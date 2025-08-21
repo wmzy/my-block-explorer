@@ -107,69 +107,55 @@ type ResponseHeaders = {
 ### 基础类型
 
 ```typescript
-// 区块数据
-type Block = {
-  number: number;              // 区块号
-  hash: string;                // 区块哈希 (0x...)
-  parentHash: string;          // 父区块哈希
-  timestamp: string;           // 时间戳 (ISO 8601)
-  miner: string;               // 矿工地址
-  gasLimit: string;            // Gas限制 (bigint string)
-  gasUsed: string;             // 已使用Gas (bigint string)
-  baseFeePerGas?: string;      // 基础费用 (bigint string)
+// 使用viem内置类型
+import type { 
+  Block as ViemBlock,
+  Transaction as ViemTransaction,
+  TransactionReceipt,
+  Log,
+  Address,
+  Hash,
+  Hex
+} from 'viem';
+
+// 扩展viem的Block类型，添加额外的统计信息
+type Block = ViemBlock & {
   transactionCount: number;    // 交易数量
   size: number;                // 区块大小(字节)
-  totalDifficulty?: string;    // 总难度
-  uncleCount?: number;         // 叔块数量
+  uncleCount?: number;         // 叔块数量（PoW链）
   reward?: string;             // 区块奖励
-  transactions?: string[];     // 交易哈希列表
 };
 
-// 交易数据
-type Transaction = {
-  hash: string;                // 交易哈希
-  blockNumber: number;         // 区块号
-  transactionIndex: number;    // 交易索引
-  from: string;                // 发送方地址
-  to: string | null;           // 接收方地址 (null表示合约创建)
-  value: string;               // 转账金额 (bigint string)
-  gasLimit: string;            // Gas限制
-  gasPrice: string;            // Gas价格
-  gasUsed?: string;            // 实际使用Gas
+// 扩展viem的Transaction类型，添加额外的元数据
+type Transaction = ViemTransaction & {
   status?: number;             // 交易状态 (1=成功, 0=失败)
-  inputData: string;           // 输入数据
-  nonce: number;               // Nonce值
-  transactionType?: number;    // 交易类型 (0=legacy, 2=EIP-1559)
-  maxFeePerGas?: string;       // 最大费用
-  maxPriorityFeePerGas?: string; // 最大优先费用
+  gasUsed?: string;            // 实际使用Gas
   timestamp: string;           // 时间戳
+  effectiveGasPrice?: string;  // 实际Gas价格
 };
 
-// 地址信息
+// 地址信息（本地扩展类型）
 type AddressInfo = {
-  address: string;             // 地址
+  address: Address;            // 地址（使用viem的Address类型）
   balance: string;             // 余额 (bigint string)
   transactionCount: number;    // 交易次数
   firstSeenBlock: number;      // 首次出现区块
   lastSeenBlock: number;       // 最后出现区块
   isContract: boolean;         // 是否为合约
-  contractCreator?: string;    // 合约创建者
-  creationTransaction?: string; // 创建交易哈希
+  contractCreator?: Address;   // 合约创建者
+  creationTransaction?: Hash;  // 创建交易哈希
   totalReceived: string;       // 总接收金额
   totalSent: string;           // 总发送金额
   updatedAt: string;           // 更新时间
 };
 
-// 代币转账
-type TokenTransfer = {
+// 代币转账（基于viem的Log类型扩展）
+type TokenTransfer = Log & {
   id: string;                  // 转账ID
-  transactionHash: string;     // 交易哈希
-  logIndex: number;            // 日志索引
-  tokenAddress: string;        // 代币合约地址
-  from: string;                // 发送方
-  to: string;                  // 接收方
+  tokenAddress: Address;       // 代币合约地址
+  from: Address;               // 发送方
+  to: Address;                 // 接收方
   value: string;               // 转账数量 (bigint string)
-  blockNumber: number;         // 区块号
   timestamp: string;           // 时间戳
   tokenInfo?: {
     name: string;
@@ -229,14 +215,18 @@ type DailyStats = {
 ```
 
 ### 支持的链ID
-| 链ID | 网络 | 路径前缀 |
-|------|------|----------|
-| 1 | Ethereum | `/api/chains/1/` |
-| 137 | Polygon | `/api/chains/137/` |
-| 56 | BSC | `/api/chains/56/` |
-| 42161 | Arbitrum | `/api/chains/42161/` |
-| 8453 | Base | `/api/chains/8453/` |
-| 10 | Optimism | `/api/chains/10/` |
+支持所有viem内置的EVM兼容链，主要包括：
+
+| 链ID | 网络 | 路径前缀 | viem定义 |
+|------|------|----------|----------|
+| 1 | Ethereum | `/api/chains/1/` | `mainnet` |
+| 137 | Polygon | `/api/chains/137/` | `polygon` |
+| 56 | BSC | `/api/chains/56/` | `bsc` |
+| 42161 | Arbitrum | `/api/chains/42161/` | `arbitrum` |
+| 8453 | Base | `/api/chains/8453/` | `base` |
+| 10 | Optimism | `/api/chains/10/` | `optimism` |
+
+> **说明**：链信息（名称、RPC、浏览器等）直接从viem的链定义获取，无需单独配置。用户只需要在访问特定链时，系统会自动支持。用户可选择配置私有RPC以获得更好的性能。
 
 ### 通用响应头
 所有多链API都会包含以下响应头：
@@ -247,46 +237,46 @@ type DailyStats = {
 
 ## API 接口
 
-### 0. 链管理接口
+### 链信息获取
 
-#### 获取支持的链列表
-```http
-GET /api/chains
-```
+前后端都直接使用viem的链定义，无需额外配置：
 
-**响应示例:**
-```http
-HTTP/1.1 200 OK
-Content-Type: application/json
-X-Response-Time: 15ms
+```typescript
+import type { Chain } from 'viem';
+import { mainnet, polygon, bsc, arbitrum, base, optimism } from 'viem/chains';
 
-{
-  "data": [
-    {
-      "chainId": 1,
-      "name": "Ethereum",
-      "symbol": "ETH",
-      "blockTime": 12,
-      "isEnabled": true,
-      "features": {
-        "supportsEIP1559": true,
-        "supportsTrace": true
-      }
-    },
-    {
-      "chainId": 137,
-      "name": "Polygon",
-      "symbol": "MATIC",
-      "blockTime": 2,
-      "isEnabled": true,
-      "features": {
-        "supportsEIP1559": true,
-        "supportsTrace": false
-      }
-    }
-  ]
+// 支持的链列表
+export const SUPPORTED_CHAINS = [
+  mainnet, polygon, bsc, arbitrum, base, optimism
+];
+
+// 根据chainId获取链信息
+export function getChainInfo(chainId: number): Chain | null {
+  return SUPPORTED_CHAINS.find(chain => chain.id === chainId) || null;
+}
+
+// 用户RPC配置类型（可选）
+type UserRpcConfig = {
+  chainId: number;
+  customRpcUrl?: string;      // 用户自定义RPC
+  rpcBackups?: string[];      // 备用RPC端点
+  timeout?: number;           // 超时设置
+  retryCount?: number;        // 重试次数
+  rateLimit?: number;         // 请求限制
+};
+
+// 获取有效的RPC URL（自定义优先，否则viem默认）
+export function getEffectiveRpcUrl(chainId: number, userConfig?: UserRpcConfig): string {
+  if (userConfig?.customRpcUrl) {
+    return userConfig.customRpcUrl;
+  }
+  
+  const chain = getChainInfo(chainId);
+  return chain?.rpcUrls.default.http[0] || '';
 }
 ```
+
+### 0. 链统计接口
 
 #### 获取链的网络统计
 ```http

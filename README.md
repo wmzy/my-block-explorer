@@ -14,21 +14,22 @@
 ## 技术架构
 
 ### 前端技术栈
-- **框架**：React 18
-- **构建工具**：Vite
-- **路由**：React Router v6
+- **框架**：React 19 (最新稳定版)
+- **构建工具**：Vite 6
+- **路由**：React Router v7.5
 - **样式**：Linaria (CSS-in-JS)
-- **图表库**：ECharts
+- **图表库**：ECharts 5.5
 - **HTTP客户端**：fetch API
-- **测试**：Vitest
+- **测试**：Vitest 2.1
+- **TypeScript**：5.7
 - **部署**：Cloudflare Pages
 
 ### 后端技术栈
-- **运行时**：Node.js + TypeScript
-- **Web框架**：Hono
-- **数据库**：DuckDB
-- **区块链交互**：Viem
-- **日志**：Pino
+- **运行时**：Node.js + TypeScript 5.7
+- **Web框架**：Hono 5.0
+- **数据库**：DuckDB 1.1
+- **区块链交互**：Viem 2.21
+- **日志**：Pino 9.5
 
 ### 数据策略
 - **混合数据源**：实时数据RPC直取，历史数据按需获取

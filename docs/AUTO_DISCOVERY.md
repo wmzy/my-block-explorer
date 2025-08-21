@@ -11,7 +11,7 @@
 ```typescript
 // src/client/lib/serviceDiscovery.ts
 export class ServiceDiscovery {
-  private static readonly DEFAULT_PORTS = [3001, 3002, 3003, 8001, 8080];
+  private static readonly DEFAULT_PORTS = [8201, 8202, 8203, 8204, 8205];
   private static readonly SCAN_TIMEOUT = 2000; // 2秒超时
   private static readonly HEALTH_CHECK_PATH = '/api/health';
   
@@ -392,7 +392,7 @@ const LoadingScreen: React.FC = () => (
     <LoadingCard>
       <Spinner />
       <h2>🔍 Scanning for local services...</h2>
-      <p>Checking ports 3001-3003, 8001, 8080...</p>
+      <p>Checking ports 8201-8205...</p>
     </LoadingCard>
   </Container>
 );

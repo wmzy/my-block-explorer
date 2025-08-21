@@ -95,42 +95,53 @@ DEFAULT_CHAIN_ID=1
     "lint": "eslint src --ext ts,tsx",
     "format": "prettier --write src",
     "clean": "rm -rf dist",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio",
     "migrate": "tsx src/server/database/migrate.ts"
   },
   "dependencies": {
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "react-router-dom": "^6.20.0",
-    "echarts": "^5.4.3",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "react-router-dom": "^7.5.0",
+    "echarts": "^5.5.1",
     "echarts-for-react": "^3.0.2",
-    "@linaria/core": "^6.0.0",
-    "@linaria/react": "^6.0.0",
-    "hono": "^3.11.0",
-    "duckdb": "^0.9.2",
-    "viem": "^1.19.0",
-    "pino": "^8.16.0",
-    "pino-pretty": "^10.2.0",
+    "@linaria/core": "^6.2.0",
+    "@linaria/react": "^6.2.0",
+    "hono": "^5.0.1",
+    "duckdb": "^1.1.3",
+    "drizzle-orm": "^0.36.4",
+    "viem": "^2.21.45",
+    "pino": "^9.5.0",
+    "pino-pretty": "^12.0.0",
     "node-cron": "^3.0.3",
-    "@hono/node-server": "^1.3.0"
+    "@hono/node-server": "^1.13.1"
   },
   "devDependencies": {
-    "@types/react": "^18.2.0",
-    "@types/react-dom": "^18.2.0",
-    "@types/node": "^20.0.0",
-    "@types/node-cron": "^3.0.8",
-    "@typescript-eslint/eslint-plugin": "^6.0.0",
-    "@typescript-eslint/parser": "^6.0.0",
-    "@vitejs/plugin-react": "^4.0.0",
-    "@linaria/vite": "^6.0.0",
-    "concurrently": "^8.2.0",
-    "eslint": "^8.45.0",
-    "eslint-plugin-react-hooks": "^4.6.0",
-    "eslint-plugin-react-refresh": "^0.4.0",
-    "prettier": "^3.0.0",
-    "tsx": "^4.0.0",
-    "typescript": "^5.0.2",
-    "vite": "^4.4.5",
-    "vitest": "^0.34.0"
+    "@types/react": "^19.0.2",
+    "@types/react-dom": "^19.0.2",
+    "@types/node": "^22.10.2",
+    "@types/node-cron": "^3.0.11",
+    "@typescript-eslint/eslint-plugin": "^8.18.1",
+    "@typescript-eslint/parser": "^8.18.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "@linaria/vite": "^6.2.0",
+    "@babel/preset-react": "^7.25.9",
+    "@babel/preset-typescript": "^7.25.9",
+    "@babel/plugin-transform-react-jsx": "^7.25.9",
+    "@vitest/coverage-v8": "^2.1.8",
+    "drizzle-kit": "^0.28.1",
+    "jsdom": "^25.0.1",
+    "concurrently": "^9.1.0",
+    "eslint": "^9.17.0",
+    "eslint-plugin-react-hooks": "^5.0.0",
+    "eslint-plugin-react-refresh": "^0.4.16",
+    "prettier": "^3.4.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.7",
+    "vitest": "^2.1.8"
   }
 }
 ```
@@ -144,9 +155,19 @@ import path from 'path';
 
 export default defineConfig({
   plugins: [
-    react(),
+    react({
+      // 启用React 19的新特性
+      babel: {
+        plugins: [
+          ['@babel/plugin-transform-react-jsx', { runtime: 'automatic' }]
+        ]
+      }
+    }),
     linaria({
       sourceMap: process.env.NODE_ENV !== 'production',
+      babelOptions: {
+        presets: ['@babel/preset-typescript', '@babel/preset-react']
+      }
     }),
   ],
   root: './src/client',
@@ -166,6 +187,7 @@ export default defineConfig({
     outDir: '../../dist/client',
     emptyOutDir: true,
     sourcemap: true,
+    target: 'esnext',
     rollupOptions: {
       input: path.resolve(__dirname, 'src/client/index.html'),
       output: {
@@ -197,15 +219,37 @@ import react from '@vitejs/plugin-react';
 import path from 'path';
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react({
+      babel: {
+        plugins: [
+          ['@babel/plugin-transform-react-jsx', { runtime: 'automatic' }]
+        ]
+      }
+    })
+  ],
   test: {
     globals: true,
     environment: 'jsdom',
     setupFiles: ['./src/test/setup.ts'],
+    coverage: {
+      provider: 'v8',
+      reporter: ['text', 'json', 'html'],
+      exclude: [
+        'node_modules/',
+        'src/test/',
+        '**/*.d.ts',
+        '**/*.config.*',
+        'dist/'
+      ]
+    }
   },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      '@/shared': path.resolve(__dirname, './src/shared'),
+      '@/client': path.resolve(__dirname, './src/client'),
+      '@/server': path.resolve(__dirname, './src/server'),
     },
   },
 });
@@ -215,8 +259,8 @@ export default defineConfig({
 ```json
 {
   "compilerOptions": {
-    "target": "ES2022",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "skipLibCheck": true,
     "moduleResolution": "bundler",
@@ -228,9 +272,13 @@ export default defineConfig({
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitReturns": true,
+    "noImplicitOverride": true,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
     "forceConsistentCasingInFileNames": true,
+    "verbatimModuleSyntax": true,
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"],
@@ -287,6 +335,22 @@ export default defineConfig({
   ],
   "exclude": ["node_modules", "dist", "src/client"]
 }
+```
+
+### drizzle.config.ts
+```typescript
+import type { Config } from 'drizzle-kit';
+
+export default {
+  schema: './src/server/database/schema.ts',
+  out: './src/server/database/migrations',
+  driver: 'pg', // 使用 PostgreSQL 驱动（通过适配器）
+  dbCredentials: {
+    connectionString: 'duckdb://data/blockchain.db',
+  },
+  verbose: true,
+  strict: true,
+} satisfies Config;
 ```
 
 ### .env 示例

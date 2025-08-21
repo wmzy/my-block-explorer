@@ -27,36 +27,30 @@ export class RpcClientManager {
 
   async getClient(chainId: number) {
     if (!this.clients.has(chainId)) {
-      const chainConfig = await this.configService.getChainConfig(chainId);
-      const client = this.createClient(chainConfig);
+      const client = await this.createClient(chainId);
       this.clients.set(chainId, client);
     }
     return this.clients.get(chainId)!;
   }
 
-  private createClient(chainConfig: ChainConfig) {
-    const viemChain = this.getViemChain(chainConfig.chainId);
+  private async createClient(chainId: number) {
+    // 直接从viem获取链定义
+    const viemChain = this.configService.getSupportedChain(chainId);
+    if (!viemChain) {
+      throw new Error(`Unsupported chain: ${chainId}`);
+    }
+
+    // 获取有效的RPC URL（用户配置优先，否则viem默认）
+    const rpcUrl = await this.configService.getEffectiveRpcUrl(chainId);
+    const userConfig = await this.configService.getUserRpcConfig(chainId);
     
     return createPublicClient({
       chain: viemChain,
-      transport: http(chainConfig.rpcUrl, {
-        timeout: chainConfig.timeout || 10000,
-        retryCount: chainConfig.retryCount || 3,
+      transport: http(rpcUrl, {
+        timeout: userConfig?.timeout || 10000,
+        retryCount: userConfig?.retryCount || 3,
       }),
     });
-  }
-
-  private getViemChain(chainId: number) {
-    // 使用 viem 内置的链定义
-    const chainMap = {
-      1: mainnet,
-      137: polygon,
-      56: bsc, 
-      42161: arbitrum,
-      8453: base,
-    };
-    
-    return chainMap[chainId] || mainnet;
   }
 }
 ```
@@ -101,16 +95,11 @@ export class RealTimeApi {
 
 #### 配置数据表结构
 ```sql
--- 链配置表
-CREATE TABLE chain_configs (
+-- 用户RPC配置表（可选配置，不配置则使用viem默认）
+CREATE TABLE user_rpc_configs (
     chain_id INTEGER PRIMARY KEY,
-    name VARCHAR NOT NULL,
-    symbol VARCHAR NOT NULL,
-    rpc_url VARCHAR NOT NULL,
-    rpc_backup_urls JSON,  -- 备用RPC端点数组
-    explorer_url VARCHAR,
-    block_time INTEGER DEFAULT 12,
-    enabled BOOLEAN DEFAULT TRUE,
+    custom_rpc_url VARCHAR,        -- 用户自定义RPC URL
+    rpc_backup_urls JSON,          -- 备用RPC端点数组
     timeout_ms INTEGER DEFAULT 10000,
     retry_count INTEGER DEFAULT 3,
     rate_limit INTEGER DEFAULT 100,  -- 每秒请求限制
@@ -145,15 +134,10 @@ CREATE TABLE rpc_performance (
 import { Database } from 'duckdb-async';
 import { mainnet, polygon, bsc, arbitrum, base, optimism } from 'viem/chains';
 
-export type ChainConfig = {
+export type UserRpcConfig = {
   chainId: number;
-  name: string;
-  symbol: string;
-  rpcUrl: string;
-  rpcBackupUrls: string[];
-  explorerUrl: string;
-  blockTime: number;
-  enabled: boolean;
+  customRpcUrl?: string;
+  rpcBackupUrls?: string[];
   timeout: number;
   retryCount: number;
   rateLimit: number;
@@ -171,65 +155,12 @@ export class ConfigService {
 
   constructor(db: Database) {
     this.db = db;
-    this.initializeDefaultConfigs();
   }
 
-  // 初始化默认配置
-  private async initializeDefaultConfigs() {
-    const existingChains = await this.db.all('SELECT chain_id FROM chain_configs');
-    
-    if (existingChains.length === 0) {
-      // 使用 viem 内置链定义初始化默认配置
-      const defaultChains = this.getDefaultChainConfigs();
-      
-      for (const chain of defaultChains) {
-        await this.saveChainConfig(chain);
-      }
-    }
-  }
-
-  private getDefaultChainConfigs(): ChainConfig[] {
-    // 基于 viem 的链定义创建默认配置
-    return [
-      {
-        chainId: mainnet.id,
-        name: mainnet.name,
-        symbol: mainnet.nativeCurrency.symbol,
-        rpcUrl: 'https://ethereum.publicnode.com',
-        rpcBackupUrls: [
-          'https://rpc.ankr.com/eth',
-          'https://eth.llamarpc.com'
-        ],
-        explorerUrl: mainnet.blockExplorers?.default?.url || 'https://etherscan.io',
-        blockTime: 12,
-        enabled: true,
-        timeout: 10000,
-        retryCount: 3,
-        rateLimit: 100
-      },
-      {
-        chainId: polygon.id,
-        name: polygon.name,
-        symbol: polygon.nativeCurrency.symbol,
-        rpcUrl: 'https://polygon-rpc.com',
-        rpcBackupUrls: [
-          'https://rpc.ankr.com/polygon'
-        ],
-        explorerUrl: polygon.blockExplorers?.default?.url || 'https://polygonscan.com',
-        blockTime: 2,
-        enabled: true,
-        timeout: 10000,
-        retryCount: 3,
-        rateLimit: 100
-      }
-      // ... 其他链配置
-    ];
-  }
-
-  // 获取链配置
-  async getChainConfig(chainId: number): Promise<ChainConfig | null> {
+  // 获取用户RPC配置（如果没有配置，返回null，使用viem默认）
+  async getUserRpcConfig(chainId: number): Promise<UserRpcConfig | null> {
     const row = await this.db.get(
-      'SELECT * FROM chain_configs WHERE chain_id = ?',
+      'SELECT * FROM user_rpc_configs WHERE chain_id = ?',
       [chainId]
     );
 
@@ -237,61 +168,58 @@ export class ConfigService {
 
     return {
       chainId: row.chain_id,
-      name: row.name,
-      symbol: row.symbol,
-      rpcUrl: row.rpc_url,
+      customRpcUrl: row.custom_rpc_url,
       rpcBackupUrls: JSON.parse(row.rpc_backup_urls || '[]'),
-      explorerUrl: row.explorer_url,
-      blockTime: row.block_time,
-      enabled: row.enabled,
       timeout: row.timeout_ms,
       retryCount: row.retry_count,
       rateLimit: row.rate_limit
     };
   }
 
-  // 保存链配置
-  async saveChainConfig(config: ChainConfig): Promise<void> {
+  // 保存用户RPC配置
+  async saveUserRpcConfig(config: UserRpcConfig): Promise<void> {
     await this.db.run(`
-      INSERT OR REPLACE INTO chain_configs (
-        chain_id, name, symbol, rpc_url, rpc_backup_urls, 
-        explorer_url, block_time, enabled, timeout_ms, 
-        retry_count, rate_limit, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      INSERT OR REPLACE INTO user_rpc_configs (
+        chain_id, custom_rpc_url, rpc_backup_urls, 
+        timeout_ms, retry_count, rate_limit, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
     `, [
       config.chainId,
-      config.name,
-      config.symbol,
-      config.rpcUrl,
-      JSON.stringify(config.rpcBackupUrls),
-      config.explorerUrl,
-      config.blockTime,
-      config.enabled,
+      config.customRpcUrl,
+      JSON.stringify(config.rpcBackupUrls || []),
       config.timeout,
       config.retryCount,
       config.rateLimit
     ]);
   }
 
-  // 获取所有启用的链
-  async getEnabledChains(): Promise<ChainConfig[]> {
-    const rows = await this.db.all(
-      'SELECT * FROM chain_configs WHERE enabled = TRUE ORDER BY chain_id'
-    );
+  // 删除用户RPC配置（回退到viem默认）
+  async deleteUserRpcConfig(chainId: number): Promise<void> {
+    await this.db.run('DELETE FROM user_rpc_configs WHERE chain_id = ?', [chainId]);
+  }
 
-    return rows.map(row => ({
-      chainId: row.chain_id,
-      name: row.name,
-      symbol: row.symbol,
-      rpcUrl: row.rpc_url,
-      rpcBackupUrls: JSON.parse(row.rpc_backup_urls || '[]'),
-      explorerUrl: row.explorer_url,
-      blockTime: row.block_time,
-      enabled: row.enabled,
-      timeout: row.timeout_ms,
-      retryCount: row.retry_count,
-      rateLimit: row.rate_limit
-    }));
+  // 获取有效的RPC URL
+  async getEffectiveRpcUrl(chainId: number): Promise<string> {
+    const userConfig = await this.getUserRpcConfig(chainId);
+    
+    if (userConfig?.customRpcUrl) {
+      return userConfig.customRpcUrl;
+    }
+
+    // 使用viem默认RPC
+    const chain = this.getSupportedChain(chainId);
+    return chain?.rpcUrls.default.http[0] || '';
+  }
+
+  // 获取支持的链信息（直接从viem）
+  getSupportedChain(chainId: number): Chain | null {
+    const supportedChains = [mainnet, polygon, bsc, arbitrum, base, optimism];
+    return supportedChains.find(chain => chain.id === chainId) || null;
+  }
+
+  // 获取所有支持的链
+  getSupportedChains(): Chain[] {
+    return [mainnet, polygon, bsc, arbitrum, base, optimism];
   }
 
   // 应用配置管理

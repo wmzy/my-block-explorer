@@ -21,7 +21,7 @@ graph TB
     subgraph "Presentation Layer"
         P1[Frontend Static Hosting<br/>Cloudflare Pages]
         P2[React Components<br/>Linaria CSS-in-JS]
-        P3[Router Management<br/>React Router v6]
+        P3[Router Management<br/>React Router v7.5]
         P4[State Management<br/>Context + Hooks]
     end
     
@@ -84,12 +84,14 @@ graph TB
 
 ### 前端技术选型
 
-#### React + Vite 选择理由
-- **现代化构建**：Vite 提供极快的开发服务器和构建速度
+#### React 19 + Vite 6 选择理由
+- **React 19新特性**：Actions、新Hooks（useActionState、useFormStatus、useOptimistic）
+- **现代化构建**：Vite 6 提供极快的开发服务器和构建速度
 - **ESM原生支持**：利用现代浏览器的原生ES模块
 - **开发体验**：热模块替换(HMR)，瞬间反馈
-- **插件生态**：丰富的Vite插件生态系统
+- **插件生态**：丰富的Vite 6插件生态系统
 - **Tree Shaking**：优秀的代码分割和摇树优化
+- **TypeScript 5.7**：最新语言特性和类型检查
 
 #### Linaria 选择理由
 - **零运行时**：编译时CSS-in-JS，无运行时开销
@@ -100,59 +102,64 @@ graph TB
 
 ### 后端技术选型
 
-#### Hono 选择理由
+#### Hono 5.0 选择理由
 - **超轻量级**：体积极小，适合边缘计算
 - **高性能**：基于Web标准API，性能优秀
-- **TypeScript支持**：完整的类型安全支持
+- **TypeScript 5.7支持**：完整的类型安全支持
 - **中间件生态**：丰富的中间件系统
 - **跨平台**：支持Node.js、Cloudflare Workers、Deno等多种运行时
+- **新特性**：更好的流式响应和WebSocket支持
 
-#### DuckDB 选择理由
+#### DuckDB 1.1 选择理由
 - **OLAP优化**：专为分析查询设计
 - **列式存储**：高压缩率，快速聚合
 - **零配置**：嵌入式数据库，无需额外配置
-- **SQL兼容**：完整的SQL语法支持
+- **PostgreSQL兼容**：高度兼容PostgreSQL SQL方言
+- **性能提升**：新版本显著提升查询性能
+- **Node.js支持**：原生Node.js驱动，TypeScript友好
+
+#### Viem 2.21 选择理由
+- **类型安全**：完整的TypeScript支持
+- **内置链定义**：支持所有主流EVM链
+- **标准ABI库**：内置ERC20、ERC721等标准合约ABI
+- **现代化API**：基于现代JavaScript特性设计
 
 ## 多链支持架构
 
-### 多链架构概览
+### 统一多链架构
 
 ```mermaid
 graph TB
     subgraph "Frontend Layer"
         F1[Chain Selector<br/>链选择器]
         F2[Unified Interface<br/>统一界面]
-        F3[Chain-specific Components<br/>链特定组件]
+        F3[Common Components<br/>通用组件]
     end
     
     subgraph "API Gateway Layer"
-        G1[Chain Router<br/>链路由器]
-        G2[Unified API<br/>统一API接口]
-        G3[Chain Adapters<br/>链适配器]
+        G1[Request Router<br/>请求路由]
+        G2[Chain Parameter<br/>链参数解析]
+        G3[Unified API<br/>统一接口]
     end
     
     subgraph "Service Layer"
-        S1[Ethereum Service<br/>以太坊服务]
-        S2[Polygon Service<br/>Polygon服务]
-        S3[BSC Service<br/>BSC服务]
-        S4[Arbitrum Service<br/>Arbitrum服务]
-        S5[Base Service<br/>Base服务]
+        S1[Block Service<br/>区块服务]
+        S2[Transaction Service<br/>交易服务]
+        S3[Address Service<br/>地址服务]
+        S4[Search Service<br/>搜索服务]
+        S5[Stats Service<br/>统计服务]
     end
     
     subgraph "Data Layer"
-        D1[Ethereum DB<br/>eth_data.db]
-        D2[Polygon DB<br/>polygon_data.db]
-        D3[BSC DB<br/>bsc_data.db]
-        D4[Arbitrum DB<br/>arbitrum_data.db]
-        D5[Base DB<br/>base_data.db]
+        D1[Unified Database<br/>统一数据库]
+        D2[Chain Dimension<br/>链维度数据]
+        D3[Cross-chain Cache<br/>跨链缓存]
     end
     
     subgraph "RPC Layer"
-        R1[Ethereum RPC<br/>mainnet]
-        R2[Polygon RPC<br/>polygon]
-        R3[BSC RPC<br/>bsc]
-        R4[Arbitrum RPC<br/>arbitrum]
-        R5[Base RPC<br/>base]
+        R1[RPC Manager<br/>RPC管理器]
+        R2[Client Pool<br/>客户端池]
+        R3[Chain Config<br/>链配置]
     end
     
     F1 --> G1
@@ -160,21 +167,22 @@ graph TB
     F3 --> G3
     
     G1 --> S1
-    G1 --> S2
-    G1 --> S3
+    G2 --> S2
+    G3 --> S3
     G1 --> S4
-    G1 --> S5
+    G2 --> S5
     
     S1 --> D1
-    S1 --> R1
     S2 --> D2
-    S2 --> R2
     S3 --> D3
+    S4 --> D1
+    S5 --> D2
+    
+    S1 --> R1
+    S2 --> R2
     S3 --> R3
-    S4 --> D4
-    S4 --> R4
-    S5 --> D5
-    S5 --> R5
+    S4 --> R1
+    S5 --> R2
     
     style F1 fill:#e3f2fd
     style G1 fill:#f3e5f5
@@ -183,49 +191,625 @@ graph TB
     style R1 fill:#fce4ec
 ```
 
-### 支持的区块链网络
+### 多链支持策略
 
-| 网络 | Chain ID | 符号 | RPC配置 | 数据库 |
-|------|----------|------|---------|--------|
-| **Ethereum** | 1 | ETH | mainnet | eth_data.db |
-| **Polygon** | 137 | MATIC | polygon | polygon_data.db |
-| **BSC** | 56 | BNB | bsc | bsc_data.db |
-| **Arbitrum** | 42161 | ETH | arbitrum | arbitrum_data.db |
-| **Base** | 8453 | ETH | base | base_data.db |
-| **Optimism** | 10 | ETH | optimism | optimism_data.db |
+#### 核心设计理念
+- **链无关性**: 服务层不包含特定链的逻辑，链ID作为数据维度
+- **统一存储**: 所有链的数据存储在同一个数据库，通过chainId字段区分
+- **通用服务**: 所有服务都是链无关的，通过参数接受chainId
+- **动态配置**: 支持的链通过配置文件和viem定义动态加载
 
-### 链抽象层设计
-
-#### 统一的链接口
+#### 数据维度设计
 ```typescript
-// src/shared/types/chain.ts
-export interface ChainConfig {
-  chainId: number;
-  name: string;
-  symbol: string;
-  rpcUrl: string;
-  explorerUrl?: string;
-  blockTime: number; // 平均出块时间(秒)
-  database: string;  // 数据库文件名
-  features: ChainFeatures;
-}
+// 所有数据表都包含 chain_id 字段作为分区键
+type BaseEntity = {
+  chainId: number;    // 链ID作为数据维度
+  // ... 其他业务字段
+};
 
-export interface ChainFeatures {
-  supportsEIP1559: boolean;  // 支持 EIP-1559
-  supportsTrace: boolean;    // 支持 trace 调用
-  supportsDebug: boolean;    // 支持 debug 调用
-  hasNativeToken: boolean;   // 是否有原生代币
-  supportsContracts: boolean; // 支持智能合约
-}
+// 示例：区块数据结构
+type Block = BaseEntity & {
+  number: bigint;
+  hash: string;
+  timestamp: Date;
+  // ... viem Block 类型的其他字段
+};
+```
 
-export interface ChainMetrics {
-  latestBlock: number;
-  avgBlockTime: number;
-  avgGasPrice: string;
-  tps: number; // 每秒交易数
-  totalTransactions: number;
+### 统一服务设计
+
+#### 链无关的服务层
+```typescript
+// src/server/services/BlockService.ts
+export class BlockService {
+  constructor(
+    private rpcManager: RpcManager,
+    private database: Database
+  ) {}
+
+  // 所有方法都接受 chainId 参数
+  async getLatestBlock(chainId: number): Promise<Block> {
+    const client = await this.rpcManager.getClient(chainId);
+    const block = await client.getBlock({ blockTag: 'latest' });
+    
+    return {
+      ...block,
+      chainId, // 添加链维度
+      network: this.rpcManager.getChainName(chainId)
+    };
+  }
+
+  async getBlockByNumber(chainId: number, blockNumber: bigint): Promise<Block> {
+    // 1. 检查缓存
+    const cached = await this.getFromCache(chainId, blockNumber);
+    if (cached) return cached;
+
+    // 2. 查询数据库
+    const stored = await this.database.get(
+      'SELECT * FROM blocks WHERE chain_id = ? AND number = ?',
+      [chainId, blockNumber.toString()]
+    );
+    if (stored) return this.mapRowToBlock(stored);
+
+    // 3. 从RPC获取
+    const client = await this.rpcManager.getClient(chainId);
+    const block = await client.getBlock({ blockNumber });
+    
+    // 4. 异步存储
+    this.storeBlock({ ...block, chainId });
+    
+    return { ...block, chainId };
+  }
+
+  // 链无关的存储逻辑
+  private async storeBlock(block: Block): Promise<void> {
+    await this.database.run(`
+      INSERT OR REPLACE INTO blocks (
+        chain_id, number, hash, parent_hash, timestamp, 
+        miner, gas_limit, gas_used, transaction_count
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `, [
+      block.chainId,
+      block.number.toString(),
+      block.hash,
+      block.parentHash,
+      block.timestamp,
+      block.miner,
+      block.gasLimit?.toString(),
+      block.gasUsed?.toString(),
+      block.transactions?.length || 0
+    ]);
+  }
 }
 ```
+
+#### 数据库访问层设计
+
+我们采用两种策略来支持 Drizzle ORM 与 DuckDB：
+
+##### 方案一：DuckDB-PostgreSQL 适配器 (推荐)
+
+通过编写一个 DuckDB 到 postgres.js 驱动的适配器，让 Drizzle ORM 直接支持 DuckDB：
+
+##### 1. postgres.js 兼容适配器
+
+```typescript
+// src/server/database/duckdb-postgres-adapter.ts
+import * as duckdb from 'duckdb';
+import { join } from 'path';
+
+/**
+ * DuckDB 到 postgres.js 的适配器
+ * 实现 postgres.js 的核心接口，让 Drizzle ORM 可以直接使用
+ */
+export class DuckDBPostgresAdapter {
+  private db: duckdb.Database;
+  private connection: duckdb.Connection;
+  private isInitialized = false;
+
+  constructor(connectionString: string) {
+    // 解析连接字符串，提取数据库路径
+    const dbPath = this.parseConnectionString(connectionString);
+    this.db = new duckdb.Database(dbPath);
+    this.connection = this.db.connect();
+  }
+
+  private parseConnectionString(connectionString: string): string {
+    // 支持格式：duckdb://path/to/database.db
+    if (connectionString.startsWith('duckdb://')) {
+      return connectionString.replace('duckdb://', '');
+    }
+    // 默认路径
+    return join(process.cwd(), 'data', 'blockchain.db');
+  }
+
+  // 实现 postgres.js 的核心查询接口
+  async query(sql: string | TemplateStringsArray, ...params: any[]): Promise<any[]> {
+    if (!this.isInitialized) {
+      await this.initialize();
+    }
+
+    // 处理模板字符串格式 (Drizzle 使用的格式)
+    let queryText: string;
+    let queryParams: any[];
+
+    if (typeof sql === 'string') {
+      queryText = sql;
+      queryParams = params;
+    } else {
+      // 处理模板字符串 + 参数
+      queryText = sql.join('?');
+      queryParams = params;
+    }
+
+    return new Promise((resolve, reject) => {
+      this.connection.all(queryText, ...queryParams, (err: Error | null, result: any[]) => {
+        if (err) {
+          reject(this.adaptError(err));
+        } else {
+          resolve(this.adaptResult(result));
+        }
+      });
+    });
+  }
+
+  // 实现 postgres.js 的事务接口
+  async begin(callback: (sql: any) => Promise<any>): Promise<any> {
+    await this.exec('BEGIN TRANSACTION');
+    try {
+      const result = await callback(this.createTransactionSql());
+      await this.exec('COMMIT');
+      return result;
+    } catch (error) {
+      await this.exec('ROLLBACK');
+      throw error;
+    }
+  }
+
+  // 创建事务 SQL 对象
+  private createTransactionSql() {
+    return {
+      query: this.query.bind(this),
+      // 其他 postgres.js 事务方法...
+    };
+  }
+
+  // 执行 SQL 语句
+  private async exec(sql: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      this.connection.exec(sql, (err: Error | null) => {
+        if (err) reject(this.adaptError(err));
+        else resolve();
+      });
+    });
+  }
+
+  // 错误适配 - 将 DuckDB 错误转换为 PostgreSQL 兼容格式
+  private adaptError(error: Error): Error {
+    // 这里可以将 DuckDB 的错误转换为 PostgreSQL 风格的错误
+    // 让 Drizzle ORM 能够正确理解
+    const adaptedError = new Error(error.message);
+    (adaptedError as any).code = this.mapErrorCode(error.message);
+    return adaptedError;
+  }
+
+  private mapErrorCode(message: string): string {
+    // 将 DuckDB 错误映射到 PostgreSQL 错误代码
+    if (message.includes('unique constraint')) return '23505';
+    if (message.includes('not null constraint')) return '23502';
+    if (message.includes('foreign key constraint')) return '23503';
+    return '42000'; // 默认语法错误
+  }
+
+  // 结果适配 - 将 DuckDB 结果转换为 PostgreSQL 兼容格式
+  private adaptResult(result: any[]): any[] {
+    // DuckDB 和 PostgreSQL 的结果格式基本兼容
+    // 这里可以做一些细微的调整
+    return result.map(row => {
+      // 处理 BigInt 类型转换
+      const adaptedRow = { ...row };
+      for (const [key, value] of Object.entries(adaptedRow)) {
+        if (typeof value === 'bigint') {
+          adaptedRow[key] = value.toString();
+        }
+      }
+      return adaptedRow;
+    });
+  }
+
+  // 初始化数据库
+  private async initialize(): Promise<void> {
+    await this.exec(`
+      CREATE TABLE IF NOT EXISTS blocks (
+        chain_id INTEGER NOT NULL,
+        number BIGINT NOT NULL,
+        hash VARCHAR(66) NOT NULL,
+        parent_hash VARCHAR(66),
+        timestamp TIMESTAMP,
+        miner VARCHAR(42),
+        gas_limit BIGINT,
+        gas_used BIGINT,
+        base_fee_per_gas BIGINT,
+        transaction_count INTEGER,
+        size_bytes INTEGER,
+        indexed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (chain_id, number),
+        UNIQUE (chain_id, hash)
+      );
+    `);
+
+    await this.exec(`
+      CREATE TABLE IF NOT EXISTS transactions (
+        chain_id INTEGER NOT NULL,
+        hash VARCHAR(66) NOT NULL,
+        block_number BIGINT,
+        transaction_index INTEGER,
+        from_address VARCHAR(42),
+        to_address VARCHAR(42),
+        value DECIMAL(38,0),
+        gas_limit BIGINT,
+        gas_price BIGINT,
+        gas_used BIGINT,
+        status INTEGER,
+        timestamp TIMESTAMP,
+        indexed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (chain_id, hash)
+      );
+    `);
+
+    this.isInitialized = true;
+  }
+
+  // 实现 postgres.js 的连接管理
+  async end(): Promise<void> {
+    return new Promise((resolve) => {
+      this.db.close(() => resolve());
+    });
+  }
+
+  // 实现 postgres.js 的监听器接口（可选）
+  on(event: string, callback: Function): void {
+    // DuckDB 不支持 LISTEN/NOTIFY，这里可以是空实现
+  }
+
+  off(event: string, callback?: Function): void {
+    // 空实现
+  }
+}
+
+// 创建适配器工厂函数，模拟 postgres.js 的使用方式
+export function createDuckDBAdapter(connectionString: string) {
+  const adapter = new DuckDBPostgresAdapter(connectionString);
+  
+  // 返回一个类似 postgres.js 的函数接口
+  const sql = async (query: string | TemplateStringsArray, ...params: any[]) => {
+    return adapter.query(query, ...params);
+  };
+
+  // 添加 postgres.js 的其他方法
+  sql.begin = adapter.begin.bind(adapter);
+  sql.end = adapter.end.bind(adapter);
+  sql.on = adapter.on.bind(adapter);
+  sql.off = adapter.off.bind(adapter);
+
+  return sql;
+}
+```
+
+##### 2. Drizzle ORM 配置
+
+```typescript
+// src/server/database/drizzle.ts
+import { drizzle } from 'drizzle-orm/postgres-js';
+import { createDuckDBAdapter } from './duckdb-postgres-adapter.js';
+import * as schema from './schema.js';
+
+// 创建 DuckDB 适配器
+const duckdbAdapter = createDuckDBAdapter('duckdb://data/blockchain.db');
+
+// 配置 Drizzle ORM
+export const db = drizzle(duckdbAdapter as any, { schema });
+
+// 现在可以使用标准的 Drizzle ORM 语法！
+export const blockRepository = {
+  findLatest: (chainId: number, limit = 20) =>
+    db.select()
+      .from(schema.blocks)
+      .where(eq(schema.blocks.chainId, chainId))
+      .orderBy(desc(schema.blocks.number))
+      .limit(limit),
+
+  findByNumber: (chainId: number, blockNumber: bigint) =>
+    db.select()
+      .from(schema.blocks)
+      .where(and(
+        eq(schema.blocks.chainId, chainId),
+        eq(schema.blocks.number, blockNumber)
+      ))
+      .get(),
+
+  create: (block: typeof schema.blocks.$inferInsert) =>
+    db.insert(schema.blocks).values(block),
+};
+```
+
+##### 3. Drizzle Schema 定义
+
+```typescript
+// src/server/database/schema.ts
+import {
+  integer,
+  varchar,
+  bigint,
+  timestamp,
+  pgTable,
+  primaryKey,
+  unique,
+  decimal,
+} from 'drizzle-orm/pg-core';
+
+export const blocks = pgTable('blocks', {
+  chainId: integer('chain_id').notNull(),
+  number: bigint('number', { mode: 'bigint' }).notNull(),
+  hash: varchar('hash', { length: 66 }).notNull(),
+  parentHash: varchar('parent_hash', { length: 66 }),
+  timestamp: timestamp('timestamp'),
+  miner: varchar('miner', { length: 42 }),
+  gasLimit: bigint('gas_limit', { mode: 'bigint' }),
+  gasUsed: bigint('gas_used', { mode: 'bigint' }),
+  baseFeePerGas: bigint('base_fee_per_gas', { mode: 'bigint' }),
+  transactionCount: integer('transaction_count'),
+  sizeBytes: integer('size_bytes'),
+  indexedAt: timestamp('indexed_at').defaultNow(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.chainId, table.number] }),
+  hashUnique: unique().on(table.chainId, table.hash),
+}));
+
+export const transactions = pgTable('transactions', {
+  chainId: integer('chain_id').notNull(),
+  hash: varchar('hash', { length: 66 }).notNull(),
+  blockNumber: bigint('block_number', { mode: 'bigint' }),
+  transactionIndex: integer('transaction_index'),
+  fromAddress: varchar('from_address', { length: 42 }),
+  toAddress: varchar('to_address', { length: 42 }),
+  value: decimal('value', { precision: 38, scale: 0 }),
+  gasLimit: bigint('gas_limit', { mode: 'bigint' }),
+  gasPrice: bigint('gas_price', { mode: 'bigint' }),
+  gasUsed: bigint('gas_used', { mode: 'bigint' }),
+  status: integer('status'),
+  timestamp: timestamp('timestamp'),
+  indexedAt: timestamp('indexed_at').defaultNow(),
+}, (table) => ({
+  pk: primaryKey({ columns: [table.chainId, table.hash] }),
+}));
+
+// 类型推断
+export type Block = typeof blocks.$inferSelect;
+export type NewBlock = typeof blocks.$inferInsert;
+export type Transaction = typeof transactions.$inferSelect;
+export type NewTransaction = typeof transactions.$inferInsert;
+```
+
+##### 2. 类型安全的查询构建器
+
+```typescript
+// src/server/database/queryBuilder.ts
+export class QueryBuilder {
+  private db: DatabaseConnection;
+  
+  constructor(db: DatabaseConnection) {
+    this.db = db;
+  }
+  
+  // 类型安全的查询方法
+  async findBlockByNumber(chainId: number, blockNumber: bigint): Promise<Block | null> {
+    const row = await this.db.get(`
+      SELECT * FROM blocks 
+      WHERE chain_id = ? AND number = ?
+    `, [chainId, blockNumber.toString()]);
+    
+    return row ? this.mapRowToBlock(row) : null;
+  }
+  
+  async findTransactionsByAddress(
+    chainId: number, 
+    address: string, 
+    limit: number = 20,
+    offset: number = 0
+  ): Promise<Transaction[]> {
+    const rows = await this.db.all(`
+      SELECT t.*, b.timestamp 
+      FROM transactions t
+      JOIN blocks b ON t.chain_id = b.chain_id AND t.block_number = b.number
+      WHERE t.chain_id = ? AND (t.from_address = ? OR t.to_address = ?)
+      ORDER BY b.timestamp DESC
+      LIMIT ? OFFSET ?
+    `, [chainId, address.toLowerCase(), address.toLowerCase(), limit, offset]);
+    
+    return rows.map(row => this.mapRowToTransaction(row));
+  }
+  
+  // 类型转换辅助方法
+  private mapRowToBlock(row: any): Block {
+    return {
+      chainId: row.chain_id,
+      number: BigInt(row.number),
+      hash: row.hash as `0x${string}`,
+      parentHash: row.parent_hash as `0x${string}`,
+      timestamp: BigInt(Math.floor(new Date(row.timestamp).getTime() / 1000)),
+      miner: row.miner as `0x${string}`,
+      gasLimit: row.gas_limit ? BigInt(row.gas_limit) : undefined,
+      gasUsed: row.gas_used ? BigInt(row.gas_used) : undefined,
+      baseFeePerGas: row.base_fee_per_gas ? BigInt(row.base_fee_per_gas) : undefined,
+      // ... 其他字段映射
+    } as Block;
+  }
+  
+  private mapRowToTransaction(row: any): Transaction {
+    return {
+      chainId: row.chain_id,
+      hash: row.hash as `0x${string}`,
+      blockNumber: BigInt(row.block_number),
+      transactionIndex: row.transaction_index,
+      from: row.from_address as `0x${string}`,
+      to: row.to_address as `0x${string}`,
+      value: BigInt(row.value),
+      gas: BigInt(row.gas_limit),
+      gasPrice: row.gas_price ? BigInt(row.gas_price) : undefined,
+      // ... 其他字段映射
+    } as Transaction;
+  }
+}
+```
+
+##### 3. Repository 模式
+
+```typescript
+// src/server/repositories/BlockRepository.ts
+export class BlockRepository {
+  private queryBuilder: QueryBuilder;
+  
+  constructor(queryBuilder: QueryBuilder) {
+    this.queryBuilder = queryBuilder;
+  }
+  
+  async findLatest(chainId: number, limit: number = 20): Promise<Block[]> {
+    return await this.queryBuilder.findLatestBlocks(chainId, limit);
+  }
+  
+  async findByNumber(chainId: number, blockNumber: bigint): Promise<Block | null> {
+    return await this.queryBuilder.findBlockByNumber(chainId, blockNumber);
+  }
+  
+  async save(block: Block): Promise<void> {
+    await this.queryBuilder.insertBlock(block);
+  }
+  
+  async findByRange(
+    chainId: number, 
+    fromBlock: bigint, 
+    toBlock: bigint
+  ): Promise<Block[]> {
+    return await this.queryBuilder.findBlocksByRange(chainId, fromBlock, toBlock);
+  }
+}
+```
+
+##### 4. 迁移管理
+
+```typescript
+// src/server/database/migrations.ts
+export class MigrationManager {
+  private db: DatabaseConnection;
+  
+  constructor(db: DatabaseConnection) {
+    this.db = db;
+  }
+  
+  async runMigrations(): Promise<void> {
+    await this.createMigrationsTable();
+    
+    const migrations = [
+      { version: 1, name: 'initial_schema', sql: INITIAL_SCHEMA },
+      { version: 2, name: 'add_indexes', sql: ADD_INDEXES },
+      { version: 3, name: 'add_user_rpc_configs', sql: ADD_USER_RPC_CONFIGS },
+    ];
+    
+    for (const migration of migrations) {
+      const applied = await this.isMigrationApplied(migration.version);
+      if (!applied) {
+        await this.applyMigration(migration);
+      }
+    }
+  }
+  
+  private async applyMigration(migration: Migration): Promise<void> {
+    await this.db.exec(migration.sql);
+    await this.db.run(
+      'INSERT INTO migrations (version, name, applied_at) VALUES (?, ?, ?)',
+      [migration.version, migration.name, new Date().toISOString()]
+    );
+    console.log(`✅ Applied migration: ${migration.name}`);
+  }
+}
+```
+
+##### 5. 事务支持
+
+```typescript
+// src/server/database/transaction.ts
+export class DatabaseTransaction {
+  private db: DatabaseConnection;
+  
+  constructor(db: DatabaseConnection) {
+    this.db = db;
+  }
+  
+  async withTransaction<T>(callback: (tx: DatabaseTransaction) => Promise<T>): Promise<T> {
+    await this.db.exec('BEGIN TRANSACTION');
+    try {
+      const result = await callback(this);
+      await this.db.exec('COMMIT');
+      return result;
+    } catch (error) {
+      await this.db.exec('ROLLBACK');
+      throw error;
+    }
+  }
+  
+  async insertBlockWithTransactions(
+    block: Block, 
+    transactions: Transaction[]
+  ): Promise<void> {
+    await this.withTransaction(async () => {
+      await this.insertBlock(block);
+      for (const tx of transactions) {
+        await this.insertTransaction(tx);
+      }
+    });
+  }
+}
+```
+
+##### 方案二：原生封装 (备选)
+
+如果适配器遇到兼容性问题，我们保留原生封装方案作为备选：
+
+```typescript
+// 原生封装方案的实现保持不变
+export class QueryBuilder {
+  private db: DatabaseConnection;
+  // ... 之前的实现
+}
+```
+
+#### 技术方案对比
+
+| 特性 | DuckDB-PostgreSQL 适配器 | 原生封装 |
+|------|-------------------------|----------|
+| **ORM 支持** | ✅ 完整 Drizzle ORM | ❌ 手写查询 |
+| **类型安全** | ✅ Drizzle 类型推断 | ✅ 手动类型转换 |
+| **开发效率** | ✅ 高 (ORM 语法) | ⚠️ 中 (SQL 编写) |
+| **性能** | ⚠️ 适配器开销 | ✅ 原生性能 |
+| **迁移支持** | ✅ Drizzle Kit | ❌ 手动管理 |
+| **关系查询** | ✅ ORM 关联查询 | ❌ 手动 JOIN |
+| **维护成本** | ⚠️ 适配器维护 | ✅ 简单直接 |
+
+#### 推荐方案
+
+**优先使用适配器方案**，原因：
+- **开发效率**: Drizzle ORM 的类型安全和 API 设计
+- **团队协作**: 标准化的 ORM 语法，降低学习成本
+- **功能完整**: 支持迁移、关系查询、事务等
+- **未来扩展**: 当官方支持 DuckDB 时，可以无缝迁移
+
+这种设计提供了：
+- **最佳开发体验**：享受 Drizzle ORM 的所有优势
+- **PostgreSQL 兼容**：充分利用 DuckDB 的兼容性
+- **类型安全**：完整的 TypeScript 支持
+- **灵活性**：可以在两种方案之间切换
+- **扩展性**：未来可以轻松升级到官方 ORM 支持
 
 ## 组件设计
 
@@ -332,43 +916,31 @@ export type PaginationInfo = {
 };
 
 // src/shared/types/blockchain.ts  
-export type Block = {
+// 使用viem内置类型并扩展多链支持
+import type { 
+  Block as ViemBlock, 
+  Transaction as ViemTransaction,
+  Address, 
+  Hash 
+} from 'viem';
+
+export type Block = ViemBlock & {
   chainId: number;       // 新增：链ID
-  number: number;
-  hash: string;
-  parentHash: string;
-  timestamp: string;
-  miner: string;
-  gasLimit: string;
-  gasUsed: string;
-  baseFeePerGas?: string; // 新增：EIP-1559基础费用
-  transactionCount: number;
   network: string;       // 新增：网络名称
-  // ... 其他字段
+  transactionCount: number; // 交易数量统计
 };
 
-export type Transaction = {
+export type Transaction = ViemTransaction & {
   chainId: number;       // 新增：链ID
-  hash: string;
-  blockNumber: number;
-  transactionIndex: number;
-  from: string;
-  to: string | null;
-  value: string;
-  gasLimit: string;
-  gasPrice?: string;     // Legacy 交易
-  maxFeePerGas?: string; // EIP-1559 交易
-  maxPriorityFeePerGas?: string; // EIP-1559 交易
-  gasUsed: string;
-  status: number;
-  timestamp: string;
+  gasUsed?: string;      // 实际使用Gas（从receipt获取）
+  status?: number;       // 交易状态（从receipt获取）
+  timestamp: string;     // 新增：时间戳
   network: string;       // 新增：网络名称
-  type: number;          // 新增：交易类型 (0, 1, 2)
 };
 
-export type Address = {
+export type AddressInfo = {
   chainId: number;       // 新增：链ID
-  address: string;
+  address: Address;      // 使用viem的Address类型
   balance: string;
   transactionCount: number;
   isContract: boolean;
@@ -402,17 +974,18 @@ export async function getBlockByNumber(
   return response.json();
 }
 
-// 后端使用 - 多链路由  
+// 后端使用 - 统一服务路由  
 // src/server/routes/blocks.ts
 import { Context } from 'hono';
 import type { DataResponse, Block } from '../../shared/types/index.js';
-import { ChainService } from '../services/ChainService.js';
+import { BlockService } from '../services/BlockService.js';
 
 export async function handleGetLatestBlock(c: Context): Promise<Response> {
   const chainId = parseInt(c.req.param('chainId'));
-  const chainService = new ChainService(chainId);
+  const blockService = new BlockService();
   
-  const block = await chainService.getLatestBlock();
+  // 服务层统一处理，chainId作为参数传入
+  const block = await blockService.getLatestBlock(chainId);
   
   // 设置响应头（元数据）
   c.header('X-Response-Time', '25ms');
@@ -516,10 +1089,10 @@ sequenceDiagram
     Note over U,C: 用户访问驱动的按需同步流程
 
     U->>P: 访问页面
-    P->>A: 扫描本地端口 (8000-8010)
+    P->>A: 扫描本地端口 (8200-8210)
     
     alt Local Server Found
-        A-->>P: 发现服务 (如:8005)
+        A-->>P: 发现服务 (如:8205)
         P-->>U: 连接本地服务
         
         U->>A: 请求数据 (GET /api/blocks/18500000)
@@ -1843,137 +2416,145 @@ sequenceDiagram
 
 ### 数据模型
 
-### 多链数据库设计
+### 统一数据库设计
 
-#### 数据库分离策略
-- **每个链使用独立的数据库文件**：`eth_data.db`, `polygon_data.db`, `bsc_data.db` 等
-- **共享的配置数据库**：`config.db` 存储链配置、用户偏好等
-- **数据隔离**：避免不同链的数据混合，提高查询性能
+#### 单一数据库策略
+- **统一存储**：所有链的数据存储在同一个 `blockchain.db` 文件
+- **链维度分区**：通过 `chain_id` 字段实现逻辑分区
+- **查询优化**：基于 `chain_id` 的索引优化跨链查询
 
-#### 链配置表（存储在 config.db）
+#### 用户RPC配置表
 ```sql
-CREATE TABLE chains (
-    chain_id INTEGER PRIMARY KEY,                    -- 链ID
-    name VARCHAR(50) NOT NULL,                      -- 链名称
-    symbol VARCHAR(10) NOT NULL,                    -- 代币符号
-    rpc_url VARCHAR(200) NOT NULL,                  -- RPC地址
-    explorer_url VARCHAR(200),                      -- 浏览器地址
-    block_time INTEGER DEFAULT 12,                  -- 平均出块时间(秒)
-    database_file VARCHAR(50) NOT NULL,             -- 数据库文件名
-    is_enabled BOOLEAN DEFAULT true,                -- 是否启用
-    supports_eip1559 BOOLEAN DEFAULT false,         -- 支持EIP-1559
-    supports_trace BOOLEAN DEFAULT false,           -- 支持trace调用
+-- 用户自定义RPC配置（可选，不配置则使用viem默认）
+CREATE TABLE user_rpc_configs (
+    chain_id INTEGER PRIMARY KEY,
+    custom_rpc_url VARCHAR(500),           -- 用户自定义RPC URL
+    rpc_backup_urls JSON,                  -- 备用RPC端点数组
+    timeout_ms INTEGER DEFAULT 10000,
+    retry_count INTEGER DEFAULT 3,
+    rate_limit INTEGER DEFAULT 100,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-
--- 插入预定义的链配置
-INSERT INTO chains (chain_id, name, symbol, rpc_url, database_file, supports_eip1559) VALUES
-(1, 'Ethereum', 'ETH', 'https://eth-mainnet.g.alchemy.com/v2/{API_KEY}', 'eth_data.db', true),
-(137, 'Polygon', 'MATIC', 'https://polygon-mainnet.g.alchemy.com/v2/{API_KEY}', 'polygon_data.db', true),
-(56, 'BSC', 'BNB', 'https://bsc-dataseed.binance.org/', 'bsc_data.db', false),
-(42161, 'Arbitrum', 'ETH', 'https://arb-mainnet.g.alchemy.com/v2/{API_KEY}', 'arbitrum_data.db', true),
-(8453, 'Base', 'ETH', 'https://base-mainnet.g.alchemy.com/v2/{API_KEY}', 'base_data.db', true);
 ```
 
-#### 索引状态表（每个链数据库）
+#### 核心数据表
+
+##### 索引状态表
 ```sql
 CREATE TABLE index_status (
-    type VARCHAR(20) NOT NULL,           -- 'block', 'address', 'token'
-    identifier VARCHAR(66) NOT NULL,    -- 区块号、地址、代币合约地址
+    chain_id INTEGER NOT NULL,              -- 链ID
+    type VARCHAR(20) NOT NULL,               -- 'block', 'address', 'token'
+    identifier VARCHAR(66) NOT NULL,        -- 区块号、地址、代币合约地址
     indexed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (type, identifier)
+    PRIMARY KEY (chain_id, type, identifier)
 );
 ```
 
-#### 区块表（每个链数据库）
+##### 区块表
 ```sql
 CREATE TABLE blocks (
-    number BIGINT PRIMARY KEY,                    -- 区块号
-    hash VARCHAR(66) UNIQUE NOT NULL,             -- 区块哈希
-    parent_hash VARCHAR(66),                      -- 父区块哈希
-    timestamp TIMESTAMP,                          -- 时间戳
-    miner VARCHAR(42),                           -- 矿工地址（验证者地址）
-    gas_limit BIGINT,                            -- Gas限制
-    gas_used BIGINT,                             -- 已使用Gas
-    base_fee_per_gas BIGINT,                     -- EIP-1559基础费用（如果支持）
-    transaction_count INTEGER,                    -- 交易数量
-    size_bytes INTEGER,                          -- 区块大小
-    difficulty VARCHAR(32),                      -- 难度值（PoW链）
-    total_difficulty VARCHAR(32),                -- 总难度（PoW链）
-    extra_data TEXT,                             -- 额外数据
-    logs_bloom TEXT,                             -- 日志布隆过滤器
-    state_root VARCHAR(66),                      -- 状态根
-    transactions_root VARCHAR(66),               -- 交易根
-    receipts_root VARCHAR(66),                   -- 收据根
-    indexed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP  -- 索引时间
+    chain_id INTEGER NOT NULL,                   -- 链ID（分区键）
+    number BIGINT NOT NULL,                      -- 区块号
+    hash VARCHAR(66) NOT NULL,                   -- 区块哈希
+    parent_hash VARCHAR(66),                     -- 父区块哈希
+    timestamp TIMESTAMP,                         -- 时间戳
+    miner VARCHAR(42),                          -- 矿工地址（验证者地址）
+    gas_limit BIGINT,                           -- Gas限制
+    gas_used BIGINT,                            -- 已使用Gas
+    base_fee_per_gas BIGINT,                    -- EIP-1559基础费用（如果支持）
+    transaction_count INTEGER,                   -- 交易数量
+    size_bytes INTEGER,                         -- 区块大小
+    difficulty VARCHAR(32),                     -- 难度值（PoW链）
+    total_difficulty VARCHAR(32),               -- 总难度（PoW链）
+    extra_data TEXT,                            -- 额外数据
+    logs_bloom TEXT,                            -- 日志布隆过滤器
+    state_root VARCHAR(66),                     -- 状态根
+    transactions_root VARCHAR(66),              -- 交易根
+    receipts_root VARCHAR(66),                  -- 收据根
+    indexed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,  -- 索引时间
+    PRIMARY KEY (chain_id, number),
+    UNIQUE (chain_id, hash)
 );
 
--- 创建索引
-CREATE INDEX idx_blocks_timestamp ON blocks(timestamp DESC);
-CREATE INDEX idx_blocks_miner ON blocks(miner);
+-- 多链索引
+CREATE INDEX idx_blocks_chain_timestamp ON blocks(chain_id, timestamp DESC);
+CREATE INDEX idx_blocks_chain_miner ON blocks(chain_id, miner);
+CREATE INDEX idx_blocks_hash ON blocks(hash);
 ```
 
-#### 交易表（每个链数据库）
+##### 交易表
 ```sql
 CREATE TABLE transactions (
-    hash VARCHAR(66) PRIMARY KEY,                -- 交易哈希
-    block_number BIGINT,                         -- 区块号
-    transaction_index INTEGER,                   -- 交易索引
-    from_address VARCHAR(42),                    -- 发送方地址
-    to_address VARCHAR(42),                      -- 接收方地址（创建合约时为NULL）
-    value DECIMAL(38,0),                         -- 转账金额
-    gas_limit BIGINT,                            -- Gas限制
-    gas_price BIGINT,                            -- Gas价格（Legacy交易）
-    max_fee_per_gas BIGINT,                      -- 最大费用（EIP-1559）
-    max_priority_fee_per_gas BIGINT,             -- 最大优先费用（EIP-1559）
-    gas_used BIGINT,                             -- 实际使用Gas
-    effective_gas_price BIGINT,                  -- 实际Gas价格
-    status INTEGER,                              -- 交易状态（0=失败，1=成功）
-    type INTEGER DEFAULT 0,                      -- 交易类型（0=Legacy，1=AccessList，2=EIP1559）
-    nonce BIGINT,                                -- 账户nonce
-    input_data TEXT,                             -- 输入数据
-    logs_count INTEGER DEFAULT 0,                -- 日志数量
-    contract_address VARCHAR(42),                -- 创建的合约地址（如果是合约创建）
-    cumulative_gas_used BIGINT,                  -- 累计Gas使用量
-    timestamp TIMESTAMP,                         -- 时间戳
-    indexed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP  -- 索引时间
+    chain_id INTEGER NOT NULL,                  -- 链ID（分区键）
+    hash VARCHAR(66) NOT NULL,                  -- 交易哈希
+    block_number BIGINT,                        -- 区块号
+    transaction_index INTEGER,                  -- 交易索引
+    from_address VARCHAR(42),                   -- 发送方地址
+    to_address VARCHAR(42),                     -- 接收方地址（创建合约时为NULL）
+    value DECIMAL(38,0),                        -- 转账金额
+    gas_limit BIGINT,                           -- Gas限制
+    gas_price BIGINT,                           -- Gas价格（Legacy交易）
+    max_fee_per_gas BIGINT,                     -- 最大费用（EIP-1559）
+    max_priority_fee_per_gas BIGINT,            -- 最大优先费用（EIP-1559）
+    gas_used BIGINT,                            -- 实际使用Gas
+    effective_gas_price BIGINT,                 -- 实际Gas价格
+    status INTEGER,                             -- 交易状态（0=失败，1=成功）
+    type INTEGER DEFAULT 0,                     -- 交易类型（0=Legacy，1=AccessList，2=EIP1559）
+    nonce BIGINT,                               -- 账户nonce
+    input_data TEXT,                            -- 输入数据
+    logs_count INTEGER DEFAULT 0,               -- 日志数量
+    contract_address VARCHAR(42),               -- 创建的合约地址（如果是合约创建）
+    cumulative_gas_used BIGINT,                 -- 累计Gas使用量
+    timestamp TIMESTAMP,                        -- 时间戳
+    indexed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,  -- 索引时间
+    PRIMARY KEY (chain_id, hash),
+    UNIQUE (chain_id, block_number, transaction_index)
 );
 
--- 创建索引
-CREATE INDEX idx_transactions_block ON transactions(block_number);
-CREATE INDEX idx_transactions_from ON transactions(from_address);
-CREATE INDEX idx_transactions_to ON transactions(to_address);
-CREATE INDEX idx_transactions_timestamp ON transactions(timestamp DESC);
-CREATE INDEX idx_transactions_type ON transactions(type);
+-- 多链索引
+CREATE INDEX idx_transactions_chain_block ON transactions(chain_id, block_number);
+CREATE INDEX idx_transactions_chain_from ON transactions(chain_id, from_address);
+CREATE INDEX idx_transactions_chain_to ON transactions(chain_id, to_address);
+CREATE INDEX idx_transactions_chain_timestamp ON transactions(chain_id, timestamp DESC);
+CREATE INDEX idx_transactions_hash ON transactions(hash);
 ```
 
-#### 地址索引表（记录用户查询过的地址）
+##### 地址索引表
 ```sql
 CREATE TABLE indexed_addresses (
-    address VARCHAR(42) PRIMARY KEY,             -- 地址
-    label VARCHAR(100),                          -- 用户自定义标签
-    first_seen_block BIGINT,                     -- 首次出现区块
-    last_seen_block BIGINT,                      -- 最后出现区块
-    transaction_count INTEGER DEFAULT 0,         -- 交易次数
+    chain_id INTEGER NOT NULL,                  -- 链ID
+    address VARCHAR(42) NOT NULL,               -- 地址
+    label VARCHAR(100),                         -- 用户自定义标签
+    first_seen_block BIGINT,                    -- 首次出现区块
+    last_seen_block BIGINT,                     -- 最后出现区块
+    transaction_count INTEGER DEFAULT 0,        -- 交易次数
     indexed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,     -- 首次索引时间
-    last_queried TIMESTAMP DEFAULT CURRENT_TIMESTAMP    -- 最后查询时间
+    last_queried TIMESTAMP DEFAULT CURRENT_TIMESTAMP,   -- 最后查询时间
+    PRIMARY KEY (chain_id, address)
 );
+
+-- 多链地址索引
+CREATE INDEX idx_indexed_addresses_chain_queried ON indexed_addresses(chain_id, last_queried DESC);
+CREATE INDEX idx_indexed_addresses_global ON indexed_addresses(address); -- 跨链地址查询
 ```
 
-#### 搜索历史表（提高搜索体验）
+##### 搜索历史表
 ```sql
 CREATE TABLE search_history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    chain_id INTEGER,                           -- 链ID（可选，跨链搜索时为NULL）
     query VARCHAR(100) NOT NULL,                -- 搜索关键词
     result_type VARCHAR(20),                     -- 'block', 'transaction', 'address'
     result_id VARCHAR(66),                       -- 结果ID
     searched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE INDEX idx_search_history_chain ON search_history(chain_id, searched_at DESC);
 ```
 
-#### 用户偏好表
+##### 用户偏好表
 ```sql
 CREATE TABLE user_preferences (
     key VARCHAR(50) PRIMARY KEY,                 -- 配置键
@@ -1982,53 +2563,86 @@ CREATE TABLE user_preferences (
 );
 ```
 
-#### 访问历史表（用于优化和清理）
+##### 访问历史表
 ```sql
 CREATE TABLE access_history (
-    type VARCHAR(20) NOT NULL,                   -- 'block', 'address', 'transaction'
-    identifier VARCHAR(66) NOT NULL,            -- 区块号、地址、交易哈希
+    chain_id INTEGER NOT NULL,                  -- 链ID
+    type VARCHAR(20) NOT NULL,                  -- 'block', 'address', 'transaction'
+    identifier VARCHAR(66) NOT NULL,           -- 区块号、地址、交易哈希
     first_accessed TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     last_accessed TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     access_count INTEGER DEFAULT 1,
-    PRIMARY KEY (type, identifier)
+    PRIMARY KEY (chain_id, type, identifier)
 );
-```
 
-### 轻量级索引策略
-
-```sql
--- 基础查询索引
-CREATE INDEX idx_blocks_timestamp ON blocks(timestamp DESC);
-CREATE INDEX idx_transactions_block_number ON transactions(block_number);
-CREATE INDEX idx_transactions_addresses ON transactions(from_address, to_address);
-
--- 按需索引相关
-CREATE INDEX idx_indexed_addresses_queried ON indexed_addresses(last_queried DESC);
-CREATE INDEX idx_search_history_query ON search_history(query);
-CREATE INDEX idx_index_status_type ON index_status(type, last_updated);
-CREATE INDEX idx_access_history_type ON access_history(type, last_accessed DESC);
+CREATE INDEX idx_access_history_chain_type ON access_history(chain_id, type, last_accessed DESC);
 CREATE INDEX idx_access_history_count ON access_history(access_count DESC);
-
--- 轻量级复合索引（仅针对常用查询）
-CREATE INDEX idx_transactions_address_block ON transactions(from_address, block_number);
-CREATE INDEX idx_transactions_to_block ON transactions(to_address, block_number);
 ```
 
-### 数据清理策略
+#### 查询优化策略
+
+##### 多链查询优化
+```sql
+-- 跨链查询（按哈希查找）
+SELECT * FROM transactions WHERE hash = ?;  -- 利用全局hash索引
+
+-- 链内查询（大部分场景）
+SELECT * FROM blocks 
+WHERE chain_id = ? AND timestamp > ?
+ORDER BY number DESC LIMIT 20;  -- 利用chain_id + timestamp索引
+
+-- 地址跨链查询
+SELECT chain_id, address, transaction_count 
+FROM indexed_addresses 
+WHERE address = ?;  -- 查看地址在哪些链上活跃
+```
+
+##### 分区查询示例
+```sql
+-- 获取特定链的最新区块
+SELECT * FROM blocks 
+WHERE chain_id = 1 
+ORDER BY number DESC LIMIT 10;
+
+-- 获取地址在特定链上的交易
+SELECT t.*, b.timestamp 
+FROM transactions t
+JOIN blocks b ON t.chain_id = b.chain_id AND t.block_number = b.number
+WHERE t.chain_id = 1 AND (t.from_address = ? OR t.to_address = ?)
+ORDER BY b.timestamp DESC
+LIMIT 20;
+
+-- 跨链统计查询
+SELECT 
+    chain_id,
+    COUNT(*) as tx_count,
+    AVG(gas_price) as avg_gas_price
+FROM transactions 
+WHERE timestamp > date('now', '-1 day')
+GROUP BY chain_id;
+```
+
+#### 数据清理策略
 
 ```sql
 -- 定期清理旧的搜索历史（保留最近30天）
 DELETE FROM search_history 
 WHERE searched_at < datetime('now', '-30 days');
 
--- 清理长期未查询的地址索引（可选，保留用户主动查询的数据）
--- DELETE FROM indexed_addresses 
--- WHERE last_queried < datetime('now', '-90 days');
+-- 清理长期未查询的地址索引（按链清理）
+DELETE FROM indexed_addresses 
+WHERE last_queried < datetime('now', '-90 days')
+AND chain_id IN (SELECT chain_id FROM user_rpc_configs WHERE custom_rpc_url IS NULL);
 
 -- 清理过期的索引状态
 DELETE FROM index_status 
 WHERE last_updated < datetime('now', '-7 days') 
 AND type = 'temp';
+
+-- 清理低活跃度链的访问历史
+DELETE FROM access_history 
+WHERE last_accessed < datetime('now', '-60 days')
+AND access_count < 5;
 ```
 
 ### 数据分区策略
@@ -2357,7 +2971,7 @@ graph TD
 
 ```dockerfile
 # backend/Dockerfile
-FROM node:18-alpine
+FROM node:22-alpine
 
 WORKDIR /app
 COPY package*.json ./
