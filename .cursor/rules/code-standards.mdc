@@ -1,0 +1,22 @@
+---
+globs: *.ts,*.tsx
+alwaysApply: false
+---
+
+## 编码规范
+- 使用 function 定义组件
+- export 尽量和定义一起
+- ts 中尽量使用 type 替代 interface 和 enum
+- 尽量不使用 let 声明变量，除非真的需要一个可变状态，必要时可以使用立即执行函数：`const foo = (() => {/* 变量初始化逻辑 */})()`
+- 尽量不适用 class 和 OOP
+- 尽量减少条件分支，尤其是嵌套的条件分支，必要时可以使用帮助函数来处理数据
+- 使用英文注释，只在必要的地方添加注释
+
+## 组件声明示例：
+```tsx
+type Props = {}
+
+export default function Game(props: Props) {
+  return <></>
+}
+```
