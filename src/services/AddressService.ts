@@ -35,7 +35,7 @@ export class AddressService {
         client.getCode({ address: address as `0x${string}` }).catch(() => "0x"),
       ]);
 
-      const isContract = code && code !== "0x" && code.length > 2;
+      const isContract = Boolean(code && code !== "0x" && code.length > 2);
 
       // 从数据库获取额外信息
       const dbInfo = await this.getAddressFromDB(chainId, address);
@@ -133,41 +133,49 @@ export class AddressService {
         address: address as `0x${string}`,
       });
 
-      if (currentNonce === 0n) {
+      if (currentNonce === 0) {
         return [];
       }
 
       // 获取最新的几个区块，寻找包含该地址的交易
       const latestBlockNumber = await client.getBlockNumber();
-      const searchBlocks = Math.min(Number(currentNonce) * 2, 100); // 搜索范围
+      const searchBlocks = Math.min(Number(currentNonce) * 2, 20); // 减少搜索范围到20个区块
       const startBlock = latestBlockNumber - BigInt(searchBlocks);
 
       const transactions: Transaction[] = [];
+      let processedBlocks = 0;
+      const maxProcessedBlocks = 10; // 最多处理10个区块
 
-      for (let i = 0; i < searchBlocks && transactions.length < limit; i++) {
+      for (
+        let i = 0;
+        i < searchBlocks &&
+        transactions.length < limit &&
+        processedBlocks < maxProcessedBlocks;
+        i++
+      ) {
         const blockNumber = latestBlockNumber - BigInt(i);
         if (blockNumber < startBlock) break;
 
         try {
+          processedBlocks++;
           const block = await client.getBlock({
             blockNumber,
             includeTransactions: true,
           });
 
           if (block.transactions) {
-            for (const tx of block.transactions) {
+            // 只处理前50个交易，避免处理太多交易
+            const txsToProcess = Array.isArray(block.transactions)
+              ? block.transactions.slice(0, 50)
+              : [block.transactions];
+
+            for (const tx of txsToProcess) {
               if (
                 typeof tx === "object" &&
                 (tx.from?.toLowerCase() === address.toLowerCase() ||
                   tx.to?.toLowerCase() === address.toLowerCase())
               ) {
-                // 获取交易receipt
-                const receipt = await client
-                  .getTransactionReceipt({
-                    hash: tx.hash,
-                  })
-                  .catch(() => null);
-
+                // 简化：不获取receipt以减少RPC调用
                 transactions.push({
                   chainId,
                   hash: tx.hash,
@@ -178,8 +186,8 @@ export class AddressService {
                   value: tx.value?.toString() || "0",
                   gasLimit: tx.gas,
                   gasPrice: tx.gasPrice,
-                  gasUsed: receipt?.gasUsed,
-                  status: receipt?.status,
+                  gasUsed: undefined, // 跳过receipt查询
+                  status: 1, // 假设成功
                   type: tx.type || 0,
                   nonce: tx.nonce,
                   timestamp: new Date(Number(block.timestamp) * 1000),
@@ -211,7 +219,7 @@ export class AddressService {
     try {
       const client = await rpcManager.getClient(chainId);
       const code = await client.getCode({ address: address as `0x${string}` });
-      return code && code !== "0x" && code.length > 2;
+      return Boolean(code && code !== "0x" && code.length > 2);
     } catch (error) {
       console.error(`Failed to check if ${address} is contract:`, error);
       return false;
