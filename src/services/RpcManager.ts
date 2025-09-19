@@ -3,9 +3,14 @@ import {
   getChainInfo,
   getEffectiveRpcUrl,
   type UserRpcConfig,
-} from "@/shared/config/chains";
-import { db, userRpcConfigs } from "@/server/database/drizzle";
-import { eq } from "drizzle-orm";
+} from "../config/chains";
+import { db } from "../database/init";
+import {
+  createRetryableRpcCall,
+  createRetryableDbCall,
+  RpcError,
+  logError,
+} from "../utils/errorHandler";
 
 /**
  * RPC客户端管理器
@@ -21,30 +26,52 @@ export class RpcManager {
 
   // 加载用户RPC配置
   private async loadUserConfigs(): Promise<void> {
-    try {
-      const configs = await db.select().from(userRpcConfigs);
+    const loadConfigs = createRetryableDbCall(async () => {
+      const configs = await db.query<{
+        chain_id: number;
+        custom_rpc_url?: string;
+        rpc_backup_urls?: string;
+        timeout_ms?: number;
+        retry_count?: number;
+        rate_limit?: number;
+      }>(`SELECT * FROM user_rpc_configs`);
+
       for (const config of configs) {
-        this.userConfigs.set(config.chainId, {
-          chainId: config.chainId,
-          customRpcUrl: config.customRpcUrl || undefined,
-          rpcBackups: config.rpcBackupUrls
-            ? JSON.parse(config.rpcBackupUrls)
+        this.userConfigs.set(config.chain_id, {
+          chainId: config.chain_id,
+          customRpcUrl: config.custom_rpc_url || undefined,
+          rpcBackups: config.rpc_backup_urls
+            ? JSON.parse(config.rpc_backup_urls)
             : undefined,
-          timeout: config.timeoutMs || 10000,
-          retryCount: config.retryCount || 3,
-          rateLimit: config.rateLimit || 100,
+          timeout: config.timeout_ms || 10000,
+          retryCount: config.retry_count || 3,
+          rateLimit: config.rate_limit || 100,
         });
       }
+    });
+
+    try {
+      await loadConfigs();
     } catch (error) {
-      console.warn("Failed to load user RPC configs:", error);
+      logError(error, "RpcManager.loadUserConfigs");
     }
   }
 
   // 获取RPC客户端
   async getClient(chainId: number): Promise<PublicClient> {
     if (!this.clients.has(chainId)) {
-      const client = await this.createClient(chainId);
-      this.clients.set(chainId, client);
+      try {
+        const client = await this.createClient(chainId);
+        this.clients.set(chainId, client);
+      } catch (error) {
+        logError(error, `RpcManager.getClient`, { chainId });
+        throw new RpcError(
+          `Failed to create RPC client for chain ${chainId}`,
+          undefined,
+          undefined,
+          chainId
+        );
+      }
     }
     return this.clients.get(chainId)!;
   }
@@ -79,32 +106,21 @@ export class RpcManager {
   // 更新用户RPC配置
   async updateUserRpcConfig(config: UserRpcConfig): Promise<void> {
     try {
-      await db
-        .insert(userRpcConfigs)
-        .values({
-          chainId: config.chainId,
-          customRpcUrl: config.customRpcUrl,
-          rpcBackupUrls: config.rpcBackups
-            ? JSON.stringify(config.rpcBackups)
-            : null,
-          timeoutMs: config.timeout,
-          retryCount: config.retryCount,
-          rateLimit: config.rateLimit,
-          updatedAt: new Date(),
-        })
-        .onConflictDoUpdate({
-          target: userRpcConfigs.chainId,
-          set: {
-            customRpcUrl: config.customRpcUrl,
-            rpcBackupUrls: config.rpcBackups
-              ? JSON.stringify(config.rpcBackups)
-              : null,
-            timeoutMs: config.timeout,
-            retryCount: config.retryCount,
-            rateLimit: config.rateLimit,
-            updatedAt: new Date(),
-          },
-        });
+      // 使用 INSERT OR REPLACE 语法
+      await db.exec(`
+        INSERT OR REPLACE INTO user_rpc_configs (
+          chain_id, custom_rpc_url, rpc_backup_urls, 
+          timeout_ms, retry_count, rate_limit, updated_at
+        ) VALUES (
+          ${config.chainId}, 
+          ${config.customRpcUrl ? `'${config.customRpcUrl}'` : "NULL"}, 
+          ${config.rpcBackups ? `'${JSON.stringify(config.rpcBackups)}'` : "NULL"},
+          ${config.timeout || 10000},
+          ${config.retryCount || 3},
+          ${config.rateLimit || 100},
+          CURRENT_TIMESTAMP
+        )
+      `);
 
       // 更新内存缓存
       this.userConfigs.set(config.chainId, config);
@@ -120,9 +136,7 @@ export class RpcManager {
   // 删除用户RPC配置
   async deleteUserRpcConfig(chainId: number): Promise<void> {
     try {
-      await db
-        .delete(userRpcConfigs)
-        .where(eq(userRpcConfigs.chainId, chainId));
+      await db.exec(`DELETE FROM user_rpc_configs WHERE chain_id = ${chainId}`);
 
       // 清除内存缓存
       this.userConfigs.delete(chainId);
@@ -185,3 +199,6 @@ export class RpcManager {
     this.userConfigs.clear();
   }
 }
+
+// 全局RPC管理器实例
+export const rpcManager = new RpcManager();

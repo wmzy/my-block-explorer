@@ -1,46 +1,69 @@
-import { eq, desc, and, gte, lte, or } from "drizzle-orm";
-import {
-  db,
-  transactions,
-  blocks,
-  type Transaction,
-  type NewTransaction,
-} from "@/server/database/drizzle";
-import { RpcManager } from "./RpcManager";
-import type {
-  PaginationParams,
-  ListResponse,
-  BlockRangeParams,
-} from "@/shared/types/index";
+import { db } from "../database/init";
+import { rpcManager } from "./RpcManager";
+
+/**
+ * 交易数据类型
+ */
+export type Transaction = {
+  chainId: number;
+  hash: string;
+  blockNumber?: bigint;
+  transactionIndex?: number;
+  fromAddress?: string;
+  toAddress?: string;
+  value?: string;
+  gasLimit?: bigint;
+  gasPrice?: bigint;
+  maxFeePerGas?: bigint;
+  maxPriorityFeePerGas?: bigint;
+  gasUsed?: bigint;
+  effectiveGasPrice?: bigint;
+  status?: number;
+  type?: number;
+  nonce?: bigint;
+  inputData?: string;
+  logsCount?: number;
+  contractAddress?: string;
+  cumulativeGasUsed?: bigint;
+  timestamp?: Date;
+  indexedAt?: Date;
+};
 
 /**
  * 交易服务
- * 负责交易数据的获取、存储和管理
+ * 负责获取和索引交易数据
  */
 export class TransactionService {
-  constructor(private rpcManager: RpcManager) {}
-
   // 根据交易哈希获取交易
   async getTransactionByHash(
     chainId: number,
     txHash: string
   ): Promise<Transaction | null> {
     try {
-      // 先从数据库查找
-      const cachedTx = await db
-        .select()
-        .from(transactions)
-        .where(
-          and(eq(transactions.chainId, chainId), eq(transactions.hash, txHash))
-        )
-        .limit(1);
+      // 先从数据库获取
+      const cached = await db.query<any>(
+        `
+        SELECT * FROM transactions 
+        WHERE chain_id = ? AND hash = ?
+        LIMIT 1
+      `,
+        [chainId, txHash]
+      );
 
-      if (cachedTx.length > 0) {
-        return cachedTx[0];
+      if (cached.length > 0) {
+        return this.formatTransaction(cached[0]);
       }
 
-      // 数据库中没有，从RPC获取
-      const transaction = await this.fetchAndStoreTransaction(chainId, txHash);
+      // 从链上获取
+      const client = await rpcManager.getClient(chainId);
+      const [tx, receipt] = await Promise.all([
+        client.getTransaction({ hash: txHash as `0x${string}` }),
+        client
+          .getTransactionReceipt({ hash: txHash as `0x${string}` })
+          .catch(() => null),
+      ]);
+
+      const transaction = await this.indexTransaction(chainId, tx, receipt);
       return transaction;
     } catch (error) {
       console.error(`Failed to get transaction ${txHash}:`, error);
@@ -48,361 +71,132 @@ export class TransactionService {
     }
   }
 
-  // 获取区块内的所有交易
-  async getTransactionsByBlock(
+  // 获取区块中的所有交易
+  async getTransactionsByBlockNumber(
     chainId: number,
-    blockNumber: number,
-    params: PaginationParams = {}
-  ): Promise<ListResponse<Transaction>> {
-    const { page = 1, limit = 20 } = params;
-    const offset = (page - 1) * limit;
-
+    blockNumber: bigint,
+    limit: number = 50,
+    offset: number = 0
+  ): Promise<{ transactions: Transaction[]; total: number }> {
     try {
-      const [txList, totalCount] = await Promise.all([
-        db
-          .select()
-          .from(transactions)
-          .where(
-            and(
-              eq(transactions.chainId, chainId),
-              eq(transactions.blockNumber, BigInt(blockNumber))
-            )
-          )
-          .orderBy(transactions.transactionIndex)
-          .limit(limit)
-          .offset(offset),
+      // 先从数据库获取
+      const transactions = await db.query<any>(
+        `
+        SELECT * FROM transactions 
+        WHERE chain_id = ? AND block_number = ?
+        ORDER BY transaction_index ASC
+        LIMIT ? OFFSET ?
+      `,
+        [chainId, blockNumber.toString(), limit, offset]
+      );
 
-        db
-          .select({ count: transactions.hash })
-          .from(transactions)
-          .where(
-            and(
-              eq(transactions.chainId, chainId),
-              eq(transactions.blockNumber, BigInt(blockNumber))
-            )
-          ),
-      ]);
+      // 获取总数
+      const countResult = await db.query<{ count: number }>(
+        `
+        SELECT COUNT(*) as count FROM transactions 
+        WHERE chain_id = ? AND block_number = ?
+      `,
+        [chainId, blockNumber.toString()]
+      );
 
-      const total = totalCount.length;
-      const totalPages = Math.ceil(total / limit);
+      const total = countResult[0]?.count || 0;
+
+      // 如果数据库中没有交易，尝试从链上获取
+      if (transactions.length === 0 && offset === 0) {
+        await this.indexBlockTransactions(chainId, blockNumber);
+
+        // 重新查询
+        const newTransactions = await db.query<any>(
+          `
+          SELECT * FROM transactions 
+          WHERE chain_id = ? AND block_number = ?
+          ORDER BY transaction_index ASC
+          LIMIT ? OFFSET ?
+        `,
+          [chainId, blockNumber.toString(), limit, offset]
+        );
+
+        return {
+          transactions: newTransactions.map((tx) => this.formatTransaction(tx)),
+          total: newTransactions.length,
+        };
+      }
 
       return {
-        data: txList,
-        pagination: {
-          page,
-          limit,
-          total,
-          totalPages,
-          hasNext: page < totalPages,
-          hasPrev: page > 1,
-        },
+        transactions: transactions.map((tx) => this.formatTransaction(tx)),
+        total,
       };
     } catch (error) {
-      console.error("Failed to get transactions by block:", error);
-      throw new Error("Failed to retrieve transactions");
+      console.error(
+        `Failed to get transactions for block ${blockNumber}:`,
+        error
+      );
+      return { transactions: [], total: 0 };
     }
   }
 
-  // 获取地址相关的交易（发送或接收）
+  // 获取地址相关的交易
   async getTransactionsByAddress(
     chainId: number,
     address: string,
-    params: PaginationParams = {}
-  ): Promise<ListResponse<Transaction>> {
-    const { page = 1, limit = 20 } = params;
-    const offset = (page - 1) * limit;
-
+    limit: number = 20,
+    offset: number = 0
+  ): Promise<{ transactions: Transaction[]; total: number }> {
     try {
-      const [txList, totalCount] = await Promise.all([
-        db
-          .select()
-          .from(transactions)
-          .where(
-            and(
-              eq(transactions.chainId, chainId),
-              or(
-                eq(transactions.fromAddress, address),
-                eq(transactions.toAddress, address)
-              )
-            )
-          )
-          .orderBy(desc(transactions.timestamp))
-          .limit(limit)
-          .offset(offset),
+      const transactions = await db.query<any>(
+        `
+        SELECT * FROM transactions 
+        WHERE chain_id = ? AND (from_address = ? OR to_address = ?)
+        ORDER BY timestamp DESC, block_number DESC, transaction_index DESC
+        LIMIT ? OFFSET ?
+      `,
+        [chainId, address.toLowerCase(), address.toLowerCase(), limit, offset]
+      );
 
-        db
-          .select({ count: transactions.hash })
-          .from(transactions)
-          .where(
-            and(
-              eq(transactions.chainId, chainId),
-              or(
-                eq(transactions.fromAddress, address),
-                eq(transactions.toAddress, address)
-              )
-            )
-          ),
-      ]);
+      // 获取总数
+      const countResult = await db.query<{ count: number }>(
+        `
+        SELECT COUNT(*) as count FROM transactions 
+        WHERE chain_id = ? AND (from_address = ? OR to_address = ?)
+      `,
+        [chainId, address.toLowerCase(), address.toLowerCase()]
+      );
 
-      const total = totalCount.length;
-      const totalPages = Math.ceil(total / limit);
+      const total = countResult[0]?.count || 0;
 
       return {
-        data: txList,
-        pagination: {
-          page,
-          limit,
-          total,
-          totalPages,
-          hasNext: page < totalPages,
-          hasPrev: page > 1,
-        },
+        transactions: transactions.map((tx) => this.formatTransaction(tx)),
+        total,
       };
     } catch (error) {
-      console.error("Failed to get transactions by address:", error);
-      throw new Error("Failed to retrieve transactions");
+      console.error(
+        `Failed to get transactions for address ${address}:`,
+        error
+      );
+      return { transactions: [], total: 0 };
     }
   }
 
-  // 获取最新交易列表
+  // 获取最新交易
   async getLatestTransactions(
     chainId: number,
-    params: PaginationParams = {}
-  ): Promise<ListResponse<Transaction>> {
-    const { page = 1, limit = 20 } = params;
-    const offset = (page - 1) * limit;
-
-    try {
-      const [txList, totalCount] = await Promise.all([
-        db
-          .select()
-          .from(transactions)
-          .where(eq(transactions.chainId, chainId))
-          .orderBy(desc(transactions.timestamp))
-          .limit(limit)
-          .offset(offset),
-
-        db
-          .select({ count: transactions.hash })
-          .from(transactions)
-          .where(eq(transactions.chainId, chainId)),
-      ]);
-
-      const total = totalCount.length;
-      const totalPages = Math.ceil(total / limit);
-
-      return {
-        data: txList,
-        pagination: {
-          page,
-          limit,
-          total,
-          totalPages,
-          hasNext: page < totalPages,
-          hasPrev: page > 1,
-        },
-      };
-    } catch (error) {
-      console.error("Failed to get latest transactions:", error);
-      throw new Error("Failed to retrieve transactions");
-    }
-  }
-
-  // 根据区块范围获取交易
-  async getTransactionsInRange(
-    chainId: number,
-    range: BlockRangeParams,
-    params: PaginationParams = {}
-  ): Promise<ListResponse<Transaction>> {
-    const { fromBlock, toBlock } = range;
-    const { page = 1, limit = 20 } = params;
-    const offset = (page - 1) * limit;
-
-    try {
-      let query = db
-        .select()
-        .from(transactions)
-        .where(eq(transactions.chainId, chainId));
-
-      // 应用区块范围过滤
-      if (fromBlock !== undefined) {
-        query = query.where(
-          and(
-            eq(transactions.chainId, chainId),
-            gte(transactions.blockNumber, BigInt(fromBlock))
-          )
-        );
-      }
-      if (toBlock !== undefined) {
-        query = query.where(
-          and(
-            eq(transactions.chainId, chainId),
-            lte(transactions.blockNumber, BigInt(toBlock))
-          )
-        );
-      }
-
-      const [txList, totalCount] = await Promise.all([
-        query.orderBy(desc(transactions.timestamp)).limit(limit).offset(offset),
-        db
-          .select({ count: transactions.hash })
-          .from(transactions)
-          .where(eq(transactions.chainId, chainId)),
-      ]);
-
-      const total = totalCount.length;
-      const totalPages = Math.ceil(total / limit);
-
-      return {
-        data: txList,
-        pagination: {
-          page,
-          limit,
-          total,
-          totalPages,
-          hasNext: page < totalPages,
-          hasPrev: page > 1,
-        },
-      };
-    } catch (error) {
-      console.error("Failed to get transactions in range:", error);
-      throw new Error("Failed to retrieve transactions in range");
-    }
-  }
-
-  // 从RPC获取并存储交易
-  private async fetchAndStoreTransaction(
-    chainId: number,
-    txHash: string
-  ): Promise<Transaction> {
-    try {
-      const client = await this.rpcManager.getClient(chainId);
-
-      // 获取交易详情和收据
-      const [viemTx, viemReceipt] = await Promise.all([
-        client.getTransaction({ hash: txHash as `0x${string}` }),
-        client
-          .getTransactionReceipt({ hash: txHash as `0x${string}` })
-          .catch(() => null),
-      ]);
-
-      // 获取区块时间戳
-      let timestamp: Date | null = null;
-      if (viemTx.blockNumber) {
-        const block = await client.getBlock({
-          blockNumber: viemTx.blockNumber,
-        });
-        timestamp = new Date(Number(block.timestamp) * 1000);
-      }
-
-      return await this.storeTransaction(
-        chainId,
-        viemTx,
-        viemReceipt,
-        timestamp
-      );
-    } catch (error) {
-      console.error(`Failed to fetch transaction ${txHash}:`, error);
-      throw new Error(`Failed to fetch transaction ${txHash} from RPC`);
-    }
-  }
-
-  // 存储交易到数据库
-  private async storeTransaction(
-    chainId: number,
-    viemTx: any,
-    viemReceipt: any = null,
-    timestamp: Date | null = null
-  ): Promise<Transaction> {
-    try {
-      const txData: NewTransaction = {
-        chainId,
-        hash: viemTx.hash,
-        blockNumber: viemTx.blockNumber,
-        transactionIndex: viemTx.transactionIndex,
-        fromAddress: viemTx.from,
-        toAddress: viemTx.to || null,
-        value: viemTx.value?.toString() || "0",
-        gasLimit: viemTx.gas || viemTx.gasLimit,
-        gasPrice: viemTx.gasPrice || null,
-        maxFeePerGas: viemTx.maxFeePerGas || null,
-        maxPriorityFeePerGas: viemTx.maxPriorityFeePerGas || null,
-        gasUsed: viemReceipt?.gasUsed || null,
-        effectiveGasPrice: viemReceipt?.effectiveGasPrice || null,
-        status: viemReceipt?.status
-          ? viemReceipt.status === "success"
-            ? 1
-            : 0
-          : null,
-        type: viemTx.type ? Number(viemTx.type) : 0,
-        nonce: viemTx.nonce,
-        inputData: viemTx.input || null,
-        logsCount: viemReceipt?.logs?.length || 0,
-        contractAddress: viemReceipt?.contractAddress || null,
-        cumulativeGasUsed: viemReceipt?.cumulativeGasUsed || null,
-        timestamp,
-      };
-
-      const [insertedTx] = await db
-        .insert(transactions)
-        .values(txData)
-        .onConflictDoUpdate({
-          target: [transactions.chainId, transactions.hash],
-          set: {
-            gasUsed: txData.gasUsed,
-            effectiveGasPrice: txData.effectiveGasPrice,
-            status: txData.status,
-            logsCount: txData.logsCount,
-            contractAddress: txData.contractAddress,
-            cumulativeGasUsed: txData.cumulativeGasUsed,
-            indexedAt: new Date(),
-          },
-        })
-        .returning();
-
-      return insertedTx;
-    } catch (error) {
-      console.error("Failed to store transaction:", error);
-      throw new Error("Failed to store transaction");
-    }
-  }
-
-  // 批量存储交易（用于区块同步）
-  async storeTransactions(
-    chainId: number,
-    viemTxs: any[],
-    blockTimestamp: Date
+    limit: number = 20
   ): Promise<Transaction[]> {
     try {
-      const txDataList: NewTransaction[] = viemTxs.map((viemTx) => ({
-        chainId,
-        hash: viemTx.hash,
-        blockNumber: viemTx.blockNumber,
-        transactionIndex: viemTx.transactionIndex,
-        fromAddress: viemTx.from,
-        toAddress: viemTx.to || null,
-        value: viemTx.value?.toString() || "0",
-        gasLimit: viemTx.gas || viemTx.gasLimit,
-        gasPrice: viemTx.gasPrice || null,
-        maxFeePerGas: viemTx.maxFeePerGas || null,
-        maxPriorityFeePerGas: viemTx.maxPriorityFeePerGas || null,
-        type: viemTx.type ? Number(viemTx.type) : 0,
-        nonce: viemTx.nonce,
-        inputData: viemTx.input || null,
-        timestamp: blockTimestamp,
-        // 注意：批量插入时没有receipt信息，需要后续补充
-      }));
+      const transactions = await db.query<any>(
+        `
+        SELECT * FROM transactions 
+        WHERE chain_id = ?
+        ORDER BY timestamp DESC, block_number DESC, transaction_index DESC
+        LIMIT ?
+      `,
+        [chainId, limit]
+      );
 
-      const insertedTxs = await db
-        .insert(transactions)
-        .values(txDataList)
-        .onConflictDoNothing() // 避免重复插入
-        .returning();
-
-      return insertedTxs;
+      return transactions.map((tx) => this.formatTransaction(tx));
     } catch (error) {
-      console.error("Failed to store transactions:", error);
-      throw new Error("Failed to store transactions");
+      console.error("Failed to get latest transactions:", error);
+      return [];
     }
   }
 
@@ -411,42 +205,41 @@ export class TransactionService {
     totalTransactions: number;
     avgGasPrice: string | null;
     avgGasUsed: string | null;
-    successRate: number | null;
+    successRate: number;
   }> {
     try {
-      const [countResult, priceResult, gasResult, statusResult] =
-        await Promise.all([
-          db
-            .select({ count: transactions.hash })
-            .from(transactions)
-            .where(eq(transactions.chainId, chainId)),
+      // 获取总交易数
+      const countResult = await db.query<{ count: number }>(
+        `
+        SELECT COUNT(*) as count FROM transactions WHERE chain_id = ?
+      `,
+        [chainId]
+      );
 
-          db
-            .select({ gasPrice: transactions.gasPrice })
-            .from(transactions)
-            .where(eq(transactions.chainId, chainId))
-            .limit(1000), // 最近1000笔交易
+      // 获取最近1000个交易的统计信息
+      const statsResult = await db.query<{
+        gas_price: string;
+        gas_used: string;
+        status: number;
+      }>(
+        `
+        SELECT gas_price, gas_used, status 
+        FROM transactions 
+        WHERE chain_id = ? AND gas_price IS NOT NULL AND gas_used IS NOT NULL
+        ORDER BY timestamp DESC 
+        LIMIT 1000
+      `,
+        [chainId]
+      );
 
-          db
-            .select({ gasUsed: transactions.gasUsed })
-            .from(transactions)
-            .where(eq(transactions.chainId, chainId))
-            .limit(1000),
-
-          db
-            .select({ status: transactions.status })
-            .from(transactions)
-            .where(eq(transactions.chainId, chainId))
-            .limit(1000),
-        ]);
-
-      const totalTransactions = countResult.length;
+      const totalTransactions = countResult[0]?.count || 0;
 
       // 计算平均Gas价格
       let avgGasPrice: string | null = null;
-      const gasPrices = priceResult
-        .map((tx) => tx.gasPrice)
-        .filter((price) => price !== null) as bigint[];
+      const gasPrices = statsResult
+        .map((tx) => tx.gas_price)
+        .filter((price) => price && price !== "0")
+        .map((price) => BigInt(price));
 
       if (gasPrices.length > 0) {
         const totalGasPrice = gasPrices.reduce((a, b) => a + b, 0n);
@@ -455,25 +248,20 @@ export class TransactionService {
 
       // 计算平均Gas使用量
       let avgGasUsed: string | null = null;
-      const gasUsages = gasResult
-        .map((tx) => tx.gasUsed)
-        .filter((gas) => gas !== null) as bigint[];
+      const gasUsedValues = statsResult
+        .map((tx) => tx.gas_used)
+        .filter((gas) => gas && gas !== "0")
+        .map((gas) => BigInt(gas));
 
-      if (gasUsages.length > 0) {
-        const totalGasUsed = gasUsages.reduce((a, b) => a + b, 0n);
-        avgGasUsed = (totalGasUsed / BigInt(gasUsages.length)).toString();
+      if (gasUsedValues.length > 0) {
+        const totalGasUsed = gasUsedValues.reduce((a, b) => a + b, 0n);
+        avgGasUsed = (totalGasUsed / BigInt(gasUsedValues.length)).toString();
       }
 
       // 计算成功率
-      let successRate: number | null = null;
-      const statuses = statusResult
-        .map((tx) => tx.status)
-        .filter((status) => status !== null);
-
-      if (statuses.length > 0) {
-        const successCount = statuses.filter((status) => status === 1).length;
-        successRate = (successCount / statuses.length) * 100;
-      }
+      const successfulTxs = statsResult.filter((tx) => tx.status === 1).length;
+      const successRate =
+        statsResult.length > 0 ? (successfulTxs / statsResult.length) * 100 : 0;
 
       return {
         totalTransactions,
@@ -487,76 +275,167 @@ export class TransactionService {
     }
   }
 
-  // 地址交易历史简化查询（基于平衡变化的二分查找）
-  async getAddressTransactionHistory(
+  // 索引区块中的所有交易
+  private async indexBlockTransactions(
     chainId: number,
-    address: string,
-    fromBlock?: number,
-    toBlock?: number,
-    maxAttempts = 10
-  ): Promise<{
-    transactions: Transaction[];
-    isComplete: boolean;
-    suggestion?: string;
-  }> {
+    blockNumber: bigint
+  ): Promise<void> {
     try {
-      const client = await this.rpcManager.getClient(chainId);
+      const client = await rpcManager.getClient(chainId);
+      const block = await client.getBlock({
+        blockNumber,
+        includeTransactions: true,
+      });
 
-      // 获取当前区块号和交易数量
-      const [currentBlock, txCount] = await Promise.all([
-        client.getBlockNumber(),
-        client.getTransactionCount({ address: address as `0x${string}` }),
-      ]);
-
-      const searchFromBlock =
-        fromBlock || Math.max(0, Number(currentBlock) - 10000); // 默认搜索最近10000个区块
-      const searchToBlock = toBlock || Number(currentBlock);
-
-      // 如果交易数量很少，直接从数据库查询已索引的交易
-      if (txCount <= 50) {
-        const existingTxs = await this.getTransactionsByAddress(
-          chainId,
-          address,
-          { limit: 100 }
-        );
-        return {
-          transactions: existingTxs.data,
-          isComplete: true,
-        };
+      if (!block.transactions || block.transactions.length === 0) {
+        return;
       }
 
-      // 对于交易量大的地址，建议用户提供更精确的范围
-      const suggestion =
-        txCount > 1000
-          ? "This address has many transactions. Please provide a specific block range or time period for better results."
-          : undefined;
-
-      // 从数据库中查询指定范围内的交易
-      const rangeQuery = and(
-        eq(transactions.chainId, chainId),
-        or(
-          eq(transactions.fromAddress, address),
-          eq(transactions.toAddress, address)
-        ),
-        gte(transactions.blockNumber, BigInt(searchFromBlock)),
-        lte(transactions.blockNumber, BigInt(searchToBlock))
+      // 获取所有交易的receipt
+      const receipts = await Promise.all(
+        block.transactions.map((tx) =>
+          client
+            .getTransactionReceipt({
+              hash: typeof tx === "string" ? (tx as `0x${string}`) : tx.hash,
+            })
+            .catch(() => null)
+        )
       );
 
-      const foundTxs = await db
-        .select()
-        .from(transactions)
-        .where(rangeQuery)
-        .orderBy(desc(transactions.timestamp))
-        .limit(100);
+      // 索引所有交易
+      for (let i = 0; i < block.transactions.length; i++) {
+        const tx = block.transactions[i];
+        const receipt = receipts[i];
 
-      return {
-        transactions: foundTxs,
-        isComplete: foundTxs.length < 100, // 如果查到的结果少于限制，认为是完整的
-        suggestion,
-      };
+        if (typeof tx !== "string") {
+          await this.indexTransaction(chainId, tx, receipt);
+        }
+      }
     } catch (error) {
-      console.error("Failed to get address transaction history:", error);
-      throw new Error("Failed to get address transaction history");
+      console.error(
+        `Failed to index transactions for block ${blockNumber}:`,
+        error
+      );
     }
   }
+
+  // 索引单个交易到数据库
+  private async indexTransaction(
+    chainId: number,
+    tx: any,
+    receipt?: any
+  ): Promise<Transaction> {
+    const timestamp = receipt?.blockNumber
+      ? await this.getBlockTimestamp(chainId, BigInt(receipt.blockNumber))
+      : null;
+
+    // 使用参数化查询避免SQL注入
+    await db.query(
+      `
+      INSERT OR REPLACE INTO transactions (
+        chain_id, hash, block_number, transaction_index, from_address, to_address,
+        value, gas_limit, gas_price, max_fee_per_gas, max_priority_fee_per_gas,
+        gas_used, effective_gas_price, status, type, nonce, input_data,
+        logs_count, contract_address, cumulative_gas_used, timestamp, indexed_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+      [
+        chainId,
+        tx.hash,
+        tx.blockNumber?.toString() || null,
+        tx.transactionIndex || null,
+        tx.from?.toLowerCase() || null,
+        tx.to?.toLowerCase() || null,
+        tx.value?.toString() || "0",
+        tx.gas?.toString() || null,
+        tx.gasPrice?.toString() || null,
+        tx.maxFeePerGas?.toString() || null,
+        tx.maxPriorityFeePerGas?.toString() || null,
+        receipt?.gasUsed?.toString() || null,
+        receipt?.effectiveGasPrice?.toString() || null,
+        receipt?.status || null,
+        tx.type || 0,
+        tx.nonce?.toString() || null,
+        tx.input || null,
+        receipt?.logs?.length || 0,
+        receipt?.contractAddress?.toLowerCase() || null,
+        receipt?.cumulativeGasUsed?.toString() || null,
+        timestamp,
+        new Date().toISOString(),
+      ]
+    );
+
+    // 返回插入的数据
+    const inserted = await db.query<any>(
+      `
+      SELECT * FROM transactions 
+      WHERE chain_id = ? AND hash = ?
+      LIMIT 1
+    `,
+      [chainId, tx.hash]
+    );
+
+    return this.formatTransaction(inserted[0]);
+  }
+
+  // 获取区块时间戳
+  private async getBlockTimestamp(
+    chainId: number,
+    blockNumber: bigint
+  ): Promise<string | null> {
+    try {
+      const blockResult = await db.query<{ timestamp: string }>(
+        `
+        SELECT timestamp FROM blocks 
+        WHERE chain_id = ? AND number = ?
+        LIMIT 1
+      `,
+        [chainId, blockNumber.toString()]
+      );
+
+      return blockResult[0]?.timestamp || null;
+    } catch (error) {
+      console.warn(`Failed to get block timestamp for ${blockNumber}:`, error);
+      return null;
+    }
+  }
+
+  // 格式化交易数据
+  private formatTransaction(dbTx: any): Transaction {
+    return {
+      chainId: dbTx.chain_id,
+      hash: dbTx.hash,
+      blockNumber: dbTx.block_number ? BigInt(dbTx.block_number) : undefined,
+      transactionIndex: dbTx.transaction_index || undefined,
+      fromAddress: dbTx.from_address || undefined,
+      toAddress: dbTx.to_address || undefined,
+      value: dbTx.value || "0",
+      gasLimit: dbTx.gas_limit ? BigInt(dbTx.gas_limit) : undefined,
+      gasPrice: dbTx.gas_price ? BigInt(dbTx.gas_price) : undefined,
+      maxFeePerGas: dbTx.max_fee_per_gas
+        ? BigInt(dbTx.max_fee_per_gas)
+        : undefined,
+      maxPriorityFeePerGas: dbTx.max_priority_fee_per_gas
+        ? BigInt(dbTx.max_priority_fee_per_gas)
+        : undefined,
+      gasUsed: dbTx.gas_used ? BigInt(dbTx.gas_used) : undefined,
+      effectiveGasPrice: dbTx.effective_gas_price
+        ? BigInt(dbTx.effective_gas_price)
+        : undefined,
+      status: dbTx.status || undefined,
+      type: dbTx.type || 0,
+      nonce: dbTx.nonce ? BigInt(dbTx.nonce) : undefined,
+      inputData: dbTx.input_data || undefined,
+      logsCount: dbTx.logs_count || 0,
+      contractAddress: dbTx.contract_address || undefined,
+      cumulativeGasUsed: dbTx.cumulative_gas_used
+        ? BigInt(dbTx.cumulative_gas_used)
+        : undefined,
+      timestamp: dbTx.timestamp ? new Date(dbTx.timestamp) : undefined,
+      indexedAt: dbTx.indexed_at ? new Date(dbTx.indexed_at) : undefined,
+    };
+  }
 }
+
+// 导出全局实例
+export const transactionService = new TransactionService();

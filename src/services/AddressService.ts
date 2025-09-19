@@ -1,215 +1,345 @@
-import { eq, and, desc, or } from "drizzle-orm";
-import {
-  db,
-  indexedAddresses,
-  transactions,
-  type IndexedAddress,
-  type NewIndexedAddress,
-} from "@/server/database/drizzle";
-import { RpcManager } from "./RpcManager";
-import type { AddressInfo } from "@/shared/types/index";
+import { db } from "../database/init";
+import { rpcManager } from "./RpcManager";
+import { transactionService, type Transaction } from "./TransactionService";
+
+/**
+ * 地址数据类型
+ */
+export type AddressInfo = {
+  chainId: number;
+  address: string;
+  balance: string;
+  transactionCount: number;
+  isContract: boolean;
+  contractCode?: string;
+  label?: string;
+  firstSeenBlock?: bigint;
+  lastSeenBlock?: bigint;
+  lastQueried?: Date;
+};
 
 /**
  * 地址服务
- * 负责地址数据的获取、存储和管理
+ * 负责获取地址信息、余额和交易历史
  */
 export class AddressService {
-  constructor(private rpcManager: RpcManager) {}
-
-  // 获取地址信息
+  // 获取地址基本信息
   async getAddressInfo(chainId: number, address: string): Promise<AddressInfo> {
     try {
-      const client = await this.rpcManager.getClient(chainId);
+      const client = await rpcManager.getClient(chainId);
 
-      // 从RPC获取基本信息
+      // 并行获取余额、交易数量和代码
       const [balance, transactionCount, code] = await Promise.all([
         client.getBalance({ address: address as `0x${string}` }),
         client.getTransactionCount({ address: address as `0x${string}` }),
         client.getCode({ address: address as `0x${string}` }).catch(() => "0x"),
       ]);
 
-      const isContract = code !== "0x" && code.length > 2;
+      const isContract = code && code !== "0x" && code.length > 2;
 
-      // 从数据库获取缓存的地址信息
-      const cachedAddress = await db
-        .select()
-        .from(indexedAddresses)
-        .where(
-          and(
-            eq(indexedAddresses.chainId, chainId),
-            eq(indexedAddresses.address, address)
-          )
-        )
-        .limit(1);
+      // 从数据库获取额外信息
+      const dbInfo = await this.getAddressFromDB(chainId, address);
 
-      // 计算额外统计信息
-      const [receivedTxs, sentTxs] = await Promise.all([
-        db
-          .select()
-          .from(transactions)
-          .where(
-            and(
-              eq(transactions.chainId, chainId),
-              eq(transactions.toAddress, address)
-            )
-          )
-          .limit(1000), // 限制查询数量
-
-        db
-          .select()
-          .from(transactions)
-          .where(
-            and(
-              eq(transactions.chainId, chainId),
-              eq(transactions.fromAddress, address)
-            )
-          )
-          .limit(1000),
-      ]);
-
-      // 计算总接收和发送金额
-      const totalReceived = receivedTxs.reduce((sum, tx) => {
-        return sum + BigInt(tx.value || 0);
-      }, 0n);
-
-      const totalSent = sentTxs.reduce((sum, tx) => {
-        return sum + BigInt(tx.value || 0);
-      }, 0n);
-
-      // 获取网络名称
-      const networkName = this.rpcManager.getChainName(chainId);
-
-      const addressInfo: AddressInfo = {
-        chainId,
-        address: address as `0x${string}`,
-        balance: balance.toString(),
-        transactionCount,
-        isContract,
-        network: networkName,
-        label: cachedAddress[0]?.label || undefined,
-        firstSeenBlock: cachedAddress[0]?.firstSeenBlock
-          ? Number(cachedAddress[0].firstSeenBlock)
-          : undefined,
-        lastSeenBlock: cachedAddress[0]?.lastSeenBlock
-          ? Number(cachedAddress[0].lastSeenBlock)
-          : undefined,
-        totalReceived: totalReceived.toString(),
-        totalSent: totalSent.toString(),
-        updatedAt: new Date().toISOString(),
-      };
-
-      // 更新或插入地址索引信息
-      await this.updateAddressIndex(chainId, address, {
-        transactionCount,
+      // 更新数据库中的地址信息
+      await this.updateAddressInDB(chainId, address, {
+        transactionCount: Number(transactionCount),
         lastQueried: new Date(),
       });
 
-      return addressInfo;
+      return {
+        chainId,
+        address: address.toLowerCase(),
+        balance: balance.toString(),
+        transactionCount: Number(transactionCount),
+        isContract,
+        contractCode: isContract ? code : undefined,
+        label: dbInfo?.label,
+        firstSeenBlock: dbInfo?.firstSeenBlock,
+        lastSeenBlock: dbInfo?.lastSeenBlock,
+        lastQueried: new Date(),
+      };
     } catch (error) {
       console.error(`Failed to get address info for ${address}:`, error);
-      throw new Error("Failed to retrieve address information");
-    }
-  }
-
-  // 检查地址是否为合约
-  async isContract(chainId: number, address: string): Promise<boolean> {
-    try {
-      const client = await this.rpcManager.getClient(chainId);
-      const code = await client.getCode({ address: address as `0x${string}` });
-      return code !== "0x" && code.length > 2;
-    } catch (error) {
-      console.error(
-        `Failed to check if address is contract: ${address}`,
-        error
-      );
-      return false;
+      throw new Error("Failed to get address information");
     }
   }
 
   // 获取地址余额
   async getAddressBalance(chainId: number, address: string): Promise<string> {
     try {
-      const client = await this.rpcManager.getClient(chainId);
+      const client = await rpcManager.getClient(chainId);
       const balance = await client.getBalance({
         address: address as `0x${string}`,
       });
       return balance.toString();
     } catch (error) {
       console.error(`Failed to get balance for ${address}:`, error);
-      throw new Error("Failed to retrieve address balance");
+      throw new Error("Failed to get address balance");
     }
   }
 
-  // 获取地址交易数量
-  async getAddressTransactionCount(
+  // 获取地址交易历史（使用轻量级方法）
+  async getAddressTransactions(
+    chainId: number,
+    address: string,
+    limit: number = 20,
+    offset: number = 0
+  ): Promise<{ transactions: Transaction[]; total: number; method: string }> {
+    try {
+      // 首先尝试从数据库获取已索引的交易
+      const dbResult = await transactionService.getTransactionsByAddress(
+        chainId,
+        address,
+        limit,
+        offset
+      );
+
+      if (dbResult.transactions.length > 0) {
+        return {
+          ...dbResult,
+          method: "database",
+        };
+      }
+
+      // 如果数据库中没有数据，使用轻量级方法
+      const lightweightResult = await this.getLightweightTransactionHistory(
+        chainId,
+        address,
+        limit
+      );
+
+      return {
+        transactions: lightweightResult,
+        total: lightweightResult.length,
+        method: "lightweight",
+      };
+    } catch (error) {
+      console.error(`Failed to get transactions for ${address}:`, error);
+      return { transactions: [], total: 0, method: "error" };
+    }
+  }
+
+  // 轻量级交易历史获取（基于余额变化的二分查找）
+  private async getLightweightTransactionHistory(
+    chainId: number,
+    address: string,
+    limit: number = 20
+  ): Promise<Transaction[]> {
+    try {
+      const client = await rpcManager.getClient(chainId);
+
+      // 获取当前交易数量
+      const currentNonce = await client.getTransactionCount({
+        address: address as `0x${string}`,
+      });
+
+      if (currentNonce === 0n) {
+        return [];
+      }
+
+      // 获取最新的几个区块，寻找包含该地址的交易
+      const latestBlockNumber = await client.getBlockNumber();
+      const searchBlocks = Math.min(Number(currentNonce) * 2, 100); // 搜索范围
+      const startBlock = latestBlockNumber - BigInt(searchBlocks);
+
+      const transactions: Transaction[] = [];
+
+      for (let i = 0; i < searchBlocks && transactions.length < limit; i++) {
+        const blockNumber = latestBlockNumber - BigInt(i);
+        if (blockNumber < startBlock) break;
+
+        try {
+          const block = await client.getBlock({
+            blockNumber,
+            includeTransactions: true,
+          });
+
+          if (block.transactions) {
+            for (const tx of block.transactions) {
+              if (
+                typeof tx === "object" &&
+                (tx.from?.toLowerCase() === address.toLowerCase() ||
+                  tx.to?.toLowerCase() === address.toLowerCase())
+              ) {
+                // 获取交易receipt
+                const receipt = await client
+                  .getTransactionReceipt({
+                    hash: tx.hash,
+                  })
+                  .catch(() => null);
+
+                transactions.push({
+                  chainId,
+                  hash: tx.hash,
+                  blockNumber: tx.blockNumber,
+                  transactionIndex: tx.transactionIndex,
+                  fromAddress: tx.from?.toLowerCase(),
+                  toAddress: tx.to?.toLowerCase(),
+                  value: tx.value?.toString() || "0",
+                  gasLimit: tx.gas,
+                  gasPrice: tx.gasPrice,
+                  gasUsed: receipt?.gasUsed,
+                  status: receipt?.status,
+                  type: tx.type || 0,
+                  nonce: tx.nonce,
+                  timestamp: new Date(Number(block.timestamp) * 1000),
+                });
+
+                if (transactions.length >= limit) break;
+              }
+            }
+          }
+        } catch (error) {
+          console.warn(`Failed to get block ${blockNumber}:`, error);
+        }
+      }
+
+      return transactions.sort((a, b) => {
+        if (a.blockNumber && b.blockNumber) {
+          return Number(b.blockNumber - a.blockNumber);
+        }
+        return 0;
+      });
+    } catch (error) {
+      console.error("Failed to get lightweight transaction history:", error);
+      return [];
+    }
+  }
+
+  // 检查地址是否为合约
+  async isContract(chainId: number, address: string): Promise<boolean> {
+    try {
+      const client = await rpcManager.getClient(chainId);
+      const code = await client.getCode({ address: address as `0x${string}` });
+      return code && code !== "0x" && code.length > 2;
+    } catch (error) {
+      console.error(`Failed to check if ${address} is contract:`, error);
+      return false;
+    }
+  }
+
+  // 获取合约代码
+  async getContractCode(
     chainId: number,
     address: string
-  ): Promise<number> {
+  ): Promise<string | null> {
     try {
-      const client = await this.rpcManager.getClient(chainId);
-      return await client.getTransactionCount({
-        address: address as `0x${string}`,
-      });
+      const client = await rpcManager.getClient(chainId);
+      const code = await client.getCode({ address: address as `0x${string}` });
+      return code !== "0x" ? code : null;
     } catch (error) {
-      console.error(`Failed to get transaction count for ${address}:`, error);
-      throw new Error("Failed to retrieve transaction count");
+      console.error(`Failed to get contract code for ${address}:`, error);
+      return null;
     }
   }
 
-  // 获取地址历史余额（在指定区块）
-  async getAddressBalanceAtBlock(
+  // 估算地址的代币余额（如果是ERC20代币）
+  async getTokenBalance(
     chainId: number,
-    address: string,
-    blockNumber: number
-  ): Promise<string> {
+    tokenAddress: string,
+    holderAddress: string
+  ): Promise<string | null> {
     try {
-      const client = await this.rpcManager.getClient(chainId);
-      const balance = await client.getBalance({
-        address: address as `0x${string}`,
-        blockNumber: BigInt(blockNumber),
+      const client = await rpcManager.getClient(chainId);
+
+      // ERC20 balanceOf函数的调用数据
+      const balanceOfData = `0x70a08231${holderAddress.slice(2).padStart(64, "0")}`;
+
+      const result = await client.call({
+        to: tokenAddress as `0x${string}`,
+        data: balanceOfData as `0x${string}`,
       });
-      return balance.toString();
+
+      if (result.data && result.data !== "0x") {
+        // 解析返回的余额
+        const balance = BigInt(result.data);
+        return balance.toString();
+      }
+
+      return null;
     } catch (error) {
-      console.error(
-        `Failed to get balance at block ${blockNumber} for ${address}:`,
-        error
+      console.error(`Failed to get token balance:`, error);
+      return null;
+    }
+  }
+
+  // 从数据库获取地址信息
+  private async getAddressFromDB(
+    chainId: number,
+    address: string
+  ): Promise<{
+    label?: string;
+    firstSeenBlock?: bigint;
+    lastSeenBlock?: bigint;
+  } | null> {
+    try {
+      const result = await db.query<{
+        label: string;
+        first_seen_block: string;
+        last_seen_block: string;
+      }>(
+        `
+        SELECT label, first_seen_block, last_seen_block 
+        FROM indexed_addresses 
+        WHERE chain_id = ? AND address = ?
+        LIMIT 1
+      `,
+        [chainId, address.toLowerCase()]
       );
-      throw new Error("Failed to retrieve historical balance");
+
+      if (result.length === 0) {
+        return null;
+      }
+
+      const row = result[0];
+      return {
+        label: row.label || undefined,
+        firstSeenBlock: row.first_seen_block
+          ? BigInt(row.first_seen_block)
+          : undefined,
+        lastSeenBlock: row.last_seen_block
+          ? BigInt(row.last_seen_block)
+          : undefined,
+      };
+    } catch (error) {
+      console.warn(`Failed to get address from DB:`, error);
+      return null;
     }
   }
 
-  // 更新地址索引信息
-  async updateAddressIndex(
+  // 更新数据库中的地址信息
+  private async updateAddressInDB(
     chainId: number,
     address: string,
-    updates: Partial<NewIndexedAddress>
+    info: {
+      transactionCount?: number;
+      lastQueried?: Date;
+      firstSeenBlock?: bigint;
+      lastSeenBlock?: bigint;
+      label?: string;
+    }
   ): Promise<void> {
     try {
-      await db
-        .insert(indexedAddresses)
-        .values({
+      await db.query(
+        `
+        INSERT OR REPLACE INTO indexed_addresses (
+          chain_id, address, label, first_seen_block, last_seen_block,
+          transaction_count, last_queried, indexed_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `,
+        [
           chainId,
-          address,
-          transactionCount: updates.transactionCount || 0,
-          firstSeenBlock: updates.firstSeenBlock,
-          lastSeenBlock: updates.lastSeenBlock,
-          label: updates.label,
-          lastQueried: updates.lastQueried || new Date(),
-        })
-        .onConflictDoUpdate({
-          target: [indexedAddresses.chainId, indexedAddresses.address],
-          set: {
-            transactionCount:
-              updates.transactionCount || indexedAddresses.transactionCount,
-            lastSeenBlock:
-              updates.lastSeenBlock || indexedAddresses.lastSeenBlock,
-            label: updates.label || indexedAddresses.label,
-            lastQueried: updates.lastQueried || new Date(),
-          },
-        });
+          address.toLowerCase(),
+          info.label || null,
+          info.firstSeenBlock?.toString() || null,
+          info.lastSeenBlock?.toString() || null,
+          info.transactionCount || 0,
+          info.lastQueried?.toISOString() || new Date().toISOString(),
+          new Date().toISOString(),
+        ]
+      );
     } catch (error) {
-      console.error("Failed to update address index:", error);
-      // 非关键错误，不抛出异常
+      console.warn("Failed to update address in DB:", error);
     }
   }
 
@@ -220,181 +350,63 @@ export class AddressService {
     label: string
   ): Promise<void> {
     try {
-      await this.updateAddressIndex(chainId, address, { label });
+      await this.updateAddressInDB(chainId, address, { label });
     } catch (error) {
-      console.error(`Failed to set label for ${address}:`, error);
+      console.error("Failed to set address label:", error);
       throw new Error("Failed to set address label");
     }
   }
 
-  // 获取地址标签
-  async getAddressLabel(
-    chainId: number,
-    address: string
-  ): Promise<string | null> {
-    try {
-      const result = await db
-        .select({ label: indexedAddresses.label })
-        .from(indexedAddresses)
-        .where(
-          and(
-            eq(indexedAddresses.chainId, chainId),
-            eq(indexedAddresses.address, address)
-          )
-        )
-        .limit(1);
-
-      return result[0]?.label || null;
-    } catch (error) {
-      console.error(`Failed to get label for ${address}:`, error);
-      return null;
-    }
-  }
-
-  // 删除地址标签
-  async removeAddressLabel(chainId: number, address: string): Promise<void> {
-    try {
-      await this.updateAddressIndex(chainId, address, { label: null });
-    } catch (error) {
-      console.error(`Failed to remove label for ${address}:`, error);
-      throw new Error("Failed to remove address label");
-    }
-  }
-
   // 获取最近查询的地址
-  async getRecentlyQueriedAddresses(
+  async getRecentAddresses(
     chainId: number,
-    limit = 20
-  ): Promise<IndexedAddress[]> {
+    limit: number = 10
+  ): Promise<AddressInfo[]> {
     try {
-      return await db
-        .select()
-        .from(indexedAddresses)
-        .where(eq(indexedAddresses.chainId, chainId))
-        .orderBy(desc(indexedAddresses.lastQueried))
-        .limit(limit);
-    } catch (error) {
-      console.error("Failed to get recently queried addresses:", error);
-      return [];
-    }
-  }
+      const result = await db.query<{
+        address: string;
+        label: string;
+        transaction_count: number;
+        last_queried: string;
+      }>(
+        `
+        SELECT address, label, transaction_count, last_queried 
+        FROM indexed_addresses 
+        WHERE chain_id = ?
+        ORDER BY last_queried DESC 
+        LIMIT ?
+      `,
+        [chainId, limit]
+      );
 
-  // 搜索地址（按标签）
-  async searchAddressesByLabel(
-    chainId: number,
-    labelQuery: string,
-    limit = 10
-  ): Promise<IndexedAddress[]> {
-    try {
-      // 简单的标签搜索，可以根据需要实现更复杂的全文搜索
-      return await db
-        .select()
-        .from(indexedAddresses)
-        .where(
-          and(
-            eq(indexedAddresses.chainId, chainId)
-            // 使用ILIKE进行不区分大小写的模糊搜索（PostgreSQL语法）
-            // 注意：这里需要根据实际SQL方言调整
-          )
-        )
-        .limit(limit);
-    } catch (error) {
-      console.error("Failed to search addresses by label:", error);
-      return [];
-    }
-  }
+      const addresses: AddressInfo[] = [];
 
-  // 批量获取地址余额
-  async getBatchAddressBalances(
-    chainId: number,
-    addresses: string[]
-  ): Promise<Map<string, string>> {
-    const balanceMap = new Map<string, string>();
+      for (const row of result) {
+        try {
+          const balance = await this.getAddressBalance(chainId, row.address);
+          const isContract = await this.isContract(chainId, row.address);
 
-    try {
-      const client = await this.rpcManager.getClient(chainId);
-
-      // 并发查询，但限制并发数以避免RPC限流
-      const BATCH_SIZE = 10;
-      for (let i = 0; i < addresses.length; i += BATCH_SIZE) {
-        const batch = addresses.slice(i, i + BATCH_SIZE);
-        const batchPromises = batch.map(async (address) => {
-          try {
-            const balance = await client.getBalance({
-              address: address as `0x${string}`,
-            });
-            balanceMap.set(address, balance.toString());
-          } catch (error) {
-            console.warn(`Failed to get balance for ${address}:`, error);
-            balanceMap.set(address, "0");
-          }
-        });
-
-        await Promise.all(batchPromises);
-
-        // 添加小延迟以避免RPC限流
-        if (i + BATCH_SIZE < addresses.length) {
-          await new Promise((resolve) => setTimeout(resolve, 100));
+          addresses.push({
+            chainId,
+            address: row.address,
+            balance,
+            transactionCount: row.transaction_count,
+            isContract,
+            label: row.label || undefined,
+            lastQueried: new Date(row.last_queried),
+          });
+        } catch (error) {
+          console.warn(`Failed to get info for address ${row.address}:`, error);
         }
       }
+
+      return addresses;
     } catch (error) {
-      console.error("Failed to get batch address balances:", error);
-    }
-
-    return balanceMap;
-  }
-
-  // 地址余额变化检测（用于交易查找优化）
-  async detectBalanceChanges(
-    chainId: number,
-    address: string,
-    fromBlock: number,
-    toBlock: number,
-    maxSamples = 20
-  ): Promise<Array<{ blockNumber: number; balance: string }>> {
-    try {
-      const client = await this.rpcManager.getClient(chainId);
-      const blockRange = toBlock - fromBlock;
-
-      if (blockRange <= maxSamples) {
-        // 如果范围小，直接查询每个区块
-        const samples: Array<{ blockNumber: number; balance: string }> = [];
-        for (let block = fromBlock; block <= toBlock; block++) {
-          try {
-            const balance = await client.getBalance({
-              address: address as `0x${string}`,
-              blockNumber: BigInt(block),
-            });
-            samples.push({ blockNumber: block, balance: balance.toString() });
-          } catch (error) {
-            // 跳过无法查询的区块
-            continue;
-          }
-        }
-        return samples;
-      } else {
-        // 对于大范围，使用采样
-        const step = Math.floor(blockRange / maxSamples);
-        const samples: Array<{ blockNumber: number; balance: string }> = [];
-
-        for (let i = 0; i <= maxSamples; i++) {
-          const blockNumber = Math.min(fromBlock + i * step, toBlock);
-          try {
-            const balance = await client.getBalance({
-              address: address as `0x${string}`,
-              blockNumber: BigInt(blockNumber),
-            });
-            samples.push({ blockNumber, balance: balance.toString() });
-          } catch (error) {
-            // 跳过无法查询的区块
-            continue;
-          }
-        }
-        return samples;
-      }
-    } catch (error) {
-      console.error("Failed to detect balance changes:", error);
+      console.error("Failed to get recent addresses:", error);
       return [];
     }
   }
 }
+
+// 导出全局实例
+export const addressService = new AddressService();

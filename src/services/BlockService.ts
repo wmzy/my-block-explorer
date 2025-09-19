@@ -1,98 +1,130 @@
-import { eq, desc, and, gte, lte, asc } from "drizzle-orm";
+import { PublicClient } from "viem";
+import { db } from "../database/init";
+import { rpcManager } from "./RpcManager";
+import { blockCache } from "../utils/cache";
 import {
-  db,
-  blocks,
-  transactions,
-  type Block,
-  type NewBlock,
-} from "@/server/database/drizzle";
-import { RpcManager } from "./RpcManager";
-import type {
-  PaginationParams,
-  ListResponse,
-  BlockRangeParams,
-} from "@/shared/types/index";
+  createRetryableRpcCall,
+  createRetryableDbCall,
+  logError,
+} from "../utils/errorHandler";
+
+/**
+ * 区块数据类型
+ */
+export type Block = {
+  chainId: number;
+  number: bigint;
+  hash: string;
+  parentHash?: string;
+  timestamp?: Date;
+  miner?: string;
+  gasLimit?: bigint;
+  gasUsed?: bigint;
+  baseFeePerGas?: bigint;
+  transactionCount?: number;
+  sizeBytes?: number;
+  difficulty?: string;
+  totalDifficulty?: string;
+  extraData?: string;
+  logsBloom?: string;
+  stateRoot?: string;
+  transactionsRoot?: string;
+  receiptsRoot?: string;
+  indexedAt?: Date;
+};
 
 /**
  * 区块服务
- * 负责区块数据的获取、存储和管理
+ * 负责获取和索引区块数据
  */
 export class BlockService {
-  constructor(private rpcManager: RpcManager) {}
-
-  // 获取最新区块列表
-  async getLatestBlocks(
-    chainId: number,
-    params: PaginationParams = {}
-  ): Promise<ListResponse<Block>> {
-    const { page = 1, limit = 20 } = params;
-    const offset = (page - 1) * limit;
+  // 获取最新区块
+  async getLatestBlock(chainId: number): Promise<Block | null> {
+    const cacheKey = `latest-${chainId}`;
 
     try {
+      // 先从内存缓存获取
+      const cached = blockCache.get(cacheKey);
+      if (cached) {
+        return cached;
+      }
+
       // 从数据库获取
-      const [blockList, totalCount] = await Promise.all([
-        db
-          .select()
-          .from(blocks)
-          .where(eq(blocks.chainId, chainId))
-          .orderBy(desc(blocks.number))
-          .limit(limit)
-          .offset(offset),
+      const dbQuery = createRetryableDbCall(async () => {
+        return await db.query<any>(
+          `
+          SELECT * FROM blocks 
+          WHERE chain_id = ? 
+          ORDER BY number DESC 
+          LIMIT 1
+        `,
+          [chainId]
+        );
+      });
 
-        db
-          .select({ count: blocks.number })
-          .from(blocks)
-          .where(eq(blocks.chainId, chainId)),
-      ]);
+      const dbResult = await dbQuery();
 
-      const total = totalCount.length;
-      const totalPages = Math.ceil(total / limit);
+      if (dbResult.length > 0) {
+        // 检查数据库缓存是否过期（超过30秒）
+        const cacheAge =
+          Date.now() - new Date(dbResult[0].indexed_at).getTime();
+        if (cacheAge < 30000) {
+          const block = this.formatBlock(dbResult[0]);
+          blockCache.set(cacheKey, block, 15000); // 缓存15秒
+          return block;
+        }
+      }
 
-      return {
-        data: blockList,
-        pagination: {
-          page,
-          limit,
-          total,
-          totalPages,
-          hasNext: page < totalPages,
-          hasPrev: page > 1,
-        },
-      };
+      // 从链上获取最新区块
+      const fetchLatestBlock = createRetryableRpcCall(async () => {
+        const client = await rpcManager.getClient(chainId);
+        return await client.getBlock({ blockTag: "latest" });
+      }, chainId);
+
+      const latestBlock = await fetchLatestBlock();
+      const block = await this.indexBlock(chainId, latestBlock);
+
+      // 缓存结果
+      blockCache.set(cacheKey, block, 15000); // 缓存15秒
+      return block;
     } catch (error) {
-      console.error("Failed to get latest blocks:", error);
-      throw new Error("Failed to retrieve blocks");
+      logError(error, "BlockService.getLatestBlock", { chainId });
+      throw new Error("Failed to fetch latest block");
     }
   }
 
   // 根据区块号获取区块
   async getBlockByNumber(
     chainId: number,
-    blockNumber: number
+    blockNumber: bigint
   ): Promise<Block | null> {
     try {
-      // 先从数据库查找
-      const cachedBlock = await db
-        .select()
-        .from(blocks)
-        .where(
-          and(
-            eq(blocks.chainId, chainId),
-            eq(blocks.number, BigInt(blockNumber))
-          )
-        )
-        .limit(1);
+      // 先从数据库获取
+      const cached = await db.query<any>(
+        `
+        SELECT * FROM blocks 
+        WHERE chain_id = ? AND number = ?
+        LIMIT 1
+      `,
+        [chainId, blockNumber.toString()]
+      );
 
-      if (cachedBlock.length > 0) {
-        return cachedBlock[0];
+      if (cached.length > 0) {
+        return this.formatBlock(cached[0]);
       }
 
-      // 数据库中没有，从RPC获取
-      const block = await this.fetchAndStoreBlock(chainId, blockNumber);
+      // 从链上获取
+      const client = await rpcManager.getClient(chainId);
+      const chainBlock = await client.getBlock({
+        blockNumber,
+        includeTransactions: false,
+      });
+
+      const block = await this.indexBlock(chainId, chainBlock);
       return block;
     } catch (error) {
       console.error(`Failed to get block ${blockNumber}:`, error);
-      throw new Error(`Failed to retrieve block ${blockNumber}`);
+      return null;
     }
   }
 
@@ -102,267 +134,138 @@ export class BlockService {
     blockHash: string
   ): Promise<Block | null> {
     try {
-      // 先从数据库查找
-      const cachedBlock = await db
-        .select()
-        .from(blocks)
-        .where(and(eq(blocks.chainId, chainId), eq(blocks.hash, blockHash)))
-        .limit(1);
+      // 先从数据库获取
+      const cached = await db.query<any>(
+        `
+        SELECT * FROM blocks 
+        WHERE chain_id = ? AND hash = ?
+        LIMIT 1
+      `,
+        [chainId, blockHash]
+      );
 
-      if (cachedBlock.length > 0) {
-        return cachedBlock[0];
+      if (cached.length > 0) {
+        return this.formatBlock(cached[0]);
       }
 
-      // 数据库中没有，从RPC获取
-      const client = await this.rpcManager.getClient(chainId);
-      const viemBlock = await client.getBlock({
+      // 从链上获取
+      const client = await rpcManager.getClient(chainId);
+      const chainBlock = await client.getBlock({
         blockHash: blockHash as `0x${string}`,
+        includeTransactions: false,
       });
 
-      const block = await this.storeBlock(chainId, viemBlock);
+      const block = await this.indexBlock(chainId, chainBlock);
       return block;
     } catch (error) {
-      console.error(`Failed to get block by hash ${blockHash}:`, error);
-      throw new Error(`Failed to retrieve block by hash`);
+      console.error(`Failed to get block ${blockHash}:`, error);
+      return null;
     }
   }
 
-  // 获取区块范围内的所有区块
-  async getBlocksInRange(
+  // 获取区块列表
+  async getBlocks(
     chainId: number,
-    range: BlockRangeParams,
-    params: PaginationParams = {}
-  ): Promise<ListResponse<Block>> {
-    const { fromBlock, toBlock } = range;
-    const { page = 1, limit = 20 } = params;
-    const offset = (page - 1) * limit;
-
+    limit: number = 10,
+    offset: number = 0
+  ): Promise<{ blocks: Block[]; total: number }> {
     try {
-      let query = db.select().from(blocks).where(eq(blocks.chainId, chainId));
+      const blockList = await db.query<any>(
+        `
+        SELECT * FROM blocks 
+        WHERE chain_id = ? 
+        ORDER BY number DESC 
+        LIMIT ? OFFSET ?
+      `,
+        [chainId, limit, offset]
+      );
 
-      // 应用区块范围过滤
-      if (fromBlock !== undefined) {
-        query = query.where(
-          and(
-            eq(blocks.chainId, chainId),
-            gte(blocks.number, BigInt(fromBlock))
-          )
-        );
-      }
-      if (toBlock !== undefined) {
-        query = query.where(
-          and(eq(blocks.chainId, chainId), lte(blocks.number, BigInt(toBlock)))
-        );
-      }
+      // 获取总数
+      const countResult = await db.query<{ count: number }>(
+        `
+        SELECT COUNT(*) as count FROM blocks WHERE chain_id = ?
+      `,
+        [chainId]
+      );
 
-      const [blockList, totalCount] = await Promise.all([
-        query.orderBy(desc(blocks.number)).limit(limit).offset(offset),
-        db
-          .select({ count: blocks.number })
-          .from(blocks)
-          .where(eq(blocks.chainId, chainId)),
-      ]);
+      const total = countResult[0]?.count || 0;
+      const blocks = blockList.map((b) => this.formatBlock(b));
 
-      const total = totalCount.length;
-      const totalPages = Math.ceil(total / limit);
-
-      return {
-        data: blockList,
-        pagination: {
-          page,
-          limit,
-          total,
-          totalPages,
-          hasNext: page < totalPages,
-          hasPrev: page > 1,
-        },
-      };
+      return { blocks, total };
     } catch (error) {
-      console.error("Failed to get blocks in range:", error);
-      throw new Error("Failed to retrieve blocks in range");
+      console.error("Failed to get blocks:", error);
+      return { blocks: [], total: 0 };
     }
   }
 
-  // 获取最新区块号（从RPC）
-  async getLatestBlockNumber(chainId: number): Promise<number> {
+  // 获取最新区块号
+  async getLatestBlockNumber(chainId: number): Promise<bigint> {
     try {
-      const client = await this.rpcManager.getClient(chainId);
-      const blockNumber = await client.getBlockNumber();
-      return Number(blockNumber);
+      const client = await rpcManager.getClient(chainId);
+      return await client.getBlockNumber();
     } catch (error) {
       console.error("Failed to get latest block number:", error);
       throw new Error("Failed to get latest block number");
     }
   }
 
-  // 从RPC获取并存储区块
-  private async fetchAndStoreBlock(
-    chainId: number,
-    blockNumber: number
-  ): Promise<Block> {
-    try {
-      const client = await this.rpcManager.getClient(chainId);
-      const viemBlock = await client.getBlock({
-        blockNumber: BigInt(blockNumber),
-        includeTransactions: false, // 不包含完整交易数据，只要数量
-      });
-
-      return await this.storeBlock(chainId, viemBlock);
-    } catch (error) {
-      console.error(`Failed to fetch block ${blockNumber}:`, error);
-      throw new Error(`Failed to fetch block ${blockNumber} from RPC`);
-    }
-  }
-
-  // 存储区块到数据库
-  private async storeBlock(chainId: number, viemBlock: any): Promise<Block> {
-    try {
-      const blockData: NewBlock = {
-        chainId,
-        number: viemBlock.number,
-        hash: viemBlock.hash,
-        parentHash: viemBlock.parentHash,
-        timestamp: viemBlock.timestamp
-          ? new Date(Number(viemBlock.timestamp) * 1000)
-          : null,
-        miner: viemBlock.miner || null,
-        gasLimit: viemBlock.gasLimit,
-        gasUsed: viemBlock.gasUsed,
-        baseFeePerGas: viemBlock.baseFeePerGas || null,
-        transactionCount: viemBlock.transactions?.length || 0,
-        sizeBytes: viemBlock.size ? Number(viemBlock.size) : null,
-        difficulty: viemBlock.difficulty?.toString() || null,
-        totalDifficulty: viemBlock.totalDifficulty?.toString() || null,
-        extraData: viemBlock.extraData || null,
-        logsBloom: viemBlock.logsBloom || null,
-        stateRoot: viemBlock.stateRoot || null,
-        transactionsRoot: viemBlock.transactionsRoot || null,
-        receiptsRoot: viemBlock.receiptsRoot || null,
-      };
-
-      const [insertedBlock] = await db
-        .insert(blocks)
-        .values(blockData)
-        .onConflictDoUpdate({
-          target: [blocks.chainId, blocks.number],
-          set: {
-            gasUsed: blockData.gasUsed,
-            baseFeePerGas: blockData.baseFeePerGas,
-            transactionCount: blockData.transactionCount,
-            indexedAt: new Date(),
-          },
-        })
-        .returning();
-
-      return insertedBlock;
-    } catch (error) {
-      console.error("Failed to store block:", error);
-      throw new Error("Failed to store block");
-    }
-  }
-
-  // 批量存储区块（用于初始同步）
-  async storeBlocks(chainId: number, viemBlocks: any[]): Promise<Block[]> {
-    try {
-      const blockDataList: NewBlock[] = viemBlocks.map((viemBlock) => ({
-        chainId,
-        number: viemBlock.number,
-        hash: viemBlock.hash,
-        parentHash: viemBlock.parentHash,
-        timestamp: viemBlock.timestamp
-          ? new Date(Number(viemBlock.timestamp) * 1000)
-          : null,
-        miner: viemBlock.miner || null,
-        gasLimit: viemBlock.gasLimit,
-        gasUsed: viemBlock.gasUsed,
-        baseFeePerGas: viemBlock.baseFeePerGas || null,
-        transactionCount: viemBlock.transactions?.length || 0,
-        sizeBytes: viemBlock.size ? Number(viemBlock.size) : null,
-        difficulty: viemBlock.difficulty?.toString() || null,
-        totalDifficulty: viemBlock.totalDifficulty?.toString() || null,
-        extraData: viemBlock.extraData || null,
-        logsBloom: viemBlock.logsBloom || null,
-        stateRoot: viemBlock.stateRoot || null,
-        transactionsRoot: viemBlock.transactionsRoot || null,
-        receiptsRoot: viemBlock.receiptsRoot || null,
-      }));
-
-      const insertedBlocks = await db
-        .insert(blocks)
-        .values(blockDataList)
-        .onConflictDoNothing() // 避免重复插入
-        .returning();
-
-      return insertedBlocks;
-    } catch (error) {
-      console.error("Failed to store blocks:", error);
-      throw new Error("Failed to store blocks");
-    }
-  }
-
-  // 获取已索引的区块数量
-  async getIndexedBlockCount(chainId: number): Promise<number> {
-    try {
-      const result = await db
-        .select({ count: blocks.number })
-        .from(blocks)
-        .where(eq(blocks.chainId, chainId));
-
-      return result.length;
-    } catch (error) {
-      console.error("Failed to get indexed block count:", error);
-      return 0;
-    }
-  }
-
   // 获取区块统计信息
   async getBlockStats(chainId: number): Promise<{
     totalBlocks: number;
-    latestBlock: number | null;
+    latestBlock: bigint | null;
     avgBlockTime: number | null;
     avgGasUsed: string | null;
   }> {
     try {
-      const [countResult, latestResult, timeResult] = await Promise.all([
-        db
-          .select({ count: blocks.number })
-          .from(blocks)
-          .where(eq(blocks.chainId, chainId)),
-        db
-          .select({ number: blocks.number })
-          .from(blocks)
-          .where(eq(blocks.chainId, chainId))
-          .orderBy(desc(blocks.number))
-          .limit(1),
-        db
-          .select({
-            timestamp: blocks.timestamp,
-            number: blocks.number,
-            gasUsed: blocks.gasUsed,
-          })
-          .from(blocks)
-          .where(eq(blocks.chainId, chainId))
-          .orderBy(desc(blocks.number))
-          .limit(100), // 使用最近100个区块计算平均值
-      ]);
+      // 获取总区块数
+      const countResult = await db.query<{ count: number }>(
+        `
+        SELECT COUNT(*) as count FROM blocks WHERE chain_id = ?
+      `,
+        [chainId]
+      );
 
-      const totalBlocks = countResult.length;
+      // 获取最新区块
+      const latestResult = await db.query<{ number: string }>(
+        `
+        SELECT number FROM blocks 
+        WHERE chain_id = ? 
+        ORDER BY number DESC 
+        LIMIT 1
+      `,
+        [chainId]
+      );
+
+      // 获取最近100个区块用于计算统计信息
+      const recentBlocks = await db.query<{
+        number: string;
+        timestamp: string;
+        gas_used: string;
+      }>(
+        `
+        SELECT number, timestamp, gas_used 
+        FROM blocks 
+        WHERE chain_id = ? AND timestamp IS NOT NULL
+        ORDER BY number DESC 
+        LIMIT 100
+      `,
+        [chainId]
+      );
+
+      const totalBlocks = countResult[0]?.count || 0;
       const latestBlock = latestResult[0]?.number
-        ? Number(latestResult[0].number)
+        ? BigInt(latestResult[0].number)
         : null;
 
       // 计算平均出块时间
       let avgBlockTime: number | null = null;
-      if (timeResult.length >= 2) {
+      if (recentBlocks.length >= 2) {
         const timeDiffs: number[] = [];
-        for (let i = 0; i < timeResult.length - 1; i++) {
-          const current = timeResult[i];
-          const next = timeResult[i + 1];
-          if (current.timestamp && next.timestamp) {
-            const diff =
-              (current.timestamp.getTime() - next.timestamp.getTime()) / 1000;
-            timeDiffs.push(diff);
-          }
+        for (let i = 0; i < recentBlocks.length - 1; i++) {
+          const current = new Date(recentBlocks[i].timestamp);
+          const next = new Date(recentBlocks[i + 1].timestamp);
+          const diff = (current.getTime() - next.getTime()) / 1000;
+          timeDiffs.push(diff);
         }
         if (timeDiffs.length > 0) {
           avgBlockTime =
@@ -372,9 +275,10 @@ export class BlockService {
 
       // 计算平均Gas使用量
       let avgGasUsed: string | null = null;
-      const gasValues = timeResult
-        .map((block) => block.gasUsed)
-        .filter((gas) => gas !== null) as bigint[];
+      const gasValues = recentBlocks
+        .map((block) => block.gas_used)
+        .filter((gas) => gas && gas !== "0")
+        .map((gas) => BigInt(gas));
 
       if (gasValues.length > 0) {
         const totalGas = gasValues.reduce((a, b) => a + b, 0n);
@@ -392,4 +296,111 @@ export class BlockService {
       throw new Error("Failed to get block statistics");
     }
   }
+
+  // 索引区块到数据库
+  private async indexBlock(chainId: number, chainBlock: any): Promise<Block> {
+    const timestamp = chainBlock.timestamp
+      ? new Date(Number(chainBlock.timestamp) * 1000).toISOString()
+      : null;
+
+    // 使用参数化查询避免SQL注入
+    await db.query(
+      `
+      INSERT OR REPLACE INTO blocks (
+        chain_id, number, hash, parent_hash, timestamp, miner,
+        gas_limit, gas_used, base_fee_per_gas, transaction_count,
+        size_bytes, difficulty, total_difficulty, extra_data,
+        logs_bloom, state_root, transactions_root, receipts_root,
+        indexed_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `,
+      [
+        chainId,
+        chainBlock.number?.toString() || null,
+        chainBlock.hash,
+        chainBlock.parentHash || null,
+        timestamp,
+        chainBlock.miner || null,
+        chainBlock.gasLimit?.toString() || null,
+        chainBlock.gasUsed?.toString() || null,
+        chainBlock.baseFeePerGas?.toString() || null,
+        chainBlock.transactions?.length || 0,
+        chainBlock.size ? Number(chainBlock.size) : null,
+        chainBlock.difficulty?.toString() || null,
+        chainBlock.totalDifficulty?.toString() || null,
+        chainBlock.extraData || null,
+        chainBlock.logsBloom || null,
+        chainBlock.stateRoot || null,
+        chainBlock.transactionsRoot || null,
+        chainBlock.receiptsRoot || null,
+        new Date().toISOString(),
+      ]
+    );
+
+    // 返回插入的数据
+    const inserted = await db.query<any>(
+      `
+      SELECT * FROM blocks 
+      WHERE chain_id = ? AND number = ?
+      LIMIT 1
+    `,
+      [chainId, chainBlock.number?.toString()]
+    );
+
+    return this.formatBlock(inserted[0]);
+  }
+
+  // 格式化区块数据
+  private formatBlock(dbBlock: any): Block {
+    return {
+      chainId: dbBlock.chain_id,
+      number: BigInt(dbBlock.number || 0),
+      hash: dbBlock.hash,
+      parentHash: dbBlock.parent_hash || undefined,
+      timestamp: dbBlock.timestamp ? new Date(dbBlock.timestamp) : undefined,
+      miner: dbBlock.miner || undefined,
+      gasLimit: dbBlock.gas_limit ? BigInt(dbBlock.gas_limit) : undefined,
+      gasUsed: dbBlock.gas_used ? BigInt(dbBlock.gas_used) : undefined,
+      baseFeePerGas: dbBlock.base_fee_per_gas
+        ? BigInt(dbBlock.base_fee_per_gas)
+        : undefined,
+      transactionCount: dbBlock.transaction_count || undefined,
+      sizeBytes: dbBlock.size_bytes || undefined,
+      difficulty: dbBlock.difficulty || undefined,
+      totalDifficulty: dbBlock.total_difficulty || undefined,
+      extraData: dbBlock.extra_data || undefined,
+      logsBloom: dbBlock.logs_bloom || undefined,
+      stateRoot: dbBlock.state_root || undefined,
+      transactionsRoot: dbBlock.transactions_root || undefined,
+      receiptsRoot: dbBlock.receipts_root || undefined,
+      indexedAt: dbBlock.indexed_at ? new Date(dbBlock.indexed_at) : undefined,
+    };
+  }
+
+  // 批量索引区块
+  async indexBlockRange(
+    chainId: number,
+    startBlock: bigint,
+    endBlock: bigint,
+    callback?: (progress: number) => void
+  ): Promise<void> {
+    const total = Number(endBlock - startBlock) + 1;
+    let processed = 0;
+
+    for (let blockNum = startBlock; blockNum <= endBlock; blockNum++) {
+      try {
+        await this.getBlockByNumber(chainId, blockNum);
+        processed++;
+
+        if (callback) {
+          callback((processed / total) * 100);
+        }
+      } catch (error) {
+        console.warn(`Failed to index block ${blockNum}:`, error);
+      }
+    }
+  }
 }
+
+// 导出全局实例
+export const blockService = new BlockService();

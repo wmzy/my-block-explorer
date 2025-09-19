@@ -7,6 +7,9 @@ import {
   useNavigate,
   Navigate,
 } from "react-router-dom";
+import AddressPage from "./pages/AddressPage";
+import BlockPage from "./pages/BlockPage";
+import TransactionPage from "./pages/TransactionPage";
 import { globalStyles } from "@/styles/global";
 import {
   SUPPORTED_CHAINS,
@@ -331,6 +334,24 @@ function HomePage() {
       );
       const data = await response.json();
       setSearchResult(data);
+
+      // 如果搜索成功且找到结果，根据类型进行路由跳转
+      if (data.found && data.data) {
+        switch (data.type) {
+          case "address":
+            navigate(`/chain/${currentChainId}/address/${searchQuery.trim()}`);
+            break;
+          case "transaction":
+            navigate(`/chain/${currentChainId}/tx/${searchQuery.trim()}`);
+            break;
+          case "block":
+            navigate(`/chain/${currentChainId}/block/${searchQuery.trim()}`);
+            break;
+          default:
+            // 保持在当前页面显示搜索结果
+            break;
+        }
+      }
     } catch (error) {
       console.error("Search failed:", error);
       // 如果链特定API不存在，回退到通用搜索
@@ -571,6 +592,18 @@ export function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/chain/:chainId" element={<HomePage />} />
+        <Route
+          path="/chain/:chainId/address/:address"
+          element={<AddressPage />}
+        />
+        <Route
+          path="/chain/:chainId/block/:blockNumber"
+          element={<BlockPage />}
+        />
+        <Route
+          path="/chain/:chainId/tx/:txHash"
+          element={<TransactionPage />}
+        />
         <Route path="/" element={<Navigate to="/chain/1" replace />} />
         <Route path="*" element={<Navigate to="/chain/1" replace />} />
       </Routes>
