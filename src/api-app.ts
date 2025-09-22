@@ -13,6 +13,7 @@ import { blockService } from "./services/BlockService";
 import { transactionService } from "./services/TransactionService";
 import { addressService } from "./services/AddressService";
 import { contractSourceService } from "./services/ContractSourceService";
+import { contractInteractionService } from "./services/ContractInteractionService";
 import { rpcManager } from "./services/RpcManager";
 import {
   formatBlockForApi,
@@ -585,6 +586,287 @@ app.get("/api/chains/:chainId/contracts/:address/abi", async (c) => {
   } catch (error) {
     console.error("Contract ABI API error:", error);
     return c.json({ error: "Failed to get contract ABI" }, 500);
+  }
+});
+
+// GET /api/chains/:chainId/contracts/:address/functions - 获取合约可调用函数
+app.get("/api/chains/:chainId/contracts/:address/functions", async (c) => {
+  const chainId = parseInt(c.req.param("chainId"));
+  const address = c.req.param("address");
+
+  if (isNaN(chainId) || !isChainSupported(chainId)) {
+    return c.json({ error: "Unsupported chain" }, 400);
+  }
+
+  if (!address || !/^0x[a-fA-F0-9]{40}$/.test(address)) {
+    return c.json({ error: "Invalid contract address" }, 400);
+  }
+
+  try {
+    // 获取合约源码（可能是代理合约）
+    const contractSource = await contractSourceService.getContractSource(
+      chainId,
+      address
+    );
+
+    let targetAddress = address;
+    let targetABI = contractSource?.abi;
+
+    // 如果是代理合约，使用实现合约的ABI
+    if (contractSource?.isProxy && contractSource?.implementationContract) {
+      targetAddress = contractSource.implementationAddress!;
+      targetABI = contractSource.implementationContract.abi;
+    }
+
+    const { readFunctions, writeFunctions } =
+      await contractInteractionService.getContractFunctions(
+        chainId,
+        targetAddress,
+        targetABI
+      );
+
+    c.header("X-Chain-Name", getChainName(chainId));
+    c.header("X-Cache-Control", "public, max-age=300");
+
+    const responseData = safeJsonResponse({
+      chainId,
+      chainName: getChainName(chainId),
+      address: address.toLowerCase(),
+      readFunctions,
+      writeFunctions,
+      timestamp: new Date().toISOString(),
+    });
+
+    return c.json(responseData);
+  } catch (error) {
+    console.error("Contract functions API error:", error);
+    return c.json({ error: "Failed to get contract functions" }, 500);
+  }
+});
+
+// POST /api/chains/:chainId/contracts/:address/read - 调用只读合约函数
+app.post("/api/chains/:chainId/contracts/:address/read", async (c) => {
+  const chainId = parseInt(c.req.param("chainId"));
+  const address = c.req.param("address");
+
+  if (isNaN(chainId) || !isChainSupported(chainId)) {
+    return c.json({ error: "Unsupported chain" }, 400);
+  }
+
+  if (!address || !/^0x[a-fA-F0-9]{40}$/.test(address)) {
+    return c.json({ error: "Invalid contract address" }, 400);
+  }
+
+  try {
+    const body = await c.req.json();
+    const { functionName, args = [] } = body;
+
+    if (!functionName || typeof functionName !== "string") {
+      return c.json({ error: "Function name is required" }, 400);
+    }
+
+    if (!Array.isArray(args)) {
+      return c.json({ error: "Arguments must be an array" }, 400);
+    }
+
+    // 获取合约源码（可能是代理合约）
+    const contractSource = await contractSourceService.getContractSource(
+      chainId,
+      address
+    );
+
+    let targetAddress = address;
+    let targetABI = contractSource?.abi;
+
+    // 如果是代理合约，使用实现合约的地址和ABI
+    if (contractSource?.isProxy && contractSource?.implementationContract) {
+      targetAddress = contractSource.implementationAddress!;
+      targetABI = contractSource.implementationContract.abi;
+    }
+
+    if (!targetABI) {
+      return c.json({ error: "Contract ABI not available" }, 400);
+    }
+
+    const result = await contractInteractionService.readContractWithABI({
+      chainId,
+      contractAddress: targetAddress,
+      functionName,
+      args,
+      abi: targetABI,
+    });
+
+    c.header("X-Chain-Name", getChainName(chainId));
+
+    const responseData = safeJsonResponse({
+      chainId,
+      chainName: getChainName(chainId),
+      contractAddress: address.toLowerCase(),
+      functionName,
+      args,
+      result: result.result,
+      success: result.success,
+      error: result.error,
+      timestamp: new Date().toISOString(),
+    });
+
+    return c.json(responseData, result.success ? 200 : 400);
+  } catch (error) {
+    console.error("Read contract API error:", error);
+    return c.json({ error: "Failed to read contract" }, 500);
+  }
+});
+
+// POST /api/chains/:chainId/contracts/:address/simulate - 模拟合约调用
+app.post("/api/chains/:chainId/contracts/:address/simulate", async (c) => {
+  const chainId = parseInt(c.req.param("chainId"));
+  const address = c.req.param("address");
+
+  if (isNaN(chainId) || !isChainSupported(chainId)) {
+    return c.json({ error: "Unsupported chain" }, 400);
+  }
+
+  if (!address || !/^0x[a-fA-F0-9]{40}$/.test(address)) {
+    return c.json({ error: "Invalid contract address" }, 400);
+  }
+
+  try {
+    const body = await c.req.json();
+    const { functionName, args = [], value, from } = body;
+
+    if (!functionName || typeof functionName !== "string") {
+      return c.json({ error: "Function name is required" }, 400);
+    }
+
+    if (!Array.isArray(args)) {
+      return c.json({ error: "Arguments must be an array" }, 400);
+    }
+
+    // 获取合约源码（可能是代理合约）
+    const contractSource = await contractSourceService.getContractSource(
+      chainId,
+      address
+    );
+
+    let targetAddress = address;
+    let targetABI = contractSource?.abi;
+
+    // 如果是代理合约，使用实现合约的地址和ABI
+    if (contractSource?.isProxy && contractSource?.implementationContract) {
+      targetAddress = contractSource.implementationAddress!;
+      targetABI = contractSource.implementationContract.abi;
+    }
+
+    const result = await contractInteractionService.simulateContractWithABI({
+      chainId,
+      contractAddress: targetAddress,
+      functionName,
+      args,
+      value: value ? BigInt(value) : undefined,
+      from,
+      abi: targetABI,
+    });
+
+    c.header("X-Chain-Name", getChainName(chainId));
+
+    const responseData = safeJsonResponse({
+      chainId,
+      chainName: getChainName(chainId),
+      contractAddress: address.toLowerCase(),
+      functionName,
+      args,
+      value,
+      from,
+      result: result.result,
+      success: result.success,
+      error: result.error,
+      gasUsed: result.gasUsed?.toString(),
+      timestamp: new Date().toISOString(),
+    });
+
+    return c.json(responseData, result.success ? 200 : 400);
+  } catch (error) {
+    console.error("Simulate contract API error:", error);
+    return c.json({ error: "Failed to simulate contract" }, 500);
+  }
+});
+
+// POST /api/chains/:chainId/contracts/:address/estimate-gas - 估算Gas费用
+app.post("/api/chains/:chainId/contracts/:address/estimate-gas", async (c) => {
+  const chainId = parseInt(c.req.param("chainId"));
+  const address = c.req.param("address");
+
+  if (isNaN(chainId) || !isChainSupported(chainId)) {
+    return c.json({ error: "Unsupported chain" }, 400);
+  }
+
+  if (!address || !/^0x[a-fA-F0-9]{40}$/.test(address)) {
+    return c.json({ error: "Invalid contract address" }, 400);
+  }
+
+  try {
+    const body = await c.req.json();
+    const { functionName, args = [], value, from } = body;
+
+    if (!functionName || typeof functionName !== "string") {
+      return c.json({ error: "Function name is required" }, 400);
+    }
+
+    if (!Array.isArray(args)) {
+      return c.json({ error: "Arguments must be an array" }, 400);
+    }
+
+    // 获取合约源码（可能是代理合约）
+    const contractSource = await contractSourceService.getContractSource(
+      chainId,
+      address
+    );
+
+    let targetAddress = address;
+    let targetABI = contractSource?.abi;
+
+    // 如果是代理合约，使用实现合约的地址和ABI
+    if (contractSource?.isProxy && contractSource?.implementationContract) {
+      targetAddress = contractSource.implementationAddress!;
+      targetABI = contractSource.implementationContract.abi;
+    }
+
+    const gasEstimate =
+      await contractInteractionService.estimateContractGasWithABI({
+        chainId,
+        contractAddress: targetAddress,
+        functionName,
+        args,
+        value: value ? BigInt(value) : undefined,
+        from,
+        abi: targetABI,
+      });
+
+    c.header("X-Chain-Name", getChainName(chainId));
+
+    if (!gasEstimate) {
+      return c.json({ error: "Failed to estimate gas" }, 400);
+    }
+
+    const responseData = safeJsonResponse({
+      chainId,
+      chainName: getChainName(chainId),
+      contractAddress: address.toLowerCase(),
+      functionName,
+      args,
+      value,
+      from,
+      gasLimit: gasEstimate.gasLimit.toString(),
+      gasPrice: gasEstimate.gasPrice?.toString(),
+      maxFeePerGas: gasEstimate.maxFeePerGas?.toString(),
+      maxPriorityFeePerGas: gasEstimate.maxPriorityFeePerGas?.toString(),
+      timestamp: new Date().toISOString(),
+    });
+
+    return c.json(responseData);
+  } catch (error) {
+    console.error("Gas estimation API error:", error);
+    return c.json({ error: "Failed to estimate gas" }, 500);
   }
 });
 

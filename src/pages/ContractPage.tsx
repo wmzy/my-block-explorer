@@ -2,6 +2,13 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { css } from "@linaria/core";
 import { getChainName, isChainSupported } from "@/config/chains";
+import {
+  parseContractFunctions,
+  readContract,
+  simulateContract,
+  estimateContractGas,
+  type ContractFunction,
+} from "../utils/contractInteraction";
 
 type ContractSource = {
   chainId: number;
@@ -29,13 +36,7 @@ type ContractSource = {
   implementationContract?: ContractSource;
 };
 
-type ContractFunction = {
-  name: string;
-  type: string;
-  inputs: any[];
-  outputs: any[];
-  signature: string;
-};
+// ContractFunction 类型现在从 contractInteraction 导入
 
 type ContractEvent = {
   name: string;
@@ -275,7 +276,7 @@ export default function ContractPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<
-    "source" | "abi" | "functions" | "events" | "implementation"
+    "source" | "abi" | "functions" | "events" | "interact" | "implementation"
   >("source");
   const [showImplementation, setShowImplementation] = useState(true); // 默认显示实现合约
 
@@ -483,10 +484,12 @@ export default function ContractPage() {
                       href={`/chain/${currentChainId}/contract/${contractSource.implementationAddress}`}
                       style={{ color: "#007bff", textDecoration: "none" }}
                       onMouseOver={(e) =>
-                        (e.target.style.textDecoration = "underline")
+                        ((e.target as HTMLElement).style.textDecoration =
+                          "underline")
                       }
                       onMouseOut={(e) =>
-                        (e.target.style.textDecoration = "none")
+                        ((e.target as HTMLElement).style.textDecoration =
+                          "none")
                       }
                     >
                       {contractSource.implementationAddress}
@@ -584,6 +587,21 @@ export default function ContractPage() {
                 )
               );
             })()}
+            {(() => {
+              const currentABI = getCurrentContractABI();
+              return (
+                currentABI &&
+                (currentABI.functions.length > 0 ||
+                  currentABI.events.length > 0) && (
+                  <button
+                    className={`tab ${activeTab === "interact" ? "active" : ""}`}
+                    onClick={() => setActiveTab("interact")}
+                  >
+                    Interact
+                  </button>
+                )
+              );
+            })()}
           </div>
 
           {activeTab === "source" && (
@@ -624,7 +642,11 @@ export default function ContractPage() {
                     {currentABI.functions.map((func, index) => (
                       <div key={index} className={`function-item ${func.type}`}>
                         <div className="function-signature">
-                          {func.signature}
+                          {func.name}(
+                          {func.inputs
+                            .map((input) => `${input.type} ${input.name}`)
+                            .join(", ")}
+                          )
                         </div>
                         <span className="function-type">{func.type}</span>
                       </div>
@@ -659,8 +681,543 @@ export default function ContractPage() {
               })()}
             </div>
           )}
+
+          {activeTab === "interact" && (
+            <ContractInteract
+              chainId={currentChainId}
+              contractAddress={address!}
+              contractSource={getCurrentContract()}
+            />
+          )}
         </>
       )}
     </div>
   );
 }
+
+// 合约交互组件
+function ContractInteract({
+  chainId,
+  contractAddress,
+  contractSource,
+}: {
+  chainId: number;
+  contractAddress: string;
+  contractSource: ContractSource | null;
+}) {
+  const [readFunctions, setReadFunctions] = useState<ContractFunction[]>([]);
+  const [writeFunctions, setWriteFunctions] = useState<ContractFunction[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [results, setResults] = useState<Record<string, any>>({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [loadingStates, setLoadingStates] = useState<Record<string, boolean>>(
+    {}
+  );
+
+  useEffect(() => {
+    if (contractSource && contractSource.abi) {
+      loadContractFunctions();
+    }
+  }, [chainId, contractAddress, contractSource]);
+
+  const loadContractFunctions = async () => {
+    try {
+      setLoading(true);
+
+      if (!contractSource) {
+        return;
+      }
+
+      // 获取要使用的 ABI（代理合约使用实现合约的 ABI）
+      let targetABI = contractSource.abi;
+      if (contractSource.isProxy && contractSource.implementationContract) {
+        targetABI = contractSource.implementationContract.abi;
+      }
+
+      // 直接解析 ABI 获取函数列表
+      const { readFunctions, writeFunctions } =
+        parseContractFunctions(targetABI);
+      setReadFunctions(readFunctions);
+      setWriteFunctions(writeFunctions);
+    } catch (error) {
+      console.error("Failed to load contract functions:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const callReadFunction = async (functionName: string, args: any[]) => {
+    const key = `${functionName}-${JSON.stringify(args)}`;
+
+    try {
+      setLoadingStates((prev) => ({ ...prev, [key]: true }));
+      setErrors((prev) => ({ ...prev, [key]: "" }));
+
+      if (!contractSource) {
+        setErrors((prev) => ({
+          ...prev,
+          [key]: "Contract source not available",
+        }));
+        return;
+      }
+
+      // 获取目标合约地址（代理合约使用实现合约地址）
+      let targetAddress = contractAddress;
+      if (contractSource.isProxy && contractSource.implementationAddress) {
+        targetAddress = contractSource.implementationAddress;
+      }
+
+      // 获取要使用的 ABI
+      let targetABI = contractSource.abi;
+      if (contractSource.isProxy && contractSource.implementationContract) {
+        targetABI = contractSource.implementationContract.abi;
+      }
+
+      // 直接调用 RPC
+      const result = await readContract({
+        chainId,
+        contractAddress: targetAddress,
+        functionName,
+        args,
+        abi: targetABI,
+      });
+
+      if (result.success) {
+        setResults((prev) => ({ ...prev, [key]: result.result }));
+      } else {
+        setErrors((prev) => ({
+          ...prev,
+          [key]: result.error || "Unknown error",
+        }));
+      }
+    } catch (error) {
+      console.error("Read function call failed:", error);
+      setErrors((prev) => ({ ...prev, [key]: "Network error" }));
+    } finally {
+      setLoadingStates((prev) => ({ ...prev, [key]: false }));
+    }
+  };
+
+  const simulateWriteFunction = async (
+    functionName: string,
+    args: any[],
+    value?: string,
+    from?: string
+  ) => {
+    const key = `${functionName}-${JSON.stringify(args)}-${value || ""}-${from || ""}`;
+
+    try {
+      setLoadingStates((prev) => ({ ...prev, [key]: true }));
+      setErrors((prev) => ({ ...prev, [key]: "" }));
+
+      if (!contractSource) {
+        setErrors((prev) => ({
+          ...prev,
+          [key]: "Contract source not available",
+        }));
+        return;
+      }
+
+      // 获取目标合约地址（代理合约使用实现合约地址）
+      let targetAddress = contractAddress;
+      if (contractSource.isProxy && contractSource.implementationAddress) {
+        targetAddress = contractSource.implementationAddress;
+      }
+
+      // 获取要使用的 ABI
+      let targetABI = contractSource.abi;
+      if (contractSource.isProxy && contractSource.implementationContract) {
+        targetABI = contractSource.implementationContract.abi;
+      }
+
+      // 直接调用 RPC 模拟
+      const result = await simulateContract({
+        chainId,
+        contractAddress: targetAddress,
+        functionName,
+        args,
+        value: value ? BigInt(value) : undefined,
+        from,
+        abi: targetABI,
+      });
+
+      if (result.success) {
+        setResults((prev) => ({
+          ...prev,
+          [key]: {
+            result: result.result,
+            gasUsed: result.gasUsed?.toString(),
+          },
+        }));
+      } else {
+        setErrors((prev) => ({
+          ...prev,
+          [key]: result.error || "Unknown error",
+        }));
+      }
+    } catch (error) {
+      console.error("Simulate function call failed:", error);
+      setErrors((prev) => ({ ...prev, [key]: "Network error" }));
+    } finally {
+      setLoadingStates((prev) => ({ ...prev, [key]: false }));
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className={cardStyles}>
+        <h2>Contract Interaction</h2>
+        <div>Loading contract functions...</div>
+      </div>
+    );
+  }
+
+  if (!contractSource || !contractSource.abi) {
+    return (
+      <div className={cardStyles}>
+        <h2>Contract Interaction</h2>
+        <div>Contract ABI not available</div>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      {/* Read Functions */}
+      {readFunctions.length > 0 && (
+        <div className={cardStyles}>
+          <h2>Read Functions</h2>
+          <div className={functionListStyles}>
+            {readFunctions.map((func, index) => (
+              <FunctionCallForm
+                key={`read-${index}`}
+                func={func}
+                onCall={callReadFunction}
+                results={results}
+                errors={errors}
+                loadingStates={loadingStates}
+                type="read"
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Write Functions */}
+      {writeFunctions.length > 0 && (
+        <div className={cardStyles}>
+          <h2>Write Functions (Simulation)</h2>
+          <div
+            style={{ marginBottom: "20px", fontSize: "14px", color: "#666" }}
+          >
+            ⚠️ These are simulations only. To execute transactions, use a Web3
+            wallet.
+          </div>
+          <div className={functionListStyles}>
+            {writeFunctions.map((func, index) => (
+              <FunctionCallForm
+                key={`write-${index}`}
+                func={func}
+                onCall={simulateWriteFunction}
+                results={results}
+                errors={errors}
+                loadingStates={loadingStates}
+                type="write"
+              />
+            ))}
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// CSS样式定义
+const functionFormStyles = css`
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 16px;
+  margin-bottom: 16px;
+  background: #fafafa;
+`;
+
+const functionNameStyles = css`
+  font-weight: 600;
+  margin-bottom: 12px;
+`;
+
+const functionNameReadStyles = css`
+  ${functionNameStyles}
+  color: #0066cc;
+`;
+
+const functionNameWriteStyles = css`
+  ${functionNameStyles}
+  color: #cc6600;
+`;
+
+const mutabilityStyles = css`
+  font-size: 12px;
+  font-weight: normal;
+  margin-left: 8px;
+  color: #666;
+`;
+
+const inputGroupStyles = css`
+  margin-bottom: 12px;
+`;
+
+const labelStyles = css`
+  display: block;
+  font-size: 14px;
+  font-weight: 500;
+  margin-bottom: 4px;
+  color: #333;
+`;
+
+const inputStyles = css`
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 13px;
+`;
+
+const buttonReadStyles = css`
+  background: #0066cc;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+
+  &:hover:not(:disabled) {
+    background: #0052a3;
+  }
+
+  &:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+  }
+`;
+
+const buttonWriteStyles = css`
+  background: #cc6600;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+
+  &:hover:not(:disabled) {
+    background: #b85c00;
+  }
+
+  &:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+  }
+`;
+
+const resultSuccessStyles = css`
+  margin-top: 12px;
+  padding: 12px;
+  background: #e8f5e8;
+  border-radius: 4px;
+  border: 1px solid #4caf50;
+`;
+
+const resultTitleStyles = css`
+  font-size: 14px;
+  font-weight: 600;
+  color: #2e7d32;
+  margin-bottom: 8px;
+`;
+
+const resultContentStyles = css`
+  font-family: monospace;
+  font-size: 12px;
+  color: #1b5e20;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+`;
+
+const functionErrorStyles = css`
+  margin-top: 12px;
+  padding: 12px;
+  background: #ffebee;
+  border-radius: 4px;
+  border: 1px solid #f44336;
+`;
+
+const functionErrorTitleStyles = css`
+  font-size: 14px;
+  font-weight: 600;
+  color: #c62828;
+  margin-bottom: 8px;
+`;
+
+const functionErrorContentStyles = css`
+  font-size: 13px;
+  color: #b71c1c;
+`;
+
+// 函数调用表单组件
+function FunctionCallForm({
+  func,
+  onCall,
+  results,
+  errors,
+  loadingStates,
+  type,
+}: {
+  func: ContractFunction;
+  onCall: (name: string, args: any[], value?: string, from?: string) => void;
+  results: Record<string, any>;
+  errors: Record<string, string>;
+  loadingStates: Record<string, boolean>;
+  type: "read" | "write";
+}) {
+  const [args, setArgs] = useState<string[]>(func.inputs.map(() => ""));
+  const [value, setValue] = useState("");
+  const [from, setFrom] = useState("");
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+
+    // 转换参数类型
+    const processedArgs = args.map((arg, index) => {
+      const inputType = func.inputs[index].type;
+
+      if (arg.trim() === "") return "";
+
+      if (inputType.startsWith("uint") || inputType.startsWith("int")) {
+        return arg;
+      }
+
+      if (inputType === "bool") {
+        return arg.toLowerCase() === "true";
+      }
+
+      return arg;
+    });
+
+    if (type === "read") {
+      onCall(func.name, processedArgs);
+    } else {
+      onCall(func.name, processedArgs, value || undefined, from || undefined);
+    }
+  };
+
+  const getResultKey = () => {
+    if (type === "read") {
+      return `${func.name}-${JSON.stringify(args)}`;
+    } else {
+      return `${func.name}-${JSON.stringify(args)}-${value || ""}-${from || ""}`;
+    }
+  };
+
+  const resultKey = getResultKey();
+  const result = results[resultKey];
+  const error = errors[resultKey];
+  const isLoading = loadingStates[resultKey];
+
+  return (
+    <div className={functionFormStyles}>
+      <div
+        className={
+          type === "read" ? functionNameReadStyles : functionNameWriteStyles
+        }
+      >
+        {func.name}
+        <span className={mutabilityStyles}>{func.stateMutability}</span>
+      </div>
+
+      <form onSubmit={handleSubmit}>
+        {/* Function Arguments */}
+        {func.inputs.map((input, index) => (
+          <div key={index} className={inputGroupStyles}>
+            <label className={labelStyles}>
+              {input.name} ({input.type})
+            </label>
+            <input
+              type="text"
+              value={args[index]}
+              onChange={(e) => {
+                const newArgs = [...args];
+                newArgs[index] = e.target.value;
+                setArgs(newArgs);
+              }}
+              placeholder={`Enter ${input.type}`}
+              className={inputStyles}
+            />
+          </div>
+        ))}
+
+        {/* Write function additional fields */}
+        {type === "write" && (
+          <>
+            {func.stateMutability === "payable" && (
+              <div className={inputGroupStyles}>
+                <label className={labelStyles}>Value (wei)</label>
+                <input
+                  type="text"
+                  value={value}
+                  onChange={(e) => setValue(e.target.value)}
+                  placeholder="0"
+                  className={inputStyles}
+                />
+              </div>
+            )}
+
+            <div className={inputGroupStyles}>
+              <label className={labelStyles}>From Address (optional)</label>
+              <input
+                type="text"
+                value={from}
+                onChange={(e) => setFrom(e.target.value)}
+                placeholder="0x..."
+                className={inputStyles}
+              />
+            </div>
+          </>
+        )}
+
+        <button
+          type="submit"
+          disabled={isLoading}
+          className={type === "read" ? buttonReadStyles : buttonWriteStyles}
+        >
+          {isLoading ? "Loading..." : type === "read" ? "Query" : "Simulate"}
+        </button>
+
+        {/* Results */}
+        {result !== undefined && (
+          <div className={resultSuccessStyles}>
+            <div className={resultTitleStyles}>Result:</div>
+            <pre className={resultContentStyles}>
+              {typeof result === "object"
+                ? JSON.stringify(result, null, 2)
+                : String(result)}
+            </pre>
+          </div>
+        )}
+
+        {/* Errors */}
+        {error && (
+          <div className={functionErrorStyles}>
+            <div className={functionErrorTitleStyles}>Error:</div>
+            <div className={functionErrorContentStyles}>{error}</div>
+          </div>
+        )}
+      </form>
+    </div>
+  );
+}
+
