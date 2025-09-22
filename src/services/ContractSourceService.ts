@@ -21,6 +21,11 @@ export type ContractSource = {
     | "unknown";
   verifiedAt?: Date;
   lastChecked: Date;
+  // Proxy contract support
+  isProxy?: boolean;
+  proxyType?: "transparent" | "uups" | "beacon" | "minimal" | "unknown";
+  implementationAddress?: string;
+  implementationContract?: ContractSource;
 };
 
 export type ContractFile = {
@@ -38,7 +43,20 @@ export class ContractSourceService {
       // 1. 先从数据库查找
       const cached = await this.getFromDatabase(chainId, address);
       if (cached && this.isCacheValid(cached)) {
-        return cached;
+        // 如果缓存的数据没有代理信息，但实际上是代理合约，需要重新获取
+        if (!cached.isProxy) {
+          const proxyInfo = await this.detectProxy(chainId, address);
+          if (proxyInfo.isProxy) {
+            // 是代理合约但缓存中没有代理信息，需要重新获取
+            console.log(
+              `Detected proxy for cached contract ${address}, refreshing...`
+            );
+          } else {
+            return cached;
+          }
+        } else {
+          return cached;
+        }
       }
 
       // 2. 检查是否为合约
@@ -47,14 +65,30 @@ export class ContractSourceService {
         return null;
       }
 
-      // 3. 尝试从 Sourcify 获取
+      // 2.5. 检查是否为代理合约
+      const proxyInfo = await this.detectProxy(chainId, address);
+
+      // 如果是代理合约，使用特殊处理
+      if (proxyInfo.isProxy) {
+        const proxyContract = await this.handleProxyContract(
+          chainId,
+          address,
+          proxyInfo
+        );
+        if (proxyContract) {
+          await this.saveToDatabase(proxyContract);
+          return proxyContract;
+        }
+      }
+
+      // 3. 尝试从 Sourcify 获取（非代理合约）
       const sourcifyResult = await this.fetchFromSourcify(chainId, address);
       if (sourcifyResult) {
         await this.saveToDatabase(sourcifyResult);
         return sourcifyResult;
       }
 
-      // 3.5. 尝试从链特定的区块浏览器获取
+      // 3.5. 尝试从链特定的区块浏览器获取（非代理合约）
       const explorerResult = await this.fetchFromChainExplorer(
         chainId,
         address
@@ -270,6 +304,237 @@ export class ContractSourceService {
     }
   }
 
+  // 专门处理代理合约
+  private async handleProxyContract(
+    chainId: number,
+    address: string,
+    proxyInfo: {
+      isProxy: boolean;
+      proxyType?: "transparent" | "uups" | "beacon" | "minimal" | "unknown";
+      implementationAddress?: string;
+    }
+  ): Promise<ContractSource | null> {
+    try {
+      // 获取代理合约本身的源码
+      let proxyContract: ContractSource | null = null;
+
+      // 尝试从 Sourcify 获取代理合约源码
+      proxyContract = await this.fetchFromSourcify(chainId, address);
+
+      // 如果 Sourcify 没有，尝试从区块浏览器获取
+      if (!proxyContract) {
+        const explorerResult = await this.fetchFromChainExplorer(
+          chainId,
+          address
+        );
+
+        // 检查区块浏览器返回的是否是代理合约本身的源码
+        // 如果返回的地址与请求的地址不同，说明返回的是实现合约的源码
+        if (
+          explorerResult &&
+          explorerResult.address.toLowerCase() === address.toLowerCase()
+        ) {
+          proxyContract = explorerResult;
+        }
+      }
+
+      // 如果还是没有，创建基本的代理合约信息
+      if (!proxyContract) {
+        proxyContract = {
+          chainId,
+          address: address.toLowerCase(),
+          name: `TransparentUpgradeableProxy`,
+          sourceCode:
+            "// This is a proxy contract. The actual implementation is at the implementation address.",
+          abi: JSON.stringify([
+            {
+              inputs: [],
+              name: "implementation",
+              outputs: [{ internalType: "address", name: "", type: "address" }],
+              stateMutability: "view",
+              type: "function",
+            },
+          ]),
+          verificationStatus: "verified",
+          verificationSource: "proxy-detection",
+          lastChecked: new Date(),
+        };
+      }
+
+      // 获取实现合约的源码
+      let implementationContract: ContractSource | null = null;
+      if (proxyInfo.implementationAddress) {
+        implementationContract = await this.getContractSource(
+          chainId,
+          proxyInfo.implementationAddress
+        );
+      }
+
+      // 返回增强的代理合约信息
+      return {
+        ...proxyContract,
+        isProxy: true,
+        proxyType: proxyInfo.proxyType,
+        implementationAddress: proxyInfo.implementationAddress,
+        implementationContract: implementationContract || undefined,
+      };
+    } catch (error) {
+      console.error("Failed to handle proxy contract:", error);
+      return null;
+    }
+  }
+
+  // 增强合约信息，检测代理并获取实现合约
+  private async enhanceWithProxyInfo(
+    contract: ContractSource,
+    proxyInfo?: {
+      isProxy: boolean;
+      proxyType?: "transparent" | "uups" | "beacon" | "minimal" | "unknown";
+      implementationAddress?: string;
+    }
+  ): Promise<ContractSource> {
+    try {
+      // 如果没有传入代理信息，则检测
+      if (!proxyInfo) {
+        proxyInfo = await this.detectProxy(contract.chainId, contract.address);
+
+        // 如果通过存储槽检测没有发现代理，尝试通过名称检测
+        if (
+          !proxyInfo.isProxy &&
+          contract.name?.toLowerCase().includes("proxy")
+        ) {
+          proxyInfo = {
+            isProxy: true,
+            proxyType: "unknown",
+          };
+        }
+      }
+
+      if (!proxyInfo.isProxy) {
+        return contract;
+      }
+
+      // 获取实现合约的源码
+      let implementationContract: ContractSource | null = null;
+      if (proxyInfo.implementationAddress) {
+        implementationContract = await this.getContractSource(
+          contract.chainId,
+          proxyInfo.implementationAddress
+        );
+      }
+
+      return {
+        ...contract,
+        isProxy: true,
+        proxyType: proxyInfo.proxyType,
+        implementationAddress: proxyInfo.implementationAddress,
+        implementationContract: implementationContract || undefined,
+      };
+    } catch (error) {
+      console.error("Failed to enhance with proxy info:", error);
+      return contract;
+    }
+  }
+
+  // 检测代理合约类型和实现地址
+  private async detectProxy(
+    chainId: number,
+    address: string
+  ): Promise<{
+    isProxy: boolean;
+    proxyType?: "transparent" | "uups" | "beacon" | "minimal" | "unknown";
+    implementationAddress?: string;
+  }> {
+    try {
+      const client = await rpcManager.getClient(chainId);
+
+      // 首先验证地址是否为合约
+      const isContract = await this.isContractAddress(chainId, address);
+      if (!isContract) {
+        return { isProxy: false };
+      }
+
+      // 检查常见的代理存储槽
+      // EIP-1967: 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc
+      const implementationSlot =
+        "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc";
+
+      try {
+        const implementationData = await client.getStorageAt({
+          address: address as `0x${string}`,
+          slot: implementationSlot as `0x${string}`,
+        });
+
+        if (
+          implementationData &&
+          implementationData !==
+            "0x0000000000000000000000000000000000000000000000000000000000000000"
+        ) {
+          // 提取地址（后20字节）
+          const implementationAddress = "0x" + implementationData.slice(-40);
+
+          // 验证实现地址是否为有效合约
+          const isValidImplementation = await this.isContractAddress(
+            chainId,
+            implementationAddress
+          );
+
+          if (isValidImplementation) {
+            return {
+              isProxy: true,
+              proxyType: "transparent",
+              implementationAddress: implementationAddress.toLowerCase(),
+            };
+          }
+        }
+      } catch (error) {
+        console.warn("Failed to check EIP-1967 implementation slot:", error);
+      }
+
+      // 检查 UUPS 代理（EIP-1822）
+      // 实现合约可能在相同的槽位
+
+      // 检查 Beacon 代理
+      // EIP-1967 Beacon: 0xa3f0ad74e5423aebfd80d3ef4346578335a9a72aeaee59ff6cb3582b35133d50
+      const beaconSlot =
+        "0xa3f0ad74e5423aebfd80d3ef4346578335a9a72aeaee59ff6cb3582b35133d50";
+
+      try {
+        const beaconData = await client.getStorageAt({
+          address: address as `0x${string}`,
+          slot: beaconSlot as `0x${string}`,
+        });
+
+        if (
+          beaconData &&
+          beaconData !==
+            "0x0000000000000000000000000000000000000000000000000000000000000000"
+        ) {
+          const beaconAddress = "0x" + beaconData.slice(-40);
+
+          // 从 Beacon 获取实现地址
+          // Beacon 通常有一个 implementation() 函数
+          // 这里简化处理，标记为 beacon 类型
+          return {
+            isProxy: true,
+            proxyType: "beacon",
+            implementationAddress: beaconAddress.toLowerCase(),
+          };
+        }
+      } catch (error) {
+        console.warn("Failed to check beacon slot:", error);
+      }
+
+      // 如果没有找到明确的代理模式，返回非代理
+      // 注意：这里不能访问 contract 对象，因为这是一个独立的检测方法
+
+      return { isProxy: false };
+    } catch (error) {
+      console.error("Failed to detect proxy:", error);
+      return { isProxy: false };
+    }
+  }
+
   // 从数据库获取缓存的合约信息
   private async getFromDatabase(
     chainId: number,
@@ -300,6 +565,10 @@ export class ContractSourceService {
         verificationSource: row.verification_source,
         verifiedAt: row.verified_at ? new Date(row.verified_at) : undefined,
         lastChecked: new Date(row.last_checked),
+        isProxy: row.is_proxy || false,
+        proxyType: row.proxy_type || undefined,
+        implementationAddress: row.implementation_address || undefined,
+        // 注意：implementationContract 不从数据库加载，需要时动态获取
       };
     } catch (error) {
       console.error("Database query error:", error);
@@ -315,8 +584,9 @@ export class ContractSourceService {
         INSERT OR REPLACE INTO contract_sources (
           chain_id, address, name, compiler_version, optimization_enabled,
           optimization_runs, source_code, abi, constructor_arguments,
-          verification_status, verification_source, verified_at, last_checked
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          verification_status, verification_source, verified_at, last_checked,
+          is_proxy, proxy_type, implementation_address
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `,
         [
           contractSource.chainId,
@@ -332,6 +602,9 @@ export class ContractSourceService {
           contractSource.verificationSource,
           contractSource.verifiedAt?.toISOString(),
           contractSource.lastChecked.toISOString(),
+          contractSource.isProxy || false,
+          contractSource.proxyType || null,
+          contractSource.implementationAddress || null,
         ]
       );
     } catch (error) {

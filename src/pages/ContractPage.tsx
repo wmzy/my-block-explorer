@@ -14,9 +14,19 @@ type ContractSource = {
   abi: string;
   constructorArguments?: string;
   verificationStatus: "verified" | "unverified" | "partial";
-  verificationSource: "sourcify" | "etherscan" | "manual" | "unknown";
+  verificationSource:
+    | "sourcify"
+    | "etherscan"
+    | "mantle-explorer"
+    | "manual"
+    | "unknown";
   verifiedAt?: string;
   lastChecked: string;
+  // Proxy contract support
+  isProxy?: boolean;
+  proxyType?: "transparent" | "uups" | "beacon" | "minimal" | "unknown";
+  implementationAddress?: string;
+  implementationContract?: ContractSource;
 };
 
 type ContractFunction = {
@@ -121,8 +131,8 @@ const codeStyles = css`
   padding: 16px;
   overflow-x: auto;
   font-family:
-    "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas,
-    "Courier New", monospace;
+    "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas, "Courier New",
+    monospace;
   font-size: 13px;
   line-height: 1.4;
   white-space: pre-wrap;
@@ -258,13 +268,67 @@ export default function ContractPage() {
     address: string;
   }>();
   const navigate = useNavigate();
-  const [contractSource, setContractSource] = useState<ContractSource | null>(null);
+  const [contractSource, setContractSource] = useState<ContractSource | null>(
+    null
+  );
   const [contractABI, setContractABI] = useState<ContractABI | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"source" | "abi" | "functions" | "events">("source");
+  const [activeTab, setActiveTab] = useState<
+    "source" | "abi" | "functions" | "events" | "implementation"
+  >("source");
+  const [showImplementation, setShowImplementation] = useState(true); // 默认显示实现合约
 
   const currentChainId = parseInt(chainId || "1");
+
+  // 获取当前要显示的合约信息（代理或实现）
+  const getCurrentContract = (): ContractSource | null => {
+    if (!contractSource) return null;
+
+    // 如果不是代理合约，直接返回原合约
+    if (!contractSource.isProxy) return contractSource;
+
+    // 如果是代理合约，根据 showImplementation 状态决定显示哪个
+    if (showImplementation && contractSource.implementationContract) {
+      return contractSource.implementationContract;
+    }
+
+    return contractSource;
+  };
+
+  // 获取当前合约的 ABI 信息
+  const getCurrentContractABI = (): ContractABI | null => {
+    const currentContract = getCurrentContract();
+    if (!currentContract?.abi) return null;
+
+    try {
+      const abi = JSON.parse(currentContract.abi);
+      const functions = abi.filter((item: any) => item.type === "function");
+      const events = abi.filter((item: any) => item.type === "event");
+      const errors = abi.filter((item: any) => item.type === "error");
+
+      return {
+        abi: currentContract.abi,
+        functions: functions.map((f: any) => ({
+          name: f.name,
+          type: f.type,
+          inputs: f.inputs || [],
+          outputs: f.outputs || [],
+          signature: `${f.name}(${(f.inputs || []).map((input: any) => input.type).join(", ")})`,
+        })),
+        events: events.map((e: any) => ({
+          name: e.name,
+          inputs: e.inputs || [],
+          signature: `${e.name}(${(e.inputs || []).map((input: any) => input.type).join(", ")})`,
+        })),
+        errors,
+        verificationStatus: currentContract.verificationStatus,
+      };
+    } catch (error) {
+      console.error("Failed to parse ABI:", error);
+      return null;
+    }
+  };
 
   useEffect(() => {
     if (!chainId || !address) return;
@@ -288,7 +352,9 @@ export default function ContractPage() {
         if (sourceResponse.status === 404) {
           throw new Error("Contract not found or not verified");
         }
-        throw new Error(`HTTP ${sourceResponse.status}: ${sourceResponse.statusText}`);
+        throw new Error(
+          `HTTP ${sourceResponse.status}: ${sourceResponse.statusText}`
+        );
       }
 
       const sourceData = await sourceResponse.json();
@@ -307,7 +373,9 @@ export default function ContractPage() {
     } catch (err) {
       console.error("Failed to fetch contract data:", err);
       setError(
-        err instanceof Error ? err.message : "Failed to fetch contract information"
+        err instanceof Error
+          ? err.message
+          : "Failed to fetch contract information"
       );
     } finally {
       setLoading(false);
@@ -342,7 +410,8 @@ export default function ContractPage() {
       <div className={headerStyles}>
         <h1>Contract Source Code</h1>
         <div className="chain-info">
-          {getChainName(currentChainId)} • <span className="address">{address}</span>
+          {getChainName(currentChainId)} •{" "}
+          <span className="address">{address}</span>
         </div>
       </div>
 
@@ -365,31 +434,114 @@ export default function ContractPage() {
               )}
               <div className="info-item">
                 <span className="label">Verification Status</span>
-                <span className={`${statusBadgeStyles} ${contractSource.verificationStatus}`}>
+                <span
+                  className={`${statusBadgeStyles} ${contractSource.verificationStatus}`}
+                >
                   {contractSource.verificationStatus}
                 </span>
               </div>
               <div className="info-item">
                 <span className="label">Verification Source</span>
-                <span className="value">{contractSource.verificationSource}</span>
+                <span className="value">
+                  {contractSource.verificationSource}
+                </span>
               </div>
               {contractSource.compilerVersion && (
                 <div className="info-item">
                   <span className="label">Compiler Version</span>
-                  <span className="value">{contractSource.compilerVersion}</span>
+                  <span className="value">
+                    {contractSource.compilerVersion}
+                  </span>
                 </div>
               )}
               {contractSource.optimizationEnabled !== undefined && (
                 <div className="info-item">
                   <span className="label">Optimization</span>
                   <span className="value">
-                    {contractSource.optimizationEnabled ? "Enabled" : "Disabled"}
-                    {contractSource.optimizationRuns && ` (${contractSource.optimizationRuns} runs)`}
+                    {contractSource.optimizationEnabled
+                      ? "Enabled"
+                      : "Disabled"}
+                    {contractSource.optimizationRuns &&
+                      ` (${contractSource.optimizationRuns} runs)`}
+                  </span>
+                </div>
+              )}
+              {contractSource.isProxy && (
+                <div className="info-item">
+                  <span className="label">Proxy Type</span>
+                  <span className="value proxy-badge">
+                    🔗 {contractSource.proxyType?.toUpperCase() || "UNKNOWN"}{" "}
+                    Proxy
+                  </span>
+                </div>
+              )}
+              {contractSource.implementationAddress && (
+                <div className="info-item">
+                  <span className="label">Implementation</span>
+                  <span className="value">
+                    <a
+                      href={`/chain/${currentChainId}/contract/${contractSource.implementationAddress}`}
+                      style={{ color: "#007bff", textDecoration: "none" }}
+                      onMouseOver={(e) =>
+                        (e.target.style.textDecoration = "underline")
+                      }
+                      onMouseOut={(e) =>
+                        (e.target.style.textDecoration = "none")
+                      }
+                    >
+                      {contractSource.implementationAddress}
+                    </a>
                   </span>
                 </div>
               )}
             </div>
           </div>
+
+          {contractSource.isProxy && contractSource.implementationContract && (
+            <div className={cardStyles}>
+              <h2>Contract View</h2>
+              <div
+                style={{ display: "flex", gap: "10px", marginBottom: "20px" }}
+              >
+                <button
+                  onClick={() => setShowImplementation(false)}
+                  style={{
+                    padding: "8px 16px",
+                    border: "1px solid #ddd",
+                    borderRadius: "4px",
+                    background: !showImplementation ? "#007bff" : "#fff",
+                    color: !showImplementation ? "#fff" : "#333",
+                    cursor: "pointer",
+                    fontSize: "14px",
+                  }}
+                >
+                  Show Proxy Contract
+                </button>
+                <button
+                  onClick={() => setShowImplementation(true)}
+                  style={{
+                    padding: "8px 16px",
+                    border: "1px solid #ddd",
+                    borderRadius: "4px",
+                    background: showImplementation ? "#007bff" : "#fff",
+                    color: showImplementation ? "#fff" : "#333",
+                    cursor: "pointer",
+                    fontSize: "14px",
+                  }}
+                >
+                  Show Implementation Contract
+                </button>
+              </div>
+              <div style={{ fontSize: "14px", color: "#666" }}>
+                Currently showing:{" "}
+                <strong>
+                  {showImplementation
+                    ? `Implementation (${contractSource.implementationContract.name || "Unknown"})`
+                    : `Proxy (${contractSource.name || "Unknown"})`}
+                </strong>
+              </div>
+            </div>
+          )}
 
           <div className={tabsStyles}>
             <button
@@ -404,32 +556,47 @@ export default function ContractPage() {
             >
               ABI
             </button>
-            {contractABI && contractABI.functions.length > 0 && (
-              <button
-                className={`tab ${activeTab === "functions" ? "active" : ""}`}
-                onClick={() => setActiveTab("functions")}
-              >
-                Functions ({contractABI.functions.length})
-              </button>
-            )}
-            {contractABI && contractABI.events.length > 0 && (
-              <button
-                className={`tab ${activeTab === "events" ? "active" : ""}`}
-                onClick={() => setActiveTab("events")}
-              >
-                Events ({contractABI.events.length})
-              </button>
-            )}
+            {(() => {
+              const currentABI = getCurrentContractABI();
+              return (
+                currentABI &&
+                currentABI.functions.length > 0 && (
+                  <button
+                    className={`tab ${activeTab === "functions" ? "active" : ""}`}
+                    onClick={() => setActiveTab("functions")}
+                  >
+                    Functions ({currentABI.functions.length})
+                  </button>
+                )
+              );
+            })()}
+            {(() => {
+              const currentABI = getCurrentContractABI();
+              return (
+                currentABI &&
+                currentABI.events.length > 0 && (
+                  <button
+                    className={`tab ${activeTab === "events" ? "active" : ""}`}
+                    onClick={() => setActiveTab("events")}
+                  >
+                    Events ({currentABI.events.length})
+                  </button>
+                )
+              );
+            })()}
           </div>
 
           {activeTab === "source" && (
             <div className={cardStyles}>
               <h2>Source Code</h2>
-              {contractSource.sourceCode ? (
-                <div className={codeStyles}>{contractSource.sourceCode}</div>
-              ) : (
-                <div>No source code available</div>
-              )}
+              {(() => {
+                const currentContract = getCurrentContract();
+                return currentContract?.sourceCode ? (
+                  <div className={codeStyles}>{currentContract.sourceCode}</div>
+                ) : (
+                  <div>No source code available</div>
+                );
+              })()}
             </div>
           )}
 
@@ -437,47 +604,59 @@ export default function ContractPage() {
             <div className={cardStyles}>
               <h2>Contract ABI</h2>
               <div className={codeStyles}>
-                {contractSource.abi ? 
-                  JSON.stringify(JSON.parse(contractSource.abi), null, 2) : 
-                  "No ABI available"
-                }
+                {(() => {
+                  const currentContract = getCurrentContract();
+                  return currentContract?.abi
+                    ? JSON.stringify(JSON.parse(currentContract.abi), null, 2)
+                    : "No ABI available";
+                })()}
               </div>
             </div>
           )}
 
-          {activeTab === "functions" && contractABI && (
+          {activeTab === "functions" && (
             <div className={cardStyles}>
               <h2>Contract Functions</h2>
-              {contractABI.functions.length > 0 ? (
-                <div className={functionListStyles}>
-                  {contractABI.functions.map((func, index) => (
-                    <div key={index} className={`function-item ${func.type}`}>
-                      <div className="function-signature">{func.signature}</div>
-                      <span className="function-type">{func.type}</span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div>No functions found</div>
-              )}
+              {(() => {
+                const currentABI = getCurrentContractABI();
+                return currentABI && currentABI.functions.length > 0 ? (
+                  <div className={functionListStyles}>
+                    {currentABI.functions.map((func, index) => (
+                      <div key={index} className={`function-item ${func.type}`}>
+                        <div className="function-signature">
+                          {func.signature}
+                        </div>
+                        <span className="function-type">{func.type}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div>No functions found</div>
+                );
+              })()}
             </div>
           )}
 
-          {activeTab === "events" && contractABI && (
+          {activeTab === "events" && (
             <div className={cardStyles}>
               <h2>Contract Events</h2>
-              {contractABI.events.length > 0 ? (
-                <div className={functionListStyles}>
-                  {contractABI.events.map((event, index) => (
-                    <div key={index} className="function-item">
-                      <div className="function-signature">{event.signature}</div>
-                      <span className="function-type">Event</span>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div>No events found</div>
-              )}
+              {(() => {
+                const currentABI = getCurrentContractABI();
+                return currentABI && currentABI.events.length > 0 ? (
+                  <div className={functionListStyles}>
+                    {currentABI.events.map((event, index) => (
+                      <div key={index} className="function-item">
+                        <div className="function-signature">
+                          {event.signature}
+                        </div>
+                        <span className="function-type">Event</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div>No events found</div>
+                );
+              })()}
             </div>
           )}
         </>
