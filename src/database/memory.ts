@@ -28,6 +28,7 @@ export class MemoryDatabase {
     this.tables.set("search_history", []);
     this.tables.set("user_preferences", []);
     this.tables.set("access_history", []);
+    this.tables.set("contract_sources", []);
 
     this.isInitialized = true;
     console.log(

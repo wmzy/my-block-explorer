@@ -247,6 +247,44 @@ export default function AddressPage() {
                     : "Externally Owned Account (EOA)"}
                 </span>
               </div>
+              {addressInfo.isContract && addressInfo.contractName && (
+                <div className="info-item">
+                  <span className="label">Contract Name</span>
+                  <span className="value">{addressInfo.contractName}</span>
+                </div>
+              )}
+              {addressInfo.isContract && addressInfo.verificationStatus && (
+                <div className="info-item">
+                  <span className="label">Verification Status</span>
+                  <span className="value">
+                    {addressInfo.verificationStatus === "verified" &&
+                      "✅ Verified"}
+                    {addressInfo.verificationStatus === "partial" &&
+                      "⚠️ Partially Verified"}
+                    {addressInfo.verificationStatus === "unverified" &&
+                      "❌ Unverified"}
+                  </span>
+                </div>
+              )}
+              {addressInfo.isContract && addressInfo.hasSourceCode && (
+                <div className="info-item">
+                  <span className="label">Source Code</span>
+                  <span className="value">
+                    <a
+                      href={`/chain/${currentChainId}/contract/${address}`}
+                      style={{ color: "#007bff", textDecoration: "none" }}
+                      onMouseOver={(e) =>
+                        (e.target.style.textDecoration = "underline")
+                      }
+                      onMouseOut={(e) =>
+                        (e.target.style.textDecoration = "none")
+                      }
+                    >
+                      View Source Code →
+                    </a>
+                  </span>
+                </div>
+              )}
               {addressInfo.firstSeenBlock && (
                 <div className="info-item">
                   <span className="label">First Seen Block</span>

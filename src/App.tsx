@@ -10,6 +10,7 @@ import {
 import AddressPage from "./pages/AddressPage";
 import BlockPage from "./pages/BlockPage";
 import TransactionPage from "./pages/TransactionPage";
+import ContractPage from "./pages/ContractPage";
 import { globalStyles } from "@/styles/global";
 import {
   SUPPORTED_CHAINS,
@@ -603,6 +604,10 @@ export function App() {
         <Route
           path="/chain/:chainId/tx/:txHash"
           element={<TransactionPage />}
+        />
+        <Route
+          path="/chain/:chainId/contract/:address"
+          element={<ContractPage />}
         />
         <Route path="/" element={<Navigate to="/chain/1" replace />} />
         <Route path="*" element={<Navigate to="/chain/1" replace />} />

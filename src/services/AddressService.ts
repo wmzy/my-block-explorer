@@ -1,6 +1,7 @@
 import { db } from "../database/init";
 import { rpcManager } from "./RpcManager";
 import { transactionService, type Transaction } from "./TransactionService";
+import { contractSourceService } from "./ContractSourceService";
 
 /**
  * 地址数据类型
@@ -12,6 +13,9 @@ export type AddressInfo = {
   transactionCount: number;
   isContract: boolean;
   contractCode?: string;
+  contractName?: string;
+  verificationStatus?: "verified" | "unverified" | "partial";
+  hasSourceCode?: boolean;
   label?: string;
   firstSeenBlock?: bigint;
   lastSeenBlock?: bigint;
@@ -40,6 +44,27 @@ export class AddressService {
       // 从数据库获取额外信息
       const dbInfo = await this.getAddressFromDB(chainId, address);
 
+      // 如果是合约，获取源码信息
+      let contractName: string | undefined;
+      let verificationStatus: "verified" | "unverified" | "partial" | undefined;
+      let hasSourceCode = false;
+
+      if (isContract) {
+        try {
+          const contractSource = await contractSourceService.getContractSource(
+            chainId,
+            address
+          );
+          if (contractSource) {
+            contractName = contractSource.name;
+            verificationStatus = contractSource.verificationStatus;
+            hasSourceCode = contractSource.sourceCode.length > 0;
+          }
+        } catch (error) {
+          console.warn(`Failed to get contract source for ${address}:`, error);
+        }
+      }
+
       // 更新数据库中的地址信息
       await this.updateAddressInDB(chainId, address, {
         transactionCount: Number(transactionCount),
@@ -53,6 +78,9 @@ export class AddressService {
         transactionCount: Number(transactionCount),
         isContract,
         contractCode: isContract ? code : undefined,
+        contractName,
+        verificationStatus,
+        hasSourceCode,
         label: dbInfo?.label,
         firstSeenBlock: dbInfo?.firstSeenBlock,
         lastSeenBlock: dbInfo?.lastSeenBlock,

@@ -12,6 +12,7 @@ import { searchService } from "./services/SearchService";
 import { blockService } from "./services/BlockService";
 import { transactionService } from "./services/TransactionService";
 import { addressService } from "./services/AddressService";
+import { contractSourceService } from "./services/ContractSourceService";
 import { rpcManager } from "./services/RpcManager";
 import {
   formatBlockForApi,
@@ -494,6 +495,127 @@ app.notFound((c) => {
 });
 
 // Error handler
+// 合约源码相关API
+// GET /api/chains/:chainId/contracts/:address/source - 获取合约源码
+app.get("/api/chains/:chainId/contracts/:address/source", async (c) => {
+  const chainId = parseInt(c.req.param("chainId"));
+  const address = c.req.param("address");
+
+  if (isNaN(chainId) || !isChainSupported(chainId)) {
+    return c.json({ error: "Unsupported chain" }, 400);
+  }
+
+  if (!address || !/^0x[a-fA-F0-9]{40}$/.test(address)) {
+    return c.json({ error: "Invalid contract address" }, 400);
+  }
+
+  try {
+    const contractSource = await contractSourceService.getContractSource(
+      chainId,
+      address
+    );
+
+    if (!contractSource) {
+      return c.json(
+        { error: "Contract not found or not a contract address" },
+        404
+      );
+    }
+
+    c.header("X-Data-Source", "contract-verification");
+    c.header("X-Chain-Name", getChainName(chainId));
+
+    const responseData = safeJsonResponse({
+      chainId,
+      chainName: getChainName(chainId),
+      address: address.toLowerCase(),
+      contractSource,
+      timestamp: new Date().toISOString(),
+    });
+
+    return c.json(responseData);
+  } catch (error) {
+    console.error("Contract source API error:", error);
+    return c.json({ error: "Failed to get contract source" }, 500);
+  }
+});
+
+// GET /api/chains/:chainId/contracts/:address/abi - 获取合约ABI和函数信息
+app.get("/api/chains/:chainId/contracts/:address/abi", async (c) => {
+  const chainId = parseInt(c.req.param("chainId"));
+  const address = c.req.param("address");
+
+  if (isNaN(chainId) || !isChainSupported(chainId)) {
+    return c.json({ error: "Unsupported chain" }, 400);
+  }
+
+  if (!address || !/^0x[a-fA-F0-9]{40}$/.test(address)) {
+    return c.json({ error: "Invalid contract address" }, 400);
+  }
+
+  try {
+    const [contractSource, contractFunctions] = await Promise.all([
+      contractSourceService.getContractSource(chainId, address),
+      contractSourceService.getContractFunctions(chainId, address),
+    ]);
+
+    if (!contractSource) {
+      return c.json(
+        { error: "Contract not found or not a contract address" },
+        404
+      );
+    }
+
+    c.header("X-Data-Source", "contract-verification");
+    c.header("X-Chain-Name", getChainName(chainId));
+
+    const responseData = safeJsonResponse({
+      chainId,
+      chainName: getChainName(chainId),
+      address: address.toLowerCase(),
+      abi: contractSource.abi,
+      functions: contractFunctions.functions,
+      events: contractFunctions.events,
+      errors: contractFunctions.errors,
+      verificationStatus: contractSource.verificationStatus,
+      timestamp: new Date().toISOString(),
+    });
+
+    return c.json(responseData);
+  } catch (error) {
+    console.error("Contract ABI API error:", error);
+    return c.json({ error: "Failed to get contract ABI" }, 500);
+  }
+});
+
+// GET /api/chains/:chainId/contracts/stats - 获取合约统计信息
+app.get("/api/chains/:chainId/contracts/stats", async (c) => {
+  const chainId = parseInt(c.req.param("chainId"));
+
+  if (isNaN(chainId) || !isChainSupported(chainId)) {
+    return c.json({ error: "Unsupported chain" }, 400);
+  }
+
+  try {
+    const stats = await contractSourceService.getContractStats(chainId);
+
+    c.header("X-Data-Source", "database");
+    c.header("X-Chain-Name", getChainName(chainId));
+
+    const responseData = safeJsonResponse({
+      chainId,
+      chainName: getChainName(chainId),
+      stats,
+      timestamp: new Date().toISOString(),
+    });
+
+    return c.json(responseData);
+  } catch (error) {
+    console.error("Contract stats API error:", error);
+    return c.json({ error: "Failed to get contract stats" }, 500);
+  }
+});
+
 app.onError((err, c) => {
   console.error("API Error:", err);
   return c.json(
