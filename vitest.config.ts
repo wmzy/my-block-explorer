@@ -4,12 +4,13 @@ import { resolve } from "path";
 export default defineConfig({
   test: {
     globals: true,
-    environment: "node",
+    environment: "jsdom",
     include: ["src/tests/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}"],
     exclude: ["node_modules", "dist", "build"],
     testTimeout: 30000, // 30秒超时，适合网络请求
     hookTimeout: 30000,
     teardownTimeout: 30000,
+    setupFiles: ["src/tests/setup.ts"],
     // 测试覆盖率配置
     coverage: {
       provider: "v8",
