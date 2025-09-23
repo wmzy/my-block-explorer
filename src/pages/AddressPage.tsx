@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { css } from "@linaria/core";
 import { getChainInfo, getChainName, getChainSymbol } from "../config/chains";
+import TopNavigation from "../components/TopNavigation";
 
 const pageStyles = css`
   max-width: 1200px;
@@ -185,135 +186,151 @@ export default function AddressPage() {
     return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
   };
 
+  const handleChainChange = (newChainId: number) => {
+    navigate(`/chain/${newChainId}/address/${address}`, { replace: true });
+  };
+
   if (!chainInfo) {
     return (
-      <div className={pageStyles}>
-        <div className={errorStyles}>Unsupported chain ID: {chainId}</div>
-      </div>
+      <>
+        <TopNavigation
+          currentChainId={currentChainId}
+          onChainChange={handleChainChange}
+        />
+        <div className={pageStyles}>
+          <div className={errorStyles}>Unsupported chain ID: {chainId}</div>
+        </div>
+      </>
     );
   }
 
   return (
-    <div className={pageStyles}>
-      <button
-        className={backButtonStyles}
-        onClick={() => navigate(`/chain/${currentChainId}`)}
-      >
-        ← Back to Explorer
-      </button>
+    <>
+      <TopNavigation
+        currentChainId={currentChainId}
+        onChainChange={handleChainChange}
+      />
+      <div className={pageStyles}>
+        <button
+          className={backButtonStyles}
+          onClick={() => navigate(`/chain/${currentChainId}`)}
+        >
+          ← Back to Explorer
+        </button>
 
-      <div className={headerStyles}>
-        <h1>Address Details</h1>
-        <div className="chain-info">
-          {getChainName(currentChainId)} • Chain ID: {currentChainId}
+        <div className={headerStyles}>
+          <h1>Address Details</h1>
+          <div className="chain-info">
+            {getChainName(currentChainId)} • Chain ID: {currentChainId}
+          </div>
         </div>
+
+        {loading && (
+          <div className={loadingStyles}>Loading address information...</div>
+        )}
+
+        {error && <div className={errorStyles}>Error: {error}</div>}
+
+        {addressInfo && (
+          <>
+            <div className={cardStyles}>
+              <h2>Overview</h2>
+              <div className={infoGridStyles}>
+                <div className="info-item">
+                  <span className="label">Address</span>
+                  <span className="value">{addressInfo.address}</span>
+                </div>
+                <div className="info-item">
+                  <span className="label">Balance</span>
+                  <span className="value">
+                    {formatBalance(
+                      addressInfo.balance,
+                      getChainSymbol(currentChainId)
+                    )}
+                  </span>
+                </div>
+                <div className="info-item">
+                  <span className="label">Transaction Count</span>
+                  <span className="value">
+                    {addressInfo.transactionCount.toLocaleString()}
+                  </span>
+                </div>
+                <div className="info-item">
+                  <span className="label">Type</span>
+                  <span className="value">
+                    {addressInfo.isContract
+                      ? "Contract"
+                      : "Externally Owned Account (EOA)"}
+                  </span>
+                </div>
+                {addressInfo.isContract && addressInfo.contractName && (
+                  <div className="info-item">
+                    <span className="label">Contract Name</span>
+                    <span className="value">{addressInfo.contractName}</span>
+                  </div>
+                )}
+                {addressInfo.isContract && addressInfo.verificationStatus && (
+                  <div className="info-item">
+                    <span className="label">Verification Status</span>
+                    <span className="value">
+                      {addressInfo.verificationStatus === "verified" &&
+                        "✅ Verified"}
+                      {addressInfo.verificationStatus === "partial" &&
+                        "⚠️ Partially Verified"}
+                      {addressInfo.verificationStatus === "unverified" &&
+                        "❌ Unverified"}
+                    </span>
+                  </div>
+                )}
+                {addressInfo.isContract && addressInfo.hasSourceCode && (
+                  <div className="info-item">
+                    <span className="label">Source Code</span>
+                    <span className="value">
+                      <a
+                        href={`/chain/${currentChainId}/contract/${address}`}
+                        style={{ color: "#007bff", textDecoration: "none" }}
+                        onMouseOver={(e) =>
+                          (e.target.style.textDecoration = "underline")
+                        }
+                        onMouseOut={(e) =>
+                          (e.target.style.textDecoration = "none")
+                        }
+                      >
+                        View Source Code →
+                      </a>
+                    </span>
+                  </div>
+                )}
+                {addressInfo.firstSeenBlock && (
+                  <div className="info-item">
+                    <span className="label">First Seen Block</span>
+                    <span className="value">{addressInfo.firstSeenBlock}</span>
+                  </div>
+                )}
+                {addressInfo.lastSeenBlock && (
+                  <div className="info-item">
+                    <span className="label">Last Seen Block</span>
+                    <span className="value">{addressInfo.lastSeenBlock}</span>
+                  </div>
+                )}
+                <div className="info-item">
+                  <span className="label">Last Updated</span>
+                  <span className="value">
+                    {new Date(addressInfo.lastQueried).toLocaleString()}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div className={cardStyles}>
+              <h2>Recent Transactions</h2>
+              <div style={{ color: "#666", fontStyle: "italic" }}>
+                Transaction history will be implemented in the next update.
+              </div>
+            </div>
+          </>
+        )}
       </div>
-
-      {loading && (
-        <div className={loadingStyles}>Loading address information...</div>
-      )}
-
-      {error && <div className={errorStyles}>Error: {error}</div>}
-
-      {addressInfo && (
-        <>
-          <div className={cardStyles}>
-            <h2>Overview</h2>
-            <div className={infoGridStyles}>
-              <div className="info-item">
-                <span className="label">Address</span>
-                <span className="value">{addressInfo.address}</span>
-              </div>
-              <div className="info-item">
-                <span className="label">Balance</span>
-                <span className="value">
-                  {formatBalance(
-                    addressInfo.balance,
-                    getChainSymbol(currentChainId)
-                  )}
-                </span>
-              </div>
-              <div className="info-item">
-                <span className="label">Transaction Count</span>
-                <span className="value">
-                  {addressInfo.transactionCount.toLocaleString()}
-                </span>
-              </div>
-              <div className="info-item">
-                <span className="label">Type</span>
-                <span className="value">
-                  {addressInfo.isContract
-                    ? "Contract"
-                    : "Externally Owned Account (EOA)"}
-                </span>
-              </div>
-              {addressInfo.isContract && addressInfo.contractName && (
-                <div className="info-item">
-                  <span className="label">Contract Name</span>
-                  <span className="value">{addressInfo.contractName}</span>
-                </div>
-              )}
-              {addressInfo.isContract && addressInfo.verificationStatus && (
-                <div className="info-item">
-                  <span className="label">Verification Status</span>
-                  <span className="value">
-                    {addressInfo.verificationStatus === "verified" &&
-                      "✅ Verified"}
-                    {addressInfo.verificationStatus === "partial" &&
-                      "⚠️ Partially Verified"}
-                    {addressInfo.verificationStatus === "unverified" &&
-                      "❌ Unverified"}
-                  </span>
-                </div>
-              )}
-              {addressInfo.isContract && addressInfo.hasSourceCode && (
-                <div className="info-item">
-                  <span className="label">Source Code</span>
-                  <span className="value">
-                    <a
-                      href={`/chain/${currentChainId}/contract/${address}`}
-                      style={{ color: "#007bff", textDecoration: "none" }}
-                      onMouseOver={(e) =>
-                        (e.target.style.textDecoration = "underline")
-                      }
-                      onMouseOut={(e) =>
-                        (e.target.style.textDecoration = "none")
-                      }
-                    >
-                      View Source Code →
-                    </a>
-                  </span>
-                </div>
-              )}
-              {addressInfo.firstSeenBlock && (
-                <div className="info-item">
-                  <span className="label">First Seen Block</span>
-                  <span className="value">{addressInfo.firstSeenBlock}</span>
-                </div>
-              )}
-              {addressInfo.lastSeenBlock && (
-                <div className="info-item">
-                  <span className="label">Last Seen Block</span>
-                  <span className="value">{addressInfo.lastSeenBlock}</span>
-                </div>
-              )}
-              <div className="info-item">
-                <span className="label">Last Updated</span>
-                <span className="value">
-                  {new Date(addressInfo.lastQueried).toLocaleString()}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          <div className={cardStyles}>
-            <h2>Recent Transactions</h2>
-            <div style={{ color: "#666", fontStyle: "italic" }}>
-              Transaction history will be implemented in the next update.
-            </div>
-          </div>
-        </>
-      )}
-    </div>
+    </>
   );
 }

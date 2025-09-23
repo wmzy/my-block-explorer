@@ -9,6 +9,7 @@ import {
   estimateContractGas,
   type ContractFunction,
 } from "../utils/contractInteraction";
+import TopNavigation from "../components/TopNavigation";
 import RpcFunctionError from "../components/RpcFunctionError";
 import BackendRpcConfig from "../components/BackendRpcConfig";
 
@@ -299,6 +300,10 @@ export default function ContractPage() {
 
   const currentChainId = parseInt(chainId || "1");
 
+  const handleChainChange = (newChainId: number) => {
+    navigate(`/chain/${newChainId}/contract/${address}`, { replace: true });
+  };
+
   // 获取当前要显示的合约信息（代理或实现）
   const getCurrentContract = (): ContractSource | null => {
     if (!contractSource) return null;
@@ -439,418 +444,452 @@ export default function ContractPage() {
 
   if (!chainId || !address) {
     return (
-      <div className={pageStyles}>
-        <div className={errorStyles}>Invalid contract address or chain ID</div>
-      </div>
+      <>
+        <TopNavigation
+          currentChainId={currentChainId}
+          onChainChange={handleChainChange}
+        />
+        <div className={pageStyles}>
+          <div className={errorStyles}>
+            Invalid contract address or chain ID
+          </div>
+        </div>
+      </>
     );
   }
 
   if (!isChainSupported(currentChainId)) {
     return (
-      <div className={pageStyles}>
-        <div className={errorStyles}>Unsupported chain ID: {chainId}</div>
-      </div>
+      <>
+        <TopNavigation
+          currentChainId={currentChainId}
+          onChainChange={handleChainChange}
+        />
+        <div className={pageStyles}>
+          <div className={errorStyles}>Unsupported chain ID: {chainId}</div>
+        </div>
+      </>
     );
   }
 
   return (
-    <div className={pageStyles}>
-      <button
-        className={backButtonStyles}
-        onClick={() => navigate(`/chain/${currentChainId}/address/${address}`)}
-      >
-        ← Back to Address
-      </button>
+    <>
+      <TopNavigation
+        currentChainId={currentChainId}
+        onChainChange={handleChainChange}
+      />
+      <div className={pageStyles}>
+        <button
+          className={backButtonStyles}
+          onClick={() =>
+            navigate(`/chain/${currentChainId}/address/${address}`)
+          }
+        >
+          ← Back to Address
+        </button>
 
-      <div className={headerStyles}>
-        <h1>Contract Source Code</h1>
-        <div className="chain-info">
-          {getChainName(currentChainId)} •{" "}
-          <span className="address">{address}</span>
+        <div className={headerStyles}>
+          <h1>Contract Source Code</h1>
+          <div className="chain-info">
+            {getChainName(currentChainId)} •{" "}
+            <span className="address">{address}</span>
+          </div>
         </div>
-      </div>
 
-      {loading && (
-        <div className={loadingStyles}>Loading contract information...</div>
-      )}
+        {loading && (
+          <div className={loadingStyles}>Loading contract information...</div>
+        )}
 
-      {error && <div className={errorStyles}>Error: {error}</div>}
+        {error && <div className={errorStyles}>Error: {error}</div>}
 
-      {contractSource && (
-        <>
-          <div className={cardStyles}>
-            <h2>Contract Information</h2>
-            <div className={infoGridStyles}>
-              {contractSource.name && (
+        {contractSource && (
+          <>
+            <div className={cardStyles}>
+              <h2>Contract Information</h2>
+              <div className={infoGridStyles}>
+                {contractSource.name && (
+                  <div className="info-item">
+                    <span className="label">Contract Name</span>
+                    <span className="value">{contractSource.name}</span>
+                  </div>
+                )}
                 <div className="info-item">
-                  <span className="label">Contract Name</span>
-                  <span className="value">{contractSource.name}</span>
+                  <span className="label">Verification Status</span>
+                  <span
+                    className={`${statusBadgeStyles} ${contractSource.verificationStatus}`}
+                  >
+                    {contractSource.verificationStatus}
+                  </span>
                 </div>
-              )}
-              <div className="info-item">
-                <span className="label">Verification Status</span>
-                <span
-                  className={`${statusBadgeStyles} ${contractSource.verificationStatus}`}
-                >
-                  {contractSource.verificationStatus}
-                </span>
+                <div className="info-item">
+                  <span className="label">Verification Source</span>
+                  <span className="value">
+                    {contractSource.verificationSource}
+                  </span>
+                </div>
+                {contractSource.compilerVersion && (
+                  <div className="info-item">
+                    <span className="label">Compiler Version</span>
+                    <span className="value">
+                      {contractSource.compilerVersion}
+                    </span>
+                  </div>
+                )}
+                {contractSource.optimizationEnabled !== undefined && (
+                  <div className="info-item">
+                    <span className="label">Optimization</span>
+                    <span className="value">
+                      {contractSource.optimizationEnabled
+                        ? "Enabled"
+                        : "Disabled"}
+                      {contractSource.optimizationRuns &&
+                        ` (${contractSource.optimizationRuns} runs)`}
+                    </span>
+                  </div>
+                )}
+                {contractSource.isProxy && (
+                  <div className="info-item">
+                    <span className="label">Proxy Type</span>
+                    <span className="value proxy-badge">
+                      🔗 {contractSource.proxyType?.toUpperCase() || "UNKNOWN"}{" "}
+                      Proxy
+                    </span>
+                  </div>
+                )}
+                {contractSource.implementationAddress && (
+                  <div className="info-item">
+                    <span className="label">Implementation</span>
+                    <span className="value">
+                      <a
+                        href={`/chain/${currentChainId}/contract/${contractSource.implementationAddress}`}
+                        style={{ color: "#007bff", textDecoration: "none" }}
+                        onMouseOver={(e) =>
+                          ((e.target as HTMLElement).style.textDecoration =
+                            "underline")
+                        }
+                        onMouseOut={(e) =>
+                          ((e.target as HTMLElement).style.textDecoration =
+                            "none")
+                        }
+                      >
+                        {contractSource.implementationAddress}
+                      </a>
+                    </span>
+                  </div>
+                )}
+
+                {/* Contract Creation Information */}
+                {creationInfo && (
+                  <>
+                    <div className="info-item">
+                      <span className="label">Creation Transaction</span>
+                      <span className="value">
+                        <a
+                          href={`/chain/${currentChainId}/tx/${creationInfo.txHash}`}
+                          style={{ color: "#007bff", textDecoration: "none" }}
+                          onMouseOver={(e) =>
+                            ((e.target as HTMLElement).style.textDecoration =
+                              "underline")
+                          }
+                          onMouseOut={(e) =>
+                            ((e.target as HTMLElement).style.textDecoration =
+                              "none")
+                          }
+                        >
+                          {creationInfo.txHash}
+                        </a>
+                      </span>
+                    </div>
+                    <div className="info-item">
+                      <span className="label">Creation Block</span>
+                      <span className="value">
+                        <a
+                          href={`/chain/${currentChainId}/block/${creationInfo.blockNumber}`}
+                          style={{ color: "#007bff", textDecoration: "none" }}
+                          onMouseOver={(e) =>
+                            ((e.target as HTMLElement).style.textDecoration =
+                              "underline")
+                          }
+                          onMouseOut={(e) =>
+                            ((e.target as HTMLElement).style.textDecoration =
+                              "none")
+                          }
+                        >
+                          #{creationInfo.blockNumber}
+                        </a>
+                      </span>
+                    </div>
+                    <div className="info-item">
+                      <span className="label">Creator</span>
+                      <span className="value">
+                        <a
+                          href={`/chain/${currentChainId}/address/${creationInfo.creator}`}
+                          style={{ color: "#007bff", textDecoration: "none" }}
+                          onMouseOver={(e) =>
+                            ((e.target as HTMLElement).style.textDecoration =
+                              "underline")
+                          }
+                          onMouseOut={(e) =>
+                            ((e.target as HTMLElement).style.textDecoration =
+                              "none")
+                          }
+                        >
+                          {creationInfo.creator}
+                        </a>
+                      </span>
+                    </div>
+                    <div className="info-item">
+                      <span className="label">Creation Time</span>
+                      <span className="value">
+                        {new Date(
+                          creationInfo.timestamp * 1000
+                        ).toLocaleString()}
+                      </span>
+                    </div>
+                    <div className="info-item">
+                      <span className="label">Gas Used</span>
+                      <span className="value">
+                        {parseInt(creationInfo.gasUsed).toLocaleString()} gas
+                      </span>
+                    </div>
+                  </>
+                )}
+
+                {creationLoading && (
+                  <div className="info-item">
+                    <span className="label">Creation Info</span>
+                    <span className="value">Loading...</span>
+                  </div>
+                )}
+
+                {/* RPC错误提示 */}
+                {creationError && (
+                  <RpcFunctionError
+                    functionName="getContractCreationInfo"
+                    chainId={currentChainId}
+                    chainName={getChainName(currentChainId)}
+                    error={creationError}
+                    onConfigureRpc={() => setShowRpcConfig(true)}
+                    onRetry={fetchContractCreationInfo}
+                  />
+                )}
               </div>
-              <div className="info-item">
-                <span className="label">Verification Source</span>
-                <span className="value">
-                  {contractSource.verificationSource}
-                </span>
-              </div>
-              {contractSource.compilerVersion && (
-                <div className="info-item">
-                  <span className="label">Compiler Version</span>
-                  <span className="value">
-                    {contractSource.compilerVersion}
-                  </span>
-                </div>
-              )}
-              {contractSource.optimizationEnabled !== undefined && (
-                <div className="info-item">
-                  <span className="label">Optimization</span>
-                  <span className="value">
-                    {contractSource.optimizationEnabled
-                      ? "Enabled"
-                      : "Disabled"}
-                    {contractSource.optimizationRuns &&
-                      ` (${contractSource.optimizationRuns} runs)`}
-                  </span>
-                </div>
-              )}
-              {contractSource.isProxy && (
-                <div className="info-item">
-                  <span className="label">Proxy Type</span>
-                  <span className="value proxy-badge">
-                    🔗 {contractSource.proxyType?.toUpperCase() || "UNKNOWN"}{" "}
-                    Proxy
-                  </span>
-                </div>
-              )}
-              {contractSource.implementationAddress && (
-                <div className="info-item">
-                  <span className="label">Implementation</span>
-                  <span className="value">
-                    <a
-                      href={`/chain/${currentChainId}/contract/${contractSource.implementationAddress}`}
-                      style={{ color: "#007bff", textDecoration: "none" }}
-                      onMouseOver={(e) =>
-                        ((e.target as HTMLElement).style.textDecoration =
-                          "underline")
-                      }
-                      onMouseOut={(e) =>
-                        ((e.target as HTMLElement).style.textDecoration =
-                          "none")
-                      }
+            </div>
+
+            {contractSource.isProxy &&
+              contractSource.implementationContract && (
+                <div className={cardStyles}>
+                  <h2>Contract View</h2>
+                  <div
+                    style={{
+                      display: "flex",
+                      gap: "10px",
+                      marginBottom: "20px",
+                    }}
+                  >
+                    <button
+                      onClick={() => setShowImplementation(false)}
+                      style={{
+                        padding: "8px 16px",
+                        border: "1px solid #ddd",
+                        borderRadius: "4px",
+                        background: !showImplementation ? "#007bff" : "#fff",
+                        color: !showImplementation ? "#fff" : "#333",
+                        cursor: "pointer",
+                        fontSize: "14px",
+                      }}
                     >
-                      {contractSource.implementationAddress}
-                    </a>
-                  </span>
+                      Show Proxy Contract
+                    </button>
+                    <button
+                      onClick={() => setShowImplementation(true)}
+                      style={{
+                        padding: "8px 16px",
+                        border: "1px solid #ddd",
+                        borderRadius: "4px",
+                        background: showImplementation ? "#007bff" : "#fff",
+                        color: showImplementation ? "#fff" : "#333",
+                        cursor: "pointer",
+                        fontSize: "14px",
+                      }}
+                    >
+                      Show Implementation Contract
+                    </button>
+                  </div>
+                  <div style={{ fontSize: "14px", color: "#666" }}>
+                    Currently showing:{" "}
+                    <strong>
+                      {showImplementation
+                        ? `Implementation (${contractSource.implementationContract.name || "Unknown"})`
+                        : `Proxy (${contractSource.name || "Unknown"})`}
+                    </strong>
+                  </div>
                 </div>
               )}
 
-              {/* Contract Creation Information */}
-              {creationInfo && (
-                <>
-                  <div className="info-item">
-                    <span className="label">Creation Transaction</span>
-                    <span className="value">
-                      <a
-                        href={`/chain/${currentChainId}/tx/${creationInfo.txHash}`}
-                        style={{ color: "#007bff", textDecoration: "none" }}
-                        onMouseOver={(e) =>
-                          ((e.target as HTMLElement).style.textDecoration =
-                            "underline")
-                        }
-                        onMouseOut={(e) =>
-                          ((e.target as HTMLElement).style.textDecoration =
-                            "none")
-                        }
-                      >
-                        {creationInfo.txHash}
-                      </a>
-                    </span>
-                  </div>
-                  <div className="info-item">
-                    <span className="label">Creation Block</span>
-                    <span className="value">
-                      <a
-                        href={`/chain/${currentChainId}/block/${creationInfo.blockNumber}`}
-                        style={{ color: "#007bff", textDecoration: "none" }}
-                        onMouseOver={(e) =>
-                          ((e.target as HTMLElement).style.textDecoration =
-                            "underline")
-                        }
-                        onMouseOut={(e) =>
-                          ((e.target as HTMLElement).style.textDecoration =
-                            "none")
-                        }
-                      >
-                        #{creationInfo.blockNumber}
-                      </a>
-                    </span>
-                  </div>
-                  <div className="info-item">
-                    <span className="label">Creator</span>
-                    <span className="value">
-                      <a
-                        href={`/chain/${currentChainId}/address/${creationInfo.creator}`}
-                        style={{ color: "#007bff", textDecoration: "none" }}
-                        onMouseOver={(e) =>
-                          ((e.target as HTMLElement).style.textDecoration =
-                            "underline")
-                        }
-                        onMouseOut={(e) =>
-                          ((e.target as HTMLElement).style.textDecoration =
-                            "none")
-                        }
-                      >
-                        {creationInfo.creator}
-                      </a>
-                    </span>
-                  </div>
-                  <div className="info-item">
-                    <span className="label">Creation Time</span>
-                    <span className="value">
-                      {new Date(creationInfo.timestamp * 1000).toLocaleString()}
-                    </span>
-                  </div>
-                  <div className="info-item">
-                    <span className="label">Gas Used</span>
-                    <span className="value">
-                      {parseInt(creationInfo.gasUsed).toLocaleString()} gas
-                    </span>
-                  </div>
-                </>
-              )}
-
-              {creationLoading && (
-                <div className="info-item">
-                  <span className="label">Creation Info</span>
-                  <span className="value">Loading...</span>
-                </div>
-              )}
-
-              {/* RPC错误提示 */}
-              {creationError && (
-                <RpcFunctionError
-                  functionName="getContractCreationInfo"
-                  chainId={currentChainId}
-                  chainName={getChainName(currentChainId)}
-                  error={creationError}
-                  onConfigureRpc={() => setShowRpcConfig(true)}
-                  onRetry={fetchContractCreationInfo}
-                />
-              )}
-            </div>
-          </div>
-
-          {contractSource.isProxy && contractSource.implementationContract && (
-            <div className={cardStyles}>
-              <h2>Contract View</h2>
-              <div
-                style={{ display: "flex", gap: "10px", marginBottom: "20px" }}
+            <div className={tabsStyles}>
+              <button
+                className={`tab ${activeTab === "source" ? "active" : ""}`}
+                onClick={() => setActiveTab("source")}
               >
-                <button
-                  onClick={() => setShowImplementation(false)}
-                  style={{
-                    padding: "8px 16px",
-                    border: "1px solid #ddd",
-                    borderRadius: "4px",
-                    background: !showImplementation ? "#007bff" : "#fff",
-                    color: !showImplementation ? "#fff" : "#333",
-                    cursor: "pointer",
-                    fontSize: "14px",
-                  }}
-                >
-                  Show Proxy Contract
-                </button>
-                <button
-                  onClick={() => setShowImplementation(true)}
-                  style={{
-                    padding: "8px 16px",
-                    border: "1px solid #ddd",
-                    borderRadius: "4px",
-                    background: showImplementation ? "#007bff" : "#fff",
-                    color: showImplementation ? "#fff" : "#333",
-                    cursor: "pointer",
-                    fontSize: "14px",
-                  }}
-                >
-                  Show Implementation Contract
-                </button>
-              </div>
-              <div style={{ fontSize: "14px", color: "#666" }}>
-                Currently showing:{" "}
-                <strong>
-                  {showImplementation
-                    ? `Implementation (${contractSource.implementationContract.name || "Unknown"})`
-                    : `Proxy (${contractSource.name || "Unknown"})`}
-                </strong>
-              </div>
-            </div>
-          )}
-
-          <div className={tabsStyles}>
-            <button
-              className={`tab ${activeTab === "source" ? "active" : ""}`}
-              onClick={() => setActiveTab("source")}
-            >
-              Source Code
-            </button>
-            <button
-              className={`tab ${activeTab === "abi" ? "active" : ""}`}
-              onClick={() => setActiveTab("abi")}
-            >
-              ABI
-            </button>
-            {(() => {
-              const currentABI = getCurrentContractABI();
-              return (
-                currentABI &&
-                currentABI.functions.length > 0 && (
-                  <button
-                    className={`tab ${activeTab === "functions" ? "active" : ""}`}
-                    onClick={() => setActiveTab("functions")}
-                  >
-                    Functions ({currentABI.functions.length})
-                  </button>
-                )
-              );
-            })()}
-            {(() => {
-              const currentABI = getCurrentContractABI();
-              return (
-                currentABI &&
-                currentABI.events.length > 0 && (
-                  <button
-                    className={`tab ${activeTab === "events" ? "active" : ""}`}
-                    onClick={() => setActiveTab("events")}
-                  >
-                    Events ({currentABI.events.length})
-                  </button>
-                )
-              );
-            })()}
-            {(() => {
-              const currentABI = getCurrentContractABI();
-              return (
-                currentABI &&
-                (currentABI.functions.length > 0 ||
-                  currentABI.events.length > 0) && (
-                  <button
-                    className={`tab ${activeTab === "interact" ? "active" : ""}`}
-                    onClick={() => setActiveTab("interact")}
-                  >
-                    Interact
-                  </button>
-                )
-              );
-            })()}
-          </div>
-
-          {activeTab === "source" && (
-            <div className={cardStyles}>
-              <h2>Source Code</h2>
+                Source Code
+              </button>
+              <button
+                className={`tab ${activeTab === "abi" ? "active" : ""}`}
+                onClick={() => setActiveTab("abi")}
+              >
+                ABI
+              </button>
               {(() => {
-                const currentContract = getCurrentContract();
-                return currentContract?.sourceCode ? (
-                  <div className={codeStyles}>{currentContract.sourceCode}</div>
-                ) : (
-                  <div>No source code available</div>
+                const currentABI = getCurrentContractABI();
+                return (
+                  currentABI &&
+                  currentABI.functions.length > 0 && (
+                    <button
+                      className={`tab ${activeTab === "functions" ? "active" : ""}`}
+                      onClick={() => setActiveTab("functions")}
+                    >
+                      Functions ({currentABI.functions.length})
+                    </button>
+                  )
+                );
+              })()}
+              {(() => {
+                const currentABI = getCurrentContractABI();
+                return (
+                  currentABI &&
+                  currentABI.events.length > 0 && (
+                    <button
+                      className={`tab ${activeTab === "events" ? "active" : ""}`}
+                      onClick={() => setActiveTab("events")}
+                    >
+                      Events ({currentABI.events.length})
+                    </button>
+                  )
+                );
+              })()}
+              {(() => {
+                const currentABI = getCurrentContractABI();
+                return (
+                  currentABI &&
+                  (currentABI.functions.length > 0 ||
+                    currentABI.events.length > 0) && (
+                    <button
+                      className={`tab ${activeTab === "interact" ? "active" : ""}`}
+                      onClick={() => setActiveTab("interact")}
+                    >
+                      Interact
+                    </button>
+                  )
                 );
               })()}
             </div>
-          )}
 
-          {activeTab === "abi" && (
-            <div className={cardStyles}>
-              <h2>Contract ABI</h2>
-              <div className={codeStyles}>
+            {activeTab === "source" && (
+              <div className={cardStyles}>
+                <h2>Source Code</h2>
                 {(() => {
                   const currentContract = getCurrentContract();
-                  return currentContract?.abi
-                    ? JSON.stringify(JSON.parse(currentContract.abi), null, 2)
-                    : "No ABI available";
+                  return currentContract?.sourceCode ? (
+                    <div className={codeStyles}>
+                      {currentContract.sourceCode}
+                    </div>
+                  ) : (
+                    <div>No source code available</div>
+                  );
                 })()}
               </div>
-            </div>
-          )}
+            )}
 
-          {activeTab === "functions" && (
-            <div className={cardStyles}>
-              <h2>Contract Functions</h2>
-              {(() => {
-                const currentABI = getCurrentContractABI();
-                return currentABI && currentABI.functions.length > 0 ? (
-                  <div className={functionListStyles}>
-                    {currentABI.functions.map((func, index) => (
-                      <div key={index} className={`function-item ${func.type}`}>
-                        <div className="function-signature">
-                          {func.name}(
-                          {func.inputs
-                            .map((input) => `${input.type} ${input.name}`)
-                            .join(", ")}
-                          )
+            {activeTab === "abi" && (
+              <div className={cardStyles}>
+                <h2>Contract ABI</h2>
+                <div className={codeStyles}>
+                  {(() => {
+                    const currentContract = getCurrentContract();
+                    return currentContract?.abi
+                      ? JSON.stringify(JSON.parse(currentContract.abi), null, 2)
+                      : "No ABI available";
+                  })()}
+                </div>
+              </div>
+            )}
+
+            {activeTab === "functions" && (
+              <div className={cardStyles}>
+                <h2>Contract Functions</h2>
+                {(() => {
+                  const currentABI = getCurrentContractABI();
+                  return currentABI && currentABI.functions.length > 0 ? (
+                    <div className={functionListStyles}>
+                      {currentABI.functions.map((func, index) => (
+                        <div
+                          key={index}
+                          className={`function-item ${func.type}`}
+                        >
+                          <div className="function-signature">
+                            {func.name}(
+                            {func.inputs
+                              .map((input) => `${input.type} ${input.name}`)
+                              .join(", ")}
+                            )
+                          </div>
+                          <span className="function-type">{func.type}</span>
                         </div>
-                        <span className="function-type">{func.type}</span>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div>No functions found</div>
-                );
-              })()}
-            </div>
-          )}
+                      ))}
+                    </div>
+                  ) : (
+                    <div>No functions found</div>
+                  );
+                })()}
+              </div>
+            )}
 
-          {activeTab === "events" && (
-            <div className={cardStyles}>
-              <h2>Contract Events</h2>
-              {(() => {
-                const currentABI = getCurrentContractABI();
-                return currentABI && currentABI.events.length > 0 ? (
-                  <div className={functionListStyles}>
-                    {currentABI.events.map((event, index) => (
-                      <div key={index} className="function-item">
-                        <div className="function-signature">
-                          {event.signature}
+            {activeTab === "events" && (
+              <div className={cardStyles}>
+                <h2>Contract Events</h2>
+                {(() => {
+                  const currentABI = getCurrentContractABI();
+                  return currentABI && currentABI.events.length > 0 ? (
+                    <div className={functionListStyles}>
+                      {currentABI.events.map((event, index) => (
+                        <div key={index} className="function-item">
+                          <div className="function-signature">
+                            {event.signature}
+                          </div>
+                          <span className="function-type">Event</span>
                         </div>
-                        <span className="function-type">Event</span>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div>No events found</div>
-                );
-              })()}
-            </div>
-          )}
+                      ))}
+                    </div>
+                  ) : (
+                    <div>No events found</div>
+                  );
+                })()}
+              </div>
+            )}
 
-          {activeTab === "interact" && (
-            <ContractInteract
-              chainId={currentChainId}
-              contractAddress={address!}
-              contractSource={getCurrentContract()}
-            />
-          )}
-        </>
-      )}
+            {activeTab === "interact" && (
+              <ContractInteract
+                chainId={currentChainId}
+                contractAddress={address!}
+                contractSource={getCurrentContract()}
+              />
+            )}
+          </>
+        )}
 
-      {/* RPC 配置弹窗 */}
-      <BackendRpcConfig
-        isOpen={showRpcConfig}
-        onClose={() => setShowRpcConfig(false)}
-        chainId={currentChainId}
-        onConfigSaved={() => {
-          setCreationError(null);
-          fetchContractCreationInfo();
-        }}
-      />
-    </div>
+        {/* RPC 配置弹窗 */}
+        <BackendRpcConfig
+          isOpen={showRpcConfig}
+          onClose={() => setShowRpcConfig(false)}
+          chainId={currentChainId}
+          onConfigSaved={() => {
+            setCreationError(null);
+            fetchContractCreationInfo();
+          }}
+        />
+      </div>
+    </>
   );
 }
 
@@ -1379,4 +1418,3 @@ function FunctionCallForm({
     </div>
   );
 }
-
