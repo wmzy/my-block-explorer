@@ -29,6 +29,7 @@ export class MemoryDatabase {
     this.tables.set("user_preferences", []);
     this.tables.set("access_history", []);
     this.tables.set("contract_sources", []);
+    this.tables.set("contract_creation_info", []);
 
     this.isInitialized = true;
     console.log(
@@ -220,7 +221,9 @@ export class MemoryDatabase {
       return [];
     }
 
-    const columns = columnsMatch[1].split(",").map((col) => col.trim());
+    const columns = columnsMatch[1]
+      .split(",")
+      .map((col) => col.trim().replace(/["`]/g, ""));
 
     // 创建新记录
     const newRecord: QueryResult = {};
@@ -228,13 +231,29 @@ export class MemoryDatabase {
       newRecord[col] = params[index];
     });
 
+    // 添加自动递增ID（如果需要）
+    if (
+      !newRecord.id &&
+      (tableName === "user_rpc_configs" ||
+        tableName === "blocks" ||
+        tableName === "transactions")
+    ) {
+      const maxId = table.reduce((max, row) => Math.max(max, row.id || 0), 0);
+      newRecord.id = maxId + 1;
+    }
+
     // 添加时间戳
     if (
       !newRecord.created_at &&
       !newRecord.indexed_at &&
       !newRecord.updated_at
     ) {
-      newRecord.indexed_at = new Date().toISOString();
+      if (tableName === "user_rpc_configs") {
+        newRecord.created_at = new Date().toISOString();
+        newRecord.updated_at = new Date().toISOString();
+      } else {
+        newRecord.indexed_at = new Date().toISOString();
+      }
     }
 
     // 检查是否是REPLACE操作
@@ -280,16 +299,116 @@ export class MemoryDatabase {
    * 处理UPDATE查询
    */
   private handleUpdate(sql: string, params: any[]): QueryResult[] {
-    // 简化实现：暂时返回空结果
-    return [];
+    const tableMatch = sql.match(/update\s+(\w+)\s+set/i);
+    if (!tableMatch) {
+      return [];
+    }
+
+    const tableName = tableMatch[1];
+    const table = this.tables.get(tableName);
+
+    if (!table) {
+      return [];
+    }
+
+    // 提取SET子句
+    const setMatch = sql.match(/set\s+(.*?)(?:\s+where|$)/i);
+    if (!setMatch) {
+      return [];
+    }
+
+    const setClause = setMatch[1];
+    const assignments = setClause.split(",").map((a) => a.trim());
+
+    // 提取WHERE子句
+    const whereMatch = sql.match(/where\s+(.*?)$/i);
+    let whereClause = "";
+    if (whereMatch) {
+      whereClause = whereMatch[1];
+    }
+
+    // 简单的WHERE解析（仅支持 column = ? 格式）
+    let paramIndex = 0;
+    const updates: Record<string, any> = {};
+
+    // 解析SET参数
+    for (const assignment of assignments) {
+      const [column] = assignment.split("=").map((s) => s.trim());
+      updates[column] = params[paramIndex++];
+    }
+
+    // 解析WHERE条件
+    let whereCondition: (row: QueryResult) => boolean = () => true;
+    if (whereClause) {
+      const conditionMatch = whereClause.match(/(\w+)\s*=\s*\?/);
+      if (conditionMatch) {
+        const whereColumn = conditionMatch[1];
+        const whereValue = params[paramIndex++];
+        whereCondition = (row) => row[whereColumn] === whereValue;
+      }
+    }
+
+    // 更新匹配的行
+    const updatedRows: QueryResult[] = [];
+    for (const row of table) {
+      if (whereCondition(row)) {
+        Object.assign(row, updates);
+        if (!row.updated_at && updates.updated_at !== undefined) {
+          row.updated_at = new Date().toISOString();
+        }
+        updatedRows.push(row);
+      }
+    }
+
+    return updatedRows;
   }
 
   /**
    * 处理DELETE查询
    */
   private handleDelete(sql: string, params: any[]): QueryResult[] {
-    // 简化实现：暂时返回空结果
-    return [];
+    const tableMatch = sql.match(/delete\s+from\s+(\w+)/i);
+    if (!tableMatch) {
+      return [];
+    }
+
+    const tableName = tableMatch[1];
+    const table = this.tables.get(tableName);
+
+    if (!table) {
+      return [];
+    }
+
+    // 提取WHERE子句
+    const whereMatch = sql.match(/where\s+(.*?)$/i);
+    if (!whereMatch) {
+      // 没有WHERE子句，删除所有记录
+      const deletedRows = [...table];
+      table.length = 0;
+      return deletedRows;
+    }
+
+    const whereClause = whereMatch[1];
+
+    // 简单的WHERE解析（仅支持 column = ? 格式）
+    const conditionMatch = whereClause.match(/(\w+)\s*=\s*\?/);
+    if (!conditionMatch) {
+      return [];
+    }
+
+    const whereColumn = conditionMatch[1];
+    const whereValue = params[0];
+
+    // 找到并删除匹配的行
+    const deletedRows: QueryResult[] = [];
+    for (let i = table.length - 1; i >= 0; i--) {
+      if (table[i][whereColumn] === whereValue) {
+        deletedRows.push(table[i]);
+        table.splice(i, 1);
+      }
+    }
+
+    return deletedRows;
   }
 
   /**

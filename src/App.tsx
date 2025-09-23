@@ -11,6 +11,8 @@ import AddressPage from "./pages/AddressPage";
 import BlockPage from "./pages/BlockPage";
 import TransactionPage from "./pages/TransactionPage";
 import ContractPage from "./pages/ContractPage";
+import RpcErrorAlert from "./components/RpcErrorAlert";
+import RpcConfigModal from "./components/RpcConfigModal";
 import { globalStyles } from "@/styles/global";
 import {
   SUPPORTED_CHAINS,
@@ -22,6 +24,7 @@ import {
   getSortedChains,
   searchChains,
 } from "@/config/chains";
+import type { RpcError } from "./types/rpc";
 
 type HealthData = {
   status: string;
@@ -296,6 +299,8 @@ function HomePage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResult, setSearchResult] = useState<SearchResult | null>(null);
   const [loading, setLoading] = useState(false);
+  const [rpcError, setRpcError] = useState<RpcError | null>(null);
+  const [showRpcConfig, setShowRpcConfig] = useState(false);
 
   // 如果链不支持，重定向到以太坊主网
   useEffect(() => {
@@ -355,6 +360,23 @@ function HomePage() {
       }
     } catch (error) {
       console.error("Search failed:", error);
+
+      // 检查是否是RPC相关错误
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      if (
+        errorMessage.includes("503") ||
+        errorMessage.includes("no backends available") ||
+        errorMessage.includes("RPC") ||
+        errorMessage.includes("connection")
+      ) {
+        setRpcError({
+          chainId: currentChainId,
+          error: errorMessage,
+          suggestion: `当前链 ${chainInfo.name} 的 RPC 节点可能不可用。建议配置备用的 RPC 节点以确保稳定连接。`,
+        });
+      }
+
       // 如果链特定API不存在，回退到通用搜索
       try {
         const response = await fetch(
@@ -402,11 +424,52 @@ function HomePage() {
           >
             🚀 Block Explorer
           </h1>
-          <ChainSelector
-            currentChainId={currentChainId}
-            onChainChange={handleChainChange}
-          />
+          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+            <button
+              onClick={() => setShowRpcConfig(true)}
+              style={{
+                background: "white",
+                border: "1px solid #d1d5db",
+                borderRadius: "8px",
+                padding: "8px 12px",
+                cursor: "pointer",
+                fontSize: "14px",
+                color: "#374151",
+                display: "flex",
+                alignItems: "center",
+                gap: "6px",
+                transition: "all 0.2s",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "#f9fafb";
+                e.currentTarget.style.borderColor = "#9ca3af";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "white";
+                e.currentTarget.style.borderColor = "#d1d5db";
+              }}
+              title="RPC 节点配置"
+            >
+              ⚙️ RPC
+            </button>
+            <ChainSelector
+              currentChainId={currentChainId}
+              onChainChange={handleChainChange}
+            />
+          </div>
         </div>
+
+        {/* RPC 错误提示 */}
+        {rpcError && (
+          <RpcErrorAlert
+            error={rpcError}
+            onConfigureRpc={() => {
+              setShowRpcConfig(true);
+              setRpcError(null);
+            }}
+            onDismiss={() => setRpcError(null)}
+          />
+        )}
 
         {/* 当前链信息 */}
         <div
@@ -582,6 +645,13 @@ function HomePage() {
             🎉 当前链: {chainInfo.name} (Chain ID: {chainInfo.id})
           </p>
         </div>
+
+        {/* RPC 配置弹窗 */}
+        <RpcConfigModal
+          isOpen={showRpcConfig}
+          onClose={() => setShowRpcConfig(false)}
+          chainId={currentChainId}
+        />
       </div>
     </div>
   );

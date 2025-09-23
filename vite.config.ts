@@ -18,13 +18,26 @@ function honoApiPlugin(): Plugin {
           // Restore the full path including /api prefix
           const fullPath = "/api" + (req.url || "");
           const url = new URL(fullPath, `http://${req.headers.host}`);
+
+          // Handle request body for POST/PUT/PATCH requests
+          let body: string | undefined = undefined;
+          if (req.method !== "GET" && req.method !== "HEAD") {
+            body = await new Promise<string>((resolve, reject) => {
+              let data = "";
+              req.on("data", (chunk) => {
+                data += chunk;
+              });
+              req.on("end", () => {
+                resolve(data);
+              });
+              req.on("error", reject);
+            });
+          }
+
           const request = new Request(url.toString(), {
             method: req.method,
             headers: req.headers as Record<string, string>,
-            body:
-              req.method !== "GET" && req.method !== "HEAD"
-                ? JSON.stringify(req.body)
-                : undefined,
+            body: body,
           });
 
           // Get response from Hono app
@@ -39,8 +52,8 @@ function honoApiPlugin(): Plugin {
           });
 
           // Send body
-          const body = await response.text();
-          res.end(body);
+          const responseBody = await response.text();
+          res.end(responseBody);
         } catch (error) {
           console.error("API Error:", error);
           res.statusCode = 500;

@@ -15,6 +15,7 @@ import { addressService } from "./services/AddressService";
 import { contractSourceService } from "./services/ContractSourceService";
 import { contractInteractionService } from "./services/ContractInteractionService";
 import { rpcManager } from "./services/RpcManager";
+import { db } from "./database/init";
 import {
   formatBlockForApi,
   formatTransactionForApi,
@@ -757,6 +758,10 @@ app.post("/api/chains/:chainId/contracts/:address/simulate", async (c) => {
       targetABI = contractSource.implementationContract.abi;
     }
 
+    if (!targetABI) {
+      return c.json({ error: "Contract ABI not available" }, 400);
+    }
+
     const result = await contractInteractionService.simulateContractWithABI({
       chainId,
       contractAddress: targetAddress,
@@ -831,6 +836,10 @@ app.post("/api/chains/:chainId/contracts/:address/estimate-gas", async (c) => {
       targetABI = contractSource.implementationContract.abi;
     }
 
+    if (!targetABI) {
+      return c.json({ error: "Contract ABI not available" }, 400);
+    }
+
     const gasEstimate =
       await contractInteractionService.estimateContractGasWithABI({
         chainId,
@@ -898,6 +907,62 @@ app.get("/api/chains/:chainId/contracts/stats", async (c) => {
   }
 });
 
+// GET /api/chains/:chainId/contracts/:address/creation - 获取合约创建信息
+app.get("/api/chains/:chainId/contracts/:address/creation", async (c) => {
+  const chainId = parseInt(c.req.param("chainId"));
+  const address = c.req.param("address");
+
+  if (isNaN(chainId) || !isChainSupported(chainId)) {
+    return c.json({ error: "Unsupported chain" }, 400);
+  }
+
+  if (!address || !/^0x[a-fA-F0-9]{40}$/.test(address)) {
+    return c.json({ error: "Invalid contract address" }, 400);
+  }
+
+  try {
+    const creationInfo = await contractSourceService.getContractCreationInfo(
+      chainId,
+      address.toLowerCase()
+    );
+
+    c.header("X-Data-Source", "rpc");
+    c.header("X-Chain-Name", getChainName(chainId));
+
+    if (!creationInfo) {
+      return c.json({
+        chainId,
+        chainName: getChainName(chainId),
+        contractAddress: address.toLowerCase(),
+        found: false,
+        message: "Contract creation information not found",
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    const responseData = safeJsonResponse({
+      chainId,
+      chainName: getChainName(chainId),
+      contractAddress: address.toLowerCase(),
+      found: true,
+      creation: {
+        txHash: creationInfo.txHash,
+        blockNumber: creationInfo.blockNumber,
+        creator: creationInfo.creator,
+        timestamp: creationInfo.timestamp,
+        gasUsed: creationInfo.gasUsed.toString(),
+        gasPrice: creationInfo.gasPrice.toString(),
+      },
+      timestamp: new Date().toISOString(),
+    });
+
+    return c.json(responseData);
+  } catch (error) {
+    console.error("Contract creation info API error:", error);
+    return c.json({ error: "Failed to get contract creation info" }, 500);
+  }
+});
+
 app.onError((err, c) => {
   console.error("API Error:", err);
   return c.json(
@@ -907,6 +972,108 @@ app.onError((err, c) => {
     },
     500
   );
+});
+
+// RPC配置管理API
+app.get("/api/rpc-configs", async (c) => {
+  try {
+    const configs = await db.query<{
+      id: number;
+      chain_id: number;
+      name: string;
+      url: string;
+      is_custom: boolean;
+      supports_history: boolean | null;
+      max_event_range: number | null;
+    }>(`SELECT * FROM user_rpc_configs ORDER BY chain_id`);
+
+    return c.json({
+      configs: configs.map((config) => ({
+        id: config.id.toString(),
+        chainId: config.chain_id,
+        name: config.name,
+        url: config.url,
+        isCustom: Boolean(config.is_custom),
+        supportsHistory: config.supports_history,
+        maxEventRange: config.max_event_range,
+      })),
+    });
+  } catch (error) {
+    console.error("Failed to get RPC configs:", error);
+    return c.json({ error: "Failed to get RPC configs" }, 500);
+  }
+});
+
+app.post("/api/rpc-configs", async (c) => {
+  try {
+    const body = await c.req.json();
+    const { chainId, name, url, supportsHistory, maxEventRange } = body;
+
+    if (!chainId || !name || !url) {
+      return c.json({ error: "Missing required fields" }, 400);
+    }
+
+    // 检查链ID是否已存在，如果存在则更新
+    const existing = await db.query<{ id: number }>(
+      `SELECT id FROM user_rpc_configs WHERE chain_id = ?`,
+      [chainId]
+    );
+
+    if (existing.length > 0) {
+      // 更新现有配置
+      await db.query(
+        `UPDATE user_rpc_configs SET 
+         name = ?, url = ?, supports_history = ?, max_event_range = ?, updated_at = ?
+         WHERE chain_id = ?`,
+        [
+          name,
+          url,
+          supportsHistory,
+          maxEventRange,
+          new Date().toISOString(),
+          chainId,
+        ]
+      );
+    } else {
+      // 插入新配置
+      await db.query(
+        `INSERT INTO user_rpc_configs (chain_id, name, url, supports_history, max_event_range) 
+         VALUES (?, ?, ?, ?, ?)`,
+        [chainId, name, url, supportsHistory, maxEventRange]
+      );
+    }
+
+    // 重新加载RPC配置
+    await rpcManager.reloadConfigs();
+
+    return c.json({ success: true });
+  } catch (error) {
+    console.error("Failed to save RPC config:", error);
+    console.error("Error details:", error.stack);
+    return c.json({ error: "Failed to save RPC config" }, 500);
+  }
+});
+
+app.delete("/api/rpc-configs/:chainId", async (c) => {
+  try {
+    const chainId = parseInt(c.req.param("chainId"));
+
+    if (isNaN(chainId)) {
+      return c.json({ error: "Invalid chain ID" }, 400);
+    }
+
+    await db.query(`DELETE FROM user_rpc_configs WHERE chain_id = ?`, [
+      chainId,
+    ]);
+
+    // 重新加载RPC配置
+    await rpcManager.reloadConfigs();
+
+    return c.json({ success: true });
+  } catch (error) {
+    console.error("Failed to delete RPC config:", error);
+    return c.json({ error: "Failed to delete RPC config" }, 500);
+  }
 });
 
 export default app;

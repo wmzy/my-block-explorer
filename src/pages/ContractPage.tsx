@@ -9,6 +9,8 @@ import {
   estimateContractGas,
   type ContractFunction,
 } from "../utils/contractInteraction";
+import RpcFunctionError from "../components/RpcFunctionError";
+import BackendRpcConfig from "../components/BackendRpcConfig";
 
 type ContractSource = {
   chainId: number;
@@ -34,6 +36,15 @@ type ContractSource = {
   proxyType?: "transparent" | "uups" | "beacon" | "minimal" | "unknown";
   implementationAddress?: string;
   implementationContract?: ContractSource;
+};
+
+type ContractCreationInfo = {
+  txHash: string;
+  blockNumber: number;
+  creator: string;
+  timestamp: number;
+  gasUsed: string;
+  gasPrice: string;
 };
 
 // ContractFunction 类型现在从 contractInteraction 导入
@@ -273,8 +284,14 @@ export default function ContractPage() {
     null
   );
   const [contractABI, setContractABI] = useState<ContractABI | null>(null);
+  const [creationInfo, setCreationInfo] = useState<ContractCreationInfo | null>(
+    null
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [creationLoading, setCreationLoading] = useState(false);
+  const [creationError, setCreationError] = useState<string | null>(null);
+  const [showRpcConfig, setShowRpcConfig] = useState(false);
   const [activeTab, setActiveTab] = useState<
     "source" | "abi" | "functions" | "events" | "interact" | "implementation"
   >("source");
@@ -335,6 +352,7 @@ export default function ContractPage() {
     if (!chainId || !address) return;
 
     fetchContractData();
+    fetchContractCreationInfo();
   }, [chainId, address]);
 
   const fetchContractData = async () => {
@@ -380,6 +398,42 @@ export default function ContractPage() {
       );
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchContractCreationInfo = async () => {
+    if (!chainId || !address) return;
+
+    setCreationLoading(true);
+    setCreationError(null);
+
+    try {
+      const response = await fetch(
+        `/api/chains/${currentChainId}/contracts/${address}/creation`
+      );
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.found) {
+          setCreationInfo(data.creation);
+        } else {
+          // 没有找到创建信息，可能是RPC节点限制
+          setCreationError(
+            "无法获取合约创建信息，可能是RPC节点不支持历史状态查询"
+          );
+        }
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        setCreationError(
+          errorData.error || `HTTP ${response.status}: ${response.statusText}`
+        );
+      }
+    } catch (err) {
+      console.error("Failed to fetch contract creation info:", err);
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      setCreationError(errorMessage);
+    } finally {
+      setCreationLoading(false);
     }
   };
 
@@ -496,6 +550,100 @@ export default function ContractPage() {
                     </a>
                   </span>
                 </div>
+              )}
+
+              {/* Contract Creation Information */}
+              {creationInfo && (
+                <>
+                  <div className="info-item">
+                    <span className="label">Creation Transaction</span>
+                    <span className="value">
+                      <a
+                        href={`/chain/${currentChainId}/tx/${creationInfo.txHash}`}
+                        style={{ color: "#007bff", textDecoration: "none" }}
+                        onMouseOver={(e) =>
+                          ((e.target as HTMLElement).style.textDecoration =
+                            "underline")
+                        }
+                        onMouseOut={(e) =>
+                          ((e.target as HTMLElement).style.textDecoration =
+                            "none")
+                        }
+                      >
+                        {creationInfo.txHash}
+                      </a>
+                    </span>
+                  </div>
+                  <div className="info-item">
+                    <span className="label">Creation Block</span>
+                    <span className="value">
+                      <a
+                        href={`/chain/${currentChainId}/block/${creationInfo.blockNumber}`}
+                        style={{ color: "#007bff", textDecoration: "none" }}
+                        onMouseOver={(e) =>
+                          ((e.target as HTMLElement).style.textDecoration =
+                            "underline")
+                        }
+                        onMouseOut={(e) =>
+                          ((e.target as HTMLElement).style.textDecoration =
+                            "none")
+                        }
+                      >
+                        #{creationInfo.blockNumber}
+                      </a>
+                    </span>
+                  </div>
+                  <div className="info-item">
+                    <span className="label">Creator</span>
+                    <span className="value">
+                      <a
+                        href={`/chain/${currentChainId}/address/${creationInfo.creator}`}
+                        style={{ color: "#007bff", textDecoration: "none" }}
+                        onMouseOver={(e) =>
+                          ((e.target as HTMLElement).style.textDecoration =
+                            "underline")
+                        }
+                        onMouseOut={(e) =>
+                          ((e.target as HTMLElement).style.textDecoration =
+                            "none")
+                        }
+                      >
+                        {creationInfo.creator}
+                      </a>
+                    </span>
+                  </div>
+                  <div className="info-item">
+                    <span className="label">Creation Time</span>
+                    <span className="value">
+                      {new Date(creationInfo.timestamp * 1000).toLocaleString()}
+                    </span>
+                  </div>
+                  <div className="info-item">
+                    <span className="label">Gas Used</span>
+                    <span className="value">
+                      {parseInt(creationInfo.gasUsed).toLocaleString()} gas
+                    </span>
+                  </div>
+                </>
+              )}
+
+              {creationLoading && (
+                <div className="info-item">
+                  <span className="label">Creation Info</span>
+                  <span className="value">Loading...</span>
+                </div>
+              )}
+
+              {/* RPC错误提示 */}
+              {creationError && (
+                <RpcFunctionError
+                  functionName="getContractCreationInfo"
+                  chainId={currentChainId}
+                  chainName={getChainName(currentChainId)}
+                  error={creationError}
+                  onConfigureRpc={() => setShowRpcConfig(true)}
+                  onRetry={fetchContractCreationInfo}
+                />
               )}
             </div>
           </div>
@@ -691,6 +839,17 @@ export default function ContractPage() {
           )}
         </>
       )}
+
+      {/* RPC 配置弹窗 */}
+      <BackendRpcConfig
+        isOpen={showRpcConfig}
+        onClose={() => setShowRpcConfig(false)}
+        chainId={currentChainId}
+        onConfigSaved={() => {
+          setCreationError(null);
+          fetchContractCreationInfo();
+        }}
+      />
     </div>
   );
 }

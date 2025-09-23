@@ -1,7 +1,7 @@
 import { createPublicClient, http, PublicClient } from "viem";
 import {
   getChainInfo,
-  getEffectiveRpcUrl,
+  getDefaultRpcUrl,
   type UserRpcConfig,
 } from "../config/chains";
 import { db } from "../database/init";
@@ -24,13 +24,23 @@ export class RpcManager {
     this.loadUserConfigs();
   }
 
+  // 重新加载RPC配置
+  async reloadConfigs(): Promise<void> {
+    this.userConfigs.clear();
+    this.clients.clear();
+    await this.loadUserConfigs();
+  }
+
   // 加载用户RPC配置
   private async loadUserConfigs(): Promise<void> {
     const loadConfigs = createRetryableDbCall(async () => {
       const configs = await db.query<{
         chain_id: number;
-        custom_rpc_url?: string;
-        rpc_backup_urls?: string;
+        name: string;
+        url: string;
+        is_custom: boolean;
+        supports_history: boolean | null;
+        max_event_range: number | null;
         timeout_ms?: number;
         retry_count?: number;
         rate_limit?: number;
@@ -39,10 +49,8 @@ export class RpcManager {
       for (const config of configs) {
         this.userConfigs.set(config.chain_id, {
           chainId: config.chain_id,
-          customRpcUrl: config.custom_rpc_url || undefined,
-          rpcBackups: config.rpc_backup_urls
-            ? JSON.parse(config.rpc_backup_urls)
-            : undefined,
+          customRpcUrl: config.url,
+          rpcBackups: undefined, // 暂时不支持备用RPC
           timeout: config.timeout_ms || 10000,
           retryCount: config.retry_count || 3,
           rateLimit: config.rate_limit || 100,
@@ -61,6 +69,12 @@ export class RpcManager {
   async getClient(chainId: number): Promise<PublicClient> {
     if (!this.clients.has(chainId)) {
       try {
+        console.log(`🔗 Creating new RPC client for chain ${chainId}`);
+        const config = this.userConfigs.get(chainId);
+        console.log(
+          `   Config found: ${!!config}, Custom RPC: ${config?.customRpcUrl}`
+        );
+
         const client = await this.createClient(chainId);
         this.clients.set(chainId, client);
       } catch (error) {
@@ -86,7 +100,9 @@ export class RpcManager {
 
     // 获取有效的RPC URL（用户配置优先，否则viem默认）
     const userConfig = this.userConfigs.get(chainId);
-    const rpcUrl = getEffectiveRpcUrl(chainId, userConfig);
+    const rpcUrl = userConfig?.customRpcUrl || getDefaultRpcUrl(chainId);
+
+    console.log(`   Creating client with RPC URL: ${rpcUrl}`);
 
     return createPublicClient({
       chain: viemChain,
