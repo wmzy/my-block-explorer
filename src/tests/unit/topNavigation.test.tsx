@@ -110,20 +110,21 @@ describe('TopNavigation', () => {
     });
   });
 
-  it.skip('handles search on Enter key press', async () => {
+  it.skip("handles search on Enter key press", async () => {
     const onSearch = vi.fn();
     renderTopNavigation({ onSearch });
-    
-    const searchInput = screen.getByPlaceholderText('搜索地址、交易哈希或区块号...');
-    
+
+    const searchInput =
+      screen.getByPlaceholderText("搜索地址、交易哈希或区块号...");
+
     // Type and press Enter
     await act(async () => {
-      fireEvent.change(searchInput, { target: { value: '0x456' } });
-      fireEvent.keyPress(searchInput, { key: 'Enter' });
+      fireEvent.change(searchInput, { target: { value: "0x456" } });
+      fireEvent.keyPress(searchInput, { key: "Enter" });
     });
-    
+
     await waitFor(() => {
-      expect(onSearch).toHaveBeenCalledWith('0x456');
+      expect(onSearch).toHaveBeenCalledWith("0x456");
     });
   });
 

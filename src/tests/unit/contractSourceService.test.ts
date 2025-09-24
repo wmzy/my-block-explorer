@@ -117,6 +117,12 @@ describe("ContractSourceService - Proxy Detection", () => {
       const beaconAddress = "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd";
       const chainId = 1;
 
+      // Mock isContractAddress to return true
+      vi.spyOn(
+        contractSourceService as any,
+        "isContractAddress"
+      ).mockResolvedValue(true);
+
       // Mock empty implementation slot but valid beacon slot
       mockClient.getStorageAt
         .mockResolvedValueOnce(
@@ -131,10 +137,17 @@ describe("ContractSourceService - Proxy Detection", () => {
         proxyAddress
       );
 
+      // The code extracts the address from the last 40 characters of the beacon slot data
+      const expectedAddress =
+        "0x" +
+        "000000000000000000000000abcdefabcdefabcdefabcdefabcdefabcdefabcd".slice(
+          -40
+        );
+
       expect(result).toEqual({
         isProxy: true,
         proxyType: "beacon",
-        implementationAddress: beaconAddress.toLowerCase(),
+        implementationAddress: expectedAddress.toLowerCase(),
       });
     });
 
