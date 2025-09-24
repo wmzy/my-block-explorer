@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
 import '@testing-library/jest-dom';
 import TopNavigation from '../../components/TopNavigation';
@@ -117,8 +117,10 @@ describe('TopNavigation', () => {
     const searchInput = screen.getByPlaceholderText('搜索地址、交易哈希或区块号...');
     
     // Type and press Enter
-    fireEvent.change(searchInput, { target: { value: '0x456' } });
-    fireEvent.keyPress(searchInput, { key: 'Enter', code: 'Enter' });
+    await act(async () => {
+      fireEvent.change(searchInput, { target: { value: '0x456' } });
+      fireEvent.keyPress(searchInput, { key: 'Enter' });
+    });
     
     await waitFor(() => {
       expect(onSearch).toHaveBeenCalledWith('0x456');
@@ -172,7 +174,11 @@ describe('TopNavigation', () => {
     renderTopNavigation({ currentChainId: 5000 });
     
     const logo = screen.getByText('Block Explorer');
-    expect(logo.closest('a')).toHaveAttribute('href', '/chain/5000');
+    expect(logo.closest('div')).toHaveStyle('cursor: pointer');
+    
+    // Test click functionality
+    fireEvent.click(logo);
+    expect(mockNavigate).toHaveBeenCalledWith('/chain/5000');
   });
 
   it('uses custom search placeholder', () => {
