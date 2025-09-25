@@ -11,7 +11,7 @@ import {
 } from "../utils/contractInteraction";
 import TopNavigation from "../components/TopNavigation";
 import RpcFunctionError from "../components/RpcFunctionError";
-import BackendRpcConfig from "../components/BackendRpcConfig";
+import RpcConfig from "../components/RpcConfig";
 
 type ContractSource = {
   chainId: number;
@@ -879,7 +879,7 @@ export default function ContractPage() {
         )}
 
         {/* RPC 配置弹窗 */}
-        <BackendRpcConfig
+        <RpcConfig
           isOpen={showRpcConfig}
           onClose={() => setShowRpcConfig(false)}
           chainId={currentChainId}

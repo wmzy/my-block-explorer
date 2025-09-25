@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import RpcConfigModal from "./RpcConfigModal";
+import RpcConfig from "./RpcConfig";
 import {
   SUPPORTED_CHAINS,
   getChainInfo,
@@ -465,7 +465,7 @@ export default function TopNavigation({
       </nav>
 
       {/* RPC 配置弹窗 */}
-      <RpcConfigModal
+      <RpcConfig
         isOpen={showRpcConfig}
         onClose={() => setShowRpcConfig(false)}
         chainId={currentChainId}
