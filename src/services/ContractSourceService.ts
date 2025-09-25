@@ -717,12 +717,51 @@ export class ContractSourceService {
         console.log(`   Is proxy: ${cached.isProxy || false}`);
         console.log(`   Last checked: ${cached.lastChecked}`);
 
-        // 对于已验证的合约，直接返回缓存（包括代理信息）
+        // 对于已验证的合约，检查是否需要更新代理信息
         if (cached.verificationStatus === "verified") {
-          console.log(
-            `✅ Returning cached verified contract (no proxy re-check needed)`
-          );
-          return cached;
+          // 如果缓存中代理信息缺失或可能不准确，需要重新检测
+          if (
+            cached.isProxy === undefined ||
+            cached.isProxy === null ||
+            (cached.isProxy === false &&
+              !cached.implementationAddress &&
+              !cached.proxyType)
+          ) {
+            console.log(
+              `📋 Cached verified contract missing or incomplete proxy info, checking...`
+            );
+            const proxyInfo = await this.detectProxy(chainId, address);
+            if (proxyInfo.isProxy) {
+              console.log(
+                `⚠️ Cached verified contract is actually a proxy, need to refresh cache`
+              );
+              // 继续执行重新获取逻辑
+            } else {
+              console.log(
+                `✅ Returning cached verified contract (confirmed non-proxy)`
+              );
+              return cached;
+            }
+          } else {
+            console.log(
+              `✅ Returning cached verified contract (proxy info complete)`
+            );
+            // 如果是代理合约，需要动态加载实现合约信息
+            if (cached.isProxy && cached.implementationAddress) {
+              console.log(
+                `📋 Loading implementation contract for cached proxy...`
+              );
+              const implementationContract = await this.getContractSource(
+                chainId,
+                cached.implementationAddress
+              );
+              return {
+                ...cached,
+                implementationContract: implementationContract || undefined,
+              };
+            }
+            return cached;
+          }
         }
 
         // 对于未验证的合约，检查是否需要更新代理信息

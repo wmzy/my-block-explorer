@@ -120,11 +120,16 @@ export class MemoryDatabase {
     if (whereMatch && params.length > 0) {
       const whereClause = whereMatch[1];
 
-      // 简单的参数替换
-      let paramIndex = 0;
+      // 改进的WHERE条件处理
       results = results.filter((row) => {
-        // 这里是一个非常简化的WHERE处理
-        // 实际应用中需要更复杂的SQL解析
+        let paramIndex = 0;
+
+        // 处理 chain_id = ? AND address = ? 的情况
+        if (whereClause.includes("chain_id = ? AND address = ?")) {
+          return row.chain_id === params[0] && row.address === params[1];
+        }
+
+        // 处理单个条件
         if (
           whereClause.includes("chain_id = ?") &&
           params[paramIndex] !== undefined
@@ -149,6 +154,7 @@ export class MemoryDatabase {
         ) {
           return row.key === params[paramIndex];
         }
+
         return true;
       });
     }
