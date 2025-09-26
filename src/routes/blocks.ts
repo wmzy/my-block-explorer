@@ -1,11 +1,11 @@
 import { Hono } from "hono";
-import { BlockService } from "@/server/services/BlockService";
-import { RpcManager } from "@/server/services/RpcManager";
+import { BlockService } from "@/services/BlockService";
+import { RpcManager } from "@/services/RpcManager";
 import {
   getValidatedChainId,
   getValidatedBlockNumber,
-} from "@/server/validation";
-import { timingMiddleware } from "@/server/middleware/timing";
+} from "../server/validation";
+// import { timingMiddleware } from "@/middleware/timing";
 
 // 创建服务实例
 const rpcManager = new RpcManager();
@@ -15,7 +15,7 @@ const blockService = new BlockService(rpcManager);
 export const blocksRouter = new Hono();
 
 // 添加通用中间件
-blocksRouter.use("*", timingMiddleware);
+// blocksRouter.use("*", timingMiddleware);
 
 // 获取最新区块列表
 // GET /api/chains/:chainId/blocks

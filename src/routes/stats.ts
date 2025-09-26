@@ -1,9 +1,9 @@
 import { Hono } from "hono";
-import { BlockService } from "@/server/services/BlockService";
-import { TransactionService } from "@/server/services/TransactionService";
-import { RpcManager } from "@/server/services/RpcManager";
-import { getValidatedChainId } from "@/server/validation";
-import { timingMiddleware } from "@/server/middleware/timing";
+import { BlockService } from "@/services/BlockService";
+import { TransactionService } from "@/services/TransactionService";
+import { RpcManager } from "@/services/RpcManager";
+import { getValidatedChainId } from "../server/validation";
+// import { timingMiddleware } from "@/middleware/timing";
 import {
   SUPPORTED_CHAINS,
   getChainName,
@@ -19,7 +19,7 @@ const transactionService = new TransactionService(rpcManager);
 export const statsRouter = new Hono();
 
 // 添加通用中间件
-statsRouter.use("*", timingMiddleware);
+// statsRouter.use("*", timingMiddleware);
 
 // 获取链统计信息
 // GET /api/chains/:chainId/stats

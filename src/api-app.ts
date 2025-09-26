@@ -363,6 +363,32 @@ app.get("/api/chains/:chainId/addresses/:address", async (c) => {
   }
 });
 
+// 地址持久化信息接口（数据库缓存）
+app.get("/api/chains/:chainId/addresses/:address/persistent", async (c) => {
+  const chainId = getValidatedChainId(c.req.param("chainId"));
+  const address = getValidatedAddress(c.req.param("address"));
+
+  try {
+    const persistentData = await addressService.getPersistentAddressData(chainId, address);
+    
+    c.header("X-Data-Source", "database");
+    c.header("X-Chain-Name", getChainName(chainId));
+
+    const responseData = safeJsonResponse({
+      chainId,
+      chainName: getChainName(chainId),
+      address,
+      ...persistentData,
+      timestamp: new Date().toISOString(),
+    });
+
+    return c.json(responseData);
+  } catch (error) {
+    console.error("Address persistent data API error:", error);
+    return c.json({ error: "Failed to get address persistent data" }, 500);
+  }
+});
+
 app.get("/api/chains/:chainId/addresses/:address/transactions", async (c) => {
   const chainId = getValidatedChainId(c.req.param("chainId"));
   const address = getValidatedAddress(c.req.param("address"));

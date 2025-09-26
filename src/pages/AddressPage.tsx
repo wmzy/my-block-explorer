@@ -1,8 +1,8 @@
-import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { css } from "@linaria/core";
 import { getChainInfo, getChainName, getChainSymbol } from "../config/chains";
 import TopNavigation from "../components/TopNavigation";
+import { useAddressData } from "../hooks/useAddressData";
 
 const pageStyles = css`
   max-width: 1200px;
@@ -107,71 +107,18 @@ const backButtonStyles = css`
   }
 `;
 
-type AddressInfo = {
-  chainId: number;
-  address: string;
-  balance: string;
-  transactionCount: number;
-  isContract: boolean;
-  firstSeenBlock?: string;
-  lastSeenBlock?: string;
-  lastQueried: string;
-};
-
 export default function AddressPage() {
   const { chainId, address } = useParams<{
     chainId: string;
     address: string;
   }>();
   const navigate = useNavigate();
-  const [addressInfo, setAddressInfo] = useState<AddressInfo | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   const currentChainId = parseInt(chainId || "1");
   const chainInfo = getChainInfo(currentChainId);
 
-  useEffect(() => {
-    if (!address || !chainId) {
-      setError("Invalid address or chain ID");
-      setLoading(false);
-      return;
-    }
-
-    fetchAddressInfo();
-  }, [chainId, address]);
-
-  const fetchAddressInfo = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const response = await fetch(
-        `/api/chains/${currentChainId}/addresses/${address}`
-      );
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-
-      if (data.error) {
-        throw new Error(data.error);
-      }
-
-      setAddressInfo(data.address);
-    } catch (err) {
-      console.error("Failed to fetch address info:", err);
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Failed to fetch address information"
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
+  // 使用新的数据分离架构
+  const addressData = useAddressData(currentChainId, address || "");
 
   const formatBalance = (balance: string, symbol: string) => {
     try {
@@ -190,6 +137,13 @@ export default function AddressPage() {
     navigate(`/chain/${newChainId}/address/${address}`, { replace: true });
   };
 
+  // 计算总体加载和错误状态
+  const isLoading =
+    addressData.loading.persistent || addressData.loading.realTime;
+  const hasError = addressData.error.persistent || addressData.error.realTime;
+  const errorMessage =
+    addressData.error.persistent || addressData.error.realTime;
+
   if (!chainInfo) {
     return (
       <>
@@ -199,6 +153,20 @@ export default function AddressPage() {
         />
         <div className={pageStyles}>
           <div className={errorStyles}>Unsupported chain ID: {chainId}</div>
+        </div>
+      </>
+    );
+  }
+
+  if (!address) {
+    return (
+      <>
+        <TopNavigation
+          currentChainId={currentChainId}
+          onChainChange={handleChainChange}
+        />
+        <div className={pageStyles}>
+          <div className={errorStyles}>Invalid address</div>
         </div>
       </>
     );
@@ -225,99 +193,171 @@ export default function AddressPage() {
           </div>
         </div>
 
-        {loading && (
-          <div className={loadingStyles}>Loading address information...</div>
+        {isLoading && (
+          <div className={loadingStyles}>
+            Loading address information...
+            {addressData.loading.persistent && " (fetching contract info)"}
+            {addressData.loading.realTime && " (fetching balance)"}
+          </div>
         )}
 
-        {error && <div className={errorStyles}>Error: {error}</div>}
+        {hasError && <div className={errorStyles}>Error: {errorMessage}</div>}
 
-        {addressInfo && (
+        {(addressData.persistent || addressData.realTime) && (
           <>
             <div className={cardStyles}>
               <h2>Overview</h2>
               <div className={infoGridStyles}>
                 <div className="info-item">
                   <span className="label">Address</span>
-                  <span className="value">{addressInfo.address}</span>
+                  <span className="value">{address}</span>
                 </div>
+
+                {/* 实时数据 - 余额 */}
                 <div className="info-item">
                   <span className="label">Balance</span>
                   <span className="value">
-                    {formatBalance(
-                      addressInfo.balance,
-                      getChainSymbol(currentChainId)
-                    )}
+                    {addressData.realTime
+                      ? `${addressData.realTime.balance} ${getChainSymbol(currentChainId)}`
+                      : addressData.loading.realTime
+                        ? "Loading..."
+                        : addressData.error.realTime
+                          ? "Error loading balance"
+                          : "N/A"}
                   </span>
                 </div>
+
+                {/* 实时数据 - 交易数量 */}
                 <div className="info-item">
                   <span className="label">Transaction Count</span>
                   <span className="value">
-                    {addressInfo.transactionCount.toLocaleString()}
+                    {addressData.realTime
+                      ? addressData.realTime.transactionCount.toLocaleString()
+                      : addressData.loading.realTime
+                        ? "Loading..."
+                        : addressData.error.realTime
+                          ? "Error loading count"
+                          : "N/A"}
                   </span>
                 </div>
+
+                {/* 持久化数据 - 地址类型 */}
                 <div className="info-item">
                   <span className="label">Type</span>
                   <span className="value">
-                    {addressInfo.isContract
-                      ? "Contract"
-                      : "Externally Owned Account (EOA)"}
+                    {addressData.persistent
+                      ? addressData.persistent.isContract
+                        ? "Contract"
+                        : "Externally Owned Account (EOA)"
+                      : addressData.loading.persistent
+                        ? "Loading..."
+                        : "Unknown"}
                   </span>
                 </div>
-                {addressInfo.isContract && addressInfo.contractName && (
+
+                {/* 持久化数据 - 合约名称 */}
+                {addressData.persistent?.isContract &&
+                  addressData.persistent.contractName && (
+                    <div className="info-item">
+                      <span className="label">Contract Name</span>
+                      <span className="value">
+                        {addressData.persistent.contractName}
+                      </span>
+                    </div>
+                  )}
+
+                {/* 持久化数据 - 验证状态 */}
+                {addressData.persistent?.isContract &&
+                  addressData.persistent.verificationStatus && (
+                    <div className="info-item">
+                      <span className="label">Verification Status</span>
+                      <span className="value">
+                        {addressData.persistent.verificationStatus ===
+                          "verified" && "✅ Verified"}
+                        {addressData.persistent.verificationStatus ===
+                          "partial" && "⚠️ Partially Verified"}
+                        {addressData.persistent.verificationStatus ===
+                          "unverified" && "❌ Unverified"}
+                      </span>
+                    </div>
+                  )}
+
+                {/* 持久化数据 - 源代码链接 */}
+                {addressData.persistent?.isContract &&
+                  addressData.persistent.sourceCodeAvailable && (
+                    <div className="info-item">
+                      <span className="label">Source Code</span>
+                      <span className="value">
+                        <a
+                          href={`/chain/${currentChainId}/contract/${address}`}
+                          style={{ color: "#007bff", textDecoration: "none" }}
+                          onMouseOver={(e) =>
+                            (e.target.style.textDecoration = "underline")
+                          }
+                          onMouseOut={(e) =>
+                            (e.target.style.textDecoration = "none")
+                          }
+                        >
+                          View Source Code →
+                        </a>
+                      </span>
+                    </div>
+                  )}
+
+                {/* 持久化数据 - 合约创建信息 */}
+                {addressData.persistent?.contractCreationBlock && (
                   <div className="info-item">
-                    <span className="label">Contract Name</span>
-                    <span className="value">{addressInfo.contractName}</span>
-                  </div>
-                )}
-                {addressInfo.isContract && addressInfo.verificationStatus && (
-                  <div className="info-item">
-                    <span className="label">Verification Status</span>
+                    <span className="label">Created at Block</span>
                     <span className="value">
-                      {addressInfo.verificationStatus === "verified" &&
-                        "✅ Verified"}
-                      {addressInfo.verificationStatus === "partial" &&
-                        "⚠️ Partially Verified"}
-                      {addressInfo.verificationStatus === "unverified" &&
-                        "❌ Unverified"}
+                      {addressData.persistent.contractCreationBlock.toLocaleString()}
                     </span>
                   </div>
                 )}
-                {addressInfo.isContract && addressInfo.hasSourceCode && (
+
+                {addressData.persistent?.contractCreator && (
                   <div className="info-item">
-                    <span className="label">Source Code</span>
+                    <span className="label">Contract Creator</span>
                     <span className="value">
-                      <a
-                        href={`/chain/${currentChainId}/contract/${address}`}
-                        style={{ color: "#007bff", textDecoration: "none" }}
-                        onMouseOver={(e) =>
-                          (e.target.style.textDecoration = "underline")
-                        }
-                        onMouseOut={(e) =>
-                          (e.target.style.textDecoration = "none")
-                        }
-                      >
-                        View Source Code →
-                      </a>
+                      {formatAddress(addressData.persistent.contractCreator)}
                     </span>
                   </div>
                 )}
-                {addressInfo.firstSeenBlock && (
+
+                {/* 持久化数据 - 代理合约信息 */}
+                {addressData.persistent?.isProxy && (
+                  <>
+                    <div className="info-item">
+                      <span className="label">Proxy Type</span>
+                      <span className="value">
+                        {addressData.persistent.proxyType || "Standard Proxy"}
+                      </span>
+                    </div>
+                    {addressData.persistent.implementationAddress && (
+                      <div className="info-item">
+                        <span className="label">Implementation</span>
+                        <span className="value">
+                          {formatAddress(
+                            addressData.persistent.implementationAddress
+                          )}
+                        </span>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {/* 实时数据 - 最新区块 */}
+                {addressData.realTime && (
                   <div className="info-item">
-                    <span className="label">First Seen Block</span>
-                    <span className="value">{addressInfo.firstSeenBlock}</span>
+                    <span className="label">Latest Block</span>
+                    <span className="value">
+                      {addressData.realTime.latestBlock.toLocaleString()}
+                    </span>
                   </div>
                 )}
-                {addressInfo.lastSeenBlock && (
-                  <div className="info-item">
-                    <span className="label">Last Seen Block</span>
-                    <span className="value">{addressInfo.lastSeenBlock}</span>
-                  </div>
-                )}
+
                 <div className="info-item">
                   <span className="label">Last Updated</span>
-                  <span className="value">
-                    {new Date(addressInfo.lastQueried).toLocaleString()}
-                  </span>
+                  <span className="value">{new Date().toLocaleString()}</span>
                 </div>
               </div>
             </div>

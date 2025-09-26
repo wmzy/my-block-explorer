@@ -1,13 +1,13 @@
 import { Hono } from "hono";
-import { TransactionService } from "@/server/services/TransactionService";
-import { RpcManager } from "@/server/services/RpcManager";
+import { TransactionService } from "@/services/TransactionService";
+import { RpcManager } from "@/services/RpcManager";
 import {
   getValidatedChainId,
   getValidatedTxHash,
   getValidatedBlockNumber,
   getValidatedAddress,
-} from "@/server/validation";
-import { timingMiddleware } from "@/server/middleware/timing";
+} from "../server/validation";
+// import { timingMiddleware } from "@/middleware/timing";
 
 // 创建服务实例
 const rpcManager = new RpcManager();
@@ -17,7 +17,7 @@ const transactionService = new TransactionService(rpcManager);
 export const transactionsRouter = new Hono();
 
 // 添加通用中间件
-transactionsRouter.use("*", timingMiddleware);
+// transactionsRouter.use("*", timingMiddleware);
 
 // 根据交易哈希获取交易
 // GET /api/chains/:chainId/transactions/:txHash

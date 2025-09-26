@@ -1,28 +1,28 @@
 import { Hono } from "hono";
-import { BlockService } from "@/server/services/BlockService";
-import { TransactionService } from "@/server/services/TransactionService";
-import { AddressService } from "@/server/services/AddressService";
-import { RpcManager } from "@/server/services/RpcManager";
-import { getValidatedChainId } from "@/server/validation";
-import { timingMiddleware } from "@/server/middleware/timing";
+import { BlockService } from "@/services/BlockService";
+import { TransactionService } from "@/services/TransactionService";
+import { AddressService } from "@/services/AddressService";
+import { RpcManager } from "@/services/RpcManager";
+import { getValidatedChainId } from "../server/validation";
+// import { timingMiddleware } from "@/middleware/timing";
 import {
   detectSearchType,
   sanitizeInput,
   isValidChainId,
 } from "@/shared/utils/validation";
-import { db, searchHistory } from "@/server/database/drizzle";
+import { db, searchHistory } from "@/database/drizzle";
 
 // 创建服务实例
 const rpcManager = new RpcManager();
 const blockService = new BlockService(rpcManager);
 const transactionService = new TransactionService(rpcManager);
-const addressService = new AddressService(rpcManager);
+const addressService = new AddressService();
 
 // 创建搜索路由
 export const searchRouter = new Hono();
 
 // 添加通用中间件
-searchRouter.use("*", timingMiddleware);
+// searchRouter.use("*", timingMiddleware);
 
 // 通用搜索接口
 // GET /api/search?q=0x123...&chainId=1
