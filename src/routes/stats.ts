@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { BlockService } from "@/server/services/BlockService";
 import { TransactionService } from "@/server/services/TransactionService";
 import { RpcManager } from "@/server/services/RpcManager";
-import { validateChainId } from "@/server/middleware/validation";
+import { getValidatedChainId } from "@/server/validation";
 import { timingMiddleware } from "@/server/middleware/timing";
 import {
   SUPPORTED_CHAINS,
@@ -23,9 +23,9 @@ statsRouter.use("*", timingMiddleware);
 
 // 获取链统计信息
 // GET /api/chains/:chainId/stats
-statsRouter.get("/:chainId/stats", validateChainId, async (c) => {
+statsRouter.get("/:chainId/stats", async (c) => {
   try {
-    const chainId = c.get("chainId");
+    const chainId = getValidatedChainId(c.req.param("chainId"));
 
     // 并发获取统计数据
     const [blockStats, txStats, latestBlockNumber, currentGasPrice] =
@@ -75,7 +75,7 @@ statsRouter.get("/:chainId/stats", validateChainId, async (c) => {
     c.header("X-Data-Source", "hybrid");
     c.header("X-Chain-Id", chainId.toString());
 
-    return con(stats);
+    return c.json(stats);
   } catch (error) {
     throw error;
   }
@@ -158,7 +158,7 @@ statsRouter.get("/overview", async (c) => {
     c.header("X-Supported-Chains", SUPPORTED_CHAINS.length.toString());
     c.header("X-Indexed-Chains", indexedChains.toString());
 
-    return con(overview);
+    return c.json(overview);
   } catch (error) {
     throw error;
   }
@@ -166,9 +166,9 @@ statsRouter.get("/overview", async (c) => {
 
 // 获取链的实时状态
 // GET /api/chains/:chainId/status
-statsRouter.get("/:chainId/status", validateChainId, async (c) => {
+statsRouter.get("/:chainId/status", async (c) => {
   try {
-    const chainId = c.get("chainId");
+    const chainId = getValidatedChainId(c.req.param("chainId"));
 
     // 测试RPC连接和获取基本信息
     const startTime = Date.now();
@@ -201,7 +201,7 @@ statsRouter.get("/:chainId/status", validateChainId, async (c) => {
     c.header("X-RPC-Latency", rpcLatency.toString());
     c.header("X-Chain-Online", "true");
 
-    return con(status);
+    return c.json(status);
   } catch (error) {
     // RPC连接失败
     const status = {
@@ -220,7 +220,7 @@ statsRouter.get("/:chainId/status", validateChainId, async (c) => {
     c.header("X-Chain-Id", c.get("chainId").toString());
     c.header("X-Chain-Online", "false");
 
-    return con(status);
+    return c.json(status);
   }
 });
 
@@ -259,7 +259,7 @@ statsRouter.get("/health", async (c) => {
     c.header("X-Database-Status", health.database);
     c.header("X-RPC-Status", health.rpc);
 
-    return con(health, statusCode);
+    return c.json(health, statusCode);
   } catch (error) {
     const health = {
       status: "unhealthy",
@@ -271,6 +271,6 @@ statsRouter.get("/health", async (c) => {
 
     c.header("X-Health-Status", "unhealthy");
 
-    return con(health, 503);
+    return c.json(health, 503);
   }
 });

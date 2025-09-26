@@ -3,7 +3,7 @@ import { BlockService } from "@/server/services/BlockService";
 import { TransactionService } from "@/server/services/TransactionService";
 import { AddressService } from "@/server/services/AddressService";
 import { RpcManager } from "@/server/services/RpcManager";
-import { validateChainId } from "@/server/middleware/validation";
+import { getValidatedChainId } from "@/server/validation";
 import { timingMiddleware } from "@/server/middleware/timing";
 import {
   detectSearchType,
@@ -32,7 +32,7 @@ searchRouter.get("/", async (c) => {
     const chainIdParam = c.req.query("chainId");
 
     if (!query || typeof query !== "string") {
-      return con(
+      return c.json(
         {
           code: "MISSING_QUERY",
           message: "Search query is required",
@@ -45,7 +45,7 @@ searchRouter.get("/", async (c) => {
     const searchType = detectSearchType(sanitizedQuery);
 
     if (searchType === "unknown") {
-      return con(
+      return c.json(
         {
           code: "INVALID_QUERY",
           message: "Invalid search query format",
@@ -58,7 +58,7 @@ searchRouter.get("/", async (c) => {
     let chainId: number | null = null;
     if (chainIdParam) {
       if (!isValidChainId(chainIdParam)) {
-        return con(
+        return c.json(
           {
             code: "INVALID_CHAIN_ID",
             message: "Invalid chain ID",
@@ -121,7 +121,7 @@ searchRouter.get("/", async (c) => {
                 resultType = "block";
                 resultId = sanitizedQuery;
               } else {
-                return con(
+                return c.json(
                   {
                     code: "NOT_FOUND",
                     message: "Transaction or block not found",
@@ -156,7 +156,7 @@ searchRouter.get("/", async (c) => {
               resultType = "block";
               resultId = blockNumber.toString();
             } else {
-              return con(
+              return c.json(
                 {
                   code: "BLOCK_NOT_FOUND",
                   message: `Block ${blockNumber} not found`,
@@ -179,7 +179,7 @@ searchRouter.get("/", async (c) => {
           break;
 
         default:
-          return con(
+          return c.json(
             {
               code: "UNSUPPORTED_SEARCH_TYPE",
               message: "Unsupported search type",
@@ -209,7 +209,7 @@ searchRouter.get("/", async (c) => {
         c.header("X-Chain-Id", chainId.toString());
       }
 
-      return con(results);
+      return c.json(results);
     } catch (error) {
       console.error("Search error:", error);
       throw error;
@@ -221,13 +221,13 @@ searchRouter.get("/", async (c) => {
 
 // 链特定搜索接口
 // GET /api/chains/:chainId/search?q=0x123...
-searchRouter.get("/:chainId/search", validateChainId, async (c) => {
+searchRouter.get("/:chainId/search", async (c) => {
   try {
-    const chainId = c.get("chainId");
+    const chainId = getValidatedChainId(c.req.param("chainId"));
     const query = c.req.query("q");
 
     if (!query || typeof query !== "string") {
-      return con(
+      return c.json(
         {
           code: "MISSING_QUERY",
           message: "Search query is required",
@@ -240,7 +240,7 @@ searchRouter.get("/:chainId/search", validateChainId, async (c) => {
     const searchType = detectSearchType(sanitizedQuery);
 
     if (searchType === "unknown") {
-      return con(
+      return c.json(
         {
           code: "INVALID_QUERY",
           message: "Invalid search query format",
@@ -285,7 +285,7 @@ searchRouter.get("/:chainId/search", validateChainId, async (c) => {
             resultType = "block";
             resultId = sanitizedQuery;
           } else {
-            return con(
+            return c.json(
               {
                 code: "NOT_FOUND",
                 message: "Transaction or block not found",
@@ -304,7 +304,7 @@ searchRouter.get("/:chainId/search", validateChainId, async (c) => {
           resultType = "block";
           resultId = blockNumber.toString();
         } else {
-          return con(
+          return c.json(
             {
               code: "BLOCK_NOT_FOUND",
               message: `Block ${blockNumber} not found`,
@@ -315,7 +315,7 @@ searchRouter.get("/:chainId/search", validateChainId, async (c) => {
         break;
 
       default:
-        return con(
+        return c.json(
           {
             code: "UNSUPPORTED_SEARCH_TYPE",
             message: "Unsupported search type",
@@ -340,7 +340,7 @@ searchRouter.get("/:chainId/search", validateChainId, async (c) => {
     c.header("X-Result-Type", results.type);
     c.header("X-Chain-Id", chainId.toString());
 
-    return con(results);
+    return c.json(results);
   } catch (error) {
     throw error;
   }
@@ -348,13 +348,13 @@ searchRouter.get("/:chainId/search", validateChainId, async (c) => {
 
 // 获取搜索历史
 // GET /api/chains/:chainId/search/history
-searchRouter.get("/:chainId/search/history", validateChainId, async (c) => {
+searchRouter.get("/:chainId/search/history", async (c) => {
   try {
-    const chainId = c.get("chainId");
+    const chainId = getValidatedChainId(c.req.param("chainId"));
     const limit = parseInt(c.req.query("limit") || "20", 10);
 
     if (limit < 1 || limit > 100) {
-      return con(
+      return c.json(
         {
           code: "INVALID_LIMIT",
           message: "Limit must be between 1 and 100",
@@ -374,7 +374,7 @@ searchRouter.get("/:chainId/search/history", validateChainId, async (c) => {
     c.header("X-Chain-Id", chainId.toString());
     c.header("X-Total-Count", history.length.toString());
 
-    return con({ data: history });
+    return c.json({ data: history });
   } catch (error) {
     throw error;
   }
