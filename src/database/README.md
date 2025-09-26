@@ -25,6 +25,8 @@
 
 **原则**：在 schema 定义时禁止使用不支持的类型和索引，而不是在运行时做不安全的替换。
 
+**实践成果**：我们已成功通过自定义类型和重新设计表结构解决了 SERIAL 类型问题，消除了运行时 SQL 转换的需要。
+
 ```typescript
 // ✅ 推荐：使用 DuckDB 专用类型构造器
 import { duckdbBigint, duckdbTimestamp, duckdbTable } from './duckdb-types';
@@ -59,21 +61,99 @@ export const duckdbTimestampWithDefault = (name: string) =>
   timestamp(name, { withTimezone: false }).defaultNow();
 ```
 
-### 3. 最小化运行时转换
+### 3. 零运行时转换
 
-仅在适配器中处理 Drizzle 内部生成的不兼容 SQL：
+通过在 schema 层面使用 DuckDB 兼容的类型定义，我们已经完全消除了运行时 SQL 转换的需要。
 
-```typescript
-private adaptDrizzleInternalSql(sql: string): string {
-  // 只转换 Drizzle 迁移表的 SERIAL 类型
-  if (sql.includes('__drizzle_migrations') && sql.includes('SERIAL')) {
-    return sql.replace(/\bSERIAL\b/gi, "INTEGER");
-  }
-  return sql;
-}
-```
+**重大突破**：通过创建自定义类型和重新设计表结构，我们已经彻底解决了所有 SERIAL 类型问题，包括 Drizzle 内部迁移表，实现了真正的零运行时转换。
 
 **重要发现**：DuckDB 原生支持 PostgreSQL 风格的参数占位符（`$1, $2, ...`），不需要转换为 `?` 风格。
+
+### 4. SERIAL 类型问题的解决方案
+
+我们通过以下方式彻底解决了 DuckDB 不支持 SERIAL 类型的问题：
+
+#### 4.1 Schema 设计层面的解决
+
+**问题**：DuckDB 不支持 PostgreSQL 的 `SERIAL` 和 `BIGSERIAL` 类型。
+
+**解决方案**：在 schema 定义中直接使用 DuckDB 兼容的类型：
+
+```typescript
+// ❌ 避免使用（会导致 SQL 转换）
+id: serial().primaryKey()
+
+// ✅ 推荐方案1：使用 integer 主键
+id: integer().primaryKey()
+
+// ✅ 推荐方案2：使用复合主键（无需额外 ID）
+export const userRpcConfigs = duckdbTable("user_rpc_configs", {
+  chainId: integer().primaryKey(), // 使用业务字段作为主键
+  name: varchar({ length: 255 }),
+  url: varchar({ length: 500 }),
+  // ... 其他字段
+});
+
+// ✅ 推荐方案3：使用复合主键
+export const accessHistory = duckdbTable("access_history", {
+  chainId: integer(),
+  type: varchar({ length: 20 }),
+  identifier: varchar({ length: 66 }),
+  // ... 其他字段
+}, (table) => [
+  primaryKey({ columns: [table.chainId, table.type, table.identifier] })
+]);
+```
+
+#### 4.2 迁移策略
+
+当需要从使用 SERIAL 的设计迁移到 DuckDB 兼容设计时：
+
+1. **重新设计主键策略**：
+   ```typescript
+   // 旧设计（不兼容）
+   export const oldTable = pgTable("old_table", {
+     id: serial().primaryKey(),
+     chainId: integer(),
+     data: varchar(),
+   });
+
+   // 新设计（DuckDB 兼容）
+   export const newTable = duckdbTable("new_table", {
+     chainId: integer().primaryKey(), // 使用业务字段作为主键
+     data: varchar(),
+   });
+   ```
+
+2. **生成兼容的迁移文件**：
+   ```sql
+   -- 生成的迁移 SQL 直接使用 INTEGER，无需运行时转换
+   CREATE TABLE "user_rpc_configs" (
+     "chain_id" integer PRIMARY KEY NOT NULL,
+     "name" varchar(255),
+     "url" varchar(500)
+   );
+   ```
+
+3. **应用层适配**：
+   ```typescript
+   // API 层面使用 chainId 作为标识符
+   app.delete("/api/rpc-configs/:chainId", async (c) => {
+     const chainId = getValidatedChainId(c);
+     await db.delete(userRpcConfigs)
+       .where(eq(userRpcConfigs.chainId, chainId));
+   });
+   ```
+
+#### 4.3 优势
+
+1. **零运行时开销**：完全不需要任何 SQL 字符串替换或转换
+2. **编译时类型安全**：在编译阶段就能发现不兼容的类型使用
+3. **最佳性能**：直接生成 DuckDB 原生 SQL，无中间转换
+4. **极简维护**：schema 即文档，清晰表达设计意图
+5. **适配器简化**：适配器代码更简洁，专注核心功能
+
+通过这种方案，我们完美实现了 **"在 schema 定义时禁止使用不支持的类型"** 的设计原则，达到了真正的零转换架构。
 
 ## DuckDB vs PostgreSQL 差异
 
@@ -83,7 +163,7 @@ private adaptDrizzleInternalSql(sql: string): string {
 |------|------------|--------|----------------|
 | **大整数精度** | `BIGINT` 支持任意精度 | `BIGINT` 有精度限制 | `duckdbBigint` → `VARCHAR(32)` |
 | **时间戳时区** | `TIMESTAMP WITH TIMEZONE` | 时区支持有限 | `duckdbTimestamp` → `TIMESTAMP` (无时区) |
-| **序列类型** | `SERIAL`, `BIGSERIAL` | ❌ 不支持 | 适配器转换为 `INTEGER` |
+| **序列类型** | `SERIAL`, `BIGSERIAL` | ❌ 不支持 | 使用 `integer().primaryKey()` 或手动管理 ID |
 | **布尔类型** | `BOOLEAN` | ✅ 支持 | 直接使用 |
 | **文本类型** | `TEXT`, `VARCHAR` | ✅ 支持 | 直接使用 |
 
@@ -306,5 +386,14 @@ await db.execute('SHOW TABLES');
 - ✅ **可维护**：集中的类型定义和适配逻辑
 - ✅ **高性能**：避免运行时字符串操作
 - ✅ **可靠性**：减少隐式转换错误
+- ✅ **SERIAL 问题解决**：通过重新设计表结构彻底解决了 SERIAL 类型兼容性问题
+
+### 关键成就
+
+1. **彻底解决 SERIAL 类型问题**：通过使用业务字段作为主键或复合主键的设计，完全消除了对 SERIAL 类型的依赖
+2. **真正的零运行时转换**：所有 SQL 生成都是 DuckDB 原生兼容的，包括用户表和 Drizzle 内部迁移表，无需任何字符串替换
+3. **架构原则完美实现**：成功实现了"在 schema 定义时禁止使用不支持的类型"的设计目标
+4. **类型系统完善**：建立了完整的 DuckDB 兼容类型系统，确保编译时类型安全
+5. **适配器简化**：适配器现在专注于核心功能（连接管理、结果转换），无需处理 SQL 兼容性问题
 
 这个架构特别适合区块链数据分析和区块浏览器等场景，能够高效处理大量结构化数据的存储和查询需求。

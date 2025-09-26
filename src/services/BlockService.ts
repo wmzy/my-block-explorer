@@ -1,5 +1,6 @@
 import { PublicClient } from "viem";
-import { db } from "../database/init";
+import { db, blocks } from "../database/init";
+import { eq, and, sql } from "drizzle-orm";
 import { rpcManager } from "./RpcManager";
 import { blockCache } from "../utils/cache";
 import {
@@ -51,15 +52,12 @@ export class BlockService {
 
       // 从数据库获取
       const dbQuery = createRetryableDbCall(async () => {
-        return await db.query<any>(
-          `
-          SELECT * FROM blocks 
-          WHERE chain_id = ? 
-          ORDER BY number DESC 
-          LIMIT 1
-        `,
-          [chainId]
-        );
+        return await db
+          .select()
+          .from(blocks)
+          .where(eq(blocks.chainId, chainId))
+          .orderBy(sql`${blocks.number} DESC`)
+          .limit(1);
       });
 
       const dbResult = await dbQuery();

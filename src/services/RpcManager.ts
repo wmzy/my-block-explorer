@@ -4,7 +4,8 @@ import {
   getDefaultRpcUrl,
   type UserRpcConfig,
 } from "../config/chains";
-import { duckdb as db } from "../database/init";
+import { db, userRpcConfigs } from "../database/init";
+import { eq } from "drizzle-orm";
 import {
   createRetryableRpcCall,
   createRetryableDbCall,
@@ -34,26 +35,16 @@ export class RpcManager {
   // 加载用户RPC配置
   private async loadUserConfigs(): Promise<void> {
     const loadConfigs = createRetryableDbCall(async () => {
-      const configs = await db.query<{
-        chain_id: number;
-        name: string;
-        url: string;
-        is_custom: boolean;
-        supports_history: boolean | null;
-        max_event_range: number | null;
-        timeout_ms?: number;
-        retry_count?: number;
-        rate_limit?: number;
-      }>(`SELECT * FROM user_rpc_configs`);
+      const configs = await db.select().from(userRpcConfigs);
 
       for (const config of configs) {
-        this.userConfigs.set(config.chain_id, {
-          chainId: config.chain_id,
-          customRpcUrl: config.url,
+        this.userConfigs.set(config.chainId, {
+          chainId: config.chainId,
+          customRpcUrl: config.url || undefined,
           rpcBackups: undefined, // 暂时不支持备用RPC
-          timeout: config.timeout_ms || 10000,
-          retryCount: config.retry_count || 3,
-          rateLimit: config.rate_limit || 100,
+          timeout: 10000,
+          retryCount: 3,
+          rateLimit: 100,
         });
       }
     });

@@ -11,34 +11,34 @@ CREATE TABLE "access_history" (
 CREATE TABLE "blocks" (
 	"chain_id" integer NOT NULL,
 	"number" "BIGNUM" NOT NULL,
-	"hash" varchar(66) NOT NULL,
-	"parent_hash" varchar(66),
+	"hash" char(66) NOT NULL,
+	"parent_hash" char(66),
 	"timestamp" "TIMESTAMP_S",
-	"miner" varchar(42),
+	"miner" char(42),
 	"gas_limit" "BIGNUM",
 	"gas_used" "BIGNUM",
 	"base_fee_per_gas" "BIGNUM",
 	"transaction_count" integer,
 	"size_bytes" integer,
-	"difficulty" varchar(32),
-	"total_difficulty" varchar(32),
+	"difficulty" "BIGNUM",
+	"total_difficulty" "BIGNUM",
 	"extra_data" text,
 	"logs_bloom" text,
-	"state_root" varchar(66),
-	"transactions_root" varchar(66),
-	"receipts_root" varchar(66),
+	"state_root" char(66),
+	"transactions_root" char(66),
+	"receipts_root" char(66),
 	"indexed_at" "TIMESTAMP_MS" DEFAULT now(),
 	CONSTRAINT "blocks_chain_id_number_pk" PRIMARY KEY("chain_id","number"),
-	CONSTRAINT "blocks_chain_id_hash_unique" UNIQUE("chain_id","hash")
+	CONSTRAINT "blocks_chainId_hash_unique" UNIQUE("chain_id","hash")
 );
 --> statement-breakpoint
 CREATE TABLE "contract_creation_info" (
 	"chain_id" integer NOT NULL,
-	"address" varchar(42) NOT NULL,
-	"creation_tx_hash" varchar(66),
+	"address" char(42) NOT NULL,
+	"creation_tx_hash" char(66),
 	"creation_block_number" "BIGNUM",
-	"creator_address" varchar(42),
-	"factory_address" varchar(42),
+	"creator_address" char(42),
+	"factory_address" char(42),
 	"creation_method" varchar(50),
 	"last_updated" "TIMESTAMP_MS" DEFAULT now(),
 	CONSTRAINT "contract_creation_info_chain_id_address_pk" PRIMARY KEY("chain_id","address")
@@ -46,7 +46,7 @@ CREATE TABLE "contract_creation_info" (
 --> statement-breakpoint
 CREATE TABLE "contract_sources" (
 	"chain_id" integer NOT NULL,
-	"address" varchar(42) NOT NULL,
+	"address" char(42) NOT NULL,
 	"source_code" text,
 	"abi" text,
 	"contract_name" varchar(255),
@@ -58,7 +58,7 @@ CREATE TABLE "contract_sources" (
 	"library" text,
 	"license_type" varchar(50),
 	"proxy" varchar(50),
-	"implementation" varchar(42),
+	"implementation" char(42),
 	"swarm_source" varchar(100),
 	"is_verified" boolean DEFAULT false,
 	"verification_date" "TIMESTAMP_MS" DEFAULT now(),
@@ -76,7 +76,7 @@ CREATE TABLE "index_status" (
 --> statement-breakpoint
 CREATE TABLE "indexed_addresses" (
 	"chain_id" integer NOT NULL,
-	"address" varchar(42) NOT NULL,
+	"address" char(42) NOT NULL,
 	"type" varchar(20) NOT NULL,
 	"first_seen" "TIMESTAMP_S",
 	"last_activity" "TIMESTAMP_S",
@@ -95,12 +95,12 @@ CREATE TABLE "search_history" (
 --> statement-breakpoint
 CREATE TABLE "transactions" (
 	"chain_id" integer NOT NULL,
-	"hash" varchar(66) NOT NULL,
+	"hash" char(66) NOT NULL,
 	"block_number" "BIGNUM",
 	"transaction_index" integer,
-	"from_address" varchar(42),
-	"to_address" varchar(42),
-	"value" varchar,
+	"from_address" char(42),
+	"to_address" char(42),
+	"value" "BIGNUM",
 	"gas_limit" "BIGNUM",
 	"gas_price" "BIGNUM",
 	"max_fee_per_gas" "BIGNUM",
@@ -112,12 +112,12 @@ CREATE TABLE "transactions" (
 	"nonce" "BIGNUM",
 	"input_data" text,
 	"logs_count" integer DEFAULT 0,
-	"contract_address" varchar(42),
+	"contract_address" char(42),
 	"cumulative_gas_used" "BIGNUM",
 	"timestamp" "TIMESTAMP_S",
 	"indexed_at" "TIMESTAMP_MS" DEFAULT now(),
 	CONSTRAINT "transactions_chain_id_hash_pk" PRIMARY KEY("chain_id","hash"),
-	CONSTRAINT "transactions_chain_id_block_number_transaction_index_unique" UNIQUE("chain_id","block_number","transaction_index")
+	CONSTRAINT "transactions_chainId_blockNumber_transactionIndex_unique" UNIQUE("chain_id","block_number","transaction_index")
 );
 --> statement-breakpoint
 CREATE TABLE "user_preferences" (
@@ -131,6 +131,7 @@ CREATE TABLE "user_rpc_configs" (
 	"chain_id" integer PRIMARY KEY NOT NULL,
 	"name" varchar(255),
 	"url" varchar(500),
+	"supports_history" boolean,
 	"max_event_range" integer,
 	"created_at" "TIMESTAMP_MS" DEFAULT now(),
 	"updated_at" "TIMESTAMP_MS" DEFAULT now()

@@ -27,9 +27,9 @@ export const timestamp = customType<{
 
 export const address = customType<{
   data: Address;
-  driverData: Address;
+  driverData: string;
 }>({
-  dataType: () => "VARCHAR(42)",
+  dataType: () => `char(42)`,
 });
 
 // EVM 特定类型定义
@@ -39,7 +39,7 @@ export const txHash = customType<{
   data: `0x${string}`;
   driverData: string;
 }>({
-  dataType: () => "VARCHAR(66)",
+  dataType: () => `char(66)`,
 });
 
 // 区块哈希 - 32 字节，0x 前缀
@@ -47,7 +47,7 @@ export const blockHash = customType<{
   data: `0x${string}`;
   driverData: string;
 }>({
-  dataType: () => "VARCHAR(66)",
+  dataType: () => `char(66)`,
 });
 
 // 通用哈希 - 32 字节，0x 前缀（用于 state root, receipts root 等）
@@ -55,7 +55,7 @@ export const hash32 = customType<{
   data: `0x${string}`;
   driverData: string;
 }>({
-  dataType: () => "VARCHAR(66)",
+  dataType: () => "char(66)",
 });
 
 // 字节数据 - 可变长度的十六进制数据
@@ -63,7 +63,7 @@ export const hexData = customType<{
   data: `0x${string}`;
   driverData: string;
 }>({
-  dataType: () => "TEXT",
+  dataType: () => "text",
 });
 
 // 交易类型 (0: Legacy, 1: EIP-2930, 2: EIP-1559, etc.)
@@ -71,7 +71,7 @@ export const txType = customType<{
   data: number;
   driverData: number;
 }>({
-  dataType: () => "INTEGER",
+  dataType: () => "integer",
 });
 
 // 交易状态 (0: 失败, 1: 成功)
@@ -79,15 +79,17 @@ export const txStatus = customType<{
   data: 0 | 1;
   driverData: number;
 }>({
-  dataType: () => "INTEGER",
+  dataType: () => "integer",
 });
 
 // 日期时间类型
 export const datetime = customType<{
   data: Date;
-  driverData: Date;
+  driverData: string;
 }>({
   dataType: () => "TIMESTAMP_MS",
+  toDriver: (value: Date) => value.toISOString(),
+  fromDriver: (value: string) => new Date(value),
 });
 
 // ✅ DuckDB 兼容的表构造器

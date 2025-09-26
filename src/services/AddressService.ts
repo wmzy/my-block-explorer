@@ -1,14 +1,17 @@
-import { db } from "../database/init";
+import { db, indexedAddresses } from "../database/init";
+import { eq, and } from "drizzle-orm";
 import { rpcManager } from "./RpcManager";
 import { transactionService, type Transaction } from "./TransactionService";
 import { contractSourceService } from "./ContractSourceService";
+import { addressEquals } from "../utils/address";
+import type { Address } from "viem";
 
 /**
  * 地址数据类型
  */
 export type AddressInfo = {
   chainId: number;
-  address: string;
+  address: Address;
   balance: string;
   transactionCount: number;
   isContract: boolean;
@@ -28,15 +31,18 @@ export type AddressInfo = {
  */
 export class AddressService {
   // 获取地址基本信息
-  async getAddressInfo(chainId: number, address: string): Promise<AddressInfo> {
+  async getAddressInfo(
+    chainId: number,
+    address: Address
+  ): Promise<AddressInfo> {
     try {
       const client = await rpcManager.getClient(chainId);
 
       // 并行获取余额、交易数量和代码
       const [balance, transactionCount, code] = await Promise.all([
-        client.getBalance({ address: address as `0x${string}` }),
-        client.getTransactionCount({ address: address as `0x${string}` }),
-        client.getCode({ address: address as `0x${string}` }).catch(() => "0x"),
+        client.getBalance({ address }),
+        client.getTransactionCount({ address }),
+        client.getCode({ address }).catch(() => "0x"),
       ]);
 
       const isContract = Boolean(code && code !== "0x" && code.length > 2);
@@ -73,7 +79,7 @@ export class AddressService {
 
       return {
         chainId,
-        address: address.toLowerCase(),
+        address,
         balance: balance.toString(),
         transactionCount: Number(transactionCount),
         isContract,
@@ -93,11 +99,11 @@ export class AddressService {
   }
 
   // 获取地址余额
-  async getAddressBalance(chainId: number, address: string): Promise<string> {
+  async getAddressBalance(chainId: number, address: Address): Promise<string> {
     try {
       const client = await rpcManager.getClient(chainId);
       const balance = await client.getBalance({
-        address: address as `0x${string}`,
+        address,
       });
       return balance.toString();
     } catch (error) {
@@ -200,8 +206,8 @@ export class AddressService {
             for (const tx of txsToProcess) {
               if (
                 typeof tx === "object" &&
-                (tx.from?.toLowerCase() === address.toLowerCase() ||
-                  tx.to?.toLowerCase() === address.toLowerCase())
+                (addressEquals(tx.from || "", address) ||
+                  addressEquals(tx.to || "", address))
               ) {
                 // 简化：不获取receipt以减少RPC调用
                 transactions.push({
@@ -209,8 +215,8 @@ export class AddressService {
                   hash: tx.hash,
                   blockNumber: tx.blockNumber,
                   transactionIndex: tx.transactionIndex,
-                  fromAddress: tx.from?.toLowerCase(),
-                  toAddress: tx.to?.toLowerCase(),
+                  fromAddress: tx.from ? formatAddress(tx.from) : undefined,
+                  toAddress: tx.to ? formatAddress(tx.to) : undefined,
                   value: tx.value?.toString() || "0",
                   gasLimit: tx.gas,
                   gasPrice: tx.gasPrice,
@@ -243,10 +249,10 @@ export class AddressService {
   }
 
   // 检查地址是否为合约
-  async isContract(chainId: number, address: string): Promise<boolean> {
+  async isContract(chainId: number, address: Address): Promise<boolean> {
     try {
       const client = await rpcManager.getClient(chainId);
-      const code = await client.getCode({ address: address as `0x${string}` });
+      const code = await client.getCode({ address });
       return Boolean(code && code !== "0x" && code.length > 2);
     } catch (error) {
       console.error(`Failed to check if ${address} is contract:`, error);
@@ -302,26 +308,26 @@ export class AddressService {
   // 从数据库获取地址信息
   private async getAddressFromDB(
     chainId: number,
-    address: string
+    address: Address
   ): Promise<{
     label?: string;
     firstSeenBlock?: bigint;
     lastSeenBlock?: bigint;
   } | null> {
     try {
-      const result = await db.query<{
-        label: string;
-        first_seen_block: string;
-        last_seen_block: string;
-      }>(
-        `
-        SELECT label, first_seen_block, last_seen_block 
-        FROM indexed_addresses 
-        WHERE chain_id = ? AND address = ?
-        LIMIT 1
-      `,
-        [chainId, address.toLowerCase()]
-      );
+      const result = await db
+        .select({
+          firstSeen: indexedAddresses.firstSeen,
+          lastActivity: indexedAddresses.lastActivity,
+        })
+        .from(indexedAddresses)
+        .where(
+          and(
+            eq(indexedAddresses.chainId, chainId),
+            eq(indexedAddresses.address, address)
+          )
+        )
+        .limit(1);
 
       if (result.length === 0) {
         return null;
@@ -329,13 +335,9 @@ export class AddressService {
 
       const row = result[0];
       return {
-        label: row.label || undefined,
-        firstSeenBlock: row.first_seen_block
-          ? BigInt(row.first_seen_block)
-          : undefined,
-        lastSeenBlock: row.last_seen_block
-          ? BigInt(row.last_seen_block)
-          : undefined,
+        label: undefined, // 新schema中没有label字段
+        firstSeenBlock: row.firstSeen ? BigInt(row.firstSeen) : undefined,
+        lastSeenBlock: row.lastActivity ? BigInt(row.lastActivity) : undefined,
       };
     } catch (error) {
       console.warn(`Failed to get address from DB:`, error);
@@ -346,7 +348,7 @@ export class AddressService {
   // 更新数据库中的地址信息
   private async updateAddressInDB(
     chainId: number,
-    address: string,
+    address: Address,
     info: {
       transactionCount?: number;
       lastQueried?: Date;
@@ -356,24 +358,28 @@ export class AddressService {
     }
   ): Promise<void> {
     try {
-      await db.query(
-        `
-        INSERT OR REPLACE INTO indexed_addresses (
-          chain_id, address, label, first_seen_block, last_seen_block,
-          transaction_count, last_queried, indexed_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `,
-        [
+      await db
+        .insert(indexedAddresses)
+        .values({
           chainId,
-          address.toLowerCase(),
-          info.label || null,
-          info.firstSeenBlock?.toString() || null,
-          info.lastSeenBlock?.toString() || null,
-          info.transactionCount || 0,
-          info.lastQueried?.toISOString() || new Date().toISOString(),
-          new Date().toISOString(),
-        ]
-      );
+          address,
+          type: "EOA", // 默认类型，可以后续更新
+          firstSeen: info.firstSeenBlock ? Number(info.firstSeenBlock) : null,
+          lastActivity: info.lastSeenBlock ? Number(info.lastSeenBlock) : null,
+          transactionCount: info.transactionCount || 0,
+          indexedAt: new Date(),
+        })
+        .onConflictDoUpdate({
+          target: [indexedAddresses.chainId, indexedAddresses.address],
+          set: {
+            firstSeen: info.firstSeenBlock ? Number(info.firstSeenBlock) : null,
+            lastActivity: info.lastSeenBlock
+              ? Number(info.lastSeenBlock)
+              : null,
+            transactionCount: info.transactionCount || 0,
+            indexedAt: new Date(),
+          },
+        });
     } catch (error) {
       console.warn("Failed to update address in DB:", error);
     }
@@ -399,21 +405,16 @@ export class AddressService {
     limit: number = 10
   ): Promise<AddressInfo[]> {
     try {
-      const result = await db.query<{
-        address: string;
-        label: string;
-        transaction_count: number;
-        last_queried: string;
-      }>(
-        `
-        SELECT address, label, transaction_count, last_queried 
-        FROM indexed_addresses 
-        WHERE chain_id = ?
-        ORDER BY last_queried DESC 
-        LIMIT ?
-      `,
-        [chainId, limit]
-      );
+      const result = await db
+        .select({
+          address: indexedAddresses.address,
+          transactionCount: indexedAddresses.transactionCount,
+          indexedAt: indexedAddresses.indexedAt,
+        })
+        .from(indexedAddresses)
+        .where(eq(indexedAddresses.chainId, chainId))
+        .orderBy(indexedAddresses.indexedAt)
+        .limit(limit);
 
       const addresses: AddressInfo[] = [];
 
@@ -426,10 +427,10 @@ export class AddressService {
             chainId,
             address: row.address,
             balance,
-            transactionCount: row.transaction_count,
+            transactionCount: row.transactionCount || 0,
             isContract,
-            label: row.label || undefined,
-            lastQueried: new Date(row.last_queried),
+            label: undefined, // 新schema中没有label字段
+            lastQueried: row.indexedAt,
           });
         } catch (error) {
           console.warn(`Failed to get info for address ${row.address}:`, error);

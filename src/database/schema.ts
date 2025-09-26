@@ -60,6 +60,7 @@ export const userRpcConfigs = duckdbTable("user_rpc_configs", {
   chainId: integer().primaryKey(),
   name: varchar({ length: 255 }),
   url: varchar({ length: 500 }),
+  supportsHistory: boolean(),
   maxEventRange: integer(),
 
   ...timestampColumns,
@@ -229,7 +230,7 @@ export const contractCreationInfo = duckdbTable(
     creationTxHash: txHash(),
     creationBlockNumber: bignum(), // 创建区块号
     creatorAddress: address(),
-    factoryAddress: address(),
+    factoryAddress: address(), // 允许 NULL，因为不是所有合约都通过工厂创建
     creationMethod: varchar({ length: 50 }),
     lastUpdated: datetime().default(sql`now()`),
   },

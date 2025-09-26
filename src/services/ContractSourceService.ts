@@ -1,6 +1,9 @@
 import { rpcManager } from "./RpcManager";
-import { db } from "../database/init";
+import { db, contractCreationInfo, contractSources } from "../database/init";
+import { eq, and, sql } from "drizzle-orm";
 import { createRetryableRpcCall } from "../utils/errorHandler";
+import { addressEquals } from "../utils/address";
+import type { Address } from "viem";
 import {
   analyzeRpcError,
   formatRpcErrorForUser,
@@ -10,7 +13,7 @@ import {
 
 export type ContractSource = {
   chainId: number;
-  address: string;
+  address: Address;
   name?: string;
   compilerVersion?: string;
   optimizationEnabled?: boolean;
@@ -56,7 +59,7 @@ export class ContractSourceService {
   // 获取合约创建信息
   async getContractCreationInfo(
     chainId: number,
-    address: string
+    address: Address
   ): Promise<ContractCreationInfo | null> {
     console.log(
       `🔍 Starting contract creation search for ${address} on chain ${chainId}`
@@ -169,13 +172,19 @@ export class ContractSourceService {
   // 从数据库获取缓存的创建信息
   private async getCachedCreationInfo(
     chainId: number,
-    address: string
+    address: Address
   ): Promise<ContractCreationInfo | null> {
     try {
-      const result = await db.query(
-        `SELECT * FROM contract_creation_info WHERE chain_id = ? AND contract_address = ?`,
-        [chainId, address.toLowerCase()]
-      );
+      const result = await db
+        .select()
+        .from(contractCreationInfo)
+        .where(
+          and(
+            eq(contractCreationInfo.chainId, chainId),
+            eq(contractCreationInfo.address, address)
+          )
+        )
+        .limit(1);
 
       if (result.length === 0) {
         return null;
@@ -184,21 +193,21 @@ export class ContractSourceService {
       const row = result[0];
 
       // 检查是否是失败的搜索记录
-      if (row.tx_hash === null || row.tx_hash === "") {
+      if (!row.creationTxHash) {
         console.log(
-          `Found cached failed search for ${address}: ${row.failure_reason || "unknown reason"}`
+          `Found cached failed search for ${address}: ${row.creationMethod || "unknown reason"}`
         );
         // 抛出特殊错误表示这是缓存的失败结果
-        throw new Error(`CACHED_FAILURE:${row.failure_reason || "unknown"}`);
+        throw new Error(`CACHED_FAILURE:${row.creationMethod || "unknown"}`);
       }
 
       return {
-        txHash: row.tx_hash,
-        blockNumber: row.block_number,
-        creator: row.creator,
-        timestamp: row.timestamp,
-        gasUsed: BigInt(row.gas_used),
-        gasPrice: BigInt(row.gas_price || 0),
+        txHash: row.creationTxHash,
+        blockNumber: Number(row.creationBlockNumber),
+        creator: row.creatorAddress || undefined,
+        timestamp: row.lastUpdated,
+        gasUsed: BigInt(0), // 这些字段在新schema中没有，可以后续添加
+        gasPrice: BigInt(0),
       };
     } catch (error) {
       console.warn(`Failed to get cached creation info for ${address}:`, error);
@@ -209,15 +218,21 @@ export class ContractSourceService {
   // 缓存创建信息到数据库
   private async cacheCreationInfo(
     chainId: number,
-    address: string,
+    address: Address,
     creationInfo: ContractCreationInfo
   ): Promise<void> {
     try {
       // 先检查是否已存在
-      const existing = await db.query(
-        `SELECT id FROM contract_creation_info WHERE chain_id = ? AND contract_address = ?`,
-        [chainId, address.toLowerCase()]
-      );
+      const existing = await db
+        .select()
+        .from(contractCreationInfo)
+        .where(
+          and(
+            eq(contractCreationInfo.chainId, chainId),
+            eq(contractCreationInfo.address, address)
+          )
+        )
+        .limit(1);
 
       if (existing.length > 0) {
         console.log(`Creation info for ${address} already cached, skipping`);
@@ -225,22 +240,16 @@ export class ContractSourceService {
       }
 
       // 插入新记录
-      await db.query(
-        `INSERT INTO contract_creation_info 
-         (chain_id, contract_address, tx_hash, block_number, creator, timestamp, gas_used, gas_price, created_at) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          chainId,
-          address.toLowerCase(),
-          creationInfo.txHash,
-          creationInfo.blockNumber,
-          creationInfo.creator,
-          creationInfo.timestamp,
-          creationInfo.gasUsed.toString(),
-          creationInfo.gasPrice?.toString() || "0",
-          new Date().toISOString(),
-        ]
-      );
+      await db.insert(contractCreationInfo).values({
+        chainId,
+        address: address,
+        creationTxHash: creationInfo.txHash,
+        creationBlockNumber: BigInt(creationInfo.blockNumber),
+        creatorAddress: creationInfo.creator,
+        factoryAddress: null,
+        creationMethod: "binary_search",
+        lastUpdated: new Date(),
+      });
     } catch (error) {
       console.warn(`Failed to cache creation info for ${address}:`, error);
       // 不抛出错误，缓存失败不应该影响主要功能
@@ -250,33 +259,37 @@ export class ContractSourceService {
   // 缓存失败的搜索结果
   private async cacheFailedSearch(
     chainId: number,
-    address: string,
+    address: Address,
     reason: string
   ): Promise<void> {
     try {
       // 先检查是否已存在
-      const existing = await db.query(
-        `SELECT id FROM contract_creation_info WHERE chain_id = ? AND contract_address = ?`,
-        [chainId, address.toLowerCase()]
-      );
+      const existing = await db
+        .select()
+        .from(contractCreationInfo)
+        .where(
+          and(
+            eq(contractCreationInfo.chainId, chainId),
+            eq(contractCreationInfo.address, address)
+          )
+        )
+        .limit(1);
 
       if (existing.length > 0) {
         return; // 已存在记录，不重复插入
       }
 
-      // 插入失败记录（tx_hash为null表示失败）
-      await db.query(
-        `INSERT INTO contract_creation_info 
-         (chain_id, contract_address, tx_hash, failure_reason, created_at) 
-         VALUES (?, ?, ?, ?, ?)`,
-        [
-          chainId,
-          address.toLowerCase(),
-          null, // tx_hash为null表示搜索失败
-          reason,
-          new Date().toISOString(),
-        ]
-      );
+      // 插入失败记录（creationTxHash为null表示失败）
+      await db.insert(contractCreationInfo).values({
+        chainId,
+        address: address,
+        creationTxHash: null, // null表示搜索失败
+        creationBlockNumber: null,
+        creatorAddress: null,
+        factoryAddress: null,
+        creationMethod: reason,
+        lastUpdated: new Date(),
+      });
       console.log(`Cached failed search for ${address}: ${reason}`);
     } catch (error) {
       console.warn(`Failed to cache failed search for ${address}:`, error);
@@ -286,7 +299,7 @@ export class ContractSourceService {
   // 使用二分法查找合约创建的区块号
   private async findContractCreationBlock(
     chainId: number,
-    address: string
+    address: Address
   ): Promise<number | null> {
     const client = await rpcManager.getClient(chainId);
     if (!client) {
@@ -496,7 +509,7 @@ export class ContractSourceService {
   // 在指定区块中查找合约创建交易
   private async findContractCreationTransaction(
     chainId: number,
-    contractAddress: string,
+    contractAddress: Address,
     blockNumber: number
   ): Promise<ContractCreationInfo | null> {
     const client = await rpcManager.getClient(chainId);
@@ -522,7 +535,7 @@ export class ContractSourceService {
       console.log(
         `Searching ${block.transactions.length} transactions in block ${blockNumber} for contract creation`
       );
-      console.log(`Target contract: ${contractAddress.toLowerCase()}`);
+      console.log(`Target contract: ${contractAddress}`);
 
       // 遍历区块中的所有交易
       for (let i = 0; i < block.transactions.length; i++) {
@@ -554,8 +567,7 @@ export class ContractSourceService {
             if (
               receipt &&
               receipt.contractAddress &&
-              receipt.contractAddress.toLowerCase() ===
-                contractAddress.toLowerCase()
+              addressEquals(receipt.contractAddress, contractAddress)
             ) {
               console.log(`🎉 Found matching contract creation transaction!`);
               console.log(
@@ -572,7 +584,7 @@ export class ContractSourceService {
               };
             } else {
               console.log(
-                `📋 Contract address doesn't match (expected: ${contractAddress.toLowerCase()}, got: ${receipt.contractAddress?.toLowerCase()})`
+                `📋 Contract address doesn't match (expected: ${contractAddress}, got: ${receipt.contractAddress ? formatAddress(receipt.contractAddress) : "null"})`
               );
             }
           } else {
@@ -588,9 +600,8 @@ export class ContractSourceService {
             const receipt = await getReceipt();
 
             // 方法1: 检查交易日志中是否有我们目标合约的相关事件
-            const hasContractEvent = receipt.logs.some(
-              (log) =>
-                log.address?.toLowerCase() === contractAddress.toLowerCase()
+            const hasContractEvent = receipt.logs.some((log) =>
+              addressEquals(log.address || "", contractAddress)
             );
 
             if (hasContractEvent) {
@@ -626,9 +637,7 @@ export class ContractSourceService {
               const findContractCreation = (call: any): boolean => {
                 // 检查当前调用是否创建了目标合约
                 if (call.type === "CREATE" || call.type === "CREATE2") {
-                  if (
-                    call.to?.toLowerCase() === contractAddress.toLowerCase()
-                  ) {
+                  if (addressEquals(call.to || "", contractAddress)) {
                     console.log(
                       `📋 Found CREATE/CREATE2 operation creating ${contractAddress}`
                     );
@@ -701,7 +710,7 @@ export class ContractSourceService {
   // 获取合约源码（优先级：数据库 -> Sourcify -> 返回未验证状态）
   async getContractSource(
     chainId: number,
-    address: string
+    address: Address
   ): Promise<ContractSource | null> {
     console.log(
       `🔍 Getting contract source for ${address} on chain ${chainId}`
@@ -862,7 +871,7 @@ export class ContractSourceService {
       console.log(`📋 No verified source found, creating unverified record`);
       const unverifiedContract: ContractSource = {
         chainId,
-        address: address.toLowerCase(),
+        address: address,
         sourceCode: "",
         abi: "[]",
         verificationStatus: "unverified",
@@ -883,7 +892,7 @@ export class ContractSourceService {
   // 从 Sourcify 获取合约源码
   private async fetchFromSourcify(
     chainId: number,
-    address: string
+    address: Address
   ): Promise<ContractSource | null> {
     try {
       const baseUrl = "https://sourcify.dev/server";
@@ -958,7 +967,7 @@ export class ContractSourceService {
 
       return {
         chainId,
-        address: address.toLowerCase(),
+        address: address,
         name: contractName,
         compilerVersion,
         sourceCode,
@@ -978,7 +987,7 @@ export class ContractSourceService {
   // 从链特定的区块浏览器获取合约源码
   private async fetchFromChainExplorer(
     chainId: number,
-    address: string
+    address: Address
   ): Promise<ContractSource | null> {
     try {
       // 根据链ID选择对应的API
@@ -1010,7 +1019,7 @@ export class ContractSourceService {
 
       return {
         chainId,
-        address: address.toLowerCase(),
+        address: address,
         name: contractData.ContractName || "Unknown",
         compilerVersion: contractData.CompilerVersion || "Unknown",
         optimizationEnabled: contractData.OptimizationUsed === "1",
@@ -1055,7 +1064,7 @@ export class ContractSourceService {
   // 检查地址是否为合约
   private async isContractAddress(
     chainId: number,
-    address: string
+    address: Address
   ): Promise<boolean> {
     try {
       const client = await rpcManager.getClient(chainId);
@@ -1070,7 +1079,7 @@ export class ContractSourceService {
   // 专门处理代理合约
   private async handleProxyContract(
     chainId: number,
-    address: string,
+    address: Address,
     proxyInfo: {
       isProxy: boolean;
       proxyType?: "transparent" | "uups" | "beacon" | "minimal" | "unknown";
@@ -1093,10 +1102,7 @@ export class ContractSourceService {
 
         // 检查区块浏览器返回的是否是代理合约本身的源码
         // 如果返回的地址与请求的地址不同，说明返回的是实现合约的源码
-        if (
-          explorerResult &&
-          explorerResult.address.toLowerCase() === address.toLowerCase()
-        ) {
+        if (explorerResult && addressEquals(explorerResult.address, address)) {
           proxyContract = explorerResult;
         }
       }
@@ -1105,7 +1111,7 @@ export class ContractSourceService {
       if (!proxyContract) {
         proxyContract = {
           chainId,
-          address: address.toLowerCase(),
+          address: address,
           name: `TransparentUpgradeableProxy`,
           sourceCode:
             "// This is a proxy contract. The actual implementation is at the implementation address.",
@@ -1202,7 +1208,7 @@ export class ContractSourceService {
   // 检测代理合约类型和实现地址
   private async detectProxy(
     chainId: number,
-    address: string
+    address: Address
   ): Promise<{
     isProxy: boolean;
     proxyType?: "transparent" | "uups" | "beacon" | "minimal" | "unknown";
@@ -1246,7 +1252,7 @@ export class ContractSourceService {
             return {
               isProxy: true,
               proxyType: "transparent",
-              implementationAddress: implementationAddress.toLowerCase(),
+              implementationAddress: implementationAddress,
             };
           }
         }
@@ -1281,7 +1287,7 @@ export class ContractSourceService {
           return {
             isProxy: true,
             proxyType: "beacon",
-            implementationAddress: beaconAddress.toLowerCase(),
+            implementationAddress: formatAddress(beaconAddress),
           };
         }
       } catch (error) {
@@ -1301,13 +1307,19 @@ export class ContractSourceService {
   // 从数据库获取缓存的合约信息
   private async getFromDatabase(
     chainId: number,
-    address: string
+    address: Address
   ): Promise<ContractSource | null> {
     try {
-      const rows = await db.query(
-        `SELECT * FROM contract_sources WHERE chain_id = ? AND address = ?`,
-        [chainId, address.toLowerCase()]
-      );
+      const rows = await db
+        .select()
+        .from(contractSources)
+        .where(
+          and(
+            eq(contractSources.chainId, chainId),
+            eq(contractSources.address, address)
+          )
+        )
+        .limit(1);
 
       if (rows.length === 0) {
         return null;
@@ -1315,22 +1327,22 @@ export class ContractSourceService {
 
       const row = rows[0];
       return {
-        chainId: row.chain_id,
+        chainId: row.chainId,
         address: row.address,
-        name: row.name,
-        compilerVersion: row.compiler_version,
-        optimizationEnabled: row.optimization_enabled,
-        optimizationRuns: row.optimization_runs,
-        sourceCode: row.source_code,
-        abi: row.abi,
-        constructorArguments: row.constructor_arguments,
-        verificationStatus: row.verification_status,
-        verificationSource: row.verification_source,
-        verifiedAt: row.verified_at ? new Date(row.verified_at) : undefined,
-        lastChecked: new Date(row.last_checked),
-        isProxy: row.is_proxy || false,
-        proxyType: row.proxy_type || undefined,
-        implementationAddress: row.implementation_address || undefined,
+        name: row.contractName || undefined,
+        compilerVersion: row.compilerVersion || undefined,
+        optimizationEnabled: row.optimizationUsed || undefined,
+        optimizationRuns: row.runs || undefined,
+        sourceCode: row.sourceCode || "",
+        abi: row.abi || "",
+        constructorArguments: row.constructorArguments || undefined,
+        verificationStatus: row.isVerified ? "verified" : "unverified",
+        verificationSource: "unknown",
+        verifiedAt: row.verificationDate || undefined,
+        lastChecked: row.lastUpdated,
+        isProxy: row.proxy ? true : false,
+        proxyType: (row.proxy as any) || undefined,
+        implementationAddress: row.implementation || undefined,
         // 注意：implementationContract 不从数据库加载，需要时动态获取
       };
     } catch (error) {
@@ -1342,34 +1354,41 @@ export class ContractSourceService {
   // 保存到数据库
   private async saveToDatabase(contractSource: ContractSource): Promise<void> {
     try {
-      await db.query(
-        `
-        INSERT OR REPLACE INTO contract_sources (
-          chain_id, address, name, compiler_version, optimization_enabled,
-          optimization_runs, source_code, abi, constructor_arguments,
-          verification_status, verification_source, verified_at, last_checked,
-          is_proxy, proxy_type, implementation_address
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `,
-        [
-          contractSource.chainId,
-          contractSource.address,
-          contractSource.name,
-          contractSource.compilerVersion,
-          contractSource.optimizationEnabled,
-          contractSource.optimizationRuns,
-          contractSource.sourceCode,
-          contractSource.abi,
-          contractSource.constructorArguments,
-          contractSource.verificationStatus,
-          contractSource.verificationSource,
-          contractSource.verifiedAt?.toISOString(),
-          contractSource.lastChecked.toISOString(),
-          contractSource.isProxy || false,
-          contractSource.proxyType || null,
-          contractSource.implementationAddress || null,
-        ]
-      );
+      await db
+        .insert(contractSources)
+        .values({
+          chainId: contractSource.chainId,
+          address: contractSource.address,
+          contractName: contractSource.name || null,
+          compilerVersion: contractSource.compilerVersion || null,
+          optimizationUsed: contractSource.optimizationEnabled || null,
+          runs: contractSource.optimizationRuns || null,
+          sourceCode: contractSource.sourceCode || null,
+          abi: contractSource.abi || null,
+          constructorArguments: contractSource.constructorArguments || null,
+          isVerified: contractSource.verificationStatus === "verified",
+          proxy: contractSource.proxyType || null,
+          implementation: contractSource.implementationAddress || null,
+          verificationDate: contractSource.verifiedAt || new Date(),
+          lastUpdated: contractSource.lastChecked,
+        })
+        .onConflictDoUpdate({
+          target: [contractSources.chainId, contractSources.address],
+          set: {
+            contractName: contractSource.name || null,
+            compilerVersion: contractSource.compilerVersion || null,
+            optimizationUsed: contractSource.optimizationEnabled || null,
+            runs: contractSource.optimizationRuns || null,
+            sourceCode: contractSource.sourceCode || null,
+            abi: contractSource.abi || null,
+            constructorArguments: contractSource.constructorArguments || null,
+            isVerified: contractSource.verificationStatus === "verified",
+            proxy: contractSource.proxyType || null,
+            implementation: contractSource.implementationAddress || null,
+            verificationDate: contractSource.verifiedAt || new Date(),
+            lastUpdated: contractSource.lastChecked,
+          },
+        });
     } catch (error) {
       console.error("Failed to save contract source:", error);
     }
@@ -1413,7 +1432,7 @@ export class ContractSourceService {
   }
 
   // 解析 ABI 并提取函数信息
-  async getContractFunctions(chainId: number, address: string) {
+  async getContractFunctions(chainId: number, address: Address) {
     try {
       const contractSource = await this.getContractSource(chainId, address);
       if (!contractSource || !contractSource.abi) {
@@ -1467,17 +1486,14 @@ export class ContractSourceService {
   // 获取合约统计信息
   async getContractStats(chainId: number) {
     try {
-      const rows = await db.query(
-        `
-        SELECT 
-          verification_status,
-          COUNT(*) as count
-        FROM contract_sources 
-        WHERE chain_id = ?
-        GROUP BY verification_status
-      `,
-        [chainId]
-      );
+      const rows = await db
+        .select({
+          isVerified: contractSources.isVerified,
+          count: sql`COUNT(*)`.as("count"),
+        })
+        .from(contractSources)
+        .where(eq(contractSources.chainId, chainId))
+        .groupBy(contractSources.isVerified);
 
       const stats = {
         total: 0,
@@ -1487,13 +1503,11 @@ export class ContractSourceService {
       };
 
       rows.forEach((row: any) => {
-        stats.total += row.count;
-        if (row.verification_status === "verified") {
-          stats.verified = row.count;
-        } else if (row.verification_status === "unverified") {
-          stats.unverified = row.count;
-        } else if (row.verification_status === "partial") {
-          stats.partial = row.count;
+        stats.total += Number(row.count);
+        if (row.isVerified) {
+          stats.verified = Number(row.count);
+        } else {
+          stats.unverified = Number(row.count);
         }
       });
 

@@ -1,5 +1,5 @@
 {
-  "id": "cf3757d5-cbf1-4bc3-a5f1-25b1ef3c1371",
+  "id": "16dcf09e-fbed-404b-9cbf-7c07251b7c64",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -83,13 +83,13 @@
         },
         "hash": {
           "name": "hash",
-          "type": "varchar(66)",
+          "type": "char(66)",
           "primaryKey": false,
           "notNull": true
         },
         "parent_hash": {
           "name": "parent_hash",
-          "type": "varchar(66)",
+          "type": "char(66)",
           "primaryKey": false,
           "notNull": false
         },
@@ -101,7 +101,7 @@
         },
         "miner": {
           "name": "miner",
-          "type": "varchar(42)",
+          "type": "char(42)",
           "primaryKey": false,
           "notNull": false
         },
@@ -137,13 +137,13 @@
         },
         "difficulty": {
           "name": "difficulty",
-          "type": "varchar(32)",
+          "type": "BIGNUM",
           "primaryKey": false,
           "notNull": false
         },
         "total_difficulty": {
           "name": "total_difficulty",
-          "type": "varchar(32)",
+          "type": "BIGNUM",
           "primaryKey": false,
           "notNull": false
         },
@@ -161,19 +161,19 @@
         },
         "state_root": {
           "name": "state_root",
-          "type": "varchar(66)",
+          "type": "char(66)",
           "primaryKey": false,
           "notNull": false
         },
         "transactions_root": {
           "name": "transactions_root",
-          "type": "varchar(66)",
+          "type": "char(66)",
           "primaryKey": false,
           "notNull": false
         },
         "receipts_root": {
           "name": "receipts_root",
-          "type": "varchar(66)",
+          "type": "char(66)",
           "primaryKey": false,
           "notNull": false
         },
@@ -197,8 +197,8 @@
         }
       },
       "uniqueConstraints": {
-        "blocks_chain_id_hash_unique": {
-          "name": "blocks_chain_id_hash_unique",
+        "blocks_chainId_hash_unique": {
+          "name": "blocks_chainId_hash_unique",
           "nullsNotDistinct": false,
           "columns": [
             "chain_id",
@@ -222,13 +222,13 @@
         },
         "address": {
           "name": "address",
-          "type": "varchar(42)",
+          "type": "char(42)",
           "primaryKey": false,
           "notNull": true
         },
         "creation_tx_hash": {
           "name": "creation_tx_hash",
-          "type": "varchar(66)",
+          "type": "char(66)",
           "primaryKey": false,
           "notNull": false
         },
@@ -240,13 +240,13 @@
         },
         "creator_address": {
           "name": "creator_address",
-          "type": "varchar(42)",
+          "type": "char(42)",
           "primaryKey": false,
           "notNull": false
         },
         "factory_address": {
           "name": "factory_address",
-          "type": "varchar(42)",
+          "type": "char(42)",
           "primaryKey": false,
           "notNull": false
         },
@@ -292,7 +292,7 @@
         },
         "address": {
           "name": "address",
-          "type": "varchar(42)",
+          "type": "char(42)",
           "primaryKey": false,
           "notNull": true
         },
@@ -364,7 +364,7 @@
         },
         "implementation": {
           "name": "implementation",
-          "type": "varchar(42)",
+          "type": "char(42)",
           "primaryKey": false,
           "notNull": false
         },
@@ -470,7 +470,7 @@
         },
         "address": {
           "name": "address",
-          "type": "varchar(42)",
+          "type": "char(42)",
           "primaryKey": false,
           "notNull": true
         },
@@ -580,7 +580,7 @@
         },
         "hash": {
           "name": "hash",
-          "type": "varchar(66)",
+          "type": "char(66)",
           "primaryKey": false,
           "notNull": true
         },
@@ -598,19 +598,19 @@
         },
         "from_address": {
           "name": "from_address",
-          "type": "varchar(42)",
+          "type": "char(42)",
           "primaryKey": false,
           "notNull": false
         },
         "to_address": {
           "name": "to_address",
-          "type": "varchar(42)",
+          "type": "char(42)",
           "primaryKey": false,
           "notNull": false
         },
         "value": {
           "name": "value",
-          "type": "varchar",
+          "type": "BIGNUM",
           "primaryKey": false,
           "notNull": false
         },
@@ -684,7 +684,7 @@
         },
         "contract_address": {
           "name": "contract_address",
-          "type": "varchar(42)",
+          "type": "char(42)",
           "primaryKey": false,
           "notNull": false
         },
@@ -720,8 +720,8 @@
         }
       },
       "uniqueConstraints": {
-        "transactions_chain_id_block_number_transaction_index_unique": {
-          "name": "transactions_chain_id_block_number_transaction_index_unique",
+        "transactions_chainId_blockNumber_transactionIndex_unique": {
+          "name": "transactions_chainId_blockNumber_transactionIndex_unique",
           "nullsNotDistinct": false,
           "columns": [
             "chain_id",
@@ -793,6 +793,12 @@
         "url": {
           "name": "url",
           "type": "varchar(500)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "supports_history": {
+          "name": "supports_history",
+          "type": "boolean",
           "primaryKey": false,
           "notNull": false
         },
