@@ -35,7 +35,17 @@ export function getValidatedTxHash(txHash: string): string {
   return txHash.toLowerCase();
 }
 
-export function getValidatedBlockNumber(blockNumber: string | number): number {
+export function getValidatedBlockNumber(blockNumber: string | number): number | string {
+  // Handle null/undefined
+  if (blockNumber == null) {
+    throw new HTTPException(400, { message: "Invalid block number" });
+  }
+
+  // Handle "latest" keyword
+  if (blockNumber === "latest") {
+    return "latest";
+  }
+
   const num =
     typeof blockNumber === "string" ? parseInt(blockNumber, 10) : blockNumber;
 
