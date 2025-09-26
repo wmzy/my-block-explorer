@@ -147,7 +147,7 @@ describe("ContractSourceService - Proxy Detection", () => {
       expect(result).toEqual({
         isProxy: true,
         proxyType: "beacon",
-        implementationAddress: expectedAddress.toLowerCase(),
+        implementationAddress: "0xABcdEFABcdEFabcdEfAbCdefabcdeFABcDEFabCD", // EIP-55 checksum format
       });
     });
 

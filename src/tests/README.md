@@ -1,26 +1,38 @@
 # 测试文档
 
-## 概述
+本项目使用 Vitest 作为测试框架，DuckDB 内存模式作为测试数据库，提供完整的单元测试、集成测试和端到端测试覆盖。
 
-本项目使用 Vitest 作为测试框架，包含单元测试和集成测试。
+## 测试架构
 
-## 测试结构
+### 测试数据库
+- 使用 DuckDB 内存模式 (`:memory:`) 进行测试
+- 每个测试前自动清理数据
+- 提供与生产环境相同的 SQL 兼容性
+- 支持事务和并发测试
 
-```
-src/tests/
-├── unit/           # 单元测试
-│   ├── database.test.ts      # 内存数据库测试
-│   ├── cache.test.ts         # 缓存系统测试
-│   ├── errorHandler.test.ts  # 错误处理测试
-│   └── chains.test.ts        # 链配置测试
-├── integration/    # 集成测试
-│   ├── rpc.test.ts          # RPC集成测试
-│   ├── services.test.ts     # 服务层集成测试
-│   └── api.test.ts          # API集成测试
-└── README.md       # 本文档
-```
+### 测试类型
 
-## 测试命令
+#### 单元测试 (`src/tests/unit/`)
+- 测试单个服务类和工具函数
+- Mock 外部依赖（RPC 调用等）
+- 快速执行，专注于业务逻辑
+
+#### 集成测试 (`src/tests/integration/`)
+- 测试 API 端点和服务层集成
+- 使用真实的数据库连接
+- 测试数据流和错误处理
+
+#### 端到端测试 (`src/tests/e2e/`)
+- 测试完整的用户工作流
+- 启动真实的服务器实例
+- 测试数据一致性和性能
+
+#### 性能测试 (`src/tests/performance/`)
+- 数据库操作性能测试
+- 并发查询测试
+- 内存使用监控
+
+## 运行测试
 
 ```bash
 # 运行所有测试
@@ -32,152 +44,196 @@ npm run test:unit
 # 运行集成测试
 npm run test:integration
 
-# 监视模式运行测试
+# 运行端到端测试
+npm run test:e2e
+
+# 运行性能测试
+npm run test:performance
+
+# 运行所有测试（除性能测试）
+npm run test:all
+
+# 监听模式
 npm run test:watch
 
-# 生成测试覆盖率报告
+# 生成覆盖率报告
 npm run test:coverage
 
-# 启动测试UI界面
+# 启动测试 UI
 npm run test:ui
 ```
 
-## 单元测试
+## 测试工具
 
-### 内存数据库测试 (`database.test.ts`)
+### TestDatabaseManager
+位于 `testDatabase.ts`，提供：
+- 内存数据库实例管理
+- 表结构初始化
+- 数据清理功能
+- 原始 SQL 查询支持
 
-测试内存数据库的核心功能：
-- ✅ 基本功能：表初始化、SELECT查询
-- ✅ 数据操作：INSERT、SELECT、INSERT OR REPLACE、WHERE条件、ORDER BY排序、LIMIT分页
-- ✅ 事务支持：事务操作
-- ✅ 错误处理：无效SQL、不存在的表
+### Fixtures
+位于 `fixtures.ts`，提供：
+- 示例区块数据
+- 示例交易数据
+- 示例合约源码
+- 数据生成工具函数
 
-### 缓存系统测试 (`cache.test.ts`)
+### 测试设置
+位于 `setup.ts`，提供：
+- 全局测试环境配置
+- DOM API Mocks
+- 数据库生命周期管理
+- 控制台输出控制
 
-测试LRU缓存的功能：
-- ✅ 基本缓存操作：设置、获取、删除、清空
-- ✅ TTL过期机制
-- ✅ LRU淘汰机制
-- ✅ getOrSet方法
-- ✅ 缓存清理和统计
+## 最佳实践
 
-### 错误处理测试 (`errorHandler.test.ts`)
+### 测试数据管理
+1. 使用 fixtures 中的示例数据
+2. 每个测试使用独立的数据集
+3. 避免测试间的数据依赖
 
-测试错误处理和重试机制：
-- ✅ withRetry函数：成功返回、失败重试、最大重试次数、重试条件
-- ✅ 错误类型：RpcError、DatabaseError、ValidationError
-- ✅ 错误识别：可重试错误识别
-- ✅ 错误标准化：normalizeError函数
-- ✅ 重试包装器：createRetryableRpcCall、createRetryableDbCall
+### Mock 策略
+1. Mock 外部 RPC 调用
+2. Mock 网络请求
+3. 保持数据库操作真实
 
-### 链配置测试 (`chains.test.ts`)
+### 性能考虑
+1. 批量插入测试数据
+2. 使用适当的索引
+3. 监控内存使用
 
-测试区块链配置功能：
-- ✅ 基本配置：支持的链列表、热门链列表
-- ✅ 链信息获取：getChainInfo、getChainName、getChainSymbol
-- ✅ 链支持检查：isChainSupported、getSupportedChainIds
-- ✅ 热门链识别：isPopularChain
-- ✅ 链类型识别：getChainType（主网/测试网）
-- ✅ 链排序和搜索：getSortedChains、searchChains
+### 错误处理测试
+1. 测试各种错误场景
+2. 验证错误消息
+3. 确保优雅降级
 
-## 集成测试
+## 测试覆盖范围
 
-### RPC集成测试 (`rpc.test.ts`)
+### 服务层测试
+- ✅ BlockService - 区块查询和缓存
+- ✅ TransactionService - 交易查询和分析
+- ✅ AddressService - 地址信息和活动
+- ✅ SearchService - 搜索功能
+- ✅ ContractService - 合约验证和交互
 
-测试与真实区块链网络的RPC交互：
-- 基本RPC功能：客户端创建、区块高度获取、区块信息查询
-- 地址相关查询：余额查询、交易数量查询、合约代码查询
-- RPC管理器功能：链名称获取、连接测试
-- 客户端缓存：客户端复用
-- 错误处理：不支持的链ID、网络错误
+### API 测试
+- ✅ 区块 API 端点
+- ✅ 交易 API 端点
+- ✅ 地址 API 端点
+- ✅ 搜索 API 端点
+- ✅ 统计 API 端点
 
-**注意**: 这些测试需要网络连接，可能会比较慢。
+### 数据库测试
+- ✅ CRUD 操作
+- ✅ 索引效果
+- ✅ 查询性能
+- ✅ 并发处理
+- ✅ 事务支持
 
-### 服务层集成测试 (`services.test.ts`)
-
-测试各个服务层的集成：
-- BlockService：最新区块、区块查询、区块列表、统计
-- AddressService：地址信息、余额查询、合约检查、交易历史
-- TransactionService：最新交易、统计、交易查询
-- SearchService：区块搜索、地址搜索、交易搜索、搜索历史
-- 服务间协作：数据索引、地址索引更新
-- 缓存功能：缓存命中测试
-
-**注意**: 这些测试需要网络连接和较长的超时时间。
-
-### API集成测试 (`api.test.ts`)
-
-测试HTTP API端点：
-- 健康检查：`GET /api/health`
-- 搜索API：`GET /api/chains/:chainId/search`
-- 区块API：`GET /api/chains/:chainId/blocks/*`
-- 地址API：`GET /api/chains/:chainId/addresses/*`
-- 统计API：`GET /api/stats/overview`
-- 错误处理：404、400错误
-- CORS和安全头
-
-**注意**: 由于BigInt序列化问题，某些API测试可能会跳过。
-
-## 测试配置
-
-测试配置位于 `vitest.config.ts`：
-
-```typescript
-export default defineConfig({
-  test: {
-    globals: true,
-    environment: 'node',
-    include: ['src/tests/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
-    testTimeout: 30000, // 30秒超时
-    coverage: {
-      provider: 'v8',
-      reporter: ['text', 'json', 'html'],
-      include: ['src/**/*.ts'],
-      exclude: ['src/tests/**', 'src/**/*.d.ts']
-    }
-  }
-});
-```
-
-## 测试最佳实践
-
-1. **单元测试**：测试单个函数或类的功能，不依赖外部服务
-2. **集成测试**：测试多个组件的协作，可能需要网络连接
-3. **Mock使用**：在单元测试中使用mock避免外部依赖
-4. **超时设置**：为需要网络请求的测试设置合适的超时时间
-5. **清理工作**：在测试后清理数据库和缓存状态
-6. **错误测试**：测试错误情况和边界条件
+### 工作流测试
+- ✅ 完整的区块索引流程
+- ✅ 地址活动跟踪
+- ✅ 合约交互分析
+- ✅ 错误恢复机制
 
 ## 持续集成
 
-测试可以在CI/CD管道中运行：
+测试配置支持 CI/CD 环境：
+- 无需外部依赖
+- 快速启动和清理
+- 详细的错误报告
+- 覆盖率统计
 
+## 调试测试
+
+### 使用测试 UI
 ```bash
-# 在CI中运行测试（跳过需要网络的集成测试）
-npm run test:unit
+npm run test:ui
+```
 
-# 在有网络的环境中运行完整测试
-npm test
+### 查看详细输出
+```bash
+npm run test:unit -- --reporter=verbose
+```
+
+### 调试特定测试
+```bash
+npm run test:unit -- --grep "specific test name"
+```
+
+### 性能分析
+```bash
+npm run test:performance -- --reporter=verbose
 ```
 
 ## 故障排除
 
 ### 常见问题
 
-1. **网络超时**：集成测试可能因为网络问题失败，可以增加超时时间或跳过
-2. **BigInt序列化**：API测试中的BigInt序列化问题已通过序列化工具解决
-3. **数据库锁定**：并发测试可能导致数据库锁定，已通过重试机制解决
+1. **内存不足**
+   - 检查测试数据大小
+   - 确保正确清理数据
+   - 监控内存使用
 
-### 调试技巧
+2. **测试超时**
+   - 检查数据库连接
+   - 优化查询性能
+   - 增加超时时间
 
-1. 使用 `npm run test:ui` 启动可视化测试界面
-2. 使用 `npm run test:watch` 在开发时持续运行测试
-3. 查看测试覆盖率报告了解测试覆盖情况
-4. 使用 `console.log` 在测试中输出调试信息
+3. **Mock 失效**
+   - 验证 Mock 配置
+   - 检查导入路径
+   - 确保 Mock 重置
 
-## 测试统计
+4. **数据不一致**
+   - 检查测试隔离
+   - 验证数据清理
+   - 确保事务完整性
 
-- **单元测试**: 66个测试用例，覆盖核心功能模块
-- **集成测试**: 涵盖RPC、服务层、API层的集成测试
-- **测试覆盖率**: 通过 `npm run test:coverage` 查看详细覆盖率报告
-- **执行时间**: 单元测试 ~2秒，集成测试 ~30秒（取决于网络）
+### 性能优化
+
+1. **批量操作**
+   ```typescript
+   // 好的做法
+   await db.insert(table).values(batchData);
+   
+   // 避免
+   for (const item of data) {
+     await db.insert(table).values(item);
+   }
+   ```
+
+2. **索引使用**
+   ```typescript
+   // 确保查询使用索引
+   await db.select()
+     .from(table)
+     .where(eq(table.indexedColumn, value));
+   ```
+
+3. **内存管理**
+   ```typescript
+   // 限制结果集大小
+   await db.select()
+     .from(table)
+     .limit(1000);
+   ```
+
+## 扩展测试
+
+添加新的测试时：
+
+1. 选择合适的测试类型
+2. 使用现有的工具和 fixtures
+3. 遵循命名约定
+4. 添加必要的文档
+5. 确保测试隔离
+
+## 测试指标
+
+当前测试覆盖目标：
+- 代码覆盖率 > 80%
+- 分支覆盖率 > 70%
+- 函数覆盖率 > 90%
+- 行覆盖率 > 85%

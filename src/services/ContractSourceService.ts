@@ -2,7 +2,7 @@ import { rpcManager } from "./RpcManager";
 import { db, contractCreationInfo, contractSources } from "../database/init";
 import { eq, and, sql } from "drizzle-orm";
 import { createRetryableRpcCall } from "../utils/errorHandler";
-import { addressEquals } from "../utils/address";
+import { addressEquals, formatAddress } from "../utils/address";
 import type { Address } from "viem";
 import {
   analyzeRpcError,
