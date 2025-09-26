@@ -8,7 +8,7 @@ const duckdbAdapter = createDuckDBAdapter(
 );
 
 // 配置 Drizzle ORM
-export const db = drizzle(duckdbAdapter as any, { schema });
+export const db = drizzle(duckdbAdapter, { schema, logger: true });
 
 // 导出所有表和类型
 export * from "./schema";

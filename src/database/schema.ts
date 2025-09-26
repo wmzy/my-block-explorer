@@ -1,161 +1,259 @@
+/**
+ * DuckDB 兼容的数据库 Schema
+ * 使用类型安全的 DuckDB 专用构造器，确保只使用支持的特性
+ *
+ * 设计原则：
+ * 1. 在 schema 定义层面确保 DuckDB 兼容性
+ * 2. 使用明确的 DuckDB 类型构造器
+ * 3. 避免在运行时做不安全的 SQL 转换
+ */
+import { sql } from "drizzle-orm";
 import {
   integer,
   varchar,
-  bigint,
+  text,
+  boolean,
+  // EVM 特定类型
+  address,
+  txHash,
+  blockHash,
+  hash32,
+  hexData,
+  txType,
+  txStatus,
+  // 时间类型
   timestamp,
-  pgTable,
+  datetime,
+  // 通用大数类型
+  bignum,
+  uint256,
+  // 表和约束构造器
+  duckdbTable,
   primaryKey,
   unique,
-  decimal,
-  boolean,
-  text,
-  index,
-} from 'drizzle-orm/pg-core';
+} from "./db-types";
+
+// 通用字段组合
+const timestampColumns = {
+  createdAt: datetime().default(sql`now()`),
+  updatedAt: datetime().default(sql`now()`),
+} as const;
+
+// 链相关的基础字段
+const chainColumns = {
+  chainId: integer().notNull(),
+} as const;
+
+// 地址相关字段
+const addressColumns = {
+  address: address().notNull(),
+} as const;
+
+// 链+地址组合（常用于合约相关表）
+const chainAddressColumns = {
+  ...chainColumns,
+  ...addressColumns,
+} as const;
 
 // 用户RPC配置表
-export const userRpcConfigs = pgTable('user_rpc_configs', {
-  chainId: integer('chain_id').primaryKey(),
-  customRpcUrl: varchar('custom_rpc_url', { length: 500 }),
-  rpcBackupUrls: text('rpc_backup_urls'), // JSON数组
-  timeoutMs: integer('timeout_ms').default(10000),
-  retryCount: integer('retry_count').default(3),
-  rateLimit: integer('rate_limit').default(100),
-  createdAt: timestamp('created_at').defaultNow(),
-  updatedAt: timestamp('updated_at').defaultNow(),
+export const userRpcConfigs = duckdbTable("user_rpc_configs", {
+  chainId: integer().primaryKey(),
+  name: varchar({ length: 255 }),
+  url: varchar({ length: 500 }),
+  maxEventRange: integer(),
+
+  ...timestampColumns,
 });
 
 // 区块表
-export const blocks = pgTable('blocks', {
-  chainId: integer('chain_id').notNull(),
-  number: bigint('number', { mode: 'bigint' }).notNull(),
-  hash: varchar('hash', { length: 66 }).notNull(),
-  parentHash: varchar('parent_hash', { length: 66 }),
-  timestamp: timestamp('timestamp'),
-  miner: varchar('miner', { length: 42 }),
-  gasLimit: bigint('gas_limit', { mode: 'bigint' }),
-  gasUsed: bigint('gas_used', { mode: 'bigint' }),
-  baseFeePerGas: bigint('base_fee_per_gas', { mode: 'bigint' }),
-  transactionCount: integer('transaction_count'),
-  sizeBytes: integer('size_bytes'),
-  difficulty: varchar('difficulty', { length: 32 }),
-  totalDifficulty: varchar('total_difficulty', { length: 32 }),
-  extraData: text('extra_data'),
-  logsBloom: text('logs_bloom'),
-  stateRoot: varchar('state_root', { length: 66 }),
-  transactionsRoot: varchar('transactions_root', { length: 66 }),
-  receiptsRoot: varchar('receipts_root', { length: 66 }),
-  indexedAt: timestamp('indexed_at').defaultNow(),
-}, (table) => ({
-  pk: primaryKey({ columns: [table.chainId, table.number] }),
-  hashUnique: unique().on(table.chainId, table.hash),
-  // 索引
-  timestampIdx: index('blocks_chain_timestamp_idx').on(table.chainId, table.timestamp),
-  minerIdx: index('blocks_chain_miner_idx').on(table.chainId, table.miner),
-  hashIdx: index('blocks_hash_idx').on(table.hash),
-}));
+export const blocks = duckdbTable(
+  "blocks",
+  {
+    ...chainColumns,
+    number: bignum().notNull(), // 区块号
+    hash: blockHash().notNull(),
+    parentHash: blockHash(),
+    timestamp: timestamp(),
+    miner: address(),
+    gasLimit: bignum(), // Gas 限制
+    gasUsed: bignum(), // Gas 使用量
+    baseFeePerGas: bignum(), // Gas 价格
+    transactionCount: integer(),
+    sizeBytes: integer(),
+    difficulty: uint256(),
+    totalDifficulty: uint256(),
+    extraData: hexData(),
+    logsBloom: hexData(),
+    stateRoot: hash32(),
+    transactionsRoot: hash32(),
+    receiptsRoot: hash32(),
+    indexedAt: datetime().default(sql`now()`),
+  },
+  (table) => [
+    primaryKey({ columns: [table.chainId, table.number] }),
+    unique().on(table.chainId, table.hash),
+    // 注意：索引在迁移脚本中手动创建，避免 Drizzle 生成不兼容的索引语法
+  ]
+);
 
 // 交易表
-export const transactions = pgTable('transactions', {
-  chainId: integer('chain_id').notNull(),
-  hash: varchar('hash', { length: 66 }).notNull(),
-  blockNumber: bigint('block_number', { mode: 'bigint' }),
-  transactionIndex: integer('transaction_index'),
-  fromAddress: varchar('from_address', { length: 42 }),
-  toAddress: varchar('to_address', { length: 42 }),
-  value: decimal('value', { precision: 38, scale: 0 }),
-  gasLimit: bigint('gas_limit', { mode: 'bigint' }),
-  gasPrice: bigint('gas_price', { mode: 'bigint' }),
-  maxFeePerGas: bigint('max_fee_per_gas', { mode: 'bigint' }),
-  maxPriorityFeePerGas: bigint('max_priority_fee_per_gas', { mode: 'bigint' }),
-  gasUsed: bigint('gas_used', { mode: 'bigint' }),
-  effectiveGasPrice: bigint('effective_gas_price', { mode: 'bigint' }),
-  status: integer('status'),
-  type: integer('type').default(0),
-  nonce: bigint('nonce', { mode: 'bigint' }),
-  inputData: text('input_data'),
-  logsCount: integer('logs_count').default(0),
-  contractAddress: varchar('contract_address', { length: 42 }),
-  cumulativeGasUsed: bigint('cumulative_gas_used', { mode: 'bigint' }),
-  timestamp: timestamp('timestamp'),
-  indexedAt: timestamp('indexed_at').defaultNow(),
-}, (table) => ({
-  pk: primaryKey({ columns: [table.chainId, table.hash] }),
-  blockUnique: unique().on(table.chainId, table.blockNumber, table.transactionIndex),
-  // 索引
-  blockIdx: index('transactions_chain_block_idx').on(table.chainId, table.blockNumber),
-  fromIdx: index('transactions_chain_from_idx').on(table.chainId, table.fromAddress),
-  toIdx: index('transactions_chain_to_idx').on(table.chainId, table.toAddress),
-  timestampIdx: index('transactions_chain_timestamp_idx').on(table.chainId, table.timestamp),
-  hashIdx: index('transactions_hash_idx').on(table.hash),
-}));
+export const transactions = duckdbTable(
+  "transactions",
+  {
+    ...chainColumns,
+    hash: txHash().notNull(),
+    blockNumber: bignum(), // 区块号
+    transactionIndex: integer(),
+    fromAddress: address(),
+    toAddress: address(),
+    value: bignum(), // Wei 金额
+    gasLimit: bignum(), // Gas 限制
+    gasPrice: bignum(), // Gas 价格
+    maxFeePerGas: bignum(), // 最大 Gas 费用
+    maxPriorityFeePerGas: bignum(), // 最大优先费用
+    gasUsed: bignum(), // Gas 使用量
+    effectiveGasPrice: bignum(), // 有效 Gas 价格
+    status: txStatus(),
+    type: txType().default(0),
+    nonce: bignum(), // Nonce 值
+    inputData: hexData(),
+    logsCount: integer().default(0),
+    contractAddress: address(),
+    cumulativeGasUsed: bignum(), // 累计 Gas 使用量
+    timestamp: timestamp(),
+    indexedAt: datetime().default(sql`now()`),
+  },
+  (table) => [
+    primaryKey({ columns: [table.chainId, table.hash] }),
+    unique().on(table.chainId, table.blockNumber, table.transactionIndex),
+    // 注意：索引在迁移脚本中手动创建
+  ]
+);
 
-// 地址索引表
-export const indexedAddresses = pgTable('indexed_addresses', {
-  chainId: integer('chain_id').notNull(),
-  address: varchar('address', { length: 42 }).notNull(),
-  label: varchar('label', { length: 100 }),
-  firstSeenBlock: bigint('first_seen_block', { mode: 'bigint' }),
-  lastSeenBlock: bigint('last_seen_block', { mode: 'bigint' }),
-  transactionCount: integer('transaction_count').default(0),
-  indexedAt: timestamp('indexed_at').defaultNow(),
-  lastQueried: timestamp('last_queried').defaultNow(),
-}, (table) => ({
-  pk: primaryKey({ columns: [table.chainId, table.address] }),
-  // 索引
-  queriedIdx: index('indexed_addresses_chain_queried_idx').on(table.chainId, table.lastQueried),
-  globalIdx: index('indexed_addresses_global_idx').on(table.address),
-}));
+// 已索引地址表
+export const indexedAddresses = duckdbTable(
+  "indexed_addresses",
+  {
+    ...chainAddressColumns,
+    type: varchar({ length: 20 }).notNull(), // 'EOA', 'contract'
+    firstSeen: timestamp(),
+    lastActivity: timestamp(),
+    transactionCount: integer().default(0),
+    indexedAt: datetime().default(sql`now()`),
+  },
+  (table) => [
+    primaryKey({ columns: [table.chainId, table.address] }),
+    // 注意：索引在迁移脚本中手动创建
+  ]
+);
 
 // 搜索历史表
-export const searchHistory = pgTable('search_history', {
-  id: integer('id').primaryKey(),
-  chainId: integer('chain_id'), // 可选，跨链搜索时为NULL
-  query: varchar('query', { length: 100 }).notNull(),
-  resultType: varchar('result_type', { length: 20 }),
-  resultId: varchar('result_id', { length: 66 }),
-  searchedAt: timestamp('searched_at').defaultNow(),
-}, (table) => ({
-  chainIdx: index('search_history_chain_idx').on(table.chainId, table.searchedAt),
-}));
-
-// 用户偏好表
-export const userPreferences = pgTable('user_preferences', {
-  key: varchar('key', { length: 50 }).primaryKey(),
-  value: text('value'),
-  updatedAt: timestamp('updated_at').defaultNow(),
+export const searchHistory = duckdbTable("search_history", {
+  id: integer().primaryKey(),
+  query: varchar({ length: 255 }),
+  searchType: varchar({ length: 20 }),
+  resultCount: integer().default(0),
+  searchedAt: datetime().default(sql`now()`),
 });
 
-// 访问历史表
-export const accessHistory = pgTable('access_history', {
-  chainId: integer('chain_id').notNull(),
-  type: varchar('type', { length: 20 }).notNull(),
-  identifier: varchar('identifier', { length: 66 }).notNull(),
-  firstAccessed: timestamp('first_accessed').defaultNow(),
-  lastAccessed: timestamp('last_accessed').defaultNow(),
-  accessCount: integer('access_count').default(1),
-}, (table) => ({
-  pk: primaryKey({ columns: [table.chainId, table.type, table.identifier] }),
-  typeIdx: index('access_history_chain_type_idx').on(table.chainId, table.type, table.lastAccessed),
-  countIdx: index('access_history_count_idx').on(table.accessCount),
-}));
+// 用户偏好表
+export const userPreferences = duckdbTable("user_preferences", {
+  id: integer().primaryKey(),
+  theme: varchar({ length: 20 }).default("light"),
+  language: varchar({ length: 10 }).default("en"),
+  updatedAt: datetime().default(sql`now()`),
+});
 
 // 索引状态表
-export const indexStatus = pgTable('index_status', {
-  chainId: integer('chain_id').notNull(),
-  type: varchar('type', { length: 20 }).notNull(),
-  identifier: varchar('identifier', { length: 66 }).notNull(),
-  indexedAt: timestamp('indexed_at').defaultNow(),
-  lastUpdated: timestamp('last_updated').defaultNow(),
-}, (table) => ({
-  pk: primaryKey({ columns: [table.chainId, table.type, table.identifier] }),
-}));
+export const indexStatus = duckdbTable(
+  "index_status",
+  {
+    ...chainColumns,
+    indexType: varchar({ length: 20 }).notNull(), // 'blocks', 'transactions'
+    lastIndexedBlock: bignum(),
+    lastIndexedAt: datetime().default(sql`now()`),
+  },
+  (table) => [primaryKey({ columns: [table.chainId, table.indexType] })]
+);
 
-// 类型推断
-export type Block = typeof blocks.$inferSelect;
-export type NewBlock = typeof blocks.$inferInsert;
-export type Transaction = typeof transactions.$inferSelect;
-export type NewTransaction = typeof transactions.$inferInsert;
-export type IndexedAddress = typeof indexedAddresses.$inferSelect;
-export type NewIndexedAddress = typeof indexedAddresses.$inferInsert;
+// 访问历史表
+export const accessHistory = duckdbTable(
+  "access_history",
+  {
+    ...chainColumns,
+    type: varchar({ length: 20 }).notNull(), // 'block', 'transaction', 'address'
+    identifier: varchar({ length: 66 }).notNull(), // hash or address
+    firstAccessed: datetime().default(sql`now()`),
+    lastAccessed: datetime().default(sql`now()`),
+    accessCount: integer().default(1),
+  },
+  (table) => [
+    primaryKey({ columns: [table.chainId, table.type, table.identifier] }),
+    // 注意：索引在迁移脚本中手动创建
+  ]
+);
+
+// 合约源码表
+export const contractSources = duckdbTable(
+  "contract_sources",
+  {
+    ...chainAddressColumns,
+    sourceCode: text(),
+    abi: text(),
+    contractName: varchar({ length: 255 }),
+    compilerVersion: varchar({ length: 50 }),
+    optimizationUsed: boolean(),
+    runs: integer(),
+    constructorArguments: hexData(),
+    evmVersion: varchar({ length: 50 }),
+    library: text(),
+    licenseType: varchar({ length: 50 }),
+    proxy: varchar({ length: 50 }),
+    implementation: address(),
+    swarmSource: varchar({ length: 100 }),
+    isVerified: boolean().default(false),
+    verificationDate: datetime().default(sql`now()`),
+    lastUpdated: datetime().default(sql`now()`),
+  },
+  (table) => [
+    primaryKey({ columns: [table.chainId, table.address] }),
+    // 注意：索引在迁移脚本中手动创建
+  ]
+);
+
+// 合约创建信息表
+export const contractCreationInfo = duckdbTable(
+  "contract_creation_info",
+  {
+    ...chainAddressColumns,
+    creationTxHash: txHash(),
+    creationBlockNumber: bignum(), // 创建区块号
+    creatorAddress: address(),
+    factoryAddress: address(),
+    creationMethod: varchar({ length: 50 }),
+    lastUpdated: datetime().default(sql`now()`),
+  },
+  (table) => [
+    primaryKey({ columns: [table.chainId, table.address] }),
+    // 注意：索引在迁移脚本中手动创建
+  ]
+);
+
+// 导出类型推断
 export type UserRpcConfig = typeof userRpcConfigs.$inferSelect;
 export type NewUserRpcConfig = typeof userRpcConfigs.$inferInsert;
+
+export type Block = typeof blocks.$inferSelect;
+export type NewBlock = typeof blocks.$inferInsert;
+
+export type Transaction = typeof transactions.$inferSelect;
+export type NewTransaction = typeof transactions.$inferInsert;
+
+export type IndexedAddress = typeof indexedAddresses.$inferSelect;
+export type NewIndexedAddress = typeof indexedAddresses.$inferInsert;
+
+export type ContractSource = typeof contractSources.$inferSelect;
+export type NewContractSource = typeof contractSources.$inferInsert;
+
+export type ContractCreationInfo = typeof contractCreationInfo.$inferSelect;
+export type NewContractCreationInfo = typeof contractCreationInfo.$inferInsert;

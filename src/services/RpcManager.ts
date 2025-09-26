@@ -4,7 +4,7 @@ import {
   getDefaultRpcUrl,
   type UserRpcConfig,
 } from "../config/chains";
-import { db } from "../database/init";
+import { duckdb as db } from "../database/init";
 import {
   createRetryableRpcCall,
   createRetryableDbCall,
