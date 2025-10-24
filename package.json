@@ -46,7 +46,8 @@
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "react-router-dom": "^7.8.1",
-    "viem": "^2.34.0"
+    "viem": "^2.34.0",
+    "zod": "^4.1.12"
   },
   "devDependencies": {
     "@babel/plugin-transform-react-jsx": "^7.27.1",

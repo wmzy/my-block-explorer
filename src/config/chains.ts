@@ -220,3 +220,173 @@ export function searchChains(query: string): Chain[] {
 
   return results;
 }
+
+// 多链数据库配置
+export interface ChainDatabaseConfig {
+  chainId: number;
+  chainName: string;
+  chainType: string;
+  databasePath: string;
+  indexingEnabled: boolean;
+  maxHistoricalBlocks: number;
+  eventBatchSize: number;
+  rpcTimeout: number;
+  maxRetries: number;
+  rateLimitRpm: number;
+}
+
+// 默认数据库配置
+export const DEFAULT_DATABASE_CONFIG: Partial<ChainDatabaseConfig> = {
+  indexingEnabled: true,
+  maxHistoricalBlocks: 10000,
+  eventBatchSize: 1000,
+  rpcTimeout: 30000,
+  maxRetries: 3,
+  rateLimitRpm: 120,
+};
+
+// 生成链特定的数据库配置
+export function getChainDatabaseConfig(
+  chainId: number,
+  overrides?: Partial<ChainDatabaseConfig>
+): ChainDatabaseConfig {
+  const chainName = getChainName(chainId);
+  const chainType = getChainType(chainId);
+
+  // 生成数据库文件路径
+  const safeChainName = chainName.toLowerCase().replace(/\s+/g, '-');
+  const databasePath = `data/chains/${chainType}/${safeChainName}-${chainId}.db`;
+
+  return {
+    chainId,
+    chainName,
+    chainType,
+    databasePath,
+    indexingEnabled: true,
+    maxHistoricalBlocks: 10000,
+    eventBatchSize: 1000,
+    rpcTimeout: 30000,
+    maxRetries: 3,
+    rateLimitRpm: 120,
+    ...DEFAULT_DATABASE_CONFIG,
+    ...overrides,
+  } as ChainDatabaseConfig;
+}
+
+// 获取多个链的数据库配置
+export function getMultiChainDatabaseConfig(
+  chainIds: number[],
+  overrides?: Partial<ChainDatabaseConfig>
+): ChainDatabaseConfig[] {
+  return chainIds.map(chainId => getChainDatabaseConfig(chainId, overrides));
+}
+
+// 多链支持的链配置（默认支持所有viem链）
+export const MULTI_CHAIN_SUPPORTED_CHAINS = getSupportedChainIds();
+
+// 常用多链配置（用于快速启动）
+export const POPULAR_MULTI_CHAINS = POPULAR_CHAINS.map(chain => chain.id);
+
+// 按类型分组的链
+export const CHAINS_BY_TYPE = {
+  mainnet: SUPPORTED_CHAINS.filter(chain => getChainType(chain.id) === 'mainnet').map(chain => chain.id),
+  testnet: SUPPORTED_CHAINS.filter(chain => getChainType(chain.id) === 'testnet').map(chain => chain.id),
+};
+
+// 获取特定类型的链
+export function getChainsByType(type: 'mainnet' | 'testnet'): number[] {
+  return CHAINS_BY_TYPE[type] || [];
+}
+
+// 检查链是否启用了数据库隔离
+export function isChainDatabaseIsolationEnabled(chainId: number): boolean {
+  // �情况下所有支持的链都启用数据库隔离
+  return isChainSupported(chainId);
+}
+
+// 获取链的数据目录
+export function getChainDataDirectory(chainId: number): string {
+  const chainType = getChainType(chainId);
+  const chainName = getChainName(chainId);
+  const safeChainName = chainName.toLowerCase().replace(/\s+/g, '-');
+  return `data/chains/${chainType}`;
+}
+
+// 获取链的数据库文件名
+export function getChainDatabaseFileName(chainId: number): string {
+  const chainName = getChainName(chainId);
+  const safeChainName = chainName.toLowerCase().replace(/\s+/g, '-');
+  return `${safeChainName}-${chainId}.db`;
+}
+
+// 获取链的完整数据库路径
+export function getChainDatabasePath(chainId: number): string {
+  const dataDirectory = getChainDataDirectory(chainId);
+  const fileName = getChainDatabaseFileName(chainId);
+  return `${dataDirectory}/${fileName}`;
+}
+
+// 多链配置验证
+export function validateMultiChainConfig(chainIds: number[]): {
+  valid: boolean;
+  errors: string[];
+  supportedChains: number[];
+  unsupportedChains: number[];
+} {
+  const supportedChains: number[] = [];
+  const unsupportedChains: number[] = [];
+  const errors: string[] = [];
+
+  chainIds.forEach(chainId => {
+    if (isChainSupported(chainId)) {
+      supportedChains.push(chainId);
+    } else {
+      unsupportedChains.push(chainId);
+      errors.push(`Chain ${chainId} is not supported`);
+    }
+  });
+
+  return {
+    valid: unsupportedChains.length === 0,
+    errors,
+    supportedChains,
+    unsupportedChains,
+  };
+}
+
+// 推荐的多链配置（基于流行度和性能）
+export const RECOMMENDED_MULTI_CHAINS = [
+  // Layer 1 主网
+  1, // Ethereum
+  56, // BSC
+  137, // Polygon
+
+  // Layer 2
+  42161, // Arbitrum One
+  8453, // Base
+  10, // Optimism
+
+  // 其他主流链
+  43114, // Avalanche
+  250, // Fantom
+  42220, // Celo
+  100, // Gnosis
+];
+
+// 获取推荐的多链配置
+export function getRecommendedMultiChainConfig(): ChainDatabaseConfig[] {
+  return getMultiChainDatabaseConfig(RECOMMENDED_MULTI_CHAINS);
+}
+
+// 开发环境多链配置
+export const DEVELOPMENT_CHAINS = [
+  1, // Ethereum Mainnet
+  11155111, // Sepolia Testnet
+  137, // Polygon
+  80001, // Polygon Mumbai
+];
+
+// 获取开发环境配置
+export function getDevelopmentMultiChainConfig(): ChainDatabaseConfig[] {
+  return getMultiChainDatabaseConfig(DEVELOPMENT_CHAINS);
+}

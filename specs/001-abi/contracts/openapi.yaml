@@ -1,0 +1,844 @@
+openapi: 3.0.3
+info:
+  title: 合约事件索引 API
+  description: 区块浏览器的合约事件索引和查询接口
+  version: 1.0.0
+  contact:
+    name: Block Explorer Team
+  license:
+    name: MIT
+
+servers:
+  - url: http://localhost:8201
+    description: 开发环境
+  - url: https://api.blockexplorer.com
+    description: 生产环境
+
+paths:
+  /api/chains/{chainId}/contracts/{contractAddress}/events/indexing-status:
+    get:
+      tags:
+        - Event Indexing
+      summary: 获取合约事件索引状态
+      description: 查询指定合约的事件索引进度和统计信息
+      parameters:
+        - name: chainId
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 999999
+          description: 区块链ID
+        - name: contractAddress
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^0x[a-fA-F0-9]{40}$'
+          description: 合约地址
+      responses:
+        '200':
+          description: 索引状态查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IndexingStatus'
+              examples:
+                success:
+                  summary: 成功响应示例
+                  value:
+                    isIndexed: true
+                    indexingProgress: 100
+                    totalEvents: 125000
+                    indexedEvents: 125000
+                    firstIndexedBlock: 18500000
+                    lastIndexedBlock: 18550000
+                    indexingRate: 500
+                    estimatedCompletion: null
+                    supportedEvents:
+                      - Transfer
+                      - Approval
+                      - TransferFrom
+                    lastUpdated: '2025-10-15T10:30:00Z'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/chains/{chainId}/contracts/{contractAddress}/events/initialize:
+    post:
+      tags:
+        - Event Indexing
+      summary: 初始化合约事件索引
+      description: 为指定合约创建事件索引并开始历史数据同步
+      parameters:
+        - name: chainId
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 999999
+          description: 区块链ID
+        - name: contractAddress
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^0x[a-fA-F0-9]{40}$'
+          description: 合约地址
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InitializeIndexingRequest'
+      responses:
+        '200':
+          description: 索引初始化成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InitializeIndexingResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          description: 索引已存在
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/chains/{chainId}/contracts/{contractAddress}/events/index-historical:
+    post:
+      tags:
+        - Event Indexing
+      summary: 索引历史事件数据
+      description: 手动触发历史事件数据的索引任务
+      parameters:
+        - name: chainId
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 999999
+          description: 区块链ID
+        - name: contractAddress
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^0x[a-fA-F0-9]{40}$'
+          description: 合约地址
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IndexHistoricalRequest'
+      responses:
+        '200':
+          description: 历史索引任务已启动
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IndexHistoricalResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/chains/{chainId}/contracts/{contractAddress}/events:
+    get:
+      tags:
+        - Event Query
+      summary: 查询合约事件
+      description: 根据过滤条件查询合约事件列表
+      parameters:
+        - name: chainId
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 999999
+          description: 区块链ID
+        - name: contractAddress
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^0x[a-fA-F0-9]{40}$'
+          description: 合约地址
+        - name: eventName
+          in: query
+          required: false
+          schema:
+            type: string
+          description: 事件名称过滤
+        - name: fromBlock
+          in: query
+          required: false
+          schema:
+            type: string
+            pattern: '^[0-9]+$'
+          description: 起始区块号
+        - name: toBlock
+          in: query
+          required: false
+          schema:
+            type: string
+            pattern: '^[0-9]+$'
+          description: 结束区块号
+        - name: fromTimestamp
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: 起始时间戳
+        - name: toTimestamp
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: 结束时间戳
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 50
+          description: 返回结果数量限制
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+          description: 分页游标
+        - name: sort
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+          description: 排序方向
+        - name: sortBy
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [timestamp, blockNumber, logIndex]
+            default: timestamp
+          description: 排序字段
+      responses:
+        '200':
+          description: 事件查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventListResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/chains/{chainId}/contracts/{contractAddress}/events/statistics:
+    get:
+      tags:
+        - Event Query
+      summary: 获取事件统计信息
+      description: 查询指定合约的事件统计信息
+      parameters:
+        - name: chainId
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 999999
+          description: 区块链ID
+        - name: contractAddress
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^0x[a-fA-F0-9]{40}$'
+          description: 合约地址
+        - name: eventName
+          in: query
+          required: false
+          schema:
+            type: string
+          description: 特定事件名称
+        - name: timeRange
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [1d, 7d, 30d, 90d, 1y]
+            default: 30d
+          description: 统计时间范围
+      responses:
+        '200':
+          description: 统计信息查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventStatistics'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/chains/{chainId}/contracts/{contractAddress}/events/chart:
+    get:
+      tags:
+        - Event Query
+      summary: 获取事件图表数据
+      description: 获取用于图表展示的事件时间序列数据
+      parameters:
+        - name: chainId
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 999999
+          description: 区块链ID
+        - name: contractAddress
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^0x[a-fA-F0-9]{40}$'
+          description: 合约地址
+        - name: eventName
+          in: query
+          required: false
+          schema:
+            type: string
+          description: 事件名称
+        - name: interval
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [1h, 1d, 1w]
+            default: 1d
+          description: 时间间隔
+        - name: fromTimestamp
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: 起始时间
+        - name: toTimestamp
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+          description: 结束时间
+      responses:
+        '200':
+          description: 图表数据查询成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChartData'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+  /api/chains/{chainId}/contracts/{contractAddress}/events/search:
+    post:
+      tags:
+        - Event Query
+      summary: 高级事件搜索
+      description: 使用复杂条件搜索事件
+      parameters:
+        - name: chainId
+          in: path
+          required: true
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 999999
+          description: 区块链ID
+        - name: contractAddress
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^0x[a-fA-F0-9]{40}$'
+          description: 合约地址
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdvancedSearchRequest'
+      responses:
+        '200':
+          description: 搜索成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventListResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+
+components:
+  schemas:
+    IndexingStatus:
+      type: object
+      required:
+        - isIndexed
+        - indexingProgress
+        - totalEvents
+        - indexedEvents
+        - supportedEvents
+        - lastUpdated
+      properties:
+        isIndexed:
+          type: boolean
+          description: 是否已开始索引
+        indexingProgress:
+          type: number
+          minimum: 0
+          maximum: 100
+          description: 索引进度百分比
+        totalEvents:
+          type: integer
+          minimum: 0
+          description: 总事件数量
+        indexedEvents:
+          type: integer
+          minimum: 0
+          description: 已索引事件数量
+        firstIndexedBlock:
+          type: integer
+          minimum: 0
+          description: 首个索引区块
+        lastIndexedBlock:
+          type: integer
+          minimum: 0
+          description: 最后索引区块
+        indexingRate:
+          type: number
+          minimum: 0
+          description: 当前索引速率 (events/minute)
+        estimatedCompletion:
+          type: string
+          format: date-time
+          nullable: true
+          description: 预计完成时间
+        supportedEvents:
+          type: array
+          items:
+            type: string
+          description: 支持的事件类型列表
+        lastUpdated:
+          type: string
+          format: date-time
+          description: 最后更新时间
+
+    InitializeIndexingRequest:
+      type: object
+      required:
+        - abi
+      properties:
+        abi:
+          type: array
+          items:
+            type: object
+          description: 合约ABI
+        fromBlock:
+          type: integer
+          minimum: 0
+          description: 开始索引的区块号 (可选)
+        batchSize:
+          type: integer
+          minimum: 100
+          maximum: 10000
+          default: 1000
+          description: 批处理大小
+
+    InitializeIndexingResponse:
+      type: object
+      required:
+        - indexingId
+        - supportedEvents
+        - estimatedEvents
+      properties:
+        indexingId:
+          type: string
+          description: 索引任务ID
+        supportedEvents:
+          type: array
+          items:
+            type: string
+          description: 支持的事件列表
+        estimatedEvents:
+          type: integer
+          minimum: 0
+          description: 预估事件总数
+        estimatedDuration:
+          type: integer
+          minimum: 0
+          description: 预估索引时间 (分钟)
+
+    IndexHistoricalRequest:
+      type: object
+      required:
+        - fromBlock
+        - toBlock
+      properties:
+        fromBlock:
+          type: integer
+          minimum: 0
+          description: 起始区块号
+        toBlock:
+          type: integer
+          minimum: 0
+          description: 结束区块号
+        batchSize:
+          type: integer
+          minimum: 100
+          maximum: 10000
+          default: 1000
+          description: 批处理大小
+        parallel:
+          type: boolean
+          default: false
+          description: 是否并行处理
+
+    IndexHistoricalResponse:
+      type: object
+      required:
+        - taskId
+        - estimatedBatches
+        - estimatedDuration
+      properties:
+        taskId:
+          type: string
+          description: 历史索引任务ID
+        estimatedBatches:
+          type: integer
+          minimum: 0
+          description: 预估批次数
+        estimatedDuration:
+          type: integer
+          minimum: 0
+          description: 预估执行时间 (分钟)
+
+    EventListResponse:
+      type: object
+      required:
+        - events
+        - pagination
+        - filters
+      properties:
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/ContractEvent'
+          description: 事件���表
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+        filters:
+          $ref: '#/components/schemas/AppliedFilters'
+        performance:
+          type: object
+          properties:
+            queryTime:
+              type: number
+              description: 查询耗时 (ms)
+            cacheHit:
+              type: boolean
+              description: 是否命中缓存
+
+    ContractEvent:
+      type: object
+      required:
+        - chainId
+        - contractAddress
+        - eventName
+        - eventSignature
+        - blockNumber
+        - transactionHash
+        - logIndex
+        - blockTimestamp
+        - args
+      properties:
+        chainId:
+          type: integer
+          description: 链ID
+        contractAddress:
+          type: string
+          pattern: '^0x[a-fA-F0-9]{40}$'
+          description: 合约地址
+        eventName:
+          type: string
+          description: 事件名称
+        eventSignature:
+          type: string
+          description: 事件签名
+        blockNumber:
+          type: string
+          description: 区块号
+        transactionHash:
+          type: string
+          pattern: '^0x[a-fA-F0-9]{64}$'
+          description: 交易哈希
+        logIndex:
+          type: integer
+          description: 日志索引
+        blockTimestamp:
+          type: string
+          format: date-time
+          description: 区块时间戳
+        transactionIndex:
+          type: integer
+          description: 交易索引
+        args:
+          type: object
+          description: 解码的事件参数
+        decodedAt:
+          type: string
+          format: date-time
+          description: 解码时间
+
+    Pagination:
+      type: object
+      required:
+        - hasNext
+        - hasPrev
+        - limit
+      properties:
+        hasNext:
+          type: boolean
+          description: 是否有下一页
+        hasPrev:
+          type: boolean
+          description: 是否有上一页
+        nextCursor:
+          type: string
+          nullable: true
+          description: 下一页游标
+        prevCursor:
+          type: string
+          nullable: true
+          description: 上一页游标
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          description: 当前页限制
+
+    AppliedFilters:
+      type: object
+      properties:
+        eventName:
+          type: string
+          description: 事件名称过滤
+        fromBlock:
+          type: string
+          description: 起始区块过滤
+        toBlock:
+          type: string
+          description: 结束区块过滤
+        fromTimestamp:
+          type: string
+          format: date-time
+          description: 起始时间过滤
+        toTimestamp:
+          type: string
+          format: date-time
+          description: 结束时间过滤
+        customFilters:
+          type: object
+          description: 自定义参数过滤
+
+    EventStatistics:
+      type: object
+      required:
+        - totalEvents
+        - timeRange
+        - eventCounts
+      properties:
+        totalEvents:
+          type: integer
+          minimum: 0
+          description: 总事件数
+        timeRange:
+          type: string
+          description: 统计时间范围
+        eventCounts:
+          type: object
+          additionalProperties:
+            type: integer
+          description: 各事件类型数量
+        dailyVolume:
+          type: array
+          items:
+            type: object
+            properties:
+              date:
+                type: string
+                format: date
+              count:
+                type: integer
+          description: 每日事件数量
+        uniqueAddresses:
+          type: integer
+          minimum: 0
+          description: 涉及的唯一地址数
+        topAddresses:
+          type: array
+          items:
+            type: object
+            properties:
+              address:
+                type: string
+              count:
+                type: integer
+          description: 最活跃地址
+
+    ChartData:
+      type: object
+      required:
+        - interval
+        - dataPoints
+      properties:
+        interval:
+          type: string
+          description: 时间间隔
+        dataPoints:
+          type: array
+          items:
+            type: object
+            properties:
+              timestamp:
+                type: string
+                format: date-time
+              count:
+                type: integer
+              volume:
+                type: string
+                nullable: true
+          description: 数据点
+        summary:
+          type: object
+          properties:
+            totalEvents:
+              type: integer
+            averagePerInterval:
+              type: number
+            peakInterval:
+              type: object
+              properties:
+                timestamp:
+                  type: string
+                  count:
+                    type: integer
+
+    AdvancedSearchRequest:
+      type: object
+      required:
+        - filters
+      properties:
+        filters:
+          type: object
+          description: 复杂过滤条件
+        sort:
+          type: array
+          items:
+            type: object
+            properties:
+              field:
+                type: string
+              direction:
+                type: string
+                enum: [asc, desc]
+          description: 排序条件
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          default: 50
+          description: 结果限制
+        cursor:
+          type: string
+          description: 分页游标
+
+    Error:
+      type: object
+      required:
+        - error
+        - message
+      properties:
+        error:
+          type: string
+          description: 错误类型
+        message:
+          type: string
+          description: 错误信息
+        code:
+          type: string
+          description: 错误代码
+        details:
+          type: object
+          description: 错误详情
+
+  responses:
+    BadRequest:
+      description: 请求参数错误
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    NotFound:
+      description: 资源未找到
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+    InternalServerError:
+      description: 服务器内部错误
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+security:
+  - BearerAuth: []
