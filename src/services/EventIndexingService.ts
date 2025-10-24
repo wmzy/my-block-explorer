@@ -19,7 +19,7 @@ import {
   AbiEvent,
   DEFAULT_EVENT_INDEXING_CONFIG
 } from '../types/events';
-import { Log, decodeEventLog, hashEvent, hexToNumber, numberToHex } from 'viem';
+import { Log, decodeEventLog, getEventSelector, hexToNumber, numberToHex, keccak256 } from 'viem';
 
 /**
  * 事件索引服务配置
@@ -102,7 +102,7 @@ export class EventIndexingService {
       taskId,
       chainId: this.chainId,
       contractAddress,
-      eventSignatures: abi.map(event => hashEvent(event)),
+      eventSignatures: abi.map(event => getEventSelector(event)),
       fromBlock: fromBlock || 0n,
       toBlock,
       status: 'pending',
@@ -303,7 +303,7 @@ export class EventIndexingService {
    */
   private async setupEventTables(contractAddress: `0x${string}`, abi: AbiEvent[]): Promise<void> {
     for (const eventAbi of abi) {
-      const eventSignature = hashEvent(eventAbi);
+      const eventSignature = getEventSelector(eventAbi);
 
       try {
         await this.eventTableManager.createEventTable(
@@ -371,7 +371,7 @@ export class EventIndexingService {
 
     // 建立事件签名到ABI的映射
     for (const eventAbi of abi) {
-      const signature = hashEvent(eventAbi);
+      const signature = getEventSelector(eventAbi);
       eventsBySignature.set(signature, eventAbi);
     }
 
@@ -406,7 +406,7 @@ export class EventIndexingService {
     const tableName = await this.eventTableManager.createEventTable(
       contractAddress,
       eventAbi.inputs || [],
-      hashEvent(eventAbi),
+      getEventSelector(eventAbi),
       eventAbi.name
     );
 
@@ -430,7 +430,7 @@ export class EventIndexingService {
             blockTimestamp: new Date(), // 需要从区块获取
             contractAddress,
             eventName: eventAbi.name,
-            eventSignature: hashEvent(eventAbi),
+            eventSignature: getEventSelector(eventAbi),
             ...decodedLog.args,
             decodedAt: new Date(),
             indexedAt: new Date(),
