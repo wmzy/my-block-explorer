@@ -255,21 +255,17 @@ export function useEventSearch(
     return optimizer.getPerformanceStats();
   }, [optimizer]);
 
-  // Update events when initial events change
+  // Initialize events only once when initialEvents changes
   useEffect(() => {
     setEvents(initialEvents);
-    setSearchState(prev => ({
-      ...prev,
-      events: initialEvents,
-      filteredEvents: prev.filters && Object.keys(prev.filters).length > 0 ? prev.filteredEvents : initialEvents,
-      total: prev.filters && Object.keys(prev.filters).length > 0 ? prev.total : initialEvents.length
-    }));
+  }, []); // Only run once on mount
 
-    // Re-run search if we have active filters
+  // Only re-run search if we have active filters and they change
+  useEffect(() => {
     if (Object.keys(filters).length > 0 && autoSearch) {
       search();
     }
-  }, [initialEvents, filters, autoSearch, search]);
+  }, [filters, autoSearch, search]);
 
   // Initial search if auto-search is enabled
   useEffect(() => {
