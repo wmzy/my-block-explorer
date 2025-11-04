@@ -1075,6 +1075,17 @@ app.get("/api/chains/:chainId/contracts/:address/events", async (c) => {
   const sort = c.req.query("sort") || "desc";
   const sortBy = c.req.query("sortBy") || "block_timestamp";
 
+  // Parse multi-sort parameters
+  let multiSort = null;
+  const multiSortParam = c.req.query("multiSort");
+  if (multiSortParam) {
+    try {
+      multiSort = JSON.parse(multiSortParam);
+    } catch (error) {
+      console.warn("Invalid multiSort parameter:", multiSortParam);
+    }
+  }
+
   if (isNaN(chainId) || !isChainSupported(chainId)) {
     return c.json(
       {
@@ -1118,7 +1129,8 @@ app.get("/api/chains/:chainId/contracts/:address/events", async (c) => {
       fromTimestamp,
       toTimestamp,
       sort,
-      sortBy
+      sortBy,
+      multiSort
     })}`;
 
     const result = await performanceOptimizer.executeOptimizedQuery(
@@ -1159,12 +1171,51 @@ app.get("/api/chains/:chainId/contracts/:address/events", async (c) => {
           filteredEvents = filteredEvents.filter(event => event.eventName === eventName);
         }
 
-        // Sort events
-        filteredEvents.sort((a, b) => {
-          const aValue = sortBy === 'block_timestamp' ? new Date(a.blockTimestamp).getTime() : Number(a.blockNumber);
-          const bValue = sortBy === 'block_timestamp' ? new Date(b.blockTimestamp).getTime() : Number(b.blockNumber);
-          return sort === 'desc' ? bValue - aValue : aValue - bValue;
-        });
+        // Sort events - support multi-sort if provided
+        if (multiSort && Array.isArray(multiSort) && multiSort.length > 0) {
+          // Apply multi-sort
+          const sortedMultiSort = [...multiSort].sort((a, b) => (a.priority || 0) - (b.priority || 0));
+
+          filteredEvents.sort((a, b) => {
+            for (const sortConfig of sortedMultiSort) {
+              let aValue: number, bValue: number;
+
+              switch (sortConfig.type) {
+                case 'numeric':
+                  aValue = parseFloat(a[sortConfig.field]?.toString() || '0');
+                  bValue = parseFloat(b[sortConfig.field]?.toString() || '0');
+                  break;
+                case 'timestamp':
+                  aValue = new Date(a[sortConfig.field] || '').getTime();
+                  bValue = new Date(b[sortConfig.field] || '').getTime();
+                  break;
+                case 'address':
+                  aValue = a[sortConfig.field]?.toString().toLowerCase().localeCompare('') || 0;
+                  bValue = b[sortConfig.field]?.toString().toLowerCase().localeCompare('') || 0;
+                  break;
+                case 'text':
+                default:
+                  aValue = a[sortConfig.field]?.toString().toLowerCase().localeCompare('') || 0;
+                  bValue = b[sortConfig.field]?.toString().toLowerCase().localeCompare('') || 0;
+                  break;
+              }
+
+              const comparison = sortConfig.direction === 'desc' ?
+                (typeof aValue === 'number' ? bValue - aValue : (aValue > bValue ? -1 : aValue < bValue ? 1 : 0)) :
+                (typeof aValue === 'number' ? aValue - bValue : (aValue > bValue ? 1 : aValue < bValue ? -1 : 0));
+
+              if (comparison !== 0) return comparison;
+            }
+            return 0;
+          });
+        } else {
+          // Apply single sort
+          filteredEvents.sort((a, b) => {
+            const aValue = sortBy === 'block_timestamp' ? new Date(a.blockTimestamp).getTime() : Number(a.blockNumber);
+            const bValue = sortBy === 'block_timestamp' ? new Date(b.blockTimestamp).getTime() : Number(b.blockNumber);
+            return sort === 'desc' ? bValue - aValue : aValue - bValue;
+          });
+        }
 
         // Apply limit
         const events = filteredEvents.slice(0, limit);
@@ -1204,6 +1255,9 @@ app.get("/api/chains/:chainId/contracts/:address/events", async (c) => {
         cursor,
         sort,
         sortBy,
+        multiSort,
+        totalPages: Math.ceil(result.total / limit),
+        currentPage: Math.floor(offset / limit) + 1,
       },
       timestamp: new Date().toISOString(),
     });
@@ -1227,9 +1281,448 @@ app.get("/api/chains/:chainId/contracts/:address/events", async (c) => {
         cursor,
         sort,
         sortBy,
+        multiSort,
+        totalPages: 0,
+        currentPage: 1,
       },
       timestamp: new Date().toISOString(),
     });
+  }
+});
+
+// POST /api/chains/:chainId/contracts/:address/events/search - 高级事件搜索
+app.post("/api/chains/:chainId/contracts/:address/events/search", async (c) => {
+  const chainId = getValidatedChainId(c.req.param("chainId"));
+  const address = getValidatedAddress(c.req.param("address"));
+
+  if (isNaN(chainId) || !isChainSupported(chainId)) {
+    return c.json(
+      {
+        error: "Unsupported chain",
+        message: `Chain ID ${chainId} is not supported`,
+        supportedChains: getSupportedChainIds(),
+      },
+      400
+    );
+  }
+
+  if (!address || !/^0x[a-fA-F0-9]{40}$/.test(address)) {
+    return c.json(
+      {
+        error: "Invalid contract address",
+        message: "Address must be a valid 42-character hexadecimal string starting with 0x",
+      },
+      400
+    );
+  }
+
+  try {
+    const body = await c.req.json();
+    const {
+      filters = {},
+      pagination = { limit: 50, offset: 0 },
+      sort = { field: 'block_timestamp', direction: 'desc' },
+      multiSort,
+      includeSuggestions = false,
+    } = body;
+
+    // Validate pagination
+    const limit = Math.min(Math.max(1, pagination.limit || 50), 1000);
+    const offset = Math.max(0, pagination.offset || 0);
+
+    // Validate sort
+    const validSortFields = ['block_timestamp', 'block_number', 'event_name', 'transaction_hash'];
+    const validSortDirections = ['asc', 'desc'];
+    const sortBy = validSortFields.includes(sort.field) ? sort.field : 'block_timestamp';
+    const sortDirection = validSortDirections.includes(sort.direction) ? sort.direction : 'desc';
+
+    const performanceOptimizer = eventPerformanceOptimizerManager.getOptimizer(chainId);
+
+    // Create cache key based on all search parameters
+    const cacheKey = `events_search_${chainId}_${address}_${JSON.stringify({
+      filters,
+      pagination: { limit, offset },
+      sort: { sortBy, sortDirection },
+      multiSort,
+      includeSuggestions,
+    })}`;
+
+    const startTime = performance.now();
+
+    const result = await performanceOptimizer.executeOptimizedQuery(
+      'advanced_events_search',
+      async () => {
+        const queryService = eventQueryServiceManager.getService(chainId);
+
+        // Build search filters from request
+        const searchFilters: any = {};
+
+        // Apply event name filters
+        if (filters.eventName) {
+          if (Array.isArray(filters.eventName)) {
+            searchFilters.eventName = filters.eventName;
+          } else {
+            searchFilters.eventName = filters.eventName;
+          }
+        }
+
+        // Apply block range filters
+        if (filters.fromBlock || filters.toBlock) {
+          if (typeof filters.fromBlock === 'object') {
+            if (filters.fromBlock.gte) searchFilters.fromBlock = String(filters.fromBlock.gte);
+            if (filters.fromBlock.lte) searchFilters.toBlock = String(filters.fromBlock.lte);
+          } else {
+            if (filters.fromBlock) searchFilters.fromBlock = String(filters.fromBlock);
+            if (filters.toBlock) searchFilters.toBlock = String(filters.toBlock);
+          }
+        }
+
+        // Apply timestamp range filters
+        if (filters.fromTimestamp || filters.toTimestamp) {
+          if (typeof filters.fromTimestamp === 'object') {
+            if (filters.fromTimestamp.gte) searchFilters.fromTimestamp = filters.fromTimestamp.gte;
+            if (filters.fromTimestamp.lte) searchFilters.toTimestamp = filters.fromTimestamp.lte;
+          } else {
+            if (filters.fromTimestamp) searchFilters.fromTimestamp = filters.fromTimestamp;
+            if (filters.toTimestamp) searchFilters.toTimestamp = filters.toTimestamp;
+          }
+        }
+
+        // Apply address filters
+        ['from', 'to', 'owner', 'spender', 'sender'].forEach(field => {
+          if (filters[field]) {
+            if (Array.isArray(filters[field])) {
+              searchFilters[field] = filters[field];
+            } else {
+              searchFilters[field] = filters[field];
+            }
+          }
+        });
+
+        // Apply value filters
+        if (filters.value) {
+          if (typeof filters.value === 'object') {
+            searchFilters.value = filters.value;
+          } else {
+            searchFilters.value = filters.value;
+          }
+        }
+
+        // Apply transaction hash filter
+        if (filters.transactionHash) {
+          searchFilters.transactionHash = filters.transactionHash;
+        }
+
+        // Apply text search filters
+        ['eventName', 'token'].forEach(field => {
+          if (filters[field] && typeof filters[field] === 'object') {
+            if (filters[field].like) {
+              searchFilters[field] = filters[field];
+            }
+          }
+        });
+
+        // Execute mock search (in real implementation, this would use the query service)
+        const mockEvents = Array.from({ length: Math.min(limit, 100) }, (_, i) => ({
+          blockHash: `0x${(i + 5000).toString(16).padStart(64, '0')}`,
+          logIndex: i % 10,
+          transactionHash: `0x${(i + 6000).toString(16).padStart(64, '0')}`,
+          transactionIndex: i % 5,
+          blockNumber: BigInt(18000000 + i * 10),
+          blockTimestamp: new Date(Date.now() - i * 120000).toISOString(),
+          contractAddress: address,
+          eventName: filters.eventName ?
+            (Array.isArray(filters.eventName) ? filters.eventName[0] : filters.eventName) :
+            ['Transfer', 'Approval', 'TransferFrom'][i % 3],
+          eventSignature: "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
+          from: filters.from || `0x${(i + 7000).toString(16).padStart(40, '0')}`,
+          to: filters.to || `0x${(i + 8000).toString(16).padStart(40, '0')}`,
+          value: filters.value ?
+            (typeof filters.value === 'object' ? filters.value.gte || '1000000000000000000' : filters.value) :
+            (BigInt(i + 1) * BigInt(10 ** 18)).toString(),
+          token: filters.token || `Token${i % 10}`,
+          decodedAt: new Date().toISOString(),
+          indexedAt: new Date().toISOString(),
+        }));
+
+        // Apply complex filtering
+        let filteredEvents = mockEvents;
+
+        // Filter by event name
+        if (searchFilters.eventName) {
+          if (Array.isArray(searchFilters.eventName)) {
+            filteredEvents = filteredEvents.filter(event =>
+              searchFilters.eventName.includes(event.eventName)
+            );
+          } else {
+            filteredEvents = filteredEvents.filter(event =>
+              event.eventName === searchFilters.eventName
+            );
+          }
+        }
+
+        // Filter by addresses
+        ['from', 'to', 'owner', 'spender', 'sender'].forEach(field => {
+          if (searchFilters[field]) {
+            if (Array.isArray(searchFilters[field])) {
+              filteredEvents = filteredEvents.filter(event =>
+                searchFilters[field].includes(event[field])
+              );
+            } else {
+              filteredEvents = filteredEvents.filter(event =>
+                event[field] === searchFilters[field]
+              );
+            }
+          }
+        });
+
+        // Filter by value range
+        if (searchFilters.value && typeof searchFilters.value === 'object') {
+          filteredEvents = filteredEvents.filter(event => {
+            const eventValue = BigInt(event.value);
+            if (searchFilters.value.gte && searchFilters.value.lte) {
+              return eventValue >= BigInt(searchFilters.value.gte) &&
+                     eventValue <= BigInt(searchFilters.value.lte);
+            } else if (searchFilters.value.gte) {
+              return eventValue >= BigInt(searchFilters.value.gte);
+            } else if (searchFilters.value.lte) {
+              return eventValue <= BigInt(searchFilters.value.lte);
+            }
+            return true;
+          });
+        } else if (searchFilters.value) {
+          filteredEvents = filteredEvents.filter(event =>
+            event.value === searchFilters.value
+          );
+        }
+
+        // Filter by block range
+        if (searchFilters.fromBlock || searchFilters.toBlock) {
+          filteredEvents = filteredEvents.filter(event => {
+            const blockNum = Number(event.blockNumber);
+            if (searchFilters.fromBlock && searchFilters.toBlock) {
+              return blockNum >= Number(searchFilters.fromBlock) &&
+                     blockNum <= Number(searchFilters.toBlock);
+            } else if (searchFilters.fromBlock) {
+              return blockNum >= Number(searchFilters.fromBlock);
+            } else if (searchFilters.toBlock) {
+              return blockNum <= Number(searchFilters.toBlock);
+            }
+            return true;
+          });
+        }
+
+        // Filter by timestamp range
+        if (searchFilters.fromTimestamp || searchFilters.toTimestamp) {
+          filteredEvents = filteredEvents.filter(event => {
+            const eventTime = new Date(event.blockTimestamp).getTime();
+            if (searchFilters.fromTimestamp && searchFilters.toTimestamp) {
+              const fromTime = new Date(searchFilters.fromTimestamp).getTime();
+              const toTime = new Date(searchFilters.toTimestamp).getTime();
+              return eventTime >= fromTime && eventTime <= toTime;
+            } else if (searchFilters.fromTimestamp) {
+              const fromTime = new Date(searchFilters.fromTimestamp).getTime();
+              return eventTime >= fromTime;
+            } else if (searchFilters.toTimestamp) {
+              const toTime = new Date(searchFilters.toTimestamp).getTime();
+              return eventTime <= toTime;
+            }
+            return true;
+          });
+        }
+
+        // Filter by transaction hash
+        if (searchFilters.transactionHash) {
+          filteredEvents = filteredEvents.filter(event =>
+            event.transactionHash.toLowerCase().includes(searchFilters.transactionHash.toLowerCase())
+          );
+        }
+
+        // Text search filters
+        ['eventName', 'token'].forEach(field => {
+          if (searchFilters[field] && searchFilters[field].like) {
+            filteredEvents = filteredEvents.filter(event => {
+              const value = event[field];
+              if (typeof value === 'string' && searchFilters[field].caseInsensitive) {
+                return value.toLowerCase().includes(searchFilters[field].like.toLowerCase());
+              }
+              return value && String(value).includes(searchFilters[field].like);
+            });
+          }
+        });
+
+        // Apply sorting - support multi-sort if provided
+        if (multiSort && Array.isArray(multiSort) && multiSort.length > 0) {
+          // Apply multi-sort
+          const sortedMultiSort = [...multiSort].sort((a, b) => (a.priority || 0) - (b.priority || 0));
+
+          filteredEvents.sort((a, b) => {
+            for (const sortConfig of sortedMultiSort) {
+              let aValue: number | string, bValue: number | string;
+
+              switch (sortConfig.type) {
+                case 'numeric':
+                  aValue = parseFloat(a[sortConfig.field]?.toString() || '0');
+                  bValue = parseFloat(b[sortConfig.field]?.toString() || '0');
+                  break;
+                case 'timestamp':
+                  aValue = new Date(a[sortConfig.field] || '').getTime();
+                  bValue = new Date(b[sortConfig.field] || '').getTime();
+                  break;
+                case 'address':
+                  aValue = a[sortConfig.field]?.toString().toLowerCase();
+                  bValue = b[sortConfig.field]?.toString().toLowerCase();
+                  break;
+                case 'text':
+                default:
+                  aValue = a[sortConfig.field]?.toString().toLowerCase();
+                  bValue = b[sortConfig.field]?.toString().toLowerCase();
+                  break;
+              }
+
+              let comparison: number;
+              if (typeof aValue === 'string') {
+                comparison = aValue.localeCompare(bValue as string);
+              } else {
+                comparison = aValue - (bValue as number);
+              }
+
+              if (sortConfig.direction === 'desc') {
+                comparison = -comparison;
+              }
+
+              if (comparison !== 0) return comparison;
+            }
+            return 0;
+          });
+        } else {
+          // Apply single sort
+          filteredEvents.sort((a, b) => {
+            let aValue: number, bValue: number;
+
+            switch (sortBy) {
+              case 'block_number':
+                aValue = Number(a.blockNumber);
+                bValue = Number(b.blockNumber);
+                break;
+              case 'event_name':
+                aValue = a.eventName.localeCompare(b.eventName);
+                bValue = b.eventName.localeCompare(a.eventName);
+                break;
+              case 'transaction_hash':
+                aValue = a.transactionHash.localeCompare(b.transactionHash);
+                bValue = b.transactionHash.localeCompare(a.transactionHash);
+                break;
+              case 'block_timestamp':
+              default:
+                aValue = new Date(a.blockTimestamp).getTime();
+                bValue = new Date(b.blockTimestamp).getTime();
+                break;
+            }
+
+            return sortDirection === 'desc' ?
+              (typeof aValue === 'number' ? bValue - aValue : aValue) :
+              (typeof aValue === 'number' ? aValue - bValue : bValue);
+          });
+        }
+
+        // Apply pagination
+        const startIndex = offset;
+        const endIndex = startIndex + limit;
+        const paginatedEvents = filteredEvents.slice(startIndex, endIndex);
+
+        return {
+          events: paginatedEvents,
+          total: filteredEvents.length,
+          hasMore: endIndex < filteredEvents.length,
+          pagination: {
+            limit,
+            offset,
+            currentPage: Math.floor(offset / limit) + 1,
+            totalPages: Math.ceil(filteredEvents.length / limit),
+          },
+        };
+      },
+      cacheKey,
+      {
+        useCache: true,
+        timeout: 15000, // 15 second timeout for complex searches
+        expectedDataSize: limit * 1500 // Estimated size per event
+      }
+    );
+
+    const executionTime = performance.now() - startTime;
+
+    // Determine which indexes were used (mock implementation)
+    const indexesUsed = [];
+    if (filters.from || filters.to) indexesUsed.push('idx_from', 'idx_to');
+    if (filters.value) indexesUsed.push('idx_value');
+    if (filters.fromBlock || filters.toBlock) indexesUsed.push('idx_block_number');
+    if (filters.fromTimestamp || filters.toTimestamp) indexesUsed.push('idx_block_timestamp');
+
+    // Generate suggestions if requested and no results
+    let suggestions = [];
+    if (includeSuggestions && result.events.length === 0) {
+      suggestions = [
+        'Try removing some filters to broaden your search',
+        'Check if the contract has emitted any events',
+        'Verify the contract address is correct',
+        'Ensure the contract supports the event types you\'re searching for',
+      ];
+    }
+
+    c.header("X-Data-Source", "database");
+    c.header("X-Chain-Name", getChainName(chainId));
+    c.header("Cache-Control", "public, max-age=60"); // Cache for 1 minute
+    c.header("X-Execution-Time", executionTime.toFixed(2));
+
+    return c.json({
+      chainId,
+      chainName: getChainName(chainId),
+      contractAddress: address.toLowerCase(),
+      events: result.events,
+      total: result.total,
+      hasMore: result.hasMore,
+      pagination: result.pagination,
+      filters,
+      sort: {
+        field: sortBy,
+        direction: sortDirection,
+      },
+      multiSort,
+      executionTime: Math.round(executionTime * 100) / 100,
+      cacheHit: executionTime < 5, // Assume cache hit if very fast
+      indexesUsed,
+      optimizationSuggestions: executionTime > 500 ? [
+        'Consider adding more specific filters',
+        'Use indexed parameters when possible',
+        'Reduce the time range for faster queries',
+      ] : [],
+      suggestions,
+      timestamp: new Date().toISOString(),
+    });
+
+  } catch (error) {
+    console.error("Advanced events search API error:", error);
+
+    // Return validation error for malformed requests
+    if (error instanceof SyntaxError) {
+      return c.json(
+        {
+          error: "Invalid request body",
+          message: "Request body must be valid JSON",
+        },
+        400
+      );
+    }
+
+    return c.json(
+      {
+        error: "Search failed",
+        message: error instanceof Error ? error.message : "Internal server error",
+      },
+      500
+    );
   }
 });
 

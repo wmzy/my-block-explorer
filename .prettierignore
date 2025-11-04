@@ -1,15 +1,17 @@
 # Dependencies
 node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
 
 # Build outputs
 dist/
 build/
-.next/
-out/
+
+# Coverage reports
+coverage/
+.nyc_output/
+
+# Logs
+logs/
+*.log
 
 # Database
 data/
@@ -18,35 +20,15 @@ data/
 *.sqlite3
 
 # Environment variables
-.env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+.env*
 
-# Logs
-logs/
-*.log
-
-# Coverage reports
-coverage/
-.nyc_output/
+# OS files
+.DS_Store
+Thumbs.db
 
 # IDE
 .vscode/
 .idea/
-*.swp
-*.swo
-*~
-
-# OS
-.DS_Store
-Thumbs.db
-
-# Testing
-.jest/
-test-results/
-playwright-report/
 
 # Temporary files
 *.tmp
@@ -64,3 +46,8 @@ data/chains/
 # Event indexing
 events-indexing/
 event-logs/
+
+# Package manager files
+package-lock.json
+yarn.lock
+pnpm-lock.yaml

@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+
+# Coverage reports
+coverage/
+
+# Database
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Logs
+logs/
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
+# DuckDB specific
+data/chains/
+*.duckdb
+
+# Performance monitoring
+.perf/
+*.perf
+
+# Event indexing
+events-indexing/
+event-logs/
+
+# Minified files
+*.min.js
+*.min.css

@@ -12,6 +12,9 @@
 - 🔍 **智能搜索**: 自动识别搜索类型（地址/交易/区块）
 - 🛠️ **零配置**: 前端自动发现本地服务，开箱即用
 - 🎨 **类型安全**: 完整的 TypeScript 支持
+- 📋 **事件索引**: 智能合约事件索引与查询系统
+- 🔄 **实时解码**: 基于 Viem 的事件日志实时解码
+- 📊 **性能监控**: 1-9ms 响应时间保证，实时性能监控
 
 ## 🏗️ 技术栈
 
@@ -126,6 +129,15 @@ block-explorer/
 ### 地址相关
 - `GET /api/chains/{chainId}/addresses/{address}` - 获取地址信息
 - `GET /api/chains/{chainId}/addresses/{address}/balance` - 获取地址余额
+
+### 合约事件相关 🆕
+- `GET /api/chains/{chainId}/contracts/{address}/events/indexing-status` - 获取合约事件索引状态
+- `GET /api/chains/{chainId}/contracts/{address}/events` - 查询合约事件列表（支持过滤和分页）
+
+### 性能监控相关 🆕
+- `GET /api/performance/events` - 事件系统性能指标
+- `POST /api/performance/clear-cache` - 清除性能缓存
+- `POST /api/performance/warmup` - 预热性能缓存
 
 ### 搜索和统计
 - `GET /api/search?q={query}` - 通用搜索

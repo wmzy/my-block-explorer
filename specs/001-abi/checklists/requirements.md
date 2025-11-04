@@ -1,34 +1,34 @@
-# Specification Quality Checklist: Contract Event Indexing and Querying
+# 规格质量检查清单：合约事件索引与查询
 
-**Purpose**: Validate specification completeness and quality before proceeding to planning
-**Created**: 2025-10-15
-**Feature**: [Contract Event Indexing and Querying](../spec.md)
+**目的**: 在进入规划阶段之前验证规格的完整性和质量
+**创建日期**: 2025-10-15
+**功能**: [合约事件索引与查询](../spec.md)
 
-## Content Quality
+## 内容质量
 
-- [x] No implementation details (languages, frameworks, APIs)
-- [x] Focused on user value and business needs
-- [x] Written for non-technical stakeholders
-- [x] All mandatory sections completed
+- [x] 没有实现细节（语言、框架、API）
+- [x] 专注于用户价值和业务需求
+- [x] 为非技术利益相关者编写
+- [x] 所有必需部分已完成
 
-## Requirement Completeness
+## 需求完整性
 
-- [x] No [NEEDS CLARIFICATION] markers remain
-- [x] Requirements are testable and unambiguous
-- [x] Success criteria are measurable
-- [x] Success criteria are technology-agnostic (no implementation details)
-- [x] All acceptance scenarios are defined
-- [x] Edge cases are identified
-- [x] Scope is clearly bounded
-- [x] Dependencies and assumptions identified
+- [x] 没有剩余的 [需要澄清] 标记
+- [x] 需求可测试且明确
+- [x] 成功标准可衡量
+- [x] 成功标准与技术无关（无实现细节）
+- [x] 所有验收场景都已定义
+- [x] 边界情况已识别
+- [x] 范围明确界定
+- [x] 依赖关系和假设已识别
 
-## Feature Readiness
+## 功能就绪性
 
-- [x] All functional requirements have clear acceptance criteria
-- [x] User scenarios cover primary flows
-- [x] Feature meets measurable outcomes defined in Success Criteria
-- [x] No implementation details leak into specification
+- [x] 所有功能需求都有明确的验收标准
+- [x] 用户场景覆盖主要流程
+- [x] 功能满足成功标准中定义的可衡量结果
+- [x] 规格中没有泄露实现细节
 
-## Notes
+## 注意事项
 
-- Items marked incomplete require spec updates before `/speckit.clarify` or `/speckit.plan`
+- 标记为未完成的项目需要在执行 `/speckit.clarify` 或 `/speckit.plan` 之前更新规格
