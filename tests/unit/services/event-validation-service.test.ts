@@ -112,14 +112,14 @@ describe('EventValidationService', () => {
     it('should detect invalid topics', () => {
       const filters = {
         topics: [
-          '0xinvalid', // Invalid hex
-          '0x123', // Too short
-          'toolong', // Not hex
-          '0x' + '1'.repeat(66), // Too long
-          '0x' + '2'.repeat(66), // Too many topics
-          '0x' + '3'.repeat(66),
-          '0x' + '4'.repeat(66),
-          '0x' + '5'.repeat(66),
+          '0xinvalid' as any, // Invalid hex
+          '0x123' as any, // Too short
+          'toolong' as any, // Not hex
+          '0x' + '1'.repeat(66) as any, // Too long
+          '0x' + '2'.repeat(66) as any, // Too many topics
+          '0x' + '3'.repeat(66) as `0x${string}`,
+          '0x' + '4'.repeat(66) as `0x${string}`,
+          '0x' + '5'.repeat(66) as `0x${string}`,
         ],
       };
 
@@ -132,7 +132,7 @@ describe('EventValidationService', () => {
 
     it('should sanitize invalid data when requested', () => {
       const filters = {
-        contractAddress: '0x1234567890123456789012345678901234567890', // Valid
+        contractAddress: '0x1234567890123456789012345678901234567890' as `0x${string}`, // Valid
         limit: 2000, // Too high, should be capped
       };
 
@@ -182,9 +182,10 @@ describe('EventValidationService', () => {
 
     it('should detect invalid offset values', () => {
       const params = {
+        limit: 50,
         offset: -10, // Negative
         offset2: 1.5, // Not integer
-      };
+      } as any;
 
       const result = validationService.validatePaginationParams(params);
 
@@ -194,6 +195,7 @@ describe('EventValidationService', () => {
 
     it('should validate cursor format', () => {
       const params = {
+        limit: 50,
         cursor: '', // Empty
       };
 
@@ -205,6 +207,7 @@ describe('EventValidationService', () => {
 
     it('should validate direction values', () => {
       const params = {
+        limit: 50,
         direction: 'invalid', // Not asc or desc
       };
 
@@ -528,7 +531,7 @@ describe('EventValidationService', () => {
     });
 
     it('should warn about address checksum', () => {
-      const lowerCaseAddress = '0x1234567890123456789012345678901234567890';
+      const lowerCaseAddress = '0x1234567890123456789012345678901234567890' as `0x${string}`;
       const result = (validationService as any).validateAddress(lowerCaseAddress, 'testAddress');
 
       expect(result.valid).toBe(true);
@@ -538,7 +541,7 @@ describe('EventValidationService', () => {
 
   describe('Hash validation', () => {
     it('should validate correct hashes', () => {
-      const hash = '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef';
+      const hash = '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef' as `0x${string}`;
       const result = (validationService as any).validateHash(hash, 'testHash', 32);
 
       expect(result.valid).toBe(true);
@@ -565,7 +568,7 @@ describe('EventValidationService', () => {
   describe('Error handling', () => {
     it('should throw errors in strict mode', () => {
       const invalidFilters = {
-        contractAddress: '0xinvalid',
+        contractAddress: '0xinvalid' as `0x${string}`,
       };
 
       expect(() => {
@@ -575,7 +578,7 @@ describe('EventValidationService', () => {
 
     it('should not throw errors in non-strict mode', () => {
       const invalidFilters = {
-        contractAddress: '0xinvalid',
+        contractAddress: '0xinvalid' as `0x${string}`,
       };
 
       expect(() => {
@@ -588,7 +591,7 @@ describe('EventValidationService', () => {
       const consoleSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
       const filters = {
-        contractAddress: '0x1234567890abcdef1234567890abcdef12345678', // Valid but wrong checksum
+        contractAddress: '0x1234567890abcdef1234567890abcdef12345678' as `0x${string}`, // Valid but wrong checksum
         fromBlock: 1000000,
         toBlock: 2000000, // Large range
       };
@@ -616,7 +619,7 @@ describe('EventValidationService', () => {
 
     it('should sanitize block numbers', () => {
       const filters = {
-        fromBlock: '18000000', // String number
+        fromBlock: '18000000' as any, // String number
       };
 
       const result = validationService.validateEventFilters(filters, { sanitize: true });
@@ -626,7 +629,7 @@ describe('EventValidationService', () => {
 
     it('should sanitize timestamps', () => {
       const filters = {
-        fromTimestamp: '2024-01-01T00:00:00Z', // ISO string
+        fromTimestamp: '2024-01-01T00:00:00Z' as any, // ISO string
       };
 
       const result = validationService.validateEventFilters(filters, { sanitize: true });

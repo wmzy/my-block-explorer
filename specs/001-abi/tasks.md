@@ -76,12 +76,12 @@ description: "合约事件索引与查询功能的任务列表"
 - [X] T018 [US1] 在 `src/services/EventQueryService.ts` 中实现 `EventQueryService` 类，用于基本事件查询（依赖于 T007）
 - [X] T019 [US1] 在 `src/api-app.ts` 中添加索引状态端点 `/api/chains/{chainId}/contracts/{contractAddress}/events/indexing-status`
 - [X] T020 [US1] 在 `src/api-app.ts` 中添加基本事件查询端点 `/api/chains/{chainId}/contracts/{contractAddress}/events`
-- [ ] T021 [US1] 在 `src/components/events/EventTable.tsx` 中创建 `EventTable` 组件，用于显示事件列表
-- [ ] T022 [US1] 在 `src/components/events/EventStatistics.tsx` 中创建 `EventStatistics` 组件，用于索引进度显示
-- [ ] T023 [US1] 在 `src/services/EventDecodingService.ts` 中使用 Viem 添加事件解码逻辑（依赖于 T008）
-- [ ] T024 [US1] 在 `src/services/EventDecodingService.ts` 中实现 ABI 解析和事件签名提取
-- [ ] T025 [US1] 为所有事件操作添加 TypeScript 验证和严格类型的错误处理
-- [ ] T026 [US1] 确保实现满足缓存事件数据 1-9ms 响应时间要求
+- [X] T021 [US1] 在 `src/components/events/EventTable.tsx` 中创建 `EventTable` 组件，用于显示事件列表
+- [X] T022 [US1] 在 `src/components/events/EventStatistics.tsx` 中创建 `EventStatistics` 组件，用于索引进度显示
+- [X] T023 [US1] 在 `src/services/EventDecodingService.ts` 中使用 Viem 添加事件解码逻辑（依赖于 T008）
+- [X] T024 [US1] 在 `src/services/EventDecodingService.ts` 中实现 ABI 解析和事件签名提取
+- [X] T025 [US1] 为所有事件操作添加 TypeScript 验证和严格类型的错误处理
+- [X] T026 [US1] 确保实现满足缓存事件数据 1-9ms 响应时间要求
 
 **检查点**: ✅ 用户故事 1 MVP 已完成 - 核心事件发现与浏览功能可用并可独立测试
 

@@ -191,6 +191,106 @@ export class EventDecodingService {
   }
 
   /**
+   * 从合约源码中提取ABI定义
+   * @param sourceCode 合约的Solidity源码
+   * @returns 提取的ABI数组
+   */
+  extractAbiFromSource(sourceCode: string): Abi | null {
+    try {
+      // 查找pragma声明后的interface或contract定义
+      const abiMatch = sourceCode.match(/(interface|contract)\s+\w+\s*{[\s\S]*?(?=\})/g);
+
+      if (!abiMatch) {
+        throw new EventDecodingError(
+          'No ABI found in source code',
+          'Unknown',
+          '0x0',
+          0
+        );
+      }
+
+      // 提取ABI项（event、function等）
+      const abiItems: any[] = [];
+
+      // 匹配event定义
+      const eventMatches = sourceCode.match(/event\s+\w+\([^)]+\)\s*(?:indexed\s*\w+[^;]*;|;)/g) || [];
+      for (const eventDef of eventMatches) {
+        try {
+          const abiItem = this.parseEventAbi(eventDef);
+          if (abiItem) {
+            abiItems.push(abiItem);
+          }
+        } catch (error) {
+          console.warn('Failed to parse event ABI:', eventDef, error);
+        }
+      }
+
+      return abiItems.length > 0 ? abiItems : null;
+    } catch (error) {
+      throw new EventDecodingError(
+        `Failed to extract ABI from source: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        'Unknown',
+        '0x0',
+        0
+      );
+    }
+  }
+
+  /**
+   * 解析单个事件的ABI定义
+   * @param eventDefStr 事件定义字符串
+   * @returns 解析后的事件ABI对象
+   */
+  parseEventAbi(eventDefStr: string): any | null {
+    try {
+      // 解析事件名称
+      const nameMatch = eventDefStr.match(/event\s+(\w+)/);
+      if (!nameMatch) {
+        return null;
+      }
+      const eventName = nameMatch[1];
+
+      // 解析参数列表
+      const paramsMatch = eventDefStr.match(/\(([^)]+)\)/);
+      if (!paramsMatch) {
+        return null;
+      }
+
+      const paramsStr = paramsMatch[1];
+      const inputs: any[] = [];
+
+      // 分割参数并解析
+      if (paramsStr.trim()) {
+        const params = paramsStr.split(',').map(p => p.trim());
+        for (const param of params) {
+          const parts = param.split(/\s+/);
+          if (parts.length >= 2) {
+            const type = parts[0];
+            const name = parts[1].replace(/[,;]/g, '');
+            const indexed = param.includes('indexed');
+
+            inputs.push({
+              name,
+              type,
+              indexed,
+              internalType: type,
+            });
+          }
+        }
+      }
+
+      return {
+        type: 'event',
+        name: eventName,
+        inputs,
+      };
+    } catch (error) {
+      console.error('Error parsing event ABI:', error);
+      return null;
+    }
+  }
+
+  /**
    * 注册自定义数据转换器
    */
   registerTransformer(abiType: string, transformer: EventDataTransformer): void {
