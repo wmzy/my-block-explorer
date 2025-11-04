@@ -12,6 +12,8 @@ import {
 import TopNavigation from "../components/TopNavigation";
 import RpcFunctionError from "../components/RpcFunctionError";
 import RpcConfig from "../components/RpcConfig";
+import EventTable from "../components/events/EventTable";
+import EventStatistics from "../components/events/EventStatistics";
 
 type ContractSource = {
   chainId: number;
@@ -846,26 +848,18 @@ export default function ContractPage() {
             )}
 
             {activeTab === "events" && (
-              <div className={cardStyles}>
-                <h2>Contract Events</h2>
-                {(() => {
-                  const currentABI = getCurrentContractABI();
-                  return currentABI && currentABI.events.length > 0 ? (
-                    <div className={functionListStyles}>
-                      {currentABI.events.map((event, index) => (
-                        <div key={index} className="function-item">
-                          <div className="function-signature">
-                            {event.signature}
-                          </div>
-                          <span className="function-type">Event</span>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div>No events found</div>
-                  );
-                })()}
-              </div>
+              <>
+                <EventStatistics
+                  chainId={currentChainId}
+                  contractAddress={address!}
+                />
+                <EventTable
+                  chainId={currentChainId}
+                  contractAddress={address!}
+                  abiEvents={getCurrentContractABI()?.events || []}
+                  enableDynamicFiltering={true}
+                />
+              </>
             )}
 
             {activeTab === "interact" && (

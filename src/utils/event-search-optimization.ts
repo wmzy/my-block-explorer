@@ -201,7 +201,7 @@ export class EventSearchOptimizer {
   /**
    * Optimized client-side filtering for larger datasets
    */
-  private optimizedClientSideFilter(events: FormattedEventData[], filters: EventFilters): FormattedEventData[] {
+  private async optimizedClientSideFilter(events: FormattedEventData[], filters: EventFilters): Promise<FormattedEventData[]> {
     // Use chunked processing to avoid blocking the main thread
     const chunkSize = 5000;
     const results: FormattedEventData[] = [];

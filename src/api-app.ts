@@ -1107,16 +1107,16 @@ app.get("/api/chains/:chainId/contracts/:address/events", async (c) => {
     );
   }
 
+  // Build filters (move outside try block to ensure it's available in catch)
+  const filters: any = {};
+  if (eventName) filters.eventName = eventName;
+  if (fromBlock) filters.fromBlock = fromBlock;
+  if (toBlock) filters.toBlock = toBlock;
+  if (fromTimestamp) filters.fromTimestamp = fromTimestamp;
+  if (toTimestamp) filters.toTimestamp = toTimestamp;
+
   try {
     const performanceOptimizer = eventPerformanceOptimizerManager.getOptimizer(chainId);
-
-    // Build filters
-    const filters: any = {};
-    if (eventName) filters.eventName = eventName;
-    if (fromBlock) filters.fromBlock = fromBlock;
-    if (toBlock) filters.toBlock = toBlock;
-    if (fromTimestamp) filters.fromTimestamp = fromTimestamp;
-    if (toTimestamp) filters.toTimestamp = toTimestamp;
 
     // Create cache key based on all parameters
     const cacheKey = `events_${chainId}_${address}_${JSON.stringify({
