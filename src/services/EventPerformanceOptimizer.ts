@@ -6,6 +6,7 @@
 
 import { performance } from 'perf_hooks';
 import { ChainDatabaseManager } from '../database/chain-database-manager';
+import { multiChainDb } from '../database/chain-database-manager';
 import { multiChainPerformanceManager } from '../database/performance-monitor';
 import { eventQueryServiceManager } from './EventQueryService';
 import { eventDecoderServiceManager } from './EventDecoderService';
@@ -195,7 +196,7 @@ export class EventPerformanceOptimizer {
     strategies: Partial<OptimizationStrategies> = {}
   ) {
     this.chainId = chainId;
-    this.chainDb = ChainDatabaseManager.getInstance().getChainDatabaseSync(chainId);
+    this.chainDb = multiChainDb.getChainDatabaseSync(chainId);
 
     // Set default thresholds
     this.thresholds = {

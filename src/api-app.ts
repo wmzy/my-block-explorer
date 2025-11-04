@@ -18,6 +18,7 @@ import { rpcManager } from "./services/RpcManager";
 import { eventIndexingServiceManager } from "./services/EventIndexingService";
 import { eventQueryServiceManager } from "./services/EventQueryService";
 import { eventPerformanceOptimizerManager } from "./services/EventPerformanceOptimizer";
+import { multiChainDb } from "./database/chain-database-manager";
 import { db, userRpcConfigs } from "./database/init";
 import { eq } from "drizzle-orm";
 import { type Address } from "viem";
@@ -978,6 +979,78 @@ app.onError((err, c) => {
 });
 
 // Event Indexing APIs
+// GET /api/chains/:chainId/contracts/:address/events/statistics - 获取事件统计信息
+app.get("/api/chains/:chainId/contracts/:address/events/statistics", async (c) => {
+  const chainId = getValidatedChainId(c.req.param("chainId"));
+  const address = getValidatedAddress(c.req.param("address"));
+
+  if (isNaN(chainId) || !isChainSupported(chainId)) {
+    return c.json(
+      {
+        error: "Unsupported chain",
+        message: `Chain ID ${chainId} is not supported`,
+        supportedChains: getSupportedChainIds(),
+      },
+      400
+    );
+  }
+
+  if (!address || !/^0x[a-fA-F0-9]{40}$/.test(address)) {
+    return c.json(
+      {
+        error: "Invalid contract address",
+        message: "Address must be a valid 42-character hexadecimal string starting with 0x",
+      },
+      400
+    );
+  }
+
+  try {
+    // 确保链数据库已初始化
+    await multiChainDb.getChainDatabase(chainId);
+
+    const performanceOptimizer = eventPerformanceOptimizerManager.getOptimizer(chainId);
+
+    const statistics = await performanceOptimizer.executeOptimizedQuery(
+      'event_statistics',
+      async () => {
+        // Return mock statistics for now
+        return {
+          chainId,
+          contractAddress: address.toLowerCase(),
+          isIndexed: false,
+          indexingProgress: 0,
+          totalEvents: 0,
+          indexedEvents: 0,
+          eventTypes: [],
+          storageSize: 0,
+          lastIndexedBlock: undefined,
+          lastIndexedAt: undefined,
+          errors: [],
+        };
+      }
+    );
+
+    return safeJsonResponse(c, statistics, {
+      chainId,
+      chainName: getChainName(chainId),
+    });
+  } catch (error) {
+    console.error("Event statistics API error:", error);
+    return c.json(
+      {
+        error: "Failed to fetch event statistics",
+        message: error instanceof Error ? error.message : "Unknown error",
+        chainId,
+        chainName: getChainName(chainId),
+        contractAddress: address.toLowerCase(),
+        timestamp: new Date().toISOString(),
+      },
+      500
+    );
+  }
+});
+
 // GET /api/chains/:chainId/contracts/:address/events/indexing-status - 获取事件索引状态
 app.get("/api/chains/:chainId/contracts/:address/events/indexing-status", async (c) => {
   const chainId = getValidatedChainId(c.req.param("chainId"));

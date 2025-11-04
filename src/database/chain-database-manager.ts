@@ -137,6 +137,17 @@ export class MultiChainDatabaseManager {
   }
 
   /**
+   * 同步获取链数据库管理器（如果已初始化）
+   */
+  getChainDatabaseSync(chainId: number): ChainDatabaseManager {
+    const manager = this.chainManagers.get(chainId);
+    if (!manager) {
+      throw new Error(`Chain database for ${chainId} is not initialized. Call getChainDatabase() first.`);
+    }
+    return manager;
+  }
+
+  /**
    * 初始化所有支持的链数据库
    */
   async initializeAllChains(): Promise<void> {

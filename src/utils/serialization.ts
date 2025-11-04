@@ -4,15 +4,65 @@
  */
 
 /**
- * 自定义JSON序列化，处理BigInt类型
+ * 自定义JSON序列化，处理BigInt类型和循环引用
  */
 export function serializeForJson(obj: any): any {
-  return JSON.parse(JSON.stringify(obj, (key, value) => {
-    if (typeof value === 'bigint') {
-      return value.toString();
-    }
-    return value;
-  }));
+  if (obj === null || obj === undefined) {
+    return obj;
+  }
+
+  // 使用WeakSet来跟踪已遍历的对象，避免循环引用
+  const seen = new WeakSet();
+
+  try {
+    return JSON.parse(JSON.stringify(obj, (key, value) => {
+      // 跳过Socket、Parser等会导致循环引用的属性
+      if (key === 'socket' || key === 'parser' || key === '_socket' || key === 'req' || key === 'res' || key === 'client') {
+        return '[Unserializable]';
+      }
+
+      if (typeof value === 'object' && value !== null) {
+        // 检查循环引用
+        if (seen.has(value)) {
+          return '[Circular]';
+        }
+        seen.add(value);
+      }
+
+      // 处理BigInt
+      if (typeof value === 'bigint') {
+        return value.toString();
+      }
+
+      // 处理Date
+      if (value instanceof Date) {
+        return value.toISOString();
+      }
+
+      // 处理Error
+      if (value instanceof Error) {
+        return {
+          name: value.name,
+          message: value.message,
+          stack: value.stack,
+        };
+      }
+
+      // 跳过函数
+      if (typeof value === 'function') {
+        return '[Function]';
+      }
+
+      return value;
+    }));
+  } catch (error) {
+    console.error('Serialization error for key:', key, 'value:', value, 'error:', error);
+    return {
+      error: 'Failed to serialize object',
+      type: typeof obj,
+      message: String(obj).substring(0, 100)
+    };
+  }
 }
 
 /**

@@ -263,60 +263,73 @@ const StatCardWithIcon: React.FC<{
 );
 
 const IndexingProgressCard: React.FC<{
-  stats: EventStatistics;
+  stats: EventStatistics | null;
   onRefresh: () => void;
   isLoading: boolean;
-}> = ({ stats, onRefresh, isLoading }) => (
-  <StatCard>
-    <StatCardHeader>
-      <StatCardTitle>Indexing Progress</StatCardTitle>
-      <RefreshButton
-        onClick={onRefresh}
-        disabled={isLoading}
-        title="Refresh indexing status"
-      >
-        {isLoading ? '⟳' : '↻'}
-      </RefreshButton>
-    </StatCardHeader>
+}> = ({ stats, onRefresh, isLoading }) => {
+  // Add null check
+  if (!stats) {
+    return (
+      <StatCard>
+        <StatCardHeader>
+          <StatCardTitle>Indexing Progress</StatCardTitle>
+          <RefreshButton onClick={onRefresh} disabled={isLoading} title="Refresh indexing status">
+            {isLoading ? '⟳' : '↻'}
+          </RefreshButton>
+        </StatCardHeader>
+        <StatLabel>Loading...</StatLabel>
+      </StatCard>
+    );
+  }
 
-    <StatValue>{stats.indexingProgress}%</StatValue>
-    <StatLabel>
-      {stats.indexedEvents.toLocaleString()} / {stats.totalEvents.toLocaleString()} events indexed
-    </StatLabel>
+  return (
+    <StatCard>
+      <StatCardHeader>
+        <StatCardTitle>Indexing Progress</StatCardTitle>
+        <RefreshButton onClick={onRefresh} disabled={isLoading} title="Refresh indexing status">
+          {isLoading ? '⟳' : '↻'}
+        </RefreshButton>
+      </StatCardHeader>
 
-    <ProgressBarContainer>
-      <ProgressBarBackground>
-        <ProgressBarFill progress={stats.indexingProgress} />
-      </ProgressBarBackground>
-      <ProgressText>
-        <span>{stats.indexingProgress}% complete</span>
-        <span>{formatLastIndexed(stats.lastIndexedAt)}</span>
-      </ProgressText>
-    </ProgressBarContainer>
-
-    {stats.lastIndexedBlock && (
-      <StatLabel style={{ marginTop: 8 }}>
-        Last indexed block: {stats.lastIndexedBlock.toLocaleString()}
+      <StatValue>{stats.indexingProgress || 0}%</StatValue>
+      <StatLabel>
+        {(stats.indexedEvents || 0).toLocaleString()} / {(stats.totalEvents || 0).toLocaleString()} events indexed
       </StatLabel>
-    )}
 
-    {stats.errors.length > 0 && (
-      <ErrorMessage>
-        <strong>Indexing Errors:</strong>
-        <ul style={{ margin: '4px 0 0 0', paddingLeft: 16 }}>
-          {stats.errors.slice(0, 3).map((error, index) => (
-            <li key={index}>
-              Block {error.blockNumber}: {error.error}
-            </li>
-          ))}
-          {stats.errors.length > 3 && (
-            <li>...and {stats.errors.length - 3} more errors</li>
-          )}
-        </ul>
-      </ErrorMessage>
-    )}
-  </StatCard>
-);
+      <ProgressBarContainer>
+        <ProgressBarBackground>
+          <ProgressBarFill progress={stats.indexingProgress || 0} />
+        </ProgressBarBackground>
+        <ProgressText>
+          <span>{stats.indexingProgress || 0}% complete</span>
+          <span>{formatLastIndexed(stats.lastIndexedAt)}</span>
+        </ProgressText>
+      </ProgressBarContainer>
+
+      {stats.lastIndexedBlock && (
+        <StatLabel style={{ marginTop: 8 }}>
+          Last indexed block: {stats.lastIndexedBlock.toLocaleString()}
+        </StatLabel>
+      )}
+
+      {stats.errors && stats.errors.length > 0 && (
+        <ErrorMessage>
+          <strong>Indexing Errors:</strong>
+          <ul style={{ margin: '4px 0 0 0', paddingLeft: 16 }}>
+            {stats.errors.slice(0, 3).map((error, index) => (
+              <li key={index}>
+                Block {error.blockNumber}: {error.error}
+              </li>
+            ))}
+            {stats.errors.length > 3 && (
+              <li>...and {stats.errors.length - 3} more errors</li>
+            )}
+          </ul>
+        </ErrorMessage>
+      )}
+    </StatCard>
+  );
+};
 
 const EventTypesCard: React.FC<{ stats: EventStatistics }> = ({ stats }) => (
   <StatCard>

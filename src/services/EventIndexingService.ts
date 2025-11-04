@@ -3,7 +3,7 @@
  * 负责合约事件的发现、解析和索引处理，使用多链数据库隔离架构
  */
 
-import { ChainDatabaseManager } from '../database/chain-database-manager';
+import { ChainDatabaseManager, multiChainDb } from '../database/chain-database-manager';
 import { ChainEventTableManager } from '../database/chain-event-table-manager';
 import { ChainSchemaManager } from '../database/chain-schema-manager';
 import { RpcManager } from './RpcManager';
@@ -66,7 +66,7 @@ export class EventIndexingService {
     };
 
     // 获取现有的多链数据库管理器实例
-    this.chainDb = ChainDatabaseManager.getInstance().getChainDatabaseSync(chainId);
+    this.chainDb = multiChainDb.getChainDatabaseSync(chainId);
     this.eventTableManager = new ChainEventTableManager(this.chainDb, this.config);
     this.schemaManager = new ChainSchemaManager(chainId);
     this.rpcManager = RpcManager.getInstance();

@@ -6,7 +6,7 @@
 
 import { Abi, AbiEvent, AbiParameter, Address, parseAbi } from 'viem';
 import { keccak256 } from 'viem/utils';
-import { ChainDatabaseManager } from '../database/chain-database-manager';
+import { ChainDatabaseManager, multiChainDb } from '../database/chain-database-manager';
 import { multiChainPerformanceManager } from '../database/performance-monitor';
 import {
   EventParameter,
@@ -106,7 +106,7 @@ export class AbiParsingService {
 
   constructor(chainId: number) {
     this.chainId = chainId;
-    this.chainDb = ChainDatabaseManager.getInstance().getChainDatabaseSync(chainId);
+    this.chainDb = multiChainDb.getChainDatabaseSync(chainId);
   }
 
   /**
