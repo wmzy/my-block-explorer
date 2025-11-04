@@ -6,7 +6,7 @@
 import { ChainDatabaseManager, multiChainDb } from '../database/chain-database-manager';
 import { ChainEventTableManager } from '../database/chain-event-table-manager';
 import { ChainSchemaManager } from '../database/chain-schema-manager';
-import { RpcManager } from './RpcManager';
+import { rpcManager } from './RpcManager';
 import { getChainName, getChainType } from '../config/chains';
 import { multiChainPerformanceManager } from '../database/performance-monitor';
 import {
@@ -69,7 +69,7 @@ export class EventIndexingService {
     this.chainDb = multiChainDb.getChainDatabaseSync(chainId);
     this.eventTableManager = new ChainEventTableManager(this.chainDb, this.config);
     this.schemaManager = new ChainSchemaManager(chainId);
-    this.rpcManager = RpcManager.getInstance();
+    this.rpcManager = rpcManager;
     this.indexingTasks = new Map();
   }
 

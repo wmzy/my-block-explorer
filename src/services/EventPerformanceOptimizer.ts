@@ -575,8 +575,21 @@ export class EventPerformanceOptimizer {
     if (typeof data === 'string') return data.length;
     if (typeof data === 'number') return 8;
     if (typeof data === 'boolean') return 1;
+    if (typeof data === 'bigint') return 8; // BigInt is 8 bytes
     if (Array.isArray(data)) return data.reduce((sum, item) => sum + this.estimateDataSize(item), 0);
-    if (typeof data === 'object') return JSON.stringify(data).length;
+    if (typeof data === 'object') {
+      try {
+        // Use serializeForJson to handle BigInt and other special types
+        const serialized = JSON.stringify(data, (key, value) => {
+          if (typeof value === 'bigint') return value.toString();
+          return value;
+        });
+        return serialized.length;
+      } catch (error) {
+        console.warn('Failed to estimate data size:', error);
+        return 100; // Default estimate
+      }
+    }
     return 100; // Default estimate
   }
 
