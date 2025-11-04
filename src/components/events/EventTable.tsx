@@ -1017,19 +1017,14 @@ export const EventTable: React.FC<EventTableProps> = ({
     }
   };
 
-  // Calculate pagination info
+  // Calculate pagination info - FIXED to avoid infinite loop
   const calculatePaginationInfo = useCallback(() => {
     const totalPagesCount = Math.ceil(pagination.total / pagination.limit);
     const startIndex = (pagination.page - 1) * pagination.limit + 1;
     const endIndex = Math.min(pagination.page * pagination.limit, pagination.total);
 
     setTotalPages(totalPagesCount);
-    setPagination(prev => ({
-      ...prev,
-      totalPages: totalPagesCount,
-      startIndex,
-      endIndex
-    }));
+    // Note: removed setPaginationInfo as it doesn't exist
   }, [pagination.total, pagination.limit, pagination.page]);
 
   useEffect(() => {
