@@ -1,6 +1,9 @@
 import { DuckDBInstance } from "@duckdb/node-api";
 import { join } from "path";
 import { mkdir } from "fs/promises";
+import { createLogger } from "../server/logger";
+
+const logger = createLogger("duckdb");
 
 /**
  * DuckDB数据库管理器
@@ -16,7 +19,7 @@ export class DuckDBManager {
     this.dbPath = dbPath || join(dataDir, "blockchain.db");
 
     // 确保数据目录存在
-    mkdir(dataDir, { recursive: true }).catch(console.warn);
+    mkdir(dataDir, { recursive: true }).catch((err) => logger.warn({ err }, "Failed to create data directory"));
   }
 
   /**
@@ -39,7 +42,7 @@ export class DuckDBManager {
     this.isInitialized = true;
 
     await this.connect();
-    console.log("🚀 Initializing DuckDB database...");
+    logger.info("Initializing DuckDB database");
 
     try {
       // 创建用户RPC配置表
@@ -202,9 +205,9 @@ export class DuckDBManager {
       // 创建索引
       await this.createIndexes();
 
-      console.log("✅ DuckDB database initialized successfully!");
+      logger.info("DuckDB database initialized successfully");
     } catch (error) {
-      console.error("❌ Database initialization failed:", error);
+      logger.error({ err: error }, "Database initialization failed");
       // 重置初始化标志，允许重试
       this.isInitialized = false;
       throw error;
@@ -250,7 +253,7 @@ export class DuckDBManager {
       try {
         await this.exec(indexSql);
       } catch (error) {
-        console.warn(`⚠️ Index creation warning: ${error}`);
+        logger.warn({ err: error }, "Index creation warning");
       }
     }
   }
@@ -282,7 +285,7 @@ export class DuckDBManager {
         return result.getRowObjects() as T[];
       }
     } catch (error) {
-      console.error("DuckDB Query Error:", { sql, params, error });
+      logger.error({ err: error, sql, params }, "DuckDB Query Error");
       throw error;
     }
   }
@@ -305,7 +308,7 @@ export class DuckDBManager {
       await connection.run(sql);
       connection.disconnectSync();
     } catch (error) {
-      console.error("DuckDB Exec Error:", { sql, error });
+      logger.error({ err: error, sql }, "DuckDB Exec Error");
       throw error;
     }
   }

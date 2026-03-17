@@ -240,7 +240,29 @@ export const contractCreationInfo = duckdbTable(
   ]
 );
 
+// 事件表注册表
+export const eventTableRegistry = duckdbTable(
+  "event_table_registry",
+  {
+    ...chainAddressColumns,
+    contractAddress: address().notNull(),
+    eventSignature: varchar({ length: 66 }).notNull(),
+    eventName: varchar({ length: 255 }),
+    tableName: varchar({ length: 255 }).notNull(),
+    tableSchema: text(),
+    isActive: boolean().default(true),
+    lastAccessed: datetime(),
+    ...timestampColumns,
+  },
+  (table) => [
+    primaryKey({ columns: [table.chainId, table.contractAddress, table.eventSignature] }),
+  ]
+);
+
 // 导出类型推断
+export type EventTableRegistry = typeof eventTableRegistry.$inferSelect;
+export type NewEventTableRegistry = typeof eventTableRegistry.$inferInsert;
+
 export type UserRpcConfig = typeof userRpcConfigs.$inferSelect;
 export type NewUserRpcConfig = typeof userRpcConfigs.$inferInsert;
 

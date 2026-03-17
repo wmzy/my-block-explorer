@@ -3,7 +3,10 @@
  * Enables the blockchain explorer to work out-of-the-box with minimal setup
  */
 
+import { createLogger } from '../server/logger';
 import { multiChainDb } from '../database/chain-database-manager';
+
+const logger = createLogger("zero-config");
 import { getRecommendedMultiChainConfig } from './chains';
 import { performanceMonitor } from '../services/PerformanceMonitor';
 
@@ -45,11 +48,11 @@ export class ZeroConfigManager {
    */
   async initialize(): Promise<void> {
     if (this.isInitialized) {
-      console.log(' Zero-config environment already initialized');
+      logger.info("Zero-config environment already initialized");
       return;
     }
 
-    console.log('=� Initializing zero-config blockchain explorer environment...');
+    logger.info("Initializing zero-config blockchain explorer environment");
 
     try {
       await this.setupEnvironment();
@@ -58,10 +61,10 @@ export class ZeroConfigManager {
       await this.setupDefaults();
 
       this.isInitialized = true;
-      console.log('<� Zero-config environment initialized successfully!');
+      logger.info("Zero-config environment initialized successfully");
 
     } catch (error) {
-      console.error('L Failed to initialize zero-config environment:', error);
+      logger.error({ err: error }, "Failed to initialize zero-config environment");
       throw error;
     }
   }
@@ -70,7 +73,7 @@ export class ZeroConfigManager {
    * Setup basic environment requirements
    */
   private async setupEnvironment(): Promise<void> {
-    console.log('=� Setting up environment...');
+    logger.info("Setting up environment");
 
     // Check Node.js version
     const nodeVersion = process.version;
@@ -95,7 +98,7 @@ export class ZeroConfigManager {
     for (const dir of directories) {
       try {
         await fs.mkdir(dir, { recursive: true });
-        console.log(`=� Created directory: ${dir}`);
+        logger.info({ dir }, "Created directory");
       } catch (error) {
         // Directory might already exist, ignore error
       }
@@ -110,27 +113,27 @@ export class ZeroConfigManager {
       process.env.LOG_LEVEL = this.config.logLevel;
     }
 
-    console.log(' Environment setup complete');
+    logger.info("Environment setup complete");
   }
 
   /**
    * Setup databases for supported chains
    */
   private async setupDatabases(): Promise<void> {
-    console.log('=� Setting up databases...');
+    logger.info("Setting up databases");
 
     try {
       const chainConfigs = getRecommendedMultiChainConfig();
       const chainIds = chainConfigs.map(config => config.chainId);
 
-      console.log(`Initializing ${chainIds.length} chain databases...`);
+      logger.info({ chainCount: chainIds.length }, "Initializing chain databases");
 
       // Initialize all recommended chain databases
       await multiChainDb.initializeAllChains();
 
-      console.log(' Database setup complete');
+      logger.info("Database setup complete");
     } catch (error) {
-      console.error('L Database setup failed:', error);
+      logger.error({ err: error }, "Database setup failed");
       throw error;
     }
   }
@@ -139,46 +142,46 @@ export class ZeroConfigManager {
    * Setup essential services
    */
   private async setupServices(): Promise<void> {
-    console.log('� Setting up services...');
+    logger.info("Setting up services");
 
     // Setup performance monitoring if enabled
     if (this.config.enablePerformanceMonitoring) {
-      console.log('=> Enabling performance monitoring...');
+      logger.info("Enabling performance monitoring");
       // Performance monitor is already initialized as singleton
-      console.log(' Performance monitoring enabled');
+      logger.info("Performance monitoring enabled");
     }
 
     // Setup error recovery
     if (this.config.errorRecovery) {
-      console.log('=� Setting up error recovery...');
+      logger.info("Setting up error recovery");
       this.setupErrorRecovery();
-      console.log(' Error recovery configured');
+      logger.info("Error recovery configured");
     }
 
-    console.log(' Services setup complete');
+    logger.info("Services setup complete");
   }
 
   /**
    * Setup default configurations
    */
   private async setupDefaults(): Promise<void> {
-    console.log('= Applying default configurations...');
+    logger.info("Applying default configurations");
 
     // Set up default RPC configurations
     const { getRecommendedMultiChainConfig } = await import('./chains');
     const defaultConfigs = getRecommendedMultiChainConfig();
 
-    console.log(`Configured ${defaultConfigs.length} chains with default settings`);
+    logger.info({ chainCount: defaultConfigs.length }, "Configured chains with default settings");
 
     // Setup event indexing if enabled
     if (this.config.enableEventIndexing) {
-      console.log('=> Event indexing enabled by default');
+      logger.info("Event indexing enabled by default");
     }
 
     // Setup caching strategy
-    console.log('=> Setting up default caching strategy...');
+    logger.info("Setting up default caching strategy");
 
-    console.log(' Default configurations applied');
+    logger.info("Default configurations applied");
   }
 
   /**
@@ -187,23 +190,23 @@ export class ZeroConfigManager {
   private setupErrorRecovery(): void {
     // Handle uncaught exceptions
     process.on('uncaughtException', (error) => {
-      console.error('=> Uncaught Exception:', error);
+      logger.error({ err: error }, "Uncaught Exception");
       this.gracefulShutdown();
     });
 
     // Handle unhandled promise rejections
     process.on('unhandledRejection', (reason, promise) => {
-      console.error('=> Unhandled Promise Rejection at:', promise, 'reason:', reason);
+      logger.error({ reason, promise }, "Unhandled Promise Rejection");
     });
 
     // Handle graceful shutdown
     process.on('SIGINT', () => {
-      console.log('\n=> Received SIGINT, shutting down gracefully...');
+      logger.info("Received SIGINT, shutting down gracefully");
       this.gracefulShutdown();
     });
 
     process.on('SIGTERM', () => {
-      console.log('\n=> Received SIGTERM, shutting down gracefully...');
+      logger.info("Received SIGTERM, shutting down gracefully");
       this.gracefulShutdown();
     });
   }
@@ -212,21 +215,21 @@ export class ZeroConfigManager {
    * Graceful shutdown procedure
    */
   private async gracefulShutdown(): Promise<void> {
-    console.log('= Starting graceful shutdown...');
+    logger.info("Starting graceful shutdown");
 
     try {
       // Stop performance monitoring
       performanceMonitor.stop();
-      console.log('=� Performance monitoring stopped');
+      logger.info("Performance monitoring stopped");
 
       // Close all database connections
       await multiChainDb.closeAll();
-      console.log('=� All databases closed');
+      logger.info("All databases closed");
 
-      console.log(' Graceful shutdown complete');
+      logger.info("Graceful shutdown complete");
       process.exit(0);
     } catch (error) {
-      console.error('L Error during graceful shutdown:', error);
+      logger.error({ err: error }, "Error during graceful shutdown");
       process.exit(1);
     }
   }
@@ -256,7 +259,7 @@ export class ZeroConfigManager {
    */
   updateConfig(updates: Partial<ZeroConfigState>): void {
     this.config = { ...this.config, ...updates };
-    console.log('=> Configuration updated');
+    logger.info("Configuration updated");
   }
 
   /**
@@ -341,7 +344,7 @@ export async function initializeBlockchainExplorer(): Promise<void> {
  */
 if (require.main === module || process.env.AUTO_INIT === 'true') {
   initializeBlockchainExplorer().catch(error => {
-    console.error('=� Failed to auto-initialize blockchain explorer:', error);
+    logger.error({ err: error }, "Failed to auto-initialize blockchain explorer");
     process.exit(1);
   });
 }

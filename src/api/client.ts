@@ -1,10 +1,7 @@
-// API客户端
 import type {
   Block,
   Transaction,
   AddressInfo,
-  PaginationParams,
-  ListResponse,
 } from "@/types/index";
 
 export class ApiError extends Error {
@@ -12,7 +9,7 @@ export class ApiError extends Error {
     message: string,
     public status: number,
     public code?: string,
-    public details?: any
+    public details?: unknown
   ) {
     super(message);
     this.name = "ApiError";
@@ -28,7 +25,6 @@ export class ApiClient {
     this.defaultTimeout = timeout;
   }
 
-  // 基础请求方法
   private async request<T>(
     endpoint: string,
     options: RequestInit = {}
@@ -80,17 +76,15 @@ export class ApiClient {
     }
   }
 
-  // GET请求
   private async get<T>(
     endpoint: string
   ): Promise<{ data: T; headers: Headers }> {
     return this.request<T>(endpoint, { method: "GET" });
   }
 
-  // POST请求
   private async post<T>(
     endpoint: string,
-    body?: any
+    body?: unknown
   ): Promise<{ data: T; headers: Headers }> {
     return this.request<T>(endpoint, {
       method: "POST",
@@ -98,170 +92,64 @@ export class ApiClient {
     });
   }
 
-  // PUT请求
-  private async put<T>(
-    endpoint: string,
-    body?: any
-  ): Promise<{ data: T; headers: Headers }> {
-    return this.request<T>(endpoint, {
-      method: "PUT",
-      body: body ? JSON.stringify(body) : undefined,
-    });
-  }
-
-  // DELETE请求
-  private async delete<T>(
+  private async del<T>(
     endpoint: string
   ): Promise<{ data: T; headers: Headers }> {
     return this.request<T>(endpoint, { method: "DELETE" });
   }
 
-  // 区块相关API
-  async getLatestBlocks(
-    chainId: number,
-    params?: PaginationParams
-  ): Promise<ListResponse<Block>> {
-    const query = new URLSearchParams();
-    if (params?.page) query.set("page", params.page.toString());
-    if (params?.limit) query.set("limit", params.limit.toString());
+  // Block APIs — aligned with actual backend endpoints
+  async getLatestBlock(chainId: number): Promise<Record<string, unknown>> {
+    const { data } = await this.get<Record<string, unknown>>(
+      `/api/chains/${chainId}/blocks/latest`
+    );
+    return data;
+  }
 
-    const { data } = await this.get<ListResponse<Block>>(
+  async getBlocks(
+    chainId: number,
+    limit = 20,
+    offset = 0
+  ): Promise<{ blocks: Block[]; total: number }> {
+    const query = new URLSearchParams({
+      limit: limit.toString(),
+      offset: offset.toString(),
+    });
+    const { data } = await this.get<{ blocks: Block[]; total: number }>(
       `/api/chains/${chainId}/blocks?${query}`
     );
     return data;
   }
 
-  async getBlockByNumber(chainId: number, blockNumber: number): Promise<Block> {
-    const { data } = await this.get<Block>(
+  async getBlockByNumber(chainId: number, blockNumber: number): Promise<Record<string, unknown>> {
+    const { data } = await this.get<Record<string, unknown>>(
       `/api/chains/${chainId}/blocks/${blockNumber}`
     );
     return data;
   }
 
-  async getBlockByHash(chainId: number, blockHash: string): Promise<Block> {
-    const { data } = await this.get<Block>(
-      `/api/chains/${chainId}/blocks/hash/${blockHash}`
-    );
-    return data;
-  }
-
-  async getBlocksInRange(
-    chainId: number,
-    fromBlock?: number,
-    toBlock?: number,
-    params?: PaginationParams
-  ): Promise<ListResponse<Block>> {
-    const query = new URLSearchParams();
-    if (fromBlock !== undefined) query.set("fromBlock", fromBlock.toString());
-    if (toBlock !== undefined) query.set("toBlock", toBlock.toString());
-    if (params?.page) query.set("page", params.page.toString());
-    if (params?.limit) query.set("limit", params.limit.toString());
-
-    const { data } = await this.get<ListResponse<Block>>(
-      `/api/chains/${chainId}/blocks/range?${query}`
-    );
-    return data;
-  }
-
-  async getLatestBlockNumber(chainId: number): Promise<number> {
-    const { data } = await this.get<{ blockNumber: number }>(
-      `/api/chains/${chainId}/blocks/latest/number`
-    );
-    return data.blockNumber;
-  }
-
-  async getBlockStats(chainId: number): Promise<any> {
-    const { data } = await this.get(`/api/chains/${chainId}/blocks/stats`);
-    return data;
-  }
-
-  // 交易相关API
+  // Transaction APIs
   async getTransactionByHash(
     chainId: number,
     txHash: string
-  ): Promise<Transaction> {
-    const { data } = await this.get<Transaction>(
+  ): Promise<Record<string, unknown>> {
+    const { data } = await this.get<Record<string, unknown>>(
       `/api/chains/${chainId}/transactions/${txHash}`
     );
     return data;
   }
 
-  async getLatestTransactions(
+  async getTransactions(
     chainId: number,
-    params?: PaginationParams
-  ): Promise<ListResponse<Transaction>> {
-    const query = new URLSearchParams();
-    if (params?.page) query.set("page", params.page.toString());
-    if (params?.limit) query.set("limit", params.limit.toString());
-
-    const { data } = await this.get<ListResponse<Transaction>>(
-      `/api/chains/${chainId}/transactions?${query}`
+    limit = 20
+  ): Promise<Record<string, unknown>> {
+    const { data } = await this.get<Record<string, unknown>>(
+      `/api/chains/${chainId}/transactions?limit=${limit}`
     );
     return data;
   }
 
-  async getTransactionsByBlock(
-    chainId: number,
-    blockNumber: number,
-    params?: PaginationParams
-  ): Promise<ListResponse<Transaction>> {
-    const query = new URLSearchParams();
-    if (params?.page) query.set("page", params.page.toString());
-    if (params?.limit) query.set("limit", params.limit.toString());
-
-    const { data } = await this.get<ListResponse<Transaction>>(
-      `/api/chains/${chainId}/blocks/${blockNumber}/transactions?${query}`
-    );
-    return data;
-  }
-
-  async getTransactionsByAddress(
-    chainId: number,
-    address: string,
-    params?: PaginationParams
-  ): Promise<ListResponse<Transaction>> {
-    const query = new URLSearchParams();
-    if (params?.page) query.set("page", params.page.toString());
-    if (params?.limit) query.set("limit", params.limit.toString());
-
-    const { data } = await this.get<ListResponse<Transaction>>(
-      `/api/chains/${chainId}/addresses/${address}/transactions?${query}`
-    );
-    return data;
-  }
-
-  async getAddressTransactionHistory(
-    chainId: number,
-    address: string,
-    fromBlock?: number,
-    toBlock?: number
-  ): Promise<{
-    data: Transaction[];
-    isComplete: boolean;
-    suggestion?: string;
-  }> {
-    const query = new URLSearchParams();
-    if (fromBlock !== undefined) query.set("fromBlock", fromBlock.toString());
-    if (toBlock !== undefined) query.set("toBlock", toBlock.toString());
-
-    const { data } = await this.get<{
-      data: Transaction[];
-      isComplete: boolean;
-      suggestion?: string;
-    }>(
-      `/api/chains/${chainId}/addresses/${address}/transactions/history?${query}`
-    );
-    return data;
-  }
-
-  async getTransactionStats(chainId: number): Promise<any> {
-    const { data } = await this.get(
-      `/api/chains/${chainId}/transactions/stats`
-    );
-    return data;
-  }
-
-  // 地址相关API
+  // Address APIs
   async getAddressInfo(chainId: number, address: string): Promise<AddressInfo> {
     const { data } = await this.get<AddressInfo>(
       `/api/chains/${chainId}/addresses/${address}`
@@ -269,102 +157,121 @@ export class ApiClient {
     return data;
   }
 
-  async getAddressBalance(chainId: number, address: string): Promise<string> {
-    const { data } = await this.get<{ balance: string }>(
-      `/api/chains/${chainId}/addresses/${address}/balance`
+  async getAddressPersistent(chainId: number, address: string): Promise<Record<string, unknown>> {
+    const { data } = await this.get<Record<string, unknown>>(
+      `/api/chains/${chainId}/addresses/${address}/persistent`
     );
-    return data.balance;
-  }
-
-  async getAddressBalanceAtBlock(
-    chainId: number,
-    address: string,
-    blockNumber: number
-  ): Promise<string> {
-    const { data } = await this.get<{ balance: string }>(
-      `/api/chains/${chainId}/addresses/${address}/balance/${blockNumber}`
-    );
-    return data.balance;
-  }
-
-  async isContract(chainId: number, address: string): Promise<boolean> {
-    const { data } = await this.get<{ isContract: boolean }>(
-      `/api/chains/${chainId}/addresses/${address}/contract`
-    );
-    return data.isContract;
-  }
-
-  async setAddressLabel(
-    chainId: number,
-    address: string,
-    label: string
-  ): Promise<void> {
-    await this.post(`/api/chains/${chainId}/addresses/${address}/label`, {
-      label,
-    });
-  }
-
-  async getAddressLabel(
-    chainId: number,
-    address: string
-  ): Promise<string | null> {
-    const { data } = await this.get<{ label: string | null }>(
-      `/api/chains/${chainId}/addresses/${address}/label`
-    );
-    return data.label;
-  }
-
-  async removeAddressLabel(chainId: number, address: string): Promise<void> {
-    await this.delete(`/api/chains/${chainId}/addresses/${address}/label`);
-  }
-
-  // 搜索相关API
-  async search(query: string, chainId?: number): Promise<any> {
-    const searchParams = new URLSearchParams({ q: query });
-    if (chainId) searchParams.set("chainId", chainId.toString());
-
-    const { data } = await this.get(`/api/search?${searchParams}`);
     return data;
   }
 
-  async searchInChain(chainId: number, query: string): Promise<any> {
-    const { data } = await this.get(
+  async getAddressTransactions(
+    chainId: number,
+    address: string,
+    limit = 20,
+    offset = 0
+  ): Promise<{ transactions: Transaction[]; total: number }> {
+    const query = new URLSearchParams({
+      limit: limit.toString(),
+      offset: offset.toString(),
+    });
+    const { data } = await this.get<{ transactions: Transaction[]; total: number }>(
+      `/api/chains/${chainId}/addresses/${address}/transactions?${query}`
+    );
+    return data;
+  }
+
+  // Search APIs
+  async search(query: string): Promise<Record<string, unknown>> {
+    const { data } = await this.get<Record<string, unknown>>(
+      `/api/search?q=${encodeURIComponent(query)}`
+    );
+    return data;
+  }
+
+  async searchInChain(chainId: number, query: string): Promise<Record<string, unknown>> {
+    const { data } = await this.get<Record<string, unknown>>(
       `/api/chains/${chainId}/search?q=${encodeURIComponent(query)}`
     );
     return data;
   }
 
-  // 统计相关API
-  async getChainStats(chainId: number): Promise<any> {
-    const { data } = await this.get(`/api/chains/${chainId}/stats`);
+  // Stats APIs
+  async getOverviewStats(): Promise<Record<string, unknown>> {
+    const { data } = await this.get<Record<string, unknown>>("/api/stats/overview");
     return data;
   }
 
-  async getOverviewStats(): Promise<any> {
-    const { data } = await this.get("/api/stats/overview");
+  // Health
+  async getHealth(): Promise<Record<string, unknown>> {
+    const { data } = await this.get<Record<string, unknown>>("/api/health");
     return data;
   }
 
-  async getChainStatus(chainId: number): Promise<any> {
-    const { data } = await this.get(`/api/chains/${chainId}/status`);
+  // Contract APIs
+  async getContractSource(chainId: number, address: string): Promise<Record<string, unknown>> {
+    const { data } = await this.get<Record<string, unknown>>(
+      `/api/chains/${chainId}/contracts/${address}/source`
+    );
     return data;
   }
 
-  async getHealth(): Promise<any> {
-    const { data } = await this.get("/api/health");
+  async getContractAbi(chainId: number, address: string): Promise<Record<string, unknown>> {
+    const { data } = await this.get<Record<string, unknown>>(
+      `/api/chains/${chainId}/contracts/${address}/abi`
+    );
     return data;
   }
 
-  // 设置基础URL（用于自动发现）
+  async getContractFunctions(chainId: number, address: string): Promise<Record<string, unknown>> {
+    const { data } = await this.get<Record<string, unknown>>(
+      `/api/chains/${chainId}/contracts/${address}/functions`
+    );
+    return data;
+  }
+
+  async readContract(
+    chainId: number,
+    address: string,
+    functionName: string,
+    args: unknown[] = []
+  ): Promise<Record<string, unknown>> {
+    const { data } = await this.post<Record<string, unknown>>(
+      `/api/chains/${chainId}/contracts/${address}/read`,
+      { functionName, args }
+    );
+    return data;
+  }
+
+  async getContractCreation(chainId: number, address: string): Promise<Record<string, unknown>> {
+    const { data } = await this.get<Record<string, unknown>>(
+      `/api/chains/${chainId}/contracts/${address}/creation`
+    );
+    return data;
+  }
+
+  // RPC config APIs
+  async getRpcConfigs(): Promise<Record<string, unknown>> {
+    const { data } = await this.get<Record<string, unknown>>("/api/rpc-configs");
+    return data;
+  }
+
+  async saveRpcConfig(config: Record<string, unknown>): Promise<Record<string, unknown>> {
+    const { data } = await this.post<Record<string, unknown>>("/api/rpc-configs", config);
+    return data;
+  }
+
+  async deleteRpcConfig(chainId: number): Promise<Record<string, unknown>> {
+    const { data } = await this.del<Record<string, unknown>>(`/api/rpc-configs/${chainId}`);
+    return data;
+  }
+
   setBaseUrl(baseUrl: string): void {
     this.baseUrl = baseUrl;
   }
 
-  // 获取当前基础URL
   getBaseUrl(): string {
     return this.baseUrl;
   }
 }
 
-// 默认API客户端实例
 export const apiClient = new ApiClient();

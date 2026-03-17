@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { app } from '../../../src/api-app';
+import app from '../../../src/api-app';
 import { initializeMultiChainEnvironment } from '../../../src/database/multi-chain-setup';
 import { EventIndexingService } from '../../../src/services/EventIndexingService';
 import { EventQueryService } from '../../../src/services/EventQueryService';

@@ -4,7 +4,10 @@
  * Supports dynamic event table generation and parameter analysis
  */
 
+import { createLogger } from '../server/logger';
 import { Abi, AbiEvent, AbiParameter, Address, parseAbi } from 'viem';
+
+const logger = createLogger("abi-parsing-service");
 import { keccak256 } from 'viem/utils';
 import { ChainDatabaseManager, multiChainDb } from '../database/chain-database-manager';
 import { multiChainPerformanceManager } from '../database/performance-monitor';
@@ -138,7 +141,7 @@ export class AbiParsingService {
           totalEstimatedStorage += parsedEvent.metadata.estimatedRowSize;
           totalComplexity += parsedEvent.metadata.complexityScore;
         } catch (error) {
-          console.warn(`Failed to parse event ${event.name}:`, error);
+          logger.warn({ err: error, eventName: event.name }, "Failed to parse event");
         }
       }
 

@@ -1,21 +1,24 @@
 import { describe, it, expect } from 'vitest';
-import { AddressService } from '@/services/AddressService';
+import { createAddressService, addressService } from '@/services/AddressService';
 
 describe('AddressService - Basic Tests', () => {
-  describe('constructor', () => {
-    it('should create AddressService instance', () => {
-      const service = new AddressService();
-      expect(service).toBeInstanceOf(AddressService);
+  describe('factory', () => {
+    it('should create AddressService instance via factory', () => {
+      const service = createAddressService({
+        db: {} as any,
+        indexedAddresses: {} as any,
+        rpcManager: {} as any,
+        contractSourceService: {} as any,
+      });
+      expect(service).toBeDefined();
+      expect(typeof service.getPersistentAddressData).toBe('function');
     });
   });
 
   describe('type definitions', () => {
     it('should have proper method signatures', () => {
-      const service = new AddressService();
-      
-      // Check that methods exist
-      expect(typeof service.getPersistentAddressData).toBe('function');
-      expect(typeof service.getAddressInfo).toBe('function');
+      expect(typeof addressService.getPersistentAddressData).toBe('function');
+      expect(typeof addressService.getAddressInfo).toBe('function');
     });
   });
 

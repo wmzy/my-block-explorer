@@ -8,10 +8,14 @@ import BlocksListPage from "./pages/BlocksListPage";
 import TransactionsListPage from "./pages/TransactionsListPage";
 import { SearchPage } from "./pages/SearchPage";
 import { NotFoundPage } from "./pages/NotFoundPage";
+import { ErrorBoundary } from "./components/ErrorBoundary";
+import { AppQueryProvider } from "./hooks/useQueryClient";
 import { globalStyles } from "@/styles/global";
 
 export function App() {
   return (
+    <ErrorBoundary>
+    <AppQueryProvider>
     <BrowserRouter>
       <div className={globalStyles}>
         <Routes>
@@ -47,5 +51,7 @@ export function App() {
         </Routes>
       </div>
     </BrowserRouter>
+    </AppQueryProvider>
+    </ErrorBoundary>
   );
 }

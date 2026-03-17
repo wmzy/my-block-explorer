@@ -3,10 +3,14 @@
  * 处理BigInt等特殊类型的JSON序列化
  */
 
+import { createLogger } from "../server/logger";
+
+const logger = createLogger("serialization");
+
 /**
  * 自定义JSON序列化，处理BigInt类型和循环引用
  */
-export function serializeForJson(obj: any): any {
+export function serializeForJson(obj: unknown): unknown {
   if (obj === null || obj === undefined) {
     return obj;
   }
@@ -56,7 +60,7 @@ export function serializeForJson(obj: any): any {
       return value;
     }));
   } catch (error) {
-    console.error('Serialization error for key:', key, 'value:', value, 'error:', error);
+    logger.error({ err: error }, "Serialization error");
     return {
       error: 'Failed to serialize object',
       type: typeof obj,
@@ -65,14 +69,17 @@ export function serializeForJson(obj: any): any {
   }
 }
 
+/** JSON-serializable value (result of JSON.parse) */
+type JsonLike = object | string | number | boolean | null;
+
 /**
  * 安全的JSON响应序列化
  */
-export function safeJsonResponse(data: any): any {
+export function safeJsonResponse(data: unknown): JsonLike {
   try {
     return serializeForJson(data);
   } catch (error) {
-    console.error('JSON serialization error:', error);
+    logger.error({ err: error }, "JSON serialization error");
     return {
       error: 'Serialization failed',
       message: 'Unable to serialize response data'
@@ -83,63 +90,63 @@ export function safeJsonResponse(data: any): any {
 /**
  * 格式化区块数据用于API响应
  */
-export function formatBlockForApi(block: any): any {
+export function formatBlockForApi(block: Record<string, unknown> | null): Record<string, unknown> | null {
   if (!block) return null;
   
   return {
     ...block,
-    number: block.number?.toString(),
-    gasLimit: block.gasLimit?.toString(),
-    gasUsed: block.gasUsed?.toString(),
-    baseFeePerGas: block.baseFeePerGas?.toString(),
-    timestamp: block.timestamp?.toISOString()
+    number: block.number != null ? String(block.number) : undefined,
+    gasLimit: block.gasLimit != null ? String(block.gasLimit) : undefined,
+    gasUsed: block.gasUsed != null ? String(block.gasUsed) : undefined,
+    baseFeePerGas: block.baseFeePerGas != null ? String(block.baseFeePerGas) : undefined,
+    timestamp: block.timestamp instanceof Date ? block.timestamp.toISOString() : undefined
   };
 }
 
 /**
  * 格式化交易数据用于API响应
  */
-export function formatTransactionForApi(transaction: any): any {
+export function formatTransactionForApi(transaction: Record<string, unknown> | null): Record<string, unknown> | null {
   if (!transaction) return null;
   
   return {
     ...transaction,
-    blockNumber: transaction.blockNumber?.toString(),
-    gasLimit: transaction.gasLimit?.toString(),
-    gasPrice: transaction.gasPrice?.toString(),
-    maxFeePerGas: transaction.maxFeePerGas?.toString(),
-    maxPriorityFeePerGas: transaction.maxPriorityFeePerGas?.toString(),
-    gasUsed: transaction.gasUsed?.toString(),
-    effectiveGasPrice: transaction.effectiveGasPrice?.toString(),
-    nonce: transaction.nonce?.toString(),
-    cumulativeGasUsed: transaction.cumulativeGasUsed?.toString(),
-    timestamp: transaction.timestamp?.toISOString()
+    blockNumber: transaction.blockNumber != null ? String(transaction.blockNumber) : undefined,
+    gasLimit: transaction.gasLimit != null ? String(transaction.gasLimit) : undefined,
+    gasPrice: transaction.gasPrice != null ? String(transaction.gasPrice) : undefined,
+    maxFeePerGas: transaction.maxFeePerGas != null ? String(transaction.maxFeePerGas) : undefined,
+    maxPriorityFeePerGas: transaction.maxPriorityFeePerGas != null ? String(transaction.maxPriorityFeePerGas) : undefined,
+    gasUsed: transaction.gasUsed != null ? String(transaction.gasUsed) : undefined,
+    effectiveGasPrice: transaction.effectiveGasPrice != null ? String(transaction.effectiveGasPrice) : undefined,
+    nonce: transaction.nonce != null ? String(transaction.nonce) : undefined,
+    cumulativeGasUsed: transaction.cumulativeGasUsed != null ? String(transaction.cumulativeGasUsed) : undefined,
+    timestamp: transaction.timestamp instanceof Date ? transaction.timestamp.toISOString() : undefined
   };
 }
 
 /**
  * 格式化地址数据用于API响应
  */
-export function formatAddressForApi(address: any): any {
+export function formatAddressForApi(address: Record<string, unknown> | null): Record<string, unknown> | null {
   if (!address) return null;
   
   return {
     ...address,
-    firstSeenBlock: address.firstSeenBlock?.toString(),
-    lastSeenBlock: address.lastSeenBlock?.toString(),
-    lastQueried: address.lastQueried?.toISOString()
+    firstSeenBlock: address.firstSeenBlock != null ? String(address.firstSeenBlock) : undefined,
+    lastSeenBlock: address.lastSeenBlock != null ? String(address.lastSeenBlock) : undefined,
+    lastQueried: address.lastQueried instanceof Date ? address.lastQueried.toISOString() : undefined
   };
 }
 
 /**
  * 格式化统计数据用于API响应
  */
-export function formatStatsForApi(stats: any): any {
+export function formatStatsForApi(stats: Record<string, unknown> | null): Record<string, unknown> | null {
   if (!stats) return null;
   
   return {
     ...stats,
-    latestBlock: stats.latestBlock?.toString(),
+    latestBlock: stats.latestBlock != null ? String(stats.latestBlock) : undefined,
     totalBlocks: Number(stats.totalBlocks) || 0,
     totalTransactions: Number(stats.totalTransactions) || 0
   };

@@ -4,6 +4,9 @@ import {
   getDefaultRpcUrl,
   type UserRpcConfig,
 } from "../config/chains";
+import { createLogger } from "../server/logger";
+
+const logger = createLogger("rpc-manager");
 import { db, userRpcConfigs } from "../database/init";
 import { eq } from "drizzle-orm";
 import {
@@ -60,10 +63,11 @@ export class RpcManager {
   async getClient(chainId: number): Promise<PublicClient> {
     if (!this.clients.has(chainId)) {
       try {
-        console.log(`🔗 Creating new RPC client for chain ${chainId}`);
+        logger.info({ chainId }, "Creating new RPC client for chain");
         const config = this.userConfigs.get(chainId);
-        console.log(
-          `   Config found: ${!!config}, Custom RPC: ${config?.customRpcUrl}`
+        logger.info(
+          { configFound: !!config, customRpc: config?.customRpcUrl },
+          "RPC config"
         );
 
         const client = await this.createClient(chainId);
@@ -93,7 +97,7 @@ export class RpcManager {
     const userConfig = this.userConfigs.get(chainId);
     const rpcUrl = userConfig?.customRpcUrl || getDefaultRpcUrl(chainId);
 
-    console.log(`   Creating client with RPC URL: ${rpcUrl}`);
+    logger.info({ rpcUrl }, "Creating client with RPC URL");
 
     return createPublicClient({
       chain: viemChain,
@@ -113,29 +117,24 @@ export class RpcManager {
   // 更新用户RPC配置
   async updateUserRpcConfig(config: UserRpcConfig): Promise<void> {
     try {
-      // 使用 INSERT OR REPLACE 语法
-      await db.exec(`
-        INSERT OR REPLACE INTO user_rpc_configs (
-          chain_id, custom_rpc_url, rpc_backup_urls, 
-          timeout_ms, retry_count, rate_limit, updated_at
-        ) VALUES (
-          ${config.chainId}, 
-          ${config.customRpcUrl ? `'${config.customRpcUrl}'` : "NULL"}, 
-          ${config.rpcBackups ? `'${JSON.stringify(config.rpcBackups)}'` : "NULL"},
-          ${config.timeout || 10000},
-          ${config.retryCount || 3},
-          ${config.rateLimit || 100},
-          CURRENT_TIMESTAMP
-        )
-      `);
+      await db
+        .insert(userRpcConfigs)
+        .values({
+          chainId: config.chainId,
+          name: config.customRpcUrl ? `Custom RPC` : null,
+          url: config.customRpcUrl ?? null,
+        })
+        .onConflictDoUpdate({
+          target: userRpcConfigs.chainId,
+          set: {
+            url: config.customRpcUrl ?? null,
+          },
+        });
 
-      // 更新内存缓存
       this.userConfigs.set(config.chainId, config);
-
-      // 清除旧的客户端，强制重新创建
       this.clients.delete(config.chainId);
     } catch (error) {
-      console.error("Failed to update user RPC config:", error);
+      logError(error, "RpcManager.updateUserRpcConfig");
       throw new Error("Failed to update RPC configuration");
     }
   }
@@ -143,15 +142,14 @@ export class RpcManager {
   // 删除用户RPC配置
   async deleteUserRpcConfig(chainId: number): Promise<void> {
     try {
-      await db.exec(`DELETE FROM user_rpc_configs WHERE chain_id = ${chainId}`);
+      await db
+        .delete(userRpcConfigs)
+        .where(eq(userRpcConfigs.chainId, chainId));
 
-      // 清除内存缓存
       this.userConfigs.delete(chainId);
-
-      // 清除客户端，强制使用默认配置重新创建
       this.clients.delete(chainId);
     } catch (error) {
-      console.error("Failed to delete user RPC config:", error);
+      logError(error, "RpcManager.deleteUserRpcConfig");
       throw new Error("Failed to delete RPC configuration");
     }
   }

@@ -3,7 +3,10 @@
  * 负责合约事件的查询、过滤和分页，使用多链数据库隔离架构
  */
 
+import { createLogger } from '../server/logger';
 import { ChainDatabaseManager, multiChainDb } from '../database/chain-database-manager';
+
+const logger = createLogger("event-query-service");
 import { ChainEventTableManager } from '../database/chain-event-table-manager';
 import { multiChainPerformanceManager } from '../database/performance-monitor';
 import {
@@ -88,7 +91,7 @@ export class EventQueryService {
           const stats = await this.eventTableManager.getEventStatistics(tableName);
           total = stats.totalEvents;
         } catch (error) {
-          console.warn('Failed to get total count:', error);
+          logger.warn({ err: error }, "Failed to get total count");
         }
       }
 
@@ -471,7 +474,7 @@ export class EventQueryService {
     try {
       return await this.eventTableManager.tableExists(tableName);
     } catch (error) {
-      console.warn(`Failed to validate table ${tableName}:`, error);
+      logger.warn({ err: error, tableName }, "Failed to validate table");
       return false;
     }
   }

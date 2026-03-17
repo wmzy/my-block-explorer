@@ -1,6 +1,6 @@
 import pino from "pino";
 
-export default pino({
+const rootLogger = pino({
   level: process.env.LOG_LEVEL || "info",
   transport:
     process.env.NODE_ENV === "development"
@@ -14,3 +14,7 @@ export default pino({
         }
       : undefined,
 });
+
+export const createLogger = (module: string) => rootLogger.child({ module });
+
+export default rootLogger;

@@ -2,6 +2,9 @@ import { DuckDBInstance } from "@duckdb/node-api";
 import { join } from "path";
 import { mkdir } from "fs/promises";
 import { type Sql } from "postgres";
+import { createLogger } from "../server/logger";
+
+const logger = createLogger("duckdb-postgres-adapter");
 
 /**
  * DuckDB 到 postgres 的适配器
@@ -18,7 +21,7 @@ export class DuckDBPostgresAdapter {
 
     // 确保数据目录存在
     const dataDir = join(process.cwd(), "data");
-    mkdir(dataDir, { recursive: true }).catch(console.warn);
+    mkdir(dataDir, { recursive: true }).catch((err) => logger.warn({ err }, "Failed to create data directory"));
   }
 
   private parseConnectionString(connectionString: string): string {
@@ -50,19 +53,19 @@ export class DuckDBPostgresAdapter {
   // 内部查询执行方法 - 提取公共逻辑
   private async executeQuery(
     queryText: string,
-    queryParams: any[],
-    connection?: any
-  ): Promise<any[]> {
+    queryParams: unknown[],
+    connection?: Awaited<ReturnType<DuckDBInstance["connect"]>>
+  ): Promise<Record<string, unknown>[]> {
     const conn = connection || (await this.instance!.connect());
     const shouldDisconnect = !connection;
 
     try {
       const result =
         queryParams.length > 0
-          ? await conn.runAndReadAll(queryText, queryParams)
+          ? await conn.runAndReadAll(queryText, queryParams as Parameters<typeof conn.runAndReadAll>[1])
           : await conn.runAndReadAll(queryText);
 
-      return this.adaptResult(result.getRowObjects());
+      return this.adaptResult(result.getRowObjects() as Record<string, unknown>[]);
     } finally {
       if (shouldDisconnect) {
         conn.disconnectSync();
@@ -73,8 +76,8 @@ export class DuckDBPostgresAdapter {
   // 实现 postgres 的核心查询接口
   async query(
     sql: string | TemplateStringsArray,
-    ...params: any[]
-  ): Promise<any[]> {
+    ...params: unknown[]
+  ): Promise<Record<string, unknown>[]> {
     if (!this.isInitialized) {
       await this.initialize();
     }
@@ -85,7 +88,7 @@ export class DuckDBPostgresAdapter {
 
     // 处理模板字符串格式 (Drizzle 使用的格式)
     let queryText: string;
-    let queryParams: any[];
+    let queryParams: unknown[];
 
     if (typeof sql === "string") {
       queryText = sql;
@@ -107,55 +110,46 @@ export class DuckDBPostgresAdapter {
   }
 
   // 实现 postgres 的事务接口
-  async begin(callback: (sql: any) => Promise<any>): Promise<any> {
+  async begin<T>(callback: (sql: TransactionSql) => Promise<T>): Promise<T> {
     if (!this.instance) {
       throw new Error("Database not initialized");
     }
 
-    console.log("🔄 DuckDB Transaction: BEGIN TRANSACTION");
+    logger.info("DuckDB Transaction: BEGIN TRANSACTION");
     const connection = await this.instance.connect();
     let transactionActive = false;
 
     try {
       await connection.run("BEGIN TRANSACTION");
       transactionActive = true;
-      console.log("✅ DuckDB Transaction: Transaction started");
+      logger.info("DuckDB Transaction: Transaction started");
 
       // 创建事务 SQL 对象，使用同一个连接
-      const transactionSql = {
-        query: async (sql: string, ...params: any[]) => {
-          // 使用公共的查询执行逻辑，传入事务连接
+      const transactionSql: TransactionSql = {
+        query: async (sql: string, ...params: unknown[]) => {
           return await this.executeQuery(sql, params, connection);
         },
-        // 添加其他必要的方法
-        unsafe: (query: string, params?: any[]) => {
-          // 重要：必须使用事务中的连接，而不是创建新连接
+        unsafe: (query: string, params?: unknown[]) => {
           const queryPromise = (async () => {
-            // 使用公共的查询执行逻辑，传入事务连接
             return await this.executeQuery(query, params || [], connection);
           })();
-
-          (queryPromise as any).values = async () => {
-            const data = await queryPromise;
-            return data.map((row: any) => Object.values(row));
-          };
-          return queryPromise;
+          return this.extendQueryPromise(queryPromise, query, params || []);
         },
       };
 
       const result = await callback(transactionSql);
       await connection.run("COMMIT");
-      console.log("✅ DuckDB Transaction: COMMIT");
+      logger.info("DuckDB Transaction: COMMIT");
       transactionActive = false;
       return result;
     } catch (error) {
-      console.error("Transaction error:", error);
+      logger.error({ err: error }, "Transaction error");
       if (transactionActive) {
         try {
           await connection.run("ROLLBACK");
-          console.log("🔄 DuckDB Transaction: ROLLBACK");
+          logger.info("DuckDB Transaction: ROLLBACK");
         } catch (rollbackError) {
-          console.warn("Failed to rollback transaction:", rollbackError);
+          logger.warn({ err: rollbackError }, "Failed to rollback transaction");
         }
       }
       throw this.adaptError(error as Error);
@@ -180,11 +174,9 @@ export class DuckDBPostgresAdapter {
   }
 
   // 错误适配 - 将 DuckDB 错误转换为 PostgreSQL 兼容格式
-  private adaptError(error: Error): Error {
-    // 这里可以将 DuckDB 的错误转换为 PostgreSQL 风格的错误
-    // 让 Drizzle ORM 能够正确理解
-    const adaptedError = new Error(error.message);
-    (adaptedError as any).code = this.mapErrorCode(error.message);
+  private adaptError(error: Error): Error & { code?: string } {
+    const adaptedError = new Error(error.message) as Error & { code?: string };
+    adaptedError.code = this.mapErrorCode(error.message);
     return adaptedError;
   }
 
@@ -197,12 +189,9 @@ export class DuckDBPostgresAdapter {
   }
 
   // 结果适配 - 将 DuckDB 结果转换为 PostgreSQL 兼容格式
-  private adaptResult(result: any[]): any[] {
-    // DuckDB 和 PostgreSQL 的结果格式基本兼容
-    // 这里可以做一些细微的调整
-    return result.map((row) => {
-      // 处理 BigInt 类型转换和时间戳
-      const adaptedRow = { ...row };
+  private adaptResult(result: Record<string, unknown>[]): Record<string, unknown>[] {
+    return result.map((row: Record<string, unknown>) => {
+      const adaptedRow: Record<string, unknown> = { ...row };
       for (const [key, value] of Object.entries(adaptedRow)) {
         if (typeof value === "bigint") {
           adaptedRow[key] = value.toString();
@@ -211,8 +200,8 @@ export class DuckDBPostgresAdapter {
           typeof value === "object" &&
           value.constructor.name === "DuckDBTimestampValue"
         ) {
-          // 将 DuckDB 时间戳转换为 JavaScript Date
-          adaptedRow[key] = new Date(Number(value.micros) / 1000);
+          const tsValue = value as { micros?: number };
+          adaptedRow[key] = new Date(Number(tsValue.micros) / 1000);
         }
       }
       return adaptedRow;
@@ -228,7 +217,7 @@ export class DuckDBPostgresAdapter {
       await this.exec(`CREATE SCHEMA IF NOT EXISTS main`);
     } catch (error) {
       // 忽略schema已存在的错误
-      console.warn("Schema creation warning:", error);
+      logger.warn({ err: error }, "Schema creation warning");
     }
 
     this.isInitialized = true;
@@ -243,72 +232,102 @@ export class DuckDBPostgresAdapter {
   }
 
   // 实现 postgres 的监听器接口（可选）
-  on(event: string, callback: Function): void {
+  on(_event: string, _callback: (...args: unknown[]) => void): void {
     // DuckDB 不支持 LISTEN/NOTIFY，这里可以是空实现
   }
 
-  off(event: string, callback?: Function): void {
+  off(_event: string, _callback?: (...args: unknown[]) => void): void {
     // 空实现
   }
+
+  // 扩展查询 Promise 以兼容 postgres-js 接口
+  extendQueryPromise(
+    queryPromise: Promise<Record<string, unknown>[]>,
+    query: string,
+    params: unknown[]
+  ): Promise<Record<string, unknown>[]> & PostgresQueryExtensions {
+    const extended = queryPromise as Promise<Record<string, unknown>[]> &
+      PostgresQueryExtensions;
+    extended.values = async () =>
+      (await queryPromise).map((row) => Object.values(row));
+    extended.raw = () => queryPromise;
+    extended.execute = () => queryPromise;
+    extended.cursor = () => ({ next: () => Promise.resolve({ done: true }) });
+    extended.stream = () => queryPromise;
+    extended.forEach = (callback: (row: Record<string, unknown>) => void) =>
+      queryPromise.then((rows) => rows.forEach(callback));
+    extended.state = { status: "ready" };
+    extended.statement = { query, params };
+    extended.signature = query;
+    extended.cancel = () => {};
+    extended.cancelled = false;
+    extended.executed = false;
+    extended.active = true;
+    return extended;
+  }
 }
+
+type TransactionSql = {
+  query: (sql: string, ...params: unknown[]) => Promise<Record<string, unknown>[]>;
+  unsafe: (
+    query: string,
+    params?: unknown[]
+  ) => Promise<Record<string, unknown>[]> & PostgresQueryExtensions;
+};
+
+type PostgresQueryExtensions = {
+  values: () => Promise<unknown[][]>;
+  raw: () => Promise<Record<string, unknown>[]>;
+  execute: () => Promise<Record<string, unknown>[]>;
+  cursor: () => { next: () => Promise<{ done: boolean }> };
+  stream: () => Promise<Record<string, unknown>[]>;
+  forEach: (callback: (row: Record<string, unknown>) => void) => Promise<void>;
+  state: { status: string };
+  statement: { query: string; params: unknown[] };
+  signature: string;
+  cancel: () => void;
+  cancelled: boolean;
+  executed: boolean;
+  active: boolean;
+};
 
 // 创建适配器工厂函数，模拟 postgres 的使用方式
 export function createDuckDBAdapter(connectionString: string) {
   const adapter = new DuckDBPostgresAdapter(connectionString);
 
-  // 返回一个类似 postgres 的函数接口
-  const sql: any = async (
+  type SqlFunction = (
     query: string | TemplateStringsArray,
-    ...params: any[]
-  ) => {
-    return adapter.query(query, ...params);
+    ...params: unknown[]
+  ) => Promise<Record<string, unknown>[]>;
+
+  const sql = (async (
+    query: string | TemplateStringsArray,
+    ...params: unknown[]
+  ) => adapter.query(query, ...params)) as SqlFunction & {
+    begin: typeof adapter.begin;
+    transaction: typeof adapter.begin;
+    end: typeof adapter.end;
+    on: typeof adapter.on;
+    off: typeof adapter.off;
+    unsafe: (
+      query: string,
+      params?: unknown[]
+    ) => Promise<Record<string, unknown>[]> & PostgresQueryExtensions;
+    options: { parsers: Record<string, unknown>; serializers: Record<string, unknown>; transform: Record<string, unknown> };
+    parameters: Record<string, unknown>;
+    types: Record<string, unknown>;
+    getDuckDB: typeof adapter.getDuckDB;
   };
 
-  // 添加 postgres 的其他方法
   sql.begin = adapter.begin.bind(adapter);
-  sql.transaction = adapter.begin.bind(adapter); // Drizzle 可能期望 transaction 方法
+  sql.transaction = adapter.begin.bind(adapter);
   sql.end = adapter.end.bind(adapter);
   sql.on = adapter.on.bind(adapter);
   sql.off = adapter.off.bind(adapter);
 
-  // 添加 Drizzle 需要的 unsafe 方法
-  sql.unsafe = (query: string, params?: any[]) => {
-    // 直接返回查询结果，不包装在复杂对象中
+  sql.unsafe = (query: string, params?: unknown[]) => {
     const queryPromise = adapter.query(query, ...(params || []));
-
-    // 为查询 Promise 添加 postgres-js 的方法
-    (queryPromise as any).values = async () => {
-      const data = await queryPromise;
-
-      // postgres-js 的 values() 方法返回数组的数组，而不是对象的数组
-      // 我们需要将对象数组转换为数组的数组
-      const arrayResult = data.map((row: any) => {
-        // 获取所有字段的值，按照查询中的字段顺序
-        return Object.values(row);
-      });
-
-      return arrayResult;
-    };
-
-    (queryPromise as any).raw = () => queryPromise;
-    (queryPromise as any).execute = () => queryPromise;
-    (queryPromise as any).cursor = () => ({
-      next: () => Promise.resolve({ done: true }),
-    });
-    (queryPromise as any).stream = () => queryPromise;
-    (queryPromise as any).forEach = (callback: any) =>
-      queryPromise.then((rows: any[]) => rows.forEach(callback));
-
-    // 其他属性
-    (queryPromise as any).state = { status: "ready" };
-    (queryPromise as any).statement = { query, params };
-    (queryPromise as any).signature = query;
-    (queryPromise as any).cancel = () => {};
-    (queryPromise as any).cancelled = false;
-    (queryPromise as any).executed = false;
-    (queryPromise as any).active = true;
-
-    return queryPromise;
+    return adapter.extendQueryPromise(queryPromise, query, params || []);
   };
 
   // 添加 Drizzle 需要的 options 属性
@@ -326,5 +345,5 @@ export function createDuckDBAdapter(connectionString: string) {
 
   sql.getDuckDB = adapter.getDuckDB.bind(adapter);
 
-  return sql as Sql & Pick<DuckDBPostgresAdapter, "getDuckDB">;
+  return sql as unknown as Sql & Pick<DuckDBPostgresAdapter, "getDuckDB">;
 }

@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { apiClient } from "@/api/client";
+import { ApiClient, apiClient } from "@/api/client";
 
 // 默认端口范围
 const DEFAULT_PORTS = [8201, 8202, 8203, 8204, 8205];
@@ -31,10 +31,7 @@ export function useAutoDiscovery() {
   const testPort = useCallback(
     async (port: number, host = DEFAULT_HOST): Promise<ServiceInfo | null> => {
       const url = `http://${host}:${port}`;
-      const testApiClient = new (apiClient.constructor as typeof ApiClient)(
-        url,
-        3000
-      ); // 3秒超时
+      const testApiClient = new ApiClient(url, 3000);
 
       try {
         const startTime = Date.now();
@@ -110,10 +107,7 @@ export function useAutoDiscovery() {
     const savedUrl = localStorage.getItem("block-explorer-api-url");
     if (savedUrl) {
       try {
-        const testApiClient = new (apiClient.constructor as typeof ApiClient)(
-          savedUrl,
-          3000
-        );
+        const testApiClient = new ApiClient(savedUrl, 3000);
         const health = await testApiClient.getHealth();
 
         if (health && health.status) {
@@ -143,10 +137,7 @@ export function useAutoDiscovery() {
   // 手动设置API URL
   const setApiUrl = useCallback(async (url: string): Promise<boolean> => {
     try {
-      const testApiClient = new (apiClient.constructor as typeof ApiClient)(
-        url,
-        5000
-      );
+      const testApiClient = new ApiClient(url, 5000);
       const health = await testApiClient.getHealth();
 
       if (health && health.status) {

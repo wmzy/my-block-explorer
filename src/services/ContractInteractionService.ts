@@ -1,6 +1,9 @@
 import { rpcManager } from "./RpcManager";
 import { createRetryableRpcCall } from "../utils/errorHandler";
 import { ContractSourceService } from "./ContractSourceService";
+import { createLogger } from "../server/logger";
+
+const logger = createLogger("contract-interaction-service");
 
 export type ContractFunction = {
   name: string;
@@ -90,7 +93,7 @@ export class ContractInteractionService {
 
       return { readFunctions, writeFunctions };
     } catch (error) {
-      console.error("Failed to get contract functions:", error);
+      logger.error({ err: error }, "Failed to get contract functions");
       return { readFunctions: [], writeFunctions: [] };
     }
   }
@@ -127,7 +130,7 @@ export class ContractInteractionService {
         result: this.formatContractResult(result),
       };
     } catch (error: any) {
-      console.error("Read contract failed:", error);
+      logger.error({ err: error }, "Read contract failed");
       return {
         success: false,
         error: this.formatError(error),
@@ -171,7 +174,7 @@ export class ContractInteractionService {
         result: this.formatContractResult(result),
       };
     } catch (error: any) {
-      console.error("Read contract failed:", error);
+      logger.error({ err: error }, "Read contract failed");
       return {
         success: false,
         error: this.formatError(error),
@@ -214,7 +217,7 @@ export class ContractInteractionService {
         gasUsed: simulation.request.gas,
       };
     } catch (error: any) {
-      console.error("Simulate contract failed:", error);
+      logger.error({ err: error }, "Simulate contract failed");
       return {
         success: false,
         error: this.formatError(error),
@@ -261,7 +264,7 @@ export class ContractInteractionService {
         gasUsed: simulation.request.gas,
       };
     } catch (error: any) {
-      console.error("Simulate contract failed:", error);
+      logger.error({ err: error }, "Simulate contract failed");
       return {
         success: false,
         error: this.formatError(error),
@@ -313,7 +316,7 @@ export class ContractInteractionService {
         maxPriorityFeePerGas: feeData?.maxPriorityFeePerGas || undefined,
       };
     } catch (error) {
-      console.error("Gas estimation failed:", error);
+      logger.error({ err: error }, "Gas estimation failed");
       return null;
     }
   }
@@ -366,7 +369,7 @@ export class ContractInteractionService {
         maxPriorityFeePerGas: feeData?.maxPriorityFeePerGas || undefined,
       };
     } catch (error) {
-      console.error("Gas estimation failed:", error);
+      logger.error({ err: error }, "Gas estimation failed");
       return null;
     }
   }

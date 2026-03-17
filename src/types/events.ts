@@ -3,39 +3,42 @@
  * 支持动态表结构生成和事件解码
  */
 
-import { AbiEvent, AbiParameter } from 'viem';
+// 用于表创建的事件 ABI 形状（链内表管理）
+export type EventAbiShape = {
+  name: string;
+  type: string;
+  inputs: EventParameter[];
+};
 
 // 事件参数基础类型
-export interface EventParameter {
+export type EventParameter = {
   name: string;
   type: string;
   indexed: boolean;
   internalType?: string;
-}
+};
 
 // 解码后的事件数据
-export interface DecodedEventData {
-  [key: string]: any;
-}
+export type DecodedEventData = Record<string, unknown>;
 
 // 解码后的事件日志（Viem兼容）
-export interface DecodedEventLog {
+export type DecodedEventLog = {
   eventName: string;
-  args: Record<string, any>;
+  args: Record<string, unknown>;
   eventSignature?: string;
-}
+};
 
 // 解码后的事件参数
-export interface DecodedEventParameter {
+export type DecodedEventParameter = {
   name: string;
   type: string;
-  value: any;
-  rawValue: any;
+  value: unknown;
+  rawValue: unknown;
   indexed: boolean;
-}
+};
 
 // 存储格式化后的事件数据（链内无chainId字段）
-export interface FormattedEventData {
+export type FormattedEventData = {
   // 通用字段
   txHash: `0x${string}`;
   blockNumber: bigint;
@@ -47,25 +50,25 @@ export interface FormattedEventData {
   indexedAt: Date;
 
   // 解码后的参数数据
-  [paramName: string]: any;
-}
+  [paramName: string]: unknown;
+};
 
 // 动态表结构定义
-export interface DynamicTableSchema {
+export type DynamicTableSchema = {
   tableName: string;
   columns: TableColumn[];
   indexes: TableIndex[];
 }
 
 // 表列定义
-export interface TableColumn {
+export type TableColumn = {
   name: string;
   type: ColumnType;
   nullable: boolean;
   indexed?: boolean;
   unique?: boolean;
-  defaultValue?: any;
-}
+  defaultValue?: unknown;
+};
 
 // 列类型枚举
 export enum ColumnType {
@@ -83,15 +86,15 @@ export enum ColumnType {
 }
 
 // 表索引定义
-export interface TableIndex {
+export type TableIndex = {
   name: string;
   columns: string[];
   unique?: boolean;
   type?: 'btree' | 'hash';
-}
+};
 
 // 事件查询过滤器（链内查询，无chainId）
-export interface EventFilters {
+export type EventFilters = {
   contractAddress?: `0x${string}`;
   fromBlock?: bigint | number;
   toBlock?: bigint | number;
@@ -99,11 +102,11 @@ export interface EventFilters {
   toTimestamp?: number;
   topics?: (`0x${string}` | null)[];
   // 动态参数过滤
-  [paramName: string]: any;
-}
+  [paramName: string]: unknown;
+};
 
 // 分页参数
-export interface PaginationParams {
+export type PaginationParams = {
   limit: number;
   offset?: number;
   cursor?: string;
@@ -111,16 +114,16 @@ export interface PaginationParams {
 }
 
 // 分页结果
-export interface PaginatedResult<T> {
+export type PaginatedResult<T> = {
   data: T[];
   total: number;
   hasMore: boolean;
   nextCursor?: string;
   prevCursor?: string;
-}
+};
 
 // 事件索引配置
-export interface EventIndexingConfig {
+export type EventIndexingConfig = {
   // 表配置
   tableNamePrefix: string;
   maxTableNameLength: number;
@@ -144,7 +147,7 @@ export interface EventIndexingConfig {
 }
 
 // ABI类型到数据库类型的映射配置
-export interface TypeMappingConfig {
+export type TypeMappingConfig = {
   // 基础类型映射
   basicTypes: Record<string, ColumnType>;
 
@@ -199,7 +202,7 @@ export class TableCreationError extends Error {
 }
 
 // 事件索引状态
-export interface EventIndexingStatus {
+export type EventIndexingStatus = {
   contractAddress: `0x${string}`;
   chainId: number;
   eventSignatures: string[];
@@ -213,7 +216,7 @@ export interface EventIndexingStatus {
 // 多链相关类型定义
 
 // 链特定配置
-export interface ChainSpecificConfig {
+export type ChainSpecificConfig = {
   chainId: number;
   chainName: string;
   chainType: string;
@@ -224,7 +227,7 @@ export interface ChainSpecificConfig {
 }
 
 // 多链事件索引状态
-export interface MultiChainIndexingStatus {
+export type MultiChainIndexingStatus = {
   chainId: number;
   chainName: string;
   isInitialized: boolean;
@@ -237,7 +240,7 @@ export interface MultiChainIndexingStatus {
 }
 
 // 跨链事件查询（用于API聚合，不支持直接跨链查询）
-export interface CrossChainEventQuery {
+export type CrossChainEventQuery = {
   chainIds: number[];
   filters: Omit<EventFilters, 'contractAddress'> & {
     contractAddresses?: Record<number, `0x${string}`[]>; // 按链分组的合约地址
@@ -246,7 +249,7 @@ export interface CrossChainEventQuery {
 }
 
 // 跨链事件结果
-export interface CrossChainEventResult {
+export type CrossChainEventResult = {
   chainId: number;
   chainName: string;
   events: FormattedEventData[];
@@ -256,7 +259,7 @@ export interface CrossChainEventResult {
 }
 
 // 链数据库状态
-export interface ChainDatabaseStatus {
+export type ChainDatabaseStatus = {
   chainId: number;
   chainName: string;
   chainType: string;
@@ -271,7 +274,7 @@ export interface ChainDatabaseStatus {
 }
 
 // 多链配置
-export interface MultiChainConfig {
+export type MultiChainConfig = {
   // 支持的链列表
   supportedChains: number[];
 
@@ -291,7 +294,7 @@ export interface MultiChainConfig {
 }
 
 // 链事件表注册信息
-export interface ChainEventTableRegistry {
+export type ChainEventTableRegistry = {
   chainId: number;
   contractAddress: `0x${string}`;
   eventSignature: string;
@@ -306,7 +309,7 @@ export interface ChainEventTableRegistry {
 }
 
 // 多链统计信息
-export interface MultiChainStatistics {
+export type MultiChainStatistics = {
   totalChains: number;
   activeChains: number;
   totalEvents: number;
@@ -323,7 +326,7 @@ export interface MultiChainStatistics {
 }
 
 // 事件索引任务
-export interface EventIndexingTask {
+export type EventIndexingTask = {
   taskId: string;
   chainId: number;
   contractAddress: `0x${string}`;
@@ -340,7 +343,7 @@ export interface EventIndexingTask {
 }
 
 // 多链事件流管理器
-export interface MultiChainEventStreamManager {
+export type MultiChainEventStreamManager = {
   // 注册链事件流
   registerChain(chainId: number, config: ChainSpecificConfig): void;
 
@@ -356,7 +359,7 @@ export interface MultiChainEventStreamManager {
 }
 
 // 流状态
-export interface StreamStatus {
+export type StreamStatus = {
   chainId: number;
   isActive: boolean;
   connected: boolean;
@@ -367,7 +370,7 @@ export interface StreamStatus {
 }
 
 // 数据库迁移信息
-export interface ChainMigrationInfo {
+export type ChainMigrationInfo = {
   chainId: number;
   version: string;
   migratedAt: Date;
@@ -416,7 +419,7 @@ export class ChainDatabaseError extends MultiChainError {
 }
 
 // 事件统计信息
-export interface EventStatistics {
+export type EventStatistics = {
   totalEvents: number;
   eventsByType: Record<string, number>;
   eventsByBlockRange: {
@@ -432,33 +435,33 @@ export interface EventStatistics {
 }
 
 // 事件数据验证器
-export interface EventDataValidator {
-  validate(param: EventParameter, value: any): ValidationResult;
-}
+export type EventDataValidator = {
+  validate(param: EventParameter, value: unknown): ValidationResult;
+};
 
 // 验证结果
-export interface ValidationResult {
+export type ValidationResult = {
   valid: boolean;
   error?: string;
-  sanitizedValue?: any;
-}
+  sanitizedValue?: unknown;
+};
 
 // 事件数据转换器
-export interface EventDataTransformer {
-  transform(param: EventParameter, value: any): any;
-  reverseTransform(param: EventParameter, value: any): any;
-}
+export type EventDataTransformer = {
+  transform(param: EventParameter, value: unknown): unknown;
+  reverseTransform(param: EventParameter, value: unknown): unknown;
+};
 
 // 存储策略接口
-export interface StorageStrategy {
+export type StorageStrategy = {
   shouldStoreAsJson(param: EventParameter): boolean;
   getColumnType(param: EventParameter): ColumnType;
-  formatValue(param: EventParameter, value: any): any;
-  parseValue(param: EventParameter, value: any): any;
-}
+  formatValue(param: EventParameter, value: unknown): unknown;
+  parseValue(param: EventParameter, value: unknown): unknown;
+};
 
 // 批处理操作
-export interface BatchOperation<T> {
+export type BatchOperation<T> = {
   items: T[];
   batchSize: number;
   maxRetries: number;
@@ -468,7 +471,7 @@ export interface BatchOperation<T> {
 }
 
 // 事件流处理器
-export interface EventStreamProcessor {
+export type EventStreamProcessor = {
   process(events: DecodedEvent[]): Promise<void>;
   onEvent?: (event: DecodedEvent) => void;
   onError?: (error: Error, event: DecodedEvent) => void;
@@ -476,7 +479,7 @@ export interface EventStreamProcessor {
 }
 
 // 解码后的事件
-export interface DecodedEvent {
+export type DecodedEvent = {
   // 基础信息
   chainId: number;
   contractAddress: `0x${string}`;

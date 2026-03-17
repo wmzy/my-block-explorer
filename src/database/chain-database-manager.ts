@@ -3,7 +3,10 @@
  * 每个链使用独立的数据库文件，不支持跨链查询
  */
 
+import { createLogger } from '../server/logger';
 import { DuckDBManager } from './duckdb';
+
+const logger = createLogger("chain-database-manager");
 import { join } from 'path';
 import { mkdir } from 'fs/promises';
 import { getChainName, getChainType } from '../config/chains';
@@ -42,7 +45,7 @@ export class ChainDatabaseManager {
     await mkdir(dataDir, { recursive: true });
 
     await this.dbManager.initialize();
-    console.log(`🚀 Initialized database for chain ${this.chainId} (${getChainName(this.chainId)})`);
+    logger.info({ chainId: this.chainId, chainName: getChainName(this.chainId) }, "Initialized database for chain");
   }
 
   /**
@@ -151,19 +154,19 @@ export class MultiChainDatabaseManager {
    * 初始化所有支持的链数据库
    */
   async initializeAllChains(): Promise<void> {
-    console.log(`🔄 Initializing ${this.supportedChains.length} chain databases...`);
+    logger.info({ count: this.supportedChains.length }, "Initializing chain databases");
 
     const initPromises = this.supportedChains.map(async (chainId) => {
       try {
         await this.getChainDatabase(chainId);
-        console.log(`✅ Chain ${chainId} database initialized`);
+        logger.info({ chainId }, "Chain database initialized");
       } catch (error) {
-        console.error(`❌ Failed to initialize chain ${chainId} database:`, error);
+        logger.error({ err: error, chainId }, "Failed to initialize chain database");
       }
     });
 
     await Promise.allSettled(initPromises);
-    console.log(`🎉 Chain databases initialization completed`);
+    logger.info("Chain databases initialization completed");
   }
 
   /**
@@ -188,7 +191,7 @@ export class MultiChainDatabaseManager {
     if (manager) {
       await manager.close();
       this.chainManagers.delete(chainId);
-      console.log(`🔒 Closed database for chain ${chainId}`);
+      logger.info({ chainId }, "Closed database for chain");
     }
   }
 
@@ -196,22 +199,22 @@ export class MultiChainDatabaseManager {
    * 关闭所有链的数据库连接
    */
   async closeAll(): Promise<void> {
-    console.log(`🔒 Closing ${this.chainManagers.size} chain databases...`);
+    logger.info({ count: this.chainManagers.size }, "Closing chain databases");
 
     const closePromises = Array.from(this.chainManagers.entries()).map(
       async ([chainId, manager]) => {
         try {
           await manager.close();
-          console.log(`✅ Chain ${chainId} database closed`);
+          logger.info({ chainId }, "Chain database closed");
         } catch (error) {
-          console.error(`❌ Failed to close chain ${chainId} database:`, error);
+          logger.error({ err: error, chainId }, "Failed to close chain database");
         }
       }
     );
 
     await Promise.allSettled(closePromises);
     this.chainManagers.clear();
-    console.log(`🎉 All chain databases closed`);
+    logger.info("All chain databases closed");
   }
 
   /**

@@ -3,14 +3,17 @@
  * Auto-initializes the blockchain explorer environment
  */
 
+import { createLogger } from './server/logger';
 import { zeroConfig, initializeBlockchainExplorer } from './config/zero-config';
+
+const logger = createLogger("zero-config-bootstrap");
 import { performanceMonitor } from './services/PerformanceMonitor';
 
 /**
  * Bootstrap the application with zero configuration
  */
 export async function bootstrap(): Promise<void> {
-  console.log('🚀 Bootstrapping blockchain explorer with zero configuration...');
+  logger.info("Bootstrapping blockchain explorer with zero configuration");
 
   try {
     // Initialize the zero-config environment
@@ -20,27 +23,24 @@ export async function bootstrap(): Promise<void> {
     const readiness = await zeroConfig.checkReadiness();
 
     if (readiness.ready) {
-      console.log('✅ System is ready for operation!');
+      logger.info("System is ready for operation");
 
       // Show status
       const status = zeroConfig.getStatus();
-      console.log(`📊 Status: ${status.chainCount} chains initialized`);
-      console.log(`💾 Databases: ${status.databasePaths.length} database files`);
+      logger.info({ chainCount: status.chainCount, databaseCount: status.databasePaths.length }, "Bootstrap status");
 
     } else {
-      console.log('⚠️ System needs attention:');
-      readiness.issues.forEach(issue => console.log(`  ❌ ${issue}`));
-
+      logger.warn("System needs attention");
+      readiness.issues.forEach(issue => logger.warn({ issue }, "Issue"));
       if (readiness.recommendations.length > 0) {
-        console.log('💡 Recommendations:');
-        readiness.recommendations.forEach(rec => console.log(`  💡 ${rec}`));
+        readiness.recommendations.forEach(rec => logger.info({ recommendation: rec }, "Recommendation"));
       }
     }
 
-    console.log('🎉 Bootstrap completed successfully!');
+    logger.info("Bootstrap completed successfully");
 
   } catch (error) {
-    console.error('💥 Bootstrap failed:', error);
+    logger.error({ err: error }, "Bootstrap failed");
     throw error;
   }
 }
@@ -50,7 +50,7 @@ export async function bootstrap(): Promise<void> {
  */
 if (require.main === module) {
   bootstrap().catch(error => {
-    console.error('💥 Auto-bootstrap failed:', error);
+    logger.error({ err: error }, "Auto-bootstrap failed");
     process.exit(1);
   });
 }

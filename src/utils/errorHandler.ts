@@ -6,13 +6,13 @@ export type RetryOptions = {
   maxRetries: number;
   delay: number;
   backoff: number;
-  retryCondition?: (error: any) => boolean;
+  retryCondition?: (error: unknown) => boolean;
 };
 
 /**
  * 重试装饰器
  */
-export function withRetry<T extends any[], R>(
+export function withRetry<T extends unknown[], R>(
   fn: (...args: T) => Promise<R>,
   options: RetryOptions = {
     maxRetries: 3,
@@ -21,7 +21,7 @@ export function withRetry<T extends any[], R>(
   }
 ): (...args: T) => Promise<R> {
   return async (...args: T): Promise<R> => {
-    let lastError: any;
+    let lastError: unknown;
     let currentDelay = options.delay;
 
     for (let attempt = 0; attempt <= options.maxRetries; attempt++) {
@@ -69,7 +69,7 @@ export class RpcError extends Error {
   constructor(
     message: string,
     public code?: number,
-    public data?: any,
+    public data?: unknown,
     public chainId?: number
   ) {
     super(message);
@@ -83,7 +83,7 @@ export class RpcError extends Error {
 export class DatabaseError extends Error {
   constructor(
     message: string,
-    public originalError?: any
+    public originalError?: unknown
   ) {
     super(message);
     this.name = "DatabaseError";
@@ -106,18 +106,19 @@ export class ValidationError extends Error {
 /**
  * 检查是否为可重试的错误
  */
-export function isRetryableError(error: any): boolean {
+export function isRetryableError(error: unknown): boolean {
+  const err = error as { code?: string; status?: number };
   // 网络错误
   if (
-    error.code === "ECONNRESET" ||
-    error.code === "ENOTFOUND" ||
-    error.code === "ETIMEDOUT"
+    err.code === "ECONNRESET" ||
+    err.code === "ENOTFOUND" ||
+    err.code === "ETIMEDOUT"
   ) {
     return true;
   }
 
   // HTTP状态码错误
-  if (error.status >= 500 && error.status < 600) {
+  if (typeof err.status === "number" && err.status >= 500 && err.status < 600) {
     return true;
   }
 
@@ -134,7 +135,7 @@ export function isRetryableError(error: any): boolean {
 /**
  * 标准化错误响应
  */
-export function normalizeError(error: any): {
+export function normalizeError(error: unknown): {
   message: string;
   code?: string | number;
   type: string;
@@ -165,15 +166,16 @@ export function normalizeError(error: any): {
     };
   }
 
+  const err = error as { code?: string; message?: string };
   // 网络错误
   if (
-    error.code === "ECONNRESET" ||
-    error.code === "ENOTFOUND" ||
-    error.code === "ETIMEDOUT"
+    err.code === "ECONNRESET" ||
+    err.code === "ENOTFOUND" ||
+    err.code === "ETIMEDOUT"
   ) {
     return {
-      message: `Network error: ${error.message}`,
-      code: error.code,
+      message: `Network error: ${err.message ?? "Unknown"}`,
+      code: err.code,
       type: "network",
       retryable: true,
     };
@@ -181,7 +183,7 @@ export function normalizeError(error: any): {
 
   // 默认错误
   return {
-    message: error.message || "Unknown error",
+    message: (error instanceof Error ? error.message : err.message) || "Unknown error",
     type: "unknown",
     retryable: false,
   };
@@ -190,7 +192,7 @@ export function normalizeError(error: any): {
 /**
  * 创建带重试的RPC调用函数
  */
-export function createRetryableRpcCall<T extends any[], R>(
+export function createRetryableRpcCall<T extends unknown[], R>(
   rpcFunction: (...args: T) => Promise<R>,
   chainId?: number
 ): (...args: T) => Promise<R> {
@@ -215,18 +217,19 @@ export function createRetryableRpcCall<T extends any[], R>(
 /**
  * 创建带重试的数据库操作函数
  */
-export function createRetryableDbCall<T extends any[], R>(
+export function createRetryableDbCall<T extends unknown[], R>(
   dbFunction: (...args: T) => Promise<R>
 ): (...args: T) => Promise<R> {
   return withRetry(dbFunction, {
     maxRetries: 2,
     delay: 500,
     backoff: 2,
-    retryCondition: (error) => {
+    retryCondition: (error: unknown) => {
+      const err = error instanceof Error ? error : { message: String(error) };
       // 数据库锁定错误可以重试
       if (
-        error.message?.includes("database is locked") ||
-        error.message?.includes("SQLITE_BUSY")
+        err.message?.includes("database is locked") ||
+        err.message?.includes("SQLITE_BUSY")
       ) {
         return true;
       }
@@ -239,9 +242,9 @@ export function createRetryableDbCall<T extends any[], R>(
  * 错误日志记录
  */
 export function logError(
-  error: any,
+  error: unknown,
   context: string,
-  additionalInfo?: Record<string, any>
+  additionalInfo?: Record<string, unknown>
 ): void {
   const normalized = normalizeError(error);
 

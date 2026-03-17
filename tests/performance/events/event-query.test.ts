@@ -4,7 +4,7 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { app } from '../../../src/api-app';
+import app from '../../../src/api-app';
 import { ChainDatabaseManager } from '../../../src/database/chain-database-manager';
 import { ChainEventTableManager } from '../../../src/database/chain-event-table-manager';
 import { initializeMultiChainEnvironment } from '../../../src/database/multi-chain-setup';

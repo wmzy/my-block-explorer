@@ -2,6 +2,9 @@ import { rpcManager } from "./RpcManager";
 import { db, contractCreationInfo, contractSources } from "../database/init";
 import { eq, and, sql } from "drizzle-orm";
 import { createRetryableRpcCall } from "../utils/errorHandler";
+import { createLogger } from "../server/logger";
+
+const logger = createLogger("contract-source-service");
 import { addressEquals, formatAddress } from "../utils/address";
 import type { Address } from "viem";
 import {
@@ -61,60 +64,56 @@ export class ContractSourceService {
     chainId: number,
     address: Address
   ): Promise<ContractCreationInfo | null> {
-    console.log(
-      `🔍 Starting contract creation search for ${address} on chain ${chainId}`
-    );
+    logger.info({ address, chainId }, "Starting contract creation search");
 
     try {
       // 1. 先从数据库查找缓存的创建信息
-      console.log(`📋 Step 1: Checking database cache for creation info...`);
+      logger.info("Step 1: Checking database cache for creation info");
       try {
         const cachedInfo = await this.getCachedCreationInfo(chainId, address);
         if (cachedInfo) {
-          console.log(
-            `✅ Found cached creation info for ${address}: tx ${cachedInfo.txHash} in block ${cachedInfo.blockNumber}`
+          logger.info(
+            { address, txHash: cachedInfo.txHash, blockNumber: cachedInfo.blockNumber },
+            "Found cached creation info"
           );
           return cachedInfo;
         }
-        console.log(
-          `📋 No cached creation info found, starting fresh search...`
-        );
+        logger.info("No cached creation info found, starting fresh search");
       } catch (error) {
         if (error.message.startsWith("CACHED_FAILURE:")) {
           const reason = error.message.replace("CACHED_FAILURE:", "");
-          console.log(
-            `❌ Found cached failed search for ${address}, reason: ${reason}`
-          );
+          logger.info({ address, reason }, "Found cached failed search");
           return null; // 直接返回null，不重新搜索
         }
         // 其他错误继续处理
-        console.warn(`Cache check failed for ${address}:`, error.message);
+        logger.warn({ err: error, address }, "Cache check failed");
       }
 
       // 2. 如果缓存中没有，执行搜索
-      console.log(`📋 Step 2: Checking if ${address} is a contract...`);
+      logger.info({ address }, "Step 2: Checking if address is a contract");
       const isContract = await this.isContractAddress(chainId, address);
-      console.log(`📋 Contract check result: ${isContract}`);
+      logger.info({ address, isContract }, "Contract check result");
 
       if (!isContract) {
-        console.log(`❌ Address ${address} is not a contract`);
+        logger.info({ address }, "Address is not a contract");
         // 缓存失败结果，避免重复检查
         await this.cacheFailedSearch(chainId, address, "not_a_contract");
         return null;
       }
 
       // 3. 使用二分法查找合约创建的区块
-      console.log(`📋 Step 3: Starting binary search for creation block...`);
+      logger.info({ address }, "Step 3: Starting binary search for creation block");
       const creationBlock = await this.findContractCreationBlock(
         chainId,
         address
       );
-      console.log(
-        `📋 Binary search result: ${creationBlock ? `Block ${creationBlock}` : "Not found"}`
+      logger.info(
+        { address, creationBlock },
+        "Binary search result"
       );
 
       if (!creationBlock) {
-        console.log(`❌ Could not find creation block for ${address}`);
+        logger.info({ address }, "Could not find creation block");
         // 缓存失败结果
         await this.cacheFailedSearch(
           chainId,
@@ -125,21 +124,21 @@ export class ContractSourceService {
       }
 
       // 4. 在创建区块中查找创建交易
-      console.log(
-        `📋 Step 4: Searching for creation transaction in block ${creationBlock}...`
-      );
+      logger.info({ address, creationBlock }, "Step 4: Searching for creation transaction in block");
       const creationTx = await this.findContractCreationTransaction(
         chainId,
         address,
         creationBlock
       );
-      console.log(
-        `📋 Transaction search result: ${creationTx ? `Found tx ${creationTx.txHash}` : "Not found"}`
+      logger.info(
+        { address, creationTx: creationTx?.txHash },
+        "Transaction search result"
       );
 
       if (!creationTx) {
-        console.log(
-          `❌ Could not find creation transaction for ${address} in block ${creationBlock}`
+        logger.info(
+          { address, creationBlock },
+          "Could not find creation transaction in block"
         );
         // 缓存失败结果
         await this.cacheFailedSearch(
@@ -150,20 +149,21 @@ export class ContractSourceService {
         return null;
       }
 
-      console.log(
-        `✅ Successfully found creation info for ${address}: tx ${creationTx.txHash} in block ${creationTx.blockNumber}`
+      logger.info(
+        { address, txHash: creationTx.txHash, blockNumber: creationTx.blockNumber },
+        "Successfully found creation info"
       );
 
       // 5. 保存到数据库缓存
-      console.log(`📋 Step 5: Caching creation info to database...`);
+      logger.info("Step 5: Caching creation info to database");
       await this.cacheCreationInfo(chainId, address, creationTx);
-      console.log(`✅ Creation info cached successfully`);
+      logger.info("Creation info cached successfully");
 
       return creationTx;
     } catch (error) {
-      console.error(
-        `❌ Failed to get contract creation info for ${address}:`,
-        error
+      logger.error(
+        { err: error, address },
+        "Failed to get contract creation info"
       );
       return null;
     }
@@ -194,8 +194,9 @@ export class ContractSourceService {
 
       // 检查是否是失败的搜索记录
       if (!row.creationTxHash) {
-        console.log(
-          `Found cached failed search for ${address}: ${row.creationMethod || "unknown reason"}`
+        logger.info(
+          { address, reason: row.creationMethod || "unknown" },
+          "Found cached failed search"
         );
         // 抛出特殊错误表示这是缓存的失败结果
         throw new Error(`CACHED_FAILURE:${row.creationMethod || "unknown"}`);
@@ -210,7 +211,7 @@ export class ContractSourceService {
         gasPrice: BigInt(0),
       };
     } catch (error) {
-      console.warn(`Failed to get cached creation info for ${address}:`, error);
+      logger.warn({ err: error, address }, "Failed to get cached creation info");
       return null;
     }
   }
@@ -235,7 +236,7 @@ export class ContractSourceService {
         .limit(1);
 
       if (existing.length > 0) {
-        console.log(`Creation info for ${address} already cached, skipping`);
+        logger.info({ address }, "Creation info already cached, skipping");
         return;
       }
 
@@ -251,7 +252,7 @@ export class ContractSourceService {
         lastUpdated: new Date(),
       });
     } catch (error) {
-      console.warn(`Failed to cache creation info for ${address}:`, error);
+      logger.warn({ err: error, address }, "Failed to cache creation info");
       // 不抛出错误，缓存失败不应该影响主要功能
     }
   }
@@ -290,9 +291,9 @@ export class ContractSourceService {
         creationMethod: reason,
         lastUpdated: new Date(),
       });
-      console.log(`Cached failed search for ${address}: ${reason}`);
+      logger.info({ address, reason }, "Cached failed search");
     } catch (error) {
-      console.warn(`Failed to cache failed search for ${address}:`, error);
+      logger.warn({ err: error, address }, "Failed to cache failed search");
     }
   }
 
@@ -324,9 +325,7 @@ export class ContractSourceService {
 
       // 如果搜索范围仍然很大，先检查合约在最早区块是否存在
       if (left > 1000000n) {
-        console.log(
-          `📋 Checking if contract exists at early block ${Number(left)}...`
-        );
+        logger.info({ earlyBlock: Number(left) }, "Checking if contract exists at early block");
         const earlyCode = createRetryableRpcCall(async () => {
           return await client.getCode({
             address: address as `0x${string}`,
@@ -341,8 +340,9 @@ export class ContractSourceService {
           earlyCodeResult.length > 2;
 
         if (hasEarlyCode) {
-          console.log(
-            `📋 Contract already exists at block ${Number(left)}, expanding search range...`
+          logger.info(
+            { block: Number(left) },
+            "Contract already exists at block, expanding search range"
           );
           // 如果在搜索起点就存在，继续扩大搜索范围
           // 基于RPC测试，我们知道10M以下的区块会失败，所以限制搜索范围
@@ -352,14 +352,16 @@ export class ContractSourceService {
             Number(latestBlockNumber)
           );
           left = latestBlockNumber - BigInt(expandedRange);
-          console.log(
-            `📋 Expanded search range to ${expandedRange} blocks (${Number(left)} to ${Number(right)})`
+          logger.info(
+            { expandedRange, left: Number(left), right: Number(right) },
+            "Expanded search range"
           );
         }
       }
 
-      console.log(
-        `Starting binary search for contract ${address} creation between blocks ${left} and ${right}`
+      logger.info(
+        { address, left: left.toString(), right: right.toString() },
+        "Starting binary search for contract creation"
       );
 
       // 二分查找
@@ -369,8 +371,9 @@ export class ContractSourceService {
         const mid = (left + right) / 2n;
         const midNumber = Number(mid);
 
-        console.log(
-          `📋 Binary search iteration ${iterations}: checking block ${midNumber} (range: ${left} - ${right})`
+        logger.info(
+          { iterations, midNumber, left: left.toString(), right: right.toString() },
+          "Binary search iteration"
         );
 
         try {
@@ -385,26 +388,29 @@ export class ContractSourceService {
           const code = await getCode();
           const hasCode = code && code !== "0x" && code.length > 2;
 
-          console.log(
-            `📋 Block ${midNumber} check result: ${hasCode ? "Contract EXISTS" : "Contract DOES NOT EXIST"}`
+          logger.info(
+            { midNumber, hasCode },
+            "Block check result"
           );
 
           if (hasCode) {
             // 合约存在，创建区块在 mid 或之前
             creationBlock = midNumber;
             right = mid - 1n;
-            console.log(
-              `📋 Contract exists at block ${midNumber}, searching earlier... New range: ${left} - ${right}`
+            logger.info(
+              { midNumber, left: left.toString(), right: right.toString() },
+              "Contract exists at block, searching earlier"
             );
           } else {
             // 合约不存在，创建区块在 mid 之后
             left = mid + 1n;
-            console.log(
-              `📋 Contract doesn't exist at block ${midNumber}, searching later... New range: ${left} - ${right}`
+            logger.info(
+              { midNumber, left: left.toString(), right: right.toString() },
+              "Contract doesn't exist at block, searching later"
             );
           }
         } catch (error) {
-          console.error(`❌ Error checking block ${midNumber}:`, error.message);
+          logger.error({ err: error, midNumber }, "Error checking block");
 
           // 分析RPC错误并提供详细反馈
           const rpcClient = await rpcManager.getClient(chainId);
@@ -417,59 +423,56 @@ export class ContractSourceService {
             chainId,
           });
 
-          console.log(`📋 RPC错误分析:`);
-          console.log(`   错误类型: ${errorDetails.error}`);
-          console.log(`   建议: ${errorDetails.suggestion}`);
-          console.log(`   可重试: ${errorDetails.retryable}`);
-          if (errorDetails.castCommand) {
-            console.log(`   验证命令: ${errorDetails.castCommand}`);
-          }
+          logger.info(
+            { error: errorDetails.error, suggestion: errorDetails.suggestion, retryable: errorDetails.retryable, castCommand: errorDetails.castCommand },
+            "RPC error analysis"
+          );
 
           // 如果是可重试的错误，记录但继续搜索
           if (shouldRetryRpcError(errorDetails)) {
-            console.log(`📋 错误可重试，继续搜索...`);
+            logger.info("Error is retryable, continuing search");
           } else {
-            console.log(`📋 错误不可重试，这可能影响搜索结果的准确性`);
+            logger.info("Error is not retryable, may affect search accuracy");
           }
 
           // 无论如何，假设合约在此区块不存在，向右搜索
-          console.log(
-            `📋 Due to error, assuming contract doesn't exist and searching later...`
-          );
+          logger.info("Due to error, assuming contract doesn't exist and searching later");
           left = mid + 1n;
         }
 
         // 防止无限循环，但允许更大的搜索范围
         if (right - left > 50000000n) {
-          console.warn("Binary search range too large (>50M blocks), stopping");
+          logger.warn("Binary search range too large (>50M blocks), stopping");
           break;
         }
 
         // 如果搜索了超过30次迭代，停止搜索
         if (iterations > 30) {
-          console.warn("Binary search iterations exceeded limit, stopping");
+          logger.warn("Binary search iterations exceeded limit, stopping");
           break;
         }
 
         // 检查是否还有搜索空间
         if (left > right) {
-          console.log(
-            `📋 Search space exhausted (left ${left} > right ${right}), stopping search`
+          logger.info(
+            { left: left.toString(), right: right.toString() },
+            "Search space exhausted, stopping search"
           );
           break;
         }
       }
 
-      console.log(`📋 Binary search completed after ${iterations} iterations`);
-      console.log(
-        `📋 Final result: ${creationBlock ? `Found creation block ${creationBlock}` : "Creation block not found"}`
+      logger.info({ iterations, creationBlock }, "Binary search completed");
+      logger.info(
+        { creationBlock },
+        "Final result"
       );
 
       if (creationBlock !== null) {
-        console.log(`Found contract creation block: ${creationBlock}`);
+        logger.info({ creationBlock }, "Found contract creation block");
 
         // 验证找到的创建区块是否正确
-        console.log(`📋 Verifying creation block ${creationBlock}...`);
+        logger.info({ creationBlock }, "Verifying creation block");
         try {
           // 检查前一个区块合约是否不存在
           const prevCode = createRetryableRpcCall(async () => {
@@ -485,23 +488,22 @@ export class ContractSourceService {
             prevCodeResult !== "0x" &&
             prevCodeResult.length > 2;
 
-          console.log(
-            `📋 Block ${creationBlock - 1}: Contract ${hasPrevCode ? "EXISTS" : "DOES NOT EXIST"}`
+          logger.info(
+            { block: creationBlock - 1, hasPrevCode },
+            "Previous block check result"
           );
 
           if (hasPrevCode) {
-            console.log(
-              `⚠️ Warning: Contract already exists in previous block, may not be the true creation block`
-            );
+            logger.warn("Contract already exists in previous block, may not be the true creation block");
           }
         } catch (error) {
-          console.log(`📋 Could not verify previous block: ${error.message}`);
+          logger.info({ err: error }, "Could not verify previous block");
         }
       }
 
       return creationBlock;
     } catch (error) {
-      console.error("Error in binary search:", error);
+      logger.error({ err: error }, "Error in binary search");
       return null;
     }
   }
@@ -532,27 +534,25 @@ export class ContractSourceService {
         return null;
       }
 
-      console.log(
-        `Searching ${block.transactions.length} transactions in block ${blockNumber} for contract creation`
+      logger.info(
+        { txCount: block.transactions.length, blockNumber, contractAddress },
+        "Searching transactions in block for contract creation"
       );
-      console.log(`Target contract: ${contractAddress}`);
 
       // 遍历区块中的所有交易
       for (let i = 0; i < block.transactions.length; i++) {
         const tx = block.transactions[i];
         if (typeof tx === "string") continue;
 
-        console.log(
-          `📋 Checking tx ${i + 1}/${block.transactions.length}: ${tx.hash}`
-        );
-        console.log(
-          `   From: ${tx.from}, To: ${tx.to || "null (contract creation)"}`
+        logger.info(
+          { index: i + 1, total: block.transactions.length, txHash: tx.hash, from: tx.from, to: tx.to },
+          "Checking transaction"
         );
 
         try {
           // 检查是否为合约创建交易（to 为 null 或 undefined）
           if (tx.to === null || tx.to === undefined) {
-            console.log(`📋 Found contract creation tx: ${tx.hash}`);
+            logger.info({ txHash: tx.hash }, "Found contract creation tx");
 
             // 获取交易回执以确认合约地址
             const getReceipt = createRetryableRpcCall(async () => {
@@ -560,8 +560,9 @@ export class ContractSourceService {
             }, chainId);
 
             const receipt = await getReceipt();
-            console.log(
-              `📋 Receipt contract address: ${receipt.contractAddress?.toLowerCase()}`
+            logger.info(
+              { contractAddress: receipt.contractAddress?.toLowerCase() },
+              "Receipt contract address"
             );
 
             if (
@@ -569,9 +570,10 @@ export class ContractSourceService {
               receipt.contractAddress &&
               addressEquals(receipt.contractAddress, contractAddress)
             ) {
-              console.log(`🎉 Found matching contract creation transaction!`);
-              console.log(
-                `Found contract creation transaction: ${tx.hash} created ${contractAddress}`
+              logger.info("Found matching contract creation transaction");
+              logger.info(
+                { txHash: tx.hash, contractAddress },
+                "Contract creation transaction found"
               );
 
               return {
@@ -583,15 +585,14 @@ export class ContractSourceService {
                 gasPrice: tx.gasPrice || 0n,
               };
             } else {
-              console.log(
-                `📋 Contract address doesn't match (expected: ${contractAddress}, got: ${receipt.contractAddress ? formatAddress(receipt.contractAddress) : "null"})`
+              logger.info(
+                { expected: contractAddress, got: receipt.contractAddress ? formatAddress(receipt.contractAddress) : "null" },
+                "Contract address doesn't match"
               );
             }
           } else {
             // 检查是否是通过工厂合约或其他方式创建的
-            console.log(
-              `📋 Checking if tx creates contract via factory or internal transaction...`
-            );
+            logger.info("Checking if tx creates contract via factory or internal transaction");
 
             const getReceipt = createRetryableRpcCall(async () => {
               return await client.getTransactionReceipt({ hash: tx.hash });
@@ -605,12 +606,8 @@ export class ContractSourceService {
             );
 
             if (hasContractEvent) {
-              console.log(
-                `📋 Found factory/internal creation in tx: ${tx.hash}`
-              );
-              console.log(
-                `   Transaction created events for contract: ${contractAddress}`
-              );
+              logger.info({ txHash: tx.hash }, "Found factory/internal creation");
+              logger.info({ contractAddress }, "Transaction created events for contract");
               return {
                 txHash: tx.hash,
                 blockNumber: Number(block.number),
@@ -622,9 +619,7 @@ export class ContractSourceService {
             }
 
             // 方法2: 检查是否有CREATE2或CREATE操作码创建了这个合约
-            console.log(
-              `📋 Checking for internal contract creation via trace...`
-            );
+            logger.info("Checking for internal contract creation via trace");
 
             try {
               // 使用debug_traceTransaction来获取交易的详细执行轨迹
@@ -638,9 +633,7 @@ export class ContractSourceService {
                 // 检查当前调用是否创建了目标合约
                 if (call.type === "CREATE" || call.type === "CREATE2") {
                   if (addressEquals(call.to || "", contractAddress)) {
-                    console.log(
-                      `📋 Found CREATE/CREATE2 operation creating ${contractAddress}`
-                    );
+                    logger.info({ contractAddress }, "Found CREATE/CREATE2 operation creating contract");
                     return true;
                   }
                 }
@@ -654,9 +647,7 @@ export class ContractSourceService {
               };
 
               if (findContractCreation(trace)) {
-                console.log(
-                  `📋 Found internal contract creation in tx: ${tx.hash}`
-                );
+                logger.info({ txHash: tx.hash }, "Found internal contract creation");
                 return {
                   txHash: tx.hash,
                   blockNumber: Number(block.number),
@@ -667,15 +658,12 @@ export class ContractSourceService {
                 };
               }
             } catch (traceError) {
-              console.log(
-                `📋 debug_traceTransaction not supported or failed:`,
-                traceError.message
-              );
+              logger.info({ err: traceError }, "debug_traceTransaction not supported or failed");
               // 如果trace不支持，继续检查其他方法
             }
           }
         } catch (error) {
-          console.warn(`Error processing transaction ${tx.hash}:`, error);
+          logger.warn({ err: error, txHash: tx.hash }, "Error processing transaction");
 
           // 分析RPC错误
           const rpcClient = await rpcManager.getClient(chainId);
@@ -687,22 +675,16 @@ export class ContractSourceService {
             chainId,
           });
 
-          console.log(`📋 Transaction check error analysis:`);
-          console.log(`   Error: ${errorDetails.error}`);
-          if (errorDetails.castCommand) {
-            console.log(`   Verify with: ${errorDetails.castCommand}`);
-          }
+          logger.info({ error: errorDetails.error, castCommand: errorDetails.castCommand }, "Transaction check error analysis");
 
           continue;
         }
       }
 
-      console.log(
-        `No contract creation transaction found in block ${blockNumber}`
-      );
+      logger.info({ blockNumber }, "No contract creation transaction found in block");
       return null;
     } catch (error) {
-      console.error("Error finding contract creation transaction:", error);
+      logger.error({ err: error }, "Error finding contract creation transaction");
       return null;
     }
   }
@@ -712,19 +694,14 @@ export class ContractSourceService {
     chainId: number,
     address: Address
   ): Promise<ContractSource | null> {
-    console.log(
-      `🔍 Getting contract source for ${address} on chain ${chainId}`
-    );
+    logger.info({ address, chainId }, "Getting contract source");
 
     try {
       // 1. 先从数据库查找缓存的合约信息
-      console.log(`📋 Step 1: Checking database cache for contract source...`);
+      logger.info("Step 1: Checking database cache for contract source");
       const cached = await this.getFromDatabase(chainId, address);
       if (cached && this.isCacheValid(cached)) {
-        console.log(`✅ Found cached contract source for ${address}`);
-        console.log(`   Verification status: ${cached.verificationStatus}`);
-        console.log(`   Is proxy: ${cached.isProxy || false}`);
-        console.log(`   Last checked: ${cached.lastChecked}`);
+        logger.info({ address, verificationStatus: cached.verificationStatus, isProxy: cached.isProxy, lastChecked: cached.lastChecked }, "Found cached contract source");
 
         // 对于已验证的合约，检查是否需要更新代理信息
         if (cached.verificationStatus === "verified") {
@@ -736,30 +713,20 @@ export class ContractSourceService {
               !cached.implementationAddress &&
               !cached.proxyType)
           ) {
-            console.log(
-              `📋 Cached verified contract missing or incomplete proxy info, checking...`
-            );
+            logger.info("Cached verified contract missing or incomplete proxy info, checking");
             const proxyInfo = await this.detectProxy(chainId, address);
             if (proxyInfo.isProxy) {
-              console.log(
-                `⚠️ Cached verified contract is actually a proxy, need to refresh cache`
-              );
+              logger.warn("Cached verified contract is actually a proxy, need to refresh cache");
               // 继续执行重新获取逻辑
             } else {
-              console.log(
-                `✅ Returning cached verified contract (confirmed non-proxy)`
-              );
+              logger.info("Returning cached verified contract (confirmed non-proxy)");
               return cached;
             }
           } else {
-            console.log(
-              `✅ Returning cached verified contract (proxy info complete)`
-            );
+            logger.info("Returning cached verified contract (proxy info complete)");
             // 如果是代理合约，需要动态加载实现合约信息
             if (cached.isProxy && cached.implementationAddress) {
-              console.log(
-                `📋 Loading implementation contract for cached proxy...`
-              );
+              logger.info("Loading implementation contract for cached proxy");
               const implementationContract = await this.getContractSource(
                 chainId,
                 cached.implementationAddress
@@ -775,30 +742,23 @@ export class ContractSourceService {
 
         // 对于未验证的合约，检查是否需要更新代理信息
         if (!cached.isProxy) {
-          console.log(
-            `📋 Checking if cached unverified contract is actually a proxy...`
-          );
+          logger.info("Checking if cached unverified contract is actually a proxy");
           const proxyInfo = await this.detectProxy(chainId, address);
           if (proxyInfo.isProxy) {
-            console.log(
-              `⚠️ Cached contract is actually a proxy, need to refresh cache`
-            );
+            logger.warn("Cached contract is actually a proxy, need to refresh cache");
             // 继续执行重新获取逻辑
           } else {
-            console.log(
-              `✅ Returning cached contract source (verified non-proxy)`
-            );
+            logger.info("Returning cached contract source (verified non-proxy)");
             return cached;
           }
         } else {
-          console.log(`✅ Returning cached proxy contract source`);
+          logger.info("Returning cached proxy contract source");
           return cached;
         }
       } else if (cached) {
-        console.log(`📋 Found cached contract but cache is invalid/expired`);
-        console.log(`   Last checked: ${cached.lastChecked}`);
+        logger.info({ lastChecked: cached.lastChecked }, "Found cached contract but cache is invalid/expired");
       } else {
-        console.log(`📋 No cached contract source found`);
+        logger.info("No cached contract source found");
       }
 
       // 2. 检查是否为合约
@@ -812,9 +772,7 @@ export class ContractSourceService {
 
       // 如果是代理合约，使用特殊处理
       if (proxyInfo.isProxy) {
-        console.log(`📋 Step 2.5: Handling proxy contract...`);
-        console.log(`   Proxy type: ${proxyInfo.proxyType}`);
-        console.log(`   Implementation: ${proxyInfo.implementationAddress}`);
+        logger.info({ proxyType: proxyInfo.proxyType, implementation: proxyInfo.implementationAddress }, "Step 2.5: Handling proxy contract");
 
         const proxyContract = await this.handleProxyContract(
           chainId,
@@ -822,53 +780,47 @@ export class ContractSourceService {
           proxyInfo
         );
         if (proxyContract) {
-          console.log(`✅ Successfully processed proxy contract`);
-          console.log(`📋 Step 3: Caching proxy contract to database...`);
+          logger.info("Successfully processed proxy contract");
+          logger.info("Step 3: Caching proxy contract to database");
           await this.saveToDatabase(proxyContract);
-          console.log(`✅ Proxy contract cached successfully`);
+          logger.info("Proxy contract cached successfully");
           return proxyContract;
         } else {
-          console.log(
-            `⚠️ Failed to process proxy contract, continuing with normal flow`
-          );
+          logger.warn("Failed to process proxy contract, continuing with normal flow");
         }
       } else {
-        console.log(
-          `📋 Contract is not a proxy, proceeding with normal source lookup`
-        );
+        logger.info("Contract is not a proxy, proceeding with normal source lookup");
       }
 
-      console.log(
-        `📋 Step 3: Fetching contract source from external sources...`
-      );
+      logger.info("Step 3: Fetching contract source from external sources");
 
       // 3. 尝试从 Sourcify 获取（非代理合约）
-      console.log(`📋 Trying Sourcify...`);
+      logger.info("Trying Sourcify");
       const sourcifyResult = await this.fetchFromSourcify(chainId, address);
       if (sourcifyResult) {
-        console.log(`✅ Found contract source from Sourcify`);
-        console.log(`📋 Step 4: Caching contract source to database...`);
+        logger.info("Found contract source from Sourcify");
+        logger.info("Step 4: Caching contract source to database");
         await this.saveToDatabase(sourcifyResult);
-        console.log(`✅ Contract source cached successfully`);
+        logger.info("Contract source cached successfully");
         return sourcifyResult;
       }
 
       // 3.5. 尝试从链特定的区块浏览器获取（非代理合约）
-      console.log(`📋 Trying chain-specific explorer...`);
+      logger.info("Trying chain-specific explorer");
       const explorerResult = await this.fetchFromChainExplorer(
         chainId,
         address
       );
       if (explorerResult) {
-        console.log(`✅ Found contract source from chain explorer`);
-        console.log(`📋 Step 4: Caching contract source to database...`);
+        logger.info("Found contract source from chain explorer");
+        logger.info("Step 4: Caching contract source to database");
         await this.saveToDatabase(explorerResult);
-        console.log(`✅ Contract source cached successfully`);
+        logger.info("Contract source cached successfully");
         return explorerResult;
       }
 
       // 4. 如果都没找到，返回未验证状态
-      console.log(`📋 No verified source found, creating unverified record`);
+      logger.info("No verified source found, creating unverified record");
       const unverifiedContract: ContractSource = {
         chainId,
         address: address,
@@ -879,12 +831,12 @@ export class ContractSourceService {
         lastChecked: new Date(),
       };
 
-      console.log(`📋 Step 4: Caching unverified contract to database...`);
+      logger.info("Step 4: Caching unverified contract to database");
       await this.saveToDatabase(unverifiedContract);
-      console.log(`✅ Unverified contract cached (to avoid future lookups)`);
+      logger.info("Unverified contract cached (to avoid future lookups)");
       return unverifiedContract;
     } catch (error) {
-      console.error(`Failed to get contract source for ${address}:`, error);
+      logger.error({ err: error, address }, "Failed to get contract source");
       return null;
     }
   }
@@ -948,7 +900,7 @@ export class ContractSourceService {
             contractName = metadata.settings.compilationTarget[target];
           }
         } catch (e) {
-          console.warn("Failed to parse metadata:", e);
+          logger.warn({ err: e }, "Failed to parse metadata");
         }
       }
 
@@ -979,7 +931,7 @@ export class ContractSourceService {
         lastChecked: new Date(),
       };
     } catch (error) {
-      console.error("Sourcify fetch error:", error);
+      logger.error({ err: error }, "Sourcify fetch error");
       return null;
     }
   }
@@ -1000,7 +952,7 @@ export class ContractSourceService {
       const response = await fetch(url);
 
       if (!response.ok) {
-        console.error(`Explorer API error: ${response.status}`);
+        logger.error({ status: response.status }, "Explorer API error");
         return null;
       }
 
@@ -1033,7 +985,7 @@ export class ContractSourceService {
         lastChecked: new Date(),
       };
     } catch (error) {
-      console.error("Chain explorer fetch error:", error);
+      logger.error({ err: error }, "Chain explorer fetch error");
       return null;
     }
   }
@@ -1071,7 +1023,7 @@ export class ContractSourceService {
       const code = await client.getCode({ address: address as `0x${string}` });
       return Boolean(code && code !== "0x" && code.length > 2);
     } catch (error) {
-      console.error("Failed to check contract address:", error);
+      logger.error({ err: error }, "Failed to check contract address");
       return false;
     }
   }
@@ -1148,7 +1100,7 @@ export class ContractSourceService {
         implementationContract: implementationContract || undefined,
       };
     } catch (error) {
-      console.error("Failed to handle proxy contract:", error);
+      logger.error({ err: error }, "Failed to handle proxy contract");
       return null;
     }
   }
@@ -1200,7 +1152,7 @@ export class ContractSourceService {
         implementationContract: implementationContract || undefined,
       };
     } catch (error) {
-      console.error("Failed to enhance with proxy info:", error);
+      logger.error({ err: error }, "Failed to enhance with proxy info");
       return contract;
     }
   }
@@ -1257,7 +1209,7 @@ export class ContractSourceService {
           }
         }
       } catch (error) {
-        console.warn("Failed to check EIP-1967 implementation slot:", error);
+        logger.warn({ err: error }, "Failed to check EIP-1967 implementation slot");
       }
 
       // 检查 UUPS 代理（EIP-1822）
@@ -1291,7 +1243,7 @@ export class ContractSourceService {
           };
         }
       } catch (error) {
-        console.warn("Failed to check beacon slot:", error);
+        logger.warn({ err: error }, "Failed to check beacon slot");
       }
 
       // 如果没有找到明确的代理模式，返回非代理
@@ -1299,7 +1251,7 @@ export class ContractSourceService {
 
       return { isProxy: false };
     } catch (error) {
-      console.error("Failed to detect proxy:", error);
+      logger.error({ err: error }, "Failed to detect proxy");
       return { isProxy: false };
     }
   }
@@ -1346,7 +1298,7 @@ export class ContractSourceService {
         // 注意：implementationContract 不从数据库加载，需要时动态获取
       };
     } catch (error) {
-      console.error("Database query error:", error);
+      logger.error({ err: error }, "Database query error");
       return null;
     }
   }
@@ -1390,7 +1342,7 @@ export class ContractSourceService {
           },
         });
     } catch (error) {
-      console.error("Failed to save contract source:", error);
+      logger.error({ err: error }, "Failed to save contract source");
     }
   }
 
@@ -1419,13 +1371,16 @@ export class ContractSourceService {
     const isValid = hoursDiff < maxHours;
 
     if (!isValid) {
-      console.log(`📋 Cache expired for ${contractSource.address}:`);
-      console.log(`   Hours since last check: ${hoursDiff.toFixed(1)}`);
-      console.log(`   Max hours allowed: ${maxHours}`);
-      console.log(
-        `   Verification status: ${contractSource.verificationStatus}`
+      logger.info(
+        {
+          address: contractSource.address,
+          hoursDiff: hoursDiff.toFixed(1),
+          maxHours,
+          verificationStatus: contractSource.verificationStatus,
+          isProxy: contractSource.isProxy || false,
+        },
+        "Cache expired"
       );
-      console.log(`   Is proxy: ${contractSource.isProxy || false}`);
     }
 
     return isValid;
@@ -1464,7 +1419,7 @@ export class ContractSourceService {
         })),
       };
     } catch (error) {
-      console.error("Failed to parse contract ABI:", error);
+      logger.error({ err: error }, "Failed to parse contract ABI");
       return { functions: [], events: [], errors: [] };
     }
   }
@@ -1513,7 +1468,7 @@ export class ContractSourceService {
 
       return stats;
     } catch (error) {
-      console.error("Failed to get contract stats:", error);
+      logger.error({ err: error }, "Failed to get contract stats");
       return { total: 0, verified: 0, unverified: 0, partial: 0 };
     }
   }

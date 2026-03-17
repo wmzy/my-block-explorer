@@ -3,7 +3,10 @@
  * 负责根据ABI事件动态创建和管理数据库表结构
  */
 
+import { createLogger } from '../server/logger';
 import { duckdbTable, primaryKey, unique } from '../database/db-types';
+
+const logger = createLogger("dynamic-table-manager");
 import { db } from '../database/init';
 import { sql } from 'drizzle-orm';
 import {
@@ -14,6 +17,7 @@ import {
   EventParameter,
   EventIndexingConfig,
   TableCreationError,
+  DEFAULT_EVENT_INDEXING_CONFIG,
   DEFAULT_TYPE_MAPPING,
   TypeMappingConfig,
 } from '../types/events';
@@ -114,7 +118,7 @@ export class DynamicTableManager {
       }
 
       this.createdTables.add(tableName);
-      console.log(`Created event table: ${tableName}`);
+      logger.info({ tableName }, "Created event table");
 
       return tableName;
     } catch (error) {
@@ -133,7 +137,7 @@ export class DynamicTableManager {
   async tableExists(tableName: string): Promise<boolean> {
     try {
       const result = await db.execute(
-        sql`SELECT name FROM sqlite_master WHERE type='table' AND name = ${tableName}`
+        sql`SELECT table_name FROM information_schema.tables WHERE table_name = ${tableName}`
       );
       return result.length > 0;
     } catch {
@@ -147,14 +151,16 @@ export class DynamicTableManager {
   async getTableSchema(tableName: string): Promise<TableColumn[]> {
     try {
       const result = await db.execute(
-        sql`PRAGMA table_info(${tableName})`
+        sql`SELECT column_name, data_type, is_nullable, column_default
+            FROM information_schema.columns
+            WHERE table_name = ${tableName}`
       );
 
-      return result.map((row: any) => ({
-        name: row.name,
-        type: this.mapSqlTypeToColumnType(row.type),
-        nullable: !row.notnull,
-        defaultValue: row.dflt_value,
+      return result.map((row: Record<string, unknown>) => ({
+        name: row.column_name as string,
+        type: this.mapSqlTypeToColumnType(row.data_type as string),
+        nullable: row.is_nullable === 'YES',
+        defaultValue: row.column_default as string | undefined,
       }));
     } catch (error) {
       throw new Error(`Failed to get table schema for ${tableName}: ${error}`);
@@ -168,7 +174,7 @@ export class DynamicTableManager {
     try {
       await db.execute(sql`DROP TABLE IF EXISTS ${tableName}`);
       this.createdTables.delete(tableName);
-      console.log(`Dropped table: ${tableName}`);
+      logger.info({ tableName }, "Dropped table");
     } catch (error) {
       throw new Error(`Failed to drop table ${tableName}: ${error}`);
     }
@@ -184,9 +190,9 @@ export class DynamicTableManager {
     const cleanedTables: string[] = [];
 
     try {
-      // 获取所有事件表
+      const prefix = `${this.config.tableNamePrefix}_%`;
       const tables = await db.execute(
-        sql`SELECT name FROM sqlite_master WHERE type='table' AND name LIKE '${this.config.tableNamePrefix}_%'`
+        sql`SELECT table_name AS name FROM information_schema.tables WHERE table_name LIKE ${prefix}`
       );
 
       for (const table of tables) {
@@ -207,10 +213,10 @@ export class DynamicTableManager {
         }
       }
 
-      console.log(`Cleaned up ${cleanedTables.length} old tables`);
+      logger.info({ count: cleanedTables.length }, "Cleaned up old tables");
       return cleanedTables;
     } catch (error) {
-      console.error('Failed to cleanup old tables:', error);
+      logger.error({ err: error }, "Failed to cleanup old tables");
       return [];
     }
   }
@@ -240,15 +246,15 @@ export class DynamicTableManager {
         tableNames.push(tableName);
       } catch (error) {
         errors.push(error as Error);
-        console.error(
-          `Failed to create table for event ${definition.eventSignature}:`,
-          error
+        logger.error(
+          { err: error, eventSignature: definition.eventSignature },
+          "Failed to create table for event"
         );
       }
     }
 
     if (errors.length > 0) {
-      console.warn(`Created ${tableNames.length} tables with ${errors.length} errors`);
+      logger.warn({ tableCount: tableNames.length, errorCount: errors.length }, "Created tables with errors");
     }
 
     return tableNames;
