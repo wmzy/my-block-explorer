@@ -196,7 +196,7 @@ export class EventPerformanceOptimizer {
     strategies: Partial<OptimizationStrategies> = {}
   ) {
     this.chainId = chainId;
-    this.chainDb = multiChainDb.getChainDatabaseSync(chainId);
+    this.chainDb = null as any; // Will be initialized lazily
 
     // Set default thresholds
     this.thresholds = {
@@ -230,6 +230,15 @@ export class EventPerformanceOptimizer {
   }
 
   /**
+   * Ensure database is initialized
+   */
+  private async ensureDatabaseInitialized(): Promise<void> {
+    if (!this.chainDb) {
+      this.chainDb = await multiChainDb.getChainDatabase(this.chainId);
+    }
+  }
+
+  /**
    * Execute optimized query with performance monitoring
    */
   async executeOptimizedQuery<T>(
@@ -242,6 +251,9 @@ export class EventPerformanceOptimizer {
       timeout?: number;
     } = {}
   ): Promise<T> {
+    // Ensure database is initialized
+    await this.ensureDatabaseInitialized();
+
     const startTime = performance.now();
     const startMemory = process.memoryUsage().heapUsed;
     const {
@@ -674,6 +686,12 @@ class EventPerformanceOptimizerManager {
     strategies?: Partial<OptimizationStrategies>
   ): EventPerformanceOptimizer {
     if (!this.optimizers.has(chainId)) {
+      // Ensure database is initialized before creating optimizer
+      try {
+        multiChainDb.getChainDatabase(chainId);
+      } catch (error) {
+        console.warn(`Failed to initialize chain database for ${chainId}:`, error);
+      }
       this.optimizers.set(chainId, new EventPerformanceOptimizer(chainId, thresholds, strategies));
     }
     return this.optimizers.get(chainId)!;

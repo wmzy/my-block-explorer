@@ -293,7 +293,7 @@ const IndexingProgressCard: React.FC<{
 
       <StatValue>{stats.indexingProgress || 0}%</StatValue>
       <StatLabel>
-        {(stats.indexedEvents || 0).toLocaleString()} / {(stats.totalEvents || 0).toLocaleString()} events indexed
+        {Number(stats.indexedEvents || 0).toLocaleString()} / {Number(stats.totalEvents || 0).toLocaleString()} events indexed
       </StatLabel>
 
       <ProgressBarContainer>
@@ -308,7 +308,7 @@ const IndexingProgressCard: React.FC<{
 
       {stats.lastIndexedBlock && (
         <StatLabel style={{ marginTop: 8 }}>
-          Last indexed block: {stats.lastIndexedBlock.toLocaleString()}
+          Last indexed block: {Number(stats.lastIndexedBlock).toLocaleString()}
         </StatLabel>
       )}
 
@@ -371,8 +371,8 @@ const StorageStatsCard: React.FC<{ stats: EventTableStats }> = ({ stats }) => (
     <StatLabel>storage used</StatLabel>
 
     <div style={{ marginTop: 12, fontSize: '12px', color: '#6b7280' }}>
-      <div>Unique addresses: {stats.uniqueAddresses.toLocaleString()}</div>
-      <div>Avg events per block: {stats.averageEventsPerBlock.toFixed(2)}</div>
+      <div>Unique addresses: {Number(stats.uniqueAddresses || 0).toLocaleString()}</div>
+      <div>Avg events per block: {Number(stats.averageEventsPerBlock || 0).toFixed(2)}</div>
     </div>
   </StatCard>
 );
@@ -503,7 +503,7 @@ export const EventStatistics: React.FC<EventStatisticsProps> = ({
       {/* Total Events */}
       <StatCardWithIcon
         title="Total Events"
-        value={tableStats?.totalEvents.toLocaleString() || indexingStats?.totalEvents.toLocaleString() || '0'}
+        value={Number(tableStats?.totalEvents || indexingStats?.totalEvents || 0).toLocaleString()}
         label="events indexed"
         icon="📈"
         color="#059669"

@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { css } from "@linaria/core";
 import { getChainInfo, getChainName } from "../config/chains";
+import TopNavigation from "../components/TopNavigation";
 
 const pageStyles = css`
   max-width: 1200px;
@@ -188,17 +189,32 @@ export default function BlockPage() {
     return `${bytes.toLocaleString()} bytes`;
   };
 
+  const handleChainChange = (newChainId: number) => {
+    navigate(`/chain/${newChainId}`, { replace: true });
+  };
+
   if (!chainInfo) {
     return (
-      <div className={pageStyles}>
-        <div className={errorStyles}>Unsupported chain ID: {chainId}</div>
-      </div>
+      <>
+        <TopNavigation
+          currentChainId={currentChainId}
+          onChainChange={handleChainChange}
+        />
+        <div className={pageStyles}>
+          <div className={errorStyles}>Unsupported chain ID: {chainId}</div>
+        </div>
+      </>
     );
   }
 
   return (
-    <div className={pageStyles}>
-      <button
+    <>
+      <TopNavigation
+        currentChainId={currentChainId}
+        onChainChange={handleChainChange}
+      />
+      <div className={pageStyles}>
+        <button
         className={backButtonStyles}
         onClick={() => navigate(`/chain/${currentChainId}`)}
       >
@@ -287,6 +303,7 @@ export default function BlockPage() {
           </div>
         </div>
       )}
-    </div>
+      </div>
+    </>
   );
 }

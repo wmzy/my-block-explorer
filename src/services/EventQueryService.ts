@@ -127,13 +127,30 @@ export class EventQueryService {
       const queryTime = performance.now() - startTime;
       performanceMonitor.recordQuery('event_statistics', queryTime, true);
 
+      const eventsByType = await this.getEventsByType(tableName).catch(() => ({}));
+
+      const avgEventsPerBlock = await (async () => {
+        try {
+          const result = await this.chainDb.query(`
+            SELECT COUNT(DISTINCT block_number) as block_count
+            FROM ${tableName}
+          `);
+          const blockCount = Number(result[0]?.block_count || 0);
+          return blockCount > 0 ? stats.totalEvents / blockCount : 0;
+        } catch {
+          return 0;
+        }
+      })();
+
       return {
         totalEvents: stats.totalEvents,
-        eventsByType: {}, // 需要额外查询实现
-        eventsByBlockRange: [], // 需要额外查询实现
-        averageEventsPerBlock: 0, // 需要计算
+        eventsByType,
+        eventsByBlockRange: [],
+        averageEventsPerBlock: avgEventsPerBlock,
         uniqueAddresses: stats.uniqueAddresses || 0,
-        storageSize: 0, // 需要额外查询实现
+        storageSize: 0,
+        lastIndexedBlock: undefined,
+        lastIndexedAt: stats.newestEvent,
       };
 
     } catch (error) {
@@ -438,6 +455,13 @@ export class EventQueryService {
         error instanceof Error ? error : new Error(String(error))
       );
     }
+  }
+
+  /**
+   * List all created event tables
+   */
+  listTables(): string[] {
+    return this.eventTableManager.getCreatedTables();
   }
 
   /**

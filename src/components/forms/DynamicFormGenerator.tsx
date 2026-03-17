@@ -35,78 +35,6 @@ export const DynamicFormGenerator: React.FC<DynamicFormGeneratorProps> = ({
   disabled = false,
   showAdvanced = false,
 }) => {
-  const [formState, setFormState] = useState<FormState>(() => {
-    const fields = generateFormFields(abiEvent);
-    const values = { ...initialData };
-    const errors: Record<string, string[]> = {};
-    const touched: Record<string, boolean> = {};
-
-    // Initialize errors
-    Object.keys(fields).forEach(fieldName => {
-      errors[fieldName] = [];
-      touched[fieldName] = false;
-    });
-
-    return { fields, values, errors, touched };
-  });
-
-  /**
-   * Generate form fields based on ABI parameters
-   */
-  const generateFormFields = useCallback((event: AbiEvent): Record<string, FormField> => {
-    const fields: Record<string, FormField> = {};
-
-    event.inputs.forEach((input, index) => {
-      const field = createFormField(input, index);
-      fields[input.name] = field;
-    });
-
-    // Add common filter fields
-    fields.eventName = {
-      name: 'eventName',
-      label: 'Event Name',
-      type: 'select',
-      required: false,
-      options: [
-        { value: event.name, label: event.name },
-        { value: '', label: 'All Events' },
-      ],
-      placeholder: 'Select event type',
-      validation: [],
-    };
-
-    fields.blockRange = {
-      name: 'blockRange',
-      label: 'Block Range',
-      type: 'range',
-      required: false,
-      placeholder: 'From block - To block',
-      validation: [
-        {
-          type: 'range',
-          min: 0,
-          message: 'Invalid block range',
-        },
-      ],
-    };
-
-    fields.timestampRange = {
-      name: 'timestampRange',
-      label: 'Time Range',
-      type: 'datetime-range',
-      required: false,
-      placeholder: 'From date - To date',
-      validation: [
-        {
-          type: 'dateRange',
-          message: 'Invalid date range',
-        },
-      ],
-    };
-
-    return fields;
-  }, []);
-
   /**
    * Create a single form field from ABI parameter
    */
@@ -189,9 +117,81 @@ export const DynamicFormGenerator: React.FC<DynamicFormGeneratorProps> = ({
   };
 
   /**
+   * Generate form fields based on ABI parameters
+   */
+  const generateFormFields = useCallback((event: AbiEvent): Record<string, FormField> => {
+    const fields: Record<string, FormField> = {};
+
+    event.inputs.forEach((input, index) => {
+      const field = createFormField(input, index);
+      fields[input.name] = field;
+    });
+
+    // Add common filter fields
+    fields.eventName = {
+      name: 'eventName',
+      label: 'Event Name',
+      type: 'select',
+      required: false,
+      options: [
+        { value: event.name, label: event.name },
+        { value: '', label: 'All Events' },
+      ],
+      placeholder: 'Select event type',
+      validation: [],
+    };
+
+    fields.blockRange = {
+      name: 'blockRange',
+      label: 'Block Range',
+      type: 'range',
+      required: false,
+      placeholder: 'From block - To block',
+      validation: [
+        {
+          type: 'range',
+          min: 0,
+          message: 'Invalid block range',
+        },
+      ],
+    };
+
+    fields.timestampRange = {
+      name: 'timestampRange',
+      label: 'Time Range',
+      type: 'datetime-range',
+      required: false,
+      placeholder: 'From date - To date',
+      validation: [
+        {
+          type: 'dateRange',
+          message: 'Invalid date range',
+        },
+      ],
+    };
+
+    return fields;
+  }, []);
+
+  const [formState, setFormState] = useState<FormState>(() => {
+    const fields = generateFormFields(abiEvent);
+    const values = { ...initialData };
+    const errors: Record<string, string[]> = {};
+    const touched: Record<string, boolean> = {};
+
+    // Initialize errors
+    Object.keys(fields).forEach(fieldName => {
+      errors[fieldName] = [];
+      touched[fieldName] = false;
+    });
+
+    return { fields, values, errors, touched };
+  });
+
+  /**
    * Generate validation rules for Solidity types
    */
-  const generateValidationRules = (solidityType: string): ValidationRule[] => {
+  function generateValidationRules(solidityType: string): ValidationRule[] {
     const rules: ValidationRule[] = [];
 
     switch (solidityType) {
@@ -233,42 +233,45 @@ export const DynamicFormGenerator: React.FC<DynamicFormGeneratorProps> = ({
     }
 
     return rules;
-  };
+  }
 
   /**
    * Format field name for display
    */
-  const formatFieldName = (name: string): string => {
+  function formatFieldName(name: string): string {
     return name
       .split(/(?=[A-Z])/)
       .join(' ')
       .replace(/\b\w/g, l => l.toUpperCase());
-  };
+  }
 
   /**
    * Handle field value changes
    */
-  const handleFieldChange = useCallback((fieldName: string, value: any) => {
-    setFormState(prev => {
-      const newValues = { ...prev.values, [fieldName]: value };
-      const newTouched = { ...prev.touched, [fieldName]: true };
+  const handleFieldChange = useCallback(
+    (fieldName: string, value: any) => {
+      setFormState(prev => {
+        const newValues = { ...prev.values, [fieldName]: value };
+        const newTouched = { ...prev.touched, [fieldName]: true };
 
-      // Validate field
-      const field = prev.fields[fieldName];
-      const errors = validateSolidityInput(value, field.validation);
-      const newErrors = { ...prev.errors, [fieldName]: errors };
+        // Validate field
+        const field = prev.fields[fieldName];
+        const errors = validateSolidityInput(value, field.validation);
+        const newErrors = { ...prev.errors, [fieldName]: errors };
 
-      return {
-        ...prev,
-        values: newValues,
-        touched: newTouched,
-        errors: newErrors,
-      };
-    });
+        return {
+          ...prev,
+          values: newValues,
+          touched: newTouched,
+          errors: newErrors,
+        };
+      });
 
-    // Notify parent
-    onFieldChange?.(fieldName, value);
-  }, [onFieldChange]);
+      // Notify parent
+      onFieldChange?.(fieldName, value);
+    },
+    [onFieldChange],
+  );
 
   /**
    * Validate entire form
@@ -299,13 +302,16 @@ export const DynamicFormGenerator: React.FC<DynamicFormGeneratorProps> = ({
   /**
    * Handle form submission
    */
-  const handleSubmit = useCallback((e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = useCallback(
+    (e: React.FormEvent) => {
+      e.preventDefault();
 
-    if (validateForm()) {
-      onSubmit(formState.values);
-    }
-  }, [formState.values, validateForm, onSubmit]);
+      if (validateForm()) {
+        onSubmit(formState.values);
+      }
+    },
+    [formState.values, validateForm, onSubmit],
+  );
 
   /**
    * Reset form to initial state
@@ -322,202 +328,215 @@ export const DynamicFormGenerator: React.FC<DynamicFormGeneratorProps> = ({
   /**
    * Render individual form field
    */
-  const renderField = useCallback((fieldName: string, field: FormField) => {
-    const value = formState.values[fieldName];
-    const errors = formState.errors[fieldName];
-    const touched = formState.touched[fieldName];
-    const hasError = touched && errors.length > 0;
+  const renderField = useCallback(
+    (fieldName: string, field: FormField) => {
+      const value = formState.values[fieldName];
+      const errors = formState.errors[fieldName];
+      const touched = formState.touched[fieldName];
+      const hasError = touched && errors.length > 0;
 
-    const fieldClassName = `form-field ${hasError ? 'error' : ''} ${field.indexed ? 'indexed' : ''}`;
+      const fieldClassName = `form-field ${hasError ? 'error' : ''} ${field.indexed ? 'indexed' : ''}`;
 
-    switch (field.type) {
-      case 'text':
-      case 'number':
-        return (
-          <div key={fieldName} className={fieldClassName}>
-            <label htmlFor={fieldName}>
-              {field.label}
-              {field.indexed && <span className="indexed-badge">Indexed</span>}
-              {field.required && <span className="required">*</span>}
-            </label>
-            <input
-              id={fieldName}
-              type={field.type}
-              value={value || ''}
-              onChange={(e) => handleFieldChange(fieldName, e.target.value)}
-              placeholder={field.placeholder}
-              disabled={disabled}
-              pattern={field.pattern}
-              maxLength={field.maxLength}
-              step={field.step}
-              min={field.min}
-              max={field.max}
-            />
-            {hasError && (
-              <div className="error-messages">
-                {errors.map((error, index) => (
-                  <span key={index} className="error-message">{error}</span>
-                ))}
-              </div>
-            )}
-          </div>
-        );
-
-      case 'select':
-        return (
-          <div key={fieldName} className={fieldClassName}>
-            <label htmlFor={fieldName}>
-              {field.label}
-              {field.required && <span className="required">*</span>}
-            </label>
-            <select
-              id={fieldName}
-              value={value || ''}
-              onChange={(e) => handleFieldChange(fieldName, e.target.value)}
-              disabled={disabled}
-            >
-              {field.options?.map(option => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-            {hasError && (
-              <div className="error-messages">
-                {errors.map((error, index) => (
-                  <span key={index} className="error-message">{error}</span>
-                ))}
-              </div>
-            )}
-          </div>
-        );
-
-      case 'checkbox':
-        return (
-          <div key={fieldName} className={fieldClassName}>
-            <label className="checkbox-label">
+      switch (field.type) {
+        case 'text':
+        case 'number':
+          return (
+            <div key={fieldName} className={fieldClassName}>
+              <label htmlFor={fieldName}>
+                {field.label}
+                {field.indexed && <span className="indexed-badge">Indexed</span>}
+                {field.required && <span className="required">*</span>}
+              </label>
               <input
-                type="checkbox"
-                checked={!!value}
-                onChange={(e) => handleFieldChange(fieldName, e.target.checked)}
+                id={fieldName}
+                type={field.type}
+                value={value || ''}
+                onChange={e => handleFieldChange(fieldName, e.target.value)}
+                placeholder={field.placeholder}
                 disabled={disabled}
+                pattern={field.pattern}
+                maxLength={field.maxLength}
+                step={field.step}
+                min={field.min}
+                max={field.max}
               />
-              {field.label}
-              {field.indexed && <span className="indexed-badge">Indexed</span>}
-            </label>
-            {hasError && (
-              <div className="error-messages">
-                {errors.map((error, index) => (
-                  <span key={index} className="error-message">{error}</span>
-                ))}
-              </div>
-            )}
-          </div>
-        );
-
-      case 'textarea':
-        return (
-          <div key={fieldName} className={fieldClassName}>
-            <label htmlFor={fieldName}>
-              {field.label}
-              {field.required && <span className="required">*</span>}
-            </label>
-            <textarea
-              id={fieldName}
-              value={value || ''}
-              onChange={(e) => handleFieldChange(fieldName, e.target.value)}
-              placeholder={field.placeholder}
-              disabled={disabled}
-              maxLength={field.maxLength}
-              rows={4}
-            />
-            {hasError && (
-              <div className="error-messages">
-                {errors.map((error, index) => (
-                  <span key={index} className="error-message">{error}</span>
-                ))}
-              </div>
-            )}
-          </div>
-        );
-
-      case 'range':
-        return (
-          <div key={fieldName} className={fieldClassName}>
-            <label>{field.label}</label>
-            <div className="range-inputs">
-              <input
-                type="number"
-                placeholder="From"
-                value={value?.from || ''}
-                onChange={(e) => handleFieldChange(fieldName, { ...value, from: e.target.value })}
-                disabled={disabled}
-                min="0"
-              />
-              <span>to</span>
-              <input
-                type="number"
-                placeholder="To"
-                value={value?.to || ''}
-                onChange={(e) => handleFieldChange(fieldName, { ...value, to: e.target.value })}
-                disabled={disabled}
-                min="0"
-              />
+              {hasError && (
+                <div className="error-messages">
+                  {errors.map((error, index) => (
+                    <span key={index} className="error-message">
+                      {error}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
-            {hasError && (
-              <div className="error-messages">
-                {errors.map((error, index) => (
-                  <span key={index} className="error-message">{error}</span>
-                ))}
-              </div>
-            )}
-          </div>
-        );
+          );
 
-      case 'datetime-range':
-        return (
-          <div key={fieldName} className={fieldClassName}>
-            <label>{field.label}</label>
-            <div className="datetime-inputs">
-              <input
-                type="datetime-local"
-                placeholder="From"
-                value={value?.from || ''}
-                onChange={(e) => handleFieldChange(fieldName, { ...value, from: e.target.value })}
+        case 'select':
+          return (
+            <div key={fieldName} className={fieldClassName}>
+              <label htmlFor={fieldName}>
+                {field.label}
+                {field.required && <span className="required">*</span>}
+              </label>
+              <select
+                id={fieldName}
+                value={value || ''}
+                onChange={e => handleFieldChange(fieldName, e.target.value)}
                 disabled={disabled}
-              />
-              <span>to</span>
-              <input
-                type="datetime-local"
-                placeholder="To"
-                value={value?.to || ''}
-                onChange={(e) => handleFieldChange(fieldName, { ...value, to: e.target.value })}
-                disabled={disabled}
-              />
+              >
+                {field.options?.map(option => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              {hasError && (
+                <div className="error-messages">
+                  {errors.map((error, index) => (
+                    <span key={index} className="error-message">
+                      {error}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
-            {hasError && (
-              <div className="error-messages">
-                {errors.map((error, index) => (
-                  <span key={index} className="error-message">{error}</span>
-                ))}
-              </div>
-            )}
-          </div>
-        );
+          );
 
-      default:
-        return null;
-    }
-  }, [formState.values, formState.errors, formState.touched, disabled, handleFieldChange]);
+        case 'checkbox':
+          return (
+            <div key={fieldName} className={fieldClassName}>
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={!!value}
+                  onChange={e => handleFieldChange(fieldName, e.target.checked)}
+                  disabled={disabled}
+                />
+                {field.label}
+                {field.indexed && <span className="indexed-badge">Indexed</span>}
+              </label>
+              {hasError && (
+                <div className="error-messages">
+                  {errors.map((error, index) => (
+                    <span key={index} className="error-message">
+                      {error}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+
+        case 'textarea':
+          return (
+            <div key={fieldName} className={fieldClassName}>
+              <label htmlFor={fieldName}>
+                {field.label}
+                {field.required && <span className="required">*</span>}
+              </label>
+              <textarea
+                id={fieldName}
+                value={value || ''}
+                onChange={e => handleFieldChange(fieldName, e.target.value)}
+                placeholder={field.placeholder}
+                disabled={disabled}
+                maxLength={field.maxLength}
+                rows={4}
+              />
+              {hasError && (
+                <div className="error-messages">
+                  {errors.map((error, index) => (
+                    <span key={index} className="error-message">
+                      {error}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+
+        case 'range':
+          return (
+            <div key={fieldName} className={fieldClassName}>
+              <label>{field.label}</label>
+              <div className="range-inputs">
+                <input
+                  type="number"
+                  placeholder="From"
+                  value={value?.from || ''}
+                  onChange={e => handleFieldChange(fieldName, { ...value, from: e.target.value })}
+                  disabled={disabled}
+                  min="0"
+                />
+                <span>to</span>
+                <input
+                  type="number"
+                  placeholder="To"
+                  value={value?.to || ''}
+                  onChange={e => handleFieldChange(fieldName, { ...value, to: e.target.value })}
+                  disabled={disabled}
+                  min="0"
+                />
+              </div>
+              {hasError && (
+                <div className="error-messages">
+                  {errors.map((error, index) => (
+                    <span key={index} className="error-message">
+                      {error}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+
+        case 'datetime-range':
+          return (
+            <div key={fieldName} className={fieldClassName}>
+              <label>{field.label}</label>
+              <div className="datetime-inputs">
+                <input
+                  type="datetime-local"
+                  placeholder="From"
+                  value={value?.from || ''}
+                  onChange={e => handleFieldChange(fieldName, { ...value, from: e.target.value })}
+                  disabled={disabled}
+                />
+                <span>to</span>
+                <input
+                  type="datetime-local"
+                  placeholder="To"
+                  value={value?.to || ''}
+                  onChange={e => handleFieldChange(fieldName, { ...value, to: e.target.value })}
+                  disabled={disabled}
+                />
+              </div>
+              {hasError && (
+                <div className="error-messages">
+                  {errors.map((error, index) => (
+                    <span key={index} className="error-message">
+                      {error}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+
+        default:
+          return null;
+      }
+    },
+    [formState.values, formState.errors, formState.touched, disabled, handleFieldChange],
+  );
 
   const visibleFields = useMemo(() => {
     const fields = Object.entries(formState.fields);
 
     if (!showAdvanced) {
       // Hide advanced fields
-      return fields.filter(([_, field]) =>
-        !['blockRange', 'timestampRange'].includes(field.name)
-      );
+      return fields.filter(([_, field]) => !['blockRange', 'timestampRange'].includes(field.name));
     }
 
     return fields;
@@ -539,12 +558,7 @@ export const DynamicFormGenerator: React.FC<DynamicFormGeneratorProps> = ({
           >
             {showAdvanced ? 'Hide Advanced' : 'Show Advanced'}
           </button>
-          <button
-            type="button"
-            className="reset-form"
-            onClick={handleReset}
-            disabled={disabled}
-          >
+          <button type="button" className="reset-form" onClick={handleReset} disabled={disabled}>
             Reset
           </button>
         </div>
@@ -555,17 +569,11 @@ export const DynamicFormGenerator: React.FC<DynamicFormGeneratorProps> = ({
       </div>
 
       <div className="form-footer">
-        <button
-          type="submit"
-          className="submit-button"
-          disabled={disabled || formHasErrors}
-        >
+        <button type="submit" className="submit-button" disabled={disabled || formHasErrors}>
           Apply Filters
         </button>
         {formHasErrors && (
-          <div className="form-errors">
-            Please correct the errors before submitting.
-          </div>
+          <div className="form-errors">Please correct the errors before submitting.</div>
         )}
       </div>
 

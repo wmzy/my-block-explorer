@@ -62,10 +62,14 @@ src/
 ├── types/             # TypeScript type definitions
 ├── utils/             # Utility functions and helpers
 ├── components/        # React components (shared UI)
+│   ├── ui/            # Reusable UI primitives (Card, Badge, Button)
+│   ├── events/        # Event-related components (EventTable, EventStatistics)
+│   └── forms/         # Dynamic form components
 ├── pages/            # Page components for routing
 ├── hooks/            # Custom React hooks
 ├── middleware/       # Server middleware (CORS, logging)
 ├── tests/            # Test files organized by type
+├── api/              # API client with service discovery
 └── api-app.ts        # Main API application with all endpoints
 ```
 
@@ -84,6 +88,17 @@ src/
 **Frontend Integration:**
 - `src/hooks/useAutoDiscovery.ts` - Automatic server discovery
 - `src/api/client.ts` - API client with service discovery
+
+**Pages:**
+- `src/pages/HomePage.tsx` - Chain overview with stats and chain list
+- `src/pages/BlocksListPage.tsx` - Paginated block list for a chain
+- `src/pages/TransactionsListPage.tsx` - Paginated transaction list for a chain
+- `src/pages/BlockPage.tsx` - Block detail view
+- `src/pages/TransactionPage.tsx` - Transaction detail view
+- `src/pages/AddressPage.tsx` - Address detail with transaction history
+- `src/pages/ContractPage.tsx` - Contract source, ABI, events, interaction
+- `src/pages/SearchPage.tsx` - Global search across chains
+- `src/pages/NotFoundPage.tsx` - 404 error page
 
 ### Chain Support
 
@@ -134,9 +149,26 @@ The application supports all Viem chains out-of-the-box:
 
 **Chain-Specific Endpoints:**
 - `/api/chains/{chainId}/blocks/{blockNumber}` - Block data
+- `/api/chains/{chainId}/blocks?page=&limit=` - Paginated block list
 - `/api/chains/{chainId}/transactions/{hash}` - Transaction data
+- `/api/chains/{chainId}/transactions?page=&limit=` - Paginated transaction list
 - `/api/chains/{chainId}/addresses/{address}` - Address data
+- `/api/chains/{chainId}/addresses/{address}/transactions` - Address transaction history
 - `/api/chains/{chainId}/contracts/{address}/...` - Contract interactions
+- `/api/search?q=` - Global search across chains
+
+**Frontend Routes:**
+- `/` - Redirects to `/chain/1`
+- `/chain/:chainId` - Chain home page with overview
+- `/chain/:chainId/blocks` - Block list
+- `/chain/:chainId/transactions` - Transaction list
+- `/chain/:chainId/block/:blockNumber` - Block detail
+- `/chain/:chainId/tx/:txHash` - Transaction detail
+- `/chain/:chainId/address/:address` - Address detail
+- `/chain/:chainId/contract/:address` - Contract detail
+- `/chain/:chainId/contract/:address/events` - Contract events
+- `/search` - Search page
+- `*` - 404 Not Found
 
 **Response Format:**
 - Consistent JSON responses with chain metadata

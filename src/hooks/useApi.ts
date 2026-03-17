@@ -17,7 +17,7 @@ export function useApi<T>(url: string) {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
 
-        const result = await responseon();
+        const result = await response.json();
         setData(result);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Unknown error");

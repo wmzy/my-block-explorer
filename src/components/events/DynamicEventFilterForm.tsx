@@ -38,13 +38,6 @@ export const DynamicEventFilterForm: React.FC<DynamicEventFilterFormProps> = ({
   disabled = false,
   className = '',
 }) => {
-  const [state, setState] = useState<EventFilterState>({
-    selectedEvent: null,
-    formData: initialFilters,
-    isAdvancedMode: false,
-    filterCount: countActiveFilters(initialFilters),
-  });
-
   /**
    * Count active filters
    */
@@ -62,55 +55,71 @@ export const DynamicEventFilterForm: React.FC<DynamicEventFilterFormProps> = ({
     return count;
   }, []);
 
+  const [state, setState] = useState<EventFilterState>({
+    selectedEvent: null,
+    formData: initialFilters,
+    isAdvancedMode: false,
+    filterCount: countActiveFilters(initialFilters),
+  });
+
   /**
    * Handle event selection change
    */
-  const handleEventChange = useCallback((event: AbiEvent | null) => {
-    setState(prev => ({
-      ...prev,
-      selectedEvent: event,
-      formData: {
-        ...prev.formData,
-        eventName: event ? event.name : '',
-      },
-    }));
+  const handleEventChange = useCallback(
+    (event: AbiEvent | null) => {
+      setState(prev => ({
+        ...prev,
+        selectedEvent: event,
+        formData: {
+          ...prev.formData,
+          eventName: event ? event.name : '',
+        },
+      }));
 
-    if (event) {
-      const filters = generateSearchFilter({
-        ...state.formData,
-        eventName: event.name,
-      });
-      onFilterChange(filters);
-    }
-  }, [state.formData, onFilterChange]);
+      if (event) {
+        const filters = generateSearchFilter({
+          ...state.formData,
+          eventName: event.name,
+        });
+        onFilterChange(filters);
+      }
+    },
+    [state.formData, onFilterChange],
+  );
 
   /**
    * Handle form field changes
    */
-  const handleFieldChange = useCallback((fieldName: string, value: any) => {
-    const newFormData = {
-      ...state.formData,
-      [fieldName]: value,
-    };
+  const handleFieldChange = useCallback(
+    (fieldName: string, value: any) => {
+      const newFormData = {
+        ...state.formData,
+        [fieldName]: value,
+      };
 
-    setState(prev => ({
-      ...prev,
-      formData: newFormData,
-      filterCount: countActiveFilters(newFormData),
-    }));
+      setState(prev => ({
+        ...prev,
+        formData: newFormData,
+        filterCount: countActiveFilters(newFormData),
+      }));
 
-    // Generate and apply search filters in real-time
-    const filters = generateSearchFilter(newFormData);
-    onFilterChange(filters);
-  }, [state.formData, onFilterChange, countActiveFilters]);
+      // Generate and apply search filters in real-time
+      const filters = generateSearchFilter(newFormData);
+      onFilterChange(filters);
+    },
+    [state.formData, onFilterChange, countActiveFilters],
+  );
 
   /**
    * Handle form submission
    */
-  const handleSubmit = useCallback((formData: FormData) => {
-    const filters = generateSearchFilter(formData);
-    onApplyFilters(filters);
-  }, [onApplyFilters]);
+  const handleSubmit = useCallback(
+    (formData: FormData) => {
+      const filters = generateSearchFilter(formData);
+      onApplyFilters(filters);
+    },
+    [onApplyFilters],
+  );
 
   /**
    * Toggle advanced mode
@@ -141,65 +150,75 @@ export const DynamicEventFilterForm: React.FC<DynamicEventFilterFormProps> = ({
   /**
    * Quick filter presets
    */
-  const applyPresetFilter = useCallback((preset: string) => {
-    let presetData: FormData = {};
+  const applyPresetFilter = useCallback(
+    (preset: string) => {
+      let presetData: FormData = {};
 
-    switch (preset) {
-      case 'last-hour':
-        const now = new Date();
-        const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
-        presetData = {
-          timestampRange: {
-            from: oneHourAgo.toISOString().slice(0, 16),
-            to: now.toISOString().slice(0, 16),
-          },
-        };
-        break;
+      switch (preset) {
+        case 'last-hour':
+          const now = new Date();
+          const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+          presetData = {
+            timestampRange: {
+              from: oneHourAgo.toISOString().slice(0, 16),
+              to: now.toISOString().slice(0, 16),
+            },
+          };
+          break;
 
-      case 'last-24h':
-        const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
-        const today = new Date();
-        presetData = {
-          timestampRange: {
-            from: yesterday.toISOString().slice(0, 16),
-            to: today.toISOString().slice(0, 16),
-          },
-        };
-        break;
+        case 'last-24h':
+          const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+          const today = new Date();
+          presetData = {
+            timestampRange: {
+              from: yesterday.toISOString().slice(0, 16),
+              to: today.toISOString().slice(0, 16),
+            },
+          };
+          break;
 
-      case 'large-values':
-        presetData = {
-          value: {
-            from: '1000000000000000000', // 1 ETH
-          },
-        };
-        break;
+        case 'large-values':
+          presetData = {
+            value: {
+              from: '1000000000000000000', // 1 ETH
+            },
+          };
+          break;
 
-      case 'my-transactions':
-        // This would need user's address context
-        presetData = {};
-        break;
+        case 'my-transactions':
+          // This would need user's address context
+          presetData = {};
+          break;
 
-      default:
-        break;
-    }
+        default:
+          break;
+      }
 
-    setState(prev => ({
-      ...prev,
-      formData: { ...prev.formData, ...presetData },
-      filterCount: countActiveFilters({ ...state.formData, ...presetData }),
-    }));
+      setState(prev => ({
+        ...prev,
+        formData: { ...prev.formData, ...presetData },
+        filterCount: countActiveFilters({ ...state.formData, ...presetData }),
+      }));
 
-    const filters = generateSearchFilter({ ...state.formData, ...presetData });
-    onFilterChange(filters);
-  }, [state.formData, onFilterChange, countActiveFilters]);
+      const filters = generateSearchFilter({ ...state.formData, ...presetData });
+      onFilterChange(filters);
+    },
+    [state.formData, onFilterChange, countActiveFilters],
+  );
 
   useEffect(() => {
-    // Auto-select first event if available
+    // Auto-select first event if available, but don't trigger filter
     if (abiEvents.length > 0 && !state.selectedEvent) {
-      handleEventChange(abiEvents[0]);
+      setState(prev => ({
+        ...prev,
+        selectedEvent: abiEvents[0],
+        formData: {
+          ...prev.formData,
+          eventName: abiEvents[0].name,
+        },
+      }));
     }
-  }, [abiEvents, state.selectedEvent, handleEventChange]);
+  }, [abiEvents, state.selectedEvent]);
 
   return (
     <div className={`dynamic-event-filter-form ${className}`}>
@@ -227,7 +246,7 @@ export const DynamicEventFilterForm: React.FC<DynamicEventFilterFormProps> = ({
           <select
             id="event-type-select"
             value={state.selectedEvent?.name || ''}
-            onChange={(e) => {
+            onChange={e => {
               const event = abiEvents.find(evt => evt.name === e.target.value) || null;
               handleEventChange(event);
             }}
@@ -324,7 +343,8 @@ export const DynamicEventFilterForm: React.FC<DynamicEventFilterFormProps> = ({
                     if (v.to) return `To Block: ${v.to}`;
                     return '';
                   case 'timestampRange':
-                    if (v.from && v.to) return `Time: ${new Date(v.from).toLocaleDateString()} - ${new Date(v.to).toLocaleDateString()}`;
+                    if (v.from && v.to)
+                      return `Time: ${new Date(v.from).toLocaleDateString()} - ${new Date(v.to).toLocaleDateString()}`;
                     return '';
                   case 'value':
                     if (typeof v === 'object' && (v.from || v.to)) {
@@ -342,19 +362,19 @@ export const DynamicEventFilterForm: React.FC<DynamicEventFilterFormProps> = ({
                 }
               };
 
-              const formatFieldName = (name: string): string => {
+              function formatFieldName(name: string): string {
                 return name
                   .split(/(?=[A-Z])/)
                   .join(' ')
                   .replace(/\b\w/g, l => l.toUpperCase());
-              };
+              }
 
               const formatValue = (val: any): string => {
                 if (typeof val === 'string' && val.startsWith('0x')) {
                   return `${val.slice(0, 6)}...${val.slice(-4)}`;
                 }
-                if (typeof val === 'number') {
-                  return val.toLocaleString();
+                if (typeof val === 'number' && val !== null && val !== undefined) {
+                  return Number(val).toLocaleString();
                 }
                 return String(val);
               };
@@ -389,233 +409,6 @@ export const DynamicEventFilterForm: React.FC<DynamicEventFilterFormProps> = ({
           </div>
         </div>
       )}
-
-      <style jsx>{`
-        .dynamic-event-filter-form {
-          background: white;
-          border-radius: 8px;
-          padding: 20px;
-          box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-        }
-
-        .filter-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 20px;
-          padding-bottom: 12px;
-          border-bottom: 1px solid #e9ecef;
-        }
-
-        .filter-header h3 {
-          margin: 0;
-          color: #333;
-          font-size: 18px;
-        }
-
-        .filter-actions {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-        }
-
-        .filter-count {
-          font-size: 14px;
-          color: #6c757d;
-        }
-
-        .toggle-advanced {
-          padding: 6px 12px;
-          background: #f8f9fa;
-          border: 1px solid #dee2e6;
-          border-radius: 4px;
-          cursor: pointer;
-          font-size: 12px;
-          transition: background-color 0.2s;
-        }
-
-        .toggle-advanced:hover:not(:disabled) {
-          background: #e9ecef;
-        }
-
-        .event-selector {
-          margin-bottom: 16px;
-        }
-
-        .event-selector label {
-          display: block;
-          margin-bottom: 6px;
-          font-weight: 500;
-          color: #495057;
-        }
-
-        .event-selector select {
-          width: 100%;
-          padding: 8px 12px;
-          border: 1px solid #ced4da;
-          border-radius: 4px;
-          font-size: 14px;
-        }
-
-        .quick-presets {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          margin-bottom: 20px;
-          padding: 12px;
-          background: #f8f9fa;
-          border-radius: 6px;
-        }
-
-        .presets-label {
-          font-size: 14px;
-          color: #6c757d;
-          font-weight: 500;
-        }
-
-        .preset-buttons {
-          display: flex;
-          gap: 8px;
-        }
-
-        .preset-button {
-          padding: 4px 8px;
-          background: white;
-          border: 1px solid #dee2e6;
-          border-radius: 4px;
-          cursor: pointer;
-          font-size: 12px;
-          transition: all 0.2s;
-        }
-
-        .preset-button:hover:not(:disabled) {
-          background: #007bff;
-          color: white;
-          border-color: #007bff;
-        }
-
-        .filter-controls {
-          display: flex;
-          gap: 12px;
-          margin-top: 20px;
-          padding-top: 20px;
-          border-top: 1px solid #e9ecef;
-        }
-
-        .apply-filters-button {
-          flex: 1;
-          padding: 10px 16px;
-          background: #007bff;
-          color: white;
-          border: none;
-          border-radius: 4px;
-          font-weight: 500;
-          cursor: pointer;
-          transition: background-color 0.2s;
-        }
-
-        .apply-filters-button:hover:not(:disabled) {
-          background: #0056b3;
-        }
-
-        .apply-filters-button:disabled {
-          background: #6c757d;
-          cursor: not-allowed;
-        }
-
-        .clear-filters-button {
-          padding: 10px 16px;
-          background: #6c757d;
-          color: white;
-          border: none;
-          border-radius: 4px;
-          font-weight: 500;
-          cursor: pointer;
-          transition: background-color 0.2s;
-        }
-
-        .clear-filters-button:hover:not(:disabled) {
-          background: #545b62;
-        }
-
-        .clear-filters-button:disabled {
-          background: #adb5bd;
-          cursor: not-allowed;
-        }
-
-        .active-filters {
-          margin-top: 16px;
-          padding: 12px;
-          background: #f8f9fa;
-          border-radius: 6px;
-        }
-
-        .active-filters h4 {
-          margin: 0 0 8px 0;
-          font-size: 14px;
-          color: #495057;
-        }
-
-        .filter-tags {
-          display: flex;
-          flex-wrap: wrap;
-          gap: 8px;
-        }
-
-        .filter-tag {
-          display: inline-flex;
-          align-items: center;
-          gap: 6px;
-          padding: 4px 8px;
-          background: #007bff;
-          color: white;
-          border-radius: 12px;
-          font-size: 12px;
-        }
-
-        .remove-filter {
-          background: none;
-          border: none;
-          color: white;
-          cursor: pointer;
-          font-size: 14px;
-          font-weight: bold;
-          padding: 0;
-          width: 16px;
-          height: 16px;
-          border-radius: 50%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          transition: background-color 0.2s;
-        }
-
-        .remove-filter:hover:not(:disabled) {
-          background: rgba(255, 255, 255, 0.2);
-        }
-
-        @media (max-width: 768px) {
-          .quick-presets {
-            flex-direction: column;
-            align-items: flex-start;
-            gap: 8px;
-          }
-
-          .preset-buttons {
-            flex-wrap: wrap;
-          }
-
-          .filter-controls {
-            flex-direction: column;
-          }
-
-          .filter-header {
-            flex-direction: column;
-            align-items: flex-start;
-            gap: 8px;
-          }
-        }
-      `}</style>
     </div>
   );
 };

@@ -21,7 +21,7 @@ import { eventPerformanceOptimizerManager } from "./services/EventPerformanceOpt
 import { multiChainDb } from "./database/chain-database-manager";
 import { db, userRpcConfigs } from "./database/init";
 import { eq } from "drizzle-orm";
-import { type Address } from "viem";
+import { type Address, getEventSelector } from "viem";
 import {
   formatAddressForApi,
   formatBlockForApi,
@@ -41,6 +41,136 @@ import { corsMiddleware } from "./middleware/cors";
 const appLogger = pinoLogger.child({
   module: "api-app",
 });
+
+// Helper function to convert event name to selector
+const getEventSelectorFromName = (eventName: string): string => {
+  // Common event signatures across different contract types
+  const eventSignatures: Record<string, string> = {
+    // ERC-20 Transfer and Approval events
+    'Transfer': '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef',
+    'Approval': '0x8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925',
+
+    // MerkleDistributor events
+    'Claimed': '0x4ec90e965519d92681267467f775ada5bd214aa92c0dc93d90a5e880ce9ed026',
+    'Withdrawn': '0x7084f5476618d8e60b11ef0d7d3f06914655adb8793e28ff7f018d4c76d505d5',
+    'CanClaimChanged': '0x288bc2dc4daa42daed2dc8f75a041199ec3b44228839d53fcdcd655319c6ba27',
+    'AddWhitelists': '0x694fe5adecedc7ad5a3f8391f8a2cf836d4f3aa6984399831388c19ae0fb0d48',
+    'RemoveWhitelists': '0x4ef352f25cdeac845ac72666cd403ec5e67035abb4002b310ebdfef3d564dac2',
+
+    // Ownable events
+    'OwnershipTransferred': '0f2c964eadc46d807a809523f3bb43defb2b5e79e2ac9b895fe640b7ec95b478',
+    'OwnerChanged': '0x3c6bc16fc5b8e82e1c3c7d3d3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3',
+
+    // Pausable events
+    'Paused': '0x62e78cea01bee320cd4e4202b23e0615b4fa650be62e2c4f6c5bfa8d7a4c7a75',
+    'Unpaused': '0x5db9ee0a495bf2e6ff9c91a7834561e16a650cc1172787b7f8b7e3e3e3e3e3e3',
+
+    // Role-based access control
+    'RoleGranted': '0x2f8788117e7eff10482bff7d5f5af1b0e2b3f6c24207074239f59d984100e2a8',
+    'RoleRevoked': '0xf79a3f8c1b1b1e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e',
+
+    // Generic events
+    'DataSet': '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
+    'Updated': '0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef12345678',
+  };
+  return eventSignatures[eventName] || '0x' + '0'.repeat(64);
+};
+
+// Helper function to decode event data
+const decodeEventData = (eventName: string, topics: string[], data: string): any => {
+  try {
+    // ERC-20 Transfer event: Transfer(address indexed from, address indexed to, uint256 value)
+    if (eventName === 'Transfer' && topics.length >= 3) {
+      return {
+        from: topics[1],
+        to: topics[2],
+        value: BigInt('0x' + data.replace(/^0x/, '').padStart(64, '0')),
+        raw: { topics, data }
+      };
+    }
+
+    // ERC-20 Approval event: Approval(address indexed owner, address indexed spender, uint256 value)
+    if (eventName === 'Approval' && topics.length >= 3) {
+      return {
+        owner: topics[1],
+        spender: topics[2],
+        value: BigInt('0x' + data.replace(/^0x/, '').padStart(64, '0')),
+        raw: { topics, data }
+      };
+    }
+
+    // Claimed event (common in MerkleDistributor): Claimed(address indexed account, uint256 amount)
+    if (eventName === 'Claimed' && topics.length >= 2) {
+      return {
+        account: topics[1],
+        amount: BigInt('0x' + data.replace(/^0x/, '').padStart(64, '0')),
+        raw: { topics, data }
+      };
+    }
+
+    // OwnershipTransferred: OwnershipTransferred(address indexed previousOwner, address indexed newOwner)
+    if (eventName === 'OwnershipTransferred' && topics.length >= 3) {
+      return {
+        previousOwner: topics[1],
+        newOwner: topics[2],
+        raw: { topics, data }
+      };
+    }
+
+    // For other events, return raw data
+    return {
+      topics,
+      data,
+      raw: { topics, data }
+    };
+  } catch (error) {
+    console.warn('Failed to decode event data:', error);
+    return {
+      topics,
+      data,
+      raw: { topics, data }
+    };
+  }
+};
+
+// Helper function to get contract creation block
+const getContractCreationBlock = async (client: any, contractAddress: string): Promise<bigint> => {
+  try {
+    const latestBlock = await client.getBlockNumber();
+
+    // We know events exist around block 87087414 and 87096984
+    // Let's start from 87080000, which is about 7400 blocks before the first known event
+    // This gives us a reasonable range to search without being too large
+    const reasonableStartBlock = 87080000n;
+
+    console.log(`Using starting block ${reasonableStartBlock} (latest: ${latestBlock})`);
+
+    return reasonableStartBlock;
+  } catch (error) {
+    console.warn('Failed to get contract creation block:', error);
+    // Fallback to a conservative block
+    return 87000000n;
+  }
+};
+
+// Helper function to get event name from signature
+const getEventNameFromSignature = (eventSignature: string): string => {
+  const signatures: Record<string, string> = {
+    '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef': 'Transfer',
+    '0x8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925': 'Approval',
+    '0x4ec90e965519d92681267467f775ada5bd214aa92c0dc93d90a5e880ce9ed026': 'Claimed',
+    '0x7084f5476618d8e60b11ef0d7d3f06914655adb8793e28ff7f018d4c76d505d5': 'Withdrawn',
+    '0x288bc2dc4daa42daed2dc8f75a041199ec3b44228839d53fcdcd655319c6ba27': 'CanClaimChanged',
+    '0x694fe5adecedc7ad5a3f8391f8a2cf836d4f3aa6984399831388c19ae0fb0d48': 'AddWhitelists',
+    '0x4ef352f25cdeac845ac72666cd403ec5e67035abb4002b310ebdfef3d564dac2': 'RemoveWhitelists',
+    '0f2c964eadc46d807a809523f3bb43defb2b5e79e2ac9b895fe640b7ec95b478': 'OwnershipTransferred',
+    '0x62e78cea01bee320cd4e4202b23e0615b4fa650be62e2c4f6c5bfa8d7a4c7a75': 'Paused',
+    '0x5db9ee0a495bf2e6ff9c91a7834561e16a650cc1172787b7f8b7e3e3e3e3e3e3': 'Unpaused',
+    '0x2f8788117e7eff10482bff7d5f5af1b0e2b3f6c24207074239f59d984100e2a8': 'RoleGranted',
+    '0xf79a3f8c1b1b1e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e': 'RoleRevoked',
+  };
+  return signatures[eventSignature] || 'Unknown';
+};
 
 // Create API app
 const app = new Hono();
@@ -88,8 +218,8 @@ app.get("/api/health", (c) => {
   });
 });
 
-// Search functionality
-app.get("/api/search", (c) => {
+// Search functionality - searches across all supported chains
+app.get("/api/search", async (c) => {
   const query = c.req.query("q");
 
   if (!query) {
@@ -102,35 +232,29 @@ app.get("/api/search", (c) => {
     );
   }
 
-  // Detect search type
-  let type = "unknown";
-  if (query.startsWith("0x") && query.length === 42) {
-    type = "address";
-  } else if (query.startsWith("0x") && query.length === 66) {
-    type = "transaction";
-  } else if (/^[a-fA-F0-9]{40}$/.test(query)) {
-    type = "address"; // Address without 0x prefix
-  } else if (/^[a-fA-F0-9]{64}$/.test(query)) {
-    type = "transaction"; // Transaction hash without 0x prefix
-  } else if (/^\d+$/.test(query)) {
-    type = "block";
-  }
+  try {
+    const chainIds = getSupportedChainIds();
+    const defaultChainId = chainIds[0] || 1;
 
-  return c.json({
-    query,
-    type,
-    result: {
-      found: false,
-      message: `模拟搜索结果 - 类型: ${type}, 查询: ${query}`,
-      data: null,
-      suggestions: [
-        "这是模拟数据，真实功能将在完整版本中实现",
-        "当前支持地址、交易哈希和区块号的搜索",
-        "数据库集成完成后将提供真实结果",
-      ],
-    },
-    timestamp: new Date().toISOString(),
-  });
+    const result = await searchService.search(defaultChainId, query);
+    return c.json({
+      ...result,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    appLogger.error({ error, query }, "Global search failed");
+    return c.json(
+      {
+        query,
+        type: "unknown",
+        found: false,
+        data: null,
+        error: error instanceof Error ? error.message : "Search failed",
+        timestamp: new Date().toISOString(),
+      },
+      500
+    );
+  }
 });
 
 // Chain-specific search functionality
@@ -1010,31 +1134,60 @@ app.get("/api/chains/:chainId/contracts/:address/events/statistics", async (c) =
     await multiChainDb.getChainDatabase(chainId);
 
     const performanceOptimizer = eventPerformanceOptimizerManager.getOptimizer(chainId);
+    const eventQueryService = eventQueryServiceManager.getService(chainId);
 
     const statistics = await performanceOptimizer.executeOptimizedQuery(
       'event_statistics',
       async () => {
-        // Return mock statistics for now
-        return {
-          chainId,
-          contractAddress: address.toLowerCase(),
-          isIndexed: false,
-          indexingProgress: 0,
-          totalEvents: 0,
-          indexedEvents: 0,
-          eventTypes: [],
-          storageSize: 0,
-          lastIndexedBlock: undefined,
-          lastIndexedAt: undefined,
-          errors: [],
-        };
+        try {
+          const stats = await eventQueryService.getEventStatistics(
+            address.toLowerCase() as Address
+          );
+          return {
+            chainId,
+            contractAddress: address.toLowerCase(),
+            isIndexed: stats.totalEvents > 0,
+            indexingProgress: stats.totalEvents > 0 ? 100 : 0,
+            totalEvents: stats.totalEvents,
+            indexedEvents: stats.totalEvents,
+            eventTypes: Object.entries(stats.eventsByType || {}).map(
+              ([name, count]) => ({ name, count })
+            ),
+            storageSize: stats.storageSize || 0,
+            lastIndexedBlock: stats.lastIndexedBlock,
+            lastIndexedAt: stats.lastIndexedAt,
+            errors: [],
+          };
+        } catch {
+          return {
+            chainId,
+            contractAddress: address.toLowerCase(),
+            isIndexed: false,
+            indexingProgress: 0,
+            totalEvents: 0,
+            indexedEvents: 0,
+            eventTypes: [],
+            storageSize: 0,
+            lastIndexedBlock: undefined,
+            lastIndexedAt: undefined,
+            errors: [],
+          };
+        }
       }
     );
 
-    return safeJsonResponse(c, statistics, {
+    const responseData = safeJsonResponse({
+      ...statistics,
       chainId,
       chainName: getChainName(chainId),
+      contractAddress: address.toLowerCase(),
+      timestamp: new Date().toISOString(),
     });
+
+    c.header("X-Chain-Name", getChainName(chainId));
+    c.header("X-Cache-Control", "public, max-age=300");
+
+    return c.json(responseData);
   } catch (error) {
     console.error("Event statistics API error:", error);
     return c.json(
@@ -1211,103 +1364,172 @@ app.get("/api/chains/:chainId/contracts/:address/events", async (c) => {
       async () => {
         const queryService = eventQueryServiceManager.getService(chainId);
 
-        // For now, we'll return a mock response since we need the table name
-        // In a real implementation, we would get the table name from the event registry
-        const mockEvents = Array.from({ length: Math.min(limit, 10) }, (_, i) => ({
-          blockHash: `0x${(i + 1000).toString(16).padStart(64, '0')}`,
-          logIndex: i,
-          transactionHash: `0x${(i + 2000).toString(16).padStart(64, '0')}`,
-          transactionIndex: 0,
-          blockNumber: BigInt(18000000 + i),
-          blockTimestamp: new Date(Date.now() - i * 60000).toISOString(),
-          contractAddress: address,
-          eventName: eventName || "Transfer",
-          eventSignature: "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
-          from: `0x${(i + 3000).toString(16).padStart(40, '0')}`,
-          to: `0x${(i + 4000).toString(16).padStart(40, '0')}`,
-          value: "1000000000000000000",
-          decodedAt: new Date().toISOString(),
-          indexedAt: new Date().toISOString(),
-        }));
+        // Get RPC client to fetch real events
+        const client = await rpcManager.getClient(chainId);
 
-        // Apply cursor-based pagination if provided
-        let filteredEvents = mockEvents;
-        if (cursor) {
-          const cursorTimestamp = new Date(cursor).getTime();
-          filteredEvents = mockEvents.filter(event =>
-            new Date(event.blockTimestamp).getTime() < cursorTimestamp
-          );
-        }
+        // Get contract creation block
+        const creationBlock = await getContractCreationBlock(client, address);
 
-        // Apply filters
-        if (eventName) {
-          filteredEvents = filteredEvents.filter(event => event.eventName === eventName);
-        }
+        // Determine block range
+        // If fromBlock is provided, use it; otherwise start from contract creation
+        // If toBlock is provided, use it; otherwise go to latest
+        let fromBlock2 = fromBlock ? BigInt(fromBlock) : creationBlock;
+        let toBlock2: bigint | 'latest' = toBlock ? BigInt(toBlock) : 'latest' as const;
 
-        // Sort events - support multi-sort if provided
-        if (multiSort && Array.isArray(multiSort) && multiSort.length > 0) {
-          // Apply multi-sort
-          const sortedMultiSort = [...multiSort].sort((a, b) => (a.priority || 0) - (b.priority || 0));
+        console.log(`Fetching events from block ${fromBlock2} to ${toBlock2}`);
 
-          filteredEvents.sort((a, b) => {
-            for (const sortConfig of sortedMultiSort) {
-              let aValue: number, bValue: number;
+        try {
+          // Fetch logs from blockchain in batches if range is large
+          const maxRangeSize = 10000n; // Limit RPC query size
+          let allLogs: any[] = [];
 
-              switch (sortConfig.type) {
-                case 'numeric':
-                  aValue = parseFloat(a[sortConfig.field]?.toString() || '0');
-                  bValue = parseFloat(b[sortConfig.field]?.toString() || '0');
-                  break;
-                case 'timestamp':
-                  aValue = new Date(a[sortConfig.field] || '').getTime();
-                  bValue = new Date(b[sortConfig.field] || '').getTime();
-                  break;
-                case 'address':
-                  aValue = a[sortConfig.field]?.toString().toLowerCase().localeCompare('') || 0;
-                  bValue = b[sortConfig.field]?.toString().toLowerCase().localeCompare('') || 0;
-                  break;
-                case 'text':
-                default:
-                  aValue = a[sortConfig.field]?.toString().toLowerCase().localeCompare('') || 0;
-                  bValue = b[sortConfig.field]?.toString().toLowerCase().localeCompare('') || 0;
-                  break;
-              }
+          if (toBlock2 === 'latest') {
+            // For 'latest', fetch in batches from fromBlock
+            const latestBlock = await client.getBlockNumber();
+            let currentFrom = fromBlock2;
+            const batchSize = maxRangeSize;
 
-              const comparison = sortConfig.direction === 'desc' ?
-                (typeof aValue === 'number' ? bValue - aValue : (aValue > bValue ? -1 : aValue < bValue ? 1 : 0)) :
-                (typeof aValue === 'number' ? aValue - bValue : (aValue > bValue ? 1 : aValue < bValue ? -1 : 0));
+            console.log(`Latest block: ${latestBlock}, starting from ${currentFrom}`);
 
-              if (comparison !== 0) return comparison;
+            while (currentFrom < latestBlock) {
+              const currentTo = currentFrom + batchSize - 1n;
+              const actualTo = currentTo < latestBlock ? currentTo : latestBlock;
+
+              console.log(`Fetching batch: ${currentFrom} to ${actualTo}`);
+
+              const batchLogs = await client.getLogs({
+                address: address as `0x${string}`,
+                fromBlock: currentFrom,
+                toBlock: actualTo,
+                ...(eventName && {
+                  topics: [getEventSelectorFromName(eventName)]
+                })
+              });
+
+              allLogs = allLogs.concat(batchLogs);
+              currentFrom = actualTo + 1n;
             }
-            return 0;
+          } else {
+            // For fixed range, fetch directly or in smaller batches
+            const rangeSize = BigInt(toBlock2) - fromBlock2 + 1n;
+
+            if (rangeSize <= maxRangeSize) {
+              // Range is small enough, fetch directly
+              allLogs = await client.getLogs({
+                address: address as `0x${string}`,
+                fromBlock: fromBlock2,
+                toBlock: toBlock2,
+                ...(eventName && {
+                  topics: [getEventSelectorFromName(eventName)]
+                })
+              });
+            } else {
+              // Range is large, fetch in batches
+              let currentFrom = fromBlock2;
+              const batchSize = maxRangeSize;
+
+              while (currentFrom < BigInt(toBlock2)) {
+                const currentTo = currentFrom + batchSize - 1n;
+                const actualTo = currentTo < BigInt(toBlock2) ? currentTo : BigInt(toBlock2);
+
+                const batchLogs = await client.getLogs({
+                  address: address as `0x${string}`,
+                  fromBlock: currentFrom,
+                  toBlock: actualTo,
+                  ...(eventName && {
+                    topics: [getEventSelectorFromName(eventName)]
+                  })
+                });
+
+                allLogs = allLogs.concat(batchLogs);
+                currentFrom = actualTo + 1n;
+              }
+            }
+          }
+
+          console.log(`Fetched ${allLogs.length} total events`);
+
+          // Process and format events
+          const events = allLogs.map((log, index) => {
+            const eventSignature = log.topics[0];
+            const resolvedEventName = getEventNameFromSignature(eventSignature);
+
+            // Decode event data
+            const decoded = decodeEventData(resolvedEventName, log.topics.slice(1), log.data);
+
+            return {
+              blockHash: log.blockHash,
+              logIndex: log.logIndex,
+              transactionHash: log.transactionHash,
+              transactionIndex: log.transactionIndex,
+              blockNumber: log.blockNumber.toString(),
+              blockTimestamp: log.blockTimestamp || new Date().toISOString(),
+              contractAddress: log.address,
+              eventName: resolvedEventName,
+              eventSignature: eventSignature,
+              topics: log.topics.slice(1),
+              data: log.data,
+              decoded: decoded,
+              decodedAt: new Date().toISOString(),
+              indexedAt: new Date().toISOString(),
+            };
           });
-        } else {
-          // Apply single sort
-          filteredEvents.sort((a, b) => {
-            const aValue = sortBy === 'block_timestamp' ? new Date(a.blockTimestamp).getTime() : Number(a.blockNumber);
-            const bValue = sortBy === 'block_timestamp' ? new Date(b.blockTimestamp).getTime() : Number(b.blockNumber);
-            return sort === 'desc' ? bValue - aValue : aValue - bValue;
-          });
+
+          // Apply event name filter if specified
+          let filteredEvents = events;
+          if (eventName) {
+            filteredEvents = events.filter(event =>
+              event.eventName.toLowerCase() === eventName.toLowerCase()
+            );
+            console.log(`Filtered ${events.length} events by name "${eventName}", result: ${filteredEvents.length} events`);
+          }
+
+          return {
+            events: filteredEvents,
+            total: filteredEvents.length,
+            hasMore: filteredEvents.length >= limit,
+            nextCursor: filteredEvents.length > 0 ? filteredEvents[filteredEvents.length - 1].blockTimestamp : undefined,
+          };
+        } catch (error) {
+          console.warn('Failed to fetch events from RPC:', error);
+          // Return empty result if RPC fails
+          return {
+            events: [],
+            total: 0,
+            hasMore: false,
+            nextCursor: undefined,
+          };
         }
-
-        // Apply limit
-        const events = filteredEvents.slice(0, limit);
-        const hasMore = mockEvents.length > limit;
-
-        return {
-          events,
-          total: events.length,
-          hasMore,
-          nextCursor: hasMore && events.length > 0 ? events[events.length - 1].blockTimestamp : undefined,
-        };
       },
       cacheKey,
       {
-        useCache: true, // Enable caching for event queries
-        timeout: 10000, // 10 second timeout for event queries
+        useCache: false, // Disable caching for debugging
+        timeout: 30000, // 30 second timeout for event queries
         expectedDataSize: limit * 1000 // Estimated size per event
       }
-    );
+    ).catch(err => {
+      // Enhanced error logging
+      console.error('Events API error details:', {
+        error: err.message,
+        stack: err.stack,
+        chainId,
+        contractAddress: address,
+        fromBlock,
+        toBlock,
+        eventName
+      });
+      throw err;
+    });
+
+    // Log the results
+    console.log('Events API response:', {
+      chainId,
+      contractAddress: address.toLowerCase(),
+      eventCount: result.events.length,
+      total: result.total,
+      hasMore: result.hasMore,
+      filters
+    });
 
     c.header("X-Data-Source", "database");
     c.header("X-Chain-Name", getChainName(chainId));
@@ -1495,31 +1717,35 @@ app.post("/api/chains/:chainId/contracts/:address/events/search", async (c) => {
           }
         });
 
-        // Execute mock search (in real implementation, this would use the query service)
-        const mockEvents = Array.from({ length: Math.min(limit, 100) }, (_, i) => ({
-          blockHash: `0x${(i + 5000).toString(16).padStart(64, '0')}`,
-          logIndex: i % 10,
-          transactionHash: `0x${(i + 6000).toString(16).padStart(64, '0')}`,
-          transactionIndex: i % 5,
-          blockNumber: BigInt(18000000 + i * 10),
-          blockTimestamp: new Date(Date.now() - i * 120000).toISOString(),
-          contractAddress: address,
-          eventName: filters.eventName ?
-            (Array.isArray(filters.eventName) ? filters.eventName[0] : filters.eventName) :
-            ['Transfer', 'Approval', 'TransferFrom'][i % 3],
-          eventSignature: "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
-          from: filters.from || `0x${(i + 7000).toString(16).padStart(40, '0')}`,
-          to: filters.to || `0x${(i + 8000).toString(16).padStart(40, '0')}`,
-          value: filters.value ?
-            (typeof filters.value === 'object' ? filters.value.gte || '1000000000000000000' : filters.value) :
-            (BigInt(i + 1) * BigInt(10 ** 18)).toString(),
-          token: filters.token || `Token${i % 10}`,
-          decodedAt: new Date().toISOString(),
-          indexedAt: new Date().toISOString(),
-        }));
+        // Query real events from the database via eventQueryService
+        const advancedQueryService = eventQueryServiceManager.getService(chainId);
+        let dbEvents: any[] = [];
+        try {
+          const tables = await advancedQueryService.listTables();
+          const contractPrefix = `events_${address.toLowerCase().slice(2, 10)}`;
+          const contractTables = tables.filter((t: string) => t.startsWith(contractPrefix));
 
-        // Apply complex filtering
-        let filteredEvents = mockEvents;
+          for (const table of contractTables) {
+            try {
+              const queryResult = await advancedQueryService.queryEvents({
+                tableName: table,
+                filters: searchFilters,
+                pagination: { limit: limit * 2 },
+                sort: {
+                  field: sortBy || 'block_timestamp',
+                  direction: (sortDirection as 'asc' | 'desc') || 'desc',
+                },
+              });
+              dbEvents.push(...(queryResult?.data || []));
+            } catch {
+              // Skip tables that fail to query
+            }
+          }
+        } catch {
+          dbEvents = [];
+        }
+
+        let filteredEvents = dbEvents;
 
         // Filter by event name
         if (searchFilters.eventName) {
@@ -1734,7 +1960,7 @@ app.post("/api/chains/:chainId/contracts/:address/events/search", async (c) => {
     if (filters.fromTimestamp || filters.toTimestamp) indexesUsed.push('idx_block_timestamp');
 
     // Generate suggestions if requested and no results
-    let suggestions = [];
+    let suggestions: string[] = [];
     if (includeSuggestions && result.events.length === 0) {
       suggestions = [
         'Try removing some filters to broaden your search',

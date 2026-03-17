@@ -1,8 +1,10 @@
-import { useParams, useNavigate } from "react-router-dom";
+import { useState, useEffect, useCallback } from "react";
+import { useParams, useNavigate, Link } from "react-router-dom";
 import { css } from "@linaria/core";
 import { getChainInfo, getChainName, getChainSymbol } from "../config/chains";
 import TopNavigation from "../components/TopNavigation";
 import { useAddressData } from "../hooks/useAddressData";
+import { formatRelativeTime } from "@/utils/format";
 
 const pageStyles = css`
   max-width: 1200px;
@@ -107,6 +109,117 @@ const backButtonStyles = css`
   }
 `;
 
+const txTableStyles = css`
+  width: 100%;
+  border-collapse: collapse;
+
+  th {
+    background: #f8f9fa;
+    padding: 10px 12px;
+    text-align: left;
+    font-weight: 600;
+    font-size: 13px;
+    color: #666;
+    border-bottom: 1px solid #e1e5e9;
+  }
+
+  td {
+    padding: 10px 12px;
+    border-bottom: 1px solid #f0f0f0;
+    font-size: 13px;
+    color: #1a1a1a;
+  }
+
+  tr:last-child td {
+    border-bottom: none;
+  }
+
+  tr:hover td {
+    background: #f8f9fa;
+  }
+`;
+
+const txLinkStyles = css`
+  color: #4f46e5;
+  text-decoration: none;
+  font-family: "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas,
+    monospace;
+  font-size: 13px;
+
+  &:hover {
+    text-decoration: underline;
+  }
+`;
+
+const directionBadge = css`
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+
+  &.in {
+    background: #d1fae5;
+    color: #065f46;
+  }
+
+  &.out {
+    background: #fee2e2;
+    color: #991b1b;
+  }
+
+  &.self {
+    background: #e0e7ff;
+    color: #3730a3;
+  }
+`;
+
+const paginationStyles = css`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 16px;
+
+  .page-info {
+    color: #666;
+    font-size: 13px;
+  }
+
+  .page-buttons {
+    display: flex;
+    gap: 8px;
+  }
+
+  button {
+    padding: 4px 12px;
+    border: 1px solid #e1e5e9;
+    border-radius: 6px;
+    background: white;
+    color: #374151;
+    font-size: 13px;
+    cursor: pointer;
+
+    &:hover:not(:disabled) {
+      background: #f0f0f0;
+    }
+
+    &:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+  }
+`;
+
+type TxRecord = {
+  hash: string;
+  blockNumber: string;
+  fromAddress: string;
+  toAddress: string;
+  value: string;
+  status: number;
+  timestamp?: string;
+};
+
 export default function AddressPage() {
   const { chainId, address } = useParams<{
     chainId: string;
@@ -117,8 +230,52 @@ export default function AddressPage() {
   const currentChainId = parseInt(chainId || "1");
   const chainInfo = getChainInfo(currentChainId);
 
-  // 使用新的数据分离架构
   const addressData = useAddressData(currentChainId, address || "");
+
+  const [transactions, setTransactions] = useState<TxRecord[]>([]);
+  const [txLoading, setTxLoading] = useState(false);
+  const [txError, setTxError] = useState<string | null>(null);
+  const [txPage, setTxPage] = useState(1);
+  const [txTotalPages, setTxTotalPages] = useState(1);
+  const txLimit = 10;
+
+  const fetchTransactions = useCallback(async () => {
+    if (!address || !chainId) return;
+    try {
+      setTxLoading(true);
+      setTxError(null);
+      const response = await fetch(
+        `/api/chains/${currentChainId}/addresses/${address}/transactions?page=${txPage}&limit=${txLimit}`
+      );
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      const data = await response.json();
+      setTransactions(data.data || data.transactions || []);
+      if (data.pagination) {
+        setTxTotalPages(data.pagination.totalPages || 1);
+      }
+    } catch (err) {
+      setTxError(
+        err instanceof Error ? err.message : "Failed to fetch transactions"
+      );
+    } finally {
+      setTxLoading(false);
+    }
+  }, [currentChainId, address, txPage]);
+
+  useEffect(() => {
+    fetchTransactions();
+  }, [fetchTransactions]);
+
+  const getDirection = (tx: TxRecord) => {
+    const lowerAddr = address?.toLowerCase();
+    const from = tx.fromAddress?.toLowerCase();
+    const to = tx.toAddress?.toLowerCase();
+    if (from === lowerAddr && to === lowerAddr) return "self";
+    if (to === lowerAddr) return "in";
+    return "out";
+  };
 
   const formatBalance = (balance: string, symbol: string) => {
     try {
@@ -364,9 +521,131 @@ export default function AddressPage() {
 
             <div className={cardStyles}>
               <h2>Recent Transactions</h2>
-              <div style={{ color: "#666", fontStyle: "italic" }}>
-                Transaction history will be implemented in the next update.
-              </div>
+              {txLoading && (
+                <div style={{ color: "#666", textAlign: "center", padding: 20 }}>
+                  Loading transactions...
+                </div>
+              )}
+              {txError && (
+                <div style={{ color: "#c33", padding: "8px 0" }}>
+                  {txError}
+                </div>
+              )}
+              {!txLoading && !txError && transactions.length === 0 && (
+                <div style={{ color: "#666", textAlign: "center", padding: 20 }}>
+                  No transactions found
+                </div>
+              )}
+              {transactions.length > 0 && (
+                <>
+                  <table className={txTableStyles}>
+                    <thead>
+                      <tr>
+                        <th>Txn Hash</th>
+                        <th>Block</th>
+                        <th>Age</th>
+                        <th>Direction</th>
+                        <th>From</th>
+                        <th>To</th>
+                        <th>Value</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {transactions.map((tx) => {
+                        const dir = getDirection(tx);
+                        const symbol = getChainSymbol(currentChainId);
+                        const valueEth = (() => {
+                          try {
+                            const v = parseFloat(tx.value) / 1e18;
+                            if (v === 0) return `0 ${symbol}`;
+                            if (v < 0.0001) return `<0.0001 ${symbol}`;
+                            return `${v.toFixed(4)} ${symbol}`;
+                          } catch {
+                            return tx.value;
+                          }
+                        })();
+                        const fmtAddr = (a: string) =>
+                          a ? `${a.slice(0, 8)}...${a.slice(-6)}` : "N/A";
+                        const fmtHash = (h: string) =>
+                          h ? `${h.slice(0, 10)}...${h.slice(-8)}` : "";
+
+                        return (
+                          <tr key={tx.hash}>
+                            <td>
+                              <Link
+                                to={`/chain/${currentChainId}/tx/${tx.hash}`}
+                                className={txLinkStyles}
+                              >
+                                {fmtHash(tx.hash)}
+                              </Link>
+                            </td>
+                            <td>
+                              <Link
+                                to={`/chain/${currentChainId}/block/${tx.blockNumber}`}
+                                className={txLinkStyles}
+                              >
+                                {parseInt(tx.blockNumber).toLocaleString()}
+                              </Link>
+                            </td>
+                            <td style={{ fontSize: 12, color: "#666" }}>
+                              {tx.timestamp
+                                ? formatRelativeTime(tx.timestamp)
+                                : "N/A"}
+                            </td>
+                            <td>
+                              <span className={`${directionBadge} ${dir}`}>
+                                {dir === "in"
+                                  ? "IN"
+                                  : dir === "out"
+                                    ? "OUT"
+                                    : "SELF"}
+                              </span>
+                            </td>
+                            <td>
+                              <Link
+                                to={`/chain/${currentChainId}/address/${tx.fromAddress}`}
+                                className={txLinkStyles}
+                              >
+                                {fmtAddr(tx.fromAddress)}
+                              </Link>
+                            </td>
+                            <td>
+                              <Link
+                                to={`/chain/${currentChainId}/address/${tx.toAddress}`}
+                                className={txLinkStyles}
+                              >
+                                {fmtAddr(tx.toAddress)}
+                              </Link>
+                            </td>
+                            <td style={{ fontFamily: "monospace", fontSize: 13 }}>
+                              {valueEth}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                  <div className={paginationStyles}>
+                    <span className="page-info">
+                      Page {txPage} of {txTotalPages}
+                    </span>
+                    <div className="page-buttons">
+                      <button
+                        disabled={txPage <= 1}
+                        onClick={() => setTxPage((p) => Math.max(1, p - 1))}
+                      >
+                        Prev
+                      </button>
+                      <button
+                        disabled={txPage >= txTotalPages}
+                        onClick={() => setTxPage((p) => p + 1)}
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </>
         )}

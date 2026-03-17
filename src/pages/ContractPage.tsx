@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useLocation } from "react-router-dom";
 import { css } from "@linaria/core";
 import { getChainName, isChainSupported } from "@/config/chains";
 import {
@@ -283,6 +283,8 @@ export default function ContractPage() {
     address: string;
   }>();
   const navigate = useNavigate();
+  const location = useLocation();
+
   const [contractSource, setContractSource] = useState<ContractSource | null>(
     null
   );
@@ -297,7 +299,7 @@ export default function ContractPage() {
   const [showRpcConfig, setShowRpcConfig] = useState(false);
   const [activeTab, setActiveTab] = useState<
     "source" | "abi" | "functions" | "events" | "interact" | "implementation"
-  >("source");
+  >(location.pathname.endsWith('/events') ? "events" : "source");
   const [showImplementation, setShowImplementation] = useState(true); // 默认显示实现合约
 
   const currentChainId = parseInt(chainId || "1");
@@ -361,6 +363,13 @@ export default function ContractPage() {
     fetchContractData();
     fetchContractCreationInfo();
   }, [chainId, address]);
+
+  // 监听路由变化，自动更新选项卡
+  useEffect(() => {
+    if (location.pathname.endsWith('/events')) {
+      setActiveTab('events');
+    }
+  }, [location.pathname]);
 
   const fetchContractData = async () => {
     if (!chainId || !address) return;

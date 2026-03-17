@@ -37,7 +37,7 @@ export function SimpleSearch() {
       const response = await fetch(
         `/api/search?q=${encodeURIComponent(query)}`
       );
-      const result = await responseon();
+      const result = await response.json();
       setSearchResult(result);
     } catch (error) {
       setSearchResult({

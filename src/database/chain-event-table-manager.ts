@@ -352,15 +352,25 @@ export class ChainEventTableManager {
    * 获取合约的事件表列表
    */
   async getContractEventTables(contractAddress: string): Promise<string[]> {
-    const result = await this.chainDb.query(
-      `
-      SELECT table_name FROM event_table_registry
-      WHERE contract_address = ? AND is_active = TRUE
-    `,
-      [contractAddress],
-    );
+    try {
+      const result = await this.chainDb.query(
+        `
+        SELECT table_name FROM event_table_registry
+        WHERE contract_address = ? AND is_active = TRUE
+      `,
+        [contractAddress],
+      );
 
-    return result.map(row => row.table_name);
+      return result.map(row => row.table_name);
+    } catch (error) {
+      // If the table doesn't exist, return empty array
+      if (error instanceof Error && error.message.includes('does not exist')) {
+        console.log('event_table_registry table does not exist yet, returning empty list');
+        return [];
+      }
+      // For other errors, re-throw
+      throw error;
+    }
   }
 
   /**

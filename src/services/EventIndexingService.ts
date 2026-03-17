@@ -410,6 +410,28 @@ export class EventIndexingService {
       eventAbi.name
     );
 
+    // Fetch block timestamps for all unique blocks
+    const uniqueBlockNumbers = [...new Set(
+      logs.map((l) => l.blockNumber).filter((n): n is bigint => n != null)
+    )];
+    const blockTimestampMap = new Map<bigint, Date>();
+    try {
+      const client = await rpcManager.getClient(this.chainId);
+      const batchResults = await Promise.allSettled(
+        uniqueBlockNumbers.map(async (bn) => {
+          const block = await client.getBlock({ blockNumber: bn });
+          return { blockNumber: bn, timestamp: new Date(Number(block.timestamp) * 1000) };
+        })
+      );
+      for (const result of batchResults) {
+        if (result.status === "fulfilled") {
+          blockTimestampMap.set(result.value.blockNumber, result.value.timestamp);
+        }
+      }
+    } catch {
+      // If batch fetch fails, timestamps will fall back to current time
+    }
+
     const decodedEvents: any[] = [];
 
     for (const log of logs) {
@@ -421,13 +443,17 @@ export class EventIndexingService {
         });
 
         if (decodedLog) {
+          const blockTimestamp =
+            (log.blockNumber != null && blockTimestampMap.get(log.blockNumber)) ||
+            new Date();
+
           const decodedEvent = {
             blockHash: log.blockHash,
             logIndex: log.logIndex,
             transactionHash: log.transactionHash,
             transactionIndex: log.transactionIndex,
             blockNumber: log.blockNumber,
-            blockTimestamp: new Date(), // 需要从区块获取
+            blockTimestamp,
             contractAddress,
             eventName: eventAbi.name,
             eventSignature: getEventSelector(eventAbi),
@@ -440,7 +466,6 @@ export class EventIndexingService {
         }
       } catch (error) {
         console.warn(`Failed to decode event log:`, error);
-        // 继续处理其他日志
       }
     }
 

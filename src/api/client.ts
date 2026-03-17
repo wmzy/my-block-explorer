@@ -5,7 +5,7 @@ import type {
   AddressInfo,
   PaginationParams,
   ListResponse,
-} from "@/shared/types/index";
+} from "@/types/index";
 
 export class ApiError extends Error {
   constructor(
@@ -51,7 +51,7 @@ export class ApiClient {
       clearTimeout(timeoutId);
 
       if (!response.ok) {
-        const errorData = await responseon().catch(() => ({}));
+        const errorData = await response.json().catch(() => ({}));
         throw new ApiError(
           errorData.message || `HTTP ${response.status}`,
           response.status,
@@ -60,7 +60,7 @@ export class ApiClient {
         );
       }
 
-      const data = await responseon();
+      const data = await response.json();
       return { data, headers: response.headers };
     } catch (error) {
       clearTimeout(timeoutId);

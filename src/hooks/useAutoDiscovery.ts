@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { apiClient } from "@/client/api/client";
+import { apiClient } from "@/api/client";
 
 // 默认端口范围
 const DEFAULT_PORTS = [8201, 8202, 8203, 8204, 8205];

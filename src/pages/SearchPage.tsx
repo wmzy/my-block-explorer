@@ -10,7 +10,7 @@ import {
 import { Button } from "../components/ui/Button";
 import { Badge } from "../components/ui/Badge";
 import { apiClient } from "../api/client";
-import { detectSearchType, sanitizeInput } from "@/shared/utils/validation";
+import { detectSearchType, sanitizeInput } from "@/utils/validation";
 
 const searchContainer = css`
   max-width: 600px;
@@ -157,15 +157,15 @@ export function SearchPage() {
       // 如果是确定的结果，直接跳转
       if (searchResult.type === "address" && searchResult.data) {
         navigate(
-          `/chains/${searchResult.data.chainId}/addresses/${searchResult.data.address}`
+          `/chain/${searchResult.data.chainId}/address/${searchResult.data.address}`
         );
       } else if (searchResult.type === "transaction" && searchResult.data) {
         navigate(
-          `/chains/${searchResult.data.chainId}/transactions/${searchResult.data.hash}`
+          `/chain/${searchResult.data.chainId}/tx/${searchResult.data.hash}`
         );
       } else if (searchResult.type === "block" && searchResult.data) {
         navigate(
-          `/chains/${searchResult.data.chainId}/blocks/${searchResult.data.number}`
+          `/chain/${searchResult.data.chainId}/block/${searchResult.data.number}`
         );
       }
     } catch (err) {
@@ -186,11 +186,11 @@ export function SearchPage() {
       const searchResult = await apiClient.searchInChain(chainId, sanitized);
 
       if (searchResult.type === "address") {
-        navigate(`/chains/${chainId}/addresses/${sanitized}`);
+        navigate(`/chain/${chainId}/address/${sanitized}`);
       } else if (searchResult.type === "transaction") {
-        navigate(`/chains/${chainId}/transactions/${sanitized}`);
+        navigate(`/chain/${chainId}/tx/${sanitized}`);
       } else if (searchResult.type === "block") {
-        navigate(`/chains/${chainId}/blocks/${sanitized}`);
+        navigate(`/chain/${chainId}/block/${sanitized}`);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "搜索失败");

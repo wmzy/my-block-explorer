@@ -427,6 +427,8 @@ export interface EventStatistics {
   averageEventsPerBlock: number;
   uniqueAddresses: number;
   storageSize: number;
+  lastIndexedBlock?: number;
+  lastIndexedAt?: string;
 }
 
 // 事件数据验证器

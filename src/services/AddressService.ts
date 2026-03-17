@@ -52,15 +52,13 @@ export class AddressService {
 
       const client = await rpcManager.getClient(chainId);
 
-      // 检查是否为合约
-      let code: string;
+      let code: string | undefined;
       try {
         code = await client.getCode({ address });
       } catch (error) {
         console.warn(`Failed to get contract code for ${address}:`, error);
-        // RPC调用失败，但不应该假设是EOA，应该重试或抛出错误
         throw new Error(
-          `Failed to determine contract status for ${address}: ${error.message}`
+          `Failed to determine contract status for ${address}: ${error instanceof Error ? error.message : String(error)}`
         );
       }
       const isContract = Boolean(code && code !== "0x" && code.length > 2);
@@ -223,7 +221,31 @@ export class AddressService {
     }
   }
 
-  // 兼容性方法 - 获取完整地址信息（保持向后兼容）
+  async getAddressTransactions(
+    chainId: number,
+    address: Address,
+    limit = 20,
+    offset = 0
+  ): Promise<{ transactions: any[]; total: number; method: string }> {
+    try {
+      const client = await rpcManager.getClient(chainId);
+      const txCount = await client.getTransactionCount({ address });
+
+      return {
+        transactions: [],
+        total: Number(txCount),
+        method: "rpc",
+      };
+    } catch (error) {
+      console.warn(`Failed to get address transactions for ${address}:`, error);
+      return {
+        transactions: [],
+        total: 0,
+        method: "fallback",
+      };
+    }
+  }
+
   async getAddressInfo(chainId: number, address: Address) {
     const persistentData = await this.getPersistentAddressData(
       chainId,
