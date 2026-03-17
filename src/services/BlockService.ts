@@ -1,6 +1,7 @@
 import { PublicClient } from "viem";
 import { db, blocks } from "../database/init";
 import { eq, and, sql } from "drizzle-orm";
+import { multiChainDb } from "../database/chain-database-manager";
 import { rpcManager } from "./RpcManager";
 import { blockCache } from "../utils/cache";
 import {
@@ -97,8 +98,8 @@ export class BlockService {
     blockNumber: bigint
   ): Promise<Block | null> {
     try {
-      // 先从数据库获取
-      const cached = await db.query<any>(
+      const chainDb = await multiChainDb.getChainDatabase(chainId);
+      const cached = await chainDb.query<any>(
         `
         SELECT * FROM blocks 
         WHERE chain_id = ? AND number = ?
@@ -132,8 +133,8 @@ export class BlockService {
     blockHash: string
   ): Promise<Block | null> {
     try {
-      // 先从数据库获取
-      const cached = await db.query<any>(
+      const chainDb = await multiChainDb.getChainDatabase(chainId);
+      const cached = await chainDb.query<any>(
         `
         SELECT * FROM blocks 
         WHERE chain_id = ? AND hash = ?
@@ -168,7 +169,8 @@ export class BlockService {
     offset: number = 0
   ): Promise<{ blocks: Block[]; total: number }> {
     try {
-      const blockList = await db.query<any>(
+      const chainDb = await multiChainDb.getChainDatabase(chainId);
+      const blockList = await chainDb.query<any>(
         `
         SELECT * FROM blocks 
         WHERE chain_id = ? 
@@ -178,8 +180,7 @@ export class BlockService {
         [chainId, limit, offset]
       );
 
-      // 获取总数
-      const countResult = await db.query<{ count: number }>(
+      const countResult = await chainDb.query<{ count: number }>(
         `
         SELECT COUNT(*) as count FROM blocks WHERE chain_id = ?
       `,
@@ -215,16 +216,16 @@ export class BlockService {
     avgGasUsed: string | null;
   }> {
     try {
-      // 获取总区块数
-      const countResult = await db.query<{ count: number }>(
+      const chainDb = await multiChainDb.getChainDatabase(chainId);
+
+      const countResult = await chainDb.query<{ count: number }>(
         `
         SELECT COUNT(*) as count FROM blocks WHERE chain_id = ?
       `,
         [chainId]
       );
 
-      // 获取最新区块
-      const latestResult = await db.query<{ number: string }>(
+      const latestResult = await chainDb.query<{ number: string }>(
         `
         SELECT number FROM blocks 
         WHERE chain_id = ? 
@@ -234,8 +235,7 @@ export class BlockService {
         [chainId]
       );
 
-      // 获取最近100个区块用于计算统计信息
-      const recentBlocks = await db.query<{
+      const recentBlocks = await chainDb.query<{
         number: string;
         timestamp: string;
         gas_used: string;
@@ -297,12 +297,12 @@ export class BlockService {
 
   // 索引区块到数据库
   private async indexBlock(chainId: number, chainBlock: any): Promise<Block> {
+    const chainDb = await multiChainDb.getChainDatabase(chainId);
     const timestamp = chainBlock.timestamp
       ? new Date(Number(chainBlock.timestamp) * 1000).toISOString()
       : null;
 
-    // 使用参数化查询避免SQL注入
-    await db.query(
+    await chainDb.query(
       `
       INSERT OR REPLACE INTO blocks (
         chain_id, number, hash, parent_hash, timestamp, miner,
@@ -335,8 +335,7 @@ export class BlockService {
       ]
     );
 
-    // 返回插入的数据
-    const inserted = await db.query<any>(
+    const inserted = await chainDb.query<any>(
       `
       SELECT * FROM blocks 
       WHERE chain_id = ? AND number = ?
