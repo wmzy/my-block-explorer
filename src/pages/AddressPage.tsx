@@ -445,24 +445,17 @@ export default function AddressPage() {
                     </div>
                   )}
 
-                {/* 持久化数据 - 源代码链接 */}
-                {addressData.persistent?.isContract &&
-                  addressData.persistent.sourceCodeAvailable && (
+                {/* 持久化数据 - 合约详情链接 */}
+                {addressData.persistent?.isContract && (
                     <div className="info-item">
-                      <span className="label">Source Code</span>
+                      <span className="label">Contract</span>
                       <span className="value">
-                        <a
-                          href={`/chain/${currentChainId}/contract/${address}`}
-                          style={{ color: "#007bff", textDecoration: "none" }}
-                          onMouseOver={(e) =>
-                            (e.target.style.textDecoration = "underline")
-                          }
-                          onMouseOut={(e) =>
-                            (e.target.style.textDecoration = "none")
-                          }
+                        <Link
+                          to={`/chain/${currentChainId}/contract/${address}`}
+                          style={{ color: "#4f46e5", textDecoration: "none" }}
                         >
-                          View Source Code →
-                        </a>
+                          View Contract Details (ABI, Source, Events) →
+                        </Link>
                       </span>
                     </div>
                   )}

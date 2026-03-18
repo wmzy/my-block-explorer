@@ -692,14 +692,18 @@ export class ContractSourceService {
   // 获取合约源码（优先级：数据库 -> Sourcify -> 返回未验证状态）
   async getContractSource(
     chainId: number,
-    address: Address
+    address: Address,
+    options?: { skipCache?: boolean }
   ): Promise<ContractSource | null> {
     logger.info({ address, chainId }, "Getting contract source");
 
     try {
       // 1. 先从数据库查找缓存的合约信息
+      if (options?.skipCache) {
+        logger.info("Skipping cache due to refresh request");
+      }
       logger.info("Step 1: Checking database cache for contract source");
-      const cached = await this.getFromDatabase(chainId, address);
+      const cached = options?.skipCache ? null : await this.getFromDatabase(chainId, address);
       if (cached && this.isCacheValid(cached)) {
         logger.info({ address, verificationStatus: cached.verificationStatus, isProxy: cached.isProxy, lastChecked: cached.lastChecked }, "Found cached contract source");
 
@@ -841,97 +845,73 @@ export class ContractSourceService {
     }
   }
 
-  // 从 Sourcify 获取合约源码
+  // 从 Sourcify v2 API 获取合约源码
   private async fetchFromSourcify(
     chainId: number,
     address: Address
   ): Promise<ContractSource | null> {
     try {
-      const baseUrl = "https://sourcify.dev/server";
+      const baseUrl = "https://sourcify.dev/server/v2";
+      const contractUrl = `${baseUrl}/contract/${chainId}/${address}?fields=abi,sources,compilation`;
 
-      // 检查合约是否在 Sourcify 中验证
-      const checkUrl = `${baseUrl}/check-by-addresses?addresses=${address}&chainIds=${chainId}`;
-      const checkResponse = await fetch(checkUrl);
+      const response = await fetch(contractUrl);
 
-      if (!checkResponse.ok) {
-        return null;
-      }
-
-      const checkResult = await checkResponse.json();
-      if (!checkResult || checkResult.length === 0) {
-        return null;
-      }
-
-      const contractInfo = checkResult[0];
-      if (
-        contractInfo.status !== "perfect" &&
-        contractInfo.status !== "partial"
-      ) {
-        return null;
-      }
-
-      // 获取源码文件
-      const filesUrl = `${baseUrl}/files/any/${chainId}/${address}`;
-      const filesResponse = await fetch(filesUrl);
-
-      if (!filesResponse.ok) {
-        return null;
-      }
-
-      const files = await filesResponse.json();
-
-      // 查找主合约文件和 ABI
-      let sourceCode = "";
-      let abi = "[]";
-      let contractName = "";
-      let compilerVersion = "";
-
-      // 查找 metadata.json
-      const metadataFile = files.find((f: any) => f.name === "metadata.json");
-      if (metadataFile) {
-        try {
-          const metadata = JSON.parse(metadataFile.content);
-          abi = JSON.stringify(metadata.output?.abi || []);
-          compilerVersion = metadata.compiler?.version || "";
-
-          // 获取合约名称
-          if (metadata.settings?.compilationTarget) {
-            const target = Object.keys(metadata.settings.compilationTarget)[0];
-            contractName = metadata.settings.compilationTarget[target];
-          }
-        } catch (e) {
-          logger.warn({ err: e }, "Failed to parse metadata");
+      if (!response.ok) {
+        if (response.status === 404) {
+          logger.info({ address, chainId }, "Contract not found on Sourcify");
+          return null;
         }
+        logger.warn({ status: response.status }, "Sourcify v2 API error");
+        return null;
       }
 
-      // 查找 Solidity 源码文件
-      const solidityFiles = files.filter((f: any) => f.name.endsWith(".sol"));
-      if (solidityFiles.length > 0) {
-        // 如果有多个文件，合并所有源码
-        if (solidityFiles.length === 1) {
-          sourceCode = solidityFiles[0].content;
-        } else {
-          sourceCode = solidityFiles
-            .map((f: any) => `// File: ${f.name}\n${f.content}`)
+      const data = await response.json();
+
+      const isMatch = data.match === "match";
+      const isPartial =
+        data.runtimeMatch === "match" && data.creationMatch !== "match";
+
+      if (!isMatch && !isPartial) {
+        return null;
+      }
+
+      const abi = data.abi ? JSON.stringify(data.abi) : "[]";
+      const contractName = data.compilation?.name || "";
+      const compilerVersion = data.compilation?.compilerVersion || "";
+
+      let sourceCode = "";
+      if (data.sources && typeof data.sources === "object") {
+        const sourceEntries = Object.entries(data.sources) as [
+          string,
+          { content?: string },
+        ][];
+        const solFiles = sourceEntries.filter(([name]) =>
+          name.endsWith(".sol")
+        );
+
+        if (solFiles.length === 1) {
+          sourceCode = solFiles[0][1].content || "";
+        } else if (solFiles.length > 1) {
+          sourceCode = solFiles
+            .map(([name, src]) => `// File: ${name}\n${src.content || ""}`)
             .join("\n\n");
         }
       }
 
       return {
         chainId,
-        address: address,
+        address,
         name: contractName,
         compilerVersion,
         sourceCode,
         abi,
-        verificationStatus:
-          contractInfo.status === "perfect" ? "verified" : "partial",
+        verificationStatus: isPartial ? "partial" : "verified",
         verificationSource: "sourcify",
-        verifiedAt: new Date(),
+        verifiedAt: data.verifiedAt ? new Date(data.verifiedAt) : new Date(),
         lastChecked: new Date(),
       };
     } catch (error) {
-      logger.error({ err: error }, "Sourcify fetch error");
+      logger.error({ err: error }, "Sourcify v2 fetch error");
       return null;
     }
   }

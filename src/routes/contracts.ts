@@ -43,11 +43,13 @@ app.get("/chains/:chainId/contracts/stats", async (c) => {
 app.get("/chains/:chainId/contracts/:address/source", async (c) => {
   const chainId = getValidatedChainId(c.req.param("chainId"));
   const address = getValidatedAddress(c.req.param("address"));
+  const refresh = c.req.query("refresh") === "true";
 
   try {
     const contractSource = await contractSourceService.getContractSource(
       chainId,
-      address
+      address,
+      { skipCache: refresh }
     );
 
     if (!contractSource) {
