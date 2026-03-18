@@ -126,19 +126,16 @@ app.get("/chains/:chainId/contracts/:address/functions", async (c) => {
       address
     );
 
-    let targetAddress = address;
     let targetABI = contractSource?.abi;
 
     if (contractSource?.isProxy && contractSource?.implementationContract) {
-      targetAddress =
-        contractSource.implementationAddress! as Address as Address;
       targetABI = contractSource.implementationContract.abi;
     }
 
     const { readFunctions, writeFunctions } =
       await contractInteractionService.getContractFunctions(
         chainId,
-        targetAddress,
+        address,
         targetABI
       );
 
@@ -190,11 +187,9 @@ app.post("/chains/:chainId/contracts/:address/read", async (c) => {
       address
     );
 
-    let targetAddress = address;
     let targetABI = contractSource?.abi;
 
     if (contractSource?.isProxy && contractSource?.implementationContract) {
-      targetAddress = contractSource.implementationAddress! as Address;
       targetABI = contractSource.implementationContract.abi;
     }
 
@@ -204,7 +199,7 @@ app.post("/chains/:chainId/contracts/:address/read", async (c) => {
 
     const result = await contractInteractionService.readContractWithABI({
       chainId,
-      contractAddress: targetAddress,
+      contractAddress: address,
       functionName,
       args,
       abi: targetABI,
@@ -260,11 +255,9 @@ app.post("/chains/:chainId/contracts/:address/simulate", async (c) => {
       address
     );
 
-    let targetAddress = address;
     let targetABI = contractSource?.abi;
 
     if (contractSource?.isProxy && contractSource?.implementationContract) {
-      targetAddress = contractSource.implementationAddress! as Address;
       targetABI = contractSource.implementationContract.abi;
     }
 
@@ -274,7 +267,7 @@ app.post("/chains/:chainId/contracts/:address/simulate", async (c) => {
 
     const result = await contractInteractionService.simulateContractWithABI({
       chainId,
-      contractAddress: targetAddress,
+      contractAddress: address,
       functionName,
       args,
       value: value ? BigInt(value) : undefined,
@@ -335,11 +328,9 @@ app.post("/chains/:chainId/contracts/:address/estimate-gas", async (c) => {
       address
     );
 
-    let targetAddress = address;
     let targetABI = contractSource?.abi;
 
     if (contractSource?.isProxy && contractSource?.implementationContract) {
-      targetAddress = contractSource.implementationAddress! as Address;
       targetABI = contractSource.implementationContract.abi;
     }
 
@@ -350,7 +341,7 @@ app.post("/chains/:chainId/contracts/:address/estimate-gas", async (c) => {
     const gasEstimate =
       await contractInteractionService.estimateContractGasWithABI({
         chainId,
-        contractAddress: targetAddress,
+        contractAddress: address,
         functionName,
         args,
         value: value ? BigInt(value) : undefined,

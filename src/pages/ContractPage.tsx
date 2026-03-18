@@ -15,6 +15,17 @@ import RpcConfig from "../components/RpcConfig";
 import EventTable from "../components/events/EventTable";
 import EventStatistics from "../components/events/EventStatistics";
 
+type ProxyType =
+  | "transparent"
+  | "uups"
+  | "beacon"
+  | "minimal"
+  | "zeppelinos"
+  | "gnosis-safe"
+  | "diamond"
+  | "eip1167"
+  | "unknown";
+
 type ContractSource = {
   chainId: number;
   address: string;
@@ -34,9 +45,8 @@ type ContractSource = {
     | "unknown";
   verifiedAt?: string;
   lastChecked: string;
-  // Proxy contract support
   isProxy?: boolean;
-  proxyType?: "transparent" | "uups" | "beacon" | "minimal" | "unknown";
+  proxyType?: ProxyType;
   implementationAddress?: string;
   implementationContract?: ContractSource;
 };
@@ -288,7 +298,6 @@ export default function ContractPage() {
   const [contractSource, setContractSource] = useState<ContractSource | null>(
     null
   );
-  const [contractABI, setContractABI] = useState<ContractABI | null>(null);
   const [creationInfo, setCreationInfo] = useState<ContractCreationInfo | null>(
     null
   );
@@ -297,10 +306,19 @@ export default function ContractPage() {
   const [creationLoading, setCreationLoading] = useState(false);
   const [creationError, setCreationError] = useState<string | null>(null);
   const [showRpcConfig, setShowRpcConfig] = useState(false);
-  const [activeTab, setActiveTab] = useState<
-    "source" | "abi" | "functions" | "events" | "interact" | "implementation"
-  >(location.pathname.endsWith('/events') ? "events" : "source");
-  const [showImplementation, setShowImplementation] = useState(true); // 默认显示实现合约
+  type TabId =
+    | "source"
+    | "source-impl"
+    | "abi"
+    | "abi-impl"
+    | "functions"
+    | "events"
+    | "interact"
+    | "read-proxy"
+    | "write-proxy";
+  const [activeTab, setActiveTab] = useState<TabId>(
+    location.pathname.endsWith("/events") ? "events" : "source"
+  );
 
   const currentChainId = parseInt(chainId || "1");
 
@@ -308,34 +326,18 @@ export default function ContractPage() {
     navigate(`/chain/${newChainId}/contract/${address}`, { replace: true });
   };
 
-  // 获取当前要显示的合约信息（代理或实现）
-  const getCurrentContract = (): ContractSource | null => {
-    if (!contractSource) return null;
+  const isProxy =
+    contractSource?.isProxy && !!contractSource?.implementationContract;
 
-    // 如果不是代理合约，直接返回原合约
-    if (!contractSource.isProxy) return contractSource;
-
-    // 如果是代理合约，根据 showImplementation 状态决定显示哪个
-    if (showImplementation && contractSource.implementationContract) {
-      return contractSource.implementationContract;
-    }
-
-    return contractSource;
-  };
-
-  // 获取当前合约的 ABI 信息
-  const getCurrentContractABI = (): ContractABI | null => {
-    const currentContract = getCurrentContract();
-    if (!currentContract?.abi) return null;
-
+  const parseABI = (contract: ContractSource | null): ContractABI | null => {
+    if (!contract?.abi) return null;
     try {
-      const abi = JSON.parse(currentContract.abi);
+      const abi = JSON.parse(contract.abi);
       const functions = abi.filter((item: any) => item.type === "function");
       const events = abi.filter((item: any) => item.type === "event");
       const errors = abi.filter((item: any) => item.type === "error");
-
       return {
-        abi: currentContract.abi,
+        abi: contract.abi,
         functions: functions.map((f: any) => ({
           name: f.name,
           type: f.type,
@@ -349,13 +351,18 @@ export default function ContractPage() {
           signature: `${e.name}(${(e.inputs || []).map((input: any) => input.type).join(", ")})`,
         })),
         errors,
-        verificationStatus: currentContract.verificationStatus,
+        verificationStatus: contract.verificationStatus,
       };
-    } catch (error) {
-      console.error("Failed to parse ABI:", error);
+    } catch {
       return null;
     }
   };
+
+  const proxyABI = parseABI(contractSource);
+  const implABI = parseABI(
+    contractSource?.implementationContract ?? null
+  );
+  const effectiveABI = isProxy ? implABI : proxyABI;
 
   useEffect(() => {
     if (!chainId || !address) return;
@@ -364,12 +371,21 @@ export default function ContractPage() {
     fetchContractCreationInfo();
   }, [chainId, address]);
 
-  // 监听路由变化，自动更新选项卡
   useEffect(() => {
-    if (location.pathname.endsWith('/events')) {
-      setActiveTab('events');
+    if (location.pathname.endsWith("/events")) {
+      setActiveTab("events");
     }
   }, [location.pathname]);
+
+  useEffect(() => {
+    if (
+      contractSource?.isProxy &&
+      contractSource?.implementationContract &&
+      activeTab === "source"
+    ) {
+      setActiveTab("read-proxy");
+    }
+  }, [contractSource]);
 
   const fetchContractData = async () => {
     if (!chainId || !address) return;
@@ -378,10 +394,9 @@ export default function ContractPage() {
     setError(null);
 
     try {
-      const [sourceResponse, abiResponse] = await Promise.all([
-        fetch(`/api/chains/${currentChainId}/contracts/${address}/source`),
-        fetch(`/api/chains/${currentChainId}/contracts/${address}/abi`),
-      ]);
+      const sourceResponse = await fetch(
+        `/api/chains/${currentChainId}/contracts/${address}/source`
+      );
 
       if (!sourceResponse.ok) {
         if (sourceResponse.status === 404) {
@@ -394,17 +409,6 @@ export default function ContractPage() {
 
       const sourceData = await sourceResponse.json();
       setContractSource(sourceData.contractSource);
-
-      if (abiResponse.ok) {
-        const abiData = await abiResponse.json();
-        setContractABI({
-          abi: abiData.abi,
-          functions: abiData.functions,
-          events: abiData.events,
-          errors: abiData.errors,
-          verificationStatus: abiData.verificationStatus,
-        });
-      }
     } catch (err) {
       console.error("Failed to fetch contract data:", err);
       setError(
@@ -559,34 +563,60 @@ export default function ContractPage() {
                   </div>
                 )}
                 {contractSource.isProxy && (
-                  <div className="info-item">
-                    <span className="label">Proxy Type</span>
-                    <span className="value proxy-badge">
-                      🔗 {contractSource.proxyType?.toUpperCase() || "UNKNOWN"}{" "}
-                      Proxy
-                    </span>
-                  </div>
-                )}
-                {contractSource.implementationAddress && (
-                  <div className="info-item">
-                    <span className="label">Implementation</span>
-                    <span className="value">
-                      <a
-                        href={`/chain/${currentChainId}/contract/${contractSource.implementationAddress}`}
-                        style={{ color: "#007bff", textDecoration: "none" }}
-                        onMouseOver={(e) =>
-                          ((e.target as HTMLElement).style.textDecoration =
-                            "underline")
-                        }
-                        onMouseOut={(e) =>
-                          ((e.target as HTMLElement).style.textDecoration =
-                            "none")
-                        }
-                      >
-                        {contractSource.implementationAddress}
-                      </a>
-                    </span>
-                  </div>
+                  <>
+                    <div className="info-item">
+                      <span className="label">Proxy Type</span>
+                      <span className="value">
+                        <span
+                          style={{
+                            display: "inline-block",
+                            padding: "2px 10px",
+                            borderRadius: "4px",
+                            background: "#e8f5e9",
+                            color: "#2e7d32",
+                            fontWeight: 600,
+                            fontSize: "13px",
+                          }}
+                        >
+                          {({
+                            transparent: "EIP-1967 Transparent",
+                            uups: "UUPS",
+                            beacon: "Beacon",
+                            minimal: "Minimal",
+                            zeppelinos: "ZeppelinOS",
+                            "gnosis-safe": "Gnosis Safe",
+                            diamond: "Diamond (EIP-2535)",
+                            eip1167: "EIP-1167 Clone",
+                            unknown: "Unknown",
+                          } as Record<string, string>)[contractSource.proxyType || "unknown"] || contractSource.proxyType?.toUpperCase()}{" "}
+                          Proxy
+                        </span>
+                      </span>
+                    </div>
+                    {contractSource.implementationAddress && (
+                      <div className="info-item">
+                        <span className="label">Implementation</span>
+                        <span className="value">
+                          <a
+                            href={`/chain/${currentChainId}/contract/${contractSource.implementationAddress}`}
+                            style={{ color: "#007bff", textDecoration: "none" }}
+                            onMouseOver={(e) =>
+                              ((e.target as HTMLElement).style.textDecoration =
+                                "underline")
+                            }
+                            onMouseOut={(e) =>
+                              ((e.target as HTMLElement).style.textDecoration =
+                                "none")
+                            }
+                          >
+                            {contractSource.implementationContract?.name
+                              ? `${contractSource.implementationContract.name} (${contractSource.implementationAddress})`
+                              : contractSource.implementationAddress}
+                          </a>
+                        </span>
+                      </div>
+                    )}
+                  </>
                 )}
 
                 {/* Contract Creation Information */}
@@ -687,172 +717,205 @@ export default function ContractPage() {
               </div>
             </div>
 
-            {contractSource.isProxy &&
-              contractSource.implementationContract && (
-                <div className={cardStyles}>
-                  <h2>Contract View</h2>
-                  <div
-                    style={{
-                      display: "flex",
-                      gap: "10px",
-                      marginBottom: "20px",
-                    }}
-                  >
-                    <button
-                      onClick={() => setShowImplementation(false)}
-                      style={{
-                        padding: "8px 16px",
-                        border: "1px solid #ddd",
-                        borderRadius: "4px",
-                        background: !showImplementation ? "#007bff" : "#fff",
-                        color: !showImplementation ? "#fff" : "#333",
-                        cursor: "pointer",
-                        fontSize: "14px",
-                      }}
-                    >
-                      Show Proxy Contract
-                    </button>
-                    <button
-                      onClick={() => setShowImplementation(true)}
-                      style={{
-                        padding: "8px 16px",
-                        border: "1px solid #ddd",
-                        borderRadius: "4px",
-                        background: showImplementation ? "#007bff" : "#fff",
-                        color: showImplementation ? "#fff" : "#333",
-                        cursor: "pointer",
-                        fontSize: "14px",
-                      }}
-                    >
-                      Show Implementation Contract
-                    </button>
-                  </div>
-                  <div style={{ fontSize: "14px", color: "#666" }}>
-                    Currently showing:{" "}
-                    <strong>
-                      {showImplementation
-                        ? `Implementation (${contractSource.implementationContract.name || "Unknown"})`
-                        : `Proxy (${contractSource.name || "Unknown"})`}
-                    </strong>
-                  </div>
-                </div>
-              )}
-
             <div className={tabsStyles}>
-              <button
-                className={`tab ${activeTab === "source" ? "active" : ""}`}
-                onClick={() => setActiveTab("source")}
-              >
-                Source Code
-              </button>
-              <button
-                className={`tab ${activeTab === "abi" ? "active" : ""}`}
-                onClick={() => setActiveTab("abi")}
-              >
-                ABI
-              </button>
-              {(() => {
-                const currentABI = getCurrentContractABI();
-                return (
-                  currentABI &&
-                  currentABI.functions.length > 0 && (
-                    <button
-                      className={`tab ${activeTab === "functions" ? "active" : ""}`}
-                      onClick={() => setActiveTab("functions")}
-                    >
-                      Functions ({currentABI.functions.length})
-                    </button>
-                  )
-                );
-              })()}
-              {(() => {
-                const currentABI = getCurrentContractABI();
-                return (
-                  currentABI &&
-                  currentABI.events.length > 0 && (
+              {isProxy ? (
+                <>
+                  <button
+                    className={`tab ${activeTab === "read-proxy" ? "active" : ""}`}
+                    onClick={() => setActiveTab("read-proxy")}
+                  >
+                    Read as Proxy
+                  </button>
+                  <button
+                    className={`tab ${activeTab === "write-proxy" ? "active" : ""}`}
+                    onClick={() => setActiveTab("write-proxy")}
+                  >
+                    Write as Proxy
+                  </button>
+                  <button
+                    className={`tab ${activeTab === "source" ? "active" : ""}`}
+                    onClick={() => setActiveTab("source")}
+                  >
+                    Source (Proxy)
+                  </button>
+                  <button
+                    className={`tab ${activeTab === "source-impl" ? "active" : ""}`}
+                    onClick={() => setActiveTab("source-impl")}
+                  >
+                    Source (Impl)
+                  </button>
+                  <button
+                    className={`tab ${activeTab === "abi" ? "active" : ""}`}
+                    onClick={() => setActiveTab("abi")}
+                  >
+                    ABI (Proxy)
+                  </button>
+                  <button
+                    className={`tab ${activeTab === "abi-impl" ? "active" : ""}`}
+                    onClick={() => setActiveTab("abi-impl")}
+                  >
+                    ABI (Impl)
+                  </button>
+                  {effectiveABI && effectiveABI.events.length > 0 && (
                     <button
                       className={`tab ${activeTab === "events" ? "active" : ""}`}
                       onClick={() => setActiveTab("events")}
                     >
-                      Events ({currentABI.events.length})
+                      Events ({effectiveABI.events.length})
                     </button>
-                  )
-                );
-              })()}
-              {(() => {
-                const currentABI = getCurrentContractABI();
-                return (
-                  currentABI &&
-                  (currentABI.functions.length > 0 ||
-                    currentABI.events.length > 0) && (
+                  )}
+                </>
+              ) : (
+                <>
+                  <button
+                    className={`tab ${activeTab === "source" ? "active" : ""}`}
+                    onClick={() => setActiveTab("source")}
+                  >
+                    Source Code
+                  </button>
+                  <button
+                    className={`tab ${activeTab === "abi" ? "active" : ""}`}
+                    onClick={() => setActiveTab("abi")}
+                  >
+                    ABI
+                  </button>
+                  {effectiveABI && effectiveABI.functions.length > 0 && (
                     <button
-                      className={`tab ${activeTab === "interact" ? "active" : ""}`}
-                      onClick={() => setActiveTab("interact")}
+                      className={`tab ${activeTab === "functions" ? "active" : ""}`}
+                      onClick={() => setActiveTab("functions")}
                     >
-                      Interact
+                      Functions ({effectiveABI.functions.length})
                     </button>
-                  )
-                );
-              })()}
+                  )}
+                  {effectiveABI && effectiveABI.events.length > 0 && (
+                    <button
+                      className={`tab ${activeTab === "events" ? "active" : ""}`}
+                      onClick={() => setActiveTab("events")}
+                    >
+                      Events ({effectiveABI.events.length})
+                    </button>
+                  )}
+                  {effectiveABI &&
+                    (effectiveABI.functions.length > 0 ||
+                      effectiveABI.events.length > 0) && (
+                      <button
+                        className={`tab ${activeTab === "interact" ? "active" : ""}`}
+                        onClick={() => setActiveTab("interact")}
+                      >
+                        Interact
+                      </button>
+                    )}
+                </>
+              )}
             </div>
 
+            {/* Read as Proxy */}
+            {activeTab === "read-proxy" && isProxy && (
+              <ContractInteract
+                chainId={currentChainId}
+                contractAddress={address!}
+                contractSource={contractSource}
+                mode="read"
+              />
+            )}
+
+            {/* Write as Proxy */}
+            {activeTab === "write-proxy" && isProxy && (
+              <ContractInteract
+                chainId={currentChainId}
+                contractAddress={address!}
+                contractSource={contractSource}
+                mode="write"
+              />
+            )}
+
+            {/* Source Code - proxy contract itself */}
             {activeTab === "source" && (
               <div className={cardStyles}>
-                <h2>Source Code</h2>
-                {(() => {
-                  const currentContract = getCurrentContract();
-                  return currentContract?.sourceCode ? (
-                    <div className={codeStyles}>
-                      {currentContract.sourceCode}
-                    </div>
-                  ) : (
-                    <div>No source code available</div>
-                  );
-                })()}
+                <h2>
+                  {isProxy ? "Proxy Contract Source" : "Source Code"}
+                </h2>
+                {contractSource.sourceCode ? (
+                  <div className={codeStyles}>
+                    {contractSource.sourceCode}
+                  </div>
+                ) : (
+                  <div>No source code available</div>
+                )}
               </div>
             )}
 
+            {/* Source Code - implementation */}
+            {activeTab === "source-impl" && isProxy && (
+              <div className={cardStyles}>
+                <h2>
+                  Implementation Source ({contractSource.implementationContract?.name || "Unknown"})
+                </h2>
+                {contractSource.implementationContract?.sourceCode ? (
+                  <div className={codeStyles}>
+                    {contractSource.implementationContract.sourceCode}
+                  </div>
+                ) : (
+                  <div>No source code available for implementation contract</div>
+                )}
+              </div>
+            )}
+
+            {/* ABI - proxy */}
             {activeTab === "abi" && (
               <div className={cardStyles}>
-                <h2>Contract ABI</h2>
+                <h2>{isProxy ? "Proxy ABI" : "Contract ABI"}</h2>
                 <div className={codeStyles}>
-                  {(() => {
-                    const currentContract = getCurrentContract();
-                    return currentContract?.abi
-                      ? JSON.stringify(JSON.parse(currentContract.abi), null, 2)
-                      : "No ABI available";
-                  })()}
+                  {contractSource.abi
+                    ? JSON.stringify(JSON.parse(contractSource.abi), null, 2)
+                    : "No ABI available"}
                 </div>
               </div>
             )}
 
-            {activeTab === "functions" && (
+            {/* ABI - implementation */}
+            {activeTab === "abi-impl" && isProxy && (
+              <div className={cardStyles}>
+                <h2>
+                  Implementation ABI ({contractSource.implementationContract?.name || "Unknown"})
+                </h2>
+                <div className={codeStyles}>
+                  {contractSource.implementationContract?.abi
+                    ? JSON.stringify(
+                        JSON.parse(contractSource.implementationContract.abi),
+                        null,
+                        2
+                      )
+                    : "No ABI available for implementation contract"}
+                </div>
+              </div>
+            )}
+
+            {/* Functions (non-proxy only) */}
+            {activeTab === "functions" && !isProxy && (
               <div className={cardStyles}>
                 <h2>Contract Functions</h2>
-                {(() => {
-                  const currentABI = getCurrentContractABI();
-                  return currentABI && currentABI.functions.length > 0 ? (
-                    <div className={functionListStyles}>
-                      {currentABI.functions.map((func, index) => (
-                        <div
-                          key={index}
-                          className={`function-item ${func.type}`}
-                        >
-                          <div className="function-signature">
-                            {func.name}(
-                            {func.inputs
-                              .map((input) => `${input.type} ${input.name}`)
-                              .join(", ")}
-                            )
-                          </div>
-                          <span className="function-type">{func.type}</span>
+                {effectiveABI && effectiveABI.functions.length > 0 ? (
+                  <div className={functionListStyles}>
+                    {effectiveABI.functions.map((func, index) => (
+                      <div
+                        key={index}
+                        className={`function-item ${func.type}`}
+                      >
+                        <div className="function-signature">
+                          {func.name}(
+                          {func.inputs
+                            .map((input) => `${input.type} ${input.name}`)
+                            .join(", ")}
+                          )
                         </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div>No functions found</div>
-                  );
-                })()}
+                        <span className="function-type">{func.type}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div>No functions found</div>
+                )}
               </div>
             )}
 
@@ -865,17 +928,19 @@ export default function ContractPage() {
                 <EventTable
                   chainId={currentChainId}
                   contractAddress={address!}
-                  abiEvents={getCurrentContractABI()?.events || []}
+                  abiEvents={effectiveABI?.events || []}
                   enableDynamicFiltering={true}
                 />
               </>
             )}
 
-            {activeTab === "interact" && (
+            {/* Interact (non-proxy only) */}
+            {activeTab === "interact" && !isProxy && (
               <ContractInteract
                 chainId={currentChainId}
                 contractAddress={address!}
-                contractSource={getCurrentContract()}
+                contractSource={contractSource}
+                mode="all"
               />
             )}
           </>
@@ -896,15 +961,16 @@ export default function ContractPage() {
   );
 }
 
-// 合约交互组件
 function ContractInteract({
   chainId,
   contractAddress,
   contractSource,
+  mode = "all",
 }: {
   chainId: number;
   contractAddress: string;
   contractSource: ContractSource | null;
+  mode?: "all" | "read" | "write";
 }) {
   const [readFunctions, setReadFunctions] = useState<ContractFunction[]>([]);
   const [writeFunctions, setWriteFunctions] = useState<ContractFunction[]>([]);
@@ -962,22 +1028,14 @@ function ContractInteract({
         return;
       }
 
-      // 获取目标合约地址（代理合约使用实现合约地址）
-      let targetAddress = contractAddress;
-      if (contractSource.isProxy && contractSource.implementationAddress) {
-        targetAddress = contractSource.implementationAddress;
-      }
+      const targetABI =
+        contractSource.isProxy && contractSource.implementationContract
+          ? contractSource.implementationContract.abi
+          : contractSource.abi;
 
-      // 获取要使用的 ABI
-      let targetABI = contractSource.abi;
-      if (contractSource.isProxy && contractSource.implementationContract) {
-        targetABI = contractSource.implementationContract.abi;
-      }
-
-      // 直接调用 RPC
       const result = await readContract({
         chainId,
-        contractAddress: targetAddress,
+        contractAddress,
         functionName,
         args,
         abi: targetABI,
@@ -1019,22 +1077,14 @@ function ContractInteract({
         return;
       }
 
-      // 获取目标合约地址（代理合约使用实现合约地址）
-      let targetAddress = contractAddress;
-      if (contractSource.isProxy && contractSource.implementationAddress) {
-        targetAddress = contractSource.implementationAddress;
-      }
+      const targetABI =
+        contractSource.isProxy && contractSource.implementationContract
+          ? contractSource.implementationContract.abi
+          : contractSource.abi;
 
-      // 获取要使用的 ABI
-      let targetABI = contractSource.abi;
-      if (contractSource.isProxy && contractSource.implementationContract) {
-        targetABI = contractSource.implementationContract.abi;
-      }
-
-      // 直接调用 RPC 模拟
       const result = await simulateContract({
         chainId,
-        contractAddress: targetAddress,
+        contractAddress,
         functionName,
         args,
         value: value ? BigInt(value) : undefined,
@@ -1064,30 +1114,72 @@ function ContractInteract({
     }
   };
 
+  const isProxyMode = contractSource?.isProxy && !!contractSource?.implementationContract;
+  const implName = contractSource?.implementationContract?.name;
+
+  const title =
+    mode === "read"
+      ? `Read as Proxy${implName ? ` (${implName})` : ""}`
+      : mode === "write"
+        ? `Write as Proxy${implName ? ` (${implName})` : ""}`
+        : "Contract Interaction";
+
   if (loading) {
     return (
       <div className={cardStyles}>
-        <h2>Contract Interaction</h2>
+        <h2>{title}</h2>
         <div>Loading contract functions...</div>
       </div>
     );
   }
 
-  if (!contractSource || !contractSource.abi) {
+  const targetABI =
+    contractSource?.isProxy && contractSource?.implementationContract
+      ? contractSource.implementationContract.abi
+      : contractSource?.abi;
+
+  if (!contractSource || !targetABI) {
     return (
       <div className={cardStyles}>
-        <h2>Contract Interaction</h2>
+        <h2>{title}</h2>
         <div>Contract ABI not available</div>
       </div>
     );
   }
 
+  const showRead = mode === "all" || mode === "read";
+  const showWrite = mode === "all" || mode === "write";
+
   return (
     <>
-      {/* Read Functions */}
-      {readFunctions.length > 0 && (
+      {isProxyMode && (
+        <div
+          style={{
+            padding: "12px 16px",
+            marginBottom: "16px",
+            background: "#f0f7ff",
+            border: "1px solid #c6dfff",
+            borderRadius: "8px",
+            fontSize: "14px",
+            color: "#1a56db",
+          }}
+        >
+          {mode === "read"
+            ? "Reading from implementation contract via proxy address."
+            : mode === "write"
+              ? "Writing to implementation contract via proxy address. These are simulations only."
+              : "Interacting with implementation contract via proxy address."}
+          {contractSource.implementationAddress && (
+            <span style={{ marginLeft: "8px", fontFamily: "monospace", fontSize: "12px" }}>
+              Implementation: {contractSource.implementationAddress}
+            </span>
+          )}
+        </div>
+      )}
+
+      {showRead && readFunctions.length > 0 && (
         <div className={cardStyles}>
-          <h2>Read Functions</h2>
+          <h2>{mode === "read" ? title : "Read Functions"}</h2>
           <div className={functionListStyles}>
             {readFunctions.map((func, index) => (
               <FunctionCallForm
@@ -1104,16 +1196,17 @@ function ContractInteract({
         </div>
       )}
 
-      {/* Write Functions */}
-      {writeFunctions.length > 0 && (
+      {showWrite && writeFunctions.length > 0 && (
         <div className={cardStyles}>
-          <h2>Write Functions (Simulation)</h2>
-          <div
-            style={{ marginBottom: "20px", fontSize: "14px", color: "#666" }}
-          >
-            ⚠️ These are simulations only. To execute transactions, use a Web3
-            wallet.
-          </div>
+          <h2>{mode === "write" ? title : "Write Functions (Simulation)"}</h2>
+          {!isProxyMode && (
+            <div
+              style={{ marginBottom: "20px", fontSize: "14px", color: "#666" }}
+            >
+              These are simulations only. To execute transactions, use a Web3
+              wallet.
+            </div>
+          )}
           <div className={functionListStyles}>
             {writeFunctions.map((func, index) => (
               <FunctionCallForm
@@ -1127,6 +1220,13 @@ function ContractInteract({
               />
             ))}
           </div>
+        </div>
+      )}
+
+      {showRead && readFunctions.length === 0 && showWrite && writeFunctions.length === 0 && (
+        <div className={cardStyles}>
+          <h2>{title}</h2>
+          <div>No functions found in the contract ABI</div>
         </div>
       )}
     </>

@@ -14,6 +14,17 @@ import {
   type RpcErrorDetails,
 } from "../utils/rpcErrorHandler";
 
+export type ProxyType =
+  | "transparent"
+  | "uups"
+  | "beacon"
+  | "minimal"
+  | "zeppelinos"
+  | "gnosis-safe"
+  | "diamond"
+  | "eip1167"
+  | "unknown";
+
 export type ContractSource = {
   chainId: number;
   address: Address;
@@ -33,12 +44,10 @@ export type ContractSource = {
     | "unknown";
   verifiedAt?: Date;
   lastChecked: Date;
-  // Proxy contract support
   isProxy?: boolean;
-  proxyType?: "transparent" | "uups" | "beacon" | "minimal" | "unknown";
+  proxyType?: ProxyType;
   implementationAddress?: string;
   implementationContract?: ContractSource;
-  // Contract creation info
   creationTxHash?: string;
   creationBlockNumber?: number;
   creator?: string;
@@ -771,63 +780,58 @@ export class ContractSourceService {
         return null;
       }
 
-      // 2.5. 检查是否为代理合约
-      const proxyInfo = await this.detectProxy(chainId, address);
+      logger.info("Step 2: Fetching contract source from external sources");
 
-      // 如果是代理合约，使用特殊处理
-      if (proxyInfo.isProxy) {
-        logger.info({ proxyType: proxyInfo.proxyType, implementation: proxyInfo.implementationAddress }, "Step 2.5: Handling proxy contract");
-
-        const proxyContract = await this.handleProxyContract(
-          chainId,
-          address,
-          proxyInfo
-        );
-        if (proxyContract) {
-          logger.info("Successfully processed proxy contract");
-          logger.info("Step 3: Caching proxy contract to database");
-          await this.saveToDatabase(proxyContract);
-          logger.info("Proxy contract cached successfully");
-          return proxyContract;
-        } else {
-          logger.warn("Failed to process proxy contract, continuing with normal flow");
-        }
-      } else {
-        logger.info("Contract is not a proxy, proceeding with normal source lookup");
-      }
-
-      logger.info("Step 3: Fetching contract source from external sources");
-
-      // 3. 尝试从 Sourcify 获取（非代理合约）
+      // 3. 尝试从 Sourcify 获取（包含 proxyResolution）
       logger.info("Trying Sourcify");
       const sourcifyResult = await this.fetchFromSourcify(chainId, address);
       if (sourcifyResult) {
-        logger.info("Found contract source from Sourcify");
-        logger.info("Step 4: Caching contract source to database");
+        logger.info(
+          { isProxy: sourcifyResult.isProxy, proxyType: sourcifyResult.proxyType },
+          "Found contract source from Sourcify"
+        );
         await this.saveToDatabase(sourcifyResult);
-        logger.info("Contract source cached successfully");
         return sourcifyResult;
       }
 
-      // 3.5. 尝试从链特定的区块浏览器获取（非代理合约）
+      // 3.5. 尝试从链特定的区块浏览器获取
       logger.info("Trying chain-specific explorer");
-      const explorerResult = await this.fetchFromChainExplorer(
-        chainId,
-        address
-      );
-      if (explorerResult) {
-        logger.info("Found contract source from chain explorer");
-        logger.info("Step 4: Caching contract source to database");
-        await this.saveToDatabase(explorerResult);
-        logger.info("Contract source cached successfully");
-        return explorerResult;
+      const explorerResult = await this.fetchFromChainExplorer(chainId, address);
+
+      // 4. 对非 Sourcify 来源，使用 detectProxy 做本地代理检测
+      const baseContract = explorerResult || null;
+      const proxyInfo = await this.detectProxy(chainId, address);
+
+      if (proxyInfo.isProxy) {
+        logger.info(
+          { proxyType: proxyInfo.proxyType, implementation: proxyInfo.implementationAddress },
+          "Local proxy detection found proxy"
+        );
+        const proxyContract = await this.handleProxyContract(chainId, address, proxyInfo);
+        if (proxyContract) {
+          if (baseContract) {
+            proxyContract.sourceCode = baseContract.sourceCode || proxyContract.sourceCode;
+            proxyContract.abi = baseContract.abi || proxyContract.abi;
+            proxyContract.name = baseContract.name || proxyContract.name;
+            proxyContract.compilerVersion = baseContract.compilerVersion || proxyContract.compilerVersion;
+            proxyContract.verificationStatus = baseContract.verificationStatus;
+            proxyContract.verificationSource = baseContract.verificationSource;
+          }
+          await this.saveToDatabase(proxyContract);
+          return proxyContract;
+        }
       }
 
-      // 4. 如果都没找到，返回未验证状态
+      if (baseContract) {
+        await this.saveToDatabase(baseContract);
+        return baseContract;
+      }
+
+      // 5. 如果都没找到，返回未验证状态
       logger.info("No verified source found, creating unverified record");
       const unverifiedContract: ContractSource = {
         chainId,
-        address: address,
+        address,
         sourceCode: "",
         abi: "[]",
         verificationStatus: "unverified",
@@ -835,14 +839,26 @@ export class ContractSourceService {
         lastChecked: new Date(),
       };
 
-      logger.info("Step 4: Caching unverified contract to database");
       await this.saveToDatabase(unverifiedContract);
-      logger.info("Unverified contract cached (to avoid future lookups)");
       return unverifiedContract;
     } catch (error) {
       logger.error({ err: error, address }, "Failed to get contract source");
       return null;
     }
+  }
+
+  private mapSourcifyProxyType(sourcifyType: string): ProxyType {
+    const mapping: Record<string, ProxyType> = {
+      EIP1967Proxy: "transparent",
+      ZeppelinOSProxy: "zeppelinos",
+      EIP1167Proxy: "eip1167",
+      GnosisSafeProxy: "gnosis-safe",
+      DiamondProxy: "diamond",
+      PROXIABLEProxy: "uups",
+      FixedProxy: "minimal",
+      SequenceWalletProxy: "minimal",
+    };
+    return mapping[sourcifyType] || "unknown";
   }
 
   // 从 Sourcify v2 API 获取合约源码
@@ -852,7 +868,7 @@ export class ContractSourceService {
   ): Promise<ContractSource | null> {
     try {
       const baseUrl = "https://sourcify.dev/server/v2";
-      const contractUrl = `${baseUrl}/contract/${chainId}/${address}?fields=abi,sources,compilation`;
+      const contractUrl = `${baseUrl}/contract/${chainId}/${address}?fields=abi,sources,compilation,proxyResolution`;
 
       const response = await fetch(contractUrl);
 
@@ -898,7 +914,7 @@ export class ContractSourceService {
         }
       }
 
-      return {
+      const result: ContractSource = {
         chainId,
         address,
         name: contractName,
@@ -910,6 +926,26 @@ export class ContractSourceService {
         verifiedAt: data.verifiedAt ? new Date(data.verifiedAt) : new Date(),
         lastChecked: new Date(),
       };
+
+      const proxy = data.proxyResolution;
+      if (proxy?.isProxy && proxy.implementations?.length > 0) {
+        const implAddress = proxy.implementations[0].address as Address;
+        result.isProxy = true;
+        result.proxyType = this.mapSourcifyProxyType(proxy.proxyType);
+        result.implementationAddress = implAddress;
+
+        logger.info(
+          { proxyType: proxy.proxyType, mapped: result.proxyType, implementation: implAddress },
+          "Sourcify detected proxy contract"
+        );
+
+        const implContract = await this.getContractSource(chainId, implAddress);
+        if (implContract) {
+          result.implementationContract = implContract;
+        }
+      }
+
+      return result;
     } catch (error) {
       logger.error({ err: error }, "Sourcify v2 fetch error");
       return null;
@@ -1014,7 +1050,7 @@ export class ContractSourceService {
     address: Address,
     proxyInfo: {
       isProxy: boolean;
-      proxyType?: "transparent" | "uups" | "beacon" | "minimal" | "unknown";
+      proxyType?: ProxyType;
       implementationAddress?: string;
     }
   ): Promise<ContractSource | null> {
@@ -1090,7 +1126,7 @@ export class ContractSourceService {
     contract: ContractSource,
     proxyInfo?: {
       isProxy: boolean;
-      proxyType?: "transparent" | "uups" | "beacon" | "minimal" | "unknown";
+      proxyType?: ProxyType;
       implementationAddress?: string;
     }
   ): Promise<ContractSource> {
@@ -1143,7 +1179,7 @@ export class ContractSourceService {
     address: Address
   ): Promise<{
     isProxy: boolean;
-    proxyType?: "transparent" | "uups" | "beacon" | "minimal" | "unknown";
+    proxyType?: ProxyType;
     implementationAddress?: string;
   }> {
     try {
@@ -1226,8 +1262,57 @@ export class ContractSourceService {
         logger.warn({ err: error }, "Failed to check beacon slot");
       }
 
-      // 如果没有找到明确的代理模式，返回非代理
-      // 注意：这里不能访问 contract 对象，因为这是一个独立的检测方法
+      // ZeppelinOS proxy: 0x7050c9e0f4ca769c69bd3a8ef740bc37934f8e2c036e5a723fd8ee048ed3f8c3
+      const zeppelinSlot =
+        "0x7050c9e0f4ca769c69bd3a8ef740bc37934f8e2c036e5a723fd8ee048ed3f8c3";
+
+      try {
+        const zeppelinData = await client.getStorageAt({
+          address: address as `0x${string}`,
+          slot: zeppelinSlot as `0x${string}`,
+        });
+
+        if (
+          zeppelinData &&
+          zeppelinData !==
+            "0x0000000000000000000000000000000000000000000000000000000000000000"
+        ) {
+          const implAddress = "0x" + zeppelinData.slice(-40);
+          const isValid = await this.isContractAddress(chainId, implAddress);
+          if (isValid) {
+            return {
+              isProxy: true,
+              proxyType: "zeppelinos",
+              implementationAddress: implAddress,
+            };
+          }
+        }
+      } catch (error) {
+        logger.warn({ err: error }, "Failed to check ZeppelinOS slot");
+      }
+
+      // EIP-1167 minimal proxy: bytecode starts with 363d3d373d3d3d363d73 + 20-byte address + 5af43d82803e903d91602b57fd5bf3
+      try {
+        const code = await client.getCode({ address: address as `0x${string}` });
+        if (code) {
+          const normalized = code.toLowerCase();
+          const eip1167Prefix = "0x363d3d373d3d3d363d73";
+          const eip1167Suffix = "5af43d82803e903d91602b57fd5bf3";
+          if (
+            normalized.startsWith(eip1167Prefix) &&
+            normalized.endsWith(eip1167Suffix)
+          ) {
+            const implAddress = "0x" + normalized.slice(22, 62);
+            return {
+              isProxy: true,
+              proxyType: "eip1167",
+              implementationAddress: implAddress,
+            };
+          }
+        }
+      } catch (error) {
+        logger.warn({ err: error }, "Failed to check EIP-1167 bytecode");
+      }
 
       return { isProxy: false };
     } catch (error) {
