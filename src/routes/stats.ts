@@ -1,86 +1,113 @@
 import { Hono } from "hono";
 import { createLogger } from "../server/logger";
 import { blockService } from "../services/BlockService";
-
-const logger = createLogger("stats-routes");
 import { transactionService } from "../services/TransactionService";
+import { rpcManager } from "../services/RpcManager";
 import {
   getChainName,
   getChainSymbol,
+  POPULAR_CHAINS,
   getSupportedChainIds,
 } from "../config/chains";
-import { safeJsonResponse } from "../utils/serialization";
+
+const logger = createLogger("stats-routes");
+
+const RPC_TIMEOUT_MS = 3000;
+
+const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T | null> =>
+  Promise.race([
+    promise,
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), ms)),
+  ]);
 
 const app = new Hono();
 
 app.get("/stats/overview", async (c) => {
   try {
-    const supportedChainIds = getSupportedChainIds();
+    const popularChainIds = POPULAR_CHAINS.map((chain) => chain.id);
     const chainStats = [];
 
-    const topChains = supportedChainIds.slice(0, 10);
+    const results = await Promise.all(
+      popularChainIds.map(async (chainId) => {
+        try {
+          const [blockStats, txStats, rpcBlockNumber] = await Promise.all([
+            blockService.getBlockStats(chainId).catch(() => ({
+              totalBlocks: 0,
+              latestBlock: null,
+              avgBlockTime: null,
+              avgGasUsed: null,
+            })),
+            transactionService.getTransactionStats(chainId).catch(() => ({
+              totalTransactions: 0,
+              avgGasPrice: null,
+              avgGasUsed: null,
+              successRate: 0,
+            })),
+            withTimeout(
+              rpcManager
+                .getClient(chainId)
+                .then((client) => client.getBlockNumber()),
+              RPC_TIMEOUT_MS
+            ).catch(() => null),
+          ]);
 
-    for (const chainId of topChains) {
-      try {
-        const [blockStats, txStats] = await Promise.all([
-          blockService.getBlockStats(chainId).catch(() => ({
-            totalBlocks: 0,
-            latestBlock: null,
+          return {
+            chainId,
+            chainName: getChainName(chainId),
+            chainSymbol: getChainSymbol(chainId),
+            latestBlockNumber: rpcBlockNumber?.toString() ?? null,
+            isIndexed: blockStats.totalBlocks > 0,
+            indexedBlocks: blockStats.totalBlocks,
+            indexedTransactions: txStats.totalTransactions,
+            latestIndexedBlock: blockStats.latestBlock?.toString() ?? null,
+            avgBlockTime: blockStats.avgBlockTime,
+            successRate: txStats.successRate,
+            rpcConnected: rpcBlockNumber !== null,
+          };
+        } catch (error) {
+          logger.warn(
+            { err: error, chainId },
+            "Failed to get stats for chain"
+          );
+          return {
+            chainId,
+            chainName: getChainName(chainId),
+            chainSymbol: getChainSymbol(chainId),
+            latestBlockNumber: null,
+            isIndexed: false,
+            indexedBlocks: 0,
+            indexedTransactions: 0,
+            latestIndexedBlock: null,
             avgBlockTime: null,
-            avgGasUsed: null,
-          })),
-          transactionService.getTransactionStats(chainId).catch(() => ({
-            totalTransactions: 0,
-            avgGasPrice: null,
-            avgGasUsed: null,
             successRate: 0,
-          })),
-        ]);
+            rpcConnected: false,
+          };
+        }
+      })
+    );
 
-        chainStats.push({
-          chainId,
-          chainName: getChainName(chainId),
-          chainSymbol: getChainSymbol(chainId),
-          isIndexed: blockStats.totalBlocks > 0,
-          totalBlocks: blockStats.totalBlocks,
-          totalTransactions: txStats.totalTransactions,
-          latestBlock: blockStats.latestBlock?.toString() ?? null,
-          avgBlockTime: blockStats.avgBlockTime,
-          successRate: txStats.successRate,
-        });
-      } catch (error) {
-        logger.warn({ err: error, chainId }, "Failed to get stats for chain");
-        chainStats.push({
-          chainId,
-          chainName: getChainName(chainId),
-          chainSymbol: getChainSymbol(chainId),
-          isIndexed: false,
-          totalBlocks: 0,
-          totalTransactions: 0,
-          latestBlock: null,
-          avgBlockTime: null,
-          successRate: 0,
-        });
-      }
-    }
+    chainStats.push(...results);
 
-    const totalBlocks = chainStats.reduce(
-      (sum, chain) => sum + chain.totalBlocks,
+    const connectedChains = chainStats.filter((ch) => ch.rpcConnected).length;
+    const indexedChains = chainStats.filter((ch) => ch.isIndexed).length;
+    const totalIndexedBlocks = chainStats.reduce(
+      (sum, ch) => sum + ch.indexedBlocks,
       0
     );
-    const totalTransactions = chainStats.reduce(
-      (sum, chain) => sum + chain.totalTransactions,
+    const totalIndexedTransactions = chainStats.reduce(
+      (sum, ch) => sum + ch.indexedTransactions,
       0
     );
-    const indexedChains = chainStats.filter((chain) => chain.isIndexed).length;
 
-    c.header("X-Data-Source", "database");
+    c.header("X-Data-Source", "hybrid");
 
     return c.json({
-      supportedChains: supportedChainIds.length,
+      supportedChains: getSupportedChainIds().length,
+      displayedChains: popularChainIds.length,
+      connectedChains,
       indexedChains,
-      totalBlocks,
-      totalTransactions,
+      totalIndexedBlocks,
+      totalIndexedTransactions,
       chains: chainStats,
       timestamp: new Date().toISOString(),
     });

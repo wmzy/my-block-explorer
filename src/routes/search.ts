@@ -13,6 +13,18 @@ import { createLogger } from "../server/logger";
 const app = new Hono();
 const logger = createLogger("search-routes");
 
+app.get("/search/history", async (c) => {
+  const limit = Math.min(parseInt(c.req.query("limit") ?? "50"), 50);
+
+  try {
+    const history = await searchService.getSearchHistory(0, limit);
+    return c.json({ history, timestamp: new Date().toISOString() });
+  } catch (error) {
+    logger.error({ err: error }, "Search history API error");
+    return c.json({ error: "Failed to get search history" }, 500);
+  }
+});
+
 app.get("/search", async (c) => {
   const query = c.req.query("q");
 

@@ -4,6 +4,7 @@ import { css } from "@linaria/core";
 import { getChainInfo, getChainName, getChainSymbol } from "../config/chains";
 import TopNavigation from "../components/TopNavigation";
 import { formatNumber, formatRelativeTime } from "@/utils/format";
+import { getLatestTransactions, type RpcTransaction } from "@/utils/blockRpcData";
 
 const pageStyles = css`
   max-width: 1200px;
@@ -157,26 +158,14 @@ const monoStyles = css`
   font-size: 13px;
 `;
 
-type TransactionSummary = {
-  hash: string;
-  blockNumber: string;
-  fromAddress: string;
-  toAddress: string;
-  value: string;
-  status: number;
-  timestamp?: string;
-  gasUsed?: string;
-  gasPrice?: string;
-};
-
 export default function TransactionsListPage() {
   const { chainId } = useParams<{ chainId: string }>();
   const navigate = useNavigate();
-  const [transactions, setTransactions] = useState<TransactionSummary[]>([]);
+  const [transactions, setTransactions] = useState<RpcTransaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
+  const [latestBlockNumber, setLatestBlockNumber] = useState<bigint | null>(null);
   const limit = 20;
 
   const currentChainId = parseInt(chainId || "1");
@@ -188,24 +177,19 @@ export default function TransactionsListPage() {
       setLoading(true);
       setError(null);
 
-      const response = await fetch(
-        `/api/chains/${currentChainId}/transactions?page=${page}&limit=${limit}`
+      const beforeBlock =
+        latestBlockNumber && page > 1
+          ? latestBlockNumber - BigInt((page - 1) * 5)
+          : undefined;
+
+      const result = await getLatestTransactions(
+        currentChainId,
+        limit,
+        beforeBlock
       );
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-
-      if (data.error) {
-        throw new Error(data.error);
-      }
-
-      setTransactions(data.data || data.transactions || []);
-      const pagination = data.pagination;
-      if (pagination) {
-        setTotalPages(pagination.totalPages || 1);
+      setTransactions(result.transactions);
+      if (page === 1) {
+        setLatestBlockNumber(result.latestBlockNumber);
       }
     } catch (err) {
       console.error("Failed to fetch transactions:", err);
@@ -215,7 +199,7 @@ export default function TransactionsListPage() {
     } finally {
       setLoading(false);
     }
-  }, [currentChainId, page]);
+  }, [currentChainId, page, latestBlockNumber]);
 
   useEffect(() => {
     fetchTransactions();
@@ -363,20 +347,22 @@ export default function TransactionsListPage() {
 
             <div className={paginationStyles}>
               <span className="page-info">
-                Page {page} of {totalPages}
+                Page {page}
+                {latestBlockNumber !== null &&
+                  ` • Latest block: ${formatNumber(Number(latestBlockNumber))}`}
               </span>
               <div className="page-buttons">
                 <button
                   disabled={page <= 1}
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
                 >
-                  Previous
+                  Newer
                 </button>
                 <button
-                  disabled={page >= totalPages}
+                  disabled={transactions.length < limit}
                   onClick={() => setPage((p) => p + 1)}
                 >
-                  Next
+                  Older
                 </button>
               </div>
             </div>

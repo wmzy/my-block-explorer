@@ -23,16 +23,18 @@ import {
 export class RpcManager {
   private clients = new Map<number, PublicClient>();
   private userConfigs = new Map<number, UserRpcConfig>();
+  private configsReady: Promise<void>;
 
   constructor() {
-    this.loadUserConfigs();
+    this.configsReady = this.loadUserConfigs();
   }
 
   // 重新加载RPC配置
   async reloadConfigs(): Promise<void> {
     this.userConfigs.clear();
     this.clients.clear();
-    await this.loadUserConfigs();
+    this.configsReady = this.loadUserConfigs();
+    await this.configsReady;
   }
 
   // 加载用户RPC配置
@@ -44,7 +46,7 @@ export class RpcManager {
         this.userConfigs.set(config.chainId, {
           chainId: config.chainId,
           customRpcUrl: config.url || undefined,
-          rpcBackups: undefined, // 暂时不支持备用RPC
+          rpcBackups: undefined,
           timeout: 10000,
           retryCount: 3,
           rateLimit: 100,
@@ -61,6 +63,8 @@ export class RpcManager {
 
   // 获取RPC客户端
   async getClient(chainId: number): Promise<PublicClient> {
+    await this.configsReady;
+
     if (!this.clients.has(chainId)) {
       try {
         logger.info({ chainId }, "Creating new RPC client for chain");

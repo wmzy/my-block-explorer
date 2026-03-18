@@ -174,8 +174,8 @@ export class DuckDBManager {
           id INTEGER PRIMARY KEY,
           chain_id INTEGER,
           query VARCHAR NOT NULL,
-          result_type VARCHAR,
-          result_id VARCHAR,
+          search_type VARCHAR,
+          result_count INTEGER DEFAULT 0,
           searched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
       `);

@@ -4,6 +4,7 @@ import { css } from "@linaria/core";
 import { getChainInfo, getChainName } from "../config/chains";
 import TopNavigation from "../components/TopNavigation";
 import { formatNumber, formatRelativeTime } from "@/utils/format";
+import { getLatestBlocks, type RpcBlock } from "@/utils/blockRpcData";
 
 const pageStyles = css`
   max-width: 1200px;
@@ -139,25 +140,14 @@ const monoStyles = css`
   font-size: 13px;
 `;
 
-type BlockSummary = {
-  number: string;
-  hash: string;
-  timestamp: string;
-  miner: string;
-  gasUsed: string;
-  gasLimit: string;
-  transactionCount: number;
-  baseFeePerGas?: string;
-};
-
 export default function BlocksListPage() {
   const { chainId } = useParams<{ chainId: string }>();
   const navigate = useNavigate();
-  const [blocks, setBlocks] = useState<BlockSummary[]>([]);
+  const [blocks, setBlocks] = useState<RpcBlock[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
+  const [latestBlockNumber, setLatestBlockNumber] = useState<bigint | null>(null);
   const limit = 20;
 
   const currentChainId = parseInt(chainId || "1");
@@ -168,24 +158,15 @@ export default function BlocksListPage() {
       setLoading(true);
       setError(null);
 
-      const response = await fetch(
-        `/api/chains/${currentChainId}/blocks?page=${page}&limit=${limit}`
-      );
+      const beforeBlock =
+        latestBlockNumber && page > 1
+          ? latestBlockNumber - BigInt((page - 1) * limit) + 1n
+          : undefined;
 
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-
-      if (data.error) {
-        throw new Error(data.error);
-      }
-
-      setBlocks(data.data || data.blocks || []);
-      const pagination = data.pagination;
-      if (pagination) {
-        setTotalPages(pagination.totalPages || 1);
+      const result = await getLatestBlocks(currentChainId, limit, beforeBlock);
+      setBlocks(result.blocks);
+      if (page === 1) {
+        setLatestBlockNumber(result.latestBlockNumber);
       }
     } catch (err) {
       console.error("Failed to fetch blocks:", err);
@@ -195,7 +176,7 @@ export default function BlocksListPage() {
     } finally {
       setLoading(false);
     }
-  }, [currentChainId, page]);
+  }, [currentChainId, page, latestBlockNumber]);
 
   useEffect(() => {
     fetchBlocks();
@@ -316,20 +297,22 @@ export default function BlocksListPage() {
 
             <div className={paginationStyles}>
               <span className="page-info">
-                Page {page} of {totalPages}
+                Page {page}
+                {latestBlockNumber !== null &&
+                  ` • Latest block: ${formatNumber(Number(latestBlockNumber))}`}
               </span>
               <div className="page-buttons">
                 <button
                   disabled={page <= 1}
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
                 >
-                  Previous
+                  Newer
                 </button>
                 <button
-                  disabled={page >= totalPages}
+                  disabled={blocks.length < limit}
                   onClick={() => setPage((p) => p + 1)}
                 >
-                  Next
+                  Older
                 </button>
               </div>
             </div>

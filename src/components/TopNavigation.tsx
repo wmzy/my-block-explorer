@@ -261,6 +261,12 @@ function ChainSelector({
   );
 }
 
+type SearchHistoryItem = {
+  query: string;
+  searchType?: string;
+  searchedAt: string;
+};
+
 export default function TopNavigation({
   currentChainId,
   onChainChange,
@@ -271,8 +277,51 @@ export default function TopNavigation({
   const [searchQuery, setSearchQuery] = useState("");
   const [showRpcConfig, setShowRpcConfig] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
+  const [searchHistory, setSearchHistory] = useState<SearchHistoryItem[]>([]);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
+  const searchContainerRef = React.useRef<HTMLDivElement>(null);
 
   const chainInfo = getChainInfo(currentChainId);
+
+  const fetchSearchHistory = React.useCallback(async () => {
+    try {
+      const response = await fetch("/api/search/history?limit=50");
+      if (!response.ok) return;
+      const data = await response.json();
+      setSearchHistory(data.history ?? []);
+      setHistoryLoaded(true);
+    } catch {
+      // silently fail
+    }
+  }, []);
+
+  const handleSearchFocus = () => {
+    setShowHistory(true);
+    if (!historyLoaded) fetchSearchHistory();
+  };
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Element;
+      if (showHistory && searchContainerRef.current && !searchContainerRef.current.contains(target)) {
+        setShowHistory(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [showHistory]);
+
+  const filteredHistory = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return searchHistory;
+    return searchHistory.filter((item) => item.query.toLowerCase().includes(q));
+  }, [searchQuery, searchHistory]);
+
+  const selectHistoryItem = (query: string) => {
+    setSearchQuery(query);
+    setShowHistory(false);
+  };
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
@@ -325,6 +374,8 @@ export default function TopNavigation({
       console.error("Search failed:", error);
     } finally {
       setLoading(false);
+      setShowHistory(false);
+      setHistoryLoaded(false);
     }
   };
 
@@ -375,51 +426,145 @@ export default function TopNavigation({
 
           {/* 搜索框 */}
           <div
+            ref={searchContainerRef}
             style={{
               flex: 1,
               maxWidth: "400px",
               margin: "0 20px",
-              display: "flex",
-              gap: "8px",
+              position: "relative",
             }}
           >
-            <input
-              type="text"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder={
-                searchPlaceholder ||
-                `在 ${chainInfo?.name || "当前链"} 上搜索地址、交易、区块...`
-              }
-              style={{
-                flex: 1,
-                padding: "8px 12px",
-                border: "1px solid #d1d5db",
-                borderRadius: "6px",
-                fontSize: "14px",
-                outline: "none",
-                height: "40px",
-                boxSizing: "border-box",
-              }}
-              onKeyPress={(e) => e.key === "Enter" && handleSearch()}
-            />
-            <button
-              onClick={handleSearch}
-              disabled={loading}
-              style={{
-                padding: "8px 16px",
-                background: loading ? "#9ca3af" : "#3b82f6",
-                color: "white",
-                border: "none",
-                borderRadius: "6px",
-                cursor: loading ? "not-allowed" : "pointer",
-                fontSize: "14px",
-                fontWeight: "500",
-                height: "40px",
-              }}
-            >
-              {loading ? "搜索中..." : "搜索"}
-            </button>
+            <div style={{ display: "flex", gap: "8px" }}>
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onFocus={handleSearchFocus}
+                placeholder={
+                  searchPlaceholder ||
+                  `在 ${chainInfo?.name || "当前链"} 上搜索地址、交易、区块...`
+                }
+                style={{
+                  flex: 1,
+                  padding: "8px 12px",
+                  border: "1px solid #d1d5db",
+                  borderRadius: "6px",
+                  fontSize: "14px",
+                  outline: "none",
+                  height: "40px",
+                  boxSizing: "border-box",
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") handleSearch();
+                  if (e.key === "Escape") setShowHistory(false);
+                }}
+              />
+              <button
+                onClick={handleSearch}
+                disabled={loading}
+                style={{
+                  padding: "8px 16px",
+                  background: loading ? "#9ca3af" : "#3b82f6",
+                  color: "white",
+                  border: "none",
+                  borderRadius: "6px",
+                  cursor: loading ? "not-allowed" : "pointer",
+                  fontSize: "14px",
+                  fontWeight: "500",
+                  height: "40px",
+                }}
+              >
+                {loading ? "搜索中..." : "搜索"}
+              </button>
+            </div>
+
+            {showHistory && filteredHistory.length > 0 && (
+              <div
+                style={{
+                  position: "absolute",
+                  top: "100%",
+                  left: 0,
+                  right: 0,
+                  marginTop: "4px",
+                  background: "white",
+                  border: "1px solid #d1d5db",
+                  borderRadius: "8px",
+                  boxShadow: "0 4px 12px rgba(0, 0, 0, 0.1)",
+                  zIndex: 1000,
+                  maxHeight: "360px",
+                  overflowY: "auto",
+                }}
+              >
+                <div
+                  style={{
+                    padding: "8px 12px",
+                    fontSize: "11px",
+                    color: "#9ca3af",
+                    fontWeight: "600",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.5px",
+                    borderBottom: "1px solid #f3f4f6",
+                  }}
+                >
+                  最近搜索
+                </div>
+                {filteredHistory.map((item, idx) => (
+                  <button
+                    key={`${item.query}-${idx}`}
+                    onClick={() => selectHistoryItem(item.query)}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                      width: "100%",
+                      padding: "8px 12px",
+                      border: "none",
+                      background: "transparent",
+                      cursor: "pointer",
+                      fontSize: "13px",
+                      color: "#374151",
+                      textAlign: "left",
+                      borderBottom: "1px solid #f9fafb",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = "#f3f4f6";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = "transparent";
+                    }}
+                  >
+                    <span style={{ color: "#9ca3af", fontSize: "14px" }}>🔍</span>
+                    <span
+                      style={{
+                        flex: 1,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                        fontFamily: /^0x/.test(item.query)
+                          ? '"SF Mono", Monaco, "Cascadia Code", monospace'
+                          : "inherit",
+                      }}
+                    >
+                      {item.query}
+                    </span>
+                    {item.searchType && (
+                      <span
+                        style={{
+                          fontSize: "10px",
+                          padding: "2px 6px",
+                          borderRadius: "4px",
+                          background: "#f3f4f6",
+                          color: "#6b7280",
+                          flexShrink: 0,
+                        }}
+                      >
+                        {item.searchType}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* 右侧控制区 */}

@@ -146,9 +146,10 @@ export class ChainSchemaManager {
     return `
       CREATE TABLE IF NOT EXISTS search_history (
         id INTEGER PRIMARY KEY,
+        chain_id INTEGER,
         query VARCHAR NOT NULL,
-        result_type VARCHAR,
-        result_id VARCHAR,
+        search_type VARCHAR,
+        result_count INTEGER DEFAULT 0,
         searched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       )
     `;
@@ -257,7 +258,7 @@ export class ChainSchemaManager {
 
       // 搜索历史索引
       "CREATE INDEX IF NOT EXISTS search_history_searched_at_idx ON search_history (searched_at)",
-      "CREATE INDEX IF NOT EXISTS search_history_result_type_idx ON search_history (result_type)",
+      "CREATE INDEX IF NOT EXISTS search_history_search_type_idx ON search_history (search_type)",
 
       // 访问历史索引
       "CREATE INDEX IF NOT EXISTS access_history_type_idx ON access_history (type, last_accessed)",

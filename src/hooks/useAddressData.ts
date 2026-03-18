@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { getRealTimeAddressData } from "@/utils/realTimeData";
+import { getRealTimeAddressData, getContractCode } from "@/utils/realTimeData";
 
 export type PersistentAddressData = {
   isContract: boolean;
@@ -58,42 +58,53 @@ export function useAddressData(chainId: number, address: string): AddressData {
   useEffect(() => {
     if (!chainId || !address) return;
 
-    // 重置状态
+    let cancelled = false;
+
     setPersistent(null);
     setRealTime(null);
     setLoading({ persistent: true, realTime: true });
     setError({ persistent: null, realTime: null });
 
-    // 并行获取持久化数据和实时数据
-    Promise.allSettled([
-      fetchPersistentData(chainId, address),
-      fetchRealTimeData(chainId, address),
-    ]).then(([persistentResult, realTimeResult]) => {
-      // 处理持久化数据结果
-      if (persistentResult.status === "fulfilled") {
-        setPersistent(persistentResult.value);
-      } else {
-        setError((prev) => ({
-          ...prev,
-          persistent:
-            persistentResult.reason?.message ||
-            "Failed to fetch persistent data",
-        }));
-      }
-      setLoading((prev) => ({ ...prev, persistent: false }));
+    fetchPersistentData(chainId, address)
+      .then((data) => {
+        if (!cancelled) setPersistent(data);
+      })
+      .catch(async (err) => {
+        if (cancelled) return;
+        try {
+          const code = await getContractCode(chainId, address);
+          const isContract = Boolean(code && code !== "0x" && code.length > 2);
+          if (!cancelled) setPersistent({ isContract });
+        } catch {
+          if (!cancelled)
+            setError((prev) => ({
+              ...prev,
+              persistent: err?.message || "Failed to fetch persistent data",
+            }));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading((prev) => ({ ...prev, persistent: false }));
+      });
 
-      // 处理实时数据结果
-      if (realTimeResult.status === "fulfilled") {
-        setRealTime(realTimeResult.value);
-      } else {
-        setError((prev) => ({
-          ...prev,
-          realTime:
-            realTimeResult.reason?.message || "Failed to fetch real-time data",
-        }));
-      }
-      setLoading((prev) => ({ ...prev, realTime: false }));
-    });
+    fetchRealTimeData(chainId, address)
+      .then((data) => {
+        if (!cancelled) setRealTime(data);
+      })
+      .catch((err) => {
+        if (!cancelled)
+          setError((prev) => ({
+            ...prev,
+            realTime: err?.message || "Failed to fetch real-time data",
+          }));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading((prev) => ({ ...prev, realTime: false }));
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [chainId, address]);
 
   return {
@@ -104,28 +115,40 @@ export function useAddressData(chainId: number, address: string): AddressData {
   };
 }
 
-/**
- * 从后端API获取持久化地址数据
- */
+const PERSISTENT_TIMEOUT_MS = 15_000;
+
 async function fetchPersistentData(
   chainId: number,
   address: string
 ): Promise<PersistentAddressData> {
-  const response = await fetch(
-    `/api/chains/${chainId}/addresses/${address}/persistent`
-  );
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), PERSISTENT_TIMEOUT_MS);
 
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+  try {
+    const response = await fetch(
+      `/api/chains/${chainId}/addresses/${address}/persistent`,
+      { signal: controller.signal }
+    );
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+
+    if (data.error) {
+      throw new Error(data.error);
+    }
+
+    return data;
+  } catch (err) {
+    if (err instanceof DOMException && err.name === "AbortError") {
+      throw new Error("Request timed out");
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
   }
-
-  const data = await response.json();
-
-  if (data.error) {
-    throw new Error(data.error);
-  }
-
-  return data;
 }
 
 /**

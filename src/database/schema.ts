@@ -151,6 +151,7 @@ export const indexedAddresses = duckdbTable(
 // 搜索历史表
 export const searchHistory = duckdbTable("search_history", {
   id: integer().primaryKey(),
+  chainId: integer(),
   query: varchar({ length: 255 }),
   searchType: varchar({ length: 20 }),
   resultCount: integer().default(0),

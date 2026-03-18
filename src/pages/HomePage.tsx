@@ -246,6 +246,14 @@ export default function HomePage() {
               <Card className={statCard}>
                 <CardContent>
                   <div className={statValue}>
+                    {overview.connectedChains || 0}
+                  </div>
+                  <div className={statLabel}>Connected Chains</div>
+                </CardContent>
+              </Card>
+              <Card className={statCard}>
+                <CardContent>
+                  <div className={statValue}>
                     {overview.indexedChains || 0}
                   </div>
                   <div className={statLabel}>Indexed Chains</div>
@@ -254,24 +262,16 @@ export default function HomePage() {
               <Card className={statCard}>
                 <CardContent>
                   <div className={statValue}>
-                    {formatNumber(overview.totalBlocks || 0)}
+                    {formatNumber(overview.totalIndexedBlocks || 0)}
                   </div>
-                  <div className={statLabel}>Total Blocks</div>
-                </CardContent>
-              </Card>
-              <Card className={statCard}>
-                <CardContent>
-                  <div className={statValue}>
-                    {formatNumber(overview.totalTransactions || 0)}
-                  </div>
-                  <div className={statLabel}>Total Transactions</div>
+                  <div className={statLabel}>Indexed Blocks</div>
                 </CardContent>
               </Card>
             </div>
 
             <Card>
               <CardHeader>
-                <CardTitle>Supported Chains</CardTitle>
+                <CardTitle>Popular Chains</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className={chainGrid}>
@@ -287,25 +287,26 @@ export default function HomePage() {
                             {chain.chainName}
                           </div>
                           <StatusBadge
-                            status={chain.isIndexed ? "online" : "offline"}
+                            status={chain.rpcConnected ? "online" : "offline"}
                           >
-                            {chain.isIndexed ? "Indexed" : "Not Indexed"}
+                            {chain.rpcConnected ? "Connected" : "Offline"}
                           </StatusBadge>
                         </div>
                         <div className={chainStatsStyle}>
                           <div>
                             Latest Block:{" "}
-                            {chain.latestBlock
-                              ? formatNumber(chain.latestBlock)
+                            {chain.latestBlockNumber
+                              ? formatNumber(chain.latestBlockNumber)
                               : "N/A"}
                           </div>
                           <div>Symbol: {chain.chainSymbol}</div>
                           <div>
-                            Indexed Blocks: {formatNumber(chain.totalBlocks)}
+                            Indexed Blocks:{" "}
+                            {formatNumber(chain.indexedBlocks || 0)}
                           </div>
                           <div>
-                            Transactions:{" "}
-                            {formatNumber(chain.totalTransactions)}
+                            Indexed Txns:{" "}
+                            {formatNumber(chain.indexedTransactions || 0)}
                           </div>
                         </div>
                       </div>

@@ -1,49 +1,70 @@
-import { createPublicClient, http, formatEther } from "viem";
-import { mainnet, polygon, arbitrum, optimism } from "viem/chains";
+import { createPublicClient, http, formatEther, type PublicClient } from "viem";
+import { getChainInfo } from "@/config/chains";
 
-// 链配置映射
-const chainMap = {
-  1: mainnet,
-  137: polygon,
-  42161: arbitrum,
-  10: optimism,
-  // 添加更多链...
-  5000: {
-    id: 5000,
-    name: "Mantle",
-    network: "mantle",
-    nativeCurrency: {
-      decimals: 18,
-      name: "Mantle",
-      symbol: "MNT",
-    },
-    rpcUrls: {
-      default: {
-        http: ["https://rpc.mantle.xyz"],
-      },
-      public: {
-        http: ["https://rpc.mantle.xyz"],
-      },
-    },
-    blockExplorers: {
-      default: { name: "Explorer", url: "https://explorer.mantle.xyz" },
-    },
-  },
-} as const;
+const clientCache = new Map<number, PublicClient>();
+const customRpcUrls = new Map<number, string>();
+let rpcConfigsLoaded = false;
+let rpcConfigsPromise: Promise<void> | null = null;
+
+type RpcConfigEntry = { chainId: number; url?: string | null };
+
+const loadRpcConfigs = (): Promise<void> => {
+  if (rpcConfigsLoaded) return Promise.resolve();
+  if (rpcConfigsPromise) return rpcConfigsPromise;
+
+  rpcConfigsPromise = fetch("/api/rpc-configs")
+    .then((res) => (res.ok ? res.json() : { configs: [] }))
+    .then((data: { configs?: RpcConfigEntry[] }) => {
+      (data.configs ?? []).forEach((cfg) => {
+        if (cfg.url) customRpcUrls.set(cfg.chainId, cfg.url);
+      });
+      rpcConfigsLoaded = true;
+    })
+    .catch(() => {
+      rpcConfigsLoaded = true;
+    })
+    .finally(() => {
+      rpcConfigsPromise = null;
+    });
+
+  return rpcConfigsPromise;
+};
 
 /**
- * 创建RPC客户端
+ * Notify that user RPC configs have changed so clients are recreated.
  */
-export const createRpcClient = (chainId: number) => {
-  const chain = chainMap[chainId as keyof typeof chainMap];
+export const invalidateRpcClients = (): void => {
+  clientCache.clear();
+  customRpcUrls.clear();
+  rpcConfigsLoaded = false;
+};
+
+const buildClient = (chainId: number): PublicClient => {
+  const chain = getChainInfo(chainId);
   if (!chain) {
     throw new Error(`Unsupported chain ID: ${chainId}`);
   }
 
-  return createPublicClient({
+  const customUrl = customRpcUrls.get(chainId);
+  const client = createPublicClient({
     chain,
-    transport: http(),
+    transport: http(customUrl ?? undefined),
   });
+  clientCache.set(chainId, client);
+  return client;
+};
+
+/**
+ * Get or create a cached viem PublicClient for the given chain.
+ * Awaits user RPC config loading on first call, then returns cached clients.
+ */
+export const createRpcClient = async (chainId: number): Promise<PublicClient> => {
+  await loadRpcConfigs();
+
+  const cached = clientCache.get(chainId);
+  if (cached) return cached;
+
+  return buildClient(chainId);
 };
 
 /**
@@ -53,7 +74,7 @@ export const getRealTimeAddressData = async (
   chainId: number,
   address: string
 ) => {
-  const client = createRpcClient(chainId);
+  const client = await createRpcClient(chainId);
 
   const [balance, txCount, latestBlock] = await Promise.all([
     client.getBalance({ address: address as `0x${string}` }),
@@ -73,7 +94,7 @@ export const getRealTimeAddressData = async (
  * 获取合约代码（如果需要）
  */
 export const getContractCode = async (chainId: number, address: string) => {
-  const client = createRpcClient(chainId);
+  const client = await createRpcClient(chainId);
   return await client.getCode({ address: address as `0x${string}` });
 };
 
@@ -84,7 +105,7 @@ export const getBatchBalances = async (
   chainId: number,
   addresses: string[]
 ) => {
-  const client = createRpcClient(chainId);
+  const client = await createRpcClient(chainId);
 
   const balances = await Promise.all(
     addresses.map((address) =>
@@ -106,7 +127,7 @@ export const isContractAddress = async (
   chainId: number,
   address: string
 ): Promise<boolean> => {
-  const client = createRpcClient(chainId);
+  const client = await createRpcClient(chainId);
   const code = await client.getCode({ address: address as `0x${string}` });
   return Boolean(code && code !== "0x" && code.length > 2);
 };

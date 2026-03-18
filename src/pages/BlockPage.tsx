@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { css } from "@linaria/core";
 import { getChainInfo, getChainName } from "../config/chains";
 import TopNavigation from "../components/TopNavigation";
+import { getBlockByNumber, type RpcBlock } from "@/utils/blockRpcData";
 
 const pageStyles = css`
   max-width: 1200px;
@@ -107,29 +108,13 @@ const backButtonStyles = css`
   }
 `;
 
-type BlockInfo = {
-  chainId: number;
-  number: string;
-  hash: string;
-  parentHash: string;
-  timestamp: string;
-  miner: string;
-  gasLimit: string;
-  gasUsed: string;
-  baseFeePerGas?: string;
-  transactionCount: number;
-  sizeBytes?: number;
-  difficulty?: string;
-  extraData?: string;
-};
-
 export default function BlockPage() {
   const { chainId, blockNumber } = useParams<{
     chainId: string;
     blockNumber: string;
   }>();
   const navigate = useNavigate();
-  const [blockInfo, setBlockInfo] = useState<BlockInfo | null>(null);
+  const [blockInfo, setBlockInfo] = useState<RpcBlock | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -143,38 +128,24 @@ export default function BlockPage() {
       return;
     }
 
+    const fetchBlockInfo = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const block = await getBlockByNumber(currentChainId, BigInt(blockNumber));
+        setBlockInfo(block);
+      } catch (err) {
+        console.error("Failed to fetch block info:", err);
+        setError(
+          err instanceof Error ? err.message : "Failed to fetch block information"
+        );
+      } finally {
+        setLoading(false);
+      }
+    };
+
     fetchBlockInfo();
-  }, [chainId, blockNumber]);
-
-  const fetchBlockInfo = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const response = await fetch(
-        `/api/chains/${currentChainId}/blocks/${blockNumber}`
-      );
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-
-      if (data.error) {
-        throw new Error(data.error);
-      }
-
-      setBlockInfo(data.block);
-    } catch (err) {
-      console.error("Failed to fetch block info:", err);
-      setError(
-        err instanceof Error ? err.message : "Failed to fetch block information"
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [chainId, blockNumber, currentChainId]);
 
   const formatGas = (gas: string) => {
     try {

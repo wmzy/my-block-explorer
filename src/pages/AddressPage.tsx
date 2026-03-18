@@ -237,12 +237,14 @@ export default function AddressPage() {
   const [txError, setTxError] = useState<string | null>(null);
   const [txPage, setTxPage] = useState(1);
   const [txTotalPages, setTxTotalPages] = useState(1);
+  const [txMethod, setTxMethod] = useState<string>("");
+  const [txTotal, setTxTotal] = useState(0);
   const txLimit = 10;
 
-  const fetchTransactions = useCallback(async () => {
+  const fetchTransactions = useCallback(async (opts?: { silent?: boolean }) => {
     if (!address || !chainId) return;
     try {
-      setTxLoading(true);
+      if (!opts?.silent) setTxLoading(true);
       setTxError(null);
       const response = await fetch(
         `/api/chains/${currentChainId}/addresses/${address}/transactions?page=${txPage}&limit=${txLimit}`
@@ -252,6 +254,8 @@ export default function AddressPage() {
       }
       const data = await response.json();
       setTransactions(data.data || data.transactions || []);
+      setTxMethod(data.method ?? "");
+      setTxTotal(data.total ?? data.pagination?.total ?? 0);
       if (data.pagination) {
         setTxTotalPages(data.pagination.totalPages || 1);
       }
@@ -294,9 +298,11 @@ export default function AddressPage() {
     navigate(`/chain/${newChainId}/address/${address}`, { replace: true });
   };
 
-  // 计算总体加载和错误状态
-  const isLoading =
-    addressData.loading.persistent || addressData.loading.realTime;
+  const isInitialLoading =
+    addressData.loading.persistent &&
+    addressData.loading.realTime &&
+    !addressData.persistent &&
+    !addressData.realTime;
   const hasError = addressData.error.persistent || addressData.error.realTime;
   const errorMessage =
     addressData.error.persistent || addressData.error.realTime;
@@ -350,17 +356,17 @@ export default function AddressPage() {
           </div>
         </div>
 
-        {isLoading && (
+        {isInitialLoading && (
           <div className={loadingStyles}>
             Loading address information...
-            {addressData.loading.persistent && " (fetching contract info)"}
-            {addressData.loading.realTime && " (fetching balance)"}
           </div>
         )}
 
-        {hasError && <div className={errorStyles}>Error: {errorMessage}</div>}
+        {hasError && !isInitialLoading && (
+          <div className={errorStyles}>Error: {errorMessage}</div>
+        )}
 
-        {(addressData.persistent || addressData.realTime) && (
+        {!isInitialLoading && (
           <>
             <div className={cardStyles}>
               <h2>Overview</h2>
@@ -520,10 +526,41 @@ export default function AddressPage() {
             </div>
 
             <div className={cardStyles}>
-              <h2>Recent Transactions</h2>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                <h2 style={{ margin: 0 }}>Recent Transactions</h2>
+                <button
+                  onClick={() => fetchTransactions()}
+                  disabled={txLoading}
+                  style={{
+                    padding: "4px 12px",
+                    border: "1px solid #e1e5e9",
+                    borderRadius: "6px",
+                    background: txLoading ? "#f3f4f6" : "white",
+                    color: txLoading ? "#9ca3af" : "#374151",
+                    fontSize: "13px",
+                    cursor: txLoading ? "not-allowed" : "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "4px",
+                  }}
+                >
+                  {txLoading ? "⏳ Searching..." : "🔄 Refresh"}
+                </button>
+              </div>
               {txLoading && (
-                <div style={{ color: "#666", textAlign: "center", padding: 20 }}>
-                  Loading transactions...
+                <div style={{
+                  color: "#6b7280",
+                  textAlign: "center",
+                  padding: "24px 20px",
+                  background: "#f9fafb",
+                  borderRadius: "8px",
+                }}>
+                  <div style={{ fontSize: "14px", fontWeight: 500, marginBottom: 6 }}>
+                    Searching for transactions via binary search...
+                  </div>
+                  <div style={{ fontSize: "12px", color: "#9ca3af" }}>
+                    Scanning block history for balance changes. This may take a few seconds.
+                  </div>
                 </div>
               )}
               {txError && (
@@ -531,9 +568,60 @@ export default function AddressPage() {
                   {txError}
                 </div>
               )}
-              {!txLoading && !txError && transactions.length === 0 && (
+              {!txLoading && !txError && transactions.length === 0 && txTotal > 0 && txMethod === "binary-search-skipped" && (
+                <div style={{
+                  color: "#6b7280",
+                  textAlign: "center",
+                  padding: "24px 20px",
+                  background: "#f0f9ff",
+                  borderRadius: "8px",
+                  border: "1px solid #bae6fd",
+                }}>
+                  <div style={{ fontSize: "14px", fontWeight: 500, marginBottom: 6 }}>
+                    Cannot discover transactions for this address
+                  </div>
+                  <div style={{ fontSize: "12px", color: "#0369a1" }}>
+                    This address has {txTotal} nonce but 0 native token balance.
+                    The binary search algorithm relies on balance changes and cannot work here.
+                    This is common for contracts that only handle tokens.
+                  </div>
+                </div>
+              )}
+              {!txLoading && !txError && transactions.length === 0 && txTotal > 0 && txMethod !== "binary-search-skipped" && (
+                <div style={{
+                  color: "#6b7280",
+                  textAlign: "center",
+                  padding: "24px 20px",
+                  background: "#fffbeb",
+                  borderRadius: "8px",
+                  border: "1px solid #fde68a",
+                }}>
+                  <div style={{ fontSize: "14px", fontWeight: 500, marginBottom: 6 }}>
+                    No transactions found in recent blocks
+                  </div>
+                  <div style={{ fontSize: "12px", color: "#92400e" }}>
+                    This address has {txTotal} transactions, but they may be outside the search range.
+                    Try clicking Refresh to search again.
+                  </div>
+                </div>
+              )}
+              {!txLoading && !txError && transactions.length === 0 && txTotal === 0 && (
                 <div style={{ color: "#666", textAlign: "center", padding: 20 }}>
                   No transactions found
+                </div>
+              )}
+              {!txLoading && transactions.length > 0 && txMethod === "binary-search" && (
+                <div style={{
+                  fontSize: "12px",
+                  color: "#6b7280",
+                  marginBottom: 12,
+                  padding: "6px 10px",
+                  background: "#f0fdf4",
+                  borderRadius: "6px",
+                  border: "1px solid #bbf7d0",
+                }}>
+                  Found {transactions.length} of ~{txTotal} transactions via balance-change binary search.
+                  Results may not include all transactions.
                 </div>
               )}
               {transactions.length > 0 && (

@@ -1,3 +1,5 @@
+import { invalidateRpcClients } from "./realTimeData";
+
 // RPC配置管理服务
 export type RpcConfig = {
   id: string;
@@ -48,6 +50,8 @@ export async function saveRpcConfig(config: {
     const error = await response.json().catch(() => ({}));
     throw new Error(error.error || "Failed to save RPC config");
   }
+
+  invalidateRpcClients();
 }
 
 // 删除RPC配置
@@ -60,6 +64,8 @@ export async function deleteRpcConfig(chainId: number): Promise<void> {
     const error = await response.json().catch(() => ({}));
     throw new Error(error.error || "Failed to delete RPC config");
   }
+
+  invalidateRpcClients();
 }
 
 // 测试RPC连接

@@ -90,17 +90,19 @@ const createSearchService = (deps: SearchServiceDeps) => {
     }
   };
 
+  let searchIdCounter = Date.now();
+
   const recordSearch = async (
-    chainId: number,
+    _chainId: number,
     query: string,
     resultType?: SearchResultType,
   ): Promise<void> => {
     try {
-      await db.insert(searchHistory).values({
-        query,
-        searchType: resultType ?? null,
-        resultCount: 0,
-      } as any);
+      const id = searchIdCounter++;
+      await db.execute(
+        sql`INSERT INTO search_history (id, query, search_type, searched_at)
+            VALUES (${id}, ${query}, ${resultType ?? null}, CURRENT_TIMESTAMP::TIMESTAMP)`
+      );
     } catch (error) {
       logger.warn({ err: error }, "Failed to record search history");
     }
@@ -288,9 +290,8 @@ const createSearchService = (deps: SearchServiceDeps) => {
       }
 
       try {
-        await recordSearch(chainId, trimmedQuery);
-
         const searchType = detectSearchType(trimmedQuery);
+        await recordSearch(chainId, trimmedQuery, searchType);
 
         switch (searchType) {
           case "block":
@@ -316,29 +317,27 @@ const createSearchService = (deps: SearchServiceDeps) => {
 
     getSearchHistory: async (
       _chainId: number,
-      limit: number = 20
+      limit: number = 50
     ): Promise<
       {
         query: string;
-        resultType?: string;
+        searchType?: string;
         searchedAt: Date;
       }[]
     > => {
       try {
-        const result = await db
-          .select({
-            query: searchHistory.query,
-            searchType: searchHistory.searchType,
-            searchedAt: searchHistory.searchedAt,
-          })
-          .from(searchHistory)
-          .orderBy(desc(searchHistory.searchedAt))
-          .limit(limit);
+        const result = await db.execute(
+          sql`SELECT query, search_type, MAX(searched_at) as searched_at
+              FROM search_history
+              GROUP BY query, search_type
+              ORDER BY searched_at DESC
+              LIMIT ${limit}`
+        );
 
-        return result.map((row) => ({
+        return (result as unknown as Array<{ query: string; search_type?: string; searched_at: string }>).map((row) => ({
           query: row.query ?? "",
-          resultType: row.searchType ?? undefined,
-          searchedAt: row.searchedAt ? new Date(row.searchedAt) : new Date(),
+          searchType: row.search_type ?? undefined,
+          searchedAt: row.searched_at ? new Date(row.searched_at) : new Date(),
         }));
       } catch (error) {
         logger.error({ err: error }, "Failed to get search history");

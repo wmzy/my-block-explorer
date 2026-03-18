@@ -64,8 +64,9 @@ app.get("/chains/:chainId/addresses/:address/persistent", async (c) => {
 app.get("/chains/:chainId/addresses/:address/transactions", async (c) => {
   const chainId = getValidatedChainId(c.req.param("chainId"));
   const address = getValidatedAddress(c.req.param("address"));
-  const limit = parseInt(c.req.query("limit") ?? "20");
-  const offset = parseInt(c.req.query("offset") ?? "0");
+  const limit = Math.min(parseInt(c.req.query("limit") ?? "20"), 50);
+  const page = Math.max(parseInt(c.req.query("page") ?? "1"), 1);
+  const offset = (page - 1) * limit;
 
   try {
     const result = await addressService.getAddressTransactions(
@@ -77,12 +78,20 @@ app.get("/chains/:chainId/addresses/:address/transactions", async (c) => {
     c.header("X-Data-Source", result.method);
     c.header("X-Chain-Name", getChainName(chainId));
 
+    const totalPages = Math.max(1, Math.ceil(result.total / limit));
+
     const responseData = safeJsonResponse({
       chainId,
       chainName: getChainName(chainId),
       address,
       transactions: result.transactions.map(formatTransactionForApi),
       total: result.total,
+      pagination: {
+        page,
+        limit,
+        totalPages,
+        total: result.total,
+      },
       method: result.method,
       timestamp: new Date().toISOString(),
     });

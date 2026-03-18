@@ -33,19 +33,41 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Architecture Overview
 
-This is a modern blockchain explorer built with a unique DuckDB-PostgreSQL adapter architecture for extreme performance (1-9ms response times).
+This is a modern blockchain explorer with a data separation architecture: ephemeral/real-time data is fetched directly from RPC by the frontend, while persistent data (contracts, addresses, events) is cached in DuckDB via the backend.
+
+### Data Separation Strategy
+
+The core design principle: **ephemeral data goes direct to RPC, persistent data goes through the backend.**
+
+**Frontend RPC Direct (via viem):**
+- Block lists, block details — `src/utils/blockRpcData.ts`
+- Transaction lists, transaction details — `src/utils/blockRpcData.ts`
+- Address balances, nonces, latest block number — `src/utils/realTimeData.ts`
+- Contract read/simulate calls — `src/utils/contractInteraction.ts`
+
+**Backend API (Hono + DuckDB):**
+- Contract source code, ABI, verification — cached in DB, fetched from Sourcify/explorers on first access
+- Contract event indexing — historical logs stored in per-chain DuckDB files
+- Address persistent metadata (isContract, creation info) — cached in DB
+- Search — queries indexed data in DB
+- Overview stats — hybrid mode: RPC for `latestBlockNumber`, DB for indexed counts
+
+**Why this split:**
+- Blocks and transactions are immutable but numerous; fetching the latest N from RPC is fast and avoids the "empty database" bootstrap problem
+- Contract source/ABI rarely changes and benefits from caching
+- Event logs require historical range queries that RPC rate-limits, so indexing is necessary
 
 ### Key Architecture Patterns
 
 **Database Architecture:**
 - **DuckDB-PostgreSQL Adapter**: Custom adapter in `src/database/duckdb-postgres-adapter.ts` allows Drizzle ORM to work with DuckDB using PostgreSQL syntax
-- **Data Separation Strategy**: Persistent data (contracts, addresses) cached in database, real-time data (balances) fetched directly by frontend
-- **Single Database File**: All chains stored in one DuckDB file at `data/blockchain.db` with chain_id as partition dimension
+- **Main DB**: `data/blockchain.db` — blocks, transactions, addresses, contracts (indexed on demand)
+- **Per-Chain Event DBs**: `data/chains/{type}/{name}-{id}.db` — contract event tables
 
 **Service Layer Architecture:**
 - **Chain-Agnostic Services**: All services in `src/services/` are designed to work across multiple chains
-- **RPC Manager**: Centralized RPC connection management with failover and configuration in `src/services/RpcManager.ts`
-- **Performance-First Design**: 99%+ performance improvement through smart caching and on-demand indexing
+- **RPC Manager**: Centralized RPC connection management with failover and configuration in `src/services/RpcManager.ts` (used by backend)
+- **Frontend RPC Client**: `src/utils/realTimeData.ts` exports `createRpcClient()` with client caching, used by all frontend RPC utilities
 
 **Frontend-Backend Split:**
 - **Client**: React 19 + Vite 7 + Linaria CSS-in-JS, runs on port 3000
@@ -77,27 +99,31 @@ src/
 
 **Core Architecture:**
 - `src/database/duckdb-postgres-adapter.ts` - Custom DuckDB adapter for Drizzle ORM
-- `src/services/RpcManager.ts` - RPC connection management with failover
+- `src/services/RpcManager.ts` - Backend RPC connection management with failover
 - `src/config/chains.ts` - Multi-chain configuration using Viem chains
 - `src/api-app.ts` - Complete API endpoint definitions
+
+**Frontend RPC Data Layer:**
+- `src/utils/realTimeData.ts` - Shared `createRpcClient()` with caching + address real-time data (balance, nonce)
+- `src/utils/blockRpcData.ts` - Block and transaction data fetched directly from RPC (getLatestBlocks, getBlockByNumber, getTransactionByHash, etc.)
+- `src/hooks/useAddressData.ts` - Data separation hook: persistent from API, real-time from RPC
 
 **Database Schema:**
 - `src/database/schema.ts` - Drizzle schema definitions
 - `drizzle.config.ts` - Drizzle Kit configuration (uses PostgreSQL dialect)
 
 **Frontend Integration:**
-- `src/hooks/useAutoDiscovery.ts` - Automatic server discovery
-- `src/api/client.ts` - API client with service discovery
+- `src/api/client.ts` - API client for backend endpoints (contracts, search, stats)
 
-**Pages:**
-- `src/pages/HomePage.tsx` - Chain overview with stats and chain list
-- `src/pages/BlocksListPage.tsx` - Paginated block list for a chain
-- `src/pages/TransactionsListPage.tsx` - Paginated transaction list for a chain
-- `src/pages/BlockPage.tsx` - Block detail view
-- `src/pages/TransactionPage.tsx` - Transaction detail view
-- `src/pages/AddressPage.tsx` - Address detail with transaction history
-- `src/pages/ContractPage.tsx` - Contract source, ABI, events, interaction
-- `src/pages/SearchPage.tsx` - Global search across chains
+**Pages (data source):**
+- `src/pages/HomePage.tsx` - Chain overview (hybrid API: RPC + DB)
+- `src/pages/BlocksListPage.tsx` - Block list (frontend RPC direct)
+- `src/pages/TransactionsListPage.tsx` - Transaction list (frontend RPC direct)
+- `src/pages/BlockPage.tsx` - Block detail (frontend RPC direct)
+- `src/pages/TransactionPage.tsx` - Transaction detail (frontend RPC direct)
+- `src/pages/AddressPage.tsx` - Address detail (RPC for balance + API for persistent)
+- `src/pages/ContractPage.tsx` - Contract source, ABI, events (backend API)
+- `src/pages/SearchPage.tsx` - Global search (backend API)
 - `src/pages/NotFoundPage.tsx` - 404 error page
 
 ### Chain Support
@@ -111,13 +137,14 @@ The application supports all Viem chains out-of-the-box:
 
 **Data Architecture:**
 - Persistent contract information cached in DuckDB for 1-9ms response times
-- Real-time data (balances, prices) fetched directly by frontend
-- On-demand indexing - only indexes data users actually access
+- Blocks and transactions fetched directly from RPC by the frontend — no backend indexing needed for browsing
+- Address balances and nonces fetched directly from RPC by the frontend
+- Backend indexing retained for search, contract events, and address metadata
 
 **Caching Strategy:**
-- Database caching for static data (contract info, addresses)
-- Frontend caching for real-time data
-- Response headers indicate data source (`X-Data-Source`)
+- DuckDB caching for contract source/ABI, address metadata, event logs
+- Frontend viem client caching per chain in `createRpcClient()`
+- Response headers indicate data source (`X-Data-Source`: `hybrid`, `database`, `rpc`)
 
 ### Testing Strategy
 
@@ -147,15 +174,32 @@ The application supports all Viem chains out-of-the-box:
 
 ### API Design Patterns
 
-**Chain-Specific Endpoints:**
-- `/api/chains/{chainId}/blocks/{blockNumber}` - Block data
-- `/api/chains/{chainId}/blocks?page=&limit=` - Paginated block list
-- `/api/chains/{chainId}/transactions/{hash}` - Transaction data
-- `/api/chains/{chainId}/transactions?page=&limit=` - Paginated transaction list
-- `/api/chains/{chainId}/addresses/{address}` - Address data
-- `/api/chains/{chainId}/addresses/{address}/transactions` - Address transaction history
-- `/api/chains/{chainId}/contracts/{address}/...` - Contract interactions
-- `/api/search?q=` - Global search across chains
+**Backend API Endpoints (still available but no longer primary data source for blocks/transactions):**
+
+Hybrid (RPC + DB):
+- `/api/stats/overview` - Chain overview stats (RPC for latestBlockNumber, DB for indexed counts)
+
+DB-backed (persistent data):
+- `/api/chains/{chainId}/addresses/{address}/persistent` - Address persistent metadata
+- `/api/chains/{chainId}/contracts/{address}/source` - Contract source code
+- `/api/chains/{chainId}/contracts/{address}/abi` - Contract ABI
+- `/api/chains/{chainId}/contracts/{address}/events` - Contract events
+- `/api/search?q=` - Global search across indexed data
+
+RPC-backed (via backend RpcManager):
+- `/api/chains/{chainId}/contracts/{address}/read` - Read contract function
+- `/api/chains/{chainId}/contracts/{address}/simulate` - Simulate transaction
+
+On-demand indexing (DB miss → RPC fetch → write DB):
+- `/api/chains/{chainId}/blocks/{blockNumber}` - Block data (retained for search/indexing)
+- `/api/chains/{chainId}/transactions/{hash}` - Transaction data (retained for search/indexing)
+
+**Frontend RPC Direct (no backend involved):**
+- Block list browsing — `blockRpcData.getLatestBlocks()`
+- Block detail — `blockRpcData.getBlockByNumber()`
+- Transaction list — `blockRpcData.getLatestTransactions()`
+- Transaction detail — `blockRpcData.getTransactionByHash()`
+- Address balance/nonce — `realTimeData.getRealTimeAddressData()`
 
 **Frontend Routes:**
 - `/` - Redirects to `/chain/1`

@@ -3,6 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { css } from "@linaria/core";
 import { getChainInfo, getChainName, getChainSymbol } from "../config/chains";
 import TopNavigation from "../components/TopNavigation";
+import { getTransactionByHash, type RpcTransaction } from "@/utils/blockRpcData";
 
 const pageStyles = css`
   max-width: 1200px;
@@ -119,30 +120,10 @@ const backButtonStyles = css`
   }
 `;
 
-type TransactionInfo = {
-  chainId: number;
-  hash: string;
-  blockNumber: string;
-  transactionIndex: number;
-  fromAddress: string;
-  toAddress: string;
-  value: string;
-  gasLimit: string;
-  gasPrice?: string;
-  maxFeePerGas?: string;
-  maxPriorityFeePerGas?: string;
-  gasUsed?: string;
-  effectiveGasPrice?: string;
-  nonce: string;
-  status: number;
-  type: number;
-  timestamp?: string;
-};
-
 export default function TransactionPage() {
   const { chainId, txHash } = useParams<{ chainId: string; txHash: string }>();
   const navigate = useNavigate();
-  const [txInfo, setTxInfo] = useState<TransactionInfo | null>(null);
+  const [txInfo, setTxInfo] = useState<RpcTransaction | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -156,40 +137,26 @@ export default function TransactionPage() {
       return;
     }
 
+    const fetchTransactionInfo = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        const tx = await getTransactionByHash(currentChainId, txHash);
+        setTxInfo(tx);
+      } catch (err) {
+        console.error("Failed to fetch transaction info:", err);
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Failed to fetch transaction information"
+        );
+      } finally {
+        setLoading(false);
+      }
+    };
+
     fetchTransactionInfo();
-  }, [chainId, txHash]);
-
-  const fetchTransactionInfo = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const response = await fetch(
-        `/api/chains/${currentChainId}/transactions/${txHash}`
-      );
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-
-      const data = await response.json();
-
-      if (data.error) {
-        throw new Error(data.error);
-      }
-
-      setTxInfo(data.transaction);
-    } catch (err) {
-      console.error("Failed to fetch transaction info:", err);
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Failed to fetch transaction information"
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [chainId, txHash, currentChainId]);
 
   const formatValue = (value: string, symbol: string) => {
     try {

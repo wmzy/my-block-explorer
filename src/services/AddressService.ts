@@ -2,7 +2,10 @@ import { db, indexedAddresses } from "../database/init";
 import { eq, and } from "drizzle-orm";
 import { rpcManager } from "./RpcManager";
 import { contractSourceService } from "./ContractSourceService";
-import type { Address } from "viem";
+import type { Address, PublicClient } from "viem";
+import { createLogger } from "../server/logger";
+
+const logger = createLogger("address-service");
 
 /**
  * 持久化地址数据类型（永不改变或很少改变的数据）
@@ -32,6 +35,150 @@ export type AddressInfo = PersistentAddressData & {
   balance: string;
   transactionCount: number;
   lastQueried: Date;
+};
+
+type DiscoveredTransaction = {
+  hash: string;
+  blockNumber: bigint;
+  fromAddress: string;
+  toAddress: string;
+  value: string;
+  timestamp: string;
+};
+
+const SCAN_THRESHOLD = 64n;
+const MAX_RPC_CALLS = 200;
+const BATCH_CONCURRENCY = 8;
+const TX_SEARCH_TIMEOUT_MS = 30_000;
+
+const withTimeout = <T>(promise: Promise<T>, ms: number, label: string): Promise<T> =>
+  Promise.race([
+    promise,
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+    ),
+  ]);
+
+const getSearchRange = (txCount: number): bigint => {
+  if (txCount > 100) return 200_000n;
+  if (txCount > 10) return 600_000n;
+  return 2_500_000n;
+};
+
+const getBalanceAt = async (
+  client: PublicClient,
+  address: Address,
+  blockNumber: bigint
+): Promise<bigint> =>
+  client.getBalance({ address, blockNumber });
+
+/**
+ * Scan a contiguous range of blocks and extract transactions involving the target address.
+ * Fetches blocks in parallel batches to reduce latency.
+ */
+const scanBlocksForAddress = async (
+  client: PublicClient,
+  address: Address,
+  fromBlock: bigint,
+  toBlock: bigint,
+  limit: number,
+  rpcCallCount: { value: number }
+): Promise<DiscoveredTransaction[]> => {
+  const lowerAddr = address.toLowerCase();
+  const results: DiscoveredTransaction[] = [];
+
+  const blockNumbers: bigint[] = [];
+  for (let b = toBlock; b >= fromBlock && blockNumbers.length < 256; b--) {
+    blockNumbers.push(b);
+  }
+
+  for (let i = 0; i < blockNumbers.length; i += BATCH_CONCURRENCY) {
+    if (results.length >= limit || rpcCallCount.value >= MAX_RPC_CALLS) break;
+
+    const batch = blockNumbers.slice(i, i + BATCH_CONCURRENCY);
+    const blocks = await Promise.all(
+      batch.map(async (bn) => {
+        rpcCallCount.value++;
+        return client
+          .getBlock({ blockNumber: bn, includeTransactions: true })
+          .catch(() => null);
+      })
+    );
+
+    for (const block of blocks) {
+      if (!block?.transactions || results.length >= limit) continue;
+      for (const tx of block.transactions) {
+        if (typeof tx === "string") continue;
+        const from = tx.from?.toLowerCase();
+        const to = tx.to?.toLowerCase();
+        if (from === lowerAddr || to === lowerAddr) {
+          results.push({
+            hash: tx.hash,
+            blockNumber: block.number ?? 0n,
+            fromAddress: tx.from,
+            toAddress: tx.to ?? "",
+            value: tx.value.toString(),
+            timestamp: new Date(
+              Number(block.timestamp) * 1000
+            ).toISOString(),
+          });
+        }
+      }
+    }
+  }
+
+  return results;
+};
+
+/**
+ * Binary-search for blocks where the native-token balance of `address` changed.
+ * When a range is narrow enough (<=SCAN_THRESHOLD), do a linear scan.
+ */
+const binarySearchBalanceChanges = async (
+  client: PublicClient,
+  address: Address,
+  lo: bigint,
+  hi: bigint,
+  limit: number,
+  rpcCallCount: { value: number }
+): Promise<DiscoveredTransaction[]> => {
+  if (rpcCallCount.value >= MAX_RPC_CALLS || limit <= 0 || lo >= hi) return [];
+
+  if (hi - lo <= SCAN_THRESHOLD) {
+    return scanBlocksForAddress(client, address, lo, hi, limit, rpcCallCount);
+  }
+
+  rpcCallCount.value += 3;
+  const [balLo, balHi, balMid] = await Promise.all([
+    getBalanceAt(client, address, lo),
+    getBalanceAt(client, address, hi),
+    getBalanceAt(client, address, (lo + hi) / 2n),
+  ]);
+
+  const mid = (lo + hi) / 2n;
+  const leftChanged = balLo !== balMid;
+  const rightChanged = balMid !== balHi;
+
+  if (!leftChanged && !rightChanged) return [];
+
+  // Search the right half first (more recent blocks)
+  const results: DiscoveredTransaction[] = [];
+
+  if (rightChanged) {
+    const rightResults = await binarySearchBalanceChanges(
+      client, address, mid, hi, limit - results.length, rpcCallCount
+    );
+    results.push(...rightResults);
+  }
+
+  if (leftChanged && results.length < limit) {
+    const leftResults = await binarySearchBalanceChanges(
+      client, address, lo, mid, limit - results.length, rpcCallCount
+    );
+    results.push(...leftResults);
+  }
+
+  return results;
 };
 
 type AddressServiceDeps = {
@@ -226,18 +373,74 @@ const createAddressService = (deps: AddressServiceDeps) => {
       address: Address,
       limit = 20,
       offset = 0
-    ): Promise<{ transactions: any[]; total: number; method: string }> => {
-      try {
+    ): Promise<{ transactions: DiscoveredTransaction[]; total: number; method: string }> => {
+      const doSearch = async (): Promise<{ transactions: DiscoveredTransaction[]; total: number; method: string }> => {
         const client = await rpcManager.getClient(chainId);
-        const txCount = await client.getTransactionCount({ address });
+        const [txCount, latestBlock, currentBalance] = await Promise.all([
+          client.getTransactionCount({ address }),
+          client.getBlockNumber(),
+          client.getBalance({ address }),
+        ]);
+
+        if (txCount === 0) {
+          return { transactions: [], total: 0, method: "binary-search" };
+        }
+
+        if (currentBalance === 0n) {
+          logger.info(
+            `Skipping binary search for ${address}: balance is 0, ` +
+            `algorithm relies on balance changes`
+          );
+          return {
+            transactions: [],
+            total: Number(txCount),
+            method: "binary-search-skipped",
+          };
+        }
+
+        const searchRange = getSearchRange(txCount);
+        const lo = latestBlock > searchRange ? latestBlock - searchRange : 0n;
+        const rpcCallCount = { value: 3 };
+
+        const fetchLimit = offset + limit;
+
+        logger.info(
+          `Binary search for ${address} on chain ${chainId}: ` +
+          `txCount=${txCount}, range=[${lo}..${latestBlock}], fetchLimit=${fetchLimit}`
+        );
+
+        const allTxs = await binarySearchBalanceChanges(
+          client, address, lo, latestBlock, fetchLimit, rpcCallCount
+        );
+
+        allTxs.sort((a, b) => {
+          if (b.blockNumber > a.blockNumber) return 1;
+          if (b.blockNumber < a.blockNumber) return -1;
+          return 0;
+        });
+
+        const deduped = allTxs.filter(
+          (tx, i, arr) => i === 0 || tx.hash !== arr[i - 1].hash
+        );
+
+        const paged = deduped.slice(offset, offset + limit);
+
+        logger.info(
+          `Binary search complete: found ${deduped.length} txs, ` +
+          `returning ${paged.length} (offset=${offset}), rpcCalls=${rpcCallCount.value}`
+        );
 
         return {
-          transactions: [],
+          transactions: paged,
           total: Number(txCount),
-          method: "rpc",
+          method: "binary-search",
         };
+      };
+
+      try {
+        return await withTimeout(doSearch(), TX_SEARCH_TIMEOUT_MS, "Address transaction search");
       } catch (error) {
-        console.warn(`Failed to get address transactions for ${address}:`, error);
+        logger.error({ err: error }, `Binary search failed for ${address}`);
         return {
           transactions: [],
           total: 0,
