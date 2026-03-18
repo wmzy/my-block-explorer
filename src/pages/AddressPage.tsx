@@ -5,209 +5,32 @@ import { getChainInfo, getChainName, getChainSymbol } from "../config/chains";
 import TopNavigation from "../components/TopNavigation";
 import { useAddressData } from "../hooks/useAddressData";
 import { formatRelativeTime } from "@/utils/format";
+import { PageContainer, PageHeader, BackButton } from "@/components/ui/PageLayout";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/Card";
+import { InfoGrid, InfoItem } from "@/components/ui/InfoGrid";
+import { DataTable, Pagination, linkStyle } from "@/components/ui/DataTable";
+import { LoadingState } from "@/components/ui/LoadingState";
+import { ErrorState } from "@/components/ui/ErrorState";
+import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
+import { CopyableHash } from "@/components/ui/CopyableHash";
+import { Alert } from "haze-ui";
 
-const pageStyles = css`
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 20px;
-  font-family:
-    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-`;
-
-const headerStyles = css`
-  margin-bottom: 30px;
-
-  h1 {
-    font-size: 24px;
-    font-weight: 600;
-    margin: 0 0 10px 0;
-    color: #1a1a1a;
-  }
-
-  .chain-info {
-    color: #666;
-    font-size: 14px;
-  }
-`;
-
-const cardStyles = css`
-  background: white;
-  border-radius: 12px;
-  border: 1px solid #e1e5e9;
-  padding: 24px;
-  margin-bottom: 20px;
-
-  h2 {
-    font-size: 18px;
-    font-weight: 600;
-    margin: 0 0 16px 0;
-    color: #1a1a1a;
-  }
-`;
-
-const infoGridStyles = css`
-  display: grid;
-  gap: 16px;
-
-  .info-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 12px 0;
-    border-bottom: 1px solid #f0f0f0;
-
-    &:last-child {
-      border-bottom: none;
-    }
-  }
-
-  .label {
-    font-weight: 500;
-    color: #666;
-  }
-
-  .value {
-    font-family:
-      "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas,
-      "Courier New", monospace;
-    color: #1a1a1a;
-    word-break: break-all;
-  }
-`;
-
-const loadingStyles = css`
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  height: 200px;
-  color: #666;
-`;
-
-const errorStyles = css`
-  background: #fee;
-  border: 1px solid #fcc;
-  border-radius: 8px;
-  padding: 16px;
-  color: #c33;
-  margin: 20px 0;
-`;
-
-const backButtonStyles = css`
-  background: #f8f9fa;
-  border: 1px solid #e1e5e9;
-  border-radius: 8px;
-  padding: 8px 16px;
-  color: #666;
-  text-decoration: none;
-  font-size: 14px;
-  margin-bottom: 20px;
-  display: inline-block;
-
-  &:hover {
-    background: #e9ecef;
-    color: #333;
-  }
-`;
-
-const txTableStyles = css`
-  width: 100%;
-  border-collapse: collapse;
-
-  th {
-    background: #f8f9fa;
-    padding: 10px 12px;
-    text-align: left;
-    font-weight: 600;
-    font-size: 13px;
-    color: #666;
-    border-bottom: 1px solid #e1e5e9;
-  }
-
-  td {
-    padding: 10px 12px;
-    border-bottom: 1px solid #f0f0f0;
-    font-size: 13px;
-    color: #1a1a1a;
-  }
-
-  tr:last-child td {
-    border-bottom: none;
-  }
-
-  tr:hover td {
-    background: #f8f9fa;
-  }
-`;
-
-const txLinkStyles = css`
-  color: #4f46e5;
-  text-decoration: none;
-  font-family: "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas,
-    monospace;
-  font-size: 13px;
-
-  &:hover {
-    text-decoration: underline;
-  }
-`;
-
-const directionBadge = css`
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-size: 11px;
-  font-weight: 600;
-
-  &.in {
-    background: #d1fae5;
-    color: #065f46;
-  }
-
-  &.out {
-    background: #fee2e2;
-    color: #991b1b;
-  }
-
-  &.self {
-    background: #e0e7ff;
-    color: #3730a3;
-  }
-`;
-
-const paginationStyles = css`
+const headerRow = css`
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-top: 16px;
+  margin-bottom: var(--haze-space-4);
+`;
 
-  .page-info {
-    color: #666;
-    font-size: 13px;
-  }
-
-  .page-buttons {
-    display: flex;
-    gap: 8px;
-  }
-
-  button {
-    padding: 4px 12px;
-    border: 1px solid #e1e5e9;
-    border-radius: 6px;
-    background: white;
-    color: #374151;
-    font-size: 13px;
-    cursor: pointer;
-
-    &:hover:not(:disabled) {
-      background: #f0f0f0;
-    }
-
-    &:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-  }
+const infoNote = css`
+  font-size: var(--haze-text-xs);
+  color: var(--haze-color-text-muted);
+  margin-bottom: var(--haze-space-3);
+  padding: var(--haze-space-2) var(--haze-space-3);
+  background: color-mix(in srgb, var(--haze-color-success) 10%, transparent);
+  border-radius: var(--haze-radius-md);
+  border: 1px solid color-mix(in srgb, var(--haze-color-success) 25%, transparent);
 `;
 
 type TxRecord = {
@@ -281,17 +104,22 @@ export default function AddressPage() {
     return "out";
   };
 
-  const formatBalance = (balance: string, symbol: string) => {
-    try {
-      const balanceInEth = parseFloat(balance) / Math.pow(10, 18);
-      return `${balanceInEth.toFixed(6)} ${symbol}`;
-    } catch {
-      return `${balance} wei`;
-    }
-  };
+  const directionVariant = { in: "success", out: "error", self: "info" } as const;
+  const directionLabel = { in: "IN", out: "OUT", self: "SELF" } as const;
 
-  const formatAddress = (addr: string) => {
-    return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+  const formatAddr = (a: string) => (a ? `${a.slice(0, 8)}...${a.slice(-6)}` : "N/A");
+  const formatHash = (h: string) => (h ? `${h.slice(0, 10)}...${h.slice(-8)}` : "");
+
+  const formatTxValue = (value: string) => {
+    const symbol = getChainSymbol(currentChainId);
+    try {
+      const v = parseFloat(value) / 1e18;
+      if (v === 0) return `0 ${symbol}`;
+      if (v < 0.0001) return `<0.0001 ${symbol}`;
+      return `${v.toFixed(4)} ${symbol}`;
+    } catch {
+      return value;
+    }
   };
 
   const handleChainChange = (newChainId: number) => {
@@ -310,13 +138,10 @@ export default function AddressPage() {
   if (!chainInfo) {
     return (
       <>
-        <TopNavigation
-          currentChainId={currentChainId}
-          onChainChange={handleChainChange}
-        />
-        <div className={pageStyles}>
-          <div className={errorStyles}>Unsupported chain ID: {chainId}</div>
-        </div>
+        <TopNavigation currentChainId={currentChainId} onChainChange={handleChainChange} />
+        <PageContainer>
+          <ErrorState message={`Unsupported chain ID: ${chainId}`} />
+        </PageContainer>
       </>
     );
   }
@@ -324,62 +149,42 @@ export default function AddressPage() {
   if (!address) {
     return (
       <>
-        <TopNavigation
-          currentChainId={currentChainId}
-          onChainChange={handleChainChange}
-        />
-        <div className={pageStyles}>
-          <div className={errorStyles}>Invalid address</div>
-        </div>
+        <TopNavigation currentChainId={currentChainId} onChainChange={handleChainChange} />
+        <PageContainer>
+          <ErrorState message="Invalid address" />
+        </PageContainer>
       </>
     );
   }
 
   return (
     <>
-      <TopNavigation
-        currentChainId={currentChainId}
-        onChainChange={handleChainChange}
-      />
-      <div className={pageStyles}>
-        <button
-          className={backButtonStyles}
-          onClick={() => navigate(`/chain/${currentChainId}`)}
-        >
-          ← Back to Explorer
-        </button>
+      <TopNavigation currentChainId={currentChainId} onChainChange={handleChainChange} />
+      <PageContainer>
+        <BackButton onClick={() => navigate(`/chain/${currentChainId}`)} />
 
-        <div className={headerStyles}>
-          <h1>Address Details</h1>
-          <div className="chain-info">
-            {getChainName(currentChainId)} • Chain ID: {currentChainId}
-          </div>
-        </div>
+        <PageHeader
+          title="Address Details"
+          chainInfo={`${getChainName(currentChainId)} • Chain ID: ${currentChainId}`}
+        />
 
-        {isInitialLoading && (
-          <div className={loadingStyles}>
-            Loading address information...
-          </div>
-        )}
+        {isInitialLoading && <LoadingState message="Loading address information..." />}
 
         {hasError && !isInitialLoading && (
-          <div className={errorStyles}>Error: {errorMessage}</div>
+          <ErrorState message={`Error: ${errorMessage}`} />
         )}
 
         {!isInitialLoading && (
           <>
-            <div className={cardStyles}>
-              <h2>Overview</h2>
-              <div className={infoGridStyles}>
-                <div className="info-item">
-                  <span className="label">Address</span>
-                  <span className="value">{address}</span>
-                </div>
+            <Card>
+              <CardHeader>
+                <CardTitle>Overview</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <InfoGrid>
+                  <InfoItem label="Address">{address}</InfoItem>
 
-                {/* 实时数据 - 余额 */}
-                <div className="info-item">
-                  <span className="label">Balance</span>
-                  <span className="value">
+                  <InfoItem label="Balance">
                     {addressData.realTime
                       ? `${addressData.realTime.balance} ${getChainSymbol(currentChainId)}`
                       : addressData.loading.realTime
@@ -387,13 +192,9 @@ export default function AddressPage() {
                         : addressData.error.realTime
                           ? "Error loading balance"
                           : "N/A"}
-                  </span>
-                </div>
+                  </InfoItem>
 
-                {/* 实时数据 - 交易数量 */}
-                <div className="info-item">
-                  <span className="label">Transaction Count</span>
-                  <span className="value">
+                  <InfoItem label="Transaction Count">
                     {addressData.realTime
                       ? addressData.realTime.transactionCount.toLocaleString()
                       : addressData.loading.realTime
@@ -401,13 +202,9 @@ export default function AddressPage() {
                         : addressData.error.realTime
                           ? "Error loading count"
                           : "N/A"}
-                  </span>
-                </div>
+                  </InfoItem>
 
-                {/* 持久化数据 - 地址类型 */}
-                <div className="info-item">
-                  <span className="label">Type</span>
-                  <span className="value">
+                  <InfoItem label="Type">
                     {addressData.persistent
                       ? addressData.persistent.isContract
                         ? "Contract"
@@ -415,322 +212,188 @@ export default function AddressPage() {
                       : addressData.loading.persistent
                         ? "Loading..."
                         : "Unknown"}
-                  </span>
-                </div>
+                  </InfoItem>
 
-                {/* 持久化数据 - 合约名称 */}
-                {addressData.persistent?.isContract &&
-                  addressData.persistent.contractName && (
-                    <div className="info-item">
-                      <span className="label">Contract Name</span>
-                      <span className="value">
+                  {addressData.persistent?.isContract &&
+                    addressData.persistent.contractName && (
+                      <InfoItem label="Contract Name">
                         {addressData.persistent.contractName}
-                      </span>
-                    </div>
-                  )}
-
-                {/* 持久化数据 - 验证状态 */}
-                {addressData.persistent?.isContract &&
-                  addressData.persistent.verificationStatus && (
-                    <div className="info-item">
-                      <span className="label">Verification Status</span>
-                      <span className="value">
-                        {addressData.persistent.verificationStatus ===
-                          "verified" && "✅ Verified"}
-                        {addressData.persistent.verificationStatus ===
-                          "partial" && "⚠️ Partially Verified"}
-                        {addressData.persistent.verificationStatus ===
-                          "unverified" && "❌ Unverified"}
-                      </span>
-                    </div>
-                  )}
-
-                {/* 持久化数据 - 合约详情链接 */}
-                {addressData.persistent?.isContract && (
-                    <div className="info-item">
-                      <span className="label">Contract</span>
-                      <span className="value">
-                        <Link
-                          to={`/chain/${currentChainId}/contract/${address}`}
-                          style={{ color: "#4f46e5", textDecoration: "none" }}
-                        >
-                          View Contract Details (ABI, Source, Events) →
-                        </Link>
-                      </span>
-                    </div>
-                  )}
-
-                {/* 持久化数据 - 合约创建信息 */}
-                {addressData.persistent?.contractCreationBlock && (
-                  <div className="info-item">
-                    <span className="label">Created at Block</span>
-                    <span className="value">
-                      {addressData.persistent.contractCreationBlock.toLocaleString()}
-                    </span>
-                  </div>
-                )}
-
-                {addressData.persistent?.contractCreator && (
-                  <div className="info-item">
-                    <span className="label">Contract Creator</span>
-                    <span className="value">
-                      {formatAddress(addressData.persistent.contractCreator)}
-                    </span>
-                  </div>
-                )}
-
-                {/* 持久化数据 - 代理合约信息 */}
-                {addressData.persistent?.isProxy && (
-                  <>
-                    <div className="info-item">
-                      <span className="label">Proxy Type</span>
-                      <span className="value">
-                        {addressData.persistent.proxyType || "Standard Proxy"}
-                      </span>
-                    </div>
-                    {addressData.persistent.implementationAddress && (
-                      <div className="info-item">
-                        <span className="label">Implementation</span>
-                        <span className="value">
-                          {formatAddress(
-                            addressData.persistent.implementationAddress
-                          )}
-                        </span>
-                      </div>
+                      </InfoItem>
                     )}
+
+                  {addressData.persistent?.isContract &&
+                    addressData.persistent.verificationStatus && (
+                      <InfoItem label="Verification Status">
+                        {addressData.persistent.verificationStatus === "verified" && "Verified"}
+                        {addressData.persistent.verificationStatus === "partial" && "Partially Verified"}
+                        {addressData.persistent.verificationStatus === "unverified" && "Unverified"}
+                      </InfoItem>
+                    )}
+
+                  {addressData.persistent?.isContract && (
+                    <InfoItem label="Contract">
+                      <Link
+                        to={`/chain/${currentChainId}/contract/${address}`}
+                        className={linkStyle}
+                      >
+                        View Contract Details →
+                      </Link>
+                    </InfoItem>
+                  )}
+
+                  {addressData.persistent?.contractCreationBlock && (
+                    <InfoItem label="Created at Block">
+                      {addressData.persistent.contractCreationBlock.toLocaleString()}
+                    </InfoItem>
+                  )}
+
+                  {addressData.persistent?.contractCreator && (
+                    <InfoItem label="Contract Creator">
+                      {formatAddr(addressData.persistent.contractCreator)}
+                    </InfoItem>
+                  )}
+
+                  {addressData.persistent?.isProxy && (
+                    <>
+                      <InfoItem label="Proxy Type">
+                        {addressData.persistent.proxyType || "Standard Proxy"}
+                      </InfoItem>
+                      {addressData.persistent.implementationAddress && (
+                        <InfoItem label="Implementation">
+                          {formatAddr(addressData.persistent.implementationAddress)}
+                        </InfoItem>
+                      )}
+                    </>
+                  )}
+
+                  {addressData.realTime && (
+                    <InfoItem label="Latest Block">
+                      {addressData.realTime.latestBlock.toLocaleString()}
+                    </InfoItem>
+                  )}
+
+                  <InfoItem label="Last Updated">
+                    {new Date().toLocaleString()}
+                  </InfoItem>
+                </InfoGrid>
+              </CardContent>
+            </Card>
+
+            <Card className={css`margin-top: var(--haze-space-5);`}>
+              <CardHeader>
+                <div className={headerRow}>
+                  <CardTitle as="h2">Recent Transactions</CardTitle>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => fetchTransactions()}
+                    loading={txLoading}
+                  >
+                    Refresh
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {txLoading && <LoadingState message="Searching for transactions via binary search..." />}
+
+                {txError && <ErrorState message={txError} />}
+
+                {!txLoading && !txError && transactions.length === 0 && txTotal > 0 && txMethod === "binary-search-skipped" && (
+                  <Alert variant="info">
+                    Cannot discover transactions for this address. This address has {txTotal} nonce but 0 native token balance.
+                  </Alert>
+                )}
+
+                {!txLoading && !txError && transactions.length === 0 && txTotal > 0 && txMethod !== "binary-search-skipped" && (
+                  <Alert variant="warning">
+                    No transactions found in recent blocks. This address has {txTotal} transactions, but they may be outside the search range.
+                  </Alert>
+                )}
+
+                {!txLoading && !txError && transactions.length === 0 && txTotal === 0 && (
+                  <Alert variant="info">No transactions found</Alert>
+                )}
+
+                {!txLoading && transactions.length > 0 && txMethod === "binary-search" && (
+                  <div className={infoNote}>
+                    Found {transactions.length} of ~{txTotal} transactions via balance-change binary search.
+                  </div>
+                )}
+
+                {transactions.length > 0 && (
+                  <>
+                    <DataTable>
+                      <thead>
+                        <tr>
+                          <th>Txn Hash</th>
+                          <th>Block</th>
+                          <th>Age</th>
+                          <th>Direction</th>
+                          <th>From</th>
+                          <th>To</th>
+                          <th>Value</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {transactions.map((tx) => {
+                          const dir = getDirection(tx);
+                          return (
+                            <tr key={tx.hash}>
+                              <td>
+                                <CopyableHash
+                                  value={tx.hash}
+                                  truncated={formatHash(tx.hash)}
+                                  href={`/chain/${currentChainId}/tx/${tx.hash}`}
+                                />
+                              </td>
+                              <td>
+                                <Link to={`/chain/${currentChainId}/block/${tx.blockNumber}`} className={linkStyle}>
+                                  {parseInt(tx.blockNumber).toLocaleString()}
+                                </Link>
+                              </td>
+                              <td>{tx.timestamp ? formatRelativeTime(tx.timestamp) : "N/A"}</td>
+                              <td>
+                                <Badge variant={directionVariant[dir]} size="sm">
+                                  {directionLabel[dir]}
+                                </Badge>
+                              </td>
+                              <td>
+                                <CopyableHash
+                                  value={tx.fromAddress}
+                                  truncated={formatAddr(tx.fromAddress)}
+                                  href={`/chain/${currentChainId}/address/${tx.fromAddress}`}
+                                />
+                              </td>
+                              <td>
+                                <CopyableHash
+                                  value={tx.toAddress}
+                                  truncated={formatAddr(tx.toAddress)}
+                                  href={`/chain/${currentChainId}/address/${tx.toAddress}`}
+                                />
+                              </td>
+                              <td className={css`font-family: var(--haze-font-mono); font-size: var(--haze-text-xs);`}>
+                                {formatTxValue(tx.value)}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </DataTable>
+                    <Pagination
+                      page={txPage}
+                      pageInfo={`Page ${txPage} of ${txTotalPages}`}
+                      hasPrev={txPage > 1}
+                      hasNext={txPage < txTotalPages}
+                      onPrev={() => setTxPage((p) => Math.max(1, p - 1))}
+                      onNext={() => setTxPage((p) => p + 1)}
+                    />
                   </>
                 )}
-
-                {/* 实时数据 - 最新区块 */}
-                {addressData.realTime && (
-                  <div className="info-item">
-                    <span className="label">Latest Block</span>
-                    <span className="value">
-                      {addressData.realTime.latestBlock.toLocaleString()}
-                    </span>
-                  </div>
-                )}
-
-                <div className="info-item">
-                  <span className="label">Last Updated</span>
-                  <span className="value">{new Date().toLocaleString()}</span>
-                </div>
-              </div>
-            </div>
-
-            <div className={cardStyles}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                <h2 style={{ margin: 0 }}>Recent Transactions</h2>
-                <button
-                  onClick={() => fetchTransactions()}
-                  disabled={txLoading}
-                  style={{
-                    padding: "4px 12px",
-                    border: "1px solid #e1e5e9",
-                    borderRadius: "6px",
-                    background: txLoading ? "#f3f4f6" : "white",
-                    color: txLoading ? "#9ca3af" : "#374151",
-                    fontSize: "13px",
-                    cursor: txLoading ? "not-allowed" : "pointer",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "4px",
-                  }}
-                >
-                  {txLoading ? "⏳ Searching..." : "🔄 Refresh"}
-                </button>
-              </div>
-              {txLoading && (
-                <div style={{
-                  color: "#6b7280",
-                  textAlign: "center",
-                  padding: "24px 20px",
-                  background: "#f9fafb",
-                  borderRadius: "8px",
-                }}>
-                  <div style={{ fontSize: "14px", fontWeight: 500, marginBottom: 6 }}>
-                    Searching for transactions via binary search...
-                  </div>
-                  <div style={{ fontSize: "12px", color: "#9ca3af" }}>
-                    Scanning block history for balance changes. This may take a few seconds.
-                  </div>
-                </div>
-              )}
-              {txError && (
-                <div style={{ color: "#c33", padding: "8px 0" }}>
-                  {txError}
-                </div>
-              )}
-              {!txLoading && !txError && transactions.length === 0 && txTotal > 0 && txMethod === "binary-search-skipped" && (
-                <div style={{
-                  color: "#6b7280",
-                  textAlign: "center",
-                  padding: "24px 20px",
-                  background: "#f0f9ff",
-                  borderRadius: "8px",
-                  border: "1px solid #bae6fd",
-                }}>
-                  <div style={{ fontSize: "14px", fontWeight: 500, marginBottom: 6 }}>
-                    Cannot discover transactions for this address
-                  </div>
-                  <div style={{ fontSize: "12px", color: "#0369a1" }}>
-                    This address has {txTotal} nonce but 0 native token balance.
-                    The binary search algorithm relies on balance changes and cannot work here.
-                    This is common for contracts that only handle tokens.
-                  </div>
-                </div>
-              )}
-              {!txLoading && !txError && transactions.length === 0 && txTotal > 0 && txMethod !== "binary-search-skipped" && (
-                <div style={{
-                  color: "#6b7280",
-                  textAlign: "center",
-                  padding: "24px 20px",
-                  background: "#fffbeb",
-                  borderRadius: "8px",
-                  border: "1px solid #fde68a",
-                }}>
-                  <div style={{ fontSize: "14px", fontWeight: 500, marginBottom: 6 }}>
-                    No transactions found in recent blocks
-                  </div>
-                  <div style={{ fontSize: "12px", color: "#92400e" }}>
-                    This address has {txTotal} transactions, but they may be outside the search range.
-                    Try clicking Refresh to search again.
-                  </div>
-                </div>
-              )}
-              {!txLoading && !txError && transactions.length === 0 && txTotal === 0 && (
-                <div style={{ color: "#666", textAlign: "center", padding: 20 }}>
-                  No transactions found
-                </div>
-              )}
-              {!txLoading && transactions.length > 0 && txMethod === "binary-search" && (
-                <div style={{
-                  fontSize: "12px",
-                  color: "#6b7280",
-                  marginBottom: 12,
-                  padding: "6px 10px",
-                  background: "#f0fdf4",
-                  borderRadius: "6px",
-                  border: "1px solid #bbf7d0",
-                }}>
-                  Found {transactions.length} of ~{txTotal} transactions via balance-change binary search.
-                  Results may not include all transactions.
-                </div>
-              )}
-              {transactions.length > 0 && (
-                <>
-                  <table className={txTableStyles}>
-                    <thead>
-                      <tr>
-                        <th>Txn Hash</th>
-                        <th>Block</th>
-                        <th>Age</th>
-                        <th>Direction</th>
-                        <th>From</th>
-                        <th>To</th>
-                        <th>Value</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {transactions.map((tx) => {
-                        const dir = getDirection(tx);
-                        const symbol = getChainSymbol(currentChainId);
-                        const valueEth = (() => {
-                          try {
-                            const v = parseFloat(tx.value) / 1e18;
-                            if (v === 0) return `0 ${symbol}`;
-                            if (v < 0.0001) return `<0.0001 ${symbol}`;
-                            return `${v.toFixed(4)} ${symbol}`;
-                          } catch {
-                            return tx.value;
-                          }
-                        })();
-                        const fmtAddr = (a: string) =>
-                          a ? `${a.slice(0, 8)}...${a.slice(-6)}` : "N/A";
-                        const fmtHash = (h: string) =>
-                          h ? `${h.slice(0, 10)}...${h.slice(-8)}` : "";
-
-                        return (
-                          <tr key={tx.hash}>
-                            <td>
-                              <Link
-                                to={`/chain/${currentChainId}/tx/${tx.hash}`}
-                                className={txLinkStyles}
-                              >
-                                {fmtHash(tx.hash)}
-                              </Link>
-                            </td>
-                            <td>
-                              <Link
-                                to={`/chain/${currentChainId}/block/${tx.blockNumber}`}
-                                className={txLinkStyles}
-                              >
-                                {parseInt(tx.blockNumber).toLocaleString()}
-                              </Link>
-                            </td>
-                            <td style={{ fontSize: 12, color: "#666" }}>
-                              {tx.timestamp
-                                ? formatRelativeTime(tx.timestamp)
-                                : "N/A"}
-                            </td>
-                            <td>
-                              <span className={`${directionBadge} ${dir}`}>
-                                {dir === "in"
-                                  ? "IN"
-                                  : dir === "out"
-                                    ? "OUT"
-                                    : "SELF"}
-                              </span>
-                            </td>
-                            <td>
-                              <Link
-                                to={`/chain/${currentChainId}/address/${tx.fromAddress}`}
-                                className={txLinkStyles}
-                              >
-                                {fmtAddr(tx.fromAddress)}
-                              </Link>
-                            </td>
-                            <td>
-                              <Link
-                                to={`/chain/${currentChainId}/address/${tx.toAddress}`}
-                                className={txLinkStyles}
-                              >
-                                {fmtAddr(tx.toAddress)}
-                              </Link>
-                            </td>
-                            <td style={{ fontFamily: "monospace", fontSize: 13 }}>
-                              {valueEth}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                  <div className={paginationStyles}>
-                    <span className="page-info">
-                      Page {txPage} of {txTotalPages}
-                    </span>
-                    <div className="page-buttons">
-                      <button
-                        disabled={txPage <= 1}
-                        onClick={() => setTxPage((p) => Math.max(1, p - 1))}
-                      >
-                        Prev
-                      </button>
-                      <button
-                        disabled={txPage >= txTotalPages}
-                        onClick={() => setTxPage((p) => p + 1)}
-                      >
-                        Next
-                      </button>
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
+              </CardContent>
+            </Card>
           </>
         )}
-      </div>
+      </PageContainer>
     </>
   );
 }

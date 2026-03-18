@@ -1,123 +1,42 @@
-import React from 'react';
-import { css, cx } from '@linaria/core';
+import { css, cx } from "@linaria/core";
+import { Badge as HazeBadge, Tag as HazeTag } from "haze-ui";
+import type { ReactNode, HTMLAttributes } from "react";
 
-const badge = css`
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 1;
-  white-space: nowrap;
+const variantMap = {
+  default: "default",
+  success: "success",
+  warning: "warning",
+  error: "danger",
+  info: "info",
+  purple: "info",
+} as const;
+
+const clickableStyle = css`
+  cursor: pointer;
 `;
 
-const variants = {
-  default: css`
-    background-color: #f1f5f9;
-    color: #475569;
-    
-    @media (prefers-color-scheme: dark) {
-      background-color: #334155;
-      color: #cbd5e1;
-    }
-  `,
-  
-  success: css`
-    background-color: #dcfce7;
-    color: #166534;
-    
-    @media (prefers-color-scheme: dark) {
-      background-color: #14532d;
-      color: #bbf7d0;
-    }
-  `,
-  
-  warning: css`
-    background-color: #fef3c7;
-    color: #92400e;
-    
-    @media (prefers-color-scheme: dark) {
-      background-color: #78350f;
-      color: #fde68a;
-    }
-  `,
-  
-  error: css`
-    background-color: #fee2e2;
-    color: #991b1b;
-    
-    @media (prefers-color-scheme: dark) {
-      background-color: #7f1d1d;
-      color: #fecaca;
-    }
-  `,
-  
-  info: css`
-    background-color: #dbeafe;
-    color: #1e40af;
-    
-    @media (prefers-color-scheme: dark) {
-      background-color: #1e3a8a;
-      color: #bfdbfe;
-    }
-  `,
-  
-  purple: css`
-    background-color: #e9d5ff;
-    color: #7c3aed;
-    
-    @media (prefers-color-scheme: dark) {
-      background-color: #6b21a8;
-      color: #d8b4fe;
-    }
-  `,
-};
-
-const sizes = {
-  sm: css`
-    padding: 2px 6px;
-    font-size: 11px;
-  `,
-  
-  md: css`
-    padding: 4px 8px;
-    font-size: 12px;
-  `,
-  
-  lg: css`
-    padding: 6px 12px;
-    font-size: 14px;
-  `,
-};
-
 export type BadgeProps = {
-  variant?: keyof typeof variants;
-  size?: keyof typeof sizes;
-  children: React.ReactNode;
+  variant?: keyof typeof variantMap;
+  size?: "sm" | "md";
+  children: ReactNode;
   className?: string;
-};
+} & Pick<HTMLAttributes<HTMLElement>, "onClick">;
 
-export function Badge({ 
-  variant = 'default', 
-  size = 'md',
-  children, 
-  className 
+export function Badge({
+  variant = "default",
+  size = "md",
+  children,
+  className,
+  onClick,
 }: BadgeProps) {
   return (
-    <span className={cx(badge, variants[variant], sizes[size], className)}>
-      {children}
+    <span onClick={onClick} className={cx(onClick ? clickableStyle : undefined, className)}>
+      <HazeBadge variant={variantMap[variant]} size={size}>
+        {children}
+      </HazeBadge>
     </span>
   );
 }
-
-// 状态指示器组件
-const statusIndicator = css`
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-`;
 
 const statusDot = css`
   width: 8px;
@@ -128,40 +47,37 @@ const statusDot = css`
 
 const statusColors = {
   online: css`
-    background-color: #10b981;
+    background-color: var(--haze-color-success);
   `,
-  
   offline: css`
-    background-color: #ef4444;
+    background-color: var(--haze-color-danger);
   `,
-  
   pending: css`
-    background-color: #f59e0b;
+    background-color: var(--haze-color-warning);
   `,
-  
   unknown: css`
-    background-color: #6b7280;
+    background-color: var(--haze-color-text-muted);
   `,
 };
 
+const statusTagVariant = {
+  online: "success",
+  offline: "danger",
+  pending: "warning",
+  unknown: "default",
+} as const;
+
 export type StatusBadgeProps = {
   status: keyof typeof statusColors;
-  children: React.ReactNode;
+  children: ReactNode;
   className?: string;
 };
 
 export function StatusBadge({ status, children, className }: StatusBadgeProps) {
-  const variant = {
-    online: 'success',
-    offline: 'error',
-    pending: 'warning',
-    unknown: 'default',
-  }[status] as keyof typeof variants;
-
   return (
-    <Badge variant={variant} className={cx(statusIndicator, className)}>
+    <HazeTag variant={statusTagVariant[status]} size="sm" className={className}>
       <span className={cx(statusDot, statusColors[status])} />
       {children}
-    </Badge>
+    </HazeTag>
   );
 }

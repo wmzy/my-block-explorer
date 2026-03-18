@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
+import { css, cx } from "@linaria/core";
+import { Input, Button } from "haze-ui";
 import RpcConfig from "./RpcConfig";
 import {
   SUPPORTED_CHAINS,
@@ -17,7 +19,264 @@ type TopNavigationProps = {
   searchPlaceholder?: string;
 };
 
-// 链选择器组件
+// --- Styles ---
+
+const nav = css`
+  background: var(--haze-color-bg);
+  border-bottom: 1px solid var(--haze-color-border);
+  box-shadow: var(--haze-shadow-sm);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+`;
+
+const navInner = css`
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 var(--haze-space-5);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 60px;
+`;
+
+const logoStyle = css`
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: var(--haze-space-2);
+`;
+
+const logoText = css`
+  font-size: var(--haze-text-lg);
+  font-weight: var(--haze-weight-semibold);
+  color: var(--haze-color-text);
+`;
+
+const searchArea = css`
+  flex: 1;
+  max-width: 400px;
+  margin: 0 var(--haze-space-5);
+  position: relative;
+`;
+
+const searchRow = css`
+  display: flex;
+  gap: var(--haze-space-2);
+`;
+
+const rightControls = css`
+  display: flex;
+  align-items: center;
+  gap: var(--haze-space-3);
+`;
+
+// Chain selector styles
+const selectorWrapper = css`
+  position: relative;
+`;
+
+const selectorButton = css`
+  display: flex;
+  align-items: center;
+  gap: var(--haze-space-2);
+  padding: var(--haze-space-2) var(--haze-space-3);
+  background: var(--haze-color-bg);
+  border: 1px solid var(--haze-color-border);
+  border-radius: var(--haze-radius-md);
+  cursor: pointer;
+  font-size: var(--haze-text-sm);
+  font-weight: var(--haze-weight-medium);
+  min-width: 180px;
+  height: 40px;
+  font-family: var(--haze-font-sans);
+  color: var(--haze-color-text);
+
+  &:hover {
+    border-color: var(--haze-color-border-hover);
+  }
+`;
+
+const selectorContent = css`
+  flex: 1;
+  text-align: left;
+`;
+
+const selectorName = css`
+  font-weight: var(--haze-weight-medium);
+  font-size: var(--haze-text-xs);
+`;
+
+const selectorMeta = css`
+  font-size: 11px;
+  color: var(--haze-color-text-muted);
+`;
+
+const selectorArrow = css`
+  transition: transform 0.2s;
+  font-size: var(--haze-text-xs);
+`;
+
+const selectorArrowOpen = css`
+  transform: rotate(180deg);
+`;
+
+const dropdown = css`
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: var(--haze-space-1);
+  background: var(--haze-color-bg);
+  border: 1px solid var(--haze-color-border);
+  border-radius: var(--haze-radius-md);
+  box-shadow: var(--haze-shadow-lg);
+  z-index: 1000;
+  min-width: 320px;
+  max-height: 400px;
+  overflow: hidden;
+`;
+
+const dropdownSearch = css`
+  padding: var(--haze-space-3);
+  border-bottom: 1px solid var(--haze-color-bg-muted);
+`;
+
+const dropdownHint = css`
+  font-size: var(--haze-text-xs);
+  color: var(--haze-color-text-muted);
+  margin-top: var(--haze-space-2);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+`;
+
+const dropdownList = css`
+  max-height: 300px;
+  overflow-y: auto;
+`;
+
+const dropdownEmpty = css`
+  padding: var(--haze-space-5);
+  text-align: center;
+  color: var(--haze-color-text-muted);
+`;
+
+const chainItem = css`
+  display: block;
+  width: 100%;
+  padding: var(--haze-space-3) var(--haze-space-4);
+  text-align: left;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: var(--haze-text-sm);
+  border-bottom: 1px solid var(--haze-color-bg-subtle);
+  font-family: var(--haze-font-sans);
+  color: var(--haze-color-text);
+
+  &:hover {
+    background: var(--haze-color-bg-subtle);
+  }
+`;
+
+const chainItemActive = css`
+  background: var(--haze-color-primary-subtle);
+`;
+
+const chainItemRow = css`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+`;
+
+const chainItemName = css`
+  font-weight: var(--haze-weight-medium);
+  display: flex;
+  align-items: center;
+  gap: var(--haze-space-1);
+`;
+
+const testnetBadge = css`
+  font-size: 10px;
+  background: color-mix(in srgb, var(--haze-color-warning) 15%, transparent);
+  color: var(--haze-color-warning);
+  padding: 2px var(--haze-space-2);
+  border-radius: var(--haze-radius-full);
+`;
+
+const chainItemMeta = css`
+  font-size: var(--haze-text-xs);
+  color: var(--haze-color-text-muted);
+`;
+
+// Search history styles
+const historyDropdown = css`
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: var(--haze-space-1);
+  background: var(--haze-color-bg);
+  border: 1px solid var(--haze-color-border);
+  border-radius: var(--haze-radius-lg);
+  box-shadow: var(--haze-shadow-lg);
+  z-index: 1000;
+  max-height: 360px;
+  overflow-y: auto;
+`;
+
+const historyHeader = css`
+  padding: var(--haze-space-2) var(--haze-space-3);
+  font-size: 11px;
+  color: var(--haze-color-text-muted);
+  font-weight: var(--haze-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--haze-color-bg-muted);
+`;
+
+const historyItem = css`
+  display: flex;
+  align-items: center;
+  gap: var(--haze-space-2);
+  width: 100%;
+  padding: var(--haze-space-2) var(--haze-space-3);
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: var(--haze-text-xs);
+  color: var(--haze-color-text);
+  text-align: left;
+  border-bottom: 1px solid var(--haze-color-bg-subtle);
+  font-family: var(--haze-font-sans);
+
+  &:hover {
+    background: var(--haze-color-bg-muted);
+  }
+`;
+
+const historyQuery = css`
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+`;
+
+const historyQueryMono = css`
+  font-family: var(--haze-font-mono);
+`;
+
+const historyType = css`
+  font-size: 10px;
+  padding: 2px var(--haze-space-2);
+  border-radius: var(--haze-radius-sm);
+  background: var(--haze-color-bg-muted);
+  color: var(--haze-color-text-muted);
+  flex-shrink: 0;
+`;
+
+// --- Components ---
+
 function ChainSelector({
   currentChainId,
   onChainChange,
@@ -28,11 +287,8 @@ function ChainSelector({
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
 
-  // 当下拉菜单关闭时重置搜索
   useEffect(() => {
-    if (!isOpen) {
-      setSearchTerm("");
-    }
+    if (!isOpen) setSearchTerm("");
   }, [isOpen]);
 
   const filteredChains = useMemo(() => {
@@ -41,7 +297,6 @@ function ChainSelector({
 
   const currentChain = getChainInfo(currentChainId);
 
-  // 处理下拉菜单外部点击关闭
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Element;
@@ -49,131 +304,58 @@ function ChainSelector({
         setIsOpen(false);
       }
     };
-
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [isOpen]);
 
   return (
-    <div style={{ position: "relative" }} data-chain-selector>
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "8px",
-          padding: "8px 12px",
-          background: "white",
-          border: "1px solid #d1d5db",
-          borderRadius: "6px",
-          cursor: "pointer",
-          fontSize: "14px",
-          fontWeight: "500",
-          minWidth: "180px",
-          height: "40px",
-        }}
-      >
-        <div style={{ flex: 1, textAlign: "left" }}>
-          <div style={{ fontWeight: "500", fontSize: "13px" }}>
+    <div className={selectorWrapper} data-chain-selector>
+      <button onClick={() => setIsOpen(!isOpen)} className={selectorButton}>
+        <div className={selectorContent}>
+          <div className={selectorName}>
             {currentChain?.name || `Chain ${currentChainId}`}
           </div>
-          <div style={{ fontSize: "11px", color: "#6b7280" }}>
+          <div className={selectorMeta}>
             ID: {currentChainId} • {currentChain?.nativeCurrency.symbol}
             {isPopularChain(currentChainId) && " ⭐"}
           </div>
         </div>
-        <span
-          style={{
-            transform: isOpen ? "rotate(180deg)" : "rotate(0deg)",
-            transition: "transform 0.2s",
-            fontSize: "12px",
-          }}
-        >
-          ▼
-        </span>
+        <span className={cx(selectorArrow, isOpen ? selectorArrowOpen : undefined)}>▼</span>
       </button>
 
       {isOpen && (
-        <div
-          style={{
-            position: "absolute",
-            top: "100%",
-            right: 0,
-            marginTop: "4px",
-            background: "white",
-            border: "1px solid #d1d5db",
-            borderRadius: "6px",
-            boxShadow: "0 4px 6px rgba(0, 0, 0, 0.1)",
-            zIndex: 1000,
-            minWidth: "320px",
-            maxHeight: "400px",
-            overflow: "hidden",
-          }}
-        >
-          {/* 搜索框 */}
-          <div style={{ padding: "12px", borderBottom: "1px solid #f3f4f6" }}>
-            <input
-              type="text"
-              placeholder="搜索链名称、ID 或代币符号..."
+        <div className={dropdown}>
+          <div className={dropdownSearch}>
+            <Input
+              placeholder="Search chain name, ID, or symbol..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === "Escape") {
-                  setIsOpen(false);
-                } else if (e.key === "Enter" && filteredChains.length > 0) {
-                  // 按回车选择第一个结果
+                if (e.key === "Escape") setIsOpen(false);
+                else if (e.key === "Enter" && filteredChains.length > 0) {
                   onChainChange(filteredChains[0].id);
                   setIsOpen(false);
                 }
               }}
-              style={{
-                width: "100%",
-                padding: "8px 12px",
-                border: "1px solid #e5e7eb",
-                borderRadius: "4px",
-                fontSize: "14px",
-                outline: "none",
-              }}
               autoFocus
             />
             {searchTerm && (
-              <div
-                style={{
-                  fontSize: "12px",
-                  color: "#6b7280",
-                  marginTop: "8px",
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                }}
-              >
-                <span>找到 {filteredChains.length} 条链</span>
+              <div className={dropdownHint}>
+                <span>Found {filteredChains.length} chains</span>
                 {filteredChains.length > 0 && (
-                  <span style={{ color: "#9ca3af" }}>回车选择第一个</span>
+                  <span>Press Enter to select first</span>
                 )}
               </div>
             )}
           </div>
 
-          {/* 链列表 */}
-          <div
-            key={`chain-list-${searchTerm}-${filteredChains.length}`}
-            style={{ maxHeight: "300px", overflowY: "auto" }}
-          >
+          <div className={dropdownList}>
             {filteredChains.length === 0 ? (
-              <div
-                style={{
-                  padding: "20px",
-                  textAlign: "center",
-                  color: "#6b7280",
-                }}
-              >
-                未找到匹配的链
-              </div>
+              <div className={dropdownEmpty}>No matching chains found</div>
             ) : (
               filteredChains.map((chain) => {
                 const chainType = getChainType(chain.id);
-                const isPopular = isPopularChain(chain.id);
+                const isActive = currentChainId === chain.id;
 
                 return (
                   <button
@@ -183,71 +365,23 @@ function ChainSelector({
                       setIsOpen(false);
                       setSearchTerm("");
                     }}
-                    style={{
-                      display: "block",
-                      width: "100%",
-                      padding: "12px 16px",
-                      textAlign: "left",
-                      border: "none",
-                      background:
-                        currentChainId === chain.id ? "#eff6ff" : "transparent",
-                      cursor: "pointer",
-                      fontSize: "14px",
-                      borderBottom: "1px solid #f9fafb",
-                    }}
-                    onMouseEnter={(e) => {
-                      if (currentChainId !== chain.id) {
-                        e.currentTarget.style.background = "#f9fafb";
-                      }
-                    }}
-                    onMouseLeave={(e) => {
-                      if (currentChainId !== chain.id) {
-                        e.currentTarget.style.background = "transparent";
-                      }
-                    }}
+                    className={cx(chainItem, isActive ? chainItemActive : undefined)}
                   >
-                    <div
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                      }}
-                    >
+                    <div className={chainItemRow}>
                       <div>
-                        <div
-                          style={{
-                            fontWeight: "500",
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "4px",
-                          }}
-                        >
+                        <div className={chainItemName}>
                           {chain.name}
-                          {isPopular && (
-                            <span style={{ fontSize: "12px" }}>⭐</span>
-                          )}
+                          {isPopularChain(chain.id) && <span>⭐</span>}
                           {chainType === "testnet" && (
-                            <span
-                              style={{
-                                fontSize: "10px",
-                                background: "#fef3c7",
-                                color: "#92400e",
-                                padding: "2px 6px",
-                                borderRadius: "12px",
-                              }}
-                            >
-                              测试网
-                            </span>
+                            <span className={testnetBadge}>Testnet</span>
                           )}
                         </div>
-                        <div style={{ fontSize: "12px", color: "#6b7280" }}>
+                        <div className={chainItemMeta}>
                           ID: {chain.id} • {chain.nativeCurrency.symbol}
                         </div>
                       </div>
-                      {currentChainId === chain.id && (
-                        <span style={{ color: "#3b82f6", fontSize: "16px" }}>
-                          ✓
-                        </span>
+                      {isActive && (
+                        <span style={{ color: "var(--haze-color-primary)" }}>✓</span>
                       )}
                     </div>
                   </button>
@@ -329,24 +463,17 @@ export default function TopNavigation({
     setLoading(true);
     try {
       if (onSearch) {
-        // 如果提供了自定义搜索处理函数，使用它
         await onSearch(searchQuery.trim());
       } else {
-        // 默认搜索逻辑：尝试路由跳转
         const query = searchQuery.trim();
 
-        // 简单的格式检测
         if (query.startsWith("0x") && query.length === 42) {
-          // 地址格式
           navigate(`/chain/${currentChainId}/address/${query}`);
         } else if (query.startsWith("0x") && query.length === 66) {
-          // 交易哈希格式
           navigate(`/chain/${currentChainId}/tx/${query}`);
         } else if (/^\d+$/.test(query)) {
-          // 数字，可能是区块号
           navigate(`/chain/${currentChainId}/block/${query}`);
         } else {
-          // 其他情况，使用搜索API
           const response = await fetch(
             `/api/chains/${currentChainId}/search?q=${encodeURIComponent(query)}`
           );
@@ -363,9 +490,6 @@ export default function TopNavigation({
               case "block":
                 navigate(`/chain/${currentChainId}/block/${query}`);
                 break;
-              default:
-                // 如果没有明确的类型，保持在当前页面
-                break;
             }
           }
         }
@@ -381,185 +505,61 @@ export default function TopNavigation({
 
   return (
     <>
-      <nav
-        style={{
-          background: "white",
-          borderBottom: "1px solid #e5e7eb",
-          boxShadow: "0 1px 3px rgba(0, 0, 0, 0.1)",
-          position: "sticky",
-          top: 0,
-          zIndex: 100,
-        }}
-      >
-        <div
-          style={{
-            maxWidth: "1200px",
-            margin: "0 auto",
-            padding: "0 20px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            height: "60px",
-          }}
-        >
-          {/* Logo */}
+      <nav className={nav}>
+        <div className={navInner}>
           <div
             onClick={() => navigate(`/chain/${currentChainId}`)}
-            style={{
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              gap: "8px",
-            }}
+            className={logoStyle}
           >
             <span style={{ fontSize: "24px" }}>🚀</span>
-            <span
-              style={{
-                fontSize: "18px",
-                fontWeight: "600",
-                color: "#1e293b",
-              }}
-            >
-              Block Explorer
-            </span>
+            <span className={logoText}>Block Explorer</span>
           </div>
 
-          {/* 搜索框 */}
-          <div
-            ref={searchContainerRef}
-            style={{
-              flex: 1,
-              maxWidth: "400px",
-              margin: "0 20px",
-              position: "relative",
-            }}
-          >
-            <div style={{ display: "flex", gap: "8px" }}>
-              <input
-                type="text"
+          <div ref={searchContainerRef} className={searchArea}>
+            <div className={searchRow}>
+              <Input
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 onFocus={handleSearchFocus}
                 placeholder={
                   searchPlaceholder ||
-                  `在 ${chainInfo?.name || "当前链"} 上搜索地址、交易、区块...`
+                  `Search on ${chainInfo?.name || "current chain"}...`
                 }
-                style={{
-                  flex: 1,
-                  padding: "8px 12px",
-                  border: "1px solid #d1d5db",
-                  borderRadius: "6px",
-                  fontSize: "14px",
-                  outline: "none",
-                  height: "40px",
-                  boxSizing: "border-box",
-                }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") handleSearch();
                   if (e.key === "Escape") setShowHistory(false);
                 }}
               />
-              <button
+              <Button
+                variant="solid"
+                size="md"
                 onClick={handleSearch}
                 disabled={loading}
-                style={{
-                  padding: "8px 16px",
-                  background: loading ? "#9ca3af" : "#3b82f6",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "6px",
-                  cursor: loading ? "not-allowed" : "pointer",
-                  fontSize: "14px",
-                  fontWeight: "500",
-                  height: "40px",
-                }}
               >
-                {loading ? "搜索中..." : "搜索"}
-              </button>
+                {loading ? "..." : "Search"}
+              </Button>
             </div>
 
             {showHistory && filteredHistory.length > 0 && (
-              <div
-                style={{
-                  position: "absolute",
-                  top: "100%",
-                  left: 0,
-                  right: 0,
-                  marginTop: "4px",
-                  background: "white",
-                  border: "1px solid #d1d5db",
-                  borderRadius: "8px",
-                  boxShadow: "0 4px 12px rgba(0, 0, 0, 0.1)",
-                  zIndex: 1000,
-                  maxHeight: "360px",
-                  overflowY: "auto",
-                }}
-              >
-                <div
-                  style={{
-                    padding: "8px 12px",
-                    fontSize: "11px",
-                    color: "#9ca3af",
-                    fontWeight: "600",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.5px",
-                    borderBottom: "1px solid #f3f4f6",
-                  }}
-                >
-                  最近搜索
-                </div>
+              <div className={historyDropdown}>
+                <div className={historyHeader}>Recent Searches</div>
                 {filteredHistory.map((item, idx) => (
                   <button
                     key={`${item.query}-${idx}`}
                     onClick={() => selectHistoryItem(item.query)}
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      gap: "8px",
-                      width: "100%",
-                      padding: "8px 12px",
-                      border: "none",
-                      background: "transparent",
-                      cursor: "pointer",
-                      fontSize: "13px",
-                      color: "#374151",
-                      textAlign: "left",
-                      borderBottom: "1px solid #f9fafb",
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.background = "#f3f4f6";
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.background = "transparent";
-                    }}
+                    className={historyItem}
                   >
-                    <span style={{ color: "#9ca3af", fontSize: "14px" }}>🔍</span>
+                    <span style={{ color: "var(--haze-color-text-muted)" }}>🔍</span>
                     <span
-                      style={{
-                        flex: 1,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                        fontFamily: /^0x/.test(item.query)
-                          ? '"SF Mono", Monaco, "Cascadia Code", monospace'
-                          : "inherit",
-                      }}
+                      className={cx(
+                        historyQuery,
+                        /^0x/.test(item.query) ? historyQueryMono : undefined
+                      )}
                     >
                       {item.query}
                     </span>
                     {item.searchType && (
-                      <span
-                        style={{
-                          fontSize: "10px",
-                          padding: "2px 6px",
-                          borderRadius: "4px",
-                          background: "#f3f4f6",
-                          color: "#6b7280",
-                          flexShrink: 0,
-                        }}
-                      >
-                        {item.searchType}
-                      </span>
+                      <span className={historyType}>{item.searchType}</span>
                     )}
                   </button>
                 ))}
@@ -567,40 +567,10 @@ export default function TopNavigation({
             )}
           </div>
 
-          {/* 右侧控制区 */}
-          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-            {/* RPC配置按钮 */}
-            <button
-              onClick={() => setShowRpcConfig(true)}
-              style={{
-                background: "white",
-                border: "1px solid #d1d5db",
-                borderRadius: "6px",
-                padding: "8px 12px",
-                cursor: "pointer",
-                fontSize: "14px",
-                color: "#374151",
-                display: "flex",
-                alignItems: "center",
-                gap: "6px",
-                transition: "all 0.2s",
-                height: "40px",
-                fontWeight: "500",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.background = "#f9fafb";
-                e.currentTarget.style.borderColor = "#9ca3af";
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.background = "white";
-                e.currentTarget.style.borderColor = "#d1d5db";
-              }}
-              title="RPC 节点配置"
-            >
+          <div className={rightControls}>
+            <Button variant="outline" size="md" onClick={() => setShowRpcConfig(true)}>
               ⚙️ RPC
-            </button>
-
-            {/* 链选择器 */}
+            </Button>
             <ChainSelector
               currentChainId={currentChainId}
               onChainChange={onChainChange}
@@ -609,7 +579,6 @@ export default function TopNavigation({
         </div>
       </nav>
 
-      {/* RPC 配置弹窗 */}
       <RpcConfig
         isOpen={showRpcConfig}
         onClose={() => setShowRpcConfig(false)}

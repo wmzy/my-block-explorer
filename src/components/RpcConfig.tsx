@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { css } from "@linaria/core";
+import { Dialog } from "haze-ui";
 import { getChainName } from "../config/chains";
 import { getRpcPresets, type RpcPreset } from "../config/rpcPresets";
 import {
@@ -11,28 +12,11 @@ import {
   type RpcTestResult,
 } from "../utils/rpcConfigService";
 
-const modalOverlayStyles = css`
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-`;
-
-const modalContentStyles = css`
-  background: white;
-  border-radius: 12px;
-  padding: 24px;
+const dialogContent = css`
   width: 90%;
   max-width: 500px;
   max-height: 80vh;
   overflow-y: auto;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12);
 `;
 
 const headerStyles = css`
@@ -407,13 +391,10 @@ export default function RpcConfig({
     }
   };
 
-  if (!isOpen) return null;
-
   return (
-    <div className={modalOverlayStyles} onClick={onClose}>
-      <div className={modalContentStyles} onClick={(e) => e.stopPropagation()}>
+    <Dialog open={isOpen} onClose={onClose} className={dialogContent}>
         <div className={headerStyles}>
-          <h2>{chainName} RPC 节点配置</h2>
+          <h2>{chainName} RPC Configuration</h2>
           <button onClick={onClose}>×</button>
         </div>
 
@@ -639,7 +620,6 @@ export default function RpcConfig({
             </form>
           </div>
         )}
-      </div>
-    </div>
+    </Dialog>
   );
 }

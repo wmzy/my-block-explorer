@@ -1,6 +1,7 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { css } from "@linaria/core";
+import { Input } from "haze-ui";
 import {
   Card,
   CardHeader,
@@ -9,123 +10,75 @@ import {
 } from "../components/ui/Card";
 import { Button } from "../components/ui/Button";
 import { Badge } from "../components/ui/Badge";
+import { ErrorState } from "../components/ui/ErrorState";
 import { apiClient } from "../api/client";
 import { detectSearchType, sanitizeInput } from "@/utils/validation";
 
 const searchContainer = css`
   max-width: 600px;
   margin: 0 auto;
+  padding: var(--haze-space-5);
 `;
 
 const searchForm = css`
   display: flex;
-  gap: 12px;
-  margin-bottom: 24px;
-`;
-
-const searchInput = css`
-  flex: 1;
-  padding: 12px 16px;
-  border: 2px solid #e2e8f0;
-  border-radius: 8px;
-  font-size: 16px;
-  transition: border-color 0.15s ease;
-
-  &:focus {
-    outline: none;
-    border-color: #3b82f6;
-  }
-
-  @media (prefers-color-scheme: dark) {
-    background-color: #1e293b;
-    border-color: #334155;
-    color: #e2e8f0;
-
-    &:focus {
-      border-color: #60a5fa;
-    }
-  }
+  gap: var(--haze-space-3);
+  margin-bottom: var(--haze-space-6);
 `;
 
 const examples = css`
-  margin-top: 16px;
-  font-size: 14px;
-  color: #64748b;
-
-  @media (prefers-color-scheme: dark) {
-    color: #94a3b8;
-  }
+  margin-top: var(--haze-space-4);
+  font-size: var(--haze-text-sm);
+  color: var(--haze-color-text-secondary);
 `;
 
-const exampleItem = css`
-  display: inline-block;
-  margin: 4px 8px 4px 0;
-  padding: 4px 8px;
-  background-color: #f1f5f9;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: background-color 0.15s ease;
-
-  &:hover {
-    background-color: #e2e8f0;
-  }
-
-  @media (prefers-color-scheme: dark) {
-    background-color: #334155;
-
-    &:hover {
-      background-color: #475569;
-    }
-  }
+const exampleBadges = css`
+  margin-top: var(--haze-space-2);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--haze-space-2);
 `;
 
 const resultCard = css`
-  margin-top: 24px;
+  margin-top: var(--haze-space-6);
 `;
 
 const chainSelector = css`
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 12px;
-  margin-top: 16px;
+  gap: var(--haze-space-3);
+  margin-top: var(--haze-space-4);
 `;
 
 const chainOption = css`
-  padding: 12px;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
+  padding: var(--haze-space-3);
+  border: 1px solid var(--haze-color-border);
+  border-radius: var(--haze-radius-md);
   cursor: pointer;
   transition: all 0.15s ease;
   text-align: center;
 
   &:hover {
-    border-color: #3b82f6;
-    background-color: #f8fafc;
-  }
-
-  @media (prefers-color-scheme: dark) {
-    border-color: #334155;
-
-    &:hover {
-      border-color: #60a5fa;
-      background-color: #1e293b;
-    }
+    border-color: var(--haze-color-primary);
+    background-color: var(--haze-color-bg-subtle);
   }
 `;
 
+const chainName = css`
+  font-weight: var(--haze-weight-medium);
+  margin-bottom: var(--haze-space-1);
+`;
+
+const chainId = css`
+  font-size: var(--haze-text-xs);
+  color: var(--haze-color-text-secondary);
+`;
+
 const exampleQueries = [
-  {
-    label: "以太坊地址",
-    value: "0x742d35Cc6634C0532925a3b8D489319BaAE7fe",
-    type: "address",
-  },
-  {
-    label: "交易哈希",
-    value: "0x5c504ed432cb51138bcf09aa5e8a410dd4a1e204ef84bfed1be16dfba1b22060",
-    type: "hash",
-  },
-  { label: "区块号", value: "18000000", type: "block" },
-  { label: "ENS域名", value: "vitalik.eth", type: "ens" },
+  { label: "Address", value: "0x742d35Cc6634C0532925a3b8D489319BaAE7fe", type: "address" },
+  { label: "Tx Hash", value: "0x5c504ed432cb51138bcf09aa5e8a410dd4a1e204ef84bfed1be16dfba1b22060", type: "hash" },
+  { label: "Block Number", value: "18000000", type: "block" },
+  { label: "ENS", value: "vitalik.eth", type: "ens" },
 ];
 
 export function SearchPage() {
@@ -142,7 +95,7 @@ export function SearchPage() {
     const searchType = detectSearchType(sanitized);
 
     if (searchType === "unknown") {
-      setError("无效的搜索格式。请输入有效的地址、交易哈希或区块号。");
+      setError("Invalid search format. Please enter a valid address, transaction hash, or block number.");
       return;
     }
 
@@ -154,28 +107,21 @@ export function SearchPage() {
       const searchResult = await apiClient.search(sanitized);
       setResult(searchResult);
 
-      // 如果是确定的结果，直接跳转
       if (searchResult.type === "address" && searchResult.data) {
-        navigate(
-          `/chain/${searchResult.data.chainId}/address/${searchResult.data.address}`
-        );
+        navigate(`/chain/${searchResult.data.chainId}/address/${searchResult.data.address}`);
       } else if (searchResult.type === "transaction" && searchResult.data) {
-        navigate(
-          `/chain/${searchResult.data.chainId}/tx/${searchResult.data.hash}`
-        );
+        navigate(`/chain/${searchResult.data.chainId}/tx/${searchResult.data.hash}`);
       } else if (searchResult.type === "block" && searchResult.data) {
-        navigate(
-          `/chain/${searchResult.data.chainId}/block/${searchResult.data.number}`
-        );
+        navigate(`/chain/${searchResult.data.chainId}/block/${searchResult.data.number}`);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "搜索失败");
+      setError(err instanceof Error ? err.message : "Search failed");
     } finally {
       setIsSearching(false);
     }
   };
 
-  const handleChainSelect = async (chainId: number) => {
+  const handleChainSelect = async (selectedChainId: number) => {
     if (!query.trim()) return;
 
     const sanitized = sanitizeInput(query.trim());
@@ -183,17 +129,17 @@ export function SearchPage() {
     setError(null);
 
     try {
-      const searchResult = await apiClient.searchInChain(chainId, sanitized);
+      const searchResult = await apiClient.searchInChain(selectedChainId, sanitized);
 
       if (searchResult.type === "address") {
-        navigate(`/chain/${chainId}/address/${sanitized}`);
+        navigate(`/chain/${selectedChainId}/address/${sanitized}`);
       } else if (searchResult.type === "transaction") {
-        navigate(`/chain/${chainId}/tx/${sanitized}`);
+        navigate(`/chain/${selectedChainId}/tx/${sanitized}`);
       } else if (searchResult.type === "block") {
-        navigate(`/chain/${chainId}/block/${sanitized}`);
+        navigate(`/chain/${selectedChainId}/block/${sanitized}`);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "搜索失败");
+      setError(err instanceof Error ? err.message : "Search failed");
     } finally {
       setIsSearching(false);
     }
@@ -208,7 +154,7 @@ export function SearchPage() {
     <div className={searchContainer}>
       <Card>
         <CardHeader>
-          <CardTitle>区块链数据搜索</CardTitle>
+          <CardTitle>Blockchain Search</CardTitle>
         </CardHeader>
         <CardContent>
           <form
@@ -218,38 +164,26 @@ export function SearchPage() {
             }}
             className={searchForm}
           >
-            <input
-              type="text"
-              placeholder="输入地址、交易哈希或区块号..."
+            <Input
+              placeholder="Enter address, tx hash, or block number..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              className={searchInput}
             />
             <Button
-              type="submit"
               loading={isSearching}
               disabled={!query.trim() || isSearching}
             >
-              搜索
+              Search
             </Button>
           </form>
 
           <div className={examples}>
-            <div>示例搜索：</div>
-            <div
-              className={css`
-                margin-top: 8px;
-              `}
-            >
+            <div>Example searches:</div>
+            <div className={exampleBadges}>
               {exampleQueries.map((example, index) => (
                 <Badge
                   key={index}
                   variant="default"
-                  className={css`
-                    ${exampleItem} margin-right: 8px;
-                    margin-bottom: 8px;
-                    cursor: pointer;
-                  `}
                   onClick={() => handleExampleClick(example.value)}
                 >
                   {example.label}
@@ -260,34 +194,16 @@ export function SearchPage() {
         </CardContent>
       </Card>
 
-      {error && (
-        <Card className={resultCard}>
-          <CardContent>
-            <div
-              className={css`
-                color: #ef4444;
-                text-align: center;
-              `}
-            >
-              ❌ {error}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {error && <ErrorState message={error} className={resultCard} />}
 
       {result && result.type.includes("_select_chain") && (
         <Card className={resultCard}>
           <CardHeader>
-            <CardTitle>选择区块链网络</CardTitle>
+            <CardTitle>Select Network</CardTitle>
           </CardHeader>
           <CardContent>
-            <p
-              className={css`
-                color: #64748b;
-                margin-bottom: 16px;
-              `}
-            >
-              请选择要搜索的区块链网络：
+            <p className={css`color: var(--haze-color-text-secondary); margin-bottom: var(--haze-space-4);`}>
+              Please select a blockchain network to search:
             </p>
 
             <div className={chainSelector}>
@@ -297,22 +213,8 @@ export function SearchPage() {
                   className={chainOption}
                   onClick={() => handleChainSelect(chain.chainId)}
                 >
-                  <div
-                    className={css`
-                      font-weight: 500;
-                      margin-bottom: 4px;
-                    `}
-                  >
-                    {chain.name}
-                  </div>
-                  <div
-                    className={css`
-                      font-size: 12px;
-                      color: #64748b;
-                    `}
-                  >
-                    Chain ID: {chain.chainId}
-                  </div>
+                  <div className={chainName}>{chain.name}</div>
+                  <div className={chainId}>Chain ID: {chain.chainId}</div>
                 </div>
               ))}
             </div>

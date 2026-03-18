@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { css } from "@linaria/core";
+import { Dialog } from "haze-ui";
 import { getChainName } from "../config/chains";
 
 type RpcValidationResult = {
@@ -451,11 +452,8 @@ export default function ChainRpcConfig({
     }
   };
 
-  if (!isOpen) return null;
-
   return (
-    <div className={overlayStyles} onClick={onClose}>
-      <div className={modalStyles} onClick={(e) => e.stopPropagation()}>
+    <Dialog open={isOpen} onClose={onClose} className={modalStyles}>
         <div className={headerStyles}>
           <div>
             <h2>配置 {chainName} RPC 节点</h2>
@@ -592,7 +590,6 @@ export default function ChainRpcConfig({
             </button>
           </div>
         </div>
-      </div>
-    </div>
+    </Dialog>
   );
 }

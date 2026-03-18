@@ -32,6 +32,9 @@ importers:
       echarts-for-react:
         specifier: ^3.0.2
         version: 3.0.2(echarts@6.0.0)(react@19.1.1)
+      haze-ui:
+        specifier: ^1.3.0
+        version: 1.3.0(@linaria/core@6.3.0)(react-dom@19.1.1(react@19.1.1))(react@19.1.1)
       hono:
         specifier: ^4.9.2
         version: 4.9.2
@@ -53,6 +56,9 @@ importers:
       react-router-dom:
         specifier: ^7.8.1
         version: 7.8.1(react-dom@19.1.1(react@19.1.1))(react@19.1.1)
+      react-use-control:
+        specifier: ^1.2.1
+        version: 1.2.1(react-dom@19.1.1(react@19.1.1))(react@19.1.1)
       viem:
         specifier: ^2.34.0
         version: 2.34.0(typescript@5.9.2)(zod@4.1.12)
@@ -1223,6 +1229,9 @@ packages:
     peerDependencies:
       '@babel/core': ^7.0.0
 
+  babel-runtime-jsx-plus@0.1.5:
+    resolution: {integrity: sha512-5qjZDfUzZGxHgX8o0tkS9o0HbyBvnUuaAtqHC9IN5CgjWFGJBg6a0Xp31wiG7btiHV0dP5t1t8cthlTCYwtnig==}
+
   balanced-match@1.0.2:
     resolution: {integrity: sha512-3oSeUO0TMV67hN1AmbXsK4yaqU7tjiHlbxRDZOpH0KW9+CeX4bRAaX0Anxt0tx2MrpRpWwQaPwIlISEJhYU5Pw==}
 
@@ -1718,6 +1727,12 @@ packages:
     resolution: {integrity: sha512-0hJU9SCPvmMzIBdZFqNPXWa6dqh7WdH0cII9y+CyS8rG3nL48Bclra9HmKhVVUHyPWNH5Y7xDwAB7bfgSjkUMQ==}
     engines: {node: '>= 0.4'}
 
+  haze-ui@1.3.0:
+    resolution: {integrity: sha512-ou/oGfbhmHlhdPdxgtNkn+nvH31faKi2hYQ7zX/eZNdkFnBh2kARY7TEf1VaaC3ehfCw/MU8dKFJ3cD5I1F4tA==}
+    peerDependencies:
+      '@linaria/core': ^7.0.0
+      react: ^19.0.0
+
   help-me@5.0.0:
     resolution: {integrity: sha512-7xgomUX6ADmcYzFik0HzAxh/73YlKR9bmFzf51CZwR+b6YtzU2m0u49hQCqV6SvlqIqsaxovfwdvbnsw3b/zpg==}
 
@@ -2156,6 +2171,26 @@ packages:
     peerDependenciesMeta:
       react-dom:
         optional: true
+
+  react-toolroom@0.4.0:
+    resolution: {integrity: sha512-0pNJmrzZvy/o8PYX2kHYTXXovAPp5gOm8l2Y4kSL/ABAdclPHK8AGxfWmfhk8pUZAahR1g8Rxxobd42w9GkUKA==}
+    peerDependencies:
+      react: ^16.8.0  || ^17.0.0 || ^18.0.0
+      react-dom: ^16.8.0  || ^17.0.0 || ^18.0.0
+
+  react-use-control@1.2.1:
+    resolution: {integrity: sha512-GxS5I/JTBl8zI9VC3EZWeUTeudDHwMgE2qqYYG1CHbQF5dZXI+UclsdJPRrP9vD4VeEU3Bz4imSjYNTw8RMk0g==}
+    engines: {node: '>=16.0.0'}
+    peerDependencies:
+      react: '>=16.8.0'
+      react-dom: '>=16.8.0'
+
+  react-use-control@1.3.0:
+    resolution: {integrity: sha512-8Krcw1U0kN+XGzhvub88mHTfRgNAktOV4Q7zy9msPREyM3wB2GObeZoL12BvRBK9IJMq04wvF572maytdwlvog==}
+    engines: {node: '>=16.0.0'}
+    peerDependencies:
+      react: '>=16.8.0'
+      react-dom: '>=16.8.0'
 
   react@19.1.1:
     resolution: {integrity: sha512-w8nqGImo45dmMIfljjMwOGtbmC/mk4CMYhWIicdSflH91J9TyCyczcPFXJzrZ/ZXcgGRFeP6BU0BEJTw6tZdfQ==}
@@ -3650,6 +3685,8 @@ snapshots:
       deepmerge: 2.2.1
       object.omit: 3.0.0
 
+  babel-runtime-jsx-plus@0.1.5: {}
+
   balanced-match@1.0.2: {}
 
   base64-js@1.5.1:
@@ -4104,6 +4141,16 @@ snapshots:
     dependencies:
       function-bind: 1.1.2
 
+  haze-ui@1.3.0(@linaria/core@6.3.0)(react-dom@19.1.1(react@19.1.1))(react@19.1.1):
+    dependencies:
+      '@linaria/core': 6.3.0
+      babel-runtime-jsx-plus: 0.1.5
+      react: 19.1.1
+      react-toolroom: 0.4.0(react-dom@19.1.1(react@19.1.1))(react@19.1.1)
+      react-use-control: 1.3.0(react-dom@19.1.1(react@19.1.1))(react@19.1.1)
+    transitivePeerDependencies:
+      - react-dom
+
   help-me@5.0.0: {}
 
   hono@4.9.2: {}
@@ -4550,6 +4597,21 @@ snapshots:
       react: 19.1.1
       set-cookie-parser: 2.7.1
     optionalDependencies:
+      react-dom: 19.1.1(react@19.1.1)
+
+  react-toolroom@0.4.0(react-dom@19.1.1(react@19.1.1))(react@19.1.1):
+    dependencies:
+      react: 19.1.1
+      react-dom: 19.1.1(react@19.1.1)
+
+  react-use-control@1.2.1(react-dom@19.1.1(react@19.1.1))(react@19.1.1):
+    dependencies:
+      react: 19.1.1
+      react-dom: 19.1.1(react@19.1.1)
+
+  react-use-control@1.3.0(react-dom@19.1.1(react@19.1.1))(react@19.1.1):
+    dependencies:
+      react: 19.1.1
       react-dom: 19.1.1(react@19.1.1)
 
   react@19.1.1: {}

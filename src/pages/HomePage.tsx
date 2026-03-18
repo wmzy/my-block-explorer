@@ -8,29 +8,25 @@ import {
   CardContent,
 } from "../components/ui/Card";
 import { StatusBadge } from "../components/ui/Badge";
-import { Button } from "../components/ui/Button";
 import TopNavigation from "../components/TopNavigation";
 import RpcErrorAlert from "../components/RpcErrorAlert";
 import { apiClient } from "../api/client";
 import { getChainInfo } from "@/config/chains";
 import { formatNumber } from "@/utils/format";
+import { PageContainer } from "@/components/ui/PageLayout";
+import { LoadingState } from "@/components/ui/LoadingState";
+import { ErrorState } from "@/components/ui/ErrorState";
 import type { RpcError } from "../types/rpc";
-
-const pageContainer = css`
-  max-width: 1000px;
-  margin: 0 auto;
-  padding: 20px;
-`;
 
 const hero = css`
   text-align: center;
-  margin-bottom: 40px;
+  margin-bottom: var(--haze-space-10);
 `;
 
 const titleStyle = css`
   font-size: 42px;
-  font-weight: 800;
-  margin: 0 0 12px 0;
+  font-weight: var(--haze-weight-bold);
+  margin: 0 0 var(--haze-space-3) 0;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
@@ -42,16 +38,17 @@ const titleStyle = css`
 `;
 
 const subtitleStyle = css`
-  font-size: 18px;
-  color: #64748b;
+  font-size: var(--haze-text-lg);
+  color: var(--haze-color-text-muted);
   margin: 0;
 `;
 
 const grid = css`
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 20px;
-  margin-bottom: 32px;
+  gap: var(--haze-space-5);
+  margin-bottom: var(--haze-space-8);
+  margin-top: var(--haze-space-8);
 `;
 
 const statCard = css`
@@ -60,33 +57,33 @@ const statCard = css`
 
 const statValue = css`
   font-size: 28px;
-  font-weight: 700;
-  color: #1e293b;
-  margin-bottom: 6px;
+  font-weight: var(--haze-weight-bold);
+  color: var(--haze-color-text);
+  margin-bottom: var(--haze-space-1);
 `;
 
 const statLabel = css`
-  font-size: 14px;
-  color: #64748b;
+  font-size: var(--haze-text-sm);
+  color: var(--haze-color-text-muted);
 `;
 
 const chainGrid = css`
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 16px;
-  margin-top: 20px;
+  gap: var(--haze-space-4);
+  margin-top: var(--haze-space-5);
 `;
 
 const chainCardStyle = css`
-  padding: 16px;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
+  padding: var(--haze-space-4);
+  border: 1px solid var(--haze-color-border);
+  border-radius: var(--haze-radius-lg);
   transition: all 0.15s ease;
 
   &:hover {
-    border-color: #3b82f6;
+    border-color: var(--haze-color-primary);
     transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    box-shadow: var(--haze-shadow-md);
   }
 `;
 
@@ -94,44 +91,44 @@ const chainHeaderStyle = css`
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 12px;
+  margin-bottom: var(--haze-space-3);
 `;
 
 const chainNameStyle = css`
-  font-weight: 600;
-  font-size: 16px;
-  color: #1e293b;
+  font-weight: var(--haze-weight-semibold);
+  font-size: var(--haze-text-base);
+  color: var(--haze-color-text);
 `;
 
 const chainStatsStyle = css`
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 8px;
-  font-size: 13px;
-  color: #64748b;
+  gap: var(--haze-space-2);
+  font-size: var(--haze-text-xs);
+  color: var(--haze-color-text-muted);
 `;
 
 const quickLinksStyle = css`
   display: flex;
-  gap: 12px;
-  margin-top: 32px;
+  gap: var(--haze-space-3);
+  margin-top: var(--haze-space-8);
 
   a {
     flex: 1;
     display: block;
-    padding: 16px;
+    padding: var(--haze-space-4);
     text-align: center;
-    background: white;
-    border: 1px solid #e2e8f0;
-    border-radius: 8px;
-    color: #4f46e5;
+    background: var(--haze-color-bg);
+    border: 1px solid var(--haze-color-border);
+    border-radius: var(--haze-radius-lg);
+    color: var(--haze-color-primary);
     text-decoration: none;
-    font-weight: 500;
+    font-weight: var(--haze-weight-medium);
     transition: all 0.15s ease;
 
     &:hover {
-      border-color: #4f46e5;
-      background: #f5f3ff;
+      border-color: var(--haze-color-primary);
+      background: var(--haze-color-primary-subtle);
     }
   }
 `;
@@ -189,7 +186,7 @@ export default function HomePage() {
         currentChainId={currentChainId}
         onChainChange={handleChainChange}
       />
-      <div className={pageContainer}>
+      <PageContainer narrow>
         {rpcError && (
           <RpcErrorAlert
             error={rpcError}
@@ -206,35 +203,18 @@ export default function HomePage() {
           </p>
         </div>
 
-        {/* Quick links for current chain */}
         <div className={quickLinksStyle}>
           <Link to={`/chain/${currentChainId}/blocks`}>Blocks</Link>
           <Link to={`/chain/${currentChainId}/transactions`}>Transactions</Link>
         </div>
 
-        {loading && (
-          <Card className={css`margin-top: 32px;`}>
-            <CardContent>
-              <div className={css`text-align: center; color: #64748b;`}>
-                Loading overview...
-              </div>
-            </CardContent>
-          </Card>
-        )}
+        {loading && <LoadingState message="Loading overview..." />}
 
-        {error && !loading && (
-          <Card className={css`margin-top: 32px;`}>
-            <CardContent>
-              <div className={css`text-align: center; color: #ef4444;`}>
-                {error}
-              </div>
-            </CardContent>
-          </Card>
-        )}
+        {error && !loading && <ErrorState message={error} />}
 
         {overview && !loading && (
           <>
-            <div className={`${grid} ${css`margin-top: 32px;`}`}>
+            <div className={grid}>
               <Card className={statCard}>
                 <CardContent>
                   <div className={statValue}>
@@ -317,7 +297,7 @@ export default function HomePage() {
             </Card>
           </>
         )}
-      </div>
+      </PageContainer>
     </>
   );
 }

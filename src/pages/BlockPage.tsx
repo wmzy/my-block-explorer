@@ -1,112 +1,13 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { css } from "@linaria/core";
 import { getChainInfo, getChainName } from "../config/chains";
 import TopNavigation from "../components/TopNavigation";
 import { getBlockByNumber, type RpcBlock } from "@/utils/blockRpcData";
-
-const pageStyles = css`
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 20px;
-  font-family:
-    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-`;
-
-const headerStyles = css`
-  margin-bottom: 30px;
-
-  h1 {
-    font-size: 24px;
-    font-weight: 600;
-    margin: 0 0 10px 0;
-    color: #1a1a1a;
-  }
-
-  .chain-info {
-    color: #666;
-    font-size: 14px;
-  }
-`;
-
-const cardStyles = css`
-  background: white;
-  border-radius: 12px;
-  border: 1px solid #e1e5e9;
-  padding: 24px;
-  margin-bottom: 20px;
-
-  h2 {
-    font-size: 18px;
-    font-weight: 600;
-    margin: 0 0 16px 0;
-    color: #1a1a1a;
-  }
-`;
-
-const infoGridStyles = css`
-  display: grid;
-  gap: 16px;
-
-  .info-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 12px 0;
-    border-bottom: 1px solid #f0f0f0;
-
-    &:last-child {
-      border-bottom: none;
-    }
-  }
-
-  .label {
-    font-weight: 500;
-    color: #666;
-  }
-
-  .value {
-    font-family:
-      "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas,
-      "Courier New", monospace;
-    color: #1a1a1a;
-    word-break: break-all;
-  }
-`;
-
-const loadingStyles = css`
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  height: 200px;
-  color: #666;
-`;
-
-const errorStyles = css`
-  background: #fee;
-  border: 1px solid #fcc;
-  border-radius: 8px;
-  padding: 16px;
-  color: #c33;
-  margin: 20px 0;
-`;
-
-const backButtonStyles = css`
-  background: #f8f9fa;
-  border: 1px solid #e1e5e9;
-  border-radius: 8px;
-  padding: 8px 16px;
-  color: #666;
-  text-decoration: none;
-  font-size: 14px;
-  margin-bottom: 20px;
-  display: inline-block;
-
-  &:hover {
-    background: #e9ecef;
-    color: #333;
-  }
-`;
+import { PageContainer, PageHeader, BackButton } from "@/components/ui/PageLayout";
+import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/Card";
+import { InfoGrid, InfoItem } from "@/components/ui/InfoGrid";
+import { LoadingState } from "@/components/ui/LoadingState";
+import { ErrorState } from "@/components/ui/ErrorState";
 
 export default function BlockPage() {
   const { chainId, blockNumber } = useParams<{
@@ -167,114 +68,69 @@ export default function BlockPage() {
   if (!chainInfo) {
     return (
       <>
-        <TopNavigation
-          currentChainId={currentChainId}
-          onChainChange={handleChainChange}
-        />
-        <div className={pageStyles}>
-          <div className={errorStyles}>Unsupported chain ID: {chainId}</div>
-        </div>
+        <TopNavigation currentChainId={currentChainId} onChainChange={handleChainChange} />
+        <PageContainer>
+          <ErrorState message={`Unsupported chain ID: ${chainId}`} />
+        </PageContainer>
       </>
     );
   }
 
   return (
     <>
-      <TopNavigation
-        currentChainId={currentChainId}
-        onChainChange={handleChainChange}
-      />
-      <div className={pageStyles}>
-        <button
-        className={backButtonStyles}
-        onClick={() => navigate(`/chain/${currentChainId}`)}
-      >
-        ← Back to Explorer
-      </button>
+      <TopNavigation currentChainId={currentChainId} onChainChange={handleChainChange} />
+      <PageContainer>
+        <BackButton onClick={() => navigate(`/chain/${currentChainId}`)} />
 
-      <div className={headerStyles}>
-        <h1>Block #{blockNumber}</h1>
-        <div className="chain-info">
-          {getChainName(currentChainId)} • Chain ID: {currentChainId}
-        </div>
-      </div>
+        <PageHeader
+          title={`Block #${blockNumber}`}
+          chainInfo={`${getChainName(currentChainId)} • Chain ID: ${currentChainId}`}
+        />
 
-      {loading && (
-        <div className={loadingStyles}>Loading block information...</div>
-      )}
+        {loading && <LoadingState message="Loading block information..." />}
 
-      {error && <div className={errorStyles}>Error: {error}</div>}
+        {error && <ErrorState message={error} />}
 
-      {blockInfo && (
-        <div className={cardStyles}>
-          <h2>Block Details</h2>
-          <div className={infoGridStyles}>
-            <div className="info-item">
-              <span className="label">Block Number</span>
-              <span className="value">
-                {parseInt(blockInfo.number).toLocaleString()}
-              </span>
-            </div>
-            <div className="info-item">
-              <span className="label">Block Hash</span>
-              <span className="value">{blockInfo.hash}</span>
-            </div>
-            <div className="info-item">
-              <span className="label">Parent Hash</span>
-              <span className="value">{blockInfo.parentHash}</span>
-            </div>
-            <div className="info-item">
-              <span className="label">Timestamp</span>
-              <span className="value">
-                {new Date(blockInfo.timestamp).toLocaleString()}
-              </span>
-            </div>
-            <div className="info-item">
-              <span className="label">Miner</span>
-              <span className="value">{blockInfo.miner}</span>
-            </div>
-            <div className="info-item">
-              <span className="label">Gas Limit</span>
-              <span className="value">{formatGas(blockInfo.gasLimit)}</span>
-            </div>
-            <div className="info-item">
-              <span className="label">Gas Used</span>
-              <span className="value">{formatGas(blockInfo.gasUsed)}</span>
-            </div>
-            {blockInfo.baseFeePerGas && (
-              <div className="info-item">
-                <span className="label">Base Fee Per Gas</span>
-                <span className="value">
-                  {formatGas(blockInfo.baseFeePerGas)} wei
-                </span>
-              </div>
-            )}
-            <div className="info-item">
-              <span className="label">Transaction Count</span>
-              <span className="value">
-                {blockInfo.transactionCount.toLocaleString()}
-              </span>
-            </div>
-            <div className="info-item">
-              <span className="label">Block Size</span>
-              <span className="value">{formatBytes(blockInfo.sizeBytes)}</span>
-            </div>
-            {blockInfo.difficulty && (
-              <div className="info-item">
-                <span className="label">Difficulty</span>
-                <span className="value">{blockInfo.difficulty}</span>
-              </div>
-            )}
-            {blockInfo.extraData && (
-              <div className="info-item">
-                <span className="label">Extra Data</span>
-                <span className="value">{blockInfo.extraData}</span>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-      </div>
+        {blockInfo && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Block Details</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <InfoGrid>
+                <InfoItem label="Block Number">
+                  {parseInt(blockInfo.number).toLocaleString()}
+                </InfoItem>
+                <InfoItem label="Block Hash">{blockInfo.hash}</InfoItem>
+                <InfoItem label="Parent Hash">{blockInfo.parentHash}</InfoItem>
+                <InfoItem label="Timestamp">
+                  {new Date(blockInfo.timestamp).toLocaleString()}
+                </InfoItem>
+                <InfoItem label="Miner">{blockInfo.miner}</InfoItem>
+                <InfoItem label="Gas Limit">{formatGas(blockInfo.gasLimit)}</InfoItem>
+                <InfoItem label="Gas Used">{formatGas(blockInfo.gasUsed)}</InfoItem>
+                {blockInfo.baseFeePerGas && (
+                  <InfoItem label="Base Fee Per Gas">
+                    {formatGas(blockInfo.baseFeePerGas)} wei
+                  </InfoItem>
+                )}
+                <InfoItem label="Transaction Count">
+                  {blockInfo.transactionCount.toLocaleString()}
+                </InfoItem>
+                <InfoItem label="Block Size">
+                  {formatBytes(blockInfo.sizeBytes)}
+                </InfoItem>
+                {blockInfo.difficulty && (
+                  <InfoItem label="Difficulty">{blockInfo.difficulty}</InfoItem>
+                )}
+                {blockInfo.extraData && (
+                  <InfoItem label="Extra Data">{blockInfo.extraData}</InfoItem>
+                )}
+              </InfoGrid>
+            </CardContent>
+          </Card>
+        )}
+      </PageContainer>
     </>
   );
 }

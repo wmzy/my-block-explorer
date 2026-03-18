@@ -1,162 +1,15 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { css } from "@linaria/core";
 import { getChainInfo, getChainName, getChainSymbol } from "../config/chains";
 import TopNavigation from "../components/TopNavigation";
 import { formatNumber, formatRelativeTime } from "@/utils/format";
 import { getLatestTransactions, type RpcTransaction } from "@/utils/blockRpcData";
-
-const pageStyles = css`
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 20px;
-  font-family:
-    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-`;
-
-const headerStyles = css`
-  margin-bottom: 24px;
-
-  h1 {
-    font-size: 24px;
-    font-weight: 600;
-    margin: 0 0 8px 0;
-    color: #1a1a1a;
-  }
-
-  .chain-info {
-    color: #666;
-    font-size: 14px;
-  }
-`;
-
-const tableContainerStyles = css`
-  background: white;
-  border-radius: 12px;
-  border: 1px solid #e1e5e9;
-  overflow: hidden;
-`;
-
-const tableStyles = css`
-  width: 100%;
-  border-collapse: collapse;
-
-  th {
-    background: #f8f9fa;
-    padding: 12px 16px;
-    text-align: left;
-    font-weight: 600;
-    font-size: 13px;
-    color: #666;
-    border-bottom: 1px solid #e1e5e9;
-    white-space: nowrap;
-  }
-
-  td {
-    padding: 12px 16px;
-    border-bottom: 1px solid #f0f0f0;
-    font-size: 14px;
-    color: #1a1a1a;
-  }
-
-  tr:last-child td {
-    border-bottom: none;
-  }
-
-  tr:hover td {
-    background: #f8f9fa;
-  }
-`;
-
-const linkStyles = css`
-  color: #4f46e5;
-  text-decoration: none;
-  font-family: "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas,
-    monospace;
-
-  &:hover {
-    text-decoration: underline;
-  }
-`;
-
-const statusBadge = css`
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-size: 12px;
-  font-weight: 600;
-
-  &.success {
-    background: #d1fae5;
-    color: #065f46;
-  }
-
-  &.failed {
-    background: #fee2e2;
-    color: #991b1b;
-  }
-`;
-
-const paginationStyles = css`
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 16px;
-  border-top: 1px solid #e1e5e9;
-  background: #f8f9fa;
-
-  .page-info {
-    color: #666;
-    font-size: 14px;
-  }
-
-  .page-buttons {
-    display: flex;
-    gap: 8px;
-  }
-
-  button {
-    padding: 6px 16px;
-    border: 1px solid #e1e5e9;
-    border-radius: 6px;
-    background: white;
-    color: #374151;
-    font-size: 14px;
-    cursor: pointer;
-
-    &:hover:not(:disabled) {
-      background: #f0f0f0;
-    }
-
-    &:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-  }
-`;
-
-const loadingStyles = css`
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  height: 200px;
-  color: #666;
-`;
-
-const errorStyles = css`
-  background: #fee;
-  border: 1px solid #fcc;
-  border-radius: 8px;
-  padding: 16px;
-  color: #c33;
-  margin: 20px 0;
-`;
-
-const monoStyles = css`
-  font-family: "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas,
-    monospace;
-  font-size: 13px;
-`;
+import { PageContainer, PageHeader } from "@/components/ui/PageLayout";
+import { DataTable, Pagination, linkStyle, monoStyle } from "@/components/ui/DataTable";
+import { TableSkeleton } from "@/components/ui/LoadingState";
+import { ErrorState } from "@/components/ui/ErrorState";
+import { Badge } from "@/components/ui/Badge";
+import { CopyableHash } from "@/components/ui/CopyableHash";
 
 export default function TransactionsListPage() {
   const { chainId } = useParams<{ chainId: string }>();
@@ -233,142 +86,101 @@ export default function TransactionsListPage() {
   if (!chainInfo) {
     return (
       <>
-        <TopNavigation
-          currentChainId={currentChainId}
-          onChainChange={handleChainChange}
-        />
-        <div className={pageStyles}>
-          <div className={errorStyles}>Unsupported chain ID: {chainId}</div>
-        </div>
+        <TopNavigation currentChainId={currentChainId} onChainChange={handleChainChange} />
+        <PageContainer>
+          <ErrorState message={`Unsupported chain ID: ${chainId}`} />
+        </PageContainer>
       </>
     );
   }
 
   return (
     <>
-      <TopNavigation
-        currentChainId={currentChainId}
-        onChainChange={handleChainChange}
-      />
-      <div className={pageStyles}>
-        <div className={headerStyles}>
-          <h1>Transactions</h1>
-          <div className="chain-info">
-            {getChainName(currentChainId)} • Chain ID: {currentChainId}
-          </div>
-        </div>
+      <TopNavigation currentChainId={currentChainId} onChainChange={handleChainChange} />
+      <PageContainer>
+        <PageHeader
+          title="Transactions"
+          chainInfo={`${getChainName(currentChainId)} • Chain ID: ${currentChainId}`}
+        />
 
-        {loading && (
-          <div className={loadingStyles}>Loading transactions...</div>
-        )}
+        {loading && <TableSkeleton rows={10} cols={7} />}
 
-        {error && (
-          <div className={errorStyles}>
-            Error: {error}
-            <button
-              onClick={fetchTransactions}
-              style={{ marginLeft: 12, cursor: "pointer" }}
-            >
-              Retry
-            </button>
-          </div>
-        )}
+        {error && <ErrorState message={error} onRetry={fetchTransactions} />}
 
         {!loading && !error && transactions.length === 0 && (
-          <div className={loadingStyles}>No transactions found</div>
+          <ErrorState message="No transactions found" />
         )}
 
         {transactions.length > 0 && (
-          <div className={tableContainerStyles}>
-            <table className={tableStyles}>
-              <thead>
-                <tr>
-                  <th>Txn Hash</th>
-                  <th>Block</th>
-                  <th>Age</th>
-                  <th>From</th>
-                  <th>To</th>
-                  <th>Value</th>
-                  <th>Status</th>
+          <DataTable>
+            <thead>
+              <tr>
+                <th>Txn Hash</th>
+                <th>Block</th>
+                <th>Age</th>
+                <th>From</th>
+                <th>To</th>
+                <th>Value</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {transactions.map((tx) => (
+                <tr key={tx.hash}>
+                  <td>
+                    <CopyableHash
+                      value={tx.hash}
+                      truncated={formatHash(tx.hash)}
+                      href={`/chain/${currentChainId}/tx/${tx.hash}`}
+                    />
+                  </td>
+                  <td>
+                    <Link to={`/chain/${currentChainId}/block/${tx.blockNumber}`} className={linkStyle}>
+                      {formatNumber(parseInt(tx.blockNumber))}
+                    </Link>
+                  </td>
+                  <td>
+                    {tx.timestamp ? formatRelativeTime(tx.timestamp) : "N/A"}
+                  </td>
+                  <td>
+                    <CopyableHash
+                      value={tx.fromAddress}
+                      truncated={formatAddr(tx.fromAddress)}
+                      href={`/chain/${currentChainId}/address/${tx.fromAddress}`}
+                    />
+                  </td>
+                  <td>
+                    <CopyableHash
+                      value={tx.toAddress}
+                      truncated={formatAddr(tx.toAddress)}
+                      href={`/chain/${currentChainId}/address/${tx.toAddress}`}
+                    />
+                  </td>
+                  <td className={monoStyle}>{formatValue(tx.value)}</td>
+                  <td>
+                    <Badge variant={tx.status === 1 ? "success" : "error"} size="sm">
+                      {tx.status === 1 ? "Success" : "Failed"}
+                    </Badge>
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {transactions.map((tx) => (
-                  <tr key={tx.hash}>
-                    <td>
-                      <Link
-                        to={`/chain/${currentChainId}/tx/${tx.hash}`}
-                        className={linkStyles}
-                      >
-                        {formatHash(tx.hash)}
-                      </Link>
-                    </td>
-                    <td>
-                      <Link
-                        to={`/chain/${currentChainId}/block/${tx.blockNumber}`}
-                        className={linkStyles}
-                      >
-                        {formatNumber(parseInt(tx.blockNumber))}
-                      </Link>
-                    </td>
-                    <td>
-                      {tx.timestamp
-                        ? formatRelativeTime(tx.timestamp)
-                        : "N/A"}
-                    </td>
-                    <td>
-                      <Link
-                        to={`/chain/${currentChainId}/address/${tx.fromAddress}`}
-                        className={linkStyles}
-                      >
-                        {formatAddr(tx.fromAddress)}
-                      </Link>
-                    </td>
-                    <td>
-                      <Link
-                        to={`/chain/${currentChainId}/address/${tx.toAddress}`}
-                        className={linkStyles}
-                      >
-                        {formatAddr(tx.toAddress)}
-                      </Link>
-                    </td>
-                    <td className={monoStyles}>{formatValue(tx.value)}</td>
-                    <td>
-                      <span
-                        className={`${statusBadge} ${tx.status === 1 ? "success" : "failed"}`}
-                      >
-                        {tx.status === 1 ? "Success" : "Failed"}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-
-            <div className={paginationStyles}>
-              <span className="page-info">
-                Page {page}
-                {latestBlockNumber !== null &&
-                  ` • Latest block: ${formatNumber(Number(latestBlockNumber))}`}
-              </span>
-              <div className="page-buttons">
-                <button
-                  disabled={page <= 1}
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                >
-                  Newer
-                </button>
-                <button
-                  disabled={transactions.length < limit}
-                  onClick={() => setPage((p) => p + 1)}
-                >
-                  Older
-                </button>
-              </div>
-            </div>
-          </div>
+              ))}
+            </tbody>
+          </DataTable>
         )}
-      </div>
+
+        {transactions.length > 0 && (
+          <Pagination
+            page={page}
+            pageInfo={`Page ${page}${latestBlockNumber !== null ? ` • Latest block: ${formatNumber(Number(latestBlockNumber))}` : ""}`}
+            hasPrev={page > 1}
+            hasNext={transactions.length >= limit}
+            onPrev={() => setPage((p) => Math.max(1, p - 1))}
+            onNext={() => setPage((p) => p + 1)}
+            prevLabel="Newer"
+            nextLabel="Older"
+          />
+        )}
+      </PageContainer>
     </>
   );
 }

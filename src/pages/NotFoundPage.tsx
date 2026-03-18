@@ -1,4 +1,3 @@
-import React from "react";
 import { Link } from "react-router-dom";
 import { css } from "@linaria/core";
 import { Card, CardContent } from "../components/ui/Card";
@@ -19,38 +18,34 @@ const content = css`
 
 const errorCode = css`
   font-size: 72px;
-  font-weight: 800;
-  color: #3b82f6;
+  font-weight: var(--haze-weight-bold);
+  color: var(--haze-color-primary);
   margin: 0;
   line-height: 1;
 `;
 
 const title = css`
-  font-size: 24px;
-  font-weight: 600;
-  color: #1e293b;
-  margin: 16px 0 8px 0;
-
-  @media (prefers-color-scheme: dark) {
-    color: #e2e8f0;
-  }
+  font-size: var(--haze-text-2xl);
+  font-weight: var(--haze-weight-semibold);
+  color: var(--haze-color-text);
+  margin: var(--haze-space-4) 0 var(--haze-space-2) 0;
 `;
 
 const description = css`
-  color: #64748b;
-  margin: 0 0 32px 0;
-  line-height: 1.6;
-
-  @media (prefers-color-scheme: dark) {
-    color: #94a3b8;
-  }
+  color: var(--haze-color-text-secondary);
+  margin: 0 0 var(--haze-space-8) 0;
+  line-height: var(--haze-leading-relaxed);
 `;
 
 const actions = css`
   display: flex;
-  gap: 16px;
+  gap: var(--haze-space-4);
   justify-content: center;
   flex-wrap: wrap;
+
+  a {
+    text-decoration: none;
+  }
 `;
 
 export function NotFoundPage() {
@@ -59,18 +54,19 @@ export function NotFoundPage() {
       <Card className={content}>
         <CardContent>
           <div className={errorCode}>404</div>
-          <h1 className={title}>页面未找到</h1>
+          <h1 className={title}>Page Not Found</h1>
           <p className={description}>
-            抱歉，您访问的页面不存在。可能是链接错误或页面已被移动。
+            Sorry, the page you are looking for does not exist. The link may be
+            incorrect or the page has been moved.
           </p>
 
           <div className={actions}>
-            <Button as={Link} to="/" variant="primary">
-              返回首页
-            </Button>
-            <Button as={Link} to="/search" variant="outline">
-              搜索数据
-            </Button>
+            <Link to="/">
+              <Button variant="primary">Go Home</Button>
+            </Link>
+            <Link to="/search">
+              <Button variant="outline">Search</Button>
+            </Link>
           </div>
         </CardContent>
       </Card>
