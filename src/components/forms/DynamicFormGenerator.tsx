@@ -5,6 +5,7 @@
 
 import React, { useState, useCallback, useMemo } from 'react';
 import { AbiParameter, AbiEvent } from 'viem';
+import { css } from '@linaria/core';
 import { FormField, FormData, ValidationRule } from '../../types/forms';
 import { validateSolidityInput, convertInputType } from '../../utils/form-validation';
 
@@ -547,7 +548,7 @@ export const DynamicFormGenerator: React.FC<DynamicFormGeneratorProps> = ({
   }, [formState.errors]);
 
   return (
-    <form className="dynamic-form" onSubmit={handleSubmit} noValidate>
+    <form className={formStyles} onSubmit={handleSubmit} noValidate>
       <div className="form-header">
         <h3>Filter Events</h3>
         <div className="form-actions">
@@ -577,168 +578,165 @@ export const DynamicFormGenerator: React.FC<DynamicFormGeneratorProps> = ({
         )}
       </div>
 
-      <style jsx>{`
-        .dynamic-form {
-          max-width: 600px;
-          margin: 0 auto;
-          padding: 20px;
-          background: #f8f9fa;
-          border-radius: 8px;
-        }
-
-        .form-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          margin-bottom: 20px;
-        }
-
-        .form-header h3 {
-          margin: 0;
-          color: #333;
-        }
-
-        .form-actions {
-          display: flex;
-          gap: 10px;
-        }
-
-        .toggle-advanced,
-        .reset-form {
-          padding: 6px 12px;
-          background: #e9ecef;
-          border: 1px solid #dee2e6;
-          border-radius: 4px;
-          cursor: pointer;
-          font-size: 12px;
-        }
-
-        .form-fields {
-          display: flex;
-          flex-direction: column;
-          gap: 16px;
-        }
-
-        .form-field {
-          display: flex;
-          flex-direction: column;
-          gap: 4px;
-        }
-
-        .form-field.error input,
-        .form-field.error select,
-        .form-field.error textarea {
-          border-color: #dc3545;
-        }
-
-        .form-field label {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          font-weight: 500;
-          color: #495057;
-        }
-
-        .indexed-badge {
-          background: #007bff;
-          color: white;
-          padding: 2px 6px;
-          border-radius: 3px;
-          font-size: 10px;
-          font-weight: normal;
-        }
-
-        .required {
-          color: #dc3545;
-        }
-
-        .form-field input,
-        .form-field select,
-        .form-field textarea {
-          padding: 8px 12px;
-          border: 1px solid #ced4da;
-          border-radius: 4px;
-          font-size: 14px;
-        }
-
-        .form-field input:focus,
-        .form-field select:focus,
-        .form-field textarea:focus {
-          outline: none;
-          border-color: #80bdff;
-          box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
-        }
-
-        .range-inputs,
-        .datetime-inputs {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-        }
-
-        .range-inputs input,
-        .datetime-inputs input {
-          flex: 1;
-        }
-
-        .range-inputs span,
-        .datetime-inputs span {
-          color: #6c757d;
-        }
-
-        .checkbox-label {
-          display: flex !important;
-          align-items: center;
-          gap: 8px;
-          flex-direction: row !important;
-        }
-
-        .error-messages {
-          display: flex;
-          flex-direction: column;
-          gap: 2px;
-        }
-
-        .error-message {
-          color: #dc3545;
-          font-size: 12px;
-        }
-
-        .form-footer {
-          margin-top: 20px;
-          padding-top: 20px;
-          border-top: 1px solid #dee2e6;
-        }
-
-        .submit-button {
-          width: 100%;
-          padding: 12px;
-          background: #007bff;
-          color: white;
-          border: none;
-          border-radius: 4px;
-          font-size: 16px;
-          font-weight: 500;
-          cursor: pointer;
-        }
-
-        .submit-button:hover:not(:disabled) {
-          background: #0056b3;
-        }
-
-        .submit-button:disabled {
-          background: #6c757d;
-          cursor: not-allowed;
-        }
-
-        .form-errors {
-          margin-top: 8px;
-          color: #dc3545;
-          font-size: 14px;
-          text-align: center;
-        }
-      `}</style>
     </form>
+  );
+};
+
+const formStyles = css`
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 20px;
+  background: #f8f9fa;
+  border-radius: 8px;
+
+  .form-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+
+    h3 {
+      margin: 0;
+      color: #333;
+    }
+  }
+
+  .form-actions {
+    display: flex;
+    gap: 10px;
+  }
+
+  .toggle-advanced,
+  .reset-form {
+    padding: 6px 12px;
+    background: #e9ecef;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+  }
+
+  .form-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .form-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+
+    &.error input,
+    &.error select,
+    &.error textarea {
+      border-color: #dc3545;
+    }
+
+    label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 500;
+      color: #495057;
+    }
+
+    input,
+    select,
+    textarea {
+      padding: 8px 12px;
+      border: 1px solid #ced4da;
+      border-radius: 4px;
+      font-size: 14px;
+
+      &:focus {
+        outline: none;
+        border-color: #80bdff;
+        box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+      }
+    }
+  }
+
+  .indexed-badge {
+    background: #007bff;
+    color: white;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: normal;
+  }
+
+  .required {
+    color: #dc3545;
+  }
+
+  .range-inputs,
+  .datetime-inputs {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    input {
+      flex: 1;
+    }
+
+    span {
+      color: #6c757d;
+    }
+  }
+
+  .checkbox-label {
+    display: flex !important;
+    align-items: center;
+    gap: 8px;
+    flex-direction: row !important;
+  }
+
+  .error-messages {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .error-message {
+    color: #dc3545;
+    font-size: 12px;
+  }
+
+  .form-footer {
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid #dee2e6;
+  }
+
+  .submit-button {
+    width: 100%;
+    padding: 12px;
+    background: #007bff;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    font-size: 16px;
+    font-weight: 500;
+    cursor: pointer;
+
+    &:hover:not(:disabled) {
+      background: #0056b3;
+    }
+
+    &:disabled {
+      background: #6c757d;
+      cursor: not-allowed;
+    }
+  }
+
+  .form-errors {
+    margin-top: 8px;
+    color: #dc3545;
+    font-size: 14px;
+    text-align: center;
+  }
+`;
   );
 };
 
