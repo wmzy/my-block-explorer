@@ -7,7 +7,6 @@ import { createLogger } from './server/logger';
 import { zeroConfig, initializeBlockchainExplorer } from './config/zero-config';
 
 const logger = createLogger('zero-config-bootstrap');
-import { performanceMonitor } from './services/PerformanceMonitor';
 
 /**
  * Bootstrap the application with zero configuration
@@ -27,13 +26,18 @@ export async function bootstrap(): Promise<void> {
 
       // Show status
       const status = zeroConfig.getStatus();
-      logger.info({ chainCount: status.chainCount, databaseCount: status.databasePaths.length }, 'Bootstrap status');
+      logger.info(
+        { chainCount: status.chainCount, databaseCount: status.databasePaths.length },
+        'Bootstrap status',
+      );
     }
     else {
       logger.warn('System needs attention');
       readiness.issues.forEach(issue => logger.warn({ issue }, 'Issue'));
       if (readiness.recommendations.length > 0) {
-        readiness.recommendations.forEach(rec => logger.info({ recommendation: rec }, 'Recommendation'));
+        readiness.recommendations.forEach(rec =>
+          logger.info({ recommendation: rec }, 'Recommendation'),
+        );
       }
     }
 

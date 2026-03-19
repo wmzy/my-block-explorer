@@ -5,7 +5,6 @@ import { Input, Button } from 'haze-ui';
 import { useControl } from 'react-use-control';
 import RpcConfig from './RpcConfig';
 import {
-  SUPPORTED_CHAINS,
   getChainInfo,
   getSortedChains,
   searchChains,

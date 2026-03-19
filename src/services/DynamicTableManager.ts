@@ -4,13 +4,12 @@
  */
 
 import { createLogger } from '../server/logger';
-import { duckdbTable, primaryKey, unique } from '../database/db-types';
+import { primaryKey, unique } from '../database/db-types';
 
 const logger = createLogger('dynamic-table-manager');
 import { db } from '../database/init';
 import { sql } from 'drizzle-orm';
 import {
-  DynamicTableSchema,
   TableColumn,
   TableIndex,
   ColumnType,

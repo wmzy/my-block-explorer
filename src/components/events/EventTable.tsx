@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { styled } from '@linaria/react';
-import { Address, formatEther, formatUnits } from 'viem';
+import { Address, formatEther } from 'viem';
 import DynamicEventFilterForm from './DynamicEventFilterForm';
 
 // Types
@@ -573,11 +573,6 @@ const formatValue = (value?: string): string => {
 // Import optimized sorting and search utilities
 import { optimizedSort, sortingPerformanceMonitor } from '../../utils/sorting-optimization';
 
-// Legacy client-side sorting utility (kept for compatibility)
-const getValueByPath = (obj: any, path: string): any => {
-  return path.split('.').reduce((current, key) => current?.[key], obj);
-};
-
 const clientSideSort = (
   data: EventData[],
   sortConfigs: SortConfig[],
@@ -654,7 +649,6 @@ export const EventTable: React.FC<EventTableProps> = ({
   defaultPageSize = 50,
   enableMultiSort = true,
   enableCustomPageSize = true,
-  columnConfig,
   enableClientSideSort = true,
   clientSideSortThreshold = 1000,
   abiEvents = [],

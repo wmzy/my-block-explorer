@@ -25,20 +25,6 @@ type Props = {
   onConfigSaved?: () => void;
 };
 
-const overlayStyles = css`
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  padding: 20px;
-`;
-
 const modalStyles = css`
   background: white;
   border-radius: 12px;
@@ -238,9 +224,6 @@ export default function ChainRpcConfig({
     null,
   );
   const [isValidating, setIsValidating] = useState(false);
-  const [currentConfig, setCurrentConfig] = useState<ChainRpcConfig | null>(
-    null,
-  );
 
   const chainName = getChainName(chainId);
 
@@ -255,7 +238,6 @@ export default function ChainRpcConfig({
       const stored = localStorage.getItem(`rpc-config-${chainId}`);
       if (stored) {
         const config = JSON.parse(stored) as ChainRpcConfig;
-        setCurrentConfig(config);
         setRpcUrl(config.url);
         setMaxEventBlockRange(config.maxEventBlockRange);
       }
@@ -404,7 +386,7 @@ export default function ChainRpcConfig({
                 break;
               }
             }
-            catch (error) {
+            catch (_error) {
               continue;
             }
           }
@@ -446,7 +428,7 @@ export default function ChainRpcConfig({
 
     const config: ChainRpcConfig = {
       url: rpcUrl,
-      maxEventBlockRange: validation.maxEventRange || maxEventBlockRange,
+      maxEventBlockRange: validation.maxEventRange ?? maxEventBlockRange,
       isDefault: false,
     };
 

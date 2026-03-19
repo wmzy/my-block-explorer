@@ -48,7 +48,7 @@ export function useAutoDiscovery() {
           };
         }
       }
-      catch (error) {
+      catch (_error) {
         // 端口不可用或服务不响应
       }
 

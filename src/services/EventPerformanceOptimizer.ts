@@ -5,7 +5,6 @@
  */
 
 import { performance } from 'perf_hooks';
-import { ChainDatabaseManager } from '../database/chain-database-manager';
 import { multiChainDb } from '../database/chain-database-manager';
 import { multiChainPerformanceManager } from '../database/performance-monitor';
 import { eventQueryServiceManager } from './EventQueryService';

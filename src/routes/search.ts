@@ -2,8 +2,6 @@ import { Hono } from 'hono';
 import { searchService } from '../services/SearchService';
 import {
   getChainName,
-  getChainSymbol,
-  isChainSupported,
   getSupportedChainIds,
 } from '../config/chains';
 import { getValidatedChainId } from '../server/validation';

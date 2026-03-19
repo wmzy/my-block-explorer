@@ -7,7 +7,6 @@ import { createLogger } from '../server/logger';
 import { multiChainDb } from '../database/chain-database-manager';
 
 const logger = createLogger('zero-config');
-import { getRecommendedMultiChainConfig } from './chains';
 import { performanceMonitor } from '../services/PerformanceMonitor';
 
 /**

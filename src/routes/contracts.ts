@@ -1,5 +1,4 @@
 import { Hono } from 'hono';
-import { type Address } from 'viem';
 import { createLogger } from '../server/logger';
 import { contractSourceService } from '../services/ContractSourceService';
 

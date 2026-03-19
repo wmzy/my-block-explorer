@@ -45,11 +45,7 @@ export class OptimizedSorter {
       threshold?: number;
     } = {},
   ): { sortedData: T[]; metrics: SortingPerformanceMetrics } {
-    const {
-      useCache = true,
-      cacheKey,
-      threshold = 10000,
-    } = options;
+    const { useCache = true, cacheKey, threshold = 10000 } = options;
 
     const startTime = performance.now();
     const dataSize = data.length;
@@ -157,9 +153,7 @@ export class OptimizedSorter {
     }
 
     // Sort each chunk individually
-    const sortedChunks = chunks.map(chunk =>
-      this.standardSort(chunk, sortConfigs),
-    );
+    const sortedChunks = chunks.map(chunk => this.standardSort(chunk, sortConfigs));
 
     // Merge sorted chunks
     return this.mergeSortedChunks(sortedChunks, sortConfigs);
@@ -219,7 +213,10 @@ export class OptimizedSorter {
   /**
    * Build heap from array
    */
-  private buildHeap<T>(heap: { chunk: number; index: number; value: T }[], sortConfigs: SortConfig[]): void {
+  private buildHeap<T>(
+    heap: { chunk: number; index: number; value: T }[],
+    sortConfigs: SortConfig[],
+  ): void {
     for (let i = Math.floor(heap.length / 2) - 1; i >= 0; i--) {
       this.heapifyDown(heap, i, sortConfigs);
     }
@@ -241,7 +238,10 @@ export class OptimizedSorter {
       smallest = left;
     }
 
-    if (right < heap.length && this.compareHeapItems(heap[right], heap[smallest], sortConfigs) < 0) {
+    if (
+      right < heap.length
+      && this.compareHeapItems(heap[right], heap[smallest], sortConfigs) < 0
+    ) {
       smallest = right;
     }
 
@@ -383,7 +383,7 @@ export class OptimizedSorter {
     let expiredCount = 0;
     const now = Date.now();
 
-    for (const [key, cache] of this.cache.entries()) {
+    for (const [, cache] of this.cache.entries()) {
       totalMemory += this.estimateMemoryUsage(cache.data);
       if (now - cache.timestamp > cache.ttl) {
         expiredCount++;
@@ -408,10 +408,7 @@ export class OptimizedSorter {
   /**
    * Optimize sorting parameters for better performance
    */
-  optimizeSortConfigs<T>(
-    data: T[],
-    sortConfigs: SortConfig[],
-  ): SortConfig[] {
+  optimizeSortConfigs<T>(data: T[], sortConfigs: SortConfig[]): SortConfig[] {
     const dataSize = data.length;
 
     if (dataSize < 1000) {
@@ -497,11 +494,14 @@ export class SortingPerformanceMonitor {
     };
   }
 
-  getMetricsByAlgorithm(): Record<string, {
-    count: number;
-    avgExecutionTime: number;
-    avgDataSize: number;
-  }> {
+  getMetricsByAlgorithm(): Record<
+    string,
+    {
+      count: number;
+      avgExecutionTime: number;
+      avgDataSize: number;
+    }
+  > {
     const grouped: Record<string, SortingPerformanceMetrics[]> = {};
 
     this.metrics.forEach((metric) => {
@@ -511,11 +511,14 @@ export class SortingPerformanceMonitor {
       grouped[metric.algorithmUsed].push(metric);
     });
 
-    const result: Record<string, {
-      count: number;
-      avgExecutionTime: number;
-      avgDataSize: number;
-    }> = {};
+    const result: Record<
+      string,
+      {
+        count: number;
+        avgExecutionTime: number;
+        avgDataSize: number;
+      }
+    > = {};
 
     Object.entries(grouped).forEach(([algorithm, metrics]) => {
       const totalExecutionTime = metrics.reduce((sum, m) => sum + m.executionTime, 0);

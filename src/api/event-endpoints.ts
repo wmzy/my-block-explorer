@@ -4,10 +4,8 @@
  */
 
 import { Hono } from 'hono';
-import { HTTPException } from 'hono/http-exception';
 import { eventIndexingService } from '../services/EventIndexingService';
 import { eventQueryService } from '../services/EventQueryService';
-import { dynamicTableManager } from '../services/DynamicTableManager';
 import { getValidatedChainId, getValidatedAddress } from '../server/validation';
 import { isChainSupported, getChainName } from '../config/chains';
 import { safeJsonResponse } from '../utils/serialization';

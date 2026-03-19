@@ -8,16 +8,12 @@ import { ChainSchemaManager } from './chain-schema-manager';
 import { ChainEventTableManager } from './chain-event-table-manager';
 import { multiChainPerformanceManager } from './performance-monitor';
 import {
-  getRecommendedMultiChainConfig,
-  getDevelopmentMultiChainConfig,
   getChainDatabaseConfig,
   validateMultiChainConfig,
   RECOMMENDED_MULTI_CHAINS,
   DEVELOPMENT_CHAINS,
 } from '../config/chains';
 import {
-  MultiChainConfig,
-  ChainDatabaseStatus,
   MultiChainIndexingStatus,
   ChainDatabaseError,
   ChainConfigError,

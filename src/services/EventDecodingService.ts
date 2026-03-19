@@ -8,7 +8,6 @@ import { keccak256 } from 'viem/utils';
 import {
   DecodedEvent,
   EventDecodingError,
-  EventParameter,
   DecodedEventData,
   DEFAULT_TYPE_MAPPING,
   ColumnType,

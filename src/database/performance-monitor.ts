@@ -3,8 +3,7 @@
  * 提供链级别的性能指标收集和分析
  */
 
-import { ChainDatabaseManager } from './chain-database-manager';
-import { ChainDatabaseStatus, MultiChainStatistics, ChainSpecificConfig } from '../types/events';
+import { ChainDatabaseStatus, MultiChainStatistics } from '../types/events';
 
 // 性能指标接口
 export interface PerformanceMetrics {

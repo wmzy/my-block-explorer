@@ -3,7 +3,6 @@
  * 移除chain_id字段，每个链独立管理自己的表结构
  */
 
-import { sql } from 'drizzle-orm';
 import { getChainName, getChainType } from '../config/chains';
 
 /**

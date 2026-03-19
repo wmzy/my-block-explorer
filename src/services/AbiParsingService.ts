@@ -9,7 +9,7 @@ import { Abi, AbiEvent, AbiParameter, Address, parseAbi } from 'viem';
 
 const logger = createLogger('abi-parsing-service');
 import { keccak256 } from 'viem/utils';
-import { ChainDatabaseManager, multiChainDb } from '../database/chain-database-manager';
+import { multiChainDb } from '../database/chain-database-manager';
 import { multiChainPerformanceManager } from '../database/performance-monitor';
 import {
   EventParameter,
@@ -18,7 +18,6 @@ import {
   DynamicTableSchema,
   TableIndex,
   EventIndexingError,
-  DecodedEventParameter,
 } from '../types/events';
 
 /**

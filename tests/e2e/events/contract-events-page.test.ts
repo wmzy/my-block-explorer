@@ -80,7 +80,9 @@ test.describe('Contract Events Page E2E', () => {
 
     // Check empty state message
     await expect(page.locator('[data-testid="empty-state"]')).toContainText('No events found');
-    await expect(page.locator('[data-testid="empty-state-message"]')).toContainText('contract has not emitted any events');
+    await expect(page.locator('[data-testid="empty-state-message"]')).toContainText(
+      'contract has not emitted any events',
+    );
   });
 
   test('should display pagination controls', async ({ page }) => {
@@ -206,7 +208,9 @@ test.describe('Contract Events Page E2E', () => {
     await page.waitForSelector('[data-testid="error-state"]');
 
     // Check error display
-    await expect(page.locator('[data-testid="error-message"]')).toContainText('Failed to load events');
+    await expect(page.locator('[data-testid="error-message"]')).toContainText(
+      'Failed to load events',
+    );
     await expect(page.locator('[data-testid="retry-button"]')).toBeVisible();
   });
 
@@ -232,7 +236,8 @@ test.describe('Contract Events Page E2E', () => {
                 blockNumber: 18000000,
                 blockTimestamp: '2024-01-01T00:00:00Z',
                 eventName: 'Transfer',
-                transactionHash: '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
+                transactionHash:
+                  '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
               },
             ],
             total: 1,
@@ -275,13 +280,13 @@ test.describe('Contract Events Page E2E', () => {
     // Wait for events to load
     await page.waitForSelector('[data-testid="events-table"]');
 
-    const initialEventCount = await page.locator('[data-testid="event-row"]').count();
+    await page.locator('[data-testid="event-row"]').count();
 
     // Simulate real-time update via WebSocket mock
     await page.evaluate(() => {
       // Mock WebSocket connection
       (window as any).WebSocket = class MockWebSocket {
-        constructor(url: string) {
+        constructor(_url: string) {
           setTimeout(() => {
             // Simulate new event
             const event = new MessageEvent('message', {
@@ -291,7 +296,8 @@ test.describe('Contract Events Page E2E', () => {
                   blockNumber: 18000001,
                   blockTimestamp: new Date().toISOString(),
                   eventName: 'Transfer',
-                  transactionHash: '0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890',
+                  transactionHash:
+                    '0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890',
                 },
               }),
             });

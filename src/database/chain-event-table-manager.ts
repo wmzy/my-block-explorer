@@ -9,8 +9,6 @@ import { ChainDatabaseManager } from './chain-database-manager';
 const logger = createLogger('chain-event-table-manager');
 import { ChainSchemaManager } from './chain-schema-manager';
 import {
-  DynamicTableSchema,
-  TableColumn,
   EventParameter,
   EventIndexingConfig,
   EventAbiShape,

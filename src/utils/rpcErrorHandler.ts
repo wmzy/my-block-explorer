@@ -32,8 +32,7 @@ export function analyzeRpcError(
       contractAddress,
       rpcUrl,
       chainId,
-      suggestion:
-        '该RPC节点可能不支持历史区块的状态查询。建议更换支持完整历史数据的RPC节点。',
+      suggestion: '该RPC节点可能不支持历史区块的状态查询。建议更换支持完整历史数据的RPC节点。',
       castCommand: blockNumber
         ? `cast code ${contractAddress} --block ${blockNumber} --rpc-url ${rpcUrl}`
         : `cast code ${contractAddress} --rpc-url ${rpcUrl}`,
@@ -47,10 +46,7 @@ export function analyzeRpcError(
     };
   }
 
-  if (
-    errorMessage.includes('503')
-    || errorMessage.includes('Service Unavailable')
-  ) {
+  if (errorMessage.includes('503') || errorMessage.includes('Service Unavailable')) {
     return {
       error: 'RPC服务暂时不可用',
       blockNumber,
@@ -78,8 +74,7 @@ export function analyzeRpcError(
       contractAddress,
       rpcUrl,
       chainId,
-      suggestion:
-        '请求过于频繁，触发了RPC节点的速率限制。建议降低请求频率或升级RPC服务计划。',
+      suggestion: '请求过于频繁，触发了RPC节点的速率限制。建议降低请求频率或升级RPC服务计划。',
       castCommand: blockNumber
         ? `cast code ${contractAddress} --block ${blockNumber} --rpc-url ${rpcUrl}`
         : `cast code ${contractAddress} --rpc-url ${rpcUrl}`,
@@ -114,18 +109,14 @@ export function analyzeRpcError(
     };
   }
 
-  if (
-    errorMessage.includes('missing trie node')
-    || errorMessage.includes('state not available')
-  ) {
+  if (errorMessage.includes('missing trie node') || errorMessage.includes('state not available')) {
     return {
       error: '历史状态数据不可用',
       blockNumber,
       contractAddress,
       rpcUrl,
       chainId,
-      suggestion:
-        'RPC节点缺少请求区块的状态数据。这通常发生在轻节点或不完整的归档节点上。',
+      suggestion: 'RPC节点缺少请求区块的状态数据。这通常发生在轻节点或不完整的归档节点上。',
       castCommand: blockNumber
         ? `cast code ${contractAddress} --block ${blockNumber} --rpc-url ${rpcUrl}`
         : `cast code ${contractAddress} --rpc-url ${rpcUrl}`,
@@ -139,10 +130,7 @@ export function analyzeRpcError(
     };
   }
 
-  if (
-    errorMessage.includes('connection refused')
-    || errorMessage.includes('ECONNREFUSED')
-  ) {
+  if (errorMessage.includes('connection refused') || errorMessage.includes('ECONNREFUSED')) {
     return {
       error: '无法连接到RPC节点',
       blockNumber,
@@ -213,7 +201,7 @@ export function formatRpcErrorForUser(errorDetails: RpcErrorDetails): string {
   message += `\n🔄 可重试: ${retryable ? '是' : '否'}\n`;
 
   message += `\n🛠️ 故障排除步骤:\n`;
-  troubleshooting.forEach((step, index) => {
+  troubleshooting.forEach((step) => {
     message += `${step}\n`;
   });
 

@@ -51,14 +51,11 @@ export function parseContractFunctions(abi: string): {
     ) as ContractFunction[];
 
     const readFunctions = functions.filter(
-      func =>
-        func.stateMutability === 'view' || func.stateMutability === 'pure',
+      func => func.stateMutability === 'view' || func.stateMutability === 'pure',
     );
 
     const writeFunctions = functions.filter(
-      func =>
-        func.stateMutability === 'nonpayable'
-        || func.stateMutability === 'payable',
+      func => func.stateMutability === 'nonpayable' || func.stateMutability === 'payable',
     );
 
     return { readFunctions, writeFunctions };
@@ -86,10 +83,7 @@ export async function readContract(
     }
     else {
       // 从 API 获取合约 ABI
-      const contractSource = await fetchContractSource(
-        params.chainId,
-        params.contractAddress,
-      );
+      const contractSource = await fetchContractSource(params.chainId, params.contractAddress);
       if (!contractSource?.abi) {
         return {
           success: false,
@@ -139,10 +133,7 @@ export async function simulateContract(
     }
     else {
       // 从 API 获取合约 ABI
-      const contractSource = await fetchContractSource(
-        params.chainId,
-        params.contractAddress,
-      );
+      const contractSource = await fetchContractSource(params.chainId, params.contractAddress);
       if (!contractSource?.abi) {
         return {
           success: false,
@@ -191,10 +182,7 @@ export async function estimateContractGas(params: ContractCallParams): Promise<{
     const client = getRpcClient(params.chainId);
 
     // 获取合约 ABI
-    const contractSource = await fetchContractSource(
-      params.chainId,
-      params.contractAddress,
-    );
+    const contractSource = await fetchContractSource(params.chainId, params.contractAddress);
     if (!contractSource?.abi) {
       return null;
     }
@@ -243,9 +231,7 @@ async function fetchContractSource(
   implementationContract?: { abi: string };
 } | null> {
   try {
-    const response = await fetch(
-      `/api/chains/${chainId}/contracts/${contractAddress}/source`,
-    );
+    const response = await fetch(`/api/chains/${chainId}/contracts/${contractAddress}/source`);
 
     if (!response.ok) {
       return null;
@@ -312,9 +298,7 @@ export function validateFunctionArgs(
   const errors: string[] = [];
 
   if (args.length !== contractFunction.inputs.length) {
-    errors.push(
-      `Expected ${contractFunction.inputs.length} arguments, got ${args.length}`,
-    );
+    errors.push(`Expected ${contractFunction.inputs.length} arguments, got ${args.length}`);
   }
 
   contractFunction.inputs.forEach((input, index) => {

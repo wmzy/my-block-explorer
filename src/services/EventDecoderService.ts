@@ -5,14 +5,12 @@
  */
 
 import { decodeEventLog, formatUnits, Abi, AbiEvent, Address, Log } from 'viem';
-import { ChainDatabaseManager, multiChainDb } from '../database/chain-database-manager';
+import { multiChainDb } from '../database/chain-database-manager';
 import { ChainEventTableManager } from '../database/chain-event-table-manager';
 import { multiChainPerformanceManager } from '../database/performance-monitor';
 import {
   EventDecodingError,
-  EventParameter,
   DecodedEventLog,
-  DecodedEventParameter,
 } from '../types/events';
 
 /**

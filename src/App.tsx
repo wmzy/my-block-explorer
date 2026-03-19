@@ -1,6 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { cx } from '@linaria/core';
-import { lightTheme, darkTheme, spacing, typography, ToastContainer } from 'haze-ui';
+import { lightTheme, spacing, typography, ToastContainer } from 'haze-ui';
 import HomePage from './pages/HomePage';
 import AddressPage from './pages/AddressPage';
 import BlockPage from './pages/BlockPage';

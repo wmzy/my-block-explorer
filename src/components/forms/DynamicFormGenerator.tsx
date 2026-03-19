@@ -181,7 +181,7 @@ export const DynamicFormGenerator: React.FC<DynamicFormGeneratorProps> = ({
     const touched: Record<string, boolean> = {};
 
     // Initialize errors
-    Object.keys(fields).forEach(fieldName => {
+    Object.keys(fields).forEach((fieldName) => {
       errors[fieldName] = [];
       touched[fieldName] = false;
     });
@@ -251,7 +251,7 @@ export const DynamicFormGenerator: React.FC<DynamicFormGeneratorProps> = ({
    */
   const handleFieldChange = useCallback(
     (fieldName: string, value: any) => {
-      setFormState(prev => {
+      setFormState((prev) => {
         const newValues = { ...prev.values, [fieldName]: value };
         const newTouched = { ...prev.touched, [fieldName]: true };
 
@@ -577,7 +577,6 @@ export const DynamicFormGenerator: React.FC<DynamicFormGeneratorProps> = ({
           <div className="form-errors">Please correct the errors before submitting.</div>
         )}
       </div>
-
     </form>
   );
 };
@@ -737,7 +736,5 @@ const formStyles = css`
     text-align: center;
   }
 `;
-  );
-};
 
 export default DynamicFormGenerator;
