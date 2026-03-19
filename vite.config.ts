@@ -68,22 +68,13 @@ function honoApiPlugin(): Plugin {
 export default defineConfig({
   plugins: [
     react({
-      // 启用React 19的新特性
-      babel: {
-        plugins: [
-          ["@babel/plugin-transform-react-jsx", { runtime: "automatic" }],
-        ],
-      },
+      exclude: ["node_modules/**"],
     }),
     wyw({
       sourceMap: process.env.NODE_ENV !== "production",
       displayName: process.env.NODE_ENV !== "production",
-      extensions: [".js", ".jsx", ".ts", ".tsx"],
-      include: ["**/*.{ts,tsx}"],
-      evaluate: true,
-      babelOptions: {
-        presets: ["@babel/preset-typescript", "@babel/preset-react"],
-      },
+      exclude: ["node_modules/**"],
+      evaluate: false,
     }),
     honoApiPlugin(),
   ],
