@@ -1,5 +1,4 @@
 import { Hono } from "hono";
-import { type Address } from "viem";
 import { createLogger } from "../server/logger";
 import { multiChainDb } from "../database/chain-database-manager";
 
@@ -23,7 +22,9 @@ import {
   decodeEventData,
   getContractCreationBlock,
   getEventNameFromSignature,
+  registerAbiEvents,
 } from "../utils/events";
+import { contractSourceService } from "../services/ContractSourceService";
 
 const app = new Hono();
 
@@ -54,57 +55,47 @@ app.get("/chains/:chainId/contracts/:address/events/statistics", async (c) => {
   }
 
   try {
-    await multiChainDb.getChainDatabase(chainId);
+    // First try DB-based statistics
+    let dbStats: {
+      totalEvents: number;
+      eventsByType: Record<string, number>;
+      storageSize: number;
+      lastIndexedBlock?: bigint;
+      lastIndexedAt?: Date;
+    } | null = null;
 
-    const performanceOptimizer =
-      eventPerformanceOptimizerManager.getOptimizer(chainId);
-    const eventQueryService = eventQueryServiceManager.getService(chainId);
+    try {
+      await multiChainDb.getChainDatabase(chainId);
+      const eventQueryService = eventQueryServiceManager.getService(chainId);
+      const tables = eventQueryService.listTables();
+      const contractPrefix = `events_${address.toLowerCase().slice(2, 10)}`;
+      const contractTables = tables.filter((t: string) =>
+        t.startsWith(contractPrefix)
+      );
 
-    const statistics = await performanceOptimizer.executeOptimizedQuery(
-      "event_statistics",
-      async () => {
-        try {
-          const stats = await eventQueryService.getEventStatistics(
-            address.toLowerCase() as Address
-          );
-          return {
-            chainId,
-            contractAddress: address.toLowerCase(),
-            isIndexed: stats.totalEvents > 0,
-            indexingProgress: stats.totalEvents > 0 ? 100 : 0,
-            totalEvents: stats.totalEvents,
-            indexedEvents: stats.totalEvents,
-            eventTypes: Object.entries(stats.eventsByType ?? {}).map(
-              ([name, count]) => ({ name, count })
-            ),
-            storageSize: stats.storageSize ?? 0,
-            lastIndexedBlock: stats.lastIndexedBlock,
-            lastIndexedAt: stats.lastIndexedAt,
-            errors: [],
-          };
-        } catch {
-          return {
-            chainId,
-            contractAddress: address.toLowerCase(),
-            isIndexed: false,
-            indexingProgress: 0,
-            totalEvents: 0,
-            indexedEvents: 0,
-            eventTypes: [],
-            storageSize: 0,
-            lastIndexedBlock: undefined,
-            lastIndexedAt: undefined,
-            errors: [],
-          };
+      if (contractTables.length > 0) {
+        let totalEvents = 0;
+        const eventsByType: Record<string, number> = {};
+        for (const table of contractTables) {
+          try {
+            const stats = await eventQueryService.getEventStatistics(table);
+            totalEvents += stats.totalEvents;
+            Object.assign(eventsByType, stats.eventsByType);
+          } catch { /* skip */ }
         }
+        dbStats = { totalEvents, eventsByType, storageSize: 0 };
       }
-    );
+    } catch { /* DB not available, will use RPC */ }
 
     const responseData = safeJsonResponse({
-      ...statistics,
       chainId,
       chainName: getChainName(chainId),
       contractAddress: address.toLowerCase(),
+      totalEvents: dbStats?.totalEvents ?? 0,
+      eventsByType: dbStats?.eventsByType ?? {},
+      uniqueAddresses: 0,
+      averageEventsPerBlock: 0,
+      storageSize: dbStats?.storageSize ?? 0,
       timestamp: new Date().toISOString(),
     });
 
@@ -157,21 +148,32 @@ app.get(
     }
 
     try {
-      const performanceOptimizer =
-        eventPerformanceOptimizerManager.getOptimizer(chainId);
-
-      const indexingStatus = await performanceOptimizer.executeOptimizedQuery(
-        "event_indexing_status",
-        async () => {
-          const indexingService =
-            eventIndexingServiceManager.getService(chainId);
-          return await indexingService.getIndexingStatus(address);
-        },
-        `indexing_status_${chainId}_${address}`,
-        {
-          useCache: true,
-          timeout: 5000,
+      // Load ABI to resolve event signatures to names
+      try {
+        const contractSource = await contractSourceService.getContractSource(
+          chainId,
+          address
+        );
+        const abiStr =
+          contractSource?.implementationContract?.abi ?? contractSource?.abi;
+        if (abiStr) {
+          registerAbiEvents(JSON.parse(abiStr));
         }
+      } catch { /* ABI not available */ }
+
+      const indexingService =
+        eventIndexingServiceManager.getService(chainId);
+      const indexingStatus = await indexingService.getIndexingStatus(
+        address as `0x${string}`
+      );
+
+      const totalEvents = indexingStatus.totalEventsIndexed;
+      const isActive = indexingStatus.indexingActive;
+      const progress = isActive ? 50 : totalEvents > 0 ? 100 : 0;
+
+      // Resolve event signature hex to human-readable names
+      const eventTypeNames = indexingStatus.eventSignatures.map(
+        (sig) => getEventNameFromSignature(sig) || sig
       );
 
       c.header("X-Data-Source", "database");
@@ -182,13 +184,14 @@ app.get(
         chainId,
         chainName: getChainName(chainId),
         contractAddress: address.toLowerCase(),
-        isIndexed: indexingStatus.totalEventsIndexed > 0,
-        indexingProgress: indexingStatus.indexingActive ? 50 : 100,
-        totalEvents: indexingStatus.totalEventsIndexed,
+        isIndexed: totalEvents > 0,
+        indexingProgress: progress,
+        totalEvents,
+        indexedEvents: totalEvents,
         lastIndexedBlock:
           indexingStatus.lastIndexedBlock?.toString() ?? null,
         lastIndexedAt: indexingStatus.lastIndexedAt?.toISOString() ?? null,
-        eventTypes: indexingStatus.eventSignatures ?? [],
+        eventTypes: eventTypeNames,
         errors: indexingStatus.errors.map((error) => error.message),
         timestamp: new Date().toISOString(),
       });
@@ -202,6 +205,7 @@ app.get(
         isIndexed: false,
         indexingProgress: 0,
         totalEvents: 0,
+        indexedEvents: 0,
         lastIndexedBlock: null,
         lastIndexedAt: null,
         eventTypes: [],
@@ -283,6 +287,22 @@ app.get("/chains/:chainId/contracts/:address/events", async (c) => {
       sortBy,
       multiSort,
     })}`;
+
+    // Try to load contract ABI so event names can be resolved dynamically
+    try {
+      const contractSource = await contractSourceService.getContractSource(
+        chainId,
+        address
+      );
+      const abiStr =
+        contractSource?.implementationContract?.abi ?? contractSource?.abi;
+      if (abiStr) {
+        const abi = JSON.parse(abiStr);
+        registerAbiEvents(abi);
+      }
+    } catch {
+      // ABI not available, will fall back to hex signatures
+    }
 
     const result = await performanceOptimizer
       .executeOptimizedQuery(

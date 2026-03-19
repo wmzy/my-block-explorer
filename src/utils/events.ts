@@ -2,78 +2,81 @@
  * Event decoding and selector utilities for contract events
  */
 
+import { type Abi, type AbiEvent, toEventSelector, parseAbiItem } from "viem";
+
+const signatureToNameCache = new Map<string, string>();
+const nameToSignatureCache = new Map<string, string>();
+
+/**
+ * Register ABI events so that signature lookups work dynamically
+ * instead of relying on a hardcoded table.
+ */
+export const registerAbiEvents = (abi: Abi | readonly unknown[]): void => {
+  for (const item of abi) {
+    const entry = item as Record<string, unknown>;
+    if (entry.type !== "event" || typeof entry.name !== "string") continue;
+    try {
+      const selector = toEventSelector(entry as AbiEvent);
+      signatureToNameCache.set(selector, entry.name);
+      nameToSignatureCache.set(entry.name, selector);
+    } catch {
+      // skip malformed entries
+    }
+  }
+};
+
 export const getEventSelectorFromName = (eventName: string): string => {
-  const eventSignatures: Record<string, string> = {
-    "Transfer":
-      "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef",
-    "Approval":
-      "0x8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925",
-    "Claimed":
-      "0x4ec90e965519d92681267467f775ada5bd214aa92c0dc93d90a5e880ce9ed026",
-    "Withdrawn":
-      "0x7084f5476618d8e60b11ef0d7d3f06914655adb8793e28ff7f018d4c76d505d5",
-    "CanClaimChanged":
-      "0x288bc2dc4daa42daed2dc8f75a041199ec3b44228839d53fcdcd655319c6ba27",
-    "AddWhitelists":
-      "0x694fe5adecedc7ad5a3f8391f8a2cf836d4f3aa6984399831388c19ae0fb0d48",
-    "RemoveWhitelists":
-      "0x4ef352f25cdeac845ac72666cd403ec5e67035abb4002b310ebdfef3d564dac2",
-    "OwnershipTransferred":
-      "0f2c964eadc46d807a809523f3bb43defb2b5e79e2ac9b895fe640b7ec95b478",
-    "OwnerChanged":
-      "0x3c6bc16fc5b8e82e1c3c7d3d3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e",
-    "Paused":
-      "0x62e78cea01bee320cd4e4202b23e0615b4fa650be62e2c4f6c5bfa8d7a4c7a75",
-    "Unpaused":
-      "0x5db9ee0a495bf2e6ff9c91a7834561e16a650cc1172787b7f8b7e3e3e3e3e3e3e",
-    "RoleGranted":
-      "0x2f8788117e7eff10482bff7d5f5af1b0e2b3f6c24207074239f59d984100e2a8",
-    "RoleRevoked":
-      "0xf79a3f8c1b1b1e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e",
-    "DataSet":
-      "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef",
-    "Updated":
-      "0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef12345678",
+  const cached = nameToSignatureCache.get(eventName);
+  if (cached) return cached;
+
+  const wellKnown: Record<string, string> = {
+    Transfer: "event Transfer(address indexed from, address indexed to, uint256 value)",
+    Approval: "event Approval(address indexed owner, address indexed spender, uint256 value)",
+    OwnershipTransferred: "event OwnershipTransferred(address indexed previousOwner, address indexed newOwner)",
   };
-  return eventSignatures[eventName] ?? "0x" + "0".repeat(64);
+
+  const sig = wellKnown[eventName];
+  if (sig) {
+    try {
+      const parsed = parseAbiItem(sig) as AbiEvent;
+      const selector = toEventSelector(parsed);
+      nameToSignatureCache.set(eventName, selector);
+      signatureToNameCache.set(selector, eventName);
+      return selector;
+    } catch { /* fall through */ }
+  }
+
+  return "0x" + "0".repeat(64);
 };
 
 export const decodeEventData = (
   eventName: string,
-  topics: string[],
+  topics: readonly string[],
   data: string
 ): Record<string, unknown> => {
   try {
-    if (eventName === "Transfer" && topics.length >= 3) {
+    if (eventName === "Transfer" && topics.length >= 2) {
       return {
-        from: topics[1],
-        to: topics[2],
-        value: BigInt("0x" + data.replace(/^0x/, "").padStart(64, "0")),
+        from: topics[0],
+        to: topics[1],
+        value: data && data !== "0x" ? BigInt(data) : undefined,
         raw: { topics, data },
       };
     }
 
-    if (eventName === "Approval" && topics.length >= 3) {
+    if (eventName === "Approval" && topics.length >= 2) {
       return {
-        owner: topics[1],
-        spender: topics[2],
-        value: BigInt("0x" + data.replace(/^0x/, "").padStart(64, "0")),
+        owner: topics[0],
+        spender: topics[1],
+        value: data && data !== "0x" ? BigInt(data) : undefined,
         raw: { topics, data },
       };
     }
 
-    if (eventName === "Claimed" && topics.length >= 2) {
+    if (eventName === "OwnershipTransferred" && topics.length >= 2) {
       return {
-        account: topics[1],
-        amount: BigInt("0x" + data.replace(/^0x/, "").padStart(64, "0")),
-        raw: { topics, data },
-      };
-    }
-
-    if (eventName === "OwnershipTransferred" && topics.length >= 3) {
-      return {
-        previousOwner: topics[1],
-        newOwner: topics[2],
+        previousOwner: topics[0],
+        newOwner: topics[1],
         raw: { topics, data },
       };
     }
@@ -93,49 +96,88 @@ export const decodeEventData = (
   }
 };
 
+type RpcClient = {
+  getBlockNumber: () => Promise<bigint>;
+  getLogs: (args: {
+    address: `0x${string}`;
+    fromBlock: bigint;
+    toBlock: bigint;
+  }) => Promise<Array<{ blockNumber: bigint }>>;
+};
+
+/**
+ * Find the earliest block with events for a contract by probing
+ * backwards from the latest block in exponentially growing ranges.
+ * Returns the earliest event block found, or a reasonable fallback.
+ */
 export const getContractCreationBlock = async (
   client: unknown,
   contractAddress: string
 ): Promise<bigint> => {
+  const rpc = client as RpcClient;
   try {
-    const latestBlock = await (client as { getBlockNumber: () => Promise<bigint> }).getBlockNumber();
-    const reasonableStartBlock = 87080000n;
+    const latestBlock = await rpc.getBlockNumber();
+    const addr = contractAddress as `0x${string}`;
+
+    // Probe backwards with exponentially growing ranges
+    // Start with recent 10k blocks, then 50k, 200k, 1M, etc.
+    const ranges = [10_000n, 50_000n, 200_000n, 1_000_000n, 5_000_000n];
+    let earliestFound: bigint | null = null;
+
+    for (const rangeSize of ranges) {
+      const fromBlock =
+        latestBlock > rangeSize ? latestBlock - rangeSize : 0n;
+
+      try {
+        const logs = await rpc.getLogs({
+          address: addr,
+          fromBlock,
+          toBlock: fromBlock + 9_999n, // small probe at the start of range
+        });
+
+        if (logs.length > 0) {
+          earliestFound = logs.reduce(
+            (min, l) => (l.blockNumber < min ? l.blockNumber : min),
+            logs[0].blockNumber
+          );
+        }
+      } catch {
+        // RPC may reject large ranges, continue with next
+      }
+
+      if (earliestFound !== null) break;
+    }
+
+    // If we found events, use the earliest block found (minus small buffer)
+    if (earliestFound !== null) {
+      const result = earliestFound > 100n ? earliestFound - 100n : 0n;
+      console.log(
+        `Contract earliest event block: ${earliestFound} (starting from: ${result})`
+      );
+      return result;
+    }
+
+    // Fallback: start from recent blocks
+    const fallback = latestBlock > 100_000n ? latestBlock - 100_000n : 0n;
     console.log(
-      `Using starting block ${reasonableStartBlock} (latest: ${latestBlock})`
+      `No events found in probes, using fallback block: ${fallback} (latest: ${latestBlock})`
     );
-    return reasonableStartBlock;
+    return fallback;
   } catch (error) {
     console.warn("Failed to get contract creation block:", error);
-    return 87000000n;
+    try {
+      const latestBlock = await rpc.getBlockNumber();
+      return latestBlock > 100_000n ? latestBlock - 100_000n : 0n;
+    } catch {
+      return 0n;
+    }
   }
 };
 
-export const getEventNameFromSignature = (eventSignature: string): string => {
-  const signatures: Record<string, string> = {
-    "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef":
-      "Transfer",
-    "0x8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925":
-      "Approval",
-    "0x4ec90e965519d92681267467f775ada5bd214aa92c0dc93d90a5e880ce9ed026":
-      "Claimed",
-    "0x7084f5476618d8e60b11ef0d7d3f06914655adb8793e28ff7f018d4c76d505d5":
-      "Withdrawn",
-    "0x288bc2dc4daa42daed2dc8f75a041199ec3b44228839d53fcdcd655319c6ba27":
-      "CanClaimChanged",
-    "0x694fe5adecedc7ad5a3f8391f8a2cf836d4f3aa6984399831388c19ae0fb0d48":
-      "AddWhitelists",
-    "0x4ef352f25cdeac845ac72666cd403ec5e67035abb4002b310ebdfef3d564dac2":
-      "RemoveWhitelists",
-    "0f2c964eadc46d807a809523f3bb43defb2b5e79e2ac9b895fe640b7ec95b478":
-      "OwnershipTransferred",
-    "0x62e78cea01bee320cd4e4202b23e0615b4fa650be62e2c4f6c5bfa8d7a4c7a75":
-      "Paused",
-    "0x5db9ee0a495bf2e6ff9c91a7834561e16a650cc1172787b7f8b7e3e3e3e3e3e3e":
-      "Unpaused",
-    "0x2f8788117e7eff10482bff7d5f5af1b0e2b3f6c24207074239f59d984100e2a8":
-      "RoleGranted",
-    "0xf79a3f8c1b1b1e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e3e":
-      "RoleRevoked",
-  };
-  return signatures[eventSignature] ?? "Unknown";
+export const getEventNameFromSignature = (
+  eventSignature: string
+): string => {
+  const cached = signatureToNameCache.get(eventSignature);
+  if (cached) return cached;
+  return eventSignature;
 };

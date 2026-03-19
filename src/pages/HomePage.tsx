@@ -1,137 +1,188 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import { css } from "@linaria/core";
+import { formatEther, formatGwei } from "viem";
 import {
   Card,
   CardHeader,
   CardTitle,
   CardContent,
 } from "../components/ui/Card";
-import { StatusBadge } from "../components/ui/Badge";
 import TopNavigation from "../components/TopNavigation";
-import RpcErrorAlert from "../components/RpcErrorAlert";
-import { apiClient } from "../api/client";
-import { getChainInfo } from "@/config/chains";
-import { formatNumber } from "@/utils/format";
+import { getChainInfo, getChainSymbol } from "@/config/chains";
+import {
+  formatNumber,
+  formatAddress,
+  formatHash,
+  formatRelativeTime,
+  formatEth,
+} from "@/utils/format";
 import { PageContainer } from "@/components/ui/PageLayout";
 import { LoadingState } from "@/components/ui/LoadingState";
-import { ErrorState } from "@/components/ui/ErrorState";
-import type { RpcError } from "../types/rpc";
+import {
+  getLatestBlocks,
+  getBlockTransactions,
+  type RpcBlock,
+  type RpcTransaction,
+} from "@/utils/blockRpcData";
+import { createRpcClient } from "@/utils/realTimeData";
+
+const MAX_LIST_ITEMS = 10;
+const POLL_INTERVAL = 12_000;
+
+// --- styles ---
 
 const hero = css`
   text-align: center;
-  margin-bottom: var(--haze-space-10);
+  padding: var(--haze-space-8) 0 var(--haze-space-4);
 `;
 
 const titleStyle = css`
-  font-size: 42px;
+  font-size: 36px;
   font-weight: var(--haze-weight-bold);
-  margin: 0 0 var(--haze-space-3) 0;
+  margin: 0 0 var(--haze-space-2) 0;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 
   @media (max-width: 768px) {
-    font-size: 32px;
+    font-size: 28px;
   }
 `;
 
 const subtitleStyle = css`
-  font-size: var(--haze-text-lg);
+  font-size: var(--haze-text-base);
   color: var(--haze-color-text-muted);
   margin: 0;
 `;
 
-const grid = css`
+const statsBar = css`
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: var(--haze-space-5);
-  margin-bottom: var(--haze-space-8);
-  margin-top: var(--haze-space-8);
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--haze-space-4);
+  margin: var(--haze-space-6) 0;
 `;
 
-const statCard = css`
+const statItem = css`
   text-align: center;
+  padding: var(--haze-space-4);
 `;
 
-const statValue = css`
-  font-size: 28px;
+const statValueStyle = css`
+  font-size: 22px;
   font-weight: var(--haze-weight-bold);
   color: var(--haze-color-text);
-  margin-bottom: var(--haze-space-1);
+  margin-bottom: 2px;
 `;
 
-const statLabel = css`
-  font-size: var(--haze-text-sm);
+const statLabelStyle = css`
+  font-size: var(--haze-text-xs);
   color: var(--haze-color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 `;
 
-const chainGrid = css`
+const columnsLayout = css`
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: var(--haze-space-4);
-  margin-top: var(--haze-space-5);
-`;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--haze-space-5);
+  margin-top: var(--haze-space-4);
 
-const chainCardStyle = css`
-  padding: var(--haze-space-4);
-  border: 1px solid var(--haze-color-border);
-  border-radius: var(--haze-radius-lg);
-  transition: all 0.15s ease;
-
-  &:hover {
-    border-color: var(--haze-color-primary);
-    transform: translateY(-2px);
-    box-shadow: var(--haze-shadow-md);
+  @media (max-width: 900px) {
+    grid-template-columns: 1fr;
   }
 `;
 
-const chainHeaderStyle = css`
+const listItem = css`
+  display: flex;
+  align-items: flex-start;
+  gap: var(--haze-space-3);
+  padding: var(--haze-space-3) 0;
+  border-bottom: 1px solid var(--haze-color-border);
+
+  &:last-child {
+    border-bottom: none;
+  }
+`;
+
+const listIcon = css`
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--haze-radius-md);
+  background: var(--haze-color-primary-subtle);
+  color: var(--haze-color-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--haze-text-xs);
+  font-weight: var(--haze-weight-bold);
+`;
+
+const listBody = css`
+  flex: 1;
+  min-width: 0;
+`;
+
+const listRow = css`
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: var(--haze-space-3);
-`;
-
-const chainNameStyle = css`
-  font-weight: var(--haze-weight-semibold);
-  font-size: var(--haze-text-base);
-  color: var(--haze-color-text);
-`;
-
-const chainStatsStyle = css`
-  display: grid;
-  grid-template-columns: 1fr 1fr;
   gap: var(--haze-space-2);
+`;
+
+const listPrimary = css`
+  font-weight: var(--haze-weight-semibold);
+  font-size: var(--haze-text-sm);
+  color: var(--haze-color-primary);
+  text-decoration: none;
+
+  &:hover {
+    text-decoration: underline;
+  }
+`;
+
+const listSecondary = css`
   font-size: var(--haze-text-xs);
   color: var(--haze-color-text-muted);
 `;
 
-const quickLinksStyle = css`
-  display: flex;
-  gap: var(--haze-space-3);
-  margin-top: var(--haze-space-8);
+const listMeta = css`
+  font-size: var(--haze-text-xs);
+  color: var(--haze-color-text-muted);
+  white-space: nowrap;
+`;
 
-  a {
-    flex: 1;
-    display: block;
-    padding: var(--haze-space-4);
-    text-align: center;
-    background: var(--haze-color-bg);
-    border: 1px solid var(--haze-color-border);
-    border-radius: var(--haze-radius-lg);
-    color: var(--haze-color-primary);
-    text-decoration: none;
-    font-weight: var(--haze-weight-medium);
-    transition: all 0.15s ease;
+const listValue = css`
+  font-size: var(--haze-text-xs);
+  font-weight: var(--haze-weight-medium);
+  color: var(--haze-color-text);
+  font-family: var(--haze-font-mono, monospace);
+`;
 
-    &:hover {
-      border-color: var(--haze-color-primary);
-      background: var(--haze-color-primary-subtle);
-    }
+const viewAllLink = css`
+  display: block;
+  text-align: center;
+  padding: var(--haze-space-3);
+  color: var(--haze-color-primary);
+  text-decoration: none;
+  font-size: var(--haze-text-sm);
+  font-weight: var(--haze-weight-medium);
+  border-top: 1px solid var(--haze-color-border);
+
+  &:hover {
+    background: var(--haze-color-primary-subtle);
   }
 `;
+
+const cardHeaderRow = css`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+`;
+
+// --- component ---
 
 export default function HomePage() {
   const { chainId } = useParams<{ chainId: string }>();
@@ -139,11 +190,17 @@ export default function HomePage() {
 
   const currentChainId = chainId ? parseInt(chainId) : 1;
   const chainInfo = getChainInfo(currentChainId);
+  const symbol = getChainSymbol(currentChainId);
 
-  const [overview, setOverview] = useState<any>(null);
+  const [blocks, setBlocks] = useState<RpcBlock[]>([]);
+  const [transactions, setTransactions] = useState<RpcTransaction[]>([]);
+  const [latestBlockNumber, setLatestBlockNumber] = useState<bigint | null>(
+    null
+  );
+  const [gasPrice, setGasPrice] = useState<bigint | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [rpcError, setRpcError] = useState<RpcError | null>(null);
+
+  const prevBlockNumberRef = useRef<bigint | null>(null);
 
   useEffect(() => {
     if (!chainInfo) {
@@ -151,34 +208,118 @@ export default function HomePage() {
     }
   }, [chainInfo, navigate]);
 
-  useEffect(() => {
-    const fetchOverview = async () => {
-      try {
-        setLoading(true);
-        const data = await apiClient.getOverviewStats();
-        setOverview(data);
-        setError(null);
-      } catch (err) {
-        setError(
-          err instanceof Error ? err.message : "Failed to load overview"
-        );
-      } finally {
-        setLoading(false);
-      }
-    };
+  // Initial load: fetch 10 blocks + their transactions
+  const initialLoad = useCallback(async () => {
+    try {
+      setLoading(true);
+      const [blockData, client] = await Promise.all([
+        getLatestBlocks(currentChainId, MAX_LIST_ITEMS),
+        createRpcClient(currentChainId),
+      ]);
 
-    fetchOverview();
-    const interval = setInterval(fetchOverview, 30000);
-    return () => clearInterval(interval);
-  }, []);
+      setBlocks(blockData.blocks);
+      setLatestBlockNumber(blockData.latestBlockNumber);
+      prevBlockNumberRef.current = blockData.latestBlockNumber;
+
+      const gp = await client.getGasPrice().catch(() => null);
+      setGasPrice(gp);
+
+      // Collect transactions from the fetched blocks
+      const latestBlock = blockData.blocks[0];
+      if (latestBlock) {
+        const txs = await getBlockTransactions(
+          currentChainId,
+          BigInt(latestBlock.number)
+        ).catch(() => []);
+        setTransactions(txs.slice(0, MAX_LIST_ITEMS));
+      }
+    } catch (err) {
+      console.error("Failed to load homepage data:", err);
+    } finally {
+      setLoading(false);
+    }
+  }, [currentChainId]);
+
+  // Poll: fetch only the latest block and prepend
+  const poll = useCallback(async () => {
+    try {
+      const client = await createRpcClient(currentChainId);
+      const currentBlockNumber = await client.getBlockNumber();
+
+      // Update gas price
+      const gp = await client.getGasPrice().catch(() => null);
+      setGasPrice(gp);
+
+      const prev = prevBlockNumberRef.current;
+      if (prev !== null && currentBlockNumber <= prev) return;
+
+      // Fetch only the new block
+      const block = await client.getBlock({ blockNumber: currentBlockNumber });
+      const newBlock: RpcBlock = {
+        number: block.number.toString(),
+        hash: block.hash!,
+        parentHash: block.parentHash,
+        timestamp: new Date(Number(block.timestamp) * 1000).toISOString(),
+        miner:
+          ((block as Record<string, unknown>).miner as string) ?? "",
+        gasUsed: block.gasUsed.toString(),
+        gasLimit: block.gasLimit.toString(),
+        baseFeePerGas: block.baseFeePerGas?.toString(),
+        transactionCount: block.transactions.length,
+        sizeBytes: Number(block.size),
+      };
+
+      setBlocks((prev) => [newBlock, ...prev].slice(0, MAX_LIST_ITEMS));
+      setLatestBlockNumber(currentBlockNumber);
+      prevBlockNumberRef.current = currentBlockNumber;
+
+      // Fetch transactions from the new block
+      if (block.transactions.length > 0) {
+        const txs = await getBlockTransactions(
+          currentChainId,
+          currentBlockNumber
+        ).catch(() => []);
+
+        if (txs.length > 0) {
+          setTransactions((prev) =>
+            [...txs, ...prev].slice(0, MAX_LIST_ITEMS)
+          );
+        }
+      }
+    } catch (err) {
+      console.error("Poll error:", err);
+    }
+  }, [currentChainId]);
+
+  useEffect(() => {
+    initialLoad();
+  }, [initialLoad]);
+
+  useEffect(() => {
+    if (loading) return;
+    const id = setInterval(poll, POLL_INTERVAL);
+    return () => clearInterval(id);
+  }, [poll, loading]);
 
   const handleChainChange = (newChainId: number) => {
+    // Reset state on chain change
+    setBlocks([]);
+    setTransactions([]);
+    setLatestBlockNumber(null);
+    setGasPrice(null);
+    prevBlockNumberRef.current = null;
     navigate(`/chain/${newChainId}`, { replace: true });
   };
 
-  if (!chainInfo) {
-    return null;
-  }
+  if (!chainInfo) return null;
+
+  const gasUsedPercent =
+    blocks[0]
+      ? (
+          (Number(blocks[0].gasUsed) / Number(blocks[0].gasLimit)) *
+          100
+        ).toFixed(1)
+      : null;
 
   return (
     <>
@@ -186,116 +327,194 @@ export default function HomePage() {
         currentChainId={currentChainId}
         onChainChange={handleChainChange}
       />
-      <PageContainer narrow>
-        {rpcError && (
-          <RpcErrorAlert
-            error={rpcError}
-            onConfigureRpc={() => setRpcError(null)}
-            onDismiss={() => setRpcError(null)}
-          />
-        )}
-
+      <PageContainer>
         <div className={hero}>
-          <h1 className={titleStyle}>Block Explorer</h1>
+          <h1 className={titleStyle}>{chainInfo.name} Explorer</h1>
           <p className={subtitleStyle}>
-            {chainInfo.name} • Chain ID: {chainInfo.id} •{" "}
-            {chainInfo.nativeCurrency.symbol}
+            Chain ID: {chainInfo.id} · {symbol}
           </p>
         </div>
 
-        <div className={quickLinksStyle}>
-          <Link to={`/chain/${currentChainId}/blocks`}>Blocks</Link>
-          <Link to={`/chain/${currentChainId}/transactions`}>Transactions</Link>
+        {/* Stats bar */}
+        <div className={statsBar}>
+          <Card className={statItem}>
+            <div className={statValueStyle}>
+              {latestBlockNumber !== null
+                ? formatNumber(latestBlockNumber)
+                : "—"}
+            </div>
+            <div className={statLabelStyle}>Latest Block</div>
+          </Card>
+          <Card className={statItem}>
+            <div className={statValueStyle}>
+              {gasPrice !== null
+                ? `${parseFloat(formatGwei(gasPrice)).toFixed(2)} Gwei`
+                : "—"}
+            </div>
+            <div className={statLabelStyle}>Gas Price</div>
+          </Card>
+          <Card className={statItem}>
+            <div className={statValueStyle}>
+              {blocks[0]
+                ? formatNumber(blocks[0].transactionCount)
+                : "—"}
+            </div>
+            <div className={statLabelStyle}>Txns in Latest Block</div>
+          </Card>
+          <Card className={statItem}>
+            <div className={statValueStyle}>
+              {gasUsedPercent !== null ? `${gasUsedPercent}%` : "—"}
+            </div>
+            <div className={statLabelStyle}>Gas Used</div>
+          </Card>
         </div>
 
-        {loading && <LoadingState message="Loading overview..." />}
+        {loading && <LoadingState message="Loading blockchain data..." />}
 
-        {error && !loading && <ErrorState message={error} />}
-
-        {overview && !loading && (
-          <>
-            <div className={grid}>
-              <Card className={statCard}>
-                <CardContent>
-                  <div className={statValue}>
-                    {overview.supportedChains || 0}
-                  </div>
-                  <div className={statLabel}>Supported Chains</div>
-                </CardContent>
-              </Card>
-              <Card className={statCard}>
-                <CardContent>
-                  <div className={statValue}>
-                    {overview.connectedChains || 0}
-                  </div>
-                  <div className={statLabel}>Connected Chains</div>
-                </CardContent>
-              </Card>
-              <Card className={statCard}>
-                <CardContent>
-                  <div className={statValue}>
-                    {overview.indexedChains || 0}
-                  </div>
-                  <div className={statLabel}>Indexed Chains</div>
-                </CardContent>
-              </Card>
-              <Card className={statCard}>
-                <CardContent>
-                  <div className={statValue}>
-                    {formatNumber(overview.totalIndexedBlocks || 0)}
-                  </div>
-                  <div className={statLabel}>Indexed Blocks</div>
-                </CardContent>
-              </Card>
-            </div>
-
+        {!loading && (
+          <div className={columnsLayout}>
+            {/* Latest Blocks */}
             <Card>
               <CardHeader>
-                <CardTitle>Popular Chains</CardTitle>
+                <div className={cardHeaderRow}>
+                  <CardTitle>Latest Blocks</CardTitle>
+                </div>
               </CardHeader>
               <CardContent>
-                <div className={chainGrid}>
-                  {overview.chains?.map((chain: any) => (
-                    <Link
-                      key={chain.chainId}
-                      to={`/chain/${chain.chainId}`}
-                      style={{ textDecoration: "none", color: "inherit" }}
-                    >
-                      <div className={chainCardStyle}>
-                        <div className={chainHeaderStyle}>
-                          <div className={chainNameStyle}>
-                            {chain.chainName}
-                          </div>
-                          <StatusBadge
-                            status={chain.rpcConnected ? "online" : "offline"}
-                          >
-                            {chain.rpcConnected ? "Connected" : "Offline"}
-                          </StatusBadge>
-                        </div>
-                        <div className={chainStatsStyle}>
-                          <div>
-                            Latest Block:{" "}
-                            {chain.latestBlockNumber
-                              ? formatNumber(chain.latestBlockNumber)
-                              : "N/A"}
-                          </div>
-                          <div>Symbol: {chain.chainSymbol}</div>
-                          <div>
-                            Indexed Blocks:{" "}
-                            {formatNumber(chain.indexedBlocks || 0)}
-                          </div>
-                          <div>
-                            Indexed Txns:{" "}
-                            {formatNumber(chain.indexedTransactions || 0)}
-                          </div>
-                        </div>
+                {blocks.map((block) => (
+                  <div key={block.number} className={listItem}>
+                    <div className={listIcon}>Bk</div>
+                    <div className={listBody}>
+                      <div className={listRow}>
+                        <Link
+                          to={`/chain/${currentChainId}/block/${block.number}`}
+                          className={listPrimary}
+                        >
+                          {formatNumber(block.number)}
+                        </Link>
+                        <span className={listMeta}>
+                          {formatRelativeTime(block.timestamp)}
+                        </span>
                       </div>
-                    </Link>
-                  ))}
-                </div>
+                      <div className={listRow}>
+                        <span className={listSecondary}>
+                          Miner{" "}
+                          <Link
+                            to={`/chain/${currentChainId}/address/${block.miner}`}
+                            className={listPrimary}
+                            style={{ fontWeight: "normal" }}
+                          >
+                            {formatAddress(block.miner, 4)}
+                          </Link>
+                        </span>
+                        <span className={listValue}>
+                          {block.transactionCount} txns
+                        </span>
+                      </div>
+                      {block.baseFeePerGas && (
+                        <div className={listSecondary}>
+                          Base fee:{" "}
+                          {parseFloat(
+                            formatGwei(BigInt(block.baseFeePerGas))
+                          ).toFixed(4)}{" "}
+                          Gwei · Size: {formatNumber(block.sizeBytes ?? 0)} B
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                <Link
+                  to={`/chain/${currentChainId}/blocks`}
+                  className={viewAllLink}
+                >
+                  View all blocks →
+                </Link>
               </CardContent>
             </Card>
-          </>
+
+            {/* Latest Transactions */}
+            <Card>
+              <CardHeader>
+                <div className={cardHeaderRow}>
+                  <CardTitle>Latest Transactions</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {transactions.map((tx) => (
+                  <div key={tx.hash} className={listItem}>
+                    <div className={listIcon}>Tx</div>
+                    <div className={listBody}>
+                      <div className={listRow}>
+                        <Link
+                          to={`/chain/${currentChainId}/tx/${tx.hash}`}
+                          className={listPrimary}
+                        >
+                          {formatHash(tx.hash, 6)}
+                        </Link>
+                        <span className={listMeta}>
+                          {tx.timestamp
+                            ? formatRelativeTime(tx.timestamp)
+                            : `Block ${formatNumber(tx.blockNumber)}`}
+                        </span>
+                      </div>
+                      <div className={listRow}>
+                        <span className={listSecondary}>
+                          From{" "}
+                          <Link
+                            to={`/chain/${currentChainId}/address/${tx.fromAddress}`}
+                            className={listPrimary}
+                            style={{ fontWeight: "normal" }}
+                          >
+                            {formatAddress(tx.fromAddress, 4)}
+                          </Link>
+                          {tx.toAddress && (
+                            <>
+                              {" → "}
+                              <Link
+                                to={`/chain/${currentChainId}/address/${tx.toAddress}`}
+                                className={listPrimary}
+                                style={{ fontWeight: "normal" }}
+                              >
+                                {formatAddress(tx.toAddress, 4)}
+                              </Link>
+                            </>
+                          )}
+                        </span>
+                      </div>
+                      <div className={listRow}>
+                        <span className={listValue}>
+                          {formatEth(tx.value)} {symbol}
+                        </span>
+                        {tx.gasUsed && tx.effectiveGasPrice && (
+                          <span className={listSecondary}>
+                            Fee:{" "}
+                            {parseFloat(
+                              formatEther(
+                                BigInt(tx.gasUsed) *
+                                  BigInt(tx.effectiveGasPrice)
+                              )
+                            ).toFixed(6)}{" "}
+                            {symbol}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {transactions.length === 0 && (
+                  <div className={listSecondary} style={{ padding: "20px 0", textAlign: "center" }}>
+                    No transactions in recent blocks
+                  </div>
+                )}
+                <Link
+                  to={`/chain/${currentChainId}/transactions`}
+                  className={viewAllLink}
+                >
+                  View all transactions →
+                </Link>
+              </CardContent>
+            </Card>
+          </div>
         )}
       </PageContainer>
     </>
