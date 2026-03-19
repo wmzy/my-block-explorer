@@ -88,7 +88,7 @@ describe('useAddressData', () => {
 
       await waitFor(() => {
         expect(mockFetch).toHaveBeenCalledWith(
-          `/api/chains/${testChainId}/addresses/${testAddress}/persistent`
+          `/api/chains/${testChainId}/addresses/${testAddress}/persistent`,
         );
         expect(getRealTimeAddressData).toHaveBeenCalledWith(testChainId, testAddress);
       });
@@ -208,7 +208,7 @@ describe('useAddressData', () => {
         ({ chainId, address }) => useAddressData(chainId, address),
         {
           initialProps: { chainId: 1, address: testAddress },
-        }
+        },
       );
 
       await waitFor(() => {
@@ -223,7 +223,7 @@ describe('useAddressData', () => {
 
       await waitFor(() => {
         expect(mockFetch).toHaveBeenCalledWith(
-          `/api/chains/137/addresses/${testAddress}/persistent`
+          `/api/chains/137/addresses/${testAddress}/persistent`,
         );
         expect(getRealTimeAddressData).toHaveBeenCalledWith(137, testAddress);
       });
@@ -231,7 +231,7 @@ describe('useAddressData', () => {
 
     it('should refetch data when address changes', async () => {
       const newAddress = '0x9876543210987654321098765432109876543210';
-      
+
       mockFetch.mockResolvedValue({
         ok: true,
         json: () => Promise.resolve({ isContract: false }),
@@ -247,7 +247,7 @@ describe('useAddressData', () => {
         ({ chainId, address }) => useAddressData(chainId, address),
         {
           initialProps: { chainId: testChainId, address: testAddress },
-        }
+        },
       );
 
       await waitFor(() => {
@@ -262,7 +262,7 @@ describe('useAddressData', () => {
 
       await waitFor(() => {
         expect(mockFetch).toHaveBeenCalledWith(
-          `/api/chains/${testChainId}/addresses/${newAddress}/persistent`
+          `/api/chains/${testChainId}/addresses/${newAddress}/persistent`,
         );
         expect(getRealTimeAddressData).toHaveBeenCalledWith(testChainId, newAddress);
       });
@@ -284,7 +284,7 @@ describe('useAddressData', () => {
         ({ chainId, address }) => useAddressData(chainId, address),
         {
           initialProps: { chainId: testChainId, address: testAddress },
-        }
+        },
       );
 
       await waitFor(() => {
@@ -345,7 +345,7 @@ describe('useAddressData', () => {
         ({ chainId, address }) => useAddressData(chainId, address),
         {
           initialProps: { chainId: 1, address: testAddress },
-        }
+        },
       );
 
       // Quickly change address to trigger concurrent requests

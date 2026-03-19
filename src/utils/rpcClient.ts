@@ -1,6 +1,6 @@
-import { createPublicClient, http, type PublicClient } from "viem";
-import { mainnet, polygon, arbitrum, optimism, base } from "viem/chains";
-import type { Chain } from "viem";
+import { createPublicClient, http, type PublicClient } from 'viem';
+import { mainnet, polygon, arbitrum, optimism, base } from 'viem/chains';
+import type { Chain } from 'viem';
 
 // 支持的链配置
 const SUPPORTED_CHAINS: Record<number, Chain> = {
@@ -12,25 +12,25 @@ const SUPPORTED_CHAINS: Record<number, Chain> = {
   // Mantle 链配置
   5000: {
     id: 5000,
-    name: "Mantle",
-    network: "mantle",
+    name: 'Mantle',
+    network: 'mantle',
     nativeCurrency: {
       decimals: 18,
-      name: "Mantle",
-      symbol: "MNT",
+      name: 'Mantle',
+      symbol: 'MNT',
     },
     rpcUrls: {
       default: {
-        http: ["https://rpc.mantle.xyz"],
+        http: ['https://rpc.mantle.xyz'],
       },
       public: {
-        http: ["https://rpc.mantle.xyz"],
+        http: ['https://rpc.mantle.xyz'],
       },
     },
     blockExplorers: {
       default: {
-        name: "Mantle Explorer",
-        url: "https://explorer.mantle.xyz",
+        name: 'Mantle Explorer',
+        url: 'https://explorer.mantle.xyz',
       },
     },
   },
@@ -86,14 +86,15 @@ export function getSupportedChains(): Chain[] {
 export async function withRetry<T>(
   operation: () => Promise<T>,
   maxRetries: number = 3,
-  delay: number = 1000
+  delay: number = 1000,
 ): Promise<T> {
   let lastError: Error;
 
   for (let i = 0; i <= maxRetries; i++) {
     try {
       return await operation();
-    } catch (error) {
+    }
+    catch (error) {
       lastError = error as Error;
 
       if (i === maxRetries) {
@@ -101,7 +102,7 @@ export async function withRetry<T>(
       }
 
       // 等待后重试
-      await new Promise((resolve) => setTimeout(resolve, delay * (i + 1)));
+      await new Promise(resolve => setTimeout(resolve, delay * (i + 1)));
     }
   }
 

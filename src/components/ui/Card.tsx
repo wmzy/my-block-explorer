@@ -1,14 +1,14 @@
-import { css, cx } from "@linaria/core";
-import { Card as HazeCard } from "haze-ui";
-import type { ReactNode } from "react";
+import { css, cx } from '@linaria/core';
+import { Card as HazeCard } from 'haze-ui';
+import type { ReactNode } from 'react';
 
 export type CardProps = {
   children: ReactNode;
   className?: string;
-  variant?: "elevated" | "outlined" | "filled";
+  variant?: 'elevated' | 'outlined' | 'filled';
 };
 
-export function Card({ children, className, variant = "outlined" }: CardProps) {
+export function Card({ children, className, variant = 'outlined' }: CardProps) {
   return (
     <HazeCard variant={variant} className={className}>
       {children}
@@ -41,13 +41,13 @@ const cardTitleStyle = css`
 export type CardTitleProps = {
   children: ReactNode;
   className?: string;
-  as?: "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
+  as?: 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6';
 };
 
 export function CardTitle({
   children,
   className,
-  as: Component = "h3",
+  as: Component = 'h3',
 }: CardTitleProps) {
   return (
     <Component className={cx(cardTitleStyle, className)}>{children}</Component>

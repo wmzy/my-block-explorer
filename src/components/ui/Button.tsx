@@ -1,6 +1,6 @@
-import { css, cx } from "@linaria/core";
-import { Button as HazeButton } from "haze-ui";
-import type { ComponentPropsWithoutRef, ReactNode } from "react";
+import { css, cx } from '@linaria/core';
+import { Button as HazeButton } from 'haze-ui';
+import type { ComponentPropsWithoutRef, ReactNode } from 'react';
 
 const spinnerStyle = css`
   width: 16px;
@@ -17,11 +17,11 @@ const spinnerStyle = css`
 `;
 
 const variantMap = {
-  primary: "solid",
-  secondary: "outline",
-  outline: "outline",
-  ghost: "ghost",
-  danger: "solid",
+  primary: 'solid',
+  secondary: 'outline',
+  outline: 'outline',
+  ghost: 'ghost',
+  danger: 'solid',
 } as const;
 
 const dangerStyle = css`
@@ -31,17 +31,17 @@ const dangerStyle = css`
 `;
 
 export type ButtonProps = {
-  variant?: "primary" | "secondary" | "outline" | "ghost" | "danger";
-  size?: "sm" | "md" | "lg";
+  variant?: 'primary' | 'secondary' | 'outline' | 'ghost' | 'danger';
+  size?: 'sm' | 'md' | 'lg';
   loading?: boolean;
   children: ReactNode;
   className?: string;
   disabled?: boolean;
-} & Omit<ComponentPropsWithoutRef<"button">, "type">;
+} & Omit<ComponentPropsWithoutRef<'button'>, 'type'>;
 
 export function Button({
-  variant = "primary",
-  size = "md",
+  variant = 'primary',
+  size = 'md',
   loading = false,
   children,
   className,
@@ -54,7 +54,7 @@ export function Button({
     <HazeButton
       variant={hazeVariant}
       size={size}
-      className={cx(variant === "danger" ? dangerStyle : undefined, className)}
+      className={cx(variant === 'danger' ? dangerStyle : undefined, className)}
       disabled={disabled || loading}
       {...rest}
     >

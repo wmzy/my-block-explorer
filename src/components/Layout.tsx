@@ -137,7 +137,7 @@ export type LayoutProps = {
 
 export function Layout({ children }: LayoutProps) {
   const location = useLocation();
-  
+
   const isActiveLink = (path: string) => {
     if (path === '/' && location.pathname === '/') return true;
     if (path !== '/' && location.pathname.startsWith(path)) return true;
@@ -151,16 +151,16 @@ export function Layout({ children }: LayoutProps) {
           <Link to="/" className={logo}>
             Block Explorer
           </Link>
-          
+
           <div className={navLinks}>
-            <Link 
-              to="/" 
+            <Link
+              to="/"
               className={cx(navLink, isActiveLink('/') && 'active')}
             >
               首页
             </Link>
-            <Link 
-              to="/search" 
+            <Link
+              to="/search"
               className={cx(navLink, isActiveLink('/search') && 'active')}
             >
               搜索
@@ -181,9 +181,9 @@ export function Layout({ children }: LayoutProps) {
             © 2024 Block Explorer. 基于 DuckDB 和 Viem 构建。
           </div>
           <div className={css`margin-top: 8px; @media (min-width: 640px) { margin-top: 0; }`}>
-            <a 
-              href="/api" 
-              target="_blank" 
+            <a
+              href="/api"
+              target="_blank"
               rel="noopener noreferrer"
               className={css`color: #3b82f6; text-decoration: none; &:hover { text-decoration: underline; }`}
             >

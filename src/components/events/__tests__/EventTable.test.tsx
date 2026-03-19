@@ -45,7 +45,7 @@ describe('EventTable Component', () => {
           chainId={mockChainId}
           contractAddress={mockContractAddress}
           initialEvents={mockEvents}
-        />
+        />,
       );
 
       // Check table headers
@@ -73,7 +73,7 @@ describe('EventTable Component', () => {
         <EventTable
           chainId={mockChainId}
           contractAddress={mockContractAddress}
-        />
+        />,
       );
 
       expect(screen.getByText('Loading events...')).toBeInTheDocument();
@@ -90,7 +90,7 @@ describe('EventTable Component', () => {
         <EventTable
           chainId={mockChainId}
           contractAddress={mockContractAddress}
-        />
+        />,
       );
 
       await waitFor(() => {
@@ -107,7 +107,7 @@ describe('EventTable Component', () => {
           chainId={mockChainId}
           contractAddress={mockContractAddress}
           initialEvents={mockEvents}
-        />
+        />,
       );
 
       const fromAddress = screen.getByText('0xabcd...ef12');
@@ -124,7 +124,7 @@ describe('EventTable Component', () => {
           chainId={mockChainId}
           contractAddress={mockContractAddress}
           initialEvents={mockEvents}
-        />
+        />,
       );
 
       const transactionHash = screen.getByText('0x12345678...cdef');
@@ -138,7 +138,7 @@ describe('EventTable Component', () => {
           chainId={mockChainId}
           contractAddress={mockContractAddress}
           initialEvents={mockEvents}
-        />
+        />,
       );
 
       expect(screen.getByText('1.000000 ETH')).toBeInTheDocument();
@@ -151,7 +151,7 @@ describe('EventTable Component', () => {
           chainId={mockChainId}
           contractAddress={mockContractAddress}
           initialEvents={mockEvents}
-        />
+        />,
       );
 
       // Should show formatted timestamp
@@ -171,7 +171,7 @@ describe('EventTable Component', () => {
           chainId={mockChainId}
           contractAddress={mockContractAddress}
           initialEvents={mockEvents}
-        />
+        />,
       );
 
       const blockHeader = screen.getByText('Block #');
@@ -181,7 +181,7 @@ describe('EventTable Component', () => {
       await waitFor(() => {
         expect(fetch).toHaveBeenCalledWith(
           expect.stringContaining('sortBy=block_number'),
-          expect.any(Object)
+          expect.any(Object),
         );
       });
     });
@@ -197,7 +197,7 @@ describe('EventTable Component', () => {
           chainId={mockChainId}
           contractAddress={mockContractAddress}
           initialEvents={mockEvents}
-        />
+        />,
       );
 
       const eventHeader = screen.getByText('Event');
@@ -207,7 +207,7 @@ describe('EventTable Component', () => {
       await waitFor(() => {
         expect(fetch).toHaveBeenCalledWith(
           expect.stringContaining('sort=asc'),
-          expect.any(Object)
+          expect.any(Object),
         );
       });
 
@@ -216,7 +216,7 @@ describe('EventTable Component', () => {
       await waitFor(() => {
         expect(fetch).toHaveBeenCalledWith(
           expect.stringContaining('sort=desc'),
-          expect.any(Object)
+          expect.any(Object),
         );
       });
     });
@@ -240,7 +240,7 @@ describe('EventTable Component', () => {
         <EventTable
           chainId={mockChainId}
           contractAddress={mockContractAddress}
-        />
+        />,
       );
 
       await waitFor(() => {
@@ -265,7 +265,7 @@ describe('EventTable Component', () => {
       await waitFor(() => {
         expect(fetch).toHaveBeenCalledWith(
           expect.stringContaining('cursor=cursor123'),
-          expect.any(Object)
+          expect.any(Object),
         );
       });
     });
@@ -276,7 +276,7 @@ describe('EventTable Component', () => {
           chainId={mockChainId}
           contractAddress={mockContractAddress}
           initialEvents={mockEvents}
-        />
+        />,
       );
 
       const prevButton = screen.getByText('Previous');
@@ -299,7 +299,7 @@ describe('EventTable Component', () => {
         <EventTable
           chainId={mockChainId}
           contractAddress={mockContractAddress}
-        />
+        />,
       );
 
       await waitFor(() => {
@@ -317,7 +317,7 @@ describe('EventTable Component', () => {
         <EventTable
           chainId={mockChainId}
           contractAddress={mockContractAddress}
-        />
+        />,
       );
 
       await waitFor(() => {
@@ -339,7 +339,7 @@ describe('EventTable Component', () => {
         <EventTable
           chainId={mockChainId}
           contractAddress={mockContractAddress}
-        />
+        />,
       );
 
       await waitFor(() => {
@@ -362,7 +362,7 @@ describe('EventTable Component', () => {
           chainId={mockChainId}
           contractAddress={mockContractAddress}
           initialEvents={mockEvents}
-        />
+        />,
       );
 
       const table = screen.getByRole('table');
@@ -381,11 +381,11 @@ describe('EventTable Component', () => {
           chainId={mockChainId}
           contractAddress={mockContractAddress}
           initialEvents={mockEvents}
-        />
+        />,
       );
 
       const sortableHeaders = screen.getAllByText(/Block #|Time|Event/);
-      sortableHeaders.forEach(header => {
+      sortableHeaders.forEach((header) => {
         expect(header).toHaveAttribute('role', 'columnheader');
       });
     });
@@ -402,7 +402,7 @@ describe('EventTable Component', () => {
         <EventTable
           chainId={mockChainId}
           contractAddress={mockContractAddress}
-        />
+        />,
       );
 
       await waitFor(() => {
@@ -413,7 +413,7 @@ describe('EventTable Component', () => {
             headers: {
               'Content-Type': 'application/json',
             },
-          })
+          }),
         );
       });
     });
@@ -428,13 +428,13 @@ describe('EventTable Component', () => {
         <EventTable
           chainId={mockChainId}
           contractAddress={mockContractAddress}
-        />
+        />,
       );
 
       await waitFor(() => {
         expect(fetch).toHaveBeenCalledWith(
           expect.stringContaining('limit=50'),
-          expect.any(Object)
+          expect.any(Object),
         );
       });
     });
@@ -447,7 +447,7 @@ describe('EventTable Component', () => {
           chainId={mockChainId}
           contractAddress={mockContractAddress}
           initialEvents={mockEvents}
-        />
+        />,
       );
 
       // Re-render with same props
@@ -456,7 +456,7 @@ describe('EventTable Component', () => {
           chainId={mockChainId}
           contractAddress={mockContractAddress}
           initialEvents={mockEvents}
-        />
+        />,
       );
 
       // Should still show the same events
@@ -476,7 +476,7 @@ describe('EventTable Component', () => {
           chainId={mockChainId}
           contractAddress={mockContractAddress}
           initialEvents={largeEventList}
-        />
+        />,
       );
 
       // Should render all events without performance issues

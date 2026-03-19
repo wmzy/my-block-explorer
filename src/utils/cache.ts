@@ -113,7 +113,7 @@ export class LRUCache<K, V> {
   async getOrSet<T extends V>(
     key: K,
     factory: () => Promise<T>,
-    ttl?: number
+    ttl?: number,
   ): Promise<T> {
     const cached = this.get(key);
     if (cached !== undefined) {
@@ -166,8 +166,8 @@ export class LRUCache<K, V> {
 
     for (const [key, entry] of this.cache.entries()) {
       // 计算使用分数（访问次数 + 最近访问时间权重）
-      const score =
-        entry.accessCount + (Date.now() - entry.lastAccessed) / 1000;
+      const score
+        = entry.accessCount + (Date.now() - entry.lastAccessed) / 1000;
 
       if (score < leastUsedScore) {
         leastUsedScore = score;
@@ -235,22 +235,22 @@ export class CacheManager {
 export const cacheManager = new CacheManager();
 
 // 预定义的缓存实例
-export const blockCache = cacheManager.getCache("blocks", {
+export const blockCache = cacheManager.getCache('blocks', {
   ttl: 30 * 1000, // 30秒
   maxSize: 500,
 });
 
-export const transactionCache = cacheManager.getCache("transactions", {
+export const transactionCache = cacheManager.getCache('transactions', {
   ttl: 60 * 1000, // 1分钟
   maxSize: 1000,
 });
 
-export const addressCache = cacheManager.getCache("addresses", {
+export const addressCache = cacheManager.getCache('addresses', {
   ttl: 2 * 60 * 1000, // 2分钟
   maxSize: 500,
 });
 
-export const searchCache = cacheManager.getCache("search", {
+export const searchCache = cacheManager.getCache('search', {
   ttl: 5 * 60 * 1000, // 5分钟
   maxSize: 200,
 });

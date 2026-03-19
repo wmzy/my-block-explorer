@@ -1,30 +1,30 @@
-import { Hono } from "hono";
-import { type Address } from "viem";
-import { createLogger } from "../server/logger";
-import { contractSourceService } from "../services/ContractSourceService";
+import { Hono } from 'hono';
+import { type Address } from 'viem';
+import { createLogger } from '../server/logger';
+import { contractSourceService } from '../services/ContractSourceService';
 
-const logger = createLogger("contracts-routes");
-import { contractInteractionService } from "../services/ContractInteractionService";
+const logger = createLogger('contracts-routes');
+import { contractInteractionService } from '../services/ContractInteractionService';
 import {
   getChainName,
   isChainSupported,
-} from "../config/chains";
+} from '../config/chains';
 import {
   getValidatedChainId,
   getValidatedAddress,
-} from "../server/validation";
-import { safeJsonResponse } from "../utils/serialization";
+} from '../server/validation';
+import { safeJsonResponse } from '../utils/serialization';
 
 const app = new Hono();
 
-app.get("/chains/:chainId/contracts/stats", async (c) => {
-  const chainId = getValidatedChainId(c.req.param("chainId"));
+app.get('/chains/:chainId/contracts/stats', async (c) => {
+  const chainId = getValidatedChainId(c.req.param('chainId'));
 
   try {
     const stats = await contractSourceService.getContractStats(chainId);
 
-    c.header("X-Data-Source", "database");
-    c.header("X-Chain-Name", getChainName(chainId));
+    c.header('X-Data-Source', 'database');
+    c.header('X-Chain-Name', getChainName(chainId));
 
     const responseData = safeJsonResponse({
       chainId,
@@ -34,52 +34,54 @@ app.get("/chains/:chainId/contracts/stats", async (c) => {
     });
 
     return c.json(responseData);
-  } catch (error) {
-    logger.error({ err: error }, "Contract stats API error");
-    return c.json({ error: "Failed to get contract stats" }, 500);
+  }
+  catch (error) {
+    logger.error({ err: error }, 'Contract stats API error');
+    return c.json({ error: 'Failed to get contract stats' }, 500);
   }
 });
 
-app.get("/chains/:chainId/contracts/:address/source", async (c) => {
-  const chainId = getValidatedChainId(c.req.param("chainId"));
-  const address = getValidatedAddress(c.req.param("address"));
-  const refresh = c.req.query("refresh") === "true";
+app.get('/chains/:chainId/contracts/:address/source', async (c) => {
+  const chainId = getValidatedChainId(c.req.param('chainId'));
+  const address = getValidatedAddress(c.req.param('address'));
+  const refresh = c.req.query('refresh') === 'true';
 
   try {
     const contractSource = await contractSourceService.getContractSource(
       chainId,
       address,
-      { skipCache: refresh }
+      { skipCache: refresh },
     );
 
     if (!contractSource) {
       return c.json(
-        { error: "Contract not found or not a contract address" },
-        404
+        { error: 'Contract not found or not a contract address' },
+        404,
       );
     }
 
-    c.header("X-Data-Source", "contract-verification");
-    c.header("X-Chain-Name", getChainName(chainId));
+    c.header('X-Data-Source', 'contract-verification');
+    c.header('X-Chain-Name', getChainName(chainId));
 
     const responseData = safeJsonResponse({
       chainId,
       chainName: getChainName(chainId),
-      address: address,
+      address,
       contractSource,
       timestamp: new Date().toISOString(),
     });
 
     return c.json(responseData);
-  } catch (error) {
-    logger.error({ err: error }, "Contract source API error");
-    return c.json({ error: "Failed to get contract source" }, 500);
+  }
+  catch (error) {
+    logger.error({ err: error }, 'Contract source API error');
+    return c.json({ error: 'Failed to get contract source' }, 500);
   }
 });
 
-app.get("/chains/:chainId/contracts/:address/abi", async (c) => {
-  const chainId = getValidatedChainId(c.req.param("chainId"));
-  const address = getValidatedAddress(c.req.param("address"));
+app.get('/chains/:chainId/contracts/:address/abi', async (c) => {
+  const chainId = getValidatedChainId(c.req.param('chainId'));
+  const address = getValidatedAddress(c.req.param('address'));
 
   try {
     const [contractSource, contractFunctions] = await Promise.all([
@@ -89,13 +91,13 @@ app.get("/chains/:chainId/contracts/:address/abi", async (c) => {
 
     if (!contractSource) {
       return c.json(
-        { error: "Contract not found or not a contract address" },
-        404
+        { error: 'Contract not found or not a contract address' },
+        404,
       );
     }
 
-    c.header("X-Data-Source", "contract-verification");
-    c.header("X-Chain-Name", getChainName(chainId));
+    c.header('X-Data-Source', 'contract-verification');
+    c.header('X-Chain-Name', getChainName(chainId));
 
     const responseData = safeJsonResponse({
       chainId,
@@ -110,20 +112,21 @@ app.get("/chains/:chainId/contracts/:address/abi", async (c) => {
     });
 
     return c.json(responseData);
-  } catch (error) {
-    logger.error({ err: error }, "Contract ABI API error");
-    return c.json({ error: "Failed to get contract ABI" }, 500);
+  }
+  catch (error) {
+    logger.error({ err: error }, 'Contract ABI API error');
+    return c.json({ error: 'Failed to get contract ABI' }, 500);
   }
 });
 
-app.get("/chains/:chainId/contracts/:address/functions", async (c) => {
-  const chainId = getValidatedChainId(c.req.param("chainId"));
-  const address = getValidatedAddress(c.req.param("address"));
+app.get('/chains/:chainId/contracts/:address/functions', async (c) => {
+  const chainId = getValidatedChainId(c.req.param('chainId'));
+  const address = getValidatedAddress(c.req.param('address'));
 
   try {
     const contractSource = await contractSourceService.getContractSource(
       chainId,
-      address
+      address,
     );
 
     let targetABI = contractSource?.abi;
@@ -132,59 +135,60 @@ app.get("/chains/:chainId/contracts/:address/functions", async (c) => {
       targetABI = contractSource.implementationContract.abi;
     }
 
-    const { readFunctions, writeFunctions } =
-      await contractInteractionService.getContractFunctions(
+    const { readFunctions, writeFunctions }
+      = await contractInteractionService.getContractFunctions(
         chainId,
         address,
-        targetABI
+        targetABI,
       );
 
-    c.header("X-Chain-Name", getChainName(chainId));
-    c.header("X-Cache-Control", "public, max-age=300");
+    c.header('X-Chain-Name', getChainName(chainId));
+    c.header('X-Cache-Control', 'public, max-age=300');
 
     const responseData = safeJsonResponse({
       chainId,
       chainName: getChainName(chainId),
-      address: address,
+      address,
       readFunctions,
       writeFunctions,
       timestamp: new Date().toISOString(),
     });
 
     return c.json(responseData);
-  } catch (error) {
-    logger.error({ err: error }, "Contract functions API error");
-    return c.json({ error: "Failed to get contract functions" }, 500);
+  }
+  catch (error) {
+    logger.error({ err: error }, 'Contract functions API error');
+    return c.json({ error: 'Failed to get contract functions' }, 500);
   }
 });
 
-app.post("/chains/:chainId/contracts/:address/read", async (c) => {
-  const chainId = getValidatedChainId(c.req.param("chainId"));
-  const address = getValidatedAddress(c.req.param("address"));
+app.post('/chains/:chainId/contracts/:address/read', async (c) => {
+  const chainId = getValidatedChainId(c.req.param('chainId'));
+  const address = getValidatedAddress(c.req.param('address'));
 
   if (isNaN(chainId) || !isChainSupported(chainId)) {
-    return c.json({ error: "Unsupported chain" }, 400);
+    return c.json({ error: 'Unsupported chain' }, 400);
   }
 
   if (!address || !/^0x[a-fA-F0-9]{40}$/.test(address)) {
-    return c.json({ error: "Invalid contract address" }, 400);
+    return c.json({ error: 'Invalid contract address' }, 400);
   }
 
   try {
     const body = await c.req.json();
     const { functionName, args = [] } = body;
 
-    if (!functionName || typeof functionName !== "string") {
-      return c.json({ error: "Function name is required" }, 400);
+    if (!functionName || typeof functionName !== 'string') {
+      return c.json({ error: 'Function name is required' }, 400);
     }
 
     if (!Array.isArray(args)) {
-      return c.json({ error: "Arguments must be an array" }, 400);
+      return c.json({ error: 'Arguments must be an array' }, 400);
     }
 
     const contractSource = await contractSourceService.getContractSource(
       chainId,
-      address
+      address,
     );
 
     let targetABI = contractSource?.abi;
@@ -194,7 +198,7 @@ app.post("/chains/:chainId/contracts/:address/read", async (c) => {
     }
 
     if (!targetABI) {
-      return c.json({ error: "Contract ABI not available" }, 400);
+      return c.json({ error: 'Contract ABI not available' }, 400);
     }
 
     const result = await contractInteractionService.readContractWithABI({
@@ -205,7 +209,7 @@ app.post("/chains/:chainId/contracts/:address/read", async (c) => {
       abi: targetABI,
     });
 
-    c.header("X-Chain-Name", getChainName(chainId));
+    c.header('X-Chain-Name', getChainName(chainId));
 
     const responseData = safeJsonResponse({
       chainId,
@@ -220,39 +224,40 @@ app.post("/chains/:chainId/contracts/:address/read", async (c) => {
     });
 
     return c.json(responseData, result.success ? 200 : 400);
-  } catch (error) {
-    logger.error({ err: error }, "Read contract API error");
-    return c.json({ error: "Failed to read contract" }, 500);
+  }
+  catch (error) {
+    logger.error({ err: error }, 'Read contract API error');
+    return c.json({ error: 'Failed to read contract' }, 500);
   }
 });
 
-app.post("/chains/:chainId/contracts/:address/simulate", async (c) => {
-  const chainId = getValidatedChainId(c.req.param("chainId"));
-  const address = getValidatedAddress(c.req.param("address"));
+app.post('/chains/:chainId/contracts/:address/simulate', async (c) => {
+  const chainId = getValidatedChainId(c.req.param('chainId'));
+  const address = getValidatedAddress(c.req.param('address'));
 
   if (isNaN(chainId) || !isChainSupported(chainId)) {
-    return c.json({ error: "Unsupported chain" }, 400);
+    return c.json({ error: 'Unsupported chain' }, 400);
   }
 
   if (!address || !/^0x[a-fA-F0-9]{40}$/.test(address)) {
-    return c.json({ error: "Invalid contract address" }, 400);
+    return c.json({ error: 'Invalid contract address' }, 400);
   }
 
   try {
     const body = await c.req.json();
     const { functionName, args = [], value, from } = body;
 
-    if (!functionName || typeof functionName !== "string") {
-      return c.json({ error: "Function name is required" }, 400);
+    if (!functionName || typeof functionName !== 'string') {
+      return c.json({ error: 'Function name is required' }, 400);
     }
 
     if (!Array.isArray(args)) {
-      return c.json({ error: "Arguments must be an array" }, 400);
+      return c.json({ error: 'Arguments must be an array' }, 400);
     }
 
     const contractSource = await contractSourceService.getContractSource(
       chainId,
-      address
+      address,
     );
 
     let targetABI = contractSource?.abi;
@@ -262,7 +267,7 @@ app.post("/chains/:chainId/contracts/:address/simulate", async (c) => {
     }
 
     if (!targetABI) {
-      return c.json({ error: "Contract ABI not available" }, 400);
+      return c.json({ error: 'Contract ABI not available' }, 400);
     }
 
     const result = await contractInteractionService.simulateContractWithABI({
@@ -275,7 +280,7 @@ app.post("/chains/:chainId/contracts/:address/simulate", async (c) => {
       abi: targetABI,
     });
 
-    c.header("X-Chain-Name", getChainName(chainId));
+    c.header('X-Chain-Name', getChainName(chainId));
 
     const responseData = safeJsonResponse({
       chainId,
@@ -293,39 +298,40 @@ app.post("/chains/:chainId/contracts/:address/simulate", async (c) => {
     });
 
     return c.json(responseData, result.success ? 200 : 400);
-  } catch (error) {
-    logger.error({ err: error }, "Simulate contract API error");
-    return c.json({ error: "Failed to simulate contract" }, 500);
+  }
+  catch (error) {
+    logger.error({ err: error }, 'Simulate contract API error');
+    return c.json({ error: 'Failed to simulate contract' }, 500);
   }
 });
 
-app.post("/chains/:chainId/contracts/:address/estimate-gas", async (c) => {
-  const chainId = getValidatedChainId(c.req.param("chainId"));
-  const address = getValidatedAddress(c.req.param("address"));
+app.post('/chains/:chainId/contracts/:address/estimate-gas', async (c) => {
+  const chainId = getValidatedChainId(c.req.param('chainId'));
+  const address = getValidatedAddress(c.req.param('address'));
 
   if (isNaN(chainId) || !isChainSupported(chainId)) {
-    return c.json({ error: "Unsupported chain" }, 400);
+    return c.json({ error: 'Unsupported chain' }, 400);
   }
 
   if (!address || !/^0x[a-fA-F0-9]{40}$/.test(address)) {
-    return c.json({ error: "Invalid contract address" }, 400);
+    return c.json({ error: 'Invalid contract address' }, 400);
   }
 
   try {
     const body = await c.req.json();
     const { functionName, args = [], value, from } = body;
 
-    if (!functionName || typeof functionName !== "string") {
-      return c.json({ error: "Function name is required" }, 400);
+    if (!functionName || typeof functionName !== 'string') {
+      return c.json({ error: 'Function name is required' }, 400);
     }
 
     if (!Array.isArray(args)) {
-      return c.json({ error: "Arguments must be an array" }, 400);
+      return c.json({ error: 'Arguments must be an array' }, 400);
     }
 
     const contractSource = await contractSourceService.getContractSource(
       chainId,
-      address
+      address,
     );
 
     let targetABI = contractSource?.abi;
@@ -335,11 +341,11 @@ app.post("/chains/:chainId/contracts/:address/estimate-gas", async (c) => {
     }
 
     if (!targetABI) {
-      return c.json({ error: "Contract ABI not available" }, 400);
+      return c.json({ error: 'Contract ABI not available' }, 400);
     }
 
-    const gasEstimate =
-      await contractInteractionService.estimateContractGasWithABI({
+    const gasEstimate
+      = await contractInteractionService.estimateContractGasWithABI({
         chainId,
         contractAddress: address,
         functionName,
@@ -349,10 +355,10 @@ app.post("/chains/:chainId/contracts/:address/estimate-gas", async (c) => {
         abi: targetABI,
       });
 
-    c.header("X-Chain-Name", getChainName(chainId));
+    c.header('X-Chain-Name', getChainName(chainId));
 
     if (!gasEstimate) {
-      return c.json({ error: "Failed to estimate gas" }, 400);
+      return c.json({ error: 'Failed to estimate gas' }, 400);
     }
 
     const responseData = safeJsonResponse({
@@ -371,32 +377,33 @@ app.post("/chains/:chainId/contracts/:address/estimate-gas", async (c) => {
     });
 
     return c.json(responseData);
-  } catch (error) {
-    logger.error({ err: error }, "Gas estimation API error");
-    return c.json({ error: "Failed to estimate gas" }, 500);
+  }
+  catch (error) {
+    logger.error({ err: error }, 'Gas estimation API error');
+    return c.json({ error: 'Failed to estimate gas' }, 500);
   }
 });
 
-app.get("/chains/:chainId/contracts/:address/creation", async (c) => {
-  const chainId = getValidatedChainId(c.req.param("chainId"));
-  const address = getValidatedAddress(c.req.param("address"));
+app.get('/chains/:chainId/contracts/:address/creation', async (c) => {
+  const chainId = getValidatedChainId(c.req.param('chainId'));
+  const address = getValidatedAddress(c.req.param('address'));
 
   if (isNaN(chainId) || !isChainSupported(chainId)) {
-    return c.json({ error: "Unsupported chain" }, 400);
+    return c.json({ error: 'Unsupported chain' }, 400);
   }
 
   if (!address || !/^0x[a-fA-F0-9]{40}$/.test(address)) {
-    return c.json({ error: "Invalid contract address" }, 400);
+    return c.json({ error: 'Invalid contract address' }, 400);
   }
 
   try {
     const creationInfo = await contractSourceService.getContractCreationInfo(
       chainId,
-      address
+      address,
     );
 
-    c.header("X-Data-Source", "rpc");
-    c.header("X-Chain-Name", getChainName(chainId));
+    c.header('X-Data-Source', 'rpc');
+    c.header('X-Chain-Name', getChainName(chainId));
 
     if (!creationInfo) {
       return c.json({
@@ -404,7 +411,7 @@ app.get("/chains/:chainId/contracts/:address/creation", async (c) => {
         chainName: getChainName(chainId),
         contractAddress: address,
         found: false,
-        message: "Contract creation information not found",
+        message: 'Contract creation information not found',
         timestamp: new Date().toISOString(),
       });
     }
@@ -426,9 +433,10 @@ app.get("/chains/:chainId/contracts/:address/creation", async (c) => {
     });
 
     return c.json(responseData);
-  } catch (error) {
-    logger.error({ err: error }, "Contract creation info API error");
-    return c.json({ error: "Failed to get contract creation info" }, 500);
+  }
+  catch (error) {
+    logger.error({ err: error }, 'Contract creation info API error');
+    return c.json({ error: 'Failed to get contract creation info' }, 500);
   }
 });
 

@@ -58,7 +58,7 @@ export type DynamicTableSchema = {
   tableName: string;
   columns: TableColumn[];
   indexes: TableIndex[];
-}
+};
 
 // 表列定义
 export type TableColumn = {
@@ -111,7 +111,7 @@ export type PaginationParams = {
   offset?: number;
   cursor?: string;
   direction?: 'asc' | 'desc';
-}
+};
 
 // 分页结果
 export type PaginatedResult<T> = {
@@ -144,7 +144,7 @@ export type EventIndexingConfig = {
   // 监控配置
   metricsEnabled: boolean;
   errorTracking: boolean;
-}
+};
 
 // ABI类型到数据库类型的映射配置
 export type TypeMappingConfig = {
@@ -159,7 +159,7 @@ export type TypeMappingConfig = {
 
   // 自定义类型映射
   customTypes: Record<string, ColumnType>;
-}
+};
 
 // 事件索引错误
 export class EventIndexingError extends Error {
@@ -168,7 +168,7 @@ export class EventIndexingError extends Error {
     public readonly eventName?: string,
     public readonly contractAddress?: `0x${string}`,
     public readonly chainId?: number,
-    public readonly cause?: Error
+    public readonly cause?: Error,
   ) {
     super(message);
     this.name = 'EventIndexingError';
@@ -182,7 +182,7 @@ export class EventDecodingError extends Error {
     public readonly blockHash?: string,
     public readonly logIndex?: number,
     public readonly chainId?: number,
-    public readonly cause?: Error
+    public readonly cause?: Error,
   ) {
     super(message);
     this.name = 'EventDecodingError';
@@ -194,7 +194,7 @@ export class TableCreationError extends Error {
   constructor(
     message: string,
     public readonly tableName: string,
-    public readonly cause?: Error
+    public readonly cause?: Error,
   ) {
     super(message);
     this.name = 'TableCreationError';
@@ -211,7 +211,7 @@ export type EventIndexingStatus = {
   indexingActive: boolean;
   lastIndexedAt: Date;
   errors: EventIndexingError[];
-}
+};
 
 // 多链相关类型定义
 
@@ -224,7 +224,7 @@ export type ChainSpecificConfig = {
   indexingEnabled: boolean;
   maxHistoricalBlocks: number;
   eventBatchSize: number;
-}
+};
 
 // 多链事件索引状态
 export type MultiChainIndexingStatus = {
@@ -237,7 +237,7 @@ export type MultiChainIndexingStatus = {
   indexingProgress: number; // 0-100
   estimatedTimeRemaining?: number; // seconds
   errors: EventIndexingError[];
-}
+};
 
 // 跨链事件查询（用于API聚合，不支持直接跨链查询）
 export type CrossChainEventQuery = {
@@ -246,7 +246,7 @@ export type CrossChainEventQuery = {
     contractAddresses?: Record<number, `0x${string}`[]>; // 按链分组的合约地址
   };
   pagination: PaginationParams;
-}
+};
 
 // 跨链事件结果
 export type CrossChainEventResult = {
@@ -256,7 +256,7 @@ export type CrossChainEventResult = {
   total: number;
   hasMore: boolean;
   errors?: string[];
-}
+};
 
 // 链数据库状态
 export type ChainDatabaseStatus = {
@@ -271,7 +271,7 @@ export type ChainDatabaseStatus = {
   totalEvents: number;
   lastIndexedAt?: Date;
   indexingActive: boolean;
-}
+};
 
 // 多链配置
 export type MultiChainConfig = {
@@ -291,7 +291,7 @@ export type MultiChainConfig = {
 
   // 索引配置
   indexingConfig: EventIndexingConfig;
-}
+};
 
 // 链事件表注册信息
 export type ChainEventTableRegistry = {
@@ -306,7 +306,7 @@ export type ChainEventTableRegistry = {
   updatedAt: Date;
   lastAccessed?: Date;
   eventCount: number;
-}
+};
 
 // 多链统计信息
 export type MultiChainStatistics = {
@@ -323,7 +323,7 @@ export type MultiChainStatistics = {
     databaseSize: number;
     lastIndexedAt?: Date;
   }>;
-}
+};
 
 // 事件索引任务
 export type EventIndexingTask = {
@@ -340,7 +340,7 @@ export type EventIndexingTask = {
   errorCount: number;
   lastError?: string;
   estimatedTimeRemaining?: number;
-}
+};
 
 // 多链事件流管理器
 export type MultiChainEventStreamManager = {
@@ -356,7 +356,7 @@ export type MultiChainEventStreamManager = {
 
   // 处理跨链事件
   handleCrossChainEvents(events: CrossChainEventResult[]): Promise<void>;
-}
+};
 
 // 流状态
 export type StreamStatus = {
@@ -367,7 +367,7 @@ export type StreamStatus = {
   lastEventTime?: Date;
   eventsProcessed: number;
   errors: string[];
-}
+};
 
 // 数据库迁移信息
 export type ChainMigrationInfo = {
@@ -377,7 +377,7 @@ export type ChainMigrationInfo = {
   migrationType: 'schema' | 'data' | 'full';
   status: 'pending' | 'running' | 'completed' | 'failed';
   description: string;
-}
+};
 
 // 多链错误类型
 export class MultiChainError extends Error {
@@ -385,7 +385,7 @@ export class MultiChainError extends Error {
     message: string,
     public readonly chainId?: number,
     public readonly operation?: string,
-    public readonly cause?: Error
+    public readonly cause?: Error,
   ) {
     super(message);
     this.name = 'MultiChainError';
@@ -398,7 +398,7 @@ export class ChainConfigError extends MultiChainError {
     message: string,
     chainId: number,
     public readonly configField?: string,
-    cause?: Error
+    cause?: Error,
   ) {
     super(message, chainId, 'config', cause);
     this.name = 'ChainConfigError';
@@ -411,7 +411,7 @@ export class ChainDatabaseError extends MultiChainError {
     message: string,
     chainId: number,
     public readonly databasePath?: string,
-    cause?: Error
+    cause?: Error,
   ) {
     super(message, chainId, 'database', cause);
     this.name = 'ChainDatabaseError';
@@ -432,7 +432,7 @@ export type EventStatistics = {
   storageSize: number;
   lastIndexedBlock?: number;
   lastIndexedAt?: string;
-}
+};
 
 // 事件数据验证器
 export type EventDataValidator = {
@@ -468,7 +468,7 @@ export type BatchOperation<T> = {
   timeout: number;
   onProgress?: (processed: number, total: number) => void;
   onError?: (error: Error, item: T) => void;
-}
+};
 
 // 事件流处理器
 export type EventStreamProcessor = {
@@ -476,7 +476,7 @@ export type EventStreamProcessor = {
   onEvent?: (event: DecodedEvent) => void;
   onError?: (error: Error, event: DecodedEvent) => void;
   onComplete?: (stats: EventStatistics) => void;
-}
+};
 
 // 解码后的事件
 export type DecodedEvent = {
@@ -504,7 +504,7 @@ export type DecodedEvent = {
   // 处理信息
   indexedAt: Date;
   processingErrors?: string[];
-}
+};
 
 // 默认配置
 export const DEFAULT_EVENT_INDEXING_CONFIG: EventIndexingConfig = {
@@ -524,27 +524,27 @@ export const DEFAULT_EVENT_INDEXING_CONFIG: EventIndexingConfig = {
 // 默认类型映射
 export const DEFAULT_TYPE_MAPPING: TypeMappingConfig = {
   basicTypes: {
-    'uint8': ColumnType.BIGNUM,
-    'uint16': ColumnType.BIGNUM,
-    'uint32': ColumnType.BIGNUM,
-    'uint64': ColumnType.BIGNUM,
-    'uint128': ColumnType.BIGNUM,
-    'uint256': ColumnType.BIGNUM,
-    'int8': ColumnType.BIGNUM,
-    'int16': ColumnType.BIGNUM,
-    'int32': ColumnType.BIGNUM,
-    'int64': ColumnType.BIGNUM,
-    'int128': ColumnType.BIGNUM,
-    'int256': ColumnType.BIGNUM,
-    'bool': ColumnType.BOOLEAN,
-    'address': ColumnType.ADDRESS,
-    'string': ColumnType.TEXT,
-    'bytes': ColumnType.HEX_DATA,
-    'bytes1': ColumnType.HEX_DATA,
-    'bytes4': ColumnType.HEX_DATA,
-    'bytes8': ColumnType.HEX_DATA,
-    'bytes16': ColumnType.HEX_DATA,
-    'bytes32': ColumnType.HASH32,
+    uint8: ColumnType.BIGNUM,
+    uint16: ColumnType.BIGNUM,
+    uint32: ColumnType.BIGNUM,
+    uint64: ColumnType.BIGNUM,
+    uint128: ColumnType.BIGNUM,
+    uint256: ColumnType.BIGNUM,
+    int8: ColumnType.BIGNUM,
+    int16: ColumnType.BIGNUM,
+    int32: ColumnType.BIGNUM,
+    int64: ColumnType.BIGNUM,
+    int128: ColumnType.BIGNUM,
+    int256: ColumnType.BIGNUM,
+    bool: ColumnType.BOOLEAN,
+    address: ColumnType.ADDRESS,
+    string: ColumnType.TEXT,
+    bytes: ColumnType.HEX_DATA,
+    bytes1: ColumnType.HEX_DATA,
+    bytes4: ColumnType.HEX_DATA,
+    bytes8: ColumnType.HEX_DATA,
+    bytes16: ColumnType.HEX_DATA,
+    bytes32: ColumnType.HASH32,
   },
 
   arrayTypes: {
@@ -556,7 +556,7 @@ export const DEFAULT_TYPE_MAPPING: TypeMappingConfig = {
   },
 
   structTypes: {
-    'tuple': ColumnType.TEXT,
+    tuple: ColumnType.TEXT,
   },
 
   customTypes: {},

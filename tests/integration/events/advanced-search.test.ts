@@ -151,7 +151,7 @@ describe('Advanced Search API Integration', () => {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(searchRequest),
-        }
+        },
       );
 
       expect(response.status).toBe(200);
@@ -195,7 +195,7 @@ describe('Advanced Search API Integration', () => {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(searchRequest),
-        }
+        },
       );
 
       expect(response.status).toBe(200);
@@ -234,7 +234,7 @@ describe('Advanced Search API Integration', () => {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(searchRequest),
-        }
+        },
       );
 
       expect(response.status).toBe(200);
@@ -269,7 +269,7 @@ describe('Advanced Search API Integration', () => {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(searchRequest),
-        }
+        },
       );
 
       expect(response.status).toBe(200);
@@ -305,7 +305,7 @@ describe('Advanced Search API Integration', () => {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(searchRequest),
-        }
+        },
       );
 
       expect(response.status).toBe(200);
@@ -336,7 +336,7 @@ describe('Advanced Search API Integration', () => {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(searchRequest),
-        }
+        },
       );
 
       expect(response.status).toBe(200);
@@ -369,7 +369,7 @@ describe('Advanced Search API Integration', () => {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(searchRequest),
-        }
+        },
       );
 
       expect(response.status).toBe(200);
@@ -384,7 +384,8 @@ describe('Advanced Search API Integration', () => {
 
         if (prev.eventName !== curr.eventName) {
           expect(prev.eventName <= curr.eventName).toBe(true);
-        } else {
+        }
+        else {
           expect(prev.blockNumber >= curr.blockNumber).toBe(true);
         }
       }
@@ -407,7 +408,7 @@ describe('Advanced Search API Integration', () => {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(firstRequest),
-        }
+        },
       );
 
       expect(firstResponse.status).toBe(200);
@@ -431,7 +432,7 @@ describe('Advanced Search API Integration', () => {
               'Content-Type': 'application/json',
             },
             body: JSON.stringify(secondRequest),
-          }
+          },
         );
 
         expect(secondResponse.status).toBe(200);
@@ -462,7 +463,7 @@ describe('Advanced Search API Integration', () => {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(searchRequest),
-        }
+        },
       );
 
       expect(response.status).toBe(200);
@@ -495,7 +496,7 @@ describe('Advanced Search API Integration', () => {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(invalidRequest),
-        }
+        },
       );
 
       expect(response.status).toBe(400);
@@ -523,7 +524,7 @@ describe('Advanced Search API Integration', () => {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(searchRequest),
-        }
+        },
       );
 
       expect(response.status).toBe(200);
@@ -547,7 +548,7 @@ describe('Advanced Search API Integration', () => {
             'Content-Type': 'application/json',
           },
           body: 'invalid json',
-        }
+        },
       );
 
       expect(response.status).toBe(400);
@@ -561,7 +562,7 @@ describe('Advanced Search API Integration', () => {
           headers: {
             'Content-Type': 'application/json',
           },
-        }
+        },
       );
 
       expect(response.status).toBe(400);
@@ -583,7 +584,7 @@ describe('Advanced Search API Integration', () => {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(searchRequest),
-        }
+        },
       );
 
       // Should not return 500 for normal operation

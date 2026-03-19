@@ -55,7 +55,7 @@ describe('EventStatistics Component', () => {
         <EventStatistics
           chainId={mockChainId}
           contractAddress={mockContractAddress}
-        />
+        />,
       );
 
       expect(screen.getByText('Loading statistics...')).toBeInTheDocument();
@@ -76,7 +76,7 @@ describe('EventStatistics Component', () => {
         <EventStatistics
           chainId={mockChainId}
           contractAddress={mockContractAddress}
-        />
+        />,
       );
 
       await waitFor(() => {
@@ -103,7 +103,7 @@ describe('EventStatistics Component', () => {
         <EventStatistics
           chainId={mockChainId}
           contractAddress={mockContractAddress}
-        />
+        />,
       );
 
       await waitFor(() => {
@@ -133,7 +133,7 @@ describe('EventStatistics Component', () => {
         <EventStatistics
           chainId={mockChainId}
           contractAddress={mockContractAddress}
-        />
+        />,
       );
 
       await waitFor(() => {
@@ -162,7 +162,7 @@ describe('EventStatistics Component', () => {
         <EventStatistics
           chainId={mockChainId}
           contractAddress={mockContractAddress}
-        />
+        />,
       );
 
       await waitFor(() => {
@@ -193,7 +193,7 @@ describe('EventStatistics Component', () => {
         <EventStatistics
           chainId={mockChainId}
           contractAddress={mockContractAddress}
-        />
+        />,
       );
 
       await waitFor(() => {
@@ -220,7 +220,7 @@ describe('EventStatistics Component', () => {
         <EventStatistics
           chainId={mockChainId}
           contractAddress={mockContractAddress}
-        />
+        />,
       );
 
       await waitFor(() => {
@@ -250,7 +250,7 @@ describe('EventStatistics Component', () => {
         <EventStatistics
           chainId={mockChainId}
           contractAddress={mockContractAddress}
-        />
+        />,
       );
 
       await waitFor(() => {
@@ -275,7 +275,7 @@ describe('EventStatistics Component', () => {
         <EventStatistics
           chainId={mockChainId}
           contractAddress={mockContractAddress}
-        />
+        />,
       );
 
       await waitFor(() => {
@@ -298,7 +298,7 @@ describe('EventStatistics Component', () => {
         <EventStatistics
           chainId={mockChainId}
           contractAddress={mockContractAddress}
-        />
+        />,
       );
 
       await waitFor(() => {
@@ -335,7 +335,7 @@ describe('EventStatistics Component', () => {
           chainId={mockChainId}
           contractAddress={mockContractAddress}
           onRefresh={onRefresh}
-        />
+        />,
       );
 
       await waitFor(() => {
@@ -356,14 +356,14 @@ describe('EventStatistics Component', () => {
         new Promise(resolve => setTimeout(() => resolve({
           ok: true,
           json: async () => mockIndexingStats,
-        }), 100))
+        }), 100)),
       );
 
       render(
         <EventStatistics
           chainId={mockChainId}
           contractAddress={mockContractAddress}
-        />
+        />,
       );
 
       const refreshButton = screen.getByTitle('Refresh indexing status');
@@ -379,7 +379,7 @@ describe('EventStatistics Component', () => {
         <EventStatistics
           chainId={mockChainId}
           contractAddress={mockContractAddress}
-        />
+        />,
       );
 
       await waitFor(() => {
@@ -405,7 +405,7 @@ describe('EventStatistics Component', () => {
         <EventStatistics
           chainId={mockChainId}
           contractAddress={mockContractAddress}
-        />
+        />,
       );
 
       await waitFor(() => {
@@ -432,7 +432,7 @@ describe('EventStatistics Component', () => {
         <EventStatistics
           chainId={mockChainId}
           contractAddress={mockContractAddress}
-        />
+        />,
       );
 
       await waitFor(() => {
@@ -461,7 +461,7 @@ describe('EventStatistics Component', () => {
         <EventStatistics
           chainId={mockChainId}
           contractAddress={mockContractAddress}
-        />
+        />,
       );
 
       await waitFor(() => {
@@ -472,7 +472,7 @@ describe('EventStatistics Component', () => {
             headers: {
               'Content-Type': 'application/json',
             },
-          })
+          }),
         );
 
         expect(fetch).toHaveBeenCalledWith(
@@ -482,7 +482,7 @@ describe('EventStatistics Component', () => {
             headers: {
               'Content-Type': 'application/json',
             },
-          })
+          }),
         );
       });
     });
@@ -504,7 +504,7 @@ describe('EventStatistics Component', () => {
         <EventStatistics
           chainId={mockChainId}
           contractAddress={mockContractAddress}
-        />
+        />,
       );
 
       await waitFor(() => {
@@ -524,7 +524,7 @@ describe('EventStatistics Component', () => {
         <EventStatistics
           chainId={mockChainId}
           contractAddress={mockContractAddress}
-        />
+        />,
       );
 
       await waitFor(() => {
@@ -550,7 +550,7 @@ describe('EventStatistics Component', () => {
         <EventStatistics
           chainId={mockChainId}
           contractAddress={mockContractAddress}
-        />
+        />,
       );
 
       await waitFor(() => {
@@ -562,7 +562,7 @@ describe('EventStatistics Component', () => {
         <EventStatistics
           chainId={mockChainId}
           contractAddress={mockContractAddress}
-        />
+        />,
       );
 
       // Should still show the same data

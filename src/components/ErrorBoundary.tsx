@@ -1,4 +1,4 @@
-import React from "react";
+import React from 'react';
 
 type ErrorBoundaryProps = {
   children: React.ReactNode;
@@ -24,7 +24,7 @@ export class ErrorBoundary extends React.Component<
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
-    console.error("ErrorBoundary caught:", error, errorInfo);
+    console.error('ErrorBoundary caught:', error, errorInfo);
   }
 
   render() {
@@ -34,20 +34,20 @@ export class ErrorBoundary extends React.Component<
       }
 
       return (
-        <div style={{ padding: "2rem", textAlign: "center" }}>
+        <div style={{ padding: '2rem', textAlign: 'center' }}>
           <h2>Something went wrong</h2>
-          <p style={{ color: "#666", marginTop: "0.5rem" }}>
-            {this.state.error?.message ?? "An unexpected error occurred."}
+          <p style={{ color: '#666', marginTop: '0.5rem' }}>
+            {this.state.error?.message ?? 'An unexpected error occurred.'}
           </p>
           <button
             onClick={() => this.setState({ hasError: false, error: null })}
             style={{
-              marginTop: "1rem",
-              padding: "0.5rem 1rem",
-              cursor: "pointer",
-              borderRadius: "4px",
-              border: "1px solid #ccc",
-              background: "#f5f5f5",
+              marginTop: '1rem',
+              padding: '0.5rem 1rem',
+              cursor: 'pointer',
+              borderRadius: '4px',
+              border: '1px solid #ccc',
+              background: '#f5f5f5',
             }}
           >
             Try again

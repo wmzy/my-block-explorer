@@ -38,7 +38,7 @@ export interface SearchActions {
  */
 export function useEventSearch(
   initialEvents: FormattedEventData[] = [],
-  options: UseEventSearchOptions = {}
+  options: UseEventSearchOptions = {},
 ): [SearchState, SearchActions] {
   const {
     enableCache = true,
@@ -50,7 +50,7 @@ export function useEventSearch(
     enableDebounce = true,
     debounceMs = 300,
     enableRealTimeSearch = false,
-    autoSearch = true
+    autoSearch = true,
   } = options;
 
   // State management
@@ -58,7 +58,7 @@ export function useEventSearch(
   const [filters, setFilters] = useState<EventFilters>({});
   const [pagination, setPagination] = useState<PaginationParams>({
     limit: 50,
-    offset: 0
+    offset: 0,
   });
   const [searchState, setSearchState] = useState<SearchState>({
     events: initialEvents,
@@ -67,7 +67,7 @@ export function useEventSearch(
     error: null,
     total: initialEvents.length,
     hasMore: false,
-    searchMetrics: []
+    searchMetrics: [],
   });
 
   // Refs for optimization
@@ -84,7 +84,7 @@ export function useEventSearch(
       maxCacheSize,
       enableClientSideFiltering,
       clientSideThreshold,
-      enablePerformanceMonitoring
+      enablePerformanceMonitoring,
     });
   }, [enableCache, cacheTTL, maxCacheSize, enableClientSideFiltering, clientSideThreshold, enablePerformanceMonitoring]);
 
@@ -93,7 +93,7 @@ export function useEventSearch(
    */
   const performSearch = useCallback(async (
     searchFilters: EventFilters = filters,
-    searchPagination: PaginationParams = pagination
+    searchPagination: PaginationParams = pagination,
   ) => {
     // Cancel previous search if still running
     if (searchAbortControllerRef.current) {
@@ -129,16 +129,16 @@ export function useEventSearch(
         total: result.total,
         hasMore: searchPagination.offset! + result.events.length < result.total,
         loading: false,
-        searchMetrics: result.metrics
+        searchMetrics: result.metrics,
       }));
-
-    } catch (error) {
+    }
+    catch (error) {
       if (abortController.signal.aborted) return;
 
       setSearchState(prev => ({
         ...prev,
         loading: false,
-        error: error instanceof Error ? error.message : 'Search failed'
+        error: error instanceof Error ? error.message : 'Search failed',
       }));
     }
   }, [events, filters, pagination, optimizer, searchState.loading]);
@@ -148,7 +148,7 @@ export function useEventSearch(
    */
   const debouncedSearch = useCallback((
     searchFilters: EventFilters = filters,
-    searchPagination: PaginationParams = pagination
+    searchPagination: PaginationParams = pagination,
   ) => {
     if (debounceTimerRef.current) {
       clearTimeout(debounceTimerRef.current);
@@ -164,14 +164,15 @@ export function useEventSearch(
    */
   const search = useCallback(async (
     newFilters?: EventFilters,
-    newPagination?: PaginationParams
+    newPagination?: PaginationParams,
   ) => {
     const searchFilters = newFilters || filters;
     const searchPagination = newPagination || pagination;
 
     if (enableDebounce && enableRealTimeSearch) {
       debouncedSearch(searchFilters, searchPagination);
-    } else {
+    }
+    else {
       await performSearch(searchFilters, searchPagination);
     }
   }, [filters, pagination, enableDebounce, enableRealTimeSearch, debouncedSearch, performSearch]);
@@ -200,7 +201,8 @@ export function useEventSearch(
     if (autoSearch) {
       if (enableDebounce && enableRealTimeSearch) {
         debouncedSearch(updatedFilters, { ...pagination, offset: 0 });
-      } else {
+      }
+      else {
         search(updatedFilters, { ...pagination, offset: 0 });
       }
     }
@@ -216,7 +218,8 @@ export function useEventSearch(
     if (autoSearch) {
       if (enableDebounce && enableRealTimeSearch) {
         debouncedSearch(filters, updatedPagination);
-      } else {
+      }
+      else {
         search(filters, updatedPagination);
       }
     }
@@ -234,7 +237,7 @@ export function useEventSearch(
       total: events.length,
       hasMore: false,
       loading: false,
-      error: null
+      error: null,
     }));
 
     // Clear debounce timer
@@ -292,7 +295,7 @@ export function useEventSearch(
     updateFilters,
     updatePagination,
     resetSearch,
-    getPerformanceStats
+    getPerformanceStats,
   };
 
   return [searchState, searchActions];
@@ -303,13 +306,13 @@ export function useEventSearch(
  */
 export function useRealTimeEventSearch(
   events: FormattedEventData[],
-  options: UseEventSearchOptions = {}
+  options: UseEventSearchOptions = {},
 ) {
   return useEventSearch(events, {
     ...options,
     enableDebounce: true,
     enableRealTimeSearch: true,
-    debounceMs: options.debounceMs || 200
+    debounceMs: options.debounceMs || 200,
   });
 }
 
@@ -318,7 +321,7 @@ export function useRealTimeEventSearch(
  */
 export function useBatchEventSearch(
   events: FormattedEventData[],
-  options: UseEventSearchOptions = {}
+  options: UseEventSearchOptions = {},
 ) {
   return useEventSearch(events, {
     ...options,
@@ -327,6 +330,6 @@ export function useBatchEventSearch(
     enableCache: true,
     cacheTTL: 600000, // 10 minutes cache for batch operations
     enableDebounce: false,
-    enableRealTimeSearch: false
+    enableRealTimeSearch: false,
   });
 }

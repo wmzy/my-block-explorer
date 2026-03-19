@@ -1,7 +1,7 @@
-import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
-import { MemoryRouter, Routes, Route, Navigate } from "react-router-dom";
-import "@testing-library/jest-dom";
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import { MemoryRouter, Routes, Route, Navigate } from 'react-router-dom';
+import '@testing-library/jest-dom';
 
 const HomePage = () => <div data-testid="home-page">HomePage</div>;
 const BlocksListPage = () => (
@@ -57,68 +57,68 @@ function renderWithRouter(initialEntries: string[]) {
         <Route path="/" element={<Navigate to="/chain/1" replace />} />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
-    </MemoryRouter>
+    </MemoryRouter>,
   );
 }
 
-describe("App Routing", () => {
-  it("renders HomePage for /chain/:chainId", () => {
-    renderWithRouter(["/chain/1"]);
-    expect(screen.getByTestId("home-page")).toBeInTheDocument();
+describe('App Routing', () => {
+  it('renders HomePage for /chain/:chainId', () => {
+    renderWithRouter(['/chain/1']);
+    expect(screen.getByTestId('home-page')).toBeInTheDocument();
   });
 
-  it("renders BlocksListPage for /chain/:chainId/blocks", () => {
-    renderWithRouter(["/chain/1/blocks"]);
-    expect(screen.getByTestId("blocks-list-page")).toBeInTheDocument();
+  it('renders BlocksListPage for /chain/:chainId/blocks', () => {
+    renderWithRouter(['/chain/1/blocks']);
+    expect(screen.getByTestId('blocks-list-page')).toBeInTheDocument();
   });
 
-  it("renders TransactionsListPage for /chain/:chainId/transactions", () => {
-    renderWithRouter(["/chain/1/transactions"]);
-    expect(screen.getByTestId("transactions-list-page")).toBeInTheDocument();
+  it('renders TransactionsListPage for /chain/:chainId/transactions', () => {
+    renderWithRouter(['/chain/1/transactions']);
+    expect(screen.getByTestId('transactions-list-page')).toBeInTheDocument();
   });
 
-  it("renders BlockPage for /chain/:chainId/block/:blockNumber", () => {
-    renderWithRouter(["/chain/1/block/12345"]);
-    expect(screen.getByTestId("block-page")).toBeInTheDocument();
+  it('renders BlockPage for /chain/:chainId/block/:blockNumber', () => {
+    renderWithRouter(['/chain/1/block/12345']);
+    expect(screen.getByTestId('block-page')).toBeInTheDocument();
   });
 
-  it("renders TransactionPage for /chain/:chainId/tx/:txHash", () => {
-    renderWithRouter(["/chain/1/tx/0xabc123"]);
-    expect(screen.getByTestId("transaction-page")).toBeInTheDocument();
+  it('renders TransactionPage for /chain/:chainId/tx/:txHash', () => {
+    renderWithRouter(['/chain/1/tx/0xabc123']);
+    expect(screen.getByTestId('transaction-page')).toBeInTheDocument();
   });
 
-  it("renders AddressPage for /chain/:chainId/address/:address", () => {
-    renderWithRouter(["/chain/1/address/0x1234"]);
-    expect(screen.getByTestId("address-page")).toBeInTheDocument();
+  it('renders AddressPage for /chain/:chainId/address/:address', () => {
+    renderWithRouter(['/chain/1/address/0x1234']);
+    expect(screen.getByTestId('address-page')).toBeInTheDocument();
   });
 
-  it("renders ContractPage for /chain/:chainId/contract/:address", () => {
-    renderWithRouter(["/chain/1/contract/0x1234"]);
-    expect(screen.getByTestId("contract-page")).toBeInTheDocument();
+  it('renders ContractPage for /chain/:chainId/contract/:address', () => {
+    renderWithRouter(['/chain/1/contract/0x1234']);
+    expect(screen.getByTestId('contract-page')).toBeInTheDocument();
   });
 
-  it("renders ContractPage for contract events route", () => {
-    renderWithRouter(["/chain/1/contract/0x1234/events"]);
-    expect(screen.getByTestId("contract-page")).toBeInTheDocument();
+  it('renders ContractPage for contract events route', () => {
+    renderWithRouter(['/chain/1/contract/0x1234/events']);
+    expect(screen.getByTestId('contract-page')).toBeInTheDocument();
   });
 
-  it("renders SearchPage for /search", () => {
-    renderWithRouter(["/search"]);
-    expect(screen.getByTestId("search-page")).toBeInTheDocument();
+  it('renders SearchPage for /search', () => {
+    renderWithRouter(['/search']);
+    expect(screen.getByTestId('search-page')).toBeInTheDocument();
   });
 
-  it("redirects / to /chain/1", () => {
-    renderWithRouter(["/"]);
-    expect(screen.getByTestId("home-page")).toBeInTheDocument();
+  it('redirects / to /chain/1', () => {
+    renderWithRouter(['/']);
+    expect(screen.getByTestId('home-page')).toBeInTheDocument();
   });
 
-  it("renders NotFoundPage for unknown routes", () => {
-    renderWithRouter(["/unknown/path"]);
-    expect(screen.getByTestId("not-found-page")).toBeInTheDocument();
+  it('renders NotFoundPage for unknown routes', () => {
+    renderWithRouter(['/unknown/path']);
+    expect(screen.getByTestId('not-found-page')).toBeInTheDocument();
   });
 
-  it("supports different chain IDs in routes", () => {
-    renderWithRouter(["/chain/137"]);
-    expect(screen.getByTestId("home-page")).toBeInTheDocument();
+  it('supports different chain IDs in routes', () => {
+    renderWithRouter(['/chain/137']);
+    expect(screen.getByTestId('home-page')).toBeInTheDocument();
   });
 });

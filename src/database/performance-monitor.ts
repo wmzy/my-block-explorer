@@ -307,7 +307,7 @@ export class MultiChainPerformanceManager {
     this.globalStats = {
       totalChains: this.monitors.size,
       activeChains: Array.from(this.monitors.values()).filter(
-        monitor => monitor.getAllMetrics().size > 0
+        monitor => monitor.getAllMetrics().size > 0,
       ).length,
       totalEvents: 0, // 需要从实际数据库获取
       totalTables: 0, // 需要从实际数据库获取
@@ -435,10 +435,12 @@ export function monitorPerformance(operation: string) {
       try {
         const result = await method.apply(this, args);
         return result;
-      } catch (error) {
+      }
+      catch (error) {
         success = false;
         throw error;
-      } finally {
+      }
+      finally {
         const endTime = Date.now();
         const duration = endTime - startTime;
 
@@ -457,7 +459,7 @@ export function monitorPerformance(operation: string) {
 export function createMonitoredQuery<T extends any[], R>(
   queryFn: (...args: T) => Promise<R>,
   monitor: ChainPerformanceMonitor,
-  operation: string
+  operation: string,
 ): (...args: T) => Promise<R> {
   return async (...args: T): Promise<R> => {
     const startTime = Date.now();
@@ -466,10 +468,12 @@ export function createMonitoredQuery<T extends any[], R>(
     try {
       const result = await queryFn(...args);
       return result;
-    } catch (error) {
+    }
+    catch (error) {
       success = false;
       throw error;
-    } finally {
+    }
+    finally {
       const endTime = Date.now();
       const duration = endTime - startTime;
       monitor.recordQuery(operation, duration, success);

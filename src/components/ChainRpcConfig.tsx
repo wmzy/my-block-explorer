@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from "react";
-import { css } from "@linaria/core";
-import { Dialog } from "haze-ui";
-import { getChainName } from "../config/chains";
+import React, { useState, useEffect } from 'react';
+import { css } from '@linaria/core';
+import { Dialog } from 'haze-ui';
+import { getChainName } from '../config/chains';
 
 type RpcValidationResult = {
   connected: boolean;
@@ -232,14 +232,14 @@ export default function ChainRpcConfig({
   chainId,
   onConfigSaved,
 }: Props) {
-  const [rpcUrl, setRpcUrl] = useState("");
+  const [rpcUrl, setRpcUrl] = useState('');
   const [maxEventBlockRange, setMaxEventBlockRange] = useState(10000);
   const [validation, setValidation] = useState<RpcValidationResult | null>(
-    null
+    null,
   );
   const [isValidating, setIsValidating] = useState(false);
   const [currentConfig, setCurrentConfig] = useState<ChainRpcConfig | null>(
-    null
+    null,
   );
 
   const chainName = getChainName(chainId);
@@ -258,22 +258,24 @@ export default function ChainRpcConfig({
         setCurrentConfig(config);
         setRpcUrl(config.url);
         setMaxEventBlockRange(config.maxEventBlockRange);
-      } else {
+      }
+      else {
         // 设置默认值
         const defaultUrls: Record<number, string> = {
-          1: "https://eth.llamarpc.com",
-          137: "https://polygon.llamarpc.com",
-          42161: "https://arbitrum.llamarpc.com",
-          10: "https://optimism.llamarpc.com",
-          8453: "https://base.llamarpc.com",
-          5000: "https://rpc.mantle.xyz",
-          11155111: "https://ethereum-sepolia.publicnode.com",
+          1: 'https://eth.llamarpc.com',
+          137: 'https://polygon.llamarpc.com',
+          42161: 'https://arbitrum.llamarpc.com',
+          10: 'https://optimism.llamarpc.com',
+          8453: 'https://base.llamarpc.com',
+          5000: 'https://rpc.mantle.xyz',
+          11155111: 'https://ethereum-sepolia.publicnode.com',
         };
-        setRpcUrl(defaultUrls[chainId] || "");
+        setRpcUrl(defaultUrls[chainId] || '');
         setMaxEventBlockRange(10000);
       }
-    } catch (error) {
-      console.error("Failed to load RPC config:", error);
+    }
+    catch (error) {
+      console.error('Failed to load RPC config:', error);
     }
   };
 
@@ -288,11 +290,11 @@ export default function ChainRpcConfig({
 
       // 1. 测试基本连接和链ID
       const chainIdResponse = await fetch(rpcUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          jsonrpc: "2.0",
-          method: "eth_chainId",
+          jsonrpc: '2.0',
+          method: 'eth_chainId',
           params: [],
           id: 1,
         }),
@@ -301,7 +303,7 @@ export default function ChainRpcConfig({
 
       if (!chainIdResponse.ok) {
         throw new Error(
-          `HTTP ${chainIdResponse.status}: ${chainIdResponse.statusText}`
+          `HTTP ${chainIdResponse.status}: ${chainIdResponse.statusText}`,
         );
       }
 
@@ -319,11 +321,11 @@ export default function ChainRpcConfig({
       let supportsHistoricalData = false;
       try {
         const blockNumber = await fetch(rpcUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            jsonrpc: "2.0",
-            method: "eth_blockNumber",
+            jsonrpc: '2.0',
+            method: 'eth_blockNumber',
             params: [],
             id: 2,
           }),
@@ -335,33 +337,34 @@ export default function ChainRpcConfig({
           const testBlock = Math.max(1, currentBlock - 1000); // 测试1000个区块前的数据
 
           const historicalTest = await fetch(rpcUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              jsonrpc: "2.0",
-              method: "eth_getBlockByNumber",
+              jsonrpc: '2.0',
+              method: 'eth_getBlockByNumber',
               params: [`0x${testBlock.toString(16)}`, false],
               id: 3,
             }),
           });
 
           const historicalData = await historicalTest.json();
-          supportsHistoricalData =
-            !historicalData.error && historicalData.result !== null;
+          supportsHistoricalData
+            = !historicalData.error && historicalData.result !== null;
         }
-      } catch (error) {
-        console.warn("Historical data test failed:", error);
+      }
+      catch (error) {
+        console.warn('Historical data test failed:', error);
       }
 
       // 3. 测试事件查询范围
       let maxEventRange: number | null = null;
       try {
         const blockNumber = await fetch(rpcUrl, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            jsonrpc: "2.0",
-            method: "eth_blockNumber",
+            jsonrpc: '2.0',
+            method: 'eth_blockNumber',
             params: [],
             id: 4,
           }),
@@ -376,17 +379,17 @@ export default function ChainRpcConfig({
             try {
               const fromBlock = Math.max(1, currentBlock - range);
               const eventTest = await fetch(rpcUrl, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                  jsonrpc: "2.0",
-                  method: "eth_getLogs",
+                  jsonrpc: '2.0',
+                  method: 'eth_getLogs',
                   params: [
                     {
                       fromBlock: `0x${fromBlock.toString(16)}`,
                       toBlock: `0x${currentBlock.toString(16)}`,
                       topics: [
-                        "0x0000000000000000000000000000000000000000000000000000000000000000",
+                        '0x0000000000000000000000000000000000000000000000000000000000000000',
                       ], // 不存在的topic
                     },
                   ],
@@ -400,13 +403,15 @@ export default function ChainRpcConfig({
                 maxEventRange = range;
                 break;
               }
-            } catch (error) {
+            }
+            catch (error) {
               continue;
             }
           }
         }
-      } catch (error) {
-        console.warn("Event range test failed:", error);
+      }
+      catch (error) {
+        console.warn('Event range test failed:', error);
       }
 
       setValidation({
@@ -416,9 +421,10 @@ export default function ChainRpcConfig({
         maxEventRange,
         latency,
       });
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
+    }
+    catch (error) {
+      const errorMessage
+        = error instanceof Error ? error.message : String(error);
       setValidation({
         connected: false,
         chainIdMatch: false,
@@ -427,7 +433,8 @@ export default function ChainRpcConfig({
         latency: 0,
         error: errorMessage,
       });
-    } finally {
+    }
+    finally {
       setIsValidating(false);
     }
   };
@@ -447,149 +454,161 @@ export default function ChainRpcConfig({
       localStorage.setItem(`rpc-config-${chainId}`, JSON.stringify(config));
       onConfigSaved?.();
       onClose();
-    } catch (error) {
-      console.error("Failed to save RPC config:", error);
+    }
+    catch (error) {
+      console.error('Failed to save RPC config:', error);
     }
   };
 
   return (
     <Dialog open={isOpen} onClose={onClose} className={modalStyles}>
-        <div className={headerStyles}>
-          <div>
-            <h2>配置 {chainName} RPC 节点</h2>
-            <div className="chain-info">Chain ID: {chainId}</div>
+      <div className={headerStyles}>
+        <div>
+          <h2>
+            配置
+            {chainName}
+            {' '}
+            RPC 节点
+          </h2>
+          <div className="chain-info">
+            Chain ID:
+            {chainId}
           </div>
-          <button className={closeButtonStyles} onClick={onClose}>
-            ×
+        </div>
+        <button className={closeButtonStyles} onClick={onClose}>
+          ×
+        </button>
+      </div>
+
+      <div className={contentStyles}>
+        <div className={formStyles}>
+          <div className="form-group">
+            <label>RPC URL</label>
+            <input
+              type="url"
+              value={rpcUrl}
+              onChange={e => setRpcUrl(e.target.value)}
+              placeholder="https://..."
+              className={validation?.error ? 'error' : ''}
+            />
+            <div className="help-text">
+              请输入支持
+              {' '}
+              {chainName}
+              {' '}
+              的 RPC
+              节点地址。建议使用支持历史数据查询的专业服务商。
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label>最大事件查询区块范围</label>
+            <input
+              type="number"
+              value={maxEventBlockRange}
+              onChange={e =>
+                setMaxEventBlockRange(parseInt(e.target.value) || 1000)}
+              min="100"
+              max="100000"
+            />
+            <div className="help-text">
+              单次事件查询的最大区块范围。不同RPC节点有不同限制，一般在1000-10000之间。
+            </div>
+          </div>
+
+          <div>
+            <button
+              className={`${buttonStyles} secondary`}
+              onClick={validateRpc}
+              disabled={!rpcUrl || isValidating}
+              style={{ width: '100%' }}
+            >
+              {isValidating ? '验证中...' : '验证 RPC 节点'}
+            </button>
+          </div>
+
+          {validation && (
+            <div className={validationStyles}>
+              <div className="validation-title">验证结果</div>
+
+              <div
+                className={`validation-item ${validation.connected ? 'success' : 'error'}`}
+              >
+                <span className="status">
+                  {validation.connected ? '✅' : '❌'}
+                </span>
+                <span className="label">连接状态</span>
+                <span className="value">
+                  {validation.connected
+                    ? `已连接 (${validation.latency}ms)`
+                    : '连接失败'}
+                </span>
+              </div>
+
+              <div
+                className={`validation-item ${validation.chainIdMatch ? 'success' : 'error'}`}
+              >
+                <span className="status">
+                  {validation.chainIdMatch ? '✅' : '❌'}
+                </span>
+                <span className="label">链 ID 匹配</span>
+                <span className="value">
+                  {validation.chainIdMatch
+                    ? '正确'
+                    : `错误 (期望: ${chainId})`}
+                </span>
+              </div>
+
+              <div
+                className={`validation-item ${validation.supportsHistoricalData ? 'success' : 'error'}`}
+              >
+                <span className="status">
+                  {validation.supportsHistoricalData ? '✅' : '❌'}
+                </span>
+                <span className="label">历史数据支持</span>
+                <span className="value">
+                  {validation.supportsHistoricalData ? '支持' : '不支持'}
+                </span>
+              </div>
+
+              <div
+                className={`validation-item ${validation.maxEventRange ? 'success' : 'error'}`}
+              >
+                <span className="status">
+                  {validation.maxEventRange ? '✅' : '❌'}
+                </span>
+                <span className="label">事件查询范围</span>
+                <span className="value">
+                  {validation.maxEventRange
+                    ? `${validation.maxEventRange} 区块`
+                    : '不支持'}
+                </span>
+              </div>
+
+              {validation.error && (
+                <div className="validation-item error">
+                  <span className="status">❌</span>
+                  <span className="label">错误信息</span>
+                  <span className="value">{validation.error}</span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className={actionsStyles}>
+          <button className={`${buttonStyles} secondary`} onClick={onClose}>
+            取消
+          </button>
+          <button
+            className={`${buttonStyles} primary`}
+            onClick={saveConfig}
+            disabled={!validation?.connected || !validation?.chainIdMatch}
+          >
+            保存配置
           </button>
         </div>
-
-        <div className={contentStyles}>
-          <div className={formStyles}>
-            <div className="form-group">
-              <label>RPC URL</label>
-              <input
-                type="url"
-                value={rpcUrl}
-                onChange={(e) => setRpcUrl(e.target.value)}
-                placeholder="https://..."
-                className={validation?.error ? "error" : ""}
-              />
-              <div className="help-text">
-                请输入支持 {chainName} 的 RPC
-                节点地址。建议使用支持历史数据查询的专业服务商。
-              </div>
-            </div>
-
-            <div className="form-group">
-              <label>最大事件查询区块范围</label>
-              <input
-                type="number"
-                value={maxEventBlockRange}
-                onChange={(e) =>
-                  setMaxEventBlockRange(parseInt(e.target.value) || 1000)
-                }
-                min="100"
-                max="100000"
-              />
-              <div className="help-text">
-                单次事件查询的最大区块范围。不同RPC节点有不同限制，一般在1000-10000之间。
-              </div>
-            </div>
-
-            <div>
-              <button
-                className={`${buttonStyles} secondary`}
-                onClick={validateRpc}
-                disabled={!rpcUrl || isValidating}
-                style={{ width: "100%" }}
-              >
-                {isValidating ? "验证中..." : "验证 RPC 节点"}
-              </button>
-            </div>
-
-            {validation && (
-              <div className={validationStyles}>
-                <div className="validation-title">验证结果</div>
-
-                <div
-                  className={`validation-item ${validation.connected ? "success" : "error"}`}
-                >
-                  <span className="status">
-                    {validation.connected ? "✅" : "❌"}
-                  </span>
-                  <span className="label">连接状态</span>
-                  <span className="value">
-                    {validation.connected
-                      ? `已连接 (${validation.latency}ms)`
-                      : "连接失败"}
-                  </span>
-                </div>
-
-                <div
-                  className={`validation-item ${validation.chainIdMatch ? "success" : "error"}`}
-                >
-                  <span className="status">
-                    {validation.chainIdMatch ? "✅" : "❌"}
-                  </span>
-                  <span className="label">链 ID 匹配</span>
-                  <span className="value">
-                    {validation.chainIdMatch
-                      ? "正确"
-                      : `错误 (期望: ${chainId})`}
-                  </span>
-                </div>
-
-                <div
-                  className={`validation-item ${validation.supportsHistoricalData ? "success" : "error"}`}
-                >
-                  <span className="status">
-                    {validation.supportsHistoricalData ? "✅" : "❌"}
-                  </span>
-                  <span className="label">历史数据支持</span>
-                  <span className="value">
-                    {validation.supportsHistoricalData ? "支持" : "不支持"}
-                  </span>
-                </div>
-
-                <div
-                  className={`validation-item ${validation.maxEventRange ? "success" : "error"}`}
-                >
-                  <span className="status">
-                    {validation.maxEventRange ? "✅" : "❌"}
-                  </span>
-                  <span className="label">事件查询范围</span>
-                  <span className="value">
-                    {validation.maxEventRange
-                      ? `${validation.maxEventRange} 区块`
-                      : "不支持"}
-                  </span>
-                </div>
-
-                {validation.error && (
-                  <div className="validation-item error">
-                    <span className="status">❌</span>
-                    <span className="label">错误信息</span>
-                    <span className="value">{validation.error}</span>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          <div className={actionsStyles}>
-            <button className={`${buttonStyles} secondary`} onClick={onClose}>
-              取消
-            </button>
-            <button
-              className={`${buttonStyles} primary`}
-              onClick={saveConfig}
-              disabled={!validation?.connected || !validation?.chainIdMatch}
-            >
-              保存配置
-            </button>
-          </div>
-        </div>
+      </div>
     </Dialog>
   );
 }

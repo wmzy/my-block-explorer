@@ -58,7 +58,7 @@ export class EventSearchOptimizer {
   async searchEvents(
     events: FormattedEventData[],
     filters: EventFilters,
-    pagination: PaginationParams
+    pagination: PaginationParams,
   ): Promise<{
     events: FormattedEventData[];
     total: number;
@@ -80,7 +80,7 @@ export class EventSearchOptimizer {
             dataSize: cachedResult.data.length,
             cacheHit: true,
             memoryUsage: this.estimateMemoryUsage(cachedResult.data),
-            algorithm: 'cache'
+            algorithm: 'cache',
           };
           metrics.push(cacheMetric);
 
@@ -91,7 +91,7 @@ export class EventSearchOptimizer {
           return {
             events: cachedResult.data,
             total: cachedResult.total,
-            metrics
+            metrics,
           };
         }
       }
@@ -112,9 +112,10 @@ export class EventSearchOptimizer {
             dataSize: events.length,
             cacheHit: false,
             memoryUsage: this.estimateMemoryUsage(filteredEvents),
-            algorithm: 'client-side'
+            algorithm: 'client-side',
           };
-        } else {
+        }
+        else {
           // For large datasets, we'd typically delegate to server-side filtering
           // For now, we'll still use client-side but with optimizations
           filteredEvents = this.optimizedClientSideFilter(events, filters);
@@ -124,7 +125,7 @@ export class EventSearchOptimizer {
             dataSize: events.length,
             cacheHit: false,
             memoryUsage: this.estimateMemoryUsage(filteredEvents),
-            algorithm: 'optimized-client-side'
+            algorithm: 'optimized-client-side',
           };
         }
 
@@ -143,7 +144,7 @@ export class EventSearchOptimizer {
         dataSize: filteredEvents.length,
         cacheHit: false,
         memoryUsage: this.estimateMemoryUsage(paginatedEvents),
-        algorithm: 'slice'
+        algorithm: 'slice',
       };
 
       if (this.options.enablePerformanceMonitoring) {
@@ -164,23 +165,23 @@ export class EventSearchOptimizer {
         dataSize: events.length,
         cacheHit: false,
         memoryUsage: this.estimateMemoryUsage(paginatedEvents),
-        algorithm: 'complete-search'
+        algorithm: 'complete-search',
       };
 
       return {
         events: paginatedEvents,
         total: filteredEvents.length,
-        metrics: [...metrics, totalMetric]
+        metrics: [...metrics, totalMetric],
       };
-
-    } catch (error) {
+    }
+    catch (error) {
       const errorMetric: SearchPerformanceMetrics = {
         operation: 'api',
         executionTime: performance.now() - startTime,
         dataSize: events.length,
         cacheHit: false,
         memoryUsage: 0,
-        algorithm: 'error'
+        algorithm: 'error',
       };
 
       if (this.options.enablePerformanceMonitoring) {
@@ -325,7 +326,7 @@ export class EventSearchOptimizer {
 
     return {
       ...cached,
-      data: [...cached.data] // Return a copy
+      data: [...cached.data], // Return a copy
     };
   }
 
@@ -337,7 +338,7 @@ export class EventSearchOptimizer {
     data: FormattedEventData[],
     total: number,
     filters: EventFilters,
-    pagination: PaginationParams
+    pagination: PaginationParams,
   ): void {
     // Check cache size limit
     if (this.cache.size >= this.options.maxCacheSize) {
@@ -352,7 +353,7 @@ export class EventSearchOptimizer {
       timestamp: Date.now(),
       ttl: this.options.cacheTTL,
       filters: { ...filters },
-      pagination: { ...pagination }
+      pagination: { ...pagination },
     });
   }
 
@@ -406,12 +407,12 @@ export class EventSearchOptimizer {
       avgDataSize: number;
     }> = {};
 
-    this.performanceMetrics.forEach(metric => {
+    this.performanceMetrics.forEach((metric) => {
       if (!operationBreakdown[metric.operation]) {
         operationBreakdown[metric.operation] = {
           count: 0,
           avgTime: 0,
-          avgDataSize: 0
+          avgDataSize: 0,
         };
       }
 
@@ -427,7 +428,7 @@ export class EventSearchOptimizer {
       maxSize: this.options.maxCacheSize,
       hitRate: totalOps > 0 ? cacheHits / totalOps : 0,
       memoryUsage: Array.from(this.cache.values())
-        .reduce((total, entry) => total + this.estimateMemoryUsage(entry.data), 0)
+        .reduce((total, entry) => total + this.estimateMemoryUsage(entry.data), 0),
     };
 
     return {
@@ -435,7 +436,7 @@ export class EventSearchOptimizer {
       averageExecutionTime: totalOps > 0 ? totalTime / totalOps : 0,
       cacheHitRate: totalOps > 0 ? cacheHits / totalOps : 0,
       operationBreakdown,
-      cacheStats
+      cacheStats,
     };
   }
 
@@ -453,7 +454,7 @@ export class EventSearchOptimizer {
   optimizeSearchParameters(
     filters: EventFilters,
     pagination: PaginationParams,
-    totalEvents: number
+    totalEvents: number,
   ): {
     optimizedFilters: EventFilters;
     optimizedPagination: PaginationParams;
@@ -464,15 +465,17 @@ export class EventSearchOptimizer {
 
     if (totalEvents <= this.options.clientSideThreshold) {
       strategy = 'client-side';
-    } else if (Object.keys(filters).length === 0 && pagination.limit! >= 1000) {
+    }
+    else if (Object.keys(filters).length === 0 && pagination.limit >= 1000) {
       strategy = 'server-side';
-    } else {
+    }
+    else {
       strategy = 'hybrid';
     }
 
     // Optimize pagination
     const optimizedPagination = { ...pagination };
-    if (strategy === 'client-side' && pagination.limit! > totalEvents) {
+    if (strategy === 'client-side' && pagination.limit > totalEvents) {
       optimizedPagination.limit = totalEvents;
     }
 
@@ -480,9 +483,9 @@ export class EventSearchOptimizer {
     const optimizedFilters = { ...filters };
 
     // Remove redundant filters
-    if (optimizedFilters.fromBlock !== undefined &&
-        optimizedFilters.toBlock !== undefined &&
-        Number(optimizedFilters.fromBlock) > Number(optimizedFilters.toBlock)) {
+    if (optimizedFilters.fromBlock !== undefined
+      && optimizedFilters.toBlock !== undefined
+      && Number(optimizedFilters.fromBlock) > Number(optimizedFilters.toBlock)) {
       delete optimizedFilters.fromBlock;
       delete optimizedFilters.toBlock;
     }
@@ -490,7 +493,7 @@ export class EventSearchOptimizer {
     return {
       optimizedFilters,
       optimizedPagination,
-      strategy
+      strategy,
     };
   }
 }
@@ -505,7 +508,7 @@ export async function searchEventsOptimized(
   events: FormattedEventData[],
   filters: EventFilters,
   pagination: PaginationParams,
-  options?: SearchOptimizationOptions
+  options?: SearchOptimizationOptions,
 ): Promise<{
   events: FormattedEventData[];
   total: number;

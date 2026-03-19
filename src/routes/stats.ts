@@ -1,30 +1,30 @@
-import { Hono } from "hono";
-import { createLogger } from "../server/logger";
-import { blockService } from "../services/BlockService";
-import { transactionService } from "../services/TransactionService";
-import { rpcManager } from "../services/RpcManager";
+import { Hono } from 'hono';
+import { createLogger } from '../server/logger';
+import { blockService } from '../services/BlockService';
+import { transactionService } from '../services/TransactionService';
+import { rpcManager } from '../services/RpcManager';
 import {
   getChainName,
   getChainSymbol,
   POPULAR_CHAINS,
   getSupportedChainIds,
-} from "../config/chains";
+} from '../config/chains';
 
-const logger = createLogger("stats-routes");
+const logger = createLogger('stats-routes');
 
 const RPC_TIMEOUT_MS = 3000;
 
 const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T | null> =>
   Promise.race([
     promise,
-    new Promise<null>((resolve) => setTimeout(() => resolve(null), ms)),
+    new Promise<null>(resolve => setTimeout(() => resolve(null), ms)),
   ]);
 
 const app = new Hono();
 
-app.get("/stats/overview", async (c) => {
+app.get('/stats/overview', async (c) => {
   try {
-    const popularChainIds = POPULAR_CHAINS.map((chain) => chain.id);
+    const popularChainIds = POPULAR_CHAINS.map(chain => chain.id);
     const chainStats = [];
 
     const results = await Promise.all(
@@ -46,8 +46,8 @@ app.get("/stats/overview", async (c) => {
             withTimeout(
               rpcManager
                 .getClient(chainId)
-                .then((client) => client.getBlockNumber()),
-              RPC_TIMEOUT_MS
+                .then(client => client.getBlockNumber()),
+              RPC_TIMEOUT_MS,
             ).catch(() => null),
           ]);
 
@@ -64,10 +64,11 @@ app.get("/stats/overview", async (c) => {
             successRate: txStats.successRate,
             rpcConnected: rpcBlockNumber !== null,
           };
-        } catch (error) {
+        }
+        catch (error) {
           logger.warn(
             { err: error, chainId },
-            "Failed to get stats for chain"
+            'Failed to get stats for chain',
           );
           return {
             chainId,
@@ -83,23 +84,23 @@ app.get("/stats/overview", async (c) => {
             rpcConnected: false,
           };
         }
-      })
+      }),
     );
 
     chainStats.push(...results);
 
-    const connectedChains = chainStats.filter((ch) => ch.rpcConnected).length;
-    const indexedChains = chainStats.filter((ch) => ch.isIndexed).length;
+    const connectedChains = chainStats.filter(ch => ch.rpcConnected).length;
+    const indexedChains = chainStats.filter(ch => ch.isIndexed).length;
     const totalIndexedBlocks = chainStats.reduce(
       (sum, ch) => sum + ch.indexedBlocks,
-      0
+      0,
     );
     const totalIndexedTransactions = chainStats.reduce(
       (sum, ch) => sum + ch.indexedTransactions,
-      0
+      0,
     );
 
-    c.header("X-Data-Source", "hybrid");
+    c.header('X-Data-Source', 'hybrid');
 
     return c.json({
       supportedChains: getSupportedChainIds().length,
@@ -111,9 +112,10 @@ app.get("/stats/overview", async (c) => {
       chains: chainStats,
       timestamp: new Date().toISOString(),
     });
-  } catch (error) {
-    logger.error({ err: error }, "Stats overview API error");
-    return c.json({ error: "Failed to get stats overview" }, 500);
+  }
+  catch (error) {
+    logger.error({ err: error }, 'Stats overview API error');
+    return c.json({ error: 'Failed to get stats overview' }, 500);
   }
 });
 

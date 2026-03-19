@@ -6,7 +6,7 @@
 import { createLogger } from '../server/logger';
 import { duckdbTable, primaryKey, unique } from '../database/db-types';
 
-const logger = createLogger("dynamic-table-manager");
+const logger = createLogger('dynamic-table-manager');
 import { db } from '../database/init';
 import { sql } from 'drizzle-orm';
 import {
@@ -42,7 +42,7 @@ class DefaultTableNamingStrategy implements TableNamingStrategy {
     chainId: number,
     contractAddress: string,
     eventSignature: string,
-    config: EventIndexingConfig
+    config: EventIndexingConfig,
   ): string {
     // 截取合约地址的前8位
     const shortAddress = contractAddress.slice(2, 10);
@@ -71,7 +71,7 @@ export class DynamicTableManager {
 
   constructor(
     config: Partial<EventIndexingConfig> = {},
-    typeMapping: Partial<TypeMappingConfig> = {}
+    typeMapping: Partial<TypeMappingConfig> = {},
   ) {
     this.namingStrategy = new DefaultTableNamingStrategy();
     this.config = { ...DEFAULT_EVENT_INDEXING_CONFIG, ...config };
@@ -86,14 +86,14 @@ export class DynamicTableManager {
     chainId: number,
     contractAddress: string,
     eventParams: EventParameter[],
-    eventSignature: string
+    eventSignature: string,
   ): Promise<string> {
     try {
       const tableName = this.namingStrategy.generateTableName(
         chainId,
         contractAddress,
         eventSignature,
-        this.config
+        this.config,
       );
 
       // 检查表是否已存在
@@ -106,7 +106,7 @@ export class DynamicTableManager {
         tableName,
         chainId,
         contractAddress,
-        eventParams
+        eventParams,
       );
 
       // 创建表
@@ -118,15 +118,16 @@ export class DynamicTableManager {
       }
 
       this.createdTables.add(tableName);
-      logger.info({ tableName }, "Created event table");
+      logger.info({ tableName }, 'Created event table');
 
       return tableName;
-    } catch (error) {
+    }
+    catch (error) {
       const creationError = error instanceof Error ? error : new Error(String(error));
       throw new TableCreationError(
         `Failed to create table for event: ${creationError.message}`,
         `${this.config.tableNamePrefix}_${chainId}_${contractAddress}`,
-        creationError
+        creationError,
       );
     }
   }
@@ -137,10 +138,11 @@ export class DynamicTableManager {
   async tableExists(tableName: string): Promise<boolean> {
     try {
       const result = await db.execute(
-        sql`SELECT table_name FROM information_schema.tables WHERE table_name = ${tableName}`
+        sql`SELECT table_name FROM information_schema.tables WHERE table_name = ${tableName}`,
       );
       return result.length > 0;
-    } catch {
+    }
+    catch {
       return false;
     }
   }
@@ -153,7 +155,7 @@ export class DynamicTableManager {
       const result = await db.execute(
         sql`SELECT column_name, data_type, is_nullable, column_default
             FROM information_schema.columns
-            WHERE table_name = ${tableName}`
+            WHERE table_name = ${tableName}`,
       );
 
       return result.map((row: Record<string, unknown>) => ({
@@ -162,7 +164,8 @@ export class DynamicTableManager {
         nullable: row.is_nullable === 'YES',
         defaultValue: row.column_default as string | undefined,
       }));
-    } catch (error) {
+    }
+    catch (error) {
       throw new Error(`Failed to get table schema for ${tableName}: ${error}`);
     }
   }
@@ -174,8 +177,9 @@ export class DynamicTableManager {
     try {
       await db.execute(sql`DROP TABLE IF EXISTS ${tableName}`);
       this.createdTables.delete(tableName);
-      logger.info({ tableName }, "Dropped table");
-    } catch (error) {
+      logger.info({ tableName }, 'Dropped table');
+    }
+    catch (error) {
       throw new Error(`Failed to drop table ${tableName}: ${error}`);
     }
   }
@@ -192,7 +196,7 @@ export class DynamicTableManager {
     try {
       const prefix = `${this.config.tableNamePrefix}_%`;
       const tables = await db.execute(
-        sql`SELECT table_name AS name FROM information_schema.tables WHERE table_name LIKE ${prefix}`
+        sql`SELECT table_name AS name FROM information_schema.tables WHERE table_name LIKE ${prefix}`,
       );
 
       for (const table of tables) {
@@ -200,7 +204,7 @@ export class DynamicTableManager {
 
         // 检查表的最旧记录
         const oldestRecord = await db.execute(
-          sql`SELECT MIN(indexedAt) as oldest FROM ${tableName}`
+          sql`SELECT MIN(indexedAt) as oldest FROM ${tableName}`,
         );
 
         if (oldestRecord.length > 0 && oldestRecord[0].oldest) {
@@ -213,10 +217,11 @@ export class DynamicTableManager {
         }
       }
 
-      logger.info({ count: cleanedTables.length }, "Cleaned up old tables");
+      logger.info({ count: cleanedTables.length }, 'Cleaned up old tables');
       return cleanedTables;
-    } catch (error) {
-      logger.error({ err: error }, "Failed to cleanup old tables");
+    }
+    catch (error) {
+      logger.error({ err: error }, 'Failed to cleanup old tables');
       return [];
     }
   }
@@ -230,7 +235,7 @@ export class DynamicTableManager {
       contractAddress: string;
       eventParams: EventParameter[];
       eventSignature: string;
-    }>
+    }>,
   ): Promise<string[]> {
     const tableNames: string[] = [];
     const errors: Error[] = [];
@@ -241,20 +246,21 @@ export class DynamicTableManager {
           definition.chainId,
           definition.contractAddress,
           definition.eventParams,
-          definition.eventSignature
+          definition.eventSignature,
         );
         tableNames.push(tableName);
-      } catch (error) {
+      }
+      catch (error) {
         errors.push(error as Error);
         logger.error(
           { err: error, eventSignature: definition.eventSignature },
-          "Failed to create table for event"
+          'Failed to create table for event',
         );
       }
     }
 
     if (errors.length > 0) {
-      logger.warn({ tableCount: tableNames.length, errorCount: errors.length }, "Created tables with errors");
+      logger.warn({ tableCount: tableNames.length, errorCount: errors.length }, 'Created tables with errors');
     }
 
     return tableNames;
@@ -267,7 +273,7 @@ export class DynamicTableManager {
     tableName: string,
     chainId: number,
     contractAddress: string,
-    eventParams: EventParameter[]
+    eventParams: EventParameter[],
   ): DynamicTableSchema {
     const columns: TableColumn[] = [
       // 通用字段
@@ -426,7 +432,7 @@ export class DynamicTableManager {
     // 为indexed参数创建索引
     eventParams
       .filter(param => param.indexed)
-      .forEach(param => {
+      .forEach((param) => {
         const columnName = this.sanitizeColumnName(param.name);
         indexes.push({
           name: `idx_${tableName}_${columnName}`,
@@ -467,10 +473,10 @@ export class DynamicTableManager {
     const indexes: TableIndex[] = [];
 
     // Transfer事件索引
-    if (eventParams.length === 3 &&
-        eventParams[0].type === 'address' &&
-        eventParams[1].type === 'address' &&
-        eventParams[2].type === 'uint256') {
+    if (eventParams.length === 3
+      && eventParams[0].type === 'address'
+      && eventParams[1].type === 'address'
+      && eventParams[2].type === 'uint256') {
       indexes.push({
         name: `idx_${tableName}_from_to`,
         columns: ['from', 'to'],
@@ -485,7 +491,7 @@ export class DynamicTableManager {
    */
   private async executeTableCreation(schema: DynamicTableSchema): Promise<void> {
     const columnsSQL = schema.columns
-      .map(col => {
+      .map((col) => {
         let columnDef = `${col.name} ${this.getColumnTypeSQL(col.type)}`;
 
         if (!col.nullable) {

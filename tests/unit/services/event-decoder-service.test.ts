@@ -157,7 +157,7 @@ describe('EventDecoderService', () => {
           contractAddress: contractAddress as Address,
           abi: sampleAbi,
           strict: true,
-        })
+        }),
       ).rejects.toThrow(EventDecodingError);
     });
   });
@@ -272,7 +272,7 @@ describe('EventDecoderService', () => {
     it('should process large batches efficiently', async () => {
       const largeBatch = Array.from({ length: 100 }, (_, i) => ({
         ...sampleTransferLog,
-        transactionHash: `0x${i.toString(16).padStart(64, '0')}` as `0x${string}`,
+        transactionHash: `0x${i.toString(16).padStart(64, '0')}`,
         logIndex: i,
       }));
 
@@ -295,7 +295,7 @@ describe('EventDecoderService', () => {
 
       const parameters = await decoderService.decodeEventParameters(
         sampleTransferLog,
-        transferEvent
+        transferEvent,
       );
 
       expect(parameters).toHaveLength(3);
@@ -316,7 +316,7 @@ describe('EventDecoderService', () => {
       const parameters = await decoderService.decodeEventParameters(
         sampleTransferLog,
         transferEvent,
-        { formatAddresses: true, formatUnits: true }
+        { formatAddresses: true, formatUnits: true },
       );
 
       const valueParam = parameters.find(p => p.name === 'value');
@@ -337,7 +337,7 @@ describe('EventDecoderService', () => {
           chainId,
           contractAddress: contractAddress as Address,
           abi: sampleAbi,
-        })
+        }),
       ).rejects.toThrow(EventDecodingError);
     });
 
@@ -352,7 +352,7 @@ describe('EventDecoderService', () => {
           chainId,
           contractAddress: contractAddress as Address,
           abi: sampleAbi,
-        })
+        }),
       ).rejects.toThrow(EventDecodingError);
     });
 
@@ -368,7 +368,8 @@ describe('EventDecoderService', () => {
           contractAddress: contractAddress as Address,
           abi: sampleAbi,
         });
-      } catch (error) {
+      }
+      catch (error) {
         expect(error).toBeInstanceOf(EventDecodingError);
         if (error instanceof EventDecodingError) {
           expect(error.chainId).toBe(chainId);
@@ -408,7 +409,8 @@ describe('EventDecoderService', () => {
           contractAddress: contractAddress as Address,
           abi: sampleAbi,
         });
-      } catch {
+      }
+      catch {
         // Expected to fail
       }
 
@@ -418,7 +420,7 @@ describe('EventDecoderService', () => {
 
   describe('ABI caching', () => {
     it('should cache ABI events for faster lookups', () => {
-      const events = sampleAbi.filter(item => item.type === 'event') as AbiEvent[];
+      const events = sampleAbi.filter(item => item.type === 'event');
 
       // Access private method through type assertion
       (decoderService as any).cacheAbiEvents(contractAddress as Address, sampleAbi);

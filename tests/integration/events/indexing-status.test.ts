@@ -34,7 +34,7 @@ describe('Event Indexing Status API', () => {
           headers: {
             'Content-Type': 'application/json',
           },
-        }
+        },
       );
 
       expect(response.status).toBe(200);
@@ -61,7 +61,7 @@ describe('Event Indexing Status API', () => {
           headers: {
             'Content-Type': 'application/json',
           },
-        }
+        },
       );
 
       expect(response.status).toBe(200);
@@ -83,7 +83,7 @@ describe('Event Indexing Status API', () => {
           headers: {
             'Content-Type': 'application/json',
           },
-        }
+        },
       );
 
       expect(response.status).toBe(404);
@@ -103,7 +103,7 @@ describe('Event Indexing Status API', () => {
           headers: {
             'Content-Type': 'application/json',
           },
-        }
+        },
       );
 
       expect(response.status).toBe(400);
@@ -121,7 +121,7 @@ describe('Event Indexing Status API', () => {
           headers: {
             'Content-Type': 'application/json',
           },
-        }
+        },
       );
 
       expect(response.status).toBe(200);
@@ -140,7 +140,7 @@ describe('Event Indexing Status API', () => {
           headers: {
             'Content-Type': 'application/json',
           },
-        }
+        },
       );
 
       expect(response.status).toBe(200);
@@ -160,9 +160,9 @@ describe('Event Indexing Status API', () => {
         {
           method: 'OPTIONS',
           headers: {
-            'Origin': 'http://localhost:3000',
+            Origin: 'http://localhost:3000',
           },
-        }
+        },
       );
 
       expect(response.status).toBe(200);
@@ -177,7 +177,7 @@ describe('Event Indexing Status API', () => {
           headers: {
             'Content-Type': 'application/json',
           },
-        }
+        },
       );
 
       expect(response.status).toBe(200);
@@ -197,7 +197,7 @@ describe('Event Indexing Status API', () => {
         `/api/chains/${chainId}/contracts/${contractAddress}/events/indexing-status`,
         {
           method: 'GET',
-        }
+        },
       );
 
       // Should not return 500 for normal operation
@@ -213,7 +213,7 @@ describe('Event Indexing Status API', () => {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({}),
-        }
+        },
       );
 
       expect(response.status).toBe(405); // Method Not Allowed

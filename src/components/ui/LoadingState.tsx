@@ -1,5 +1,5 @@
-import { css, cx } from "@linaria/core";
-import { Skeleton } from "haze-ui";
+import { css, cx } from '@linaria/core';
+import { Skeleton } from 'haze-ui';
 
 const loadingContainer = css`
   display: flex;
@@ -30,7 +30,7 @@ type LoadingStateProps = {
   className?: string;
 };
 
-export function LoadingState({ message = "Loading...", className }: LoadingStateProps) {
+export function LoadingState({ message = 'Loading...', className }: LoadingStateProps) {
   return (
     <div className={cx(loadingContainer, className)}>
       <Skeleton width="32px" height="32px" variant="circular" />

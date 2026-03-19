@@ -10,23 +10,23 @@ import { EventParameter, EventFilters } from '../src/types/events';
 // 示例ERC20 ABI（简化版）
 const ERC20_ABI = [
   {
-    "type": "event",
-    "name": "Transfer",
-    "inputs": [
-      {"indexed": true, "internalType": "address", "name": "from", "type": "address"},
-      {"indexed": true, "internalType": "address", "name": "to", "type": "address"},
-      {"indexed": false, "internalType": "uint256", "name": "value", "type": "uint256"}
-    ]
+    type: 'event',
+    name: 'Transfer',
+    inputs: [
+      { indexed: true, internalType: 'address', name: 'from', type: 'address' },
+      { indexed: true, internalType: 'address', name: 'to', type: 'address' },
+      { indexed: false, internalType: 'uint256', name: 'value', type: 'uint256' },
+    ],
   },
   {
-    "type": "event",
-    "name": "Approval",
-    "inputs": [
-      {"indexed": true, "internalType": "address", "name": "owner", "type": "address"},
-      {"indexed": true, "internalType": "address", "name": "spender", "type": "address"},
-      {"indexed": false, "internalType": "uint256", "name": "value", "type": "uint256"}
-    ]
-  }
+    type: 'event',
+    name: 'Approval',
+    inputs: [
+      { indexed: true, internalType: 'address', name: 'owner', type: 'address' },
+      { indexed: true, internalType: 'address', name: 'spender', type: 'address' },
+      { indexed: false, internalType: 'uint256', name: 'value', type: 'uint256' },
+    ],
+  },
 ];
 
 // 示例USDT合约地址（以太坊主网）
@@ -43,12 +43,13 @@ async function example1_initializeIndexing() {
     await eventIndexingService.initializeContractIndexing(
       CHAIN_ID,
       USDT_CONTRACT_ADDRESS,
-      ERC20_ABI as any
+      ERC20_ABI as any,
     );
 
     console.log('✅ 事件索引初始化成功');
     console.log(`📊 已创建 ${ERC20_ABI.length} 个事件表`);
-  } catch (error) {
+  }
+  catch (error) {
     console.error('❌ 初始化失败:', error);
   }
 }
@@ -62,7 +63,7 @@ async function example2_checkIndexingStatus() {
   try {
     const status = await eventIndexingService.getIndexingStatus(
       CHAIN_ID,
-      USDT_CONTRACT_ADDRESS
+      USDT_CONTRACT_ADDRESS,
     );
 
     if (status) {
@@ -74,10 +75,12 @@ async function example2_checkIndexingStatus() {
       console.log(`  - 总索引事件数: ${status.totalEventsIndexed}`);
       console.log(`  - 索引状态: ${status.indexingActive ? '进行中' : '已完成'}`);
       console.log(`  - 最后更新时间: ${status.lastIndexedAt}`);
-    } else {
+    }
+    else {
       console.log('⚠️ 未找到索引状态，请先初始化');
     }
-  } catch (error) {
+  }
+  catch (error) {
     console.error('❌ 查询失败:', error);
   }
 }
@@ -104,7 +107,7 @@ async function example3_queryTransferEvents() {
       USDT_CONTRACT_ADDRESS,
       'Transfer',
       filters,
-      pagination
+      pagination,
     );
 
     console.log(`📋 找到 ${result.data.length} 个Transfer事件 (总数: ${result.total})`);
@@ -118,7 +121,8 @@ async function example3_queryTransferEvents() {
       console.log(`    - 金额: ${event.args.value}`);
       console.log(`    - 时间: ${new Date(event.blockTimestamp * 1000).toLocaleString()}`);
     });
-  } catch (error) {
+  }
+  catch (error) {
     console.error('❌ 查询失败:', error);
   }
 }
@@ -133,7 +137,7 @@ async function example4_getEventStatistics() {
     const statistics = await eventIndexingService.getEventStatistics(
       CHAIN_ID,
       USDT_CONTRACT_ADDRESS,
-      'Transfer'
+      'Transfer',
     );
 
     console.log('📊 Transfer事件统计:');
@@ -143,7 +147,8 @@ async function example4_getEventStatistics() {
     console.log(`  - 平均每区块事件数: ${statistics.averageEventsPerBlock.toFixed(2)}`);
     console.log(`  - 涉及唯一地址数: ${statistics.uniqueAddresses}`);
     console.log(`  - 存储大小: ${(statistics.storageSize / 1024).toFixed(2)} KB`);
-  } catch (error) {
+  }
+  catch (error) {
     console.error('❌ 获取统计失败:', error);
   }
 }
@@ -164,14 +169,15 @@ async function example5_getEventChartData() {
     const chartData = await eventQueryService.getEventHistoryChartData(
       tableName,
       filters,
-      'hour'
+      'hour',
     );
 
     console.log('📈 事件历史图表数据 (按小时):');
     chartData.forEach((data, index) => {
       console.log(`  ${index + 1}. 时间: ${new Date(data.timestamp).toLocaleString()}, 事件数: ${data.count}`);
     });
-  } catch (error) {
+  }
+  catch (error) {
     console.error('❌ 获取图表数据失败:', error);
   }
 }
@@ -197,7 +203,7 @@ async function example6_searchEvents() {
     const result = await eventQueryService.searchEvents(
       searchTerm,
       filters,
-      pagination
+      pagination,
     );
 
     console.log(`🔍 搜索 "${searchTerm}" 找到 ${result.data.length} 个事件 (总数: ${result.total})`);
@@ -209,7 +215,8 @@ async function example6_searchEvents() {
       console.log(`    - 合约地址: ${event.contractAddress}`);
       console.log(`    - 区块号: ${event.blockNumber}`);
     });
-  } catch (error) {
+  }
+  catch (error) {
     console.error('❌ 搜索失败:', error);
   }
 }
@@ -242,7 +249,7 @@ async function example7_batchProcessLogs() {
 
     const processedEvents = await eventIndexingService.processEventBatch(
       mockLogs,
-      CHAIN_ID
+      CHAIN_ID,
     );
 
     console.log(`📦 批处理完成，处理了 ${processedEvents.length} 个事件`);
@@ -253,7 +260,8 @@ async function example7_batchProcessLogs() {
       console.log(`    - 交易哈希: ${event.txHash}`);
       console.log(`    - 解码参数:`, event.args);
     });
-  } catch (error) {
+  }
+  catch (error) {
     console.error('❌ 批处理失败:', error);
   }
 }
@@ -307,14 +315,15 @@ async function example8_customDecoder() {
         return {
           valid: true,
           sanitizedValue: value.toLowerCase(),
-          metadata: { isContract }
+          metadata: { isContract },
         };
       },
     });
 
     console.log('✅ 自定义解码器配置完成');
     console.log('📝 已注册自定义转换器和验证器');
-  } catch (error) {
+  }
+  catch (error) {
     console.error('❌ 自定义解码器配置失败:', error);
   }
 }
@@ -340,7 +349,7 @@ async function runAllExamples() {
 
 // 如果直接运行此文件，执行所有示例
 if (require.main === module) {
-  runAllExamples().catch(error => {
+  runAllExamples().catch((error) => {
     console.error('💥 运行示例时出错:', error);
     process.exit(1);
   });

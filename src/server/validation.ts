@@ -1,28 +1,29 @@
-import { HTTPException } from "hono/http-exception";
-import { getAddress } from "viem";
+import { HTTPException } from 'hono/http-exception';
+import { getAddress } from 'viem';
 import {
   isValidTransactionHash,
   isValidBlockNumber,
-} from "../utils/validation";
-import { isChainSupported } from "../config/chains";
+} from '../utils/validation';
+import { isChainSupported } from '../config/chains';
 
 export function getValidatedAddress(address: string) {
   try {
     return getAddress(address);
-  } catch {
-    throw new HTTPException(400, { message: "Invalid address" });
+  }
+  catch {
+    throw new HTTPException(400, { message: 'Invalid address' });
   }
 }
 
 export function getValidatedChainId(chainId: string | number): number {
-  const id = typeof chainId === "string" ? parseInt(chainId, 10) : chainId;
+  const id = typeof chainId === 'string' ? parseInt(chainId, 10) : chainId;
 
   if (isNaN(id) || id <= 0) {
-    throw new HTTPException(400, { message: "Invalid chain ID" });
+    throw new HTTPException(400, { message: 'Invalid chain ID' });
   }
 
   if (!isChainSupported(id)) {
-    throw new HTTPException(400, { message: "Unsupported chain" });
+    throw new HTTPException(400, { message: 'Unsupported chain' });
   }
 
   return id;
@@ -30,7 +31,7 @@ export function getValidatedChainId(chainId: string | number): number {
 
 export function getValidatedTxHash(txHash: string): string {
   if (!txHash || !isValidTransactionHash(txHash)) {
-    throw new HTTPException(400, { message: "Invalid transaction hash" });
+    throw new HTTPException(400, { message: 'Invalid transaction hash' });
   }
   return txHash.toLowerCase();
 }
@@ -38,19 +39,19 @@ export function getValidatedTxHash(txHash: string): string {
 export function getValidatedBlockNumber(blockNumber: string | number): number | string {
   // Handle null/undefined
   if (blockNumber == null) {
-    throw new HTTPException(400, { message: "Invalid block number" });
+    throw new HTTPException(400, { message: 'Invalid block number' });
   }
 
   // Handle "latest" keyword
-  if (blockNumber === "latest") {
-    return "latest";
+  if (blockNumber === 'latest') {
+    return 'latest';
   }
 
-  const num =
-    typeof blockNumber === "string" ? parseInt(blockNumber, 10) : blockNumber;
+  const num
+    = typeof blockNumber === 'string' ? parseInt(blockNumber, 10) : blockNumber;
 
   if (!isValidBlockNumber(num)) {
-    throw new HTTPException(400, { message: "Invalid block number" });
+    throw new HTTPException(400, { message: 'Invalid block number' });
   }
 
   return num;

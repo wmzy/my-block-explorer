@@ -3,9 +3,9 @@
  * 处理BigInt等特殊类型的JSON序列化
  */
 
-import { createLogger } from "../server/logger";
+import { createLogger } from '../server/logger';
 
-const logger = createLogger("serialization");
+const logger = createLogger('serialization');
 
 /**
  * 自定义JSON序列化，处理BigInt类型和循环引用
@@ -59,12 +59,13 @@ export function serializeForJson(obj: unknown): unknown {
 
       return value;
     }));
-  } catch (error) {
-    logger.error({ err: error }, "Serialization error");
+  }
+  catch (error) {
+    logger.error({ err: error }, 'Serialization error');
     return {
       error: 'Failed to serialize object',
       type: typeof obj,
-      message: String(obj).substring(0, 100)
+      message: String(obj).substring(0, 100),
     };
   }
 }
@@ -78,11 +79,12 @@ type JsonLike = object | string | number | boolean | null;
 export function safeJsonResponse(data: unknown): JsonLike {
   try {
     return serializeForJson(data);
-  } catch (error) {
-    logger.error({ err: error }, "JSON serialization error");
+  }
+  catch (error) {
+    logger.error({ err: error }, 'JSON serialization error');
     return {
       error: 'Serialization failed',
-      message: 'Unable to serialize response data'
+      message: 'Unable to serialize response data',
     };
   }
 }
@@ -92,14 +94,14 @@ export function safeJsonResponse(data: unknown): JsonLike {
  */
 export function formatBlockForApi(block: Record<string, unknown> | null): Record<string, unknown> | null {
   if (!block) return null;
-  
+
   return {
     ...block,
     number: block.number != null ? String(block.number) : undefined,
     gasLimit: block.gasLimit != null ? String(block.gasLimit) : undefined,
     gasUsed: block.gasUsed != null ? String(block.gasUsed) : undefined,
     baseFeePerGas: block.baseFeePerGas != null ? String(block.baseFeePerGas) : undefined,
-    timestamp: block.timestamp instanceof Date ? block.timestamp.toISOString() : undefined
+    timestamp: block.timestamp instanceof Date ? block.timestamp.toISOString() : undefined,
   };
 }
 
@@ -108,7 +110,7 @@ export function formatBlockForApi(block: Record<string, unknown> | null): Record
  */
 export function formatTransactionForApi(transaction: Record<string, unknown> | null): Record<string, unknown> | null {
   if (!transaction) return null;
-  
+
   return {
     ...transaction,
     blockNumber: transaction.blockNumber != null ? String(transaction.blockNumber) : undefined,
@@ -120,7 +122,7 @@ export function formatTransactionForApi(transaction: Record<string, unknown> | n
     effectiveGasPrice: transaction.effectiveGasPrice != null ? String(transaction.effectiveGasPrice) : undefined,
     nonce: transaction.nonce != null ? String(transaction.nonce) : undefined,
     cumulativeGasUsed: transaction.cumulativeGasUsed != null ? String(transaction.cumulativeGasUsed) : undefined,
-    timestamp: transaction.timestamp instanceof Date ? transaction.timestamp.toISOString() : undefined
+    timestamp: transaction.timestamp instanceof Date ? transaction.timestamp.toISOString() : undefined,
   };
 }
 
@@ -129,12 +131,12 @@ export function formatTransactionForApi(transaction: Record<string, unknown> | n
  */
 export function formatAddressForApi(address: Record<string, unknown> | null): Record<string, unknown> | null {
   if (!address) return null;
-  
+
   return {
     ...address,
     firstSeenBlock: address.firstSeenBlock != null ? String(address.firstSeenBlock) : undefined,
     lastSeenBlock: address.lastSeenBlock != null ? String(address.lastSeenBlock) : undefined,
-    lastQueried: address.lastQueried instanceof Date ? address.lastQueried.toISOString() : undefined
+    lastQueried: address.lastQueried instanceof Date ? address.lastQueried.toISOString() : undefined,
   };
 }
 
@@ -143,11 +145,11 @@ export function formatAddressForApi(address: Record<string, unknown> | null): Re
  */
 export function formatStatsForApi(stats: Record<string, unknown> | null): Record<string, unknown> | null {
   if (!stats) return null;
-  
+
   return {
     ...stats,
     latestBlock: stats.latestBlock != null ? String(stats.latestBlock) : undefined,
     totalBlocks: Number(stats.totalBlocks) || 0,
-    totalTransactions: Number(stats.totalTransactions) || 0
+    totalTransactions: Number(stats.totalTransactions) || 0,
   };
 }

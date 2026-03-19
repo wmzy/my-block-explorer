@@ -7,7 +7,7 @@
 import { createLogger } from '../server/logger';
 import { Abi, AbiEvent, AbiParameter, Address, parseAbi } from 'viem';
 
-const logger = createLogger("abi-parsing-service");
+const logger = createLogger('abi-parsing-service');
 import { keccak256 } from 'viem/utils';
 import { ChainDatabaseManager, multiChainDb } from '../database/chain-database-manager';
 import { multiChainPerformanceManager } from '../database/performance-monitor';
@@ -18,7 +18,7 @@ import {
   DynamicTableSchema,
   TableIndex,
   EventIndexingError,
-  DecodedEventParameter
+  DecodedEventParameter,
 } from '../types/events';
 
 /**
@@ -140,8 +140,9 @@ export class AbiParsingService {
 
           totalEstimatedStorage += parsedEvent.metadata.estimatedRowSize;
           totalComplexity += parsedEvent.metadata.complexityScore;
-        } catch (error) {
-          logger.warn({ err: error, eventName: event.name }, "Failed to parse event");
+        }
+        catch (error) {
+          logger.warn({ err: error, eventName: event.name }, 'Failed to parse event');
         }
       }
 
@@ -180,8 +181,8 @@ export class AbiParsingService {
       this.cacheSignatures(signatures);
 
       return result;
-
-    } catch (error) {
+    }
+    catch (error) {
       const parseTime = performance.now() - startTime;
       performanceMonitor.recordQuery('abi_parse', parseTime, false);
 
@@ -190,7 +191,7 @@ export class AbiParsingService {
         undefined,
         options.contractAddress,
         options.chainId,
-        error instanceof Error ? error : new Error(String(error))
+        error instanceof Error ? error : new Error(String(error)),
       );
     }
   }
@@ -264,7 +265,7 @@ export class AbiParsingService {
    * Generate event topic (signature hash)
    */
   private generateEventTopic(signature: string): `0x${string}` {
-    return keccak256(signature) as `0x${string}`;
+    return keccak256(signature);
   }
 
   /**
@@ -473,7 +474,7 @@ export class AbiParsingService {
   private async generateEventMetadata(
     event: AbiEvent,
     options: AbiParsingOptions,
-    tableSchema: DynamicTableSchema
+    tableSchema: DynamicTableSchema,
   ): Promise<EventMetadata> {
     const abiHash = keccak256(JSON.stringify(event));
     const parameterCount = event.inputs.length;
@@ -697,8 +698,8 @@ export class AbiParsingService {
           }
         }
       }
-
-    } catch (error) {
+    }
+    catch (error) {
       errors.push(`Failed to parse ABI: ${error}`);
     }
 
@@ -725,7 +726,7 @@ export class AbiParsingService {
     try {
       const result = await this.chainDb.query(
         'SELECT abi_hash FROM contract_abi_cache WHERE contract_address = ?',
-        [contractAddress.toLowerCase()]
+        [contractAddress.toLowerCase()],
       );
 
       if (result.length === 0) {
@@ -733,7 +734,8 @@ export class AbiParsingService {
       }
 
       return result[0].abi_hash !== currentHash;
-    } catch {
+    }
+    catch {
       return true; // Assume changed on error
     }
   }

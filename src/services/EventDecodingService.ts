@@ -59,7 +59,7 @@ export class EventDecodingService {
     log: Log,
     abiEvent: EventParameter[],
     chainId: number,
-    blockTimestamp?: number
+    blockTimestamp?: number,
   ): Promise<DecodedEvent> {
     try {
       // 构建Viem兼容的ABI事件定义
@@ -78,14 +78,14 @@ export class EventDecodingService {
           'Event decoding returned null',
           abiEvent[0]?.name,
           log.address,
-          chainId
+          chainId,
         );
       }
 
       // 格式化解码后的参数
       const formattedArgs = await this.formatDecodedArgs(
         decodedLog.args as unknown as DecodedEventData,
-        abiEvent
+        abiEvent,
       );
 
       // 构建完整的事件对象
@@ -116,14 +116,15 @@ export class EventDecodingService {
       };
 
       return decodedEvent;
-    } catch (error) {
+    }
+    catch (error) {
       const eventError = error instanceof Error ? error : new Error(String(error));
       throw new EventDecodingError(
         `Failed to decode event: ${eventError.message}`,
         abiEvent[0]?.name,
         log.address,
         chainId,
-        eventError
+        eventError,
       );
     }
   }
@@ -135,7 +136,7 @@ export class EventDecodingService {
     logs: Log[],
     abiEvents: Map<string, EventParameter[]>,
     chainId: number,
-    onProgress?: (processed: number, total: number) => void
+    onProgress?: (processed: number, total: number) => void,
   ): Promise<DecodedEvent[]> {
     const results: DecodedEvent[] = [];
     const errors: EventDecodingError[] = [];
@@ -154,15 +155,16 @@ export class EventDecodingService {
               `No ABI found for event signature: ${eventSignature}`,
               undefined,
               log.address,
-              chainId
-            )
+              chainId,
+            ),
           );
           continue;
         }
 
         const decodedEvent = await this.decodeLog(log, abiEvent, chainId);
         results.push(decodedEvent);
-      } catch (error) {
+      }
+      catch (error) {
         const eventError = error instanceof EventDecodingError ? error : new EventDecodingError(String(error));
         errors.push(eventError);
       }
@@ -187,7 +189,7 @@ export class EventDecodingService {
     const signature = `${eventParams[0]?.name || 'Unknown'}(${eventParams
       .map(p => p.type)
       .join(',')})`;
-    return keccak256(signature) as `0x${string}`;
+    return keccak256(signature);
   }
 
   /**
@@ -205,7 +207,7 @@ export class EventDecodingService {
           'No ABI found in source code',
           'Unknown',
           '0x0',
-          0
+          0,
         );
       }
 
@@ -220,18 +222,20 @@ export class EventDecodingService {
           if (abiItem) {
             abiItems.push(abiItem);
           }
-        } catch (error) {
+        }
+        catch (error) {
           console.warn('Failed to parse event ABI:', eventDef, error);
         }
       }
 
       return abiItems.length > 0 ? abiItems : null;
-    } catch (error) {
+    }
+    catch (error) {
       throw new EventDecodingError(
         `Failed to extract ABI from source: ${error instanceof Error ? error.message : 'Unknown error'}`,
         'Unknown',
         '0x0',
-        0
+        0,
       );
     }
   }
@@ -284,7 +288,8 @@ export class EventDecodingService {
         name: eventName,
         inputs,
       };
-    } catch (error) {
+    }
+    catch (error) {
       console.error('Error parsing event ABI:', error);
       return null;
     }
@@ -325,7 +330,7 @@ export class EventDecodingService {
    */
   private async formatDecodedArgs(
     args: DecodedEventData,
-    eventParams: EventParameter[]
+    eventParams: EventParameter[],
   ): Promise<DecodedEventData> {
     const formatted: DecodedEventData = {};
 
@@ -343,7 +348,8 @@ export class EventDecodingService {
         // 转换数据
         const transformedValue = this.transformParameter(param, validation.sanitizedValue || value);
         formatted[param.name] = transformedValue;
-      } catch (error) {
+      }
+      catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         console.warn(`Failed to format parameter ${param.name}: ${errorMessage}`);
         formatted[param.name] = value; // 使用原始值作为后备
@@ -393,7 +399,8 @@ export class EventDecodingService {
       try {
         const num = BigInt(value);
         return { valid: true, sanitizedValue: num };
-      } catch {
+      }
+      catch {
         return { valid: false, error: 'Invalid number format' };
       }
     }
@@ -530,7 +537,8 @@ export class EventDecodingService {
         try {
           const num = BigInt(value);
           return { valid: true, sanitizedValue: num };
-        } catch {
+        }
+        catch {
           return { valid: false, error: 'Invalid uint256 format' };
         }
       },

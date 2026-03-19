@@ -7,7 +7,7 @@ import {
   isRetryableError,
   normalizeError,
   createRetryableRpcCall,
-  createRetryableDbCall
+  createRetryableDbCall,
 } from '@/utils/errorHandler';
 
 describe('ErrorHandler', () => {
@@ -15,9 +15,9 @@ describe('ErrorHandler', () => {
     it('应该在成功时直接返回结果', async () => {
       const mockFn = vi.fn().mockResolvedValue('success');
       const retryFn = withRetry(mockFn, { maxRetries: 3, delay: 10, backoff: 1 });
-      
+
       const result = await retryFn('arg1', 'arg2');
-      
+
       expect(result).toBe('success');
       expect(mockFn).toHaveBeenCalledOnce();
       expect(mockFn).toHaveBeenCalledWith('arg1', 'arg2');
@@ -28,11 +28,11 @@ describe('ErrorHandler', () => {
         .mockRejectedValueOnce(new Error('fail1'))
         .mockRejectedValueOnce(new Error('fail2'))
         .mockResolvedValue('success');
-      
+
       const retryFn = withRetry(mockFn, { maxRetries: 3, delay: 10, backoff: 1 });
-      
+
       const result = await retryFn();
-      
+
       expect(result).toBe('success');
       expect(mockFn).toHaveBeenCalledTimes(3);
     });
@@ -40,9 +40,9 @@ describe('ErrorHandler', () => {
     it('应该在达到最大重试次数后抛出错误', async () => {
       const error = new Error('persistent failure');
       const mockFn = vi.fn().mockRejectedValue(error);
-      
+
       const retryFn = withRetry(mockFn, { maxRetries: 2, delay: 10, backoff: 1 });
-      
+
       await expect(retryFn()).rejects.toThrow('persistent failure');
       expect(mockFn).toHaveBeenCalledTimes(3); // 初始调用 + 2次重试
     });
@@ -50,18 +50,18 @@ describe('ErrorHandler', () => {
     it('应该根据重试条件决定是否重试', async () => {
       const retryableError = new Error('retryable');
       const nonRetryableError = new Error('non-retryable');
-      
+
       const mockFn = vi.fn()
         .mockRejectedValueOnce(retryableError)
         .mockRejectedValueOnce(nonRetryableError);
-      
+
       const retryFn = withRetry(mockFn, {
         maxRetries: 3,
         delay: 10,
         backoff: 1,
-        retryCondition: (error) => error.message === 'retryable'
+        retryCondition: error => error.message === 'retryable',
       });
-      
+
       await expect(retryFn()).rejects.toThrow('non-retryable');
       expect(mockFn).toHaveBeenCalledTimes(2); // 第二个错误不可重试
     });
@@ -70,7 +70,7 @@ describe('ErrorHandler', () => {
   describe('错误类型', () => {
     it('RpcError应该包含正确的属性', () => {
       const error = new RpcError('RPC failed', 500, { detail: 'timeout' }, 1);
-      
+
       expect(error.name).toBe('RpcError');
       expect(error.message).toBe('RPC failed');
       expect(error.code).toBe(500);
@@ -81,7 +81,7 @@ describe('ErrorHandler', () => {
     it('DatabaseError应该包含正确的属性', () => {
       const originalError = new Error('DB connection failed');
       const error = new DatabaseError('Database operation failed', originalError);
-      
+
       expect(error.name).toBe('DatabaseError');
       expect(error.message).toBe('Database operation failed');
       expect(error.originalError).toBe(originalError);
@@ -89,7 +89,7 @@ describe('ErrorHandler', () => {
 
     it('ValidationError应该包含正确的属性', () => {
       const error = new ValidationError('Invalid input', 'email');
-      
+
       expect(error.name).toBe('ValidationError');
       expect(error.message).toBe('Invalid input');
       expect(error.field).toBe('email');
@@ -101,10 +101,10 @@ describe('ErrorHandler', () => {
       const networkErrors = [
         { code: 'ECONNRESET' },
         { code: 'ENOTFOUND' },
-        { code: 'ETIMEDOUT' }
+        { code: 'ETIMEDOUT' },
       ];
-      
-      networkErrors.forEach(error => {
+
+      networkErrors.forEach((error) => {
         expect(isRetryableError(error)).toBe(true);
       });
     });
@@ -114,10 +114,10 @@ describe('ErrorHandler', () => {
         { status: 500 },
         { status: 502 },
         { status: 503 },
-        { status: 504 }
+        { status: 504 },
       ];
-      
-      serverErrors.forEach(error => {
+
+      serverErrors.forEach((error) => {
         expect(isRetryableError(error)).toBe(true);
       });
     });
@@ -126,10 +126,10 @@ describe('ErrorHandler', () => {
       const retryableRpcErrors = [
         new RpcError('Internal error', -32603),
         new RpcError('Limit exceeded', -32005),
-        new RpcError('Unknown error', -32000)
+        new RpcError('Unknown error', -32000),
       ];
-      
-      retryableRpcErrors.forEach(error => {
+
+      retryableRpcErrors.forEach((error) => {
         expect(isRetryableError(error)).toBe(true);
       });
     });
@@ -140,10 +140,10 @@ describe('ErrorHandler', () => {
         { status: 401 },
         { status: 404 },
         new RpcError('Invalid params', -32602),
-        new ValidationError('Invalid input')
+        new ValidationError('Invalid input'),
       ];
-      
-      nonRetryableErrors.forEach(error => {
+
+      nonRetryableErrors.forEach((error) => {
         expect(isRetryableError(error)).toBe(false);
       });
     });
@@ -153,57 +153,57 @@ describe('ErrorHandler', () => {
     it('应该正确标准化RpcError', () => {
       const error = new RpcError('RPC failed', 500);
       const normalized = normalizeError(error);
-      
+
       expect(normalized).toEqual({
         message: 'RPC failed',
         code: 500,
         type: 'rpc',
-        retryable: false // RPC错误500不是可重试的
+        retryable: false, // RPC错误500不是可重试的
       });
     });
 
     it('应该正确标准化DatabaseError', () => {
       const error = new DatabaseError('DB failed');
       const normalized = normalizeError(error);
-      
+
       expect(normalized).toEqual({
         message: 'DB failed',
         type: 'database',
-        retryable: false
+        retryable: false,
       });
     });
 
     it('应该正确标准化ValidationError', () => {
       const error = new ValidationError('Invalid input');
       const normalized = normalizeError(error);
-      
+
       expect(normalized).toEqual({
         message: 'Invalid input',
         type: 'validation',
-        retryable: false
+        retryable: false,
       });
     });
 
     it('应该正确标准化网络错误', () => {
       const error = { code: 'ECONNRESET', message: 'Connection reset' };
       const normalized = normalizeError(error);
-      
+
       expect(normalized).toEqual({
         message: 'Network error: Connection reset',
         code: 'ECONNRESET',
         type: 'network',
-        retryable: true
+        retryable: true,
       });
     });
 
     it('应该正确标准化未知错误', () => {
       const error = new Error('Unknown error');
       const normalized = normalizeError(error);
-      
+
       expect(normalized).toEqual({
         message: 'Unknown error',
         type: 'unknown',
-        retryable: false
+        retryable: false,
       });
     });
   });
@@ -213,11 +213,11 @@ describe('ErrorHandler', () => {
       const mockRpcFn = vi.fn()
         .mockRejectedValueOnce(new RpcError('Temporary failure', -32603))
         .mockResolvedValue('success');
-      
+
       const retryableRpcFn = createRetryableRpcCall(mockRpcFn, 1);
-      
+
       const result = await retryableRpcFn('arg1');
-      
+
       expect(result).toBe('success');
       expect(mockRpcFn).toHaveBeenCalledTimes(2);
     });
@@ -228,20 +228,20 @@ describe('ErrorHandler', () => {
       const mockDbFn = vi.fn()
         .mockRejectedValueOnce(new Error('database is locked'))
         .mockResolvedValue('success');
-      
+
       const retryableDbFn = createRetryableDbCall(mockDbFn);
-      
+
       const result = await retryableDbFn('arg1');
-      
+
       expect(result).toBe('success');
       expect(mockDbFn).toHaveBeenCalledTimes(2);
     });
 
     it('应该不重试非锁定相关的数据库错误', async () => {
       const mockDbFn = vi.fn().mockRejectedValue(new Error('syntax error'));
-      
+
       const retryableDbFn = createRetryableDbCall(mockDbFn);
-      
+
       await expect(retryableDbFn()).rejects.toThrow('syntax error');
       expect(mockDbFn).toHaveBeenCalledOnce();
     });

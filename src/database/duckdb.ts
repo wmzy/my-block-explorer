@@ -1,9 +1,9 @@
-import { DuckDBInstance } from "@duckdb/node-api";
-import { join } from "path";
-import { mkdir } from "fs/promises";
-import { createLogger } from "../server/logger";
+import { DuckDBInstance } from '@duckdb/node-api';
+import { join } from 'path';
+import { mkdir } from 'fs/promises';
+import { createLogger } from '../server/logger';
 
-const logger = createLogger("duckdb");
+const logger = createLogger('duckdb');
 
 /**
  * DuckDB数据库管理器
@@ -15,11 +15,11 @@ export class DuckDBManager {
   private dbPath: string;
 
   constructor(dbPath?: string) {
-    const dataDir = join(process.cwd(), "data");
-    this.dbPath = dbPath || join(dataDir, "blockchain.db");
+    const dataDir = join(process.cwd(), 'data');
+    this.dbPath = dbPath || join(dataDir, 'blockchain.db');
 
     // 确保数据目录存在
-    mkdir(dataDir, { recursive: true }).catch((err) => logger.warn({ err }, "Failed to create data directory"));
+    mkdir(dataDir, { recursive: true }).catch(err => logger.warn({ err }, 'Failed to create data directory'));
   }
 
   /**
@@ -42,7 +42,7 @@ export class DuckDBManager {
     this.isInitialized = true;
 
     await this.connect();
-    logger.info("Initializing DuckDB database");
+    logger.info('Initializing DuckDB database');
 
     try {
       // All DDL must match Drizzle schema in schema.ts exactly (camelCase → snake_case)
@@ -149,9 +149,10 @@ export class DuckDBManager {
       // 创建索引
       await this.createIndexes();
 
-      logger.info("DuckDB database initialized successfully");
-    } catch (error) {
-      logger.error({ err: error }, "Database initialization failed");
+      logger.info('DuckDB database initialized successfully');
+    }
+    catch (error) {
+      logger.error({ err: error }, 'Database initialization failed');
       // 重置初始化标志，允许重试
       this.isInitialized = false;
       throw error;
@@ -164,45 +165,46 @@ export class DuckDBManager {
   private async createIndexes(): Promise<void> {
     const indexes = [
       // 合约源码索引
-      "CREATE INDEX IF NOT EXISTS contract_sources_chain_verification_idx ON contract_sources (chain_id, verification_status)",
-      "CREATE INDEX IF NOT EXISTS contract_sources_proxy_idx ON contract_sources (chain_id, is_proxy)",
+      'CREATE INDEX IF NOT EXISTS contract_sources_chain_verification_idx ON contract_sources (chain_id, verification_status)',
+      'CREATE INDEX IF NOT EXISTS contract_sources_proxy_idx ON contract_sources (chain_id, is_proxy)',
 
       // 合约创建信息索引
-      "CREATE INDEX IF NOT EXISTS contract_creation_info_status_idx ON contract_creation_info (search_status)",
-      "CREATE INDEX IF NOT EXISTS contract_creation_info_tx_idx ON contract_creation_info (creation_tx_hash)",
+      'CREATE INDEX IF NOT EXISTS contract_creation_info_status_idx ON contract_creation_info (search_status)',
+      'CREATE INDEX IF NOT EXISTS contract_creation_info_tx_idx ON contract_creation_info (creation_tx_hash)',
 
       // 区块索引
-      "CREATE INDEX IF NOT EXISTS blocks_chain_timestamp_idx ON blocks (chain_id, timestamp)",
-      "CREATE INDEX IF NOT EXISTS blocks_chain_miner_idx ON blocks (chain_id, miner)",
-      "CREATE INDEX IF NOT EXISTS blocks_hash_idx ON blocks (hash)",
+      'CREATE INDEX IF NOT EXISTS blocks_chain_timestamp_idx ON blocks (chain_id, timestamp)',
+      'CREATE INDEX IF NOT EXISTS blocks_chain_miner_idx ON blocks (chain_id, miner)',
+      'CREATE INDEX IF NOT EXISTS blocks_hash_idx ON blocks (hash)',
 
       // 交易索引
-      "CREATE INDEX IF NOT EXISTS transactions_chain_block_idx ON transactions (chain_id, block_number)",
-      "CREATE INDEX IF NOT EXISTS transactions_chain_from_idx ON transactions (chain_id, from_address)",
-      "CREATE INDEX IF NOT EXISTS transactions_chain_to_idx ON transactions (chain_id, to_address)",
-      "CREATE INDEX IF NOT EXISTS transactions_chain_timestamp_idx ON transactions (chain_id, timestamp)",
+      'CREATE INDEX IF NOT EXISTS transactions_chain_block_idx ON transactions (chain_id, block_number)',
+      'CREATE INDEX IF NOT EXISTS transactions_chain_from_idx ON transactions (chain_id, from_address)',
+      'CREATE INDEX IF NOT EXISTS transactions_chain_to_idx ON transactions (chain_id, to_address)',
+      'CREATE INDEX IF NOT EXISTS transactions_chain_timestamp_idx ON transactions (chain_id, timestamp)',
 
       // 地址索引
-      "CREATE INDEX IF NOT EXISTS indexed_addresses_chain_queried_idx ON indexed_addresses (chain_id, last_queried)",
-      "CREATE INDEX IF NOT EXISTS indexed_addresses_global_idx ON indexed_addresses (address)",
+      'CREATE INDEX IF NOT EXISTS indexed_addresses_chain_queried_idx ON indexed_addresses (chain_id, last_queried)',
+      'CREATE INDEX IF NOT EXISTS indexed_addresses_global_idx ON indexed_addresses (address)',
 
       // 搜索历史索引
-      "CREATE INDEX IF NOT EXISTS search_history_chain_idx ON search_history (chain_id, searched_at)",
+      'CREATE INDEX IF NOT EXISTS search_history_chain_idx ON search_history (chain_id, searched_at)',
 
       // 访问历史索引
-      "CREATE INDEX IF NOT EXISTS access_history_chain_type_idx ON access_history (chain_id, type, last_accessed)",
+      'CREATE INDEX IF NOT EXISTS access_history_chain_type_idx ON access_history (chain_id, type, last_accessed)',
 
       // 事件索引
-      "CREATE INDEX IF NOT EXISTS contract_events_chain_contract_idx ON contract_events (chain_id, contract_address)",
-      "CREATE INDEX IF NOT EXISTS contract_events_chain_contract_block_idx ON contract_events (chain_id, contract_address, block_number)",
-      "CREATE INDEX IF NOT EXISTS contract_events_chain_contract_name_idx ON contract_events (chain_id, contract_address, event_name)",
+      'CREATE INDEX IF NOT EXISTS contract_events_chain_contract_idx ON contract_events (chain_id, contract_address)',
+      'CREATE INDEX IF NOT EXISTS contract_events_chain_contract_block_idx ON contract_events (chain_id, contract_address, block_number)',
+      'CREATE INDEX IF NOT EXISTS contract_events_chain_contract_name_idx ON contract_events (chain_id, contract_address, event_name)',
     ];
 
     for (const indexSql of indexes) {
       try {
         await this.exec(indexSql);
-      } catch (error) {
-        logger.warn({ err: error }, "Index creation warning");
+      }
+      catch (error) {
+        logger.warn({ err: error }, 'Index creation warning');
       }
     }
   }
@@ -216,7 +218,7 @@ export class DuckDBManager {
     }
 
     if (!this.instance) {
-      throw new Error("Database not initialized");
+      throw new Error('Database not initialized');
     }
 
     try {
@@ -228,13 +230,15 @@ export class DuckDBManager {
         const result = await connection.runAndReadAll(sql, params);
         connection.disconnectSync();
         return result.getRowObjects() as T[];
-      } else {
+      }
+      else {
         const result = await connection.runAndReadAll(sql);
         connection.disconnectSync();
         return result.getRowObjects() as T[];
       }
-    } catch (error) {
-      logger.error({ err: error, sql, params }, "DuckDB Query Error");
+    }
+    catch (error) {
+      logger.error({ err: error, sql, params }, 'DuckDB Query Error');
       throw error;
     }
   }
@@ -248,7 +252,7 @@ export class DuckDBManager {
     }
 
     if (!this.instance) {
-      throw new Error("Database not initialized");
+      throw new Error('Database not initialized');
     }
 
     try {
@@ -256,8 +260,9 @@ export class DuckDBManager {
       const connection = await this.instance.connect();
       await connection.run(sql);
       connection.disconnectSync();
-    } catch (error) {
-      logger.error({ err: error, sql }, "DuckDB Exec Error");
+    }
+    catch (error) {
+      logger.error({ err: error, sql }, 'DuckDB Exec Error');
       throw error;
     }
   }
@@ -267,19 +272,21 @@ export class DuckDBManager {
    */
   async transaction<T>(callback: () => Promise<T>): Promise<T> {
     if (!this.instance) {
-      throw new Error("Database not initialized");
+      throw new Error('Database not initialized');
     }
 
     const connection = await this.instance.connect();
     try {
-      await connection.run("BEGIN TRANSACTION");
+      await connection.run('BEGIN TRANSACTION');
       const result = await callback();
-      await connection.run("COMMIT");
+      await connection.run('COMMIT');
       return result;
-    } catch (error) {
-      await connection.run("ROLLBACK");
+    }
+    catch (error) {
+      await connection.run('ROLLBACK');
       throw error;
-    } finally {
+    }
+    finally {
       connection.disconnectSync();
     }
   }

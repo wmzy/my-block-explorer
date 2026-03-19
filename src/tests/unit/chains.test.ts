@@ -10,7 +10,7 @@ import {
   isPopularChain,
   getChainType,
   getSortedChains,
-  searchChains
+  searchChains,
 } from '@/config/chains';
 
 describe('Chains Configuration', () => {
@@ -28,7 +28,7 @@ describe('Chains Configuration', () => {
     });
 
     it('热门链应该都在支持的链列表中', () => {
-      POPULAR_CHAINS.forEach(popularChain => {
+      POPULAR_CHAINS.forEach((popularChain) => {
         const isSupported = SUPPORTED_CHAINS.some(chain => chain.id === popularChain.id);
         expect(isSupported).toBe(true);
       });
@@ -94,7 +94,7 @@ describe('Chains Configuration', () => {
 
     it('返回的链ID应该都是数字', () => {
       const chainIds = getSupportedChainIds();
-      chainIds.forEach(id => {
+      chainIds.forEach((id) => {
         expect(typeof id).toBe('number');
         expect(id).toBeGreaterThan(0);
       });
@@ -111,9 +111,9 @@ describe('Chains Configuration', () => {
     it('应该正确识别非热门链', () => {
       // 找一个不在热门列表中的链进行测试
       const nonPopularChainId = SUPPORTED_CHAINS.find(
-        chain => !POPULAR_CHAINS.some(popular => popular.id === chain.id)
+        chain => !POPULAR_CHAINS.some(popular => popular.id === chain.id),
       )?.id;
-      
+
       if (nonPopularChainId) {
         expect(isPopularChain(nonPopularChainId)).toBe(false);
       }
@@ -128,12 +128,12 @@ describe('Chains Configuration', () => {
 
     it('应该正确识别测试网', () => {
       // 查找测试网链进行测试
-      const testnetChain = SUPPORTED_CHAINS.find(chain => 
-        chain.name.toLowerCase().includes('test') ||
-        chain.name.toLowerCase().includes('sepolia') ||
-        chain.name.toLowerCase().includes('goerli')
+      const testnetChain = SUPPORTED_CHAINS.find(chain =>
+        chain.name.toLowerCase().includes('test')
+        || chain.name.toLowerCase().includes('sepolia')
+        || chain.name.toLowerCase().includes('goerli'),
       );
-      
+
       if (testnetChain) {
         expect(getChainType(testnetChain.id)).toBe('testnet');
       }
@@ -150,9 +150,9 @@ describe('Chains Configuration', () => {
     it('热门链应该排在前面', () => {
       const sortedChains = getSortedChains();
       const firstFewChains = sortedChains.slice(0, POPULAR_CHAINS.length);
-      
+
       // 检查前几个链是否都是热门链
-      firstFewChains.forEach(chain => {
+      firstFewChains.forEach((chain) => {
         expect(isPopularChain(chain.id)).toBe(true);
       });
     });
@@ -190,12 +190,12 @@ describe('Chains Configuration', () => {
 
     it('搜索结果应该按相关性排序', () => {
       const results = searchChains('eth');
-      
+
       if (results.length > 1) {
         // 精确匹配的应该排在前面
         const ethereumIndex = results.findIndex(chain => chain.id === 1);
         expect(ethereumIndex).toBeGreaterThanOrEqual(0);
-        
+
         // 热门链应该优先显示
         const firstResult = results[0];
         if (firstResult.id !== 1) {
@@ -211,7 +211,7 @@ describe('Chains Configuration', () => {
       const lowerResults = searchChains('ethereum');
       const upperResults = searchChains('ETHEREUM');
       const mixedResults = searchChains('Ethereum');
-      
+
       expect(lowerResults.length).toBeGreaterThan(0);
       expect(upperResults.length).toBe(lowerResults.length);
       expect(mixedResults.length).toBe(lowerResults.length);

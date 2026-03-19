@@ -1,29 +1,29 @@
-import { rpcManager } from "./RpcManager";
-import { db, contractCreationInfo, contractSources } from "../database/init";
-import { eq, and, sql } from "drizzle-orm";
-import { createRetryableRpcCall } from "../utils/errorHandler";
-import { createLogger } from "../server/logger";
+import { rpcManager } from './RpcManager';
+import { db, contractCreationInfo, contractSources } from '../database/init';
+import { eq, and, sql } from 'drizzle-orm';
+import { createRetryableRpcCall } from '../utils/errorHandler';
+import { createLogger } from '../server/logger';
 
-const logger = createLogger("contract-source-service");
-import { addressEquals, formatAddress } from "../utils/address";
-import type { Address } from "viem";
+const logger = createLogger('contract-source-service');
+import { addressEquals, formatAddress } from '../utils/address';
+import type { Address } from 'viem';
 import {
   analyzeRpcError,
   formatRpcErrorForUser,
   shouldRetryRpcError,
   type RpcErrorDetails,
-} from "../utils/rpcErrorHandler";
+} from '../utils/rpcErrorHandler';
 
-export type ProxyType =
-  | "transparent"
-  | "uups"
-  | "beacon"
-  | "minimal"
-  | "zeppelinos"
-  | "gnosis-safe"
-  | "diamond"
-  | "eip1167"
-  | "unknown";
+export type ProxyType
+  = | 'transparent'
+    | 'uups'
+    | 'beacon'
+    | 'minimal'
+    | 'zeppelinos'
+    | 'gnosis-safe'
+    | 'diamond'
+    | 'eip1167'
+    | 'unknown';
 
 export type ContractSource = {
   chainId: number;
@@ -35,13 +35,13 @@ export type ContractSource = {
   sourceCode: string;
   abi: string;
   constructorArguments?: string;
-  verificationStatus: "verified" | "unverified" | "partial";
+  verificationStatus: 'verified' | 'unverified' | 'partial';
   verificationSource:
-    | "sourcify"
-    | "etherscan"
-    | "mantle-explorer"
-    | "manual"
-    | "unknown";
+    | 'sourcify'
+    | 'etherscan'
+    | 'mantle-explorer'
+    | 'manual'
+    | 'unknown';
   verifiedAt?: Date;
   lastChecked: Date;
   isProxy?: boolean;
@@ -71,108 +71,110 @@ export class ContractSourceService {
   // 获取合约创建信息
   async getContractCreationInfo(
     chainId: number,
-    address: Address
+    address: Address,
   ): Promise<ContractCreationInfo | null> {
-    logger.info({ address, chainId }, "Starting contract creation search");
+    logger.info({ address, chainId }, 'Starting contract creation search');
 
     try {
       // 1. 先从数据库查找缓存的创建信息
-      logger.info("Step 1: Checking database cache for creation info");
+      logger.info('Step 1: Checking database cache for creation info');
       try {
         const cachedInfo = await this.getCachedCreationInfo(chainId, address);
         if (cachedInfo) {
           logger.info(
             { address, txHash: cachedInfo.txHash, blockNumber: cachedInfo.blockNumber },
-            "Found cached creation info"
+            'Found cached creation info',
           );
           return cachedInfo;
         }
-        logger.info("No cached creation info found, starting fresh search");
-      } catch (error) {
-        if (error.message.startsWith("CACHED_FAILURE:")) {
-          const reason = error.message.replace("CACHED_FAILURE:", "");
-          logger.info({ address, reason }, "Found cached failed search");
+        logger.info('No cached creation info found, starting fresh search');
+      }
+      catch (error) {
+        if (error.message.startsWith('CACHED_FAILURE:')) {
+          const reason = error.message.replace('CACHED_FAILURE:', '');
+          logger.info({ address, reason }, 'Found cached failed search');
           return null; // 直接返回null，不重新搜索
         }
         // 其他错误继续处理
-        logger.warn({ err: error, address }, "Cache check failed");
+        logger.warn({ err: error, address }, 'Cache check failed');
       }
 
       // 2. 如果缓存中没有，执行搜索
-      logger.info({ address }, "Step 2: Checking if address is a contract");
+      logger.info({ address }, 'Step 2: Checking if address is a contract');
       const isContract = await this.isContractAddress(chainId, address);
-      logger.info({ address, isContract }, "Contract check result");
+      logger.info({ address, isContract }, 'Contract check result');
 
       if (!isContract) {
-        logger.info({ address }, "Address is not a contract");
+        logger.info({ address }, 'Address is not a contract');
         // 缓存失败结果，避免重复检查
-        await this.cacheFailedSearch(chainId, address, "not_a_contract");
+        await this.cacheFailedSearch(chainId, address, 'not_a_contract');
         return null;
       }
 
       // 3. 使用二分法查找合约创建的区块
-      logger.info({ address }, "Step 3: Starting binary search for creation block");
+      logger.info({ address }, 'Step 3: Starting binary search for creation block');
       const creationBlock = await this.findContractCreationBlock(
         chainId,
-        address
+        address,
       );
       logger.info(
         { address, creationBlock },
-        "Binary search result"
+        'Binary search result',
       );
 
       if (!creationBlock) {
-        logger.info({ address }, "Could not find creation block");
+        logger.info({ address }, 'Could not find creation block');
         // 缓存失败结果
         await this.cacheFailedSearch(
           chainId,
           address,
-          "creation_block_not_found"
+          'creation_block_not_found',
         );
         return null;
       }
 
       // 4. 在创建区块中查找创建交易
-      logger.info({ address, creationBlock }, "Step 4: Searching for creation transaction in block");
+      logger.info({ address, creationBlock }, 'Step 4: Searching for creation transaction in block');
       const creationTx = await this.findContractCreationTransaction(
         chainId,
         address,
-        creationBlock
+        creationBlock,
       );
       logger.info(
         { address, creationTx: creationTx?.txHash },
-        "Transaction search result"
+        'Transaction search result',
       );
 
       if (!creationTx) {
         logger.info(
           { address, creationBlock },
-          "Could not find creation transaction in block"
+          'Could not find creation transaction in block',
         );
         // 缓存失败结果
         await this.cacheFailedSearch(
           chainId,
           address,
-          "creation_transaction_not_found"
+          'creation_transaction_not_found',
         );
         return null;
       }
 
       logger.info(
         { address, txHash: creationTx.txHash, blockNumber: creationTx.blockNumber },
-        "Successfully found creation info"
+        'Successfully found creation info',
       );
 
       // 5. 保存到数据库缓存
-      logger.info("Step 5: Caching creation info to database");
+      logger.info('Step 5: Caching creation info to database');
       await this.cacheCreationInfo(chainId, address, creationTx);
-      logger.info("Creation info cached successfully");
+      logger.info('Creation info cached successfully');
 
       return creationTx;
-    } catch (error) {
+    }
+    catch (error) {
       logger.error(
         { err: error, address },
-        "Failed to get contract creation info"
+        'Failed to get contract creation info',
       );
       return null;
     }
@@ -181,7 +183,7 @@ export class ContractSourceService {
   // 从数据库获取缓存的创建信息
   private async getCachedCreationInfo(
     chainId: number,
-    address: Address
+    address: Address,
   ): Promise<ContractCreationInfo | null> {
     try {
       const result = await db
@@ -190,8 +192,8 @@ export class ContractSourceService {
         .where(
           and(
             eq(contractCreationInfo.chainId, chainId),
-            eq(contractCreationInfo.address, address)
-          )
+            eq(contractCreationInfo.address, address),
+          ),
         )
         .limit(1);
 
@@ -204,11 +206,11 @@ export class ContractSourceService {
       // 检查是否是失败的搜索记录
       if (!row.creationTxHash) {
         logger.info(
-          { address, reason: row.creationMethod || "unknown" },
-          "Found cached failed search"
+          { address, reason: row.creationMethod || 'unknown' },
+          'Found cached failed search',
         );
         // 抛出特殊错误表示这是缓存的失败结果
-        throw new Error(`CACHED_FAILURE:${row.creationMethod || "unknown"}`);
+        throw new Error(`CACHED_FAILURE:${row.creationMethod || 'unknown'}`);
       }
 
       return {
@@ -219,8 +221,9 @@ export class ContractSourceService {
         gasUsed: BigInt(0),
         gasPrice: BigInt(0),
       };
-    } catch (error) {
-      logger.warn({ err: error, address }, "Failed to get cached creation info");
+    }
+    catch (error) {
+      logger.warn({ err: error, address }, 'Failed to get cached creation info');
       return null;
     }
   }
@@ -229,7 +232,7 @@ export class ContractSourceService {
   private async cacheCreationInfo(
     chainId: number,
     address: Address,
-    creationInfo: ContractCreationInfo
+    creationInfo: ContractCreationInfo,
   ): Promise<void> {
     try {
       // 先检查是否已存在
@@ -239,29 +242,30 @@ export class ContractSourceService {
         .where(
           and(
             eq(contractCreationInfo.chainId, chainId),
-            eq(contractCreationInfo.address, address)
-          )
+            eq(contractCreationInfo.address, address),
+          ),
         )
         .limit(1);
 
       if (existing.length > 0) {
-        logger.info({ address }, "Creation info already cached, skipping");
+        logger.info({ address }, 'Creation info already cached, skipping');
         return;
       }
 
       await db.insert(contractCreationInfo).values({
         chainId,
-        address: address,
+        address,
         creationTxHash: creationInfo.txHash,
         creationBlockNumber: BigInt(creationInfo.blockNumber),
         creationTimestamp: creationInfo.timestamp,
         creatorAddress: creationInfo.creator,
         factoryAddress: null,
-        creationMethod: "binary_search",
+        creationMethod: 'binary_search',
         lastUpdated: new Date(),
       });
-    } catch (error) {
-      logger.warn({ err: error, address }, "Failed to cache creation info");
+    }
+    catch (error) {
+      logger.warn({ err: error, address }, 'Failed to cache creation info');
       // 不抛出错误，缓存失败不应该影响主要功能
     }
   }
@@ -270,7 +274,7 @@ export class ContractSourceService {
   private async cacheFailedSearch(
     chainId: number,
     address: Address,
-    reason: string
+    reason: string,
   ): Promise<void> {
     try {
       // 先检查是否已存在
@@ -280,8 +284,8 @@ export class ContractSourceService {
         .where(
           and(
             eq(contractCreationInfo.chainId, chainId),
-            eq(contractCreationInfo.address, address)
-          )
+            eq(contractCreationInfo.address, address),
+          ),
         )
         .limit(1);
 
@@ -292,7 +296,7 @@ export class ContractSourceService {
       // 插入失败记录（creationTxHash为null表示失败）
       await db.insert(contractCreationInfo).values({
         chainId,
-        address: address,
+        address,
         creationTxHash: null, // null表示搜索失败
         creationBlockNumber: null,
         creatorAddress: null,
@@ -300,16 +304,17 @@ export class ContractSourceService {
         creationMethod: reason,
         lastUpdated: new Date(),
       });
-      logger.info({ address, reason }, "Cached failed search");
-    } catch (error) {
-      logger.warn({ err: error, address }, "Failed to cache failed search");
+      logger.info({ address, reason }, 'Cached failed search');
+    }
+    catch (error) {
+      logger.warn({ err: error, address }, 'Failed to cache failed search');
     }
   }
 
   // 使用二分法查找合约创建的区块号
   private async findContractCreationBlock(
     chainId: number,
-    address: Address
+    address: Address,
   ): Promise<number | null> {
     const client = await rpcManager.getClient(chainId);
     if (!client) {
@@ -326,51 +331,51 @@ export class ContractSourceService {
 
       // 动态调整搜索范围
       // 基于测试结果，扩大初始搜索范围以覆盖更多历史区块
-      let searchRange = 20000000n; // 开始搜索最近2000万个区块
-      let left =
-        latestBlockNumber > searchRange ? latestBlockNumber - searchRange : 0n;
+      const searchRange = 20000000n; // 开始搜索最近2000万个区块
+      let left
+        = latestBlockNumber > searchRange ? latestBlockNumber - searchRange : 0n;
       let right = latestBlockNumber;
       let creationBlock: number | null = null;
 
       // 如果搜索范围仍然很大，先检查合约在最早区块是否存在
       if (left > 1000000n) {
-        logger.info({ earlyBlock: Number(left) }, "Checking if contract exists at early block");
+        logger.info({ earlyBlock: Number(left) }, 'Checking if contract exists at early block');
         const earlyCode = createRetryableRpcCall(async () => {
           return await client.getCode({
-            address: address as `0x${string}`,
+            address,
             blockNumber: left,
           });
         }, chainId);
 
         const earlyCodeResult = await earlyCode();
-        const hasEarlyCode =
-          earlyCodeResult &&
-          earlyCodeResult !== "0x" &&
-          earlyCodeResult.length > 2;
+        const hasEarlyCode
+          = earlyCodeResult
+            && earlyCodeResult !== '0x'
+            && earlyCodeResult.length > 2;
 
         if (hasEarlyCode) {
           logger.info(
             { block: Number(left) },
-            "Contract already exists at block, expanding search range"
+            'Contract already exists at block, expanding search range',
           );
           // 如果在搜索起点就存在，继续扩大搜索范围
           // 基于RPC测试，我们知道10M以下的区块会失败，所以限制搜索范围
           const maxSafeRange = 50000000n; // 最多搜索5000万个区块
           const expandedRange = Math.min(
             Number(maxSafeRange),
-            Number(latestBlockNumber)
+            Number(latestBlockNumber),
           );
           left = latestBlockNumber - BigInt(expandedRange);
           logger.info(
             { expandedRange, left: Number(left), right: Number(right) },
-            "Expanded search range"
+            'Expanded search range',
           );
         }
       }
 
       logger.info(
         { address, left: left.toString(), right: right.toString() },
-        "Starting binary search for contract creation"
+        'Starting binary search for contract creation',
       );
 
       // 二分查找
@@ -382,24 +387,24 @@ export class ContractSourceService {
 
         logger.info(
           { iterations, midNumber, left: left.toString(), right: right.toString() },
-          "Binary search iteration"
+          'Binary search iteration',
         );
 
         try {
           // 检查在 mid 区块时合约是否存在
           const getCode = createRetryableRpcCall(async () => {
             return await client.getCode({
-              address: address as `0x${string}`,
+              address,
               blockNumber: mid,
             });
           }, chainId);
 
           const code = await getCode();
-          const hasCode = code && code !== "0x" && code.length > 2;
+          const hasCode = code && code !== '0x' && code.length > 2;
 
           logger.info(
             { midNumber, hasCode },
-            "Block check result"
+            'Block check result',
           );
 
           if (hasCode) {
@@ -408,22 +413,24 @@ export class ContractSourceService {
             right = mid - 1n;
             logger.info(
               { midNumber, left: left.toString(), right: right.toString() },
-              "Contract exists at block, searching earlier"
+              'Contract exists at block, searching earlier',
             );
-          } else {
+          }
+          else {
             // 合约不存在，创建区块在 mid 之后
             left = mid + 1n;
             logger.info(
               { midNumber, left: left.toString(), right: right.toString() },
-              "Contract doesn't exist at block, searching later"
+              'Contract doesn\'t exist at block, searching later',
             );
           }
-        } catch (error) {
-          logger.error({ err: error, midNumber }, "Error checking block");
+        }
+        catch (error) {
+          logger.error({ err: error, midNumber }, 'Error checking block');
 
           // 分析RPC错误并提供详细反馈
           const rpcClient = await rpcManager.getClient(chainId);
-          const rpcUrl = rpcClient.transport?.url || "unknown";
+          const rpcUrl = rpcClient.transport?.url || 'unknown';
 
           const errorDetails = analyzeRpcError(error, {
             blockNumber: midNumber,
@@ -434,30 +441,31 @@ export class ContractSourceService {
 
           logger.info(
             { error: errorDetails.error, suggestion: errorDetails.suggestion, retryable: errorDetails.retryable, castCommand: errorDetails.castCommand },
-            "RPC error analysis"
+            'RPC error analysis',
           );
 
           // 如果是可重试的错误，记录但继续搜索
           if (shouldRetryRpcError(errorDetails)) {
-            logger.info("Error is retryable, continuing search");
-          } else {
-            logger.info("Error is not retryable, may affect search accuracy");
+            logger.info('Error is retryable, continuing search');
+          }
+          else {
+            logger.info('Error is not retryable, may affect search accuracy');
           }
 
           // 无论如何，假设合约在此区块不存在，向右搜索
-          logger.info("Due to error, assuming contract doesn't exist and searching later");
+          logger.info('Due to error, assuming contract doesn\'t exist and searching later');
           left = mid + 1n;
         }
 
         // 防止无限循环，但允许更大的搜索范围
         if (right - left > 50000000n) {
-          logger.warn("Binary search range too large (>50M blocks), stopping");
+          logger.warn('Binary search range too large (>50M blocks), stopping');
           break;
         }
 
         // 如果搜索了超过30次迭代，停止搜索
         if (iterations > 30) {
-          logger.warn("Binary search iterations exceeded limit, stopping");
+          logger.warn('Binary search iterations exceeded limit, stopping');
           break;
         }
 
@@ -465,54 +473,56 @@ export class ContractSourceService {
         if (left > right) {
           logger.info(
             { left: left.toString(), right: right.toString() },
-            "Search space exhausted, stopping search"
+            'Search space exhausted, stopping search',
           );
           break;
         }
       }
 
-      logger.info({ iterations, creationBlock }, "Binary search completed");
+      logger.info({ iterations, creationBlock }, 'Binary search completed');
       logger.info(
         { creationBlock },
-        "Final result"
+        'Final result',
       );
 
       if (creationBlock !== null) {
-        logger.info({ creationBlock }, "Found contract creation block");
+        logger.info({ creationBlock }, 'Found contract creation block');
 
         // 验证找到的创建区块是否正确
-        logger.info({ creationBlock }, "Verifying creation block");
+        logger.info({ creationBlock }, 'Verifying creation block');
         try {
           // 检查前一个区块合约是否不存在
           const prevCode = createRetryableRpcCall(async () => {
             return await client.getCode({
-              address: address as `0x${string}`,
+              address,
               blockNumber: BigInt(creationBlock - 1),
             });
           }, chainId);
 
           const prevCodeResult = await prevCode();
-          const hasPrevCode =
-            prevCodeResult &&
-            prevCodeResult !== "0x" &&
-            prevCodeResult.length > 2;
+          const hasPrevCode
+            = prevCodeResult
+              && prevCodeResult !== '0x'
+              && prevCodeResult.length > 2;
 
           logger.info(
             { block: creationBlock - 1, hasPrevCode },
-            "Previous block check result"
+            'Previous block check result',
           );
 
           if (hasPrevCode) {
-            logger.warn("Contract already exists in previous block, may not be the true creation block");
+            logger.warn('Contract already exists in previous block, may not be the true creation block');
           }
-        } catch (error) {
-          logger.info({ err: error }, "Could not verify previous block");
+        }
+        catch (error) {
+          logger.info({ err: error }, 'Could not verify previous block');
         }
       }
 
       return creationBlock;
-    } catch (error) {
-      logger.error({ err: error }, "Error in binary search");
+    }
+    catch (error) {
+      logger.error({ err: error }, 'Error in binary search');
       return null;
     }
   }
@@ -521,7 +531,7 @@ export class ContractSourceService {
   private async findContractCreationTransaction(
     chainId: number,
     contractAddress: Address,
-    blockNumber: number
+    blockNumber: number,
   ): Promise<ContractCreationInfo | null> {
     const client = await rpcManager.getClient(chainId);
     if (!client) {
@@ -539,29 +549,29 @@ export class ContractSourceService {
 
       const block = await getBlock();
 
-      if (!block || !block.transactions) {
+      if (!block?.transactions) {
         return null;
       }
 
       logger.info(
         { txCount: block.transactions.length, blockNumber, contractAddress },
-        "Searching transactions in block for contract creation"
+        'Searching transactions in block for contract creation',
       );
 
       // 遍历区块中的所有交易
       for (let i = 0; i < block.transactions.length; i++) {
         const tx = block.transactions[i];
-        if (typeof tx === "string") continue;
+        if (typeof tx === 'string') continue;
 
         logger.info(
           { index: i + 1, total: block.transactions.length, txHash: tx.hash, from: tx.from, to: tx.to },
-          "Checking transaction"
+          'Checking transaction',
         );
 
         try {
           // 检查是否为合约创建交易（to 为 null 或 undefined）
           if (tx.to === null || tx.to === undefined) {
-            logger.info({ txHash: tx.hash }, "Found contract creation tx");
+            logger.info({ txHash: tx.hash }, 'Found contract creation tx');
 
             // 获取交易回执以确认合约地址
             const getReceipt = createRetryableRpcCall(async () => {
@@ -571,18 +581,17 @@ export class ContractSourceService {
             const receipt = await getReceipt();
             logger.info(
               { contractAddress: receipt.contractAddress?.toLowerCase() },
-              "Receipt contract address"
+              'Receipt contract address',
             );
 
             if (
-              receipt &&
-              receipt.contractAddress &&
-              addressEquals(receipt.contractAddress, contractAddress)
+              receipt?.contractAddress
+              && addressEquals(receipt.contractAddress, contractAddress)
             ) {
-              logger.info("Found matching contract creation transaction");
+              logger.info('Found matching contract creation transaction');
               logger.info(
                 { txHash: tx.hash, contractAddress },
-                "Contract creation transaction found"
+                'Contract creation transaction found',
               );
 
               return {
@@ -593,15 +602,17 @@ export class ContractSourceService {
                 gasUsed: receipt.gasUsed,
                 gasPrice: tx.gasPrice || 0n,
               };
-            } else {
+            }
+            else {
               logger.info(
-                { expected: contractAddress, got: receipt.contractAddress ? formatAddress(receipt.contractAddress) : "null" },
-                "Contract address doesn't match"
+                { expected: contractAddress, got: receipt.contractAddress ? formatAddress(receipt.contractAddress) : 'null' },
+                'Contract address doesn\'t match',
               );
             }
-          } else {
+          }
+          else {
             // 检查是否是通过工厂合约或其他方式创建的
-            logger.info("Checking if tx creates contract via factory or internal transaction");
+            logger.info('Checking if tx creates contract via factory or internal transaction');
 
             const getReceipt = createRetryableRpcCall(async () => {
               return await client.getTransactionReceipt({ hash: tx.hash });
@@ -610,13 +621,13 @@ export class ContractSourceService {
             const receipt = await getReceipt();
 
             // 方法1: 检查交易日志中是否有我们目标合约的相关事件
-            const hasContractEvent = receipt.logs.some((log) =>
-              addressEquals(log.address || "", contractAddress)
+            const hasContractEvent = receipt.logs.some(log =>
+              addressEquals(log.address || '', contractAddress),
             );
 
             if (hasContractEvent) {
-              logger.info({ txHash: tx.hash }, "Found factory/internal creation");
-              logger.info({ contractAddress }, "Transaction created events for contract");
+              logger.info({ txHash: tx.hash }, 'Found factory/internal creation');
+              logger.info({ contractAddress }, 'Transaction created events for contract');
               return {
                 txHash: tx.hash,
                 blockNumber: Number(block.number),
@@ -628,21 +639,21 @@ export class ContractSourceService {
             }
 
             // 方法2: 检查是否有CREATE2或CREATE操作码创建了这个合约
-            logger.info("Checking for internal contract creation via trace");
+            logger.info('Checking for internal contract creation via trace');
 
             try {
               // 使用debug_traceTransaction来获取交易的详细执行轨迹
               const trace = await client.request({
-                method: "debug_traceTransaction",
-                params: [tx.hash, { tracer: "callTracer" }],
+                method: 'debug_traceTransaction',
+                params: [tx.hash, { tracer: 'callTracer' }],
               });
 
               // 递归检查trace中的所有调用，查找合约创建
               const findContractCreation = (call: any): boolean => {
                 // 检查当前调用是否创建了目标合约
-                if (call.type === "CREATE" || call.type === "CREATE2") {
-                  if (addressEquals(call.to || "", contractAddress)) {
-                    logger.info({ contractAddress }, "Found CREATE/CREATE2 operation creating contract");
+                if (call.type === 'CREATE' || call.type === 'CREATE2') {
+                  if (addressEquals(call.to || '', contractAddress)) {
+                    logger.info({ contractAddress }, 'Found CREATE/CREATE2 operation creating contract');
                     return true;
                   }
                 }
@@ -656,7 +667,7 @@ export class ContractSourceService {
               };
 
               if (findContractCreation(trace)) {
-                logger.info({ txHash: tx.hash }, "Found internal contract creation");
+                logger.info({ txHash: tx.hash }, 'Found internal contract creation');
                 return {
                   txHash: tx.hash,
                   blockNumber: Number(block.number),
@@ -666,17 +677,19 @@ export class ContractSourceService {
                   gasPrice: tx.gasPrice || 0n,
                 };
               }
-            } catch (traceError) {
-              logger.info({ err: traceError }, "debug_traceTransaction not supported or failed");
+            }
+            catch (traceError) {
+              logger.info({ err: traceError }, 'debug_traceTransaction not supported or failed');
               // 如果trace不支持，继续检查其他方法
             }
           }
-        } catch (error) {
-          logger.warn({ err: error, txHash: tx.hash }, "Error processing transaction");
+        }
+        catch (error) {
+          logger.warn({ err: error, txHash: tx.hash }, 'Error processing transaction');
 
           // 分析RPC错误
           const rpcClient = await rpcManager.getClient(chainId);
-          const rpcUrl = rpcClient.transport?.url || "unknown";
+          const rpcUrl = rpcClient.transport?.url || 'unknown';
 
           const errorDetails = analyzeRpcError(error, {
             contractAddress,
@@ -684,16 +697,17 @@ export class ContractSourceService {
             chainId,
           });
 
-          logger.info({ error: errorDetails.error, castCommand: errorDetails.castCommand }, "Transaction check error analysis");
+          logger.info({ error: errorDetails.error, castCommand: errorDetails.castCommand }, 'Transaction check error analysis');
 
           continue;
         }
       }
 
-      logger.info({ blockNumber }, "No contract creation transaction found in block");
+      logger.info({ blockNumber }, 'No contract creation transaction found in block');
       return null;
-    } catch (error) {
-      logger.error({ err: error }, "Error finding contract creation transaction");
+    }
+    catch (error) {
+      logger.error({ err: error }, 'Error finding contract creation transaction');
       return null;
     }
   }
@@ -702,41 +716,43 @@ export class ContractSourceService {
   async getContractSource(
     chainId: number,
     address: Address,
-    options?: { skipCache?: boolean }
+    options?: { skipCache?: boolean },
   ): Promise<ContractSource | null> {
-    logger.info({ address, chainId }, "Getting contract source");
+    logger.info({ address, chainId }, 'Getting contract source');
 
     try {
       // 1. 先从数据库查找缓存的合约信息
       if (options?.skipCache) {
-        logger.info("Skipping cache due to refresh request");
+        logger.info('Skipping cache due to refresh request');
       }
-      logger.info("Step 1: Checking database cache for contract source");
+      logger.info('Step 1: Checking database cache for contract source');
       const cached = options?.skipCache ? null : await this.getFromDatabase(chainId, address);
       if (cached && this.isCacheValid(cached)) {
-        logger.info({ address, verificationStatus: cached.verificationStatus, isProxy: cached.isProxy, lastChecked: cached.lastChecked }, "Found cached contract source");
+        logger.info({ address, verificationStatus: cached.verificationStatus, isProxy: cached.isProxy, lastChecked: cached.lastChecked }, 'Found cached contract source');
 
         // 对于已验证的合约，检查是否需要更新代理信息
-        if (cached.verificationStatus === "verified") {
+        if (cached.verificationStatus === 'verified') {
           // Only re-detect proxy when proxy status is genuinely unknown
           if (cached.isProxy === undefined || cached.isProxy === null) {
-            logger.info("Cached verified contract missing or incomplete proxy info, checking");
+            logger.info('Cached verified contract missing or incomplete proxy info, checking');
             const proxyInfo = await this.detectProxy(chainId, address);
             if (proxyInfo.isProxy) {
-              logger.warn("Cached verified contract is actually a proxy, need to refresh cache");
+              logger.warn('Cached verified contract is actually a proxy, need to refresh cache');
               // 继续执行重新获取逻辑
-            } else {
-              logger.info("Returning cached verified contract (confirmed non-proxy)");
+            }
+            else {
+              logger.info('Returning cached verified contract (confirmed non-proxy)');
               return cached;
             }
-          } else {
-            logger.info("Returning cached verified contract (proxy info complete)");
+          }
+          else {
+            logger.info('Returning cached verified contract (proxy info complete)');
             // 如果是代理合约，需要动态加载实现合约信息
             if (cached.isProxy && cached.implementationAddress) {
-              logger.info("Loading implementation contract for cached proxy");
+              logger.info('Loading implementation contract for cached proxy');
               const implementationContract = await this.getContractSource(
                 chainId,
-                cached.implementationAddress
+                cached.implementationAddress,
               );
               return {
                 ...cached,
@@ -749,23 +765,27 @@ export class ContractSourceService {
 
         // 对于未验证的合约，检查是否需要更新代理信息
         if (!cached.isProxy) {
-          logger.info("Checking if cached unverified contract is actually a proxy");
+          logger.info('Checking if cached unverified contract is actually a proxy');
           const proxyInfo = await this.detectProxy(chainId, address);
           if (proxyInfo.isProxy) {
-            logger.warn("Cached contract is actually a proxy, need to refresh cache");
+            logger.warn('Cached contract is actually a proxy, need to refresh cache');
             // 继续执行重新获取逻辑
-          } else {
-            logger.info("Returning cached contract source (verified non-proxy)");
+          }
+          else {
+            logger.info('Returning cached contract source (verified non-proxy)');
             return cached;
           }
-        } else {
-          logger.info("Returning cached proxy contract source");
+        }
+        else {
+          logger.info('Returning cached proxy contract source');
           return cached;
         }
-      } else if (cached) {
-        logger.info({ lastChecked: cached.lastChecked }, "Found cached contract but cache is invalid/expired");
-      } else {
-        logger.info("No cached contract source found");
+      }
+      else if (cached) {
+        logger.info({ lastChecked: cached.lastChecked }, 'Found cached contract but cache is invalid/expired');
+      }
+      else {
+        logger.info('No cached contract source found');
       }
 
       // 2. 检查是否为合约
@@ -774,22 +794,22 @@ export class ContractSourceService {
         return null;
       }
 
-      logger.info("Step 2: Fetching contract source from external sources");
+      logger.info('Step 2: Fetching contract source from external sources');
 
       // 3. 尝试从 Sourcify 获取（包含 proxyResolution）
-      logger.info("Trying Sourcify");
+      logger.info('Trying Sourcify');
       const sourcifyResult = await this.fetchFromSourcify(chainId, address);
       if (sourcifyResult) {
         logger.info(
           { isProxy: sourcifyResult.isProxy, proxyType: sourcifyResult.proxyType },
-          "Found contract source from Sourcify"
+          'Found contract source from Sourcify',
         );
         await this.saveToDatabase(sourcifyResult);
         return sourcifyResult;
       }
 
       // 3.5. 尝试从链特定的区块浏览器获取
-      logger.info("Trying chain-specific explorer");
+      logger.info('Trying chain-specific explorer');
       const explorerResult = await this.fetchFromChainExplorer(chainId, address);
 
       // 4. 对非 Sourcify 来源，使用 detectProxy 做本地代理检测
@@ -799,7 +819,7 @@ export class ContractSourceService {
       if (proxyInfo.isProxy) {
         logger.info(
           { proxyType: proxyInfo.proxyType, implementation: proxyInfo.implementationAddress },
-          "Local proxy detection found proxy"
+          'Local proxy detection found proxy',
         );
         const proxyContract = await this.handleProxyContract(chainId, address, proxyInfo);
         if (proxyContract) {
@@ -822,89 +842,88 @@ export class ContractSourceService {
       }
 
       // 5. 如果都没找到，返回未验证状态
-      logger.info("No verified source found, creating unverified record");
+      logger.info('No verified source found, creating unverified record');
       const unverifiedContract: ContractSource = {
         chainId,
         address,
-        sourceCode: "",
-        abi: "[]",
-        verificationStatus: "unverified",
-        verificationSource: "unknown",
+        sourceCode: '',
+        abi: '[]',
+        verificationStatus: 'unverified',
+        verificationSource: 'unknown',
         lastChecked: new Date(),
       };
 
       await this.saveToDatabase(unverifiedContract);
       return unverifiedContract;
-    } catch (error) {
-      logger.error({ err: error, address }, "Failed to get contract source");
+    }
+    catch (error) {
+      logger.error({ err: error, address }, 'Failed to get contract source');
       return null;
     }
   }
 
   private mapSourcifyProxyType(sourcifyType: string): ProxyType {
     const mapping: Record<string, ProxyType> = {
-      EIP1967Proxy: "transparent",
-      ZeppelinOSProxy: "zeppelinos",
-      EIP1167Proxy: "eip1167",
-      GnosisSafeProxy: "gnosis-safe",
-      DiamondProxy: "diamond",
-      PROXIABLEProxy: "uups",
-      FixedProxy: "minimal",
-      SequenceWalletProxy: "minimal",
+      EIP1967Proxy: 'transparent',
+      ZeppelinOSProxy: 'zeppelinos',
+      EIP1167Proxy: 'eip1167',
+      GnosisSafeProxy: 'gnosis-safe',
+      DiamondProxy: 'diamond',
+      PROXIABLEProxy: 'uups',
+      FixedProxy: 'minimal',
+      SequenceWalletProxy: 'minimal',
     };
-    return mapping[sourcifyType] || "unknown";
+    return mapping[sourcifyType] || 'unknown';
   }
 
   // 从 Sourcify v2 API 获取合约源码
   private async fetchFromSourcify(
     chainId: number,
-    address: Address
+    address: Address,
   ): Promise<ContractSource | null> {
     try {
-      const baseUrl = "https://sourcify.dev/server/v2";
+      const baseUrl = 'https://sourcify.dev/server/v2';
       const contractUrl = `${baseUrl}/contract/${chainId}/${address}?fields=abi,sources,compilation,proxyResolution`;
 
       const response = await fetch(contractUrl);
 
       if (!response.ok) {
         if (response.status === 404) {
-          logger.info({ address, chainId }, "Contract not found on Sourcify");
+          logger.info({ address, chainId }, 'Contract not found on Sourcify');
           return null;
         }
-        logger.warn({ status: response.status }, "Sourcify v2 API error");
+        logger.warn({ status: response.status }, 'Sourcify v2 API error');
         return null;
       }
 
       const data = await response.json();
 
-      const isMatch = data.match === "match";
-      const isPartial =
-        data.runtimeMatch === "match" && data.creationMatch !== "match";
+      const isMatch = data.match === 'match';
+      const isPartial
+        = data.runtimeMatch === 'match' && data.creationMatch !== 'match';
 
       if (!isMatch && !isPartial) {
         return null;
       }
 
-      const abi = data.abi ? JSON.stringify(data.abi) : "[]";
-      const contractName = data.compilation?.name || "";
-      const compilerVersion = data.compilation?.compilerVersion || "";
+      const abi = data.abi ? JSON.stringify(data.abi) : '[]';
+      const contractName = data.compilation?.name || '';
+      const compilerVersion = data.compilation?.compilerVersion || '';
 
-      let sourceCode = "";
-      if (data.sources && typeof data.sources === "object") {
-        const sourceEntries = Object.entries(data.sources) as [
-          string,
-          { content?: string },
-        ][];
+      let sourceCode = '';
+      if (data.sources && typeof data.sources === 'object') {
+        const sourceEntries = Object.entries(data.sources);
         const solFiles = sourceEntries.filter(([name]) =>
-          name.endsWith(".sol")
+          name.endsWith('.sol'),
         );
 
         if (solFiles.length === 1) {
-          sourceCode = solFiles[0][1].content || "";
-        } else if (solFiles.length > 1) {
+          sourceCode = solFiles[0][1].content || '';
+        }
+        else if (solFiles.length > 1) {
           sourceCode = solFiles
-            .map(([name, src]) => `// File: ${name}\n${src.content || ""}`)
-            .join("\n\n");
+            .map(([name, src]) => `// File: ${name}\n${src.content || ''}`)
+            .join('\n\n');
         }
       }
 
@@ -915,8 +934,8 @@ export class ContractSourceService {
         compilerVersion,
         sourceCode,
         abi,
-        verificationStatus: isPartial ? "partial" : "verified",
-        verificationSource: "sourcify",
+        verificationStatus: isPartial ? 'partial' : 'verified',
+        verificationSource: 'sourcify',
         verifiedAt: data.verifiedAt ? new Date(data.verifiedAt) : new Date(),
         lastChecked: new Date(),
       };
@@ -930,7 +949,7 @@ export class ContractSourceService {
 
         logger.info(
           { proxyType: proxy.proxyType, mapped: result.proxyType, implementation: implAddress },
-          "Sourcify detected proxy contract"
+          'Sourcify detected proxy contract',
         );
 
         const implContract = await this.getContractSource(chainId, implAddress);
@@ -940,8 +959,9 @@ export class ContractSourceService {
       }
 
       return result;
-    } catch (error) {
-      logger.error({ err: error }, "Sourcify v2 fetch error");
+    }
+    catch (error) {
+      logger.error({ err: error }, 'Sourcify v2 fetch error');
       return null;
     }
   }
@@ -949,7 +969,7 @@ export class ContractSourceService {
   // 从链特定的区块浏览器获取合约源码
   private async fetchFromChainExplorer(
     chainId: number,
-    address: Address
+    address: Address,
   ): Promise<ContractSource | null> {
     try {
       // 根据链ID选择对应的API
@@ -962,56 +982,57 @@ export class ContractSourceService {
       const response = await fetch(url);
 
       if (!response.ok) {
-        logger.error({ status: response.status }, "Explorer API error");
+        logger.error({ status: response.status }, 'Explorer API error');
         return null;
       }
 
       const data = await response.json();
 
-      if (data.status !== "1" || !data.result || data.result.length === 0) {
+      if (data.status !== '1' || !data.result || data.result.length === 0) {
         return null;
       }
 
       const contractData = data.result[0];
 
       // 检查是否有源码
-      if (!contractData.SourceCode || contractData.SourceCode.trim() === "") {
+      if (!contractData.SourceCode || contractData.SourceCode.trim() === '') {
         return null;
       }
 
       return {
         chainId,
-        address: address,
-        name: contractData.ContractName || "Unknown",
-        compilerVersion: contractData.CompilerVersion || "Unknown",
-        optimizationEnabled: contractData.OptimizationUsed === "1",
-        optimizationRuns: parseInt(contractData.Runs || "200"),
+        address,
+        name: contractData.ContractName || 'Unknown',
+        compilerVersion: contractData.CompilerVersion || 'Unknown',
+        optimizationEnabled: contractData.OptimizationUsed === '1',
+        optimizationRuns: parseInt(contractData.Runs || '200'),
         sourceCode: contractData.SourceCode,
-        abi: contractData.ABI || "[]",
-        constructorArguments: contractData.ConstructorArguments || "",
-        verificationStatus: "verified",
+        abi: contractData.ABI || '[]',
+        constructorArguments: contractData.ConstructorArguments || '',
+        verificationStatus: 'verified',
         verificationSource: explorerConfig.name,
         verifiedAt: new Date(),
         lastChecked: new Date(),
       };
-    } catch (error) {
-      logger.error({ err: error }, "Chain explorer fetch error");
+    }
+    catch (error) {
+      logger.error({ err: error }, 'Chain explorer fetch error');
       return null;
     }
   }
 
   // 获取链特定的区块浏览器配置
   private getExplorerConfig(
-    chainId: number
-  ): { name: "mantle-explorer" | "etherscan"; apiUrl: string } | null {
+    chainId: number,
+  ): { name: 'mantle-explorer' | 'etherscan'; apiUrl: string } | null {
     const configs: Record<
       number,
-      { name: "mantle-explorer" | "etherscan"; apiUrl: string }
+      { name: 'mantle-explorer' | 'etherscan'; apiUrl: string }
     > = {
       5000: {
         // Mantle
-        name: "mantle-explorer",
-        apiUrl: "https://explorer.mantle.xyz/api",
+        name: 'mantle-explorer',
+        apiUrl: 'https://explorer.mantle.xyz/api',
       },
       // 可以添加更多链的配置
       // 1: { // Ethereum
@@ -1026,14 +1047,15 @@ export class ContractSourceService {
   // 检查地址是否为合约
   private async isContractAddress(
     chainId: number,
-    address: Address
+    address: Address,
   ): Promise<boolean> {
     try {
       const client = await rpcManager.getClient(chainId);
-      const code = await client.getCode({ address: address as `0x${string}` });
-      return Boolean(code && code !== "0x" && code.length > 2);
-    } catch (error) {
-      logger.error({ err: error }, "Failed to check contract address");
+      const code = await client.getCode({ address });
+      return Boolean(code && code !== '0x' && code.length > 2);
+    }
+    catch (error) {
+      logger.error({ err: error }, 'Failed to check contract address');
       return false;
     }
   }
@@ -1046,7 +1068,7 @@ export class ContractSourceService {
       isProxy: boolean;
       proxyType?: ProxyType;
       implementationAddress?: string;
-    }
+    },
   ): Promise<ContractSource | null> {
     try {
       // 获取代理合约本身的源码
@@ -1059,7 +1081,7 @@ export class ContractSourceService {
       if (!proxyContract) {
         const explorerResult = await this.fetchFromChainExplorer(
           chainId,
-          address
+          address,
         );
 
         // 检查区块浏览器返回的是否是代理合约本身的源码
@@ -1073,21 +1095,21 @@ export class ContractSourceService {
       if (!proxyContract) {
         proxyContract = {
           chainId,
-          address: address,
+          address,
           name: `TransparentUpgradeableProxy`,
           sourceCode:
-            "// This is a proxy contract. The actual implementation is at the implementation address.",
+            '// This is a proxy contract. The actual implementation is at the implementation address.',
           abi: JSON.stringify([
             {
               inputs: [],
-              name: "implementation",
-              outputs: [{ internalType: "address", name: "", type: "address" }],
-              stateMutability: "view",
-              type: "function",
+              name: 'implementation',
+              outputs: [{ internalType: 'address', name: '', type: 'address' }],
+              stateMutability: 'view',
+              type: 'function',
             },
           ]),
-          verificationStatus: "verified" as const,
-          verificationSource: "manual" as const,
+          verificationStatus: 'verified' as const,
+          verificationSource: 'manual' as const,
           lastChecked: new Date(),
         };
       }
@@ -1097,7 +1119,7 @@ export class ContractSourceService {
       if (proxyInfo.implementationAddress) {
         implementationContract = await this.getContractSource(
           chainId,
-          proxyInfo.implementationAddress
+          proxyInfo.implementationAddress,
         );
       }
 
@@ -1109,8 +1131,9 @@ export class ContractSourceService {
         implementationAddress: proxyInfo.implementationAddress,
         implementationContract: implementationContract || undefined,
       };
-    } catch (error) {
-      logger.error({ err: error }, "Failed to handle proxy contract");
+    }
+    catch (error) {
+      logger.error({ err: error }, 'Failed to handle proxy contract');
       return null;
     }
   }
@@ -1122,7 +1145,7 @@ export class ContractSourceService {
       isProxy: boolean;
       proxyType?: ProxyType;
       implementationAddress?: string;
-    }
+    },
   ): Promise<ContractSource> {
     try {
       // 如果没有传入代理信息，则检测
@@ -1131,12 +1154,12 @@ export class ContractSourceService {
 
         // 如果通过存储槽检测没有发现代理，尝试通过名称检测
         if (
-          !proxyInfo.isProxy &&
-          contract.name?.toLowerCase().includes("proxy")
+          !proxyInfo.isProxy
+          && contract.name?.toLowerCase().includes('proxy')
         ) {
           proxyInfo = {
             isProxy: true,
-            proxyType: "unknown",
+            proxyType: 'unknown',
           };
         }
       }
@@ -1150,7 +1173,7 @@ export class ContractSourceService {
       if (proxyInfo.implementationAddress) {
         implementationContract = await this.getContractSource(
           contract.chainId,
-          proxyInfo.implementationAddress
+          proxyInfo.implementationAddress,
         );
       }
 
@@ -1161,8 +1184,9 @@ export class ContractSourceService {
         implementationAddress: proxyInfo.implementationAddress,
         implementationContract: implementationContract || undefined,
       };
-    } catch (error) {
-      logger.error({ err: error }, "Failed to enhance with proxy info");
+    }
+    catch (error) {
+      logger.error({ err: error }, 'Failed to enhance with proxy info');
       return contract;
     }
   }
@@ -1170,21 +1194,21 @@ export class ContractSourceService {
   // 检测代理合约类型和实现地址
   private async detectProxy(
     chainId: number,
-    address: Address
+    address: Address,
   ): Promise<{
     isProxy: boolean;
     proxyType?: ProxyType;
     implementationAddress?: string;
   }> {
-    const timeout = new Promise<{ isProxy: false }>((resolve) =>
-      setTimeout(() => resolve({ isProxy: false }), 15_000)
+    const timeout = new Promise<{ isProxy: false }>(resolve =>
+      setTimeout(() => resolve({ isProxy: false }), 15_000),
     );
     return Promise.race([this._detectProxyImpl(chainId, address), timeout]);
   }
 
   private async _detectProxyImpl(
     chainId: number,
-    address: Address
+    address: Address,
   ): Promise<{
     isProxy: boolean;
     proxyType?: ProxyType;
@@ -1201,39 +1225,40 @@ export class ContractSourceService {
 
       // 检查常见的代理存储槽
       // EIP-1967: 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc
-      const implementationSlot =
-        "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc";
+      const implementationSlot
+        = '0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc';
 
       try {
         const implementationData = await client.getStorageAt({
-          address: address as `0x${string}`,
+          address,
           slot: implementationSlot as `0x${string}`,
         });
 
         if (
-          implementationData &&
-          implementationData !==
-            "0x0000000000000000000000000000000000000000000000000000000000000000"
+          implementationData
+          && implementationData
+          !== '0x0000000000000000000000000000000000000000000000000000000000000000'
         ) {
           // 提取地址（后20字节）
-          const implementationAddress = "0x" + implementationData.slice(-40);
+          const implementationAddress = `0x${implementationData.slice(-40)}`;
 
           // 验证实现地址是否为有效合约
           const isValidImplementation = await this.isContractAddress(
             chainId,
-            implementationAddress
+            implementationAddress,
           );
 
           if (isValidImplementation) {
             return {
               isProxy: true,
-              proxyType: "transparent",
-              implementationAddress: implementationAddress,
+              proxyType: 'transparent',
+              implementationAddress,
             };
           }
         }
-      } catch (error) {
-        logger.warn({ err: error }, "Failed to check EIP-1967 implementation slot");
+      }
+      catch (error) {
+        logger.warn({ err: error }, 'Failed to check EIP-1967 implementation slot');
       }
 
       // 检查 UUPS 代理（EIP-1822）
@@ -1241,90 +1266,94 @@ export class ContractSourceService {
 
       // 检查 Beacon 代理
       // EIP-1967 Beacon: 0xa3f0ad74e5423aebfd80d3ef4346578335a9a72aeaee59ff6cb3582b35133d50
-      const beaconSlot =
-        "0xa3f0ad74e5423aebfd80d3ef4346578335a9a72aeaee59ff6cb3582b35133d50";
+      const beaconSlot
+        = '0xa3f0ad74e5423aebfd80d3ef4346578335a9a72aeaee59ff6cb3582b35133d50';
 
       try {
         const beaconData = await client.getStorageAt({
-          address: address as `0x${string}`,
+          address,
           slot: beaconSlot as `0x${string}`,
         });
 
         if (
-          beaconData &&
-          beaconData !==
-            "0x0000000000000000000000000000000000000000000000000000000000000000"
+          beaconData
+          && beaconData
+          !== '0x0000000000000000000000000000000000000000000000000000000000000000'
         ) {
-          const beaconAddress = "0x" + beaconData.slice(-40);
+          const beaconAddress = `0x${beaconData.slice(-40)}`;
 
           // 从 Beacon 获取实现地址
           // Beacon 通常有一个 implementation() 函数
           // 这里简化处理，标记为 beacon 类型
           return {
             isProxy: true,
-            proxyType: "beacon",
+            proxyType: 'beacon',
             implementationAddress: formatAddress(beaconAddress),
           };
         }
-      } catch (error) {
-        logger.warn({ err: error }, "Failed to check beacon slot");
+      }
+      catch (error) {
+        logger.warn({ err: error }, 'Failed to check beacon slot');
       }
 
       // ZeppelinOS proxy: 0x7050c9e0f4ca769c69bd3a8ef740bc37934f8e2c036e5a723fd8ee048ed3f8c3
-      const zeppelinSlot =
-        "0x7050c9e0f4ca769c69bd3a8ef740bc37934f8e2c036e5a723fd8ee048ed3f8c3";
+      const zeppelinSlot
+        = '0x7050c9e0f4ca769c69bd3a8ef740bc37934f8e2c036e5a723fd8ee048ed3f8c3';
 
       try {
         const zeppelinData = await client.getStorageAt({
-          address: address as `0x${string}`,
+          address,
           slot: zeppelinSlot as `0x${string}`,
         });
 
         if (
-          zeppelinData &&
-          zeppelinData !==
-            "0x0000000000000000000000000000000000000000000000000000000000000000"
+          zeppelinData
+          && zeppelinData
+          !== '0x0000000000000000000000000000000000000000000000000000000000000000'
         ) {
-          const implAddress = "0x" + zeppelinData.slice(-40);
+          const implAddress = `0x${zeppelinData.slice(-40)}`;
           const isValid = await this.isContractAddress(chainId, implAddress);
           if (isValid) {
             return {
               isProxy: true,
-              proxyType: "zeppelinos",
+              proxyType: 'zeppelinos',
               implementationAddress: implAddress,
             };
           }
         }
-      } catch (error) {
-        logger.warn({ err: error }, "Failed to check ZeppelinOS slot");
+      }
+      catch (error) {
+        logger.warn({ err: error }, 'Failed to check ZeppelinOS slot');
       }
 
       // EIP-1167 minimal proxy: bytecode starts with 363d3d373d3d3d363d73 + 20-byte address + 5af43d82803e903d91602b57fd5bf3
       try {
-        const code = await client.getCode({ address: address as `0x${string}` });
+        const code = await client.getCode({ address });
         if (code) {
           const normalized = code.toLowerCase();
-          const eip1167Prefix = "0x363d3d373d3d3d363d73";
-          const eip1167Suffix = "5af43d82803e903d91602b57fd5bf3";
+          const eip1167Prefix = '0x363d3d373d3d3d363d73';
+          const eip1167Suffix = '5af43d82803e903d91602b57fd5bf3';
           if (
-            normalized.startsWith(eip1167Prefix) &&
-            normalized.endsWith(eip1167Suffix)
+            normalized.startsWith(eip1167Prefix)
+            && normalized.endsWith(eip1167Suffix)
           ) {
-            const implAddress = "0x" + normalized.slice(22, 62);
+            const implAddress = `0x${normalized.slice(22, 62)}`;
             return {
               isProxy: true,
-              proxyType: "eip1167",
+              proxyType: 'eip1167',
               implementationAddress: implAddress,
             };
           }
         }
-      } catch (error) {
-        logger.warn({ err: error }, "Failed to check EIP-1167 bytecode");
+      }
+      catch (error) {
+        logger.warn({ err: error }, 'Failed to check EIP-1167 bytecode');
       }
 
       return { isProxy: false };
-    } catch (error) {
-      logger.error({ err: error }, "Failed to detect proxy");
+    }
+    catch (error) {
+      logger.error({ err: error }, 'Failed to detect proxy');
       return { isProxy: false };
     }
   }
@@ -1332,7 +1361,7 @@ export class ContractSourceService {
   // 从数据库获取缓存的合约信息
   private async getFromDatabase(
     chainId: number,
-    address: Address
+    address: Address,
   ): Promise<ContractSource | null> {
     try {
       const rows = await db
@@ -1341,8 +1370,8 @@ export class ContractSourceService {
         .where(
           and(
             eq(contractSources.chainId, chainId),
-            eq(contractSources.address, address)
-          )
+            eq(contractSources.address, address),
+          ),
         )
         .limit(1);
 
@@ -1358,11 +1387,11 @@ export class ContractSourceService {
         compilerVersion: row.compilerVersion || undefined,
         optimizationEnabled: row.optimizationUsed || undefined,
         optimizationRuns: row.runs || undefined,
-        sourceCode: row.sourceCode || "",
-        abi: row.abi || "",
+        sourceCode: row.sourceCode || '',
+        abi: row.abi || '',
         constructorArguments: row.constructorArguments || undefined,
-        verificationStatus: row.isVerified ? "verified" : "unverified",
-        verificationSource: "unknown",
+        verificationStatus: row.isVerified ? 'verified' : 'unverified',
+        verificationSource: 'unknown',
         verifiedAt: row.verificationDate || undefined,
         lastChecked: row.lastUpdated,
         isProxy: row.proxy ? true : false,
@@ -1370,8 +1399,9 @@ export class ContractSourceService {
         implementationAddress: row.implementation || undefined,
         // 注意：implementationContract 不从数据库加载，需要时动态获取
       };
-    } catch (error) {
-      logger.error({ err: error }, "Database query error");
+    }
+    catch (error) {
+      logger.error({ err: error }, 'Database query error');
       return null;
     }
   }
@@ -1391,7 +1421,7 @@ export class ContractSourceService {
           sourceCode: contractSource.sourceCode || null,
           abi: contractSource.abi || null,
           constructorArguments: contractSource.constructorArguments || null,
-          isVerified: contractSource.verificationStatus === "verified",
+          isVerified: contractSource.verificationStatus === 'verified',
           proxy: contractSource.proxyType || null,
           implementation: contractSource.implementationAddress || null,
           verificationDate: contractSource.verifiedAt || new Date(),
@@ -1407,15 +1437,16 @@ export class ContractSourceService {
             sourceCode: contractSource.sourceCode || null,
             abi: contractSource.abi || null,
             constructorArguments: contractSource.constructorArguments || null,
-            isVerified: contractSource.verificationStatus === "verified",
+            isVerified: contractSource.verificationStatus === 'verified',
             proxy: contractSource.proxyType || null,
             implementation: contractSource.implementationAddress || null,
             verificationDate: contractSource.verifiedAt || new Date(),
             lastUpdated: contractSource.lastChecked,
           },
         });
-    } catch (error) {
-      logger.error({ err: error }, "Failed to save contract source");
+    }
+    catch (error) {
+      logger.error({ err: error }, 'Failed to save contract source');
     }
   }
 
@@ -1423,8 +1454,8 @@ export class ContractSourceService {
   private isCacheValid(contractSource: ContractSource): boolean {
     const now = new Date();
     const lastChecked = contractSource.lastChecked;
-    const hoursDiff =
-      (now.getTime() - lastChecked.getTime()) / (1000 * 60 * 60);
+    const hoursDiff
+      = (now.getTime() - lastChecked.getTime()) / (1000 * 60 * 60);
 
     // 缓存策略：
     // - 已验证的合约：30天（合约源码不会变）
@@ -1433,11 +1464,12 @@ export class ContractSourceService {
     let maxHours: number;
 
     if (
-      contractSource.verificationStatus === "verified" ||
-      contractSource.isProxy
+      contractSource.verificationStatus === 'verified'
+      || contractSource.isProxy
     ) {
       maxHours = 24 * 30; // 30天
-    } else {
+    }
+    else {
       maxHours = 24 * 3; // 3天
     }
 
@@ -1452,7 +1484,7 @@ export class ContractSourceService {
           verificationStatus: contractSource.verificationStatus,
           isProxy: contractSource.isProxy || false,
         },
-        "Cache expired"
+        'Cache expired',
       );
     }
 
@@ -1463,20 +1495,20 @@ export class ContractSourceService {
   async getContractFunctions(chainId: number, address: Address) {
     try {
       const contractSource = await this.getContractSource(chainId, address);
-      if (!contractSource || !contractSource.abi) {
+      if (!contractSource?.abi) {
         return { functions: [], events: [], errors: [] };
       }
 
       const abi = JSON.parse(contractSource.abi);
 
-      const functions = abi.filter((item: any) => item.type === "function");
-      const events = abi.filter((item: any) => item.type === "event");
-      const errors = abi.filter((item: any) => item.type === "error");
+      const functions = abi.filter((item: any) => item.type === 'function');
+      const events = abi.filter((item: any) => item.type === 'event');
+      const errors = abi.filter((item: any) => item.type === 'error');
 
       return {
         functions: functions.map((f: any) => ({
           name: f.name,
-          type: f.stateMutability || "nonpayable",
+          type: f.stateMutability || 'nonpayable',
           inputs: f.inputs || [],
           outputs: f.outputs || [],
           signature: this.generateFunctionSignature(f),
@@ -1491,23 +1523,24 @@ export class ContractSourceService {
           inputs: e.inputs || [],
         })),
       };
-    } catch (error) {
-      logger.error({ err: error }, "Failed to parse contract ABI");
+    }
+    catch (error) {
+      logger.error({ err: error }, 'Failed to parse contract ABI');
       return { functions: [], events: [], errors: [] };
     }
   }
 
   // 生成函数签名
   private generateFunctionSignature(func: any): string {
-    const inputs =
-      func.inputs?.map((input: any) => input.type).join(", ") || "";
+    const inputs
+      = func.inputs?.map((input: any) => input.type).join(', ') || '';
     return `${func.name}(${inputs})`;
   }
 
   // 生成事件签名
   private generateEventSignature(event: any): string {
-    const inputs =
-      event.inputs?.map((input: any) => input.type).join(", ") || "";
+    const inputs
+      = event.inputs?.map((input: any) => input.type).join(', ') || '';
     return `${event.name}(${inputs})`;
   }
 
@@ -1517,7 +1550,7 @@ export class ContractSourceService {
       const rows = await db
         .select({
           isVerified: contractSources.isVerified,
-          count: sql`COUNT(*)`.as("count"),
+          count: sql`COUNT(*)`.as('count'),
         })
         .from(contractSources)
         .where(eq(contractSources.chainId, chainId))
@@ -1534,14 +1567,16 @@ export class ContractSourceService {
         stats.total += Number(row.count);
         if (row.isVerified) {
           stats.verified = Number(row.count);
-        } else {
+        }
+        else {
           stats.unverified = Number(row.count);
         }
       });
 
       return stats;
-    } catch (error) {
-      logger.error({ err: error }, "Failed to get contract stats");
+    }
+    catch (error) {
+      logger.error({ err: error }, 'Failed to get contract stats');
       return { total: 0, verified: 0, unverified: 0, partial: 0 };
     }
   }

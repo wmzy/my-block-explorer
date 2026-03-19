@@ -18,7 +18,7 @@ export function withRetry<T extends unknown[], R>(
     maxRetries: 3,
     delay: 1000,
     backoff: 2,
-  }
+  },
 ): (...args: T) => Promise<R> {
   return async (...args: T): Promise<R> => {
     let lastError: unknown;
@@ -27,7 +27,8 @@ export function withRetry<T extends unknown[], R>(
     for (let attempt = 0; attempt <= options.maxRetries; attempt++) {
       try {
         return await fn(...args);
-      } catch (error) {
+      }
+      catch (error) {
         lastError = error;
 
         // 检查是否应该重试
@@ -46,7 +47,7 @@ export function withRetry<T extends unknown[], R>(
 
         console.warn(
           `Retry attempt ${attempt + 1}/${options.maxRetries} failed:`,
-          error
+          error,
         );
       }
     }
@@ -59,7 +60,7 @@ export function withRetry<T extends unknown[], R>(
  * 睡眠函数
  */
 function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 /**
@@ -70,10 +71,10 @@ export class RpcError extends Error {
     message: string,
     public code?: number,
     public data?: unknown,
-    public chainId?: number
+    public chainId?: number,
   ) {
     super(message);
-    this.name = "RpcError";
+    this.name = 'RpcError';
   }
 }
 
@@ -83,10 +84,10 @@ export class RpcError extends Error {
 export class DatabaseError extends Error {
   constructor(
     message: string,
-    public originalError?: unknown
+    public originalError?: unknown,
   ) {
     super(message);
-    this.name = "DatabaseError";
+    this.name = 'DatabaseError';
   }
 }
 
@@ -96,10 +97,10 @@ export class DatabaseError extends Error {
 export class ValidationError extends Error {
   constructor(
     message: string,
-    public field?: string
+    public field?: string,
   ) {
     super(message);
-    this.name = "ValidationError";
+    this.name = 'ValidationError';
   }
 }
 
@@ -110,15 +111,15 @@ export function isRetryableError(error: unknown): boolean {
   const err = error as { code?: string; status?: number };
   // 网络错误
   if (
-    err.code === "ECONNRESET" ||
-    err.code === "ENOTFOUND" ||
-    err.code === "ETIMEDOUT"
+    err.code === 'ECONNRESET'
+    || err.code === 'ENOTFOUND'
+    || err.code === 'ETIMEDOUT'
   ) {
     return true;
   }
 
   // HTTP状态码错误
-  if (typeof err.status === "number" && err.status >= 500 && err.status < 600) {
+  if (typeof err.status === 'number' && err.status >= 500 && err.status < 600) {
     return true;
   }
 
@@ -145,7 +146,7 @@ export function normalizeError(error: unknown): {
     return {
       message: error.message,
       code: error.code,
-      type: "rpc",
+      type: 'rpc',
       retryable: isRetryableError(error),
     };
   }
@@ -153,7 +154,7 @@ export function normalizeError(error: unknown): {
   if (error instanceof DatabaseError) {
     return {
       message: error.message,
-      type: "database",
+      type: 'database',
       retryable: false,
     };
   }
@@ -161,7 +162,7 @@ export function normalizeError(error: unknown): {
   if (error instanceof ValidationError) {
     return {
       message: error.message,
-      type: "validation",
+      type: 'validation',
       retryable: false,
     };
   }
@@ -169,22 +170,22 @@ export function normalizeError(error: unknown): {
   const err = error as { code?: string; message?: string };
   // 网络错误
   if (
-    err.code === "ECONNRESET" ||
-    err.code === "ENOTFOUND" ||
-    err.code === "ETIMEDOUT"
+    err.code === 'ECONNRESET'
+    || err.code === 'ENOTFOUND'
+    || err.code === 'ETIMEDOUT'
   ) {
     return {
-      message: `Network error: ${err.message ?? "Unknown"}`,
+      message: `Network error: ${err.message ?? 'Unknown'}`,
       code: err.code,
-      type: "network",
+      type: 'network',
       retryable: true,
     };
   }
 
   // 默认错误
   return {
-    message: (error instanceof Error ? error.message : err.message) || "Unknown error",
-    type: "unknown",
+    message: (error instanceof Error ? error.message : err.message) || 'Unknown error',
+    type: 'unknown',
     retryable: false,
   };
 }
@@ -194,7 +195,7 @@ export function normalizeError(error: unknown): {
  */
 export function createRetryableRpcCall<T extends unknown[], R>(
   rpcFunction: (...args: T) => Promise<R>,
-  chainId?: number
+  chainId?: number,
 ): (...args: T) => Promise<R> {
   return withRetry(rpcFunction, {
     maxRetries: 3,
@@ -205,7 +206,7 @@ export function createRetryableRpcCall<T extends unknown[], R>(
       if (!normalized.retryable) {
         console.error(
           `Non-retryable RPC error for chain ${chainId}:`,
-          normalized
+          normalized,
         );
         return false;
       }
@@ -218,7 +219,7 @@ export function createRetryableRpcCall<T extends unknown[], R>(
  * 创建带重试的数据库操作函数
  */
 export function createRetryableDbCall<T extends unknown[], R>(
-  dbFunction: (...args: T) => Promise<R>
+  dbFunction: (...args: T) => Promise<R>,
 ): (...args: T) => Promise<R> {
   return withRetry(dbFunction, {
     maxRetries: 2,
@@ -228,8 +229,8 @@ export function createRetryableDbCall<T extends unknown[], R>(
       const err = error instanceof Error ? error : { message: String(error) };
       // 数据库锁定错误可以重试
       if (
-        err.message?.includes("database is locked") ||
-        err.message?.includes("SQLITE_BUSY")
+        err.message?.includes('database is locked')
+        || err.message?.includes('SQLITE_BUSY')
       ) {
         return true;
       }
@@ -244,7 +245,7 @@ export function createRetryableDbCall<T extends unknown[], R>(
 export function logError(
   error: unknown,
   context: string,
-  additionalInfo?: Record<string, unknown>
+  additionalInfo?: Record<string, unknown>,
 ): void {
   const normalized = normalizeError(error);
 
@@ -257,9 +258,9 @@ export function logError(
   });
 
   // 如果是严重错误，可以在这里添加报警逻辑
-  if (!normalized.retryable && normalized.type !== "validation") {
+  if (!normalized.retryable && normalized.type !== 'validation') {
     console.error(
-      `[${context}] CRITICAL ERROR - Manual intervention may be required`
+      `[${context}] CRITICAL ERROR - Manual intervention may be required`,
     );
   }
 }

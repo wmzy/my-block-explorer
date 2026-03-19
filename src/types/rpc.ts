@@ -9,7 +9,7 @@ export type RpcConfig = {
 export type RpcStatus = {
   chainId: number;
   url: string;
-  status: "connected" | "error" | "testing";
+  status: 'connected' | 'error' | 'testing';
   latency?: number;
   error?: string;
   lastChecked: Date;

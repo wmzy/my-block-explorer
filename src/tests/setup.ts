@@ -1,13 +1,14 @@
 import '@testing-library/jest-dom';
-import { beforeAll, afterAll, beforeEach, afterEach } from "vitest";
-import { simpleTestDb } from "./testDatabase.simple";
+import { beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
+import { simpleTestDb } from './testDatabase.simple';
 
 // Initialize test database before all tests
 beforeAll(async () => {
   try {
     await simpleTestDb.initialize();
-  } catch (error) {
-    console.warn("Failed to initialize test database:", error);
+  }
+  catch (error) {
+    console.warn('Failed to initialize test database:', error);
   }
 });
 
@@ -15,8 +16,9 @@ beforeAll(async () => {
 afterAll(async () => {
   try {
     await simpleTestDb.close();
-  } catch (error) {
-    console.warn("Failed to close test database:", error);
+  }
+  catch (error) {
+    console.warn('Failed to close test database:', error);
   }
 });
 
@@ -24,8 +26,9 @@ afterAll(async () => {
 beforeEach(async () => {
   try {
     await simpleTestDb.clearAllData();
-  } catch (error) {
-    console.warn("Failed to clear test data:", error);
+  }
+  catch (error) {
+    console.warn('Failed to clear test data:', error);
   }
 });
 

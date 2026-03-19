@@ -1,11 +1,11 @@
-import { useState, useEffect, useCallback, useRef } from "react";
-import { css, cx } from "@linaria/core";
-import type { Address } from "viem";
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { css, cx } from '@linaria/core';
+import type { Address } from 'viem';
 
 type IndexingStatus = {
   chainId: number;
   contractAddress: Address;
-  status: "idle" | "indexing" | "error";
+  status: 'idle' | 'indexing' | 'error';
   creationBlock: number;
   lastIndexedBlock: number;
   latestBlock: number;
@@ -117,7 +117,7 @@ export const EventStatistics = ({
     try {
       setLoading(true);
       const res = await fetch(
-        `/api/chains/${chainId}/contracts/${contractAddress}/events/indexing-status`
+        `/api/chains/${chainId}/contracts/${contractAddress}/events/indexing-status`,
       );
       if (!res.ok) return;
       const data: IndexingStatus = await res.json();
@@ -127,9 +127,11 @@ export const EventStatistics = ({
         prevEventsRef.current = data.totalEventsIndexed;
         onEventsUpdated?.();
       }
-    } catch {
+    }
+    catch {
       // silently fail
-    } finally {
+    }
+    finally {
       setLoading(false);
     }
   }, [chainId, contractAddress, onEventsUpdated]);
@@ -139,7 +141,7 @@ export const EventStatistics = ({
   }, [fetchStatus]);
 
   useEffect(() => {
-    if (!stats || stats.status !== "indexing") return;
+    if (stats?.status !== 'indexing') return;
 
     const id = setInterval(fetchStatus, 5000);
     return () => clearInterval(id);
@@ -152,22 +154,22 @@ export const EventStatistics = ({
 
   if (!stats) return null;
 
-  const totalBlocks =
-    stats.latestBlock && stats.creationBlock
+  const totalBlocks
+    = stats.latestBlock && stats.creationBlock
       ? stats.latestBlock - stats.creationBlock
       : 0;
-  const indexedBlocks =
-    stats.lastIndexedBlock && stats.creationBlock
+  const indexedBlocks
+    = stats.lastIndexedBlock && stats.creationBlock
       ? stats.lastIndexedBlock - stats.creationBlock
       : 0;
   const progress = totalBlocks > 0 ? Math.min(100, (indexedBlocks / totalBlocks) * 100) : 0;
 
-  const statusColor =
-    stats.status === "indexing"
-      ? "#3b82f6"
-      : stats.status === "error"
-        ? "#dc2626"
-        : "#10b981";
+  const statusColor
+    = stats.status === 'indexing'
+      ? '#3b82f6'
+      : stats.status === 'error'
+        ? '#dc2626'
+        : '#10b981';
 
   return (
     <div className={cx(barStyle, className)}>
@@ -177,7 +179,7 @@ export const EventStatistics = ({
           style={{ background: statusColor }}
         />
         <span className={metricValueStyle}>
-          {stats.status === "indexing" ? "Indexing" : stats.status === "error" ? "Error" : "Idle"}
+          {stats.status === 'indexing' ? 'Indexing' : stats.status === 'error' ? 'Error' : 'Idle'}
         </span>
       </div>
 
@@ -186,9 +188,14 @@ export const EventStatistics = ({
       <div className={metricStyle}>
         Blocks:
         <span className={metricValueStyle}>
-          {indexedBlocks.toLocaleString()} / {totalBlocks.toLocaleString()}
+          {indexedBlocks.toLocaleString()}
+          {' '}
+          /
+          {totalBlocks.toLocaleString()}
         </span>
-        ({progress.toFixed(1)}%)
+        (
+        {progress.toFixed(1)}
+        %)
       </div>
 
       <div className={progressWrapperStyle}>
@@ -226,7 +233,7 @@ export const EventStatistics = ({
         disabled={loading}
         title="Refresh"
       >
-        {loading ? "..." : "↻"}
+        {loading ? '...' : '↻'}
       </button>
     </div>
   );

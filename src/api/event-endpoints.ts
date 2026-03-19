@@ -46,7 +46,8 @@ export function createEventRoutes(): Hono {
       });
 
       return c.json(responseData);
-    } catch (error) {
+    }
+    catch (error) {
       console.error('Event indexing status API error:', error);
       return c.json({ error: 'Failed to get indexing status' }, 500);
     }
@@ -86,7 +87,8 @@ export function createEventRoutes(): Hono {
         message: 'Event indexing initialized successfully',
         timestamp: new Date().toISOString(),
       });
-    } catch (error) {
+    }
+    catch (error) {
       console.error('Event initialization API error:', error);
       return c.json({
         error: 'Failed to initialize event indexing',
@@ -117,8 +119,8 @@ export function createEventRoutes(): Hono {
         endBlock,
         (progress) => {
           console.log(`Indexing progress: ${progress.processedEvents} events, current block: ${progress.currentBlock}`);
-        }
-      ).catch(error => {
+        },
+      ).catch((error) => {
         console.error('Historical indexing failed:', error);
       });
 
@@ -135,7 +137,8 @@ export function createEventRoutes(): Hono {
         message: 'Historical event indexing started',
         timestamp: new Date().toISOString(),
       });
-    } catch (error) {
+    }
+    catch (error) {
       console.error('Historical indexing API error:', error);
       return c.json({
         error: 'Failed to start historical indexing',
@@ -163,7 +166,8 @@ export function createEventRoutes(): Hono {
         message: 'Realtime event indexing started',
         timestamp: new Date().toISOString(),
       });
-    } catch (error) {
+    }
+    catch (error) {
       console.error('Start realtime indexing API error:', error);
       return c.json({
         error: 'Failed to start realtime indexing',
@@ -191,7 +195,8 @@ export function createEventRoutes(): Hono {
         message: 'Realtime event indexing stopped',
         timestamp: new Date().toISOString(),
       });
-    } catch (error) {
+    }
+    catch (error) {
       console.error('Stop realtime indexing API error:', error);
       return c.json({
         error: 'Failed to stop realtime indexing',
@@ -247,7 +252,7 @@ export function createEventRoutes(): Hono {
         address,
         eventName,
         eventFilters,
-        pagination
+        pagination,
       );
 
       c.header('X-Data-Source', 'event-index');
@@ -272,7 +277,8 @@ export function createEventRoutes(): Hono {
       });
 
       return c.json(responseData);
-    } catch (error) {
+    }
+    catch (error) {
       console.error('Event query API error:', error);
       return c.json({
         error: 'Failed to query events',
@@ -307,7 +313,7 @@ export function createEventRoutes(): Hono {
       const statistics = await eventIndexingService.getEventStatistics(
         chainId,
         address,
-        eventName
+        eventName,
       );
 
       c.header('X-Data-Source', 'event-index');
@@ -324,7 +330,8 @@ export function createEventRoutes(): Hono {
       });
 
       return c.json(responseData);
-    } catch (error) {
+    }
+    catch (error) {
       console.error('Event statistics API error:', error);
       return c.json({
         error: 'Failed to get event statistics',
@@ -369,7 +376,7 @@ export function createEventRoutes(): Hono {
       const chartData = await eventQueryService.getEventHistoryChartData(
         tableName,
         filters,
-        interval as 'hour' | 'day' | 'week'
+        interval as 'hour' | 'day' | 'week',
       );
 
       c.header('X-Data-Source', 'event-index');
@@ -387,7 +394,8 @@ export function createEventRoutes(): Hono {
       });
 
       return c.json(responseData);
-    } catch (error) {
+    }
+    catch (error) {
       console.error('Event chart API error:', error);
       return c.json({
         error: 'Failed to get event chart data',
@@ -434,7 +442,7 @@ export function createEventRoutes(): Hono {
       const result = await eventQueryService.searchEvents(
         searchTerm,
         filters,
-        pagination
+        pagination,
       );
 
       c.header('X-Data-Source', 'event-search');
@@ -459,7 +467,8 @@ export function createEventRoutes(): Hono {
       });
 
       return c.json(responseData);
-    } catch (error) {
+    }
+    catch (error) {
       console.error('Event search API error:', error);
       return c.json({
         error: 'Failed to search events',
@@ -478,7 +487,7 @@ export function createEventRoutes(): Hono {
 
       const eventTypes = await eventQueryService.getEventTypes(
         contractAddress,
-        chainId
+        chainId,
       );
 
       c.header('X-Data-Source', 'event-index');
@@ -494,7 +503,8 @@ export function createEventRoutes(): Hono {
       });
 
       return c.json(responseData);
-    } catch (error) {
+    }
+    catch (error) {
       console.error('Event types API error:', error);
       return c.json({
         error: 'Failed to get event types',
@@ -520,7 +530,7 @@ export function createEventRoutes(): Hono {
       const processedEvents = await eventIndexingService.processEventBatch(
         logs,
         chainId,
-        options.processor
+        options.processor,
       );
 
       c.header('X-Chain-Name', getChainName(chainId));
@@ -535,7 +545,8 @@ export function createEventRoutes(): Hono {
       });
 
       return c.json(responseData);
-    } catch (error) {
+    }
+    catch (error) {
       console.error('Batch process API error:', error);
       return c.json({
         error: 'Failed to process events batch',

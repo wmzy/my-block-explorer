@@ -1,6 +1,6 @@
-import { css, cx } from "@linaria/core";
-import { Button } from "./Button";
-import type { ReactNode } from "react";
+import { css, cx } from '@linaria/core';
+import { Button } from './Button';
+import type { ReactNode } from 'react';
 
 const tableContainer = css`
   background: var(--haze-color-bg);
@@ -110,8 +110,8 @@ export function Pagination({
   hasNext,
   onPrev,
   onNext,
-  prevLabel = "Prev",
-  nextLabel = "Next",
+  prevLabel = 'Prev',
+  nextLabel = 'Next',
 }: PaginationProps) {
   return (
     <div className={paginationStyle}>

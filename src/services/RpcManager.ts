@@ -1,20 +1,20 @@
-import { createPublicClient, http, PublicClient } from "viem";
+import { createPublicClient, http, PublicClient } from 'viem';
 import {
   getChainInfo,
   getDefaultRpcUrl,
   type UserRpcConfig,
-} from "../config/chains";
-import { createLogger } from "../server/logger";
+} from '../config/chains';
+import { createLogger } from '../server/logger';
 
-const logger = createLogger("rpc-manager");
-import { db, userRpcConfigs } from "../database/init";
-import { eq } from "drizzle-orm";
+const logger = createLogger('rpc-manager');
+import { db, userRpcConfigs } from '../database/init';
+import { eq } from 'drizzle-orm';
 import {
   createRetryableRpcCall,
   createRetryableDbCall,
   RpcError,
   logError,
-} from "../utils/errorHandler";
+} from '../utils/errorHandler';
 
 /**
  * RPC客户端管理器
@@ -56,8 +56,9 @@ export class RpcManager {
 
     try {
       await loadConfigs();
-    } catch (error) {
-      logError(error, "RpcManager.loadUserConfigs");
+    }
+    catch (error) {
+      logError(error, 'RpcManager.loadUserConfigs');
     }
   }
 
@@ -67,22 +68,23 @@ export class RpcManager {
 
     if (!this.clients.has(chainId)) {
       try {
-        logger.info({ chainId }, "Creating new RPC client for chain");
+        logger.info({ chainId }, 'Creating new RPC client for chain');
         const config = this.userConfigs.get(chainId);
         logger.info(
           { configFound: !!config, customRpc: config?.customRpcUrl },
-          "RPC config"
+          'RPC config',
         );
 
         const client = await this.createClient(chainId);
         this.clients.set(chainId, client);
-      } catch (error) {
+      }
+      catch (error) {
         logError(error, `RpcManager.getClient`, { chainId });
         throw new RpcError(
           `Failed to create RPC client for chain ${chainId}`,
           undefined,
           undefined,
-          chainId
+          chainId,
         );
       }
     }
@@ -101,7 +103,7 @@ export class RpcManager {
     const userConfig = this.userConfigs.get(chainId);
     const rpcUrl = userConfig?.customRpcUrl || getDefaultRpcUrl(chainId);
 
-    logger.info({ rpcUrl }, "Creating client with RPC URL");
+    logger.info({ rpcUrl }, 'Creating client with RPC URL');
 
     return createPublicClient({
       chain: viemChain,
@@ -137,9 +139,10 @@ export class RpcManager {
 
       this.userConfigs.set(config.chainId, config);
       this.clients.delete(config.chainId);
-    } catch (error) {
-      logError(error, "RpcManager.updateUserRpcConfig");
-      throw new Error("Failed to update RPC configuration");
+    }
+    catch (error) {
+      logError(error, 'RpcManager.updateUserRpcConfig');
+      throw new Error('Failed to update RPC configuration');
     }
   }
 
@@ -152,9 +155,10 @@ export class RpcManager {
 
       this.userConfigs.delete(chainId);
       this.clients.delete(chainId);
-    } catch (error) {
-      logError(error, "RpcManager.deleteUserRpcConfig");
-      throw new Error("Failed to delete RPC configuration");
+    }
+    catch (error) {
+      logError(error, 'RpcManager.deleteUserRpcConfig');
+      throw new Error('Failed to delete RPC configuration');
     }
   }
 
@@ -171,7 +175,7 @@ export class RpcManager {
   // 测试RPC连接
   async testRpcConnection(
     chainId: number,
-    rpcUrl?: string
+    rpcUrl?: string,
   ): Promise<{ success: boolean; latency?: number; error?: string }> {
     try {
       const startTime = Date.now();
@@ -179,11 +183,11 @@ export class RpcManager {
       // 创建临时客户端进行测试
       const viemChain = getChainInfo(chainId);
       if (!viemChain) {
-        return { success: false, error: "Unsupported chain" };
+        return { success: false, error: 'Unsupported chain' };
       }
 
-      const testUrl =
-        rpcUrl || getEffectiveRpcUrl(chainId, this.userConfigs.get(chainId));
+      const testUrl
+        = rpcUrl || getEffectiveRpcUrl(chainId, this.userConfigs.get(chainId));
       const testClient = createPublicClient({
         chain: viemChain,
         transport: http(testUrl, { timeout: 5000 }),
@@ -194,10 +198,11 @@ export class RpcManager {
 
       const latency = Date.now() - startTime;
       return { success: true, latency };
-    } catch (error) {
+    }
+    catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : "Unknown error",
+        error: error instanceof Error ? error.message : 'Unknown error',
       };
     }
   }

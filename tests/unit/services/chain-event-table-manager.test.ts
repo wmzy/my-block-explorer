@@ -48,7 +48,7 @@ describe('ChainEventTableManager', () => {
         contractAddress,
         eventParams,
         eventSignature,
-        eventName
+        eventName,
       );
 
       expect(result).toContain('events_');
@@ -65,7 +65,7 @@ describe('ChainEventTableManager', () => {
         contractAddress,
         eventParams,
         eventSignature,
-        eventName
+        eventName,
       );
 
       // Table name should be in format: events_{address_prefix}_{signature_prefix}
@@ -83,7 +83,7 @@ describe('ChainEventTableManager', () => {
         contractAddress,
         eventParams,
         eventSignature,
-        eventName
+        eventName,
       );
 
       // Second call with same parameters
@@ -91,7 +91,7 @@ describe('ChainEventTableManager', () => {
         contractAddress,
         eventParams,
         eventSignature,
-        eventName
+        eventName,
       );
 
       expect(result1).toBe(result2);
@@ -112,7 +112,7 @@ describe('ChainEventTableManager', () => {
         contractAddress,
         eventParams,
         eventSignature,
-        eventName
+        eventName,
       );
 
       // Should call exec for table creation and index creation
@@ -142,7 +142,7 @@ describe('ChainEventTableManager', () => {
 
       expect(chainDbManager.exec).toHaveBeenCalledWith(
         expect.stringContaining('INSERT INTO'),
-        expect.arrayContaining(Object.values(eventData))
+        expect.arrayContaining(Object.values(eventData)),
       );
     });
   });
@@ -169,7 +169,7 @@ describe('ChainEventTableManager', () => {
       expect(result.hasMore).toBe(false);
       expect(chainDbManager.query).toHaveBeenCalledWith(
         expect.stringContaining('SELECT * FROM'),
-        expect.arrayContaining(['Transfer'])
+        expect.arrayContaining(['Transfer']),
       );
     });
 
@@ -184,7 +184,7 @@ describe('ChainEventTableManager', () => {
 
       expect(chainDbManager.query).toHaveBeenCalledWith(
         expect.stringContaining('block_number >= ?'),
-        expect.arrayContaining(['1000', '2000'])
+        expect.arrayContaining(['1000', '2000']),
       );
     });
 
@@ -219,7 +219,7 @@ describe('ChainEventTableManager', () => {
       expect(exists).toBe(true);
       expect(chainDbManager.query).toHaveBeenCalledWith(
         expect.stringContaining('SELECT name FROM sqlite_master'),
-        [tableName]
+        [tableName],
       );
     });
 
@@ -249,7 +249,7 @@ describe('ChainEventTableManager', () => {
       expect(result).toEqual(['events_12345678_abcd1234', 'events_12345678_efgh5678']);
       expect(chainDbManager.query).toHaveBeenCalledWith(
         expect.stringContaining('SELECT table_name FROM event_table_registry'),
-        [contractAddress]
+        [contractAddress],
       );
     });
   });
@@ -265,7 +265,7 @@ describe('ChainEventTableManager', () => {
       (chainDbManager.exec as any).mockRejectedValue(dbError);
 
       await expect(
-        eventTableManager.createEventTable(contractAddress, eventParams, eventSignature, eventName)
+        eventTableManager.createEventTable(contractAddress, eventParams, eventSignature, eventName),
       ).rejects.toThrow('Database connection failed');
     });
   });

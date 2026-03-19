@@ -226,50 +226,50 @@ export class ChainSchemaManager {
   getIndexCreationSQL(): string[] {
     return [
       // 合约源码索引
-      "CREATE INDEX IF NOT EXISTS contract_sources_verification_idx ON contract_sources (verification_status)",
-      "CREATE INDEX IF NOT EXISTS contract_sources_proxy_idx ON contract_sources (is_proxy)",
-      "CREATE INDEX IF NOT EXISTS contract_sources_verified_at_idx ON contract_sources (verified_at)",
+      'CREATE INDEX IF NOT EXISTS contract_sources_verification_idx ON contract_sources (verification_status)',
+      'CREATE INDEX IF NOT EXISTS contract_sources_proxy_idx ON contract_sources (is_proxy)',
+      'CREATE INDEX IF NOT EXISTS contract_sources_verified_at_idx ON contract_sources (verified_at)',
 
       // 合约创建信息索引
-      "CREATE INDEX IF NOT EXISTS contract_creation_info_status_idx ON contract_creation_info (search_status)",
-      "CREATE INDEX IF NOT EXISTS contract_creation_info_tx_idx ON contract_creation_info (creation_tx_hash)",
-      "CREATE INDEX IF NOT EXISTS contract_creation_info_block_idx ON contract_creation_info (creation_block_number)",
+      'CREATE INDEX IF NOT EXISTS contract_creation_info_status_idx ON contract_creation_info (search_status)',
+      'CREATE INDEX IF NOT EXISTS contract_creation_info_tx_idx ON contract_creation_info (creation_tx_hash)',
+      'CREATE INDEX IF NOT EXISTS contract_creation_info_block_idx ON contract_creation_info (creation_block_number)',
 
       // 区块索引
-      "CREATE INDEX IF NOT EXISTS blocks_timestamp_idx ON blocks (timestamp)",
-      "CREATE INDEX IF NOT EXISTS blocks_miner_idx ON blocks (miner)",
-      "CREATE INDEX IF NOT EXISTS blocks_parent_hash_idx ON blocks (parent_hash)",
-      "CREATE INDEX IF NOT EXISTS blocks_indexed_at_idx ON blocks (indexed_at)",
+      'CREATE INDEX IF NOT EXISTS blocks_timestamp_idx ON blocks (timestamp)',
+      'CREATE INDEX IF NOT EXISTS blocks_miner_idx ON blocks (miner)',
+      'CREATE INDEX IF NOT EXISTS blocks_parent_hash_idx ON blocks (parent_hash)',
+      'CREATE INDEX IF NOT EXISTS blocks_indexed_at_idx ON blocks (indexed_at)',
 
       // 交易索引
-      "CREATE INDEX IF NOT EXISTS transactions_block_idx ON transactions (block_number)",
-      "CREATE INDEX IF NOT EXISTS transactions_from_idx ON transactions (from_address)",
-      "CREATE INDEX IF NOT EXISTS transactions_to_idx ON transactions (to_address)",
-      "CREATE INDEX IF NOT EXISTS transactions_timestamp_idx ON transactions (timestamp)",
-      "CREATE INDEX IF NOT EXISTS transactions_contract_idx ON transactions (contract_address)",
-      "CREATE INDEX IF NOT EXISTS transactions_status_idx ON transactions (status)",
-      "CREATE INDEX IF NOT EXISTS transactions_nonce_idx ON transactions (nonce)",
+      'CREATE INDEX IF NOT EXISTS transactions_block_idx ON transactions (block_number)',
+      'CREATE INDEX IF NOT EXISTS transactions_from_idx ON transactions (from_address)',
+      'CREATE INDEX IF NOT EXISTS transactions_to_idx ON transactions (to_address)',
+      'CREATE INDEX IF NOT EXISTS transactions_timestamp_idx ON transactions (timestamp)',
+      'CREATE INDEX IF NOT EXISTS transactions_contract_idx ON transactions (contract_address)',
+      'CREATE INDEX IF NOT EXISTS transactions_status_idx ON transactions (status)',
+      'CREATE INDEX IF NOT EXISTS transactions_nonce_idx ON transactions (nonce)',
 
       // 地址索引
-      "CREATE INDEX IF NOT EXISTS indexed_addresses_queried_idx ON indexed_addresses (last_queried)",
-      "CREATE INDEX IF NOT EXISTS indexed_addresses_tx_count_idx ON indexed_addresses (transaction_count)",
-      "CREATE INDEX IF NOT EXISTS indexed_addresses_first_seen_idx ON indexed_addresses (first_seen_block)",
-      "CREATE INDEX IF NOT EXISTS indexed_addresses_last_seen_idx ON indexed_addresses (last_seen_block)",
+      'CREATE INDEX IF NOT EXISTS indexed_addresses_queried_idx ON indexed_addresses (last_queried)',
+      'CREATE INDEX IF NOT EXISTS indexed_addresses_tx_count_idx ON indexed_addresses (transaction_count)',
+      'CREATE INDEX IF NOT EXISTS indexed_addresses_first_seen_idx ON indexed_addresses (first_seen_block)',
+      'CREATE INDEX IF NOT EXISTS indexed_addresses_last_seen_idx ON indexed_addresses (last_seen_block)',
 
       // 搜索历史索引
-      "CREATE INDEX IF NOT EXISTS search_history_searched_at_idx ON search_history (searched_at)",
-      "CREATE INDEX IF NOT EXISTS search_history_search_type_idx ON search_history (search_type)",
+      'CREATE INDEX IF NOT EXISTS search_history_searched_at_idx ON search_history (searched_at)',
+      'CREATE INDEX IF NOT EXISTS search_history_search_type_idx ON search_history (search_type)',
 
       // 访问历史索引
-      "CREATE INDEX IF NOT EXISTS access_history_type_idx ON access_history (type, last_accessed)",
-      "CREATE INDEX IF NOT EXISTS access_history_identifier_idx ON access_history (identifier)",
-      "CREATE INDEX IF NOT EXISTS access_history_access_count_idx ON access_history (access_count)",
+      'CREATE INDEX IF NOT EXISTS access_history_type_idx ON access_history (type, last_accessed)',
+      'CREATE INDEX IF NOT EXISTS access_history_identifier_idx ON access_history (identifier)',
+      'CREATE INDEX IF NOT EXISTS access_history_access_count_idx ON access_history (access_count)',
 
       // 事件表注册索引
-      "CREATE INDEX IF NOT EXISTS event_table_registry_event_name_idx ON event_table_registry (event_name)",
-      "CREATE INDEX IF NOT EXISTS event_table_registry_table_name_idx ON event_table_registry (table_name)",
-      "CREATE INDEX IF NOT EXISTS event_table_registry_active_idx ON event_table_registry (is_active)",
-      "CREATE INDEX IF NOT EXISTS event_table_registry_updated_at_idx ON event_table_registry (updated_at)",
+      'CREATE INDEX IF NOT EXISTS event_table_registry_event_name_idx ON event_table_registry (event_name)',
+      'CREATE INDEX IF NOT EXISTS event_table_registry_table_name_idx ON event_table_registry (table_name)',
+      'CREATE INDEX IF NOT EXISTS event_table_registry_active_idx ON event_table_registry (is_active)',
+      'CREATE INDEX IF NOT EXISTS event_table_registry_updated_at_idx ON event_table_registry (updated_at)',
     ];
   }
 
@@ -335,7 +335,7 @@ export class ChainSchemaManager {
       'bool[]': 'TEXT',
       'bytes32': 'VARCHAR(66)',
       'tuple': 'TEXT',
-      'tuple[]': 'TEXT'
+      'tuple[]': 'TEXT',
     };
 
     // 处理数组类型
@@ -396,7 +396,7 @@ export class ChainSchemaManager {
     return {
       chainId: this.chainId,
       chainName: getChainName(this.chainId),
-      chainType: getChainType(this.chainId)
+      chainType: getChainType(this.chainId),
     };
   }
 }

@@ -1,5 +1,5 @@
-import { css, cx } from "@linaria/core";
-import type { ReactNode } from "react";
+import { css, cx } from '@linaria/core';
+import type { ReactNode } from 'react';
 
 const gridStyle = css`
   display: grid;

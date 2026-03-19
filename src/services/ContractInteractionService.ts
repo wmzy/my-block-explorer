@@ -1,16 +1,16 @@
-import { rpcManager } from "./RpcManager";
-import { createRetryableRpcCall } from "../utils/errorHandler";
-import { ContractSourceService } from "./ContractSourceService";
-import { createLogger } from "../server/logger";
+import { rpcManager } from './RpcManager';
+import { createRetryableRpcCall } from '../utils/errorHandler';
+import { ContractSourceService } from './ContractSourceService';
+import { createLogger } from '../server/logger';
 
-const logger = createLogger("contract-interaction-service");
+const logger = createLogger('contract-interaction-service');
 
 export type ContractFunction = {
   name: string;
-  type: "function";
+  type: 'function';
   inputs: ContractFunctionInput[];
   outputs: ContractFunctionOutput[];
-  stateMutability: "pure" | "view" | "nonpayable" | "payable";
+  stateMutability: 'pure' | 'view' | 'nonpayable' | 'payable';
 };
 
 export type ContractFunctionInput = {
@@ -55,7 +55,7 @@ export class ContractInteractionService {
   async getContractFunctions(
     chainId: number,
     contractAddress: string,
-    customABI?: string
+    customABI?: string,
   ): Promise<{
     readFunctions: ContractFunction[];
     writeFunctions: ContractFunction[];
@@ -65,13 +65,14 @@ export class ContractInteractionService {
 
       if (customABI) {
         abi = JSON.parse(customABI);
-      } else {
+      }
+      else {
         const contractSource = await this.contractSourceService.getContractSource(
           chainId,
-          contractAddress
+          contractAddress,
         );
 
-        if (!contractSource || !contractSource.abi) {
+        if (!contractSource?.abi) {
           return { readFunctions: [], writeFunctions: [] };
         }
 
@@ -79,21 +80,22 @@ export class ContractInteractionService {
       }
 
       const functions = abi.filter(
-        (item: any) => item.type === "function"
+        (item: any) => item.type === 'function',
       ) as ContractFunction[];
 
       const readFunctions = functions.filter(
-        (func) => func.stateMutability === "view" || func.stateMutability === "pure"
+        func => func.stateMutability === 'view' || func.stateMutability === 'pure',
       );
 
       const writeFunctions = functions.filter(
-        (func) =>
-          func.stateMutability === "nonpayable" || func.stateMutability === "payable"
+        func =>
+          func.stateMutability === 'nonpayable' || func.stateMutability === 'payable',
       );
 
       return { readFunctions, writeFunctions };
-    } catch (error) {
-      logger.error({ err: error }, "Failed to get contract functions");
+    }
+    catch (error) {
+      logger.error({ err: error }, 'Failed to get contract functions');
       return { readFunctions: [], writeFunctions: [] };
     }
   }
@@ -108,7 +110,7 @@ export class ContractInteractionService {
       if (!params.abi) {
         return {
           success: false,
-          error: "Contract ABI not provided",
+          error: 'Contract ABI not provided',
         };
       }
 
@@ -129,8 +131,9 @@ export class ContractInteractionService {
         success: true,
         result: this.formatContractResult(result),
       };
-    } catch (error: any) {
-      logger.error({ err: error }, "Read contract failed");
+    }
+    catch (error: any) {
+      logger.error({ err: error }, 'Read contract failed');
       return {
         success: false,
         error: this.formatError(error),
@@ -146,13 +149,13 @@ export class ContractInteractionService {
       const client = await rpcManager.getClient(params.chainId);
       const contractSource = await this.contractSourceService.getContractSource(
         params.chainId,
-        params.contractAddress
+        params.contractAddress,
       );
 
-      if (!contractSource || !contractSource.abi) {
+      if (!contractSource?.abi) {
         return {
           success: false,
-          error: "Contract ABI not available",
+          error: 'Contract ABI not available',
         };
       }
 
@@ -173,8 +176,9 @@ export class ContractInteractionService {
         success: true,
         result: this.formatContractResult(result),
       };
-    } catch (error: any) {
-      logger.error({ err: error }, "Read contract failed");
+    }
+    catch (error: any) {
+      logger.error({ err: error }, 'Read contract failed');
       return {
         success: false,
         error: this.formatError(error),
@@ -192,7 +196,7 @@ export class ContractInteractionService {
       if (!params.abi) {
         return {
           success: false,
-          error: "Contract ABI not provided",
+          error: 'Contract ABI not provided',
         };
       }
 
@@ -216,8 +220,9 @@ export class ContractInteractionService {
         result: this.formatContractResult(simulation.result),
         gasUsed: simulation.request.gas,
       };
-    } catch (error: any) {
-      logger.error({ err: error }, "Simulate contract failed");
+    }
+    catch (error: any) {
+      logger.error({ err: error }, 'Simulate contract failed');
       return {
         success: false,
         error: this.formatError(error),
@@ -233,13 +238,13 @@ export class ContractInteractionService {
       const client = await rpcManager.getClient(params.chainId);
       const contractSource = await this.contractSourceService.getContractSource(
         params.chainId,
-        params.contractAddress
+        params.contractAddress,
       );
 
-      if (!contractSource || !contractSource.abi) {
+      if (!contractSource?.abi) {
         return {
           success: false,
-          error: "Contract ABI not available",
+          error: 'Contract ABI not available',
         };
       }
 
@@ -263,8 +268,9 @@ export class ContractInteractionService {
         result: this.formatContractResult(simulation.result),
         gasUsed: simulation.request.gas,
       };
-    } catch (error: any) {
-      logger.error({ err: error }, "Simulate contract failed");
+    }
+    catch (error: any) {
+      logger.error({ err: error }, 'Simulate contract failed');
       return {
         success: false,
         error: this.formatError(error),
@@ -315,8 +321,9 @@ export class ContractInteractionService {
         maxFeePerGas: feeData?.maxFeePerGas || undefined,
         maxPriorityFeePerGas: feeData?.maxPriorityFeePerGas || undefined,
       };
-    } catch (error) {
-      logger.error({ err: error }, "Gas estimation failed");
+    }
+    catch (error) {
+      logger.error({ err: error }, 'Gas estimation failed');
       return null;
     }
   }
@@ -334,10 +341,10 @@ export class ContractInteractionService {
       const client = await rpcManager.getClient(params.chainId);
       const contractSource = await this.contractSourceService.getContractSource(
         params.chainId,
-        params.contractAddress
+        params.contractAddress,
       );
 
-      if (!contractSource || !contractSource.abi) {
+      if (!contractSource?.abi) {
         return null;
       }
 
@@ -368,8 +375,9 @@ export class ContractInteractionService {
         maxFeePerGas: feeData?.maxFeePerGas || undefined,
         maxPriorityFeePerGas: feeData?.maxPriorityFeePerGas || undefined,
       };
-    } catch (error) {
-      logger.error({ err: error }, "Gas estimation failed");
+    }
+    catch (error) {
+      logger.error({ err: error }, 'Gas estimation failed');
       return null;
     }
   }
@@ -378,7 +386,7 @@ export class ContractInteractionService {
    * 获取函数签名的输入参数类型
    */
   getFunctionInputTypes(contractFunction: ContractFunction): string[] {
-    return contractFunction.inputs.map((input) => input.type);
+    return contractFunction.inputs.map(input => input.type);
   }
 
   /**
@@ -386,13 +394,13 @@ export class ContractInteractionService {
    */
   validateFunctionArgs(
     contractFunction: ContractFunction,
-    args: any[]
+    args: any[],
   ): { valid: boolean; errors: string[] } {
     const errors: string[] = [];
 
     if (args.length !== contractFunction.inputs.length) {
       errors.push(
-        `Expected ${contractFunction.inputs.length} arguments, got ${args.length}`
+        `Expected ${contractFunction.inputs.length} arguments, got ${args.length}`,
       );
     }
 
@@ -416,42 +424,43 @@ export class ContractInteractionService {
   private validateArgument(
     type: string,
     value: any,
-    name: string
+    name: string,
   ): { valid: boolean; error?: string } {
-    if (value === undefined || value === null || value === "") {
-      return { valid: false, error: "Value is required" };
+    if (value === undefined || value === null || value === '') {
+      return { valid: false, error: 'Value is required' };
     }
 
     try {
       // 地址类型验证
-      if (type === "address") {
-        if (typeof value !== "string" || !value.match(/^0x[a-fA-F0-9]{40}$/)) {
-          return { valid: false, error: "Invalid address format" };
+      if (type === 'address') {
+        if (typeof value !== 'string' || !value.match(/^0x[a-fA-F0-9]{40}$/)) {
+          return { valid: false, error: 'Invalid address format' };
         }
       }
 
       // 数字类型验证
-      if (type.startsWith("uint") || type.startsWith("int")) {
+      if (type.startsWith('uint') || type.startsWith('int')) {
         const num = BigInt(value);
         // 可以添加更多的范围检查
       }
 
       // 字节类型验证
-      if (type.startsWith("bytes")) {
-        if (typeof value !== "string" || !value.startsWith("0x")) {
-          return { valid: false, error: "Invalid bytes format, should start with 0x" };
+      if (type.startsWith('bytes')) {
+        if (typeof value !== 'string' || !value.startsWith('0x')) {
+          return { valid: false, error: 'Invalid bytes format, should start with 0x' };
         }
       }
 
       // 布尔类型验证
-      if (type === "bool") {
-        if (typeof value !== "boolean" && value !== "true" && value !== "false") {
-          return { valid: false, error: "Invalid boolean value" };
+      if (type === 'bool') {
+        if (typeof value !== 'boolean' && value !== 'true' && value !== 'false') {
+          return { valid: false, error: 'Invalid boolean value' };
         }
       }
 
       return { valid: true };
-    } catch (error) {
+    }
+    catch (error) {
       return { valid: false, error: `Invalid ${type} value` };
     }
   }
@@ -460,15 +469,15 @@ export class ContractInteractionService {
    * 格式化合约调用结果
    */
   private formatContractResult(result: any): any {
-    if (typeof result === "bigint") {
+    if (typeof result === 'bigint') {
       return result.toString();
     }
 
     if (Array.isArray(result)) {
-      return result.map((item) => this.formatContractResult(item));
+      return result.map(item => this.formatContractResult(item));
     }
 
-    if (typeof result === "object" && result !== null) {
+    if (typeof result === 'object' && result !== null) {
       const formatted: any = {};
       for (const [key, value] of Object.entries(result)) {
         formatted[key] = this.formatContractResult(value);
@@ -491,11 +500,11 @@ export class ContractInteractionService {
       return error.shortMessage;
     }
 
-    if (typeof error === "string") {
+    if (typeof error === 'string') {
       return error;
     }
 
-    return "Unknown error occurred";
+    return 'Unknown error occurred';
   }
 }
 

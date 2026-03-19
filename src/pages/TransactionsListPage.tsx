@@ -1,15 +1,15 @@
-import { useState, useEffect, useCallback } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
-import { getChainInfo, getChainName, getChainSymbol } from "../config/chains";
-import TopNavigation from "../components/TopNavigation";
-import { formatNumber, formatRelativeTime } from "@/utils/format";
-import { getLatestTransactions, type RpcTransaction } from "@/utils/blockRpcData";
-import { PageContainer, PageHeader } from "@/components/ui/PageLayout";
-import { DataTable, Pagination, linkStyle, monoStyle } from "@/components/ui/DataTable";
-import { TableSkeleton } from "@/components/ui/LoadingState";
-import { ErrorState } from "@/components/ui/ErrorState";
-import { Badge } from "@/components/ui/Badge";
-import { CopyableHash } from "@/components/ui/CopyableHash";
+import { useState, useEffect, useCallback } from 'react';
+import { useParams, useNavigate, Link } from 'react-router-dom';
+import { getChainInfo, getChainName, getChainSymbol } from '../config/chains';
+import TopNavigation from '../components/TopNavigation';
+import { formatNumber, formatRelativeTime } from '@/utils/format';
+import { getLatestTransactions, type RpcTransaction } from '@/utils/blockRpcData';
+import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
+import { DataTable, Pagination, linkStyle, monoStyle } from '@/components/ui/DataTable';
+import { TableSkeleton } from '@/components/ui/LoadingState';
+import { ErrorState } from '@/components/ui/ErrorState';
+import { Badge } from '@/components/ui/Badge';
+import { CopyableHash } from '@/components/ui/CopyableHash';
 
 export default function TransactionsListPage() {
   const { chainId } = useParams<{ chainId: string }>();
@@ -21,7 +21,7 @@ export default function TransactionsListPage() {
   const [latestBlockNumber, setLatestBlockNumber] = useState<bigint | null>(null);
   const limit = 20;
 
-  const currentChainId = parseInt(chainId || "1");
+  const currentChainId = parseInt(chainId || '1');
   const chainInfo = getChainInfo(currentChainId);
   const symbol = getChainSymbol(currentChainId);
 
@@ -30,26 +30,28 @@ export default function TransactionsListPage() {
       setLoading(true);
       setError(null);
 
-      const beforeBlock =
-        latestBlockNumber && page > 1
+      const beforeBlock
+        = latestBlockNumber && page > 1
           ? latestBlockNumber - BigInt((page - 1) * 5)
           : undefined;
 
       const result = await getLatestTransactions(
         currentChainId,
         limit,
-        beforeBlock
+        beforeBlock,
       );
       setTransactions(result.transactions);
       if (page === 1) {
         setLatestBlockNumber(result.latestBlockNumber);
       }
-    } catch (err) {
-      console.error("Failed to fetch transactions:", err);
+    }
+    catch (err) {
+      console.error('Failed to fetch transactions:', err);
       setError(
-        err instanceof Error ? err.message : "Failed to fetch transactions"
+        err instanceof Error ? err.message : 'Failed to fetch transactions',
       );
-    } finally {
+    }
+    finally {
       setLoading(false);
     }
   }, [currentChainId, page, latestBlockNumber]);
@@ -68,7 +70,7 @@ export default function TransactionsListPage() {
   };
 
   const formatAddr = (addr: string) => {
-    if (!addr || addr.length < 10) return addr || "N/A";
+    if (!addr || addr.length < 10) return addr || 'N/A';
     return `${addr.slice(0, 8)}...${addr.slice(-6)}`;
   };
 
@@ -78,7 +80,8 @@ export default function TransactionsListPage() {
       if (valueInEth === 0) return `0 ${symbol}`;
       if (valueInEth < 0.0001) return `<0.0001 ${symbol}`;
       return `${valueInEth.toFixed(4)} ${symbol}`;
-    } catch {
+    }
+    catch {
       return `${value} wei`;
     }
   };
@@ -125,7 +128,7 @@ export default function TransactionsListPage() {
               </tr>
             </thead>
             <tbody>
-              {transactions.map((tx) => (
+              {transactions.map(tx => (
                 <tr key={tx.hash}>
                   <td>
                     <CopyableHash
@@ -140,7 +143,7 @@ export default function TransactionsListPage() {
                     </Link>
                   </td>
                   <td>
-                    {tx.timestamp ? formatRelativeTime(tx.timestamp) : "N/A"}
+                    {tx.timestamp ? formatRelativeTime(tx.timestamp) : 'N/A'}
                   </td>
                   <td>
                     <CopyableHash
@@ -158,8 +161,8 @@ export default function TransactionsListPage() {
                   </td>
                   <td className={monoStyle}>{formatValue(tx.value)}</td>
                   <td>
-                    <Badge variant={tx.status === 1 ? "success" : "error"} size="sm">
-                      {tx.status === 1 ? "Success" : "Failed"}
+                    <Badge variant={tx.status === 1 ? 'success' : 'error'} size="sm">
+                      {tx.status === 1 ? 'Success' : 'Failed'}
                     </Badge>
                   </td>
                 </tr>
@@ -171,11 +174,11 @@ export default function TransactionsListPage() {
         {transactions.length > 0 && (
           <Pagination
             page={page}
-            pageInfo={`Page ${page}${latestBlockNumber !== null ? ` • Latest block: ${formatNumber(Number(latestBlockNumber))}` : ""}`}
+            pageInfo={`Page ${page}${latestBlockNumber !== null ? ` • Latest block: ${formatNumber(Number(latestBlockNumber))}` : ''}`}
             hasPrev={page > 1}
             hasNext={transactions.length >= limit}
-            onPrev={() => setPage((p) => Math.max(1, p - 1))}
-            onNext={() => setPage((p) => p + 1)}
+            onPrev={() => setPage(p => Math.max(1, p - 1))}
+            onNext={() => setPage(p => p + 1)}
             prevLabel="Newer"
             nextLabel="Older"
           />

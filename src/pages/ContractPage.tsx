@@ -1,31 +1,31 @@
-import { useState, useEffect, useRef, useCallback } from "react";
-import { useParams, useNavigate, useLocation, useSearchParams } from "react-router-dom";
-import { css } from "@linaria/core";
-import { useControl } from "react-use-control";
-import { getChainName, isChainSupported } from "@/config/chains";
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
+import { css } from '@linaria/core';
+import { useControl } from 'react-use-control';
+import { getChainName, isChainSupported } from '@/config/chains';
 import {
   parseContractFunctions,
   readContract,
   simulateContract,
   estimateContractGas,
   type ContractFunction,
-} from "../utils/contractInteraction";
-import TopNavigation from "../components/TopNavigation";
-import RpcFunctionError from "../components/RpcFunctionError";
-import RpcConfig from "../components/RpcConfig";
-import EventTable from "../components/events/EventTable";
-import EventStatistics from "../components/events/EventStatistics";
+} from '../utils/contractInteraction';
+import TopNavigation from '../components/TopNavigation';
+import RpcFunctionError from '../components/RpcFunctionError';
+import RpcConfig from '../components/RpcConfig';
+import EventTable from '../components/events/EventTable';
+import EventStatistics from '../components/events/EventStatistics';
 
-type ProxyType =
-  | "transparent"
-  | "uups"
-  | "beacon"
-  | "minimal"
-  | "zeppelinos"
-  | "gnosis-safe"
-  | "diamond"
-  | "eip1167"
-  | "unknown";
+type ProxyType
+  = | 'transparent'
+    | 'uups'
+    | 'beacon'
+    | 'minimal'
+    | 'zeppelinos'
+    | 'gnosis-safe'
+    | 'diamond'
+    | 'eip1167'
+    | 'unknown';
 
 type ContractSource = {
   chainId: number;
@@ -37,13 +37,13 @@ type ContractSource = {
   sourceCode: string;
   abi: string;
   constructorArguments?: string;
-  verificationStatus: "verified" | "unverified" | "partial";
+  verificationStatus: 'verified' | 'unverified' | 'partial';
   verificationSource:
-    | "sourcify"
-    | "etherscan"
-    | "mantle-explorer"
-    | "manual"
-    | "unknown";
+    | 'sourcify'
+    | 'etherscan'
+    | 'mantle-explorer'
+    | 'manual'
+    | 'unknown';
   verifiedAt?: string;
   lastChecked: string;
   isProxy?: boolean;
@@ -298,52 +298,52 @@ export default function ContractPage() {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [contractSource, setContractSource] = useState<ContractSource | null>(
-    null
+    null,
   );
   const [creationInfo, setCreationInfo] = useState<ContractCreationInfo | null>(
-    null
+    null,
   );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [creationLoading, setCreationLoading] = useState(false);
   const [creationError, setCreationError] = useState<string | null>(null);
   const [, setShowRpcConfig, rpcConfigControl] = useControl(false);
-  type TabId =
-    | "source"
-    | "source-impl"
-    | "abi"
-    | "abi-impl"
-    | "functions"
-    | "events"
-    | "interact"
-    | "read-proxy"
-    | "write-proxy";
+  type TabId
+    = | 'source'
+      | 'source-impl'
+      | 'abi'
+      | 'abi-impl'
+      | 'functions'
+      | 'events'
+      | 'interact'
+      | 'read-proxy'
+      | 'write-proxy';
 
-  const tabFromUrl = (searchParams.get("tab") ||
-    (location.pathname.endsWith("/events") ? "events" : "")) as TabId | "";
+  const tabFromUrl = (searchParams.get('tab')
+    || (location.pathname.endsWith('/events') ? 'events' : '')) as TabId | '';
 
-  const activeTab: TabId = tabFromUrl || "source";
+  const activeTab: TabId = tabFromUrl || 'source';
 
   const setActiveTab = (tab: TabId) => {
     setSearchParams({ tab }, { replace: true });
   };
 
-  const currentChainId = parseInt(chainId || "1");
+  const currentChainId = parseInt(chainId || '1');
 
   const handleChainChange = (newChainId: number) => {
     navigate(`/chain/${newChainId}/contract/${address}`, { replace: true });
   };
 
-  const isProxy =
-    contractSource?.isProxy && !!contractSource?.implementationContract;
+  const isProxy
+    = contractSource?.isProxy && !!contractSource?.implementationContract;
 
   const parseABI = (contract: ContractSource | null): ContractABI | null => {
     if (!contract?.abi) return null;
     try {
       const abi = JSON.parse(contract.abi);
-      const functions = abi.filter((item: any) => item.type === "function");
-      const events = abi.filter((item: any) => item.type === "event");
-      const errors = abi.filter((item: any) => item.type === "error");
+      const functions = abi.filter((item: any) => item.type === 'function');
+      const events = abi.filter((item: any) => item.type === 'event');
+      const errors = abi.filter((item: any) => item.type === 'error');
       return {
         abi: contract.abi,
         functions: functions.map((f: any) => ({
@@ -351,24 +351,25 @@ export default function ContractPage() {
           type: f.type,
           inputs: f.inputs || [],
           outputs: f.outputs || [],
-          signature: `${f.name}(${(f.inputs || []).map((input: any) => input.type).join(", ")})`,
+          signature: `${f.name}(${(f.inputs || []).map((input: any) => input.type).join(', ')})`,
         })),
         events: events.map((e: any) => ({
           name: e.name,
           inputs: e.inputs || [],
-          signature: `${e.name}(${(e.inputs || []).map((input: any) => input.type).join(", ")})`,
+          signature: `${e.name}(${(e.inputs || []).map((input: any) => input.type).join(', ')})`,
         })),
         errors,
         verificationStatus: contract.verificationStatus,
       };
-    } catch {
+    }
+    catch {
       return null;
     }
   };
 
   const proxyABI = parseABI(contractSource);
   const implABI = parseABI(
-    contractSource?.implementationContract ?? null
+    contractSource?.implementationContract ?? null,
   );
   const effectiveABI = isProxy ? implABI : proxyABI;
 
@@ -381,24 +382,24 @@ export default function ContractPage() {
 
   useEffect(() => {
     if (
-      contractSource?.isProxy &&
-      contractSource?.implementationContract &&
-      !tabFromUrl
+      contractSource?.isProxy
+      && contractSource?.implementationContract
+      && !tabFromUrl
     ) {
-      setActiveTab("read-proxy");
+      setActiveTab('read-proxy');
     }
   }, [contractSource]);
 
   const indexingTriggered = useRef(false);
 
   useEffect(() => {
-    if (activeTab !== "events" || !address || !currentChainId) return;
+    if (activeTab !== 'events' || !address || !currentChainId) return;
     if (indexingTriggered.current) return;
     indexingTriggered.current = true;
 
     fetch(
       `/api/chains/${currentChainId}/contracts/${address}/events/index`,
-      { method: "POST", headers: { "Content-Type": "application/json" } }
+      { method: 'POST', headers: { 'Content-Type': 'application/json' } },
     ).catch(() => {});
   }, [activeTab, address, currentChainId]);
 
@@ -414,28 +415,30 @@ export default function ContractPage() {
 
     try {
       const sourceResponse = await fetch(
-        `/api/chains/${currentChainId}/contracts/${address}/source`
+        `/api/chains/${currentChainId}/contracts/${address}/source`,
       );
 
       if (!sourceResponse.ok) {
         if (sourceResponse.status === 404) {
-          throw new Error("Contract not found or not verified");
+          throw new Error('Contract not found or not verified');
         }
         throw new Error(
-          `HTTP ${sourceResponse.status}: ${sourceResponse.statusText}`
+          `HTTP ${sourceResponse.status}: ${sourceResponse.statusText}`,
         );
       }
 
       const sourceData = await sourceResponse.json();
       setContractSource(sourceData.contractSource);
-    } catch (err) {
-      console.error("Failed to fetch contract data:", err);
+    }
+    catch (err) {
+      console.error('Failed to fetch contract data:', err);
       setError(
         err instanceof Error
           ? err.message
-          : "Failed to fetch contract information"
+          : 'Failed to fetch contract information',
       );
-    } finally {
+    }
+    finally {
       setLoading(false);
     }
   };
@@ -448,30 +451,34 @@ export default function ContractPage() {
 
     try {
       const response = await fetch(
-        `/api/chains/${currentChainId}/contracts/${address}/creation`
+        `/api/chains/${currentChainId}/contracts/${address}/creation`,
       );
 
       if (response.ok) {
         const data = await response.json();
         if (data.found) {
           setCreationInfo(data.creation);
-        } else {
+        }
+        else {
           // 没有找到创建信息，可能是RPC节点限制
           setCreationError(
-            "无法获取合约创建信息，可能是RPC节点不支持历史状态查询"
+            '无法获取合约创建信息，可能是RPC节点不支持历史状态查询',
           );
         }
-      } else {
+      }
+      else {
         const errorData = await response.json().catch(() => ({}));
         setCreationError(
-          errorData.error || `HTTP ${response.status}: ${response.statusText}`
+          errorData.error || `HTTP ${response.status}: ${response.statusText}`,
         );
       }
-    } catch (err) {
-      console.error("Failed to fetch contract creation info:", err);
+    }
+    catch (err) {
+      console.error('Failed to fetch contract creation info:', err);
       const errorMessage = err instanceof Error ? err.message : String(err);
       setCreationError(errorMessage);
-    } finally {
+    }
+    finally {
       setCreationLoading(false);
     }
   };
@@ -500,7 +507,10 @@ export default function ContractPage() {
           onChainChange={handleChainChange}
         />
         <div className={pageStyles}>
-          <div className={errorStyles}>Unsupported chain ID: {chainId}</div>
+          <div className={errorStyles}>
+            Unsupported chain ID:
+            {chainId}
+          </div>
         </div>
       </>
     );
@@ -516,8 +526,7 @@ export default function ContractPage() {
         <button
           className={backButtonStyles}
           onClick={() =>
-            navigate(`/chain/${currentChainId}/address/${address}`)
-          }
+            navigate(`/chain/${currentChainId}/address/${address}`)}
         >
           ← Back to Address
         </button>
@@ -525,7 +534,10 @@ export default function ContractPage() {
         <div className={headerStyles}>
           <h1>Contract Source Code</h1>
           <div className="chain-info">
-            {getChainName(currentChainId)} •{" "}
+            {getChainName(currentChainId)}
+            {' '}
+            •
+            {' '}
             <span className="address">{address}</span>
           </div>
         </div>
@@ -534,7 +546,12 @@ export default function ContractPage() {
           <div className={loadingStyles}>Loading contract information...</div>
         )}
 
-        {error && <div className={errorStyles}>Error: {error}</div>}
+        {error && (
+          <div className={errorStyles}>
+            Error:
+            {error}
+          </div>
+        )}
 
         {contractSource && (
           <>
@@ -574,10 +591,10 @@ export default function ContractPage() {
                     <span className="label">Optimization</span>
                     <span className="value">
                       {contractSource.optimizationEnabled
-                        ? "Enabled"
-                        : "Disabled"}
-                      {contractSource.optimizationRuns &&
-                        ` (${contractSource.optimizationRuns} runs)`}
+                        ? 'Enabled'
+                        : 'Disabled'}
+                      {contractSource.optimizationRuns
+                        && ` (${contractSource.optimizationRuns} runs)`}
                     </span>
                   </div>
                 )}
@@ -588,26 +605,27 @@ export default function ContractPage() {
                       <span className="value">
                         <span
                           style={{
-                            display: "inline-block",
-                            padding: "2px 10px",
-                            borderRadius: "4px",
-                            background: "#e8f5e9",
-                            color: "#2e7d32",
+                            display: 'inline-block',
+                            padding: '2px 10px',
+                            borderRadius: '4px',
+                            background: '#e8f5e9',
+                            color: '#2e7d32',
                             fontWeight: 600,
-                            fontSize: "13px",
+                            fontSize: '13px',
                           }}
                         >
                           {({
-                            transparent: "EIP-1967 Transparent",
-                            uups: "UUPS",
-                            beacon: "Beacon",
-                            minimal: "Minimal",
-                            zeppelinos: "ZeppelinOS",
-                            "gnosis-safe": "Gnosis Safe",
-                            diamond: "Diamond (EIP-2535)",
-                            eip1167: "EIP-1167 Clone",
-                            unknown: "Unknown",
-                          } as Record<string, string>)[contractSource.proxyType || "unknown"] || contractSource.proxyType?.toUpperCase()}{" "}
+                            'transparent': 'EIP-1967 Transparent',
+                            'uups': 'UUPS',
+                            'beacon': 'Beacon',
+                            'minimal': 'Minimal',
+                            'zeppelinos': 'ZeppelinOS',
+                            'gnosis-safe': 'Gnosis Safe',
+                            'diamond': 'Diamond (EIP-2535)',
+                            'eip1167': 'EIP-1167 Clone',
+                            'unknown': 'Unknown',
+                          } as Record<string, string>)[contractSource.proxyType || 'unknown'] || contractSource.proxyType?.toUpperCase()}
+                          {' '}
                           Proxy
                         </span>
                       </span>
@@ -618,15 +636,13 @@ export default function ContractPage() {
                         <span className="value">
                           <a
                             href={`/chain/${currentChainId}/contract/${contractSource.implementationAddress}`}
-                            style={{ color: "#007bff", textDecoration: "none" }}
-                            onMouseOver={(e) =>
-                              ((e.target as HTMLElement).style.textDecoration =
-                                "underline")
-                            }
-                            onMouseOut={(e) =>
-                              ((e.target as HTMLElement).style.textDecoration =
-                                "none")
-                            }
+                            style={{ color: '#007bff', textDecoration: 'none' }}
+                            onMouseOver={e =>
+                              ((e.target as HTMLElement).style.textDecoration
+                                = 'underline')}
+                            onMouseOut={e =>
+                              ((e.target as HTMLElement).style.textDecoration
+                                = 'none')}
                           >
                             {contractSource.implementationContract?.name
                               ? `${contractSource.implementationContract.name} (${contractSource.implementationAddress})`
@@ -646,15 +662,13 @@ export default function ContractPage() {
                       <span className="value">
                         <a
                           href={`/chain/${currentChainId}/tx/${creationInfo.txHash}`}
-                          style={{ color: "#007bff", textDecoration: "none" }}
-                          onMouseOver={(e) =>
-                            ((e.target as HTMLElement).style.textDecoration =
-                              "underline")
-                          }
-                          onMouseOut={(e) =>
-                            ((e.target as HTMLElement).style.textDecoration =
-                              "none")
-                          }
+                          style={{ color: '#007bff', textDecoration: 'none' }}
+                          onMouseOver={e =>
+                            ((e.target as HTMLElement).style.textDecoration
+                              = 'underline')}
+                          onMouseOut={e =>
+                            ((e.target as HTMLElement).style.textDecoration
+                              = 'none')}
                         >
                           {creationInfo.txHash}
                         </a>
@@ -665,17 +679,16 @@ export default function ContractPage() {
                       <span className="value">
                         <a
                           href={`/chain/${currentChainId}/block/${creationInfo.blockNumber}`}
-                          style={{ color: "#007bff", textDecoration: "none" }}
-                          onMouseOver={(e) =>
-                            ((e.target as HTMLElement).style.textDecoration =
-                              "underline")
-                          }
-                          onMouseOut={(e) =>
-                            ((e.target as HTMLElement).style.textDecoration =
-                              "none")
-                          }
+                          style={{ color: '#007bff', textDecoration: 'none' }}
+                          onMouseOver={e =>
+                            ((e.target as HTMLElement).style.textDecoration
+                              = 'underline')}
+                          onMouseOut={e =>
+                            ((e.target as HTMLElement).style.textDecoration
+                              = 'none')}
                         >
-                          #{creationInfo.blockNumber}
+                          #
+                          {creationInfo.blockNumber}
                         </a>
                       </span>
                     </div>
@@ -684,15 +697,13 @@ export default function ContractPage() {
                       <span className="value">
                         <a
                           href={`/chain/${currentChainId}/address/${creationInfo.creator}`}
-                          style={{ color: "#007bff", textDecoration: "none" }}
-                          onMouseOver={(e) =>
-                            ((e.target as HTMLElement).style.textDecoration =
-                              "underline")
-                          }
-                          onMouseOut={(e) =>
-                            ((e.target as HTMLElement).style.textDecoration =
-                              "none")
-                          }
+                          style={{ color: '#007bff', textDecoration: 'none' }}
+                          onMouseOver={e =>
+                            ((e.target as HTMLElement).style.textDecoration
+                              = 'underline')}
+                          onMouseOut={e =>
+                            ((e.target as HTMLElement).style.textDecoration
+                              = 'none')}
                         >
                           {creationInfo.creator}
                         </a>
@@ -702,14 +713,16 @@ export default function ContractPage() {
                       <span className="label">Creation Time</span>
                       <span className="value">
                         {new Date(
-                          creationInfo.timestamp * 1000
+                          creationInfo.timestamp * 1000,
                         ).toLocaleString()}
                       </span>
                     </div>
                     <div className="info-item">
                       <span className="label">Gas Used</span>
                       <span className="value">
-                        {parseInt(creationInfo.gasUsed).toLocaleString()} gas
+                        {parseInt(creationInfo.gasUsed).toLocaleString()}
+                        {' '}
+                        gas
                       </span>
                     </div>
                   </>
@@ -737,208 +750,227 @@ export default function ContractPage() {
             </div>
 
             <div className={tabsStyles}>
-              {isProxy ? (
-                <>
-                  <button
-                    className={`tab ${activeTab === "read-proxy" ? "active" : ""}`}
-                    onClick={() => setActiveTab("read-proxy")}
-                  >
-                    Read as Proxy
-                  </button>
-                  <button
-                    className={`tab ${activeTab === "write-proxy" ? "active" : ""}`}
-                    onClick={() => setActiveTab("write-proxy")}
-                  >
-                    Write as Proxy
-                  </button>
-                  <button
-                    className={`tab ${activeTab === "source" ? "active" : ""}`}
-                    onClick={() => setActiveTab("source")}
-                  >
-                    Source (Proxy)
-                  </button>
-                  <button
-                    className={`tab ${activeTab === "source-impl" ? "active" : ""}`}
-                    onClick={() => setActiveTab("source-impl")}
-                  >
-                    Source (Impl)
-                  </button>
-                  <button
-                    className={`tab ${activeTab === "abi" ? "active" : ""}`}
-                    onClick={() => setActiveTab("abi")}
-                  >
-                    ABI (Proxy)
-                  </button>
-                  <button
-                    className={`tab ${activeTab === "abi-impl" ? "active" : ""}`}
-                    onClick={() => setActiveTab("abi-impl")}
-                  >
-                    ABI (Impl)
-                  </button>
-                  {effectiveABI && effectiveABI.events.length > 0 && (
-                    <button
-                      className={`tab ${activeTab === "events" ? "active" : ""}`}
-                      onClick={() => setActiveTab("events")}
-                    >
-                      Events ({effectiveABI.events.length})
-                    </button>
-                  )}
-                </>
-              ) : (
-                <>
-                  <button
-                    className={`tab ${activeTab === "source" ? "active" : ""}`}
-                    onClick={() => setActiveTab("source")}
-                  >
-                    Source Code
-                  </button>
-                  <button
-                    className={`tab ${activeTab === "abi" ? "active" : ""}`}
-                    onClick={() => setActiveTab("abi")}
-                  >
-                    ABI
-                  </button>
-                  {effectiveABI && effectiveABI.functions.length > 0 && (
-                    <button
-                      className={`tab ${activeTab === "functions" ? "active" : ""}`}
-                      onClick={() => setActiveTab("functions")}
-                    >
-                      Functions ({effectiveABI.functions.length})
-                    </button>
-                  )}
-                  {effectiveABI && effectiveABI.events.length > 0 && (
-                    <button
-                      className={`tab ${activeTab === "events" ? "active" : ""}`}
-                      onClick={() => setActiveTab("events")}
-                    >
-                      Events ({effectiveABI.events.length})
-                    </button>
-                  )}
-                  {effectiveABI &&
-                    (effectiveABI.functions.length > 0 ||
-                      effectiveABI.events.length > 0) && (
+              {isProxy
+                ? (
+                    <>
                       <button
-                        className={`tab ${activeTab === "interact" ? "active" : ""}`}
-                        onClick={() => setActiveTab("interact")}
+                        className={`tab ${activeTab === 'read-proxy' ? 'active' : ''}`}
+                        onClick={() => setActiveTab('read-proxy')}
                       >
-                        Interact
+                        Read as Proxy
                       </button>
-                    )}
-                </>
-              )}
+                      <button
+                        className={`tab ${activeTab === 'write-proxy' ? 'active' : ''}`}
+                        onClick={() => setActiveTab('write-proxy')}
+                      >
+                        Write as Proxy
+                      </button>
+                      <button
+                        className={`tab ${activeTab === 'source' ? 'active' : ''}`}
+                        onClick={() => setActiveTab('source')}
+                      >
+                        Source (Proxy)
+                      </button>
+                      <button
+                        className={`tab ${activeTab === 'source-impl' ? 'active' : ''}`}
+                        onClick={() => setActiveTab('source-impl')}
+                      >
+                        Source (Impl)
+                      </button>
+                      <button
+                        className={`tab ${activeTab === 'abi' ? 'active' : ''}`}
+                        onClick={() => setActiveTab('abi')}
+                      >
+                        ABI (Proxy)
+                      </button>
+                      <button
+                        className={`tab ${activeTab === 'abi-impl' ? 'active' : ''}`}
+                        onClick={() => setActiveTab('abi-impl')}
+                      >
+                        ABI (Impl)
+                      </button>
+                      {effectiveABI && effectiveABI.events.length > 0 && (
+                        <button
+                          className={`tab ${activeTab === 'events' ? 'active' : ''}`}
+                          onClick={() => setActiveTab('events')}
+                        >
+                          Events (
+                          {effectiveABI.events.length}
+                          )
+                        </button>
+                      )}
+                    </>
+                  )
+                : (
+                    <>
+                      <button
+                        className={`tab ${activeTab === 'source' ? 'active' : ''}`}
+                        onClick={() => setActiveTab('source')}
+                      >
+                        Source Code
+                      </button>
+                      <button
+                        className={`tab ${activeTab === 'abi' ? 'active' : ''}`}
+                        onClick={() => setActiveTab('abi')}
+                      >
+                        ABI
+                      </button>
+                      {effectiveABI && effectiveABI.functions.length > 0 && (
+                        <button
+                          className={`tab ${activeTab === 'functions' ? 'active' : ''}`}
+                          onClick={() => setActiveTab('functions')}
+                        >
+                          Functions (
+                          {effectiveABI.functions.length}
+                          )
+                        </button>
+                      )}
+                      {effectiveABI && effectiveABI.events.length > 0 && (
+                        <button
+                          className={`tab ${activeTab === 'events' ? 'active' : ''}`}
+                          onClick={() => setActiveTab('events')}
+                        >
+                          Events (
+                          {effectiveABI.events.length}
+                          )
+                        </button>
+                      )}
+                      {effectiveABI
+                        && (effectiveABI.functions.length > 0
+                          || effectiveABI.events.length > 0) && (
+                        <button
+                          className={`tab ${activeTab === 'interact' ? 'active' : ''}`}
+                          onClick={() => setActiveTab('interact')}
+                        >
+                          Interact
+                        </button>
+                      )}
+                    </>
+                  )}
             </div>
 
             {/* Read as Proxy */}
-            {activeTab === "read-proxy" && isProxy && (
+            {activeTab === 'read-proxy' && isProxy && (
               <ContractInteract
                 chainId={currentChainId}
-                contractAddress={address!}
+                contractAddress={address}
                 contractSource={contractSource}
                 mode="read"
               />
             )}
 
             {/* Write as Proxy */}
-            {activeTab === "write-proxy" && isProxy && (
+            {activeTab === 'write-proxy' && isProxy && (
               <ContractInteract
                 chainId={currentChainId}
-                contractAddress={address!}
+                contractAddress={address}
                 contractSource={contractSource}
                 mode="write"
               />
             )}
 
             {/* Source Code - proxy contract itself */}
-            {activeTab === "source" && (
+            {activeTab === 'source' && (
               <div className={cardStyles}>
                 <h2>
-                  {isProxy ? "Proxy Contract Source" : "Source Code"}
+                  {isProxy ? 'Proxy Contract Source' : 'Source Code'}
                 </h2>
-                {contractSource.sourceCode ? (
-                  <div className={codeStyles}>
-                    {contractSource.sourceCode}
-                  </div>
-                ) : (
-                  <div>No source code available</div>
-                )}
+                {contractSource.sourceCode
+                  ? (
+                      <div className={codeStyles}>
+                        {contractSource.sourceCode}
+                      </div>
+                    )
+                  : (
+                      <div>No source code available</div>
+                    )}
               </div>
             )}
 
             {/* Source Code - implementation */}
-            {activeTab === "source-impl" && isProxy && (
+            {activeTab === 'source-impl' && isProxy && (
               <div className={cardStyles}>
                 <h2>
-                  Implementation Source ({contractSource.implementationContract?.name || "Unknown"})
+                  Implementation Source (
+                  {contractSource.implementationContract?.name || 'Unknown'}
+                  )
                 </h2>
-                {contractSource.implementationContract?.sourceCode ? (
-                  <div className={codeStyles}>
-                    {contractSource.implementationContract.sourceCode}
-                  </div>
-                ) : (
-                  <div>No source code available for implementation contract</div>
-                )}
+                {contractSource.implementationContract?.sourceCode
+                  ? (
+                      <div className={codeStyles}>
+                        {contractSource.implementationContract.sourceCode}
+                      </div>
+                    )
+                  : (
+                      <div>No source code available for implementation contract</div>
+                    )}
               </div>
             )}
 
             {/* ABI - proxy */}
-            {activeTab === "abi" && (
+            {activeTab === 'abi' && (
               <div className={cardStyles}>
-                <h2>{isProxy ? "Proxy ABI" : "Contract ABI"}</h2>
+                <h2>{isProxy ? 'Proxy ABI' : 'Contract ABI'}</h2>
                 <div className={codeStyles}>
                   {contractSource.abi
                     ? JSON.stringify(JSON.parse(contractSource.abi), null, 2)
-                    : "No ABI available"}
+                    : 'No ABI available'}
                 </div>
               </div>
             )}
 
             {/* ABI - implementation */}
-            {activeTab === "abi-impl" && isProxy && (
+            {activeTab === 'abi-impl' && isProxy && (
               <div className={cardStyles}>
                 <h2>
-                  Implementation ABI ({contractSource.implementationContract?.name || "Unknown"})
+                  Implementation ABI (
+                  {contractSource.implementationContract?.name || 'Unknown'}
+                  )
                 </h2>
                 <div className={codeStyles}>
                   {contractSource.implementationContract?.abi
                     ? JSON.stringify(
                         JSON.parse(contractSource.implementationContract.abi),
                         null,
-                        2
+                        2,
                       )
-                    : "No ABI available for implementation contract"}
+                    : 'No ABI available for implementation contract'}
                 </div>
               </div>
             )}
 
             {/* Functions (non-proxy only) */}
-            {activeTab === "functions" && !isProxy && (
+            {activeTab === 'functions' && !isProxy && (
               <div className={cardStyles}>
                 <h2>Contract Functions</h2>
-                {effectiveABI && effectiveABI.functions.length > 0 ? (
-                  <div className={functionListStyles}>
-                    {effectiveABI.functions.map((func, index) => (
-                      <div
-                        key={index}
-                        className={`function-item ${func.type}`}
-                      >
-                        <div className="function-signature">
-                          {func.name}(
-                          {func.inputs
-                            .map((input) => `${input.type} ${input.name}`)
-                            .join(", ")}
-                          )
-                        </div>
-                        <span className="function-type">{func.type}</span>
+                {effectiveABI && effectiveABI.functions.length > 0
+                  ? (
+                      <div className={functionListStyles}>
+                        {effectiveABI.functions.map((func, index) => (
+                          <div
+                            key={index}
+                            className={`function-item ${func.type}`}
+                          >
+                            <div className="function-signature">
+                              {func.name}
+                              (
+                              {func.inputs
+                                .map(input => `${input.type} ${input.name}`)
+                                .join(', ')}
+                              )
+                            </div>
+                            <span className="function-type">{func.type}</span>
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div>No functions found</div>
-                )}
+                    )
+                  : (
+                      <div>No functions found</div>
+                    )}
               </div>
             )}
 
-            {activeTab === "events" && (
+            {activeTab === 'events' && (
               <EventsPanel
                 chainId={currentChainId}
                 contractAddress={address as `0x${string}`}
@@ -947,10 +979,10 @@ export default function ContractPage() {
             )}
 
             {/* Interact (non-proxy only) */}
-            {activeTab === "interact" && !isProxy && (
+            {activeTab === 'interact' && !isProxy && (
               <ContractInteract
                 chainId={currentChainId}
-                contractAddress={address!}
+                contractAddress={address}
                 contractSource={contractSource}
                 mode="all"
               />
@@ -984,7 +1016,7 @@ function EventsPanel({
   const [refreshKey, setRefreshKey] = useState(0);
 
   const handleEventsUpdated = useCallback(() => {
-    setRefreshKey((k) => k + 1);
+    setRefreshKey(k => k + 1);
   }, []);
 
   return (
@@ -1010,12 +1042,12 @@ function ContractInteract({
   chainId,
   contractAddress,
   contractSource,
-  mode = "all",
+  mode = 'all',
 }: {
   chainId: number;
   contractAddress: string;
   contractSource: ContractSource | null;
-  mode?: "all" | "read" | "write";
+  mode?: 'all' | 'read' | 'write';
 }) {
   const [readFunctions, setReadFunctions] = useState<ContractFunction[]>([]);
   const [writeFunctions, setWriteFunctions] = useState<ContractFunction[]>([]);
@@ -1023,7 +1055,7 @@ function ContractInteract({
   const [results, setResults] = useState<Record<string, any>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loadingStates, setLoadingStates] = useState<Record<string, boolean>>(
-    {}
+    {},
   );
 
   useEffect(() => {
@@ -1047,13 +1079,15 @@ function ContractInteract({
       }
 
       // 直接解析 ABI 获取函数列表
-      const { readFunctions, writeFunctions } =
-        parseContractFunctions(targetABI);
+      const { readFunctions, writeFunctions }
+        = parseContractFunctions(targetABI);
       setReadFunctions(readFunctions);
       setWriteFunctions(writeFunctions);
-    } catch (error) {
-      console.error("Failed to load contract functions:", error);
-    } finally {
+    }
+    catch (error) {
+      console.error('Failed to load contract functions:', error);
+    }
+    finally {
       setLoading(false);
     }
   };
@@ -1062,19 +1096,19 @@ function ContractInteract({
     const key = `${functionName}-${JSON.stringify(args)}`;
 
     try {
-      setLoadingStates((prev) => ({ ...prev, [key]: true }));
-      setErrors((prev) => ({ ...prev, [key]: "" }));
+      setLoadingStates(prev => ({ ...prev, [key]: true }));
+      setErrors(prev => ({ ...prev, [key]: '' }));
 
       if (!contractSource) {
-        setErrors((prev) => ({
+        setErrors(prev => ({
           ...prev,
-          [key]: "Contract source not available",
+          [key]: 'Contract source not available',
         }));
         return;
       }
 
-      const targetABI =
-        contractSource.isProxy && contractSource.implementationContract
+      const targetABI
+        = contractSource.isProxy && contractSource.implementationContract
           ? contractSource.implementationContract.abi
           : contractSource.abi;
 
@@ -1087,18 +1121,21 @@ function ContractInteract({
       });
 
       if (result.success) {
-        setResults((prev) => ({ ...prev, [key]: result.result }));
-      } else {
-        setErrors((prev) => ({
+        setResults(prev => ({ ...prev, [key]: result.result }));
+      }
+      else {
+        setErrors(prev => ({
           ...prev,
-          [key]: result.error || "Unknown error",
+          [key]: result.error || 'Unknown error',
         }));
       }
-    } catch (error) {
-      console.error("Read function call failed:", error);
-      setErrors((prev) => ({ ...prev, [key]: "Network error" }));
-    } finally {
-      setLoadingStates((prev) => ({ ...prev, [key]: false }));
+    }
+    catch (error) {
+      console.error('Read function call failed:', error);
+      setErrors(prev => ({ ...prev, [key]: 'Network error' }));
+    }
+    finally {
+      setLoadingStates(prev => ({ ...prev, [key]: false }));
     }
   };
 
@@ -1106,24 +1143,24 @@ function ContractInteract({
     functionName: string,
     args: any[],
     value?: string,
-    from?: string
+    from?: string,
   ) => {
-    const key = `${functionName}-${JSON.stringify(args)}-${value || ""}-${from || ""}`;
+    const key = `${functionName}-${JSON.stringify(args)}-${value || ''}-${from || ''}`;
 
     try {
-      setLoadingStates((prev) => ({ ...prev, [key]: true }));
-      setErrors((prev) => ({ ...prev, [key]: "" }));
+      setLoadingStates(prev => ({ ...prev, [key]: true }));
+      setErrors(prev => ({ ...prev, [key]: '' }));
 
       if (!contractSource) {
-        setErrors((prev) => ({
+        setErrors(prev => ({
           ...prev,
-          [key]: "Contract source not available",
+          [key]: 'Contract source not available',
         }));
         return;
       }
 
-      const targetABI =
-        contractSource.isProxy && contractSource.implementationContract
+      const targetABI
+        = contractSource.isProxy && contractSource.implementationContract
           ? contractSource.implementationContract.abi
           : contractSource.abi;
 
@@ -1138,36 +1175,39 @@ function ContractInteract({
       });
 
       if (result.success) {
-        setResults((prev) => ({
+        setResults(prev => ({
           ...prev,
           [key]: {
             result: result.result,
             gasUsed: result.gasUsed?.toString(),
           },
         }));
-      } else {
-        setErrors((prev) => ({
+      }
+      else {
+        setErrors(prev => ({
           ...prev,
-          [key]: result.error || "Unknown error",
+          [key]: result.error || 'Unknown error',
         }));
       }
-    } catch (error) {
-      console.error("Simulate function call failed:", error);
-      setErrors((prev) => ({ ...prev, [key]: "Network error" }));
-    } finally {
-      setLoadingStates((prev) => ({ ...prev, [key]: false }));
+    }
+    catch (error) {
+      console.error('Simulate function call failed:', error);
+      setErrors(prev => ({ ...prev, [key]: 'Network error' }));
+    }
+    finally {
+      setLoadingStates(prev => ({ ...prev, [key]: false }));
     }
   };
 
   const isProxyMode = contractSource?.isProxy && !!contractSource?.implementationContract;
   const implName = contractSource?.implementationContract?.name;
 
-  const title =
-    mode === "read"
-      ? `Read as Proxy${implName ? ` (${implName})` : ""}`
-      : mode === "write"
-        ? `Write as Proxy${implName ? ` (${implName})` : ""}`
-        : "Contract Interaction";
+  const title
+    = mode === 'read'
+      ? `Read as Proxy${implName ? ` (${implName})` : ''}`
+      : mode === 'write'
+        ? `Write as Proxy${implName ? ` (${implName})` : ''}`
+        : 'Contract Interaction';
 
   if (loading) {
     return (
@@ -1178,8 +1218,8 @@ function ContractInteract({
     );
   }
 
-  const targetABI =
-    contractSource?.isProxy && contractSource?.implementationContract
+  const targetABI
+    = contractSource?.isProxy && contractSource?.implementationContract
       ? contractSource.implementationContract.abi
       : contractSource?.abi;
 
@@ -1192,31 +1232,33 @@ function ContractInteract({
     );
   }
 
-  const showRead = mode === "all" || mode === "read";
-  const showWrite = mode === "all" || mode === "write";
+  const showRead = mode === 'all' || mode === 'read';
+  const showWrite = mode === 'all' || mode === 'write';
 
   return (
     <>
       {isProxyMode && (
         <div
           style={{
-            padding: "12px 16px",
-            marginBottom: "16px",
-            background: "#f0f7ff",
-            border: "1px solid #c6dfff",
-            borderRadius: "8px",
-            fontSize: "14px",
-            color: "#1a56db",
+            padding: '12px 16px',
+            marginBottom: '16px',
+            background: '#f0f7ff',
+            border: '1px solid #c6dfff',
+            borderRadius: '8px',
+            fontSize: '14px',
+            color: '#1a56db',
           }}
         >
-          {mode === "read"
-            ? "Reading from implementation contract via proxy address."
-            : mode === "write"
-              ? "Writing to implementation contract via proxy address. These are simulations only."
-              : "Interacting with implementation contract via proxy address."}
+          {mode === 'read'
+            ? 'Reading from implementation contract via proxy address.'
+            : mode === 'write'
+              ? 'Writing to implementation contract via proxy address. These are simulations only.'
+              : 'Interacting with implementation contract via proxy address.'}
           {contractSource.implementationAddress && (
-            <span style={{ marginLeft: "8px", fontFamily: "monospace", fontSize: "12px" }}>
-              Implementation: {contractSource.implementationAddress}
+            <span style={{ marginLeft: '8px', fontFamily: 'monospace', fontSize: '12px' }}>
+              Implementation:
+              {' '}
+              {contractSource.implementationAddress}
             </span>
           )}
         </div>
@@ -1224,7 +1266,7 @@ function ContractInteract({
 
       {showRead && readFunctions.length > 0 && (
         <div className={cardStyles}>
-          <h2>{mode === "read" ? title : "Read Functions"}</h2>
+          <h2>{mode === 'read' ? title : 'Read Functions'}</h2>
           <div className={functionListStyles}>
             {readFunctions.map((func, index) => (
               <FunctionCallForm
@@ -1243,10 +1285,10 @@ function ContractInteract({
 
       {showWrite && writeFunctions.length > 0 && (
         <div className={cardStyles}>
-          <h2>{mode === "write" ? title : "Write Functions (Simulation)"}</h2>
+          <h2>{mode === 'write' ? title : 'Write Functions (Simulation)'}</h2>
           {!isProxyMode && (
             <div
-              style={{ marginBottom: "20px", fontSize: "14px", color: "#666" }}
+              style={{ marginBottom: '20px', fontSize: '14px', color: '#666' }}
             >
               These are simulations only. To execute transactions, use a Web3
               wallet.
@@ -1425,11 +1467,11 @@ function FunctionCallForm({
   results: Record<string, any>;
   errors: Record<string, string>;
   loadingStates: Record<string, boolean>;
-  type: "read" | "write";
+  type: 'read' | 'write';
 }) {
-  const [args, setArgs] = useState<string[]>(func.inputs.map(() => ""));
-  const [value, setValue] = useState("");
-  const [from, setFrom] = useState("");
+  const [args, setArgs] = useState<string[]>(func.inputs.map(() => ''));
+  const [value, setValue] = useState('');
+  const [from, setFrom] = useState('');
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1438,31 +1480,33 @@ function FunctionCallForm({
     const processedArgs = args.map((arg, index) => {
       const inputType = func.inputs[index].type;
 
-      if (arg.trim() === "") return "";
+      if (arg.trim() === '') return '';
 
-      if (inputType.startsWith("uint") || inputType.startsWith("int")) {
+      if (inputType.startsWith('uint') || inputType.startsWith('int')) {
         return arg;
       }
 
-      if (inputType === "bool") {
-        return arg.toLowerCase() === "true";
+      if (inputType === 'bool') {
+        return arg.toLowerCase() === 'true';
       }
 
       return arg;
     });
 
-    if (type === "read") {
+    if (type === 'read') {
       onCall(func.name, processedArgs);
-    } else {
+    }
+    else {
       onCall(func.name, processedArgs, value || undefined, from || undefined);
     }
   };
 
   const getResultKey = () => {
-    if (type === "read") {
+    if (type === 'read') {
       return `${func.name}-${JSON.stringify(args)}`;
-    } else {
-      return `${func.name}-${JSON.stringify(args)}-${value || ""}-${from || ""}`;
+    }
+    else {
+      return `${func.name}-${JSON.stringify(args)}-${value || ''}-${from || ''}`;
     }
   };
 
@@ -1475,7 +1519,7 @@ function FunctionCallForm({
     <div className={functionFormStyles}>
       <div
         className={
-          type === "read" ? functionNameReadStyles : functionNameWriteStyles
+          type === 'read' ? functionNameReadStyles : functionNameWriteStyles
         }
       >
         {func.name}
@@ -1487,7 +1531,11 @@ function FunctionCallForm({
         {func.inputs.map((input, index) => (
           <div key={index} className={inputGroupStyles}>
             <label className={labelStyles}>
-              {input.name} ({input.type})
+              {input.name}
+              {' '}
+              (
+              {input.type}
+              )
             </label>
             <input
               type="text"
@@ -1504,15 +1552,15 @@ function FunctionCallForm({
         ))}
 
         {/* Write function additional fields */}
-        {type === "write" && (
+        {type === 'write' && (
           <>
-            {func.stateMutability === "payable" && (
+            {func.stateMutability === 'payable' && (
               <div className={inputGroupStyles}>
                 <label className={labelStyles}>Value (wei)</label>
                 <input
                   type="text"
                   value={value}
-                  onChange={(e) => setValue(e.target.value)}
+                  onChange={e => setValue(e.target.value)}
                   placeholder="0"
                   className={inputStyles}
                 />
@@ -1524,7 +1572,7 @@ function FunctionCallForm({
               <input
                 type="text"
                 value={from}
-                onChange={(e) => setFrom(e.target.value)}
+                onChange={e => setFrom(e.target.value)}
                 placeholder="0x..."
                 className={inputStyles}
               />
@@ -1535,9 +1583,9 @@ function FunctionCallForm({
         <button
           type="submit"
           disabled={isLoading}
-          className={type === "read" ? buttonReadStyles : buttonWriteStyles}
+          className={type === 'read' ? buttonReadStyles : buttonWriteStyles}
         >
-          {isLoading ? "Loading..." : type === "read" ? "Query" : "Simulate"}
+          {isLoading ? 'Loading...' : type === 'read' ? 'Query' : 'Simulate'}
         </button>
 
         {/* Results */}
@@ -1545,7 +1593,7 @@ function FunctionCallForm({
           <div className={resultSuccessStyles}>
             <div className={resultTitleStyles}>Result:</div>
             <pre className={resultContentStyles}>
-              {typeof result === "object"
+              {typeof result === 'object'
                 ? JSON.stringify(result, null, 2)
                 : String(result)}
             </pre>

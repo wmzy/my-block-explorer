@@ -1,4 +1,4 @@
-import { getAddress, isAddress } from "viem";
+import { getAddress, isAddress } from 'viem';
 
 /**
  * 格式化以太坊地址为校验和格式 (EIP-55)
@@ -11,7 +11,8 @@ export function formatAddress(address: string): `0x${string}` {
       return address as `0x${string}`;
     }
     return getAddress(address);
-  } catch {
+  }
+  catch {
     return address as `0x${string}`;
   }
 }
@@ -26,7 +27,8 @@ export function addressEquals(address1: string, address2: string): boolean {
   if (!address1 || !address2) return false;
   try {
     return getAddress(address1) === getAddress(address2);
-  } catch {
+  }
+  catch {
     return address1.toLowerCase() === address2.toLowerCase();
   }
 }

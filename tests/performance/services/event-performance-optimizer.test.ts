@@ -48,7 +48,7 @@ describe('EventPerformanceOptimizer', () => {
       const result1 = await optimizer.executeOptimizedQuery(
         'test_operation',
         queryFn,
-        cacheKey
+        cacheKey,
       );
 
       expect(result1).toEqual(mockData);
@@ -59,7 +59,7 @@ describe('EventPerformanceOptimizer', () => {
       const result2 = await optimizer.executeOptimizedQuery(
         'test_operation',
         queryFn,
-        cacheKey
+        cacheKey,
       );
       const endTime = performance.now();
       const duration = endTime - startTime;
@@ -80,7 +80,7 @@ describe('EventPerformanceOptimizer', () => {
         await optimizer.executeOptimizedQuery(
           'populate_cache',
           async () => query.data,
-          query.key
+          query.key,
         );
       }
 
@@ -91,9 +91,9 @@ describe('EventPerformanceOptimizer', () => {
           optimizer.executeOptimizedQuery(
             'cached_query',
             async () => query.data,
-            query.key
-          )
-        )
+            query.key,
+          ),
+        ),
       );
       const endTime = performance.now();
       const totalTime = endTime - startTime;
@@ -113,7 +113,7 @@ describe('EventPerformanceOptimizer', () => {
         await optimizer.executeOptimizedQuery(
           'repeated_query',
           async () => mockData,
-          queryKey
+          queryKey,
         );
       }
 
@@ -135,7 +135,7 @@ describe('EventPerformanceOptimizer', () => {
         'simple_query',
         queryFn,
         undefined, // No caching
-        { useCache: false }
+        { useCache: false },
       );
       const endTime = performance.now();
       const duration = endTime - startTime;
@@ -156,7 +156,7 @@ describe('EventPerformanceOptimizer', () => {
         'large_query',
         queryFn,
         undefined, // No caching
-        { useCache: false, expectedDataSize: 1000 }
+        { useCache: false, expectedDataSize: 1000 },
       );
       const endTime = performance.now();
       const duration = endTime - startTime;
@@ -178,7 +178,7 @@ describe('EventPerformanceOptimizer', () => {
       const results = await optimizer.executeBatch(
         items,
         operationFn,
-        { maxConcurrency: 10, batchSize: 20 }
+        { maxConcurrency: 10, batchSize: 20 },
       );
       const endTime = performance.now();
       const duration = endTime - startTime;
@@ -204,7 +204,7 @@ describe('EventPerformanceOptimizer', () => {
       await optimizer.executeBatch(
         items,
         operationFn,
-        { maxConcurrency: 5, batchSize: 10 }
+        { maxConcurrency: 5, batchSize: 10 },
       );
 
       expect(maxConcurrent).toBeLessThanOrEqual(5);
@@ -220,7 +220,7 @@ describe('EventPerformanceOptimizer', () => {
         await optimizer.executeOptimizedQuery(
           `memory_test_${i}`,
           async () => ({ data: 'x'.repeat(1000) }),
-          `cache_key_${i}`
+          `cache_key_${i}`,
         );
       }
 
@@ -242,7 +242,7 @@ describe('EventPerformanceOptimizer', () => {
         await optimizer.executeOptimizedQuery(
           'cache_size_test',
           async () => ({ id: i, data: 'x'.repeat(1000) }),
-          `size_test_${i}`
+          `size_test_${i}`,
         );
       }
 
@@ -331,8 +331,8 @@ describe('EventPerformanceOptimizer', () => {
           'timeout_test',
           slowQueryFn,
           undefined,
-          { timeout: 100 } // 100ms timeout
-        )
+          { timeout: 100 }, // 100ms timeout
+        ),
       ).rejects.toThrow('timed out');
     });
 
@@ -346,7 +346,7 @@ describe('EventPerformanceOptimizer', () => {
         'timeout_success_test',
         fastQueryFn,
         undefined,
-        { timeout: 100 } // 100ms timeout
+        { timeout: 100 }, // 100ms timeout
       );
 
       expect(result.result).toBe('fast_enough');
@@ -387,7 +387,7 @@ describe('EventPerformanceOptimizer', () => {
         await optimizer.executeOptimizedQuery(
           'clear_test',
           async () => ({ id: i }),
-          `clear_test_${i}`
+          `clear_test_${i}`,
         );
       }
 
@@ -458,7 +458,7 @@ describe('EventPerformanceOptimizer', () => {
       };
 
       await expect(
-        optimizer.executeOptimizedQuery('failing_query', failingQueryFn)
+        optimizer.executeOptimizedQuery('failing_query', failingQueryFn),
       ).rejects.toThrow('Query failed');
 
       // Should still record metrics
@@ -478,7 +478,7 @@ describe('EventPerformanceOptimizer', () => {
 
       expect(consoleSpy).toHaveBeenCalledWith(
         expect.stringContaining('Performance threshold exceeded'),
-        expect.any(Object)
+        expect.any(Object),
       );
 
       consoleSpy.mockRestore();

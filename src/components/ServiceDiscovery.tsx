@@ -1,9 +1,9 @@
-import React, { useState } from "react";
-import { css } from "@linaria/core";
-import { Card, CardHeader, CardTitle, CardContent } from "./ui/Card";
-import { Button } from "./ui/Button";
-import { Badge, StatusBadge } from "./ui/Badge";
-import { useAutoDiscovery } from "../hooks/useAutoDiscovery";
+import React, { useState } from 'react';
+import { css } from '@linaria/core';
+import { Card, CardHeader, CardTitle, CardContent } from './ui/Card';
+import { Button } from './ui/Button';
+import { Badge, StatusBadge } from './ui/Badge';
+import { useAutoDiscovery } from '../hooks/useAutoDiscovery';
 
 const container = css`
   display: flex;
@@ -102,7 +102,7 @@ export function ServiceDiscovery() {
     reset,
   } = useAutoDiscovery();
 
-  const [customUrl, setCustomUrl] = useState("");
+  const [customUrl, setCustomUrl] = useState('');
   const [isConnecting, setIsConnecting] = useState(false);
 
   const handleManualConnect = async () => {
@@ -124,35 +124,35 @@ export function ServiceDiscovery() {
 
   const getStatusInfo = () => {
     switch (status) {
-      case "discovering":
+      case 'discovering':
         return {
           badge: <StatusBadge status="pending">正在扫描</StatusBadge>,
-          message: "正在扫描本地端口以查找Block Explorer服务...",
-          submessage: currentPort ? `当前检查端口: ${currentPort}` : "",
+          message: '正在扫描本地端口以查找Block Explorer服务...',
+          submessage: currentPort ? `当前检查端口: ${currentPort}` : '',
         };
-      case "found":
+      case 'found':
         return {
           badge: <StatusBadge status="online">服务已连接</StatusBadge>,
           message: `已找到Block Explorer服务`,
-          submessage: serviceInfo ? `地址: ${serviceInfo.url}` : "",
+          submessage: serviceInfo ? `地址: ${serviceInfo.url}` : '',
         };
-      case "not-found":
+      case 'not-found':
         return {
           badge: <StatusBadge status="offline">未找到服务</StatusBadge>,
-          message: "在默认端口范围内未找到Block Explorer服务",
-          submessage: "请确保本地服务正在运行，或手动输入API地址",
+          message: '在默认端口范围内未找到Block Explorer服务',
+          submessage: '请确保本地服务正在运行，或手动输入API地址',
         };
-      case "error":
+      case 'error':
         return {
           badge: <StatusBadge status="offline">连接错误</StatusBadge>,
-          message: "连接时发生错误",
-          submessage: error || "未知错误",
+          message: '连接时发生错误',
+          submessage: error || '未知错误',
         };
       default:
         return {
           badge: <Badge variant="default">准备就绪</Badge>,
-          message: "准备搜索Block Explorer服务",
-          submessage: "",
+          message: '准备搜索Block Explorer服务',
+          submessage: '',
         };
     }
   };
@@ -217,16 +217,25 @@ export function ServiceDiscovery() {
                 `}
               >
                 <div>
-                  地址: <code>{serviceInfo.url}</code>
+                  地址:
+                  {' '}
+                  <code>{serviceInfo.url}</code>
                 </div>
                 {serviceInfo.version && (
                   <div>
-                    版本: <code>{serviceInfo.version}</code>
+                    版本:
+                    {' '}
+                    <code>{serviceInfo.version}</code>
                   </div>
                 )}
                 {serviceInfo.latency && (
                   <div>
-                    延迟: <code>{serviceInfo.latency}ms</code>
+                    延迟:
+                    {' '}
+                    <code>
+                      {serviceInfo.latency}
+                      ms
+                    </code>
                   </div>
                 )}
               </div>
@@ -247,13 +256,13 @@ export function ServiceDiscovery() {
               disabled={isScanning || isConnecting}
               variant="primary"
             >
-              {status === "idle" ? "开始扫描" : "重新扫描"}
+              {status === 'idle' ? '开始扫描' : '重新扫描'}
             </Button>
 
-            {status === "not-found" && (
+            {status === 'not-found' && (
               <Button
                 variant="outline"
-                onClick={() => setCustomUrl("http://localhost:8201")}
+                onClick={() => setCustomUrl('http://localhost:8201')}
               >
                 手动连接
               </Button>
@@ -261,7 +270,7 @@ export function ServiceDiscovery() {
           </div>
 
           {/* 手动连接 */}
-          {(status === "not-found" || customUrl) && (
+          {(status === 'not-found' || customUrl) && (
             <div
               className={css`
                 margin-top: 20px;
@@ -281,9 +290,9 @@ export function ServiceDiscovery() {
                   type="url"
                   placeholder="http://localhost:8201"
                   value={customUrl}
-                  onChange={(e) => setCustomUrl(e.target.value)}
+                  onChange={e => setCustomUrl(e.target.value)}
                   className={input}
-                  onKeyDown={(e) => e.key === "Enter" && handleManualConnect()}
+                  onKeyDown={e => e.key === 'Enter' && handleManualConnect()}
                 />
                 <Button
                   onClick={handleManualConnect}
@@ -297,7 +306,7 @@ export function ServiceDiscovery() {
           )}
 
           {/* 安装说明 */}
-          {status === "not-found" && (
+          {status === 'not-found' && (
             <div className={installSection}>
               <h4
                 className={css`

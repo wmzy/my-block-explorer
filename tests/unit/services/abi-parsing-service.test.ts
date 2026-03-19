@@ -457,7 +457,7 @@ describe('AbiParsingService', () => {
         abiService.parseAbi(malformedAbi, {
           chainId,
           contractAddress: contractAddress as Address,
-        })
+        }),
       ).rejects.toThrow(EventIndexingError);
     });
 
@@ -469,7 +469,8 @@ describe('AbiParsingService', () => {
           chainId,
           contractAddress: contractAddress as Address,
         });
-      } catch (error) {
+      }
+      catch (error) {
         expect(error).toBeInstanceOf(EventIndexingError);
         if (error instanceof EventIndexingError) {
           expect(error.chainId).toBe(chainId);
@@ -501,7 +502,8 @@ describe('AbiParsingService', () => {
           chainId,
           contractAddress: contractAddress as Address,
         });
-      } catch {
+      }
+      catch {
         // Expected to fail
       }
 

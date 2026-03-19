@@ -56,7 +56,7 @@ export class PerformanceMonitor {
 
     // Check if we're hitting performance targets
     if (metric.duration > 9) {
-      console.warn(`  Slow operation detected: ${metric.operation} took ${metric.duration}ms`);
+      console.warn(`ï¿½ Slow operation detected: ${metric.operation} took ${metric.duration}ms`);
     }
 
     // Log errors
@@ -75,7 +75,7 @@ export class PerformanceMonitor {
       chainId?: number;
       cacheHit?: boolean;
       expectedDataSize?: number;
-    }
+    },
   ): Promise<T> {
     const startTime = performance.now();
     const timestamp = new Date();
@@ -92,11 +92,12 @@ export class PerformanceMonitor {
         success: true,
         cacheHit: metadata?.cacheHit,
         dataSize: metadata?.expectedDataSize,
-        metadata
+        metadata,
       });
 
       return result;
-    } catch (error) {
+    }
+    catch (error) {
       const duration = performance.now() - startTime;
 
       this.record({
@@ -106,7 +107,7 @@ export class PerformanceMonitor {
         chainId: metadata?.chainId,
         success: false,
         errorType: error instanceof Error ? error.constructor.name : 'Unknown',
-        metadata
+        metadata,
       });
 
       throw error;
@@ -128,7 +129,7 @@ export class PerformanceMonitor {
 
     // Group by operation
     const operationGroups = new Map<string, PerformanceMetrics[]>();
-    filteredMetrics.forEach(metric => {
+    filteredMetrics.forEach((metric) => {
       if (!operationGroups.has(metric.operation)) {
         operationGroups.set(metric.operation, []);
       }
@@ -176,7 +177,7 @@ export class PerformanceMonitor {
         successRate,
         errorRate,
         cacheHitRate,
-        callsPerSecond
+        callsPerSecond,
       });
     });
 
@@ -218,7 +219,7 @@ export class PerformanceMonitor {
       errorRate,
       cacheHitRate,
       operationsWithinTarget,
-      targetComplianceRate
+      targetComplianceRate,
     };
   }
 
@@ -256,7 +257,7 @@ export class PerformanceMonitor {
       withinTarget,
       averageResponseTime: summary.averageResponseTime,
       targetCompliance: summary.targetComplianceRate,
-      recommendations
+      recommendations,
     };
   }
 
@@ -266,9 +267,9 @@ export class PerformanceMonitor {
   getChainPerformance(chainId: number): PerformanceStats[] {
     return this.getStats(undefined, undefined).filter(stat =>
       this.metrics.some(m =>
-        m.chainId === chainId &&
-        m.operation === stat.operation
-      )
+        m.chainId === chainId
+        && m.operation === stat.operation,
+      ),
     );
   }
 
@@ -288,7 +289,7 @@ export class PerformanceMonitor {
     const stats = this.getStats();
     const targets = this.checkPerformanceTargets();
 
-    console.log('=Ê Performance Report');
+    console.log('=ï¿½ Performance Report');
     console.log('====================');
     console.log(`Operations within 9ms target: ${targets.targetCompliance.toFixed(1)}%`);
     console.log(`Average response time: ${targets.averageResponseTime.toFixed(2)}ms`);
@@ -296,15 +297,16 @@ export class PerformanceMonitor {
     console.log(`Error rate: ${this.systemSummary.errorRate.toFixed(1)}%`);
 
     if (targets.recommendations.length > 0) {
-      console.log('  Recommendations:');
+      console.log('ï¿½ Recommendations:');
       targets.recommendations.forEach(rec => console.log(`  - ${rec}`));
     }
 
     // Notify listeners
-    this.listeners.forEach(listener => {
+    this.listeners.forEach((listener) => {
       try {
         listener(stats);
-      } catch (error) {
+      }
+      catch (error) {
         console.error('Error in performance report listener:', error);
       }
     });
@@ -376,7 +378,7 @@ export class PerformanceMonitor {
       timeout?: number;
       retries?: number;
       expectedDuration?: number;
-    } = {}
+    } = {},
   ): Promise<{
     success: boolean;
     duration: number;
@@ -394,12 +396,13 @@ export class PerformanceMonitor {
         const result = await Promise.race([
           this.executeTracked(operation, fn),
           new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error('Operation timeout')), timeout)
-          )
+            setTimeout(() => reject(new Error('Operation timeout')), timeout),
+          ),
         ]);
 
         return { success: true, duration: 0, result };
-      } catch (error) {
+      }
+      catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
         if (attempt < retries) {
           console.log(`Retrying operation ${operation} (attempt ${attempt + 2})`);
@@ -410,7 +413,7 @@ export class PerformanceMonitor {
     return {
       success: false,
       duration: 0,
-      error: lastError
+      error: lastError,
     };
   }
 }
@@ -425,7 +428,7 @@ export async function trackPerformance<T>(
   metadata?: {
     chainId?: number;
     cacheHit?: boolean;
-  }
+  },
 ): Promise<T> {
   return performanceMonitor.executeTracked(operation, fn, metadata);
 }
@@ -439,7 +442,7 @@ export function PerformanceTrack(operation: string) {
       return trackPerformance(
         `${operation}.${propertyName}`,
         () => method.apply(this, args),
-        { chainId: this.chainId }
+        { chainId: this.chainId },
       );
     };
 

@@ -1,5 +1,5 @@
-import { createPublicClient, http, formatEther, type PublicClient } from "viem";
-import { getChainInfo } from "@/config/chains";
+import { createPublicClient, http, formatEther, type PublicClient } from 'viem';
+import { getChainInfo } from '@/config/chains';
 
 const clientCache = new Map<number, PublicClient>();
 const customRpcUrls = new Map<number, string>();
@@ -12,8 +12,8 @@ const loadRpcConfigs = (): Promise<void> => {
   if (rpcConfigsLoaded) return Promise.resolve();
   if (rpcConfigsPromise) return rpcConfigsPromise;
 
-  rpcConfigsPromise = fetch("/api/rpc-configs")
-    .then((res) => (res.ok ? res.json() : { configs: [] }))
+  rpcConfigsPromise = fetch('/api/rpc-configs')
+    .then(res => (res.ok ? res.json() : { configs: [] }))
     .then((data: { configs?: RpcConfigEntry[] }) => {
       (data.configs ?? []).forEach((cfg) => {
         if (cfg.url) customRpcUrls.set(cfg.chainId, cfg.url);
@@ -72,7 +72,7 @@ export const createRpcClient = async (chainId: number): Promise<PublicClient> =>
  */
 export const getRealTimeAddressData = async (
   chainId: number,
-  address: string
+  address: string,
 ) => {
   const client = await createRpcClient(chainId);
 
@@ -103,14 +103,14 @@ export const getContractCode = async (chainId: number, address: string) => {
  */
 export const getBatchBalances = async (
   chainId: number,
-  addresses: string[]
+  addresses: string[],
 ) => {
   const client = await createRpcClient(chainId);
 
   const balances = await Promise.all(
-    addresses.map((address) =>
-      client.getBalance({ address: address as `0x${string}` })
-    )
+    addresses.map(address =>
+      client.getBalance({ address: address as `0x${string}` }),
+    ),
   );
 
   return addresses.map((address, index) => ({
@@ -125,9 +125,9 @@ export const getBatchBalances = async (
  */
 export const isContractAddress = async (
   chainId: number,
-  address: string
+  address: string,
 ): Promise<boolean> => {
   const client = await createRpcClient(chainId);
   const code = await client.getCode({ address: address as `0x${string}` });
-  return Boolean(code && code !== "0x" && code.length > 2);
+  return Boolean(code && code !== '0x' && code.length > 2);
 };

@@ -1,21 +1,21 @@
-import type { RpcConfig, RpcStatus } from "../types/rpc";
+import type { RpcConfig, RpcStatus } from '../types/rpc';
 
-const RPC_CONFIG_KEY = "block-explorer-rpc-configs";
+const RPC_CONFIG_KEY = 'block-explorer-rpc-configs';
 
 // 默认RPC配置
 const DEFAULT_RPC_CONFIGS: RpcConfig[] = [
   // Ethereum
   {
     chainId: 1,
-    name: "Ethereum Mainnet (Public)",
-    url: "https://eth.llamarpc.com",
+    name: 'Ethereum Mainnet (Public)',
+    url: 'https://eth.llamarpc.com',
     isDefault: true,
     isCustom: false,
   },
   {
     chainId: 1,
-    name: "Ethereum Mainnet (Cloudflare)",
-    url: "https://cloudflare-eth.com",
+    name: 'Ethereum Mainnet (Cloudflare)',
+    url: 'https://cloudflare-eth.com',
     isDefault: false,
     isCustom: false,
   },
@@ -23,15 +23,15 @@ const DEFAULT_RPC_CONFIGS: RpcConfig[] = [
   // Polygon
   {
     chainId: 137,
-    name: "Polygon Mainnet (Public)",
-    url: "https://polygon.llamarpc.com",
+    name: 'Polygon Mainnet (Public)',
+    url: 'https://polygon.llamarpc.com',
     isDefault: true,
     isCustom: false,
   },
   {
     chainId: 137,
-    name: "Polygon Mainnet (Matic Network)",
-    url: "https://polygon-rpc.com",
+    name: 'Polygon Mainnet (Matic Network)',
+    url: 'https://polygon-rpc.com',
     isDefault: false,
     isCustom: false,
   },
@@ -39,15 +39,15 @@ const DEFAULT_RPC_CONFIGS: RpcConfig[] = [
   // Arbitrum One
   {
     chainId: 42161,
-    name: "Arbitrum One (Public)",
-    url: "https://arbitrum.llamarpc.com",
+    name: 'Arbitrum One (Public)',
+    url: 'https://arbitrum.llamarpc.com',
     isDefault: true,
     isCustom: false,
   },
   {
     chainId: 42161,
-    name: "Arbitrum One (Official)",
-    url: "https://arb1.arbitrum.io/rpc",
+    name: 'Arbitrum One (Official)',
+    url: 'https://arb1.arbitrum.io/rpc',
     isDefault: false,
     isCustom: false,
   },
@@ -55,15 +55,15 @@ const DEFAULT_RPC_CONFIGS: RpcConfig[] = [
   // Optimism
   {
     chainId: 10,
-    name: "Optimism Mainnet (Public)",
-    url: "https://optimism.llamarpc.com",
+    name: 'Optimism Mainnet (Public)',
+    url: 'https://optimism.llamarpc.com',
     isDefault: true,
     isCustom: false,
   },
   {
     chainId: 10,
-    name: "Optimism Mainnet (Official)",
-    url: "https://mainnet.optimism.io",
+    name: 'Optimism Mainnet (Official)',
+    url: 'https://mainnet.optimism.io',
     isDefault: false,
     isCustom: false,
   },
@@ -71,15 +71,15 @@ const DEFAULT_RPC_CONFIGS: RpcConfig[] = [
   // Base
   {
     chainId: 8453,
-    name: "Base Mainnet (Public)",
-    url: "https://base.llamarpc.com",
+    name: 'Base Mainnet (Public)',
+    url: 'https://base.llamarpc.com',
     isDefault: true,
     isCustom: false,
   },
   {
     chainId: 8453,
-    name: "Base Mainnet (Official)",
-    url: "https://mainnet.base.org",
+    name: 'Base Mainnet (Official)',
+    url: 'https://mainnet.base.org',
     isDefault: false,
     isCustom: false,
   },
@@ -87,15 +87,15 @@ const DEFAULT_RPC_CONFIGS: RpcConfig[] = [
   // Mantle
   {
     chainId: 5000,
-    name: "Mantle Mainnet (Official)",
-    url: "https://rpc.mantle.xyz",
+    name: 'Mantle Mainnet (Official)',
+    url: 'https://rpc.mantle.xyz',
     isDefault: true,
     isCustom: false,
   },
   {
     chainId: 5000,
-    name: "Mantle Mainnet (Public)",
-    url: "https://mantle.publicnode.com",
+    name: 'Mantle Mainnet (Public)',
+    url: 'https://mantle.publicnode.com',
     isDefault: false,
     isCustom: false,
   },
@@ -103,8 +103,8 @@ const DEFAULT_RPC_CONFIGS: RpcConfig[] = [
   // Sepolia Testnet
   {
     chainId: 11155111,
-    name: "Sepolia Testnet (Public)",
-    url: "https://ethereum-sepolia.publicnode.com",
+    name: 'Sepolia Testnet (Public)',
+    url: 'https://ethereum-sepolia.publicnode.com',
     isDefault: true,
     isCustom: false,
   },
@@ -120,17 +120,18 @@ export function getRpcConfigs(): RpcConfig[] {
       const configs = JSON.parse(stored) as RpcConfig[];
       // 合并默认配置和用户配置
       const defaultConfigs = DEFAULT_RPC_CONFIGS.filter(
-        (defaultConfig) =>
+        defaultConfig =>
           !configs.some(
-            (config) =>
-              config.chainId === defaultConfig.chainId &&
-              config.url === defaultConfig.url
-          )
+            config =>
+              config.chainId === defaultConfig.chainId
+              && config.url === defaultConfig.url,
+          ),
       );
       return [...defaultConfigs, ...configs];
     }
-  } catch (error) {
-    console.error("Failed to load RPC configs:", error);
+  }
+  catch (error) {
+    console.error('Failed to load RPC configs:', error);
   }
 
   return DEFAULT_RPC_CONFIGS;
@@ -143,20 +144,22 @@ export function saveRpcConfig(config: RpcConfig): void {
   try {
     const configs = getRpcConfigs();
     const existingIndex = configs.findIndex(
-      (c) => c.chainId === config.chainId && c.url === config.url
+      c => c.chainId === config.chainId && c.url === config.url,
     );
 
     if (existingIndex >= 0) {
       configs[existingIndex] = config;
-    } else {
+    }
+    else {
       configs.push(config);
     }
 
     // 只保存用户自定义的配置
-    const customConfigs = configs.filter((c) => c.isCustom);
+    const customConfigs = configs.filter(c => c.isCustom);
     localStorage.setItem(RPC_CONFIG_KEY, JSON.stringify(customConfigs));
-  } catch (error) {
-    console.error("Failed to save RPC config:", error);
+  }
+  catch (error) {
+    console.error('Failed to save RPC config:', error);
   }
 }
 
@@ -167,13 +170,14 @@ export function deleteRpcConfig(chainId: number, url: string): void {
   try {
     const configs = getRpcConfigs();
     const filteredConfigs = configs.filter(
-      (c) => !(c.chainId === chainId && c.url === url && c.isCustom)
+      c => !(c.chainId === chainId && c.url === url && c.isCustom),
     );
 
-    const customConfigs = filteredConfigs.filter((c) => c.isCustom);
+    const customConfigs = filteredConfigs.filter(c => c.isCustom);
     localStorage.setItem(RPC_CONFIG_KEY, JSON.stringify(customConfigs));
-  } catch (error) {
-    console.error("Failed to delete RPC config:", error);
+  }
+  catch (error) {
+    console.error('Failed to delete RPC config:', error);
   }
 }
 
@@ -181,7 +185,7 @@ export function deleteRpcConfig(chainId: number, url: string): void {
  * 获取指定链的RPC配置
  */
 export function getRpcConfigsForChain(chainId: number): RpcConfig[] {
-  return getRpcConfigs().filter((config) => config.chainId === chainId);
+  return getRpcConfigs().filter(config => config.chainId === chainId);
 }
 
 /**
@@ -189,7 +193,7 @@ export function getRpcConfigsForChain(chainId: number): RpcConfig[] {
  */
 export function getDefaultRpcConfig(chainId: number): RpcConfig | null {
   const configs = getRpcConfigsForChain(chainId);
-  return configs.find((config) => config.isDefault) || configs[0] || null;
+  return configs.find(config => config.isDefault) || configs[0] || null;
 }
 
 /**
@@ -200,13 +204,13 @@ export async function testRpcConnection(config: RpcConfig): Promise<RpcStatus> {
 
   try {
     const response = await fetch(config.url, {
-      method: "POST",
+      method: 'POST',
       headers: {
-        "Content-Type": "application/json",
+        'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        jsonrpc: "2.0",
-        method: "eth_blockNumber",
+        jsonrpc: '2.0',
+        method: 'eth_blockNumber',
         params: [],
         id: 1,
       }),
@@ -219,7 +223,7 @@ export async function testRpcConnection(config: RpcConfig): Promise<RpcStatus> {
       return {
         chainId: config.chainId,
         url: config.url,
-        status: "error",
+        status: 'error',
         error: `HTTP ${response.status}: ${response.statusText}`,
         lastChecked: new Date(),
       };
@@ -231,8 +235,8 @@ export async function testRpcConnection(config: RpcConfig): Promise<RpcStatus> {
       return {
         chainId: config.chainId,
         url: config.url,
-        status: "error",
-        error: data.error.message || "RPC Error",
+        status: 'error',
+        error: data.error.message || 'RPC Error',
         lastChecked: new Date(),
       };
     }
@@ -241,8 +245,8 @@ export async function testRpcConnection(config: RpcConfig): Promise<RpcStatus> {
       return {
         chainId: config.chainId,
         url: config.url,
-        status: "error",
-        error: "Invalid response format",
+        status: 'error',
+        error: 'Invalid response format',
         lastChecked: new Date(),
       };
     }
@@ -250,17 +254,18 @@ export async function testRpcConnection(config: RpcConfig): Promise<RpcStatus> {
     return {
       chainId: config.chainId,
       url: config.url,
-      status: "connected",
+      status: 'connected',
       latency,
       lastChecked: new Date(),
     };
-  } catch (error) {
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown error";
+  }
+  catch (error) {
+    const errorMessage
+      = error instanceof Error ? error.message : 'Unknown error';
     return {
       chainId: config.chainId,
       url: config.url,
-      status: "error",
+      status: 'error',
       error: errorMessage,
       lastChecked: new Date(),
     };
@@ -271,7 +276,7 @@ export async function testRpcConnection(config: RpcConfig): Promise<RpcStatus> {
  * 批量测试RPC连接
  */
 export async function testMultipleRpcConnections(
-  configs: RpcConfig[]
+  configs: RpcConfig[],
 ): Promise<Map<string, RpcStatus>> {
   const results = new Map<string, RpcStatus>();
 

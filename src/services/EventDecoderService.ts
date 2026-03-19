@@ -12,7 +12,7 @@ import {
   EventDecodingError,
   EventParameter,
   DecodedEventLog,
-  DecodedEventParameter
+  DecodedEventParameter,
 } from '../types/events';
 
 /**
@@ -73,7 +73,7 @@ export class EventDecoderService {
    */
   async decodeEventLog(
     log: Log,
-    options: EventDecodingOptions
+    options: EventDecodingOptions,
   ): Promise<FormattedDecodedEvent | null> {
     const startTime = performance.now();
     const performanceMonitor = multiChainPerformanceManager.getChainMonitor(this.chainId);
@@ -96,7 +96,7 @@ export class EventDecoderService {
             log.blockHash,
             log.logIndex,
             this.chainId,
-            new Error('Event signature not found in ABI')
+            new Error('Event signature not found in ABI'),
           );
         }
         return null;
@@ -106,15 +106,15 @@ export class EventDecoderService {
       const formattedEvent = await this.formatDecodedEvent(
         log,
         decodedLog,
-        options
+        options,
       );
 
       const decodeTime = performance.now() - startTime;
       performanceMonitor.recordQuery('event_decode', decodeTime, true);
 
       return formattedEvent;
-
-    } catch (error) {
+    }
+    catch (error) {
       const decodeTime = performance.now() - startTime;
       performanceMonitor.recordQuery('event_decode', decodeTime, false);
 
@@ -123,7 +123,7 @@ export class EventDecoderService {
         log.blockHash,
         log.logIndex,
         this.chainId,
-        error instanceof Error ? error : new Error(String(error))
+        error instanceof Error ? error : new Error(String(error)),
       );
     }
   }
@@ -133,7 +133,7 @@ export class EventDecoderService {
    */
   async decodeEventLogsBatch(
     logs: Log[],
-    options: EventDecodingOptions
+    options: EventDecodingOptions,
   ): Promise<FormattedDecodedEvent[]> {
     const startTime = performance.now();
     const performanceMonitor = multiChainPerformanceManager.getChainMonitor(this.chainId);
@@ -151,7 +151,8 @@ export class EventDecoderService {
           try {
             const decoded = await this.decodeEventLog(log, options);
             return decoded;
-          } catch (error) {
+          }
+          catch (error) {
             errors.push({ log, error: error instanceof Error ? error : new Error(String(error)) });
             return null;
           }
@@ -170,8 +171,8 @@ export class EventDecoderService {
       }
 
       return results;
-
-    } catch (error) {
+    }
+    catch (error) {
       const decodeTime = performance.now() - startTime;
       performanceMonitor.recordQuery('event_decode_batch', decodeTime, false);
 
@@ -180,7 +181,7 @@ export class EventDecoderService {
         undefined,
         undefined,
         this.chainId,
-        error instanceof Error ? error : new Error(String(error))
+        error instanceof Error ? error : new Error(String(error)),
       );
     }
   }
@@ -191,7 +192,7 @@ export class EventDecoderService {
   private async formatDecodedEvent(
     log: Log,
     decodedLog: any,
-    options: EventDecodingOptions
+    options: EventDecodingOptions,
   ): Promise<FormattedDecodedEvent> {
     // Get block timestamp
     const blockTimestamp = await this.getBlockTimestamp(log.blockNumber);
@@ -200,7 +201,7 @@ export class EventDecoderService {
     const formattedParameters = this.formatEventParameters(
       decodedLog.args || {},
       decodedLog.eventName,
-      options
+      options,
     );
 
     return {
@@ -230,14 +231,15 @@ export class EventDecoderService {
       formatUnits: true,
       dateFormat: 'iso',
       precision: 6,
-    }
+    },
   ): Record<string, any> {
     const formatted: Record<string, any> = {};
 
     for (const [key, value] of Object.entries(args)) {
       try {
         formatted[key] = this.formatParameterValue(value, formattingOptions);
-      } catch (error) {
+      }
+      catch (error) {
         console.warn(`Failed to format parameter ${key} for event ${eventName}:`, error);
         formatted[key] = value; // Fallback to raw value
       }
@@ -251,7 +253,7 @@ export class EventDecoderService {
    */
   private formatParameterValue(
     value: any,
-    options: ParameterFormattingOptions
+    options: ParameterFormattingOptions,
   ): any {
     // Handle null/undefined values
     if (value === null || value === undefined) {
@@ -302,7 +304,7 @@ export class EventDecoderService {
    * Get event signature string
    */
   private getEventSignature(eventName: string, args: Record<string, any>): string {
-    const paramTypes = Object.values(args).map(value => {
+    const paramTypes = Object.values(args).map((value) => {
       if (typeof value === 'bigint') return 'uint256';
       if (typeof value === 'string' && value.startsWith('0x')) {
         return value.length === 42 ? 'address' : 'bytes';
@@ -322,7 +324,7 @@ export class EventDecoderService {
       // First try to get from database cache
       const result = await this.chainDb.query(
         'SELECT timestamp FROM blocks WHERE number = ?',
-        [blockNumber.toString()]
+        [blockNumber.toString()],
       );
 
       if (result.length > 0) {
@@ -332,8 +334,8 @@ export class EventDecoderService {
       // If not in cache, return current time as fallback
       // In production, this would fetch from blockchain
       return new Date().toISOString();
-
-    } catch (error) {
+    }
+    catch (error) {
       console.warn('Failed to get block timestamp:', error);
       return new Date().toISOString();
     }
@@ -360,7 +362,7 @@ export class EventDecoderService {
   async decodeEventParameters(
     log: Log,
     eventAbi: AbiEvent,
-    formattingOptions?: ParameterFormattingOptions
+    formattingOptions?: ParameterFormattingOptions,
   ): Promise<DecodedEventParameter[]> {
     try {
       const decodedLog = decodeEventLog({
@@ -369,7 +371,7 @@ export class EventDecoderService {
         topics: log.topics,
       });
 
-      if (!decodedLog || !decodedLog.args) {
+      if (!decodedLog?.args) {
         throw new Error('Failed to decode event parameters');
       }
 
@@ -388,7 +390,7 @@ export class EventDecoderService {
             formatUnits: true,
             dateFormat: 'iso',
             precision: 6,
-          }
+          },
         );
 
         parameters.push({
@@ -401,14 +403,14 @@ export class EventDecoderService {
       }
 
       return parameters;
-
-    } catch (error) {
+    }
+    catch (error) {
       throw new EventDecodingError(
         `Failed to decode event parameters: ${error}`,
         log.blockHash,
         log.logIndex,
         this.chainId,
-        error instanceof Error ? error : new Error(String(error))
+        error instanceof Error ? error : new Error(String(error)),
       );
     }
   }
@@ -418,7 +420,7 @@ export class EventDecoderService {
    */
   getEventAbiBySignature(
     contractAddress: Address,
-    eventSignature: string
+    eventSignature: string,
   ): AbiEvent | null {
     const events = this.getCachedAbiEvents(contractAddress);
 
@@ -445,7 +447,8 @@ export class EventDecoderService {
       });
 
       return decodedLog !== null;
-    } catch {
+    }
+    catch {
       return false;
     }
   }

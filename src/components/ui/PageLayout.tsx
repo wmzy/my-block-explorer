@@ -1,5 +1,5 @@
-import { css, cx } from "@linaria/core";
-import type { ReactNode } from "react";
+import { css, cx } from '@linaria/core';
+import type { ReactNode } from 'react';
 
 const pageContainer = css`
   max-width: 1200px;
@@ -82,10 +82,12 @@ type BackButtonProps = {
   label?: string;
 };
 
-export function BackButton({ onClick, label = "Back to Explorer" }: BackButtonProps) {
+export function BackButton({ onClick, label = 'Back to Explorer' }: BackButtonProps) {
   return (
     <button className={backButtonStyle} onClick={onClick}>
-      ← {label}
+      ←
+      {' '}
+      {label}
     </button>
   );
 }

@@ -1,6 +1,6 @@
-import React from "react";
-import { css } from "@linaria/core";
-import type { RpcError } from "../types/rpc";
+import React from 'react';
+import { css } from '@linaria/core';
+import type { RpcError } from '../types/rpc';
 
 type Props = {
   error: RpcError;
@@ -114,14 +114,21 @@ export default function RpcErrorAlert({
 
       <div className={contentStyles}>
         <h4>RPC 连接错误</h4>
-        <p>无法连接到链 ID {error.chainId} 的 RPC 节点。</p>
+        <p>
+          无法连接到链 ID
+          {error.chainId}
+          {' '}
+          的 RPC 节点。
+        </p>
         <p>
           <strong>错误信息：</strong>
           {error.error}
         </p>
 
         <div className="suggestion">
-          💡 <strong>建议：</strong>
+          💡
+          {' '}
+          <strong>建议：</strong>
           {error.suggestion}
         </div>
 

@@ -193,7 +193,7 @@ export class EventPerformanceOptimizer {
   constructor(
     chainId: number,
     thresholds: Partial<PerformanceThresholds> = {},
-    strategies: Partial<OptimizationStrategies> = {}
+    strategies: Partial<OptimizationStrategies> = {},
   ) {
     this.chainId = chainId;
     this.chainDb = null as any; // Will be initialized lazily
@@ -249,7 +249,7 @@ export class EventPerformanceOptimizer {
       useCache?: boolean;
       expectedDataSize?: number;
       timeout?: number;
-    } = {}
+    } = {},
   ): Promise<T> {
     // Ensure database is initialized
     await this.ensureDatabaseInitialized();
@@ -314,8 +314,8 @@ export class EventPerformanceOptimizer {
       this.validatePerformance(operation, duration, false);
 
       return result;
-
-    } catch (error) {
+    }
+    catch (error) {
       const endTime = performance.now();
       const duration = endTime - startTime;
 
@@ -350,7 +350,7 @@ export class EventPerformanceOptimizer {
       maxConcurrency?: number;
       enableBatching?: boolean;
       batchSize?: number;
-    } = {}
+    } = {},
   ): Promise<R[]> {
     const {
       maxConcurrency = this.strategies.maxConcurrentOperations,
@@ -369,7 +369,7 @@ export class EventPerformanceOptimizer {
       const batch = items.slice(i, i + batchSize);
       const batchPromises = batch.map(item => this.executeWithConcurrencyControl(
         () => operationFn(item),
-        maxConcurrency
+        maxConcurrency,
       ));
 
       const batchResults = await Promise.all(batchPromises);
@@ -393,7 +393,7 @@ export class EventPerformanceOptimizer {
         'precompute_event_types',
         () => queryService.getEventsByType(`events_${contractAddress.toLowerCase()}`),
         `event_types_${contractAddress}`,
-        { useCache: true }
+        { useCache: true },
       );
 
       // Precompute time-based statistics
@@ -401,7 +401,7 @@ export class EventPerformanceOptimizer {
         'precompute_time_stats',
         () => queryService.getEventsByTimeRange(`events_${contractAddress.toLowerCase()}`, 'day', 30),
         `time_stats_${contractAddress}`,
-        { useCache: true }
+        { useCache: true },
       );
 
       // Precompute top addresses
@@ -409,10 +409,10 @@ export class EventPerformanceOptimizer {
         'precompute_top_addresses',
         () => queryService.getTopAddresses(`events_${contractAddress.toLowerCase()}`, 'from', 10),
         `top_addresses_${contractAddress}`,
-        { useCache: true }
+        { useCache: true },
       );
-
-    } catch (error) {
+    }
+    catch (error) {
       console.warn('Failed to precompute aggregates:', error);
     }
   }
@@ -423,13 +423,13 @@ export class EventPerformanceOptimizer {
   optimizeQuery(query: string, params: any[]): { optimizedQuery: string; optimizedParams: any[] } {
     // Apply query optimizations
     let optimizedQuery = query;
-    let optimizedParams = [...params];
+    const optimizedParams = [...params];
 
     // Add query hints for better performance
     if (query.includes('SELECT') && query.includes('FROM')) {
       optimizedQuery = query.replace(
         'SELECT',
-        'SELECT /*+ USE_INDEX */'
+        'SELECT /*+ USE_INDEX */',
       );
     }
 
@@ -441,7 +441,7 @@ export class EventPerformanceOptimizer {
         // Suggest using pagination for large limits
         optimizedQuery = optimizedQuery.replace(
           limitMatch[0],
-          `LIMIT ${Math.min(limit, 100)}`
+          `LIMIT ${Math.min(limit, 100)}`,
         );
       }
     }
@@ -521,7 +521,8 @@ export class EventPerformanceOptimizer {
       try {
         // Preload common queries
         await this.precomputeAggregates(contractAddress);
-      } catch (error) {
+      }
+      catch (error) {
         console.warn(`Failed to warm up cache for ${contractAddress}:`, error);
       }
     });
@@ -534,7 +535,7 @@ export class EventPerformanceOptimizer {
    */
   private async executeWithTimeout<T>(
     fn: () => Promise<T>,
-    timeoutMs: number
+    timeoutMs: number,
   ): Promise<T> {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
@@ -542,11 +543,11 @@ export class EventPerformanceOptimizer {
       }, timeoutMs);
 
       fn()
-        .then(result => {
+        .then((result) => {
           clearTimeout(timeout);
           resolve(result);
         })
-        .catch(error => {
+        .catch((error) => {
           clearTimeout(timeout);
           reject(error);
         });
@@ -558,7 +559,7 @@ export class EventPerformanceOptimizer {
    */
   private async executeWithConcurrencyControl<T>(
     fn: () => Promise<T>,
-    maxConcurrency: number
+    maxConcurrency: number,
   ): Promise<T> {
     // Simple implementation - in production, this would use a proper semaphore
     return fn();
@@ -569,7 +570,7 @@ export class EventPerformanceOptimizer {
    */
   private async executeSequential<T, R>(
     items: T[],
-    operationFn: (item: T) => Promise<R>
+    operationFn: (item: T) => Promise<R>,
   ): Promise<R[]> {
     const results: R[] = [];
     for (const item of items) {
@@ -597,7 +598,8 @@ export class EventPerformanceOptimizer {
           return value;
         });
         return serialized.length;
-      } catch (error) {
+      }
+      catch (error) {
         console.warn('Failed to estimate data size:', error);
         return 100; // Default estimate
       }
@@ -683,13 +685,14 @@ class EventPerformanceOptimizerManager {
   getOptimizer(
     chainId: number,
     thresholds?: Partial<PerformanceThresholds>,
-    strategies?: Partial<OptimizationStrategies>
+    strategies?: Partial<OptimizationStrategies>,
   ): EventPerformanceOptimizer {
     if (!this.optimizers.has(chainId)) {
       // Ensure database is initialized before creating optimizer
       try {
         multiChainDb.getChainDatabase(chainId);
-      } catch (error) {
+      }
+      catch (error) {
         console.warn(`Failed to initialize chain database for ${chainId}:`, error);
       }
       this.optimizers.set(chainId, new EventPerformanceOptimizer(chainId, thresholds, strategies));

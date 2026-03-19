@@ -1,4 +1,4 @@
-import { invalidateRpcClients } from "./realTimeData";
+import { invalidateRpcClients } from './realTimeData';
 
 // RPC配置管理服务
 export type RpcConfig = {
@@ -12,7 +12,7 @@ export type RpcConfig = {
 };
 
 export type RpcTestResult = {
-  status: "success" | "failed" | "testing";
+  status: 'success' | 'failed' | 'testing';
   latency?: number;
   error?: string;
   detectedChainId?: number;
@@ -22,9 +22,9 @@ export type RpcTestResult = {
 
 // 获取所有RPC配置
 export async function getRpcConfigs(): Promise<RpcConfig[]> {
-  const response = await fetch("/api/rpc-configs");
+  const response = await fetch('/api/rpc-configs');
   if (!response.ok) {
-    throw new Error("Failed to fetch RPC configs");
+    throw new Error('Failed to fetch RPC configs');
   }
   const data = await response.json();
   return data.configs;
@@ -38,17 +38,17 @@ export async function saveRpcConfig(config: {
   supportsHistory?: boolean;
   maxEventRange?: number;
 }): Promise<void> {
-  const response = await fetch("/api/rpc-configs", {
-    method: "POST",
+  const response = await fetch('/api/rpc-configs', {
+    method: 'POST',
     headers: {
-      "Content-Type": "application/json",
+      'Content-Type': 'application/json',
     },
     body: JSON.stringify(config),
   });
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.error || "Failed to save RPC config");
+    throw new Error(error.error || 'Failed to save RPC config');
   }
 
   invalidateRpcClients();
@@ -57,12 +57,12 @@ export async function saveRpcConfig(config: {
 // 删除RPC配置
 export async function deleteRpcConfig(chainId: number): Promise<void> {
   const response = await fetch(`/api/rpc-configs/${chainId}`, {
-    method: "DELETE",
+    method: 'DELETE',
   });
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.error || "Failed to delete RPC config");
+    throw new Error(error.error || 'Failed to delete RPC config');
   }
 
   invalidateRpcClients();
@@ -71,18 +71,18 @@ export async function deleteRpcConfig(chainId: number): Promise<void> {
 // 测试RPC连接
 export async function testRpcConnection(
   url: string,
-  expectedChainId: number
+  expectedChainId: number,
 ): Promise<RpcTestResult> {
   const startTime = Date.now();
 
   try {
     // 1. 测试基本连接
     const chainIdResponse = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        jsonrpc: "2.0",
-        method: "eth_chainId",
+        jsonrpc: '2.0',
+        method: 'eth_chainId',
         params: [],
         id: 1,
       }),
@@ -90,7 +90,7 @@ export async function testRpcConnection(
 
     if (!chainIdResponse.ok) {
       return {
-        status: "failed",
+        status: 'failed',
         error: `HTTP ${chainIdResponse.status}: ${chainIdResponse.statusText}`,
       };
     }
@@ -98,7 +98,7 @@ export async function testRpcConnection(
     const chainIdData = await chainIdResponse.json();
     if (chainIdData.error) {
       return {
-        status: "failed",
+        status: 'failed',
         error: `Chain ID error: ${chainIdData.error.message}`,
       };
     }
@@ -108,7 +108,7 @@ export async function testRpcConnection(
 
     if (detectedChainId !== expectedChainId) {
       return {
-        status: "failed",
+        status: 'failed',
         error: `Chain ID mismatch: expected ${expectedChainId}, got ${detectedChainId}`,
         detectedChainId,
         latency,
@@ -117,11 +117,11 @@ export async function testRpcConnection(
 
     // 2. 测试历史数据支持
     const blockNumberResponse = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        jsonrpc: "2.0",
-        method: "eth_blockNumber",
+        jsonrpc: '2.0',
+        method: 'eth_blockNumber',
         params: [],
         id: 2,
       }),
@@ -138,11 +138,11 @@ export async function testRpcConnection(
         // 测试历史区块查询
         const testBlock = Math.max(1, currentBlock - 1000);
         const historicalResponse = await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            jsonrpc: "2.0",
-            method: "eth_getBlockByNumber",
+            jsonrpc: '2.0',
+            method: 'eth_getBlockByNumber',
             params: [`0x${testBlock.toString(16)}`, false],
             id: 3,
           }),
@@ -160,17 +160,17 @@ export async function testRpcConnection(
             try {
               const fromBlock = Math.max(1, currentBlock - range);
               const logsResponse = await fetch(url, {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                  jsonrpc: "2.0",
-                  method: "eth_getLogs",
+                  jsonrpc: '2.0',
+                  method: 'eth_getLogs',
                   params: [
                     {
                       fromBlock: `0x${fromBlock.toString(16)}`,
                       toBlock: `0x${currentBlock.toString(16)}`,
                       topics: [
-                        "0x0000000000000000000000000000000000000000000000000000000000000000",
+                        '0x0000000000000000000000000000000000000000000000000000000000000000',
                       ], // 不存在的topic
                     },
                   ],
@@ -185,7 +185,8 @@ export async function testRpcConnection(
                   break;
                 }
               }
-            } catch {
+            }
+            catch {
               continue;
             }
           }
@@ -194,15 +195,16 @@ export async function testRpcConnection(
     }
 
     return {
-      status: "success",
+      status: 'success',
       latency,
       detectedChainId,
       supportsHistory,
       maxEventRange: maxEventRange > 0 ? maxEventRange : undefined,
     };
-  } catch (error) {
+  }
+  catch (error) {
     return {
-      status: "failed",
+      status: 'failed',
       error: error instanceof Error ? error.message : String(error),
       latency: Date.now() - startTime,
     };

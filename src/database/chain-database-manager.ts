@@ -6,7 +6,7 @@
 import { createLogger } from '../server/logger';
 import { DuckDBManager } from './duckdb';
 
-const logger = createLogger("chain-database-manager");
+const logger = createLogger('chain-database-manager');
 import { join } from 'path';
 import { mkdir } from 'fs/promises';
 import { getChainName, getChainType } from '../config/chains';
@@ -29,7 +29,7 @@ export class ChainDatabaseManager {
    * 生成数据库文件路径
    */
   private generateDatabasePath(chainId: number): string {
-    const dataDir = join(process.cwd(), "data", "chains");
+    const dataDir = join(process.cwd(), 'data', 'chains');
     const chainName = getChainName(chainId).toLowerCase().replace(/\s+/g, '-');
     const chainType = getChainType(chainId);
 
@@ -41,11 +41,11 @@ export class ChainDatabaseManager {
    */
   async initialize(): Promise<void> {
     // 确保数据目录存在
-    const dataDir = join(process.cwd(), "data", "chains");
+    const dataDir = join(process.cwd(), 'data', 'chains');
     await mkdir(dataDir, { recursive: true });
 
     await this.dbManager.initialize();
-    logger.info({ chainId: this.chainId, chainName: getChainName(this.chainId) }, "Initialized database for chain");
+    logger.info({ chainId: this.chainId, chainName: getChainName(this.chainId) }, 'Initialized database for chain');
   }
 
   /**
@@ -154,19 +154,20 @@ export class MultiChainDatabaseManager {
    * 初始化所有支持的链数据库
    */
   async initializeAllChains(): Promise<void> {
-    logger.info({ count: this.supportedChains.length }, "Initializing chain databases");
+    logger.info({ count: this.supportedChains.length }, 'Initializing chain databases');
 
     const initPromises = this.supportedChains.map(async (chainId) => {
       try {
         await this.getChainDatabase(chainId);
-        logger.info({ chainId }, "Chain database initialized");
-      } catch (error) {
-        logger.error({ err: error, chainId }, "Failed to initialize chain database");
+        logger.info({ chainId }, 'Chain database initialized');
+      }
+      catch (error) {
+        logger.error({ err: error, chainId }, 'Failed to initialize chain database');
       }
     });
 
     await Promise.allSettled(initPromises);
-    logger.info("Chain databases initialization completed");
+    logger.info('Chain databases initialization completed');
   }
 
   /**
@@ -191,7 +192,7 @@ export class MultiChainDatabaseManager {
     if (manager) {
       await manager.close();
       this.chainManagers.delete(chainId);
-      logger.info({ chainId }, "Closed database for chain");
+      logger.info({ chainId }, 'Closed database for chain');
     }
   }
 
@@ -199,22 +200,23 @@ export class MultiChainDatabaseManager {
    * 关闭所有链的数据库连接
    */
   async closeAll(): Promise<void> {
-    logger.info({ count: this.chainManagers.size }, "Closing chain databases");
+    logger.info({ count: this.chainManagers.size }, 'Closing chain databases');
 
     const closePromises = Array.from(this.chainManagers.entries()).map(
       async ([chainId, manager]) => {
         try {
           await manager.close();
-          logger.info({ chainId }, "Chain database closed");
-        } catch (error) {
-          logger.error({ err: error, chainId }, "Failed to close chain database");
+          logger.info({ chainId }, 'Chain database closed');
         }
-      }
+        catch (error) {
+          logger.error({ err: error, chainId }, 'Failed to close chain database');
+        }
+      },
     );
 
     await Promise.allSettled(closePromises);
     this.chainManagers.clear();
-    logger.info("All chain databases closed");
+    logger.info('All chain databases closed');
   }
 
   /**
@@ -235,7 +237,7 @@ export class MultiChainDatabaseManager {
       chainName: getChainName(chainId),
       databasePath: manager?.getDatabasePath() || new ChainDatabaseManager(chainId).getDatabasePath(),
       isInitialized: this.isChainInitialized(chainId),
-      fileExists: await fs.access(manager?.getDatabasePath() || new ChainDatabaseManager(chainId).getDatabasePath()).then(() => true).catch(() => false)
+      fileExists: await fs.access(manager?.getDatabasePath() || new ChainDatabaseManager(chainId).getDatabasePath()).then(() => true).catch(() => false),
     };
   }
 
@@ -250,7 +252,7 @@ export class MultiChainDatabaseManager {
     fileExists: boolean;
   }>> {
     const statsPromises = this.supportedChains.map(chainId =>
-      this.getChainStats(chainId)
+      this.getChainStats(chainId),
     );
 
     return Promise.all(statsPromises);

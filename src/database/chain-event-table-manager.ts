@@ -6,14 +6,14 @@
 import { createLogger } from '../server/logger';
 import { ChainDatabaseManager } from './chain-database-manager';
 
-const logger = createLogger("chain-event-table-manager");
+const logger = createLogger('chain-event-table-manager');
 import { ChainSchemaManager } from './chain-schema-manager';
 import {
   DynamicTableSchema,
   TableColumn,
   EventParameter,
   EventIndexingConfig,
-  EventAbiShape
+  EventAbiShape,
 } from '../types/events';
 
 /**
@@ -91,11 +91,12 @@ export class ChainEventTableManager {
 
       logger.info(
         { tableName, eventName, chainId: this.chainDb.getChainId() },
-        "Created event table"
+        'Created event table',
       );
       return tableName;
-    } catch (error) {
-      logger.error({ err: error, eventName }, "Failed to create event table");
+    }
+    catch (error) {
+      logger.error({ err: error, eventName }, 'Failed to create event table');
       throw error;
     }
   }
@@ -193,8 +194,8 @@ export class ChainEventTableManager {
       sortBy?: string;
     } = {},
   ): Promise<{ events: Record<string, unknown>[]; hasMore: boolean; nextCursor?: string }> {
-    let whereClauses: string[] = [];
-    let params: unknown[] = [];
+    const whereClauses: string[] = [];
+    const params: unknown[] = [];
 
     // 构建WHERE条件
     if (filters.eventName) {
@@ -225,8 +226,8 @@ export class ChainEventTableManager {
     // 处理自定义过滤条件
     Object.entries(filters).forEach(([key, value]) => {
       if (
-        !['eventName', 'fromBlock', 'toBlock', 'fromTimestamp', 'toTimestamp'].includes(key) &&
-        value !== undefined
+        !['eventName', 'fromBlock', 'toBlock', 'fromTimestamp', 'toTimestamp'].includes(key)
+        && value !== undefined
       ) {
         whereClauses.push(`${key} = ?`);
         params.push(value);
@@ -242,11 +243,12 @@ export class ChainEventTableManager {
 
     // 分页
     const limit = Math.min(options.limit || 50, 1000);
-    let cursorClause = '';
+    const cursorClause = '';
     if (options.cursor) {
       if (sortOrder === 'desc') {
         whereClauses.push(`${sortBy} < ?`);
-      } else {
+      }
+      else {
         whereClauses.push(`${sortBy} > ?`);
       }
       params.push(options.cursor);
@@ -303,7 +305,7 @@ export class ChainEventTableManager {
       FROM ${tableName}
     `;
 
-    let params: unknown[] = [];
+    const params: unknown[] = [];
     if (timeRange) {
       sql += ` WHERE block_timestamp >= DATE_SUB(NOW(), INTERVAL ${timeRange})`;
     }
@@ -347,7 +349,8 @@ export class ChainEventTableManager {
         [tableName],
       );
       return result.length > 0;
-    } catch {
+    }
+    catch {
       return false;
     }
   }
@@ -366,10 +369,11 @@ export class ChainEventTableManager {
       );
 
       return result.map(row => row.table_name);
-    } catch (error) {
+    }
+    catch (error) {
       // If the table doesn't exist, return empty array
       if (error instanceof Error && error.message.includes('does not exist')) {
-        logger.info("event_table_registry table does not exist yet, returning empty list");
+        logger.info('event_table_registry table does not exist yet, returning empty list');
         return [];
       }
       // For other errors, re-throw
@@ -389,9 +393,10 @@ export class ChainEventTableManager {
       );
 
       this.createdTables.delete(tableName);
-      logger.info({ tableName }, "Dropped event table");
-    } catch (error) {
-      logger.error({ err: error, tableName }, "Failed to drop table");
+      logger.info({ tableName }, 'Dropped event table');
+    }
+    catch (error) {
+      logger.error({ err: error, tableName }, 'Failed to drop table');
       throw error;
     }
   }
@@ -428,7 +433,8 @@ export class ChainEventTableManager {
       const existing = indexMap.get(row.index_name);
       if (existing) {
         existing.columns.push(row.column_name);
-      } else {
+      }
+      else {
         indexMap.set(row.index_name, {
           columns: [row.column_name],
           unique: row.is_unique,
@@ -465,8 +471,9 @@ export class ChainEventTableManager {
       try {
         await this.dropEventTable(row.table_name);
         cleanedCount++;
-      } catch (error) {
-        logger.error({ err: error, tableName: row.table_name }, "Failed to cleanup table");
+      }
+      catch (error) {
+        logger.error({ err: error, tableName: row.table_name }, 'Failed to cleanup table');
       }
     }
 
@@ -485,7 +492,7 @@ export class ChainEventTableManager {
    */
   async createFilteringIndexes(tableName: string, parameters: string[]): Promise<void> {
     try {
-      logger.info({ tableName }, "Creating filtering indexes for table");
+      logger.info({ tableName }, 'Creating filtering indexes for table');
 
       // 为每个参数创建索引（如果它们是常用过滤字段）
       for (const param of parameters) {
@@ -495,17 +502,19 @@ export class ChainEventTableManager {
             await this.chainDb.exec(`
               CREATE INDEX IF NOT EXISTS ${indexName} ON ${tableName} (${param})
             `);
-            logger.info({ indexName, param }, "Created index");
-          } catch (error) {
-            logger.warn({ err: error, indexName }, "Failed to create index");
+            logger.info({ indexName, param }, 'Created index');
+          }
+          catch (error) {
+            logger.warn({ err: error, indexName }, 'Failed to create index');
           }
         }
       }
 
       // 创建复合索引以提高常见过滤组合的性能
       await this.createCompositeIndexes(tableName, parameters);
-    } catch (error) {
-      logger.error({ err: error, tableName }, "Failed to create filtering indexes");
+    }
+    catch (error) {
+      logger.error({ err: error, tableName }, 'Failed to create filtering indexes');
       throw error;
     }
   }
@@ -556,9 +565,10 @@ export class ChainEventTableManager {
           await this.chainDb.exec(`
             CREATE INDEX IF NOT EXISTS ${index.name} ON ${tableName} (${index.fields.join(', ')})
           `);
-          logger.info({ indexName: index.name, fields: index.fields }, "Created composite index");
-        } catch (error) {
-          logger.warn({ err: error, indexName: index.name }, "Failed to create composite index");
+          logger.info({ indexName: index.name, fields: index.fields }, 'Created composite index');
+        }
+        catch (error) {
+          logger.warn({ err: error, indexName: index.name }, 'Failed to create composite index');
         }
       }
     }
@@ -618,7 +628,8 @@ export class ChainEventTableManager {
 
       if (existing) {
         existing.frequency++;
-      } else {
+      }
+      else {
         patterns.set(key, {
           fields,
           frequency: 1,
@@ -656,8 +667,9 @@ export class ChainEventTableManager {
       }
 
       return false;
-    } catch (error) {
-      logger.warn({ err: error }, "Failed to check index existence");
+    }
+    catch (error) {
+      logger.warn({ err: error }, 'Failed to check index existence');
       return false;
     }
   }
@@ -686,8 +698,9 @@ export class ChainEventTableManager {
         lastUsed: new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000), // 模拟最后使用时间
         efficiency: 0.8 + Math.random() * 0.2, // 模拟效率评分
       }));
-    } catch (error) {
-      logger.warn({ err: error }, "Failed to get index usage stats");
+    }
+    catch (error) {
+      logger.warn({ err: error }, 'Failed to get index usage stats');
       return [];
     }
   }
@@ -715,11 +728,13 @@ export class ChainEventTableManager {
           try {
             await this.chainDb.exec(`DROP INDEX IF EXISTS ${stat.indexName}`);
             droppedIndexes.push(stat.indexName);
-            logger.info({ indexName: stat.indexName }, "Dropped inefficient index");
-          } catch (error) {
-            logger.warn({ err: error, indexName: stat.indexName }, "Failed to drop index");
+            logger.info({ indexName: stat.indexName }, 'Dropped inefficient index');
           }
-        } else if (stat.usageCount > 100 && stat.efficiency > 0.8) {
+          catch (error) {
+            logger.warn({ err: error, indexName: stat.indexName }, 'Failed to drop index');
+          }
+        }
+        else if (stat.usageCount > 100 && stat.efficiency > 0.8) {
           // 使用频繁且效率高的索引
           optimizedIndexes.push(stat.indexName);
         }
@@ -732,11 +747,12 @@ export class ChainEventTableManager {
       await this.createFilteringIndexes(tableName, parameters);
       createdIndexes.push(...parameters.filter(param => this.shouldCreateIndex(param)));
 
-      logger.info({ tableName }, "Index optimization completed for table");
+      logger.info({ tableName }, 'Index optimization completed for table');
 
       return { optimizedIndexes, droppedIndexes, createdIndexes };
-    } catch (error) {
-      logger.error({ err: error, tableName }, "Failed to optimize indexes");
+    }
+    catch (error) {
+      logger.error({ err: error, tableName }, 'Failed to optimize indexes');
       throw error;
     }
   }
@@ -834,8 +850,8 @@ export class ChainEventTableManager {
 
       for (const suggestion of compositeSuggestions) {
         if (
-          suggestion.fields.every(field => parameters.includes(field)) &&
-          !this.hasIndexForField(currentIndexes, ...suggestion.fields)
+          suggestion.fields.every(field => parameters.includes(field))
+          && !this.hasIndexForField(currentIndexes, ...suggestion.fields)
         ) {
           suggestedIndexes.push({
             fields: suggestion.fields,
@@ -852,8 +868,9 @@ export class ChainEventTableManager {
         suggestedIndexes,
         performanceImpact,
       };
-    } catch (error) {
-      logger.error({ err: error }, "Failed to get indexing recommendations");
+    }
+    catch (error) {
+      logger.error({ err: error }, 'Failed to get indexing recommendations');
       return {
         currentIndexes: [],
         suggestedIndexes: [],
@@ -887,11 +904,14 @@ export class ChainEventTableManager {
 
     if (highPriorityCount > 0) {
       return 'High - Will significantly improve query performance';
-    } else if (mediumPriorityCount > 2) {
+    }
+    else if (mediumPriorityCount > 2) {
       return 'Medium - Will moderately improve query performance';
-    } else if (lowPriorityCount > 5) {
+    }
+    else if (lowPriorityCount > 5) {
       return 'Low - May slightly improve query performance';
-    } else {
+    }
+    else {
       return 'Minimal - Little performance impact expected';
     }
   }

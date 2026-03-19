@@ -36,7 +36,7 @@ describe('OptimizedSorter', () => {
       const data = [
         { id: 3, name: 'C' },
         { id: 1, name: 'A' },
-        { id: 2, name: 'B' }
+        { id: 2, name: 'B' },
       ];
       const sortConfigs = [{ key: 'id', direction: 'asc' as const, type: 'numeric' as const }];
 
@@ -44,7 +44,7 @@ describe('OptimizedSorter', () => {
       expect(result.sortedData).toEqual([
         { id: 1, name: 'A' },
         { id: 2, name: 'B' },
-        { id: 3, name: 'C' }
+        { id: 3, name: 'C' },
       ]);
     });
 
@@ -52,7 +52,7 @@ describe('OptimizedSorter', () => {
       const data = [
         { id: 1, name: 'A' },
         { id: 3, name: 'C' },
-        { id: 2, name: 'B' }
+        { id: 2, name: 'B' },
       ];
       const sortConfigs = [{ key: 'id', direction: 'desc' as const, type: 'numeric' as const }];
 
@@ -60,7 +60,7 @@ describe('OptimizedSorter', () => {
       expect(result.sortedData).toEqual([
         { id: 3, name: 'C' },
         { id: 2, name: 'B' },
-        { id: 1, name: 'A' }
+        { id: 1, name: 'A' },
       ]);
     });
 
@@ -68,7 +68,7 @@ describe('OptimizedSorter', () => {
       const data = [
         { name: 'Charlie' },
         { name: 'Alice' },
-        { name: 'Bob' }
+        { name: 'Bob' },
       ];
       const sortConfigs = [{ key: 'name', direction: 'asc' as const, type: 'text' as const }];
 
@@ -76,7 +76,7 @@ describe('OptimizedSorter', () => {
       expect(result.sortedData).toEqual([
         { name: 'Alice' },
         { name: 'Bob' },
-        { name: 'Charlie' }
+        { name: 'Charlie' },
       ]);
     });
 
@@ -85,7 +85,7 @@ describe('OptimizedSorter', () => {
         { id: null, name: 'A' },
         { id: 2, name: 'B' },
         { id: undefined, name: 'C' },
-        { id: 1, name: 'D' }
+        { id: 1, name: 'D' },
       ];
       const sortConfigs = [{ key: 'id', direction: 'asc' as const, type: 'numeric' as const }];
 
@@ -102,11 +102,11 @@ describe('OptimizedSorter', () => {
         { category: 'B', value: 1, name: 'B1' },
         { category: 'A', value: 1, name: 'A1' },
         { category: 'B', value: 2, name: 'B2' },
-        { category: 'A', value: 2, name: 'A2' }
+        { category: 'A', value: 2, name: 'A2' },
       ];
       const sortConfigs = [
         { key: 'category', direction: 'asc' as const, type: 'text' as const, priority: 0 },
-        { key: 'value', direction: 'asc' as const, type: 'numeric' as const, priority: 1 }
+        { key: 'value', direction: 'asc' as const, type: 'numeric' as const, priority: 1 },
       ];
 
       const result = sorter.sort(data, sortConfigs);
@@ -115,7 +115,7 @@ describe('OptimizedSorter', () => {
         { category: 'A', value: 2, name: 'A2' },
         { category: 'A', value: 3, name: 'C3' },
         { category: 'B', value: 1, name: 'B1' },
-        { category: 'B', value: 2, name: 'B2' }
+        { category: 'B', value: 2, name: 'B2' },
       ]);
     });
   });
@@ -125,7 +125,7 @@ describe('OptimizedSorter', () => {
       const data = [
         { user: { profile: { age: 30 } }, name: 'A' },
         { user: { profile: { age: 25 } }, name: 'B' },
-        { user: { profile: { age: 35 } }, name: 'C' }
+        { user: { profile: { age: 35 } }, name: 'C' },
       ];
       const sortConfigs = [{ key: 'user.profile.age', direction: 'asc' as const, type: 'numeric' as const }];
 
@@ -133,7 +133,7 @@ describe('OptimizedSorter', () => {
       expect(result.sortedData).toEqual([
         { user: { profile: { age: 25 } }, name: 'B' },
         { user: { profile: { age: 30 } }, name: 'A' },
-        { user: { profile: { age: 35 } }, name: 'C' }
+        { user: { profile: { age: 35 } }, name: 'C' },
       ]);
     });
   });
@@ -215,7 +215,7 @@ describe('OptimizedSorter', () => {
       const data = [
         { timestamp: '2023-01-03T00:00:00Z' },
         { timestamp: '2023-01-01T00:00:00Z' },
-        { timestamp: '2023-01-02T00:00:00Z' }
+        { timestamp: '2023-01-02T00:00:00Z' },
       ];
       const sortConfigs = [{ key: 'timestamp', direction: 'asc' as const, type: 'timestamp' as const }];
 
@@ -229,7 +229,7 @@ describe('OptimizedSorter', () => {
       const data = [
         { address: '0xABCDEF1234567890' },
         { address: '0xabcdef1234567890' },
-        { address: '0x1234567890ABCDEF' }
+        { address: '0x1234567890ABCDEF' },
       ];
       const sortConfigs = [{ key: 'address', direction: 'asc' as const, type: 'address' as const }];
 
@@ -248,7 +248,7 @@ describe('OptimizedSorter', () => {
         { key: 'field2', direction: 'desc' as const, type: 'numeric' as const, priority: 1 },
         { key: 'field3', direction: 'asc' as const, type: 'text' as const, priority: 2 },
         { key: 'field4', direction: 'desc' as const, type: 'text' as const, priority: 4 },
-        { key: 'field5', direction: 'asc' as const, type: 'numeric' as const, priority: 0 }
+        { key: 'field5', direction: 'asc' as const, type: 'numeric' as const, priority: 0 },
       ];
 
       const optimized = sorter.optimizeSortConfigs(data, sortConfigs);
@@ -271,7 +271,7 @@ describe('optimizedSort convenience function', () => {
     expect(result.sortedData).toEqual([
       { id: 1 },
       { id: 2 },
-      { id: 3 }
+      { id: 3 },
     ]);
     expect(result.metrics).toBeDefined();
   });
@@ -288,7 +288,7 @@ describe('SortingPerformanceMonitor', () => {
     const metrics = [
       { algorithmUsed: 'standard', executionTime: 10, dataSize: 100, memoryUsage: 1000, cacheHit: false },
       { algorithmUsed: 'optimized', executionTime: 20, dataSize: 200, memoryUsage: 2000, cacheHit: true },
-      { algorithmUsed: 'standard', executionTime: 15, dataSize: 150, memoryUsage: 1500, cacheHit: false }
+      { algorithmUsed: 'standard', executionTime: 15, dataSize: 150, memoryUsage: 1500, cacheHit: false },
     ];
 
     metrics.forEach(metric => monitor.recordMetrics(metric));
@@ -297,7 +297,7 @@ describe('SortingPerformanceMonitor', () => {
     expect(avg.avgExecutionTime).toBe(15); // (10 + 20 + 15) / 3
     expect(avg.avgDataSize).toBe(150); // (100 + 200 + 150) / 3
     expect(avg.avgMemoryUsage).toBe(1500); // (1000 + 2000 + 1500) / 3
-    expect(avg.cacheHitRate).toBe(1/3); // 1 cache hit out of 3
+    expect(avg.cacheHitRate).toBe(1 / 3); // 1 cache hit out of 3
     expect(avg.totalOperations).toBe(3);
   });
 
@@ -305,7 +305,7 @@ describe('SortingPerformanceMonitor', () => {
     const metrics = [
       { algorithmUsed: 'standard', executionTime: 10, dataSize: 100, memoryUsage: 1000, cacheHit: false },
       { algorithmUsed: 'standard', executionTime: 15, dataSize: 150, memoryUsage: 1500, cacheHit: false },
-      { algorithmUsed: 'optimized', executionTime: 20, dataSize: 200, memoryUsage: 2000, cacheHit: true }
+      { algorithmUsed: 'optimized', executionTime: 20, dataSize: 200, memoryUsage: 2000, cacheHit: true },
     ];
 
     metrics.forEach(metric => monitor.recordMetrics(metric));
@@ -340,7 +340,7 @@ describe('SortingPerformanceMonitor', () => {
         executionTime: i,
         dataSize: i * 10,
         memoryUsage: i * 100,
-        cacheHit: false
+        cacheHit: false,
       });
     }
 
@@ -354,7 +354,7 @@ describe('SortingPerformanceMonitor', () => {
       executionTime: 10,
       dataSize: 100,
       memoryUsage: 1000,
-      cacheHit: false
+      cacheHit: false,
     });
 
     expect(monitor.getAverageMetrics().totalOperations).toBe(1);

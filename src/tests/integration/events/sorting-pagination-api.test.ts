@@ -16,15 +16,15 @@ vi.mock('../../../services/EventPerformanceOptimizer', () => ({
       getPerformanceMetrics: vi.fn().mockReturnValue({
         avgResponseTime: 8,
         cacheHitRate: 0.75,
-        totalQueries: 100
+        totalQueries: 100,
       }),
       getCacheStatistics: vi.fn().mockReturnValue({
         size: 50,
         hitRate: 0.8,
-        memoryUsage: 1024000
-      })
-    })
-  }
+        memoryUsage: 1024000,
+      }),
+    }),
+  },
 }));
 
 describe('Sorting and Pagination API Integration', () => {
@@ -59,9 +59,9 @@ describe('Sorting and Pagination API Integration', () => {
           sortBy: 'block_timestamp',
           totalPages: expect.any(Number),
           currentPage: 1,
-          multiSort: null
+          multiSort: null,
         }),
-        timestamp: expect.any(String)
+        timestamp: expect.any(String),
       });
     });
 
@@ -112,7 +112,7 @@ describe('Sorting and Pagination API Integration', () => {
     it('should support multi-sort parameters', async () => {
       const multiSort = JSON.stringify([
         { field: 'event_name', direction: 'asc', type: 'text', priority: 0 },
-        { field: 'value', direction: 'desc', type: 'numeric', priority: 1 }
+        { field: 'value', direction: 'desc', type: 'numeric', priority: 1 },
       ]);
 
       const res = await app.request(`/api/chains/${chainId}/contracts/${contractAddress}/events?multiSort=${encodeURIComponent(multiSort)}`);
@@ -202,21 +202,21 @@ describe('Sorting and Pagination API Integration', () => {
         filters: {
           eventName: ['Transfer', 'Approval'],
           from: '0xabc123',
-          value: { gte: '1000000000000000000', lte: '10000000000000000000' }
+          value: { gte: '1000000000000000000', lte: '10000000000000000000' },
         },
         pagination: { limit: 25, offset: 0 },
         sort: { field: 'block_timestamp', direction: 'desc' },
         multiSort: [
           { field: 'event_name', direction: 'asc', type: 'text', priority: 0 },
-          { field: 'value', direction: 'desc', type: 'numeric', priority: 1 }
+          { field: 'value', direction: 'desc', type: 'numeric', priority: 1 },
         ],
-        includeSuggestions: true
+        includeSuggestions: true,
       };
 
       const res = await app.request(`/api/chains/${chainId}/contracts/${contractAddress}/events/search`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(searchBody)
+        body: JSON.stringify(searchBody),
       });
 
       expect(res.status).toBe(200);
@@ -233,7 +233,7 @@ describe('Sorting and Pagination API Integration', () => {
           limit: 25,
           offset: 0,
           currentPage: 1,
-          totalPages: expect.any(Number)
+          totalPages: expect.any(Number),
         }),
         filters: searchBody.filters,
         sort: searchBody.sort,
@@ -243,7 +243,7 @@ describe('Sorting and Pagination API Integration', () => {
         indexesUsed: expect.any(Array),
         optimizationSuggestions: expect.any(Array),
         suggestions: expect.any(Array),
-        timestamp: expect.any(String)
+        timestamp: expect.any(String),
       });
     });
 
@@ -251,13 +251,13 @@ describe('Sorting and Pagination API Integration', () => {
       const searchBody = {
         filters: {},
         pagination: { limit: 2000, offset: -10 }, // Invalid values
-        sort: { field: 'block_timestamp', direction: 'desc' }
+        sort: { field: 'block_timestamp', direction: 'desc' },
       };
 
       const res = await app.request(`/api/chains/${chainId}/contracts/${contractAddress}/events/search`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(searchBody)
+        body: JSON.stringify(searchBody),
       });
 
       expect(res.status).toBe(200);
@@ -271,13 +271,13 @@ describe('Sorting and Pagination API Integration', () => {
       const searchBody = {
         filters: {},
         pagination: { limit: 50, offset: 0 },
-        sort: { field: 'invalid_field', direction: 'invalid_direction' }
+        sort: { field: 'invalid_field', direction: 'invalid_direction' },
       };
 
       const res = await app.request(`/api/chains/${chainId}/contracts/${contractAddress}/events/search`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(searchBody)
+        body: JSON.stringify(searchBody),
       });
 
       expect(res.status).toBe(200);
@@ -292,13 +292,13 @@ describe('Sorting and Pagination API Integration', () => {
         filters: { eventName: 'NonExistentEvent' },
         pagination: { limit: 50, offset: 0 },
         sort: { field: 'block_timestamp', direction: 'desc' },
-        includeSuggestions: true
+        includeSuggestions: true,
       };
 
       const res = await app.request(`/api/chains/${chainId}/contracts/${contractAddress}/events/search`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(searchBody)
+        body: JSON.stringify(searchBody),
       });
 
       expect(res.status).toBe(200);
@@ -308,7 +308,7 @@ describe('Sorting and Pagination API Integration', () => {
       expect(data.total).toBe(0);
       expect(data.suggestions).toEqual(expect.arrayContaining([
         expect.stringContaining('Try removing some filters'),
-        expect.stringContaining('Check if the contract has emitted any events')
+        expect.stringContaining('Check if the contract has emitted any events'),
       ]));
     });
 
@@ -320,16 +320,16 @@ describe('Sorting and Pagination API Integration', () => {
           to: ['0x789abc'],
           fromBlock: { gte: 18000000, lte: 18000100 },
           value: { gte: '1000000000000000000' },
-          transactionHash: '0x123456'
+          transactionHash: '0x123456',
         },
         pagination: { limit: 50, offset: 0 },
-        sort: { field: 'block_number', direction: 'desc' }
+        sort: { field: 'block_number', direction: 'desc' },
       };
 
       const res = await app.request(`/api/chains/${chainId}/contracts/${contractAddress}/events/search`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(searchBody)
+        body: JSON.stringify(searchBody),
       });
 
       expect(res.status).toBe(200);
@@ -337,7 +337,7 @@ describe('Sorting and Pagination API Integration', () => {
       const data = await res.json();
       expect(data.filters).toEqual(searchBody.filters);
       expect(data.indexesUsed).toEqual(expect.arrayContaining([
-        'idx_from', 'idx_to', 'idx_block_number', 'idx_value'
+        'idx_from', 'idx_to', 'idx_block_number', 'idx_value',
       ]));
     });
 
@@ -345,13 +345,13 @@ describe('Sorting and Pagination API Integration', () => {
       const searchBody = {
         filters: {},
         pagination: { limit: 100, offset: 0 },
-        sort: { field: 'block_timestamp', direction: 'desc' }
+        sort: { field: 'block_timestamp', direction: 'desc' },
       };
 
       const res = await app.request(`/api/chains/${chainId}/contracts/${contractAddress}/events/search`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(searchBody)
+        body: JSON.stringify(searchBody),
       });
 
       expect(res.status).toBe(200);
@@ -366,7 +366,7 @@ describe('Sorting and Pagination API Integration', () => {
       const res = await app.request(`/api/chains/${chainId}/contracts/${contractAddress}/events/search`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: 'invalid json'
+        body: 'invalid json',
       });
 
       expect(res.status).toBe(400);
@@ -388,23 +388,23 @@ describe('Sorting and Pagination API Integration', () => {
                 events: [],
                 total: 0,
                 hasMore: false,
-                pagination: { limit: 50, offset: 0, currentPage: 1, totalPages: 0 }
+                pagination: { limit: 50, offset: 0, currentPage: 1, totalPages: 0 },
               };
-            })
-          })
-        }
+            }),
+          }),
+        },
       }));
 
       const searchBody = {
         filters: {},
         pagination: { limit: 50, offset: 0 },
-        sort: { field: 'block_timestamp', direction: 'desc' }
+        sort: { field: 'block_timestamp', direction: 'desc' },
       };
 
       const res = await app.request(`/api/chains/${chainId}/contracts/${contractAddress}/events/search`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(searchBody)
+        body: JSON.stringify(searchBody),
       });
 
       expect(res.status).toBe(200);
@@ -412,7 +412,7 @@ describe('Sorting and Pagination API Integration', () => {
       const data = await res.json();
       expect(data.optimizationSuggestions).toEqual(expect.arrayContaining([
         expect.stringContaining('Consider adding more specific filters'),
-        expect.stringContaining('Use indexed parameters when possible')
+        expect.stringContaining('Use indexed parameters when possible'),
       ]));
     });
 
@@ -420,13 +420,13 @@ describe('Sorting and Pagination API Integration', () => {
       const searchBody = {
         filters: {},
         pagination: { limit: 50, offset: 0 },
-        sort: { field: 'block_timestamp', direction: 'desc' }
+        sort: { field: 'block_timestamp', direction: 'desc' },
       };
 
       const res = await app.request(`/api/chains/${chainId}/contracts/${contractAddress}/events/search`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(searchBody)
+        body: JSON.stringify(searchBody),
       });
 
       expect(res.status).toBe(200);
@@ -474,9 +474,9 @@ describe('Sorting and Pagination API Integration', () => {
       vi.doMock('../../../services/EventPerformanceOptimizer', () => ({
         eventPerformanceOptimizerManager: {
           getOptimizer: vi.fn().mockReturnValue({
-            executeOptimizedQuery: vi.fn().mockRejectedValue(new Error('Database connection failed'))
-          })
-        }
+            executeOptimizedQuery: vi.fn().mockRejectedValue(new Error('Database connection failed')),
+          }),
+        },
       }));
 
       const contractAddress = '0x1234567890123456789012345678901234567890';

@@ -1,13 +1,13 @@
-import { eq, and, sql, gte, lte, desc } from "drizzle-orm";
-import { db } from "../database/drizzle";
+import { eq, and, sql, gte, lte, desc } from 'drizzle-orm';
+import { db } from '../database/drizzle';
 import {
   indexingProgress,
   contractEvents,
   contractCreationInfo,
-} from "../database/schema";
-import { rpcManager } from "./RpcManager";
-import { decodeEventLog, type Abi, type Log } from "viem";
-import { getContractCreationBlock } from "../utils/events";
+} from '../database/schema';
+import { rpcManager } from './RpcManager';
+import { decodeEventLog, type Abi, type Log } from 'viem';
+import { getContractCreationBlock } from '../utils/events';
 
 const BATCH_SIZE = 2000;
 const MAX_RETRY = 3;
@@ -16,7 +16,7 @@ const RETRY_DELAY_MS = 2000;
 type IndexingState = {
   chainId: number;
   address: `0x${string}`;
-  status: "idle" | "indexing" | "error";
+  status: 'idle' | 'indexing' | 'error';
   creationBlock: bigint;
   lastIndexedBlock: bigint;
   lastFinalizedBlock: bigint;
@@ -29,12 +29,12 @@ const activeJobs = new Map<string, { abort: boolean }>();
 const jobKey = (chainId: number, address: string) =>
   `${chainId}:${address.toLowerCase()}`;
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 const getOrCreateProgress = async (
   chainId: number,
   address: `0x${string}`,
-  creationBlock: bigint
+  creationBlock: bigint,
 ): Promise<IndexingState> => {
   const rows = await db
     .select()
@@ -42,8 +42,8 @@ const getOrCreateProgress = async (
     .where(
       and(
         eq(indexingProgress.chainId, chainId),
-        eq(indexingProgress.address, address)
-      )
+        eq(indexingProgress.address, address),
+      ),
     )
     .limit(1);
 
@@ -59,8 +59,8 @@ const getOrCreateProgress = async (
         .where(
           and(
             eq(indexingProgress.chainId, chainId),
-            eq(indexingProgress.address, address)
-          )
+            eq(indexingProgress.address, address),
+          ),
         );
     }
 
@@ -69,8 +69,8 @@ const getOrCreateProgress = async (
 
     return {
       chainId: row.chainId,
-      address: row.address as `0x${string}`,
-      status: (row.status as IndexingState["status"]) ?? "idle",
+      address: row.address,
+      status: (row.status as IndexingState['status']) ?? 'idle',
       creationBlock: effectiveCreation,
       lastIndexedBlock: resumeFrom,
       lastFinalizedBlock: row.lastFinalizedBlock ?? 0n,
@@ -86,14 +86,14 @@ const getOrCreateProgress = async (
     lastIndexedBlock: creationBlock,
     lastFinalizedBlock: 0n,
     totalEventsIndexed: 0,
-    status: "idle",
+    status: 'idle',
     updatedAt: new Date(),
   });
 
   return {
     chainId,
     address,
-    status: "idle",
+    status: 'idle',
     creationBlock,
     lastIndexedBlock: creationBlock,
     lastFinalizedBlock: 0n,
@@ -110,7 +110,7 @@ const updateProgress = async (
     totalEventsIndexed: number;
     status: string;
     errorMessage: string | null;
-  }>
+  }>,
 ) => {
   await db
     .update(indexingProgress)
@@ -118,8 +118,8 @@ const updateProgress = async (
     .where(
       and(
         eq(indexingProgress.chainId, chainId),
-        eq(indexingProgress.address, address)
-      )
+        eq(indexingProgress.address, address),
+      ),
     );
 };
 
@@ -127,13 +127,14 @@ const fetchLogsWithRetry = async (
   chainId: number,
   address: `0x${string}`,
   fromBlock: bigint,
-  toBlock: bigint
+  toBlock: bigint,
 ): Promise<Log[]> => {
   const client = await rpcManager.getClient(chainId);
   for (let attempt = 0; attempt < MAX_RETRY; attempt++) {
     try {
       return await client.getLogs({ address, fromBlock, toBlock });
-    } catch (err) {
+    }
+    catch (err) {
       if (attempt === MAX_RETRY - 1) throw err;
       await sleep(RETRY_DELAY_MS * (attempt + 1));
     }
@@ -143,7 +144,7 @@ const fetchLogsWithRetry = async (
 
 const fetchBlockTimestamps = async (
   chainId: number,
-  blockNumbers: bigint[]
+  blockNumbers: bigint[],
 ): Promise<Map<bigint, number>> => {
   const client = await rpcManager.getClient(chainId);
   const map = new Map<bigint, number>();
@@ -153,11 +154,11 @@ const fetchBlockTimestamps = async (
     unique.map(async (bn) => {
       const block = await client.getBlock({ blockNumber: bn });
       return { bn, ts: Number(block.timestamp) };
-    })
+    }),
   );
 
   for (const r of results) {
-    if (r.status === "fulfilled") {
+    if (r.status === 'fulfilled') {
       map.set(r.value.bn, r.value.ts);
     }
   }
@@ -167,7 +168,7 @@ const fetchBlockTimestamps = async (
 const decodeLogs = (
   logs: Log[],
   abi: Abi,
-  blockTimestamps: Map<bigint, number>
+  blockTimestamps: Map<bigint, number>,
 ) => {
   const decoded: Array<{
     blockNumber: bigint;
@@ -191,46 +192,47 @@ const decodeLogs = (
       if (!result) continue;
 
       const args: Record<string, string> = {};
-      if (result.args && typeof result.args === "object") {
+      if (result.args && typeof result.args === 'object') {
         for (const [k, v] of Object.entries(result.args as object)) {
-          args[k] = typeof v === "bigint" ? v.toString() : String(v);
+          args[k] = typeof v === 'bigint' ? v.toString() : String(v);
         }
       }
 
       decoded.push({
         blockNumber: log.blockNumber ?? 0n,
         blockTimestamp:
-          blockTimestamps.get(log.blockNumber ?? 0n) ??
-          Math.floor(Date.now() / 1000),
-        transactionHash: log.transactionHash ?? ("0x" as `0x${string}`),
+          blockTimestamps.get(log.blockNumber ?? 0n)
+          ?? Math.floor(Date.now() / 1000),
+        transactionHash: log.transactionHash ?? ('0x' as `0x${string}`),
         transactionIndex: log.transactionIndex ?? 0,
         logIndex: log.logIndex ?? 0,
-        eventName: result.eventName ?? "Unknown",
-        eventSignature: (log.topics[0] as string) ?? "",
+        eventName: result.eventName ?? 'Unknown',
+        eventSignature: (log.topics[0] as string) ?? '',
         decodedArgs: JSON.stringify(args),
-        topic0: (log.topics[0] as string) ?? "",
+        topic0: (log.topics[0] as string) ?? '',
         topic1: (log.topics[1] as string) ?? null,
         topic2: (log.topics[2] as string) ?? null,
         topic3: (log.topics[3] as string) ?? null,
-        data: log.data ?? "0x",
+        data: log.data ?? '0x',
       });
-    } catch {
+    }
+    catch {
       decoded.push({
         blockNumber: log.blockNumber ?? 0n,
         blockTimestamp:
-          blockTimestamps.get(log.blockNumber ?? 0n) ??
-          Math.floor(Date.now() / 1000),
-        transactionHash: log.transactionHash ?? ("0x" as `0x${string}`),
+          blockTimestamps.get(log.blockNumber ?? 0n)
+          ?? Math.floor(Date.now() / 1000),
+        transactionHash: log.transactionHash ?? ('0x' as `0x${string}`),
         transactionIndex: log.transactionIndex ?? 0,
         logIndex: log.logIndex ?? 0,
-        eventName: "Unknown",
-        eventSignature: (log.topics[0] as string) ?? "",
-        decodedArgs: "{}",
-        topic0: (log.topics[0] as string) ?? "",
+        eventName: 'Unknown',
+        eventSignature: (log.topics[0] as string) ?? '',
+        decodedArgs: '{}',
+        topic0: (log.topics[0] as string) ?? '',
         topic1: (log.topics[1] as string) ?? null,
         topic2: (log.topics[2] as string) ?? null,
         topic3: (log.topics[3] as string) ?? null,
-        data: log.data ?? "0x",
+        data: log.data ?? '0x',
       });
     }
   }
@@ -243,11 +245,11 @@ const insertEvents = async (
   chainId: number,
   contractAddress: `0x${string}`,
   events: ReturnType<typeof decodeLogs>,
-  isFinalized: boolean
+  isFinalized: boolean,
 ) => {
   if (events.length === 0) return 0;
 
-  const rows = events.map((e) => ({
+  const rows = events.map(e => ({
     chainId,
     contractAddress,
     blockNumber: e.blockNumber,
@@ -274,11 +276,13 @@ const insertEvents = async (
         .insert(contractEvents)
         .values(chunk)
         .onConflictDoNothing();
-    } catch {
+    }
+    catch {
       for (const row of chunk) {
         try {
           await db.insert(contractEvents).values(row).onConflictDoNothing();
-        } catch {
+        }
+        catch {
           // skip duplicates
         }
       }
@@ -291,7 +295,7 @@ const insertEvents = async (
 const handleReorgs = async (
   chainId: number,
   contractAddress: `0x${string}`,
-  lastFinalizedBlock: bigint
+  lastFinalizedBlock: bigint,
 ) => {
   const nonFinalized = await db
     .select()
@@ -301,35 +305,35 @@ const handleReorgs = async (
         eq(contractEvents.chainId, chainId),
         eq(contractEvents.contractAddress, contractAddress),
         eq(contractEvents.isFinalized, false),
-        lte(contractEvents.blockNumber, lastFinalizedBlock)
-      )
+        lte(contractEvents.blockNumber, lastFinalizedBlock),
+      ),
     );
 
   if (nonFinalized.length === 0) return;
 
   const client = await rpcManager.getClient(chainId);
   const blockNumbers = [
-    ...new Set(nonFinalized.map((e) => e.blockNumber)),
+    ...new Set(nonFinalized.map(e => e.blockNumber)),
   ];
 
   for (const bn of blockNumbers) {
     try {
       const block = await client.getBlock({ blockNumber: bn });
       const eventsInBlock = nonFinalized.filter(
-        (e) => e.blockNumber === bn
+        e => e.blockNumber === bn,
       );
 
       const blockTxHashes = new Set(
-        block.transactions as string[]
+        block.transactions as string[],
       );
 
       const reorgedEvents = eventsInBlock.filter(
-        (e) => !blockTxHashes.has(e.transactionHash)
+        e => !blockTxHashes.has(e.transactionHash),
       );
 
       if (reorgedEvents.length > 0) {
         console.warn(
-          `[EventIndexing] Reorg detected at block ${bn}, removing ${reorgedEvents.length} events`
+          `[EventIndexing] Reorg detected at block ${bn}, removing ${reorgedEvents.length} events`,
         );
         for (const e of reorgedEvents) {
           await db
@@ -338,12 +342,13 @@ const handleReorgs = async (
               and(
                 eq(contractEvents.chainId, chainId),
                 eq(contractEvents.transactionHash, e.transactionHash),
-                eq(contractEvents.logIndex, e.logIndex!)
-              )
+                eq(contractEvents.logIndex, e.logIndex),
+              ),
             );
         }
       }
-    } catch {
+    }
+    catch {
       // skip block verification on error
     }
   }
@@ -356,15 +361,15 @@ const handleReorgs = async (
         eq(contractEvents.chainId, chainId),
         eq(contractEvents.contractAddress, contractAddress),
         eq(contractEvents.isFinalized, false),
-        lte(contractEvents.blockNumber, lastFinalizedBlock)
-      )
+        lte(contractEvents.blockNumber, lastFinalizedBlock),
+      ),
     );
 };
 
 export const startIndexing = async (
   chainId: number,
   address: `0x${string}`,
-  abi: Abi
+  abi: Abi,
 ): Promise<void> => {
   const key = jobKey(chainId, address);
 
@@ -383,8 +388,8 @@ export const startIndexing = async (
       .where(
         and(
           eq(contractCreationInfo.chainId, chainId),
-          eq(contractCreationInfo.address, address)
-        )
+          eq(contractCreationInfo.address, address),
+        ),
       )
       .limit(1);
 
@@ -394,7 +399,8 @@ export const startIndexing = async (
       try {
         const client = await rpcManager.getClient(chainId);
         creationBlock = await getContractCreationBlock(client, address);
-      } catch {
+      }
+      catch {
         // fallback: start from a recent range
         const client = await rpcManager.getClient(chainId);
         const latest = await client.getBlockNumber();
@@ -404,17 +410,18 @@ export const startIndexing = async (
 
     const state = await getOrCreateProgress(chainId, address, creationBlock);
 
-    await updateProgress(chainId, address, { status: "indexing", errorMessage: null });
+    await updateProgress(chainId, address, { status: 'indexing', errorMessage: null });
 
     const client = await rpcManager.getClient(chainId);
 
     let finalizedBlockNumber: bigint;
     try {
       const finalizedBlock = await client.getBlock({
-        blockTag: "finalized",
+        blockTag: 'finalized',
       });
       finalizedBlockNumber = finalizedBlock.number;
-    } catch {
+    }
+    catch {
       const latestBlock = await client.getBlockNumber();
       finalizedBlockNumber = latestBlock - 64n;
     }
@@ -431,8 +438,8 @@ export const startIndexing = async (
     let totalInserted = state.totalEventsIndexed;
 
     while (fromBlock <= latestBlock && !job.abort) {
-      const toBlock =
-        fromBlock + BigInt(BATCH_SIZE) - 1n > latestBlock
+      const toBlock
+        = fromBlock + BigInt(BATCH_SIZE) - 1n > latestBlock
           ? latestBlock
           : fromBlock + BigInt(BATCH_SIZE) - 1n;
 
@@ -440,7 +447,7 @@ export const startIndexing = async (
 
       if (logs.length > 0) {
         const blockNumbers = logs
-          .map((l) => l.blockNumber)
+          .map(l => l.blockNumber)
           .filter((n): n is bigint => n != null);
         const timestamps = await fetchBlockTimestamps(chainId, blockNumbers);
         const decoded = decodeLogs(logs, abi, timestamps);
@@ -449,7 +456,7 @@ export const startIndexing = async (
           chainId,
           address,
           decoded,
-          isFinalized
+          isFinalized,
         );
         totalInserted += inserted;
       }
@@ -459,7 +466,7 @@ export const startIndexing = async (
         lastFinalizedBlock:
           toBlock <= finalizedBlockNumber ? toBlock : state.lastFinalizedBlock,
         totalEventsIndexed: totalInserted,
-        status: "indexing",
+        status: 'indexing',
       });
 
       fromBlock = toBlock + 1n;
@@ -468,16 +475,18 @@ export const startIndexing = async (
     await updateProgress(chainId, address, {
       lastIndexedBlock: latestBlock,
       totalEventsIndexed: totalInserted,
-      status: "idle",
+      status: 'idle',
     });
-  } catch (err) {
+  }
+  catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`[EventIndexing] Error indexing ${key}:`, msg);
     await updateProgress(chainId, address, {
-      status: "error",
+      status: 'error',
       errorMessage: msg,
     }).catch(() => {});
-  } finally {
+  }
+  finally {
     activeJobs.delete(key);
   }
 };
@@ -490,7 +499,7 @@ export const stopIndexing = (chainId: number, address: string) => {
 
 export const getIndexingStatus = async (
   chainId: number,
-  address: `0x${string}`
+  address: `0x${string}`,
 ): Promise<{
   chainId: number;
   contractAddress: string;
@@ -509,19 +518,20 @@ export const getIndexingStatus = async (
     .where(
       and(
         eq(indexingProgress.chainId, chainId),
-        eq(indexingProgress.address, address)
-      )
+        eq(indexingProgress.address, address),
+      ),
     )
     .limit(1);
 
   let latestBlock = 0;
   try {
     const rpcTimeout = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error("RPC timeout")), 10_000)
+      setTimeout(() => reject(new Error('RPC timeout')), 10_000),
     );
     const client = await Promise.race([rpcManager.getClient(chainId), rpcTimeout]);
     latestBlock = Number(await Promise.race([client.getBlockNumber(), rpcTimeout]));
-  } catch {
+  }
+  catch {
     // ignore
   }
 
@@ -531,20 +541,20 @@ export const getIndexingStatus = async (
     .where(
       and(
         eq(contractEvents.chainId, chainId),
-        eq(contractEvents.contractAddress, address)
-      )
+        eq(contractEvents.contractAddress, address),
+      ),
     )
     .groupBy(contractEvents.eventName);
 
   const eventTypes = eventTypeRows
-    .map((r) => r.eventName)
+    .map(r => r.eventName)
     .filter((n): n is string => !!n);
 
   if (rows.length === 0) {
     return {
       chainId,
       contractAddress: address,
-      status: "idle",
+      status: 'idle',
       creationBlock: 0,
       lastIndexedBlock: 0,
       latestBlock,
@@ -558,7 +568,7 @@ export const getIndexingStatus = async (
   return {
     chainId,
     contractAddress: address,
-    status: row.status ?? "idle",
+    status: row.status ?? 'idle',
     creationBlock: Number(row.creationBlock ?? 0n),
     lastIndexedBlock: Number(row.lastIndexedBlock ?? 0n),
     latestBlock,
@@ -578,7 +588,7 @@ export const getContractEvents = async (
     eventName?: string;
     fromBlock?: number;
     toBlock?: number;
-  } = {}
+  } = {},
 ) => {
   const { page = 1, pageSize = 50, eventName, fromBlock, toBlock } = options;
   const offset = (page - 1) * pageSize;
@@ -623,7 +633,7 @@ export const getContractEvents = async (
 
 export const getEventStatistics = async (
   chainId: number,
-  address: `0x${string}`
+  address: `0x${string}`,
 ) => {
   const [countResult, typeResult] = await Promise.all([
     db
@@ -632,8 +642,8 @@ export const getEventStatistics = async (
       .where(
         and(
           eq(contractEvents.chainId, chainId),
-          eq(contractEvents.contractAddress, address)
-        )
+          eq(contractEvents.contractAddress, address),
+        ),
       ),
     db
       .select({
@@ -644,8 +654,8 @@ export const getEventStatistics = async (
       .where(
         and(
           eq(contractEvents.chainId, chainId),
-          eq(contractEvents.contractAddress, address)
-        )
+          eq(contractEvents.contractAddress, address),
+        ),
       )
       .groupBy(contractEvents.eventName),
   ]);

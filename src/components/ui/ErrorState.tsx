@@ -1,7 +1,7 @@
-import { css, cx } from "@linaria/core";
-import { Alert } from "haze-ui";
-import { Button } from "./Button";
-import type { ReactNode } from "react";
+import { css, cx } from '@linaria/core';
+import { Alert } from 'haze-ui';
+import { Button } from './Button';
+import type { ReactNode } from 'react';
 
 const errorContainer = css`
   margin: var(--haze-space-5) 0;
@@ -21,7 +21,7 @@ type ErrorStateProps = {
 export function ErrorState({
   message,
   onRetry,
-  retryLabel = "Retry",
+  retryLabel = 'Retry',
   className,
 }: ErrorStateProps) {
   return (
@@ -47,7 +47,7 @@ type EmptyStateProps = {
 };
 
 export function EmptyState({
-  message = "No data found",
+  message = 'No data found',
   className,
   children,
 }: EmptyStateProps) {

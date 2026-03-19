@@ -1,12 +1,12 @@
-import { getRpcClient, withRetry } from "./rpcClient";
-import type { Abi, Address } from "viem";
+import { getRpcClient, withRetry } from './rpcClient';
+import type { Abi, Address } from 'viem';
 
 export type ContractFunction = {
   name: string;
   type: string;
   inputs: ContractFunctionInput[];
   outputs: ContractFunctionOutput[];
-  stateMutability: "pure" | "view" | "nonpayable" | "payable";
+  stateMutability: 'pure' | 'view' | 'nonpayable' | 'payable';
 };
 
 export type ContractFunctionInput = {
@@ -47,23 +47,24 @@ export function parseContractFunctions(abi: string): {
   try {
     const parsedAbi = JSON.parse(abi);
     const functions = parsedAbi.filter(
-      (item: any) => item.type === "function"
+      (item: any) => item.type === 'function',
     ) as ContractFunction[];
 
     const readFunctions = functions.filter(
-      (func) =>
-        func.stateMutability === "view" || func.stateMutability === "pure"
+      func =>
+        func.stateMutability === 'view' || func.stateMutability === 'pure',
     );
 
     const writeFunctions = functions.filter(
-      (func) =>
-        func.stateMutability === "nonpayable" ||
-        func.stateMutability === "payable"
+      func =>
+        func.stateMutability === 'nonpayable'
+        || func.stateMutability === 'payable',
     );
 
     return { readFunctions, writeFunctions };
-  } catch (error) {
-    console.error("Failed to parse contract ABI:", error);
+  }
+  catch (error) {
+    console.error('Failed to parse contract ABI:', error);
     return { readFunctions: [], writeFunctions: [] };
   }
 }
@@ -72,7 +73,7 @@ export function parseContractFunctions(abi: string): {
  * 调用只读合约函数
  */
 export async function readContract(
-  params: ContractCallParams & { abi?: string }
+  params: ContractCallParams & { abi?: string },
 ): Promise<ContractCallResult> {
   try {
     const client = getRpcClient(params.chainId);
@@ -82,16 +83,17 @@ export async function readContract(
     if (params.abi) {
       // 直接使用提供的 ABI
       abi = JSON.parse(params.abi) as Abi;
-    } else {
+    }
+    else {
       // 从 API 获取合约 ABI
       const contractSource = await fetchContractSource(
         params.chainId,
-        params.contractAddress
+        params.contractAddress,
       );
       if (!contractSource?.abi) {
         return {
           success: false,
-          error: "Contract ABI not available",
+          error: 'Contract ABI not available',
         };
       }
       abi = JSON.parse(contractSource.abi) as Abi;
@@ -110,8 +112,9 @@ export async function readContract(
       success: true,
       result: formatContractResult(result),
     };
-  } catch (error: any) {
-    console.error("Read contract failed:", error);
+  }
+  catch (error: any) {
+    console.error('Read contract failed:', error);
     return {
       success: false,
       error: formatError(error),
@@ -123,7 +126,7 @@ export async function readContract(
  * 模拟合约调用
  */
 export async function simulateContract(
-  params: ContractCallParams & { abi?: string }
+  params: ContractCallParams & { abi?: string },
 ): Promise<ContractCallResult> {
   try {
     const client = getRpcClient(params.chainId);
@@ -133,16 +136,17 @@ export async function simulateContract(
     if (params.abi) {
       // 直接使用提供的 ABI
       abi = JSON.parse(params.abi) as Abi;
-    } else {
+    }
+    else {
       // 从 API 获取合约 ABI
       const contractSource = await fetchContractSource(
         params.chainId,
-        params.contractAddress
+        params.contractAddress,
       );
       if (!contractSource?.abi) {
         return {
           success: false,
-          error: "Contract ABI not available",
+          error: 'Contract ABI not available',
         };
       }
       abi = JSON.parse(contractSource.abi) as Abi;
@@ -164,8 +168,9 @@ export async function simulateContract(
       result: formatContractResult(simulation.result),
       gasUsed: simulation.request.gas,
     };
-  } catch (error: any) {
-    console.error("Simulate contract failed:", error);
+  }
+  catch (error: any) {
+    console.error('Simulate contract failed:', error);
     return {
       success: false,
       error: formatError(error),
@@ -188,7 +193,7 @@ export async function estimateContractGas(params: ContractCallParams): Promise<{
     // 获取合约 ABI
     const contractSource = await fetchContractSource(
       params.chainId,
-      params.contractAddress
+      params.contractAddress,
     );
     if (!contractSource?.abi) {
       return null;
@@ -219,8 +224,9 @@ export async function estimateContractGas(params: ContractCallParams): Promise<{
       maxFeePerGas: feeData?.maxFeePerGas || undefined,
       maxPriorityFeePerGas: feeData?.maxPriorityFeePerGas || undefined,
     };
-  } catch (error) {
-    console.error("Gas estimation failed:", error);
+  }
+  catch (error) {
+    console.error('Gas estimation failed:', error);
     return null;
   }
 }
@@ -230,7 +236,7 @@ export async function estimateContractGas(params: ContractCallParams): Promise<{
  */
 async function fetchContractSource(
   chainId: number,
-  contractAddress: string
+  contractAddress: string,
 ): Promise<{
   abi: string;
   isProxy?: boolean;
@@ -238,7 +244,7 @@ async function fetchContractSource(
 } | null> {
   try {
     const response = await fetch(
-      `/api/chains/${chainId}/contracts/${contractAddress}/source`
+      `/api/chains/${chainId}/contracts/${contractAddress}/source`,
     );
 
     if (!response.ok) {
@@ -247,8 +253,9 @@ async function fetchContractSource(
 
     const data = await response.json();
     return data.contractSource;
-  } catch (error) {
-    console.error("Failed to fetch contract source:", error);
+  }
+  catch (error) {
+    console.error('Failed to fetch contract source:', error);
     return null;
   }
 }
@@ -257,15 +264,15 @@ async function fetchContractSource(
  * 格式化合约调用结果
  */
 function formatContractResult(result: any): any {
-  if (typeof result === "bigint") {
+  if (typeof result === 'bigint') {
     return result.toString();
   }
 
   if (Array.isArray(result)) {
-    return result.map((item) => formatContractResult(item));
+    return result.map(item => formatContractResult(item));
   }
 
-  if (typeof result === "object" && result !== null) {
+  if (typeof result === 'object' && result !== null) {
     const formatted: any = {};
     for (const [key, value] of Object.entries(result)) {
       formatted[key] = formatContractResult(value);
@@ -288,11 +295,11 @@ function formatError(error: any): string {
     return error.shortMessage;
   }
 
-  if (typeof error === "string") {
+  if (typeof error === 'string') {
     return error;
   }
 
-  return "Unknown error occurred";
+  return 'Unknown error occurred';
 }
 
 /**
@@ -300,13 +307,13 @@ function formatError(error: any): string {
  */
 export function validateFunctionArgs(
   contractFunction: ContractFunction,
-  args: any[]
+  args: any[],
 ): { valid: boolean; errors: string[] } {
   const errors: string[] = [];
 
   if (args.length !== contractFunction.inputs.length) {
     errors.push(
-      `Expected ${contractFunction.inputs.length} arguments, got ${args.length}`
+      `Expected ${contractFunction.inputs.length} arguments, got ${args.length}`,
     );
   }
 
@@ -330,45 +337,46 @@ export function validateFunctionArgs(
 function validateArgument(
   type: string,
   value: any,
-  name: string
+  name: string,
 ): { valid: boolean; error?: string } {
-  if (value === undefined || value === null || value === "") {
-    return { valid: false, error: "Value is required" };
+  if (value === undefined || value === null || value === '') {
+    return { valid: false, error: 'Value is required' };
   }
 
   try {
     // 地址类型验证
-    if (type === "address") {
-      if (typeof value !== "string" || !value.match(/^0x[a-fA-F0-9]{40}$/)) {
-        return { valid: false, error: "Invalid address format" };
+    if (type === 'address') {
+      if (typeof value !== 'string' || !value.match(/^0x[a-fA-F0-9]{40}$/)) {
+        return { valid: false, error: 'Invalid address format' };
       }
     }
 
     // 数字类型验证
-    if (type.startsWith("uint") || type.startsWith("int")) {
+    if (type.startsWith('uint') || type.startsWith('int')) {
       const num = BigInt(value);
       // 可以添加更多的范围检查
     }
 
     // 字节类型验证
-    if (type.startsWith("bytes")) {
-      if (typeof value !== "string" || !value.startsWith("0x")) {
+    if (type.startsWith('bytes')) {
+      if (typeof value !== 'string' || !value.startsWith('0x')) {
         return {
           valid: false,
-          error: "Invalid bytes format, should start with 0x",
+          error: 'Invalid bytes format, should start with 0x',
         };
       }
     }
 
     // 布尔类型验证
-    if (type === "bool") {
-      if (typeof value !== "boolean" && value !== "true" && value !== "false") {
-        return { valid: false, error: "Invalid boolean value" };
+    if (type === 'bool') {
+      if (typeof value !== 'boolean' && value !== 'true' && value !== 'false') {
+        return { valid: false, error: 'Invalid boolean value' };
       }
     }
 
     return { valid: true };
-  } catch (error) {
+  }
+  catch (error) {
     return { valid: false, error: `Invalid ${type} value` };
   }
 }

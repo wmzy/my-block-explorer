@@ -1,6 +1,6 @@
-import { expect, afterEach } from "vitest";
-import { cleanup } from "@testing-library/react";
-import * as matchers from "@testing-library/jest-dom/matchers";
+import { expect, afterEach } from 'vitest';
+import { cleanup } from '@testing-library/react';
+import * as matchers from '@testing-library/jest-dom/matchers';
 
 // 扩展 expect 匹配器
 expect.extend(matchers);

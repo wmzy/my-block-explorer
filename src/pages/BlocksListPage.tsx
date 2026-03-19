@@ -1,14 +1,14 @@
-import { useState, useEffect, useCallback } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
-import { getChainInfo, getChainName } from "../config/chains";
-import TopNavigation from "../components/TopNavigation";
-import { formatNumber, formatRelativeTime } from "@/utils/format";
-import { getLatestBlocks, type RpcBlock } from "@/utils/blockRpcData";
-import { PageContainer, PageHeader } from "@/components/ui/PageLayout";
-import { DataTable, Pagination, linkStyle, monoStyle } from "@/components/ui/DataTable";
-import { LoadingState, TableSkeleton } from "@/components/ui/LoadingState";
-import { ErrorState } from "@/components/ui/ErrorState";
-import { CopyableHash } from "@/components/ui/CopyableHash";
+import { useState, useEffect, useCallback } from 'react';
+import { useParams, useNavigate, Link } from 'react-router-dom';
+import { getChainInfo, getChainName } from '../config/chains';
+import TopNavigation from '../components/TopNavigation';
+import { formatNumber, formatRelativeTime } from '@/utils/format';
+import { getLatestBlocks, type RpcBlock } from '@/utils/blockRpcData';
+import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
+import { DataTable, Pagination, linkStyle, monoStyle } from '@/components/ui/DataTable';
+import { LoadingState, TableSkeleton } from '@/components/ui/LoadingState';
+import { ErrorState } from '@/components/ui/ErrorState';
+import { CopyableHash } from '@/components/ui/CopyableHash';
 
 export default function BlocksListPage() {
   const { chainId } = useParams<{ chainId: string }>();
@@ -20,7 +20,7 @@ export default function BlocksListPage() {
   const [latestBlockNumber, setLatestBlockNumber] = useState<bigint | null>(null);
   const limit = 20;
 
-  const currentChainId = parseInt(chainId || "1");
+  const currentChainId = parseInt(chainId || '1');
   const chainInfo = getChainInfo(currentChainId);
 
   const fetchBlocks = useCallback(async () => {
@@ -28,8 +28,8 @@ export default function BlocksListPage() {
       setLoading(true);
       setError(null);
 
-      const beforeBlock =
-        latestBlockNumber && page > 1
+      const beforeBlock
+        = latestBlockNumber && page > 1
           ? latestBlockNumber - BigInt((page - 1) * limit) + 1n
           : undefined;
 
@@ -38,12 +38,14 @@ export default function BlocksListPage() {
       if (page === 1) {
         setLatestBlockNumber(result.latestBlockNumber);
       }
-    } catch (err) {
-      console.error("Failed to fetch blocks:", err);
+    }
+    catch (err) {
+      console.error('Failed to fetch blocks:', err);
       setError(
-        err instanceof Error ? err.message : "Failed to fetch blocks"
+        err instanceof Error ? err.message : 'Failed to fetch blocks',
       );
-    } finally {
+    }
+    finally {
       setLoading(false);
     }
   }, [currentChainId, page, latestBlockNumber]);
@@ -62,7 +64,8 @@ export default function BlocksListPage() {
       const limitNum = parseInt(limit);
       const percentage = ((usedNum / limitNum) * 100).toFixed(1);
       return `${formatNumber(usedNum)} (${percentage}%)`;
-    } catch {
+    }
+    catch {
       return used;
     }
   };
@@ -112,7 +115,7 @@ export default function BlocksListPage() {
               </tr>
             </thead>
             <tbody>
-              {blocks.map((block) => (
+              {blocks.map(block => (
                 <tr key={block.number}>
                   <td>
                     <Link
@@ -125,7 +128,7 @@ export default function BlocksListPage() {
                   <td>
                     {block.timestamp
                       ? formatRelativeTime(block.timestamp)
-                      : "N/A"}
+                      : 'N/A'}
                   </td>
                   <td>{block.transactionCount}</td>
                   <td className={monoStyle}>
@@ -147,11 +150,11 @@ export default function BlocksListPage() {
         {blocks.length > 0 && (
           <Pagination
             page={page}
-            pageInfo={`Page ${page}${latestBlockNumber !== null ? ` • Latest block: ${formatNumber(Number(latestBlockNumber))}` : ""}`}
+            pageInfo={`Page ${page}${latestBlockNumber !== null ? ` • Latest block: ${formatNumber(Number(latestBlockNumber))}` : ''}`}
             hasPrev={page > 1}
             hasNext={blocks.length >= limit}
-            onPrev={() => setPage((p) => Math.max(1, p - 1))}
-            onNext={() => setPage((p) => p + 1)}
+            onPrev={() => setPage(p => Math.max(1, p - 1))}
+            onNext={() => setPage(p => p + 1)}
             prevLabel="Newer"
             nextLabel="Older"
           />

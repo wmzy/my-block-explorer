@@ -110,7 +110,7 @@ describe('Services - Basic Structure Tests', () => {
 
     it('should have required methods', () => {
       const manager = new RpcManager();
-      
+
       expect(typeof manager.getClient).toBe('function');
       expect(typeof manager.getChainName).toBe('function');
       expect(typeof manager.testRpcConnection).toBe('function');
@@ -118,7 +118,7 @@ describe('Services - Basic Structure Tests', () => {
 
     it('should return correct chain names', () => {
       const manager = new RpcManager();
-      
+
       expect(manager.getChainName(1)).toBe('Ethereum');
       expect(manager.getChainName(137)).toBe('Polygon');
       expect(manager.getChainName(42161)).toBe('Arbitrum One');
@@ -129,7 +129,7 @@ describe('Services - Basic Structure Tests', () => {
 
     it('should handle method parameters correctly', () => {
       const manager = new RpcManager();
-      
+
       expect(() => manager.getClient(1)).not.toThrow();
       expect(() => manager.testRpcConnection(1)).not.toThrow();
     });
@@ -154,7 +154,7 @@ describe('Services - Basic Structure Tests', () => {
       expect(searchService).toBeDefined();
       const rpcManager = new RpcManager();
       const contractService = new ContractInteractionService();
-      
+
       expect(typeof blockService.getLatestBlock).toBe('function');
       expect(typeof transactionService.getTransactionByHash).toBe('function');
       expect(typeof searchService.search).toBe('function');

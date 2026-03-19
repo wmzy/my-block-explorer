@@ -1,17 +1,17 @@
-import { useState, useEffect } from "react";
-import { useParams, useNavigate } from "react-router-dom";
-import { getChainInfo, getChainName, getChainSymbol } from "../config/chains";
-import TopNavigation from "../components/TopNavigation";
-import { getTransactionByHash, type RpcTransaction } from "@/utils/blockRpcData";
-import { PageContainer, PageHeader, BackButton } from "@/components/ui/PageLayout";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/Card";
-import { InfoGrid, InfoItem } from "@/components/ui/InfoGrid";
-import { LoadingState } from "@/components/ui/LoadingState";
-import { ErrorState } from "@/components/ui/ErrorState";
-import { Badge } from "@/components/ui/Badge";
+import { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { getChainInfo, getChainName, getChainSymbol } from '../config/chains';
+import TopNavigation from '../components/TopNavigation';
+import { getTransactionByHash, type RpcTransaction } from '@/utils/blockRpcData';
+import { PageContainer, PageHeader, BackButton } from '@/components/ui/PageLayout';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
+import { InfoGrid, InfoItem } from '@/components/ui/InfoGrid';
+import { LoadingState } from '@/components/ui/LoadingState';
+import { ErrorState } from '@/components/ui/ErrorState';
+import { Badge } from '@/components/ui/Badge';
 
 const getTxTypeText = (type: number) => {
-  const types: Record<number, string> = { 0: "Legacy", 1: "EIP-2930", 2: "EIP-1559" };
+  const types: Record<number, string> = { 0: 'Legacy', 1: 'EIP-2930', 2: 'EIP-1559' };
   return types[type] ?? `Type ${type}`;
 };
 
@@ -22,12 +22,12 @@ export default function TransactionPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const currentChainId = parseInt(chainId || "1");
+  const currentChainId = parseInt(chainId || '1');
   const chainInfo = getChainInfo(currentChainId);
 
   useEffect(() => {
     if (!txHash || !chainId) {
-      setError("Invalid transaction hash or chain ID");
+      setError('Invalid transaction hash or chain ID');
       setLoading(false);
       return;
     }
@@ -38,14 +38,16 @@ export default function TransactionPage() {
         setError(null);
         const tx = await getTransactionByHash(currentChainId, txHash);
         setTxInfo(tx);
-      } catch (err) {
-        console.error("Failed to fetch transaction info:", err);
+      }
+      catch (err) {
+        console.error('Failed to fetch transaction info:', err);
         setError(
           err instanceof Error
             ? err.message
-            : "Failed to fetch transaction information"
+            : 'Failed to fetch transaction information',
         );
-      } finally {
+      }
+      finally {
         setLoading(false);
       }
     };
@@ -57,7 +59,8 @@ export default function TransactionPage() {
     try {
       const valueInEth = parseFloat(value) / Math.pow(10, 18);
       return `${valueInEth.toFixed(6)} ${symbol}`;
-    } catch {
+    }
+    catch {
       return `${value} wei`;
     }
   };
@@ -65,7 +68,8 @@ export default function TransactionPage() {
   const formatGas = (gas: string) => {
     try {
       return parseInt(gas).toLocaleString();
-    } catch {
+    }
+    catch {
       return gas;
     }
   };
@@ -110,10 +114,10 @@ export default function TransactionPage() {
                 <InfoItem label="Transaction Hash">{txInfo.hash}</InfoItem>
                 <InfoItem label="Status">
                   <Badge
-                    variant={txInfo.status === 1 ? "success" : "error"}
+                    variant={txInfo.status === 1 ? 'success' : 'error'}
                     size="sm"
                   >
-                    {txInfo.status === 1 ? "Success" : "Failed"}
+                    {txInfo.status === 1 ? 'Success' : 'Failed'}
                   </Badge>
                 </InfoItem>
                 <InfoItem label="Block Number">
@@ -132,21 +136,31 @@ export default function TransactionPage() {
                   <InfoItem label="Gas Used">{formatGas(txInfo.gasUsed)}</InfoItem>
                 )}
                 {txInfo.gasPrice && (
-                  <InfoItem label="Gas Price">{formatGas(txInfo.gasPrice)} wei</InfoItem>
+                  <InfoItem label="Gas Price">
+                    {formatGas(txInfo.gasPrice)}
+                    {' '}
+                    wei
+                  </InfoItem>
                 )}
                 {txInfo.maxFeePerGas && (
                   <InfoItem label="Max Fee Per Gas">
-                    {formatGas(txInfo.maxFeePerGas)} wei
+                    {formatGas(txInfo.maxFeePerGas)}
+                    {' '}
+                    wei
                   </InfoItem>
                 )}
                 {txInfo.maxPriorityFeePerGas && (
                   <InfoItem label="Max Priority Fee Per Gas">
-                    {formatGas(txInfo.maxPriorityFeePerGas)} wei
+                    {formatGas(txInfo.maxPriorityFeePerGas)}
+                    {' '}
+                    wei
                   </InfoItem>
                 )}
                 {txInfo.effectiveGasPrice && (
                   <InfoItem label="Effective Gas Price">
-                    {formatGas(txInfo.effectiveGasPrice)} wei
+                    {formatGas(txInfo.effectiveGasPrice)}
+                    {' '}
+                    wei
                   </InfoItem>
                 )}
                 <InfoItem label="Nonce">{txInfo.nonce}</InfoItem>

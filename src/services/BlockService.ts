@@ -1,7 +1,7 @@
-import { eq, and, sql, desc, count } from "drizzle-orm";
-import { createLogger } from "../server/logger";
+import { eq, and, sql, desc, count } from 'drizzle-orm';
+import { createLogger } from '../server/logger';
 
-const logger = createLogger("block-service");
+const logger = createLogger('block-service');
 
 /**
  * 区块数据类型
@@ -29,13 +29,13 @@ export type Block = {
 };
 
 type BlockServiceDeps = {
-  db: typeof import("../database/init").db;
-  blocks: typeof import("../database/init").blocks;
-  rpcManager: typeof import("./RpcManager").rpcManager;
-  blockCache: typeof import("../utils/cache").blockCache;
-  createRetryableRpcCall: typeof import("../utils/errorHandler").createRetryableRpcCall;
-  createRetryableDbCall: typeof import("../utils/errorHandler").createRetryableDbCall;
-  logError: typeof import("../utils/errorHandler").logError;
+  db: typeof import('../database/init').db;
+  blocks: typeof import('../database/init').blocks;
+  rpcManager: typeof import('./RpcManager').rpcManager;
+  blockCache: typeof import('../utils/cache').blockCache;
+  createRetryableRpcCall: typeof import('../utils/errorHandler').createRetryableRpcCall;
+  createRetryableDbCall: typeof import('../utils/errorHandler').createRetryableDbCall;
+  logError: typeof import('../utils/errorHandler').logError;
 };
 
 const createBlockService = (deps: BlockServiceDeps) => {
@@ -45,34 +45,34 @@ const createBlockService = (deps: BlockServiceDeps) => {
   const formatBlock = (dbBlock: Record<string, unknown>): Block => {
     const get = (camel: string, snake: string) => dbBlock[camel] ?? dbBlock[snake];
     return {
-      chainId: Number(get("chainId", "chain_id")),
-      number: BigInt((get("number", "number") as string | number) || 0),
-      hash: get("hash", "hash") as string,
-      parentHash: (get("parentHash", "parent_hash") as string) || undefined,
-      timestamp: get("timestamp", "timestamp")
-        ? new Date(get("timestamp", "timestamp") as string | number)
+      chainId: Number(get('chainId', 'chain_id')),
+      number: BigInt((get('number', 'number') as string | number) || 0),
+      hash: get('hash', 'hash') as string,
+      parentHash: (get('parentHash', 'parent_hash') as string) || undefined,
+      timestamp: get('timestamp', 'timestamp')
+        ? new Date(get('timestamp', 'timestamp') as string | number)
         : undefined,
-      miner: (get("miner", "miner") as string) || undefined,
-      gasLimit: get("gasLimit", "gas_limit")
-        ? BigInt(get("gasLimit", "gas_limit") as string)
+      miner: (get('miner', 'miner') as string) || undefined,
+      gasLimit: get('gasLimit', 'gas_limit')
+        ? BigInt(get('gasLimit', 'gas_limit') as string)
         : undefined,
-      gasUsed: get("gasUsed", "gas_used")
-        ? BigInt(get("gasUsed", "gas_used") as string)
+      gasUsed: get('gasUsed', 'gas_used')
+        ? BigInt(get('gasUsed', 'gas_used') as string)
         : undefined,
-      baseFeePerGas: get("baseFeePerGas", "base_fee_per_gas")
-        ? BigInt(get("baseFeePerGas", "base_fee_per_gas") as string)
+      baseFeePerGas: get('baseFeePerGas', 'base_fee_per_gas')
+        ? BigInt(get('baseFeePerGas', 'base_fee_per_gas') as string)
         : undefined,
-      transactionCount: (get("transactionCount", "transaction_count") as number) || undefined,
-      sizeBytes: (get("sizeBytes", "size_bytes") as number) || undefined,
-      difficulty: (get("difficulty", "difficulty") as string) || undefined,
-      totalDifficulty: (get("totalDifficulty", "total_difficulty") as string) || undefined,
-      extraData: (get("extraData", "extra_data") as string) || undefined,
-      logsBloom: (get("logsBloom", "logs_bloom") as string) || undefined,
-      stateRoot: (get("stateRoot", "state_root") as string) || undefined,
-      transactionsRoot: (get("transactionsRoot", "transactions_root") as string) || undefined,
-      receiptsRoot: (get("receiptsRoot", "receipts_root") as string) || undefined,
-      indexedAt: get("indexedAt", "indexed_at")
-        ? new Date(get("indexedAt", "indexed_at") as string | number)
+      transactionCount: (get('transactionCount', 'transaction_count') as number) || undefined,
+      sizeBytes: (get('sizeBytes', 'size_bytes') as number) || undefined,
+      difficulty: (get('difficulty', 'difficulty') as string) || undefined,
+      totalDifficulty: (get('totalDifficulty', 'total_difficulty') as string) || undefined,
+      extraData: (get('extraData', 'extra_data') as string) || undefined,
+      logsBloom: (get('logsBloom', 'logs_bloom') as string) || undefined,
+      stateRoot: (get('stateRoot', 'state_root') as string) || undefined,
+      transactionsRoot: (get('transactionsRoot', 'transactions_root') as string) || undefined,
+      receiptsRoot: (get('receiptsRoot', 'receipts_root') as string) || undefined,
+      indexedAt: get('indexedAt', 'indexed_at')
+        ? new Date(get('indexedAt', 'indexed_at') as string | number)
         : undefined,
     } as Block;
   };
@@ -84,7 +84,7 @@ const createBlockService = (deps: BlockServiceDeps) => {
 
     const values = {
       chainId,
-      number: chainBlock.number?.toString() ?? "0",
+      number: chainBlock.number?.toString() ?? '0',
       hash: chainBlock.hash as string,
       parentHash: (chainBlock.parentHash as string) ?? null,
       timestamp: blockTimestamp,
@@ -119,13 +119,13 @@ const createBlockService = (deps: BlockServiceDeps) => {
       .where(
         and(
           eq(blocks.chainId, chainId),
-          eq(blocks.number, typeof chainBlock.number === "bigint" ? chainBlock.number : BigInt(Number(chainBlock.number) || 0))
-        )
+          eq(blocks.number, typeof chainBlock.number === 'bigint' ? chainBlock.number : BigInt(Number(chainBlock.number) || 0)),
+        ),
       )
       .limit(1);
 
     const row = inserted[0];
-    if (!row) throw new Error("Failed to insert block");
+    if (!row) throw new Error('Failed to insert block');
     return formatBlock(row as Record<string, unknown>);
   };
 
@@ -165,7 +165,7 @@ const createBlockService = (deps: BlockServiceDeps) => {
 
         const fetchLatestBlock = retryableRpc(async () => {
           const client = await rpcManager.getClient(chainId);
-          return await client.getBlock({ blockTag: "latest" });
+          return await client.getBlock({ blockTag: 'latest' });
         }, chainId);
 
         const latestBlock = await fetchLatestBlock();
@@ -173,15 +173,16 @@ const createBlockService = (deps: BlockServiceDeps) => {
 
         blockCache.set(cacheKey, block, 15000);
         return block;
-      } catch (error) {
-        logErr(error, "BlockService.getLatestBlock", { chainId });
-        throw new Error("Failed to fetch latest block");
+      }
+      catch (error) {
+        logErr(error, 'BlockService.getLatestBlock', { chainId });
+        throw new Error('Failed to fetch latest block');
       }
     },
 
     getBlockByNumber: async (
       chainId: number,
-      blockNumber: bigint
+      blockNumber: bigint,
     ): Promise<Block | null> => {
       try {
         const cached = await db
@@ -190,8 +191,8 @@ const createBlockService = (deps: BlockServiceDeps) => {
           .where(
             and(
               eq(blocks.chainId, chainId),
-              eq(blocks.number, blockNumber)
-            )
+              eq(blocks.number, blockNumber),
+            ),
           )
           .limit(1);
 
@@ -207,15 +208,16 @@ const createBlockService = (deps: BlockServiceDeps) => {
 
         const block = await indexBlock(chainId, chainBlock as Record<string, unknown>);
         return block;
-      } catch (error) {
-        logErr(error, "BlockService.getBlockByNumber", { chainId, blockNumber: blockNumber.toString() });
+      }
+      catch (error) {
+        logErr(error, 'BlockService.getBlockByNumber', { chainId, blockNumber: blockNumber.toString() });
         return null;
       }
     },
 
     getBlockByHash: async (
       chainId: number,
-      blockHash: string
+      blockHash: string,
     ): Promise<Block | null> => {
       try {
         const cached = await db
@@ -224,8 +226,8 @@ const createBlockService = (deps: BlockServiceDeps) => {
           .where(
             and(
               eq(blocks.chainId, chainId),
-              eq(blocks.hash, blockHash as `0x${string}`)
-            )
+              eq(blocks.hash, blockHash as `0x${string}`),
+            ),
           )
           .limit(1);
 
@@ -241,8 +243,9 @@ const createBlockService = (deps: BlockServiceDeps) => {
 
         const block = await indexBlock(chainId, chainBlock as Record<string, unknown>);
         return block;
-      } catch (error) {
-        logErr(error, "BlockService.getBlockByHash", { chainId, blockHash });
+      }
+      catch (error) {
+        logErr(error, 'BlockService.getBlockByHash', { chainId, blockHash });
         return null;
       }
     },
@@ -250,7 +253,7 @@ const createBlockService = (deps: BlockServiceDeps) => {
     getBlocks: async (
       chainId: number,
       limit: number = 10,
-      offset: number = 0
+      offset: number = 0,
     ): Promise<{ blocks: Block[]; total: number }> => {
       try {
         const blockList = await db
@@ -267,11 +270,12 @@ const createBlockService = (deps: BlockServiceDeps) => {
           .where(eq(blocks.chainId, chainId));
 
         const total = countResult[0]?.value || 0;
-        const formattedBlocks = blockList.map((b) => formatBlock(b as Record<string, unknown>));
+        const formattedBlocks = blockList.map(b => formatBlock(b as Record<string, unknown>));
 
         return { blocks: formattedBlocks, total };
-      } catch (error) {
-        logErr(error, "BlockService.getBlocks", { chainId });
+      }
+      catch (error) {
+        logErr(error, 'BlockService.getBlocks', { chainId });
         return { blocks: [], total: 0 };
       }
     },
@@ -280,9 +284,10 @@ const createBlockService = (deps: BlockServiceDeps) => {
       try {
         const client = await rpcManager.getClient(chainId);
         return await client.getBlockNumber();
-      } catch (error) {
-        logger.error({ err: error }, "Failed to get latest block number");
-        throw new Error("Failed to get latest block number");
+      }
+      catch (error) {
+        logger.error({ err: error }, 'Failed to get latest block number');
+        throw new Error('Failed to get latest block number');
       }
     },
 
@@ -322,7 +327,7 @@ const createBlockService = (deps: BlockServiceDeps) => {
           : null;
 
         let avgBlockTime: number | null = null;
-        const blocksWithTimestamp = recentBlocks.filter((b) => b.timestamp != null);
+        const blocksWithTimestamp = recentBlocks.filter(b => b.timestamp != null);
         if (blocksWithTimestamp.length >= 2) {
           const timeDiffs: number[] = [];
           for (let i = 0; i < blocksWithTimestamp.length - 1; i++) {
@@ -332,16 +337,16 @@ const createBlockService = (deps: BlockServiceDeps) => {
             timeDiffs.push(diff);
           }
           if (timeDiffs.length > 0) {
-            avgBlockTime =
-              timeDiffs.reduce((a, b) => a + b, 0) / timeDiffs.length;
+            avgBlockTime
+              = timeDiffs.reduce((a, b) => a + b, 0) / timeDiffs.length;
           }
         }
 
-      let avgGasUsed: string | null = null;
-      const gasValues = recentBlocks
-        .map((block) => block.gasUsed)
-        .filter((gas): gas is bigint => gas != null && gas !== 0n)
-        .map((gas) => gas);
+        let avgGasUsed: string | null = null;
+        const gasValues = recentBlocks
+          .map(block => block.gasUsed)
+          .filter((gas): gas is bigint => gas != null && gas !== 0n)
+          .map(gas => gas);
 
         if (gasValues.length > 0) {
           const totalGas = gasValues.reduce((a, b) => a + b, 0n);
@@ -354,9 +359,10 @@ const createBlockService = (deps: BlockServiceDeps) => {
           avgBlockTime,
           avgGasUsed,
         };
-      } catch (error) {
-        logErr(error, "BlockService.getBlockStats", { chainId });
-        throw new Error("Failed to get block statistics");
+      }
+      catch (error) {
+        logErr(error, 'BlockService.getBlockStats', { chainId });
+        throw new Error('Failed to get block statistics');
       }
     },
 
@@ -364,7 +370,7 @@ const createBlockService = (deps: BlockServiceDeps) => {
       chainId: number,
       startBlock: bigint,
       endBlock: bigint,
-      callback?: (progress: number) => void
+      callback?: (progress: number) => void,
     ): Promise<void> => {
       const total = Number(endBlock - startBlock) + 1;
       let processed = 0;
@@ -377,8 +383,9 @@ const createBlockService = (deps: BlockServiceDeps) => {
           if (callback) {
             callback((processed / total) * 100);
           }
-        } catch (error) {
-          logger.warn({ err: error, blockNum: blockNum.toString() }, "Failed to index block");
+        }
+        catch (error) {
+          logger.warn({ err: error, blockNum: blockNum.toString() }, 'Failed to index block');
         }
       }
     },
@@ -390,14 +397,14 @@ const createBlockService = (deps: BlockServiceDeps) => {
 export type BlockService = ReturnType<typeof createBlockService>;
 export { createBlockService };
 
-import { db, blocks } from "../database/init";
-import { rpcManager } from "./RpcManager";
-import { blockCache } from "../utils/cache";
+import { db, blocks } from '../database/init';
+import { rpcManager } from './RpcManager';
+import { blockCache } from '../utils/cache';
 import {
   createRetryableRpcCall,
   createRetryableDbCall,
   logError,
-} from "../utils/errorHandler";
+} from '../utils/errorHandler';
 
 export const blockService = createBlockService({
   db,

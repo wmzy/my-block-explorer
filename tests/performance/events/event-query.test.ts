@@ -47,7 +47,7 @@ describe('Event Query Performance Tests', () => {
       contractAddress,
       eventParams,
       '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
-      'Transfer'
+      'Transfer',
     );
 
     // Insert test data
@@ -58,7 +58,8 @@ describe('Event Query Performance Tests', () => {
     // Cleanup test data
     try {
       await eventTableManager.dropEventTable(tableName);
-    } catch (error) {
+    }
+    catch (error) {
       // Ignore cleanup errors in test environment
     }
   });
@@ -98,7 +99,7 @@ describe('Event Query Performance Tests', () => {
           headers: {
             'Content-Type': 'application/json',
           },
-        }
+        },
       );
 
       const endTime = performance.now();
@@ -122,7 +123,7 @@ describe('Event Query Performance Tests', () => {
           headers: {
             'Content-Type': 'application/json',
           },
-        }
+        },
       );
 
       const endTime = performance.now();
@@ -142,7 +143,7 @@ describe('Event Query Performance Tests', () => {
           headers: {
             'Content-Type': 'application/json',
           },
-        }
+        },
       );
 
       const endTime = performance.now();
@@ -165,7 +166,7 @@ describe('Event Query Performance Tests', () => {
           headers: {
             'Content-Type': 'application/json',
           },
-        }
+        },
       );
 
       const endTime = performance.now();
@@ -187,7 +188,7 @@ describe('Event Query Performance Tests', () => {
           headers: {
             'Content-Type': 'application/json',
           },
-        }
+        },
       );
 
       expect(firstResponse.status).toBe(200);
@@ -203,7 +204,7 @@ describe('Event Query Performance Tests', () => {
             headers: {
               'Content-Type': 'application/json',
             },
-          }
+          },
         );
 
         const endTime = performance.now();
@@ -226,7 +227,7 @@ describe('Event Query Performance Tests', () => {
           headers: {
             'Content-Type': 'application/json',
           },
-        }
+        },
       );
 
       const endTime = performance.now();
@@ -246,7 +247,7 @@ describe('Event Query Performance Tests', () => {
           headers: {
             'Content-Type': 'application/json',
           },
-        }
+        },
       );
 
       const endTime = performance.now();
@@ -266,7 +267,7 @@ describe('Event Query Performance Tests', () => {
           headers: {
             'Content-Type': 'application/json',
           },
-        }
+        },
       );
 
       const endTime = performance.now();
@@ -290,8 +291,8 @@ describe('Event Query Performance Tests', () => {
             headers: {
               'Content-Type': 'application/json',
             },
-          }
-        )
+          },
+        ),
       );
 
       const responses = await Promise.all(promises);
@@ -299,7 +300,7 @@ describe('Event Query Performance Tests', () => {
       const totalTime = endTime - startTime;
 
       // All requests should succeed
-      responses.forEach(response => {
+      responses.forEach((response) => {
         expect(response.status).toBe(200);
       });
 
@@ -322,7 +323,7 @@ describe('Event Query Performance Tests', () => {
             headers: {
               'Content-Type': 'application/json',
             },
-          }
+          },
         );
       }
 
@@ -350,7 +351,7 @@ describe('Event Query Performance Tests', () => {
           headers: {
             'Content-Type': 'application/json',
           },
-        }
+        },
       );
 
       const endTime = performance.now();

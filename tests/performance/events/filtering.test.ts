@@ -50,7 +50,7 @@ describe('Event Filtering Performance Tests', () => {
       contractAddress,
       eventParams,
       '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
-      'Transfer'
+      'Transfer',
     );
 
     // Create additional indexes for filtering performance
@@ -69,7 +69,8 @@ describe('Event Filtering Performance Tests', () => {
     // Cleanup test data
     try {
       await eventTableManager.dropEventTable(tableName);
-    } catch (error) {
+    }
+    catch (error) {
       // Ignore cleanup errors in test environment
     }
   });
@@ -120,7 +121,7 @@ describe('Event Filtering Performance Tests', () => {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(searchRequest),
-        }
+        },
       );
 
       const endTime = performance.now();
@@ -154,7 +155,7 @@ describe('Event Filtering Performance Tests', () => {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(searchRequest),
-        }
+        },
       );
 
       const endTime = performance.now();
@@ -191,7 +192,7 @@ describe('Event Filtering Performance Tests', () => {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(searchRequest),
-        }
+        },
       );
 
       const endTime = performance.now();
@@ -243,7 +244,7 @@ describe('Event Filtering Performance Tests', () => {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(searchRequest),
-        }
+        },
       );
 
       const endTime = performance.now();
@@ -287,7 +288,7 @@ describe('Event Filtering Performance Tests', () => {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(searchRequest),
-        }
+        },
       );
 
       const endTime = performance.now();
@@ -323,7 +324,7 @@ describe('Event Filtering Performance Tests', () => {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(searchRequest),
-        }
+        },
       );
 
       const endTime = performance.now();
@@ -364,7 +365,7 @@ describe('Event Filtering Performance Tests', () => {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(searchRequest),
-        }
+        },
       );
 
       const endTime = performance.now();
@@ -403,7 +404,7 @@ describe('Event Filtering Performance Tests', () => {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(searchRequest),
-        }
+        },
       );
 
       const endTime = performance.now();
@@ -440,7 +441,7 @@ describe('Event Filtering Performance Tests', () => {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(searchRequest),
-        }
+        },
       );
       const firstEndTime = performance.now();
       const firstResponseTime = firstEndTime - firstStartTime;
@@ -457,7 +458,7 @@ describe('Event Filtering Performance Tests', () => {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(searchRequest),
-        }
+        },
       );
       const secondEndTime = performance.now();
       const secondResponseTime = secondEndTime - secondStartTime;
@@ -493,7 +494,7 @@ describe('Event Filtering Performance Tests', () => {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(searchRequest),
-        }
+        },
       );
 
       expect(firstResponse.status).toBe(200);
@@ -502,9 +503,9 @@ describe('Event Filtering Performance Tests', () => {
 
       // Simulate new event being indexed
       const newEvent = {
-        blockHash: '0x' + '1'.repeat(64),
+        blockHash: `0x${'1'.repeat(64)}`,
         logIndex: 0,
-        transactionHash: '0x' + '2'.repeat(64),
+        transactionHash: `0x${'2'.repeat(64)}`,
         transactionIndex: 0,
         blockNumber: BigInt(18010000),
         blockTimestamp: new Date(),
@@ -527,7 +528,7 @@ describe('Event Filtering Performance Tests', () => {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(searchRequest),
-        }
+        },
       );
 
       expect(secondResponse.status).toBe(200);
@@ -562,7 +563,7 @@ describe('Event Filtering Performance Tests', () => {
               'Content-Type': 'application/json',
             },
             body: JSON.stringify(searchRequest),
-          }
+          },
         );
       });
 
@@ -571,7 +572,7 @@ describe('Event Filtering Performance Tests', () => {
       const totalTime = endTime - startTime;
 
       // All requests should succeed
-      responses.forEach(response => {
+      responses.forEach((response) => {
         expect(response.status).toBe(200);
       });
 
@@ -609,7 +610,7 @@ describe('Event Filtering Performance Tests', () => {
               'Content-Type': 'application/json',
             },
             body: JSON.stringify(searchRequest),
-          }
+          },
         );
       }
 
@@ -651,7 +652,7 @@ describe('Event Filtering Performance Tests', () => {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(searchRequest),
-        }
+        },
       );
 
       const endTime = performance.now();
@@ -684,7 +685,7 @@ describe('Event Filtering Performance Tests', () => {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(searchRequest),
-        }
+        },
       );
 
       expect(response.status).toBe(200);

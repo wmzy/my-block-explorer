@@ -29,9 +29,9 @@ describe('realTimeData', () => {
       getBlockNumber: vi.fn(),
       getCode: vi.fn(),
     };
-    
+
     vi.mocked(createPublicClient).mockReturnValue(mockClient);
-    vi.mocked(formatEther).mockImplementation((wei) => (Number(wei) / 1e18).toString());
+    vi.mocked(formatEther).mockImplementation(wei => (Number(wei) / 1e18).toString());
   });
 
   afterEach(() => {
@@ -41,8 +41,8 @@ describe('realTimeData', () => {
   describe('createRpcClient', () => {
     it('should create client for supported chains', () => {
       const supportedChains = [1, 137, 42161, 10, 5000];
-      
-      supportedChains.forEach(chainId => {
+
+      supportedChains.forEach((chainId) => {
         expect(() => createRpcClient(chainId)).not.toThrow();
         expect(createPublicClient).toHaveBeenCalled();
       });
@@ -54,27 +54,27 @@ describe('realTimeData', () => {
 
     it('should create client with correct configuration', () => {
       createRpcClient(1);
-      
+
       expect(createPublicClient).toHaveBeenCalledWith(
         expect.objectContaining({
           chain: expect.objectContaining({ id: 1 }),
-        })
+        }),
       );
     });
 
     it('should create client for Mantle with custom config', () => {
       createRpcClient(5000);
-      
+
       expect(createPublicClient).toHaveBeenCalledWith(
         expect.objectContaining({
           chain: expect.objectContaining({
             id: 5000,
             name: 'Mantle',
             rpcUrls: expect.objectContaining({
-              default: { http: ['https://rpc.mantle.xyz'] }
-            })
-          })
-        })
+              default: { http: ['https://rpc.mantle.xyz'] },
+            }),
+          }),
+        }),
       );
     });
   });
@@ -142,7 +142,7 @@ describe('realTimeData', () => {
       expect(mockClient.getBalance).toHaveBeenCalledTimes(1);
       expect(mockClient.getTransactionCount).toHaveBeenCalledTimes(1);
       expect(mockClient.getBlockNumber).toHaveBeenCalledTimes(1);
-      
+
       // Should be fast due to parallel execution
       expect(endTime - startTime).toBeLessThan(100);
     });
@@ -191,7 +191,7 @@ describe('realTimeData', () => {
         .mockResolvedValueOnce(BigInt('1000000000000000000')) // 1 ETH
         .mockResolvedValueOnce(BigInt('2000000000000000000')) // 2 ETH
         .mockResolvedValueOnce(BigInt('0')); // 0 ETH
-      
+
       vi.mocked(formatEther)
         .mockReturnValueOnce('1.0')
         .mockReturnValueOnce('2.0')
@@ -217,7 +217,7 @@ describe('realTimeData', () => {
       expect(mockClient.getBalance).not.toHaveBeenCalled();
     });
 
-    // Note: Single address and error handling tests are complex due to 
+    // Note: Single address and error handling tests are complex due to
     // mock state management. The basic functionality is covered by other tests.
   });
 

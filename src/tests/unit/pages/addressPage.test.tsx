@@ -1,26 +1,29 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
-import "@testing-library/jest-dom";
-import AddressPage from "../../../pages/AddressPage";
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import '@testing-library/jest-dom';
+import AddressPage from '../../../pages/AddressPage';
 
-vi.mock("../../../components/TopNavigation", () => ({
+vi.mock('../../../components/TopNavigation', () => ({
   default: ({ currentChainId }: { currentChainId: number }) => (
-    <div data-testid="top-navigation">TopNav chain={currentChainId}</div>
+    <div data-testid="top-navigation">
+      TopNav chain=
+      {currentChainId}
+    </div>
   ),
 }));
 
-vi.mock("../../../config/chains", () => ({
+vi.mock('../../../config/chains', () => ({
   getChainInfo: (chainId: number) => {
     if (chainId === 1)
-      return { id: 1, name: "Ethereum", nativeCurrency: { symbol: "ETH" } };
+      return { id: 1, name: 'Ethereum', nativeCurrency: { symbol: 'ETH' } };
     return null;
   },
-  getChainName: (chainId: number) => (chainId === 1 ? "Ethereum" : "Unknown"),
-  getChainSymbol: (chainId: number) => (chainId === 1 ? "ETH" : "UNKNOWN"),
+  getChainName: (chainId: number) => (chainId === 1 ? 'Ethereum' : 'Unknown'),
+  getChainSymbol: (chainId: number) => (chainId === 1 ? 'ETH' : 'UNKNOWN'),
 }));
 
-vi.mock("../../../hooks/useAddressData", () => ({
+vi.mock('../../../hooks/useAddressData', () => ({
   useAddressData: () => ({
     persistent: {
       isContract: false,
@@ -29,7 +32,7 @@ vi.mock("../../../hooks/useAddressData", () => ({
       sourceCodeAvailable: false,
     },
     realTime: {
-      balance: "1.5",
+      balance: '1.5',
       transactionCount: 42,
       latestBlock: 18000000,
     },
@@ -38,30 +41,30 @@ vi.mock("../../../hooks/useAddressData", () => ({
   }),
 }));
 
-vi.mock("@/utils/format", () => ({
-  formatRelativeTime: () => "3 min ago",
+vi.mock('@/utils/format', () => ({
+  formatRelativeTime: () => '3 min ago',
 }));
 
-const testAddress = "0x1234567890abcdef1234567890abcdef12345678";
+const testAddress = '0x1234567890abcdef1234567890abcdef12345678';
 
 const mockTransactions = [
   {
-    hash: "0xabc123def456abc123def456abc123def456abc123def456abc123def456abc1",
-    blockNumber: "18000001",
+    hash: '0xabc123def456abc123def456abc123def456abc123def456abc123def456abc1',
+    blockNumber: '18000001',
     fromAddress: testAddress,
-    toAddress: "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd",
-    value: "1000000000000000000",
+    toAddress: '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd',
+    value: '1000000000000000000',
     status: 1,
-    timestamp: "2024-01-01T00:00:00Z",
+    timestamp: '2024-01-01T00:00:00Z',
   },
   {
-    hash: "0xdef789abc123def789abc123def789abc123def789abc123def789abc123def7",
-    blockNumber: "18000000",
-    fromAddress: "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd",
+    hash: '0xdef789abc123def789abc123def789abc123def789abc123def789abc123def7',
+    blockNumber: '18000000',
+    fromAddress: '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd',
     toAddress: testAddress,
-    value: "500000000000000000",
+    value: '500000000000000000',
     status: 1,
-    timestamp: "2024-01-01T00:00:00Z",
+    timestamp: '2024-01-01T00:00:00Z',
   },
 ];
 
@@ -74,10 +77,10 @@ const renderPage = (path = `/chain/1/address/${testAddress}`) =>
           element={<AddressPage />}
         />
       </Routes>
-    </MemoryRouter>
+    </MemoryRouter>,
   );
 
-describe("AddressPage", () => {
+describe('AddressPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     (global.fetch as any).mockResolvedValue({
@@ -90,55 +93,55 @@ describe("AddressPage", () => {
     });
   });
 
-  it("renders TopNavigation", () => {
+  it('renders TopNavigation', () => {
     renderPage();
-    expect(screen.getByTestId("top-navigation")).toBeInTheDocument();
+    expect(screen.getByTestId('top-navigation')).toBeInTheDocument();
   });
 
-  it("displays address details header", () => {
+  it('displays address details header', () => {
     renderPage();
-    expect(screen.getByText("Address Details")).toBeInTheDocument();
+    expect(screen.getByText('Address Details')).toBeInTheDocument();
     expect(screen.getByText(/Ethereum/)).toBeInTheDocument();
   });
 
-  it("shows address overview with balance", async () => {
+  it('shows address overview with balance', async () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText("Overview")).toBeInTheDocument();
+      expect(screen.getByText('Overview')).toBeInTheDocument();
       expect(screen.getByText(testAddress)).toBeInTheDocument();
       expect(screen.getByText(/1\.5 ETH/)).toBeInTheDocument();
     });
   });
 
-  it("shows transaction count from real-time data", async () => {
+  it('shows transaction count from real-time data', async () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText("42")).toBeInTheDocument();
+      expect(screen.getByText('42')).toBeInTheDocument();
     });
   });
 
-  it("renders Recent Transactions section", async () => {
+  it('renders Recent Transactions section', async () => {
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText("Recent Transactions")).toBeInTheDocument();
+      expect(screen.getByText('Recent Transactions')).toBeInTheDocument();
     });
   });
 
-  it("displays transaction direction badges", async () => {
+  it('displays transaction direction badges', async () => {
     renderPage();
 
     await waitFor(() => {
-      const outBadges = screen.getAllByText("OUT");
-      const inBadges = screen.getAllByText("IN");
+      const outBadges = screen.getAllByText('OUT');
+      const inBadges = screen.getAllByText('IN');
       expect(outBadges.length).toBeGreaterThan(0);
       expect(inBadges.length).toBeGreaterThan(0);
     });
   });
 
-  it("shows unsupported chain error for invalid chain", () => {
+  it('shows unsupported chain error for invalid chain', () => {
     render(
       <MemoryRouter initialEntries={[`/chain/999/address/${testAddress}`]}>
         <Routes>
@@ -147,7 +150,7 @@ describe("AddressPage", () => {
             element={<AddressPage />}
           />
         </Routes>
-      </MemoryRouter>
+      </MemoryRouter>,
     );
 
     expect(screen.getByText(/Unsupported chain ID/)).toBeInTheDocument();

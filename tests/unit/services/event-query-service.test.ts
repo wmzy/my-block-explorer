@@ -386,7 +386,7 @@ describe('EventQueryService Filtering Logic', () => {
 
     it('should validate and sanitize filter inputs', () => {
       const maliciousFilters: EventFilters = {
-        eventName: "'; DROP TABLE events_test; --",
+        eventName: '\'; DROP TABLE events_test; --',
       };
 
       expect(() => {

@@ -221,7 +221,8 @@ test.describe('Contract Events Page E2E', () => {
           contentType: 'application/json',
           body: JSON.stringify({ error: 'Internal server error' }),
         });
-      } else {
+      }
+      else {
         await route.fulfill({
           status: 200,
           contentType: 'application/json',

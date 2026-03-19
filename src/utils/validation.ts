@@ -62,24 +62,24 @@ export function validatePaginationParams(page?: string | number, limit?: string 
  */
 export function detectSearchType(input: string): 'address' | 'hash' | 'block' | 'unknown' {
   if (!input || typeof input !== 'string') return 'unknown';
-  
+
   const trimmed = input.trim();
-  
+
   // 地址检测
   if (isValidAddress(trimmed)) {
     return 'address';
   }
-  
+
   // 哈希检测 (交易或区块哈希)
   if (isValidTransactionHash(trimmed) || isValidBlockHash(trimmed)) {
     return 'hash';
   }
-  
+
   // 区块号检测
   if (/^\d+$/.test(trimmed) && isValidBlockNumber(trimmed)) {
     return 'block';
   }
-  
+
   return 'unknown';
 }
 
@@ -88,17 +88,18 @@ export function detectSearchType(input: string): 'address' | 'hash' | 'block' | 
  */
 export function sanitizeInput(input: string): string {
   if (!input || typeof input !== 'string') return '';
-  
+
   // 移除首尾空格并转换为小写（除了需要保持大小写的情况）
   let cleaned = input.trim();
-  
+
   // 对于地址和哈希，确保以0x开头
   if (/^[a-fA-F0-9]{40}$/.test(cleaned)) {
     cleaned = `0x${cleaned}`;
-  } else if (/^[a-fA-F0-9]{64}$/.test(cleaned)) {
+  }
+  else if (/^[a-fA-F0-9]{64}$/.test(cleaned)) {
     cleaned = `0x${cleaned}`;
   }
-  
+
   return cleaned;
 }
 
@@ -107,22 +108,22 @@ export function sanitizeInput(input: string): string {
  */
 export function validateTimeRange(from?: string, to?: string) {
   if (!from && !to) return { from: undefined, to: undefined };
-  
+
   const fromDate = from ? new Date(from) : undefined;
   const toDate = to ? new Date(to) : undefined;
-  
+
   if (from && isNaN(fromDate!.getTime())) {
     throw new Error('Invalid from date format');
   }
-  
+
   if (to && isNaN(toDate!.getTime())) {
     throw new Error('Invalid to date format');
   }
-  
+
   if (fromDate && toDate && fromDate > toDate) {
     throw new Error('From date must be before to date');
   }
-  
+
   return { from: fromDate, to: toDate };
 }
 
@@ -131,21 +132,21 @@ export function validateTimeRange(from?: string, to?: string) {
  */
 export function validateBlockRange(fromBlock?: string | number, toBlock?: string | number) {
   if (!fromBlock && !toBlock) return { fromBlock: undefined, toBlock: undefined };
-  
+
   const from = fromBlock ? (typeof fromBlock === 'string' ? parseInt(fromBlock, 10) : fromBlock) : undefined;
   const to = toBlock ? (typeof toBlock === 'string' ? parseInt(toBlock, 10) : toBlock) : undefined;
-  
+
   if (fromBlock && (isNaN(from!) || from! < 0)) {
     throw new Error('Invalid from block number');
   }
-  
+
   if (toBlock && (isNaN(to!) || to! < 0)) {
     throw new Error('Invalid to block number');
   }
-  
+
   if (from && to && from > to) {
     throw new Error('From block must be before to block');
   }
-  
+
   return { fromBlock: from, toBlock: to };
 }

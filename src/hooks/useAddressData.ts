@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { getRealTimeAddressData, getContractCode } from "@/utils/realTimeData";
+import { useState, useEffect } from 'react';
+import { getRealTimeAddressData, getContractCode } from '@/utils/realTimeData';
 
 export type PersistentAddressData = {
   isContract: boolean;
@@ -7,7 +7,7 @@ export type PersistentAddressData = {
   contractCreationBlock?: number;
   contractCreator?: string;
   contractName?: string;
-  verificationStatus?: "verified" | "unverified" | "partial";
+  verificationStatus?: 'verified' | 'unverified' | 'partial';
   sourceCodeAvailable?: boolean;
   compilerVersion?: string;
   isProxy?: boolean;
@@ -43,7 +43,7 @@ export type AddressData = {
  */
 export function useAddressData(chainId: number, address: string): AddressData {
   const [persistent, setPersistent] = useState<PersistentAddressData | null>(
-    null
+    null,
   );
   const [realTime, setRealTime] = useState<RealTimeAddressData | null>(null);
   const [loading, setLoading] = useState({
@@ -73,18 +73,19 @@ export function useAddressData(chainId: number, address: string): AddressData {
         if (cancelled) return;
         try {
           const code = await getContractCode(chainId, address);
-          const isContract = Boolean(code && code !== "0x" && code.length > 2);
+          const isContract = Boolean(code && code !== '0x' && code.length > 2);
           if (!cancelled) setPersistent({ isContract });
-        } catch {
+        }
+        catch {
           if (!cancelled)
-            setError((prev) => ({
+            setError(prev => ({
               ...prev,
-              persistent: err?.message || "Failed to fetch persistent data",
+              persistent: err?.message || 'Failed to fetch persistent data',
             }));
         }
       })
       .finally(() => {
-        if (!cancelled) setLoading((prev) => ({ ...prev, persistent: false }));
+        if (!cancelled) setLoading(prev => ({ ...prev, persistent: false }));
       });
 
     fetchRealTimeData(chainId, address)
@@ -93,13 +94,13 @@ export function useAddressData(chainId: number, address: string): AddressData {
       })
       .catch((err) => {
         if (!cancelled)
-          setError((prev) => ({
+          setError(prev => ({
             ...prev,
-            realTime: err?.message || "Failed to fetch real-time data",
+            realTime: err?.message || 'Failed to fetch real-time data',
           }));
       })
       .finally(() => {
-        if (!cancelled) setLoading((prev) => ({ ...prev, realTime: false }));
+        if (!cancelled) setLoading(prev => ({ ...prev, realTime: false }));
       });
 
     return () => {
@@ -119,7 +120,7 @@ const PERSISTENT_TIMEOUT_MS = 15_000;
 
 async function fetchPersistentData(
   chainId: number,
-  address: string
+  address: string,
 ): Promise<PersistentAddressData> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), PERSISTENT_TIMEOUT_MS);
@@ -127,7 +128,7 @@ async function fetchPersistentData(
   try {
     const response = await fetch(
       `/api/chains/${chainId}/addresses/${address}/persistent`,
-      { signal: controller.signal }
+      { signal: controller.signal },
     );
 
     if (!response.ok) {
@@ -141,12 +142,14 @@ async function fetchPersistentData(
     }
 
     return data;
-  } catch (err) {
-    if (err instanceof DOMException && err.name === "AbortError") {
-      throw new Error("Request timed out");
+  }
+  catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      throw new Error('Request timed out');
     }
     throw err;
-  } finally {
+  }
+  finally {
     clearTimeout(timer);
   }
 }
@@ -156,12 +159,13 @@ async function fetchPersistentData(
  */
 async function fetchRealTimeData(
   chainId: number,
-  address: string
+  address: string,
 ): Promise<RealTimeAddressData> {
   try {
     return await getRealTimeAddressData(chainId, address);
-  } catch (error) {
-    console.error("Failed to fetch real-time data:", error);
+  }
+  catch (error) {
+    console.error('Failed to fetch real-time data:', error);
     throw error;
   }
 }

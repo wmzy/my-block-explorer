@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect } from 'react';
 
 // 简化的 API Hook
 export function useApi<T>(url: string) {
@@ -19,9 +19,11 @@ export function useApi<T>(url: string) {
 
         const result = await response.json();
         setData(result);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Unknown error");
-      } finally {
+      }
+      catch (err) {
+        setError(err instanceof Error ? err.message : 'Unknown error');
+      }
+      finally {
         setLoading(false);
       }
     };
@@ -33,7 +35,7 @@ export function useApi<T>(url: string) {
 }
 
 // API 基础 URL
-const API_BASE = "/api";
+const API_BASE = '/api';
 
 export const apiEndpoints = {
   health: `${API_BASE}/health`,

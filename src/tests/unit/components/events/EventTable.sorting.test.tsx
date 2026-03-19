@@ -28,8 +28,8 @@ vi.mock('../../../utils/sorting-optimization', () => ({
         executionTime: 5,
         dataSize: data.length,
         memoryUsage: data.length * 100,
-        cacheHit: false
-      }
+        cacheHit: false,
+      },
     };
   }),
   sortingPerformanceMonitor: {
@@ -39,14 +39,14 @@ vi.mock('../../../utils/sorting-optimization', () => ({
       avgDataSize: 500,
       avgMemoryUsage: 50000,
       cacheHitRate: 0.3,
-      totalOperations: 10
+      totalOperations: 10,
     }),
     getMetricsByAlgorithm: vi.fn().mockReturnValue({
       standard: { count: 7, avgExecutionTime: 6, avgDataSize: 300 },
-      optimized: { count: 3, avgExecutionTime: 12, avgDataSize: 1000 }
+      optimized: { count: 3, avgExecutionTime: 12, avgDataSize: 1000 },
     }),
-    clear: vi.fn()
-  }
+    clear: vi.fn(),
+  },
 }));
 
 // Mock fetch globally
@@ -74,8 +74,8 @@ describe('EventTable Sorting', () => {
         events: mockEvents.slice(0, 10),
         total: mockEvents.length,
         hasMore: true,
-        nextCursor: mockEvents[9].blockTimestamp
-      })
+        nextCursor: mockEvents[9].blockTimestamp,
+      }),
     });
   });
 
@@ -91,7 +91,7 @@ describe('EventTable Sorting', () => {
           contractAddress={mockContractAddress}
           initialEvents={mockEvents}
           enableClientSideSort={true}
-        />
+        />,
       );
 
       expect(screen.getByText('排序:')).toBeInTheDocument();
@@ -106,7 +106,7 @@ describe('EventTable Sorting', () => {
           contractAddress={mockContractAddress}
           initialEvents={mockEvents}
           enableClientSideSort={true}
-        />
+        />,
       );
 
       const sortSelect = screen.getByDisplayValue('时间');
@@ -124,7 +124,7 @@ describe('EventTable Sorting', () => {
           contractAddress={mockContractAddress}
           initialEvents={mockEvents}
           enableClientSideSort={true}
-        />
+        />,
       );
 
       const directionButton = screen.getByText('↑ 升序');
@@ -142,7 +142,7 @@ describe('EventTable Sorting', () => {
           contractAddress={mockContractAddress}
           initialEvents={mockEvents}
           enableClientSideSort={true}
-        />
+        />,
       );
 
       const blockNumberHeader = screen.getByText('区块号');
@@ -164,7 +164,7 @@ describe('EventTable Sorting', () => {
           initialEvents={mockEvents}
           enableClientSideSort={true}
           enableMultiSort={true}
-        />
+        />,
       );
 
       expect(screen.getByText('+ 添加到多列排序')).toBeInTheDocument();
@@ -179,7 +179,7 @@ describe('EventTable Sorting', () => {
           initialEvents={mockEvents}
           enableClientSideSort={true}
           enableMultiSort={true}
-        />
+        />,
       );
 
       const addToMultiSortButton = screen.getByText('+ 添加到多列排序');
@@ -201,7 +201,7 @@ describe('EventTable Sorting', () => {
           initialEvents={mockEvents}
           enableClientSideSort={true}
           enableMultiSort={true}
-        />
+        />,
       );
 
       // Add to multi-sort first
@@ -235,7 +235,7 @@ describe('EventTable Sorting', () => {
           initialEvents={mockEvents.slice(0, 10)}
           enableClientSideSort={true}
           clientSideSortThreshold={100}
-        />
+        />,
       );
 
       // Should show performance info for client-side sorting
@@ -250,7 +250,7 @@ describe('EventTable Sorting', () => {
           initialEvents={mockEvents}
           enableClientSideSort={true}
           clientSideSortThreshold={10} // Low threshold to force server-side
-        />
+        />,
       );
 
       // Should not show performance info for server-side sorting
@@ -264,13 +264,13 @@ describe('EventTable Sorting', () => {
           contractAddress={mockContractAddress}
           initialEvents={[]} // Empty to trigger API call
           enableClientSideSort={false}
-        />
+        />,
       );
 
       await waitFor(() => {
         expect(global.fetch).toHaveBeenCalledWith(
           expect.stringContaining('/api/chains/1/contracts/0x1234567890123456789012345678901234567890/events'),
-          expect.any(Object)
+          expect.any(Object),
         );
       });
     });
@@ -284,7 +284,7 @@ describe('EventTable Sorting', () => {
           contractAddress={mockContractAddress}
           initialEvents={mockEvents}
           enableClientSideSort={true}
-        />
+        />,
       );
 
       expect(screen.getByText(/性能:/)).toBeInTheDocument();
@@ -297,7 +297,7 @@ describe('EventTable Sorting', () => {
           contractAddress={mockContractAddress}
           initialEvents={mockEvents}
           enableClientSideSort={true}
-        />
+        />,
       );
 
       const performanceButton = screen.getByText(/性能:/);
@@ -321,7 +321,7 @@ describe('EventTable Sorting', () => {
           contractAddress={mockContractAddress}
           initialEvents={mockEvents}
           enableClientSideSort={true}
-        />
+        />,
       );
 
       // Show performance metrics
@@ -348,7 +348,7 @@ describe('EventTable Sorting', () => {
           contractAddress={mockContractAddress}
           initialEvents={mockEvents}
           enableClientSideSort={true}
-        />
+        />,
       );
 
       const performanceButton = screen.getByText(/性能:/);
@@ -379,11 +379,11 @@ describe('EventTable Sorting', () => {
           initialEvents={mockEvents}
           availableSortOptions={customSortOptions}
           enableClientSideSort={true}
-        />
+        />,
       );
 
       // Check that all sort options are available
-      customSortOptions.forEach(option => {
+      customSortOptions.forEach((option) => {
         expect(screen.getByText(option.label)).toBeInTheDocument();
       });
     });
@@ -401,7 +401,7 @@ describe('EventTable Sorting', () => {
           initialEvents={mockEvents}
           availableSortOptions={customSortOptions}
           enableClientSideSort={true}
-        />
+        />,
       );
 
       // Switch to event name (should default to asc)
@@ -431,7 +431,7 @@ describe('EventTable Sorting', () => {
           contractAddress={mockContractAddress}
           initialEvents={smallDataset}
           enableClientSideSort={true}
-        />
+        />,
       );
 
       expect(screen.getByText(/性能:/)).toBeInTheDocument();
@@ -451,7 +451,7 @@ describe('EventTable Sorting', () => {
           initialEvents={mediumDataset}
           enableClientSideSort={true}
           clientSideSortThreshold={2000}
-        />
+        />,
       );
 
       expect(screen.getByText(/性能:/)).toBeInTheDocument();
@@ -469,8 +469,8 @@ describe('EventTable Sorting', () => {
           recordMetrics: vi.fn(),
           getAverageMetrics: vi.fn().mockReturnValue({}),
           getMetricsByAlgorithm: vi.fn().mockReturnValue({}),
-          clear: vi.fn()
-        }
+          clear: vi.fn(),
+        },
       }));
 
       render(
@@ -479,7 +479,7 @@ describe('EventTable Sorting', () => {
           contractAddress={mockContractAddress}
           initialEvents={mockEvents}
           enableClientSideSort={true}
-        />
+        />,
       );
 
       // Component should still render without crashing

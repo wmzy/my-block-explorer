@@ -22,9 +22,9 @@ export function formatGasPrice(value: bigint | string): string {
  * 格式化代币数量
  */
 export function formatTokenAmount(
-  value: bigint | string, 
-  decimals: number = 18, 
-  displayDecimals = 4
+  value: bigint | string,
+  decimals: number = 18,
+  displayDecimals = 4,
 ): string {
   const formatted = formatUnits(BigInt(value), decimals);
   return parseFloat(formatted).toFixed(displayDecimals);
@@ -99,6 +99,6 @@ export function formatRelativeTime(timestamp: Date | string | number): string {
   if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)} min ago`;
   if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)} hours ago`;
   if (diffInSeconds < 2592000) return `${Math.floor(diffInSeconds / 86400)} days ago`;
-  
+
   return date.toLocaleDateString();
 }

@@ -115,11 +115,11 @@ describe('EventValidationService', () => {
           '0xinvalid' as any, // Invalid hex
           '0x123' as any, // Too short
           'toolong' as any, // Not hex
-          '0x' + '1'.repeat(66) as any, // Too long
-          '0x' + '2'.repeat(66) as any, // Too many topics
-          '0x' + '3'.repeat(66) as `0x${string}`,
-          '0x' + '4'.repeat(66) as `0x${string}`,
-          '0x' + '5'.repeat(66) as `0x${string}`,
+          `0x${'1'.repeat(66)}` as any, // Too long
+          `0x${'2'.repeat(66)}` as any, // Too many topics
+          `0x${'3'.repeat(66)}`,
+          `0x${'4'.repeat(66)}`,
+          `0x${'5'.repeat(66)}`,
         ],
       };
 
@@ -474,8 +474,8 @@ describe('EventValidationService', () => {
         {
           name: 'longBytes',
           type: 'bytes32',
-          value: '0x' + '1'.repeat(70), // Too long
-          rawValue: '0x' + '1'.repeat(70),
+          value: `0x${'1'.repeat(70)}`, // Too long
+          rawValue: `0x${'1'.repeat(70)}`,
           indexed: false,
         },
       ];
@@ -554,7 +554,7 @@ describe('EventValidationService', () => {
         '0x123',
         'invalid',
         12345,
-        '0x' + '1'.repeat(65), // Wrong length
+        `0x${'1'.repeat(65)}`, // Wrong length
       ];
 
       for (const hash of invalidHashes) {

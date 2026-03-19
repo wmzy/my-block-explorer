@@ -1,14 +1,14 @@
-import { css, cx } from "@linaria/core";
-import { Badge as HazeBadge, Tag as HazeTag } from "haze-ui";
-import type { ReactNode, HTMLAttributes } from "react";
+import { css, cx } from '@linaria/core';
+import { Badge as HazeBadge, Tag as HazeTag } from 'haze-ui';
+import type { ReactNode, HTMLAttributes } from 'react';
 
 const variantMap = {
-  default: "default",
-  success: "success",
-  warning: "warning",
-  error: "danger",
-  info: "info",
-  purple: "info",
+  default: 'default',
+  success: 'success',
+  warning: 'warning',
+  error: 'danger',
+  info: 'info',
+  purple: 'info',
 } as const;
 
 const clickableStyle = css`
@@ -17,14 +17,14 @@ const clickableStyle = css`
 
 export type BadgeProps = {
   variant?: keyof typeof variantMap;
-  size?: "sm" | "md";
+  size?: 'sm' | 'md';
   children: ReactNode;
   className?: string;
-} & Pick<HTMLAttributes<HTMLElement>, "onClick">;
+} & Pick<HTMLAttributes<HTMLElement>, 'onClick'>;
 
 export function Badge({
-  variant = "default",
-  size = "md",
+  variant = 'default',
+  size = 'md',
   children,
   className,
   onClick,
@@ -61,10 +61,10 @@ const statusColors = {
 };
 
 const statusTagVariant = {
-  online: "success",
-  offline: "danger",
-  pending: "warning",
-  unknown: "default",
+  online: 'success',
+  offline: 'danger',
+  pending: 'warning',
+  unknown: 'default',
 } as const;
 
 export type StatusBadgeProps = {

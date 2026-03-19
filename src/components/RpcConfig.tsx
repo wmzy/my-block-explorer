@@ -1,9 +1,9 @@
-import React, { useState, useEffect } from "react";
-import { css } from "@linaria/core";
-import { Dialog, type DialogProps } from "haze-ui";
-import { useControl, type Control } from "react-use-control";
-import { getChainName } from "../config/chains";
-import { getRpcPresets, type RpcPreset } from "../config/rpcPresets";
+import React, { useState, useEffect } from 'react';
+import { css } from '@linaria/core';
+import { Dialog, type DialogProps } from 'haze-ui';
+import { useControl, type Control } from 'react-use-control';
+import { getChainName } from '../config/chains';
+import { getRpcPresets, type RpcPreset } from '../config/rpcPresets';
 import {
   getRpcConfigs,
   saveRpcConfig,
@@ -11,7 +11,7 @@ import {
   testRpcConnection,
   type RpcConfig,
   type RpcTestResult,
-} from "../utils/rpcConfigService";
+} from '../utils/rpcConfigService';
 
 const dialogContent = css`
   width: 90%;
@@ -263,9 +263,9 @@ export default function RpcConfig({
 
   const [currentConfig, setCurrentConfig] = useState<RpcConfig | null>(null);
   const [showCustomForm, setShowCustomForm] = useState(false);
-  const [customName, setCustomName] = useState("");
-  const [customUrl, setCustomUrl] = useState("");
-  const [customMaxEventRange, setCustomMaxEventRange] = useState("");
+  const [customName, setCustomName] = useState('');
+  const [customUrl, setCustomUrl] = useState('');
+  const [customMaxEventRange, setCustomMaxEventRange] = useState('');
   const [loading, setLoading] = useState(false);
   const [testResult, setTestResult] = useState<RpcTestResult | null>(null);
 
@@ -281,15 +281,16 @@ export default function RpcConfig({
   const loadCurrentConfig = async () => {
     try {
       const configs = await getRpcConfigs();
-      const chainConfig = configs.find((c) => c.chainId === chainId);
+      const chainConfig = configs.find(c => c.chainId === chainId);
       setCurrentConfig(chainConfig || null);
-    } catch (error) {
-      console.error("Failed to load current config:", error);
+    }
+    catch (error) {
+      console.error('Failed to load current config:', error);
     }
   };
 
   const handlePresetSelect = async (preset: RpcPreset) => {
-    if (preset.url.includes("YOUR_")) {
+    if (preset.url.includes('YOUR_')) {
       // 需要用户输入API密钥
       setCustomName(preset.name);
       setCustomUrl(preset.url);
@@ -303,7 +304,7 @@ export default function RpcConfig({
   const handleSaveConfig = async (
     name: string,
     url: string,
-    maxEventRange?: number
+    maxEventRange?: number,
   ) => {
     setLoading(true);
     setTestResult(null);
@@ -313,9 +314,9 @@ export default function RpcConfig({
       const result = await testRpcConnection(url, chainId);
       setTestResult(result);
 
-      if (result.status === "failed") {
+      if (result.status === 'failed') {
         alert(
-          `RPC测试失败: ${result.error}\n\n建议使用以下命令验证RPC:\ncast chain-id --rpc-url ${url}\ncast block-number --rpc-url ${url}`
+          `RPC测试失败: ${result.error}\n\n建议使用以下命令验证RPC:\ncast chain-id --rpc-url ${url}\ncast block-number --rpc-url ${url}`,
         );
         return;
       }
@@ -323,7 +324,7 @@ export default function RpcConfig({
       // 验证链ID是否匹配
       if (result.detectedChainId && result.detectedChainId !== chainId) {
         alert(
-          `链ID不匹配！\n期望: ${chainId}\n实际: ${result.detectedChainId}\n\n请确认RPC URL对应正确的链。`
+          `链ID不匹配！\n期望: ${chainId}\n实际: ${result.detectedChainId}\n\n请确认RPC URL对应正确的链。`,
         );
         return;
       }
@@ -331,7 +332,7 @@ export default function RpcConfig({
       // 验证历史数据支持
       if (!result.supportsHistory) {
         const confirmContinue = confirm(
-          "警告：此RPC节点不支持历史区块数据查询，可能影响合约创建信息等功能。\n\n是否仍要继续保存？"
+          '警告：此RPC节点不支持历史区块数据查询，可能影响合约创建信息等功能。\n\n是否仍要继续保存？',
         );
         if (!confirmContinue) {
           return;
@@ -342,7 +343,7 @@ export default function RpcConfig({
       const finalMaxEventRange = maxEventRange || result.maxEventRange;
       if (finalMaxEventRange && finalMaxEventRange > 10000) {
         const confirmRange = confirm(
-          `事件查询范围设置为 ${finalMaxEventRange} 个区块，这可能导致查询超时。\n\n建议设置为 5000 以下。是否继续？`
+          `事件查询范围设置为 ${finalMaxEventRange} 个区块，这可能导致查询超时。\n\n建议设置为 5000 以下。是否继续？`,
         );
         if (!confirmRange) {
           return;
@@ -360,21 +361,23 @@ export default function RpcConfig({
       await loadCurrentConfig();
       onConfigSaved?.();
       setShowCustomForm(false);
-      setCustomName("");
-      setCustomUrl("");
-      setCustomMaxEventRange("");
+      setCustomName('');
+      setCustomUrl('');
+      setCustomMaxEventRange('');
 
-      alert("RPC配置保存成功！");
-    } catch (error) {
-      console.error("Failed to save config:", error);
-      alert("保存配置失败，请检查网络连接");
-    } finally {
+      alert('RPC配置保存成功！');
+    }
+    catch (error) {
+      console.error('Failed to save config:', error);
+      alert('保存配置失败，请检查网络连接');
+    }
+    finally {
       setLoading(false);
     }
   };
 
   const handleRemoveConfig = async () => {
-    if (!confirm("确定要移除自定义RPC配置吗？将恢复使用默认节点。")) {
+    if (!confirm('确定要移除自定义RPC配置吗？将恢复使用默认节点。')) {
       return;
     }
 
@@ -382,10 +385,11 @@ export default function RpcConfig({
       await deleteRpcConfig(chainId);
       await loadCurrentConfig();
       onConfigSaved?.();
-      alert("已恢复使用默认RPC节点");
-    } catch (error) {
-      console.error("Failed to remove config:", error);
-      alert("移除配置失败");
+      alert('已恢复使用默认RPC节点');
+    }
+    catch (error) {
+      console.error('Failed to remove config:', error);
+      alert('移除配置失败');
     }
   };
 
@@ -402,234 +406,266 @@ export default function RpcConfig({
   if (!isOpen) return null;
 
   return (
-    <Dialog open={open as DialogProps["open"]} onClose={handleClose} className={dialogContent}>
-        <div className={headerStyles}>
-          <h2>{chainName} RPC Configuration</h2>
-          <button onClick={handleClose}>×</button>
-        </div>
+    <Dialog open={open as DialogProps['open']} onClose={handleClose} className={dialogContent}>
+      <div className={headerStyles}>
+        <h2>
+          {chainName}
+          {' '}
+          RPC Configuration
+        </h2>
+        <button onClick={handleClose}>×</button>
+      </div>
 
-        {/* 当前配置状态 */}
-        <div className={sectionStyles}>
-          <h3>当前状态</h3>
-          <div className={currentConfigStyles}>
-            {currentConfig ? (
-              <>
-                <div className="status custom">✅ 使用自定义RPC节点</div>
-                <div style={{ marginBottom: "8px" }}>
-                  <div style={{ fontWeight: "500", marginBottom: "4px" }}>
-                    {currentConfig.name}
-                  </div>
-                  <div className="url">{currentConfig.url}</div>
-                  {currentConfig.maxEventRange && (
-                    <div
-                      style={{
-                        fontSize: "12px",
-                        color: "#6c757d",
-                        marginTop: "4px",
-                      }}
-                    >
-                      📊 事件查询范围: {currentConfig.maxEventRange} 个区块
+      {/* 当前配置状态 */}
+      <div className={sectionStyles}>
+        <h3>当前状态</h3>
+        <div className={currentConfigStyles}>
+          {currentConfig
+            ? (
+                <>
+                  <div className="status custom">✅ 使用自定义RPC节点</div>
+                  <div style={{ marginBottom: '8px' }}>
+                    <div style={{ fontWeight: '500', marginBottom: '4px' }}>
+                      {currentConfig.name}
                     </div>
-                  )}
-                </div>
-                <div className="actions">
-                  <button
-                    className="btn danger small"
-                    onClick={handleRemoveConfig}
-                  >
-                    恢复默认
-                  </button>
-                </div>
-              </>
-            ) : (
-              <div className="status default">🔄 使用默认RPC节点</div>
-            )}
-          </div>
-        </div>
-
-        {!showCustomForm && (
-          <>
-            {/* 预设选项 */}
-            {presets.length > 0 && (
-              <div className={sectionStyles}>
-                <h3>推荐节点</h3>
-                <p>选择一个可信的RPC提供商来提升访问速度和稳定性</p>
-                <div className={presetStyles}>
-                  {presets.map((preset, index) => (
-                    <div
-                      key={index}
-                      className="preset-item"
-                      onClick={() => handlePresetSelect(preset)}
-                    >
-                      <div className="preset-header">
-                        <div className="preset-name">{preset.name}</div>
-                        <div className="preset-provider">{preset.provider}</div>
-                      </div>
-                      <div className="preset-url">{preset.url}</div>
-                      {preset.description && (
-                        <div className="preset-description">
-                          {preset.description}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* 自定义选项 */}
-            <div className={sectionStyles}>
-              <h3>自定义节点</h3>
-              <p>如果您有私有RPC节点或其他提供商的节点</p>
-              <div className={buttonStyles}>
-                <button
-                  className="btn secondary"
-                  onClick={() => setShowCustomForm(true)}
-                >
-                  添加自定义RPC
-                </button>
-              </div>
-            </div>
-          </>
-        )}
-
-        {/* 自定义表单 */}
-        {showCustomForm && (
-          <div className={sectionStyles}>
-            <h3>添加自定义RPC节点</h3>
-            <form onSubmit={handleCustomSubmit} className={customFormStyles}>
-              <div className="form-group">
-                <label>节点名称</label>
-                <input
-                  type="text"
-                  value={customName}
-                  onChange={(e) => setCustomName(e.target.value)}
-                  placeholder="例如：我的私有节点"
-                  required
-                />
-              </div>
-              <div className="form-group">
-                <label>RPC URL</label>
-                <input
-                  type="url"
-                  value={customUrl}
-                  onChange={(e) => setCustomUrl(e.target.value)}
-                  placeholder="https://your-rpc-endpoint.com"
-                  required
-                />
-              </div>
-              <div className="form-group">
-                <label>最大事件查询范围（可选）</label>
-                <input
-                  type="number"
-                  value={customMaxEventRange}
-                  onChange={(e) => setCustomMaxEventRange(e.target.value)}
-                  placeholder="例如：5000（留空将自动检测）"
-                  min="100"
-                  max="50000"
-                />
-                <div
-                  style={{
-                    fontSize: "12px",
-                    color: "#6c757d",
-                    marginTop: "4px",
-                  }}
-                >
-                  设置单次查询事件的最大区块范围。较小的值更稳定，较大的值查询更快但可能超时。
-                </div>
-              </div>
-
-              {testResult && (
-                <div
-                  style={{
-                    padding: "12px",
-                    borderRadius: "6px",
-                    marginBottom: "16px",
-                    background:
-                      testResult.status === "success" ? "#d4edda" : "#f8d7da",
-                    color:
-                      testResult.status === "success" ? "#155724" : "#721c24",
-                    fontSize: "14px",
-                  }}
-                >
-                  {testResult.status === "success" ? (
-                    <div>
-                      <div style={{ marginBottom: "8px" }}>
-                        ✅ <strong>连接成功</strong> (延迟: {testResult.latency}
-                        ms)
-                      </div>
-                      <div style={{ fontSize: "12px", lineHeight: "1.4" }}>
-                        {testResult.detectedChainId && (
-                          <div>
-                            🔗 链ID: {testResult.detectedChainId}{" "}
-                            {testResult.detectedChainId === chainId ? "✅" : "❌"}
-                          </div>
-                        )}
-                        <div>
-                          📚 历史数据:{" "}
-                          {testResult.supportsHistory ? "✅ 支持" : "❌ 不支持"}
-                        </div>
-                        {testResult.maxEventRange && (
-                          <div>
-                            📊 推荐事件范围: {testResult.maxEventRange} 个区块
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ) : (
-                    <div>
-                      <div style={{ marginBottom: "8px" }}>
-                        ❌ <strong>连接失败</strong>
-                      </div>
-                      <div style={{ fontSize: "12px", color: "#721c24" }}>
-                        {testResult.error}
-                      </div>
+                    <div className="url">{currentConfig.url}</div>
+                    {currentConfig.maxEventRange && (
                       <div
                         style={{
-                          fontSize: "11px",
-                          marginTop: "8px",
-                          fontFamily: "monospace",
-                          background: "rgba(0,0,0,0.1)",
-                          padding: "4px",
-                          borderRadius: "3px",
+                          fontSize: '12px',
+                          color: '#6c757d',
+                          marginTop: '4px',
                         }}
                       >
-                        验证命令:
-                        <br />
-                        cast chain-id --rpc-url {customUrl}
-                        <br />
-                        cast block-number --rpc-url {customUrl}
+                        📊 事件查询范围:
+                        {' '}
+                        {currentConfig.maxEventRange}
+                        {' '}
+                        个区块
                       </div>
-                    </div>
-                  )}
-                </div>
+                    )}
+                  </div>
+                  <div className="actions">
+                    <button
+                      className="btn danger small"
+                      onClick={handleRemoveConfig}
+                    >
+                      恢复默认
+                    </button>
+                  </div>
+                </>
+              )
+            : (
+                <div className="status default">🔄 使用默认RPC节点</div>
               )}
+        </div>
+      </div>
 
-              <div className={`${buttonStyles} btn-group`}>
-                <button
-                  type="submit"
-                  className="btn primary"
-                  disabled={loading}
-                >
-                  {loading ? "测试并保存中..." : "测试并保存"}
-                </button>
-                <button
-                  type="button"
-                  className="btn secondary"
-                  onClick={() => {
-                    setShowCustomForm(false);
-                    setCustomName("");
-                    setCustomUrl("");
-                    setCustomMaxEventRange("");
-                    setTestResult(null);
-                  }}
-                >
-                  取消
-                </button>
+      {!showCustomForm && (
+        <>
+          {/* 预设选项 */}
+          {presets.length > 0 && (
+            <div className={sectionStyles}>
+              <h3>推荐节点</h3>
+              <p>选择一个可信的RPC提供商来提升访问速度和稳定性</p>
+              <div className={presetStyles}>
+                {presets.map((preset, index) => (
+                  <div
+                    key={index}
+                    className="preset-item"
+                    onClick={() => handlePresetSelect(preset)}
+                  >
+                    <div className="preset-header">
+                      <div className="preset-name">{preset.name}</div>
+                      <div className="preset-provider">{preset.provider}</div>
+                    </div>
+                    <div className="preset-url">{preset.url}</div>
+                    {preset.description && (
+                      <div className="preset-description">
+                        {preset.description}
+                      </div>
+                    )}
+                  </div>
+                ))}
               </div>
-            </form>
+            </div>
+          )}
+
+          {/* 自定义选项 */}
+          <div className={sectionStyles}>
+            <h3>自定义节点</h3>
+            <p>如果您有私有RPC节点或其他提供商的节点</p>
+            <div className={buttonStyles}>
+              <button
+                className="btn secondary"
+                onClick={() => setShowCustomForm(true)}
+              >
+                添加自定义RPC
+              </button>
+            </div>
           </div>
-        )}
+        </>
+      )}
+
+      {/* 自定义表单 */}
+      {showCustomForm && (
+        <div className={sectionStyles}>
+          <h3>添加自定义RPC节点</h3>
+          <form onSubmit={handleCustomSubmit} className={customFormStyles}>
+            <div className="form-group">
+              <label>节点名称</label>
+              <input
+                type="text"
+                value={customName}
+                onChange={e => setCustomName(e.target.value)}
+                placeholder="例如：我的私有节点"
+                required
+              />
+            </div>
+            <div className="form-group">
+              <label>RPC URL</label>
+              <input
+                type="url"
+                value={customUrl}
+                onChange={e => setCustomUrl(e.target.value)}
+                placeholder="https://your-rpc-endpoint.com"
+                required
+              />
+            </div>
+            <div className="form-group">
+              <label>最大事件查询范围（可选）</label>
+              <input
+                type="number"
+                value={customMaxEventRange}
+                onChange={e => setCustomMaxEventRange(e.target.value)}
+                placeholder="例如：5000（留空将自动检测）"
+                min="100"
+                max="50000"
+              />
+              <div
+                style={{
+                  fontSize: '12px',
+                  color: '#6c757d',
+                  marginTop: '4px',
+                }}
+              >
+                设置单次查询事件的最大区块范围。较小的值更稳定，较大的值查询更快但可能超时。
+              </div>
+            </div>
+
+            {testResult && (
+              <div
+                style={{
+                  padding: '12px',
+                  borderRadius: '6px',
+                  marginBottom: '16px',
+                  background:
+                      testResult.status === 'success' ? '#d4edda' : '#f8d7da',
+                  color:
+                      testResult.status === 'success' ? '#155724' : '#721c24',
+                  fontSize: '14px',
+                }}
+              >
+                {testResult.status === 'success'
+                  ? (
+                      <div>
+                        <div style={{ marginBottom: '8px' }}>
+                          ✅
+                          {' '}
+                          <strong>连接成功</strong>
+                          {' '}
+                          (延迟:
+                          {' '}
+                          {testResult.latency}
+                          ms)
+                        </div>
+                        <div style={{ fontSize: '12px', lineHeight: '1.4' }}>
+                          {testResult.detectedChainId && (
+                            <div>
+                              🔗 链ID:
+                              {' '}
+                              {testResult.detectedChainId}
+                              {' '}
+                              {testResult.detectedChainId === chainId ? '✅' : '❌'}
+                            </div>
+                          )}
+                          <div>
+                            📚 历史数据:
+                            {' '}
+                            {testResult.supportsHistory ? '✅ 支持' : '❌ 不支持'}
+                          </div>
+                          {testResult.maxEventRange && (
+                            <div>
+                              📊 推荐事件范围:
+                              {' '}
+                              {testResult.maxEventRange}
+                              {' '}
+                              个区块
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  : (
+                      <div>
+                        <div style={{ marginBottom: '8px' }}>
+                          ❌
+                          {' '}
+                          <strong>连接失败</strong>
+                        </div>
+                        <div style={{ fontSize: '12px', color: '#721c24' }}>
+                          {testResult.error}
+                        </div>
+                        <div
+                          style={{
+                            fontSize: '11px',
+                            marginTop: '8px',
+                            fontFamily: 'monospace',
+                            background: 'rgba(0,0,0,0.1)',
+                            padding: '4px',
+                            borderRadius: '3px',
+                          }}
+                        >
+                          验证命令:
+                          <br />
+                          cast chain-id --rpc-url
+                          {' '}
+                          {customUrl}
+                          <br />
+                          cast block-number --rpc-url
+                          {' '}
+                          {customUrl}
+                        </div>
+                      </div>
+                    )}
+              </div>
+            )}
+
+            <div className={`${buttonStyles} btn-group`}>
+              <button
+                type="submit"
+                className="btn primary"
+                disabled={loading}
+              >
+                {loading ? '测试并保存中...' : '测试并保存'}
+              </button>
+              <button
+                type="button"
+                className="btn secondary"
+                onClick={() => {
+                  setShowCustomForm(false);
+                  setCustomName('');
+                  setCustomUrl('');
+                  setCustomMaxEventRange('');
+                  setTestResult(null);
+                }}
+              >
+                取消
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </Dialog>
   );
 }

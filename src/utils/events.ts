@@ -2,7 +2,7 @@
  * Event decoding and selector utilities for contract events
  */
 
-import { type Abi, type AbiEvent, toEventSelector, parseAbiItem } from "viem";
+import { type Abi, type AbiEvent, toEventSelector, parseAbiItem } from 'viem';
 
 const signatureToNameCache = new Map<string, string>();
 const nameToSignatureCache = new Map<string, string>();
@@ -14,12 +14,13 @@ const nameToSignatureCache = new Map<string, string>();
 export const registerAbiEvents = (abi: Abi | readonly unknown[]): void => {
   for (const item of abi) {
     const entry = item as Record<string, unknown>;
-    if (entry.type !== "event" || typeof entry.name !== "string") continue;
+    if (entry.type !== 'event' || typeof entry.name !== 'string') continue;
     try {
       const selector = toEventSelector(entry as AbiEvent);
       signatureToNameCache.set(selector, entry.name);
       nameToSignatureCache.set(entry.name, selector);
-    } catch {
+    }
+    catch {
       // skip malformed entries
     }
   }
@@ -30,9 +31,9 @@ export const getEventSelectorFromName = (eventName: string): string => {
   if (cached) return cached;
 
   const wellKnown: Record<string, string> = {
-    Transfer: "event Transfer(address indexed from, address indexed to, uint256 value)",
-    Approval: "event Approval(address indexed owner, address indexed spender, uint256 value)",
-    OwnershipTransferred: "event OwnershipTransferred(address indexed previousOwner, address indexed newOwner)",
+    Transfer: 'event Transfer(address indexed from, address indexed to, uint256 value)',
+    Approval: 'event Approval(address indexed owner, address indexed spender, uint256 value)',
+    OwnershipTransferred: 'event OwnershipTransferred(address indexed previousOwner, address indexed newOwner)',
   };
 
   const sig = wellKnown[eventName];
@@ -43,37 +44,38 @@ export const getEventSelectorFromName = (eventName: string): string => {
       nameToSignatureCache.set(eventName, selector);
       signatureToNameCache.set(selector, eventName);
       return selector;
-    } catch { /* fall through */ }
+    }
+    catch { /* fall through */ }
   }
 
-  return "0x" + "0".repeat(64);
+  return `0x${'0'.repeat(64)}`;
 };
 
 export const decodeEventData = (
   eventName: string,
   topics: readonly string[],
-  data: string
+  data: string,
 ): Record<string, unknown> => {
   try {
-    if (eventName === "Transfer" && topics.length >= 2) {
+    if (eventName === 'Transfer' && topics.length >= 2) {
       return {
         from: topics[0],
         to: topics[1],
-        value: data && data !== "0x" ? BigInt(data) : undefined,
+        value: data && data !== '0x' ? BigInt(data) : undefined,
         raw: { topics, data },
       };
     }
 
-    if (eventName === "Approval" && topics.length >= 2) {
+    if (eventName === 'Approval' && topics.length >= 2) {
       return {
         owner: topics[0],
         spender: topics[1],
-        value: data && data !== "0x" ? BigInt(data) : undefined,
+        value: data && data !== '0x' ? BigInt(data) : undefined,
         raw: { topics, data },
       };
     }
 
-    if (eventName === "OwnershipTransferred" && topics.length >= 2) {
+    if (eventName === 'OwnershipTransferred' && topics.length >= 2) {
       return {
         previousOwner: topics[0],
         newOwner: topics[1],
@@ -86,8 +88,9 @@ export const decodeEventData = (
       data,
       raw: { topics, data },
     };
-  } catch (error) {
-    console.warn("Failed to decode event data:", error);
+  }
+  catch (error) {
+    console.warn('Failed to decode event data:', error);
     return {
       topics,
       data,
@@ -112,7 +115,7 @@ type RpcClient = {
  */
 export const getContractCreationBlock = async (
   client: unknown,
-  contractAddress: string
+  contractAddress: string,
 ): Promise<bigint> => {
   const rpc = client as RpcClient;
   try {
@@ -138,13 +141,14 @@ export const getContractCreationBlock = async (
         if (logs.length > 0) {
           const blockMin = logs.reduce(
             (min, l) => (l.blockNumber < min ? l.blockNumber : min),
-            logs[0].blockNumber
+            logs[0].blockNumber,
           );
           if (earliestFound === null || blockMin < earliestFound) {
             earliestFound = blockMin;
           }
         }
-      } catch {
+      }
+      catch {
         // RPC may reject, skip
       }
     }
@@ -153,7 +157,7 @@ export const getContractCreationBlock = async (
     if (earliestFound !== null) {
       const result = earliestFound > 100n ? earliestFound - 100n : 0n;
       console.log(
-        `Contract earliest event block: ${earliestFound} (starting from: ${result})`
+        `Contract earliest event block: ${earliestFound} (starting from: ${result})`,
       );
       return result;
     }
@@ -161,22 +165,24 @@ export const getContractCreationBlock = async (
     // Fallback: start from recent blocks
     const fallback = latestBlock > 100_000n ? latestBlock - 100_000n : 0n;
     console.log(
-      `No events found in probes, using fallback block: ${fallback} (latest: ${latestBlock})`
+      `No events found in probes, using fallback block: ${fallback} (latest: ${latestBlock})`,
     );
     return fallback;
-  } catch (error) {
-    console.warn("Failed to get contract creation block:", error);
+  }
+  catch (error) {
+    console.warn('Failed to get contract creation block:', error);
     try {
       const latestBlock = await rpc.getBlockNumber();
       return latestBlock > 100_000n ? latestBlock - 100_000n : 0n;
-    } catch {
+    }
+    catch {
       return 0n;
     }
   }
 };
 
 export const getEventNameFromSignature = (
-  eventSignature: string
+  eventSignature: string,
 ): string => {
   const cached = signatureToNameCache.get(eventSignature);
   if (cached) return cached;

@@ -1,7 +1,7 @@
-import { Link } from "react-router-dom";
-import { css } from "@linaria/core";
-import { Card, CardContent } from "../components/ui/Card";
-import { Button } from "../components/ui/Button";
+import { Link } from 'react-router-dom';
+import { css } from '@linaria/core';
+import { Card, CardContent } from '../components/ui/Card';
+import { Button } from '../components/ui/Button';
 
 const container = css`
   display: flex;

@@ -7,14 +7,14 @@ export const corsMiddleware = cors({
     if (process.env.NODE_ENV === 'development') {
       return origin || '*';
     }
-    
+
     // 生产环境只允许特定来源
     const allowedOrigins = [
       'https://your-domain.com',
       'https://localhost:3000',
       'http://localhost:3000',
     ];
-    
+
     return allowedOrigins.includes(origin || '') ? origin : null;
   },
   allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],

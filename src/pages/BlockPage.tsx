@@ -1,13 +1,13 @@
-import { useState, useEffect } from "react";
-import { useParams, useNavigate } from "react-router-dom";
-import { getChainInfo, getChainName } from "../config/chains";
-import TopNavigation from "../components/TopNavigation";
-import { getBlockByNumber, type RpcBlock } from "@/utils/blockRpcData";
-import { PageContainer, PageHeader, BackButton } from "@/components/ui/PageLayout";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/Card";
-import { InfoGrid, InfoItem } from "@/components/ui/InfoGrid";
-import { LoadingState } from "@/components/ui/LoadingState";
-import { ErrorState } from "@/components/ui/ErrorState";
+import { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { getChainInfo, getChainName } from '../config/chains';
+import TopNavigation from '../components/TopNavigation';
+import { getBlockByNumber, type RpcBlock } from '@/utils/blockRpcData';
+import { PageContainer, PageHeader, BackButton } from '@/components/ui/PageLayout';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
+import { InfoGrid, InfoItem } from '@/components/ui/InfoGrid';
+import { LoadingState } from '@/components/ui/LoadingState';
+import { ErrorState } from '@/components/ui/ErrorState';
 
 export default function BlockPage() {
   const { chainId, blockNumber } = useParams<{
@@ -19,12 +19,12 @@ export default function BlockPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const currentChainId = parseInt(chainId || "1");
+  const currentChainId = parseInt(chainId || '1');
   const chainInfo = getChainInfo(currentChainId);
 
   useEffect(() => {
     if (!blockNumber || !chainId) {
-      setError("Invalid block number or chain ID");
+      setError('Invalid block number or chain ID');
       setLoading(false);
       return;
     }
@@ -35,12 +35,14 @@ export default function BlockPage() {
         setError(null);
         const block = await getBlockByNumber(currentChainId, BigInt(blockNumber));
         setBlockInfo(block);
-      } catch (err) {
-        console.error("Failed to fetch block info:", err);
+      }
+      catch (err) {
+        console.error('Failed to fetch block info:', err);
         setError(
-          err instanceof Error ? err.message : "Failed to fetch block information"
+          err instanceof Error ? err.message : 'Failed to fetch block information',
         );
-      } finally {
+      }
+      finally {
         setLoading(false);
       }
     };
@@ -51,13 +53,14 @@ export default function BlockPage() {
   const formatGas = (gas: string) => {
     try {
       return parseInt(gas).toLocaleString();
-    } catch {
+    }
+    catch {
       return gas;
     }
   };
 
   const formatBytes = (bytes?: number) => {
-    if (!bytes) return "N/A";
+    if (!bytes) return 'N/A';
     return `${bytes.toLocaleString()} bytes`;
   };
 
@@ -111,7 +114,9 @@ export default function BlockPage() {
                 <InfoItem label="Gas Used">{formatGas(blockInfo.gasUsed)}</InfoItem>
                 {blockInfo.baseFeePerGas && (
                   <InfoItem label="Base Fee Per Gas">
-                    {formatGas(blockInfo.baseFeePerGas)} wei
+                    {formatGas(blockInfo.baseFeePerGas)}
+                    {' '}
+                    wei
                   </InfoItem>
                 )}
                 <InfoItem label="Transaction Count">

@@ -311,11 +311,12 @@ export function generateSearchFilter(formData: FormData): Record<string, any> {
         if (value.from !== undefined) rangeFilter.gte = value.from;
         if (value.to !== undefined) rangeFilter.lte = value.to;
         filter[key] = rangeFilter;
-      } else if (value.like) {
+      }
+      else if (value.like) {
         // Text search with LIKE
         filter[key] = {
           like: `%${value.like}%`,
-          caseInsensitive: true
+          caseInsensitive: true,
         };
       }
       return;
@@ -326,19 +327,23 @@ export function generateSearchFilter(formData: FormData): Record<string, any> {
       if (validateAddress(value)) {
         filter[key] = value.toLowerCase();
       }
-    } else if (isNumericField(key)) {
+    }
+    else if (isNumericField(key)) {
       filter[key] = value;
-    } else if (isBooleanField(key)) {
+    }
+    else if (isBooleanField(key)) {
       filter[key] = Boolean(value);
-    } else if (isHashField(key)) {
+    }
+    else if (isHashField(key)) {
       if (validateHexString(value, getHashLength(key))) {
         filter[key] = value.toLowerCase();
       }
-    } else {
+    }
+    else {
       // Default: text search with LIKE
       filter[key] = {
         like: `%${value}%`,
-        caseInsensitive: true
+        caseInsensitive: true,
       };
     }
   });
@@ -372,7 +377,7 @@ function isAddressField(fieldName: string): boolean {
     /^(from|to|owner|sender|recipient|spender|minter|burner|operator|proxy)$/i,
     /address$/i,
     /account$/i,
-    /wallet$/i
+    /wallet$/i,
   ];
 
   return addressPatterns.some(pattern => pattern.test(fieldName));
@@ -390,7 +395,7 @@ function isNumericField(fieldName: string): boolean {
     /count$/i,
     /index$/i,
     /level$/i,
-    /version$/i
+    /version$/i,
   ];
 
   return numericPatterns.some(pattern => pattern.test(fieldName));
@@ -408,7 +413,7 @@ function isBooleanField(fieldName: string): boolean {
     /(is|has|can)[A-Z]/,
     /[A-Z](is|has|can)/,
     /able$/i,
-    /ible$/i
+    /ible$/i,
   ];
 
   return booleanPatterns.some(pattern => pattern.test(fieldName));
@@ -423,7 +428,7 @@ function isHashField(fieldName: string): boolean {
     /hash$/i,
     /signature$/i,
     /digest$/i,
-    /identifier$/i
+    /identifier$/i,
   ];
 
   return hashPatterns.some(pattern => pattern.test(fieldName));

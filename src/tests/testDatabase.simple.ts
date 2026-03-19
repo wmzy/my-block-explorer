@@ -1,4 +1,4 @@
-import { DuckDBInstance } from "@duckdb/node-api";
+import { DuckDBInstance } from '@duckdb/node-api';
 
 /**
  * Simple test database manager using DuckDB in-memory mode
@@ -14,11 +14,11 @@ export class SimpleTestDatabaseManager {
     if (this.isInitialized) return;
 
     // Create in-memory DuckDB instance
-    this.instance = await DuckDBInstance.create(":memory:");
-    
+    this.instance = await DuckDBInstance.create(':memory:');
+
     // Initialize tables
     await this.createTables();
-    
+
     this.isInitialized = true;
   }
 
@@ -27,16 +27,17 @@ export class SimpleTestDatabaseManager {
    */
   async query<T = any>(sql: string, params: any[] = []): Promise<T[]> {
     if (!this.instance) {
-      throw new Error("Test database not initialized");
+      throw new Error('Test database not initialized');
     }
 
     const connection = await this.instance.connect();
     try {
-      const result = params.length > 0 
+      const result = params.length > 0
         ? await connection.runAndReadAll(sql, params)
         : await connection.runAndReadAll(sql);
       return result.getRowObjects() as T[];
-    } finally {
+    }
+    finally {
       connection.disconnectSync();
     }
   }
@@ -46,13 +47,14 @@ export class SimpleTestDatabaseManager {
    */
   async exec(sql: string): Promise<void> {
     if (!this.instance) {
-      throw new Error("Test database not initialized");
+      throw new Error('Test database not initialized');
     }
 
     const connection = await this.instance.connect();
     try {
       await connection.run(sql);
-    } finally {
+    }
+    finally {
       connection.disconnectSync();
     }
   }
@@ -66,13 +68,14 @@ export class SimpleTestDatabaseManager {
       'contract_sources',
       'blocks',
       'transactions',
-      'indexed_addresses'
+      'indexed_addresses',
     ];
 
     for (const table of tables) {
       try {
         await this.exec(`DELETE FROM ${table}`);
-      } catch (error) {
+      }
+      catch (error) {
         // Table might not exist, ignore error
       }
     }

@@ -43,12 +43,12 @@ export class OptimizedSorter {
       useCache?: boolean;
       cacheKey?: string;
       threshold?: number;
-    } = {}
+    } = {},
   ): { sortedData: T[]; metrics: SortingPerformanceMetrics } {
     const {
       useCache = true,
       cacheKey,
-      threshold = 10000
+      threshold = 10000,
     } = options;
 
     const startTime = performance.now();
@@ -65,8 +65,8 @@ export class OptimizedSorter {
             executionTime: performance.now() - startTime,
             dataSize,
             memoryUsage: this.estimateMemoryUsage(cachedResult),
-            cacheHit: true
-          }
+            cacheHit: true,
+          },
         };
       }
     }
@@ -78,14 +78,17 @@ export class OptimizedSorter {
     if (dataSize === 0) {
       sortedData = [];
       algorithmUsed = 'empty';
-    } else if (sortConfigs.length === 0) {
+    }
+    else if (sortConfigs.length === 0) {
       sortedData = [...data];
       algorithmUsed = 'no-sort';
-    } else if (dataSize < threshold) {
+    }
+    else if (dataSize < threshold) {
       // For smaller datasets, use standard sort
       sortedData = this.standardSort(data, sortConfigs);
       algorithmUsed = 'standard';
-    } else {
+    }
+    else {
       // For larger datasets, use optimized strategies
       sortedData = this.optimizedSort(data, sortConfigs);
       algorithmUsed = 'optimized';
@@ -105,8 +108,8 @@ export class OptimizedSorter {
         executionTime,
         dataSize,
         memoryUsage: this.estimateMemoryUsage(sortedData),
-        cacheHit: false
-      }
+        cacheHit: false,
+      },
     };
   }
 
@@ -155,7 +158,7 @@ export class OptimizedSorter {
 
     // Sort each chunk individually
     const sortedChunks = chunks.map(chunk =>
-      this.standardSort(chunk, sortConfigs)
+      this.standardSort(chunk, sortConfigs),
     );
 
     // Merge sorted chunks
@@ -180,7 +183,7 @@ export class OptimizedSorter {
         heap.push({
           chunk: chunkIndex,
           index: 0,
-          value: chunk[0]
+          value: chunk[0],
         });
       }
     });
@@ -202,7 +205,7 @@ export class OptimizedSorter {
         heap.push({
           chunk: min.chunk,
           index: nextIndex,
-          value: newValue
+          value: newValue,
         });
 
         // Restore heap property
@@ -228,7 +231,7 @@ export class OptimizedSorter {
   private heapifyDown<T>(
     heap: { chunk: number; index: number; value: T }[],
     index: number,
-    sortConfigs: SortConfig[]
+    sortConfigs: SortConfig[],
   ): void {
     const left = 2 * index + 1;
     const right = 2 * index + 2;
@@ -254,7 +257,7 @@ export class OptimizedSorter {
   private compareHeapItems<T>(
     a: { chunk: number; index: number; value: T },
     b: { chunk: number; index: number; value: T },
-    sortConfigs: SortConfig[]
+    sortConfigs: SortConfig[],
   ): number {
     return this.compareItems(a.value, b.value, sortConfigs[0]);
   }
@@ -348,7 +351,7 @@ export class OptimizedSorter {
     this.cache.set(cacheKey, {
       data: [...data], // Store a copy
       timestamp: Date.now(),
-      ttl: this.defaultCacheTTL
+      ttl: this.defaultCacheTTL,
     });
   }
 
@@ -398,7 +401,7 @@ export class OptimizedSorter {
       size: this.cache.size,
       maxSize: this.cacheMaxSize,
       memoryUsage: totalMemory,
-      hitRate: 0 // Would need to track hits/misses for real implementation
+      hitRate: 0, // Would need to track hits/misses for real implementation
     };
   }
 
@@ -407,7 +410,7 @@ export class OptimizedSorter {
    */
   optimizeSortConfigs<T>(
     data: T[],
-    sortConfigs: SortConfig[]
+    sortConfigs: SortConfig[],
   ): SortConfig[] {
     const dataSize = data.length;
 
@@ -442,7 +445,7 @@ export function optimizedSort<T>(
     useCache?: boolean;
     cacheKey?: string;
     threshold?: number;
-  }
+  },
 ): { sortedData: T[]; metrics: SortingPerformanceMetrics } {
   return optimizedSorter.sort(data, sortConfigs, options);
 }
@@ -476,7 +479,7 @@ export class SortingPerformanceMonitor {
         avgDataSize: 0,
         avgMemoryUsage: 0,
         cacheHitRate: 0,
-        totalOperations: 0
+        totalOperations: 0,
       };
     }
 
@@ -490,7 +493,7 @@ export class SortingPerformanceMonitor {
       avgDataSize: totalDataSize / this.metrics.length,
       avgMemoryUsage: totalMemoryUsage / this.metrics.length,
       cacheHitRate: cacheHits / this.metrics.length,
-      totalOperations: this.metrics.length
+      totalOperations: this.metrics.length,
     };
   }
 
@@ -501,7 +504,7 @@ export class SortingPerformanceMonitor {
   }> {
     const grouped: Record<string, SortingPerformanceMetrics[]> = {};
 
-    this.metrics.forEach(metric => {
+    this.metrics.forEach((metric) => {
       if (!grouped[metric.algorithmUsed]) {
         grouped[metric.algorithmUsed] = [];
       }
@@ -521,7 +524,7 @@ export class SortingPerformanceMonitor {
       result[algorithm] = {
         count: metrics.length,
         avgExecutionTime: totalExecutionTime / metrics.length,
-        avgDataSize: totalDataSize / metrics.length
+        avgDataSize: totalDataSize / metrics.length,
       };
     });
 

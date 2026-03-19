@@ -1,5 +1,5 @@
-import React from "react";
-import { css } from "@linaria/core";
+import React from 'react';
+import { css } from '@linaria/core';
 
 type Props = {
   functionName: string;
@@ -140,43 +140,43 @@ export default function RpcFunctionError({
 }: Props) {
   const getSuggestions = (functionName: string) => {
     switch (functionName) {
-      case "getContractCreationInfo":
+      case 'getContractCreationInfo':
         return [
-          "当前RPC节点可能不支持历史状态查询",
-          "建议配置支持archive模式的RPC节点",
-          "可以尝试使用Alchemy、Infura等专业服务商的RPC",
-          "某些免费RPC节点限制历史数据访问",
+          '当前RPC节点可能不支持历史状态查询',
+          '建议配置支持archive模式的RPC节点',
+          '可以尝试使用Alchemy、Infura等专业服务商的RPC',
+          '某些免费RPC节点限制历史数据访问',
         ];
-      case "getEvents":
+      case 'getEvents':
         return [
-          "当前RPC节点可能限制了事件查询的区块范围",
-          "建议减小查询的区块范围或配置更强大的RPC节点",
-          "某些RPC节点限制单次查询最多1000个区块",
-          "可以配置支持大范围查询的RPC节点",
+          '当前RPC节点可能限制了事件查询的区块范围',
+          '建议减小查询的区块范围或配置更强大的RPC节点',
+          '某些RPC节点限制单次查询最多1000个区块',
+          '可以配置支持大范围查询的RPC节点',
         ];
-      case "getStorageAt":
+      case 'getStorageAt':
         return [
-          "当前RPC节点可能不支持存储槽查询",
-          "代理合约检测需要支持eth_getStorageAt的RPC节点",
-          "建议使用完整节点或专业RPC服务",
+          '当前RPC节点可能不支持存储槽查询',
+          '代理合约检测需要支持eth_getStorageAt的RPC节点',
+          '建议使用完整节点或专业RPC服务',
         ];
       default:
         return [
-          "当前RPC节点可能存在功能限制",
-          "建议配置更稳定、功能完整的RPC节点",
-          "可以尝试使用多个RPC节点作为备选",
+          '当前RPC节点可能存在功能限制',
+          '建议配置更稳定、功能完整的RPC节点',
+          '可以尝试使用多个RPC节点作为备选',
         ];
     }
   };
 
   const getFunctionDisplayName = (functionName: string) => {
     switch (functionName) {
-      case "getContractCreationInfo":
-        return "合约创建信息查询";
-      case "getEvents":
-        return "事件日志查询";
-      case "getStorageAt":
-        return "存储槽查询";
+      case 'getContractCreationInfo':
+        return '合约创建信息查询';
+      case 'getEvents':
+        return '事件日志查询';
+      case 'getStorageAt':
+        return '存储槽查询';
       default:
         return functionName;
     }
@@ -194,15 +194,24 @@ export default function RpcFunctionError({
           <span className="function-name">
             {getFunctionDisplayName(functionName)}
           </span>
-          在{" "}
+          在
+          {' '}
           <span className="chain-info">
-            {chainName} (Chain ID: {chainId})
-          </span>{" "}
+            {chainName}
+            {' '}
+            (Chain ID:
+            {chainId}
+            )
+          </span>
+          {' '}
           上执行失败。
         </p>
       </div>
 
-      <div className="error-details">错误详情: {error}</div>
+      <div className="error-details">
+        错误详情:
+        {error}
+      </div>
 
       <div className="suggestions">
         <div className="suggestion-title">💡 可能的解决方案：</div>
@@ -215,7 +224,11 @@ export default function RpcFunctionError({
 
       <div className="actions">
         <button className={`${buttonStyles} primary`} onClick={onConfigureRpc}>
-          配置 {chainName} RPC 节点
+          配置
+          {' '}
+          {chainName}
+          {' '}
+          RPC 节点
         </button>
         {onRetry && (
           <button className={`${buttonStyles} secondary`} onClick={onRetry}>

@@ -1,16 +1,16 @@
-import { useState, useEffect, useCallback } from "react";
-import { ApiClient, apiClient } from "@/api/client";
+import { useState, useEffect, useCallback } from 'react';
+import { ApiClient, apiClient } from '@/api/client';
 
 // 默认端口范围
 const DEFAULT_PORTS = [8201, 8202, 8203, 8204, 8205];
-const DEFAULT_HOST = "localhost";
+const DEFAULT_HOST = 'localhost';
 
-export type DiscoveryStatus =
-  | "idle" // 未开始
-  | "discovering" // 发现中
-  | "found" // 找到服务
-  | "not-found" // 未找到服务
-  | "error"; // 发现过程出错
+export type DiscoveryStatus
+  = | 'idle' // 未开始
+    | 'discovering' // 发现中
+    | 'found' // 找到服务
+    | 'not-found' // 未找到服务
+    | 'error'; // 发现过程出错
 
 export type ServiceInfo = {
   host: string;
@@ -21,7 +21,7 @@ export type ServiceInfo = {
 };
 
 export function useAutoDiscovery() {
-  const [status, setStatus] = useState<DiscoveryStatus>("idle");
+  const [status, setStatus] = useState<DiscoveryStatus>('idle');
   const [serviceInfo, setServiceInfo] = useState<ServiceInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isScanning, setIsScanning] = useState(false);
@@ -38,7 +38,7 @@ export function useAutoDiscovery() {
         const health = await testApiClient.getHealth();
         const latency = Date.now() - startTime;
 
-        if (health && health.status) {
+        if (health?.status) {
           return {
             host,
             port,
@@ -47,22 +47,23 @@ export function useAutoDiscovery() {
             latency,
           };
         }
-      } catch (error) {
+      }
+      catch (error) {
         // 端口不可用或服务不响应
       }
 
       return null;
     },
-    []
+    [],
   );
 
   // 扫描端口范围
   const discover = useCallback(
     async (
       ports = DEFAULT_PORTS,
-      host = DEFAULT_HOST
+      host = DEFAULT_HOST,
     ): Promise<ServiceInfo | null> => {
-      setStatus("discovering");
+      setStatus('discovering');
       setError(null);
       setIsScanning(true);
       setServiceInfo(null);
@@ -74,7 +75,7 @@ export function useAutoDiscovery() {
           const service = await testPort(port, host);
           if (service) {
             setServiceInfo(service);
-            setStatus("found");
+            setStatus('found');
             setIsScanning(false);
             setCurrentPort(null);
 
@@ -86,31 +87,32 @@ export function useAutoDiscovery() {
         }
 
         // 没有找到任何可用服务
-        setStatus("not-found");
+        setStatus('not-found');
         setIsScanning(false);
         setCurrentPort(null);
         return null;
-      } catch (error) {
-        setError(error instanceof Error ? error.message : "Discovery failed");
-        setStatus("error");
+      }
+      catch (error) {
+        setError(error instanceof Error ? error.message : 'Discovery failed');
+        setStatus('error');
         setIsScanning(false);
         setCurrentPort(null);
         return null;
       }
     },
-    [testPort]
+    [testPort],
   );
 
   // 自动发现（页面加载时）
   const autoDiscover = useCallback(async () => {
     // 首先检查是否已经配置了服务URL
-    const savedUrl = localStorage.getItem("block-explorer-api-url");
+    const savedUrl = localStorage.getItem('block-explorer-api-url');
     if (savedUrl) {
       try {
         const testApiClient = new ApiClient(savedUrl, 3000);
         const health = await testApiClient.getHealth();
 
-        if (health && health.status) {
+        if (health?.status) {
           const url = new URL(savedUrl);
           const serviceInfo: ServiceInfo = {
             host: url.hostname,
@@ -120,13 +122,14 @@ export function useAutoDiscovery() {
           };
 
           setServiceInfo(serviceInfo);
-          setStatus("found");
+          setStatus('found');
           apiClient.setBaseUrl(savedUrl);
           return serviceInfo;
         }
-      } catch (error) {
+      }
+      catch (error) {
         // 保存的URL无效，清除并继续自动发现
-        localStorage.removeItem("block-explorer-api-url");
+        localStorage.removeItem('block-explorer-api-url');
       }
     }
 
@@ -140,23 +143,23 @@ export function useAutoDiscovery() {
       const testApiClient = new ApiClient(url, 5000);
       const health = await testApiClient.getHealth();
 
-      if (health && health.status) {
+      if (health?.status) {
         const urlObj = new URL(url);
         const serviceInfo: ServiceInfo = {
           host: urlObj.hostname,
           port:
-            parseInt(urlObj.port, 10) ||
-            (urlObj.protocol === "https:" ? 443 : 80),
+            parseInt(urlObj.port, 10)
+            || (urlObj.protocol === 'https:' ? 443 : 80),
           url,
           version: health.version,
         };
 
         setServiceInfo(serviceInfo);
-        setStatus("found");
+        setStatus('found');
         setError(null);
 
         // 保存到本地存储
-        localStorage.setItem("block-explorer-api-url", url);
+        localStorage.setItem('block-explorer-api-url', url);
 
         // 更新API客户端
         apiClient.setBaseUrl(url);
@@ -165,21 +168,22 @@ export function useAutoDiscovery() {
       }
 
       return false;
-    } catch (error) {
-      setError(error instanceof Error ? error.message : "Invalid API URL");
+    }
+    catch (error) {
+      setError(error instanceof Error ? error.message : 'Invalid API URL');
       return false;
     }
   }, []);
 
   // 重置发现状态
   const reset = useCallback(() => {
-    setStatus("idle");
+    setStatus('idle');
     setServiceInfo(null);
     setError(null);
     setIsScanning(false);
     setCurrentPort(null);
-    localStorage.removeItem("block-explorer-api-url");
-    apiClient.setBaseUrl("");
+    localStorage.removeItem('block-explorer-api-url');
+    apiClient.setBaseUrl('');
   }, []);
 
   // 页面加载时自动运行发现

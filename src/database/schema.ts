@@ -7,7 +7,7 @@
  * 2. 使用明确的 DuckDB 类型构造器
  * 3. 避免在运行时做不安全的 SQL 转换
  */
-import { sql } from "drizzle-orm";
+import { sql } from 'drizzle-orm';
 import {
   integer,
   varchar,
@@ -31,7 +31,7 @@ import {
   duckdbTable,
   primaryKey,
   unique,
-} from "./db-types";
+} from './db-types';
 
 // 通用字段组合
 const timestampColumns = {
@@ -56,7 +56,7 @@ const chainAddressColumns = {
 } as const;
 
 // 用户RPC配置表
-export const userRpcConfigs = duckdbTable("user_rpc_configs", {
+export const userRpcConfigs = duckdbTable('user_rpc_configs', {
   chainId: integer().primaryKey(),
   name: varchar({ length: 255 }),
   url: varchar({ length: 500 }),
@@ -68,7 +68,7 @@ export const userRpcConfigs = duckdbTable("user_rpc_configs", {
 
 // 区块表
 export const blocks = duckdbTable(
-  "blocks",
+  'blocks',
   {
     ...chainColumns,
     number: bignum().notNull(), // 区块号
@@ -90,16 +90,16 @@ export const blocks = duckdbTable(
     receiptsRoot: hash32(),
     indexedAt: datetime().default(sql`now()`),
   },
-  (table) => [
+  table => [
     primaryKey({ columns: [table.chainId, table.number] }),
     unique().on(table.chainId, table.hash),
     // 注意：索引在迁移脚本中手动创建，避免 Drizzle 生成不兼容的索引语法
-  ]
+  ],
 );
 
 // 交易表
 export const transactions = duckdbTable(
-  "transactions",
+  'transactions',
   {
     ...chainColumns,
     hash: txHash().notNull(),
@@ -124,16 +124,16 @@ export const transactions = duckdbTable(
     timestamp: timestamp(),
     indexedAt: datetime().default(sql`now()`),
   },
-  (table) => [
+  table => [
     primaryKey({ columns: [table.chainId, table.hash] }),
     unique().on(table.chainId, table.blockNumber, table.transactionIndex),
     // 注意：索引在迁移脚本中手动创建
-  ]
+  ],
 );
 
 // 已索引地址表
 export const indexedAddresses = duckdbTable(
-  "indexed_addresses",
+  'indexed_addresses',
   {
     ...chainAddressColumns,
     type: varchar({ length: 20 }).notNull(), // 'EOA', 'contract'
@@ -142,14 +142,14 @@ export const indexedAddresses = duckdbTable(
     transactionCount: integer().default(0),
     indexedAt: datetime().default(sql`now()`),
   },
-  (table) => [
+  table => [
     primaryKey({ columns: [table.chainId, table.address] }),
     // 注意：索引在迁移脚本中手动创建
-  ]
+  ],
 );
 
 // 搜索历史表
-export const searchHistory = duckdbTable("search_history", {
+export const searchHistory = duckdbTable('search_history', {
   id: integer().primaryKey(),
   chainId: integer(),
   query: varchar({ length: 255 }),
@@ -159,28 +159,28 @@ export const searchHistory = duckdbTable("search_history", {
 });
 
 // 用户偏好表
-export const userPreferences = duckdbTable("user_preferences", {
+export const userPreferences = duckdbTable('user_preferences', {
   id: integer().primaryKey(),
-  theme: varchar({ length: 20 }).default("light"),
-  language: varchar({ length: 10 }).default("en"),
+  theme: varchar({ length: 20 }).default('light'),
+  language: varchar({ length: 10 }).default('en'),
   updatedAt: datetime().default(sql`now()`),
 });
 
 // 索引状态表
 export const indexStatus = duckdbTable(
-  "index_status",
+  'index_status',
   {
     ...chainColumns,
     indexType: varchar({ length: 20 }).notNull(), // 'blocks', 'transactions'
     lastIndexedBlock: bignum(),
     lastIndexedAt: datetime().default(sql`now()`),
   },
-  (table) => [primaryKey({ columns: [table.chainId, table.indexType] })]
+  table => [primaryKey({ columns: [table.chainId, table.indexType] })],
 );
 
 // 访问历史表
 export const accessHistory = duckdbTable(
-  "access_history",
+  'access_history',
   {
     ...chainColumns,
     type: varchar({ length: 20 }).notNull(), // 'block', 'transaction', 'address'
@@ -189,15 +189,15 @@ export const accessHistory = duckdbTable(
     lastAccessed: datetime().default(sql`now()`),
     accessCount: integer().default(1),
   },
-  (table) => [
+  table => [
     primaryKey({ columns: [table.chainId, table.type, table.identifier] }),
     // 注意：索引在迁移脚本中手动创建
-  ]
+  ],
 );
 
 // 合约源码表
 export const contractSources = duckdbTable(
-  "contract_sources",
+  'contract_sources',
   {
     ...chainAddressColumns,
     sourceCode: text(),
@@ -217,15 +217,15 @@ export const contractSources = duckdbTable(
     verificationDate: datetime().default(sql`now()`),
     lastUpdated: datetime().default(sql`now()`),
   },
-  (table) => [
+  table => [
     primaryKey({ columns: [table.chainId, table.address] }),
     // 注意：索引在迁移脚本中手动创建
-  ]
+  ],
 );
 
 // 合约创建信息表
 export const contractCreationInfo = duckdbTable(
-  "contract_creation_info",
+  'contract_creation_info',
   {
     ...chainAddressColumns,
     creationTxHash: txHash(),
@@ -236,15 +236,15 @@ export const contractCreationInfo = duckdbTable(
     creationMethod: varchar({ length: 50 }),
     lastUpdated: datetime().default(sql`now()`),
   },
-  (table) => [
+  table => [
     primaryKey({ columns: [table.chainId, table.address] }),
     // 注意：索引在迁移脚本中手动创建
-  ]
+  ],
 );
 
 // Event indexing progress — tracks per-contract indexing state
 export const indexingProgress = duckdbTable(
-  "indexing_progress",
+  'indexing_progress',
   {
     ...chainColumns,
     address: address().notNull(),
@@ -252,16 +252,16 @@ export const indexingProgress = duckdbTable(
     lastIndexedBlock: bignum(),
     lastFinalizedBlock: bignum(),
     totalEventsIndexed: integer().default(0),
-    status: varchar({ length: 20 }).default("idle"),
+    status: varchar({ length: 20 }).default('idle'),
     errorMessage: text(),
     updatedAt: datetime().default(sql`now()`),
   },
-  (table) => [primaryKey({ columns: [table.chainId, table.address] })]
+  table => [primaryKey({ columns: [table.chainId, table.address] })],
 );
 
 // Contract events — stores decoded events for all contracts
 export const contractEvents = duckdbTable(
-  "contract_events",
+  'contract_events',
   {
     ...chainColumns,
     contractAddress: address().notNull(),
@@ -281,16 +281,16 @@ export const contractEvents = duckdbTable(
     isFinalized: boolean().default(false),
     indexedAt: datetime().default(sql`now()`),
   },
-  (table) => [
+  table => [
     primaryKey({
       columns: [table.chainId, table.transactionHash, table.logIndex],
     }),
-  ]
+  ],
 );
 
 // 事件表注册表
 export const eventTableRegistry = duckdbTable(
-  "event_table_registry",
+  'event_table_registry',
   {
     ...chainAddressColumns,
     contractAddress: address().notNull(),
@@ -302,9 +302,9 @@ export const eventTableRegistry = duckdbTable(
     lastAccessed: datetime(),
     ...timestampColumns,
   },
-  (table) => [
+  table => [
     primaryKey({ columns: [table.chainId, table.contractAddress, table.eventSignature] }),
-  ]
+  ],
 );
 
 // 导出类型推断

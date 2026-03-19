@@ -7,7 +7,7 @@ describe('LRUCache', () => {
   beforeEach(() => {
     cache = new LRUCache({
       ttl: 1000, // 1秒TTL
-      maxSize: 3
+      maxSize: 3,
     });
   });
 
@@ -20,7 +20,7 @@ describe('LRUCache', () => {
     it('应该在TTL过期后返回undefined', async () => {
       cache.set('key1', 'value1', 100); // 100ms TTL
       expect(cache.get('key1')).toBe('value1');
-      
+
       // 等待TTL过期
       await new Promise(resolve => setTimeout(resolve, 150));
       expect(cache.get('key1')).toBeUndefined();
@@ -35,7 +35,7 @@ describe('LRUCache', () => {
     it('应该能删除缓存条目', () => {
       cache.set('key1', 'value1');
       expect(cache.has('key1')).toBe(true);
-      
+
       cache.delete('key1');
       expect(cache.has('key1')).toBe(false);
     });
@@ -44,7 +44,7 @@ describe('LRUCache', () => {
       cache.set('key1', 'value1');
       cache.set('key2', 'value2');
       expect(cache.size()).toBe(2);
-      
+
       cache.clear();
       expect(cache.size()).toBe(0);
     });
@@ -66,12 +66,12 @@ describe('LRUCache', () => {
 
     it('应该更新访问统计', () => {
       cache.set('key1', 'value1');
-      
+
       // 多次访问应该更新统计
       cache.get('key1');
       cache.get('key1');
       cache.get('key1');
-      
+
       const stats = cache.getStats();
       expect(stats.size).toBe(1);
     });
@@ -80,9 +80,9 @@ describe('LRUCache', () => {
   describe('getOrSet方法', () => {
     it('应该在缓存未命中时调用工厂函数', async () => {
       const factory = vi.fn().mockResolvedValue('computed_value');
-      
+
       const result = await cache.getOrSet('key1', factory);
-      
+
       expect(result).toBe('computed_value');
       expect(factory).toHaveBeenCalledOnce();
       expect(cache.get('key1')).toBe('computed_value');
@@ -90,12 +90,12 @@ describe('LRUCache', () => {
 
     it('应该在缓存命中时不调用工厂函数', async () => {
       const factory = vi.fn().mockResolvedValue('computed_value');
-      
+
       // 先设置缓存
       cache.set('key1', 'cached_value');
-      
+
       const result = await cache.getOrSet('key1', factory);
-      
+
       expect(result).toBe('cached_value');
       expect(factory).not.toHaveBeenCalled();
     });
@@ -105,12 +105,12 @@ describe('LRUCache', () => {
     it('应该能清理过期的条目', async () => {
       cache.set('key1', 'value1', 100); // 100ms TTL
       cache.set('key2', 'value2', 2000); // 2s TTL
-      
+
       expect(cache.size()).toBe(2);
-      
+
       // 等待第一个条目过期
       await new Promise(resolve => setTimeout(resolve, 150));
-      
+
       cache.cleanup();
       expect(cache.size()).toBe(1);
       expect(cache.has('key2')).toBe(true);
@@ -121,7 +121,7 @@ describe('LRUCache', () => {
     it('应该提供正确的统计信息', () => {
       cache.set('key1', 'value1');
       cache.set('key2', 'value2');
-      
+
       const stats = cache.getStats();
       expect(stats.size).toBe(2);
       expect(stats.maxSize).toBe(3);

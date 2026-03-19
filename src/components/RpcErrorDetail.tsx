@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { css } from "@linaria/core";
+import React, { useState } from 'react';
+import { css } from '@linaria/core';
 
 const errorDetailStyles = css`
   background: #fff5f5;
@@ -208,7 +208,7 @@ export default function RpcErrorDetail({
       <div className="error-header">
         <h4>🚨 RPC节点错误</h4>
         <button className="toggle-btn" onClick={() => setExpanded(!expanded)}>
-          {expanded ? "收起详情" : "查看详情"}
+          {expanded ? '收起详情' : '查看详情'}
         </button>
       </div>
 
@@ -226,22 +226,35 @@ export default function RpcErrorDetail({
               <h5>请求详情</h5>
               {chainId && chainName && (
                 <p>
-                  <strong>链:</strong> {chainName} (ID: {chainId})
+                  <strong>链:</strong>
+                  {' '}
+                  {chainName}
+                  {' '}
+                  (ID:
+                  {' '}
+                  {chainId}
+                  )
                 </p>
               )}
               {blockNumber && (
                 <p>
-                  <strong>区块:</strong> {blockNumber.toLocaleString()}
+                  <strong>区块:</strong>
+                  {' '}
+                  {blockNumber.toLocaleString()}
                 </p>
               )}
               {contractAddress && (
                 <p>
-                  <strong>合约:</strong> {contractAddress}
+                  <strong>合约:</strong>
+                  {' '}
+                  {contractAddress}
                 </p>
               )}
               {rpcUrl && (
                 <p>
-                  <strong>RPC:</strong> {rpcUrl}
+                  <strong>RPC:</strong>
+                  {' '}
+                  {rpcUrl}
                 </p>
               )}
             </div>
@@ -289,8 +302,8 @@ export default function RpcErrorDetail({
 
         <span className="retry-info">
           {retryable
-            ? "此错误可能是临时的，建议重试"
-            : "此错误通常需要更换RPC节点"}
+            ? '此错误可能是临时的，建议重试'
+            : '此错误通常需要更换RPC节点'}
         </span>
       </div>
     </div>

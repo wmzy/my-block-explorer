@@ -1,6 +1,6 @@
 // 链配置定义
-import type { Chain } from "viem";
-import * as chains from "viem/chains";
+import type { Chain } from 'viem';
+import * as chains from 'viem/chains';
 
 // 支持viem的所有链
 export const SUPPORTED_CHAINS: Chain[] = Object.values(chains);
@@ -21,7 +21,7 @@ export const POPULAR_CHAINS: Chain[] = [
 
 // 根据chainId获取链信息
 export function getChainInfo(chainId: number): Chain | null {
-  return SUPPORTED_CHAINS.find((chain) => chain.id === chainId) || null;
+  return SUPPORTED_CHAINS.find(chain => chain.id === chainId) || null;
 }
 
 // 获取链名称
@@ -33,24 +33,24 @@ export function getChainName(chainId: number): string {
 // 获取链的原生代币符号
 export function getChainSymbol(chainId: number): string {
   const chain = getChainInfo(chainId);
-  return chain?.nativeCurrency.symbol || "ETH";
+  return chain?.nativeCurrency.symbol || 'ETH';
 }
 
 // 获取链的区块浏览器URL
 export function getChainExplorerUrl(chainId: number): string {
   const chain = getChainInfo(chainId);
-  return chain?.blockExplorers?.default?.url || "";
+  return chain?.blockExplorers?.default?.url || '';
 }
 
 // 获取默认RPC URL
 export function getDefaultRpcUrl(chainId: number): string {
   const chain = getChainInfo(chainId);
-  return chain?.rpcUrls.default.http[0] || "";
+  return chain?.rpcUrls.default.http[0] || '';
 }
 
 // 获取所有支持的链ID
 export function getSupportedChainIds(): number[] {
-  return SUPPORTED_CHAINS.map((chain) => chain.id);
+  return SUPPORTED_CHAINS.map(chain => chain.id);
 }
 
 // 检查链是否支持
@@ -71,7 +71,7 @@ export type UserRpcConfig = {
 // 获取有效的RPC URL（自定义优先，否则viem默认）
 export function getEffectiveRpcUrl(
   chainId: number,
-  userConfig?: UserRpcConfig
+  userConfig?: UserRpcConfig,
 ): string {
   if (userConfig?.customRpcUrl) {
     return userConfig.customRpcUrl;
@@ -82,15 +82,15 @@ export function getEffectiveRpcUrl(
 
 // 检查链是否为常用链
 export function isPopularChain(chainId: number): boolean {
-  return POPULAR_CHAINS.some((chain) => chain.id === chainId);
+  return POPULAR_CHAINS.some(chain => chain.id === chainId);
 }
 
 // 获取链的类型（主网/测试网）
 export function getChainType(
-  chainId: number
-): "mainnet" | "testnet" | "unknown" {
+  chainId: number,
+): 'mainnet' | 'testnet' | 'unknown' {
   const chain = getChainInfo(chainId);
-  if (!chain) return "unknown";
+  if (!chain) return 'unknown';
 
   // 常见的测试网链ID
   const testnetIds = [
@@ -115,23 +115,23 @@ export function getChainType(
   ];
 
   if (testnetIds.includes(chainId)) {
-    return "testnet";
+    return 'testnet';
   }
 
   // 检查链名称中是否包含测试网标识
   const name = chain.name.toLowerCase();
   if (
-    name.includes("test") ||
-    name.includes("sepolia") ||
-    name.includes("goerli") ||
-    name.includes("mumbai") ||
-    name.includes("fuji") ||
-    name.includes("chiado")
+    name.includes('test')
+    || name.includes('sepolia')
+    || name.includes('goerli')
+    || name.includes('mumbai')
+    || name.includes('fuji')
+    || name.includes('chiado')
   ) {
-    return "testnet";
+    return 'testnet';
   }
 
-  return "mainnet";
+  return 'mainnet';
 }
 
 // 按类型和受欢迎程度排序链
@@ -148,8 +148,8 @@ export function getSortedChains(): Chain[] {
     const aType = getChainType(a.id);
     const bType = getChainType(b.id);
 
-    if (aType === "mainnet" && bType !== "mainnet") return -1;
-    if (aType !== "mainnet" && bType === "mainnet") return 1;
+    if (aType === 'mainnet' && bType !== 'mainnet') return -1;
+    if (aType !== 'mainnet' && bType === 'mainnet') return 1;
 
     // 最后按名称排序
     return a.name.localeCompare(b.name);
@@ -181,8 +181,8 @@ export function searchChains(query: string): Chain[] {
     if (
       chain.name
         .toLowerCase()
-        .replace(/\s+/g, "")
-        .includes(lowerQuery.replace(/\s+/g, ""))
+        .replace(/\s+/g, '')
+        .includes(lowerQuery.replace(/\s+/g, ''))
     )
       return true;
 
@@ -211,8 +211,8 @@ export function searchChains(query: string): Chain[] {
     // 4. 主网优先于测试网
     const aType = getChainType(a.id);
     const bType = getChainType(b.id);
-    if (aType === "mainnet" && bType !== "mainnet") return -1;
-    if (aType !== "mainnet" && bType === "mainnet") return 1;
+    if (aType === 'mainnet' && bType !== 'mainnet') return -1;
+    if (aType !== 'mainnet' && bType === 'mainnet') return 1;
 
     // 5. 按名称排序
     return a.name.localeCompare(b.name);
@@ -248,7 +248,7 @@ export const DEFAULT_DATABASE_CONFIG: Partial<ChainDatabaseConfig> = {
 // 生成链特定的数据库配置
 export function getChainDatabaseConfig(
   chainId: number,
-  overrides?: Partial<ChainDatabaseConfig>
+  overrides?: Partial<ChainDatabaseConfig>,
 ): ChainDatabaseConfig {
   const chainName = getChainName(chainId);
   const chainType = getChainType(chainId);
@@ -276,7 +276,7 @@ export function getChainDatabaseConfig(
 // 获取多个链的数据库配置
 export function getMultiChainDatabaseConfig(
   chainIds: number[],
-  overrides?: Partial<ChainDatabaseConfig>
+  overrides?: Partial<ChainDatabaseConfig>,
 ): ChainDatabaseConfig[] {
   return chainIds.map(chainId => getChainDatabaseConfig(chainId, overrides));
 }
@@ -337,10 +337,11 @@ export function validateMultiChainConfig(chainIds: number[]): {
   const unsupportedChains: number[] = [];
   const errors: string[] = [];
 
-  chainIds.forEach(chainId => {
+  chainIds.forEach((chainId) => {
     if (isChainSupported(chainId)) {
       supportedChains.push(chainId);
-    } else {
+    }
+    else {
       unsupportedChains.push(chainId);
       errors.push(`Chain ${chainId} is not supported`);
     }

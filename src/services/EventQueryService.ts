@@ -6,7 +6,7 @@
 import { createLogger } from '../server/logger';
 import { ChainDatabaseManager, multiChainDb } from '../database/chain-database-manager';
 
-const logger = createLogger("event-query-service");
+const logger = createLogger('event-query-service');
 import { ChainEventTableManager } from '../database/chain-event-table-manager';
 import { multiChainPerformanceManager } from '../database/performance-monitor';
 import {
@@ -15,7 +15,7 @@ import {
   PaginatedResult,
   EventStatistics,
   ChainDatabaseError,
-  EventDecodingError
+  EventDecodingError,
 } from '../types/events';
 
 /**
@@ -60,7 +60,7 @@ export class EventQueryService {
         filters = {},
         pagination = { limit: 50 },
         sort = { field: 'block_timestamp', direction: 'desc' },
-        includeTotal = true
+        includeTotal = true,
       } = options;
 
       // 构建查询参数
@@ -90,8 +90,9 @@ export class EventQueryService {
         try {
           const stats = await this.eventTableManager.getEventStatistics(tableName);
           total = stats.totalEvents;
-        } catch (error) {
-          logger.warn({ err: error }, "Failed to get total count");
+        }
+        catch (error) {
+          logger.warn({ err: error }, 'Failed to get total count');
         }
       }
 
@@ -102,8 +103,8 @@ export class EventQueryService {
         nextCursor: result.nextCursor,
         prevCursor: undefined, // 可以根据需要实现
       };
-
-    } catch (error) {
+    }
+    catch (error) {
       const queryTime = performance.now() - startTime;
       performanceMonitor.recordQuery('event_query', queryTime, false);
 
@@ -112,7 +113,7 @@ export class EventQueryService {
         undefined,
         undefined,
         this.chainId,
-        error instanceof Error ? error : new Error(String(error))
+        error instanceof Error ? error : new Error(String(error)),
       );
     }
   }
@@ -140,7 +141,8 @@ export class EventQueryService {
           `);
           const blockCount = Number(result[0]?.block_count || 0);
           return blockCount > 0 ? stats.totalEvents / blockCount : 0;
-        } catch {
+        }
+        catch {
           return 0;
         }
       })();
@@ -155,8 +157,8 @@ export class EventQueryService {
         lastIndexedBlock: undefined,
         lastIndexedAt: stats.newestEvent,
       };
-
-    } catch (error) {
+    }
+    catch (error) {
       const queryTime = performance.now() - startTime;
       performanceMonitor.recordQuery('event_statistics', queryTime, false);
 
@@ -165,7 +167,7 @@ export class EventQueryService {
         undefined,
         undefined,
         this.chainId,
-        error instanceof Error ? error : new Error(String(error))
+        error instanceof Error ? error : new Error(String(error)),
       );
     }
   }
@@ -194,8 +196,8 @@ export class EventQueryService {
         acc[row.event_name] = Number(row.count);
         return acc;
       }, {});
-
-    } catch (error) {
+    }
+    catch (error) {
       const queryTime = performance.now() - startTime;
       performanceMonitor.recordQuery('events_by_type', queryTime, false);
 
@@ -204,7 +206,7 @@ export class EventQueryService {
         undefined,
         undefined,
         this.chainId,
-        error instanceof Error ? error : new Error(String(error))
+        error instanceof Error ? error : new Error(String(error)),
       );
     }
   }
@@ -215,7 +217,7 @@ export class EventQueryService {
   async getEventsByTimeRange(
     tableName: string,
     interval: 'hour' | 'day' | 'week' | 'month' = 'day',
-    limit: number = 30
+    limit: number = 30,
   ): Promise<Array<{ timeRange: string; count: number }>> {
     const startTime = performance.now();
     const performanceMonitor = multiChainPerformanceManager.getChainMonitor(this.chainId);
@@ -224,16 +226,16 @@ export class EventQueryService {
       let intervalSql: string;
       switch (interval) {
         case 'hour':
-          intervalSql = "strftime('%Y-%m-%d %H:00:00', block_timestamp)";
+          intervalSql = 'strftime(\'%Y-%m-%d %H:00:00\', block_timestamp)';
           break;
         case 'day':
-          intervalSql = "strftime('%Y-%m-%d', block_timestamp)";
+          intervalSql = 'strftime(\'%Y-%m-%d\', block_timestamp)';
           break;
         case 'week':
-          intervalSql = "strftime('%Y-%W', block_timestamp)";
+          intervalSql = 'strftime(\'%Y-%W\', block_timestamp)';
           break;
         case 'month':
-          intervalSql = "strftime('%Y-%m', block_timestamp)";
+          intervalSql = 'strftime(\'%Y-%m\', block_timestamp)';
           break;
       }
 
@@ -255,8 +257,8 @@ export class EventQueryService {
         timeRange: row.time_range,
         count: Number(row.count),
       }));
-
-    } catch (error) {
+    }
+    catch (error) {
       const queryTime = performance.now() - startTime;
       performanceMonitor.recordQuery('events_by_time_range', queryTime, false);
 
@@ -265,7 +267,7 @@ export class EventQueryService {
         undefined,
         undefined,
         this.chainId,
-        error instanceof Error ? error : new Error(String(error))
+        error instanceof Error ? error : new Error(String(error)),
       );
     }
   }
@@ -276,7 +278,7 @@ export class EventQueryService {
   async getTopAddresses(
     tableName: string,
     type: 'from' | 'to' | 'contract',
-    limit: number = 10
+    limit: number = 10,
   ): Promise<Array<{ address: string; count: number; percentage: number }>> {
     const startTime = performance.now();
     const performanceMonitor = multiChainPerformanceManager.getChainMonitor(this.chainId);
@@ -315,8 +317,8 @@ export class EventQueryService {
         count: Number(row.count),
         percentage: Number(row.percentage),
       }));
-
-    } catch (error) {
+    }
+    catch (error) {
       const queryTime = performance.now() - startTime;
       performanceMonitor.recordQuery('top_addresses', queryTime, false);
 
@@ -325,7 +327,7 @@ export class EventQueryService {
         undefined,
         undefined,
         this.chainId,
-        error instanceof Error ? error : new Error(String(error))
+        error instanceof Error ? error : new Error(String(error)),
       );
     }
   }
@@ -336,7 +338,7 @@ export class EventQueryService {
   async searchEvents(
     tableName: string,
     searchTerm: string,
-    options: Partial<EventQueryOptions> = {}
+    options: Partial<EventQueryOptions> = {},
   ): Promise<PaginatedResult<any>> {
     const startTime = performance.now();
     const performanceMonitor = multiChainPerformanceManager.getChainMonitor(this.chainId);
@@ -375,8 +377,8 @@ export class EventQueryService {
         hasMore,
         nextCursor: hasMore ? events[events.length - 1]?.block_timestamp : undefined,
       };
-
-    } catch (error) {
+    }
+    catch (error) {
       const queryTime = performance.now() - startTime;
       performanceMonitor.recordQuery('event_search', queryTime, false);
 
@@ -385,7 +387,7 @@ export class EventQueryService {
         undefined,
         undefined,
         this.chainId,
-        error instanceof Error ? error : new Error(String(error))
+        error instanceof Error ? error : new Error(String(error)),
       );
     }
   }
@@ -407,8 +409,8 @@ export class EventQueryService {
       performanceMonitor.recordQuery('event_details', queryTime, true);
 
       return result.length > 0 ? result[0] : null;
-
-    } catch (error) {
+    }
+    catch (error) {
       const queryTime = performance.now() - startTime;
       performanceMonitor.recordQuery('event_details', queryTime, false);
 
@@ -417,7 +419,7 @@ export class EventQueryService {
         undefined,
         undefined,
         this.chainId,
-        error instanceof Error ? error : new Error(String(error))
+        error instanceof Error ? error : new Error(String(error)),
       );
     }
   }
@@ -428,7 +430,7 @@ export class EventQueryService {
   async getSimilarEvents(
     tableName: string,
     eventName: string,
-    limit: number = 10
+    limit: number = 10,
   ): Promise<any[]> {
     const startTime = performance.now();
     const performanceMonitor = multiChainPerformanceManager.getChainMonitor(this.chainId);
@@ -445,8 +447,8 @@ export class EventQueryService {
       performanceMonitor.recordQuery('similar_events', queryTime, true);
 
       return result;
-
-    } catch (error) {
+    }
+    catch (error) {
       const queryTime = performance.now() - startTime;
       performanceMonitor.recordQuery('similar_events', queryTime, false);
 
@@ -455,7 +457,7 @@ export class EventQueryService {
         undefined,
         undefined,
         this.chainId,
-        error instanceof Error ? error : new Error(String(error))
+        error instanceof Error ? error : new Error(String(error)),
       );
     }
   }
@@ -473,8 +475,9 @@ export class EventQueryService {
   async validateTable(tableName: string): Promise<boolean> {
     try {
       return await this.eventTableManager.tableExists(tableName);
-    } catch (error) {
-      logger.warn({ err: error, tableName }, "Failed to validate table");
+    }
+    catch (error) {
+      logger.warn({ err: error, tableName }, 'Failed to validate table');
       return false;
     }
   }
@@ -488,13 +491,14 @@ export class EventQueryService {
   }> {
     try {
       return await this.eventTableManager.getTableSchema(tableName);
-    } catch (error) {
+    }
+    catch (error) {
       throw new EventDecodingError(
         `Failed to get table schema: ${error}`,
         undefined,
         undefined,
         this.chainId,
-        error instanceof Error ? error : new Error(String(error))
+        error instanceof Error ? error : new Error(String(error)),
       );
     }
   }

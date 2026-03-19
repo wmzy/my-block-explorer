@@ -32,8 +32,8 @@ describe('EventTable Pagination', () => {
         events: mockEvents.slice(0, 10),
         total: mockEvents.length,
         hasMore: true,
-        nextCursor: mockEvents[9].blockTimestamp
-      })
+        nextCursor: mockEvents[9].blockTimestamp,
+      }),
     });
   });
 
@@ -49,7 +49,7 @@ describe('EventTable Pagination', () => {
           contractAddress={mockContractAddress}
           initialEvents={mockEvents.slice(0, 50)}
           enableClientSideSort={true}
-        />
+        />,
       );
 
       expect(screen.getByText(/显示第 \d+ - \d+ 条，共 \d+ 条事件/)).toBeInTheDocument();
@@ -65,7 +65,7 @@ describe('EventTable Pagination', () => {
           contractAddress={mockContractAddress}
           initialEvents={mockEvents.slice(0, 50)}
           enableClientSideSort={true}
-        />
+        />,
       );
 
       expect(screen.getByText('显示第 1 - 50 条，共 100 条事件')).toBeInTheDocument();
@@ -79,7 +79,7 @@ describe('EventTable Pagination', () => {
           contractAddress={mockContractAddress}
           initialEvents={mockEvents}
           enableClientSideSort={true}
-        />
+        />,
       );
 
       const nextButton = screen.getByText('→');
@@ -98,7 +98,7 @@ describe('EventTable Pagination', () => {
           contractAddress={mockContractAddress}
           initialEvents={mockEvents}
           enableClientSideSort={true}
-        />
+        />,
       );
 
       // Go to next page first
@@ -125,7 +125,7 @@ describe('EventTable Pagination', () => {
           contractAddress={mockContractAddress}
           initialEvents={mockEvents}
           enableClientSideSort={true}
-        />
+        />,
       );
 
       // Go to last page first
@@ -152,7 +152,7 @@ describe('EventTable Pagination', () => {
           contractAddress={mockContractAddress}
           initialEvents={mockEvents}
           enableClientSideSort={true}
-        />
+        />,
       );
 
       const lastButton = screen.getByText('⇥');
@@ -173,7 +173,7 @@ describe('EventTable Pagination', () => {
           initialEvents={mockEvents}
           enableClientSideSort={true}
           enableCustomPageSize={true}
-        />
+        />,
       );
 
       expect(screen.getByText('每页显示:')).toBeInTheDocument();
@@ -188,7 +188,7 @@ describe('EventTable Pagination', () => {
           initialEvents={mockEvents}
           enableClientSideSort={true}
           enableCustomPageSize={true}
-        />
+        />,
       );
 
       const pageSizeSelect = screen.getByDisplayValue('50 条');
@@ -208,7 +208,7 @@ describe('EventTable Pagination', () => {
           initialEvents={mockEvents}
           enableClientSideSort={true}
           enableCustomPageSize={true}
-        />
+        />,
       );
 
       const pageSizeSelect = screen.getByDisplayValue('50 条');
@@ -228,7 +228,7 @@ describe('EventTable Pagination', () => {
           initialEvents={mockEvents}
           enableClientSideSort={true}
           enableCustomPageSize={true}
-        />
+        />,
       );
 
       // Navigate to second page
@@ -257,7 +257,7 @@ describe('EventTable Pagination', () => {
           contractAddress={mockContractAddress}
           initialEvents={mockEvents}
           enableClientSideSort={true}
-        />
+        />,
       );
 
       expect(screen.getByText('跳转到:')).toBeInTheDocument();
@@ -272,7 +272,7 @@ describe('EventTable Pagination', () => {
           contractAddress={mockContractAddress}
           initialEvents={mockEvents}
           enableClientSideSort={true}
-        />
+        />,
       );
 
       const pageInput = screen.getByPlaceholderText('1');
@@ -293,7 +293,7 @@ describe('EventTable Pagination', () => {
           contractAddress={mockContractAddress}
           initialEvents={mockEvents}
           enableClientSideSort={true}
-        />
+        />,
       );
 
       const pageInput = screen.getByPlaceholderText('1');
@@ -313,7 +313,7 @@ describe('EventTable Pagination', () => {
           contractAddress={mockContractAddress}
           initialEvents={mockEvents}
           enableClientSideSort={true}
-        />
+        />,
       );
 
       const pageInput = screen.getByPlaceholderText('1');
@@ -335,7 +335,7 @@ describe('EventTable Pagination', () => {
           contractAddress={mockContractAddress}
           initialEvents={mockEvents}
           enableClientSideSort={true}
-        />
+        />,
       );
 
       const pageInput = screen.getByPlaceholderText('1');
@@ -357,7 +357,7 @@ describe('EventTable Pagination', () => {
           contractAddress={mockContractAddress}
           initialEvents={mockEvents}
           enableClientSideSort={true}
-        />
+        />,
       );
 
       const pageInput = screen.getByPlaceholderText('1');
@@ -380,7 +380,7 @@ describe('EventTable Pagination', () => {
           contractAddress={mockContractAddress}
           initialEvents={mockEvents.slice(0, 50)}
           enableClientSideSort={true}
-        />
+        />,
       );
 
       // On first page
@@ -397,7 +397,7 @@ describe('EventTable Pagination', () => {
           contractAddress={mockContractAddress}
           initialEvents={mockEvents}
           enableClientSideSort={true}
-        />
+        />,
       );
 
       // Navigate to last page
@@ -419,7 +419,7 @@ describe('EventTable Pagination', () => {
           contractAddress={mockContractAddress}
           initialEvents={mockEvents}
           enableClientSideSort={true}
-        />
+        />,
       );
 
       const goButton = screen.getByText('确定');
@@ -433,7 +433,7 @@ describe('EventTable Pagination', () => {
           contractAddress={mockContractAddress}
           initialEvents={mockEvents}
           enableClientSideSort={true}
-        />
+        />,
       );
 
       const pageInput = screen.getByPlaceholderText('1');
@@ -453,7 +453,7 @@ describe('EventTable Pagination', () => {
           initialEvents={mockEvents.slice(0, 50)}
           enableClientSideSort={true}
           clientSideSortThreshold={100}
-        />
+        />,
       );
 
       // Should show pagination controls for client-side
@@ -467,13 +467,13 @@ describe('EventTable Pagination', () => {
           contractAddress={mockContractAddress}
           initialEvents={[]} // Empty to trigger API call
           enableClientSideSort={false}
-        />
+        />,
       );
 
       // Should make API call for server-side pagination
       expect(global.fetch).toHaveBeenCalledWith(
         expect.stringContaining('limit=50'),
-        expect.any(Object)
+        expect.any(Object),
       );
     });
 
@@ -484,13 +484,13 @@ describe('EventTable Pagination', () => {
           contractAddress={mockContractAddress}
           initialEvents={[]} // Empty to trigger API call
           enableClientSideSort={false}
-        />
+        />,
       );
 
       await waitFor(() => {
         expect(global.fetch).toHaveBeenCalledWith(
           expect.stringContaining('limit=50'),
-          expect.any(Object)
+          expect.any(Object),
         );
       });
     });
@@ -503,8 +503,8 @@ describe('EventTable Pagination', () => {
             events: mockEvents.slice(0, 50),
             total: mockEvents.length,
             hasMore: true,
-            nextCursor: mockEvents[49].blockTimestamp
-          })
+            nextCursor: mockEvents[49].blockTimestamp,
+          }),
         })
         .mockResolvedValueOnce({
           ok: true,
@@ -512,8 +512,8 @@ describe('EventTable Pagination', () => {
             events: mockEvents.slice(50, 100),
             total: mockEvents.length,
             hasMore: false,
-            nextCursor: undefined
-          })
+            nextCursor: undefined,
+          }),
         });
 
       render(
@@ -522,7 +522,7 @@ describe('EventTable Pagination', () => {
           contractAddress={mockContractAddress}
           initialEvents={[]} // Empty to trigger API call
           enableClientSideSort={false}
-        />
+        />,
       );
 
       // Wait for initial load
@@ -549,7 +549,7 @@ describe('EventTable Pagination', () => {
           initialEvents={mockEvents.slice(0, 20)}
           enableClientSideSort={true}
           defaultPageSize={50}
-        />
+        />,
       );
 
       expect(screen.getByText('显示第 1 - 20 条，共 20 条事件')).toBeInTheDocument();
@@ -565,7 +565,7 @@ describe('EventTable Pagination', () => {
           contractAddress={mockContractAddress}
           initialEvents={[]}
           enableClientSideSort={true}
-        />
+        />,
       );
 
       expect(screen.getByText('未找到事件')).toBeInTheDocument();
@@ -579,7 +579,7 @@ describe('EventTable Pagination', () => {
           initialEvents={mockEvents}
           enableClientSideSort={true}
           enableCustomPageSize={true}
-        />
+        />,
       );
 
       const pageSizeSelect = screen.getByDisplayValue('50 条');
@@ -598,7 +598,7 @@ describe('EventTable Pagination', () => {
           contractAddress={mockContractAddress}
           initialEvents={mockEvents}
           enableClientSideSort={true}
-        />
+        />,
       );
 
       // Navigate to second page
@@ -628,7 +628,7 @@ describe('EventTable Pagination', () => {
           initialEvents={mockEvents.slice(0, 75)}
           enableClientSideSort={true}
           defaultPageSize={50}
-        />
+        />,
       );
 
       expect(screen.getByText('显示第 1 - 50 条，共 75 条事件')).toBeInTheDocument();
@@ -642,7 +642,7 @@ describe('EventTable Pagination', () => {
           contractAddress={mockContractAddress}
           initialEvents={mockEvents}
           enableClientSideSort={true}
-        />
+        />,
       );
 
       const nextButton = screen.getByText('→');

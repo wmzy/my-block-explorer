@@ -1,4 +1,4 @@
-import { css } from "@linaria/core";
+import { css } from '@linaria/core';
 
 export const hazeThemeWrapper = css`
   @media (prefers-color-scheme: dark) {

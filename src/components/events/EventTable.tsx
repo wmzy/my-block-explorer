@@ -551,9 +551,10 @@ const formatTimestamp = (timestamp: string): string => {
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit',
-      hour12: false
+      hour12: false,
     });
-  } catch {
+  }
+  catch {
     return 'Invalid timestamp';
   }
 };
@@ -563,7 +564,8 @@ const formatValue = (value?: string): string => {
   try {
     const etherValue = formatEther(BigInt(value));
     return `${parseFloat(etherValue).toFixed(6)} ETH`;
-  } catch {
+  }
+  catch {
     return `${value} wei`;
   }
 };
@@ -579,7 +581,7 @@ const getValueByPath = (obj: any, path: string): any => {
 const clientSideSort = (
   data: EventData[],
   sortConfigs: SortConfig[],
-  primarySort: SortState
+  primarySort: SortState,
 ): EventData[] => {
   if (!sortConfigs.length && !primarySort.field) return data;
 
@@ -590,30 +592,31 @@ const clientSideSort = (
     // Use multi-sort configurations
     finalSortConfigs = sortConfigs.map(config => ({
       ...config,
-      type: config.type || 'text'
+      type: config.type || 'text',
     }));
-  } else if (primarySort.field) {
+  }
+  else if (primarySort.field) {
     // Use primary sort configuration
     const sortOption = defaultSortOptions.find(opt => opt.key === primarySort.field);
     finalSortConfigs = [{
       key: primarySort.field,
       direction: primarySort.direction,
       type: sortOption?.type || 'text',
-      priority: 0
+      priority: 0,
     }];
   }
 
   // Generate cache key based on sort configurations
   const cacheKey = `sort_${JSON.stringify({
     dataSize: data.length,
-    configs: finalSortConfigs.map(c => ({ k: c.key, d: c.direction, t: c.type }))
+    configs: finalSortConfigs.map(c => ({ k: c.key, d: c.direction, t: c.type })),
   })}`;
 
   // Use optimized sorting
   const result = optimizedSort(data, finalSortConfigs, {
     useCache: true,
     cacheKey,
-    threshold: 1000 // Use optimized sorting for datasets over 1000 items
+    threshold: 1000, // Use optimized sorting for datasets over 1000 items
   });
 
   // Record performance metrics
@@ -672,7 +675,7 @@ export const EventTable: React.FC<EventTableProps> = ({
   const [filters, setFilters] = useState<FilterState>({});
   const [sort, setSort] = useState<SortState>({
     field: 'block_timestamp',
-    direction: 'desc'
+    direction: 'desc',
   });
 
   // Enhanced sorting state
@@ -718,7 +721,7 @@ export const EventTable: React.FC<EventTableProps> = ({
           field: s.key,
           direction: s.direction,
           type: s.type,
-          priority: s.priority
+          priority: s.priority,
         }))));
       }
 
@@ -741,7 +744,8 @@ export const EventTable: React.FC<EventTableProps> = ({
             if (obj.from) queryParams.set(`${key}_from`, String(obj.from));
             if (obj.to) queryParams.set(`${key}_to`, String(obj.to));
             if (obj.like) queryParams.set(`${key}_like`, String(obj.like));
-          } else {
+          }
+          else {
             queryParams.set(key, String(value));
           }
         }
@@ -767,10 +771,13 @@ export const EventTable: React.FC<EventTableProps> = ({
       console.log('API response data:', data);
 
       const normalizedEvents = (data.events ?? []).map((e: any) => {
-        const args = typeof e.decodedArgs === "string"
-          ? (() => { try { return JSON.parse(e.decodedArgs); } catch { return {}; } })()
+        const args = typeof e.decodedArgs === 'string'
+          ? (() => {
+              try { return JSON.parse(e.decodedArgs); }
+              catch { return {}; }
+            })()
           : (e.decodedArgs ?? {});
-        const blockTimestamp = typeof e.blockTimestamp === "number"
+        const blockTimestamp = typeof e.blockTimestamp === 'number'
           ? new Date(e.blockTimestamp * 1000).toISOString()
           : e.blockTimestamp;
         return { ...args, ...e, blockTimestamp };
@@ -778,7 +785,8 @@ export const EventTable: React.FC<EventTableProps> = ({
 
       if (cursor) {
         setAllEvents(prev => [...prev, ...normalizedEvents]);
-      } else {
+      }
+      else {
         setAllEvents(normalizedEvents);
       }
 
@@ -790,11 +798,12 @@ export const EventTable: React.FC<EventTableProps> = ({
       }));
 
       console.log('Events updated, count:', data.events.length);
-
-    } catch (err) {
+    }
+    catch (err) {
       console.error('Failed to fetch events:', err);
       setError(err instanceof Error ? err.message : 'Failed to load events');
-    } finally {
+    }
+    finally {
       setLoading(false);
     }
   }, [chainId, contractAddress, pagination.limit, sort, filters, enableMultiSort, multiSort, dynamicFilters]);
@@ -824,7 +833,8 @@ export const EventTable: React.FC<EventTableProps> = ({
       setEvents([]);
       setPagination(prev => ({ ...prev, page: 1, nextCursor: undefined }));
       fetchEvents();
-    } else {
+    }
+    else {
       // For client-side sorting, just reset to first page
       setPagination(prev => ({ ...prev, page: 1 }));
     }
@@ -841,7 +851,8 @@ export const EventTable: React.FC<EventTableProps> = ({
       setEvents([]);
       setPagination(prev => ({ ...prev, page: 1, nextCursor: undefined }));
       fetchEvents();
-    } else {
+    }
+    else {
       // For client-side sorting, just reset to first page
       setPagination(prev => ({ ...prev, page: 1 }));
     }
@@ -855,7 +866,8 @@ export const EventTable: React.FC<EventTableProps> = ({
       setEvents([]);
       setPagination(prev => ({ ...prev, page: 1, nextCursor: undefined }));
       fetchEvents();
-    } else {
+    }
+    else {
       // For client-side sorting, just reset to first page
       setPagination(prev => ({ ...prev, page: 1 }));
     }
@@ -886,15 +898,16 @@ export const EventTable: React.FC<EventTableProps> = ({
       newMultiSort = [...multiSort];
       newMultiSort[existingIndex] = {
         ...newMultiSort[existingIndex],
-        direction: newMultiSort[existingIndex].direction === 'asc' ? 'desc' : 'asc'
+        direction: newMultiSort[existingIndex].direction === 'asc' ? 'desc' : 'asc',
       };
-    } else {
+    }
+    else {
       // Add new sort
       const newSortConfig: SortConfig = {
         key: currentSortField,
         direction: sortOption.defaultDirection || 'asc',
         type: sortOption.type,
-        priority: multiSort.length
+        priority: multiSort.length,
       };
       newMultiSort = [...multiSort, newSortConfig];
     }
@@ -922,7 +935,8 @@ export const EventTable: React.FC<EventTableProps> = ({
       setEvents([]);
       setPagination(prev => ({ ...prev, page: 1, nextCursor: undefined }));
       fetchEvents();
-    } else {
+    }
+    else {
       // For client-side sorting, just reset to first page
       setPagination(prev => ({ ...prev, page: 1 }));
     }
@@ -934,11 +948,13 @@ export const EventTable: React.FC<EventTableProps> = ({
       // Client-side pagination - just update page state
       const nextPage = pagination.page + 1;
       setPagination(prev => ({ ...prev, page: nextPage }));
-    } else {
+    }
+    else {
       // Server-side pagination
       if (pagination.nextCursor) {
         fetchEvents(pagination.nextCursor);
-      } else {
+      }
+      else {
         const nextPage = pagination.page + 1;
         setPagination(prev => ({ ...prev, page: nextPage }));
         setEvents([]);
@@ -952,7 +968,8 @@ export const EventTable: React.FC<EventTableProps> = ({
       // Client-side pagination - just update page state
       const prevPage = Math.max(1, pagination.page - 1);
       setPagination(prev => ({ ...prev, page: prevPage }));
-    } else {
+    }
+    else {
       // Server-side pagination
       const prevPage = Math.max(1, pagination.page - 1);
       setPagination(prev => ({ ...prev, page: prevPage }));
@@ -965,7 +982,8 @@ export const EventTable: React.FC<EventTableProps> = ({
     if (shouldUseClientSideSort) {
       // Client-side pagination - just update page state
       setPagination(prev => ({ ...prev, page: 1 }));
-    } else {
+    }
+    else {
       // Server-side pagination
       setPagination(prev => ({ ...prev, page: 1 }));
       setEvents([]);
@@ -979,7 +997,8 @@ export const EventTable: React.FC<EventTableProps> = ({
       if (totalPages > 0) {
         setPagination(prev => ({ ...prev, page: totalPages }));
       }
-    } else {
+    }
+    else {
       // Server-side pagination
       if (totalPages > 0) {
         setPagination(prev => ({ ...prev, page: totalPages }));
@@ -1024,7 +1043,7 @@ export const EventTable: React.FC<EventTableProps> = ({
     setPagination(prev => ({
       ...prev,
       startIndex,
-      endIndex
+      endIndex,
     }));
   }, [pagination.total, pagination.limit, pagination.page]);
 
@@ -1055,7 +1074,7 @@ export const EventTable: React.FC<EventTableProps> = ({
         dataSize: allEvents.length,
         algorithm: recentMetrics['optimized'] ? 'optimized' : 'standard',
         cacheHit: sortTime < 5, // Assume cache hit if very fast
-        avgMetrics
+        avgMetrics,
       });
 
       // Update pagination info for client-side data
@@ -1063,9 +1082,10 @@ export const EventTable: React.FC<EventTableProps> = ({
         ...prev,
         total: allEvents.length,
         hasMore: pagination.page * pagination.limit < allEvents.length,
-        totalPages: Math.ceil(allEvents.length / pagination.limit)
+        totalPages: Math.ceil(allEvents.length / pagination.limit),
       }));
-    } else {
+    }
+    else {
       // For server-side sorting, just use the events as-is
       if (pagination.page === 1) {
         setEvents(allEvents.slice(0, pagination.limit));
@@ -1149,10 +1169,10 @@ export const EventTable: React.FC<EventTableProps> = ({
     );
   }
 
-  const hasActiveFilters = Object.keys(dynamicFilters).length > 0 &&
-    Object.values(dynamicFilters).some(value =>
-      value !== null && value !== undefined && value !== '' &&
-      (typeof value !== 'object' || Object.values(value).some(v => v !== null && v !== undefined && v !== ''))
+  const hasActiveFilters = Object.keys(dynamicFilters).length > 0
+    && Object.values(dynamicFilters).some(value =>
+      value !== null && value !== undefined && value !== ''
+      && (typeof value !== 'object' || Object.values(value).some(v => v !== null && v !== undefined && v !== '')),
     );
 
   return (
@@ -1162,14 +1182,16 @@ export const EventTable: React.FC<EventTableProps> = ({
         <div style={{
           background: '#f8fafc',
           borderBottom: '1px solid #e2e8f0',
-          padding: '16px'
-        }}>
+          padding: '16px',
+        }}
+        >
           <div style={{
             display: 'flex',
             justifyContent: 'space-between',
             alignItems: 'center',
-            marginBottom: showFilterForm ? '16px' : '0'
-          }}>
+            marginBottom: showFilterForm ? '16px' : '0',
+          }}
+          >
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
               <h4 style={{ margin: 0, fontSize: '16px', fontWeight: '600' }}>Event Filters</h4>
               {hasActiveFilters && (
@@ -1178,9 +1200,12 @@ export const EventTable: React.FC<EventTableProps> = ({
                   color: 'white',
                   padding: '2px 8px',
                   borderRadius: '12px',
-                  fontSize: '12px'
-                }}>
-                  {Object.keys(dynamicFilters).length} active
+                  fontSize: '12px',
+                }}
+                >
+                  {Object.keys(dynamicFilters).length}
+                  {' '}
+                  active
                 </span>
               )}
             </div>
@@ -1193,7 +1218,7 @@ export const EventTable: React.FC<EventTableProps> = ({
                   border: '1px solid #dee2e6',
                   borderRadius: '4px',
                   cursor: 'pointer',
-                  fontSize: '12px'
+                  fontSize: '12px',
                 }}
               >
                 {showFilterForm ? 'Hide Filters' : 'Show Filters'}
@@ -1208,7 +1233,7 @@ export const EventTable: React.FC<EventTableProps> = ({
                     border: 'none',
                     borderRadius: '4px',
                     cursor: 'pointer',
-                    fontSize: '12px'
+                    fontSize: '12px',
                   }}
                 >
                   Clear All
@@ -1237,7 +1262,7 @@ export const EventTable: React.FC<EventTableProps> = ({
           <SortLabel>排序:</SortLabel>
           <SortSelect
             value={currentSortField}
-            onChange={(e) => handleSortFieldChange(e.target.value)}
+            onChange={e => handleSortFieldChange(e.target.value)}
           >
             {availableSortOptions.map(option => (
               <option key={option.key} value={option.key}>
@@ -1258,7 +1283,8 @@ export const EventTable: React.FC<EventTableProps> = ({
                 + 添加到多列排序
               </AddSortButton>
               <AddSortButton onClick={() => setShowAdvancedSort(!showAdvancedSort)}>
-                {showAdvancedSort ? '隐藏' : '显示'}高级排序
+                {showAdvancedSort ? '隐藏' : '显示'}
+                高级排序
               </AddSortButton>
             </>
           )}
@@ -1269,11 +1295,13 @@ export const EventTable: React.FC<EventTableProps> = ({
             <PageSizeLabel>每页显示:</PageSizeLabel>
             <PageSizeSelect
               value={pagination.limit}
-              onChange={(e) => handlePageSizeChange(Number(e.target.value))}
+              onChange={e => handlePageSizeChange(Number(e.target.value))}
             >
               {pageSizeOptions.map(size => (
                 <option key={size} value={size}>
-                  {size} 条
+                  {size}
+                  {' '}
+                  条
                 </option>
               ))}
             </PageSizeSelect>
@@ -1287,7 +1315,10 @@ export const EventTable: React.FC<EventTableProps> = ({
               $active={showPerformanceInfo}
               onClick={() => setShowPerformanceInfo(!showPerformanceInfo)}
             >
-              性能: {sortingMetrics.sortTime.toFixed(1)}ms
+              性能:
+              {' '}
+              {sortingMetrics.sortTime.toFixed(1)}
+              ms
             </PerformanceToggleButton>
 
             {showPerformanceInfo && (
@@ -1301,7 +1332,11 @@ export const EventTable: React.FC<EventTableProps> = ({
 
                 <PerformanceMetric>
                   <PerformanceMetricLabel>数据量:</PerformanceMetricLabel>
-                  <PerformanceMetricValue>{Number(sortingMetrics.dataSize || 0).toLocaleString()} 条</PerformanceMetricValue>
+                  <PerformanceMetricValue>
+                    {Number(sortingMetrics.dataSize || 0).toLocaleString()}
+                    {' '}
+                    条
+                  </PerformanceMetricValue>
                 </PerformanceMetric>
 
                 <PerformanceMetric>
@@ -1312,7 +1347,9 @@ export const EventTable: React.FC<EventTableProps> = ({
                 <PerformanceMetric>
                   <PerformanceMetricLabel>排序时间:</PerformanceMetricLabel>
                   <PerformanceMetricValue highlight={sortingMetrics.sortTime < 10}>
-                    {sortingMetrics.sortTime.toFixed(2)} ms
+                    {sortingMetrics.sortTime.toFixed(2)}
+                    {' '}
+                    ms
                   </PerformanceMetricValue>
                 </PerformanceMetric>
 
@@ -1328,14 +1365,17 @@ export const EventTable: React.FC<EventTableProps> = ({
                     <PerformanceMetric>
                       <PerformanceMetricLabel>平均时间:</PerformanceMetricLabel>
                       <PerformanceMetricValue>
-                        {sortingMetrics.avgMetrics.avgExecutionTime.toFixed(2)} ms
+                        {sortingMetrics.avgMetrics.avgExecutionTime.toFixed(2)}
+                        {' '}
+                        ms
                       </PerformanceMetricValue>
                     </PerformanceMetric>
 
                     <PerformanceMetric>
                       <PerformanceMetricLabel>缓存命中率:</PerformanceMetricLabel>
                       <PerformanceMetricValue>
-                        {(sortingMetrics.avgMetrics.cacheHitRate * 100).toFixed(1)}%
+                        {(sortingMetrics.avgMetrics.cacheHitRate * 100).toFixed(1)}
+                        %
                       </PerformanceMetricValue>
                     </PerformanceMetric>
                   </>
@@ -1361,7 +1401,11 @@ export const EventTable: React.FC<EventTableProps> = ({
                 const option = availableSortOptions.find(opt => opt.key === sortConfig.key);
                 return (
                   <MultiSortTag key={sortConfig.key}>
-                    {option?.label || sortConfig.key} ({sortConfig.direction === 'asc' ? '↑' : '↓'})
+                    {option?.label || sortConfig.key}
+                    {' '}
+                    (
+                    {sortConfig.direction === 'asc' ? '↑' : '↓'}
+                    )
                     <MultiSortRemove onClick={() => removeFromMultiSort(sortConfig.key)}>
                       ×
                     </MultiSortRemove>
@@ -1407,24 +1451,28 @@ export const EventTable: React.FC<EventTableProps> = ({
               <TimestampCell>{formatTimestamp(event.blockTimestamp)}</TimestampCell>
               <EventNameCell>{event.eventName}</EventNameCell>
               <AddressCell>
-                {event.from ? (
-                  <a
-                    href={`/chain/${chainId}/address/${event.from}`}
-                    style={{ color: '#4f46e5', textDecoration: 'none' }}
-                  >
-                    {formatAddress(event.from)}
-                  </a>
-                ) : 'N/A'}
+                {event.from
+                  ? (
+                      <a
+                        href={`/chain/${chainId}/address/${event.from}`}
+                        style={{ color: '#4f46e5', textDecoration: 'none' }}
+                      >
+                        {formatAddress(event.from)}
+                      </a>
+                    )
+                  : 'N/A'}
               </AddressCell>
               <AddressCell>
-                {event.to ? (
-                  <a
-                    href={`/chain/${chainId}/address/${event.to}`}
-                    style={{ color: '#4f46e5', textDecoration: 'none' }}
-                  >
-                    {formatAddress(event.to)}
-                  </a>
-                ) : 'N/A'}
+                {event.to
+                  ? (
+                      <a
+                        href={`/chain/${chainId}/address/${event.to}`}
+                        style={{ color: '#4f46e5', textDecoration: 'none' }}
+                      >
+                        {formatAddress(event.to)}
+                      </a>
+                    )
+                  : 'N/A'}
               </AddressCell>
               <ValueCell>{formatValue(event.value)}</ValueCell>
               <TransactionHashCell>
@@ -1460,13 +1508,33 @@ export const EventTable: React.FC<EventTableProps> = ({
       <PaginationContainer>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           <PaginationInfo>
-            显示第 {pagination.startIndex || 1} - {pagination.endIndex || events.length} 条，
-            共 {pagination.total} 条事件
+            显示第
+            {' '}
+            {pagination.startIndex || 1}
+            {' '}
+            -
+            {' '}
+            {pagination.endIndex || events.length}
+            {' '}
+            条，
+            共
+            {' '}
+            {pagination.total}
+            {' '}
+            条事件
           </PaginationInfo>
 
           {totalPages > 1 && (
             <PageInfo>
-              第 {pagination.page} / {totalPages} 页
+              第
+              {' '}
+              {pagination.page}
+              {' '}
+              /
+              {' '}
+              {totalPages}
+              {' '}
+              页
             </PageInfo>
           )}
         </div>

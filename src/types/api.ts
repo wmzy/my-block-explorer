@@ -33,7 +33,7 @@ export type PaginationParams = {
 
 export type TimeRangeParams = {
   from?: string; // ISO timestamp
-  to?: string;   // ISO timestamp
+  to?: string; // ISO timestamp
 };
 
 export type BlockRangeParams = {
