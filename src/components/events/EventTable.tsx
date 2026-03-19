@@ -36,6 +36,7 @@ interface EventTableProps {
   abiEvents?: any[];
   enableDynamicFiltering?: boolean;
   onFiltersChange?: (filters: any) => void;
+  refreshKey?: number;
 }
 
 interface PaginationState {
@@ -655,7 +656,8 @@ export const EventTable: React.FC<EventTableProps> = ({
   clientSideSortThreshold = 1000,
   abiEvents = [],
   enableDynamicFiltering = false,
-  onFiltersChange
+  onFiltersChange,
+  refreshKey = 0,
 }) => {
   const [allEvents, setAllEvents] = useState<EventData[]>(initialEvents);
   const [events, setEvents] = useState<EventData[]>(initialEvents);
@@ -797,11 +799,10 @@ export const EventTable: React.FC<EventTableProps> = ({
     }
   }, [chainId, contractAddress, pagination.limit, sort, filters, enableMultiSort, multiSort, dynamicFilters]);
 
-  // Initial load
+  // Initial load + refresh when refreshKey changes
   useEffect(() => {
-    console.log('EventTable: Initial load, fetching events...', { chainId, contractAddress });
     fetchEvents();
-  }, [chainId, contractAddress]); // Remove fetchEvents from deps to avoid infinite loop
+  }, [chainId, contractAddress, refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Refetch when filters or pagination change (but not on initial load)
   useEffect(() => {

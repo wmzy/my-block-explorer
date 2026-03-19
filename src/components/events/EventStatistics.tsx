@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { css, cx } from "@linaria/core";
 import type { Address } from "viem";
 
@@ -19,6 +19,7 @@ type EventStatisticsProps = {
   contractAddress: Address;
   className?: string;
   onRefresh?: () => void;
+  onEventsUpdated?: () => void;
 };
 
 const barStyle = css`
@@ -106,9 +107,11 @@ export const EventStatistics = ({
   contractAddress,
   className,
   onRefresh,
+  onEventsUpdated,
 }: EventStatisticsProps) => {
   const [stats, setStats] = useState<IndexingStatus | null>(null);
   const [loading, setLoading] = useState(false);
+  const prevEventsRef = useRef(0);
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -117,18 +120,30 @@ export const EventStatistics = ({
         `/api/chains/${chainId}/contracts/${contractAddress}/events/indexing-status`
       );
       if (!res.ok) return;
-      const data = await res.json();
+      const data: IndexingStatus = await res.json();
       setStats(data);
+
+      if (data.totalEventsIndexed > prevEventsRef.current) {
+        prevEventsRef.current = data.totalEventsIndexed;
+        onEventsUpdated?.();
+      }
     } catch {
       // silently fail
     } finally {
       setLoading(false);
     }
-  }, [chainId, contractAddress]);
+  }, [chainId, contractAddress, onEventsUpdated]);
 
   useEffect(() => {
     fetchStatus();
   }, [fetchStatus]);
+
+  useEffect(() => {
+    if (!stats || stats.status !== "indexing") return;
+
+    const id = setInterval(fetchStatus, 5000);
+    return () => clearInterval(id);
+  }, [stats?.status, fetchStatus]);
 
   const handleRefresh = useCallback(() => {
     fetchStatus();

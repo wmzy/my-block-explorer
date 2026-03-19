@@ -237,6 +237,8 @@ const decodeLogs = (
   return decoded;
 };
 
+const INSERT_CHUNK_SIZE = 50;
+
 const insertEvents = async (
   chainId: number,
   contractAddress: `0x${string}`,
@@ -265,18 +267,20 @@ const insertEvents = async (
     indexedAt: new Date(),
   }));
 
-  try {
-    await db
-      .insert(contractEvents)
-      .values(rows)
-      .onConflictDoNothing();
-  } catch (err) {
-    console.error("[EventIndexing] Insert error, falling back to individual inserts:", err);
-    for (const row of rows) {
-      try {
-        await db.insert(contractEvents).values(row).onConflictDoNothing();
-      } catch {
-        // skip duplicates
+  for (let i = 0; i < rows.length; i += INSERT_CHUNK_SIZE) {
+    const chunk = rows.slice(i, i + INSERT_CHUNK_SIZE);
+    try {
+      await db
+        .insert(contractEvents)
+        .values(chunk)
+        .onConflictDoNothing();
+    } catch {
+      for (const row of chunk) {
+        try {
+          await db.insert(contractEvents).values(row).onConflictDoNothing();
+        } catch {
+          // skip duplicates
+        }
       }
     }
   }
