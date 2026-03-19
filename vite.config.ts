@@ -103,10 +103,10 @@ export default defineConfig({
         main: path.resolve(__dirname, "index.html"),
       },
       output: {
-        manualChunks: {
-          vendor: ["react", "react-dom"],
-          router: ["react-router-dom"],
-          charts: ["echarts"],
+        manualChunks(id) {
+          if (id.includes("node_modules/react-dom") || id.includes("node_modules/react/")) return "vendor";
+          if (id.includes("node_modules/react-router")) return "router";
+          if (id.includes("node_modules/echarts")) return "charts";
         },
       },
     },

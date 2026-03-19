@@ -939,18 +939,11 @@ export default function ContractPage() {
             )}
 
             {activeTab === "events" && (
-              <>
-                <EventStatistics
-                  chainId={currentChainId}
-                  contractAddress={address as `0x${string}`}
-                />
-                <EventTable
-                  chainId={currentChainId}
-                  contractAddress={address as `0x${string}`}
-                  abiEvents={effectiveABI?.events || []}
-                  enableDynamicFiltering={true}
-                />
-              </>
+              <EventsPanel
+                chainId={currentChainId}
+                contractAddress={address as `0x${string}`}
+                abiEvents={effectiveABI?.events || []}
+              />
             )}
 
             {/* Interact (non-proxy only) */}
@@ -975,6 +968,40 @@ export default function ContractPage() {
           }}
         />
       </div>
+    </>
+  );
+}
+
+function EventsPanel({
+  chainId,
+  contractAddress,
+  abiEvents,
+}: {
+  chainId: number;
+  contractAddress: `0x${string}`;
+  abiEvents: any[];
+}) {
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  const handleEventsUpdated = useCallback(() => {
+    setRefreshKey((k) => k + 1);
+  }, []);
+
+  return (
+    <>
+      <EventStatistics
+        chainId={chainId}
+        contractAddress={contractAddress}
+        onRefresh={handleEventsUpdated}
+        onEventsUpdated={handleEventsUpdated}
+      />
+      <EventTable
+        chainId={chainId}
+        contractAddress={contractAddress}
+        abiEvents={abiEvents}
+        enableDynamicFiltering={true}
+        refreshKey={refreshKey}
+      />
     </>
   );
 }
@@ -1260,18 +1287,15 @@ const functionFormStyles = css`
   background: #fafafa;
 `;
 
-const functionNameStyles = css`
+const functionNameReadStyles = css`
   font-weight: 600;
   margin-bottom: 12px;
-`;
-
-const functionNameReadStyles = css`
-  ${functionNameStyles}
   color: #0066cc;
 `;
 
 const functionNameWriteStyles = css`
-  ${functionNameStyles}
+  font-weight: 600;
+  margin-bottom: 12px;
   color: #cc6600;
 `;
 
