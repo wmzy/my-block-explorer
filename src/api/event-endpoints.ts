@@ -115,9 +115,6 @@ export function createEventRoutes(): Hono {
         address,
         startBlock,
         endBlock,
-        (progress) => {
-          console.log(`Indexing progress: ${progress.processedEvents} events, current block: ${progress.currentBlock}`);
-        },
       ).catch((error) => {
         console.error('Historical indexing failed:', error);
       });

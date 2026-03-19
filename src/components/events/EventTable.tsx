@@ -690,11 +690,12 @@ export const EventTable: React.FC<EventTableProps> = ({
   const [showFilterForm, setShowFilterForm] = useState(enableDynamicFiltering);
 
   // Determine if we should use client-side sorting
-  const shouldUseClientSideSort = enableClientSideSort && allEvents.length <= clientSideSortThreshold;
+  // Use pagination.total (server-reported count) instead of allEvents.length (loaded data)
+  // This prevents incorrect total count when only a page of data is loaded
+  const shouldUseClientSideSort = enableClientSideSort && pagination.total > 0 && pagination.total <= clientSideSortThreshold;
 
   // API call function
   const fetchEvents = useCallback(async (cursor?: string) => {
-    console.log('fetchEvents called', { chainId, contractAddress, cursor });
     setLoading(true);
     setError(null);
 
@@ -706,8 +707,6 @@ export const EventTable: React.FC<EventTableProps> = ({
         sort: sort.direction,
         sortBy: sort.field,
       });
-
-      console.log('Query params prepared', Object.fromEntries(queryParams));
 
       // Add multi-sort support
       if (enableMultiSort && multiSort.length > 0) {
@@ -746,7 +745,6 @@ export const EventTable: React.FC<EventTableProps> = ({
       });
 
       const url = `/api/chains/${chainId}/contracts/${contractAddress}/events?${queryParams}`;
-      console.log('Making API request to:', url);
 
       const response = await fetch(url, {
         method: 'GET',
@@ -755,14 +753,11 @@ export const EventTable: React.FC<EventTableProps> = ({
         },
       });
 
-      console.log('API response status:', response.status);
-
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
       const data = await response.json();
-      console.log('API response data:', data);
 
       const normalizedEvents = (data.events ?? []).map((e: any) => {
         const args = typeof e.decodedArgs === 'string'
@@ -790,8 +785,6 @@ export const EventTable: React.FC<EventTableProps> = ({
         hasMore: data.page < (data.totalPages ?? 1),
         totalPages: data.totalPages,
       }));
-
-      console.log('Events updated, count:', data.events.length);
     }
     catch (err) {
       console.error('Failed to fetch events:', err);
@@ -811,7 +804,6 @@ export const EventTable: React.FC<EventTableProps> = ({
   useEffect(() => {
     // Skip on initial mount by checking if we already have events
     if (allEvents.length > 0) {
-      console.log('EventTable: Filters or pagination changed, refetching...', { dynamicFilters, pagination });
       fetchEvents();
     }
   }, [dynamicFilters, pagination.limit, sort.field, sort.direction]); // eslint-disable-line react-hooks/exhaustive-deps

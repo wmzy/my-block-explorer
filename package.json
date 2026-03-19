@@ -31,7 +31,8 @@
     "migrate": "tsx src/database/migrate.ts"
   },
   "dependencies": {
-    "@duckdb/node-api": "1.4.3-r.1",
+    "@duckdb/node-api": "1.5.0-r.1",
+    "@duckdb/node-bindings-darwin-arm64": "1.5.0-r.1",
     "@hono/node-server": "^1.19.11",
     "@linaria/core": "^7.0.0",
     "@linaria/react": "^7.0.1",

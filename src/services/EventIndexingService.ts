@@ -535,20 +535,35 @@ export const getIndexingStatus = async (
     // ignore
   }
 
-  const eventTypeRows = await db
-    .select({ eventName: contractEvents.eventName })
-    .from(contractEvents)
-    .where(
-      and(
-        eq(contractEvents.chainId, chainId),
-        eq(contractEvents.contractAddress, address),
+  // Query actual event count and types from contract_events table
+  const [eventTypeRows, countResult] = await Promise.all([
+    db
+      .select({ eventName: contractEvents.eventName })
+      .from(contractEvents)
+      .where(
+        and(
+          eq(contractEvents.chainId, chainId),
+          eq(contractEvents.contractAddress, address),
+        ),
+      )
+      .groupBy(contractEvents.eventName),
+    db
+      .select({ count: sql<number>`count(*)` })
+      .from(contractEvents)
+      .where(
+        and(
+          eq(contractEvents.chainId, chainId),
+          eq(contractEvents.contractAddress, address),
+        ),
       ),
-    )
-    .groupBy(contractEvents.eventName);
+  ]);
 
   const eventTypes = eventTypeRows
     .map(r => r.eventName)
     .filter((n): n is string => !!n);
+
+  // Use actual count from database instead of the accumulator field
+  const actualTotalEvents = countResult[0]?.count ?? 0;
 
   if (rows.length === 0) {
     return {
@@ -559,7 +574,7 @@ export const getIndexingStatus = async (
       lastIndexedBlock: 0,
       latestBlock,
       lastFinalizedBlock: 0,
-      totalEventsIndexed: 0,
+      totalEventsIndexed: actualTotalEvents,
       eventTypes,
     };
   }
@@ -573,7 +588,7 @@ export const getIndexingStatus = async (
     lastIndexedBlock: Number(row.lastIndexedBlock ?? 0n),
     latestBlock,
     lastFinalizedBlock: Number(row.lastFinalizedBlock ?? 0n),
-    totalEventsIndexed: row.totalEventsIndexed ?? 0,
+    totalEventsIndexed: actualTotalEvents,
     eventTypes,
     errorMessage: row.errorMessage ?? undefined,
   };

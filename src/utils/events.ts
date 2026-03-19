@@ -155,19 +155,11 @@ export const getContractCreationBlock = async (
 
     // If we found events, use the earliest block found (minus small buffer)
     if (earliestFound !== null) {
-      const result = earliestFound > 100n ? earliestFound - 100n : 0n;
-      console.log(
-        `Contract earliest event block: ${earliestFound} (starting from: ${result})`,
-      );
-      return result;
+      return earliestFound > 100n ? earliestFound - 100n : 0n;
     }
 
     // Fallback: start from recent blocks
-    const fallback = latestBlock > 100_000n ? latestBlock - 100_000n : 0n;
-    console.log(
-      `No events found in probes, using fallback block: ${fallback} (latest: ${latestBlock})`,
-    );
-    return fallback;
+    return latestBlock > 100_000n ? latestBlock - 100_000n : 0n;
   }
   catch (error) {
     console.warn('Failed to get contract creation block:', error);

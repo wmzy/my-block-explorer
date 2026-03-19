@@ -322,13 +322,20 @@ export class DuckDBPostgresAdapter {
         if (typeof value === 'bigint') {
           adaptedRow[key] = value.toString();
         }
-        else if (
-          value
-          && typeof value === 'object'
-          && value.constructor.name === 'DuckDBTimestampValue'
-        ) {
-          const tsValue = value as { micros?: number };
-          adaptedRow[key] = new Date(Number(tsValue.micros) / 1000);
+        else if (value && typeof value === 'object') {
+          // Handle DuckDB HUGEINT (128-bit integer) returned by count(*)
+          // HUGEINT is represented as { high: number, low: bigint } or similar
+          const obj = value as Record<string, unknown>;
+          if ('high' in obj && 'low' in obj) {
+            // Convert HUGEINT to number (safe for counts up to 2^53 - 1)
+            const low = typeof obj.low === 'bigint' ? obj.low : BigInt(obj.low as number);
+            const high = typeof obj.high === 'number' ? BigInt(obj.high) : obj.high as bigint;
+            adaptedRow[key] = Number((high << 64n) + low);
+          }
+          else if (value.constructor.name === 'DuckDBTimestampValue') {
+            const tsValue = value as { micros?: number };
+            adaptedRow[key] = new Date(Number(tsValue.micros) / 1000);
+          }
         }
       }
       return adaptedRow;
