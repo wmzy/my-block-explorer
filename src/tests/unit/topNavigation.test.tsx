@@ -16,8 +16,8 @@ vi.mock('react-router-dom', async () => {
 
 // Mock RpcConfig
 vi.mock('../../components/RpcConfig', () => ({
-  default: ({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) => (
-    isOpen ? <div data-testid="rpc-config-modal">RPC Config Modal</div> : null
+  default: ({ open }: { open?: unknown }) => (
+    <div data-testid="rpc-config-modal">RPC Config Modal</div>
   ),
 }));
 

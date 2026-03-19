@@ -119,33 +119,34 @@ export const getContractCreationBlock = async (
     const latestBlock = await rpc.getBlockNumber();
     const addr = contractAddress as `0x${string}`;
 
-    // Probe backwards with exponentially growing ranges
-    // Start with recent 10k blocks, then 50k, 200k, 1M, etc.
-    const ranges = [10_000n, 50_000n, 200_000n, 1_000_000n, 5_000_000n];
+    // Binary-search style: probe at increasing distances from genesis.
+    // Find the largest offset where events exist, then use that as the start.
+    const offsets = [10_000n, 50_000n, 200_000n, 1_000_000n, 5_000_000n, 10_000_000n, 20_000_000n];
     let earliestFound: bigint | null = null;
 
-    for (const rangeSize of ranges) {
-      const fromBlock =
-        latestBlock > rangeSize ? latestBlock - rangeSize : 0n;
+    for (const offset of offsets) {
+      if (offset > latestBlock) continue;
+      const fromBlock = latestBlock - offset;
 
       try {
         const logs = await rpc.getLogs({
           address: addr,
           fromBlock,
-          toBlock: fromBlock + 9_999n, // small probe at the start of range
+          toBlock: fromBlock + 9_999n,
         });
 
         if (logs.length > 0) {
-          earliestFound = logs.reduce(
+          const blockMin = logs.reduce(
             (min, l) => (l.blockNumber < min ? l.blockNumber : min),
             logs[0].blockNumber
           );
+          if (earliestFound === null || blockMin < earliestFound) {
+            earliestFound = blockMin;
+          }
         }
       } catch {
-        // RPC may reject large ranges, continue with next
+        // RPC may reject, skip
       }
-
-      if (earliestFound !== null) break;
     }
 
     // If we found events, use the earliest block found (minus small buffer)

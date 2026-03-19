@@ -45,162 +45,106 @@ export class DuckDBManager {
     logger.info("Initializing DuckDB database");
 
     try {
-      // 创建用户RPC配置表
-      await this.exec(`
-        CREATE TABLE IF NOT EXISTS user_rpc_configs (
-          chain_id INTEGER PRIMARY KEY,
-          name TEXT,
-          url TEXT,
-          max_event_range INTEGER,
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-      `);
+      // All DDL must match Drizzle schema in schema.ts exactly (camelCase → snake_case)
+      await this.exec(`CREATE TABLE IF NOT EXISTS user_rpc_configs (
+        chain_id INTEGER PRIMARY KEY, name VARCHAR(255), url VARCHAR(500),
+        supports_history BOOLEAN, max_event_range INTEGER,
+        created_at TIMESTAMP_MS, updated_at TIMESTAMP_MS)`);
 
-      // 创建合约源码表
-      await this.exec(`
-        CREATE TABLE IF NOT EXISTS contract_sources (
-          chain_id INTEGER NOT NULL,
-          address VARCHAR NOT NULL,
-          name VARCHAR,
-          compiler_version VARCHAR,
-          optimization_enabled BOOLEAN,
-          optimization_runs INTEGER,
-          source_code TEXT,
-          abi TEXT,
-          constructor_arguments TEXT,
-          verification_status VARCHAR,
-          verification_source VARCHAR,
-          verified_at TIMESTAMP,
-          last_checked TIMESTAMP,
-          is_proxy BOOLEAN,
-          proxy_type VARCHAR,
-          implementation_address VARCHAR,
-          PRIMARY KEY (chain_id, address)
-        )
-      `);
+      await this.exec(`CREATE TABLE IF NOT EXISTS blocks (
+        chain_id INTEGER NOT NULL, number BIGNUM NOT NULL,
+        hash char(66) NOT NULL, parent_hash char(66),
+        timestamp TIMESTAMP_S, miner char(42),
+        gas_limit BIGNUM, gas_used BIGNUM, base_fee_per_gas BIGNUM,
+        transaction_count INTEGER, size_bytes INTEGER,
+        difficulty BIGNUM, total_difficulty BIGNUM,
+        extra_data TEXT, logs_bloom TEXT,
+        state_root char(66), transactions_root char(66), receipts_root char(66),
+        indexed_at TIMESTAMP_MS,
+        PRIMARY KEY (chain_id, number))`);
 
-      // 创建合约创建信息表
-      await this.exec(`
-        CREATE TABLE IF NOT EXISTS contract_creation_info (
-          chain_id INTEGER NOT NULL,
-          contract_address VARCHAR NOT NULL,
-          creator_address VARCHAR,
-          creation_tx_hash VARCHAR,
-          creation_block_number BIGINT,
-          creation_timestamp TIMESTAMP,
-          gas_used BIGINT,
-          gas_price BIGINT,
-          search_status VARCHAR DEFAULT 'pending',
-          error_message TEXT,
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          PRIMARY KEY (chain_id, contract_address)
-        )
-      `);
+      await this.exec(`CREATE TABLE IF NOT EXISTS transactions (
+        chain_id INTEGER NOT NULL, hash char(66) NOT NULL,
+        block_number BIGNUM, transaction_index INTEGER,
+        from_address char(42), to_address char(42), value BIGNUM,
+        gas_limit BIGNUM, gas_price BIGNUM,
+        max_fee_per_gas BIGNUM, max_priority_fee_per_gas BIGNUM,
+        gas_used BIGNUM, effective_gas_price BIGNUM,
+        status INTEGER, type INTEGER DEFAULT 0, nonce BIGNUM,
+        input_data TEXT, logs_count INTEGER DEFAULT 0,
+        contract_address char(42), cumulative_gas_used BIGNUM,
+        timestamp TIMESTAMP_S, indexed_at TIMESTAMP_MS,
+        PRIMARY KEY (chain_id, hash))`);
 
-      // 创建区块表
-      await this.exec(`
-        CREATE TABLE IF NOT EXISTS blocks (
-          chain_id INTEGER NOT NULL,
-          number BIGINT NOT NULL,
-          hash VARCHAR NOT NULL,
-          parent_hash VARCHAR,
-          timestamp TIMESTAMP,
-          miner VARCHAR,
-          gas_limit BIGINT,
-          gas_used BIGINT,
-          base_fee_per_gas BIGINT,
-          transaction_count INTEGER,
-          size_bytes BIGINT,
-          difficulty VARCHAR,
-          total_difficulty VARCHAR,
-          extra_data TEXT,
-          logs_bloom TEXT,
-          state_root VARCHAR,
-          transactions_root VARCHAR,
-          receipts_root VARCHAR,
-          indexed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          PRIMARY KEY (chain_id, number)
-        )
-      `);
+      await this.exec(`CREATE TABLE IF NOT EXISTS indexed_addresses (
+        chain_id INTEGER NOT NULL, address char(42) NOT NULL,
+        type VARCHAR(20) NOT NULL, first_seen TIMESTAMP_S,
+        last_activity TIMESTAMP_S, transaction_count INTEGER DEFAULT 0,
+        indexed_at TIMESTAMP_MS,
+        PRIMARY KEY (chain_id, address))`);
 
-      // 创建交易表
-      await this.exec(`
-        CREATE TABLE IF NOT EXISTS transactions (
-          chain_id INTEGER NOT NULL,
-          hash VARCHAR NOT NULL,
-          block_number BIGINT,
-          transaction_index INTEGER,
-          from_address VARCHAR,
-          to_address VARCHAR,
-          value VARCHAR,
-          gas_limit BIGINT,
-          gas_price BIGINT,
-          max_fee_per_gas BIGINT,
-          max_priority_fee_per_gas BIGINT,
-          gas_used BIGINT,
-          effective_gas_price BIGINT,
-          status INTEGER,
-          type INTEGER DEFAULT 0,
-          nonce BIGINT,
-          input_data TEXT,
-          logs_count INTEGER DEFAULT 0,
-          contract_address VARCHAR,
-          cumulative_gas_used BIGINT,
-          timestamp TIMESTAMP,
-          indexed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          PRIMARY KEY (chain_id, hash)
-        )
-      `);
+      await this.exec(`CREATE TABLE IF NOT EXISTS search_history (
+        id INTEGER PRIMARY KEY, chain_id INTEGER,
+        query VARCHAR(255), search_type VARCHAR(20),
+        result_count INTEGER DEFAULT 0, searched_at TIMESTAMP_MS)`);
 
-      // 创建地址索引表
-      await this.exec(`
-        CREATE TABLE IF NOT EXISTS indexed_addresses (
-          chain_id INTEGER NOT NULL,
-          address VARCHAR NOT NULL,
-          label VARCHAR,
-          first_seen_block BIGINT,
-          last_seen_block BIGINT,
-          transaction_count INTEGER DEFAULT 0,
-          indexed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          last_queried TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          PRIMARY KEY (chain_id, address)
-        )
-      `);
+      await this.exec(`CREATE TABLE IF NOT EXISTS user_preferences (
+        id INTEGER PRIMARY KEY, theme VARCHAR(20) DEFAULT 'light',
+        language VARCHAR(10) DEFAULT 'en', updated_at TIMESTAMP_MS)`);
 
-      // 创建搜索历史表
-      await this.exec(`
-        CREATE TABLE IF NOT EXISTS search_history (
-          id INTEGER PRIMARY KEY,
-          chain_id INTEGER,
-          query VARCHAR NOT NULL,
-          search_type VARCHAR,
-          result_count INTEGER DEFAULT 0,
-          searched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-      `);
+      await this.exec(`CREATE TABLE IF NOT EXISTS index_status (
+        chain_id INTEGER NOT NULL, index_type VARCHAR(20) NOT NULL,
+        last_indexed_block BIGNUM, last_indexed_at TIMESTAMP_MS,
+        PRIMARY KEY (chain_id, index_type))`);
 
-      // 创建用户偏好表
-      await this.exec(`
-        CREATE TABLE IF NOT EXISTS user_preferences (
-          key VARCHAR PRIMARY KEY,
-          value TEXT,
-          updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-      `);
+      await this.exec(`CREATE TABLE IF NOT EXISTS access_history (
+        chain_id INTEGER NOT NULL, type VARCHAR(20) NOT NULL,
+        identifier VARCHAR(66) NOT NULL,
+        first_accessed TIMESTAMP_MS, last_accessed TIMESTAMP_MS,
+        access_count INTEGER DEFAULT 1,
+        PRIMARY KEY (chain_id, type, identifier))`);
 
-      // 创建访问历史表
-      await this.exec(`
-        CREATE TABLE IF NOT EXISTS access_history (
-          chain_id INTEGER NOT NULL,
-          type VARCHAR NOT NULL,
-          identifier VARCHAR NOT NULL,
-          first_accessed TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          last_accessed TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          access_count INTEGER DEFAULT 1,
-          PRIMARY KEY (chain_id, type, identifier)
-        )
-      `);
+      await this.exec(`CREATE TABLE IF NOT EXISTS contract_sources (
+        chain_id INTEGER NOT NULL, address char(42) NOT NULL,
+        source_code TEXT, abi TEXT,
+        contract_name VARCHAR(255), compiler_version VARCHAR(50),
+        optimization_used BOOLEAN, runs INTEGER,
+        constructor_arguments TEXT, evm_version VARCHAR(50),
+        library TEXT, license_type VARCHAR(50),
+        proxy VARCHAR(50), implementation char(42),
+        swarm_source VARCHAR(100),
+        is_verified BOOLEAN DEFAULT false,
+        verification_date TIMESTAMP_MS, last_updated TIMESTAMP_MS,
+        PRIMARY KEY (chain_id, address))`);
+
+      await this.exec(`CREATE TABLE IF NOT EXISTS contract_creation_info (
+        chain_id INTEGER NOT NULL, address char(42) NOT NULL,
+        creation_tx_hash char(66), creation_block_number BIGNUM,
+        creation_timestamp TIMESTAMP_S,
+        creator_address char(42), factory_address char(42),
+        creation_method VARCHAR(50), last_updated TIMESTAMP_MS,
+        PRIMARY KEY (chain_id, address))`);
+
+      await this.exec(`CREATE TABLE IF NOT EXISTS indexing_progress (
+        chain_id INTEGER NOT NULL, address char(42) NOT NULL,
+        creation_block BIGNUM, last_indexed_block BIGNUM,
+        last_finalized_block BIGNUM,
+        total_events_indexed INTEGER DEFAULT 0,
+        status VARCHAR(20) DEFAULT 'idle', error_message TEXT,
+        updated_at TIMESTAMP_MS,
+        PRIMARY KEY (chain_id, address))`);
+
+      await this.exec(`CREATE TABLE IF NOT EXISTS contract_events (
+        chain_id INTEGER NOT NULL, contract_address char(42) NOT NULL,
+        block_number BIGNUM NOT NULL, block_timestamp TIMESTAMP_S,
+        transaction_hash char(66) NOT NULL, transaction_index INTEGER,
+        log_index INTEGER NOT NULL, event_name VARCHAR(100),
+        event_signature VARCHAR(66), decoded_args TEXT,
+        topic0 VARCHAR(66), topic1 VARCHAR(66),
+        topic2 VARCHAR(66), topic3 VARCHAR(66),
+        data TEXT, is_finalized BOOLEAN DEFAULT false,
+        indexed_at TIMESTAMP_MS,
+        PRIMARY KEY (chain_id, transaction_hash, log_index))`);
 
       // 创建索引
       await this.createIndexes();
@@ -247,6 +191,11 @@ export class DuckDBManager {
 
       // 访问历史索引
       "CREATE INDEX IF NOT EXISTS access_history_chain_type_idx ON access_history (chain_id, type, last_accessed)",
+
+      // 事件索引
+      "CREATE INDEX IF NOT EXISTS contract_events_chain_contract_idx ON contract_events (chain_id, contract_address)",
+      "CREATE INDEX IF NOT EXISTS contract_events_chain_contract_block_idx ON contract_events (chain_id, contract_address, block_number)",
+      "CREATE INDEX IF NOT EXISTS contract_events_chain_contract_name_idx ON contract_events (chain_id, contract_address, event_name)",
     ];
 
     for (const indexSql of indexes) {

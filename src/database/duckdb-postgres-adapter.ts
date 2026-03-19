@@ -39,8 +39,125 @@ export class DuckDBPostgresAdapter {
   private async connect(): Promise<void> {
     if (this.instance) return;
 
-    // 使用 DuckDB Neo API 创建实例
     this.instance = await DuckDBInstance.create(this.dbPath);
+    await this.ensureTables();
+  }
+
+  private async ensureTables(): Promise<void> {
+    if (!this.instance) return;
+    const conn = await this.instance.connect();
+    try {
+      const ddls = [
+        // user_rpc_configs: matches schema.ts userRpcConfigs
+        `CREATE TABLE IF NOT EXISTS user_rpc_configs (
+          chain_id INTEGER PRIMARY KEY, name VARCHAR(255), url VARCHAR(500),
+          supports_history BOOLEAN, max_event_range INTEGER,
+          created_at TIMESTAMP_MS, updated_at TIMESTAMP_MS)`,
+        // blocks: matches schema.ts blocks
+        `CREATE TABLE IF NOT EXISTS blocks (
+          chain_id INTEGER NOT NULL, number BIGNUM NOT NULL,
+          hash char(66) NOT NULL, parent_hash char(66),
+          timestamp TIMESTAMP_S, miner char(42),
+          gas_limit BIGNUM, gas_used BIGNUM, base_fee_per_gas BIGNUM,
+          transaction_count INTEGER, size_bytes INTEGER,
+          difficulty BIGNUM, total_difficulty BIGNUM,
+          extra_data TEXT, logs_bloom TEXT,
+          state_root char(66), transactions_root char(66), receipts_root char(66),
+          indexed_at TIMESTAMP_MS,
+          PRIMARY KEY (chain_id, number))`,
+        // transactions: matches schema.ts transactions
+        `CREATE TABLE IF NOT EXISTS transactions (
+          chain_id INTEGER NOT NULL, hash char(66) NOT NULL,
+          block_number BIGNUM, transaction_index INTEGER,
+          from_address char(42), to_address char(42), value BIGNUM,
+          gas_limit BIGNUM, gas_price BIGNUM,
+          max_fee_per_gas BIGNUM, max_priority_fee_per_gas BIGNUM,
+          gas_used BIGNUM, effective_gas_price BIGNUM,
+          status INTEGER, type INTEGER DEFAULT 0, nonce BIGNUM,
+          input_data TEXT, logs_count INTEGER DEFAULT 0,
+          contract_address char(42), cumulative_gas_used BIGNUM,
+          timestamp TIMESTAMP_S, indexed_at TIMESTAMP_MS,
+          PRIMARY KEY (chain_id, hash))`,
+        // indexed_addresses: matches schema.ts indexedAddresses
+        `CREATE TABLE IF NOT EXISTS indexed_addresses (
+          chain_id INTEGER NOT NULL, address char(42) NOT NULL,
+          type VARCHAR(20) NOT NULL, first_seen TIMESTAMP_S,
+          last_activity TIMESTAMP_S, transaction_count INTEGER DEFAULT 0,
+          indexed_at TIMESTAMP_MS,
+          PRIMARY KEY (chain_id, address))`,
+        // search_history: matches schema.ts searchHistory
+        `CREATE TABLE IF NOT EXISTS search_history (
+          id INTEGER PRIMARY KEY, chain_id INTEGER,
+          query VARCHAR(255), search_type VARCHAR(20),
+          result_count INTEGER DEFAULT 0, searched_at TIMESTAMP_MS)`,
+        // user_preferences: matches schema.ts userPreferences
+        `CREATE TABLE IF NOT EXISTS user_preferences (
+          id INTEGER PRIMARY KEY, theme VARCHAR(20) DEFAULT 'light',
+          language VARCHAR(10) DEFAULT 'en', updated_at TIMESTAMP_MS)`,
+        // index_status: matches schema.ts indexStatus
+        `CREATE TABLE IF NOT EXISTS index_status (
+          chain_id INTEGER NOT NULL, index_type VARCHAR(20) NOT NULL,
+          last_indexed_block BIGNUM, last_indexed_at TIMESTAMP_MS,
+          PRIMARY KEY (chain_id, index_type))`,
+        // access_history: matches schema.ts accessHistory
+        `CREATE TABLE IF NOT EXISTS access_history (
+          chain_id INTEGER NOT NULL, type VARCHAR(20) NOT NULL,
+          identifier VARCHAR(66) NOT NULL,
+          first_accessed TIMESTAMP_MS, last_accessed TIMESTAMP_MS,
+          access_count INTEGER DEFAULT 1,
+          PRIMARY KEY (chain_id, type, identifier))`,
+        // contract_sources: matches schema.ts contractSources
+        `CREATE TABLE IF NOT EXISTS contract_sources (
+          chain_id INTEGER NOT NULL, address char(42) NOT NULL,
+          source_code TEXT, abi TEXT,
+          contract_name VARCHAR(255), compiler_version VARCHAR(50),
+          optimization_used BOOLEAN, runs INTEGER,
+          constructor_arguments TEXT, evm_version VARCHAR(50),
+          library TEXT, license_type VARCHAR(50),
+          proxy VARCHAR(50), implementation char(42),
+          swarm_source VARCHAR(100),
+          is_verified BOOLEAN DEFAULT false,
+          verification_date TIMESTAMP_MS, last_updated TIMESTAMP_MS,
+          PRIMARY KEY (chain_id, address))`,
+        // contract_creation_info: matches schema.ts contractCreationInfo
+        `CREATE TABLE IF NOT EXISTS contract_creation_info (
+          chain_id INTEGER NOT NULL, address char(42) NOT NULL,
+          creation_tx_hash char(66), creation_block_number BIGNUM,
+          creation_timestamp TIMESTAMP_S,
+          creator_address char(42), factory_address char(42),
+          creation_method VARCHAR(50), last_updated TIMESTAMP_MS,
+          PRIMARY KEY (chain_id, address))`,
+        // indexing_progress: matches schema.ts indexingProgress
+        `CREATE TABLE IF NOT EXISTS indexing_progress (
+          chain_id INTEGER NOT NULL, address char(42) NOT NULL,
+          creation_block BIGNUM, last_indexed_block BIGNUM,
+          last_finalized_block BIGNUM,
+          total_events_indexed INTEGER DEFAULT 0,
+          status VARCHAR(20) DEFAULT 'idle', error_message TEXT,
+          updated_at TIMESTAMP_MS,
+          PRIMARY KEY (chain_id, address))`,
+        // contract_events: matches schema.ts contractEvents
+        `CREATE TABLE IF NOT EXISTS contract_events (
+          chain_id INTEGER NOT NULL, contract_address char(42) NOT NULL,
+          block_number BIGNUM NOT NULL, block_timestamp TIMESTAMP_S,
+          transaction_hash char(66) NOT NULL, transaction_index INTEGER,
+          log_index INTEGER NOT NULL, event_name VARCHAR(100),
+          event_signature VARCHAR(66), decoded_args TEXT,
+          topic0 VARCHAR(66), topic1 VARCHAR(66),
+          topic2 VARCHAR(66), topic3 VARCHAR(66),
+          data TEXT, is_finalized BOOLEAN DEFAULT false,
+          indexed_at TIMESTAMP_MS,
+          PRIMARY KEY (chain_id, transaction_hash, log_index))`,
+        `CREATE INDEX IF NOT EXISTS contract_events_chain_contract_idx ON contract_events (chain_id, contract_address)`,
+        `CREATE INDEX IF NOT EXISTS contract_events_chain_contract_block_idx ON contract_events (chain_id, contract_address, block_number)`,
+        `CREATE INDEX IF NOT EXISTS contract_events_chain_contract_name_idx ON contract_events (chain_id, contract_address, event_name)`,
+      ];
+      for (const ddl of ddls) {
+        try { await conn.run(ddl); } catch { /* already exists */ }
+      }
+    } finally {
+      conn.disconnectSync();
+    }
   }
 
   public async getDuckDB(): Promise<DuckDBInstance> {

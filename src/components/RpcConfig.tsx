@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { css } from "@linaria/core";
-import { Dialog } from "haze-ui";
+import { Dialog, type DialogProps } from "haze-ui";
+import { useControl, type Control } from "react-use-control";
 import { getChainName } from "../config/chains";
 import { getRpcPresets, type RpcPreset } from "../config/rpcPresets";
 import {
@@ -241,18 +242,25 @@ const buttonStyles = css`
 `;
 
 type Props = {
-  isOpen: boolean;
-  onClose: () => void;
+  open?: Control<boolean>;
+  onClose?: () => void;
   chainId: number;
   onConfigSaved?: () => void;
 };
 
 export default function RpcConfig({
-  isOpen,
+  open,
   onClose,
   chainId,
   onConfigSaved,
 }: Props) {
+  const [isOpen, setOpen] = useControl(open, false);
+
+  const handleClose = () => {
+    setOpen(false);
+    onClose?.();
+  };
+
   const [currentConfig, setCurrentConfig] = useState<RpcConfig | null>(null);
   const [showCustomForm, setShowCustomForm] = useState(false);
   const [customName, setCustomName] = useState("");
@@ -313,9 +321,9 @@ export default function RpcConfig({
       }
 
       // 验证链ID是否匹配
-      if (result.chainId && result.chainId !== chainId) {
+      if (result.detectedChainId && result.detectedChainId !== chainId) {
         alert(
-          `链ID不匹配！\n期望: ${chainId}\n实际: ${result.chainId}\n\n请确认RPC URL对应正确的链。`
+          `链ID不匹配！\n期望: ${chainId}\n实际: ${result.detectedChainId}\n\n请确认RPC URL对应正确的链。`
         );
         return;
       }
@@ -391,11 +399,13 @@ export default function RpcConfig({
     }
   };
 
+  if (!isOpen) return null;
+
   return (
-    <Dialog open={isOpen} onClose={onClose} className={dialogContent}>
+    <Dialog open={open as DialogProps["open"]} onClose={handleClose} className={dialogContent}>
         <div className={headerStyles}>
           <h2>{chainName} RPC Configuration</h2>
-          <button onClick={onClose}>×</button>
+          <button onClick={handleClose}>×</button>
         </div>
 
         {/* 当前配置状态 */}
@@ -549,10 +559,10 @@ export default function RpcConfig({
                         ms)
                       </div>
                       <div style={{ fontSize: "12px", lineHeight: "1.4" }}>
-                        {testResult.chainId && (
+                        {testResult.detectedChainId && (
                           <div>
-                            🔗 链ID: {testResult.chainId}{" "}
-                            {testResult.chainId === chainId ? "✅" : "❌"}
+                            🔗 链ID: {testResult.detectedChainId}{" "}
+                            {testResult.detectedChainId === chainId ? "✅" : "❌"}
                           </div>
                         )}
                         <div>

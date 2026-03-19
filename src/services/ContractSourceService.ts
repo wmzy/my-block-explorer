@@ -215,8 +215,8 @@ export class ContractSourceService {
         txHash: row.creationTxHash,
         blockNumber: Number(row.creationBlockNumber),
         creator: row.creatorAddress || undefined,
-        timestamp: row.lastUpdated,
-        gasUsed: BigInt(0), // 这些字段在新schema中没有，可以后续添加
+        timestamp: row.creationTimestamp ?? 0,
+        gasUsed: BigInt(0),
         gasPrice: BigInt(0),
       };
     } catch (error) {
@@ -249,12 +249,12 @@ export class ContractSourceService {
         return;
       }
 
-      // 插入新记录
       await db.insert(contractCreationInfo).values({
         chainId,
         address: address,
         creationTxHash: creationInfo.txHash,
         creationBlockNumber: BigInt(creationInfo.blockNumber),
+        creationTimestamp: creationInfo.timestamp,
         creatorAddress: creationInfo.creator,
         factoryAddress: null,
         creationMethod: "binary_search",
@@ -718,14 +718,8 @@ export class ContractSourceService {
 
         // 对于已验证的合约，检查是否需要更新代理信息
         if (cached.verificationStatus === "verified") {
-          // 如果缓存中代理信息缺失或可能不准确，需要重新检测
-          if (
-            cached.isProxy === undefined ||
-            cached.isProxy === null ||
-            (cached.isProxy === false &&
-              !cached.implementationAddress &&
-              !cached.proxyType)
-          ) {
+          // Only re-detect proxy when proxy status is genuinely unknown
+          if (cached.isProxy === undefined || cached.isProxy === null) {
             logger.info("Cached verified contract missing or incomplete proxy info, checking");
             const proxyInfo = await this.detectProxy(chainId, address);
             if (proxyInfo.isProxy) {
@@ -1175,6 +1169,20 @@ export class ContractSourceService {
 
   // 检测代理合约类型和实现地址
   private async detectProxy(
+    chainId: number,
+    address: Address
+  ): Promise<{
+    isProxy: boolean;
+    proxyType?: ProxyType;
+    implementationAddress?: string;
+  }> {
+    const timeout = new Promise<{ isProxy: false }>((resolve) =>
+      setTimeout(() => resolve({ isProxy: false }), 15_000)
+    );
+    return Promise.race([this._detectProxyImpl(chainId, address), timeout]);
+  }
+
+  private async _detectProxyImpl(
     chainId: number,
     address: Address
   ): Promise<{

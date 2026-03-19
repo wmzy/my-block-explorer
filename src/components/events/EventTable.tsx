@@ -700,8 +700,10 @@ export const EventTable: React.FC<EventTableProps> = ({
     setError(null);
 
     try {
+      const currentPage = Math.floor((pagination.startIndex ?? 0) / pagination.limit) + 1;
       const queryParams = new URLSearchParams({
-        limit: pagination.limit.toString(),
+        page: currentPage.toString(),
+        pageSize: pagination.limit.toString(),
         sort: sort.direction,
         sortBy: sort.field,
       });
@@ -762,19 +764,27 @@ export const EventTable: React.FC<EventTableProps> = ({
       const data = await response.json();
       console.log('API response data:', data);
 
+      const normalizedEvents = (data.events ?? []).map((e: any) => {
+        const args = typeof e.decodedArgs === "string"
+          ? (() => { try { return JSON.parse(e.decodedArgs); } catch { return {}; } })()
+          : (e.decodedArgs ?? {});
+        const blockTimestamp = typeof e.blockTimestamp === "number"
+          ? new Date(e.blockTimestamp * 1000).toISOString()
+          : e.blockTimestamp;
+        return { ...args, ...e, blockTimestamp };
+      });
+
       if (cursor) {
-        // For pagination, append to existing data
-        setAllEvents(prev => [...prev, ...data.events]);
+        setAllEvents(prev => [...prev, ...normalizedEvents]);
       } else {
-        // For initial load or new filters, replace all data
-        setAllEvents(data.events);
+        setAllEvents(normalizedEvents);
       }
 
       setPagination(prev => ({
         ...prev,
         total: data.total || data.events.length,
-        hasMore: data.hasMore,
-        nextCursor: data.nextCursor,
+        hasMore: data.page < (data.totalPages ?? 1),
+        totalPages: data.totalPages,
       }));
 
       console.log('Events updated, count:', data.events.length);

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { css, cx } from "@linaria/core";
 import { Input, Button } from "haze-ui";
+import { useControl } from "react-use-control";
 import RpcConfig from "./RpcConfig";
 import {
   SUPPORTED_CHAINS,
@@ -409,7 +410,7 @@ export default function TopNavigation({
 }: TopNavigationProps) {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState("");
-  const [showRpcConfig, setShowRpcConfig] = useState(false);
+  const [, setShowRpcConfig, rpcConfigControl] = useControl(false);
   const [loading, setLoading] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [searchHistory, setSearchHistory] = useState<SearchHistoryItem[]>([]);
@@ -455,6 +456,17 @@ export default function TopNavigation({
   const selectHistoryItem = (query: string) => {
     setSearchQuery(query);
     setShowHistory(false);
+
+    // Navigate directly based on query pattern
+    if (query.startsWith("0x") && query.length === 42) {
+      navigate(`/chain/${currentChainId}/address/${query}`);
+    } else if (query.startsWith("0x") && query.length === 66) {
+      navigate(`/chain/${currentChainId}/tx/${query}`);
+    } else if (/^\d+$/.test(query)) {
+      navigate(`/chain/${currentChainId}/block/${query}`);
+    } else {
+      navigate(`/search?q=${encodeURIComponent(query)}`);
+    }
   };
 
   const handleSearch = async () => {
@@ -580,8 +592,7 @@ export default function TopNavigation({
       </nav>
 
       <RpcConfig
-        isOpen={showRpcConfig}
-        onClose={() => setShowRpcConfig(false)}
+        open={rpcConfigControl}
         chainId={currentChainId}
       />
     </>

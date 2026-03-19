@@ -172,6 +172,27 @@ The application supports all Viem chains out-of-the-box:
 - Custom adapter handles DuckDB translation
 - Snake_case naming convention enforced
 
+### Event Indexing Architecture
+
+Contract events are indexed into DuckDB for fast querying. The system indexes from the contract creation block to the latest block, with finalization tracking and reorg safety.
+
+**Key Tables:**
+- `indexing_progress` — per-contract indexing state (PK: chainId + address). Tracks `creationBlock`, `lastIndexedBlock`, `lastFinalizedBlock`, `totalEventsIndexed`, `status` (idle/indexing/error).
+- `contract_events` — decoded events for all contracts (PK: chainId + transactionHash + logIndex). Stores `eventName`, `eventSignature`, `decodedArgs` (JSON), topics, `isFinalized` flag.
+
+**Indexing Flow:**
+1. Frontend opens Events tab → auto-triggers `POST /events/index`
+2. Service reads `indexing_progress` to resume from `lastIndexedBlock + 1`
+3. Gets finalized block via `client.getBlock({ blockTag: 'finalized' })`
+4. Batch loop (2000 blocks/batch): `getLogs` → `decodeEventLog` with ABI → insert with `onConflictDoNothing`
+5. Events up to finalized block marked `isFinalized = true`
+6. On next run, non-finalized events are checked for reorgs (tx hash verified against block)
+
+**Key Files:**
+- `src/services/EventIndexingService.ts` — `startIndexing()`, `getIndexingStatus()`, `getContractEvents()`, `getEventStatistics()`
+- `src/routes/events.ts` — API endpoints for events
+- `src/database/schema.ts` — `indexingProgress` and `contractEvents` table definitions
+
 ### API Design Patterns
 
 **Backend API Endpoints (still available but no longer primary data source for blocks/transactions):**
@@ -183,7 +204,10 @@ DB-backed (persistent data):
 - `/api/chains/{chainId}/addresses/{address}/persistent` - Address persistent metadata
 - `/api/chains/{chainId}/contracts/{address}/source` - Contract source code
 - `/api/chains/{chainId}/contracts/{address}/abi` - Contract ABI
-- `/api/chains/{chainId}/contracts/{address}/events` - Contract events
+- `/api/chains/{chainId}/contracts/{address}/events` - Query indexed contract events (page, pageSize, eventName, fromBlock, toBlock)
+- `/api/chains/{chainId}/contracts/{address}/events/index` - POST to trigger indexing, DELETE to stop
+- `/api/chains/{chainId}/contracts/{address}/events/indexing-status` - Indexing progress (blocks indexed, status)
+- `/api/chains/{chainId}/contracts/{address}/events/statistics` - Event statistics (counts by type)
 - `/api/search?q=` - Global search across indexed data
 
 RPC-backed (via backend RpcManager):

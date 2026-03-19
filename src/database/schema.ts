@@ -229,15 +229,62 @@ export const contractCreationInfo = duckdbTable(
   {
     ...chainAddressColumns,
     creationTxHash: txHash(),
-    creationBlockNumber: bignum(), // 创建区块号
+    creationBlockNumber: bignum(),
+    creationTimestamp: timestamp(),
     creatorAddress: address(),
-    factoryAddress: address(), // 允许 NULL，因为不是所有合约都通过工厂创建
+    factoryAddress: address(),
     creationMethod: varchar({ length: 50 }),
     lastUpdated: datetime().default(sql`now()`),
   },
   (table) => [
     primaryKey({ columns: [table.chainId, table.address] }),
     // 注意：索引在迁移脚本中手动创建
+  ]
+);
+
+// Event indexing progress — tracks per-contract indexing state
+export const indexingProgress = duckdbTable(
+  "indexing_progress",
+  {
+    ...chainColumns,
+    address: address().notNull(),
+    creationBlock: bignum(),
+    lastIndexedBlock: bignum(),
+    lastFinalizedBlock: bignum(),
+    totalEventsIndexed: integer().default(0),
+    status: varchar({ length: 20 }).default("idle"),
+    errorMessage: text(),
+    updatedAt: datetime().default(sql`now()`),
+  },
+  (table) => [primaryKey({ columns: [table.chainId, table.address] })]
+);
+
+// Contract events — stores decoded events for all contracts
+export const contractEvents = duckdbTable(
+  "contract_events",
+  {
+    ...chainColumns,
+    contractAddress: address().notNull(),
+    blockNumber: bignum().notNull(),
+    blockTimestamp: timestamp(),
+    transactionHash: txHash().notNull(),
+    transactionIndex: integer(),
+    logIndex: integer().notNull(),
+    eventName: varchar({ length: 100 }),
+    eventSignature: varchar({ length: 66 }),
+    decodedArgs: text(),
+    topic0: varchar({ length: 66 }),
+    topic1: varchar({ length: 66 }),
+    topic2: varchar({ length: 66 }),
+    topic3: varchar({ length: 66 }),
+    data: text(),
+    isFinalized: boolean().default(false),
+    indexedAt: datetime().default(sql`now()`),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.chainId, table.transactionHash, table.logIndex],
+    }),
   ]
 );
 
@@ -281,3 +328,9 @@ export type NewContractSource = typeof contractSources.$inferInsert;
 
 export type ContractCreationInfo = typeof contractCreationInfo.$inferSelect;
 export type NewContractCreationInfo = typeof contractCreationInfo.$inferInsert;
+
+export type IndexingProgress = typeof indexingProgress.$inferSelect;
+export type NewIndexingProgress = typeof indexingProgress.$inferInsert;
+
+export type ContractEvent = typeof contractEvents.$inferSelect;
+export type NewContractEvent = typeof contractEvents.$inferInsert;

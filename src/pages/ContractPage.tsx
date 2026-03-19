@@ -1,6 +1,7 @@
-import { useState, useEffect } from "react";
-import { useParams, useNavigate, useLocation } from "react-router-dom";
+import { useState, useEffect, useRef, useCallback } from "react";
+import { useParams, useNavigate, useLocation, useSearchParams } from "react-router-dom";
 import { css } from "@linaria/core";
+import { useControl } from "react-use-control";
 import { getChainName, isChainSupported } from "@/config/chains";
 import {
   parseContractFunctions,
@@ -294,6 +295,7 @@ export default function ContractPage() {
   }>();
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const [contractSource, setContractSource] = useState<ContractSource | null>(
     null
@@ -305,7 +307,7 @@ export default function ContractPage() {
   const [error, setError] = useState<string | null>(null);
   const [creationLoading, setCreationLoading] = useState(false);
   const [creationError, setCreationError] = useState<string | null>(null);
-  const [showRpcConfig, setShowRpcConfig] = useState(false);
+  const [, setShowRpcConfig, rpcConfigControl] = useControl(false);
   type TabId =
     | "source"
     | "source-impl"
@@ -316,9 +318,15 @@ export default function ContractPage() {
     | "interact"
     | "read-proxy"
     | "write-proxy";
-  const [activeTab, setActiveTab] = useState<TabId>(
-    location.pathname.endsWith("/events") ? "events" : "source"
-  );
+
+  const tabFromUrl = (searchParams.get("tab") ||
+    (location.pathname.endsWith("/events") ? "events" : "")) as TabId | "";
+
+  const activeTab: TabId = tabFromUrl || "source";
+
+  const setActiveTab = (tab: TabId) => {
+    setSearchParams({ tab }, { replace: true });
+  };
 
   const currentChainId = parseInt(chainId || "1");
 
@@ -372,20 +380,31 @@ export default function ContractPage() {
   }, [chainId, address]);
 
   useEffect(() => {
-    if (location.pathname.endsWith("/events")) {
-      setActiveTab("events");
-    }
-  }, [location.pathname]);
-
-  useEffect(() => {
     if (
       contractSource?.isProxy &&
       contractSource?.implementationContract &&
-      activeTab === "source"
+      !tabFromUrl
     ) {
       setActiveTab("read-proxy");
     }
   }, [contractSource]);
+
+  const indexingTriggered = useRef(false);
+
+  useEffect(() => {
+    if (activeTab !== "events" || !address || !currentChainId) return;
+    if (indexingTriggered.current) return;
+    indexingTriggered.current = true;
+
+    fetch(
+      `/api/chains/${currentChainId}/contracts/${address}/events/index`,
+      { method: "POST", headers: { "Content-Type": "application/json" } }
+    ).catch(() => {});
+  }, [activeTab, address, currentChainId]);
+
+  useEffect(() => {
+    indexingTriggered.current = false;
+  }, [address, currentChainId]);
 
   const fetchContractData = async () => {
     if (!chainId || !address) return;
@@ -923,11 +942,11 @@ export default function ContractPage() {
               <>
                 <EventStatistics
                   chainId={currentChainId}
-                  contractAddress={address!}
+                  contractAddress={address as `0x${string}`}
                 />
                 <EventTable
                   chainId={currentChainId}
-                  contractAddress={address!}
+                  contractAddress={address as `0x${string}`}
                   abiEvents={effectiveABI?.events || []}
                   enableDynamicFiltering={true}
                 />
@@ -948,8 +967,7 @@ export default function ContractPage() {
 
         {/* RPC 配置弹窗 */}
         <RpcConfig
-          isOpen={showRpcConfig}
-          onClose={() => setShowRpcConfig(false)}
+          open={rpcConfigControl}
           chainId={currentChainId}
           onConfigSaved={() => {
             setCreationError(null);

@@ -39,7 +39,7 @@
     "drizzle-orm": "^0.44.4",
     "echarts": "^6.0.0",
     "echarts-for-react": "^3.0.2",
-    "haze-ui": "^1.3.0",
+    "haze-ui": "^1.4.0",
     "hono": "^4.9.2",
     "pino": "^9.9.0",
     "pino-pretty": "^13.1.1",
@@ -47,7 +47,7 @@
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "react-router-dom": "^7.8.1",
-    "react-use-control": "^1.2.1",
+    "react-use-control": "^1.3.1",
     "viem": "^2.34.0",
     "zod": "^4.1.12"
   },
@@ -77,5 +77,10 @@
     "typescript": "^5.9.2",
     "vite": "^7.1.3",
     "vitest": "^3.2.4"
+  },
+  "pnpm": {
+    "overrides": {
+      "react-use-control": "^1.3.1"
+    }
   }
 }
