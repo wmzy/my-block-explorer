@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { css } from '@linaria/core';
+import { SegmentedProgressBar, type Segment } from '../ui/SegmentedProgressBar';
 
 const containerStyles = css`
   background: white;
@@ -181,7 +182,8 @@ const inputGroupStyles = css`
     color: #374151;
   }
 
-  input, select {
+  input,
+  select {
     padding: 8px 12px;
     border: 1px solid #d1d5db;
     border-radius: 4px;
@@ -278,18 +280,16 @@ export const IndexingRangeManager: React.FC<Props> = ({
   const [overlaps, setOverlaps] = useState<Overlap[]>([]);
   const [actionLoading, setActionLoading] = useState<number | null>(null);
 
-  const latestBlock = ranges.length > 0
-    ? Math.max(...ranges.map(r => Number(r.toBlock)))
-    : 0;
+  const latestBlock = ranges.length > 0 ? Math.max(...ranges.map(r => Number(r.toBlock))) : 0;
   const fetchRanges = useCallback(async () => {
     setLoading(true);
     try {
       const response = await fetch(
-        `/api/chains/${chainId}/contracts/${contractAddress}/events/ranges`
+        `/api/chains/${chainId}/contracts/${contractAddress}/events/ranges`,
       );
       if (response.ok) {
         const data = await response.json();
-        setRanges(data);
+        setRanges(data.ranges ?? []);
       }
     } catch (error) {
       console.error('Failed to fetch ranges:', error);
@@ -330,7 +330,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(formState),
-        }
+        },
       );
       const data = await response.json();
       if (response.ok) {
@@ -351,96 +351,108 @@ export const IndexingRangeManager: React.FC<Props> = ({
       setActionLoading(null);
     }
   }, [chainId, contractAddress, formState, creationBlock, fetchRanges, onRefresh]);
-  const handleStartIndexing = useCallback(async (rangeId: number) => {
-    setActionLoading(rangeId);
-    try {
-      const response = await fetch(
-        `/api/chains/${chainId}/contracts/${contractAddress}/events/ranges/${rangeId}/start`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ abi }),
+  const handleStartIndexing = useCallback(
+    async (rangeId: number) => {
+      setActionLoading(rangeId);
+      try {
+        const response = await fetch(
+          `/api/chains/${chainId}/contracts/${contractAddress}/events/ranges/${rangeId}/start`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ abi }),
+          },
+        );
+        if (response.ok) {
+          await fetchRanges();
+        } else {
+          const data = await response.json();
+          alert(data.error || 'Failed to start indexing');
         }
-      );
-      if (response.ok) {
-        await fetchRanges();
-      } else {
-        const data = await response.json();
-        alert(data.error || 'Failed to start indexing');
+      } catch (error) {
+        console.error('Failed to start indexing:', error);
+        alert('Failed to start indexing');
+      } finally {
+        setActionLoading(null);
       }
-    } catch (error) {
-      console.error('Failed to start indexing:', error);
-      alert('Failed to start indexing');
-    } finally {
-      setActionLoading(null);
-    }
-  }, [chainId, contractAddress, abi, fetchRanges]);
-  const handlePauseIndexing = useCallback(async (rangeId: number) => {
-    setActionLoading(rangeId);
-    try {
-      const response = await fetch(
-        `/api/chains/${chainId}/contracts/${contractAddress}/events/ranges/${rangeId}/pause`,
-        { method: 'POST' }
-      );
-      if (response.ok) {
-        await fetchRanges();
-      } else {
-        const data = await response.json();
-        alert(data.error || 'Failed to pause indexing');
-      }
-    } catch (error) {
-      console.error('Failed to pause indexing:', error);
-      alert('Failed to pause indexing');
-    } finally {
-      setActionLoading(null);
-    }
-  }, [chainId, contractAddress, fetchRanges]);
-  const handleResumeIndexing = useCallback(async (rangeId: number) => {
-    setActionLoading(rangeId);
-    try {
-      const response = await fetch(
-        `/api/chains/${chainId}/contracts/${contractAddress}/events/ranges/${rangeId}/resume`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ abi }),
+    },
+    [chainId, contractAddress, abi, fetchRanges],
+  );
+  const handlePauseIndexing = useCallback(
+    async (rangeId: number) => {
+      setActionLoading(rangeId);
+      try {
+        const response = await fetch(
+          `/api/chains/${chainId}/contracts/${contractAddress}/events/ranges/${rangeId}/pause`,
+          { method: 'POST' },
+        );
+        if (response.ok) {
+          await fetchRanges();
+        } else {
+          const data = await response.json();
+          alert(data.error || 'Failed to pause indexing');
         }
-      );
-      if (response.ok) {
-        await fetchRanges();
-      } else {
-        const data = await response.json();
-        alert(data.error || 'Failed to resume indexing');
+      } catch (error) {
+        console.error('Failed to pause indexing:', error);
+        alert('Failed to pause indexing');
+      } finally {
+        setActionLoading(null);
       }
-    } catch (error) {
-      console.error('Failed to resume indexing:', error);
-      alert('Failed to resume indexing');
-    } finally {
-      setActionLoading(null);
-    }
-  }, [chainId, contractAddress, abi, fetchRanges]);
-  const handleDeleteRange = useCallback(async (rangeId: number) => {
-    if (!confirm('Are you sure you want to delete this range?')) return;
-    setActionLoading(rangeId);
-    try {
-      const response = await fetch(
-        `/api/chains/${chainId}/contracts/${contractAddress}/events/ranges/${rangeId}`,
-        { method: 'DELETE' }
-      );
-      if (response.ok) {
-        await fetchRanges();
-        onRefresh?.();
-      } else {
-        const data = await response.json();
-        alert(data.error || 'Failed to delete range');
+    },
+    [chainId, contractAddress, fetchRanges],
+  );
+  const handleResumeIndexing = useCallback(
+    async (rangeId: number) => {
+      setActionLoading(rangeId);
+      try {
+        const response = await fetch(
+          `/api/chains/${chainId}/contracts/${contractAddress}/events/ranges/${rangeId}/resume`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ abi }),
+          },
+        );
+        if (response.ok) {
+          await fetchRanges();
+        } else {
+          const data = await response.json();
+          alert(data.error || 'Failed to resume indexing');
+        }
+      } catch (error) {
+        console.error('Failed to resume indexing:', error);
+        alert('Failed to resume indexing');
+      } finally {
+        setActionLoading(null);
       }
-    } catch (error) {
-      console.error('Failed to delete range:', error);
-      alert('Failed to delete range');
-    } finally {
-      setActionLoading(null);
-    }
-  }, [chainId, contractAddress, fetchRanges, onRefresh]);
+    },
+    [chainId, contractAddress, abi, fetchRanges],
+  );
+  const handleDeleteRange = useCallback(
+    async (rangeId: number) => {
+      if (!confirm('Are you sure you want to delete this range?')) return;
+      setActionLoading(rangeId);
+      try {
+        const response = await fetch(
+          `/api/chains/${chainId}/contracts/${contractAddress}/events/ranges/${rangeId}`,
+          { method: 'DELETE' },
+        );
+        if (response.ok) {
+          await fetchRanges();
+          onRefresh?.();
+        } else {
+          const data = await response.json();
+          alert(data.error || 'Failed to delete range');
+        }
+      } catch (error) {
+        console.error('Failed to delete range:', error);
+        alert('Failed to delete range');
+      } finally {
+        setActionLoading(null);
+      }
+    },
+    [chainId, contractAddress, fetchRanges, onRefresh],
+  );
   const formatBlock = (block: bigint | number): string => {
     return Number(block).toLocaleString();
   };
@@ -448,9 +460,10 @@ export const IndexingRangeManager: React.FC<Props> = ({
     if (!range.currentBlock) return 0;
     const totalBlocks = Number(range.toBlock) - Number(range.fromBlock) + 1;
     if (totalBlocks <= 0) return 0;
-    const currentIndexed = range.direction === 'forward'
-      ? Number(range.currentBlock) - Number(range.fromBlock) + 1
-      : Number(range.toBlock) - Number(range.currentBlock) + 1;
+    const currentIndexed =
+      range.direction === 'forward'
+        ? Number(range.currentBlock) - Number(range.fromBlock) + 1
+        : Number(range.toBlock) - Number(range.currentBlock) + 1;
     return Math.round((currentIndexed / totalBlocks) * 100);
   };
   const getStatusLabel = (status: RangeStatus): string => {
@@ -535,13 +548,27 @@ export const IndexingRangeManager: React.FC<Props> = ({
           {showAddForm ? 'Cancel' : '+ Add Range'}
         </button>
       </div>
+      {ranges.length > 0 && (
+        <SegmentedProgressBar
+          segments={ranges.map(r => ({
+            rangeId: r.rangeId,
+            fromBlock: Number(r.fromBlock),
+            toBlock: Number(r.toBlock),
+            currentBlock: r.currentBlock !== null ? Number(r.currentBlock) : null,
+            status: r.status,
+            progress: calculateProgress(r),
+          }))}
+        />
+      )}
       {overlaps.length > 0 && (
         <div className={warningStyles}>
-          <strong>Warning:</strong> Some existing ranges overlap with the range. Events in overlapping blocks will be re-indexed:
+          <strong>Warning:</strong> Some existing ranges overlap with the range. Events in
+          overlapping blocks will be re-indexed:
           <ul style={{ margin: '8px 0 0', paddingLeft: '16px' }}>
             {overlaps.map(o => (
               <li key={o.rangeId}>
-                Range #{o.rangeId}: blocks {formatBlock(o.overlapStart)} - {formatBlock(o.overlapEnd)}
+                Range #{o.rangeId}: blocks {formatBlock(o.overlapStart)} -{' '}
+                {formatBlock(o.overlapEnd)}
                 <button
                   style={{
                     marginLeft: '8px',
@@ -619,7 +646,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
               type="number"
               placeholder={creationBlock > 0 ? creationBlock.toString() : '0'}
               value={formState.fromBlock}
-              onChange={(e) => setFormState({ ...formState, fromBlock: e.target.value })}
+              onChange={e => setFormState({ ...formState, fromBlock: e.target.value })}
               min={creationBlock > 0 ? creationBlock : 0}
             />
           </div>
@@ -629,14 +656,16 @@ export const IndexingRangeManager: React.FC<Props> = ({
               type="number"
               placeholder={latestBlock > 0 ? latestBlock.toString() : ''}
               value={formState.toBlock}
-              onChange={(e) => setFormState({ ...formState, toBlock: e.target.value })}
+              onChange={e => setFormState({ ...formState, toBlock: e.target.value })}
             />
           </div>
           <div className={inputGroupStyles}>
             <label>Direction</label>
             <select
               value={formState.direction}
-              onChange={(e) => setFormState({ ...formState, direction: e.target.value as RangeDirection })}
+              onChange={e =>
+                setFormState({ ...formState, direction: e.target.value as RangeDirection })
+              }
             >
               <option value="forward">Forward (old to new)</option>
               <option value="backward">Backward (new to old)</option>

@@ -1,0 +1,19 @@
+{
+  "active_plan": "/Users/lot/projects/block-explorer/.sisyphus/plans/manual-index-segments.md",
+  "started_at": "2026-03-20T12:00:06.563Z",
+  "completed_at": "2026-03-20T21:50:00.000Z",
+  "session_ids": [
+    "ses_2f5103720fferQCdIxk8cppuPz",
+    "ses_2f5165099ffejR6F3Ma1Pd6ms0",
+    "ses_2f4e16a81ffeTOTrpEZcqA5n36",
+    "ses_2f4dfeb9effeDmtaj6oBfFPuY0",
+    "ses_2f4e0122effewZJbdWVKktZ1V5",
+    "ses_2f4df74e8ffeAgnwD61w5oRFk8",
+    "ses_2f4cdf68dfferZYxMvrKKypumN",
+    "ses_2f4cdc31affeWlpIy5mARKM83j",
+    "ses_2f489e0f7ffeF6k4Mk0J0nIV0d"
+  ],
+  "plan_name": "manual-index-segments",
+  "agent": "atlas",
+  "status": "completed"
+}

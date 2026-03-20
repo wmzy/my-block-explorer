@@ -15,6 +15,13 @@
       "when": 1773888538220,
       "tag": "0001_lumpy_jack_murdock",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1774016985280,
+      "tag": "0002_tense_grim_reaper",
+      "breakpoints": true
     }
   ]
 }

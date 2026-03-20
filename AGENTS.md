@@ -34,29 +34,31 @@ block-explorer/
 
 ## WHERE TO LOOK
 
-| Task                 | Location                                                                       | Notes                                     |
-| -------------------- | ------------------------------------------------------------------------------ | ----------------------------------------- |
-| Add new API endpoint | `src/routes/*.ts` → `src/api-app.ts`                                           | Register in api-app.ts                    |
-| Modify DB schema     | `src/database/schema.ts`                                                       | Run `npm run db:generate`                 |
-| Add new chain        | `src/config/chains.ts`                                                         | Viem chains auto-supported                |
-| RPC client creation  | `src/utils/realTimeData.ts` (frontend), `src/services/RpcManager.ts` (backend) | Both cache per chainId                    |
-| Event indexing       | `src/services/EventIndexingService.ts`                                         | Batch 2000 blocks, reorg handling         |
-| Contract source/ABI  | `src/services/ContractSourceService.ts`                                        | Sourcify → Etherscan fallback             |
-| UI components        | `src/components/ui/`                                                           | Haze UI wrappers + Linaria                |
-| Address data hook    | `src/hooks/useAddressData.ts`                                                  | Hybrid: API (persistent) + RPC (realtime) |
+| Task                 | Location                                                                        | Notes                                               |
+| -------------------- | ------------------------------------------------------------------------------- | --------------------------------------------------- |
+| Add new API endpoint | `src/routes/*.ts` → `src/api-app.ts`                                            | Register in api-app.ts                              |
+| Modify DB schema     | `src/database/schema.ts`                                                        | Run `npm run db:generate`                           |
+| Add new chain        | `src/config/chains.ts`                                                          | Viem chains auto-supported                          |
+| RPC client creation  | `src/utils/realTimeData.ts` (frontend), `src/services/RpcManager.ts` (backend)  | Both cache per chainId                              |
+| Event indexing       | `src/services/EventIndexingService.ts` + `src/services/IndexingQueueService.ts` | Manual range-based, serial queue, 2000 blocks/batch |
+| Contract source/ABI  | `src/services/ContractSourceService.ts`                                         | Sourcify → Etherscan fallback                       |
+| UI components        | `src/components/ui/`                                                            | Haze UI wrappers + Linaria                          |
+| Address data hook    | `src/hooks/useAddressData.ts`                                                   | Hybrid: API (persistent) + RPC (realtime)           |
 
 ## CODE MAP
 
-| Symbol                | Type      | Location                                      | Role                                 |
-| --------------------- | --------- | --------------------------------------------- | ------------------------------------ |
-| `rpcManager`          | Singleton | `src/services/RpcManager.ts:218`              | Central RPC client manager           |
-| `createDuckDBAdapter` | Function  | `src/database/duckdb-postgres-adapter.ts:430` | PostgreSQL→DuckDB bridge for Drizzle |
-| `createRpcClient`     | Function  | `src/utils/realTimeData.ts:61`                | Frontend viem client factory         |
-| `startIndexing`       | Function  | `src/services/EventIndexingService.ts:360`    | Event batch indexing entry           |
-| `useAddressData`      | Hook      | `src/hooks/useAddressData.ts:44`              | Data separation hook                 |
-| `apiClient`           | Class     | `src/api/client.ts:278`                       | Backend API client                   |
-| `getChainInfo`        | Function  | `src/config/chains.ts:23`                     | Viem chain lookup                    |
-| `honoApiPlugin`       | Plugin    | `vite.config.ts:8-66`                         | Vite→Hono bridge (dev only)          |
+| Symbol                 | Type      | Location                                      | Role                                 |
+| ---------------------- | --------- | --------------------------------------------- | ------------------------------------ |
+| `rpcManager`           | Singleton | `src/services/RpcManager.ts:218`              | Central RPC client manager           |
+| `createDuckDBAdapter`  | Function  | `src/database/duckdb-postgres-adapter.ts:430` | PostgreSQL→DuckDB bridge for Drizzle |
+| `createRpcClient`      | Function  | `src/utils/realTimeData.ts:61`                | Frontend viem client factory         |
+| `indexingQueueService` | Singleton | `src/services/IndexingQueueService.ts`        | Serial queue for range indexing      |
+| `startIndexingRange`   | Function  | `src/services/EventIndexingService.ts`        | Range-based batch indexing entry     |
+| `SegmentedProgressBar` | Component | `src/components/ui/SegmentedProgressBar.tsx`  | Segmented progress bar UI            |
+| `useAddressData`       | Hook      | `src/hooks/useAddressData.ts:44`              | Data separation hook                 |
+| `apiClient`            | Class     | `src/api/client.ts:278`                       | Backend API client                   |
+| `getChainInfo`         | Function  | `src/config/chains.ts:23`                     | Viem chain lookup                    |
+| `honoApiPlugin`        | Plugin    | `vite.config.ts:8-66`                         | Vite→Hono bridge (dev only)          |
 
 ## CONVENTIONS
 

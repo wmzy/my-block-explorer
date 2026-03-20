@@ -14,11 +14,9 @@ import {
   getContractEvents,
   getEventStatistics,
   getIndexingStatus,
-  startIndexing,
-  stopIndexing,
 } from '../services/EventIndexingService';
-import { contractSourceService } from '../services/ContractSourceService';
 import { safeJsonResponse } from '../utils/serialization';
+import { contractSourceService } from '../services/ContractSourceService';
 
 const logger = createLogger('events-routes');
 const app = new Hono();
@@ -117,298 +115,6 @@ app.get('/chains/:chainId/contracts/:address/events/indexing-status', async c =>
   }
 });
 
-// POST /chains/:chainId/contracts/:address/events/index — trigger indexing
-app.post('/chains/:chainId/contracts/:address/events/index', async c => {
-  const result = validateChainAndAddress(c.req.param('chainId'), c.req.param('address'));
-  if ('error' in result) return c.json(result.error, result.status);
-
-  const { chainId, address } = result;
-
-  try {
-    let abi: unknown[] = [];
-
-    try {
-      const body = await c.req.json();
-      if (body.abi && Array.isArray(body.abi)) {
-        abi = body.abi;
-      }
-    } catch {
-      // no body or invalid JSON
-    }
-
-    if (abi.length === 0) {
-      try {
-        const contractSource = await contractSourceService.getContractSource(chainId, address);
-        const abiStr = contractSource?.implementationContract?.abi ?? contractSource?.abi;
-        if (abiStr) {
-          abi = JSON.parse(abiStr);
-        }
-      } catch {
-        // ABI not available
-      }
-    }
-
-    if (abi.length === 0) {
-      return c.json(
-        {
-          error: 'No ABI available',
-          message:
-            'Contract ABI is required for indexing. Verify the contract on a block explorer first.',
-        },
-        400,
-      );
-    }
-
-    startIndexing(chainId, address, abi as any).catch(err => {
-      logger.error({ err, chainId, address }, 'Background indexing failed');
-    });
-
-    return c.json({
-      message: 'Indexing started',
-      chainId,
-      contractAddress: address,
-    });
-  } catch (error) {
-    logger.error({ err: error }, 'Failed to start indexing');
-    return c.json(
-      {
-        error: 'Failed to start indexing',
-        message: error instanceof Error ? error.message : 'Unknown error',
-      },
-      500,
-    );
-  }
-});
-
-// DELETE /chains/:chainId/contracts/:address/events/index — stop indexing
-app.delete('/chains/:chainId/contracts/:address/events/index', async c => {
-  const result = validateChainAndAddress(c.req.param('chainId'), c.req.param('address'));
-  if ('error' in result) return c.json(result.error, result.status);
-
-  const { chainId, address } = result;
-  stopIndexing(chainId, address);
-  return c.json({ message: 'Indexing stopped', chainId, contractAddress: address });
-});
-
-// POST /chains/:chainId/contracts/:address/events/index — trigger indexing
-app.post('/chains/:chainId/contracts/:address/events/index', async c => {
-  const result = validateChainAndAddress(c.req.param('chainId'), c.req.param('address'));
-  if ('error' in result) return c.json(result.error, result.status);
-
-  const { chainId, address } = result;
-
-  try {
-    let abi: unknown[] = [];
-
-    try {
-      const body = await c.req.json();
-      if (body.abi && Array.isArray(body.abi)) {
-        abi = body.abi;
-      }
-    } catch {
-      // no body or invalid JSON
-    }
-
-    if (abi.length === 0) {
-      try {
-        const contractSource = await contractSourceService.getContractSource(chainId, address);
-        const abiStr = contractSource?.implementationContract?.abi ?? contractSource?.abi;
-        if (abiStr) {
-          abi = JSON.parse(abiStr);
-        }
-      } catch {
-        // ABI not available
-      }
-    }
-
-    if (abi.length === 0) {
-      return c.json(
-        {
-          error: 'No ABI available',
-          message:
-            'Contract ABI is required for indexing. Verify the contract on a block explorer first.',
-        },
-        400,
-      );
-    }
-
-    startIndexing(chainId, address, abi as any).catch(err => {
-      logger.error({ err, chainId, address }, 'Background indexing failed');
-    });
-
-    return c.json({
-      message: 'Indexing started',
-      chainId,
-      contractAddress: address,
-    });
-  } catch (error) {
-    logger.error({ err: error }, 'Failed to start indexing');
-    return c.json(
-      {
-        error: 'Failed to start indexing',
-        message: error instanceof Error ? error.message : 'Unknown error',
-      },
-      500,
-    );
-  }
-});
-
-// DELETE /chains/:chainId/contracts/:address/events/index — stop indexing
-app.delete('/chains/:chainId/contracts/:address/events/index', async c => {
-  const result = validateChainAndAddress(c.req.param('chainId'), c.req.param('address'));
-  if ('error' in result) return c.json(result.error, result.status);
-
-  const { chainId, address } = result;
-  stopIndexing(chainId, address);
-  return c.json({ message: 'Indexing stopped', chainId, contractAddress: address });
-});
-
-// POST /chains/:chainId/contracts/:address/events/index — trigger indexing
-app.post('/chains/:chainId/contracts/:address/events/index', async c => {
-  const result = validateChainAndAddress(c.req.param('chainId'), c.req.param('address'));
-  if ('error' in result) return c.json(result.error, result.status);
-
-  const { chainId, address } = result;
-
-  try {
-    let abi: unknown[] = [];
-
-    try {
-      const body = await c.req.json();
-      if (body.abi && Array.isArray(body.abi)) {
-        abi = body.abi;
-      }
-    } catch {
-      // no body or invalid JSON
-    }
-
-    if (abi.length === 0) {
-      try {
-        const contractSource = await contractSourceService.getContractSource(chainId, address);
-        const abiStr = contractSource?.implementationContract?.abi ?? contractSource?.abi;
-        if (abiStr) {
-          abi = JSON.parse(abiStr);
-        }
-      } catch {
-        // ABI not available
-      }
-    }
-
-    if (abi.length === 0) {
-      return c.json(
-        {
-          error: 'No ABI available',
-          message:
-            'Contract ABI is required for indexing. Verify the contract on a block explorer first.',
-        },
-        400,
-      );
-    }
-
-    startIndexing(chainId, address, abi as any).catch(err => {
-      logger.error({ err, chainId, address }, 'Background indexing failed');
-    });
-
-    return c.json({
-      message: 'Indexing started',
-      chainId,
-      contractAddress: address,
-    });
-  } catch (error) {
-    logger.error({ err: error }, 'Failed to start indexing');
-    return c.json(
-      {
-        error: 'Failed to start indexing',
-        message: error instanceof Error ? error.message : 'Unknown error',
-      },
-      500,
-    );
-  }
-});
-
-// DELETE /chains/:chainId/contracts/:address/events/index — stop indexing
-app.delete('/chains/:chainId/contracts/:address/events/index', async c => {
-  const result = validateChainAndAddress(c.req.param('chainId'), c.req.param('address'));
-  if ('error' in result) return c.json(result.error, result.status);
-
-  const { chainId, address } = result;
-  stopIndexing(chainId, address);
-  return c.json({ message: 'Indexing stopped', chainId, contractAddress: address });
-});
-
-// POST /chains/:chainId/contracts/:address/events/index — trigger indexing
-app.post('/chains/:chainId/contracts/:address/events/index', async c => {
-  const result = validateChainAndAddress(c.req.param('chainId'), c.req.param('address'));
-  if ('error' in result) return c.json(result.error, result.status);
-
-  const { chainId, address } = result;
-
-  try {
-    let abi: unknown[] = [];
-
-    try {
-      const body = await c.req.json();
-      if (body.abi && Array.isArray(body.abi)) {
-        abi = body.abi;
-      }
-    } catch {
-      // no body or invalid JSON
-    }
-
-    if (abi.length === 0) {
-      try {
-        const contractSource = await contractSourceService.getContractSource(chainId, address);
-        const abiStr = contractSource?.implementationContract?.abi ?? contractSource?.abi;
-        if (abiStr) {
-          abi = JSON.parse(abiStr);
-        }
-      } catch {
-        // ABI not available
-      }
-    }
-
-    if (abi.length === 0) {
-      return c.json(
-        {
-          error: 'No ABI available',
-          message:
-            'Contract ABI is required for indexing. Verify the contract on a block explorer first.',
-        },
-        400,
-      );
-    }
-
-    startIndexing(chainId, address, abi as any).catch(err => {
-      logger.error({ err, chainId, address }, 'Background indexing failed');
-    });
-
-    return c.json({
-      message: 'Indexing started',
-      chainId,
-      contractAddress: address,
-    });
-  } catch (error) {
-    logger.error({ err: error }, 'Failed to start indexing');
-    return c.json(
-      {
-        error: 'Failed to start indexing',
-        message: error instanceof Error ? error.message : 'Unknown error',
-      },
-      500,
-    );
-  }
-});
-
-// DELETE /chains/:chainId/contracts/:address/events/index — stop indexing
-app.delete('/chains/:chainId/contracts/:address/events/index', async c => {
-  const result = validateChainAndAddress(c.req.param('chainId'), c.req.param('address'));
-  if ('error' in result) return c.json(result.error, result.status);
-
-  const { chainId, address } = result;
-  stopIndexing(chainId, address);
-  return c.json({ message: 'Indexing stopped', chainId, contractAddress: address });
-});
-
 // GET /chains/:chainId/contracts/:address/events — query indexed events
 app.get('/chains/:chainId/contracts/:address/events', async c => {
   const result = validateChainAndAddress(c.req.param('chainId'), c.req.param('address'));
@@ -457,6 +163,458 @@ app.get('/chains/:chainId/contracts/:address/events', async c => {
         pageSize,
         totalPages: 0,
         timestamp: new Date().toISOString(),
+      },
+      500,
+    );
+  }
+});
+
+// GET /chains/:chainId/contracts/:address/events/ranges — get all ranges
+app.get('/chains/:chainId/contracts/:address/events/ranges', async c => {
+  const result = validateChainAndAddress(c.req.param('chainId'), c.req.param('address'));
+  if ('error' in result) return c.json(result.error, result.status);
+
+  const { chainId, address } = result;
+
+  try {
+    const ranges = await getIndexingRanges(chainId, address);
+
+    c.header('X-Chain-Name', getChainName(chainId));
+    c.header('Cache-Control', 'public, max-age=10');
+
+    return c.json(
+      safeJsonResponse({
+        chainId,
+        chainName: getChainName(chainId),
+        contractAddress: address,
+        ranges,
+        timestamp: new Date().toISOString(),
+      }),
+    );
+  } catch (error) {
+    logger.error({ err: error }, 'Get indexing ranges API error');
+    return c.json(
+      {
+        error: 'Failed to fetch indexing ranges',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      },
+      500,
+    );
+  }
+});
+
+// POST /chains/:chainId/contracts/:address/events/ranges — add new range
+app.post('/chains/:chainId/contracts/:address/events/ranges', async c => {
+  const result = validateChainAndAddress(c.req.param('chainId'), c.req.param('address'));
+  if ('error' in result) return c.json(result.error, result.status);
+
+  const { chainId, address } = result;
+
+  try {
+    const body = await c.req.json();
+    const { fromBlock, toBlock, direction, priority } = body;
+
+    if (typeof fromBlock !== 'number' || typeof toBlock !== 'number') {
+      return c.json(
+        {
+          error: 'Invalid request body',
+          message: 'fromBlock and toBlock are required and must be numbers',
+        },
+        400,
+      );
+    }
+
+    const response = await addIndexingRange(chainId, address, {
+      fromBlock,
+      toBlock,
+      direction,
+      priority,
+    });
+
+    if (!response.success) {
+      return c.json(
+        {
+          error: 'Failed to add indexing range',
+          message: response.error,
+          overlaps: response.overlaps,
+        },
+        400,
+      );
+    }
+
+    c.header('X-Chain-Name', getChainName(chainId));
+
+    return c.json(
+      safeJsonResponse({
+        chainId,
+        chainName: getChainName(chainId),
+        contractAddress: address,
+        rangeId: response.rangeId,
+        overlaps: response.overlaps,
+        timestamp: new Date().toISOString(),
+      }),
+      201,
+    );
+  } catch (error) {
+    logger.error({ err: error }, 'Add indexing range API error');
+    return c.json(
+      {
+        error: 'Failed to add indexing range',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      },
+      500,
+    );
+  }
+});
+
+// PATCH /chains/:chainId/contracts/:address/events/ranges/:rangeId — update range
+app.patch('/chains/:chainId/contracts/:address/events/ranges/:rangeId', async c => {
+  const result = validateChainAndAddress(c.req.param('chainId'), c.req.param('address'));
+  if ('error' in result) return c.json(result.error, result.status);
+
+  const { chainId, address } = result;
+  const rangeId = parseInt(c.req.param('rangeId'));
+
+  if (isNaN(rangeId)) {
+    return c.json(
+      {
+        error: 'Invalid rangeId',
+        message: 'rangeId must be a number',
+      },
+      400,
+    );
+  }
+
+  try {
+    const body = await c.req.json();
+    const { fromBlock, toBlock, direction, priority } = body;
+
+    const response = await updateIndexingRange(chainId, address, rangeId, {
+      fromBlock,
+      toBlock,
+      direction,
+      priority,
+    });
+
+    if (!response.success) {
+      return c.json(
+        {
+          error: 'Failed to update indexing range',
+          message: response.error,
+          overlaps: response.overlaps,
+        },
+        400,
+      );
+    }
+
+    c.header('X-Chain-Name', getChainName(chainId));
+
+    return c.json(
+      safeJsonResponse({
+        chainId,
+        chainName: getChainName(chainId),
+        contractAddress: address,
+        rangeId,
+        overlaps: response.overlaps,
+        timestamp: new Date().toISOString(),
+      }),
+    );
+  } catch (error) {
+    logger.error({ err: error }, 'Update indexing range API error');
+    return c.json(
+      {
+        error: 'Failed to update indexing range',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      },
+      500,
+    );
+  }
+});
+
+// DELETE /chains/:chainId/contracts/:address/events/ranges/:rangeId — delete range
+app.delete('/chains/:chainId/contracts/:address/events/ranges/:rangeId', async c => {
+  const result = validateChainAndAddress(c.req.param('chainId'), c.req.param('address'));
+  if ('error' in result) return c.json(result.error, result.status);
+
+  const { chainId, address } = result;
+  const rangeId = parseInt(c.req.param('rangeId'));
+
+  if (isNaN(rangeId)) {
+    return c.json(
+      {
+        error: 'Invalid rangeId',
+        message: 'rangeId must be a number',
+      },
+      400,
+    );
+  }
+
+  try {
+    const response = await deleteIndexingRange(chainId, address, rangeId);
+
+    if (!response.success) {
+      return c.json(
+        {
+          error: 'Failed to delete indexing range',
+          message: response.error,
+        },
+        400,
+      );
+    }
+
+    c.header('X-Chain-Name', getChainName(chainId));
+
+    return c.json(
+      safeJsonResponse({
+        chainId,
+        chainName: getChainName(chainId),
+        contractAddress: address,
+        rangeId,
+        deleted: true,
+        timestamp: new Date().toISOString(),
+      }),
+    );
+  } catch (error) {
+    logger.error({ err: error }, 'Delete indexing range API error');
+    return c.json(
+      {
+        error: 'Failed to delete indexing range',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      },
+      500,
+    );
+  }
+});
+
+// POST /chains/:chainId/contracts/:address/events/ranges/:rangeId/start — start indexing
+app.post('/chains/:chainId/contracts/:address/events/ranges/:rangeId/start', async c => {
+  const result = validateChainAndAddress(c.req.param('chainId'), c.req.param('address'));
+  if ('error' in result) return c.json(result.error, result.status);
+
+  const { chainId, address } = result;
+  const rangeId = parseInt(c.req.param('rangeId'));
+
+  if (isNaN(rangeId)) {
+    return c.json(
+      {
+        error: 'Invalid rangeId',
+        message: 'rangeId must be a number',
+      },
+      400,
+    );
+  }
+
+  try {
+    let abi: unknown[] = [];
+
+    try {
+      const body = await c.req.json();
+      if (body.abi && Array.isArray(body.abi)) {
+        abi = body.abi;
+      }
+    } catch {
+      // no body or invalid JSON
+    }
+
+    if (abi.length === 0) {
+      try {
+        const contractSource = await contractSourceService.getContractSource(chainId, address);
+        const abiStr = contractSource?.implementationContract?.abi ?? contractSource?.abi;
+        if (abiStr) {
+          abi = JSON.parse(abiStr);
+        }
+      } catch {
+        // ABI not available
+      }
+    }
+
+    if (abi.length === 0) {
+      return c.json(
+        {
+          error: 'No ABI available',
+          message:
+            'Contract ABI is required for indexing. Verify the contract on a block explorer first.',
+        },
+        400,
+      );
+    }
+
+    const response = await startIndexingRange(chainId, address, rangeId, abi as any);
+
+    if (!response.success) {
+      return c.json(
+        {
+          error: 'Failed to start indexing range',
+          message: response.error,
+        },
+        400,
+      );
+    }
+
+    c.header('X-Chain-Name', getChainName(chainId));
+
+    return c.json(
+      safeJsonResponse({
+        chainId,
+        chainName: getChainName(chainId),
+        contractAddress: address,
+        rangeId,
+        status: 'indexing',
+        timestamp: new Date().toISOString(),
+      }),
+    );
+  } catch (error) {
+    logger.error({ err: error }, 'Start indexing range API error');
+    return c.json(
+      {
+        error: 'Failed to start indexing range',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      },
+      500,
+    );
+  }
+});
+
+// POST /chains/:chainId/contracts/:address/events/ranges/:rangeId/pause — pause indexing
+app.post('/chains/:chainId/contracts/:address/events/ranges/:rangeId/pause', async c => {
+  const result = validateChainAndAddress(c.req.param('chainId'), c.req.param('address'));
+  if ('error' in result) return c.json(result.error, result.status);
+
+  const { chainId, address } = result;
+  const rangeId = parseInt(c.req.param('rangeId'));
+
+  if (isNaN(rangeId)) {
+    return c.json(
+      {
+        error: 'Invalid rangeId',
+        message: 'rangeId must be a number',
+      },
+      400,
+    );
+  }
+
+  try {
+    const isActive = getActiveRangeJob(chainId, address, rangeId);
+
+    if (!isActive) {
+      return c.json(
+        {
+          error: 'No active indexing job',
+          message: 'Range is not currently being indexed',
+        },
+        400,
+      );
+    }
+
+    pauseIndexingRange(chainId, address, rangeId);
+
+    c.header('X-Chain-Name', getChainName(chainId));
+
+    return c.json(
+      safeJsonResponse({
+        chainId,
+        chainName: getChainName(chainId),
+        contractAddress: address,
+        rangeId,
+        status: 'paused',
+        timestamp: new Date().toISOString(),
+      }),
+    );
+  } catch (error) {
+    logger.error({ err: error }, 'Pause indexing range API error');
+    return c.json(
+      {
+        error: 'Failed to pause indexing range',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      },
+      500,
+    );
+  }
+});
+
+// POST /chains/:chainId/contracts/:address/events/ranges/:rangeId/resume — resume indexing
+app.post('/chains/:chainId/contracts/:address/events/ranges/:rangeId/resume', async c => {
+  const result = validateChainAndAddress(c.req.param('chainId'), c.req.param('address'));
+  if ('error' in result) return c.json(result.error, result.status);
+
+  const { chainId, address } = result;
+  const rangeId = parseInt(c.req.param('rangeId'));
+
+  if (isNaN(rangeId)) {
+    return c.json(
+      {
+        error: 'Invalid rangeId',
+        message: 'rangeId must be a number',
+      },
+      400,
+    );
+  }
+
+  try {
+    let abi: unknown[] = [];
+
+    try {
+      const body = await c.req.json();
+      if (body.abi && Array.isArray(body.abi)) {
+        abi = body.abi;
+      }
+    } catch {
+      // no body or invalid JSON
+    }
+
+    if (abi.length === 0) {
+      try {
+        const contractSource = await contractSourceService.getContractSource(chainId, address);
+        const abiStr = contractSource?.implementationContract?.abi ?? contractSource?.abi;
+        if (abiStr) {
+          abi = JSON.parse(abiStr);
+        }
+      } catch {
+        // ABI not available
+      }
+    }
+
+    if (abi.length === 0) {
+      return c.json(
+        {
+          error: 'No ABI available',
+          message:
+            'Contract ABI is required for indexing. Verify the contract on a block explorer first.',
+        },
+        400,
+      );
+    }
+
+    const response = await resumeIndexingRange(chainId, address, rangeId, abi as any);
+
+    if (!response.success) {
+      return c.json(
+        {
+          error: 'Failed to resume indexing range',
+          message: response.error,
+        },
+        400,
+      );
+    }
+
+    c.header('X-Chain-Name', getChainName(chainId));
+
+    return c.json(
+      safeJsonResponse({
+        chainId,
+        chainName: getChainName(chainId),
+        contractAddress: address,
+        rangeId,
+        status: 'indexing',
+        timestamp: new Date().toISOString(),
+      }),
+    );
+  } catch (error) {
+    logger.error({ err: error }, 'Resume indexing range API error');
+    return c.json(
+      {
+        error: 'Failed to resume indexing range',
+        message: error instanceof Error ? error.message : 'Unknown error',
       },
       500,
     );

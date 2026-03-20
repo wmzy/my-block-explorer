@@ -54,89 +54,10 @@ type RangeOverlap = {
 
 const activeJobs = new Map<string, { abort: boolean }>();
 
-const jobKey = (chainId: number, address: string) => `${chainId}:${address.toLowerCase()}`;
-
 const rangeJobKey = (chainId: number, address: string, rangeId: number) =>
   `${chainId}:${address.toLowerCase()}:range:${rangeId}`;
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
-
-const getOrCreateProgress = async (
-  chainId: number,
-  address: `0x${string}`,
-  creationBlock: bigint,
-): Promise<IndexingState> => {
-  const rows = await db
-    .select()
-    .from(indexingProgress)
-    .where(and(eq(indexingProgress.chainId, chainId), eq(indexingProgress.address, address)))
-    .limit(1);
-
-  if (rows.length > 0) {
-    const row = rows[0];
-    const storedCreation = row.creationBlock ?? 0n;
-    const effectiveCreation = storedCreation > 0n ? storedCreation : creationBlock;
-
-    if (storedCreation === 0n && creationBlock > 0n) {
-      await db
-        .update(indexingProgress)
-        .set({ creationBlock, updatedAt: new Date() })
-        .where(and(eq(indexingProgress.chainId, chainId), eq(indexingProgress.address, address)));
-    }
-
-    const lastIndexed = row.lastIndexedBlock ?? effectiveCreation;
-    const resumeFrom = lastIndexed < effectiveCreation ? effectiveCreation : lastIndexed;
-
-    return {
-      chainId: row.chainId,
-      address: row.address,
-      status: (row.status as IndexingState['status']) ?? 'idle',
-      creationBlock: effectiveCreation,
-      lastIndexedBlock: resumeFrom,
-      lastFinalizedBlock: row.lastFinalizedBlock ?? 0n,
-      totalEventsIndexed: row.totalEventsIndexed ?? 0,
-      errorMessage: row.errorMessage ?? undefined,
-    };
-  }
-
-  await db.insert(indexingProgress).values({
-    chainId,
-    address,
-    creationBlock,
-    lastIndexedBlock: creationBlock,
-    lastFinalizedBlock: 0n,
-    totalEventsIndexed: 0,
-    status: 'idle',
-    updatedAt: new Date(),
-  });
-
-  return {
-    chainId,
-    address,
-    status: 'idle',
-    creationBlock,
-    lastIndexedBlock: creationBlock,
-    lastFinalizedBlock: 0n,
-    totalEventsIndexed: 0,
-  };
-};
-
-const updateProgress = async (
-  chainId: number,
-  address: `0x${string}`,
-  updates: Partial<{
-    lastIndexedBlock: bigint;
-    lastFinalizedBlock: bigint;
-    totalEventsIndexed: number;
-    status: string;
-    errorMessage: string | null;
-  }>,
-) => {
-  await db
-    .update(indexingProgress)
-    .set({ ...updates, updatedAt: new Date() })
-    .where(and(eq(indexingProgress.chainId, chainId), eq(indexingProgress.address, address)));
-};
 
 const fetchLogsWithRetry = async (
   chainId: number,
@@ -357,119 +278,13 @@ const handleReorgs = async (
     );
 };
 
-export const startIndexing = async (
-  chainId: number,
-  address: `0x${string}`,
-  abi: Abi,
-): Promise<void> => {
-  const key = jobKey(chainId, address);
-
-  if (activeJobs.has(key)) {
-    console.log(`[EventIndexing] Already indexing ${key}`);
-    return;
-  }
-
-  const job = { abort: false };
-  activeJobs.set(key, job);
-
-  try {
-    const creationRows = await db
-      .select()
-      .from(contractCreationInfo)
-      .where(
-        and(eq(contractCreationInfo.chainId, chainId), eq(contractCreationInfo.address, address)),
-      )
-      .limit(1);
-
-    let creationBlock = creationRows[0]?.creationBlockNumber ?? 0n;
-
-    if (creationBlock === 0n) {
-      try {
-        const client = await rpcManager.getClient(chainId);
-        creationBlock = await getContractCreationBlock(client, address);
-      } catch {
-        // fallback: start from a recent range
-        const client = await rpcManager.getClient(chainId);
-        const latest = await client.getBlockNumber();
-        creationBlock = latest > 100_000n ? latest - 100_000n : 0n;
-      }
-    }
-
-    const state = await getOrCreateProgress(chainId, address, creationBlock);
-
-    await updateProgress(chainId, address, { status: 'indexing', errorMessage: null });
-
-    const client = await rpcManager.getClient(chainId);
-
-    let finalizedBlockNumber: bigint;
-    try {
-      const finalizedBlock = await client.getBlock({
-        blockTag: 'finalized',
-      });
-      finalizedBlockNumber = finalizedBlock.number;
-    } catch {
-      const latestBlock = await client.getBlockNumber();
-      finalizedBlockNumber = latestBlock - 64n;
-    }
-
-    const latestBlock = await client.getBlockNumber();
-
-    if (state.lastFinalizedBlock > 0n) {
-      await handleReorgs(chainId, address, finalizedBlockNumber);
-    }
-
-    let fromBlock =
-      state.lastIndexedBlock > creationBlock ? state.lastIndexedBlock + 1n : creationBlock;
-    let totalInserted = state.totalEventsIndexed;
-
-    while (fromBlock <= latestBlock && !job.abort) {
-      const toBlock =
-        fromBlock + BigInt(BATCH_SIZE) - 1n > latestBlock
-          ? latestBlock
-          : fromBlock + BigInt(BATCH_SIZE) - 1n;
-
-      const logs = await fetchLogsWithRetry(chainId, address, fromBlock, toBlock);
-
-      if (logs.length > 0) {
-        const blockNumbers = logs.map(l => l.blockNumber).filter((n): n is bigint => n != null);
-        const timestamps = await fetchBlockTimestamps(chainId, blockNumbers);
-        const decoded = decodeLogs(logs, abi, timestamps);
-        const isFinalized = toBlock <= finalizedBlockNumber;
-        const inserted = await insertEvents(chainId, address, decoded, isFinalized);
-        totalInserted += inserted;
-      }
-
-      await updateProgress(chainId, address, {
-        lastIndexedBlock: toBlock,
-        lastFinalizedBlock: toBlock <= finalizedBlockNumber ? toBlock : state.lastFinalizedBlock,
-        totalEventsIndexed: totalInserted,
-        status: 'indexing',
-      });
-
-      fromBlock = toBlock + 1n;
-    }
-
-    await updateProgress(chainId, address, {
-      lastIndexedBlock: latestBlock,
-      totalEventsIndexed: totalInserted,
-      status: 'idle',
-    });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[EventIndexing] Error indexing ${key}:`, msg);
-    await updateProgress(chainId, address, {
-      status: 'error',
-      errorMessage: msg,
-    }).catch(() => {});
-  } finally {
-    activeJobs.delete(key);
-  }
-};
-
-export const stopIndexing = (chainId: number, address: string) => {
-  const key = jobKey(chainId, address);
-  const job = activeJobs.get(key);
-  if (job) job.abort = true;
+type RangeSummary = {
+  rangeId: number;
+  fromBlock: number;
+  toBlock: number;
+  currentBlock: number | null;
+  status: RangeStatus;
+  progress: number;
 };
 
 export const getIndexingStatus = async (
@@ -486,7 +301,16 @@ export const getIndexingStatus = async (
   totalEventsIndexed: number;
   eventTypes: string[];
   errorMessage?: string;
+  totalRanges: number;
+  completedRanges: number;
+  pendingRanges: number;
+  indexingRanges: number;
+  pausedRanges: number;
+  errorRanges: number;
+  totalProgress: number;
+  ranges: RangeSummary[];
 }> => {
+  // Keep legacy indexingProgress query for backwards compatibility
   const rows = await db
     .select()
     .from(indexingProgress)
@@ -518,36 +342,130 @@ export const getIndexingStatus = async (
   ]);
 
   const eventTypes = eventTypeRows.map(r => r.eventName).filter((n): n is string => !!n);
-
-  // Use actual count from database instead of the accumulator field
   const actualTotalEvents = countResult[0]?.count ?? 0;
 
-  if (rows.length === 0) {
-    return {
-      chainId,
-      contractAddress: address,
-      status: 'idle',
-      creationBlock: 0,
-      lastIndexedBlock: 0,
-      latestBlock,
-      lastFinalizedBlock: 0,
-      totalEventsIndexed: actualTotalEvents,
-      eventTypes,
-    };
-  }
+  // Query indexingRanges for range-based aggregation
+  const rangeRows = await db
+    .select()
+    .from(indexingRanges)
+    .where(and(eq(indexingRanges.chainId, chainId), eq(indexingRanges.address, address)))
+    .orderBy(desc(indexingRanges.priority), desc(indexingRanges.createdAt));
 
-  const row = rows[0];
+  // Aggregate range statistics
+  let totalRanges = 0;
+  let completedRanges = 0;
+  let pendingRanges = 0;
+  let indexingRangesCount = 0;
+  let pausedRanges = 0;
+  let errorRanges = 0;
+  let totalBlocks = 0;
+  let indexedBlocks = 0;
+
+  const ranges: RangeSummary[] = rangeRows.map(r => {
+    const fromBlock = Number(r.fromBlock);
+    const toBlock = Number(r.toBlock);
+    const currentBlock = r.currentBlock !== null ? Number(r.currentBlock) : null;
+    const rangeSize = toBlock - fromBlock;
+
+    totalRanges++;
+    totalBlocks += rangeSize;
+
+    switch (r.status) {
+      case 'completed':
+        completedRanges++;
+        indexedBlocks += rangeSize;
+        break;
+      case 'indexing':
+        indexingRangesCount++;
+        if (currentBlock !== null) {
+          const progress =
+            r.direction === 'forward' ? currentBlock - fromBlock : toBlock - currentBlock;
+          indexedBlocks += Math.max(0, progress);
+        }
+        break;
+      case 'pending':
+        pendingRanges++;
+        break;
+      case 'paused':
+        pausedRanges++;
+        if (currentBlock !== null) {
+          const progress =
+            r.direction === 'forward' ? currentBlock - fromBlock : toBlock - currentBlock;
+          indexedBlocks += Math.max(0, progress);
+        }
+        break;
+      case 'error':
+        errorRanges++;
+        if (currentBlock !== null) {
+          const progress =
+            r.direction === 'forward' ? currentBlock - fromBlock : toBlock - currentBlock;
+          indexedBlocks += Math.max(0, progress);
+        }
+        break;
+    }
+
+    const progress =
+      rangeSize > 0
+        ? (() => {
+            if (r.status === 'completed') return 100;
+            if (currentBlock === null) return 0;
+            const completed =
+              r.direction === 'forward' ? currentBlock - fromBlock : toBlock - currentBlock;
+            return Math.min(100, Math.max(0, (completed / rangeSize) * 100));
+          })()
+        : 0;
+
+    return {
+      rangeId: r.rangeId,
+      fromBlock,
+      toBlock,
+      currentBlock,
+      status: r.status as RangeStatus,
+      progress,
+    };
+  });
+
+  // Calculate weighted average progress
+  const totalProgress = totalBlocks > 0 ? Math.round((indexedBlocks / totalBlocks) * 100) : 0;
+
+  // Legacy compatibility: derive status from ranges if no indexingProgress row
+  const legacyStatus = rows.length > 0 ? (rows[0].status ?? 'idle') : 'idle';
+  const legacyCreationBlock = rows.length > 0 ? Number(rows[0].creationBlock ?? 0n) : 0;
+  const legacyLastIndexedBlock = rows.length > 0 ? Number(rows[0].lastIndexedBlock ?? 0n) : 0;
+  const legacyLastFinalizedBlock = rows.length > 0 ? Number(rows[0].lastFinalizedBlock ?? 0n) : 0;
+  const legacyErrorMessage = rows.length > 0 ? (rows[0].errorMessage ?? undefined) : undefined;
+
+  // If we have ranges but no legacy progress, derive from ranges
+  const derivedStatus =
+    rows.length === 0 && totalRanges > 0
+      ? errorRanges > 0
+        ? 'error'
+        : indexingRangesCount > 0
+          ? 'indexing'
+          : pendingRanges > 0
+            ? 'pending'
+            : 'completed'
+      : legacyStatus;
+
   return {
     chainId,
     contractAddress: address,
-    status: row.status ?? 'idle',
-    creationBlock: Number(row.creationBlock ?? 0n),
-    lastIndexedBlock: Number(row.lastIndexedBlock ?? 0n),
+    status: derivedStatus,
+    creationBlock: legacyCreationBlock,
+    lastIndexedBlock: legacyLastIndexedBlock,
     latestBlock,
-    lastFinalizedBlock: Number(row.lastFinalizedBlock ?? 0n),
+    lastFinalizedBlock: legacyLastFinalizedBlock,
     totalEventsIndexed: actualTotalEvents,
     eventTypes,
-    errorMessage: row.errorMessage ?? undefined,
+    errorMessage: legacyErrorMessage,
+    totalRanges,
+    completedRanges,
+    pendingRanges,
+    indexingRanges: indexingRangesCount,
+    pausedRanges,
+    errorRanges,
+    totalProgress,
+    ranges,
   };
 };
 
@@ -637,7 +555,7 @@ export const getEventStatistics = async (chainId: number, address: `0x${string}`
 // Range-based indexing functions
 // ============================================
 
-const getNextRangeId = async (chainId: number, address: string): Promise<number> => {
+const getNextRangeId = async (chainId: number, address: `0x${string}`): Promise<number> => {
   const rows = await db
     .select({ maxId: sql<number>`coalesce(max(range_id), 0)` })
     .from(indexingRanges)
