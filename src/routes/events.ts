@@ -14,6 +14,7 @@ import {
   getContractEvents,
   getEventStatistics,
   getIndexingStatus,
+  updateRangeStatus,
 } from '../services/EventIndexingService';
 import { safeJsonResponse } from '../utils/serialization';
 import { contractSourceService } from '../services/ContractSourceService';
@@ -497,6 +498,31 @@ app.post('/chains/:chainId/contracts/:address/events/ranges/:rangeId/pause', asy
     const isActive = getActiveRangeJob(chainId, address, rangeId);
 
     if (!isActive) {
+      const ranges = await getIndexingRanges(chainId, address);
+      const range = ranges.find(r => r.rangeId === rangeId);
+
+      if (range && range.currentBlock !== null && range.toBlock !== null) {
+        const isComplete =
+          range.direction === 'forward'
+            ? range.currentBlock >= range.toBlock
+            : range.currentBlock <= range.fromBlock;
+
+        if (isComplete) {
+          await updateRangeStatus(chainId, address, rangeId, 'completed');
+          return c.json(
+            safeJsonResponse({
+              chainId,
+              chainName: getChainName(chainId),
+              contractAddress: address,
+              rangeId,
+              status: 'completed',
+              message: 'Range was already complete, status updated',
+              timestamp: new Date().toISOString(),
+            }),
+          );
+        }
+      }
+
       return c.json(
         {
           error: 'No active indexing job',

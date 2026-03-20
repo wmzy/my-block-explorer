@@ -329,7 +329,11 @@ export const IndexingRangeManager: React.FC<Props> = ({
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(formState),
+          body: JSON.stringify({
+            fromBlock,
+            toBlock,
+            direction: formState.direction,
+          }),
         },
       );
       const data = await response.json();
@@ -342,7 +346,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
         }
         onRefresh?.();
       } else {
-        alert(data.error || 'Failed to add range');
+        alert(data.message || data.error || 'Failed to add range');
       }
     } catch (error) {
       console.error('Failed to add range:', error);

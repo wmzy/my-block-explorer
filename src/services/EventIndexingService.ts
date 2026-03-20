@@ -1006,3 +1006,39 @@ export const getActiveRangeJob = (chainId: number, address: string, rangeId: num
   const key = rangeJobKey(chainId, address, rangeId);
   return activeJobs.has(key);
 };
+
+export const updateRangeStatus = async (
+  chainId: number,
+  address: `0x${string}`,
+  rangeId: number,
+  status: RangeStatus,
+): Promise<{ success: boolean; error?: string }> => {
+  const existing = await db
+    .select()
+    .from(indexingRanges)
+    .where(
+      and(
+        eq(indexingRanges.chainId, chainId),
+        eq(indexingRanges.address, address),
+        eq(indexingRanges.rangeId, rangeId),
+      ),
+    )
+    .limit(1);
+
+  if (existing.length === 0) {
+    return { success: false, error: 'Range not found' };
+  }
+
+  await db
+    .update(indexingRanges)
+    .set({ status, updatedAt: new Date() })
+    .where(
+      and(
+        eq(indexingRanges.chainId, chainId),
+        eq(indexingRanges.address, address),
+        eq(indexingRanges.rangeId, rangeId),
+      ),
+    );
+
+  return { success: true };
+};
