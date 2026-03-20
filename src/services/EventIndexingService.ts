@@ -1,9 +1,10 @@
-import { eq, and, sql, gte, lte, desc } from 'drizzle-orm';
+import { eq, and, sql, gte, lte, desc, isNull, ne } from 'drizzle-orm';
 import { db } from '../database/drizzle';
 import {
   indexingProgress,
   contractEvents,
   contractCreationInfo,
+  indexingRanges,
 } from '../database/schema';
 import { rpcManager } from './RpcManager';
 import { decodeEventLog, type Abi, type Log } from 'viem';
@@ -24,10 +25,39 @@ type IndexingState = {
   errorMessage?: string;
 };
 
+type RangeStatus = 'pending' | 'indexing' | 'paused' | 'completed' | 'error';
+type RangeDirection = 'forward' | 'backward';
+
+type IndexingRange = {
+  chainId: number;
+  address: `0x${string}`;
+  rangeId: number;
+  fromBlock: bigint;
+  toBlock: bigint;
+  direction: RangeDirection;
+  currentBlock: bigint | null;
+  status: RangeStatus;
+  totalEventsIndexed: number;
+  errorMessage: string | null;
+  priority: number;
+  createdAt: Date | null;
+  updatedAt: Date | null;
+};
+
+type RangeOverlap = {
+  rangeId: number;
+  fromBlock: bigint;
+  toBlock: bigint;
+  overlapStart: bigint;
+  overlapEnd: bigint;
+};
+
 const activeJobs = new Map<string, { abort: boolean }>();
 
-const jobKey = (chainId: number, address: string) =>
-  `${chainId}:${address.toLowerCase()}`;
+const jobKey = (chainId: number, address: string) => `${chainId}:${address.toLowerCase()}`;
+
+const rangeJobKey = (chainId: number, address: string, rangeId: number) =>
+  `${chainId}:${address.toLowerCase()}:range:${rangeId}`;
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
@@ -39,12 +69,7 @@ const getOrCreateProgress = async (
   const rows = await db
     .select()
     .from(indexingProgress)
-    .where(
-      and(
-        eq(indexingProgress.chainId, chainId),
-        eq(indexingProgress.address, address),
-      ),
-    )
+    .where(and(eq(indexingProgress.chainId, chainId), eq(indexingProgress.address, address)))
     .limit(1);
 
   if (rows.length > 0) {
@@ -56,12 +81,7 @@ const getOrCreateProgress = async (
       await db
         .update(indexingProgress)
         .set({ creationBlock, updatedAt: new Date() })
-        .where(
-          and(
-            eq(indexingProgress.chainId, chainId),
-            eq(indexingProgress.address, address),
-          ),
-        );
+        .where(and(eq(indexingProgress.chainId, chainId), eq(indexingProgress.address, address)));
     }
 
     const lastIndexed = row.lastIndexedBlock ?? effectiveCreation;
@@ -115,12 +135,7 @@ const updateProgress = async (
   await db
     .update(indexingProgress)
     .set({ ...updates, updatedAt: new Date() })
-    .where(
-      and(
-        eq(indexingProgress.chainId, chainId),
-        eq(indexingProgress.address, address),
-      ),
-    );
+    .where(and(eq(indexingProgress.chainId, chainId), eq(indexingProgress.address, address)));
 };
 
 const fetchLogsWithRetry = async (
@@ -133,8 +148,7 @@ const fetchLogsWithRetry = async (
   for (let attempt = 0; attempt < MAX_RETRY; attempt++) {
     try {
       return await client.getLogs({ address, fromBlock, toBlock });
-    }
-    catch (err) {
+    } catch (err) {
       if (attempt === MAX_RETRY - 1) throw err;
       await sleep(RETRY_DELAY_MS * (attempt + 1));
     }
@@ -151,7 +165,7 @@ const fetchBlockTimestamps = async (
   const unique = [...new Set(blockNumbers)];
 
   const results = await Promise.allSettled(
-    unique.map(async (bn) => {
+    unique.map(async bn => {
       const block = await client.getBlock({ blockNumber: bn });
       return { bn, ts: Number(block.timestamp) };
     }),
@@ -165,11 +179,7 @@ const fetchBlockTimestamps = async (
   return map;
 };
 
-const decodeLogs = (
-  logs: Log[],
-  abi: Abi,
-  blockTimestamps: Map<bigint, number>,
-) => {
+const decodeLogs = (logs: Log[], abi: Abi, blockTimestamps: Map<bigint, number>) => {
   const decoded: Array<{
     blockNumber: bigint;
     blockTimestamp: number;
@@ -200,9 +210,7 @@ const decodeLogs = (
 
       decoded.push({
         blockNumber: log.blockNumber ?? 0n,
-        blockTimestamp:
-          blockTimestamps.get(log.blockNumber ?? 0n)
-          ?? Math.floor(Date.now() / 1000),
+        blockTimestamp: blockTimestamps.get(log.blockNumber ?? 0n) ?? Math.floor(Date.now() / 1000),
         transactionHash: log.transactionHash ?? ('0x' as `0x${string}`),
         transactionIndex: log.transactionIndex ?? 0,
         logIndex: log.logIndex ?? 0,
@@ -215,13 +223,10 @@ const decodeLogs = (
         topic3: (log.topics[3] as string) ?? null,
         data: log.data ?? '0x',
       });
-    }
-    catch {
+    } catch {
       decoded.push({
         blockNumber: log.blockNumber ?? 0n,
-        blockTimestamp:
-          blockTimestamps.get(log.blockNumber ?? 0n)
-          ?? Math.floor(Date.now() / 1000),
+        blockTimestamp: blockTimestamps.get(log.blockNumber ?? 0n) ?? Math.floor(Date.now() / 1000),
         transactionHash: log.transactionHash ?? ('0x' as `0x${string}`),
         transactionIndex: log.transactionIndex ?? 0,
         logIndex: log.logIndex ?? 0,
@@ -272,17 +277,12 @@ const insertEvents = async (
   for (let i = 0; i < rows.length; i += INSERT_CHUNK_SIZE) {
     const chunk = rows.slice(i, i + INSERT_CHUNK_SIZE);
     try {
-      await db
-        .insert(contractEvents)
-        .values(chunk)
-        .onConflictDoNothing();
-    }
-    catch {
+      await db.insert(contractEvents).values(chunk).onConflictDoNothing();
+    } catch {
       for (const row of chunk) {
         try {
           await db.insert(contractEvents).values(row).onConflictDoNothing();
-        }
-        catch {
+        } catch {
           // skip duplicates
         }
       }
@@ -312,24 +312,16 @@ const handleReorgs = async (
   if (nonFinalized.length === 0) return;
 
   const client = await rpcManager.getClient(chainId);
-  const blockNumbers = [
-    ...new Set(nonFinalized.map(e => e.blockNumber)),
-  ];
+  const blockNumbers = [...new Set(nonFinalized.map(e => e.blockNumber))];
 
   for (const bn of blockNumbers) {
     try {
       const block = await client.getBlock({ blockNumber: bn });
-      const eventsInBlock = nonFinalized.filter(
-        e => e.blockNumber === bn,
-      );
+      const eventsInBlock = nonFinalized.filter(e => e.blockNumber === bn);
 
-      const blockTxHashes = new Set(
-        block.transactions as string[],
-      );
+      const blockTxHashes = new Set(block.transactions as string[]);
 
-      const reorgedEvents = eventsInBlock.filter(
-        e => !blockTxHashes.has(e.transactionHash),
-      );
+      const reorgedEvents = eventsInBlock.filter(e => !blockTxHashes.has(e.transactionHash));
 
       if (reorgedEvents.length > 0) {
         console.warn(
@@ -347,8 +339,7 @@ const handleReorgs = async (
             );
         }
       }
-    }
-    catch {
+    } catch {
       // skip block verification on error
     }
   }
@@ -386,10 +377,7 @@ export const startIndexing = async (
       .select()
       .from(contractCreationInfo)
       .where(
-        and(
-          eq(contractCreationInfo.chainId, chainId),
-          eq(contractCreationInfo.address, address),
-        ),
+        and(eq(contractCreationInfo.chainId, chainId), eq(contractCreationInfo.address, address)),
       )
       .limit(1);
 
@@ -399,8 +387,7 @@ export const startIndexing = async (
       try {
         const client = await rpcManager.getClient(chainId);
         creationBlock = await getContractCreationBlock(client, address);
-      }
-      catch {
+      } catch {
         // fallback: start from a recent range
         const client = await rpcManager.getClient(chainId);
         const latest = await client.getBlockNumber();
@@ -420,8 +407,7 @@ export const startIndexing = async (
         blockTag: 'finalized',
       });
       finalizedBlockNumber = finalizedBlock.number;
-    }
-    catch {
+    } catch {
       const latestBlock = await client.getBlockNumber();
       finalizedBlockNumber = latestBlock - 64n;
     }
@@ -432,39 +418,30 @@ export const startIndexing = async (
       await handleReorgs(chainId, address, finalizedBlockNumber);
     }
 
-    let fromBlock = state.lastIndexedBlock > creationBlock
-      ? state.lastIndexedBlock + 1n
-      : creationBlock;
+    let fromBlock =
+      state.lastIndexedBlock > creationBlock ? state.lastIndexedBlock + 1n : creationBlock;
     let totalInserted = state.totalEventsIndexed;
 
     while (fromBlock <= latestBlock && !job.abort) {
-      const toBlock
-        = fromBlock + BigInt(BATCH_SIZE) - 1n > latestBlock
+      const toBlock =
+        fromBlock + BigInt(BATCH_SIZE) - 1n > latestBlock
           ? latestBlock
           : fromBlock + BigInt(BATCH_SIZE) - 1n;
 
       const logs = await fetchLogsWithRetry(chainId, address, fromBlock, toBlock);
 
       if (logs.length > 0) {
-        const blockNumbers = logs
-          .map(l => l.blockNumber)
-          .filter((n): n is bigint => n != null);
+        const blockNumbers = logs.map(l => l.blockNumber).filter((n): n is bigint => n != null);
         const timestamps = await fetchBlockTimestamps(chainId, blockNumbers);
         const decoded = decodeLogs(logs, abi, timestamps);
         const isFinalized = toBlock <= finalizedBlockNumber;
-        const inserted = await insertEvents(
-          chainId,
-          address,
-          decoded,
-          isFinalized,
-        );
+        const inserted = await insertEvents(chainId, address, decoded, isFinalized);
         totalInserted += inserted;
       }
 
       await updateProgress(chainId, address, {
         lastIndexedBlock: toBlock,
-        lastFinalizedBlock:
-          toBlock <= finalizedBlockNumber ? toBlock : state.lastFinalizedBlock,
+        lastFinalizedBlock: toBlock <= finalizedBlockNumber ? toBlock : state.lastFinalizedBlock,
         totalEventsIndexed: totalInserted,
         status: 'indexing',
       });
@@ -477,16 +454,14 @@ export const startIndexing = async (
       totalEventsIndexed: totalInserted,
       status: 'idle',
     });
-  }
-  catch (err) {
+  } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`[EventIndexing] Error indexing ${key}:`, msg);
     await updateProgress(chainId, address, {
       status: 'error',
       errorMessage: msg,
     }).catch(() => {});
-  }
-  finally {
+  } finally {
     activeJobs.delete(key);
   }
 };
@@ -515,12 +490,7 @@ export const getIndexingStatus = async (
   const rows = await db
     .select()
     .from(indexingProgress)
-    .where(
-      and(
-        eq(indexingProgress.chainId, chainId),
-        eq(indexingProgress.address, address),
-      ),
-    )
+    .where(and(eq(indexingProgress.chainId, chainId), eq(indexingProgress.address, address)))
     .limit(1);
 
   let latestBlock = 0;
@@ -530,8 +500,7 @@ export const getIndexingStatus = async (
     );
     const client = await Promise.race([rpcManager.getClient(chainId), rpcTimeout]);
     latestBlock = Number(await Promise.race([client.getBlockNumber(), rpcTimeout]));
-  }
-  catch {
+  } catch {
     // ignore
   }
 
@@ -540,27 +509,15 @@ export const getIndexingStatus = async (
     db
       .select({ eventName: contractEvents.eventName })
       .from(contractEvents)
-      .where(
-        and(
-          eq(contractEvents.chainId, chainId),
-          eq(contractEvents.contractAddress, address),
-        ),
-      )
+      .where(and(eq(contractEvents.chainId, chainId), eq(contractEvents.contractAddress, address)))
       .groupBy(contractEvents.eventName),
     db
       .select({ count: sql<number>`count(*)` })
       .from(contractEvents)
-      .where(
-        and(
-          eq(contractEvents.chainId, chainId),
-          eq(contractEvents.contractAddress, address),
-        ),
-      ),
+      .where(and(eq(contractEvents.chainId, chainId), eq(contractEvents.contractAddress, address))),
   ]);
 
-  const eventTypes = eventTypeRows
-    .map(r => r.eventName)
-    .filter((n): n is string => !!n);
+  const eventTypes = eventTypeRows.map(r => r.eventName).filter((n): n is string => !!n);
 
   // Use actual count from database instead of the accumulator field
   const actualTotalEvents = countResult[0]?.count ?? 0;
@@ -646,32 +603,19 @@ export const getContractEvents = async (
   };
 };
 
-export const getEventStatistics = async (
-  chainId: number,
-  address: `0x${string}`,
-) => {
+export const getEventStatistics = async (chainId: number, address: `0x${string}`) => {
   const [countResult, typeResult] = await Promise.all([
     db
       .select({ count: sql<number>`count(*)` })
       .from(contractEvents)
-      .where(
-        and(
-          eq(contractEvents.chainId, chainId),
-          eq(contractEvents.contractAddress, address),
-        ),
-      ),
+      .where(and(eq(contractEvents.chainId, chainId), eq(contractEvents.contractAddress, address))),
     db
       .select({
         eventName: contractEvents.eventName,
         count: sql<number>`count(*)`,
       })
       .from(contractEvents)
-      .where(
-        and(
-          eq(contractEvents.chainId, chainId),
-          eq(contractEvents.contractAddress, address),
-        ),
-      )
+      .where(and(eq(contractEvents.chainId, chainId), eq(contractEvents.contractAddress, address)))
       .groupBy(contractEvents.eventName),
   ]);
 
@@ -687,4 +631,460 @@ export const getEventStatistics = async (
     eventsByType,
     uniqueEventTypes: typeResult.length,
   };
+};
+
+// ============================================
+// Range-based indexing functions
+// ============================================
+
+const getNextRangeId = async (chainId: number, address: string): Promise<number> => {
+  const rows = await db
+    .select({ maxId: sql<number>`coalesce(max(range_id), 0)` })
+    .from(indexingRanges)
+    .where(and(eq(indexingRanges.chainId, chainId), eq(indexingRanges.address, address)));
+  return (rows[0]?.maxId ?? 0) + 1;
+};
+
+const checkRangeOverlaps = async (
+  chainId: number,
+  address: `0x${string}`,
+  fromBlock: bigint,
+  toBlock: bigint,
+  excludeRangeId?: number,
+): Promise<RangeOverlap[]> => {
+  const conditions = [
+    eq(indexingRanges.chainId, chainId),
+    eq(indexingRanges.address, address),
+    sql`${indexingRanges.fromBlock} <= ${toBlock}`,
+    sql`${indexingRanges.toBlock} >= ${fromBlock}`,
+  ];
+
+  if (excludeRangeId !== undefined) {
+    conditions.push(ne(indexingRanges.rangeId, excludeRangeId));
+  }
+
+  const overlapping = await db
+    .select()
+    .from(indexingRanges)
+    .where(and(...conditions));
+
+  return overlapping.map(r => ({
+    rangeId: r.rangeId,
+    fromBlock: r.fromBlock,
+    toBlock: r.toBlock,
+    overlapStart: fromBlock > r.fromBlock ? fromBlock : r.fromBlock,
+    overlapEnd: toBlock < r.toBlock ? toBlock : r.toBlock,
+  }));
+};
+
+const getContractCreationBlockCached = async (
+  chainId: number,
+  address: `0x${string}`,
+): Promise<bigint> => {
+  const rows = await db
+    .select()
+    .from(contractCreationInfo)
+    .where(
+      and(eq(contractCreationInfo.chainId, chainId), eq(contractCreationInfo.address, address)),
+    )
+    .limit(1);
+
+  if (rows.length > 0 && rows[0].creationBlockNumber) {
+    return rows[0].creationBlockNumber;
+  }
+
+  try {
+    const client = await rpcManager.getClient(chainId);
+    const block = await getContractCreationBlock(client, address);
+    return block;
+  } catch {
+    const client = await rpcManager.getClient(chainId);
+    const latest = await client.getBlockNumber();
+    return latest > 100_000n ? latest - 100_000n : 0n;
+  }
+};
+
+export const addIndexingRange = async (
+  chainId: number,
+  address: `0x${string}`,
+  range: {
+    fromBlock: number;
+    toBlock: number;
+    direction?: RangeDirection;
+    priority?: number;
+  },
+): Promise<{
+  success: boolean;
+  rangeId?: number;
+  overlaps?: RangeOverlap[];
+  error?: string;
+}> => {
+  const { fromBlock, toBlock, direction = 'forward', priority = 0 } = range;
+
+  if (fromBlock >= toBlock) {
+    return { success: false, error: 'fromBlock must be less than toBlock' };
+  }
+
+  const creationBlock = await getContractCreationBlockCached(chainId, address);
+
+  if (fromBlock < Number(creationBlock)) {
+    return {
+      success: false,
+      error: `fromBlock cannot be before contract creation block (${creationBlock})`,
+    };
+  }
+
+  const overlaps = await checkRangeOverlaps(chainId, address, BigInt(fromBlock), BigInt(toBlock));
+
+  const rangeId = await getNextRangeId(chainId, address);
+
+  await db.insert(indexingRanges).values({
+    chainId,
+    address,
+    rangeId,
+    fromBlock: BigInt(fromBlock),
+    toBlock: BigInt(toBlock),
+    direction,
+    currentBlock: null,
+    status: 'pending',
+    totalEventsIndexed: 0,
+    errorMessage: null,
+    priority,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+
+  return {
+    success: true,
+    rangeId,
+    overlaps: overlaps.length > 0 ? overlaps : undefined,
+  };
+};
+
+export const getIndexingRanges = async (
+  chainId: number,
+  address: `0x${string}`,
+): Promise<IndexingRange[]> => {
+  const rows = await db
+    .select()
+    .from(indexingRanges)
+    .where(and(eq(indexingRanges.chainId, chainId), eq(indexingRanges.address, address)))
+    .orderBy(desc(indexingRanges.priority), desc(indexingRanges.createdAt));
+
+  return rows.map(r => ({
+    chainId: r.chainId,
+    address: r.address,
+    rangeId: r.rangeId,
+    fromBlock: r.fromBlock,
+    toBlock: r.toBlock,
+    direction: r.direction as RangeDirection,
+    currentBlock: r.currentBlock,
+    status: r.status as RangeStatus,
+    totalEventsIndexed: r.totalEventsIndexed ?? 0,
+    errorMessage: r.errorMessage,
+    priority: r.priority ?? 0,
+    createdAt: r.createdAt,
+    updatedAt: r.updatedAt,
+  }));
+};
+
+export const updateIndexingRange = async (
+  chainId: number,
+  address: `0x${string}`,
+  rangeId: number,
+  updates: {
+    fromBlock?: number;
+    toBlock?: number;
+    direction?: RangeDirection;
+    priority?: number;
+  },
+): Promise<{
+  success: boolean;
+  overlaps?: RangeOverlap[];
+  error?: string;
+}> => {
+  const existing = await db
+    .select()
+    .from(indexingRanges)
+    .where(
+      and(
+        eq(indexingRanges.chainId, chainId),
+        eq(indexingRanges.address, address),
+        eq(indexingRanges.rangeId, rangeId),
+      ),
+    )
+    .limit(1);
+
+  if (existing.length === 0) {
+    return { success: false, error: 'Range not found' };
+  }
+
+  const range = existing[0];
+
+  if (range.status === 'indexing') {
+    return { success: false, error: 'Cannot update range while indexing' };
+  }
+
+  const newFromBlock =
+    updates.fromBlock !== undefined ? BigInt(updates.fromBlock) : range.fromBlock;
+  const newToBlock = updates.toBlock !== undefined ? BigInt(updates.toBlock) : range.toBlock;
+
+  if (newFromBlock >= newToBlock) {
+    return { success: false, error: 'fromBlock must be less than toBlock' };
+  }
+
+  const creationBlock = await getContractCreationBlockCached(chainId, address);
+
+  if (newFromBlock < creationBlock) {
+    return {
+      success: false,
+      error: `fromBlock cannot be before contract creation block (${creationBlock})`,
+    };
+  }
+
+  const overlaps = await checkRangeOverlaps(chainId, address, newFromBlock, newToBlock, rangeId);
+
+  await db
+    .update(indexingRanges)
+    .set({
+      ...updates,
+      fromBlock: updates.fromBlock !== undefined ? BigInt(updates.fromBlock) : undefined,
+      toBlock: updates.toBlock !== undefined ? BigInt(updates.toBlock) : undefined,
+      updatedAt: new Date(),
+    })
+    .where(
+      and(
+        eq(indexingRanges.chainId, chainId),
+        eq(indexingRanges.address, address),
+        eq(indexingRanges.rangeId, rangeId),
+      ),
+    );
+
+  return {
+    success: true,
+    overlaps: overlaps.length > 0 ? overlaps : undefined,
+  };
+};
+
+export const deleteIndexingRange = async (
+  chainId: number,
+  address: `0x${string}`,
+  rangeId: number,
+): Promise<{ success: boolean; error?: string }> => {
+  const existing = await db
+    .select()
+    .from(indexingRanges)
+    .where(
+      and(
+        eq(indexingRanges.chainId, chainId),
+        eq(indexingRanges.address, address),
+        eq(indexingRanges.rangeId, rangeId),
+      ),
+    )
+    .limit(1);
+
+  if (existing.length === 0) {
+    return { success: false, error: 'Range not found' };
+  }
+
+  if (existing[0].status === 'indexing') {
+    return { success: false, error: 'Cannot delete range while indexing' };
+  }
+
+  await db
+    .delete(indexingRanges)
+    .where(
+      and(
+        eq(indexingRanges.chainId, chainId),
+        eq(indexingRanges.address, address),
+        eq(indexingRanges.rangeId, rangeId),
+      ),
+    );
+
+  return { success: true };
+};
+
+export const startIndexingRange = async (
+  chainId: number,
+  address: `0x${string}`,
+  rangeId: number,
+  abi: Abi,
+): Promise<{ success: boolean; error?: string }> => {
+  const key = rangeJobKey(chainId, address, rangeId);
+
+  if (activeJobs.has(key)) {
+    return { success: false, error: 'Range is already being indexed' };
+  }
+
+  const existing = await db
+    .select()
+    .from(indexingRanges)
+    .where(
+      and(
+        eq(indexingRanges.chainId, chainId),
+        eq(indexingRanges.address, address),
+        eq(indexingRanges.rangeId, rangeId),
+      ),
+    )
+    .limit(1);
+
+  if (existing.length === 0) {
+    return { success: false, error: 'Range not found' };
+  }
+
+  const range = existing[0];
+
+  if (range.status === 'completed') {
+    return { success: false, error: 'Range is already completed' };
+  }
+
+  const job = { abort: false };
+  activeJobs.set(key, job);
+
+  const updateRange = async (
+    updates: Partial<{
+      currentBlock: bigint;
+      status: RangeStatus;
+      totalEventsIndexed: number;
+      errorMessage: string | null;
+    }>,
+  ) => {
+    await db
+      .update(indexingRanges)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(
+        and(
+          eq(indexingRanges.chainId, chainId),
+          eq(indexingRanges.address, address),
+          eq(indexingRanges.rangeId, rangeId),
+        ),
+      );
+  };
+
+  try {
+    await updateRange({ status: 'indexing', errorMessage: null });
+
+    const client = await rpcManager.getClient(chainId);
+    const direction = range.direction as RangeDirection;
+
+    let currentBlock: bigint;
+    let endBlock: bigint;
+    let step: (n: bigint) => bigint;
+    let isComplete: (current: bigint, end: bigint) => boolean;
+
+    if (direction === 'forward') {
+      currentBlock = range.currentBlock ? range.currentBlock + 1n : range.fromBlock;
+      endBlock = range.toBlock;
+      step = n => n + BigInt(BATCH_SIZE);
+      isComplete = (current, end) => current > end;
+    } else {
+      currentBlock = range.currentBlock ? range.currentBlock - 1n : range.toBlock;
+      endBlock = range.fromBlock;
+      step = n => n - BigInt(BATCH_SIZE);
+      isComplete = (current, end) => current < end;
+    }
+
+    let totalInserted = range.totalEventsIndexed ?? 0;
+
+    let finalizedBlockNumber: bigint;
+    try {
+      const finalizedBlock = await client.getBlock({ blockTag: 'finalized' });
+      finalizedBlockNumber = finalizedBlock.number;
+    } catch {
+      const latestBlock = await client.getBlockNumber();
+      finalizedBlockNumber = latestBlock - 64n;
+    }
+
+    while (!isComplete(currentBlock, endBlock) && !job.abort) {
+      let batchFrom: bigint;
+      let batchTo: bigint;
+
+      if (direction === 'forward') {
+        batchFrom = currentBlock;
+        batchTo = currentBlock + BigInt(BATCH_SIZE) - 1n;
+        if (batchTo > endBlock) batchTo = endBlock;
+      } else {
+        batchTo = currentBlock;
+        batchFrom = currentBlock - BigInt(BATCH_SIZE) + 1n;
+        if (batchFrom < endBlock) batchFrom = endBlock;
+      }
+
+      const logs = await fetchLogsWithRetry(chainId, address, batchFrom, batchTo);
+
+      if (logs.length > 0) {
+        const blockNumbers = logs.map(l => l.blockNumber).filter((n): n is bigint => n != null);
+        const timestamps = await fetchBlockTimestamps(chainId, blockNumbers);
+        const decoded = decodeLogs(logs, abi, timestamps);
+        const isFinalized = batchTo <= finalizedBlockNumber;
+        const inserted = await insertEvents(chainId, address, decoded, isFinalized);
+        totalInserted += inserted;
+      }
+
+      await updateRange({
+        currentBlock: direction === 'forward' ? batchTo : batchFrom,
+        totalEventsIndexed: totalInserted,
+        status: 'indexing',
+      });
+
+      currentBlock = step(currentBlock);
+    }
+
+    const finalBlock = direction === 'forward' ? range.toBlock : range.fromBlock;
+    await updateRange({
+      currentBlock: finalBlock,
+      status: job.abort ? 'paused' : 'completed',
+      totalEventsIndexed: totalInserted,
+    });
+
+    return { success: true };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[EventIndexing] Error indexing range ${key}:`, msg);
+    await updateRange({ status: 'error', errorMessage: msg });
+    return { success: false, error: msg };
+  } finally {
+    activeJobs.delete(key);
+  }
+};
+
+export const pauseIndexingRange = (chainId: number, address: string, rangeId: number): void => {
+  const key = rangeJobKey(chainId, address, rangeId);
+  const job = activeJobs.get(key);
+  if (job) job.abort = true;
+};
+
+export const resumeIndexingRange = async (
+  chainId: number,
+  address: `0x${string}`,
+  rangeId: number,
+  abi: Abi,
+): Promise<{ success: boolean; error?: string }> => {
+  const existing = await db
+    .select()
+    .from(indexingRanges)
+    .where(
+      and(
+        eq(indexingRanges.chainId, chainId),
+        eq(indexingRanges.address, address),
+        eq(indexingRanges.rangeId, rangeId),
+      ),
+    )
+    .limit(1);
+
+  if (existing.length === 0) {
+    return { success: false, error: 'Range not found' };
+  }
+
+  const range = existing[0];
+
+  if (range.status !== 'paused' && range.status !== 'error') {
+    return { success: false, error: 'Can only resume paused or errored ranges' };
+  }
+
+  return startIndexingRange(chainId, address, rangeId, abi);
+};
+
+export const getActiveRangeJob = (chainId: number, address: string, rangeId: number): boolean => {
+  const key = rangeJobKey(chainId, address, rangeId);
+  return activeJobs.has(key);
 };

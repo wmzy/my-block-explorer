@@ -259,6 +259,26 @@ export const indexingProgress = duckdbTable(
   table => [primaryKey({ columns: [table.chainId, table.address] })],
 );
 
+// Indexing ranges — stores user-defined block ranges for event indexing
+export const indexingRanges = duckdbTable(
+  'indexing_ranges',
+  {
+    ...chainColumns,
+    address: address().notNull(),
+    rangeId: integer().notNull(),
+    fromBlock: bignum().notNull(),
+    toBlock: bignum().notNull(),
+    direction: varchar({ length: 10 }).notNull().default('forward'), // 'forward' | 'backward'
+    currentBlock: bignum(), // current position during indexing
+    status: varchar({ length: 20 }).notNull().default('pending'), // 'pending' | 'indexing' | 'paused' | 'completed' | 'error'
+    totalEventsIndexed: integer().default(0),
+    errorMessage: text(),
+    priority: integer().default(0), // higher = more urgent
+    ...timestampColumns,
+  },
+  table => [primaryKey({ columns: [table.chainId, table.address, table.rangeId] })],
+);
+
 // Contract events — stores decoded events for all contracts
 export const contractEvents = duckdbTable(
   'contract_events',
@@ -302,9 +322,7 @@ export const eventTableRegistry = duckdbTable(
     lastAccessed: datetime(),
     ...timestampColumns,
   },
-  table => [
-    primaryKey({ columns: [table.chainId, table.contractAddress, table.eventSignature] }),
-  ],
+  table => [primaryKey({ columns: [table.chainId, table.contractAddress, table.eventSignature] })],
 );
 
 // 导出类型推断
@@ -331,6 +349,9 @@ export type NewContractCreationInfo = typeof contractCreationInfo.$inferInsert;
 
 export type IndexingProgress = typeof indexingProgress.$inferSelect;
 export type NewIndexingProgress = typeof indexingProgress.$inferInsert;
+
+export type IndexingRange = typeof indexingRanges.$inferSelect;
+export type NewIndexingRange = typeof indexingRanges.$inferInsert;
 
 export type ContractEvent = typeof contractEvents.$inferSelect;
 export type NewContractEvent = typeof contractEvents.$inferInsert;

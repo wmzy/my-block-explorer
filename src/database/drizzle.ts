@@ -10,7 +10,6 @@ const duckdbAdapter = createDuckDBAdapter(
 // 配置 Drizzle ORM，确保与 drizzle.config.ts 中的 casing 配置一致
 export const db = drizzle(duckdbAdapter, {
   schema,
-  logger: true,
   casing: 'snake_case', // 与 drizzle.config.ts 保持一致
 });
 
