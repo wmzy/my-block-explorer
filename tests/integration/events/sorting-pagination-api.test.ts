@@ -9,10 +9,12 @@ import app from '@/api-app';
 vi.mock('../../../services/EventPerformanceOptimizer', () => ({
   eventPerformanceOptimizerManager: {
     getOptimizer: vi.fn().mockReturnValue({
-      executeOptimizedQuery: vi.fn().mockImplementation(async (queryType, queryFn, cacheKey, options) => {
-        // Simulate actual query execution with mock data
-        return await queryFn();
-      }),
+      executeOptimizedQuery: vi
+        .fn()
+        .mockImplementation(async (queryType, queryFn, _cacheKey, _options) => {
+          // Simulate actual query execution with mock data
+          return await queryFn();
+        }),
       getPerformanceMetrics: vi.fn().mockReturnValue({
         avgResponseTime: 8,
         cacheHitRate: 0.75,
@@ -66,7 +68,9 @@ describe('Sorting and Pagination API Integration', () => {
     });
 
     it('should support custom page size', async () => {
-      const res = await app.request(`/api/chains/${chainId}/contracts/${contractAddress}/events?limit=20`);
+      const res = await app.request(
+        `/api/chains/${chainId}/contracts/${contractAddress}/events?limit=20`,
+      );
       expect(res.status).toBe(200);
 
       const data = await res.json();
@@ -75,7 +79,9 @@ describe('Sorting and Pagination API Integration', () => {
     });
 
     it('should enforce maximum page size limit', async () => {
-      const res = await app.request(`/api/chains/${chainId}/contracts/${contractAddress}/events?limit=2000`);
+      const res = await app.request(
+        `/api/chains/${chainId}/contracts/${contractAddress}/events?limit=2000`,
+      );
       expect(res.status).toBe(200);
 
       const data = await res.json();
@@ -85,7 +91,9 @@ describe('Sorting and Pagination API Integration', () => {
 
     it('should support cursor-based pagination', async () => {
       const cursor = new Date(Date.now() - 60000).toISOString();
-      const res = await app.request(`/api/chains/${chainId}/contracts/${contractAddress}/events?cursor=${encodeURIComponent(cursor)}`);
+      const res = await app.request(
+        `/api/chains/${chainId}/contracts/${contractAddress}/events?cursor=${encodeURIComponent(cursor)}`,
+      );
       expect(res.status).toBe(200);
 
       const data = await res.json();
@@ -93,7 +101,9 @@ describe('Sorting and Pagination API Integration', () => {
     });
 
     it('should support offset-based pagination', async () => {
-      const res = await app.request(`/api/chains/${chainId}/contracts/${contractAddress}/events?offset=10`);
+      const res = await app.request(
+        `/api/chains/${chainId}/contracts/${contractAddress}/events?offset=10`,
+      );
       expect(res.status).toBe(200);
 
       const data = await res.json();
@@ -101,7 +111,9 @@ describe('Sorting and Pagination API Integration', () => {
     });
 
     it('should support custom sorting', async () => {
-      const res = await app.request(`/api/chains/${chainId}/contracts/${contractAddress}/events?sortBy=block_number&sort=asc`);
+      const res = await app.request(
+        `/api/chains/${chainId}/contracts/${contractAddress}/events?sortBy=block_number&sort=asc`,
+      );
       expect(res.status).toBe(200);
 
       const data = await res.json();
@@ -115,7 +127,9 @@ describe('Sorting and Pagination API Integration', () => {
         { field: 'value', direction: 'desc', type: 'numeric', priority: 1 },
       ]);
 
-      const res = await app.request(`/api/chains/${chainId}/contracts/${contractAddress}/events?multiSort=${encodeURIComponent(multiSort)}`);
+      const res = await app.request(
+        `/api/chains/${chainId}/contracts/${contractAddress}/events?multiSort=${encodeURIComponent(multiSort)}`,
+      );
       expect(res.status).toBe(200);
 
       const data = await res.json();
@@ -123,7 +137,9 @@ describe('Sorting and Pagination API Integration', () => {
     });
 
     it('should handle invalid multi-sort parameters gracefully', async () => {
-      const res = await app.request(`/api/chains/${chainId}/contracts/${contractAddress}/events?multiSort=invalid-json`);
+      const res = await app.request(
+        `/api/chains/${chainId}/contracts/${contractAddress}/events?multiSort=invalid-json`,
+      );
       expect(res.status).toBe(200);
 
       const data = await res.json();
@@ -131,7 +147,9 @@ describe('Sorting and Pagination API Integration', () => {
     });
 
     it('should support event name filtering', async () => {
-      const res = await app.request(`/api/chains/${chainId}/contracts/${contractAddress}/events?eventName=Transfer`);
+      const res = await app.request(
+        `/api/chains/${chainId}/contracts/${contractAddress}/events?eventName=Transfer`,
+      );
       expect(res.status).toBe(200);
 
       const data = await res.json();
@@ -139,7 +157,9 @@ describe('Sorting and Pagination API Integration', () => {
     });
 
     it('should support block range filtering', async () => {
-      const res = await app.request(`/api/chains/${chainId}/contracts/${contractAddress}/events?fromBlock=18000000&toBlock=18000100`);
+      const res = await app.request(
+        `/api/chains/${chainId}/contracts/${contractAddress}/events?fromBlock=18000000&toBlock=18000100`,
+      );
       expect(res.status).toBe(200);
 
       const data = await res.json();
@@ -151,7 +171,9 @@ describe('Sorting and Pagination API Integration', () => {
       const fromTimestamp = new Date(Date.now() - 3600000).toISOString();
       const toTimestamp = new Date().toISOString();
 
-      const res = await app.request(`/api/chains/${chainId}/contracts/${contractAddress}/events?fromTimestamp=${encodeURIComponent(fromTimestamp)}&toTimestamp=${encodeURIComponent(toTimestamp)}`);
+      const res = await app.request(
+        `/api/chains/${chainId}/contracts/${contractAddress}/events?fromTimestamp=${encodeURIComponent(fromTimestamp)}&toTimestamp=${encodeURIComponent(toTimestamp)}`,
+      );
       expect(res.status).toBe(200);
 
       const data = await res.json();
@@ -169,7 +191,9 @@ describe('Sorting and Pagination API Integration', () => {
     });
 
     it('should handle unsupported chain IDs', async () => {
-      const res = await app.request('/api/chains/99999/contracts/0x1234567890123456789012345678901234567890/events');
+      const res = await app.request(
+        '/api/chains/99999/contracts/0x1234567890123456789012345678901234567890/events',
+      );
       expect(res.status).toBe(400);
 
       const data = await res.json();
@@ -185,7 +209,9 @@ describe('Sorting and Pagination API Integration', () => {
     });
 
     it('should validate numeric parameters', async () => {
-      const res = await app.request(`/api/chains/${chainId}/contracts/${contractAddress}/events?limit=invalid`);
+      const res = await app.request(
+        `/api/chains/${chainId}/contracts/${contractAddress}/events?limit=invalid`,
+      );
       expect(res.status).toBe(200);
 
       const data = await res.json();
@@ -213,11 +239,14 @@ describe('Sorting and Pagination API Integration', () => {
         includeSuggestions: true,
       };
 
-      const res = await app.request(`/api/chains/${chainId}/contracts/${contractAddress}/events/search`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(searchBody),
-      });
+      const res = await app.request(
+        `/api/chains/${chainId}/contracts/${contractAddress}/events/search`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(searchBody),
+        },
+      );
 
       expect(res.status).toBe(200);
 
@@ -254,11 +283,14 @@ describe('Sorting and Pagination API Integration', () => {
         sort: { field: 'block_timestamp', direction: 'desc' },
       };
 
-      const res = await app.request(`/api/chains/${chainId}/contracts/${contractAddress}/events/search`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(searchBody),
-      });
+      const res = await app.request(
+        `/api/chains/${chainId}/contracts/${contractAddress}/events/search`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(searchBody),
+        },
+      );
 
       expect(res.status).toBe(200);
 
@@ -274,11 +306,14 @@ describe('Sorting and Pagination API Integration', () => {
         sort: { field: 'invalid_field', direction: 'invalid_direction' },
       };
 
-      const res = await app.request(`/api/chains/${chainId}/contracts/${contractAddress}/events/search`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(searchBody),
-      });
+      const res = await app.request(
+        `/api/chains/${chainId}/contracts/${contractAddress}/events/search`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(searchBody),
+        },
+      );
 
       expect(res.status).toBe(200);
 
@@ -295,21 +330,26 @@ describe('Sorting and Pagination API Integration', () => {
         includeSuggestions: true,
       };
 
-      const res = await app.request(`/api/chains/${chainId}/contracts/${contractAddress}/events/search`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(searchBody),
-      });
+      const res = await app.request(
+        `/api/chains/${chainId}/contracts/${contractAddress}/events/search`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(searchBody),
+        },
+      );
 
       expect(res.status).toBe(200);
 
       const data = await res.json();
       expect(data.events).toHaveLength(0);
       expect(data.total).toBe(0);
-      expect(data.suggestions).toEqual(expect.arrayContaining([
-        expect.stringContaining('Try removing some filters'),
-        expect.stringContaining('Check if the contract has emitted any events'),
-      ]));
+      expect(data.suggestions).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining('Try removing some filters'),
+          expect.stringContaining('Check if the contract has emitted any events'),
+        ]),
+      );
     });
 
     it('should handle complex multi-parameter filtering', async () => {
@@ -326,19 +366,22 @@ describe('Sorting and Pagination API Integration', () => {
         sort: { field: 'block_number', direction: 'desc' },
       };
 
-      const res = await app.request(`/api/chains/${chainId}/contracts/${contractAddress}/events/search`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(searchBody),
-      });
+      const res = await app.request(
+        `/api/chains/${chainId}/contracts/${contractAddress}/events/search`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(searchBody),
+        },
+      );
 
       expect(res.status).toBe(200);
 
       const data = await res.json();
       expect(data.filters).toEqual(searchBody.filters);
-      expect(data.indexesUsed).toEqual(expect.arrayContaining([
-        'idx_from', 'idx_to', 'idx_block_number', 'idx_value',
-      ]));
+      expect(data.indexesUsed).toEqual(
+        expect.arrayContaining(['idx_from', 'idx_to', 'idx_block_number', 'idx_value']),
+      );
     });
 
     it('should return performance metrics', async () => {
@@ -348,11 +391,14 @@ describe('Sorting and Pagination API Integration', () => {
         sort: { field: 'block_timestamp', direction: 'desc' },
       };
 
-      const res = await app.request(`/api/chains/${chainId}/contracts/${contractAddress}/events/search`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(searchBody),
-      });
+      const res = await app.request(
+        `/api/chains/${chainId}/contracts/${contractAddress}/events/search`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(searchBody),
+        },
+      );
 
       expect(res.status).toBe(200);
 
@@ -363,11 +409,14 @@ describe('Sorting and Pagination API Integration', () => {
     });
 
     it('should handle malformed JSON requests', async () => {
-      const res = await app.request(`/api/chains/${chainId}/contracts/${contractAddress}/events/search`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: 'invalid json',
-      });
+      const res = await app.request(
+        `/api/chains/${chainId}/contracts/${contractAddress}/events/search`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: 'invalid json',
+        },
+      );
 
       expect(res.status).toBe(400);
 
@@ -401,19 +450,24 @@ describe('Sorting and Pagination API Integration', () => {
         sort: { field: 'block_timestamp', direction: 'desc' },
       };
 
-      const res = await app.request(`/api/chains/${chainId}/contracts/${contractAddress}/events/search`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(searchBody),
-      });
+      const res = await app.request(
+        `/api/chains/${chainId}/contracts/${contractAddress}/events/search`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(searchBody),
+        },
+      );
 
       expect(res.status).toBe(200);
 
       const data = await res.json();
-      expect(data.optimizationSuggestions).toEqual(expect.arrayContaining([
-        expect.stringContaining('Consider adding more specific filters'),
-        expect.stringContaining('Use indexed parameters when possible'),
-      ]));
+      expect(data.optimizationSuggestions).toEqual(
+        expect.arrayContaining([
+          expect.stringContaining('Consider adding more specific filters'),
+          expect.stringContaining('Use indexed parameters when possible'),
+        ]),
+      );
     });
 
     it('should return appropriate cache headers', async () => {
@@ -423,11 +477,14 @@ describe('Sorting and Pagination API Integration', () => {
         sort: { field: 'block_timestamp', direction: 'desc' },
       };
 
-      const res = await app.request(`/api/chains/${chainId}/contracts/${contractAddress}/events/search`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(searchBody),
-      });
+      const res = await app.request(
+        `/api/chains/${chainId}/contracts/${contractAddress}/events/search`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(searchBody),
+        },
+      );
 
       expect(res.status).toBe(200);
       expect(res.headers.get('X-Data-Source')).toBe('database');
@@ -461,7 +518,9 @@ describe('Sorting and Pagination API Integration', () => {
 
     it('should handle malformed query parameters', async () => {
       const contractAddress = '0x1234567890123456789012345678901234567890';
-      const res = await app.request(`/api/chains/${chainId}/contracts/${contractAddress}/events?limit=abc&sort=invalid`);
+      const res = await app.request(
+        `/api/chains/${chainId}/contracts/${contractAddress}/events?limit=abc&sort=invalid`,
+      );
       expect(res.status).toBe(200); // Should gracefully handle invalid params
 
       const data = await res.json();
@@ -474,7 +533,9 @@ describe('Sorting and Pagination API Integration', () => {
       vi.doMock('../../../services/EventPerformanceOptimizer', () => ({
         eventPerformanceOptimizerManager: {
           getOptimizer: vi.fn().mockReturnValue({
-            executeOptimizedQuery: vi.fn().mockRejectedValue(new Error('Database connection failed')),
+            executeOptimizedQuery: vi
+              .fn()
+              .mockRejectedValue(new Error('Database connection failed')),
           }),
         },
       }));

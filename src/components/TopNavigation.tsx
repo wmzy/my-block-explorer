@@ -312,9 +312,7 @@ function ChainSelector({
     <div className={selectorWrapper} data-chain-selector>
       <button onClick={() => setIsOpen(!isOpen)} className={selectorButton}>
         <div className={selectorContent}>
-          <div className={selectorName}>
-            {currentChain?.name || `Chain ${currentChainId}`}
-          </div>
+          <div className={selectorName}>{currentChain?.name ?? `Chain ${currentChainId}`}</div>
           <div className={selectorMeta}>
             ID:
             {' '}
@@ -353,9 +351,7 @@ function ChainSelector({
                   {' '}
                   chains
                 </span>
-                {filteredChains.length > 0 && (
-                  <span>Press Enter to select first</span>
-                )}
+                {filteredChains.length > 0 && <span>Press Enter to select first</span>}
               </div>
             )}
           </div>
@@ -385,9 +381,7 @@ function ChainSelector({
                             <div className={chainItemName}>
                               {chain.name}
                               {isPopularChain(chain.id) && <span>⭐</span>}
-                              {chainType === 'testnet' && (
-                                <span className={testnetBadge}>Testnet</span>
-                              )}
+                              {chainType === 'testnet' && <span className={testnetBadge}>Testnet</span>}
                             </div>
                             <div className={chainItemMeta}>
                               ID:
@@ -399,9 +393,7 @@ function ChainSelector({
                               {chain.nativeCurrency.symbol}
                             </div>
                           </div>
-                          {isActive && (
-                            <span style={{ color: 'var(--haze-color-primary)' }}>✓</span>
-                          )}
+                          {isActive && <span style={{ color: 'var(--haze-color-primary)' }}>✓</span>}
                         </div>
                       </button>
                     );
@@ -428,7 +420,7 @@ export default function TopNavigation({
 }: TopNavigationProps) {
   const navigate = useNavigate();
   const [searchQuery, setSearchQuery] = useState('');
-  const [, setShowRpcConfig, rpcConfigControl] = useControl(false);
+  const [, setShowRpcConfig, rpcConfigControl] = useControl<boolean>(null, false);
   const [loading, setLoading] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [searchHistory, setSearchHistory] = useState<SearchHistoryItem[]>([]);
@@ -458,7 +450,11 @@ export default function TopNavigation({
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Element;
-      if (showHistory && searchContainerRef.current && !searchContainerRef.current.contains(target)) {
+      if (
+        showHistory
+        && searchContainerRef.current
+        && !searchContainerRef.current.contains(target)
+      ) {
         setShowHistory(false);
       }
     };
@@ -547,10 +543,7 @@ export default function TopNavigation({
     <>
       <nav className={nav}>
         <div className={navInner}>
-          <div
-            onClick={() => navigate(`/chain/${currentChainId}`)}
-            className={logoStyle}
-          >
+          <div onClick={() => navigate(`/chain/${currentChainId}`)} className={logoStyle}>
             <span style={{ fontSize: '24px' }}>🚀</span>
             <span className={logoText}>Block Explorer</span>
           </div>
@@ -562,20 +555,14 @@ export default function TopNavigation({
                 onChange={e => setSearchQuery(e.target.value)}
                 onFocus={handleSearchFocus}
                 placeholder={
-                  searchPlaceholder
-                  || `Search on ${chainInfo?.name || 'current chain'}...`
+                  searchPlaceholder ?? `Search on ${chainInfo?.name ?? 'current chain'}...`
                 }
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') handleSearch();
                   if (e.key === 'Escape') setShowHistory(false);
                 }}
               />
-              <Button
-                variant="solid"
-                size="md"
-                onClick={handleSearch}
-                disabled={loading}
-              >
+              <Button variant="solid" size="md" onClick={handleSearch} disabled={loading}>
                 {loading ? '...' : 'Search'}
               </Button>
             </div>
@@ -598,9 +585,7 @@ export default function TopNavigation({
                     >
                       {item.query}
                     </span>
-                    {item.searchType && (
-                      <span className={historyType}>{item.searchType}</span>
-                    )}
+                    {item.searchType && <span className={historyType}>{item.searchType}</span>}
                   </button>
                 ))}
               </div>
@@ -611,18 +596,12 @@ export default function TopNavigation({
             <Button variant="outline" size="md" onClick={() => setShowRpcConfig(true)}>
               ⚙️ RPC
             </Button>
-            <ChainSelector
-              currentChainId={currentChainId}
-              onChainChange={onChainChange}
-            />
+            <ChainSelector currentChainId={currentChainId} onChainChange={onChainChange} />
           </div>
         </div>
       </nav>
 
-      <RpcConfig
-        open={rpcConfigControl}
-        chainId={currentChainId}
-      />
+      <RpcConfig open={rpcConfigControl} chainId={currentChainId} />
     </>
   );
 }

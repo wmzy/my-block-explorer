@@ -1,15 +1,11 @@
-/**
- * ABI Parsing Service
- * Handles ABI parsing, event signature extraction, and metadata management
- * Supports dynamic event table generation and parameter analysis
- */
-
 import { createLogger } from '../server/logger';
-import { Abi, AbiEvent, AbiParameter, Address, parseAbi } from 'viem';
+import { Abi, AbiEvent, AbiParameter, Address, keccak256, toHex } from 'viem';
 
 const logger = createLogger('abi-parsing-service');
-import { keccak256 } from 'viem/utils';
-import { multiChainDb } from '../database/chain-database-manager';
+
+type EventAbiParameter = AbiParameter & { indexed?: boolean };
+
+import { multiChainDb, ChainDatabaseManager } from '../database/chain-database-manager';
 import { multiChainPerformanceManager } from '../database/performance-monitor';
 import {
   EventParameter,
@@ -119,10 +115,8 @@ export class AbiParsingService {
     const performanceMonitor = multiChainPerformanceManager.getChainMonitor(this.chainId);
 
     try {
-      // Parse ABI if it's a string
-      const parsedAbi = typeof abi === 'string' ? parseAbi(abi) : abi;
+      const parsedAbi: Abi = typeof abi === 'string' ? JSON.parse(abi) : abi;
 
-      // Extract events from ABI
       const events = parsedAbi.filter((item): item is AbiEvent => item.type === 'event');
 
       // Parse each event
@@ -139,8 +133,7 @@ export class AbiParsingService {
 
           totalEstimatedStorage += parsedEvent.metadata.estimatedRowSize;
           totalComplexity += parsedEvent.metadata.complexityScore;
-        }
-        catch (error) {
+        } catch (error) {
           logger.warn({ err: error, eventName: event.name }, 'Failed to parse event');
         }
       }
@@ -180,8 +173,7 @@ export class AbiParsingService {
       this.cacheSignatures(signatures);
 
       return result;
-    }
-    catch (error) {
+    } catch (error) {
       const parseTime = performance.now() - startTime;
       performanceMonitor.recordQuery('abi_parse', parseTime, false);
 
@@ -211,7 +203,7 @@ export class AbiParsingService {
       signature,
       topic,
       inputs: parameters,
-      anonymous: event.anonymous || false,
+      anonymous: event.anonymous ?? false,
       tableName,
       tableSchema,
       metadata,
@@ -221,11 +213,11 @@ export class AbiParsingService {
   /**
    * Parse event parameters from ABI
    */
-  private parseEventParameters(inputs: AbiParameter[]): EventParameter[] {
+  private parseEventParameters(inputs: readonly EventAbiParameter[]): EventParameter[] {
     return inputs.map((input, index) => ({
-      name: input.name || `param${index}`,
+      name: input.name ?? `param${index}`,
       type: input.type,
-      indexed: input.indexed || false,
+      indexed: input.indexed ?? false,
       internalType: input.internalType,
     }));
   }
@@ -234,18 +226,16 @@ export class AbiParsingService {
    * Generate table name for event
    */
   private generateTableName(eventName: string, options: AbiParsingOptions): string {
-    const prefix = options.tableNamePrefix || 'events';
-    const maxLength = options.maxTableNameLength || 63;
+    const prefix = options.tableNamePrefix ?? 'events';
+    const maxLength = options.maxTableNameLength ?? 63;
 
     // Clean event name and create table name
-    const cleanName = eventName
-      .replace(/[^a-zA-Z0-9_]/g, '_')
-      .replace(/^[0-9_]/, 'e_'); // Ensure it starts with letter
+    const cleanName = eventName.replace(/[^a-zA-Z0-9_]/g, '_').replace(/^[0-9_]/, 'e_'); // Ensure it starts with letter
     const tableName = `${prefix}_${cleanName}`.toLowerCase();
 
     // Truncate if too long
     if (tableName.length > maxLength) {
-      const hash = keccak256(tableName).slice(2, 10);
+      const hash = keccak256(toHex(tableName)).slice(2, 10);
       return `${tableName.slice(0, maxLength - 9)}_${hash}`;
     }
 
@@ -264,7 +254,7 @@ export class AbiParsingService {
    * Generate event topic (signature hash)
    */
   private generateEventTopic(signature: string): `0x${string}` {
-    return keccak256(signature);
+    return keccak256(toHex(signature));
   }
 
   /**
@@ -274,9 +264,11 @@ export class AbiParsingService {
     const signature = this.generateEventSignature(event);
     const topic = this.generateEventTopic(signature);
     const parameterTypes = event.inputs.map(input => input.type);
-    const parameterNames = event.inputs.map(input => input.name || `param${event.inputs.indexOf(input)}`);
+    const parameterNames = event.inputs.map(
+      input => input.name ?? `param${event.inputs.indexOf(input)}`,
+    );
     const indexedParams = event.inputs
-      .map((input, index) => input.indexed ? index : -1)
+      .map((input, index) => (input.indexed ? index : -1))
       .filter(index => index !== -1);
 
     return {
@@ -286,14 +278,18 @@ export class AbiParsingService {
       parameterTypes,
       parameterNames,
       indexedParams,
-      anonymous: event.anonymous || false,
+      anonymous: event.anonymous ?? false,
     };
   }
 
   /**
    * Generate table schema for event
    */
-  private generateTableSchema(tableName: string, parameters: EventParameter[], event: AbiEvent): DynamicTableSchema {
+  private generateTableSchema(
+    tableName: string,
+    parameters: EventParameter[],
+    _event: AbiEvent,
+  ): DynamicTableSchema {
     // Standard columns
     const standardColumns: TableColumn[] = [
       {
@@ -475,7 +471,7 @@ export class AbiParsingService {
     options: AbiParsingOptions,
     tableSchema: DynamicTableSchema,
   ): Promise<EventMetadata> {
-    const abiHash = keccak256(JSON.stringify(event));
+    const abiHash = keccak256(toHex(JSON.stringify(event)));
     const parameterCount = event.inputs.length;
     const indexedParameterCount = event.inputs.filter(input => input.indexed).length;
     const complexityScore = this.calculateEventComplexity(event);
@@ -596,7 +592,9 @@ export class AbiParsingService {
     // Check for high-cardinality parameters
     for (const input of event.inputs) {
       if (input.indexed && (input.type === 'address' || input.type.includes('256'))) {
-        recommendations.push(`Consider creating composite index with ${input.name} and block_number`);
+        recommendations.push(
+          `Consider creating composite index with ${input.name} and block_number`,
+        );
       }
     }
 
@@ -635,7 +633,7 @@ export class AbiParsingService {
    * Extract all event signatures from ABI
    */
   extractEventSignatures(abi: Abi | string): EventSignature[] {
-    const parsedAbi = typeof abi === 'string' ? parseAbi(abi) : abi;
+    const parsedAbi: Abi = typeof abi === 'string' ? JSON.parse(abi) : abi;
     const events = parsedAbi.filter((item): item is AbiEvent => item.type === 'event');
 
     return events.map(event => this.extractEventSignature(event));
@@ -666,7 +664,7 @@ export class AbiParsingService {
     const errors: string[] = [];
 
     try {
-      const parsedAbi = typeof abi === 'string' ? parseAbi(abi) : abi;
+      const parsedAbi: Abi = typeof abi === 'string' ? JSON.parse(abi) : abi;
 
       if (!Array.isArray(parsedAbi)) {
         errors.push('ABI must be an array');
@@ -697,8 +695,7 @@ export class AbiParsingService {
           }
         }
       }
-    }
-    catch (error) {
+    } catch (error) {
       errors.push(`Failed to parse ABI: ${error}`);
     }
 
@@ -712,8 +709,8 @@ export class AbiParsingService {
    * Get ABI hash for comparison
    */
   getAbiHash(abi: Abi | string): string {
-    const parsedAbi = typeof abi === 'string' ? parseAbi(abi) : abi;
-    return keccak256(JSON.stringify(parsedAbi));
+    const parsedAbi: Abi = typeof abi === 'string' ? JSON.parse(abi) : abi;
+    return keccak256(toHex(JSON.stringify(parsedAbi)));
   }
 
   /**
@@ -732,9 +729,8 @@ export class AbiParsingService {
         return true; // New contract
       }
 
-      return result[0].abi_hash !== currentHash;
-    }
-    catch {
+      return (result[0] as { abi_hash?: string })?.abi_hash !== currentHash;
+    } catch {
       return true; // Assume changed on error
     }
   }

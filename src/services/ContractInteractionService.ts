@@ -2,6 +2,7 @@ import { rpcManager } from './RpcManager';
 import { createRetryableRpcCall } from '../utils/errorHandler';
 import { ContractSourceService } from './ContractSourceService';
 import { createLogger } from '../server/logger';
+import type { Address } from 'viem';
 
 const logger = createLogger('contract-interaction-service');
 
@@ -35,7 +36,7 @@ export type ContractCallResult = {
 
 export type ContractCallParams = {
   chainId: number;
-  contractAddress: string;
+  contractAddress: Address;
   functionName: string;
   args: any[];
   value?: bigint;
@@ -54,7 +55,7 @@ export class ContractInteractionService {
    */
   async getContractFunctions(
     chainId: number,
-    contractAddress: string,
+    contractAddress: Address,
     customABI?: string,
   ): Promise<{
     readFunctions: ContractFunction[];
@@ -65,8 +66,7 @@ export class ContractInteractionService {
 
       if (customABI) {
         abi = JSON.parse(customABI);
-      }
-      else {
+      } else {
         const contractSource = await this.contractSourceService.getContractSource(
           chainId,
           contractAddress,
@@ -79,22 +79,18 @@ export class ContractInteractionService {
         abi = JSON.parse(contractSource.abi);
       }
 
-      const functions = abi.filter(
-        (item: any) => item.type === 'function',
-      ) as ContractFunction[];
+      const functions = abi.filter((item: any) => item.type === 'function') as ContractFunction[];
 
       const readFunctions = functions.filter(
         func => func.stateMutability === 'view' || func.stateMutability === 'pure',
       );
 
       const writeFunctions = functions.filter(
-        func =>
-          func.stateMutability === 'nonpayable' || func.stateMutability === 'payable',
+        func => func.stateMutability === 'nonpayable' || func.stateMutability === 'payable',
       );
 
       return { readFunctions, writeFunctions };
-    }
-    catch (error) {
+    } catch (error) {
       logger.error({ err: error }, 'Failed to get contract functions');
       return { readFunctions: [], writeFunctions: [] };
     }
@@ -103,7 +99,9 @@ export class ContractInteractionService {
   /**
    * 调用只读合约函数 (readContract) - 使用提供的ABI
    */
-  async readContractWithABI(params: ContractCallParams & { abi: string }): Promise<ContractCallResult> {
+  async readContractWithABI(
+    params: ContractCallParams & { abi: string },
+  ): Promise<ContractCallResult> {
     try {
       const client = await rpcManager.getClient(params.chainId);
 
@@ -118,7 +116,7 @@ export class ContractInteractionService {
 
       const readCall = createRetryableRpcCall(async () => {
         return await client.readContract({
-          address: params.contractAddress as `0x${string}`,
+          address: params.contractAddress,
           abi,
           functionName: params.functionName,
           args: params.args,
@@ -131,8 +129,7 @@ export class ContractInteractionService {
         success: true,
         result: this.formatContractResult(result),
       };
-    }
-    catch (error: any) {
+    } catch (error: any) {
       logger.error({ err: error }, 'Read contract failed');
       return {
         success: false,
@@ -163,7 +160,7 @@ export class ContractInteractionService {
 
       const readCall = createRetryableRpcCall(async () => {
         return await client.readContract({
-          address: params.contractAddress as `0x${string}`,
+          address: params.contractAddress,
           abi,
           functionName: params.functionName,
           args: params.args,
@@ -176,8 +173,7 @@ export class ContractInteractionService {
         success: true,
         result: this.formatContractResult(result),
       };
-    }
-    catch (error: any) {
+    } catch (error: any) {
       logger.error({ err: error }, 'Read contract failed');
       return {
         success: false,
@@ -189,7 +185,9 @@ export class ContractInteractionService {
   /**
    * 模拟合约调用 (simulateContract) - 使用提供的ABI
    */
-  async simulateContractWithABI(params: ContractCallParams & { abi: string }): Promise<ContractCallResult> {
+  async simulateContractWithABI(
+    params: ContractCallParams & { abi: string },
+  ): Promise<ContractCallResult> {
     try {
       const client = await rpcManager.getClient(params.chainId);
 
@@ -204,7 +202,7 @@ export class ContractInteractionService {
 
       const simulateCall = createRetryableRpcCall(async () => {
         return await client.simulateContract({
-          address: params.contractAddress as `0x${string}`,
+          address: params.contractAddress,
           abi,
           functionName: params.functionName,
           args: params.args,
@@ -220,8 +218,7 @@ export class ContractInteractionService {
         result: this.formatContractResult(simulation.result),
         gasUsed: simulation.request.gas,
       };
-    }
-    catch (error: any) {
+    } catch (error: any) {
       logger.error({ err: error }, 'Simulate contract failed');
       return {
         success: false,
@@ -252,7 +249,7 @@ export class ContractInteractionService {
 
       const simulateCall = createRetryableRpcCall(async () => {
         return await client.simulateContract({
-          address: params.contractAddress as `0x${string}`,
+          address: params.contractAddress,
           abi,
           functionName: params.functionName,
           args: params.args,
@@ -268,8 +265,7 @@ export class ContractInteractionService {
         result: this.formatContractResult(simulation.result),
         gasUsed: simulation.request.gas,
       };
-    }
-    catch (error: any) {
+    } catch (error: any) {
       logger.error({ err: error }, 'Simulate contract failed');
       return {
         success: false,
@@ -298,7 +294,7 @@ export class ContractInteractionService {
 
       const estimateGas = createRetryableRpcCall(async () => {
         return await client.estimateContractGas({
-          address: params.contractAddress as `0x${string}`,
+          address: params.contractAddress,
           abi,
           functionName: params.functionName,
           args: params.args,
@@ -317,12 +313,11 @@ export class ContractInteractionService {
 
       return {
         gasLimit,
-        gasPrice: gasPrice || undefined,
-        maxFeePerGas: feeData?.maxFeePerGas || undefined,
-        maxPriorityFeePerGas: feeData?.maxPriorityFeePerGas || undefined,
+        gasPrice: gasPrice ?? undefined,
+        maxFeePerGas: feeData?.maxFeePerGas ?? undefined,
+        maxPriorityFeePerGas: feeData?.maxPriorityFeePerGas ?? undefined,
       };
-    }
-    catch (error) {
+    } catch (error) {
       logger.error({ err: error }, 'Gas estimation failed');
       return null;
     }
@@ -352,7 +347,7 @@ export class ContractInteractionService {
 
       const estimateGas = createRetryableRpcCall(async () => {
         return await client.estimateContractGas({
-          address: params.contractAddress as `0x${string}`,
+          address: params.contractAddress,
           abi,
           functionName: params.functionName,
           args: params.args,
@@ -371,12 +366,11 @@ export class ContractInteractionService {
 
       return {
         gasLimit,
-        gasPrice: gasPrice || undefined,
-        maxFeePerGas: feeData?.maxFeePerGas || undefined,
-        maxPriorityFeePerGas: feeData?.maxPriorityFeePerGas || undefined,
+        gasPrice: gasPrice ?? undefined,
+        maxFeePerGas: feeData?.maxFeePerGas ?? undefined,
+        maxPriorityFeePerGas: feeData?.maxPriorityFeePerGas ?? undefined,
       };
-    }
-    catch (error) {
+    } catch (error) {
       logger.error({ err: error }, 'Gas estimation failed');
       return null;
     }
@@ -399,9 +393,7 @@ export class ContractInteractionService {
     const errors: string[] = [];
 
     if (args.length !== contractFunction.inputs.length) {
-      errors.push(
-        `Expected ${contractFunction.inputs.length} arguments, got ${args.length}`,
-      );
+      errors.push(`Expected ${contractFunction.inputs.length} arguments, got ${args.length}`);
     }
 
     contractFunction.inputs.forEach((input, index) => {
@@ -424,7 +416,7 @@ export class ContractInteractionService {
   private validateArgument(
     type: string,
     value: any,
-    name: string,
+    _name: string,
   ): { valid: boolean; error?: string } {
     if (value === undefined || value === null || value === '') {
       return { valid: false, error: 'Value is required' };
@@ -440,7 +432,7 @@ export class ContractInteractionService {
 
       // 数字类型验证
       if (type.startsWith('uint') || type.startsWith('int')) {
-        const num = BigInt(value);
+        const _num = BigInt(value);
         // 可以添加更多的范围检查
       }
 
@@ -459,8 +451,7 @@ export class ContractInteractionService {
       }
 
       return { valid: true };
-    }
-    catch (error) {
+    } catch {
       return { valid: false, error: `Invalid ${type} value` };
     }
   }

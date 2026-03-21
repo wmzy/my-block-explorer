@@ -22,7 +22,7 @@ export default function TransactionPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const currentChainId = parseInt(chainId || '1');
+  const currentChainId = parseInt(chainId ?? '1');
   const chainInfo = getChainInfo(currentChainId);
 
   useEffect(() => {
@@ -41,11 +41,7 @@ export default function TransactionPage() {
       }
       catch (err) {
         console.error('Failed to fetch transaction info:', err);
-        setError(
-          err instanceof Error
-            ? err.message
-            : 'Failed to fetch transaction information',
-        );
+        setError(err instanceof Error ? err.message : 'Failed to fetch transaction information');
       }
       finally {
         setLoading(false);
@@ -113,19 +109,14 @@ export default function TransactionPage() {
               <InfoGrid>
                 <InfoItem label="Transaction Hash">{txInfo.hash}</InfoItem>
                 <InfoItem label="Status">
-                  <Badge
-                    variant={txInfo.status === 1 ? 'success' : 'error'}
-                    size="sm"
-                  >
+                  <Badge variant={txInfo.status === 1 ? 'success' : 'error'} size="sm">
                     {txInfo.status === 1 ? 'Success' : 'Failed'}
                   </Badge>
                 </InfoItem>
                 <InfoItem label="Block Number">
                   {parseInt(txInfo.blockNumber).toLocaleString()}
                 </InfoItem>
-                <InfoItem label="Transaction Index">
-                  {txInfo.transactionIndex}
-                </InfoItem>
+                <InfoItem label="Transaction Index">{txInfo.transactionIndex}</InfoItem>
                 <InfoItem label="From">{txInfo.fromAddress}</InfoItem>
                 <InfoItem label="To">{txInfo.toAddress}</InfoItem>
                 <InfoItem label="Value">
@@ -164,9 +155,7 @@ export default function TransactionPage() {
                   </InfoItem>
                 )}
                 <InfoItem label="Nonce">{txInfo.nonce}</InfoItem>
-                <InfoItem label="Transaction Type">
-                  {getTxTypeText(txInfo.type)}
-                </InfoItem>
+                <InfoItem label="Transaction Type">{getTxTypeText(txInfo.type)}</InfoItem>
                 {txInfo.timestamp && (
                   <InfoItem label="Timestamp">
                     {new Date(txInfo.timestamp).toLocaleString()}

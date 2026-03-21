@@ -27,8 +27,7 @@ export function withRetry<T extends unknown[], R>(
     for (let attempt = 0; attempt <= options.maxRetries; attempt++) {
       try {
         return await fn(...args);
-      }
-      catch (error) {
+      } catch (error) {
         lastError = error;
 
         // 检查是否应该重试
@@ -45,10 +44,7 @@ export function withRetry<T extends unknown[], R>(
         await sleep(currentDelay);
         currentDelay *= options.backoff;
 
-        console.warn(
-          `Retry attempt ${attempt + 1}/${options.maxRetries} failed:`,
-          error,
-        );
+        console.warn(`Retry attempt ${attempt + 1}/${options.maxRetries} failed:`, error);
       }
     }
 
@@ -110,11 +106,7 @@ export class ValidationError extends Error {
 export function isRetryableError(error: unknown): boolean {
   const err = error as { code?: string; status?: number };
   // 网络错误
-  if (
-    err.code === 'ECONNRESET'
-    || err.code === 'ENOTFOUND'
-    || err.code === 'ETIMEDOUT'
-  ) {
+  if (err.code === 'ECONNRESET' || err.code === 'ENOTFOUND' || err.code === 'ETIMEDOUT') {
     return true;
   }
 
@@ -127,7 +119,7 @@ export function isRetryableError(error: unknown): boolean {
   if (error instanceof RpcError) {
     // 某些RPC错误码是可重试的
     const retryableCodes = [-32603, -32005, -32000]; // Internal error, limit exceeded, unknown error
-    return retryableCodes.includes(error.code || 0);
+    return retryableCodes.includes(error.code ?? 0);
   }
 
   return false;
@@ -169,11 +161,7 @@ export function normalizeError(error: unknown): {
 
   const err = error as { code?: string; message?: string };
   // 网络错误
-  if (
-    err.code === 'ECONNRESET'
-    || err.code === 'ENOTFOUND'
-    || err.code === 'ETIMEDOUT'
-  ) {
+  if (err.code === 'ECONNRESET' || err.code === 'ENOTFOUND' || err.code === 'ETIMEDOUT') {
     return {
       message: `Network error: ${err.message ?? 'Unknown'}`,
       code: err.code,
@@ -184,7 +172,7 @@ export function normalizeError(error: unknown): {
 
   // 默认错误
   return {
-    message: (error instanceof Error ? error.message : err.message) || 'Unknown error',
+    message: (error instanceof Error ? error.message : err.message) ?? 'Unknown error',
     type: 'unknown',
     retryable: false,
   };
@@ -201,13 +189,10 @@ export function createRetryableRpcCall<T extends unknown[], R>(
     maxRetries: 3,
     delay: 1000,
     backoff: 1.5,
-    retryCondition: (error) => {
+    retryCondition: error => {
       const normalized = normalizeError(error);
       if (!normalized.retryable) {
-        console.error(
-          `Non-retryable RPC error for chain ${chainId}:`,
-          normalized,
-        );
+        console.error(`Non-retryable RPC error for chain ${chainId}:`, normalized);
         return false;
       }
       return true;
@@ -228,10 +213,7 @@ export function createRetryableDbCall<T extends unknown[], R>(
     retryCondition: (error: unknown) => {
       const err = error instanceof Error ? error : { message: String(error) };
       // 数据库锁定错误可以重试
-      if (
-        err.message?.includes('database is locked')
-        || err.message?.includes('SQLITE_BUSY')
-      ) {
+      if (err.message?.includes('database is locked') || err.message?.includes('SQLITE_BUSY')) {
         return true;
       }
       return false;
@@ -259,8 +241,6 @@ export function logError(
 
   // 如果是严重错误，可以在这里添加报警逻辑
   if (!normalized.retryable && normalized.type !== 'validation') {
-    console.error(
-      `[${context}] CRITICAL ERROR - Manual intervention may be required`,
-    );
+    console.error(`[${context}] CRITICAL ERROR - Manual intervention may be required`);
   }
 }

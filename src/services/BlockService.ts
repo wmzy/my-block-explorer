@@ -40,7 +40,11 @@ type BlockServiceDeps = {
 
 const createBlockService = (deps: BlockServiceDeps) => {
   const { db, blocks, rpcManager, blockCache } = deps;
-  const { createRetryableRpcCall: retryableRpc, createRetryableDbCall: retryableDb, logError: logErr } = deps;
+  const {
+    createRetryableRpcCall: retryableRpc,
+    createRetryableDbCall: retryableDb,
+    logError: logErr,
+  } = deps;
 
   const formatBlock = (dbBlock: Record<string, unknown>): Block => {
     const get = (camel: string, snake: string) => dbBlock[camel] ?? dbBlock[snake];
@@ -77,7 +81,10 @@ const createBlockService = (deps: BlockServiceDeps) => {
     } as Block;
   };
 
-  const indexBlock = async (chainId: number, chainBlock: Record<string, unknown>): Promise<Block> => {
+  const indexBlock = async (
+    chainId: number,
+    chainBlock: Record<string, unknown>,
+  ): Promise<Block> => {
     const blockTimestamp = chainBlock.timestamp
       ? new Date(Number(chainBlock.timestamp) * 1000)
       : null;
@@ -92,9 +99,7 @@ const createBlockService = (deps: BlockServiceDeps) => {
       gasLimit: chainBlock.gasLimit?.toString() ?? null,
       gasUsed: chainBlock.gasUsed?.toString() ?? null,
       baseFeePerGas: chainBlock.baseFeePerGas?.toString() ?? null,
-      transactionCount: Array.isArray(chainBlock.transactions)
-        ? chainBlock.transactions.length
-        : 0,
+      transactionCount: Array.isArray(chainBlock.transactions) ? chainBlock.transactions.length : 0,
       sizeBytes: chainBlock.size ? Number(chainBlock.size) : null,
       difficulty: chainBlock.difficulty?.toString() ?? null,
       totalDifficulty: chainBlock.totalDifficulty?.toString() ?? null,
@@ -107,9 +112,11 @@ const createBlockService = (deps: BlockServiceDeps) => {
 
     await db
       .insert(blocks)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       .values(values as any)
       .onConflictDoUpdate({
         target: [blocks.chainId, blocks.number],
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         set: values as any,
       });
 
@@ -119,7 +126,12 @@ const createBlockService = (deps: BlockServiceDeps) => {
       .where(
         and(
           eq(blocks.chainId, chainId),
-          eq(blocks.number, typeof chainBlock.number === 'bigint' ? chainBlock.number : BigInt(Number(chainBlock.number) || 0)),
+          eq(
+            blocks.number,
+            typeof chainBlock.number === 'bigint'
+              ? chainBlock.number
+              : BigInt(Number(chainBlock.number) || 0),
+          ),
         ),
       )
       .limit(1);
@@ -173,27 +185,18 @@ const createBlockService = (deps: BlockServiceDeps) => {
 
         blockCache.set(cacheKey, block, 15000);
         return block;
-      }
-      catch (error) {
+      } catch (error) {
         logErr(error, 'BlockService.getLatestBlock', { chainId });
-        throw new Error('Failed to fetch latest block');
+        throw new Error('Failed to fetch latest block', { cause: error });
       }
     },
 
-    getBlockByNumber: async (
-      chainId: number,
-      blockNumber: bigint,
-    ): Promise<Block | null> => {
+    getBlockByNumber: async (chainId: number, blockNumber: bigint): Promise<Block | null> => {
       try {
         const cached = await db
           .select()
           .from(blocks)
-          .where(
-            and(
-              eq(blocks.chainId, chainId),
-              eq(blocks.number, blockNumber),
-            ),
-          )
+          .where(and(eq(blocks.chainId, chainId), eq(blocks.number, blockNumber)))
           .limit(1);
 
         if (cached.length > 0) {
@@ -208,27 +211,21 @@ const createBlockService = (deps: BlockServiceDeps) => {
 
         const block = await indexBlock(chainId, chainBlock as Record<string, unknown>);
         return block;
-      }
-      catch (error) {
-        logErr(error, 'BlockService.getBlockByNumber', { chainId, blockNumber: blockNumber.toString() });
+      } catch (error) {
+        logErr(error, 'BlockService.getBlockByNumber', {
+          chainId,
+          blockNumber: blockNumber.toString(),
+        });
         return null;
       }
     },
 
-    getBlockByHash: async (
-      chainId: number,
-      blockHash: string,
-    ): Promise<Block | null> => {
+    getBlockByHash: async (chainId: number, blockHash: string): Promise<Block | null> => {
       try {
         const cached = await db
           .select()
           .from(blocks)
-          .where(
-            and(
-              eq(blocks.chainId, chainId),
-              eq(blocks.hash, blockHash as `0x${string}`),
-            ),
-          )
+          .where(and(eq(blocks.chainId, chainId), eq(blocks.hash, blockHash as `0x${string}`)))
           .limit(1);
 
         if (cached.length > 0) {
@@ -243,8 +240,7 @@ const createBlockService = (deps: BlockServiceDeps) => {
 
         const block = await indexBlock(chainId, chainBlock as Record<string, unknown>);
         return block;
-      }
-      catch (error) {
+      } catch (error) {
         logErr(error, 'BlockService.getBlockByHash', { chainId, blockHash });
         return null;
       }
@@ -273,8 +269,7 @@ const createBlockService = (deps: BlockServiceDeps) => {
         const formattedBlocks = blockList.map(b => formatBlock(b as Record<string, unknown>));
 
         return { blocks: formattedBlocks, total };
-      }
-      catch (error) {
+      } catch (error) {
         logErr(error, 'BlockService.getBlocks', { chainId });
         return { blocks: [], total: 0 };
       }
@@ -284,14 +279,15 @@ const createBlockService = (deps: BlockServiceDeps) => {
       try {
         const client = await rpcManager.getClient(chainId);
         return await client.getBlockNumber();
-      }
-      catch (error) {
+      } catch (error) {
         logger.error({ err: error }, 'Failed to get latest block number');
-        throw new Error('Failed to get latest block number');
+        throw new Error('Failed to get latest block number', { cause: error });
       }
     },
 
-    getBlockStats: async (chainId: number): Promise<{
+    getBlockStats: async (
+      chainId: number,
+    ): Promise<{
       totalBlocks: number;
       latestBlock: bigint | null;
       avgBlockTime: number | null;
@@ -322,9 +318,7 @@ const createBlockService = (deps: BlockServiceDeps) => {
           .limit(100);
 
         const totalBlocks = countResult[0]?.value || 0;
-        const latestBlock = latestResult[0]?.number
-          ? BigInt(latestResult[0].number)
-          : null;
+        const latestBlock = latestResult[0]?.number ? BigInt(latestResult[0].number) : null;
 
         let avgBlockTime: number | null = null;
         const blocksWithTimestamp = recentBlocks.filter(b => b.timestamp != null);
@@ -337,8 +331,7 @@ const createBlockService = (deps: BlockServiceDeps) => {
             timeDiffs.push(diff);
           }
           if (timeDiffs.length > 0) {
-            avgBlockTime
-              = timeDiffs.reduce((a, b) => a + b, 0) / timeDiffs.length;
+            avgBlockTime = timeDiffs.reduce((a, b) => a + b, 0) / timeDiffs.length;
           }
         }
 
@@ -359,10 +352,9 @@ const createBlockService = (deps: BlockServiceDeps) => {
           avgBlockTime,
           avgGasUsed,
         };
-      }
-      catch (error) {
+      } catch (error) {
         logErr(error, 'BlockService.getBlockStats', { chainId });
-        throw new Error('Failed to get block statistics');
+        throw new Error('Failed to get block statistics', { cause: error });
       }
     },
 
@@ -383,8 +375,7 @@ const createBlockService = (deps: BlockServiceDeps) => {
           if (callback) {
             callback((processed / total) * 100);
           }
-        }
-        catch (error) {
+        } catch (error) {
           logger.warn({ err: error, blockNum: blockNum.toString() }, 'Failed to index block');
         }
       }
@@ -400,11 +391,7 @@ export { createBlockService };
 import { db, blocks } from '../database/init';
 import { rpcManager } from './RpcManager';
 import { blockCache } from '../utils/cache';
-import {
-  createRetryableRpcCall,
-  createRetryableDbCall,
-  logError,
-} from '../utils/errorHandler';
+import { createRetryableRpcCall, createRetryableDbCall, logError } from '../utils/errorHandler';
 
 export const blockService = createBlockService({
   db,

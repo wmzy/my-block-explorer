@@ -18,7 +18,7 @@ describe('Server Validation', () => {
         '0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF',
       ];
 
-      validAddresses.forEach((address) => {
+      validAddresses.forEach(address => {
         expect(() => getValidatedAddress(address)).not.toThrow();
         // getAddress returns checksum format, not lowercase
         expect(getValidatedAddress(address)).toMatch(/^0x[a-fA-F0-9]{40}$/);
@@ -34,13 +34,14 @@ describe('Server Validation', () => {
         '1234567890123456789012345678901234567890', // Missing 0x prefix
         '0xGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG', // Invalid hex characters
         '0x123456789012345678901234567890123456789Z', // Invalid character at end
-        null,
-        undefined,
       ];
 
-      invalidAddresses.forEach((address) => {
-        expect(() => getValidatedAddress(address as any)).toThrow(HTTPException);
+      invalidAddresses.forEach(address => {
+        expect(() => getValidatedAddress(address)).toThrow(HTTPException);
       });
+
+      expect(() => getValidatedAddress(null as unknown as string)).toThrow(HTTPException);
+      expect(() => getValidatedAddress(undefined as unknown as string)).toThrow(HTTPException);
     });
 
     it('should normalize address case', () => {
@@ -56,26 +57,21 @@ describe('Server Validation', () => {
     it('should validate supported chain IDs', () => {
       const supportedChainIds = ['1', '137', '42161', '10', '5000'];
 
-      supportedChainIds.forEach((chainId) => {
+      supportedChainIds.forEach(chainId => {
         expect(() => getValidatedChainId(chainId)).not.toThrow();
         expect(getValidatedChainId(chainId)).toBe(parseInt(chainId));
       });
     });
 
     it('should reject invalid chain IDs', () => {
-      const invalidChainIds = [
-        '',
-        'abc',
-        '0',
-        '-1',
-        '99999', // Unsupported chain
-        null,
-        undefined,
-      ];
+      const invalidChainIds = ['', 'abc', '0', '-1', '99999'];
 
-      invalidChainIds.forEach((chainId) => {
-        expect(() => getValidatedChainId(chainId as any)).toThrow(HTTPException);
+      invalidChainIds.forEach(chainId => {
+        expect(() => getValidatedChainId(chainId)).toThrow(HTTPException);
       });
+
+      expect(() => getValidatedChainId(null as unknown as string)).toThrow(HTTPException);
+      expect(() => getValidatedChainId(undefined as unknown as string)).toThrow(HTTPException);
     });
 
     it('should handle numeric input', () => {
@@ -93,7 +89,7 @@ describe('Server Validation', () => {
         '0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff',
       ];
 
-      validHashes.forEach((hash) => {
+      validHashes.forEach(hash => {
         expect(() => getValidatedTxHash(hash)).not.toThrow();
         expect(getValidatedTxHash(hash)).toBe(hash.toLowerCase());
       });
@@ -103,17 +99,18 @@ describe('Server Validation', () => {
       const invalidHashes = [
         '',
         '0x',
-        '0x123', // Too short
-        '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1', // Too long
-        '1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef', // Missing 0x prefix
-        '0xGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG', // Invalid hex
-        null,
-        undefined,
+        '0x123',
+        '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1',
+        '1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
+        '0xGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG',
       ];
 
-      invalidHashes.forEach((hash) => {
-        expect(() => getValidatedTxHash(hash as any)).toThrow(HTTPException);
+      invalidHashes.forEach(hash => {
+        expect(() => getValidatedTxHash(hash)).toThrow(HTTPException);
       });
+
+      expect(() => getValidatedTxHash(null as unknown as string)).toThrow(HTTPException);
+      expect(() => getValidatedTxHash(undefined as unknown as string)).toThrow(HTTPException);
     });
 
     it('should normalize hash case', () => {
@@ -127,7 +124,7 @@ describe('Server Validation', () => {
     it('should validate correct block numbers', () => {
       const validBlockNumbers = ['0', '1', '123456', '18000000'];
 
-      validBlockNumbers.forEach((blockNumber) => {
+      validBlockNumbers.forEach(blockNumber => {
         expect(() => getValidatedBlockNumber(blockNumber)).not.toThrow();
         expect(getValidatedBlockNumber(blockNumber)).toBe(parseInt(blockNumber));
       });
@@ -139,21 +136,14 @@ describe('Server Validation', () => {
     });
 
     it('should reject invalid block numbers', () => {
-      const invalidBlockNumbers = [
-        '',
-        'abc',
-        '-1',
-        'earliest', // Not supported
-        'pending', // Not supported
-      ];
+      const invalidBlockNumbers = ['', 'abc', '-1', 'earliest', 'pending'];
 
-      invalidBlockNumbers.forEach((blockNumber) => {
-        expect(() => getValidatedBlockNumber(blockNumber as any)).toThrow(HTTPException);
+      invalidBlockNumbers.forEach(blockNumber => {
+        expect(() => getValidatedBlockNumber(blockNumber)).toThrow(HTTPException);
       });
 
-      // Test null and undefined separately
-      expect(() => getValidatedBlockNumber(null as any)).toThrow(HTTPException);
-      expect(() => getValidatedBlockNumber(undefined as any)).toThrow(HTTPException);
+      expect(() => getValidatedBlockNumber(null as unknown as string)).toThrow(HTTPException);
+      expect(() => getValidatedBlockNumber(undefined as unknown as string)).toThrow(HTTPException);
     });
 
     it('should handle large block numbers', () => {
@@ -166,8 +156,7 @@ describe('Server Validation', () => {
     it('should throw HTTPException with 400 status for invalid address', () => {
       try {
         getValidatedAddress('invalid');
-      }
-      catch (error) {
+      } catch (error) {
         expect(error).toBeInstanceOf(HTTPException);
         expect((error as HTTPException).status).toBe(400);
         expect((error as HTTPException).message).toContain('Invalid address');
@@ -177,8 +166,7 @@ describe('Server Validation', () => {
     it('should throw HTTPException with 400 status for invalid chain ID', () => {
       try {
         getValidatedChainId('invalid');
-      }
-      catch (error) {
+      } catch (error) {
         expect(error).toBeInstanceOf(HTTPException);
         expect((error as HTTPException).status).toBe(400);
         expect((error as HTTPException).message).toContain('Invalid chain ID');
@@ -188,8 +176,7 @@ describe('Server Validation', () => {
     it('should throw HTTPException with 400 status for invalid tx hash', () => {
       try {
         getValidatedTxHash('invalid');
-      }
-      catch (error) {
+      } catch (error) {
         expect(error).toBeInstanceOf(HTTPException);
         expect((error as HTTPException).status).toBe(400);
         expect((error as HTTPException).message).toContain('Invalid transaction hash');
@@ -199,8 +186,7 @@ describe('Server Validation', () => {
     it('should throw HTTPException with 400 status for invalid block number', () => {
       try {
         getValidatedBlockNumber('invalid');
-      }
-      catch (error) {
+      } catch (error) {
         expect(error).toBeInstanceOf(HTTPException);
         expect((error as HTTPException).status).toBe(400);
         expect((error as HTTPException).message).toContain('Invalid block number');

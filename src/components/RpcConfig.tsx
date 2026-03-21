@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { css } from '@linaria/core';
 import { Dialog, type DialogProps } from 'haze-ui';
 import { useControl, type Control } from 'react-use-control';
+import { toast } from 'sonner';
 import { getChainName } from '../config/chains';
 import { getRpcPresets, type RpcPreset } from '../config/rpcPresets';
 import {
@@ -248,12 +249,7 @@ type Props = {
   onConfigSaved?: () => void;
 };
 
-export default function RpcConfig({
-  open,
-  onClose,
-  chainId,
-  onConfigSaved,
-}: Props) {
+export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Props) {
   const [isOpen, setOpen] = useControl(open, false);
 
   const handleClose = () => {
@@ -282,7 +278,7 @@ export default function RpcConfig({
     try {
       const configs = await getRpcConfigs();
       const chainConfig = configs.find(c => c.chainId === chainId);
-      setCurrentConfig(chainConfig || null);
+      setCurrentConfig(chainConfig ?? null);
     }
     catch (error) {
       console.error('Failed to load current config:', error);
@@ -301,11 +297,7 @@ export default function RpcConfig({
     await handleSaveConfig(preset.name, preset.url);
   };
 
-  const handleSaveConfig = async (
-    name: string,
-    url: string,
-    maxEventRange?: number,
-  ) => {
+  const handleSaveConfig = async (name: string, url: string, maxEventRange?: number) => {
     setLoading(true);
     setTestResult(null);
 
@@ -315,24 +307,25 @@ export default function RpcConfig({
       setTestResult(result);
 
       if (result.status === 'failed') {
-        alert(
-          `RPC测试失败: ${result.error}\n\n建议使用以下命令验证RPC:\ncast chain-id --rpc-url ${url}\ncast block-number --rpc-url ${url}`,
+        toast.error(
+          `RPC test failed: ${result.error}\n\nRecommended to verify RPC using:\ncast chain-id --rpc-url ${url}\ncast block-number --rpc-url ${url}`,
         );
         return;
       }
 
       // 验证链ID是否匹配
       if (result.detectedChainId && result.detectedChainId !== chainId) {
-        alert(
-          `链ID不匹配！\n期望: ${chainId}\n实际: ${result.detectedChainId}\n\n请确认RPC URL对应正确的链。`,
+        toast.error(
+          `Chain ID mismatch!\nExpected: ${chainId}\nActual: ${result.detectedChainId}\n\nPlease confirm the RPC URL corresponds to the correct chain.`,
         );
         return;
       }
 
       // 验证历史数据支持
       if (!result.supportsHistory) {
-        const confirmContinue = confirm(
-          '警告：此RPC节点不支持历史区块数据查询，可能影响合约创建信息等功能。\n\n是否仍要继续保存？',
+        // eslint-disable-next-line no-alert
+        const confirmContinue = window.confirm(
+          'Warning: This RPC node does not support historical block data queries, which may affect contract creation info and other features.\n\nDo you want to continue saving anyway?',
         );
         if (!confirmContinue) {
           return;
@@ -340,10 +333,11 @@ export default function RpcConfig({
       }
 
       // 验证maxEventRange
-      const finalMaxEventRange = maxEventRange || result.maxEventRange;
+      const finalMaxEventRange = maxEventRange ?? result.maxEventRange;
       if (finalMaxEventRange && finalMaxEventRange > 10000) {
-        const confirmRange = confirm(
-          `事件查询范围设置为 ${finalMaxEventRange} 个区块，这可能导致查询超时。\n\n建议设置为 5000 以下。是否继续？`,
+        // eslint-disable-next-line no-alert
+        const confirmRange = window.confirm(
+          `Event query range set to ${finalMaxEventRange} blocks, which may cause query timeout.\n\nRecommended setting is below 5000. Continue anyway?`,
         );
         if (!confirmRange) {
           return;
@@ -365,11 +359,11 @@ export default function RpcConfig({
       setCustomUrl('');
       setCustomMaxEventRange('');
 
-      alert('RPC配置保存成功！');
+      toast.success('RPC configuration saved successfully!');
     }
     catch (error) {
       console.error('Failed to save config:', error);
-      alert('保存配置失败，请检查网络连接');
+      toast.error('Failed to save configuration. Please check your network connection.');
     }
     finally {
       setLoading(false);
@@ -377,7 +371,12 @@ export default function RpcConfig({
   };
 
   const handleRemoveConfig = async () => {
-    if (!confirm('确定要移除自定义RPC配置吗？将恢复使用默认节点。')) {
+    /* eslint-disable no-alert */
+    const confirmed = window.confirm(
+      'Are you sure you want to remove the custom RPC configuration? It will revert to using the default node.',
+    );
+    /* eslint-enable no-alert */
+    if (!confirmed) {
       return;
     }
 
@@ -385,11 +384,11 @@ export default function RpcConfig({
       await deleteRpcConfig(chainId);
       await loadCurrentConfig();
       onConfigSaved?.();
-      alert('已恢复使用默认RPC节点');
+      toast.success('Reverted to default RPC node.');
     }
     catch (error) {
       console.error('Failed to remove config:', error);
-      alert('移除配置失败');
+      toast.error('Failed to remove configuration.');
     }
   };
 
@@ -425,9 +424,7 @@ export default function RpcConfig({
                 <>
                   <div className="status custom">✅ 使用自定义RPC节点</div>
                   <div style={{ marginBottom: '8px' }}>
-                    <div style={{ fontWeight: '500', marginBottom: '4px' }}>
-                      {currentConfig.name}
-                    </div>
+                    <div style={{ fontWeight: '500', marginBottom: '4px' }}>{currentConfig.name}</div>
                     <div className="url">{currentConfig.url}</div>
                     {currentConfig.maxEventRange && (
                       <div
@@ -446,10 +443,7 @@ export default function RpcConfig({
                     )}
                   </div>
                   <div className="actions">
-                    <button
-                      className="btn danger small"
-                      onClick={handleRemoveConfig}
-                    >
+                    <button className="btn danger small" onClick={handleRemoveConfig}>
                       恢复默认
                     </button>
                   </div>
@@ -481,9 +475,7 @@ export default function RpcConfig({
                     </div>
                     <div className="preset-url">{preset.url}</div>
                     {preset.description && (
-                      <div className="preset-description">
-                        {preset.description}
-                      </div>
+                      <div className="preset-description">{preset.description}</div>
                     )}
                   </div>
                 ))}
@@ -496,10 +488,7 @@ export default function RpcConfig({
             <h3>自定义节点</h3>
             <p>如果您有私有RPC节点或其他提供商的节点</p>
             <div className={buttonStyles}>
-              <button
-                className="btn secondary"
-                onClick={() => setShowCustomForm(true)}
-              >
+              <button className="btn secondary" onClick={() => setShowCustomForm(true)}>
                 添加自定义RPC
               </button>
             </div>
@@ -559,10 +548,8 @@ export default function RpcConfig({
                   padding: '12px',
                   borderRadius: '6px',
                   marginBottom: '16px',
-                  background:
-                      testResult.status === 'success' ? '#d4edda' : '#f8d7da',
-                  color:
-                      testResult.status === 'success' ? '#155724' : '#721c24',
+                  background: testResult.status === 'success' ? '#d4edda' : '#f8d7da',
+                  color: testResult.status === 'success' ? '#155724' : '#721c24',
                   fontSize: '14px',
                 }}
               >
@@ -591,13 +578,11 @@ export default function RpcConfig({
                           )}
                           <div>
                             📚 历史数据:
-                            {' '}
                             {testResult.supportsHistory ? '✅ 支持' : '❌ 不支持'}
                           </div>
                           {testResult.maxEventRange && (
                             <div>
                               📊 推荐事件范围:
-                              {' '}
                               {testResult.maxEventRange}
                               {' '}
                               个区块
@@ -613,9 +598,7 @@ export default function RpcConfig({
                           {' '}
                           <strong>连接失败</strong>
                         </div>
-                        <div style={{ fontSize: '12px', color: '#721c24' }}>
-                          {testResult.error}
-                        </div>
+                        <div style={{ fontSize: '12px', color: '#721c24' }}>{testResult.error}</div>
                         <div
                           style={{
                             fontSize: '11px',
@@ -642,11 +625,7 @@ export default function RpcConfig({
             )}
 
             <div className={`${buttonStyles} btn-group`}>
-              <button
-                type="submit"
-                className="btn primary"
-                disabled={loading}
-              >
+              <button type="submit" className="btn primary" disabled={loading}>
                 {loading ? '测试并保存中...' : '测试并保存'}
               </button>
               <button

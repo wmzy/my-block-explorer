@@ -48,7 +48,7 @@ export async function saveRpcConfig(config: {
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.error || 'Failed to save RPC config');
+    throw new Error(error.error ?? 'Failed to save RPC config');
   }
 
   invalidateRpcClients();
@@ -62,7 +62,7 @@ export async function deleteRpcConfig(chainId: number): Promise<void> {
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({}));
-    throw new Error(error.error || 'Failed to delete RPC config');
+    throw new Error(error.error ?? 'Failed to delete RPC config');
   }
 
   invalidateRpcClients();
@@ -185,8 +185,7 @@ export async function testRpcConnection(
                   break;
                 }
               }
-            }
-            catch {
+            } catch {
               continue;
             }
           }
@@ -201,8 +200,7 @@ export async function testRpcConnection(
       supportsHistory,
       maxEventRange: maxEventRange > 0 ? maxEventRange : undefined,
     };
-  }
-  catch (error) {
+  } catch (error) {
     return {
       status: 'failed',
       error: error instanceof Error ? error.message : String(error),

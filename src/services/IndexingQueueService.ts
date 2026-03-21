@@ -115,13 +115,11 @@ export class IndexingQueueService {
         if (contractSource?.abi) {
           try {
             resolvedAbi = JSON.parse(contractSource.abi) as Abi;
-          }
-          catch {
+          } catch {
             logger.error({ chainId, address }, 'Failed to parse ABI from contract source');
             throw new Error('Failed to parse ABI from contract source');
           }
-        }
-        else {
+        } else {
           logger.error({ chainId, address }, 'No ABI available for contract');
           throw new Error('No ABI available for contract');
         }
@@ -131,19 +129,16 @@ export class IndexingQueueService {
 
       if (result.success) {
         logger.info({ chainId, address, rangeId }, 'Indexing completed successfully');
-      }
-      else {
+      } else {
         logger.warn(
           { chainId, address, rangeId, error: result.error },
           'Indexing completed with error',
         );
       }
-    }
-    catch (err) {
+    } catch (err) {
       const errorMsg = err instanceof Error ? err.message : String(err);
       logger.error({ chainId, address, rangeId, error: errorMsg }, 'Indexing threw error');
-    }
-    finally {
+    } finally {
       await this.handleRangeCompletion(chainId, address, rangeId);
     }
   }
@@ -231,15 +226,14 @@ export class IndexingQueueService {
     const key = queueKey(chainId, address);
     const queue = this.queues.get(key);
 
+    // eslint-disable-next-line @typescript-eslint/prefer-optional-chain
     if (!queue || queue.currentRangeId === null) {
       logger.debug({ chainId, address }, 'No current range to pause');
       return { success: false, error: 'No range currently indexing' };
     }
 
-    logger.info(
-      { chainId, address, currentRangeId: queue.currentRangeId },
-      'Pausing current range',
-    );
+    const currentRangeId = queue.currentRangeId;
+    logger.info({ chainId, address, currentRangeId }, 'Pausing current range');
     pauseIndexingRange(chainId, address, queue.currentRangeId);
 
     const pausedRangeId = queue.currentRangeId;

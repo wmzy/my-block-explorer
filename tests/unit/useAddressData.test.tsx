@@ -40,12 +40,13 @@ describe('useAddressData', () => {
       // Mock successful persistent data fetch
       mockFetch.mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve({
-          isContract: true,
-          contractName: 'TestContract',
-          verificationStatus: 'verified',
-          sourceCodeAvailable: true,
-        }),
+        json: () =>
+          Promise.resolve({
+            isContract: true,
+            contractName: 'TestContract',
+            verificationStatus: 'verified',
+            sourceCodeAvailable: true,
+          }),
       });
 
       // Mock successful real-time data fetch
@@ -121,9 +122,10 @@ describe('useAddressData', () => {
     it('should handle real-time data fetch error', async () => {
       mockFetch.mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve({
-          isContract: false,
-        }),
+        json: () =>
+          Promise.resolve({
+            isContract: false,
+          }),
       });
       vi.mocked(getRealTimeAddressData).mockRejectedValue(new Error('Real-time data fetch failed'));
 
@@ -176,9 +178,10 @@ describe('useAddressData', () => {
     it('should handle API error responses', async () => {
       mockFetch.mockResolvedValue({
         ok: true,
-        json: () => Promise.resolve({
-          error: 'Address not found',
-        }),
+        json: () =>
+          Promise.resolve({
+            error: 'Address not found',
+          }),
       });
 
       const { result } = renderHook(() => useAddressData(testChainId, testAddress));
@@ -307,7 +310,7 @@ describe('useAddressData', () => {
 
   describe('edge cases', () => {
     it('should handle empty chainId', () => {
-      const { result } = renderHook(() => useAddressData(0, testAddress));
+      const _result = renderHook(() => useAddressData(0, testAddress));
 
       // Should not make any API calls
       expect(mockFetch).not.toHaveBeenCalled();
@@ -315,7 +318,7 @@ describe('useAddressData', () => {
     });
 
     it('should handle empty address', () => {
-      const { result } = renderHook(() => useAddressData(testChainId, ''));
+      const _result = renderHook(() => useAddressData(testChainId, ''));
 
       // Should not make any API calls
       expect(mockFetch).not.toHaveBeenCalled();

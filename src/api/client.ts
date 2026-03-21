@@ -1,8 +1,4 @@
-import type {
-  Block,
-  Transaction,
-  AddressInfo,
-} from '@/types/index';
+import type { Block, Transaction, AddressInfo } from '@/types/index';
 
 export class ApiError extends Error {
   constructor(
@@ -49,7 +45,7 @@ export class ApiClient {
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         throw new ApiError(
-          errorData.message || `HTTP ${response.status}`,
+          errorData.message ?? `HTTP ${response.status}`,
           response.status,
           errorData.code,
           errorData.details,
@@ -77,25 +73,18 @@ export class ApiClient {
     }
   }
 
-  private async get<T>(
-    endpoint: string,
-  ): Promise<{ data: T; headers: Headers }> {
+  private async get<T>(endpoint: string): Promise<{ data: T; headers: Headers }> {
     return this.request<T>(endpoint, { method: 'GET' });
   }
 
-  private async post<T>(
-    endpoint: string,
-    body?: unknown,
-  ): Promise<{ data: T; headers: Headers }> {
+  private async post<T>(endpoint: string, body?: unknown): Promise<{ data: T; headers: Headers }> {
     return this.request<T>(endpoint, {
       method: 'POST',
       body: body ? JSON.stringify(body) : undefined,
     });
   }
 
-  private async del<T>(
-    endpoint: string,
-  ): Promise<{ data: T; headers: Headers }> {
+  private async del<T>(endpoint: string): Promise<{ data: T; headers: Headers }> {
     return this.request<T>(endpoint, { method: 'DELETE' });
   }
 
@@ -130,20 +119,14 @@ export class ApiClient {
   }
 
   // Transaction APIs
-  async getTransactionByHash(
-    chainId: number,
-    txHash: string,
-  ): Promise<Record<string, unknown>> {
+  async getTransactionByHash(chainId: number, txHash: string): Promise<Record<string, unknown>> {
     const { data } = await this.get<Record<string, unknown>>(
       `/api/chains/${chainId}/transactions/${txHash}`,
     );
     return data;
   }
 
-  async getTransactions(
-    chainId: number,
-    limit = 20,
-  ): Promise<Record<string, unknown>> {
+  async getTransactions(chainId: number, limit = 20): Promise<Record<string, unknown>> {
     const { data } = await this.get<Record<string, unknown>>(
       `/api/chains/${chainId}/transactions?limit=${limit}`,
     );
@@ -152,9 +135,7 @@ export class ApiClient {
 
   // Address APIs
   async getAddressInfo(chainId: number, address: string): Promise<AddressInfo> {
-    const { data } = await this.get<AddressInfo>(
-      `/api/chains/${chainId}/addresses/${address}`,
-    );
+    const { data } = await this.get<AddressInfo>(`/api/chains/${chainId}/addresses/${address}`);
     return data;
   }
 

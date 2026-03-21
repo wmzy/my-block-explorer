@@ -1,5 +1,5 @@
 import { db, searchHistory } from '../database/init';
-import { sql, desc } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 import { createLogger } from '../server/logger';
 import { blockService, type Block } from './BlockService';
 
@@ -31,7 +31,7 @@ type SearchServiceDeps = {
 };
 
 const createSearchService = (deps: SearchServiceDeps) => {
-  const { db, searchHistory, blockService, transactionService, addressService } = deps;
+  const { db, blockService, transactionService, addressService } = deps;
 
   const detectSearchType = (query: string): SearchResultType => {
     if (/^\d+$/.test(query)) {
@@ -65,17 +65,14 @@ const createSearchService = (deps: SearchServiceDeps) => {
 
       return suggestions;
     }
-    catch (error) {
+    catch {
       return ['请输入有效的区块号或区块哈希'];
     }
   };
 
   const getTransactionSuggestions = async (chainId: number): Promise<string[]> => {
     try {
-      const recentTxs = await transactionService.getLatestTransactions(
-        chainId,
-        3,
-      );
+      const recentTxs = await transactionService.getLatestTransactions(chainId, 3);
       const suggestions = ['请输入有效的交易哈希（0x开头的64位字符串）'];
 
       if (recentTxs.length > 0) {
@@ -87,7 +84,7 @@ const createSearchService = (deps: SearchServiceDeps) => {
 
       return suggestions;
     }
-    catch (error) {
+    catch {
       return ['请输入有效的交易哈希（0x开头的64位字符串）'];
     }
   };
@@ -111,10 +108,7 @@ const createSearchService = (deps: SearchServiceDeps) => {
     }
   };
 
-  const searchBlock = async (
-    chainId: number,
-    query: string,
-  ): Promise<SearchResult> => {
+  const searchBlock = async (chainId: number, query: string): Promise<SearchResult> => {
     try {
       let block: Block | null = null;
 
@@ -155,15 +149,9 @@ const createSearchService = (deps: SearchServiceDeps) => {
     }
   };
 
-  const searchTransaction = async (
-    chainId: number,
-    query: string,
-  ): Promise<SearchResult> => {
+  const searchTransaction = async (chainId: number, query: string): Promise<SearchResult> => {
     try {
-      const transaction = await transactionService.getTransactionByHash(
-        chainId,
-        query,
-      );
+      const transaction = await transactionService.getTransactionByHash(chainId, query);
 
       if (transaction) {
         return {
@@ -202,16 +190,12 @@ const createSearchService = (deps: SearchServiceDeps) => {
         query,
         chainId,
         found: false,
-        error:
-          error instanceof Error ? error.message : 'Transaction search failed',
+        error: error instanceof Error ? error.message : 'Transaction search failed',
       };
     }
   };
 
-  const searchAddress = async (
-    chainId: number,
-    query: string,
-  ): Promise<SearchResult> => {
+  const searchAddress = async (chainId: number, query: string): Promise<SearchResult> => {
     try {
       const address = query;
 
@@ -225,10 +209,7 @@ const createSearchService = (deps: SearchServiceDeps) => {
         };
       }
 
-      const addressInfo = await addressService.getAddressInfo(
-        chainId,
-        address as `0x${string}`,
-      );
+      const addressInfo = await addressService.getAddressInfo(chainId, address as `0x${string}`);
 
       return {
         type: 'address',
@@ -249,10 +230,7 @@ const createSearchService = (deps: SearchServiceDeps) => {
     }
   };
 
-  const searchAll = async (
-    chainId: number,
-    query: string,
-  ): Promise<SearchResult> => {
+  const searchAll = async (chainId: number, query: string): Promise<SearchResult> => {
     const searches = [
       searchBlock(chainId, query),
       searchTransaction(chainId, query),
@@ -342,7 +320,9 @@ const createSearchService = (deps: SearchServiceDeps) => {
               LIMIT ${limit}`,
         );
 
-        return (result as unknown as Array<{ query: string; search_type?: string; searched_at: string }>).map(row => ({
+        return (
+          result as unknown as Array<{ query: string; search_type?: string; searched_at: string }>
+        ).map(row => ({
           query: row.query ?? '',
           searchType: row.search_type ?? undefined,
           searchedAt: row.searched_at ? new Date(row.searched_at) : new Date(),
@@ -381,9 +361,7 @@ const createSearchService = (deps: SearchServiceDeps) => {
       }
     },
 
-    cleanupSearchHistory: async (
-      olderThanDays: number = 30,
-    ): Promise<void> => {
+    cleanupSearchHistory: async (olderThanDays: number = 30): Promise<void> => {
       try {
         await db.execute(
           sql`DELETE FROM search_history

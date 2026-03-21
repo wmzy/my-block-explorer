@@ -17,6 +17,7 @@ import {
   MultiChainIndexingStatus,
   ChainDatabaseError,
   ChainConfigError,
+  type ChainDatabaseStatus,
 } from '../types/events';
 import { mkdir } from 'fs/promises';
 import { join } from 'path';
@@ -67,14 +68,17 @@ export class MultiChainEnvironment {
 
   constructor(options: ZeroConfigOptions = {}) {
     this.options = {
-      environment: options.environment || (process.env.NODE_ENV as any) || 'development',
-      chains: options.chains || 'recommended',
-      dataDirectory: options.dataDirectory || 'data',
+      environment:
+        options.environment ??
+        (process.env.NODE_ENV as 'development' | 'production' | 'test') ??
+        'development',
+      chains: options.chains ?? 'recommended',
+      dataDirectory: options.dataDirectory ?? 'data',
       enablePerformanceMonitoring: options.enablePerformanceMonitoring ?? true,
       autoStartIndexing: options.autoStartIndexing ?? false,
       skipValidation: options.skipValidation ?? false,
       createDataDirectories: options.createDataDirectories ?? true,
-      maxConcurrentInitialization: options.maxConcurrentInitialization || 5,
+      maxConcurrentInitialization: options.maxConcurrentInitialization ?? 5,
     };
 
     this.multiChainDb = MultiChainDatabaseManager.getInstance();
@@ -144,16 +148,21 @@ export class MultiChainEnvironment {
       this.status.isInitialized = true;
       this.status.initializationTime = Date.now() - this.initializationStartTime;
 
-      console.log(`✅ Multi-chain environment initialized successfully in ${this.status.initializationTime}ms`);
-      console.log(`📊 Initialized ${this.status.initializedChains.length}/${chainIds.length} chains`);
+      console.log(
+        `✅ Multi-chain environment initialized successfully in ${this.status.initializationTime}ms`,
+      );
+      console.log(
+        `📊 Initialized ${this.status.initializedChains.length}/${chainIds.length} chains`,
+      );
 
       if (this.status.failedChains.length > 0) {
-        console.warn(`⚠️ Failed to initialize ${this.status.failedChains.length} chains: ${this.status.failedChains.join(', ')}`);
+        console.warn(
+          `⚠️ Failed to initialize ${this.status.failedChains.length} chains: ${this.status.failedChains.join(', ')}`,
+        );
       }
 
       return this.status;
-    }
-    catch (error) {
+    } catch (error) {
       this.status.errors.push(error instanceof Error ? error.message : String(error));
       console.error(`❌ Failed to initialize multi-chain environment:`, error);
       throw error;
@@ -167,14 +176,16 @@ export class MultiChainEnvironment {
         return RECOMMENDED_MULTI_CHAINS;
       case 'development':
         return DEVELOPMENT_CHAINS;
-      case 'all':
+      case 'all': {
         const { getSupportedChainIds } = await import('../config/chains');
         return getSupportedChainIds();
-      default:
+      }
+      default: {
         if (Array.isArray(this.options.chains)) {
           return this.options.chains;
         }
         throw new Error(`Invalid chains configuration: ${this.options.chains}`);
+      }
     }
   }
 
@@ -190,12 +201,11 @@ export class MultiChainEnvironment {
 
     console.log(`📁 Creating ${directories.size} data directories...`);
 
-    const creationPromises = Array.from(directories).map(async (dirPath) => {
+    const creationPromises = Array.from(directories).map(async dirPath => {
       try {
         await mkdir(dirPath, { recursive: true });
         console.log(`✅ Created directory: ${dirPath}`);
-      }
-      catch (error) {
+      } catch (error) {
         throw new ChainDatabaseError(
           `Failed to create directory: ${dirPath}`,
           0,
@@ -216,15 +226,16 @@ export class MultiChainEnvironment {
     const batchSize = this.options.maxConcurrentInitialization;
     for (let i = 0; i < chainIds.length; i += batchSize) {
       const batch = chainIds.slice(i, i + batchSize);
-      console.log(`📦 Processing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(chainIds.length / batchSize)}: ${batch.join(', ')}`);
+      console.log(
+        `📦 Processing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(chainIds.length / batchSize)}: ${batch.join(', ')}`,
+      );
 
-      const batchPromises = batch.map(async (chainId) => {
+      const batchPromises = batch.map(async chainId => {
         try {
           await this.initializeSingleChain(chainId);
           this.status.initializedChains.push(chainId);
           console.log(`✅ Initialized chain ${chainId}`);
-        }
-        catch (error) {
+        } catch (error) {
           this.status.failedChains.push(chainId);
           const errorMessage = error instanceof Error ? error.message : String(error);
           this.status.errors.push(`Chain ${chainId}: ${errorMessage}`);
@@ -258,8 +269,7 @@ export class MultiChainEnvironment {
       }
 
       console.log(`🗄️ Chain ${chainId} database schema created`);
-    }
-    catch (error) {
+    } catch (error) {
       throw new ChainDatabaseError(
         `Failed to initialize chain database`,
         chainId,
@@ -290,11 +300,10 @@ export class MultiChainEnvironment {
       try {
         // 创建事件表管理器
         const chainDb = await this.multiChainDb.getChainDatabase(chainId);
-        const eventTableManager = new ChainEventTableManager(chainDb);
+        const _eventTableManager = new ChainEventTableManager(chainDb);
 
         console.log(`📋 Event table manager created for chain ${chainId}`);
-      }
-      catch (error) {
+      } catch (error) {
         console.warn(`⚠️ Failed to create event table manager for chain ${chainId}:`, error);
       }
     }
@@ -329,8 +338,7 @@ export class MultiChainEnvironment {
           lastIndexedAt: undefined,
           indexingActive: false, // 需要实际查询索引状态
         });
-      }
-      catch (error) {
+      } catch (error) {
         console.warn(`⚠️ Failed to get status for chain ${chainId}:`, error);
       }
     }
@@ -345,7 +353,7 @@ export class MultiChainEnvironment {
     for (const chainId of this.status.initializedChains) {
       try {
         const config = getChainDatabaseConfig(chainId);
-        const monitor = multiChainPerformanceManager.getChainMonitor(chainId);
+        const _monitor = multiChainPerformanceManager.getChainMonitor(chainId);
 
         statuses.push({
           chainId,
@@ -358,8 +366,7 @@ export class MultiChainEnvironment {
           estimatedTimeRemaining: undefined,
           errors: [],
         });
-      }
-      catch (error) {
+      } catch (error) {
         console.warn(`⚠️ Failed to get indexing status for chain ${chainId}:`, error);
       }
     }
@@ -374,8 +381,7 @@ export class MultiChainEnvironment {
     try {
       await this.multiChainDb.closeAll();
       console.log(`✅ Multi-chain environment shutdown completed`);
-    }
-    catch (error) {
+    } catch (error) {
       console.error(`❌ Error during shutdown:`, error);
       throw error;
     }
@@ -398,14 +404,15 @@ export class MultiChainEnvironment {
         await this.initializeSingleChain(chainId);
         this.status.initializedChains.push(chainId);
         console.log(`✅ Successfully retried chain ${chainId}`);
-      }
-      catch (error) {
+      } catch (error) {
         this.status.failedChains.push(chainId);
         console.error(`❌ Retry failed for chain ${chainId}:`, error);
       }
     }
 
-    console.log(`🔄 Retry completed. ${this.status.initializedChains.length} chains initialized, ${this.status.failedChains.length} still failed`);
+    console.log(
+      `🔄 Retry completed. ${this.status.initializedChains.length} chains initialized, ${this.status.failedChains.length} still failed`,
+    );
   }
 }
 
@@ -440,7 +447,7 @@ export const MULTI_CHAIN_PRESETS = {
   // 测试环境预设
   test: {
     environment: 'test' as const,
-    chains: ['1', '11155111'] as number[], // Ethereum mainnet and Sepolia
+    chains: [1, 11155111] as number[], // Ethereum mainnet and Sepolia
     enablePerformanceMonitoring: false,
     autoStartIndexing: false,
     maxConcurrentInitialization: 2,
@@ -470,15 +477,13 @@ let globalEnvironment: MultiChainEnvironment | null = null;
 
 // 获取全局环境实例
 export function getGlobalMultiChainEnvironment(): MultiChainEnvironment {
-  if (!globalEnvironment) {
-    globalEnvironment = new MultiChainEnvironment();
-  }
+  globalEnvironment ??= new MultiChainEnvironment();
   return globalEnvironment;
 }
 
 // 初始化全局环境
 export async function initializeGlobalMultiChainEnvironment(
-  options?: ZeroConfigOptions,
+  _options?: ZeroConfigOptions,
 ): Promise<MultiChainEnvironmentStatus> {
   const environment = getGlobalMultiChainEnvironment();
   return await environment.initialize();

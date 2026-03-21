@@ -1,4 +1,4 @@
-import { DuckDBInstance } from '@duckdb/node-api';
+import { DuckDBInstance, DuckDBValue } from '@duckdb/node-api';
 import { join } from 'path';
 import { mkdir } from 'fs/promises';
 import { createLogger } from '../server/logger';
@@ -16,10 +16,12 @@ export class DuckDBManager {
 
   constructor(dbPath?: string) {
     const dataDir = join(process.cwd(), 'data');
-    this.dbPath = dbPath || join(dataDir, 'blockchain.db');
+    this.dbPath = dbPath ?? join(dataDir, 'blockchain.db');
 
     // 确保数据目录存在
-    mkdir(dataDir, { recursive: true }).catch(err => logger.warn({ err }, 'Failed to create data directory'));
+    mkdir(dataDir, { recursive: true }).catch(err =>
+      logger.warn({ err }, 'Failed to create data directory'),
+    );
   }
 
   /**
@@ -150,8 +152,7 @@ export class DuckDBManager {
       await this.createIndexes();
 
       logger.info('DuckDB database initialized successfully');
-    }
-    catch (error) {
+    } catch (error) {
       logger.error({ err: error }, 'Database initialization failed');
       // 重置初始化标志，允许重试
       this.isInitialized = false;
@@ -202,8 +203,7 @@ export class DuckDBManager {
     for (const indexSql of indexes) {
       try {
         await this.exec(indexSql);
-      }
-      catch (error) {
+      } catch (error) {
         logger.warn({ err: error }, 'Index creation warning');
       }
     }
@@ -212,7 +212,7 @@ export class DuckDBManager {
   /**
    * 执行查询
    */
-  async query<T = any>(sql: string, params: any[] = []): Promise<T[]> {
+  async query<T = unknown>(sql: string, params: DuckDBValue[] = []): Promise<T[]> {
     if (!this.isInitialized) {
       await this.initialize();
     }
@@ -230,14 +230,12 @@ export class DuckDBManager {
         const result = await connection.runAndReadAll(sql, params);
         connection.disconnectSync();
         return result.getRowObjects() as T[];
-      }
-      else {
+      } else {
         const result = await connection.runAndReadAll(sql);
         connection.disconnectSync();
         return result.getRowObjects() as T[];
       }
-    }
-    catch (error) {
+    } catch (error) {
       logger.error({ err: error, sql, params }, 'DuckDB Query Error');
       throw error;
     }
@@ -260,8 +258,7 @@ export class DuckDBManager {
       const connection = await this.instance.connect();
       await connection.run(sql);
       connection.disconnectSync();
-    }
-    catch (error) {
+    } catch (error) {
       logger.error({ err: error, sql }, 'DuckDB Exec Error');
       throw error;
     }
@@ -281,12 +278,10 @@ export class DuckDBManager {
       const result = await callback();
       await connection.run('COMMIT');
       return result;
-    }
-    catch (error) {
+    } catch (error) {
       await connection.run('ROLLBACK');
       throw error;
-    }
-    finally {
+    } finally {
       connection.disconnectSync();
     }
   }

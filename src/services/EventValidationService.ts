@@ -4,17 +4,12 @@
  * Ensures type safety, data integrity, and proper error reporting
  */
 
-import { Address, Hex, isValidAddress, isHex } from 'viem';
-import { z } from 'zod';
+import { Address, isAddress, isHex } from 'viem';
 import {
-  EventParameter,
   EventFilters,
   PaginationParams,
-  DecodedEvent,
   DecodedEventParameter,
   EventDecodingError,
-  ChainDatabaseError,
-  EventIndexingError,
 } from '../types/events';
 
 /**
@@ -90,7 +85,10 @@ export class EventValidationService {
   /**
    * Validate event filters
    */
-  validateEventFilters(filters: EventFilters, options: EventValidationOptions = {}): ValidationResult {
+  validateEventFilters(
+    filters: EventFilters,
+    options: EventValidationOptions = {},
+  ): ValidationResult {
     const errors: ValidationError[] = [];
     const warnings: ValidationWarning[] = [];
     const sanitizedFilters = { ...filters };
@@ -162,7 +160,16 @@ export class EventValidationService {
 
     // Validate dynamic parameters
     for (const [key, value] of Object.entries(filters)) {
-      if (!['contractAddress', 'fromBlock', 'toBlock', 'fromTimestamp', 'toTimestamp', 'topics'].includes(key)) {
+      if (
+        ![
+          'contractAddress',
+          'fromBlock',
+          'toBlock',
+          'fromTimestamp',
+          'toTimestamp',
+          'topics',
+        ].includes(key)
+      ) {
         const paramValidation = this.validateDynamicParameter(key, value);
         errors.push(...paramValidation.errors);
         warnings.push(...paramValidation.warnings);
@@ -187,7 +194,10 @@ export class EventValidationService {
   /**
    * Validate pagination parameters
    */
-  validatePaginationParams(params: PaginationParams, options: EventValidationOptions = {}): ValidationResult {
+  validatePaginationParams(
+    params: PaginationParams,
+    options: EventValidationOptions = {},
+  ): ValidationResult {
     const errors: ValidationError[] = [];
     const warnings: ValidationWarning[] = [];
     const sanitizedParams = { ...params };
@@ -252,7 +262,14 @@ export class EventValidationService {
     const warnings: ValidationWarning[] = [];
 
     // Check required fields
-    const requiredFields = ['chainId', 'contractAddress', 'eventName', 'txHash', 'blockNumber', 'logIndex'];
+    const requiredFields = [
+      'chainId',
+      'contractAddress',
+      'eventName',
+      'txHash',
+      'blockNumber',
+      'logIndex',
+    ];
     for (const field of requiredFields) {
       if (!event[field]) {
         errors.push({
@@ -441,7 +458,7 @@ export class EventValidationService {
     // Normalize address format
     const normalizedAddress = address.toLowerCase();
 
-    if (!isValidAddress(address)) {
+    if (!isAddress(address)) {
       errors.push({
         field: fieldName,
         code: 'INVALID_ADDRESS_FORMAT',
@@ -449,8 +466,7 @@ export class EventValidationService {
         value: address,
         severity: 'error',
       });
-    }
-    else {
+    } else {
       // Check checksum
       if (address !== normalizedAddress && address !== address.toUpperCase()) {
         warnings.push({
@@ -490,8 +506,7 @@ export class EventValidationService {
           severity: 'error',
         });
       }
-    }
-    else if (typeof blockNumber === 'number') {
+    } else if (typeof blockNumber === 'number') {
       if (!Number.isInteger(blockNumber)) {
         errors.push({
           field: fieldName,
@@ -512,8 +527,7 @@ export class EventValidationService {
       }
       // Convert to bigint for consistency
       sanitizedBlockNumber = BigInt(blockNumber);
-    }
-    else if (typeof blockNumber === 'string') {
+    } else if (typeof blockNumber === 'string') {
       const parsed = parseInt(blockNumber, 10);
       if (isNaN(parsed) || !Number.isInteger(parsed)) {
         errors.push({
@@ -523,12 +537,10 @@ export class EventValidationService {
           value: blockNumber,
           severity: 'error',
         });
-      }
-      else {
+      } else {
         sanitizedBlockNumber = BigInt(parsed);
       }
-    }
-    else {
+    } else {
       errors.push({
         field: fieldName,
         code: 'INVALID_BLOCK_NUMBER_TYPE',
@@ -616,7 +628,6 @@ export class EventValidationService {
           field: fieldName,
           code: 'FUTURE_TIMESTAMP',
           message: 'Timestamp is far in the future',
-          value: timestamp,
         });
       }
       if (timestamp < now - 50 * yearMs) {
@@ -624,11 +635,9 @@ export class EventValidationService {
           field: fieldName,
           code: 'ANCIENT_TIMESTAMP',
           message: 'Timestamp is very far in the past',
-          value: timestamp,
         });
       }
-    }
-    else if (typeof timestamp === 'string') {
+    } else if (typeof timestamp === 'string') {
       const parsed = new Date(timestamp).getTime();
       if (isNaN(parsed)) {
         errors.push({
@@ -638,15 +647,12 @@ export class EventValidationService {
           value: timestamp,
           severity: 'error',
         });
-      }
-      else {
+      } else {
         sanitizedTimestamp = parsed;
       }
-    }
-    else if (timestamp instanceof Date) {
+    } else if (timestamp instanceof Date) {
       sanitizedTimestamp = timestamp.getTime();
-    }
-    else {
+    } else {
       errors.push({
         field: fieldName,
         code: 'INVALID_TIMESTAMP_TYPE',
@@ -670,7 +676,7 @@ export class EventValidationService {
   private validateTopics(topics: any): ValidationResult {
     const errors: ValidationError[] = [];
     const warnings: ValidationWarning[] = [];
-    let sanitizedTopics = topics;
+    const _sanitizedTopics = topics;
 
     if (!Array.isArray(topics)) {
       errors.push({
@@ -693,7 +699,7 @@ export class EventValidationService {
       });
     }
 
-    sanitizedTopics = topics.map((topic, index) => {
+    const sanitizedTopics = topics.map((topic, index) => {
       if (topic === null || topic === undefined) {
         return null; // Allow null for wildcard topics
       }
@@ -787,8 +793,7 @@ export class EventValidationService {
         value: limit,
         severity: 'error',
       });
-    }
-    else if (limit < 1) {
+    } else if (limit < 1) {
       errors.push({
         field: 'limit',
         code: 'INVALID_LIMIT_RANGE',
@@ -796,8 +801,7 @@ export class EventValidationService {
         value: limit,
         severity: 'error',
       });
-    }
-    else if (limit > 1000) {
+    } else if (limit > 1000) {
       warnings.push({
         field: 'limit',
         code: 'HIGH_LIMIT_VALUE',
@@ -831,8 +835,7 @@ export class EventValidationService {
         value: offset,
         severity: 'error',
       });
-    }
-    else if (offset < 0) {
+    } else if (offset < 0) {
       errors.push({
         field: 'offset',
         code: 'NEGATIVE_OFFSET',
@@ -840,8 +843,7 @@ export class EventValidationService {
         value: offset,
         severity: 'error',
       });
-    }
-    else if (offset > 100000) {
+    } else if (offset > 100000) {
       warnings.push({
         field: 'offset',
         code: 'HIGH_OFFSET_VALUE',
@@ -868,16 +870,14 @@ export class EventValidationService {
         value: cursor,
         severity: 'error',
       });
-    }
-    else if (cursor.length === 0) {
+    } else if (cursor.length === 0) {
       errors.push({
         field: 'cursor',
         code: 'EMPTY_CURSOR',
         message: 'Cursor cannot be empty',
         severity: 'error',
       });
-    }
-    else if (cursor.length > 1000) {
+    } else if (cursor.length > 1000) {
       warnings.push({
         field: 'cursor',
         code: 'LONG_CURSOR',
@@ -921,8 +921,7 @@ export class EventValidationService {
         value: chainId,
         severity: 'error',
       });
-    }
-    else if (chainId < 1) {
+    } else if (chainId < 1) {
       errors.push({
         field: 'chainId',
         code: 'INVALID_CHAIN_ID_RANGE',
@@ -949,8 +948,7 @@ export class EventValidationService {
         value: hash,
         severity: 'error',
       });
-    }
-    else if (!isHex(hash)) {
+    } else if (!isHex(hash)) {
       errors.push({
         field: fieldName,
         code: 'INVALID_HASH_FORMAT',
@@ -958,8 +956,8 @@ export class EventValidationService {
         value: hash,
         severity: 'error',
       });
-    }
-    else if (hash.length !== expectedLength * 2 + 2) { // +2 for '0x' prefix
+    } else if (hash.length !== expectedLength * 2 + 2) {
+      // +2 for '0x' prefix
       errors.push({
         field: fieldName,
         code: 'INVALID_HASH_LENGTH',
@@ -986,8 +984,7 @@ export class EventValidationService {
         value: logIndex,
         severity: 'error',
       });
-    }
-    else if (logIndex < 0) {
+    } else if (logIndex < 0) {
       errors.push({
         field: 'logIndex',
         code: 'NEGATIVE_LOG_INDEX',
@@ -1015,13 +1012,11 @@ export class EventValidationService {
         value: eventName,
         severity: 'error',
       });
-    }
-    else if (!/^[A-Z][a-zA-Z0-9]*$/.test(eventName)) {
+    } else if (!/^[A-Z][a-zA-Z0-9]*$/.test(eventName)) {
       warnings.push({
         field: 'eventName',
         code: 'NON_STANDARD_EVENT_NAME',
         message: 'Event name should follow Solidity naming convention (PascalCase)',
-        value: eventName,
       });
     }
 
@@ -1042,8 +1037,7 @@ export class EventValidationService {
         value: signature,
         severity: 'error',
       });
-    }
-    else if (!/^[A-Za-z][A-Za-z0-9]*\([^)]*\)$/.test(signature)) {
+    } else if (!/^[A-Za-z][A-Za-z0-9]*\([^)]*\)$/.test(signature)) {
       errors.push({
         field: 'eventSignature',
         code: 'INVALID_EVENT_SIGNATURE_FORMAT',
@@ -1115,11 +1109,11 @@ export class EventValidationService {
     const errors: ValidationError[] = [];
     const warnings: ValidationWarning[] = [];
 
-    const { type, value, indexed } = param;
+    const { type, value, indexed: _indexed } = param;
 
     // Address validation
     if (type === 'address') {
-      if (typeof value === 'string' && !isValidAddress(value)) {
+      if (typeof value === 'string' && !isAddress(value)) {
         errors.push({
           field: param.name,
           code: 'INVALID_ADDRESS_VALUE',
@@ -1225,7 +1219,7 @@ export class EventValidationService {
 
     for (const errors of this.errorCache.values()) {
       for (const error of errors) {
-        const existing = summary.get(error.code) || { count: 0, lastSeen: new Date() };
+        const existing = summary.get(error.code) ?? { count: 0, lastSeen: new Date() };
         summary.set(error.code, {
           count: existing.count + 1,
           lastSeen: new Date(),

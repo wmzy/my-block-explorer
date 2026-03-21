@@ -13,7 +13,7 @@ export type ListResponse<T> = {
 export type ErrorResponse = {
   code: string;
   message: string;
-  details?: any;
+  details?: unknown;
 };
 
 export type PaginationInfo = {
@@ -26,7 +26,7 @@ export type PaginationInfo = {
 };
 
 // API请求参数类型
-export type PaginationParams = {
+export type ApiPaginationParams = {
   page?: number;
   limit?: number;
 };

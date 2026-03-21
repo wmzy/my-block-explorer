@@ -7,7 +7,7 @@ import { ValidationRule, FormData, RangeValue, DateTimeRangeValue } from '../typ
 /**
  * Validate form input against validation rules
  */
-export function validateSolidityInput(value: any, rules: ValidationRule[] = []): string[] {
+export function validateSolidityInput(value: unknown, rules: ValidationRule[] = []): string[] {
   const errors: string[] = [];
 
   for (const rule of rules) {
@@ -23,7 +23,7 @@ export function validateSolidityInput(value: any, rules: ValidationRule[] = []):
 /**
  * Validate a single rule
  */
-function validateRule(value: any, rule: ValidationRule): string | null {
+function validateRule(value: unknown, rule: ValidationRule): string | null {
   switch (rule.type) {
     case 'required':
       if (!value || value === '' || value === null || value === undefined) {
@@ -56,8 +56,8 @@ function validateRule(value: any, rule: ValidationRule): string | null {
       break;
 
     case 'maxLength':
-      if (value && value.length > rule.value) {
-        return rule.message || `Maximum length is ${rule.value} characters`;
+      if (value && typeof value === 'string' && value.length > rule.value) {
+        return rule.message ?? `Maximum length is ${rule.value} characters`;
       }
       break;
 
@@ -93,10 +93,14 @@ function validateRule(value: any, rule: ValidationRule): string | null {
 
     case 'array':
       if (value && typeof value === 'string') {
-        const lines = value.trim().split('\n').filter(line => line.trim());
+        const lines = value
+          .trim()
+          .split('\n')
+          .filter(line => line.trim());
+        const itemType = rule.itemType ?? 'string';
         for (const line of lines) {
-          if (!validateArrayItem(line, rule.itemType)) {
-            return rule.message || `Invalid ${rule.itemType} in array`;
+          if (!validateArrayItem(line, itemType)) {
+            return rule.message || `Invalid ${itemType} in array`;
           }
         }
       }
@@ -149,6 +153,7 @@ export function convertInputType(solidityType: string): string {
 /**
  * Convert form value to Solidity type
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function convertFormValue(value: any, solidityType: string): any {
   if (value === '' || value === null || value === undefined) {
     return null;
@@ -182,8 +187,13 @@ export function convertFormValue(value: any, solidityType: string): any {
       if (solidityType.endsWith('[]')) {
         // Handle array types
         if (typeof value === 'string') {
-          const lines = value.trim().split('\n').filter(line => line.trim());
-          return lines.map(line => convertFormValue(line.trim(), solidityType.slice(0, -2)));
+          const lines = value
+            .trim()
+            .split('\n')
+            .filter(line => line.trim());
+          return lines.map((line: string) =>
+            convertFormValue(line.trim(), solidityType.slice(0, -2)),
+          );
         }
         return value;
       }
@@ -226,9 +236,7 @@ export function validateTimestamp(timestamp: string): boolean {
  * Validate hex string
  */
 export function validateHexString(hex: string, length?: number): boolean {
-  const hexPattern = length
-    ? new RegExp(`^0x[a-fA-F0-9]{${length}}$`)
-    : /^0x[a-fA-F0-9]+$/;
+  const hexPattern = length ? new RegExp(`^0x[a-fA-F0-9]{${length}}$`) : /^0x[a-fA-F0-9]+$/;
 
   return hexPattern.test(hex);
 }
@@ -237,10 +245,7 @@ export function validateHexString(hex: string, length?: number): boolean {
  * Sanitize user input
  */
 export function sanitizeInput(input: string): string {
-  return input
-    .trim()
-    .replace(/\s+/g, ' ')
-    .replace(/[<>]/g, ''); // Remove potential XSS
+  return input.trim().replace(/\s+/g, ' ').replace(/[<>]/g, ''); // Remove potential XSS
 }
 
 /**
@@ -267,7 +272,9 @@ export function parseRangeValue(value: RangeValue): { from?: number; to?: number
 /**
  * Parse datetime range value
  */
-export function parseDateTimeRangeValue(value: DateTimeRangeValue): { from?: Date; to?: Date } | null {
+export function parseDateTimeRangeValue(
+  value: DateTimeRangeValue,
+): { from?: Date; to?: Date } | null {
   if (!value) return null;
 
   const result: { from?: Date; to?: Date } = {};
@@ -288,8 +295,8 @@ export function parseDateTimeRangeValue(value: DateTimeRangeValue): { from?: Dat
 /**
  * Enhanced search filter generation for ABI-based event filtering
  */
-export function generateSearchFilter(formData: FormData): Record<string, any> {
-  const filter: Record<string, any> = {};
+export function generateSearchFilter(formData: FormData): Record<string, unknown> | null {
+  const filter: Record<string, unknown> = {};
 
   // Handle event name
   if (formData.eventName) {
@@ -304,18 +311,19 @@ export function generateSearchFilter(formData: FormData): Record<string, any> {
     if (['eventName', 'blockRange', 'timestampRange'].includes(key)) return;
 
     // Handle range objects
-    if (typeof value === 'object' && (value.from || value.to || value.like)) {
-      if (value.from !== undefined || value.to !== undefined) {
+    if (typeof value === 'object' && value !== null) {
+      const rangeVal = value as RangeValue;
+      const likeVal = value as { like?: string };
+      if (rangeVal.from !== undefined || rangeVal.to !== undefined) {
         // Numeric or timestamp range
-        const rangeFilter: any = {};
-        if (value.from !== undefined) rangeFilter.gte = value.from;
-        if (value.to !== undefined) rangeFilter.lte = value.to;
+        const rangeFilter: Record<string, unknown> = {};
+        if (rangeVal.from !== undefined) rangeFilter.gte = rangeVal.from;
+        if (rangeVal.to !== undefined) rangeFilter.lte = rangeVal.to;
         filter[key] = rangeFilter;
-      }
-      else if (value.like) {
+      } else if (likeVal.like) {
         // Text search with LIKE
         filter[key] = {
-          like: `%${value.like}%`,
+          like: `%${likeVal.like}%`,
           caseInsensitive: true,
         };
       }
@@ -324,22 +332,18 @@ export function generateSearchFilter(formData: FormData): Record<string, any> {
 
     // Handle specific field types based on naming patterns
     if (isAddressField(key)) {
-      if (validateAddress(value)) {
-        filter[key] = value.toLowerCase();
+      if (validateAddress(value as string)) {
+        filter[key] = (value as string).toLowerCase();
       }
-    }
-    else if (isNumericField(key)) {
+    } else if (isNumericField(key)) {
       filter[key] = value;
-    }
-    else if (isBooleanField(key)) {
+    } else if (isBooleanField(key)) {
       filter[key] = Boolean(value);
-    }
-    else if (isHashField(key)) {
-      if (validateHexString(value, getHashLength(key))) {
-        filter[key] = value.toLowerCase();
+    } else if (isHashField(key)) {
+      if (validateHexString(value as string, getHashLength(key))) {
+        filter[key] = (value as string).toLowerCase();
       }
-    }
-    else {
+    } else {
       // Default: text search with LIKE
       filter[key] = {
         like: `%${value}%`,

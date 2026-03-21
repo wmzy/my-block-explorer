@@ -4,16 +4,22 @@
  */
 
 import React, { useState, useCallback, useMemo } from 'react';
-import { AbiParameter, AbiEvent } from 'viem';
+import { AbiEvent } from 'viem';
 import { css } from '@linaria/core';
 import { FormField, FormData, ValidationRule } from '../../types/forms';
 import { validateSolidityInput, convertInputType } from '../../utils/form-validation';
+
+type FormFieldType = FormField['type'];
+
+type RangeFieldValue = { from?: string | number; to?: string | number };
+
+type FormFieldValue = string | number | boolean | null | undefined | RangeFieldValue;
 
 interface DynamicFormGeneratorProps {
   abiEvent: AbiEvent;
   initialData?: FormData;
   onSubmit: (data: FormData) => void;
-  onFieldChange?: (fieldName: string, value: any) => void;
+  onFieldChange?: (fieldName: string, value: FormFieldValue) => void;
   disabled?: boolean;
   showAdvanced?: boolean;
 }
@@ -34,23 +40,30 @@ export const DynamicFormGenerator: React.FC<DynamicFormGeneratorProps> = ({
   onSubmit,
   onFieldChange,
   disabled = false,
-  showAdvanced = false,
+  showAdvanced: initialShowAdvanced = false,
 }) => {
+  const [showAdvanced, setShowAdvanced] = useState(initialShowAdvanced);
+
   /**
    * Create a single form field from ABI parameter
    */
-  const createFormField = (input: AbiParameter, index: number): FormField => {
-    const solidityType = input.type;
-    const fieldType = convertInputType(solidityType);
+  const createFormField = (input: AbiEvent['inputs'][number], _index: number): FormField | null => {
+    if (!input.name) {
+      return null;
+    }
 
+    const solidityType = input.type;
+    const fieldType = convertInputType(solidityType) as FormFieldType;
+
+    const validationRules = generateValidationRules(solidityType);
     const baseField: FormField = {
       name: input.name,
       label: formatFieldName(input.name),
       type: fieldType,
       required: false,
-      indexed: input.indexed || false,
+      indexed: input.indexed ?? false,
       placeholder: `Enter ${input.name}`,
-      validation: generateValidationRules(solidityType),
+      validation: validationRules,
     };
 
     // Add type-specific configurations
@@ -68,11 +81,14 @@ export const DynamicFormGenerator: React.FC<DynamicFormGeneratorProps> = ({
         baseField.type = 'number';
         baseField.step = '1';
         baseField.placeholder = 'Enter amount (wei)';
-        baseField.validation.push({
-          type: 'min',
-          value: 0,
-          message: 'Value must be non-negative',
-        });
+        baseField.validation = [
+          ...(baseField.validation ?? []),
+          {
+            type: 'min',
+            value: 0,
+            message: 'Value must be non-negative',
+          },
+        ];
         break;
 
       case 'int256':
@@ -102,14 +118,16 @@ export const DynamicFormGenerator: React.FC<DynamicFormGeneratorProps> = ({
 
       default:
         if (solidityType.endsWith('[]')) {
-          // Array types
           baseField.type = 'textarea';
           baseField.placeholder = 'Enter values (one per line)';
-          baseField.validation.push({
-            type: 'array',
-            itemType: solidityType.slice(0, -2),
-            message: 'Invalid array format',
-          });
+          baseField.validation = [
+            ...(baseField.validation ?? []),
+            {
+              type: 'array',
+              itemType: solidityType.slice(0, -2),
+              message: 'Invalid array format',
+            },
+          ];
         }
         break;
     }
@@ -125,7 +143,9 @@ export const DynamicFormGenerator: React.FC<DynamicFormGeneratorProps> = ({
 
     event.inputs.forEach((input, index) => {
       const field = createFormField(input, index);
-      fields[input.name] = field;
+      if (field && input.name) {
+        fields[input.name] = field;
+      }
     });
 
     // Add common filter fields
@@ -151,7 +171,7 @@ export const DynamicFormGenerator: React.FC<DynamicFormGeneratorProps> = ({
       validation: [
         {
           type: 'range',
-          min: 0,
+          value: 0,
           message: 'Invalid block range',
         },
       ],
@@ -181,7 +201,7 @@ export const DynamicFormGenerator: React.FC<DynamicFormGeneratorProps> = ({
     const touched: Record<string, boolean> = {};
 
     // Initialize errors
-    Object.keys(fields).forEach((fieldName) => {
+    Object.keys(fields).forEach(fieldName => {
       errors[fieldName] = [];
       touched[fieldName] = false;
     });
@@ -250,8 +270,8 @@ export const DynamicFormGenerator: React.FC<DynamicFormGeneratorProps> = ({
    * Handle field value changes
    */
   const handleFieldChange = useCallback(
-    (fieldName: string, value: any) => {
-      setFormState((prev) => {
+    (fieldName: string, value: FormFieldValue) => {
+      setFormState(prev => {
         const newValues = { ...prev.values, [fieldName]: value };
         const newTouched = { ...prev.touched, [fieldName]: true };
 
@@ -351,11 +371,11 @@ export const DynamicFormGenerator: React.FC<DynamicFormGeneratorProps> = ({
               <input
                 id={fieldName}
                 type={field.type}
-                value={value || ''}
+                value={value ?? ''}
                 onChange={e => handleFieldChange(fieldName, e.target.value)}
                 placeholder={field.placeholder}
                 disabled={disabled}
-                pattern={field.pattern}
+                pattern={field.pattern?.source}
                 maxLength={field.maxLength}
                 step={field.step}
                 min={field.min}
@@ -382,7 +402,7 @@ export const DynamicFormGenerator: React.FC<DynamicFormGeneratorProps> = ({
               </label>
               <select
                 id={fieldName}
-                value={value || ''}
+                value={value ?? ''}
                 onChange={e => handleFieldChange(fieldName, e.target.value)}
                 disabled={disabled}
               >
@@ -438,7 +458,7 @@ export const DynamicFormGenerator: React.FC<DynamicFormGeneratorProps> = ({
               </label>
               <textarea
                 id={fieldName}
-                value={value || ''}
+                value={value ?? ''}
                 onChange={e => handleFieldChange(fieldName, e.target.value)}
                 placeholder={field.placeholder}
                 disabled={disabled}
@@ -465,7 +485,7 @@ export const DynamicFormGenerator: React.FC<DynamicFormGeneratorProps> = ({
                 <input
                   type="number"
                   placeholder="From"
-                  value={value?.from || ''}
+                  value={value?.from ?? ''}
                   onChange={e => handleFieldChange(fieldName, { ...value, from: e.target.value })}
                   disabled={disabled}
                   min="0"
@@ -474,7 +494,7 @@ export const DynamicFormGenerator: React.FC<DynamicFormGeneratorProps> = ({
                 <input
                   type="number"
                   placeholder="To"
-                  value={value?.to || ''}
+                  value={value?.to ?? ''}
                   onChange={e => handleFieldChange(fieldName, { ...value, to: e.target.value })}
                   disabled={disabled}
                   min="0"
@@ -500,7 +520,7 @@ export const DynamicFormGenerator: React.FC<DynamicFormGeneratorProps> = ({
                 <input
                   type="datetime-local"
                   placeholder="From"
-                  value={value?.from || ''}
+                  value={value?.from ?? ''}
                   onChange={e => handleFieldChange(fieldName, { ...value, from: e.target.value })}
                   disabled={disabled}
                 />
@@ -508,7 +528,7 @@ export const DynamicFormGenerator: React.FC<DynamicFormGeneratorProps> = ({
                 <input
                   type="datetime-local"
                   placeholder="To"
-                  value={value?.to || ''}
+                  value={value?.to ?? ''}
                   onChange={e => handleFieldChange(fieldName, { ...value, to: e.target.value })}
                   disabled={disabled}
                 />

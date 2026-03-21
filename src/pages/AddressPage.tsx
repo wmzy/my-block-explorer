@@ -50,10 +50,10 @@ export default function AddressPage() {
   }>();
   const navigate = useNavigate();
 
-  const currentChainId = parseInt(chainId || '1');
+  const currentChainId = parseInt(chainId ?? '1');
   const chainInfo = getChainInfo(currentChainId);
 
-  const addressData = useAddressData(currentChainId, address || '');
+  const addressData = useAddressData(currentChainId, address ?? '');
 
   const [transactions, setTransactions] = useState<TxRecord[]>([]);
   const [txLoading, setTxLoading] = useState(false);
@@ -64,34 +64,35 @@ export default function AddressPage() {
   const [txTotal, setTxTotal] = useState(0);
   const txLimit = 10;
 
-  const fetchTransactions = useCallback(async (opts?: { silent?: boolean }) => {
-    if (!address || !chainId) return;
-    try {
-      if (!opts?.silent) setTxLoading(true);
-      setTxError(null);
-      const response = await fetch(
-        `/api/chains/${currentChainId}/addresses/${address}/transactions?page=${txPage}&limit=${txLimit}`,
-      );
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+  const fetchTransactions = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      if (!address || !chainId) return;
+      try {
+        if (!opts?.silent) setTxLoading(true);
+        setTxError(null);
+        const response = await fetch(
+          `/api/chains/${currentChainId}/addresses/${address}/transactions?page=${txPage}&limit=${txLimit}`,
+        );
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        const data = await response.json();
+        setTransactions(data.data ?? data.transactions ?? []);
+        setTxMethod(data.method ?? '');
+        setTxTotal(data.total ?? data.pagination?.total ?? 0);
+        if (data.pagination) {
+          setTxTotalPages(data.pagination.totalPages ?? 1);
+        }
       }
-      const data = await response.json();
-      setTransactions(data.data || data.transactions || []);
-      setTxMethod(data.method ?? '');
-      setTxTotal(data.total ?? data.pagination?.total ?? 0);
-      if (data.pagination) {
-        setTxTotalPages(data.pagination.totalPages || 1);
+      catch (err) {
+        setTxError(err instanceof Error ? err.message : 'Failed to fetch transactions');
       }
-    }
-    catch (err) {
-      setTxError(
-        err instanceof Error ? err.message : 'Failed to fetch transactions',
-      );
-    }
-    finally {
-      setTxLoading(false);
-    }
-  }, [currentChainId, address, txPage]);
+      finally {
+        setTxLoading(false);
+      }
+    },
+    [currentChainId, address, txPage],
+  );
 
   useEffect(() => {
     fetchTransactions();
@@ -134,10 +135,8 @@ export default function AddressPage() {
       && addressData.loading.realTime
       && !addressData.persistent
       && !addressData.realTime;
-  const hasError = addressData.error.persistent || addressData.error.realTime;
-  const errorMessage
-    = addressData.error.persistent || addressData.error.realTime;
-
+  const hasError = addressData.error.persistent ?? addressData.error.realTime;
+  const errorMessage = addressData.error.persistent ?? addressData.error.realTime;
   if (!chainInfo) {
     return (
       <>
@@ -173,9 +172,7 @@ export default function AddressPage() {
 
         {isInitialLoading && <LoadingState message="Loading address information..." />}
 
-        {hasError && !isInitialLoading && (
-          <ErrorState message={`Error: ${errorMessage}`} />
-        )}
+        {hasError && !isInitialLoading && <ErrorState message={`Error: ${errorMessage}`} />}
 
         {!isInitialLoading && (
           <>
@@ -217,18 +214,16 @@ export default function AddressPage() {
                         : 'Unknown'}
                   </InfoItem>
 
-                  {addressData.persistent?.isContract
-                    && addressData.persistent.contractName && (
-                    <InfoItem label="Contract Name">
-                      {addressData.persistent.contractName}
-                    </InfoItem>
+                  {addressData.persistent?.isContract && addressData.persistent.contractName && (
+                    <InfoItem label="Contract Name">{addressData.persistent.contractName}</InfoItem>
                   )}
 
                   {addressData.persistent?.isContract
                     && addressData.persistent.verificationStatus && (
                     <InfoItem label="Verification Status">
                       {addressData.persistent.verificationStatus === 'verified' && 'Verified'}
-                      {addressData.persistent.verificationStatus === 'partial' && 'Partially Verified'}
+                      {addressData.persistent.verificationStatus === 'partial'
+                        && 'Partially Verified'}
                       {addressData.persistent.verificationStatus === 'unverified' && 'Unverified'}
                     </InfoItem>
                   )}
@@ -259,7 +254,7 @@ export default function AddressPage() {
                   {addressData.persistent?.isProxy && (
                     <>
                       <InfoItem label="Proxy Type">
-                        {addressData.persistent.proxyType || 'Standard Proxy'}
+                        {addressData.persistent.proxyType ?? 'Standard Proxy'}
                       </InfoItem>
                       {addressData.persistent.implementationAddress && (
                         <InfoItem label="Implementation">
@@ -275,14 +270,16 @@ export default function AddressPage() {
                     </InfoItem>
                   )}
 
-                  <InfoItem label="Last Updated">
-                    {new Date().toLocaleString()}
-                  </InfoItem>
+                  <InfoItem label="Last Updated">{new Date().toLocaleString()}</InfoItem>
                 </InfoGrid>
               </CardContent>
             </Card>
 
-            <Card className={css`margin-top: var(--haze-space-5);`}>
+            <Card
+              className={css`
+                margin-top: var(--haze-space-5);
+              `}
+            >
               <CardHeader>
                 <div className={headerRow}>
                   <CardTitle as="h2">Recent Transactions</CardTitle>
@@ -297,11 +294,17 @@ export default function AddressPage() {
                 </div>
               </CardHeader>
               <CardContent>
-                {txLoading && <LoadingState message="Searching for transactions via binary search..." />}
+                {txLoading && (
+                  <LoadingState message="Searching for transactions via binary search..." />
+                )}
 
                 {txError && <ErrorState message={txError} />}
 
-                {!txLoading && !txError && transactions.length === 0 && txTotal > 0 && txMethod === 'binary-search-skipped' && (
+                {!txLoading
+                  && !txError
+                  && transactions.length === 0
+                  && txTotal > 0
+                  && txMethod === 'binary-search-skipped' && (
                   <Alert variant="info">
                     Cannot discover transactions for this address. This address has
                     {' '}
@@ -311,7 +314,11 @@ export default function AddressPage() {
                   </Alert>
                 )}
 
-                {!txLoading && !txError && transactions.length === 0 && txTotal > 0 && txMethod !== 'binary-search-skipped' && (
+                {!txLoading
+                  && !txError
+                  && transactions.length === 0
+                  && txTotal > 0
+                  && txMethod !== 'binary-search-skipped' && (
                   <Alert variant="warning">
                     No transactions found in recent blocks. This address has
                     {' '}
@@ -334,7 +341,8 @@ export default function AddressPage() {
                     of ~
                     {txTotal}
                     {' '}
-                    transactions via balance-change binary search.
+                    transactions via balance-change binary
+                    search.
                   </div>
                 )}
 
@@ -365,7 +373,10 @@ export default function AddressPage() {
                                 />
                               </td>
                               <td>
-                                <Link to={`/chain/${currentChainId}/block/${tx.blockNumber}`} className={linkStyle}>
+                                <Link
+                                  to={`/chain/${currentChainId}/block/${tx.blockNumber}`}
+                                  className={linkStyle}
+                                >
                                   {parseInt(tx.blockNumber).toLocaleString()}
                                 </Link>
                               </td>
@@ -389,7 +400,12 @@ export default function AddressPage() {
                                   href={`/chain/${currentChainId}/address/${tx.toAddress}`}
                                 />
                               </td>
-                              <td className={css`font-family: var(--haze-font-mono); font-size: var(--haze-text-xs);`}>
+                              <td
+                                className={css`
+                                  font-family: var(--haze-font-mono);
+                                  font-size: var(--haze-text-xs);
+                                `}
+                              >
                                 {formatTxValue(tx.value)}
                               </td>
                             </tr>

@@ -14,7 +14,6 @@ import {
   PaginationParams,
   PaginatedResult,
   EventStatistics,
-  ChainDatabaseError,
   EventDecodingError,
 } from '../types/events';
 
@@ -63,9 +62,21 @@ export class EventQueryService {
         includeTotal = true,
       } = options;
 
-      // 构建查询参数
-      const queryParams = {
-        ...filters,
+      const { fromBlock, toBlock, fromTimestamp, toTimestamp, ...restFilters } = filters;
+      const queryParams: {
+        eventName?: string;
+        fromBlock?: string;
+        toBlock?: string;
+        fromTimestamp?: string;
+        toTimestamp?: string;
+        contractAddress?: `0x${string}`;
+        [key: string]: unknown;
+      } = {
+        ...restFilters,
+        fromBlock: fromBlock !== undefined ? String(fromBlock) : undefined,
+        toBlock: toBlock !== undefined ? String(toBlock) : undefined,
+        fromTimestamp: fromTimestamp !== undefined ? String(fromTimestamp) : undefined,
+        toTimestamp: toTimestamp !== undefined ? String(toTimestamp) : undefined,
         limit: pagination.limit,
         cursor: pagination.cursor,
         sort: sort.direction,
@@ -90,8 +101,7 @@ export class EventQueryService {
         try {
           const stats = await this.eventTableManager.getEventStatistics(tableName);
           total = stats.totalEvents;
-        }
-        catch (error) {
+        } catch (error) {
           logger.warn({ err: error }, 'Failed to get total count');
         }
       }
@@ -103,8 +113,7 @@ export class EventQueryService {
         nextCursor: result.nextCursor,
         prevCursor: undefined, // 可以根据需要实现
       };
-    }
-    catch (error) {
+    } catch (error) {
       const queryTime = performance.now() - startTime;
       performanceMonitor.recordQuery('event_query', queryTime, false);
 
@@ -139,10 +148,9 @@ export class EventQueryService {
             SELECT COUNT(DISTINCT block_number) as block_count
             FROM ${tableName}
           `);
-          const blockCount = Number(result[0]?.block_count || 0);
+          const blockCount = Number((result[0] as { block_count?: number })?.block_count ?? 0);
           return blockCount > 0 ? stats.totalEvents / blockCount : 0;
-        }
-        catch {
+        } catch {
           return 0;
         }
       })();
@@ -152,13 +160,12 @@ export class EventQueryService {
         eventsByType,
         eventsByBlockRange: [],
         averageEventsPerBlock: avgEventsPerBlock,
-        uniqueAddresses: stats.uniqueAddresses || 0,
+        uniqueAddresses: stats.uniqueAddresses ?? 0,
         storageSize: 0,
         lastIndexedBlock: undefined,
         lastIndexedAt: stats.newestEvent,
       };
-    }
-    catch (error) {
+    } catch (error) {
       const queryTime = performance.now() - startTime;
       performanceMonitor.recordQuery('event_statistics', queryTime, false);
 
@@ -196,8 +203,7 @@ export class EventQueryService {
         acc[row.event_name] = Number(row.count);
         return acc;
       }, {});
-    }
-    catch (error) {
+    } catch (error) {
       const queryTime = performance.now() - startTime;
       performanceMonitor.recordQuery('events_by_type', queryTime, false);
 
@@ -257,8 +263,7 @@ export class EventQueryService {
         timeRange: row.time_range,
         count: Number(row.count),
       }));
-    }
-    catch (error) {
+    } catch (error) {
       const queryTime = performance.now() - startTime;
       performanceMonitor.recordQuery('events_by_time_range', queryTime, false);
 
@@ -317,8 +322,7 @@ export class EventQueryService {
         count: Number(row.count),
         percentage: Number(row.percentage),
       }));
-    }
-    catch (error) {
+    } catch (error) {
       const queryTime = performance.now() - startTime;
       performanceMonitor.recordQuery('top_addresses', queryTime, false);
 
@@ -356,7 +360,7 @@ export class EventQueryService {
       `;
 
       const searchPattern = `%${searchTerm}%`;
-      const limit = options.pagination?.limit || 50;
+      const limit = options.pagination?.limit ?? 50;
 
       const result = await this.chainDb.query(searchQuery, [
         searchPattern,
@@ -372,13 +376,14 @@ export class EventQueryService {
       const events = hasMore ? result.slice(0, -1) : result;
 
       return {
-        data: events,
+        data: events as Record<string, unknown>[],
         total: events.length,
         hasMore,
-        nextCursor: hasMore ? events[events.length - 1]?.block_timestamp : undefined,
+        nextCursor: hasMore
+          ? String((events[events.length - 1] as Record<string, unknown>)?.block_timestamp)
+          : undefined,
       };
-    }
-    catch (error) {
+    } catch (error) {
       const queryTime = performance.now() - startTime;
       performanceMonitor.recordQuery('event_search', queryTime, false);
 
@@ -395,22 +400,28 @@ export class EventQueryService {
   /**
    * 获取事件的详细信息
    */
-  async getEventDetails(tableName: string, blockHash: string, logIndex: number): Promise<any | null> {
+  async getEventDetails(
+    tableName: string,
+    blockHash: string,
+    logIndex: number,
+  ): Promise<any | null> {
     const startTime = performance.now();
     const performanceMonitor = multiChainPerformanceManager.getChainMonitor(this.chainId);
 
     try {
-      const result = await this.chainDb.query(`
+      const result = await this.chainDb.query(
+        `
         SELECT * FROM ${tableName}
         WHERE block_hash = ? AND log_index = ?
-      `, [blockHash, logIndex]);
+      `,
+        [blockHash, logIndex],
+      );
 
       const queryTime = performance.now() - startTime;
       performanceMonitor.recordQuery('event_details', queryTime, true);
 
       return result.length > 0 ? result[0] : null;
-    }
-    catch (error) {
+    } catch (error) {
       const queryTime = performance.now() - startTime;
       performanceMonitor.recordQuery('event_details', queryTime, false);
 
@@ -427,28 +438,26 @@ export class EventQueryService {
   /**
    * 获取相似事件
    */
-  async getSimilarEvents(
-    tableName: string,
-    eventName: string,
-    limit: number = 10,
-  ): Promise<any[]> {
+  async getSimilarEvents(tableName: string, eventName: string, limit: number = 10): Promise<any[]> {
     const startTime = performance.now();
     const performanceMonitor = multiChainPerformanceManager.getChainMonitor(this.chainId);
 
     try {
-      const result = await this.chainDb.query(`
+      const result = await this.chainDb.query(
+        `
         SELECT * FROM ${tableName}
         WHERE event_name = ?
         ORDER BY block_timestamp DESC
         LIMIT ?
-      `, [eventName, limit]);
+      `,
+        [eventName, limit],
+      );
 
       const queryTime = performance.now() - startTime;
       performanceMonitor.recordQuery('similar_events', queryTime, true);
 
       return result;
-    }
-    catch (error) {
+    } catch (error) {
       const queryTime = performance.now() - startTime;
       performanceMonitor.recordQuery('similar_events', queryTime, false);
 
@@ -475,8 +484,7 @@ export class EventQueryService {
   async validateTable(tableName: string): Promise<boolean> {
     try {
       return await this.eventTableManager.tableExists(tableName);
-    }
-    catch (error) {
+    } catch (error) {
       logger.warn({ err: error, tableName }, 'Failed to validate table');
       return false;
     }
@@ -491,8 +499,7 @@ export class EventQueryService {
   }> {
     try {
       return await this.eventTableManager.getTableSchema(tableName);
-    }
-    catch (error) {
+    } catch (error) {
       throw new EventDecodingError(
         `Failed to get table schema: ${error}`,
         undefined,

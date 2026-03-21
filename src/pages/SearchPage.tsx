@@ -2,17 +2,23 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { css } from '@linaria/core';
 import { Input } from 'haze-ui';
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardContent,
-} from '../components/ui/Card';
+import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Badge } from '../components/ui/Badge';
 import { ErrorState } from '../components/ui/ErrorState';
 import { apiClient } from '../api/client';
 import { detectSearchType, sanitizeInput } from '@/utils/validation';
+import type { Block, Transaction, AddressInfo } from '@/types/blockchain';
+
+type SearchData = Block | Transaction | AddressInfo;
+
+type SearchResult = {
+  found: boolean;
+  type: string;
+  data?: SearchData;
+  chainId?: number;
+  supportedChains?: Array<{ chainId: number; name: string }>;
+};
 
 const searchContainer = css`
   max-width: 600px;
@@ -76,7 +82,11 @@ const chainId = css`
 
 const exampleQueries = [
   { label: 'Address', value: '0x742d35Cc6634C0532925a3b8D489319BaAE7fe', type: 'address' },
-  { label: 'Tx Hash', value: '0x5c504ed432cb51138bcf09aa5e8a410dd4a1e204ef84bfed1be16dfba1b22060', type: 'hash' },
+  {
+    label: 'Tx Hash',
+    value: '0x5c504ed432cb51138bcf09aa5e8a410dd4a1e204ef84bfed1be16dfba1b22060',
+    type: 'hash',
+  },
   { label: 'Block Number', value: '18000000', type: 'block' },
   { label: 'ENS', value: 'vitalik.eth', type: 'ens' },
 ];
@@ -84,7 +94,7 @@ const exampleQueries = [
 export function SearchPage() {
   const [query, setQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
-  const [result, setResult] = useState<any>(null);
+  const [result, setResult] = useState<SearchResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
 
@@ -95,7 +105,9 @@ export function SearchPage() {
     const searchType = detectSearchType(sanitized);
 
     if (searchType === 'unknown') {
-      setError('Invalid search format. Please enter a valid address, transaction hash, or block number.');
+      setError(
+        'Invalid search format. Please enter a valid address, transaction hash, or block number.',
+      );
       return;
     }
 
@@ -104,17 +116,20 @@ export function SearchPage() {
     setResult(null);
 
     try {
-      const searchResult = await apiClient.search(sanitized);
+      const searchResult = (await apiClient.search(sanitized)) as SearchResult;
       setResult(searchResult);
 
-      if (searchResult.type === 'address' && searchResult.data) {
-        navigate(`/chain/${searchResult.data.chainId}/address/${searchResult.data.address}`);
+      if (searchResult.found && searchResult.type === 'address' && searchResult.data) {
+        const data = searchResult.data as AddressInfo;
+        navigate(`/chain/${data.chainId}/address/${data.address}`);
       }
-      else if (searchResult.type === 'transaction' && searchResult.data) {
-        navigate(`/chain/${searchResult.data.chainId}/tx/${searchResult.data.hash}`);
+      else if (searchResult.found && searchResult.type === 'transaction' && searchResult.data) {
+        const data = searchResult.data as Transaction;
+        navigate(`/chain/${data.chainId}/tx/${data.hash}`);
       }
-      else if (searchResult.type === 'block' && searchResult.data) {
-        navigate(`/chain/${searchResult.data.chainId}/block/${searchResult.data.number}`);
+      else if (searchResult.found && searchResult.type === 'block' && searchResult.data) {
+        const data = searchResult.data as Block;
+        navigate(`/chain/${data.chainId}/block/${data.number}`);
       }
     }
     catch (err) {
@@ -133,7 +148,10 @@ export function SearchPage() {
     setError(null);
 
     try {
-      const searchResult = await apiClient.searchInChain(selectedChainId, sanitized);
+      const searchResult = (await apiClient.searchInChain(
+        selectedChainId,
+        sanitized,
+      )) as SearchResult;
 
       if (searchResult.type === 'address') {
         navigate(`/chain/${selectedChainId}/address/${sanitized}`);
@@ -177,10 +195,7 @@ export function SearchPage() {
               value={query}
               onChange={e => setQuery(e.target.value)}
             />
-            <Button
-              loading={isSearching}
-              disabled={!query.trim() || isSearching}
-            >
+            <Button loading={isSearching} disabled={!query.trim() || isSearching}>
               Search
             </Button>
           </form>
@@ -210,12 +225,17 @@ export function SearchPage() {
             <CardTitle>Select Network</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className={css`color: var(--haze-color-text-secondary); margin-bottom: var(--haze-space-4);`}>
+            <p
+              className={css`
+                color: var(--haze-color-text-secondary);
+                margin-bottom: var(--haze-space-4);
+              `}
+            >
               Please select a blockchain network to search:
             </p>
 
             <div className={chainSelector}>
-              {result.supportedChains?.map((chain: any) => (
+              {result.supportedChains?.map(chain => (
                 <div
                   key={chain.chainId}
                   className={chainOption}

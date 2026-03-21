@@ -21,31 +21,31 @@ export const POPULAR_CHAINS: Chain[] = [
 
 // 根据chainId获取链信息
 export function getChainInfo(chainId: number): Chain | null {
-  return SUPPORTED_CHAINS.find(chain => chain.id === chainId) || null;
+  return SUPPORTED_CHAINS.find(chain => chain.id === chainId) ?? null;
 }
 
 // 获取链名称
 export function getChainName(chainId: number): string {
   const chain = getChainInfo(chainId);
-  return chain?.name || `Chain ${chainId}`;
+  return chain?.name ?? `Chain ${chainId}`;
 }
 
 // 获取链的原生代币符号
 export function getChainSymbol(chainId: number): string {
   const chain = getChainInfo(chainId);
-  return chain?.nativeCurrency.symbol || 'ETH';
+  return chain?.nativeCurrency.symbol ?? 'ETH';
 }
 
 // 获取链的区块浏览器URL
 export function getChainExplorerUrl(chainId: number): string {
   const chain = getChainInfo(chainId);
-  return chain?.blockExplorers?.default?.url || '';
+  return chain?.blockExplorers?.default?.url ?? '';
 }
 
 // 获取默认RPC URL
 export function getDefaultRpcUrl(chainId: number): string {
   const chain = getChainInfo(chainId);
-  return chain?.rpcUrls.default.http[0] || '';
+  return chain?.rpcUrls.default.http[0] ?? '';
 }
 
 // 获取所有支持的链ID
@@ -69,10 +69,7 @@ export type UserRpcConfig = {
 };
 
 // 获取有效的RPC URL（自定义优先，否则viem默认）
-export function getEffectiveRpcUrl(
-  chainId: number,
-  userConfig?: UserRpcConfig,
-): string {
+export function getEffectiveRpcUrl(chainId: number, userConfig?: UserRpcConfig): string {
   if (userConfig?.customRpcUrl) {
     return userConfig.customRpcUrl;
   }
@@ -86,9 +83,7 @@ export function isPopularChain(chainId: number): boolean {
 }
 
 // 获取链的类型（主网/测试网）
-export function getChainType(
-  chainId: number,
-): 'mainnet' | 'testnet' | 'unknown' {
+export function getChainType(chainId: number): 'mainnet' | 'testnet' | 'unknown' {
   const chain = getChainInfo(chainId);
   if (!chain) return 'unknown';
 
@@ -174,16 +169,10 @@ export function searchChains(query: string): Chain[] {
     if (chain.id.toString().includes(query)) return true;
 
     // 代币符号匹配
-    if (chain.nativeCurrency.symbol.toLowerCase().includes(lowerQuery))
-      return true;
+    if (chain.nativeCurrency.symbol.toLowerCase().includes(lowerQuery)) return true;
 
     // 别名匹配（如果有的话）
-    if (
-      chain.name
-        .toLowerCase()
-        .replace(/\s+/g, '')
-        .includes(lowerQuery.replace(/\s+/g, ''))
-    )
+    if (chain.name.toLowerCase().replace(/\s+/g, '').includes(lowerQuery.replace(/\s+/g, '')))
       return true;
 
     return false;
@@ -289,8 +278,12 @@ export const POPULAR_MULTI_CHAINS = POPULAR_CHAINS.map(chain => chain.id);
 
 // 按类型分组的链
 export const CHAINS_BY_TYPE = {
-  mainnet: SUPPORTED_CHAINS.filter(chain => getChainType(chain.id) === 'mainnet').map(chain => chain.id),
-  testnet: SUPPORTED_CHAINS.filter(chain => getChainType(chain.id) === 'testnet').map(chain => chain.id),
+  mainnet: SUPPORTED_CHAINS.filter(chain => getChainType(chain.id) === 'mainnet').map(
+    chain => chain.id,
+  ),
+  testnet: SUPPORTED_CHAINS.filter(chain => getChainType(chain.id) === 'testnet').map(
+    chain => chain.id,
+  ),
 };
 
 // 获取特定类型的链
@@ -307,8 +300,6 @@ export function isChainDatabaseIsolationEnabled(chainId: number): boolean {
 // 获取链的数据目录
 export function getChainDataDirectory(chainId: number): string {
   const chainType = getChainType(chainId);
-  const chainName = getChainName(chainId);
-  const safeChainName = chainName.toLowerCase().replace(/\s+/g, '-');
   return `data/chains/${chainType}`;
 }
 

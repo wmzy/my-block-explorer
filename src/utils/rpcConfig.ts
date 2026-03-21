@@ -122,15 +122,12 @@ export function getRpcConfigs(): RpcConfig[] {
       const defaultConfigs = DEFAULT_RPC_CONFIGS.filter(
         defaultConfig =>
           !configs.some(
-            config =>
-              config.chainId === defaultConfig.chainId
-              && config.url === defaultConfig.url,
+            config => config.chainId === defaultConfig.chainId && config.url === defaultConfig.url,
           ),
       );
       return [...defaultConfigs, ...configs];
     }
-  }
-  catch (error) {
+  } catch (error) {
     console.error('Failed to load RPC configs:', error);
   }
 
@@ -149,16 +146,14 @@ export function saveRpcConfig(config: RpcConfig): void {
 
     if (existingIndex >= 0) {
       configs[existingIndex] = config;
-    }
-    else {
+    } else {
       configs.push(config);
     }
 
     // 只保存用户自定义的配置
     const customConfigs = configs.filter(c => c.isCustom);
     localStorage.setItem(RPC_CONFIG_KEY, JSON.stringify(customConfigs));
-  }
-  catch (error) {
+  } catch (error) {
     console.error('Failed to save RPC config:', error);
   }
 }
@@ -175,8 +170,7 @@ export function deleteRpcConfig(chainId: number, url: string): void {
 
     const customConfigs = filteredConfigs.filter(c => c.isCustom);
     localStorage.setItem(RPC_CONFIG_KEY, JSON.stringify(customConfigs));
-  }
-  catch (error) {
+  } catch (error) {
     console.error('Failed to delete RPC config:', error);
   }
 }
@@ -193,7 +187,7 @@ export function getRpcConfigsForChain(chainId: number): RpcConfig[] {
  */
 export function getDefaultRpcConfig(chainId: number): RpcConfig | null {
   const configs = getRpcConfigsForChain(chainId);
-  return configs.find(config => config.isDefault) || configs[0] || null;
+  return configs.find(config => config.isDefault) ?? configs[0] ?? null;
 }
 
 /**
@@ -236,7 +230,7 @@ export async function testRpcConnection(config: RpcConfig): Promise<RpcStatus> {
         chainId: config.chainId,
         url: config.url,
         status: 'error',
-        error: data.error.message || 'RPC Error',
+        error: data.error.message ?? 'RPC Error',
         lastChecked: new Date(),
       };
     }
@@ -258,10 +252,8 @@ export async function testRpcConnection(config: RpcConfig): Promise<RpcStatus> {
       latency,
       lastChecked: new Date(),
     };
-  }
-  catch (error) {
-    const errorMessage
-      = error instanceof Error ? error.message : 'Unknown error';
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     return {
       chainId: config.chainId,
       url: config.url,
@@ -280,7 +272,7 @@ export async function testMultipleRpcConnections(
 ): Promise<Map<string, RpcStatus>> {
   const results = new Map<string, RpcStatus>();
 
-  const promises = configs.map(async (config) => {
+  const promises = configs.map(async config => {
     const status = await testRpcConnection(config);
     const key = `${config.chainId}-${config.url}`;
     results.set(key, status);

@@ -3,17 +3,15 @@
  * 负责解码以太坊事件日志并提供类型安全的解码结果
  */
 
-import { decodeEventLog, formatAbiItem, Log, Abi } from 'viem';
-import { keccak256 } from 'viem/utils';
+import { decodeEventLog, Log, Abi, toHex, keccak256 } from 'viem';
 import {
   DecodedEvent,
   EventDecodingError,
   DecodedEventData,
-  DEFAULT_TYPE_MAPPING,
-  ColumnType,
   EventDataTransformer,
   EventDataValidator,
   ValidationResult,
+  EventParameter,
 } from '../types/events';
 
 /**
@@ -75,8 +73,8 @@ export class EventDecodingService {
       if (!decodedLog) {
         throw new EventDecodingError(
           'Event decoding returned null',
-          abiEvent[0]?.name,
-          log.address,
+          log.blockHash ?? undefined,
+          log.logIndex ?? undefined,
           chainId,
         );
       }
@@ -91,18 +89,18 @@ export class EventDecodingService {
       const decodedEvent: DecodedEvent = {
         chainId,
         contractAddress: log.address,
-        eventName: decodedLog.eventName,
+        eventName: decodedLog.eventName ?? 'Unknown',
         eventSignature: this.getEventSignature(abiEvent),
 
         // 交易信息
-        txHash: log.transactionHash,
+        txHash: log.transactionHash ?? '0x',
         blockNumber: log.blockNumber!,
         blockHash: log.blockHash!,
         transactionIndex: log.transactionIndex!,
         logIndex: log.logIndex!,
 
         // 时间信息
-        blockTimestamp: blockTimestamp || 0,
+        blockTimestamp: blockTimestamp ?? 0,
 
         // 解码数据
         args: formattedArgs,
@@ -115,13 +113,12 @@ export class EventDecodingService {
       };
 
       return decodedEvent;
-    }
-    catch (error) {
+    } catch (error) {
       const eventError = error instanceof Error ? error : new Error(String(error));
       throw new EventDecodingError(
         `Failed to decode event: ${eventError.message}`,
-        abiEvent[0]?.name,
-        log.address,
+        log.blockHash ?? undefined,
+        log.logIndex ?? undefined,
         chainId,
         eventError,
       );
@@ -146,14 +143,14 @@ export class EventDecodingService {
       try {
         // 根据主题0找到对应的ABI事件定义
         const eventSignature = log.topics[0];
-        const abiEvent = abiEvents.get(eventSignature);
+        const abiEvent = eventSignature ? abiEvents.get(eventSignature) : undefined;
 
         if (!abiEvent) {
           errors.push(
             new EventDecodingError(
-              `No ABI found for event signature: ${eventSignature}`,
-              undefined,
-              log.address,
+              `No ABI found for event signature: ${eventSignature ?? 'unknown'}`,
+              log.blockHash ?? undefined,
+              log.logIndex ?? undefined,
               chainId,
             ),
           );
@@ -162,9 +159,9 @@ export class EventDecodingService {
 
         const decodedEvent = await this.decodeLog(log, abiEvent, chainId);
         results.push(decodedEvent);
-      }
-      catch (error) {
-        const eventError = error instanceof EventDecodingError ? error : new EventDecodingError(String(error));
+      } catch (error) {
+        const eventError =
+          error instanceof EventDecodingError ? error : new EventDecodingError(String(error));
         errors.push(eventError);
       }
 
@@ -188,7 +185,7 @@ export class EventDecodingService {
     const signature = `${eventParams[0]?.name || 'Unknown'}(${eventParams
       .map(p => p.type)
       .join(',')})`;
-    return keccak256(signature);
+    return keccak256(toHex(signature));
   }
 
   /**
@@ -202,38 +199,32 @@ export class EventDecodingService {
       const abiMatch = sourceCode.match(/(interface|contract)\s+\w+\s*{[\s\S]*?(?=\})/g);
 
       if (!abiMatch) {
-        throw new EventDecodingError(
-          'No ABI found in source code',
-          'Unknown',
-          '0x0',
-          0,
-        );
+        throw new EventDecodingError('No ABI found in source code', undefined, undefined, 0);
       }
 
       // 提取ABI项（event、function等）
       const abiItems: any[] = [];
 
       // 匹配event定义
-      const eventMatches = sourceCode.match(/event\s+\w+\([^)]+\)\s*(?:indexed\s*\w+[^;]*;|;)/g) || [];
+      const eventMatches =
+        sourceCode.match(/event\s+\w+\([^)]+\)\s*(?:indexed\s*\w+[^;]*;|;)/g) ?? [];
       for (const eventDef of eventMatches) {
         try {
           const abiItem = this.parseEventAbi(eventDef);
           if (abiItem) {
             abiItems.push(abiItem);
           }
-        }
-        catch (error) {
+        } catch (error) {
           console.warn('Failed to parse event ABI:', eventDef, error);
         }
       }
 
       return abiItems.length > 0 ? abiItems : null;
-    }
-    catch (error) {
+    } catch (error) {
       throw new EventDecodingError(
         `Failed to extract ABI from source: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        'Unknown',
-        '0x0',
+        undefined,
+        undefined,
         0,
       );
     }
@@ -287,8 +278,7 @@ export class EventDecodingService {
         name: eventName,
         inputs,
       };
-    }
-    catch (error) {
+    } catch (error) {
       console.error('Error parsing event ABI:', error);
       return null;
     }
@@ -345,10 +335,9 @@ export class EventDecodingService {
         }
 
         // 转换数据
-        const transformedValue = this.transformParameter(param, validation.sanitizedValue || value);
+        const transformedValue = this.transformParameter(param, validation.sanitizedValue ?? value);
         formatted[param.name] = transformedValue;
-      }
-      catch (error) {
+      } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         console.warn(`Failed to format parameter ${param.name}: ${errorMessage}`);
         formatted[param.name] = value; // 使用原始值作为后备
@@ -398,8 +387,7 @@ export class EventDecodingService {
       try {
         const num = BigInt(value);
         return { valid: true, sanitizedValue: num };
-      }
-      catch {
+      } catch {
         return { valid: false, error: 'Invalid number format' };
       }
     }
@@ -507,12 +495,27 @@ export class EventDecodingService {
   private initializeDefaultHandlers(): void {
     // 注册默认转换器
     this.registerTransformer('uint256', {
-      transform: (param, value) => value.toString(),
-      reverseTransform: (param, value) => BigInt(value),
+      transform: (param, value) => {
+        if (typeof value === 'bigint' || typeof value === 'number' || typeof value === 'string') {
+          return value.toString();
+        }
+        return String(value);
+      },
+      reverseTransform: (param, value) => {
+        if (typeof value === 'string' || typeof value === 'number' || typeof value === 'bigint') {
+          return BigInt(value);
+        }
+        return BigInt(0);
+      },
     });
 
     this.registerTransformer('address', {
-      transform: (param, value) => value.toLowerCase(),
+      transform: (param, value) => {
+        if (typeof value === 'string') {
+          return value.toLowerCase();
+        }
+        return value;
+      },
       reverseTransform: (param, value) => value,
     });
 
@@ -534,10 +537,12 @@ export class EventDecodingService {
     this.registerValidator('uint256', {
       validate: (param, value) => {
         try {
-          const num = BigInt(value);
-          return { valid: true, sanitizedValue: num };
-        }
-        catch {
+          if (typeof value === 'string' || typeof value === 'number' || typeof value === 'bigint') {
+            const num = BigInt(value);
+            return { valid: true, sanitizedValue: num };
+          }
+          return { valid: false, error: 'Invalid uint256 format' };
+        } catch {
           return { valid: false, error: 'Invalid uint256 format' };
         }
       },

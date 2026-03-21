@@ -69,8 +69,7 @@ const getBalanceAt = async (
   client: PublicClient,
   address: Address,
   blockNumber: bigint,
-): Promise<bigint> =>
-  client.getBalance({ address, blockNumber });
+): Promise<bigint> => client.getBalance({ address, blockNumber });
 
 /**
  * Scan a contiguous range of blocks and extract transactions involving the target address.
@@ -97,11 +96,9 @@ const scanBlocksForAddress = async (
 
     const batch = blockNumbers.slice(i, i + BATCH_CONCURRENCY);
     const blocks = await Promise.all(
-      batch.map(async (bn) => {
+      batch.map(async bn => {
         rpcCallCount.value++;
-        return client
-          .getBlock({ blockNumber: bn, includeTransactions: true })
-          .catch(() => null);
+        return client.getBlock({ blockNumber: bn, includeTransactions: true }).catch(() => null);
       }),
     );
 
@@ -118,9 +115,7 @@ const scanBlocksForAddress = async (
             fromAddress: tx.from,
             toAddress: tx.to ?? '',
             value: tx.value.toString(),
-            timestamp: new Date(
-              Number(block.timestamp) * 1000,
-            ).toISOString(),
+            timestamp: new Date(Number(block.timestamp) * 1000).toISOString(),
           });
         }
       }
@@ -166,14 +161,24 @@ const binarySearchBalanceChanges = async (
 
   if (rightChanged) {
     const rightResults = await binarySearchBalanceChanges(
-      client, address, mid, hi, limit - results.length, rpcCallCount,
+      client,
+      address,
+      mid,
+      hi,
+      limit - results.length,
+      rpcCallCount,
     );
     results.push(...rightResults);
   }
 
   if (leftChanged && results.length < limit) {
     const leftResults = await binarySearchBalanceChanges(
-      client, address, lo, mid, limit - results.length, rpcCallCount,
+      client,
+      address,
+      lo,
+      mid,
+      limit - results.length,
+      rpcCallCount,
     );
     results.push(...leftResults);
   }
@@ -203,12 +208,7 @@ const createAddressService = (deps: AddressServiceDeps) => {
           indexedAt: indexedAddresses.indexedAt,
         })
         .from(indexedAddresses)
-        .where(
-          and(
-            eq(indexedAddresses.chainId, chainId),
-            eq(indexedAddresses.address, address),
-          ),
-        )
+        .where(and(eq(indexedAddresses.chainId, chainId), eq(indexedAddresses.address, address)))
         .limit(1);
 
       if (result.length === 0) {
@@ -220,39 +220,29 @@ const createAddressService = (deps: AddressServiceDeps) => {
 
       const persistentData: PersistentAddressData = {
         isContract,
-        firstSeenBlock: row.firstSeen || undefined,
-        firstSeenTimestamp: row.indexedAt || undefined,
+        firstSeenBlock: row.firstSeen ?? undefined,
+        firstSeenTimestamp: row.indexedAt ?? undefined,
       };
 
       if (isContract) {
         try {
-          const sourceInfo = await contractSourceService.getContractSource(
-            chainId,
-            address,
-          );
+          const sourceInfo = await contractSourceService.getContractSource(chainId, address);
           if (sourceInfo) {
             persistentData.contractName = sourceInfo.name;
             persistentData.verificationStatus = sourceInfo.verificationStatus;
-            persistentData.sourceCodeAvailable
-              = sourceInfo.sourceCode.length > 0;
+            persistentData.sourceCodeAvailable = sourceInfo.sourceCode.length > 0;
             persistentData.compilerVersion = sourceInfo.compilerVersion;
             persistentData.isProxy = sourceInfo.isProxy;
             persistentData.proxyType = sourceInfo.proxyType;
-            persistentData.implementationAddress
-              = sourceInfo.implementationAddress;
+            persistentData.implementationAddress = sourceInfo.implementationAddress;
           }
-        }
-        catch (error) {
-          console.warn(
-            `Failed to get contract source from cache for ${address}:`,
-            error,
-          );
+        } catch (error) {
+          console.warn(`Failed to get contract source from cache for ${address}:`, error);
         }
       }
 
       return persistentData;
-    }
-    catch (error) {
+    } catch (error) {
       console.warn(`Failed to get persistent data from DB:`, error);
       return null;
     }
@@ -270,19 +260,18 @@ const createAddressService = (deps: AddressServiceDeps) => {
           chainId,
           address,
           type: persistentData.isContract ? 'contract' : 'EOA',
-          firstSeen: persistentData.firstSeenBlock || null,
-          indexedAt: persistentData.firstSeenTimestamp || new Date(),
+          firstSeen: persistentData.firstSeenBlock ?? null,
+          indexedAt: persistentData.firstSeenTimestamp ?? new Date(),
         })
         .onConflictDoUpdate({
           target: [indexedAddresses.chainId, indexedAddresses.address],
           set: {
             type: persistentData.isContract ? 'contract' : 'EOA',
-            firstSeen: persistentData.firstSeenBlock || null,
-            indexedAt: persistentData.firstSeenTimestamp || new Date(),
+            firstSeen: persistentData.firstSeenBlock ?? null,
+            indexedAt: persistentData.firstSeenTimestamp ?? new Date(),
           },
         });
-    }
-    catch (error) {
+    } catch (error) {
       console.warn('Failed to save persistent data to DB:', error);
     }
   };
@@ -306,58 +295,47 @@ const createAddressService = (deps: AddressServiceDeps) => {
         let code: string | undefined;
         try {
           code = await client.getCode({ address });
-        }
-        catch (error) {
+        } catch (error) {
           console.warn(`Failed to get contract code for ${address}:`, error);
           throw new Error(
             `Failed to determine contract status for ${address}: ${error instanceof Error ? error.message : String(error)}`,
+            { cause: error },
           );
         }
         const isContract = Boolean(code && code !== '0x' && code.length > 2);
         console.log(
-          `🔍 Contract code check for ${address}: ${isContract ? 'CONTRACT' : 'EOA'} (code length: ${code?.length || 0})`,
+          `🔍 Contract code check for ${address}: ${isContract ? 'CONTRACT' : 'EOA'} (code length: ${code?.length ?? 0})`,
         );
 
         const persistentData: PersistentAddressData = { isContract };
 
         if (isContract) {
           try {
-            const creationInfo
-              = await contractSourceService.getContractCreationInfo(
-                chainId,
-                address,
-              );
+            const creationInfo = await contractSourceService.getContractCreationInfo(
+              chainId,
+              address,
+            );
             if (creationInfo) {
               persistentData.contractCreationTx = creationInfo.txHash;
               persistentData.contractCreationBlock = creationInfo.blockNumber;
               persistentData.contractCreator = creationInfo.creator;
             }
-          }
-          catch (error) {
-            console.warn(
-              `Failed to get contract creation info for ${address}:`,
-              error,
-            );
+          } catch (error) {
+            console.warn(`Failed to get contract creation info for ${address}:`, error);
           }
 
           try {
-            const sourceInfo = await contractSourceService.getContractSource(
-              chainId,
-              address,
-            );
+            const sourceInfo = await contractSourceService.getContractSource(chainId, address);
             if (sourceInfo) {
               persistentData.contractName = sourceInfo.name;
               persistentData.verificationStatus = sourceInfo.verificationStatus;
-              persistentData.sourceCodeAvailable
-                = sourceInfo.sourceCode.length > 0;
+              persistentData.sourceCodeAvailable = sourceInfo.sourceCode.length > 0;
               persistentData.compilerVersion = sourceInfo.compilerVersion;
               persistentData.isProxy = sourceInfo.isProxy;
               persistentData.proxyType = sourceInfo.proxyType;
-              persistentData.implementationAddress
-                = sourceInfo.implementationAddress;
+              persistentData.implementationAddress = sourceInfo.implementationAddress;
             }
-          }
-          catch (error) {
+          } catch (error) {
             console.warn(`Failed to get contract source for ${address}:`, error);
           }
         }
@@ -368,8 +346,7 @@ const createAddressService = (deps: AddressServiceDeps) => {
         console.log(`✅ Cached persistent data to DB for ${address}`);
 
         return persistentData;
-      }
-      catch (error) {
+      } catch (error) {
         console.error(`Failed to get persistent data for ${address}:`, error);
         throw error;
       }
@@ -381,7 +358,11 @@ const createAddressService = (deps: AddressServiceDeps) => {
       limit = 20,
       offset = 0,
     ): Promise<{ transactions: DiscoveredTransaction[]; total: number; method: string }> => {
-      const doSearch = async (): Promise<{ transactions: DiscoveredTransaction[]; total: number; method: string }> => {
+      const doSearch = async (): Promise<{
+        transactions: DiscoveredTransaction[];
+        total: number;
+        method: string;
+      }> => {
         const client = await rpcManager.getClient(chainId);
         const [txCount, latestBlock, currentBalance] = await Promise.all([
           client.getTransactionCount({ address }),
@@ -395,8 +376,8 @@ const createAddressService = (deps: AddressServiceDeps) => {
 
         if (currentBalance === 0n) {
           logger.info(
-            `Skipping binary search for ${address}: balance is 0, `
-            + `algorithm relies on balance changes`,
+            `Skipping binary search for ${address}: balance is 0, ` +
+            `algorithm relies on balance changes`,
           );
           return {
             transactions: [],
@@ -412,12 +393,17 @@ const createAddressService = (deps: AddressServiceDeps) => {
         const fetchLimit = offset + limit;
 
         logger.info(
-          `Binary search for ${address} on chain ${chainId}: `
-          + `txCount=${txCount}, range=[${lo}..${latestBlock}], fetchLimit=${fetchLimit}`,
+          `Binary search for ${address} on chain ${chainId}: ` +
+          `txCount=${txCount}, range=[${lo}..${latestBlock}], fetchLimit=${fetchLimit}`,
         );
 
         const allTxs = await binarySearchBalanceChanges(
-          client, address, lo, latestBlock, fetchLimit, rpcCallCount,
+          client,
+          address,
+          lo,
+          latestBlock,
+          fetchLimit,
+          rpcCallCount,
         );
 
         allTxs.sort((a, b) => {
@@ -426,15 +412,13 @@ const createAddressService = (deps: AddressServiceDeps) => {
           return 0;
         });
 
-        const deduped = allTxs.filter(
-          (tx, i, arr) => i === 0 || tx.hash !== arr[i - 1].hash,
-        );
+        const deduped = allTxs.filter((tx, i, arr) => i === 0 || tx.hash !== arr[i - 1].hash);
 
         const paged = deduped.slice(offset, offset + limit);
 
         logger.info(
-          `Binary search complete: found ${deduped.length} txs, `
-          + `returning ${paged.length} (offset=${offset}), rpcCalls=${rpcCallCount.value}`,
+          `Binary search complete: found ${deduped.length} txs, ` +
+          `returning ${paged.length} (offset=${offset}), rpcCalls=${rpcCallCount.value}`,
         );
 
         return {
@@ -446,8 +430,7 @@ const createAddressService = (deps: AddressServiceDeps) => {
 
       try {
         return await withTimeout(doSearch(), TX_SEARCH_TIMEOUT_MS, 'Address transaction search');
-      }
-      catch (error) {
+      } catch (error) {
         logger.error({ err: error }, `Binary search failed for ${address}`);
         return {
           transactions: [],
@@ -457,14 +440,8 @@ const createAddressService = (deps: AddressServiceDeps) => {
       }
     },
 
-    getAddressInfo: async (
-      chainId: number,
-      address: Address,
-    ): Promise<AddressInfo> => {
-      const persistentData = await service.getPersistentAddressData(
-        chainId,
-        address,
-      );
+    getAddressInfo: async (chainId: number, address: Address): Promise<AddressInfo> => {
+      const persistentData = await service.getPersistentAddressData(chainId, address);
 
       return {
         chainId,

@@ -20,7 +20,7 @@ export interface SortingPerformanceMetrics {
 
 export interface SortingCache {
   key: string;
-  data: any[];
+  data: unknown[];
   timestamp: number;
   ttl: number;
 }
@@ -55,7 +55,7 @@ export class OptimizedSorter {
       const cachedResult = this.getCachedResult(cacheKey);
       if (cachedResult) {
         return {
-          sortedData: cachedResult,
+          sortedData: cachedResult as T[],
           metrics: {
             algorithmUsed: 'cache',
             executionTime: performance.now() - startTime,
@@ -74,17 +74,14 @@ export class OptimizedSorter {
     if (dataSize === 0) {
       sortedData = [];
       algorithmUsed = 'empty';
-    }
-    else if (sortConfigs.length === 0) {
+    } else if (sortConfigs.length === 0) {
       sortedData = [...data];
       algorithmUsed = 'no-sort';
-    }
-    else if (dataSize < threshold) {
+    } else if (dataSize < threshold) {
       // For smaller datasets, use standard sort
       sortedData = this.standardSort(data, sortConfigs);
       algorithmUsed = 'standard';
-    }
-    else {
+    } else {
       // For larger datasets, use optimized strategies
       sortedData = this.optimizedSort(data, sortConfigs);
       algorithmUsed = 'optimized';
@@ -114,7 +111,7 @@ export class OptimizedSorter {
    */
   private standardSort<T>(data: T[], sortConfigs: SortConfig[]): T[] {
     const sortedData = [...data];
-    const sortedConfigs = [...sortConfigs].sort((a, b) => (a.priority || 0) - (b.priority || 0));
+    const sortedConfigs = [...sortConfigs].sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0));
 
     return sortedData.sort((a, b) => {
       for (const config of sortedConfigs) {
@@ -129,7 +126,7 @@ export class OptimizedSorter {
    * Optimized sort for large datasets
    */
   private optimizedSort<T>(data: T[], sortConfigs: SortConfig[]): T[] {
-    const sortedConfigs = [...sortConfigs].sort((a, b) => (a.priority || 0) - (b.priority || 0));
+    const sortedConfigs = [...sortConfigs].sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0));
     const primarySort = sortedConfigs[0];
 
     if (!primarySort) {
@@ -165,7 +162,7 @@ export class OptimizedSorter {
   private mergeSortedChunks<T>(chunks: T[][], sortConfigs: SortConfig[]): T[] {
     if (chunks.length === 1) return chunks[0];
 
-    const sortedConfigs = [...sortConfigs].sort((a, b) => (a.priority || 0) - (b.priority || 0));
+    const sortedConfigs = [...sortConfigs].sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0));
 
     // Use a min-heap approach for efficient merging
     const result: T[] = [];
@@ -239,8 +236,8 @@ export class OptimizedSorter {
     }
 
     if (
-      right < heap.length
-      && this.compareHeapItems(heap[right], heap[smallest], sortConfigs) < 0
+      right < heap.length &&
+      this.compareHeapItems(heap[right], heap[smallest], sortConfigs) < 0
     ) {
       smallest = right;
     }
@@ -266,23 +263,28 @@ export class OptimizedSorter {
    * Compare two items based on sort configuration
    */
   private compareItems<T>(a: T, b: T, config: SortConfig): number {
-    const aValue = this.extractValue(a, config.key);
-    const bValue = this.extractValue(b, config.key);
+    const aValue = this.extractValue(a as Record<string, unknown>, config.key);
+    const bValue = this.extractValue(b as Record<string, unknown>, config.key);
 
-    return this.compareValues(aValue, bValue, config.type || 'text', config.direction);
+    return this.compareValues(aValue, bValue, config.type ?? 'text', config.direction);
   }
 
   /**
    * Extract value from object by key path
    */
-  private extractValue(obj: any, keyPath: string): any {
-    return keyPath.split('.').reduce((current, key) => current?.[key], obj);
+  private extractValue(obj: Record<string, unknown>, keyPath: string): unknown {
+    return keyPath.split('.').reduce<unknown>((current, key) => {
+      if (current !== null && typeof current === 'object') {
+        return (current as Record<string, unknown>)[key];
+      }
+      return undefined;
+    }, obj);
   }
 
   /**
    * Compare two values based on type and direction
    */
-  private compareValues(a: any, b: any, type: string, direction: 'asc' | 'desc'): number {
+  private compareValues(a: unknown, b: unknown, type: string, direction: 'asc' | 'desc'): number {
     // Handle null/undefined values
     if (a == null && b == null) return 0;
     if (a == null) return direction === 'asc' ? -1 : 1;
@@ -291,31 +293,34 @@ export class OptimizedSorter {
     let comparison: number;
 
     switch (type) {
-      case 'numeric':
+      case 'numeric': {
         const aNum = parseFloat(a.toString());
         const bNum = parseFloat(b.toString());
         comparison = aNum - bNum;
         break;
+      }
 
-      case 'timestamp':
-        const aTime = new Date(a).getTime();
-        const bTime = new Date(b).getTime();
+      case 'timestamp': {
+        const aTime = new Date(String(a)).getTime();
+        const bTime = new Date(String(b)).getTime();
         comparison = aTime - bTime;
         break;
+      }
 
-      case 'address':
-        // Convert to lowercase for case-insensitive comparison
+      case 'address': {
         const aAddr = a.toString().toLowerCase();
         const bAddr = b.toString().toLowerCase();
         comparison = aAddr.localeCompare(bAddr);
         break;
+      }
 
       case 'text':
-      default:
+      default: {
         const aStr = a.toString().toLowerCase();
         const bStr = b.toString().toLowerCase();
         comparison = aStr.localeCompare(bStr);
         break;
+      }
     }
 
     return direction === 'desc' ? -comparison : comparison;
@@ -324,7 +329,7 @@ export class OptimizedSorter {
   /**
    * Get cached result if available and not expired
    */
-  private getCachedResult(cacheKey: string): any[] | null {
+  private getCachedResult(cacheKey: string): unknown[] | null {
     const cached = this.cache.get(cacheKey);
     if (!cached) return null;
 
@@ -340,15 +345,18 @@ export class OptimizedSorter {
   /**
    * Set cached result
    */
-  private setCachedResult(cacheKey: string, data: any[]): void {
+  private setCachedResult(cacheKey: string, data: readonly unknown[]): void {
     // Check cache size limit
     if (this.cache.size >= this.cacheMaxSize) {
       // Remove oldest entry
       const firstKey = this.cache.keys().next().value;
-      this.cache.delete(firstKey);
+      if (firstKey !== undefined) {
+        this.cache.delete(firstKey);
+      }
     }
 
     this.cache.set(cacheKey, {
+      key: cacheKey,
       data: [...data], // Store a copy
       timestamp: Date.now(),
       ttl: this.defaultCacheTTL,
@@ -358,7 +366,7 @@ export class OptimizedSorter {
   /**
    * Estimate memory usage of data
    */
-  private estimateMemoryUsage(data: any[]): number {
+  private estimateMemoryUsage(data: readonly unknown[]): number {
     // Rough estimation in bytes
     return data.length * 1000; // Assume ~1KB per item average
   }
@@ -380,13 +388,13 @@ export class OptimizedSorter {
     hitRate: number;
   } {
     let totalMemory = 0;
-    let expiredCount = 0;
+    let _expiredCount = 0;
     const now = Date.now();
 
     for (const [, cache] of this.cache.entries()) {
       totalMemory += this.estimateMemoryUsage(cache.data);
       if (now - cache.timestamp > cache.ttl) {
-        expiredCount++;
+        _expiredCount++;
       }
     }
 
@@ -422,7 +430,7 @@ export class OptimizedSorter {
     // 3. Using optimal sort directions
 
     const optimized = [...sortConfigs]
-      .sort((a, b) => (a.priority || 0) - (b.priority || 0))
+      .sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0))
       .slice(0, Math.min(sortConfigs.length, 3)); // Limit to 3 sort levels for large datasets
 
     return optimized;
@@ -504,7 +512,7 @@ export class SortingPerformanceMonitor {
   > {
     const grouped: Record<string, SortingPerformanceMetrics[]> = {};
 
-    this.metrics.forEach((metric) => {
+    this.metrics.forEach(metric => {
       if (!grouped[metric.algorithmUsed]) {
         grouped[metric.algorithmUsed] = [];
       }

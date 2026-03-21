@@ -59,8 +59,7 @@ export function parseContractFunctions(abi: string): {
     );
 
     return { readFunctions, writeFunctions };
-  }
-  catch (error) {
+  } catch (error) {
     console.error('Failed to parse contract ABI:', error);
     return { readFunctions: [], writeFunctions: [] };
   }
@@ -80,8 +79,7 @@ export async function readContract(
     if (params.abi) {
       // 直接使用提供的 ABI
       abi = JSON.parse(params.abi) as Abi;
-    }
-    else {
+    } else {
       // 从 API 获取合约 ABI
       const contractSource = await fetchContractSource(params.chainId, params.contractAddress);
       if (!contractSource?.abi) {
@@ -106,8 +104,7 @@ export async function readContract(
       success: true,
       result: formatContractResult(result),
     };
-  }
-  catch (error: any) {
+  } catch (error: any) {
     console.error('Read contract failed:', error);
     return {
       success: false,
@@ -130,8 +127,7 @@ export async function simulateContract(
     if (params.abi) {
       // 直接使用提供的 ABI
       abi = JSON.parse(params.abi) as Abi;
-    }
-    else {
+    } else {
       // 从 API 获取合约 ABI
       const contractSource = await fetchContractSource(params.chainId, params.contractAddress);
       if (!contractSource?.abi) {
@@ -159,8 +155,7 @@ export async function simulateContract(
       result: formatContractResult(simulation.result),
       gasUsed: simulation.request.gas,
     };
-  }
-  catch (error: any) {
+  } catch (error: any) {
     console.error('Simulate contract failed:', error);
     return {
       success: false,
@@ -208,12 +203,11 @@ export async function estimateContractGas(params: ContractCallParams): Promise<{
 
     return {
       gasLimit,
-      gasPrice: gasPrice || undefined,
-      maxFeePerGas: feeData?.maxFeePerGas || undefined,
-      maxPriorityFeePerGas: feeData?.maxPriorityFeePerGas || undefined,
+      gasPrice: gasPrice ?? undefined,
+      maxFeePerGas: feeData?.maxFeePerGas ?? undefined,
+      maxPriorityFeePerGas: feeData?.maxPriorityFeePerGas ?? undefined,
     };
-  }
-  catch (error) {
+  } catch (error) {
     console.error('Gas estimation failed:', error);
     return null;
   }
@@ -239,8 +233,7 @@ async function fetchContractSource(
 
     const data = await response.json();
     return data.contractSource;
-  }
-  catch (error) {
+  } catch (error) {
     console.error('Failed to fetch contract source:', error);
     return null;
   }
@@ -321,7 +314,7 @@ export function validateFunctionArgs(
 function validateArgument(
   type: string,
   value: any,
-  name: string,
+  _name: string,
 ): { valid: boolean; error?: string } {
   if (value === undefined || value === null || value === '') {
     return { valid: false, error: 'Value is required' };
@@ -337,7 +330,7 @@ function validateArgument(
 
     // 数字类型验证
     if (type.startsWith('uint') || type.startsWith('int')) {
-      const num = BigInt(value);
+      const _num = BigInt(value);
       // 可以添加更多的范围检查
     }
 
@@ -359,8 +352,7 @@ function validateArgument(
     }
 
     return { valid: true };
-  }
-  catch (error) {
+  } catch {
     return { valid: false, error: `Invalid ${type} value` };
   }
 }

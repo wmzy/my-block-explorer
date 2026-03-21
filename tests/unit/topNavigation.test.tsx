@@ -16,7 +16,7 @@ vi.mock('react-router-dom', async () => {
 
 // Mock RpcConfig
 vi.mock('../../components/RpcConfig', () => ({
-  default: ({ open }: { open?: unknown }) => (
+  default: ({ _open }: { _open?: unknown }) => (
     <div data-testid="rpc-config-modal">RPC Config Modal</div>
   ),
 }));
@@ -39,19 +39,19 @@ vi.mock('../../config/chains', () => ({
     const symbols = { 1: 'ETH', 5000: 'MNT', 137: 'MATIC' };
     return symbols[chainId as keyof typeof symbols] || 'UNKNOWN';
   },
-  getChainType: (chainId: number) => chainId === 5 ? 'testnet' : 'mainnet',
+  getChainType: (chainId: number) => (chainId === 5 ? 'testnet' : 'mainnet'),
   isPopularChain: (chainId: number) => [1, 137, 5000].includes(chainId),
   getSortedChains: () => [
     { id: 1, name: 'Ethereum', nativeCurrency: { symbol: 'ETH' } },
     { id: 137, name: 'Polygon', nativeCurrency: { symbol: 'MATIC' } },
     { id: 5000, name: 'Mantle', nativeCurrency: { symbol: 'MNT' } },
   ],
-  searchChains: (query: string) => [
-    { id: 1, name: 'Ethereum', nativeCurrency: { symbol: 'ETH' } },
-  ].filter(chain =>
-    chain.name.toLowerCase().includes(query.toLowerCase())
-    || chain.id.toString().includes(query),
-  ),
+  searchChains: (query: string) =>
+    [{ id: 1, name: 'Ethereum', nativeCurrency: { symbol: 'ETH' } }].filter(
+      chain =>
+        chain.name.toLowerCase().includes(query.toLowerCase()) ||
+        chain.id.toString().includes(query),
+    ),
 }));
 
 const renderTopNavigation = (props = {}) => {
@@ -114,8 +114,7 @@ describe('TopNavigation', () => {
     const onSearch = vi.fn();
     renderTopNavigation({ onSearch });
 
-    const searchInput
-      = screen.getByPlaceholderText('搜索地址、交易哈希或区块号...');
+    const searchInput = screen.getByPlaceholderText('搜索地址、交易哈希或区块号...');
 
     // Type and press Enter
     await act(async () => {

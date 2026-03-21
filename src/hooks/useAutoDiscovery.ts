@@ -43,7 +43,7 @@ export function useAutoDiscovery() {
             host,
             port,
             url,
-            version: health.version,
+            version: health.version as string | undefined,
             latency,
           };
         }
@@ -59,10 +59,7 @@ export function useAutoDiscovery() {
 
   // 扫描端口范围
   const discover = useCallback(
-    async (
-      ports = DEFAULT_PORTS,
-      host = DEFAULT_HOST,
-    ): Promise<ServiceInfo | null> => {
+    async (ports = DEFAULT_PORTS, host = DEFAULT_HOST): Promise<ServiceInfo | null> => {
       setStatus('discovering');
       setError(null);
       setIsScanning(true);
@@ -118,7 +115,7 @@ export function useAutoDiscovery() {
             host: url.hostname,
             port: parseInt(url.port, 10),
             url: savedUrl,
-            version: health.version,
+            version: health.version as string | undefined,
           };
 
           setServiceInfo(serviceInfo);
@@ -127,7 +124,7 @@ export function useAutoDiscovery() {
           return serviceInfo;
         }
       }
-      catch (error) {
+      catch {
         // 保存的URL无效，清除并继续自动发现
         localStorage.removeItem('block-explorer-api-url');
       }
@@ -147,11 +144,9 @@ export function useAutoDiscovery() {
         const urlObj = new URL(url);
         const serviceInfo: ServiceInfo = {
           host: urlObj.hostname,
-          port:
-            parseInt(urlObj.port, 10)
-            || (urlObj.protocol === 'https:' ? 443 : 80),
+          port: parseInt(urlObj.port, 10) || (urlObj.protocol === 'https:' ? 443 : 80),
           url,
-          version: health.version,
+          version: health.version as string | undefined,
         };
 
         setServiceInfo(serviceInfo);

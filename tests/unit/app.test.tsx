@@ -1,27 +1,19 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter, Routes, Route, Navigate } from 'react-router-dom';
 import '@testing-library/jest-dom';
 
 const HomePage = () => <div data-testid="home-page">HomePage</div>;
-const BlocksListPage = () => (
-  <div data-testid="blocks-list-page">BlocksListPage</div>
-);
+const BlocksListPage = () => <div data-testid="blocks-list-page">BlocksListPage</div>;
 const TransactionsListPage = () => (
   <div data-testid="transactions-list-page">TransactionsListPage</div>
 );
 const BlockPage = () => <div data-testid="block-page">BlockPage</div>;
-const TransactionPage = () => (
-  <div data-testid="transaction-page">TransactionPage</div>
-);
+const TransactionPage = () => <div data-testid="transaction-page">TransactionPage</div>;
 const AddressPage = () => <div data-testid="address-page">AddressPage</div>;
-const ContractPage = () => (
-  <div data-testid="contract-page">ContractPage</div>
-);
+const ContractPage = () => <div data-testid="contract-page">ContractPage</div>;
 const SearchPage = () => <div data-testid="search-page">SearchPage</div>;
-const NotFoundPage = () => (
-  <div data-testid="not-found-page">NotFoundPage</div>
-);
+const NotFoundPage = () => <div data-testid="not-found-page">NotFoundPage</div>;
 
 function renderWithRouter(initialEntries: string[]) {
   return render(
@@ -29,30 +21,12 @@ function renderWithRouter(initialEntries: string[]) {
       <Routes>
         <Route path="/chain/:chainId" element={<HomePage />} />
         <Route path="/chain/:chainId/blocks" element={<BlocksListPage />} />
-        <Route
-          path="/chain/:chainId/transactions"
-          element={<TransactionsListPage />}
-        />
-        <Route
-          path="/chain/:chainId/block/:blockNumber"
-          element={<BlockPage />}
-        />
-        <Route
-          path="/chain/:chainId/tx/:txHash"
-          element={<TransactionPage />}
-        />
-        <Route
-          path="/chain/:chainId/address/:address"
-          element={<AddressPage />}
-        />
-        <Route
-          path="/chain/:chainId/contract/:address"
-          element={<ContractPage />}
-        />
-        <Route
-          path="/chain/:chainId/contract/:address/events"
-          element={<ContractPage />}
-        />
+        <Route path="/chain/:chainId/transactions" element={<TransactionsListPage />} />
+        <Route path="/chain/:chainId/block/:blockNumber" element={<BlockPage />} />
+        <Route path="/chain/:chainId/tx/:txHash" element={<TransactionPage />} />
+        <Route path="/chain/:chainId/address/:address" element={<AddressPage />} />
+        <Route path="/chain/:chainId/contract/:address" element={<ContractPage />} />
+        <Route path="/chain/:chainId/contract/:address/events" element={<ContractPage />} />
         <Route path="/search" element={<SearchPage />} />
         <Route path="/" element={<Navigate to="/chain/1" replace />} />
         <Route path="*" element={<NotFoundPage />} />

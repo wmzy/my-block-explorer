@@ -9,12 +9,22 @@ import DynamicFormGenerator from '../forms/DynamicFormGenerator';
 import { FormData } from '../../types/forms';
 import { generateSearchFilter } from '../../utils/form-validation';
 
+export type RangeFilterValue = {
+  from?: string | number;
+  to?: string | number;
+  like?: string;
+};
+
+export type EventFilterValue = string | number | boolean | null | undefined | RangeFilterValue;
+
+export type EventFilters = Record<string, EventFilterValue>;
+
 interface DynamicEventFilterFormProps {
   contractAddress: string;
   abiEvents: AbiEvent[];
-  onFilterChange: (filters: any) => void;
-  onApplyFilters: (filters: any) => void;
-  initialFilters?: any;
+  onFilterChange: (filters: EventFilters) => void;
+  onApplyFilters: (filters: EventFilters) => void;
+  initialFilters?: EventFilters;
   disabled?: boolean;
   className?: string;
 }
@@ -30,7 +40,7 @@ interface EventFilterState {
  * Dynamic event filter form that adapts to contract ABI
  */
 export const DynamicEventFilterForm: React.FC<DynamicEventFilterFormProps> = ({
-  contractAddress,
+  contractAddress: _contractAddress,
   abiEvents,
   onFilterChange,
   onApplyFilters,
@@ -38,14 +48,20 @@ export const DynamicEventFilterForm: React.FC<DynamicEventFilterFormProps> = ({
   disabled = false,
   className = '',
 }) => {
-  /**
-   * Count active filters
-   */
-  const countActiveFilters = useCallback((filters: any): number => {
+  type FilterValue
+    = | string
+      | number
+      | boolean
+      | null
+      | undefined
+      | { from?: unknown; to?: unknown; like?: unknown };
+  type Filters = Record<string, FilterValue>;
+
+  const countActiveFilters = useCallback((filters: Filters): number => {
     let count = 0;
     for (const [key, value] of Object.entries(filters)) {
       if (value !== null && value !== undefined && value !== '' && value !== false) {
-        if (typeof value === 'object' && (value.from || value.to || value.like)) {
+        if (typeof value === 'object' && ('from' in value || 'to' in value || 'like' in value)) {
           count++;
         }
         else if (key !== 'eventName' || value !== '') {
@@ -81,8 +97,8 @@ export const DynamicEventFilterForm: React.FC<DynamicEventFilterFormProps> = ({
         const filters = generateSearchFilter({
           ...state.formData,
           eventName: event.name,
-        });
-        onFilterChange(filters);
+        }) as EventFilters | null;
+        onFilterChange(filters ?? {});
       }
     },
     [state.formData, onFilterChange],
@@ -92,7 +108,7 @@ export const DynamicEventFilterForm: React.FC<DynamicEventFilterFormProps> = ({
    * Handle form field changes
    */
   const handleFieldChange = useCallback(
-    (fieldName: string, value: any) => {
+    (fieldName: string, value: EventFilterValue) => {
       const newFormData = {
         ...state.formData,
         [fieldName]: value,
@@ -105,8 +121,8 @@ export const DynamicEventFilterForm: React.FC<DynamicEventFilterFormProps> = ({
       }));
 
       // Generate and apply search filters in real-time
-      const filters = generateSearchFilter(newFormData);
-      onFilterChange(filters);
+      const filters = generateSearchFilter(newFormData) as EventFilters | null;
+      onFilterChange(filters ?? {});
     },
     [state.formData, onFilterChange, countActiveFilters],
   );
@@ -116,8 +132,8 @@ export const DynamicEventFilterForm: React.FC<DynamicEventFilterFormProps> = ({
    */
   const handleSubmit = useCallback(
     (formData: FormData) => {
-      const filters = generateSearchFilter(formData);
-      onApplyFilters(filters);
+      const filters = generateSearchFilter(formData) as EventFilters | null;
+      onApplyFilters(filters ?? {});
     },
     [onApplyFilters],
   );
@@ -156,7 +172,7 @@ export const DynamicEventFilterForm: React.FC<DynamicEventFilterFormProps> = ({
       let presetData: FormData = {};
 
       switch (preset) {
-        case 'last-hour':
+        case 'last-hour': {
           const now = new Date();
           const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
           presetData = {
@@ -166,8 +182,9 @@ export const DynamicEventFilterForm: React.FC<DynamicEventFilterFormProps> = ({
             },
           };
           break;
+        }
 
-        case 'last-24h':
+        case 'last-24h': {
           const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
           const today = new Date();
           presetData = {
@@ -177,22 +194,26 @@ export const DynamicEventFilterForm: React.FC<DynamicEventFilterFormProps> = ({
             },
           };
           break;
+        }
 
-        case 'large-values':
+        case 'large-values': {
           presetData = {
             value: {
               from: '1000000000000000000', // 1 ETH
             },
           };
           break;
+        }
 
-        case 'my-transactions':
-          // This would need user's address context
+        case 'my-transactions': {
           presetData = {};
           break;
+        }
 
-        default:
+        default: {
+          presetData = {};
           break;
+        }
       }
 
       setState(prev => ({
@@ -201,8 +222,11 @@ export const DynamicEventFilterForm: React.FC<DynamicEventFilterFormProps> = ({
         filterCount: countActiveFilters({ ...state.formData, ...presetData }),
       }));
 
-      const filters = generateSearchFilter({ ...state.formData, ...presetData });
-      onFilterChange(filters);
+      const filters = generateSearchFilter({
+        ...state.formData,
+        ...presetData,
+      }) as EventFilters | null;
+      onFilterChange(filters ?? {});
     },
     [state.formData, onFilterChange, countActiveFilters],
   );
@@ -250,9 +274,9 @@ export const DynamicEventFilterForm: React.FC<DynamicEventFilterFormProps> = ({
           <label htmlFor="event-type-select">Event Type</label>
           <select
             id="event-type-select"
-            value={state.selectedEvent?.name || ''}
+            value={state.selectedEvent?.name ?? ''}
             onChange={(e) => {
-              const event = abiEvents.find(evt => evt.name === e.target.value) || null;
+              const event = abiEvents.find(evt => evt.name === e.target.value) ?? null;
               handleEventChange(event);
             }}
             disabled={disabled}
@@ -338,29 +362,32 @@ export const DynamicEventFilterForm: React.FC<DynamicEventFilterFormProps> = ({
             {Object.entries(state.formData).map(([key, value]) => {
               if (!value || value === '' || value === false) return null;
 
-              const formatFilterValue = (k: string, v: any): string => {
+              const isRangeValue = (val: EventFilterValue): val is RangeFilterValue =>
+                typeof val === 'object' && val !== null && !Array.isArray(val);
+
+              const formatFilterValue = (k: string, v: EventFilterValue): string => {
                 switch (k) {
                   case 'eventName':
                     return `Event: ${v}`;
                   case 'blockRange':
-                    if (v.from && v.to) return `Blocks: ${v.from}-${v.to}`;
-                    if (v.from) return `From Block: ${v.from}`;
-                    if (v.to) return `To Block: ${v.to}`;
+                    if (isRangeValue(v) && v.from && v.to) return `Blocks: ${v.from}-${v.to}`;
+                    if (isRangeValue(v) && v.from) return `From Block: ${v.from}`;
+                    if (isRangeValue(v) && v.to) return `To Block: ${v.to}`;
                     return '';
                   case 'timestampRange':
-                    if (v.from && v.to)
+                    if (isRangeValue(v) && v.from && v.to)
                       return `Time: ${new Date(v.from).toLocaleDateString()} - ${new Date(v.to).toLocaleDateString()}`;
                     return '';
                   case 'value':
-                    if (typeof v === 'object' && (v.from || v.to)) {
-                      const parts = [];
+                    if (isRangeValue(v) && (v.from || v.to)) {
+                      const parts: string[] = [];
                       if (v.from) parts.push(`≥${formatValue(v.from)}`);
                       if (v.to) parts.push(`≤${formatValue(v.to)}`);
                       return `Value: ${parts.join(' ')}`;
                     }
                     return `Value: ${formatValue(v)}`;
                   default:
-                    if (typeof v === 'object' && v.like) {
+                    if (isRangeValue(v) && v.like) {
                       return `${formatFieldName(k)}: ${v.like.replace(/%/g, '')}`;
                     }
                     return `${formatFieldName(k)}: ${formatValue(v)}`;
@@ -374,7 +401,7 @@ export const DynamicEventFilterForm: React.FC<DynamicEventFilterFormProps> = ({
                   .replace(/\b\w/g, l => l.toUpperCase());
               }
 
-              const formatValue = (val: any): string => {
+              const formatValue = (val: EventFilterValue): string => {
                 if (typeof val === 'string' && val.startsWith('0x')) {
                   return `${val.slice(0, 6)}...${val.slice(-4)}`;
                 }
@@ -401,8 +428,8 @@ export const DynamicEventFilterForm: React.FC<DynamicEventFilterFormProps> = ({
                         formData: newFormData,
                         filterCount: countActiveFilters(newFormData),
                       }));
-                      const filters = generateSearchFilter(newFormData);
-                      onFilterChange(filters);
+                      const filters = generateSearchFilter(newFormData) as EventFilters | null;
+                      onFilterChange(filters ?? {});
                     }}
                     disabled={disabled}
                   >

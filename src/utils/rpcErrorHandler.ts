@@ -13,7 +13,7 @@ export type RpcErrorDetails = {
 };
 
 export function analyzeRpcError(
-  error: any,
+  error: unknown,
   context: {
     blockNumber?: number;
     contractAddress?: string;
@@ -21,7 +21,7 @@ export function analyzeRpcError(
     chainId?: number;
   },
 ): RpcErrorDetails {
-  const errorMessage = error.message || String(error);
+  const errorMessage = (error as { message?: string }).message ?? String(error);
   const { blockNumber, contractAddress, rpcUrl, chainId } = context;
 
   // 分析不同类型的RPC错误
@@ -201,7 +201,7 @@ export function formatRpcErrorForUser(errorDetails: RpcErrorDetails): string {
   message += `\n🔄 可重试: ${retryable ? '是' : '否'}\n`;
 
   message += `\n🛠️ 故障排除步骤:\n`;
-  troubleshooting.forEach((step) => {
+  troubleshooting.forEach(step => {
     message += `${step}\n`;
   });
 

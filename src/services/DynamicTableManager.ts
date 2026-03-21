@@ -4,7 +4,6 @@
  */
 
 import { createLogger } from '../server/logger';
-import { primaryKey, unique } from '../database/db-types';
 
 const logger = createLogger('dynamic-table-manager');
 import { db } from '../database/init';
@@ -22,6 +21,15 @@ import {
 } from '../types/events';
 
 /**
+ * Dynamic table schema definition
+ */
+type DynamicTableSchema = {
+  tableName: string;
+  columns: TableColumn[];
+  indexes: TableIndex[];
+};
+
+/**
  * 表命名策略
  */
 interface TableNamingStrategy {
@@ -29,7 +37,7 @@ interface TableNamingStrategy {
     chainId: number,
     contractAddress: string,
     eventSignature: string,
-    config: EventIndexingConfig
+    config: EventIndexingConfig,
   ): string;
 }
 
@@ -165,7 +173,7 @@ export class DynamicTableManager {
       }));
     }
     catch (error) {
-      throw new Error(`Failed to get table schema for ${tableName}: ${error}`);
+      throw new Error(`Failed to get table schema for ${tableName}: ${error}`, { cause: error });
     }
   }
 
@@ -179,7 +187,7 @@ export class DynamicTableManager {
       logger.info({ tableName }, 'Dropped table');
     }
     catch (error) {
-      throw new Error(`Failed to drop table ${tableName}: ${error}`);
+      throw new Error(`Failed to drop table ${tableName}: ${error}`, { cause: error });
     }
   }
 
@@ -199,7 +207,7 @@ export class DynamicTableManager {
       );
 
       for (const table of tables) {
-        const tableName = table.name;
+        const tableName = table.name as string;
 
         // 检查表的最旧记录
         const oldestRecord = await db.execute(
@@ -207,7 +215,7 @@ export class DynamicTableManager {
         );
 
         if (oldestRecord.length > 0 && oldestRecord[0].oldest) {
-          const oldestDate = new Date(oldestRecord[0].oldest);
+          const oldestDate = new Date(oldestRecord[0].oldest as string | number | Date);
 
           if (oldestDate < cutoffDate) {
             await this.dropTable(tableName);
@@ -259,7 +267,10 @@ export class DynamicTableManager {
     }
 
     if (errors.length > 0) {
-      logger.warn({ tableCount: tableNames.length, errorCount: errors.length }, 'Created tables with errors');
+      logger.warn(
+        { tableCount: tableNames.length, errorCount: errors.length },
+        'Created tables with errors',
+      );
     }
 
     return tableNames;
@@ -472,10 +483,12 @@ export class DynamicTableManager {
     const indexes: TableIndex[] = [];
 
     // Transfer事件索引
-    if (eventParams.length === 3
+    if (
+      eventParams.length === 3
       && eventParams[0].type === 'address'
       && eventParams[1].type === 'address'
-      && eventParams[2].type === 'uint256') {
+      && eventParams[2].type === 'uint256'
+    ) {
       indexes.push({
         name: `idx_${tableName}_from_to`,
         columns: ['from', 'to'],
@@ -518,7 +531,10 @@ export class DynamicTableManager {
   /**
    * 创建表索引
    */
-  private async createTableIndexes(tableName: string, eventParams: EventParameter[]): Promise<void> {
+  private async createTableIndexes(
+    tableName: string,
+    eventParams: EventParameter[],
+  ): Promise<void> {
     const indexes = this.generateIndexDefinitions(tableName, eventParams);
 
     for (const index of indexes) {

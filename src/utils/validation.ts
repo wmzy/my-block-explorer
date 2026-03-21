@@ -43,8 +43,8 @@ export function isValidChainId(chainId: string | number): boolean {
  * 验证分页参数
  */
 export function validatePaginationParams(page?: string | number, limit?: string | number) {
-  const pageNum = typeof page === 'string' ? parseInt(page, 10) : (page || 1);
-  const limitNum = typeof limit === 'string' ? parseInt(limit, 10) : (limit || 20);
+  const pageNum = typeof page === 'string' ? parseInt(page, 10) : (page ?? 1);
+  const limitNum = typeof limit === 'string' ? parseInt(limit, 10) : (limit ?? 20);
 
   if (isNaN(pageNum) || pageNum < 1) {
     throw new Error('Page must be a positive integer');
@@ -133,7 +133,11 @@ export function validateTimeRange(from?: string, to?: string) {
 export function validateBlockRange(fromBlock?: string | number, toBlock?: string | number) {
   if (!fromBlock && !toBlock) return { fromBlock: undefined, toBlock: undefined };
 
-  const from = fromBlock ? (typeof fromBlock === 'string' ? parseInt(fromBlock, 10) : fromBlock) : undefined;
+  const from = fromBlock
+    ? typeof fromBlock === 'string'
+      ? parseInt(fromBlock, 10)
+      : fromBlock
+    : undefined;
   const to = toBlock ? (typeof toBlock === 'string' ? parseInt(toBlock, 10) : toBlock) : undefined;
 
   if (fromBlock && (isNaN(from!) || from! < 0)) {

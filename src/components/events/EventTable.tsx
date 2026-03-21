@@ -5,11 +5,11 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import { styled } from '@linaria/react';
-import { Address, formatEther } from 'viem';
-import DynamicEventFilterForm from './DynamicEventFilterForm';
+import { Address, formatEther, AbiEvent } from 'viem';
+import DynamicEventFilterForm, { type EventFilters } from './DynamicEventFilterForm';
 
 // Types
-interface EventData {
+type EventData = {
   blockNumber: number;
   blockTimestamp: string;
   transactionHash: `0x${string}`;
@@ -17,10 +17,10 @@ interface EventData {
   from?: string;
   to?: string;
   value?: string;
-  [key: string]: any;
-}
+  [key: string]: unknown;
+};
 
-interface EventTableProps {
+type EventTableProps = {
   chainId: number;
   contractAddress: Address;
   initialEvents?: EventData[];
@@ -33,13 +33,13 @@ interface EventTableProps {
   enableClientSideSort?: boolean;
   clientSideSortThreshold?: number;
   // Enhanced filtering props
-  abiEvents?: any[];
+  abiEvents?: AbiEvent[];
   enableDynamicFiltering?: boolean;
-  onFiltersChange?: (filters: any) => void;
+  onFiltersChange?: (filters: EventFilters) => void;
   refreshKey?: number;
-}
+};
 
-interface PaginationState {
+type PaginationState = {
   page: number;
   limit: number;
   total: number;
@@ -49,44 +49,44 @@ interface PaginationState {
   totalPages?: number;
   startIndex?: number;
   endIndex?: number;
-}
+};
 
-interface FilterState {
+type FilterState = {
   eventName?: string;
   fromBlock?: number;
   toBlock?: number;
   fromAddress?: string;
   toAddress?: string;
-}
+};
 
-interface SortState {
+type SortState = {
   field: string;
   direction: 'asc' | 'desc';
-}
+};
 
-interface SortConfig {
+type SortConfig = {
   key: string;
   direction: 'asc' | 'desc';
   type?: 'numeric' | 'text' | 'address' | 'timestamp';
   priority?: number;
-}
+};
 
-interface SortOption {
+type SortOption = {
   key: string;
   label: string;
   type: 'numeric' | 'text' | 'address' | 'timestamp';
   defaultDirection?: 'asc' | 'desc';
   description?: string;
-}
+};
 
-interface ColumnConfig {
+type ColumnConfig = {
   key: string;
   label: string;
   sortable: boolean;
   width?: string;
   visible: boolean;
   priority: number;
-}
+};
 
 // Styled components
 const TableContainer = styled.div`
@@ -112,7 +112,7 @@ const TableHeaderCell = styled.th<{ sortable?: boolean }>`
   text-align: left;
   font-weight: 600;
   color: #374151;
-  cursor: ${props => props.sortable ? 'pointer' : 'default'};
+  cursor: ${props => (props.sortable ? 'pointer' : 'default')};
   user-select: none;
   position: relative;
 
@@ -196,10 +196,10 @@ const PaginationControls = styled.div`
 const PaginationButton = styled.button<{ disabled?: boolean }>`
   padding: 8px 12px;
   border: 1px solid #d1d5db;
-  background: ${props => props.disabled ? '#f9fafb' : 'white'};
-  color: ${props => props.disabled ? '#9ca3af' : '#374151'};
+  background: ${props => (props.disabled ? '#f9fafb' : 'white')};
+  color: ${props => (props.disabled ? '#9ca3af' : '#374151')};
   border-radius: 4px;
-  cursor: ${props => props.disabled ? 'not-allowed' : 'pointer'};
+  cursor: ${props => (props.disabled ? 'not-allowed' : 'pointer')};
   font-size: 14px;
   min-width: 36px;
 
@@ -266,8 +266,12 @@ const LoadingSpinner = styled.div`
   animation: spin 1s linear infinite;
 
   @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
+    0% {
+      transform: rotate(0deg);
+    }
+    100% {
+      transform: rotate(360deg);
+    }
   }
 `;
 
@@ -364,16 +368,16 @@ const SortSelect = styled.select`
 
 const SortDirectionButton = styled.button<{ $active?: boolean }>`
   padding: 6px 8px;
-  border: 1px solid ${props => props.$active ? '#3b82f6' : '#d1d5db'};
-  background: ${props => props.$active ? '#eff6ff' : 'white'};
-  color: ${props => props.$active ? '#1d4ed8' : '#374151'};
+  border: 1px solid ${props => (props.$active ? '#3b82f6' : '#d1d5db')};
+  background: ${props => (props.$active ? '#eff6ff' : 'white')};
+  color: ${props => (props.$active ? '#1d4ed8' : '#374151')};
   border-radius: 4px;
   cursor: pointer;
   font-size: 14px;
   margin-left: 4px;
 
   &:hover {
-    background: ${props => props.$active ? '#dbeafe' : '#f3f4f6'};
+    background: ${props => (props.$active ? '#dbeafe' : '#f3f4f6')};
   }
 `;
 
@@ -511,22 +515,22 @@ const PerformanceMetricLabel = styled.span`
 `;
 
 const PerformanceMetricValue = styled.span<{ highlight?: boolean }>`
-  color: ${props => props.highlight ? '#059669' : '#374151'};
-  font-weight: ${props => props.highlight ? '600' : 'normal'};
+  color: ${props => (props.highlight ? '#059669' : '#374151')};
+  font-weight: ${props => (props.highlight ? '600' : 'normal')};
 `;
 
 const PerformanceToggleButton = styled.button<{ $active?: boolean }>`
   padding: 4px 8px;
-  background: ${props => props.$active ? '#e0f2fe' : 'white'};
-  border: 1px solid ${props => props.$active ? '#0ea5e9' : '#d1d5db'};
+  background: ${props => (props.$active ? '#e0f2fe' : 'white')};
+  border: 1px solid ${props => (props.$active ? '#0ea5e9' : '#d1d5db')};
   border-radius: 4px;
-  color: ${props => props.$active ? '#0369a1' : '#6b7280'};
+  color: ${props => (props.$active ? '#0369a1' : '#6b7280')};
   cursor: pointer;
   font-size: 11px;
   margin-left: 8px;
 
   &:hover {
-    background: ${props => props.$active ? '#bae6fd' : '#f3f4f6'};
+    background: ${props => (props.$active ? '#bae6fd' : '#f3f4f6')};
   }
 `;
 
@@ -587,18 +591,20 @@ const clientSideSort = (
     // Use multi-sort configurations
     finalSortConfigs = sortConfigs.map(config => ({
       ...config,
-      type: config.type || 'text',
+      type: config.type ?? 'text',
     }));
   }
   else if (primarySort.field) {
     // Use primary sort configuration
     const sortOption = defaultSortOptions.find(opt => opt.key === primarySort.field);
-    finalSortConfigs = [{
-      key: primarySort.field,
-      direction: primarySort.direction,
-      type: sortOption?.type || 'text',
-      priority: 0,
-    }];
+    finalSortConfigs = [
+      {
+        key: primarySort.field,
+        direction: primarySort.direction,
+        type: sortOption?.type ?? 'text',
+        priority: 0,
+      },
+    ];
   }
 
   // Generate cache key based on sort configurations
@@ -628,13 +634,55 @@ const paginateData = (data: EventData[], page: number, limit: number): EventData
 
 // Default sort options
 const defaultSortOptions: SortOption[] = [
-  { key: 'block_timestamp', label: '时间', type: 'timestamp', defaultDirection: 'desc', description: '按区块时间排序' },
-  { key: 'block_number', label: '区块号', type: 'numeric', defaultDirection: 'desc', description: '按区块号排序' },
-  { key: 'event_name', label: '事件名称', type: 'text', defaultDirection: 'asc', description: '按事件名称排序' },
-  { key: 'from', label: '发送方', type: 'address', defaultDirection: 'asc', description: '按发送方地址排序' },
-  { key: 'to', label: '接收方', type: 'address', defaultDirection: 'asc', description: '按接收方地址排序' },
-  { key: 'value', label: '金额', type: 'numeric', defaultDirection: 'desc', description: '按交易金额排序' },
-  { key: 'transaction_hash', label: '交易哈希', type: 'text', defaultDirection: 'asc', description: '按交易哈希排序' },
+  {
+    key: 'block_timestamp',
+    label: '时间',
+    type: 'timestamp',
+    defaultDirection: 'desc',
+    description: '按区块时间排序',
+  },
+  {
+    key: 'block_number',
+    label: '区块号',
+    type: 'numeric',
+    defaultDirection: 'desc',
+    description: '按区块号排序',
+  },
+  {
+    key: 'event_name',
+    label: '事件名称',
+    type: 'text',
+    defaultDirection: 'asc',
+    description: '按事件名称排序',
+  },
+  {
+    key: 'from',
+    label: '发送方',
+    type: 'address',
+    defaultDirection: 'asc',
+    description: '按发送方地址排序',
+  },
+  {
+    key: 'to',
+    label: '接收方',
+    type: 'address',
+    defaultDirection: 'asc',
+    description: '按接收方地址排序',
+  },
+  {
+    key: 'value',
+    label: '金额',
+    type: 'numeric',
+    defaultDirection: 'desc',
+    description: '按交易金额排序',
+  },
+  {
+    key: 'transaction_hash',
+    label: '交易哈希',
+    type: 'text',
+    defaultDirection: 'asc',
+    description: '按交易哈希排序',
+  },
 ];
 
 const pageSizeOptions = [10, 20, 50, 100, 200];
@@ -666,7 +714,7 @@ export const EventTable: React.FC<EventTableProps> = ({
     total: initialEvents.length,
     hasMore: false,
   });
-  const [filters, setFilters] = useState<FilterState>({});
+  const [filters, _setFilters] = useState<FilterState>({});
   const [sort, setSort] = useState<SortState>({
     field: 'block_timestamp',
     direction: 'desc',
@@ -682,118 +730,163 @@ export const EventTable: React.FC<EventTableProps> = ({
   const [totalPages, setTotalPages] = useState<number>(1);
 
   // Performance monitoring state
-  const [sortingMetrics, setSortingMetrics] = useState<any>(null);
+  const [sortingMetrics, setSortingMetrics] = useState<{
+    sortTime: number;
+    dataSize: number;
+    algorithm: string;
+    cacheHit: boolean;
+    avgMetrics?: {
+      avgExecutionTime: number;
+      avgDataSize: number;
+      avgMemoryUsage: number;
+      cacheHitRate: number;
+      totalOperations: number;
+    };
+  } | null>(null);
   const [showPerformanceInfo, setShowPerformanceInfo] = useState(false);
 
   // Enhanced filtering state
-  const [dynamicFilters, setDynamicFilters] = useState<any>({});
+  const [dynamicFilters, setDynamicFilters] = useState<EventFilters>({});
   const [showFilterForm, setShowFilterForm] = useState(enableDynamicFiltering);
 
   // Determine if we should use client-side sorting
   // Use pagination.total (server-reported count) instead of allEvents.length (loaded data)
   // This prevents incorrect total count when only a page of data is loaded
-  const shouldUseClientSideSort = enableClientSideSort && pagination.total > 0 && pagination.total <= clientSideSortThreshold;
+  const shouldUseClientSideSort
+    = enableClientSideSort && pagination.total > 0 && pagination.total <= clientSideSortThreshold;
 
   // API call function
-  const fetchEvents = useCallback(async (cursor?: string) => {
-    setLoading(true);
-    setError(null);
+  const fetchEvents = useCallback(
+    async (cursor?: string) => {
+      setLoading(true);
+      setError(null);
 
-    try {
-      const currentPage = Math.floor((pagination.startIndex ?? 0) / pagination.limit) + 1;
-      const queryParams = new URLSearchParams({
-        page: currentPage.toString(),
-        pageSize: pagination.limit.toString(),
-        sort: sort.direction,
-        sortBy: sort.field,
-      });
+      try {
+        const currentPage = Math.floor((pagination.startIndex ?? 0) / pagination.limit) + 1;
+        const queryParams = new URLSearchParams({
+          page: currentPage.toString(),
+          pageSize: pagination.limit.toString(),
+          sort: sort.direction,
+          sortBy: sort.field,
+        });
 
-      // Add multi-sort support
-      if (enableMultiSort && multiSort.length > 0) {
-        queryParams.set('multiSort', JSON.stringify(multiSort.map(s => ({
-          field: s.key,
-          direction: s.direction,
-          type: s.type,
-          priority: s.priority,
-        }))));
-      }
-
-      if (cursor) {
-        queryParams.set('cursor', cursor);
-      }
-
-      // Add basic filters
-      Object.entries(filters).forEach(([key, value]) => {
-        if (value !== undefined && value !== '') {
-          queryParams.set(key, value.toString());
+        // Add multi-sort support
+        if (enableMultiSort && multiSort.length > 0) {
+          queryParams.set(
+            'multiSort',
+            JSON.stringify(
+              multiSort.map(s => ({
+                field: s.key,
+                direction: s.direction,
+                type: s.type,
+                priority: s.priority,
+              })),
+            ),
+          );
         }
-      });
 
-      // Add dynamic filters from ABI-based filtering
-      Object.entries(dynamicFilters).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== '') {
-          if (typeof value === 'object' && value !== null) {
-            const obj = value as Record<string, unknown>;
-            if (obj.from) queryParams.set(`${key}_from`, String(obj.from));
-            if (obj.to) queryParams.set(`${key}_to`, String(obj.to));
-            if (obj.like) queryParams.set(`${key}_like`, String(obj.like));
-          }
-          else {
-            queryParams.set(key, String(value));
-          }
+        if (cursor) {
+          queryParams.set('cursor', cursor);
         }
-      });
 
-      const url = `/api/chains/${chainId}/contracts/${contractAddress}/events?${queryParams}`;
+        // Add basic filters
+        Object.entries(filters).forEach(([key, value]) => {
+          if (value !== undefined && value !== '') {
+            queryParams.set(key, value.toString());
+          }
+        });
 
-      const response = await fetch(url, {
-        method: 'GET',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
+        // Add dynamic filters from ABI-based filtering
+        Object.entries(dynamicFilters).forEach(([key, value]) => {
+          if (value !== undefined && value !== null && value !== '') {
+            if (typeof value === 'object' && value !== null) {
+              const obj = value as Record<string, unknown>;
+              if (obj.from) queryParams.set(`${key}_from`, String(obj.from));
+              if (obj.to) queryParams.set(`${key}_to`, String(obj.to));
+              if (obj.like) queryParams.set(`${key}_like`, String(obj.like));
+            }
+            else {
+              queryParams.set(key, String(value));
+            }
+          }
+        });
 
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        const url = `/api/chains/${chainId}/contracts/${contractAddress}/events?${queryParams}`;
+
+        const response = await fetch(url, {
+          method: 'GET',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const data = (await response.json()) as {
+          events: Array<{
+            decodedArgs?: string | Record<string, unknown>;
+            blockTimestamp?: number | string;
+            [key: string]: unknown;
+          }>;
+          total?: number;
+          page?: number;
+          totalPages?: number;
+        };
+
+        const normalizedEvents = (data.events ?? []).map((e) => {
+          const args
+            = typeof e.decodedArgs === 'string'
+              ? (() => {
+                  try {
+                    return JSON.parse(e.decodedArgs) as Record<string, unknown>;
+                  }
+                  catch {
+                    return {};
+                  }
+                })()
+              : (e.decodedArgs ?? {});
+          const blockTimestamp
+            = typeof e.blockTimestamp === 'number'
+              ? new Date(e.blockTimestamp * 1000).toISOString()
+              : e.blockTimestamp;
+          return { ...args, ...e, blockTimestamp } as EventData;
+        });
+
+        if (cursor) {
+          setAllEvents(prev => [...prev, ...normalizedEvents]);
+        }
+        else {
+          setAllEvents(normalizedEvents);
+        }
+
+        setPagination(prev => ({
+          ...prev,
+          total: data.total ?? data.events.length,
+          hasMore: (data.page ?? 1) < (data.totalPages ?? 1),
+          totalPages: data.totalPages,
+        }));
       }
-
-      const data = await response.json();
-
-      const normalizedEvents = (data.events ?? []).map((e: any) => {
-        const args = typeof e.decodedArgs === 'string'
-          ? (() => {
-              try { return JSON.parse(e.decodedArgs); }
-              catch { return {}; }
-            })()
-          : (e.decodedArgs ?? {});
-        const blockTimestamp = typeof e.blockTimestamp === 'number'
-          ? new Date(e.blockTimestamp * 1000).toISOString()
-          : e.blockTimestamp;
-        return { ...args, ...e, blockTimestamp };
-      });
-
-      if (cursor) {
-        setAllEvents(prev => [...prev, ...normalizedEvents]);
+      catch (err) {
+        console.error('Failed to fetch events:', err);
+        setError(err instanceof Error ? err.message : 'Failed to load events');
       }
-      else {
-        setAllEvents(normalizedEvents);
+      finally {
+        setLoading(false);
       }
-
-      setPagination(prev => ({
-        ...prev,
-        total: data.total || data.events.length,
-        hasMore: data.page < (data.totalPages ?? 1),
-        totalPages: data.totalPages,
-      }));
-    }
-    catch (err) {
-      console.error('Failed to fetch events:', err);
-      setError(err instanceof Error ? err.message : 'Failed to load events');
-    }
-    finally {
-      setLoading(false);
-    }
-  }, [chainId, contractAddress, pagination.limit, sort, filters, enableMultiSort, multiSort, dynamicFilters]);
+    },
+    [
+      chainId,
+      contractAddress,
+      pagination.limit,
+      sort,
+      filters,
+      enableMultiSort,
+      multiSort,
+      dynamicFilters,
+    ],
+  );
 
   // Initial load + refresh when refreshKey changes
   useEffect(() => {
@@ -829,7 +922,7 @@ export const EventTable: React.FC<EventTableProps> = ({
   const handleSortFieldChange = (field: string) => {
     setCurrentSortField(field);
     const sortOption = availableSortOptions.find(option => option.key === field);
-    const direction = sortOption?.defaultDirection || 'asc';
+    const direction = sortOption?.defaultDirection ?? 'asc';
     setSort({ field, direction });
 
     if (!shouldUseClientSideSort) {
@@ -891,7 +984,7 @@ export const EventTable: React.FC<EventTableProps> = ({
       // Add new sort
       const newSortConfig: SortConfig = {
         key: currentSortField,
-        direction: sortOption.defaultDirection || 'asc',
+        direction: sortOption.defaultDirection ?? 'asc',
         type: sortOption.type,
         priority: multiSort.length,
       };
@@ -913,7 +1006,7 @@ export const EventTable: React.FC<EventTableProps> = ({
     if (multiSort.length === 0) return;
 
     // Use the highest priority sort as the primary sort
-    const primarySort = multiSort.sort((a, b) => (a.priority || 0) - (b.priority || 0))[0];
+    const primarySort = multiSort.sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0))[0];
     setSort({ field: primarySort.key, direction: primarySort.direction });
 
     if (!shouldUseClientSideSort) {
@@ -1086,21 +1179,27 @@ export const EventTable: React.FC<EventTableProps> = ({
   };
 
   // Enhanced filtering handlers
-  const handleFilterChange = useCallback((newFilters: any) => {
-    setDynamicFilters(newFilters);
-    onFiltersChange?.(newFilters);
+  const handleFilterChange = useCallback(
+    (newFilters: EventFilters) => {
+      setDynamicFilters(newFilters);
+      onFiltersChange?.(newFilters);
 
-    // Reset pagination and refetch
-    setPagination(prev => ({ ...prev, page: 1, nextCursor: undefined }));
-  }, [onFiltersChange]);
+      // Reset pagination and refetch
+      setPagination(prev => ({ ...prev, page: 1, nextCursor: undefined }));
+    },
+    [onFiltersChange],
+  );
 
-  const handleFilterApply = useCallback((appliedFilters: any) => {
-    setDynamicFilters(appliedFilters);
-    onFiltersChange?.(appliedFilters);
+  const handleFilterApply = useCallback(
+    (appliedFilters: EventFilters) => {
+      setDynamicFilters(appliedFilters);
+      onFiltersChange?.(appliedFilters);
 
-    // Reset pagination and refetch
-    setPagination(prev => ({ ...prev, page: 1, nextCursor: undefined }));
-  }, [onFiltersChange]);
+      // Reset pagination and refetch
+      setPagination(prev => ({ ...prev, page: 1, nextCursor: undefined }));
+    },
+    [onFiltersChange],
+  );
 
   const toggleFilterForm = useCallback(() => {
     setShowFilterForm(prev => !prev);
@@ -1155,39 +1254,47 @@ export const EventTable: React.FC<EventTableProps> = ({
     );
   }
 
-  const hasActiveFilters = Object.keys(dynamicFilters).length > 0
-    && Object.values(dynamicFilters).some(value =>
-      value !== null && value !== undefined && value !== ''
-      && (typeof value !== 'object' || Object.values(value).some(v => v !== null && v !== undefined && v !== '')),
-    );
+  const hasActiveFilters
+    = Object.keys(dynamicFilters).length > 0
+      && Object.values(dynamicFilters).some(
+        value =>
+          value !== null
+          && value !== undefined
+          && value !== ''
+          && (typeof value !== 'object'
+            || Object.values(value).some(v => v !== null && v !== undefined && v !== '')),
+      );
 
   return (
     <TableContainer className={className}>
       {/* Enhanced Filtering Controls */}
       {enableDynamicFiltering && (
-        <div style={{
-          background: '#f8fafc',
-          borderBottom: '1px solid #e2e8f0',
-          padding: '16px',
-        }}
-        >
-          <div style={{
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            marginBottom: showFilterForm ? '16px' : '0',
+        <div
+          style={{
+            background: '#f8fafc',
+            borderBottom: '1px solid #e2e8f0',
+            padding: '16px',
           }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: showFilterForm ? '16px' : '0',
+            }}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
               <h4 style={{ margin: 0, fontSize: '16px', fontWeight: '600' }}>Event Filters</h4>
               {hasActiveFilters && (
-                <span style={{
-                  background: '#007bff',
-                  color: 'white',
-                  padding: '2px 8px',
-                  borderRadius: '12px',
-                  fontSize: '12px',
-                }}
+                <span
+                  style={{
+                    background: '#007bff',
+                    color: 'white',
+                    padding: '2px 8px',
+                    borderRadius: '12px',
+                    fontSize: '12px',
+                  }}
                 >
                   {Object.keys(dynamicFilters).length}
                   {' '}
@@ -1265,9 +1372,7 @@ export const EventTable: React.FC<EventTableProps> = ({
 
           {enableMultiSort && (
             <>
-              <AddSortButton onClick={addToMultiSort}>
-                + 添加到多列排序
-              </AddSortButton>
+              <AddSortButton onClick={addToMultiSort}>+ 添加到多列排序</AddSortButton>
               <AddSortButton onClick={() => setShowAdvancedSort(!showAdvancedSort)}>
                 {showAdvancedSort ? '隐藏' : '显示'}
                 高级排序
@@ -1319,7 +1424,7 @@ export const EventTable: React.FC<EventTableProps> = ({
                 <PerformanceMetric>
                   <PerformanceMetricLabel>数据量:</PerformanceMetricLabel>
                   <PerformanceMetricValue>
-                    {Number(sortingMetrics.dataSize || 0).toLocaleString()}
+                    {Number(sortingMetrics.dataSize ?? 0).toLocaleString()}
                     {' '}
                     条
                   </PerformanceMetricValue>
@@ -1379,7 +1484,9 @@ export const EventTable: React.FC<EventTableProps> = ({
 
       {/* Advanced Multi-Sort Controls */}
       {showAdvancedSort && enableMultiSort && multiSort.length > 0 && (
-        <SortControlsContainer style={{ background: '#f1f5f9', paddingTop: '8px', paddingBottom: '8px' }}>
+        <SortControlsContainer
+          style={{ background: '#f1f5f9', paddingTop: '8px', paddingBottom: '8px' }}
+        >
           <div>
             <SortLabel>多列排序:</SortLabel>
             <MultiSortContainer>
@@ -1387,7 +1494,7 @@ export const EventTable: React.FC<EventTableProps> = ({
                 const option = availableSortOptions.find(opt => opt.key === sortConfig.key);
                 return (
                   <MultiSortTag key={sortConfig.key}>
-                    {option?.label || sortConfig.key}
+                    {option?.label ?? sortConfig.key}
                     {' '}
                     (
                     {sortConfig.direction === 'asc' ? '↑' : '↓'}
@@ -1398,12 +1505,8 @@ export const EventTable: React.FC<EventTableProps> = ({
                   </MultiSortTag>
                 );
               })}
-              <AddSortButton onClick={clearMultiSort}>
-                清除全部
-              </AddSortButton>
-              <AddSortButton onClick={applyMultiSort}>
-                应用多列排序
-              </AddSortButton>
+              <AddSortButton onClick={clearMultiSort}>清除全部</AddSortButton>
+              <AddSortButton onClick={applyMultiSort}>应用多列排序</AddSortButton>
             </MultiSortContainer>
           </div>
         </SortControlsContainer>
@@ -1414,15 +1517,21 @@ export const EventTable: React.FC<EventTableProps> = ({
           <tr>
             <TableHeaderCell sortable onClick={() => handleSort('block_number')}>
               区块号
-              <SortIndicator>{sort.field === 'block_number' ? (sort.direction === 'asc' ? '↑' : '↓') : '↕'}</SortIndicator>
+              <SortIndicator>
+                {sort.field === 'block_number' ? (sort.direction === 'asc' ? '↑' : '↓') : '↕'}
+              </SortIndicator>
             </TableHeaderCell>
             <TableHeaderCell sortable onClick={() => handleSort('block_timestamp')}>
               时间
-              <SortIndicator>{sort.field === 'block_timestamp' ? (sort.direction === 'asc' ? '↑' : '↓') : '↕'}</SortIndicator>
+              <SortIndicator>
+                {sort.field === 'block_timestamp' ? (sort.direction === 'asc' ? '↑' : '↓') : '↕'}
+              </SortIndicator>
             </TableHeaderCell>
             <TableHeaderCell sortable onClick={() => handleSort('event_name')}>
               事件
-              <SortIndicator>{sort.field === 'event_name' ? (sort.direction === 'asc' ? '↑' : '↓') : '↕'}</SortIndicator>
+              <SortIndicator>
+                {sort.field === 'event_name' ? (sort.direction === 'asc' ? '↑' : '↓') : '↕'}
+              </SortIndicator>
             </TableHeaderCell>
             <TableHeaderCell>发送方</TableHeaderCell>
             <TableHeaderCell>接收方</TableHeaderCell>
@@ -1446,7 +1555,9 @@ export const EventTable: React.FC<EventTableProps> = ({
                         {formatAddress(event.from)}
                       </a>
                     )
-                  : 'N/A'}
+                  : (
+                      'N/A'
+                    )}
               </AddressCell>
               <AddressCell>
                 {event.to
@@ -1458,7 +1569,9 @@ export const EventTable: React.FC<EventTableProps> = ({
                         {formatAddress(event.to)}
                       </a>
                     )
-                  : 'N/A'}
+                  : (
+                      'N/A'
+                    )}
               </AddressCell>
               <ValueCell>{formatValue(event.value)}</ValueCell>
               <TransactionHashCell>
@@ -1496,14 +1609,13 @@ export const EventTable: React.FC<EventTableProps> = ({
           <PaginationInfo>
             显示第
             {' '}
-            {pagination.startIndex || 1}
+            {pagination.startIndex ?? 1}
             {' '}
             -
             {' '}
-            {pagination.endIndex || events.length}
+            {pagination.endIndex ?? events.length}
             {' '}
-            条，
-            共
+            条， 共
             {' '}
             {pagination.total}
             {' '}
@@ -1557,10 +1669,7 @@ export const EventTable: React.FC<EventTableProps> = ({
                   min={1}
                   max={totalPages}
                 />
-                <PaginationButton
-                  onClick={handleGoToPage}
-                  disabled={!pageInput || loading}
-                >
+                <PaginationButton onClick={handleGoToPage} disabled={!pageInput || loading}>
                   确定
                 </PaginationButton>
               </GoToPageContainer>
@@ -1571,7 +1680,7 @@ export const EventTable: React.FC<EventTableProps> = ({
 
           <PaginationButton
             onClick={handleNextPage}
-            disabled={!pagination.hasMore && pagination.page >= totalPages || loading}
+            disabled={(!pagination.hasMore && pagination.page >= totalPages) || loading}
             title="下一页"
           >
             →

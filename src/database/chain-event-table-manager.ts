@@ -5,14 +5,11 @@
 
 import { createLogger } from '../server/logger';
 import { ChainDatabaseManager } from './chain-database-manager';
+import { ChainSchemaManager } from './chain-schema-manager';
+import { EventParameter, EventIndexingConfig, EventAbiShape } from '../types/events';
+import type { AbiEvent } from 'viem';
 
 const logger = createLogger('chain-event-table-manager');
-import { ChainSchemaManager } from './chain-schema-manager';
-import {
-  EventParameter,
-  EventIndexingConfig,
-  EventAbiShape,
-} from '../types/events';
 
 /**
  * 链特定的事件表管理器
@@ -60,10 +57,10 @@ export class ChainEventTableManager {
         return tableName;
       }
 
-      const eventAbi = {
+      const eventAbi: AbiEvent = {
         name: eventName,
         type: 'event',
-        inputs: eventParams,
+        inputs: eventParams as unknown as AbiEvent['inputs'],
       };
 
       // 创建事件表
@@ -81,7 +78,7 @@ export class ChainEventTableManager {
         eventSignature,
         eventName,
         tableName,
-        eventAbi,
+        eventAbi as unknown as EventAbiShape,
       );
 
       // 缓存表名
@@ -92,8 +89,7 @@ export class ChainEventTableManager {
         'Created event table',
       );
       return tableName;
-    }
-    catch (error) {
+    } catch (error) {
       logger.error({ err: error, eventName }, 'Failed to create event table');
       throw error;
     }
@@ -122,11 +118,11 @@ export class ChainEventTableManager {
    * 注册事件表到元数据表
    */
   private async registerEventTable(
-    contractAddress: string,
-    eventSignature: string,
-    eventName: string,
-    tableName: string,
-    eventAbi: EventAbiShape,
+    _contractAddress: string,
+    _eventSignature: string,
+    _eventName: string,
+    _tableName: string,
+    _eventAbi: EventAbiShape,
   ): Promise<void> {
     const sql = `
       INSERT OR REPLACE INTO event_table_registry (
@@ -156,13 +152,16 @@ export class ChainEventTableManager {
   /**
    * 批量插入事件数据
    */
-  async insertEventDataBatch(tableName: string, eventsData: Record<string, unknown>[]): Promise<void> {
+  async insertEventDataBatch(
+    tableName: string,
+    eventsData: Record<string, unknown>[],
+  ): Promise<void> {
     if (eventsData.length === 0) return;
 
     const columns = Object.keys(eventsData[0]);
     const placeholders = eventsData.map(() => `(${columns.map(() => '?').join(', ')})`).join(', ');
 
-    const values = eventsData.flatMap(event => Object.values(event));
+    const _values = eventsData.flatMap(event => Object.values(event));
 
     const sql = `
       INSERT INTO ${tableName} (${columns.join(', ')})
@@ -224,29 +223,28 @@ export class ChainEventTableManager {
     // 处理自定义过滤条件
     Object.entries(filters).forEach(([key, value]) => {
       if (
-        !['eventName', 'fromBlock', 'toBlock', 'fromTimestamp', 'toTimestamp'].includes(key)
-        && value !== undefined
+        !['eventName', 'fromBlock', 'toBlock', 'fromTimestamp', 'toTimestamp'].includes(key) &&
+        value !== undefined
       ) {
         whereClauses.push(`${key} = ?`);
         params.push(value);
       }
     });
 
-    const whereClause = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+    const _whereClause = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
 
     // 排序
-    const sortBy = options.sortBy || 'block_timestamp';
-    const sortOrder = options.sort || 'desc';
+    const sortBy = options.sortBy ?? 'block_timestamp';
+    const sortOrder = options.sort ?? 'desc';
     const orderClause = `ORDER BY ${sortBy} ${sortOrder}`;
 
     // 分页
-    const limit = Math.min(options.limit || 50, 1000);
-    const cursorClause = '';
+    const limit = Math.min(options.limit ?? 50, 1000);
+    const _cursorClause = '';
     if (options.cursor) {
       if (sortOrder === 'desc') {
         whereClauses.push(`${sortBy} < ?`);
-      }
-      else {
+      } else {
         whereClauses.push(`${sortBy} > ?`);
       }
       params.push(options.cursor);
@@ -271,13 +269,13 @@ export class ChainEventTableManager {
     // 生成下一页游标
     let nextCursor: string | undefined;
     if (hasMore && returnedEvents.length > 0) {
-      const lastEvent = returnedEvents[returnedEvents.length - 1];
+      const lastEvent = returnedEvents[returnedEvents.length - 1] as Record<string, unknown>;
       const cursorVal = lastEvent[sortBy];
       nextCursor = cursorVal != null ? String(cursorVal) : undefined;
     }
 
     return {
-      events: returnedEvents,
+      events: returnedEvents as Record<string, unknown>[],
       hasMore,
       nextCursor,
     };
@@ -314,22 +312,27 @@ export class ChainEventTableManager {
       return { totalEvents: 0 };
     }
 
-    const stats = result[0];
+    const stats = result[0] as {
+      total_events?: number;
+      oldest_event?: string;
+      newest_event?: string;
+      unique_addresses?: number;
+    };
 
     // 获取唯一地址数量（需要额外的查询）
     let uniqueAddresses;
-    if (stats.total_events > 0) {
+    if ((stats.total_events ?? 0) > 0) {
       const addressQuery = `
         SELECT COUNT(DISTINCT contract_address) as unique_addresses
         FROM ${tableName}
         ${timeRange ? ` WHERE block_timestamp >= DATE_SUB(NOW(), INTERVAL ${timeRange})` : ''}
       `;
       const addressResult = await this.chainDb.query(addressQuery);
-      uniqueAddresses = addressResult[0]?.unique_addresses || 0;
+      uniqueAddresses = (addressResult[0] as { unique_addresses?: number })?.unique_addresses ?? 0;
     }
 
     return {
-      totalEvents: Number(stats.total_events),
+      totalEvents: Number(stats.total_events ?? 0),
       oldestEvent: stats.oldest_event,
       newestEvent: stats.newest_event,
       uniqueAddresses,
@@ -347,8 +350,7 @@ export class ChainEventTableManager {
         [tableName],
       );
       return result.length > 0;
-    }
-    catch {
+    } catch {
       return false;
     }
   }
@@ -366,9 +368,8 @@ export class ChainEventTableManager {
         [contractAddress],
       );
 
-      return result.map(row => row.table_name);
-    }
-    catch (error) {
+      return result.map(row => (row as { table_name: string }).table_name);
+    } catch (error) {
       // If the table doesn't exist, return empty array
       if (error instanceof Error && error.message.includes('does not exist')) {
         logger.info('event_table_registry table does not exist yet, returning empty list');
@@ -385,15 +386,13 @@ export class ChainEventTableManager {
   async dropEventTable(tableName: string): Promise<void> {
     try {
       await this.chainDb.exec(`DROP TABLE IF EXISTS ${tableName}`);
-      await this.chainDb.query(
-        `DELETE FROM event_table_registry WHERE table_name = ?`,
-        [tableName],
-      );
+      await this.chainDb.query(`DELETE FROM event_table_registry WHERE table_name = ?`, [
+        tableName,
+      ]);
 
       this.createdTables.delete(tableName);
       logger.info({ tableName }, 'Dropped event table');
-    }
-    catch (error) {
+    } catch (error) {
       logger.error({ err: error, tableName }, 'Failed to drop table');
       throw error;
     }
@@ -414,9 +413,9 @@ export class ChainEventTableManager {
     );
 
     const columns = columnsResult.map(col => ({
-      name: col.column_name,
-      type: col.data_type,
-      nullable: col.is_nullable === 'YES',
+      name: (col as { column_name: string }).column_name,
+      type: (col as { data_type: string }).data_type,
+      nullable: (col as { is_nullable: string }).is_nullable === 'YES',
     }));
 
     const indexesResult = await this.chainDb.query(
@@ -428,14 +427,14 @@ export class ChainEventTableManager {
 
     const indexMap = new Map<string, { columns: string[]; unique: boolean }>();
     for (const row of indexesResult) {
-      const existing = indexMap.get(row.index_name);
+      const r = row as { index_name: string; column_name: string; is_unique: boolean };
+      const existing = indexMap.get(r.index_name);
       if (existing) {
-        existing.columns.push(row.column_name);
-      }
-      else {
-        indexMap.set(row.index_name, {
-          columns: [row.column_name],
-          unique: row.is_unique,
+        existing.columns.push(r.column_name);
+      } else {
+        indexMap.set(r.index_name, {
+          columns: [r.column_name],
+          unique: r.is_unique,
         });
       }
     }
@@ -467,11 +466,13 @@ export class ChainEventTableManager {
     let cleanedCount = 0;
     for (const row of result) {
       try {
-        await this.dropEventTable(row.table_name);
+        await this.dropEventTable((row as { table_name: string }).table_name);
         cleanedCount++;
-      }
-      catch (error) {
-        logger.error({ err: error, tableName: row.table_name }, 'Failed to cleanup table');
+      } catch (error) {
+        logger.error(
+          { err: error, tableName: (row as { table_name: string }).table_name },
+          'Failed to cleanup table',
+        );
       }
     }
 
@@ -501,8 +502,7 @@ export class ChainEventTableManager {
               CREATE INDEX IF NOT EXISTS ${indexName} ON ${tableName} (${param})
             `);
             logger.info({ indexName, param }, 'Created index');
-          }
-          catch (error) {
+          } catch (error) {
             logger.warn({ err: error, indexName }, 'Failed to create index');
           }
         }
@@ -510,8 +510,7 @@ export class ChainEventTableManager {
 
       // 创建复合索引以提高常见过滤组合的性能
       await this.createCompositeIndexes(tableName, parameters);
-    }
-    catch (error) {
+    } catch (error) {
       logger.error({ err: error, tableName }, 'Failed to create filtering indexes');
       throw error;
     }
@@ -564,8 +563,7 @@ export class ChainEventTableManager {
             CREATE INDEX IF NOT EXISTS ${index.name} ON ${tableName} (${index.fields.join(', ')})
           `);
           logger.info({ indexName: index.name, fields: index.fields }, 'Created composite index');
-        }
-        catch (error) {
+        } catch (error) {
           logger.warn({ err: error, indexName: index.name }, 'Failed to create composite index');
         }
       }
@@ -626,8 +624,7 @@ export class ChainEventTableManager {
 
       if (existing) {
         existing.frequency++;
-      }
-      else {
+      } else {
         patterns.set(key, {
           fields,
           frequency: 1,
@@ -653,9 +650,10 @@ export class ChainEventTableManager {
 
       const indexMap = new Map<string, string[]>();
       for (const row of indexesResult) {
-        const cols = indexMap.get(row.index_name) ?? [];
-        cols.push(row.column_name);
-        indexMap.set(row.index_name, cols);
+        const r = row as { index_name: string; column_name: string };
+        const cols = indexMap.get(r.index_name) ?? [];
+        cols.push(r.column_name);
+        indexMap.set(r.index_name, cols);
       }
 
       for (const indexColumns of indexMap.values()) {
@@ -665,8 +663,7 @@ export class ChainEventTableManager {
       }
 
       return false;
-    }
-    catch (error) {
+    } catch (error) {
       logger.warn({ err: error }, 'Failed to check index existence');
       return false;
     }
@@ -696,8 +693,7 @@ export class ChainEventTableManager {
         lastUsed: new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000), // 模拟最后使用时间
         efficiency: 0.8 + Math.random() * 0.2, // 模拟效率评分
       }));
-    }
-    catch (error) {
+    } catch (error) {
       logger.warn({ err: error }, 'Failed to get index usage stats');
       return [];
     }
@@ -727,12 +723,10 @@ export class ChainEventTableManager {
             await this.chainDb.exec(`DROP INDEX IF EXISTS ${stat.indexName}`);
             droppedIndexes.push(stat.indexName);
             logger.info({ indexName: stat.indexName }, 'Dropped inefficient index');
-          }
-          catch (error) {
+          } catch (error) {
             logger.warn({ err: error, indexName: stat.indexName }, 'Failed to drop index');
           }
-        }
-        else if (stat.usageCount > 100 && stat.efficiency > 0.8) {
+        } else if (stat.usageCount > 100 && stat.efficiency > 0.8) {
           // 使用频繁且效率高的索引
           optimizedIndexes.push(stat.indexName);
         }
@@ -748,8 +742,7 @@ export class ChainEventTableManager {
       logger.info({ tableName }, 'Index optimization completed for table');
 
       return { optimizedIndexes, droppedIndexes, createdIndexes };
-    }
-    catch (error) {
+    } catch (error) {
       logger.error({ err: error, tableName }, 'Failed to optimize indexes');
       throw error;
     }
@@ -848,8 +841,8 @@ export class ChainEventTableManager {
 
       for (const suggestion of compositeSuggestions) {
         if (
-          suggestion.fields.every(field => parameters.includes(field))
-          && !this.hasIndexForField(currentIndexes, ...suggestion.fields)
+          suggestion.fields.every(field => parameters.includes(field)) &&
+          !this.hasIndexForField(currentIndexes, ...suggestion.fields)
         ) {
           suggestedIndexes.push({
             fields: suggestion.fields,
@@ -866,8 +859,7 @@ export class ChainEventTableManager {
         suggestedIndexes,
         performanceImpact,
       };
-    }
-    catch (error) {
+    } catch (error) {
       logger.error({ err: error }, 'Failed to get indexing recommendations');
       return {
         currentIndexes: [],
@@ -902,14 +894,11 @@ export class ChainEventTableManager {
 
     if (highPriorityCount > 0) {
       return 'High - Will significantly improve query performance';
-    }
-    else if (mediumPriorityCount > 2) {
+    } else if (mediumPriorityCount > 2) {
       return 'Medium - Will moderately improve query performance';
-    }
-    else if (lowPriorityCount > 5) {
+    } else if (lowPriorityCount > 5) {
       return 'Low - May slightly improve query performance';
-    }
-    else {
+    } else {
       return 'Minimal - Little performance impact expected';
     }
   }

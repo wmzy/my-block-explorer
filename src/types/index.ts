@@ -1,4 +1,11 @@
-// 导出所有共享类型
-export * from './api';
+export type { ApiPaginationParams } from './api';
+export type {
+  DataResponse,
+  ListResponse,
+  ErrorResponse,
+  PaginationInfo,
+  TimeRangeParams,
+  BlockRangeParams,
+} from './api';
 export * from './blockchain';
 export * from './events';

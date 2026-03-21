@@ -51,7 +51,7 @@ const validateChainAndAddress = (chainIdStr: string, addressStr: string) => {
 };
 
 // GET /chains/:chainId/contracts/:address/events/statistics
-app.get('/chains/:chainId/contracts/:address/events/statistics', async (c) => {
+app.get('/chains/:chainId/contracts/:address/events/statistics', async c => {
   const result = validateChainAndAddress(c.req.param('chainId'), c.req.param('address'));
   if ('error' in result) return c.json(result.error, result.status);
 
@@ -72,8 +72,7 @@ app.get('/chains/:chainId/contracts/:address/events/statistics', async (c) => {
         timestamp: new Date().toISOString(),
       }),
     );
-  }
-  catch (error) {
+  } catch (error) {
     logger.error({ err: error }, 'Event statistics API error');
     return c.json(
       {
@@ -86,7 +85,7 @@ app.get('/chains/:chainId/contracts/:address/events/statistics', async (c) => {
 });
 
 // GET /chains/:chainId/contracts/:address/events/indexing-status
-app.get('/chains/:chainId/contracts/:address/events/indexing-status', async (c) => {
+app.get('/chains/:chainId/contracts/:address/events/indexing-status', async c => {
   const result = validateChainAndAddress(c.req.param('chainId'), c.req.param('address'));
   if ('error' in result) return c.json(result.error, result.status);
 
@@ -100,8 +99,7 @@ app.get('/chains/:chainId/contracts/:address/events/indexing-status', async (c) 
     c.header('Cache-Control', 'public, max-age=5');
 
     return c.json(status);
-  }
-  catch (error) {
+  } catch (error) {
     logger.error({ err: error }, 'Event indexing status API error');
     return c.json({
       chainId,
@@ -119,7 +117,7 @@ app.get('/chains/:chainId/contracts/:address/events/indexing-status', async (c) 
 });
 
 // GET /chains/:chainId/contracts/:address/events — query indexed events
-app.get('/chains/:chainId/contracts/:address/events', async (c) => {
+app.get('/chains/:chainId/contracts/:address/events', async c => {
   const result = validateChainAndAddress(c.req.param('chainId'), c.req.param('address'));
   if ('error' in result) return c.json(result.error, result.status);
 
@@ -127,7 +125,7 @@ app.get('/chains/:chainId/contracts/:address/events', async (c) => {
 
   const page = Math.max(1, parseInt(c.req.query('page') ?? '1'));
   const pageSize = Math.min(Math.max(1, parseInt(c.req.query('pageSize') ?? '50')), 1000);
-  const eventName = c.req.query('eventName') || undefined;
+  const eventName = c.req.query('eventName') ?? undefined;
   const fromBlock = c.req.query('fromBlock') ? parseInt(c.req.query('fromBlock')!) : undefined;
   const toBlock = c.req.query('toBlock') ? parseInt(c.req.query('toBlock')!) : undefined;
 
@@ -153,8 +151,7 @@ app.get('/chains/:chainId/contracts/:address/events', async (c) => {
         timestamp: new Date().toISOString(),
       }),
     );
-  }
-  catch (error) {
+  } catch (error) {
     logger.error({ err: error }, 'Contract events API error');
     return c.json(
       {
@@ -174,7 +171,7 @@ app.get('/chains/:chainId/contracts/:address/events', async (c) => {
 });
 
 // GET /chains/:chainId/contracts/:address/events/ranges — get all ranges
-app.get('/chains/:chainId/contracts/:address/events/ranges', async (c) => {
+app.get('/chains/:chainId/contracts/:address/events/ranges', async c => {
   const result = validateChainAndAddress(c.req.param('chainId'), c.req.param('address'));
   if ('error' in result) return c.json(result.error, result.status);
 
@@ -195,8 +192,7 @@ app.get('/chains/:chainId/contracts/:address/events/ranges', async (c) => {
         timestamp: new Date().toISOString(),
       }),
     );
-  }
-  catch (error) {
+  } catch (error) {
     logger.error({ err: error }, 'Get indexing ranges API error');
     return c.json(
       {
@@ -209,7 +205,7 @@ app.get('/chains/:chainId/contracts/:address/events/ranges', async (c) => {
 });
 
 // POST /chains/:chainId/contracts/:address/events/ranges — add new range
-app.post('/chains/:chainId/contracts/:address/events/ranges', async (c) => {
+app.post('/chains/:chainId/contracts/:address/events/ranges', async c => {
   const result = validateChainAndAddress(c.req.param('chainId'), c.req.param('address'));
   if ('error' in result) return c.json(result.error, result.status);
 
@@ -260,8 +256,7 @@ app.post('/chains/:chainId/contracts/:address/events/ranges', async (c) => {
       }),
       201,
     );
-  }
-  catch (error) {
+  } catch (error) {
     logger.error({ err: error }, 'Add indexing range API error');
     return c.json(
       {
@@ -274,7 +269,7 @@ app.post('/chains/:chainId/contracts/:address/events/ranges', async (c) => {
 });
 
 // PATCH /chains/:chainId/contracts/:address/events/ranges/:rangeId — update range
-app.patch('/chains/:chainId/contracts/:address/events/ranges/:rangeId', async (c) => {
+app.patch('/chains/:chainId/contracts/:address/events/ranges/:rangeId', async c => {
   const result = validateChainAndAddress(c.req.param('chainId'), c.req.param('address'));
   if ('error' in result) return c.json(result.error, result.status);
 
@@ -325,8 +320,7 @@ app.patch('/chains/:chainId/contracts/:address/events/ranges/:rangeId', async (c
         timestamp: new Date().toISOString(),
       }),
     );
-  }
-  catch (error) {
+  } catch (error) {
     logger.error({ err: error }, 'Update indexing range API error');
     return c.json(
       {
@@ -339,7 +333,7 @@ app.patch('/chains/:chainId/contracts/:address/events/ranges/:rangeId', async (c
 });
 
 // DELETE /chains/:chainId/contracts/:address/events/ranges/:rangeId — delete range
-app.delete('/chains/:chainId/contracts/:address/events/ranges/:rangeId', async (c) => {
+app.delete('/chains/:chainId/contracts/:address/events/ranges/:rangeId', async c => {
   const result = validateChainAndAddress(c.req.param('chainId'), c.req.param('address'));
   if ('error' in result) return c.json(result.error, result.status);
 
@@ -381,8 +375,7 @@ app.delete('/chains/:chainId/contracts/:address/events/ranges/:rangeId', async (
         timestamp: new Date().toISOString(),
       }),
     );
-  }
-  catch (error) {
+  } catch (error) {
     logger.error({ err: error }, 'Delete indexing range API error');
     return c.json(
       {
@@ -395,7 +388,7 @@ app.delete('/chains/:chainId/contracts/:address/events/ranges/:rangeId', async (
 });
 
 // POST /chains/:chainId/contracts/:address/events/ranges/:rangeId/start — start indexing
-app.post('/chains/:chainId/contracts/:address/events/ranges/:rangeId/start', async (c) => {
+app.post('/chains/:chainId/contracts/:address/events/ranges/:rangeId/start', async c => {
   const result = validateChainAndAddress(c.req.param('chainId'), c.req.param('address'));
   if ('error' in result) return c.json(result.error, result.status);
 
@@ -420,8 +413,7 @@ app.post('/chains/:chainId/contracts/:address/events/ranges/:rangeId/start', asy
       if (body.abi && Array.isArray(body.abi)) {
         abi = body.abi;
       }
-    }
-    catch {
+    } catch {
       // no body or invalid JSON
     }
 
@@ -432,8 +424,7 @@ app.post('/chains/:chainId/contracts/:address/events/ranges/:rangeId/start', asy
         if (abiStr) {
           abi = JSON.parse(abiStr);
         }
-      }
-      catch {
+      } catch {
         // ABI not available
       }
     }
@@ -473,8 +464,7 @@ app.post('/chains/:chainId/contracts/:address/events/ranges/:rangeId/start', asy
         timestamp: new Date().toISOString(),
       }),
     );
-  }
-  catch (error) {
+  } catch (error) {
     logger.error({ err: error }, 'Start indexing range API error');
     return c.json(
       {
@@ -487,7 +477,7 @@ app.post('/chains/:chainId/contracts/:address/events/ranges/:rangeId/start', asy
 });
 
 // POST /chains/:chainId/contracts/:address/events/ranges/:rangeId/pause — pause indexing
-app.post('/chains/:chainId/contracts/:address/events/ranges/:rangeId/pause', async (c) => {
+app.post('/chains/:chainId/contracts/:address/events/ranges/:rangeId/pause', async c => {
   const result = validateChainAndAddress(c.req.param('chainId'), c.req.param('address'));
   if ('error' in result) return c.json(result.error, result.status);
 
@@ -511,11 +501,16 @@ app.post('/chains/:chainId/contracts/:address/events/ranges/:rangeId/pause', asy
       const ranges = await getIndexingRanges(chainId, address);
       const range = ranges.find(r => r.rangeId === rangeId);
 
-      if (range?.currentBlock !== null && range.toBlock !== null) {
-        const isComplete
-          = range.direction === 'forward'
-            ? range.currentBlock >= range.toBlock
-            : range.currentBlock <= range.fromBlock;
+      if (!range) {
+        return c.json({ error: 'Range not found' }, 404);
+      }
+
+      if (range.currentBlock !== null && range.toBlock !== null) {
+        const currentBlock = range.currentBlock;
+        const toBlock = range.toBlock;
+        const fromBlock = range.fromBlock;
+        const isComplete =
+          range.direction === 'forward' ? currentBlock >= toBlock : currentBlock <= fromBlock;
 
         if (isComplete) {
           await updateRangeStatus(chainId, address, rangeId, 'completed');
@@ -556,8 +551,7 @@ app.post('/chains/:chainId/contracts/:address/events/ranges/:rangeId/pause', asy
         timestamp: new Date().toISOString(),
       }),
     );
-  }
-  catch (error) {
+  } catch (error) {
     logger.error({ err: error }, 'Pause indexing range API error');
     return c.json(
       {
@@ -570,7 +564,7 @@ app.post('/chains/:chainId/contracts/:address/events/ranges/:rangeId/pause', asy
 });
 
 // POST /chains/:chainId/contracts/:address/events/ranges/:rangeId/resume — resume indexing
-app.post('/chains/:chainId/contracts/:address/events/ranges/:rangeId/resume', async (c) => {
+app.post('/chains/:chainId/contracts/:address/events/ranges/:rangeId/resume', async c => {
   const result = validateChainAndAddress(c.req.param('chainId'), c.req.param('address'));
   if ('error' in result) return c.json(result.error, result.status);
 
@@ -595,8 +589,7 @@ app.post('/chains/:chainId/contracts/:address/events/ranges/:rangeId/resume', as
       if (body.abi && Array.isArray(body.abi)) {
         abi = body.abi;
       }
-    }
-    catch {
+    } catch {
       // no body or invalid JSON
     }
 
@@ -607,8 +600,7 @@ app.post('/chains/:chainId/contracts/:address/events/ranges/:rangeId/resume', as
         if (abiStr) {
           abi = JSON.parse(abiStr);
         }
-      }
-      catch {
+      } catch {
         // ABI not available
       }
     }
@@ -648,8 +640,7 @@ app.post('/chains/:chainId/contracts/:address/events/ranges/:rangeId/resume', as
         timestamp: new Date().toISOString(),
       }),
     );
-  }
-  catch (error) {
+  } catch (error) {
     logger.error({ err: error }, 'Resume indexing range API error');
     return c.json(
       {

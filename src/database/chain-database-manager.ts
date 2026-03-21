@@ -5,6 +5,7 @@
 
 import { createLogger } from '../server/logger';
 import { DuckDBManager } from './duckdb';
+import type { DuckDBValue } from '@duckdb/node-api';
 
 const logger = createLogger('chain-database-manager');
 import { join } from 'path';
@@ -45,14 +46,17 @@ export class ChainDatabaseManager {
     await mkdir(dataDir, { recursive: true });
 
     await this.dbManager.initialize();
-    logger.info({ chainId: this.chainId, chainName: getChainName(this.chainId) }, 'Initialized database for chain');
+    logger.info(
+      { chainId: this.chainId, chainName: getChainName(this.chainId) },
+      'Initialized database for chain',
+    );
   }
 
   /**
    * 执行查询
    */
-  async query<T = any>(sql: string, params: any[] = []): Promise<T[]> {
-    return this.dbManager.query<T>(sql, params);
+  async query<T = unknown>(sql: string, params: unknown[] = []): Promise<T[]> {
+    return this.dbManager.query<T>(sql, params as DuckDBValue[]);
   }
 
   /**
@@ -145,7 +149,9 @@ export class MultiChainDatabaseManager {
   getChainDatabaseSync(chainId: number): ChainDatabaseManager {
     const manager = this.chainManagers.get(chainId);
     if (!manager) {
-      throw new Error(`Chain database for ${chainId} is not initialized. Call getChainDatabase() first.`);
+      throw new Error(
+        `Chain database for ${chainId} is not initialized. Call getChainDatabase() first.`,
+      );
     }
     return manager;
   }
@@ -156,12 +162,11 @@ export class MultiChainDatabaseManager {
   async initializeAllChains(): Promise<void> {
     logger.info({ count: this.supportedChains.length }, 'Initializing chain databases');
 
-    const initPromises = this.supportedChains.map(async (chainId) => {
+    const initPromises = this.supportedChains.map(async chainId => {
       try {
         await this.getChainDatabase(chainId);
         logger.info({ chainId }, 'Chain database initialized');
-      }
-      catch (error) {
+      } catch (error) {
         logger.error({ err: error, chainId }, 'Failed to initialize chain database');
       }
     });
@@ -207,8 +212,7 @@ export class MultiChainDatabaseManager {
         try {
           await manager.close();
           logger.info({ chainId }, 'Chain database closed');
-        }
-        catch (error) {
+        } catch (error) {
           logger.error({ err: error, chainId }, 'Failed to close chain database');
         }
       },
@@ -235,25 +239,29 @@ export class MultiChainDatabaseManager {
     return {
       chainId,
       chainName: getChainName(chainId),
-      databasePath: manager?.getDatabasePath() || new ChainDatabaseManager(chainId).getDatabasePath(),
+      databasePath:
+        manager?.getDatabasePath() ?? new ChainDatabaseManager(chainId).getDatabasePath(),
       isInitialized: this.isChainInitialized(chainId),
-      fileExists: await fs.access(manager?.getDatabasePath() || new ChainDatabaseManager(chainId).getDatabasePath()).then(() => true).catch(() => false),
+      fileExists: await fs
+        .access(manager?.getDatabasePath() ?? new ChainDatabaseManager(chainId).getDatabasePath())
+        .then(() => true)
+        .catch(() => false),
     };
   }
 
   /**
    * 获取所有链的统计信息
    */
-  async getAllChainStats(): Promise<Array<{
-    chainId: number;
-    chainName: string;
-    databasePath: string;
-    isInitialized: boolean;
-    fileExists: boolean;
-  }>> {
-    const statsPromises = this.supportedChains.map(chainId =>
-      this.getChainStats(chainId),
-    );
+  async getAllChainStats(): Promise<
+    Array<{
+      chainId: number;
+      chainName: string;
+      databasePath: string;
+      isInitialized: boolean;
+      fileExists: boolean;
+    }>
+  > {
+    const statsPromises = this.supportedChains.map(chainId => this.getChainStats(chainId));
 
     return Promise.all(statsPromises);
   }

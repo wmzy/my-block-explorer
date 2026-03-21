@@ -3,8 +3,9 @@ import { searchService } from '../services/SearchService';
 import {
   getChainName,
   getSupportedChainIds,
+  isChainSupported,
+  getChainSymbol,
 } from '../config/chains';
-import { getValidatedChainId } from '../server/validation';
 import { safeJsonResponse } from '../utils/serialization';
 import { createLogger } from '../server/logger';
 
@@ -126,8 +127,7 @@ app.get('/chains/:chainId/search', async (c) => {
     return c.json(
       {
         error: 'Search failed',
-        message:
-          error instanceof Error ? error.message : 'Internal server error',
+        message: error instanceof Error ? error.message : 'Internal server error',
       },
       500,
     );

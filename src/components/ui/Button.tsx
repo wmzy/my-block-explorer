@@ -55,7 +55,7 @@ export function Button({
       variant={hazeVariant}
       size={size}
       className={cx(variant === 'danger' ? dangerStyle : undefined, className)}
-      disabled={disabled || loading}
+      disabled={disabled ?? loading}
       {...rest}
     >
       {loading && <span className={spinnerStyle} />}

@@ -2,6 +2,7 @@ import { createPublicClient, http, PublicClient } from 'viem';
 import {
   getChainInfo,
   getDefaultRpcUrl,
+  getEffectiveRpcUrl,
   type UserRpcConfig,
 } from '../config/chains';
 import { createLogger } from '../server/logger';
@@ -9,12 +10,7 @@ import { createLogger } from '../server/logger';
 const logger = createLogger('rpc-manager');
 import { db, userRpcConfigs } from '../database/init';
 import { eq } from 'drizzle-orm';
-import {
-  createRetryableRpcCall,
-  createRetryableDbCall,
-  RpcError,
-  logError,
-} from '../utils/errorHandler';
+import { createRetryableDbCall, RpcError, logError } from '../utils/errorHandler';
 
 /**
  * RPC客户端管理器
@@ -45,7 +41,7 @@ export class RpcManager {
       for (const config of configs) {
         this.userConfigs.set(config.chainId, {
           chainId: config.chainId,
-          customRpcUrl: config.url || undefined,
+          customRpcUrl: config.url ?? undefined,
           rpcBackups: undefined,
           timeout: 10000,
           retryCount: 3,
@@ -56,8 +52,7 @@ export class RpcManager {
 
     try {
       await loadConfigs();
-    }
-    catch (error) {
+    } catch (error) {
       logError(error, 'RpcManager.loadUserConfigs');
     }
   }
@@ -70,15 +65,11 @@ export class RpcManager {
       try {
         logger.info({ chainId }, 'Creating new RPC client for chain');
         const config = this.userConfigs.get(chainId);
-        logger.info(
-          { configFound: !!config, customRpc: config?.customRpcUrl },
-          'RPC config',
-        );
+        logger.info({ configFound: !!config, customRpc: config?.customRpcUrl }, 'RPC config');
 
         const client = await this.createClient(chainId);
         this.clients.set(chainId, client);
-      }
-      catch (error) {
+      } catch (error) {
         logError(error, `RpcManager.getClient`, { chainId });
         throw new RpcError(
           `Failed to create RPC client for chain ${chainId}`,
@@ -101,15 +92,15 @@ export class RpcManager {
 
     // 获取有效的RPC URL（用户配置优先，否则viem默认）
     const userConfig = this.userConfigs.get(chainId);
-    const rpcUrl = userConfig?.customRpcUrl || getDefaultRpcUrl(chainId);
+    const rpcUrl = userConfig?.customRpcUrl ?? getDefaultRpcUrl(chainId);
 
     logger.info({ rpcUrl }, 'Creating client with RPC URL');
 
     return createPublicClient({
       chain: viemChain,
       transport: http(rpcUrl, {
-        timeout: userConfig?.timeout || 10000,
-        retryCount: userConfig?.retryCount || 3,
+        timeout: userConfig?.timeout ?? 10000,
+        retryCount: userConfig?.retryCount ?? 3,
       }),
     });
   }
@@ -117,7 +108,7 @@ export class RpcManager {
   // 获取链名称
   getChainName(chainId: number): string {
     const chain = getChainInfo(chainId);
-    return chain?.name || `Chain ${chainId}`;
+    return chain?.name ?? `Chain ${chainId}`;
   }
 
   // 更新用户RPC配置
@@ -139,26 +130,22 @@ export class RpcManager {
 
       this.userConfigs.set(config.chainId, config);
       this.clients.delete(config.chainId);
-    }
-    catch (error) {
+    } catch (error) {
       logError(error, 'RpcManager.updateUserRpcConfig');
-      throw new Error('Failed to update RPC configuration');
+      throw new Error('Failed to update RPC configuration', { cause: error });
     }
   }
 
   // 删除用户RPC配置
   async deleteUserRpcConfig(chainId: number): Promise<void> {
     try {
-      await db
-        .delete(userRpcConfigs)
-        .where(eq(userRpcConfigs.chainId, chainId));
+      await db.delete(userRpcConfigs).where(eq(userRpcConfigs.chainId, chainId));
 
       this.userConfigs.delete(chainId);
       this.clients.delete(chainId);
-    }
-    catch (error) {
+    } catch (error) {
       logError(error, 'RpcManager.deleteUserRpcConfig');
-      throw new Error('Failed to delete RPC configuration');
+      throw new Error('Failed to delete RPC configuration', { cause: error });
     }
   }
 
@@ -186,8 +173,7 @@ export class RpcManager {
         return { success: false, error: 'Unsupported chain' };
       }
 
-      const testUrl
-        = rpcUrl || getEffectiveRpcUrl(chainId, this.userConfigs.get(chainId));
+      const testUrl = rpcUrl ?? getEffectiveRpcUrl(chainId, this.userConfigs.get(chainId));
       const testClient = createPublicClient({
         chain: viemChain,
         transport: http(testUrl, { timeout: 5000 }),
@@ -198,8 +184,7 @@ export class RpcManager {
 
       const latency = Date.now() - startTime;
       return { success: true, latency };
-    }
-    catch (error) {
+    } catch (error) {
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error',

@@ -5,12 +5,8 @@
  */
 
 import { performance } from 'perf_hooks';
-import { multiChainDb } from '../database/chain-database-manager';
-import { multiChainPerformanceManager } from '../database/performance-monitor';
+import { multiChainDb, ChainDatabaseManager } from '../database/chain-database-manager';
 import { eventQueryServiceManager } from './EventQueryService';
-import { eventDecoderServiceManager } from './EventDecoderService';
-import { abiParsingServiceManager } from './AbiParsingService';
-import { eventValidationServiceManager } from './EventValidationService';
 
 /**
  * Performance metrics interface
@@ -126,7 +122,7 @@ class PerformanceCache<T> {
     let keyToDelete: string | null = null;
 
     switch (this.strategy) {
-      case 'lru': // Least Recently Used
+      case 'lru': {
         let oldestAccess = Date.now();
         for (const [key, entry] of this.cache.entries()) {
           if (entry.lastAccessed < oldestAccess) {
@@ -135,8 +131,9 @@ class PerformanceCache<T> {
           }
         }
         break;
+      }
 
-      case 'fifo': // First In First Out
+      case 'fifo': {
         let oldestTimestamp = Date.now();
         for (const [key, entry] of this.cache.entries()) {
           if (entry.timestamp < oldestTimestamp) {
@@ -145,8 +142,9 @@ class PerformanceCache<T> {
           }
         }
         break;
+      }
 
-      case 'lfu': // Least Frequently Used
+      case 'lfu': {
         let lowestCount = Infinity;
         for (const [key, entry] of this.cache.entries()) {
           if (entry.accessCount < lowestCount) {
@@ -155,6 +153,7 @@ class PerformanceCache<T> {
           }
         }
         break;
+      }
     }
 
     if (keyToDelete) {
@@ -313,8 +312,7 @@ export class EventPerformanceOptimizer {
       this.validatePerformance(operation, duration, false);
 
       return result;
-    }
-    catch (error) {
+    } catch (error) {
       const endTime = performance.now();
       const duration = endTime - startTime;
 
@@ -366,10 +364,9 @@ export class EventPerformanceOptimizer {
     const results: R[] = [];
     for (let i = 0; i < items.length; i += batchSize) {
       const batch = items.slice(i, i + batchSize);
-      const batchPromises = batch.map(item => this.executeWithConcurrencyControl(
-        () => operationFn(item),
-        maxConcurrency,
-      ));
+      const batchPromises = batch.map(item =>
+        this.executeWithConcurrencyControl(() => operationFn(item), maxConcurrency),
+      );
 
       const batchResults = await Promise.all(batchPromises);
       results.push(...batchResults);
@@ -398,7 +395,8 @@ export class EventPerformanceOptimizer {
       // Precompute time-based statistics
       await this.executeOptimizedQuery(
         'precompute_time_stats',
-        () => queryService.getEventsByTimeRange(`events_${contractAddress.toLowerCase()}`, 'day', 30),
+        () =>
+          queryService.getEventsByTimeRange(`events_${contractAddress.toLowerCase()}`, 'day', 30),
         `time_stats_${contractAddress}`,
         { useCache: true },
       );
@@ -410,8 +408,7 @@ export class EventPerformanceOptimizer {
         `top_addresses_${contractAddress}`,
         { useCache: true },
       );
-    }
-    catch (error) {
+    } catch (error) {
       console.warn('Failed to precompute aggregates:', error);
     }
   }
@@ -426,10 +423,7 @@ export class EventPerformanceOptimizer {
 
     // Add query hints for better performance
     if (query.includes('SELECT') && query.includes('FROM')) {
-      optimizedQuery = query.replace(
-        'SELECT',
-        'SELECT /*+ USE_INDEX */',
-      );
+      optimizedQuery = query.replace('SELECT', 'SELECT /*+ USE_INDEX */');
     }
 
     // Optimize LIMIT clauses
@@ -438,10 +432,7 @@ export class EventPerformanceOptimizer {
       const limit = parseInt(limitMatch[1], 10);
       if (limit > 100) {
         // Suggest using pagination for large limits
-        optimizedQuery = optimizedQuery.replace(
-          limitMatch[0],
-          `LIMIT ${Math.min(limit, 100)}`,
-        );
+        optimizedQuery = optimizedQuery.replace(limitMatch[0], `LIMIT ${Math.min(limit, 100)}`);
       }
     }
 
@@ -516,12 +507,11 @@ export class EventPerformanceOptimizer {
    * Warm up caches with common queries
    */
   async warmUpCaches(contracts: string[]): Promise<void> {
-    const warmUpPromises = contracts.map(async (contractAddress) => {
+    const warmUpPromises = contracts.map(async contractAddress => {
       try {
         // Preload common queries
         await this.precomputeAggregates(contractAddress);
-      }
-      catch (error) {
+      } catch (error) {
         console.warn(`Failed to warm up cache for ${contractAddress}:`, error);
       }
     });
@@ -532,21 +522,18 @@ export class EventPerformanceOptimizer {
   /**
    * Execute function with timeout
    */
-  private async executeWithTimeout<T>(
-    fn: () => Promise<T>,
-    timeoutMs: number,
-  ): Promise<T> {
+  private async executeWithTimeout<T>(fn: () => Promise<T>, timeoutMs: number): Promise<T> {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         reject(new Error(`Operation timed out after ${timeoutMs}ms`));
       }, timeoutMs);
 
       fn()
-        .then((result) => {
+        .then(result => {
           clearTimeout(timeout);
           resolve(result);
         })
-        .catch((error) => {
+        .catch(error => {
           clearTimeout(timeout);
           reject(error);
         });
@@ -558,7 +545,7 @@ export class EventPerformanceOptimizer {
    */
   private async executeWithConcurrencyControl<T>(
     fn: () => Promise<T>,
-    maxConcurrency: number,
+    _maxConcurrency: number,
   ): Promise<T> {
     // Simple implementation - in production, this would use a proper semaphore
     return fn();
@@ -588,7 +575,8 @@ export class EventPerformanceOptimizer {
     if (typeof data === 'number') return 8;
     if (typeof data === 'boolean') return 1;
     if (typeof data === 'bigint') return 8; // BigInt is 8 bytes
-    if (Array.isArray(data)) return data.reduce((sum, item) => sum + this.estimateDataSize(item), 0);
+    if (Array.isArray(data))
+      return data.reduce((sum, item) => sum + this.estimateDataSize(item), 0);
     if (typeof data === 'object') {
       try {
         // Use serializeForJson to handle BigInt and other special types
@@ -597,8 +585,7 @@ export class EventPerformanceOptimizer {
           return value;
         });
         return serialized.length;
-      }
-      catch (error) {
+      } catch (error) {
         console.warn('Failed to estimate data size:', error);
         return 100; // Default estimate
       }
@@ -636,7 +623,7 @@ export class EventPerformanceOptimizer {
     }
 
     // Update performance baseline
-    const baseline = this.performanceBaseline.get(operation) || threshold;
+    const baseline = this.performanceBaseline.get(operation) ?? threshold;
     const newBaseline = baseline * 0.9 + duration * 0.1; // Exponential moving average
     this.performanceBaseline.set(operation, newBaseline);
   }
@@ -690,8 +677,7 @@ class EventPerformanceOptimizerManager {
       // Ensure database is initialized before creating optimizer
       try {
         multiChainDb.getChainDatabase(chainId);
-      }
-      catch (error) {
+      } catch (error) {
         console.warn(`Failed to initialize chain database for ${chainId}:`, error);
       }
       this.optimizers.set(chainId, new EventPerformanceOptimizer(chainId, thresholds, strategies));

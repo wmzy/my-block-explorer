@@ -41,36 +41,31 @@ type TransactionServiceDeps = {
 const createTransactionService = (deps: TransactionServiceDeps) => {
   const { db, transactions, blocks, rpcManager } = deps;
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const formatTransaction = (dbTx: any): Transaction => {
     return {
       chainId: dbTx.chain_id,
       hash: dbTx.hash,
       blockNumber: dbTx.block_number ? BigInt(dbTx.block_number) : undefined,
-      transactionIndex: dbTx.transaction_index || undefined,
-      fromAddress: dbTx.from_address || undefined,
-      toAddress: dbTx.to_address || undefined,
-      value: dbTx.value || '0',
+      transactionIndex: dbTx.transaction_index ?? undefined,
+      fromAddress: dbTx.from_address ?? undefined,
+      toAddress: dbTx.to_address ?? undefined,
+      value: dbTx.value ?? '0',
       gasLimit: dbTx.gas_limit ? BigInt(dbTx.gas_limit) : undefined,
       gasPrice: dbTx.gas_price ? BigInt(dbTx.gas_price) : undefined,
-      maxFeePerGas: dbTx.max_fee_per_gas
-        ? BigInt(dbTx.max_fee_per_gas)
-        : undefined,
+      maxFeePerGas: dbTx.max_fee_per_gas ? BigInt(dbTx.max_fee_per_gas) : undefined,
       maxPriorityFeePerGas: dbTx.max_priority_fee_per_gas
         ? BigInt(dbTx.max_priority_fee_per_gas)
         : undefined,
       gasUsed: dbTx.gas_used ? BigInt(dbTx.gas_used) : undefined,
-      effectiveGasPrice: dbTx.effective_gas_price
-        ? BigInt(dbTx.effective_gas_price)
-        : undefined,
-      status: dbTx.status || undefined,
-      type: dbTx.type || 0,
+      effectiveGasPrice: dbTx.effective_gas_price ? BigInt(dbTx.effective_gas_price) : undefined,
+      status: dbTx.status ?? undefined,
+      type: dbTx.type ?? 0,
       nonce: dbTx.nonce ? BigInt(dbTx.nonce) : undefined,
-      inputData: dbTx.input_data || undefined,
-      logsCount: dbTx.logs_count || 0,
-      contractAddress: dbTx.contract_address || undefined,
-      cumulativeGasUsed: dbTx.cumulative_gas_used
-        ? BigInt(dbTx.cumulative_gas_used)
-        : undefined,
+      inputData: dbTx.input_data ?? undefined,
+      logsCount: dbTx.logs_count ?? 0,
+      contractAddress: dbTx.contract_address ?? undefined,
+      cumulativeGasUsed: dbTx.cumulative_gas_used ? BigInt(dbTx.cumulative_gas_used) : undefined,
       timestamp: dbTx.timestamp ? new Date(dbTx.timestamp) : undefined,
       indexedAt: dbTx.indexed_at ? new Date(dbTx.indexed_at) : undefined,
     };
@@ -89,8 +84,7 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
 
       const ts = blockResult[0]?.timestamp;
       return ts != null ? new Date(Number(ts) * 1000).toISOString() : null;
-    }
-    catch (error) {
+    } catch (error) {
       console.warn(`Failed to get block timestamp for ${blockNumber}:`, error);
       return null;
     }
@@ -109,31 +103,23 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
       chainId,
       hash: tx.hash,
       blockNumber: tx.blockNumber ? BigInt(tx.blockNumber) : null,
-      transactionIndex: tx.transactionIndex || null,
-      fromAddress: tx.from || null,
-      toAddress: tx.to || null,
+      transactionIndex: tx.transactionIndex ?? null,
+      fromAddress: tx.from ?? null,
+      toAddress: tx.to ?? null,
       value: tx.value ? BigInt(tx.value) : 0n,
       gasLimit: tx.gas ? BigInt(tx.gas) : null,
       gasPrice: tx.gasPrice ? BigInt(tx.gasPrice) : null,
       maxFeePerGas: tx.maxFeePerGas ? BigInt(tx.maxFeePerGas) : null,
-      maxPriorityFeePerGas: tx.maxPriorityFeePerGas
-        ? BigInt(tx.maxPriorityFeePerGas)
-        : null,
+      maxPriorityFeePerGas: tx.maxPriorityFeePerGas ? BigInt(tx.maxPriorityFeePerGas) : null,
       gasUsed: receipt?.gasUsed ? BigInt(receipt.gasUsed) : null,
-      effectiveGasPrice: receipt?.effectiveGasPrice
-        ? BigInt(receipt.effectiveGasPrice)
-        : null,
-      status: receipt?.status || null,
-      type: tx.type || 0,
+      effectiveGasPrice: receipt?.effectiveGasPrice ? BigInt(receipt.effectiveGasPrice) : null,
+      status: receipt?.status ?? null,
+      type: tx.type ?? 0,
       nonce: tx.nonce ? BigInt(tx.nonce) : null,
-      inputData: tx.input || null,
-      logsCount: receipt?.logs?.length || 0,
-      contractAddress: receipt?.contractAddress
-        ? (receipt.contractAddress as Address)
-        : null,
-      cumulativeGasUsed: receipt?.cumulativeGasUsed
-        ? BigInt(receipt.cumulativeGasUsed)
-        : null,
+      inputData: tx.input ?? null,
+      logsCount: receipt?.logs?.length ?? 0,
+      contractAddress: receipt?.contractAddress ? (receipt.contractAddress as Address) : null,
+      cumulativeGasUsed: receipt?.cumulativeGasUsed ? BigInt(receipt.cumulativeGasUsed) : null,
       timestamp,
       indexedAt: new Date(),
     };
@@ -149,18 +135,13 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
     const inserted = await db
       .select()
       .from(transactions)
-      .where(
-        and(eq(transactions.chainId, chainId), eq(transactions.hash, tx.hash)),
-      )
+      .where(and(eq(transactions.chainId, chainId), eq(transactions.hash, tx.hash)))
       .limit(1);
 
     return formatTransaction(inserted[0] as any);
   };
 
-  const indexBlockTransactions = async (
-    chainId: number,
-    blockNumber: bigint,
-  ): Promise<void> => {
+  const indexBlockTransactions = async (chainId: number, blockNumber: bigint): Promise<void> => {
     try {
       const client = await rpcManager.getClient(chainId);
       const block = await client.getBlock({
@@ -190,20 +171,13 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
           await indexTransaction(chainId, tx, receipt);
         }
       }
-    }
-    catch (error) {
-      console.error(
-        `Failed to index transactions for block ${blockNumber}:`,
-        error,
-      );
+    } catch (error) {
+      console.error(`Failed to index transactions for block ${blockNumber}:`, error);
     }
   };
 
   const service = {
-    getTransactionByHash: async (
-      chainId: number,
-      txHash: string,
-    ): Promise<Transaction | null> => {
+    getTransactionByHash: async (chainId: number, txHash: string): Promise<Transaction | null> => {
       try {
         const cached = await db
           .select()
@@ -220,15 +194,12 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
         const client = await rpcManager.getClient(chainId);
         const [tx, receipt] = await Promise.all([
           client.getTransaction({ hash: txHash as `0x${string}` }),
-          client
-            .getTransactionReceipt({ hash: txHash as `0x${string}` })
-            .catch(() => null),
+          client.getTransactionReceipt({ hash: txHash as `0x${string}` }).catch(() => null),
         ]);
 
         const transaction = await indexTransaction(chainId, tx, receipt);
         return transaction;
-      }
-      catch (error) {
+      } catch (error) {
         console.error(`Failed to get transaction ${txHash}:`, error);
         return null;
       }
@@ -244,12 +215,7 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
         const txResults = await db
           .select()
           .from(transactions)
-          .where(
-            and(
-              eq(transactions.chainId, chainId),
-              eq(transactions.blockNumber, blockNumber),
-            ),
-          )
+          .where(and(eq(transactions.chainId, chainId), eq(transactions.blockNumber, blockNumber)))
           .orderBy(transactions.transactionIndex)
           .limit(limit)
           .offset(offset);
@@ -257,12 +223,7 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
         const countResult = await db
           .select({ count: sql<number>`count(*)` })
           .from(transactions)
-          .where(
-            and(
-              eq(transactions.chainId, chainId),
-              eq(transactions.blockNumber, blockNumber),
-            ),
-          );
+          .where(and(eq(transactions.chainId, chainId), eq(transactions.blockNumber, blockNumber)));
 
         const total = countResult[0]?.count || 0;
 
@@ -273,10 +234,7 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
             .select()
             .from(transactions)
             .where(
-              and(
-                eq(transactions.chainId, chainId),
-                eq(transactions.blockNumber, blockNumber),
-              ),
+              and(eq(transactions.chainId, chainId), eq(transactions.blockNumber, blockNumber)),
             )
             .orderBy(transactions.transactionIndex)
             .limit(limit)
@@ -292,12 +250,8 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
           transactions: txResults.map(tx => formatTransaction(tx)),
           total,
         };
-      }
-      catch (error) {
-        console.error(
-          `Failed to get transactions for block ${blockNumber}:`,
-          error,
-        );
+      } catch (error) {
+        console.error(`Failed to get transactions for block ${blockNumber}:`, error);
         return { transactions: [], total: 0 };
       }
     },
@@ -340,20 +294,13 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
           transactions: txResults.map(tx => formatTransaction(tx)),
           total,
         };
-      }
-      catch (error) {
-        console.error(
-          `Failed to get transactions for address ${address}:`,
-          error,
-        );
+      } catch (error) {
+        console.error(`Failed to get transactions for address ${address}:`, error);
         return { transactions: [], total: 0 };
       }
     },
 
-    getLatestTransactions: async (
-      chainId: number,
-      limit: number = 20,
-    ): Promise<Transaction[]> => {
+    getLatestTransactions: async (chainId: number, limit: number = 20): Promise<Transaction[]> => {
       try {
         const txResults = await db
           .select()
@@ -365,14 +312,15 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
           .limit(limit);
 
         return txResults.map(tx => formatTransaction(tx));
-      }
-      catch (error) {
+      } catch (error) {
         console.error('Failed to get latest transactions:', error);
         return [];
       }
     },
 
-    getTransactionStats: async (chainId: number): Promise<{
+    getTransactionStats: async (
+      chainId: number,
+    ): Promise<{
       totalTransactions: number;
       avgGasPrice: string | null;
       avgGasUsed: string | null;
@@ -423,8 +371,7 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
         }
 
         const successfulTxs = statsResult.filter(tx => tx.status === 1).length;
-        const successRate
-          = statsResult.length > 0 ? (successfulTxs / statsResult.length) * 100 : 0;
+        const successRate = statsResult.length > 0 ? (successfulTxs / statsResult.length) * 100 : 0;
 
         return {
           totalTransactions,
@@ -432,10 +379,9 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
           avgGasUsed,
           successRate,
         };
-      }
-      catch (error) {
+      } catch (error) {
         console.error('Failed to get transaction stats:', error);
-        throw new Error('Failed to get transaction statistics');
+        throw new Error('Failed to get transaction statistics', { cause: error });
       }
     },
   };

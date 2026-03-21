@@ -42,9 +42,7 @@ export type AddressData = {
  * 持久化数据从后端数据库获取，实时数据直接从RPC获取
  */
 export function useAddressData(chainId: number, address: string): AddressData {
-  const [persistent, setPersistent] = useState<PersistentAddressData | null>(
-    null,
-  );
+  const [persistent, setPersistent] = useState<PersistentAddressData | null>(null);
   const [realTime, setRealTime] = useState<RealTimeAddressData | null>(null);
   const [loading, setLoading] = useState({
     persistent: true,
@@ -80,7 +78,7 @@ export function useAddressData(chainId: number, address: string): AddressData {
           if (!cancelled)
             setError(prev => ({
               ...prev,
-              persistent: err?.message || 'Failed to fetch persistent data',
+              persistent: err?.message ?? 'Failed to fetch persistent data',
             }));
         }
       })
@@ -96,7 +94,7 @@ export function useAddressData(chainId: number, address: string): AddressData {
         if (!cancelled)
           setError(prev => ({
             ...prev,
-            realTime: err?.message || 'Failed to fetch real-time data',
+            realTime: err?.message ?? 'Failed to fetch real-time data',
           }));
       })
       .finally(() => {
@@ -126,10 +124,9 @@ async function fetchPersistentData(
   const timer = setTimeout(() => controller.abort(), PERSISTENT_TIMEOUT_MS);
 
   try {
-    const response = await fetch(
-      `/api/chains/${chainId}/addresses/${address}/persistent`,
-      { signal: controller.signal },
-    );
+    const response = await fetch(`/api/chains/${chainId}/addresses/${address}/persistent`, {
+      signal: controller.signal,
+    });
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -145,7 +142,7 @@ async function fetchPersistentData(
   }
   catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') {
-      throw new Error('Request timed out');
+      throw new Error('Request timed out', { cause: err });
     }
     throw err;
   }
@@ -157,10 +154,7 @@ async function fetchPersistentData(
 /**
  * 直接从RPC获取实时地址数据
  */
-async function fetchRealTimeData(
-  chainId: number,
-  address: string,
-): Promise<RealTimeAddressData> {
+async function fetchRealTimeData(chainId: number, address: string): Promise<RealTimeAddressData> {
   try {
     return await getRealTimeAddressData(chainId, address);
   }

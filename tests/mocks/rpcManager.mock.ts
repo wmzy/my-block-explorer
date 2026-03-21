@@ -1,7 +1,8 @@
 import { vi } from 'vitest';
 
 // Mock RPC Manager to avoid database connections in tests
-export const mockRpcManager = {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export const mockRpcManager: any = {
   getClient: vi.fn().mockImplementation((chainId: number) => {
     if (chainId === 999999) {
       return Promise.reject(new Error('Unsupported chain ID'));

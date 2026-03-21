@@ -19,46 +19,55 @@ export function serializeForJson(obj: unknown): unknown {
   const seen = new WeakSet();
 
   try {
-    return JSON.parse(JSON.stringify(obj, (key, value) => {
-      // 跳过Socket、Parser等会导致循环引用的属性
-      if (key === 'socket' || key === 'parser' || key === '_socket' || key === 'req' || key === 'res' || key === 'client') {
-        return '[Unserializable]';
-      }
-
-      if (typeof value === 'object' && value !== null) {
-        // 检查循环引用
-        if (seen.has(value)) {
-          return '[Circular]';
+    return JSON.parse(
+      JSON.stringify(obj, (key, value) => {
+        // 跳过Socket、Parser等会导致循环引用的属性
+        if (
+          key === 'socket'
+          || key === 'parser'
+          || key === '_socket'
+          || key === 'req'
+          || key === 'res'
+          || key === 'client'
+        ) {
+          return '[Unserializable]';
         }
-        seen.add(value);
-      }
 
-      // 处理BigInt
-      if (typeof value === 'bigint') {
-        return value.toString();
-      }
+        if (typeof value === 'object' && value !== null) {
+          // 检查循环引用
+          if (seen.has(value)) {
+            return '[Circular]';
+          }
+          seen.add(value);
+        }
 
-      // 处理Date
-      if (value instanceof Date) {
-        return value.toISOString();
-      }
+        // 处理BigInt
+        if (typeof value === 'bigint') {
+          return value.toString();
+        }
 
-      // 处理Error
-      if (value instanceof Error) {
-        return {
-          name: value.name,
-          message: value.message,
-          stack: value.stack,
-        };
-      }
+        // 处理Date
+        if (value instanceof Date) {
+          return value.toISOString();
+        }
 
-      // 跳过函数
-      if (typeof value === 'function') {
-        return '[Function]';
-      }
+        // 处理Error
+        if (value instanceof Error) {
+          return {
+            name: value.name,
+            message: value.message,
+            stack: value.stack,
+          };
+        }
 
-      return value;
-    }));
+        // 跳过函数
+        if (typeof value === 'function') {
+          return '[Function]';
+        }
+
+        return value;
+      }),
+    );
   }
   catch (error) {
     logger.error({ err: error }, 'Serialization error');
@@ -78,7 +87,11 @@ type JsonLike = object | string | number | boolean | null;
  */
 export function safeJsonResponse(data: unknown): JsonLike {
   try {
-    return serializeForJson(data);
+    const result = serializeForJson(data);
+    if (result === undefined) {
+      return null;
+    }
+    return result as JsonLike;
   }
   catch (error) {
     logger.error({ err: error }, 'JSON serialization error');
@@ -92,7 +105,9 @@ export function safeJsonResponse(data: unknown): JsonLike {
 /**
  * 格式化区块数据用于API响应
  */
-export function formatBlockForApi(block: Record<string, unknown> | null): Record<string, unknown> | null {
+export function formatBlockForApi(
+  block: Record<string, unknown> | null,
+): Record<string, unknown> | null {
   if (!block) return null;
 
   return {
@@ -108,7 +123,9 @@ export function formatBlockForApi(block: Record<string, unknown> | null): Record
 /**
  * 格式化交易数据用于API响应
  */
-export function formatTransactionForApi(transaction: Record<string, unknown> | null): Record<string, unknown> | null {
+export function formatTransactionForApi(
+  transaction: Record<string, unknown> | null,
+): Record<string, unknown> | null {
   if (!transaction) return null;
 
   return {
@@ -117,33 +134,44 @@ export function formatTransactionForApi(transaction: Record<string, unknown> | n
     gasLimit: transaction.gasLimit != null ? String(transaction.gasLimit) : undefined,
     gasPrice: transaction.gasPrice != null ? String(transaction.gasPrice) : undefined,
     maxFeePerGas: transaction.maxFeePerGas != null ? String(transaction.maxFeePerGas) : undefined,
-    maxPriorityFeePerGas: transaction.maxPriorityFeePerGas != null ? String(transaction.maxPriorityFeePerGas) : undefined,
+    maxPriorityFeePerGas:
+      transaction.maxPriorityFeePerGas != null
+        ? String(transaction.maxPriorityFeePerGas)
+        : undefined,
     gasUsed: transaction.gasUsed != null ? String(transaction.gasUsed) : undefined,
-    effectiveGasPrice: transaction.effectiveGasPrice != null ? String(transaction.effectiveGasPrice) : undefined,
+    effectiveGasPrice:
+      transaction.effectiveGasPrice != null ? String(transaction.effectiveGasPrice) : undefined,
     nonce: transaction.nonce != null ? String(transaction.nonce) : undefined,
-    cumulativeGasUsed: transaction.cumulativeGasUsed != null ? String(transaction.cumulativeGasUsed) : undefined,
-    timestamp: transaction.timestamp instanceof Date ? transaction.timestamp.toISOString() : undefined,
+    cumulativeGasUsed:
+      transaction.cumulativeGasUsed != null ? String(transaction.cumulativeGasUsed) : undefined,
+    timestamp:
+      transaction.timestamp instanceof Date ? transaction.timestamp.toISOString() : undefined,
   };
 }
 
 /**
  * 格式化地址数据用于API响应
  */
-export function formatAddressForApi(address: Record<string, unknown> | null): Record<string, unknown> | null {
+export function formatAddressForApi(
+  address: Record<string, unknown> | null,
+): Record<string, unknown> | null {
   if (!address) return null;
 
   return {
     ...address,
     firstSeenBlock: address.firstSeenBlock != null ? String(address.firstSeenBlock) : undefined,
     lastSeenBlock: address.lastSeenBlock != null ? String(address.lastSeenBlock) : undefined,
-    lastQueried: address.lastQueried instanceof Date ? address.lastQueried.toISOString() : undefined,
+    lastQueried:
+      address.lastQueried instanceof Date ? address.lastQueried.toISOString() : undefined,
   };
 }
 
 /**
  * 格式化统计数据用于API响应
  */
-export function formatStatsForApi(stats: Record<string, unknown> | null): Record<string, unknown> | null {
+export function formatStatsForApi(
+  stats: Record<string, unknown> | null,
+): Record<string, unknown> | null {
   if (!stats) return null;
 
   return {

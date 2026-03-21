@@ -20,7 +20,7 @@ export default function BlocksListPage() {
   const [latestBlockNumber, setLatestBlockNumber] = useState<bigint | null>(null);
   const limit = 20;
 
-  const currentChainId = parseInt(chainId || '1');
+  const currentChainId = parseInt(chainId ?? '1');
   const chainInfo = getChainInfo(currentChainId);
 
   const fetchBlocks = useCallback(async () => {
@@ -41,9 +41,7 @@ export default function BlocksListPage() {
     }
     catch (err) {
       console.error('Failed to fetch blocks:', err);
-      setError(
-        err instanceof Error ? err.message : 'Failed to fetch blocks',
-      );
+      setError(err instanceof Error ? err.message : 'Failed to fetch blocks');
     }
     finally {
       setLoading(false);
@@ -99,9 +97,7 @@ export default function BlocksListPage() {
 
         {error && <ErrorState message={error} onRetry={fetchBlocks} />}
 
-        {!loading && !error && blocks.length === 0 && (
-          <LoadingState message="No blocks found" />
-        )}
+        {!loading && !error && blocks.length === 0 && <LoadingState message="No blocks found" />}
 
         {blocks.length > 0 && (
           <DataTable>
@@ -125,15 +121,9 @@ export default function BlocksListPage() {
                       {formatNumber(parseInt(block.number))}
                     </Link>
                   </td>
-                  <td>
-                    {block.timestamp
-                      ? formatRelativeTime(block.timestamp)
-                      : 'N/A'}
-                  </td>
+                  <td>{block.timestamp ? formatRelativeTime(block.timestamp) : 'N/A'}</td>
                   <td>{block.transactionCount}</td>
-                  <td className={monoStyle}>
-                    {formatGasUsage(block.gasUsed, block.gasLimit)}
-                  </td>
+                  <td className={monoStyle}>{formatGasUsage(block.gasUsed, block.gasLimit)}</td>
                   <td>
                     <CopyableHash
                       value={block.miner}

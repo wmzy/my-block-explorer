@@ -5,6 +5,28 @@
 
 import { EventFilters, FormattedEventData, PaginationParams } from '../types/events';
 
+type RangeFilterValue = {
+  gte?: number | string;
+  lte?: number | string;
+};
+
+type LikeFilterValue = {
+  like: string;
+  caseInsensitive?: boolean;
+};
+
+function isRangeFilter(value: unknown): value is RangeFilterValue {
+  if (typeof value !== 'object' || value === null) return false;
+  const obj = value as Record<string, unknown>;
+  return obj.gte !== undefined || obj.lte !== undefined;
+}
+
+function isLikeFilter(value: unknown): value is LikeFilterValue {
+  if (typeof value !== 'object' || value === null) return false;
+  const obj = value as Record<string, unknown>;
+  return typeof obj.like === 'string';
+}
+
 export interface SearchCacheEntry {
   key: string;
   data: FormattedEventData[];
@@ -118,7 +140,7 @@ export class EventSearchOptimizer {
         else {
           // For large datasets, we'd typically delegate to server-side filtering
           // For now, we'll still use client-side but with optimizations
-          filteredEvents = this.optimizedClientSideFilter(events, filters);
+          filteredEvents = await this.optimizedClientSideFilter(events, filters);
           filterMetrics = {
             operation: 'filter',
             executionTime: performance.now() - filterStartTime,
@@ -153,7 +175,10 @@ export class EventSearchOptimizer {
       metrics.push(paginatedMetrics);
 
       // Step 4: Cache result
-      if (this.options.enableCache && filteredEvents.length < this.options.clientSideThreshold * 2) {
+      if (
+        this.options.enableCache
+        && filteredEvents.length < this.options.clientSideThreshold * 2
+      ) {
         const cacheKey = this.generateCacheKey(filters, pagination);
         this.setCachedResult(cacheKey, paginatedEvents, filteredEvents.length, filters, pagination);
       }
@@ -195,14 +220,20 @@ export class EventSearchOptimizer {
   /**
    * Client-side filtering for smaller datasets
    */
-  private clientSideFilter(events: FormattedEventData[], filters: EventFilters): FormattedEventData[] {
+  private clientSideFilter(
+    events: FormattedEventData[],
+    filters: EventFilters,
+  ): FormattedEventData[] {
     return events.filter(event => this.matchesFilters(event, filters));
   }
 
   /**
    * Optimized client-side filtering for larger datasets
    */
-  private async optimizedClientSideFilter(events: FormattedEventData[], filters: EventFilters): Promise<FormattedEventData[]> {
+  private async optimizedClientSideFilter(
+    events: FormattedEventData[],
+    filters: EventFilters,
+  ): Promise<FormattedEventData[]> {
     // Use chunked processing to avoid blocking the main thread
     const chunkSize = 5000;
     const results: FormattedEventData[] = [];
@@ -266,13 +297,13 @@ export class EventSearchOptimizer {
   /**
    * Check if specific value matches filter value
    */
-  private matchesFilterValue(eventValue: any, filterValue: any): boolean {
+  private matchesFilterValue(eventValue: unknown, filterValue: unknown): boolean {
     if (filterValue === null || filterValue === undefined || filterValue === '') {
       return true;
     }
 
     // Handle range filters
-    if (typeof filterValue === 'object' && (filterValue.gte !== undefined || filterValue.lte !== undefined)) {
+    if (isRangeFilter(filterValue)) {
       const numEventValue = Number(eventValue);
       if (filterValue.gte !== undefined && numEventValue < Number(filterValue.gte)) {
         return false;
@@ -284,7 +315,7 @@ export class EventSearchOptimizer {
     }
 
     // Handle LIKE filters
-    if (typeof filterValue === 'object' && filterValue.like) {
+    if (isLikeFilter(filterValue)) {
       const pattern = filterValue.like.replace(/%/g, '.*');
       const regex = new RegExp(pattern, filterValue.caseInsensitive ? 'i' : '');
       return regex.test(String(eventValue));
@@ -297,7 +328,10 @@ export class EventSearchOptimizer {
   /**
    * Apply pagination to filtered results
    */
-  private applyPagination(events: FormattedEventData[], pagination: PaginationParams): FormattedEventData[] {
+  private applyPagination(
+    events: FormattedEventData[],
+    pagination: PaginationParams,
+  ): FormattedEventData[] {
     const { limit, offset = 0 } = pagination;
     return events.slice(offset, offset + limit);
   }
@@ -344,15 +378,18 @@ export class EventSearchOptimizer {
     if (this.cache.size >= this.options.maxCacheSize) {
       // Remove oldest entry
       const firstKey = this.cache.keys().next().value;
-      this.cache.delete(firstKey);
+      if (firstKey !== undefined) {
+        this.cache.delete(firstKey);
+      }
     }
 
     this.cache.set(cacheKey, {
+      key: cacheKey,
       data: [...data], // Store a copy
       total,
       timestamp: Date.now(),
       ttl: this.options.cacheTTL,
-      filters: { ...filters },
+      filters,
       pagination: { ...pagination },
     });
   }
@@ -384,11 +421,14 @@ export class EventSearchOptimizer {
     totalOperations: number;
     averageExecutionTime: number;
     cacheHitRate: number;
-    operationBreakdown: Record<string, {
-      count: number;
-      avgTime: number;
-      avgDataSize: number;
-    }>;
+    operationBreakdown: Record<
+      string,
+      {
+        count: number;
+        avgTime: number;
+        avgDataSize: number;
+      }
+    >;
     cacheStats: {
       size: number;
       maxSize: number;
@@ -401,11 +441,14 @@ export class EventSearchOptimizer {
     const totalTime = this.performanceMetrics.reduce((sum, m) => sum + m.executionTime, 0);
 
     // Operation breakdown
-    const operationBreakdown: Record<string, {
-      count: number;
-      avgTime: number;
-      avgDataSize: number;
-    }> = {};
+    const operationBreakdown: Record<
+      string,
+      {
+        count: number;
+        avgTime: number;
+        avgDataSize: number;
+      }
+    > = {};
 
     this.performanceMetrics.forEach((metric) => {
       if (!operationBreakdown[metric.operation]) {
@@ -427,8 +470,10 @@ export class EventSearchOptimizer {
       size: this.cache.size,
       maxSize: this.options.maxCacheSize,
       hitRate: totalOps > 0 ? cacheHits / totalOps : 0,
-      memoryUsage: Array.from(this.cache.values())
-        .reduce((total, entry) => total + this.estimateMemoryUsage(entry.data), 0),
+      memoryUsage: Array.from(this.cache.values()).reduce(
+        (total, entry) => total + this.estimateMemoryUsage(entry.data),
+        0,
+      ),
     };
 
     return {
@@ -483,9 +528,11 @@ export class EventSearchOptimizer {
     const optimizedFilters = { ...filters };
 
     // Remove redundant filters
-    if (optimizedFilters.fromBlock !== undefined
+    if (
+      optimizedFilters.fromBlock !== undefined
       && optimizedFilters.toBlock !== undefined
-      && Number(optimizedFilters.fromBlock) > Number(optimizedFilters.toBlock)) {
+      && Number(optimizedFilters.fromBlock) > Number(optimizedFilters.toBlock)
+    ) {
       delete optimizedFilters.fromBlock;
       delete optimizedFilters.toBlock;
     }

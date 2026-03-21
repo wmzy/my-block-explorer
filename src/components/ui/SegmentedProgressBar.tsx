@@ -124,7 +124,6 @@ function getTooltipText(segment: Segment): string {
   const from = segment.fromBlock.toLocaleString();
   const to = segment.toBlock.toLocaleString();
   const pct = segment.progress.toFixed(1);
-  const statusLabel = segment.status.charAt(0).toUpperCase() + segment.status.slice(1);
 
   if (segment.status === 'completed') {
     return `${from} - ${to} (Completed)`;

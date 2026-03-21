@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { css } from '@linaria/core';
-import { SegmentedProgressBar, type Segment } from '../ui/SegmentedProgressBar';
+import { SegmentedProgressBar } from '../ui/SegmentedProgressBar';
+import { toast } from 'sonner';
 
 const containerStyles = css`
   background: white;
@@ -313,15 +314,15 @@ export const IndexingRangeManager: React.FC<Props> = ({
     const fromBlock = parseInt(formState.fromBlock);
     const toBlock = parseInt(formState.toBlock);
     if (isNaN(fromBlock) || isNaN(toBlock)) {
-      alert('Please enter valid block numbers');
+      toast.error('Please enter valid block numbers');
       return;
     }
     if (fromBlock >= toBlock) {
-      alert('From block must be less than to block');
+      toast.error('From block must be less than to block');
       return;
     }
     if (creationBlock > 0 && fromBlock < creationBlock) {
-      alert(`From block cannot be before contract creation block (${creationBlock})`);
+      toast.error(`From block cannot be before contract creation block (${creationBlock})`);
       return;
     }
     setActionLoading(-1);
@@ -349,12 +350,12 @@ export const IndexingRangeManager: React.FC<Props> = ({
         onRefresh?.();
       }
       else {
-        alert(data.message || data.error || 'Failed to add range');
+        toast.error(data.message ?? data.error ?? 'Failed to add range');
       }
     }
     catch (error) {
       console.error('Failed to add range:', error);
-      alert('Failed to add range');
+      toast.error('Failed to add range');
     }
     finally {
       setActionLoading(null);
@@ -377,12 +378,12 @@ export const IndexingRangeManager: React.FC<Props> = ({
         }
         else {
           const data = await response.json();
-          alert(data.error || 'Failed to start indexing');
+          toast.error(data.error ?? 'Failed to start indexing');
         }
       }
       catch (error) {
         console.error('Failed to start indexing:', error);
-        alert('Failed to start indexing');
+        toast.error('Failed to start indexing');
       }
       finally {
         setActionLoading(null);
@@ -403,12 +404,12 @@ export const IndexingRangeManager: React.FC<Props> = ({
         }
         else {
           const data = await response.json();
-          alert(data.error || 'Failed to pause indexing');
+          toast.error(data.error ?? 'Failed to pause indexing');
         }
       }
       catch (error) {
         console.error('Failed to pause indexing:', error);
-        alert('Failed to pause indexing');
+        toast.error('Failed to pause indexing');
       }
       finally {
         setActionLoading(null);
@@ -433,12 +434,12 @@ export const IndexingRangeManager: React.FC<Props> = ({
         }
         else {
           const data = await response.json();
-          alert(data.error || 'Failed to resume indexing');
+          toast.error(data.error ?? 'Failed to resume indexing');
         }
       }
       catch (error) {
         console.error('Failed to resume indexing:', error);
-        alert('Failed to resume indexing');
+        toast.error('Failed to resume indexing');
       }
       finally {
         setActionLoading(null);
@@ -448,7 +449,8 @@ export const IndexingRangeManager: React.FC<Props> = ({
   );
   const handleDeleteRange = useCallback(
     async (rangeId: number) => {
-      if (!confirm('Are you sure you want to delete this range?')) return;
+      // eslint-disable-next-line no-alert
+      if (!window.confirm('Are you sure you want to delete this range?')) return;
       setActionLoading(rangeId);
       try {
         const response = await fetch(
@@ -461,12 +463,12 @@ export const IndexingRangeManager: React.FC<Props> = ({
         }
         else {
           const data = await response.json();
-          alert(data.error || 'Failed to delete range');
+          toast.error(data.error ?? 'Failed to delete range');
         }
       }
       catch (error) {
         console.error('Failed to delete range:', error);
-        alert('Failed to delete range');
+        toast.error('Failed to delete range');
       }
       finally {
         setActionLoading(null);

@@ -1,5 +1,4 @@
 import { customType } from 'drizzle-orm/pg-core';
-import { Address } from 'viem';
 
 // ✅ DuckDB 兼容的基础类型 - 直接重导出，确保兼容性
 export { integer, varchar, text, boolean } from 'drizzle-orm/pg-core';
@@ -32,7 +31,7 @@ export const timestamp = customType<{
 });
 
 export const address = customType<{
-  data: Address;
+  data: `0x${string}`;
   driverData: string;
 }>({
   dataType: () => `char(42)`,

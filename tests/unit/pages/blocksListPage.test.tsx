@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import '@testing-library/jest-dom';
 import BlocksListPage from '@/pages/BlocksListPage';
@@ -15,8 +15,7 @@ vi.mock('../../../components/TopNavigation', () => ({
 
 vi.mock('../../../config/chains', () => ({
   getChainInfo: (chainId: number) => {
-    if (chainId === 1)
-      return { id: 1, name: 'Ethereum', nativeCurrency: { symbol: 'ETH' } };
+    if (chainId === 1) return { id: 1, name: 'Ethereum', nativeCurrency: { symbol: 'ETH' } };
     return null;
   },
   getChainName: (chainId: number) => (chainId === 1 ? 'Ethereum' : 'Unknown'),
@@ -113,9 +112,7 @@ describe('BlocksListPage', () => {
     renderPage();
 
     await waitFor(() => {
-      expect(
-        screen.getByText(/HTTP 500: Internal Server Error/),
-      ).toBeInTheDocument();
+      expect(screen.getByText(/HTTP 500: Internal Server Error/)).toBeInTheDocument();
     });
   });
 

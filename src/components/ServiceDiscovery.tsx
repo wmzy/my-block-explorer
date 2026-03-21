@@ -84,23 +84,15 @@ const codeBlock = css`
   color: #e2e8f0;
   padding: 12px;
   border-radius: 6px;
-  font-family: "JetBrains Mono", "Consolas", monospace;
+  font-family: 'JetBrains Mono', 'Consolas', monospace;
   font-size: 13px;
   margin: 8px 0;
   overflow-x: auto;
 `;
 
 export function ServiceDiscovery() {
-  const {
-    status,
-    serviceInfo,
-    error,
-    isScanning,
-    currentPort,
-    discover,
-    setApiUrl,
-    reset,
-  } = useAutoDiscovery();
+  const { status, serviceInfo, error, isScanning, currentPort, discover, setApiUrl, reset }
+    = useAutoDiscovery();
 
   const [customUrl, setCustomUrl] = useState('');
   const [isConnecting, setIsConnecting] = useState(false);
@@ -146,7 +138,7 @@ export function ServiceDiscovery() {
         return {
           badge: <StatusBadge status="offline">连接错误</StatusBadge>,
           message: '连接时发生错误',
-          submessage: error || '未知错误',
+          submessage: error ?? '未知错误',
         };
       default:
         return {
@@ -191,9 +183,7 @@ export function ServiceDiscovery() {
               >
                 {statusInfo.message}
               </div>
-              {statusInfo.submessage && (
-                <div className={scanningText}>{statusInfo.submessage}</div>
-              )}
+              {statusInfo.submessage && <div className={scanningText}>{statusInfo.submessage}</div>}
             </div>
           </div>
 
@@ -260,10 +250,7 @@ export function ServiceDiscovery() {
             </Button>
 
             {status === 'not-found' && (
-              <Button
-                variant="outline"
-                onClick={() => setCustomUrl('http://localhost:8201')}
-              >
+              <Button variant="outline" onClick={() => setCustomUrl('http://localhost:8201')}>
                 手动连接
               </Button>
             )}

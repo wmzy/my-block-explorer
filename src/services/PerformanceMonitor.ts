@@ -96,8 +96,7 @@ export class PerformanceMonitor {
       });
 
       return result;
-    }
-    catch (error) {
+    } catch (error) {
       const duration = performance.now() - startTime;
 
       this.record({
@@ -129,7 +128,7 @@ export class PerformanceMonitor {
 
     // Group by operation
     const operationGroups = new Map<string, PerformanceMetrics[]>();
-    filteredMetrics.forEach((metric) => {
+    filteredMetrics.forEach(metric => {
       if (!operationGroups.has(metric.operation)) {
         operationGroups.set(metric.operation, []);
       }
@@ -161,7 +160,8 @@ export class PerformanceMonitor {
       const cacheHitRate = (cacheHits.length / totalCalls) * 100;
 
       // Calculate calls per second
-      const timeSpan = (metrics[metrics.length - 1].timestamp.getTime() - metrics[0].timestamp.getTime()) / 1000;
+      const timeSpan =
+        (metrics[metrics.length - 1].timestamp.getTime() - metrics[0].timestamp.getTime()) / 1000;
       const callsPerSecond = timeSpan > 0 ? totalCalls / timeSpan : 0;
 
       stats.push({
@@ -198,13 +198,15 @@ export class PerformanceMonitor {
   } {
     const allStats = this.getStats();
     const totalOperations = allStats.reduce((sum, stat) => sum + stat.totalCalls, 0);
-    const averageResponseTime = allStats.reduce((sum, stat) => sum + stat.averageDuration, 0) / (allStats.length || 1);
+    const averageResponseTime =
+      allStats.reduce((sum, stat) => sum + stat.averageDuration, 0) / (allStats.length || 1);
 
     const slowOperations = this.metrics.filter(m => m.duration > 9);
     const slowOperationsCount = slowOperations.length;
 
     const successfulOperations = this.metrics.filter(m => m.success);
-    const errorRate = ((this.metrics.length - successfulOperations.length) / this.metrics.length) * 100;
+    const errorRate =
+      ((this.metrics.length - successfulOperations.length) / this.metrics.length) * 100;
 
     const cacheHits = this.metrics.filter(m => m.cacheHit === true);
     const cacheHitRate = (cacheHits.length / this.metrics.length) * 100;
@@ -266,10 +268,7 @@ export class PerformanceMonitor {
    */
   getChainPerformance(chainId: number): PerformanceStats[] {
     return this.getStats(undefined, undefined).filter(stat =>
-      this.metrics.some(m =>
-        m.chainId === chainId
-        && m.operation === stat.operation,
-      ),
+      this.metrics.some(m => m.chainId === chainId && m.operation === stat.operation),
     );
   }
 
@@ -302,11 +301,10 @@ export class PerformanceMonitor {
     }
 
     // Notify listeners
-    this.listeners.forEach((listener) => {
+    this.listeners.forEach(listener => {
       try {
         listener(stats);
-      }
-      catch (error) {
+      } catch (error) {
         console.error('Error in performance report listener:', error);
       }
     });
@@ -385,9 +383,9 @@ export class PerformanceMonitor {
     result?: T;
     error?: Error;
   }> {
-    const timeout = options.timeout || 5000;
-    const retries = options.retries || 0;
-    const expectedDuration = options.expectedDuration || 9;
+    const timeout = options.timeout ?? 5000;
+    const retries = options.retries ?? 0;
+    const _expectedDuration = options.expectedDuration ?? 9;
 
     let lastError: Error | undefined;
 
@@ -401,8 +399,7 @@ export class PerformanceMonitor {
         ]);
 
         return { success: true, duration: 0, result };
-      }
-      catch (error) {
+      } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
         if (attempt < retries) {
           console.log(`Retrying operation ${operation} (attempt ${attempt + 2})`);
@@ -435,15 +432,13 @@ export async function trackPerformance<T>(
 
 // Performance monitoring decorator
 export function PerformanceTrack(operation: string) {
-  return function (target: any, propertyName: string, descriptor: PropertyDescriptor) {
+  return function (target: object, propertyName: string, descriptor: PropertyDescriptor) {
     const method = descriptor.value;
 
-    descriptor.value = async function (...args: any[]) {
-      return trackPerformance(
-        `${operation}.${propertyName}`,
-        () => method.apply(this, args),
-        { chainId: this.chainId },
-      );
+    descriptor.value = async function (this: { chainId?: number }, ...args: unknown[]) {
+      return trackPerformance(`${operation}.${propertyName}`, () => method.apply(this, args), {
+        chainId: this.chainId,
+      });
     };
 
     return descriptor;

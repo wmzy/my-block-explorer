@@ -19,9 +19,20 @@ export interface FormField {
 }
 
 export interface ValidationRule {
-  type: 'required' | 'pattern' | 'min' | 'max' | 'range' | 'dateRange' | 'numeric' | 'array' | 'maxLength';
+  type:
+    | 'required'
+    | 'pattern'
+    | 'min'
+    | 'max'
+    | 'range'
+    | 'dateRange'
+    | 'numeric'
+    | 'array'
+    | 'maxLength';
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   value?: any;
   message: string;
+  itemType?: string;
 }
 
 export interface FormData {

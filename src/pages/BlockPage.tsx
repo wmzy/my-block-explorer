@@ -19,7 +19,7 @@ export default function BlockPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const currentChainId = parseInt(chainId || '1');
+  const currentChainId = parseInt(chainId ?? '1');
   const chainInfo = getChainInfo(currentChainId);
 
   useEffect(() => {
@@ -38,9 +38,7 @@ export default function BlockPage() {
       }
       catch (err) {
         console.error('Failed to fetch block info:', err);
-        setError(
-          err instanceof Error ? err.message : 'Failed to fetch block information',
-        );
+        setError(err instanceof Error ? err.message : 'Failed to fetch block information');
       }
       finally {
         setLoading(false);
@@ -122,9 +120,7 @@ export default function BlockPage() {
                 <InfoItem label="Transaction Count">
                   {blockInfo.transactionCount.toLocaleString()}
                 </InfoItem>
-                <InfoItem label="Block Size">
-                  {formatBytes(blockInfo.sizeBytes)}
-                </InfoItem>
+                <InfoItem label="Block Size">{formatBytes(blockInfo.sizeBytes)}</InfoItem>
                 {blockInfo.difficulty && (
                   <InfoItem label="Difficulty">{blockInfo.difficulty}</InfoItem>
                 )}

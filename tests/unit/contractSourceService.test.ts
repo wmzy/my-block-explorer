@@ -42,15 +42,13 @@ describe('ContractSourceService - Proxy Detection', () => {
   describe('detectProxy', () => {
     it('should detect EIP-1967 transparent proxy correctly', async () => {
       const proxyAddress = '0x83358A7241A8EEBaF488F7560f2c2eb5EE05f4ca';
-      const implementationAddress
-        = '0xef6958d7067013251100ce96a1181f7398ad52b5';
+      const implementationAddress = '0xef6958d7067013251100ce96a1181f7398ad52b5';
       const chainId = 5000;
 
       // Mock storage slot responses
-      const implementationSlotData
-        = '0x000000000000000000000000ef6958d7067013251100ce96a1181f7398ad52b5';
-      const emptySlotData
-        = '0x0000000000000000000000000000000000000000000000000000000000000000';
+      const implementationSlotData =
+        '0x000000000000000000000000ef6958d7067013251100ce96a1181f7398ad52b5';
+      const emptySlotData = '0x0000000000000000000000000000000000000000000000000000000000000000';
 
       // First call: implementation slot (has data), second call: beacon slot (empty)
       mockClient.getStorageAt
@@ -58,18 +56,11 @@ describe('ContractSourceService - Proxy Detection', () => {
         .mockResolvedValueOnce(emptySlotData);
 
       // Mock implementation contract bytecode check
-      mockClient.getBytecode.mockResolvedValue(
-        '0x608060405234801561001057600080fd5b50...',
-      );
-      mockClient.getCode.mockResolvedValue(
-        '0x608060405234801561001057600080fd5b50...',
-      );
+      mockClient.getBytecode.mockResolvedValue('0x608060405234801561001057600080fd5b50...');
+      mockClient.getCode.mockResolvedValue('0x608060405234801561001057600080fd5b50...');
 
       // Call the private method through reflection
-      const result = await (contractSourceService as any).detectProxy(
-        chainId,
-        proxyAddress,
-      );
+      const result = await (contractSourceService as any).detectProxy(chainId, proxyAddress);
 
       expect(result).toEqual({
         isProxy: true,
@@ -95,17 +86,12 @@ describe('ContractSourceService - Proxy Detection', () => {
 
       // Mock empty storage slot (no proxy)
       mockClient.getStorageAt
-        .mockResolvedValueOnce(
-          '0x0000000000000000000000000000000000000000000000000000000000000000',
-        ) // implementation slot
+        .mockResolvedValueOnce('0x0000000000000000000000000000000000000000000000000000000000000000') // implementation slot
         .mockResolvedValueOnce(
           '0x0000000000000000000000000000000000000000000000000000000000000000',
         ); // beacon slot
 
-      const result = await (contractSourceService as any).detectProxy(
-        chainId,
-        contractAddress,
-      );
+      const result = await (contractSourceService as any).detectProxy(chainId, contractAddress);
 
       expect(result).toEqual({
         isProxy: false,
@@ -114,35 +100,20 @@ describe('ContractSourceService - Proxy Detection', () => {
 
     it('should detect beacon proxy correctly', async () => {
       const proxyAddress = '0x1234567890123456789012345678901234567890';
-      const beaconAddress = '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd';
+      const _beaconAddress = '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd';
       const chainId = 1;
 
       // Mock isContractAddress to return true
-      vi.spyOn(
-        contractSourceService as any,
-        'isContractAddress',
-      ).mockResolvedValue(true);
+      vi.spyOn(contractSourceService as any, 'isContractAddress').mockResolvedValue(true);
 
       // Mock empty implementation slot but valid beacon slot
       mockClient.getStorageAt
-        .mockResolvedValueOnce(
-          '0x0000000000000000000000000000000000000000000000000000000000000000',
-        ) // implementation slot
+        .mockResolvedValueOnce('0x0000000000000000000000000000000000000000000000000000000000000000') // implementation slot
         .mockResolvedValueOnce(
           '0x000000000000000000000000abcdefabcdefabcdefabcdefabcdefabcdefabcd',
         ); // beacon slot
 
-      const result = await (contractSourceService as any).detectProxy(
-        chainId,
-        proxyAddress,
-      );
-
-      // The code extracts the address from the last 40 characters of the beacon slot data
-      const expectedAddress
-        = `0x${
-          '000000000000000000000000abcdefabcdefabcdefabcdefabcdefabcdefabcd'.slice(
-            -40,
-          )}`;
+      const result = await (contractSourceService as any).detectProxy(chainId, proxyAddress);
 
       expect(result).toEqual({
         isProxy: true,
@@ -156,10 +127,9 @@ describe('ContractSourceService - Proxy Detection', () => {
       const chainId = 5000;
 
       // Mock storage slot with invalid implementation (no bytecode)
-      const implementationSlotData
-        = '0x000000000000000000000000ef6958d7067013251100ce96a1181f7398ad52b5';
-      const emptySlotData
-        = '0x0000000000000000000000000000000000000000000000000000000000000000';
+      const implementationSlotData =
+        '0x000000000000000000000000ef6958d7067013251100ce96a1181f7398ad52b5';
+      const emptySlotData = '0x0000000000000000000000000000000000000000000000000000000000000000';
 
       // First call: implementation slot (has data), second call: beacon slot (empty)
       mockClient.getStorageAt
@@ -168,10 +138,7 @@ describe('ContractSourceService - Proxy Detection', () => {
       mockClient.getBytecode.mockResolvedValue('0x'); // No bytecode
       mockClient.getCode.mockResolvedValue('0x'); // No code
 
-      const result = await (contractSourceService as any).detectProxy(
-        chainId,
-        proxyAddress,
-      );
+      const result = await (contractSourceService as any).detectProxy(chainId, proxyAddress);
 
       expect(result).toEqual({
         isProxy: false,
@@ -185,10 +152,7 @@ describe('ContractSourceService - Proxy Detection', () => {
       // Mock RPC error
       mockClient.getStorageAt.mockRejectedValue(new Error('RPC Error'));
 
-      const result = await (contractSourceService as any).detectProxy(
-        chainId,
-        proxyAddress,
-      );
+      const result = await (contractSourceService as any).detectProxy(chainId, proxyAddress);
 
       expect(result).toEqual({
         isProxy: false,
@@ -199,37 +163,26 @@ describe('ContractSourceService - Proxy Detection', () => {
   describe('Real-world test case', () => {
     it('should correctly identify Mantle proxy contract', async () => {
       const proxyAddress = '0x83358A7241A8EEBaF488F7560f2c2eb5EE05f4ca';
-      const implementationAddress
-        = '0xef6958d7067013251100ce96a1181f7398ad52b5';
+      const implementationAddress = '0xef6958d7067013251100ce96a1181f7398ad52b5';
       const chainId = 5000;
 
       // Real data from Mantle network
-      const implementationSlotData
-        = '0x000000000000000000000000ef6958d7067013251100ce96a1181f7398ad52b5';
-      const emptySlotData
-        = '0x0000000000000000000000000000000000000000000000000000000000000000';
+      const implementationSlotData =
+        '0x000000000000000000000000ef6958d7067013251100ce96a1181f7398ad52b5';
+      const emptySlotData = '0x0000000000000000000000000000000000000000000000000000000000000000';
 
       // First call: implementation slot (has data), second call: beacon slot (empty)
       mockClient.getStorageAt
         .mockResolvedValueOnce(implementationSlotData)
         .mockResolvedValueOnce(emptySlotData);
-      mockClient.getBytecode.mockResolvedValue(
-        '0x608060405234801561001057600080fd5b50...',
-      );
-      mockClient.getCode.mockResolvedValue(
-        '0x608060405234801561001057600080fd5b50...',
-      );
+      mockClient.getBytecode.mockResolvedValue('0x608060405234801561001057600080fd5b50...');
+      mockClient.getCode.mockResolvedValue('0x608060405234801561001057600080fd5b50...');
 
-      const result = await (contractSourceService as any).detectProxy(
-        chainId,
-        proxyAddress,
-      );
+      const result = await (contractSourceService as any).detectProxy(chainId, proxyAddress);
 
       expect(result.isProxy).toBe(true);
       expect(result.proxyType).toBe('transparent');
-      expect(result.implementationAddress).toBe(
-        implementationAddress.toLowerCase(),
-      );
+      expect(result.implementationAddress).toBe(implementationAddress.toLowerCase());
     });
   });
 });

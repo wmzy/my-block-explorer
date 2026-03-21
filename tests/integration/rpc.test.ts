@@ -1,5 +1,7 @@
-import { describe, it, expect, beforeAll, vi } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { createPublicClient, http } from 'viem';
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 import { mainnet } from 'viem/chains';
 
 // Import our mock
@@ -105,8 +107,7 @@ describe('RPC Integration Tests', () => {
         expect(typeof testResult.latency).toBe('number');
         expect(testResult.latency).toBeGreaterThan(0);
         expect(testResult.error).toBeUndefined();
-      }
-      else {
+      } else {
         expect(typeof testResult.error).toBe('string');
         expect(testResult.error).toBeTruthy();
         // 打印错误信息以便调试
@@ -145,8 +146,7 @@ describe('RPC Integration Tests', () => {
       try {
         const polygonClient = await rpcManager.getClient(137);
         expect(ethereumClient).not.toBe(polygonClient);
-      }
-      catch (error) {
+      } catch (error) {
         // 如果不支持Polygon或网络问题，跳过这个测试
         console.warn('Polygon client test skipped:', error);
       }

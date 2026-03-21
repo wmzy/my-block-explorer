@@ -5,7 +5,31 @@
 
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { FormattedEventData, EventFilters, PaginationParams } from '../types/events';
-import { eventSearchOptimizer, SearchOptimizationOptions } from '../utils/event-search-optimization';
+import {
+  EventSearchOptimizer,
+  SearchOptimizationOptions,
+  SearchPerformanceMetrics,
+} from '../utils/event-search-optimization';
+
+export interface PerformanceStats {
+  totalOperations: number;
+  averageExecutionTime: number;
+  cacheHitRate: number;
+  operationBreakdown: Record<
+    string,
+    {
+      count: number;
+      avgTime: number;
+      avgDataSize: number;
+    }
+  >;
+  cacheStats: {
+    size: number;
+    maxSize: number;
+    hitRate: number;
+    memoryUsage: number;
+  };
+}
 
 export interface UseEventSearchOptions extends SearchOptimizationOptions {
   enableDebounce?: boolean;
@@ -21,7 +45,7 @@ export interface SearchState {
   error: string | null;
   total: number;
   hasMore: boolean;
-  searchMetrics: any[];
+  searchMetrics: SearchPerformanceMetrics[];
 }
 
 export interface SearchActions {
@@ -30,7 +54,7 @@ export interface SearchActions {
   updateFilters: (filters: Partial<EventFilters>) => void;
   updatePagination: (pagination: Partial<PaginationParams>) => void;
   resetSearch: () => void;
-  getPerformanceStats: () => any;
+  getPerformanceStats: () => PerformanceStats;
 }
 
 /**
@@ -73,12 +97,11 @@ export function useEventSearch(
   // Refs for optimization
   const searchAbortControllerRef = useRef<AbortController | null>(null);
   const debounceTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const optimizerRef = useRef(eventSearchOptimizer);
   const lastSearchRef = useRef<string>('');
 
   // Memoized optimizer with current options
   const optimizer = useMemo(() => {
-    return new eventSearchOptimizer.constructor({
+    return new EventSearchOptimizer({
       enableCache,
       cacheTTL,
       maxCacheSize,
@@ -86,96 +109,104 @@ export function useEventSearch(
       clientSideThreshold,
       enablePerformanceMonitoring,
     });
-  }, [enableCache, cacheTTL, maxCacheSize, enableClientSideFiltering, clientSideThreshold, enablePerformanceMonitoring]);
+  }, [
+    enableCache,
+    cacheTTL,
+    maxCacheSize,
+    enableClientSideFiltering,
+    clientSideThreshold,
+    enablePerformanceMonitoring,
+  ]);
 
   /**
    * Perform search with optimizations
    */
-  const performSearch = useCallback(async (
-    searchFilters: EventFilters = filters,
-    searchPagination: PaginationParams = pagination,
-  ) => {
-    // Cancel previous search if still running
-    if (searchAbortControllerRef.current) {
-      searchAbortControllerRef.current.abort();
-    }
+  const performSearch = useCallback(
+    async (
+      searchFilters: EventFilters = filters,
+      searchPagination: PaginationParams = pagination,
+    ) => {
+      // Cancel previous search if still running
+      if (searchAbortControllerRef.current) {
+        searchAbortControllerRef.current.abort();
+      }
 
-    // Create new abort controller
-    const abortController = new AbortController();
-    searchAbortControllerRef.current = abortController;
+      // Create new abort controller
+      const abortController = new AbortController();
+      searchAbortControllerRef.current = abortController;
 
-    // Generate search key for comparison
-    const searchKey = JSON.stringify({ filters: searchFilters, pagination: searchPagination });
+      // Generate search key for comparison
+      const searchKey = JSON.stringify({ filters: searchFilters, pagination: searchPagination });
 
-    // Skip if this is the same search as the last one
-    if (searchKey === lastSearchRef.current && !searchState.loading) {
-      return;
-    }
-    lastSearchRef.current = searchKey;
+      // Skip if this is the same search as the last one
+      if (searchKey === lastSearchRef.current && !searchState.loading) {
+        return;
+      }
+      lastSearchRef.current = searchKey;
 
-    setSearchState(prev => ({ ...prev, loading: true, error: null }));
+      setSearchState(prev => ({ ...prev, loading: true, error: null }));
 
-    try {
-      if (abortController.signal.aborted) return;
+      try {
+        if (abortController.signal.aborted) return;
 
-      // Use optimized search
-      const result = await optimizer.searchEvents(events, searchFilters, searchPagination);
+        // Use optimized search
+        const result = await optimizer.searchEvents(events, searchFilters, searchPagination);
 
-      if (abortController.signal.aborted) return;
+        if (abortController.signal.aborted) return;
 
-      setSearchState(prev => ({
-        ...prev,
-        filteredEvents: result.events,
-        total: result.total,
-        hasMore: searchPagination.offset! + result.events.length < result.total,
-        loading: false,
-        searchMetrics: result.metrics,
-      }));
-    }
-    catch (error) {
-      if (abortController.signal.aborted) return;
+        setSearchState(prev => ({
+          ...prev,
+          filteredEvents: result.events,
+          total: result.total,
+          hasMore: searchPagination.offset! + result.events.length < result.total,
+          loading: false,
+          searchMetrics: result.metrics,
+        }));
+      } catch (error) {
+        if (abortController.signal.aborted) return;
 
-      setSearchState(prev => ({
-        ...prev,
-        loading: false,
-        error: error instanceof Error ? error.message : 'Search failed',
-      }));
-    }
-  }, [events, filters, pagination, optimizer, searchState.loading]);
+        setSearchState(prev => ({
+          ...prev,
+          loading: false,
+          error: error instanceof Error ? error.message : 'Search failed',
+        }));
+      }
+    },
+    [events, filters, pagination, optimizer, searchState.loading],
+  );
 
   /**
    * Debounced search function
    */
-  const debouncedSearch = useCallback((
-    searchFilters: EventFilters = filters,
-    searchPagination: PaginationParams = pagination,
-  ) => {
-    if (debounceTimerRef.current) {
-      clearTimeout(debounceTimerRef.current);
-    }
+  const debouncedSearch = useCallback(
+    (searchFilters: EventFilters = filters, searchPagination: PaginationParams = pagination) => {
+      if (debounceTimerRef.current) {
+        clearTimeout(debounceTimerRef.current);
+      }
 
-    debounceTimerRef.current = setTimeout(() => {
-      performSearch(searchFilters, searchPagination);
-    }, debounceMs);
-  }, [performSearch, debounceMs]);
+      debounceTimerRef.current = setTimeout(() => {
+        performSearch(searchFilters, searchPagination);
+      }, debounceMs);
+    },
+    [performSearch, debounceMs],
+  );
 
   /**
    * Public search function
    */
-  const search = useCallback(async (
-    newFilters?: EventFilters,
-    newPagination?: PaginationParams,
-  ) => {
-    const searchFilters = newFilters || filters;
-    const searchPagination = newPagination || pagination;
+  const search = useCallback(
+    async (newFilters?: EventFilters, newPagination?: PaginationParams) => {
+      const searchFilters = newFilters ?? filters;
+      const searchPagination = newPagination ?? pagination;
 
-    if (enableDebounce && enableRealTimeSearch) {
-      debouncedSearch(searchFilters, searchPagination);
-    }
-    else {
-      await performSearch(searchFilters, searchPagination);
-    }
-  }, [filters, pagination, enableDebounce, enableRealTimeSearch, debouncedSearch, performSearch]);
+      if (enableDebounce && enableRealTimeSearch) {
+        debouncedSearch(searchFilters, searchPagination);
+      } else {
+        await performSearch(searchFilters, searchPagination);
+      }
+    },
+    [filters, pagination, enableDebounce, enableRealTimeSearch, debouncedSearch, performSearch],
+  );
 
   /**
    * Clear all filters
@@ -193,37 +224,57 @@ export function useEventSearch(
   /**
    * Update filters
    */
-  const updateFilters = useCallback((newFilters: Partial<EventFilters>) => {
-    const updatedFilters = { ...filters, ...newFilters };
-    setFilters(updatedFilters);
-    setPagination(prev => ({ ...prev, offset: 0 })); // Reset to first page
+  const updateFilters = useCallback(
+    (newFilters: Partial<EventFilters>) => {
+      const updatedFilters = { ...filters, ...newFilters };
+      setFilters(updatedFilters);
+      setPagination(prev => ({ ...prev, offset: 0 })); // Reset to first page
 
-    if (autoSearch) {
-      if (enableDebounce && enableRealTimeSearch) {
-        debouncedSearch(updatedFilters, { ...pagination, offset: 0 });
+      if (autoSearch) {
+        if (enableDebounce && enableRealTimeSearch) {
+          debouncedSearch(updatedFilters, { ...pagination, offset: 0 });
+        } else {
+          search(updatedFilters, { ...pagination, offset: 0 });
+        }
       }
-      else {
-        search(updatedFilters, { ...pagination, offset: 0 });
-      }
-    }
-  }, [filters, pagination, autoSearch, enableDebounce, enableRealTimeSearch, debouncedSearch, search]);
+    },
+    [
+      filters,
+      pagination,
+      autoSearch,
+      enableDebounce,
+      enableRealTimeSearch,
+      debouncedSearch,
+      search,
+    ],
+  );
 
   /**
    * Update pagination
    */
-  const updatePagination = useCallback((newPagination: Partial<PaginationParams>) => {
-    const updatedPagination = { ...pagination, ...newPagination };
-    setPagination(updatedPagination);
+  const updatePagination = useCallback(
+    (newPagination: Partial<PaginationParams>) => {
+      const updatedPagination = { ...pagination, ...newPagination };
+      setPagination(updatedPagination);
 
-    if (autoSearch) {
-      if (enableDebounce && enableRealTimeSearch) {
-        debouncedSearch(filters, updatedPagination);
+      if (autoSearch) {
+        if (enableDebounce && enableRealTimeSearch) {
+          debouncedSearch(filters, updatedPagination);
+        } else {
+          search(filters, updatedPagination);
+        }
       }
-      else {
-        search(filters, updatedPagination);
-      }
-    }
-  }, [filters, pagination, autoSearch, enableDebounce, enableRealTimeSearch, debouncedSearch, search]);
+    },
+    [
+      filters,
+      pagination,
+      autoSearch,
+      enableDebounce,
+      enableRealTimeSearch,
+      debouncedSearch,
+      search,
+    ],
+  );
 
   /**
    * Reset search to initial state
@@ -272,7 +323,11 @@ export function useEventSearch(
 
   // Initial search if auto-search is enabled
   useEffect(() => {
-    if (autoSearch && initialEvents.length > 0 && (Object.keys(filters).length > 0 || pagination.offset! > 0)) {
+    if (
+      autoSearch &&
+      initialEvents.length > 0 &&
+      (Object.keys(filters).length > 0 || pagination.offset! > 0)
+    ) {
       search();
     }
   }, []); // Only run once on mount
@@ -312,7 +367,7 @@ export function useRealTimeEventSearch(
     ...options,
     enableDebounce: true,
     enableRealTimeSearch: true,
-    debounceMs: options.debounceMs || 200,
+    debounceMs: options.debounceMs ?? 200,
   });
 }
 

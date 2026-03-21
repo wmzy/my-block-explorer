@@ -13,7 +13,6 @@ const SUPPORTED_CHAINS: Record<number, Chain> = {
   5000: {
     id: 5000,
     name: 'Mantle',
-    network: 'mantle',
     nativeCurrency: {
       decimals: 18,
       name: 'Mantle',

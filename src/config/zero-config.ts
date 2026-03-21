@@ -5,6 +5,11 @@
 
 import { createLogger } from '../server/logger';
 import { multiChainDb } from '../database/chain-database-manager';
+import {
+  getRecommendedMultiChainConfig,
+  getChainDatabasePath,
+  type ChainDatabaseConfig,
+} from './chains';
 
 const logger = createLogger('zero-config');
 import { performanceMonitor } from '../services/PerformanceMonitor';
@@ -61,8 +66,7 @@ export class ZeroConfigManager {
 
       this.isInitialized = true;
       logger.info('Zero-config environment initialized successfully');
-    }
-    catch (error) {
+    } catch (error) {
       logger.error({ err: error }, 'Failed to initialize zero-config environment');
       throw error;
     }
@@ -79,39 +83,29 @@ export class ZeroConfigManager {
     const majorVersion = parseInt(nodeVersion.slice(1).split('.')[0]);
 
     if (majorVersion < 22) {
-      throw new Error(`Node.js version ${nodeVersion} is not supported. Please upgrade to Node.js 22 or later.`);
+      throw new Error(
+        `Node.js version ${nodeVersion} is not supported. Please upgrade to Node.js 22 or later.`,
+      );
     }
 
     // Create required directories
     const fs = await import('fs/promises');
-    const path = await import('path');
 
-    const directories = [
-      'data',
-      'data/chains',
-      'data/logs',
-      'logs',
-      'temp',
-    ];
+    const directories = ['data', 'data/chains', 'data/logs', 'logs', 'temp'];
 
     for (const dir of directories) {
       try {
         await fs.mkdir(dir, { recursive: true });
         logger.info({ dir }, 'Created directory');
-      }
-      catch (error) {
+      } catch {
         // Directory might already exist, ignore error
       }
     }
 
     // Set environment variables with sensible defaults
-    if (!process.env.NODE_ENV) {
-      process.env.NODE_ENV = 'development';
-    }
+    process.env.NODE_ENV ??= 'development';
 
-    if (!process.env.LOG_LEVEL) {
-      process.env.LOG_LEVEL = this.config.logLevel;
-    }
+    process.env.LOG_LEVEL ??= this.config.logLevel;
 
     logger.info('Environment setup complete');
   }
@@ -132,8 +126,7 @@ export class ZeroConfigManager {
       await multiChainDb.initializeAllChains();
 
       logger.info('Database setup complete');
-    }
-    catch (error) {
+    } catch (error) {
       logger.error({ err: error }, 'Database setup failed');
       throw error;
     }
@@ -190,7 +183,7 @@ export class ZeroConfigManager {
    */
   private setupErrorRecovery(): void {
     // Handle uncaught exceptions
-    process.on('uncaughtException', (error) => {
+    process.on('uncaughtException', error => {
       logger.error({ err: error }, 'Uncaught Exception');
       this.gracefulShutdown();
     });
@@ -229,8 +222,7 @@ export class ZeroConfigManager {
 
       logger.info('Graceful shutdown complete');
       process.exit(0);
-    }
-    catch (error) {
+    } catch (error) {
       logger.error({ err: error }, 'Error during graceful shutdown');
       process.exit(1);
     }
@@ -249,8 +241,7 @@ export class ZeroConfigManager {
       isInitialized: this.isInitialized,
       config: this.config,
       chainCount: multiChainDb.getInitializedChains().length,
-      databasePaths: multiChainDb.getInitializedChains().map((chainId) => {
-        const { getChainDatabasePath } = require('./chains');
+      databasePaths: multiChainDb.getInitializedChains().map(chainId => {
         return getChainDatabasePath(chainId);
       }),
     };
@@ -268,9 +259,8 @@ export class ZeroConfigManager {
    * Get supported chains list
    */
   getSupportedChains(): number[] {
-    const { getRecommendedMultiChainConfig } = require('./chains');
     const configs = getRecommendedMultiChainConfig();
-    return configs.map((config: any) => config.chainId);
+    return configs.map((config: ChainDatabaseConfig) => config.chainId);
   }
 
   /**
@@ -345,7 +335,7 @@ export async function initializeBlockchainExplorer(): Promise<void> {
  * Auto-initialize if this module is imported
  */
 if (require.main === module || process.env.AUTO_INIT === 'true') {
-  initializeBlockchainExplorer().catch((error) => {
+  initializeBlockchainExplorer().catch(error => {
     logger.error({ err: error }, 'Failed to auto-initialize blockchain explorer');
     process.exit(1);
   });

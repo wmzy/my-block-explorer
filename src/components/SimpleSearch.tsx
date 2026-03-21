@@ -1,13 +1,30 @@
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/Button';
 
+type SearchError = {
+  error: true;
+  message: string;
+};
+
+type SearchSuccess = {
+  error?: false;
+  query: string;
+  type: string;
+  result: {
+    found: boolean;
+    message: string;
+    suggestions: string[];
+  };
+  timestamp: string;
+};
+
+type SearchResult = SearchError | SearchSuccess;
+
 export function SimpleSearch() {
   const [query, setQuery] = useState('');
-  const [searchType, setSearchType] = useState<
-    'address' | 'transaction' | 'block' | null
-  >(null);
+  const [searchType, setSearchType] = useState<'address' | 'transaction' | 'block' | null>(null);
   const [searching, setSearching] = useState(false);
-  const [searchResult, setSearchResult] = useState<any>(null);
+  const [searchResult, setSearchResult] = useState<SearchResult | null>(null);
 
   const detectSearchType = (input: string) => {
     if (!input) return null;
@@ -36,9 +53,7 @@ export function SimpleSearch() {
     setSearchResult(null);
 
     try {
-      const response = await fetch(
-        `/api/search?q=${encodeURIComponent(query)}`,
-      );
+      const response = await fetch(`/api/search?q=${encodeURIComponent(query)}`);
       const result = await response.json();
       setSearchResult(result);
     }
@@ -181,9 +196,7 @@ export function SimpleSearch() {
 
           {searchResult.error
             ? (
-                <p style={{ color: '#dc2626', margin: 0 }}>
-                  {searchResult.message}
-                </p>
+                <p style={{ color: '#dc2626', margin: 0 }}>{searchResult.message}</p>
               )
             : (
                 <div>
@@ -222,11 +235,9 @@ export function SimpleSearch() {
                           color: '#6b7280',
                         }}
                       >
-                        {searchResult.result.suggestions.map(
-                          (suggestion: string, index: number) => (
-                            <li key={index}>{suggestion}</li>
-                          ),
-                        )}
+                        {searchResult.result.suggestions.map((suggestion: string, index: number) => (
+                          <li key={index}>{suggestion}</li>
+                        ))}
                       </ul>
                     )}
                   </div>
@@ -256,8 +267,7 @@ export function SimpleSearch() {
         >
           地址: 0x742d35Cc6634C0532925a3b8D489319BaAE7fe
           <br />
-          交易:
-          0x5c504ed432cb51138bcf09aa5e8a410dd4a1e204ef84bfed1be16dfba1b22060
+          交易: 0x5c504ed432cb51138bcf09aa5e8a410dd4a1e204ef84bfed1be16dfba1b22060
           <br />
           区块: 18000000
         </div>

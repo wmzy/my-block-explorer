@@ -21,7 +21,7 @@ export default function TransactionsListPage() {
   const [latestBlockNumber, setLatestBlockNumber] = useState<bigint | null>(null);
   const limit = 20;
 
-  const currentChainId = parseInt(chainId || '1');
+  const currentChainId = parseInt(chainId ?? '1');
   const chainInfo = getChainInfo(currentChainId);
   const symbol = getChainSymbol(currentChainId);
 
@@ -30,28 +30,18 @@ export default function TransactionsListPage() {
       setLoading(true);
       setError(null);
 
-      const beforeBlock
-        = latestBlockNumber && page > 1
-          ? latestBlockNumber - BigInt((page - 1) * 5)
-          : undefined;
+      const beforeBlock =
+        latestBlockNumber && page > 1 ? latestBlockNumber - BigInt((page - 1) * 5) : undefined;
 
-      const result = await getLatestTransactions(
-        currentChainId,
-        limit,
-        beforeBlock,
-      );
+      const result = await getLatestTransactions(currentChainId, limit, beforeBlock);
       setTransactions(result.transactions);
       if (page === 1) {
         setLatestBlockNumber(result.latestBlockNumber);
       }
-    }
-    catch (err) {
+    } catch (err) {
       console.error('Failed to fetch transactions:', err);
-      setError(
-        err instanceof Error ? err.message : 'Failed to fetch transactions',
-      );
-    }
-    finally {
+      setError(err instanceof Error ? err.message : 'Failed to fetch transactions');
+    } finally {
       setLoading(false);
     }
   }, [currentChainId, page, latestBlockNumber]);
@@ -80,8 +70,7 @@ export default function TransactionsListPage() {
       if (valueInEth === 0) return `0 ${symbol}`;
       if (valueInEth < 0.0001) return `<0.0001 ${symbol}`;
       return `${valueInEth.toFixed(4)} ${symbol}`;
-    }
-    catch {
+    } catch {
       return `${value} wei`;
     }
   };
@@ -138,13 +127,14 @@ export default function TransactionsListPage() {
                     />
                   </td>
                   <td>
-                    <Link to={`/chain/${currentChainId}/block/${tx.blockNumber}`} className={linkStyle}>
+                    <Link
+                      to={`/chain/${currentChainId}/block/${tx.blockNumber}`}
+                      className={linkStyle}
+                    >
                       {formatNumber(parseInt(tx.blockNumber))}
                     </Link>
                   </td>
-                  <td>
-                    {tx.timestamp ? formatRelativeTime(tx.timestamp) : 'N/A'}
-                  </td>
+                  <td>{tx.timestamp ? formatRelativeTime(tx.timestamp) : 'N/A'}</td>
                   <td>
                     <CopyableHash
                       value={tx.fromAddress}

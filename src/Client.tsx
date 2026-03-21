@@ -14,7 +14,7 @@ type SearchResult = {
   result: {
     found: boolean;
     message: string;
-    data: any;
+    data: unknown;
     suggestions: string[];
   };
   timestamp: string;
@@ -47,9 +47,7 @@ export function Client() {
 
     setLoading(true);
     try {
-      const response = await fetch(
-        `/api/search?q=${encodeURIComponent(searchQuery)}`,
-      );
+      const response = await fetch(`/api/search?q=${encodeURIComponent(searchQuery)}`);
       const data = await response.json();
       setSearchResult(data);
     }
@@ -176,9 +174,7 @@ export function Client() {
                 border: '1px solid #e2e8f0',
               }}
             >
-              <h3 style={{ margin: '0 0 12px 0', color: '#374151' }}>
-                Search Result
-              </h3>
+              <h3 style={{ margin: '0 0 12px 0', color: '#374151' }}>Search Result</h3>
               <p>
                 <strong>Query:</strong>
                 {' '}
@@ -199,13 +195,11 @@ export function Client() {
                 <div style={{ marginTop: '12px' }}>
                   <strong>Suggestions:</strong>
                   <ul style={{ marginTop: '8px', paddingLeft: '20px' }}>
-                    {searchResult.result.suggestions.map(
-                      (suggestion, index) => (
-                        <li key={index} style={{ marginBottom: '4px' }}>
-                          {suggestion}
-                        </li>
-                      ),
-                    )}
+                    {searchResult.result.suggestions.map((suggestion, index) => (
+                      <li key={index} style={{ marginBottom: '4px' }}>
+                        {suggestion}
+                      </li>
+                    ))}
                   </ul>
                 </div>
               )}
@@ -222,9 +216,7 @@ export function Client() {
             border: '1px solid #e2e8f0',
           }}
         >
-          <h3 style={{ margin: '0 0 12px 0', color: '#374151' }}>
-            Development Status
-          </h3>
+          <h3 style={{ margin: '0 0 12px 0', color: '#374151' }}>Development Status</h3>
           <p style={{ color: '#6b7280', lineHeight: '1.6', margin: 0 }}>
             ✅ 统一开发环境已配置完成
             <br />

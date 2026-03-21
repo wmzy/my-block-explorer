@@ -4,6 +4,7 @@
  */
 
 import { getChainName, getChainType } from '../config/chains';
+import { AbiEvent, AbiParameter } from 'viem';
 
 /**
  * 链特定表结构定义
@@ -275,7 +276,7 @@ export class ChainSchemaManager {
   /**
    * 创建动态事件表的SQL
    */
-  getCreateEventTableSQL(tableName: string, eventAbi: any): string {
+  getCreateEventTableSQL(tableName: string, eventAbi: AbiEvent): string {
     // 从ABI生成列定义
     const columns = this.generateEventColumns(eventAbi);
 
@@ -303,12 +304,12 @@ export class ChainSchemaManager {
   /**
    * 从ABI生成事件列定义
    */
-  private generateEventColumns(eventAbi: any): string[] {
+  private generateEventColumns(eventAbi: AbiEvent): string[] {
     if (!eventAbi.inputs) {
       return [];
     }
 
-    return eventAbi.inputs.map((input: any) => {
+    return eventAbi.inputs.map((input: AbiParameter & { indexed?: boolean }) => {
       const dbType = this.mapAbiTypeToDb(input.type);
       const nullable = !input.indexed;
       return `${input.name} ${dbType}${nullable ? '' : ' NOT NULL'}`;
@@ -366,7 +367,7 @@ export class ChainSchemaManager {
   /**
    * 生成事件表索引SQL
    */
-  getEventTableIndexesSQL(tableName: string, eventAbi: any): string[] {
+  getEventTableIndexesSQL(tableName: string, eventAbi: AbiEvent): string[] {
     const indexes = [
       `CREATE INDEX IF NOT EXISTS idx_${tableName}_block_timestamp ON ${tableName} (block_timestamp)`,
       `CREATE INDEX IF NOT EXISTS idx_${tableName}_contract_address ON ${tableName} (contract_address)`,
@@ -378,9 +379,11 @@ export class ChainSchemaManager {
 
     // 为indexed参数创建索引
     if (eventAbi.inputs) {
-      eventAbi.inputs.forEach((input: any) => {
+      eventAbi.inputs.forEach((input: AbiParameter & { indexed?: boolean }) => {
         if (input.indexed && input.name) {
-          indexes.push(`CREATE INDEX IF NOT EXISTS idx_${tableName}_${input.name} ON ${tableName} (${input.name})`);
+          indexes.push(
+            `CREATE INDEX IF NOT EXISTS idx_${tableName}_${input.name} ON ${tableName} (${input.name})`,
+          );
         }
       });
     }

@@ -1,4 +1,4 @@
-import { eq, and, sql, gte, lte, desc, isNull, ne } from 'drizzle-orm';
+import { eq, and, sql, gte, lte, desc, ne } from 'drizzle-orm';
 import { db } from '../database/drizzle';
 import {
   indexingProgress,
@@ -14,7 +14,7 @@ const BATCH_SIZE = 2000;
 const MAX_RETRY = 3;
 const RETRY_DELAY_MS = 2000;
 
-type IndexingState = {
+type _IndexingState = {
   chainId: number;
   address: `0x${string}`;
   status: 'idle' | 'indexing' | 'error';
@@ -217,7 +217,7 @@ const insertEvents = async (
   return rows.length;
 };
 
-const handleReorgs = async (
+const _handleReorgs = async (
   chainId: number,
   contractAddress: `0x${string}`,
   lastFinalizedBlock: bigint,

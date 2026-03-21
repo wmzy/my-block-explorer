@@ -74,7 +74,7 @@ const errorDetailStyles = css`
         border: 1px solid #e2e8f0;
         border-radius: 4px;
         padding: 8px;
-        font-family: "Monaco", "Menlo", monospace;
+        font-family: 'Monaco', 'Menlo', monospace;
         font-size: 12px;
         color: #2d3748;
         overflow-x: auto;
@@ -108,7 +108,7 @@ const errorDetailStyles = css`
           font-size: 13px;
 
           &:before {
-            content: "→";
+            content: '→';
             position: absolute;
             left: 0;
             color: #c53030;
@@ -221,7 +221,7 @@ export default function RpcErrorDetail({
             <p>{error}</p>
           </div>
 
-          {(blockNumber || contractAddress || rpcUrl) && (
+          {(blockNumber ?? contractAddress ?? rpcUrl) && (
             <div className="detail-section">
               <h5>请求详情</h5>
               {chainId && chainName && (
@@ -265,10 +265,7 @@ export default function RpcErrorDetail({
               <h5>验证命令</h5>
               <p>使用以下命令可以直接验证RPC节点是否正常工作：</p>
               <div className="code-block">
-                <button
-                  className="copy-btn"
-                  onClick={() => copyToClipboard(castCommand)}
-                >
+                <button className="copy-btn" onClick={() => copyToClipboard(castCommand)}>
                   复制
                 </button>
                 {castCommand}
@@ -301,9 +298,7 @@ export default function RpcErrorDetail({
         )}
 
         <span className="retry-info">
-          {retryable
-            ? '此错误可能是临时的，建议重试'
-            : '此错误通常需要更换RPC节点'}
+          {retryable ? '此错误可能是临时的，建议重试' : '此错误通常需要更换RPC节点'}
         </span>
       </div>
     </div>

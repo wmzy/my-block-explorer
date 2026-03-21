@@ -1,4 +1,4 @@
-import { formatEther, type Block, type TransactionReceipt } from 'viem';
+import { type Block, type TransactionReceipt } from 'viem';
 import { createRpcClient } from './realTimeData';
 
 export type RpcBlock = {
@@ -43,13 +43,11 @@ export type RpcTransaction = {
 };
 
 const formatBlock = (block: Block, includeTimestamp = true): RpcBlock => ({
-  number: block.number.toString(),
-  hash: block.hash!,
+  number: (block.number ?? 0n).toString(),
+  hash: block.hash ?? '',
   parentHash: block.parentHash,
-  timestamp: includeTimestamp
-    ? new Date(Number(block.timestamp) * 1000).toISOString()
-    : '',
-  miner: (block as Record<string, unknown>).miner as string ?? '',
+  timestamp: includeTimestamp ? new Date(Number(block.timestamp) * 1000).toISOString() : '',
+  miner: ((block as Record<string, unknown>).miner as string) ?? '',
   gasUsed: block.gasUsed.toString(),
   gasLimit: block.gasLimit.toString(),
   baseFeePerGas: block.baseFeePerGas?.toString(),
@@ -58,10 +56,10 @@ const formatBlock = (block: Block, includeTimestamp = true): RpcBlock => ({
   difficulty: block.difficulty?.toString(),
   totalDifficulty: block.totalDifficulty?.toString(),
   extraData: block.extraData,
-  logsBloom: block.logsBloom,
-  stateRoot: block.stateRoot,
-  transactionsRoot: block.transactionsRoot,
-  receiptsRoot: block.receiptsRoot,
+  logsBloom: block.logsBloom ?? undefined,
+  stateRoot: block.stateRoot ?? undefined,
+  transactionsRoot: block.transactionsRoot ?? undefined,
+  receiptsRoot: block.receiptsRoot ?? undefined,
 });
 
 const formatTransaction = (
@@ -84,9 +82,7 @@ const formatTransaction = (
   nonce: (tx.nonce as number)?.toString() ?? '0',
   status: receipt?.status === 'success' ? 1 : receipt ? 0 : -1,
   type: Number(tx.type ?? 0),
-  timestamp: blockTimestamp
-    ? new Date(Number(blockTimestamp) * 1000).toISOString()
-    : undefined,
+  timestamp: blockTimestamp ? new Date(Number(blockTimestamp) * 1000).toISOString() : undefined,
   inputData: tx.input as string,
   contractAddress: receipt?.contractAddress ?? undefined,
 });
@@ -104,10 +100,7 @@ export const getLatestBlocks = async (
   const latestBlockNumber = beforeBlock ?? (await client.getBlockNumber());
 
   const startBlock = latestBlockNumber;
-  const endBlock
-    = startBlock - BigInt(count - 1) > 0n
-      ? startBlock - BigInt(count - 1)
-      : 0n;
+  const endBlock = startBlock - BigInt(count - 1) > 0n ? startBlock - BigInt(count - 1) : 0n;
 
   const blockNumbers: bigint[] = [];
   for (let n = startBlock; n >= endBlock; n--) {
@@ -132,10 +125,7 @@ export const getLatestBlocks = async (
 /**
  * Fetch a single block by number directly from RPC.
  */
-export const getBlockByNumber = async (
-  chainId: number,
-  blockNumber: bigint,
-): Promise<RpcBlock> => {
+export const getBlockByNumber = async (chainId: number, blockNumber: bigint): Promise<RpcBlock> => {
   const client = await createRpcClient(chainId);
   const block = await client.getBlock({ blockNumber });
   return formatBlock(block);
@@ -156,20 +146,16 @@ export const getBlockTransactions = async (
 
   if (!block.transactions.length) return [];
 
-  const txObjects = block.transactions.filter(
-    (tx): tx is Record<string, unknown> => typeof tx !== 'string',
-  );
+  const txObjects = block.transactions.filter(tx => typeof tx !== 'string') as {
+    hash: `0x${string}`;
+  }[];
 
   const receipts = await Promise.all(
-    txObjects.map(tx =>
-      client
-        .getTransactionReceipt({ hash: tx.hash })
-        .catch(() => null),
-    ),
+    txObjects.map(tx => client.getTransactionReceipt({ hash: tx.hash }).catch(() => null)),
   );
 
   return txObjects.map((tx, i) =>
-    formatTransaction(tx, receipts[i], block.timestamp),
+    formatTransaction(tx as unknown as Record<string, unknown>, receipts[i], block.timestamp),
   );
 };
 
@@ -216,22 +202,14 @@ export const getTransactionByHash = async (
   const client = await createRpcClient(chainId);
   const [tx, receipt] = await Promise.all([
     client.getTransaction({ hash: txHash as `0x${string}` }),
-    client
-      .getTransactionReceipt({ hash: txHash as `0x${string}` })
-      .catch(() => null),
+    client.getTransactionReceipt({ hash: txHash as `0x${string}` }).catch(() => null),
   ]);
 
   let blockTimestamp: bigint | undefined;
   if (tx.blockNumber) {
-    const block = await client
-      .getBlock({ blockNumber: tx.blockNumber })
-      .catch(() => null);
+    const block = await client.getBlock({ blockNumber: tx.blockNumber }).catch(() => null);
     blockTimestamp = block?.timestamp;
   }
 
-  return formatTransaction(
-    tx as unknown as Record<string, unknown>,
-    receipt,
-    blockTimestamp,
-  );
+  return formatTransaction(tx as unknown as Record<string, unknown>, receipt, blockTimestamp);
 };

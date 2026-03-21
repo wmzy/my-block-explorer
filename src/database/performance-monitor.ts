@@ -3,7 +3,7 @@
  * 提供链级别的性能指标收集和分析
  */
 
-import { ChainDatabaseStatus, MultiChainStatistics } from '../types/events';
+import { MultiChainStatistics } from '../types/events';
 
 // 性能指标接口
 export interface PerformanceMetrics {
@@ -43,7 +43,7 @@ export class ChainPerformanceMonitor {
 
   // 记录查询性能
   recordQuery(operation: string, queryTime: number, success: boolean = true): void {
-    const current = this.metrics.get(operation) || {
+    const current = this.metrics.get(operation) ?? {
       queryTime: 0,
       queryCount: 0,
       errorCount: 0,
@@ -69,7 +69,7 @@ export class ChainPerformanceMonitor {
 
   // 记录事件索引性能
   recordEventIndexing(eventsCount: number, indexingTime: number, blocksProcessed: number): void {
-    const current = this.metrics.get('event_indexing') || {
+    const current = this.metrics.get('event_indexing') ?? {
       queryTime: 0,
       queryCount: 0,
       errorCount: 0,
@@ -92,7 +92,7 @@ export class ChainPerformanceMonitor {
 
   // 记录RPC性能
   recordRpcCall(responseTime: number, success: boolean = true): void {
-    const current = this.metrics.get('rpc_calls') || {
+    const current = this.metrics.get('rpc_calls') ?? {
       queryTime: 0,
       queryCount: 0,
       errorCount: 0,
@@ -239,37 +239,45 @@ export class MultiChainPerformanceManager {
   getChainPerformanceReport(chainId: number): {
     chainId: number;
     uptime: number;
-    queryPerformance: Record<string, any>;
-    indexingPerformance: any;
-    rpcPerformance: any;
+    queryPerformance: Record<
+      string,
+      { averageQueryTime: number; queriesPerSecond: number; errorRate: number } | null
+    >;
+    indexingPerformance: {
+      eventsPerSecond: number;
+      averageIndexingTime: number;
+      blocksPerSecond: number;
+    } | null;
+    rpcPerformance: {
+      averageResponseTime: number;
+      callsPerSecond: number;
+      errorRate: number;
+    } | null;
   } | null {
     const monitor = this.monitors.get(chainId);
     if (!monitor) {
       return null;
     }
 
-    const report: any = {
-      chainId,
-      uptime: monitor.getUptime(),
-      queryPerformance: {},
-      indexingPerformance: null,
-      rpcPerformance: null,
-    };
+    const queryPerformance: Record<
+      string,
+      { averageQueryTime: number; queriesPerSecond: number; errorRate: number } | null
+    > = {};
 
     // 收集所有查询性能
     for (const [operation, metrics] of monitor.getAllMetrics()) {
       if (metrics.queryCount > 0) {
-        report.queryPerformance[operation] = monitor.getAveragePerformance(operation);
+        queryPerformance[operation] = monitor.getAveragePerformance(operation);
       }
     }
 
-    // 事件索引性能
-    report.indexingPerformance = monitor.getIndexingPerformance();
-
-    // RPC性能
-    report.rpcPerformance = monitor.getRpcPerformance();
-
-    return report;
+    return {
+      chainId,
+      uptime: monitor.getUptime(),
+      queryPerformance,
+      indexingPerformance: monitor.getIndexingPerformance(),
+      rpcPerformance: monitor.getRpcPerformance(),
+    };
   }
 
   // 获取多链性能摘要
@@ -281,7 +289,24 @@ export class MultiChainPerformanceManager {
       chainId: number;
       uptime: number;
       hasActivity: boolean;
-      performance: any;
+      performance: {
+        chainId: number;
+        uptime: number;
+        queryPerformance: Record<
+          string,
+          { averageQueryTime: number; queriesPerSecond: number; errorRate: number } | null
+        >;
+        indexingPerformance: {
+          eventsPerSecond: number;
+          averageIndexingTime: number;
+          blocksPerSecond: number;
+        } | null;
+        rpcPerformance: {
+          averageResponseTime: number;
+          callsPerSecond: number;
+          errorRate: number;
+        } | null;
+      } | null;
     }>;
   } {
     const chainReports = Array.from(this.monitors.entries()).map(([chainId, monitor]) => ({
@@ -340,7 +365,8 @@ export class MultiChainPerformanceManager {
       // 检查查询错误率
       for (const [operation, _] of monitor.getAllMetrics()) {
         const perf = monitor.getAveragePerformance(operation);
-        if (perf && perf.errorRate > 0.1) { // 10%错误率阈值
+        if (perf && perf.errorRate > 0.1) {
+          // 10%错误率阈值
           alerts.push({
             chainId,
             type: 'high_error_rate',
@@ -349,7 +375,8 @@ export class MultiChainPerformanceManager {
           });
         }
 
-        if (perf && perf.averageQueryTime > 1000) { // 1秒阈值
+        if (perf && perf.averageQueryTime > 1000) {
+          // 1秒阈值
           alerts.push({
             chainId,
             type: 'slow_queries',
@@ -362,7 +389,8 @@ export class MultiChainPerformanceManager {
       // 检查RPC性能
       const rpcPerf = monitor.getRpcPerformance();
       if (rpcPerf) {
-        if (rpcPerf.errorRate > 0.05) { // 5%RPC错误率阈值
+        if (rpcPerf.errorRate > 0.05) {
+          // 5%RPC错误率阈值
           alerts.push({
             chainId,
             type: 'rpc_issues',
@@ -371,7 +399,8 @@ export class MultiChainPerformanceManager {
           });
         }
 
-        if (rpcPerf.averageResponseTime > 5000) { // 5秒阈值
+        if (rpcPerf.averageResponseTime > 5000) {
+          // 5秒阈值
           alerts.push({
             chainId,
             type: 'rpc_issues',
@@ -383,7 +412,8 @@ export class MultiChainPerformanceManager {
 
       // 检查索引性能
       const indexingPerf = monitor.getIndexingPerformance();
-      if (indexingPerf && indexingPerf.eventsPerSecond < 1) { // 每秒至少1个事件
+      if (indexingPerf && indexingPerf.eventsPerSecond < 1) {
+        // 每秒至少1个事件
         alerts.push({
           chainId,
           type: 'indexing_slow',
@@ -424,30 +454,39 @@ export class MultiChainPerformanceManager {
 
 // 性能监控装饰器
 export function monitorPerformance(operation: string) {
-  return function (target: any, propertyName: string, descriptor: PropertyDescriptor) {
-    const method = descriptor.value;
+  return function (target: object, propertyName: string, descriptor: PropertyDescriptor) {
+    const originalMethod = descriptor.value;
 
-    descriptor.value = async function (...args: any[]) {
+    if (typeof originalMethod !== 'function') {
+      return descriptor;
+    }
+
+    descriptor.value = function (
+      this: { performanceMonitor?: ChainPerformanceMonitor },
+      ...args: unknown[]
+    ) {
       const startTime = Date.now();
       let success = true;
 
-      try {
-        const result = await method.apply(this, args);
-        return result;
-      }
-      catch (error) {
-        success = false;
-        throw error;
-      }
-      finally {
-        const endTime = Date.now();
-        const duration = endTime - startTime;
-
-        // 记录到性能监控器（如果存在）
-        if (this.performanceMonitor) {
-          this.performanceMonitor.recordQuery(operation, duration, success);
+      const execute = async () => {
+        try {
+          const result = await (originalMethod as (...args: unknown[]) => Promise<unknown>).apply(
+            this,
+            args,
+          );
+          return result;
+        } catch (error) {
+          success = false;
+          throw error;
+        } finally {
+          const duration = Date.now() - startTime;
+          if (this.performanceMonitor) {
+            this.performanceMonitor.recordQuery(operation, duration, success);
+          }
         }
-      }
+      };
+
+      return execute();
     };
 
     return descriptor;
@@ -467,12 +506,10 @@ export function createMonitoredQuery<T extends any[], R>(
     try {
       const result = await queryFn(...args);
       return result;
-    }
-    catch (error) {
+    } catch (error) {
       success = false;
       throw error;
-    }
-    finally {
+    } finally {
       const endTime = Date.now();
       const duration = endTime - startTime;
       monitor.recordQuery(operation, duration, success);

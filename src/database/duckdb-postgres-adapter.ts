@@ -21,7 +21,9 @@ export class DuckDBPostgresAdapter {
 
     // 确保数据目录存在
     const dataDir = join(process.cwd(), 'data');
-    mkdir(dataDir, { recursive: true }).catch(err => logger.warn({ err }, 'Failed to create data directory'));
+    mkdir(dataDir, { recursive: true }).catch(err =>
+      logger.warn({ err }, 'Failed to create data directory'),
+    );
   }
 
   private parseConnectionString(connectionString: string): string {
@@ -153,11 +155,13 @@ export class DuckDBPostgresAdapter {
         `CREATE INDEX IF NOT EXISTS contract_events_chain_contract_name_idx ON contract_events (chain_id, contract_address, event_name)`,
       ];
       for (const ddl of ddls) {
-        try { await conn.run(ddl); }
-        catch { /* already exists */ }
+        try {
+          await conn.run(ddl);
+        } catch {
+          /* already exists */
+        }
       }
-    }
-    finally {
+    } finally {
       conn.disconnectSync();
     }
   }
@@ -175,18 +179,20 @@ export class DuckDBPostgresAdapter {
     queryParams: unknown[],
     connection?: Awaited<ReturnType<DuckDBInstance['connect']>>,
   ): Promise<Record<string, unknown>[]> {
-    const conn = connection || (await this.instance!.connect());
+    const conn = connection ?? (await this.instance!.connect());
     const shouldDisconnect = !connection;
 
     try {
-      const result
-        = queryParams.length > 0
-          ? await conn.runAndReadAll(queryText, queryParams as Parameters<typeof conn.runAndReadAll>[1])
+      const result =
+        queryParams.length > 0
+          ? await conn.runAndReadAll(
+              queryText,
+              queryParams as Parameters<typeof conn.runAndReadAll>[1],
+            )
           : await conn.runAndReadAll(queryText);
 
       return this.adaptResult(result.getRowObjects() as Record<string, unknown>[]);
-    }
-    finally {
+    } finally {
       if (shouldDisconnect) {
         conn.disconnectSync();
       }
@@ -213,8 +219,7 @@ export class DuckDBPostgresAdapter {
     if (typeof sql === 'string') {
       queryText = sql;
       queryParams = params;
-    }
-    else {
+    } else {
       // 处理模板字符串 + 参数
       queryText = sql.join('?');
       queryParams = params;
@@ -225,8 +230,7 @@ export class DuckDBPostgresAdapter {
 
     try {
       return await this.executeQuery(queryText, queryParams);
-    }
-    catch (error) {
+    } catch (error) {
       throw this.adaptError(error as Error);
     }
   }
@@ -253,9 +257,9 @@ export class DuckDBPostgresAdapter {
         },
         unsafe: (query: string, params?: unknown[]) => {
           const queryPromise = (async () => {
-            return await this.executeQuery(query, params || [], connection);
+            return await this.executeQuery(query, params ?? [], connection);
           })();
-          return this.extendQueryPromise(queryPromise, query, params || []);
+          return this.extendQueryPromise(queryPromise, query, params ?? []);
         },
       };
 
@@ -264,21 +268,18 @@ export class DuckDBPostgresAdapter {
       logger.info('DuckDB Transaction: COMMIT');
       transactionActive = false;
       return result;
-    }
-    catch (error) {
+    } catch (error) {
       logger.error({ err: error }, 'Transaction error');
       if (transactionActive) {
         try {
           await connection.run('ROLLBACK');
           logger.info('DuckDB Transaction: ROLLBACK');
-        }
-        catch (rollbackError) {
+        } catch (rollbackError) {
           logger.warn({ err: rollbackError }, 'Failed to rollback transaction');
         }
       }
       throw this.adaptError(error as Error);
-    }
-    finally {
+    } finally {
       connection.disconnectSync();
     }
   }
@@ -293,8 +294,7 @@ export class DuckDBPostgresAdapter {
       const connection = await this.instance.connect();
       await connection.run(sql);
       connection.disconnectSync();
-    }
-    catch (error) {
+    } catch (error) {
       throw this.adaptError(error as Error);
     }
   }
@@ -321,18 +321,16 @@ export class DuckDBPostgresAdapter {
       for (const [key, value] of Object.entries(adaptedRow)) {
         if (typeof value === 'bigint') {
           adaptedRow[key] = value.toString();
-        }
-        else if (value && typeof value === 'object') {
+        } else if (value && typeof value === 'object') {
           // Handle DuckDB HUGEINT (128-bit integer) returned by count(*)
           // HUGEINT is represented as { high: number, low: bigint } or similar
           const obj = value as Record<string, unknown>;
           if ('high' in obj && 'low' in obj) {
             // Convert HUGEINT to number (safe for counts up to 2^53 - 1)
             const low = typeof obj.low === 'bigint' ? obj.low : BigInt(obj.low as number);
-            const high = typeof obj.high === 'number' ? BigInt(obj.high) : obj.high as bigint;
+            const high = typeof obj.high === 'number' ? BigInt(obj.high) : (obj.high as bigint);
             adaptedRow[key] = Number((high << 64n) + low);
-          }
-          else if (value.constructor.name === 'DuckDBTimestampValue') {
+          } else if (value.constructor.name === 'DuckDBTimestampValue') {
             const tsValue = value as { micros?: number };
             adaptedRow[key] = new Date(Number(tsValue.micros) / 1000);
           }
@@ -349,8 +347,7 @@ export class DuckDBPostgresAdapter {
     // 确保数据目录存在，创建基本schema
     try {
       await this.exec(`CREATE SCHEMA IF NOT EXISTS main`);
-    }
-    catch (error) {
+    } catch (error) {
       // 忽略schema已存在的错误
       logger.warn({ err: error }, 'Schema creation warning');
     }
@@ -381,10 +378,8 @@ export class DuckDBPostgresAdapter {
     query: string,
     params: unknown[],
   ): Promise<Record<string, unknown>[]> & PostgresQueryExtensions {
-    const extended = queryPromise as Promise<Record<string, unknown>[]>
-      & PostgresQueryExtensions;
-    extended.values = async () =>
-      (await queryPromise).map(row => Object.values(row));
+    const extended = queryPromise as Promise<Record<string, unknown>[]> & PostgresQueryExtensions;
+    extended.values = async () => (await queryPromise).map(row => Object.values(row));
     extended.raw = () => queryPromise;
     extended.execute = () => queryPromise;
     extended.cursor = () => ({ next: () => Promise.resolve({ done: true }) });
@@ -435,24 +430,26 @@ export function createDuckDBAdapter(connectionString: string) {
     ...params: unknown[]
   ) => Promise<Record<string, unknown>[]>;
 
-  const sql = (async (
-    query: string | TemplateStringsArray,
-    ...params: unknown[]
-  ) => adapter.query(query, ...params)) as SqlFunction & {
-    begin: typeof adapter.begin;
-    transaction: typeof adapter.begin;
-    end: typeof adapter.end;
-    on: typeof adapter.on;
-    off: typeof adapter.off;
-    unsafe: (
-      query: string,
-      params?: unknown[],
-    ) => Promise<Record<string, unknown>[]> & PostgresQueryExtensions;
-    options: { parsers: Record<string, unknown>; serializers: Record<string, unknown>; transform: Record<string, unknown> };
-    parameters: Record<string, unknown>;
-    types: Record<string, unknown>;
-    getDuckDB: typeof adapter.getDuckDB;
-  };
+  const sql = (async (query: string | TemplateStringsArray, ...params: unknown[]) =>
+    adapter.query(query, ...params)) as SqlFunction & {
+      begin: typeof adapter.begin;
+      transaction: typeof adapter.begin;
+      end: typeof adapter.end;
+      on: typeof adapter.on;
+      off: typeof adapter.off;
+      unsafe: (
+        query: string,
+        params?: unknown[],
+      ) => Promise<Record<string, unknown>[]> & PostgresQueryExtensions;
+      options: {
+        parsers: Record<string, unknown>;
+        serializers: Record<string, unknown>;
+        transform: Record<string, unknown>;
+      };
+      parameters: Record<string, unknown>;
+      types: Record<string, unknown>;
+      getDuckDB: typeof adapter.getDuckDB;
+    };
 
   sql.begin = adapter.begin.bind(adapter);
   sql.transaction = adapter.begin.bind(adapter);
@@ -461,8 +458,8 @@ export function createDuckDBAdapter(connectionString: string) {
   sql.off = adapter.off.bind(adapter);
 
   sql.unsafe = (query: string, params?: unknown[]) => {
-    const queryPromise = adapter.query(query, ...(params || []));
-    return adapter.extendQueryPromise(queryPromise, query, params || []);
+    const queryPromise = adapter.query(query, ...(params ?? []));
+    return adapter.extendQueryPromise(queryPromise, query, params ?? []);
   };
 
   // 添加 Drizzle 需要的 options 属性

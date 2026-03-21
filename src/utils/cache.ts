@@ -23,7 +23,7 @@ export class LRUCache<K, V> {
   private readonly defaultTtl: number;
 
   constructor(options: CacheOptions) {
-    this.maxSize = options.maxSize || 1000;
+    this.maxSize = options.maxSize ?? 1000;
     this.defaultTtl = options.ttl;
   }
 
@@ -55,7 +55,7 @@ export class LRUCache<K, V> {
    */
   set(key: K, value: V, ttl?: number): void {
     const now = Date.now();
-    const expiresAt = now + (ttl || this.defaultTtl);
+    const expiresAt = now + (ttl ?? this.defaultTtl);
 
     // 如果缓存已满，删除最少使用的条目
     if (this.cache.size >= this.maxSize && !this.cache.has(key)) {
@@ -110,11 +110,7 @@ export class LRUCache<K, V> {
   /**
    * 获取或设置缓存值
    */
-  async getOrSet<T extends V>(
-    key: K,
-    factory: () => Promise<T>,
-    ttl?: number,
-  ): Promise<T> {
+  async getOrSet<T extends V>(key: K, factory: () => Promise<T>, ttl?: number): Promise<T> {
     const cached = this.get(key);
     if (cached !== undefined) {
       return cached as T;
@@ -166,8 +162,7 @@ export class LRUCache<K, V> {
 
     for (const [key, entry] of this.cache.entries()) {
       // 计算使用分数（访问次数 + 最近访问时间权重）
-      const score
-        = entry.accessCount + (Date.now() - entry.lastAccessed) / 1000;
+      const score = entry.accessCount + (Date.now() - entry.lastAccessed) / 1000;
 
       if (score < leastUsedScore) {
         leastUsedScore = score;
@@ -184,8 +179,11 @@ export class LRUCache<K, V> {
 /**
  * 缓存管理器
  */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyCache = LRUCache<any, any>;
+
 export class CacheManager {
-  private caches = new Map<string, LRUCache<any, any>>();
+  private caches = new Map<string, AnyCache>();
 
   /**
    * 获取或创建缓存实例
@@ -213,8 +211,8 @@ export class CacheManager {
   /**
    * 获取所有缓存统计
    */
-  getAllStats(): Record<string, any> {
-    const stats: Record<string, any> = {};
+  getAllStats(): Record<string, unknown> {
+    const stats: Record<string, unknown> = {};
     for (const [name, cache] of this.caches.entries()) {
       stats[name] = cache.getStats();
     }

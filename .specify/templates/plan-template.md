@@ -3,11 +3,13 @@
 **Branch**: `[###-feature-name]` | **Date**: [DATE] | **Spec**: [link]
 **Input**: Feature specification from `/specs/[###-feature-name]/spec.md`
 
-**Note**: This template is filled in by the `/speckit.plan` command. See `.specify/templates/commands/plan.md` for the execution workflow.
+**Note**: This template is filled in by the `/speckit.plan` command. See
+`.specify/templates/commands/plan.md` for the execution workflow.
 
 ## Summary
 
-[Extract from feature spec: primary requirement + technical approach from research]
+[Extract from feature spec: primary requirement + technical approach from
+research]
 
 ## Technical Context
 
@@ -17,29 +19,32 @@
   the iteration process.
 -->
 
-**Language/Version**: TypeScript 5.9+ (Frontend), Node.js 22 (Backend)
-**Primary Dependencies**: React 19, Hono framework, DuckDB via custom adapter, Drizzle ORM, Viem 2.34+
-**Storage**: DuckDB with PostgreSQL-compatible adapter through Drizzle ORM
-**Testing**: Vitest with jsdom environment and v8 coverage provider
-**Target Platform**: Web application (client + server)
-**Project Type**: Web application with separate frontend/backend build targets
-**Performance Goals**: 1-9ms response times for cached data, 80%+ test coverage, sub-200ms p95
-**Constraints**: TypeScript strict mode, chain-agnostic services, zero configuration deployment
-**Scale/Scope**: Multi-chain blockchain explorer supporting all Viem chains
+**Language/Version**: TypeScript 5.9+ (Frontend), Node.js 22 (Backend) **Primary
+Dependencies**: React 19, Hono framework, DuckDB via custom adapter, Drizzle
+ORM, Viem 2.34+ **Storage**: DuckDB with PostgreSQL-compatible adapter through
+Drizzle ORM **Testing**: Vitest with jsdom environment and v8 coverage provider
+**Target Platform**: Web application (client + server) **Project Type**: Web
+application with separate frontend/backend build targets **Performance Goals**:
+1-9ms response times for cached data, 80%+ test coverage, sub-200ms p95
+**Constraints**: TypeScript strict mode, chain-agnostic services, zero
+configuration deployment **Scale/Scope**: Multi-chain blockchain explorer
+supporting all Viem chains
 
 ## Constitution Check
 
-*GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
+_GATE: Must pass before Phase 0 research. Re-check after Phase 1 design._
 
 [Gates determined based on constitution file]
 
-**Performance-First Architecture**: Must demonstrate 1-9ms response times for cached data
-**TypeScript Strict Mode**: Zero type errors, no implicit any types
-**Chain-Agnostic Services**: Services must work across multiple chains without code changes
-**Database Architecture Rules**: Must use DuckDB-PostgreSQL adapter, single database file
-**Test Coverage Requirements**: Minimum 80% coverage with unit/integration/e2e/performance tests
-**API Design Standards**: RESTful with chain-specific endpoints and consistent JSON responses
-**Zero Configuration Deployment**: Application must work out-of-the-box after npm install
+**Performance-First Architecture**: Must demonstrate 1-9ms response times for
+cached data **TypeScript Strict Mode**: Zero type errors, no implicit any types
+**Chain-Agnostic Services**: Services must work across multiple chains without
+code changes **Database Architecture Rules**: Must use DuckDB-PostgreSQL
+adapter, single database file **Test Coverage Requirements**: Minimum 80%
+coverage with unit/integration/e2e/performance tests **API Design Standards**:
+RESTful with chain-specific endpoints and consistent JSON responses **Zero
+Configuration Deployment**: Application must work out-of-the-box after npm
+install
 
 ## Project Structure
 
@@ -56,6 +61,7 @@ specs/[###-feature]/
 ```
 
 ### Source Code (repository root)
+
 <!--
   ACTION REQUIRED: Replace the placeholder tree below with the concrete layout
   for this feature. Delete unused options and expand the chosen structure with
@@ -109,9 +115,9 @@ directories captured above]
 
 ## Complexity Tracking
 
-*Fill ONLY if Constitution Check has violations that must be justified*
+_Fill ONLY if Constitution Check has violations that must be justified_
 
-| Violation | Why Needed | Simpler Alternative Rejected Because |
-|-----------|------------|-------------------------------------|
-| [e.g., 4th project] | [current need] | [why 3 projects insufficient] |
-| [e.g., Repository pattern] | [specific problem] | [why direct DB access insufficient] |
+| Violation                  | Why Needed         | Simpler Alternative Rejected Because |
+| -------------------------- | ------------------ | ------------------------------------ |
+| [e.g., 4th project]        | [current need]     | [why 3 projects insufficient]        |
+| [e.g., Repository pattern] | [specific problem] | [why direct DB access insufficient]  |
