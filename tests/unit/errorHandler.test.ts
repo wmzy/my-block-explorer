@@ -24,7 +24,8 @@ describe('ErrorHandler', () => {
     });
 
     it('应该在失败时进行重试', async () => {
-      const mockFn = vi.fn()
+      const mockFn = vi
+        .fn()
         .mockRejectedValueOnce(new Error('fail1'))
         .mockRejectedValueOnce(new Error('fail2'))
         .mockResolvedValue('success');
@@ -51,7 +52,8 @@ describe('ErrorHandler', () => {
       const retryableError = new Error('retryable');
       const nonRetryableError = new Error('non-retryable');
 
-      const mockFn = vi.fn()
+      const mockFn = vi
+        .fn()
         .mockRejectedValueOnce(retryableError)
         .mockRejectedValueOnce(nonRetryableError);
 
@@ -59,7 +61,7 @@ describe('ErrorHandler', () => {
         maxRetries: 3,
         delay: 10,
         backoff: 1,
-        retryCondition: error => error.message === 'retryable',
+        retryCondition: (err: unknown) => err instanceof Error && err.message === 'retryable',
       });
 
       await expect(retryFn()).rejects.toThrow('non-retryable');
@@ -98,11 +100,7 @@ describe('ErrorHandler', () => {
 
   describe('isRetryableError', () => {
     it('应该识别网络错误为可重试', () => {
-      const networkErrors = [
-        { code: 'ECONNRESET' },
-        { code: 'ENOTFOUND' },
-        { code: 'ETIMEDOUT' },
-      ];
+      const networkErrors = [{ code: 'ECONNRESET' }, { code: 'ENOTFOUND' }, { code: 'ETIMEDOUT' }];
 
       networkErrors.forEach((error) => {
         expect(isRetryableError(error)).toBe(true);
@@ -110,12 +108,7 @@ describe('ErrorHandler', () => {
     });
 
     it('应该识别5xx HTTP状态码为可重试', () => {
-      const serverErrors = [
-        { status: 500 },
-        { status: 502 },
-        { status: 503 },
-        { status: 504 },
-      ];
+      const serverErrors = [{ status: 500 }, { status: 502 }, { status: 503 }, { status: 504 }];
 
       serverErrors.forEach((error) => {
         expect(isRetryableError(error)).toBe(true);
@@ -210,7 +203,8 @@ describe('ErrorHandler', () => {
 
   describe('createRetryableRpcCall', () => {
     it('应该创建带重试的RPC调用函数', async () => {
-      const mockRpcFn = vi.fn()
+      const mockRpcFn = vi
+        .fn()
         .mockRejectedValueOnce(new RpcError('Temporary failure', -32603))
         .mockResolvedValue('success');
 
@@ -225,7 +219,8 @@ describe('ErrorHandler', () => {
 
   describe('createRetryableDbCall', () => {
     it('应该创建带重试的数据库调用函数', async () => {
-      const mockDbFn = vi.fn()
+      const mockDbFn = vi
+        .fn()
         .mockRejectedValueOnce(new Error('database is locked'))
         .mockResolvedValue('success');
 

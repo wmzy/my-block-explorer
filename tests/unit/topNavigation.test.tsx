@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { BrowserRouter } from 'react-router-dom';
 import '@testing-library/jest-dom';
-import TopNavigation from '../../components/TopNavigation';
+import TopNavigation from '@/components/TopNavigation';
 
 // Mock react-router-dom
 const mockNavigate = vi.fn();

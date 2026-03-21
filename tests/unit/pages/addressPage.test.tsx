@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import '@testing-library/jest-dom';
-import AddressPage from '../../../pages/AddressPage';
+import AddressPage from '@/pages/AddressPage';
 
 vi.mock('../../../components/TopNavigation', () => ({
   default: ({ currentChainId }: { currentChainId: number }) => (

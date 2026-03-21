@@ -69,7 +69,8 @@ const fetchLogsWithRetry = async (
   for (let attempt = 0; attempt < MAX_RETRY; attempt++) {
     try {
       return await client.getLogs({ address, fromBlock, toBlock });
-    } catch (err) {
+    }
+    catch (err) {
       if (attempt === MAX_RETRY - 1) throw err;
       await sleep(RETRY_DELAY_MS * (attempt + 1));
     }
@@ -86,7 +87,7 @@ const fetchBlockTimestamps = async (
   const unique = [...new Set(blockNumbers)];
 
   const results = await Promise.allSettled(
-    unique.map(async bn => {
+    unique.map(async (bn) => {
       const block = await client.getBlock({ blockNumber: bn });
       return { bn, ts: Number(block.timestamp) };
     }),
@@ -144,7 +145,8 @@ const decodeLogs = (logs: Log[], abi: Abi, blockTimestamps: Map<bigint, number>)
         topic3: (log.topics[3] as string) ?? null,
         data: log.data ?? '0x',
       });
-    } catch {
+    }
+    catch {
       decoded.push({
         blockNumber: log.blockNumber ?? 0n,
         blockTimestamp: blockTimestamps.get(log.blockNumber ?? 0n) ?? Math.floor(Date.now() / 1000),
@@ -199,11 +201,13 @@ const insertEvents = async (
     const chunk = rows.slice(i, i + INSERT_CHUNK_SIZE);
     try {
       await db.insert(contractEvents).values(chunk).onConflictDoNothing();
-    } catch {
+    }
+    catch {
       for (const row of chunk) {
         try {
           await db.insert(contractEvents).values(row).onConflictDoNothing();
-        } catch {
+        }
+        catch {
           // skip duplicates
         }
       }
@@ -260,7 +264,8 @@ const handleReorgs = async (
             );
         }
       }
-    } catch {
+    }
+    catch {
       // skip block verification on error
     }
   }
@@ -324,7 +329,8 @@ export const getIndexingStatus = async (
     );
     const client = await Promise.race([rpcManager.getClient(chainId), rpcTimeout]);
     latestBlock = Number(await Promise.race([client.getBlockNumber(), rpcTimeout]));
-  } catch {
+  }
+  catch {
     // ignore
   }
 
@@ -361,7 +367,7 @@ export const getIndexingStatus = async (
   let totalBlocks = 0;
   let indexedBlocks = 0;
 
-  const ranges: RangeSummary[] = rangeRows.map(r => {
+  const ranges: RangeSummary[] = rangeRows.map((r) => {
     const fromBlock = Number(r.fromBlock);
     const toBlock = Number(r.toBlock);
     const currentBlock = r.currentBlock !== null ? Number(r.currentBlock) : null;
@@ -378,8 +384,8 @@ export const getIndexingStatus = async (
       case 'indexing':
         indexingRangesCount++;
         if (currentBlock !== null) {
-          const progress =
-            r.direction === 'forward' ? currentBlock - fromBlock : toBlock - currentBlock;
+          const progress
+            = r.direction === 'forward' ? currentBlock - fromBlock : toBlock - currentBlock;
           indexedBlocks += Math.max(0, progress);
         }
         break;
@@ -389,28 +395,28 @@ export const getIndexingStatus = async (
       case 'paused':
         pausedRanges++;
         if (currentBlock !== null) {
-          const progress =
-            r.direction === 'forward' ? currentBlock - fromBlock : toBlock - currentBlock;
+          const progress
+            = r.direction === 'forward' ? currentBlock - fromBlock : toBlock - currentBlock;
           indexedBlocks += Math.max(0, progress);
         }
         break;
       case 'error':
         errorRanges++;
         if (currentBlock !== null) {
-          const progress =
-            r.direction === 'forward' ? currentBlock - fromBlock : toBlock - currentBlock;
+          const progress
+            = r.direction === 'forward' ? currentBlock - fromBlock : toBlock - currentBlock;
           indexedBlocks += Math.max(0, progress);
         }
         break;
     }
 
-    const progress =
-      rangeSize > 0
+    const progress
+      = rangeSize > 0
         ? (() => {
             if (r.status === 'completed') return 100;
             if (currentBlock === null) return 0;
-            const completed =
-              r.direction === 'forward' ? currentBlock - fromBlock : toBlock - currentBlock;
+            const completed
+              = r.direction === 'forward' ? currentBlock - fromBlock : toBlock - currentBlock;
             return Math.min(100, Math.max(0, (completed / rangeSize) * 100));
           })()
         : 0;
@@ -436,8 +442,8 @@ export const getIndexingStatus = async (
   const legacyErrorMessage = rows.length > 0 ? (rows[0].errorMessage ?? undefined) : undefined;
 
   // If we have ranges but no legacy progress, derive from ranges
-  const derivedStatus =
-    rows.length === 0 && totalRanges > 0
+  const derivedStatus
+    = rows.length === 0 && totalRanges > 0
       ? errorRanges > 0
         ? 'error'
         : indexingRangesCount > 0
@@ -615,7 +621,8 @@ const getContractCreationBlockCached = async (
     const client = await rpcManager.getClient(chainId);
     const block = await getContractCreationBlock(client, address);
     return block;
-  } catch {
+  }
+  catch {
     const client = await rpcManager.getClient(chainId);
     const latest = await client.getBlockNumber();
     return latest > 100_000n ? latest - 100_000n : 0n;
@@ -743,8 +750,8 @@ export const updateIndexingRange = async (
     return { success: false, error: 'Cannot update range while indexing' };
   }
 
-  const newFromBlock =
-    updates.fromBlock !== undefined ? BigInt(updates.fromBlock) : range.fromBlock;
+  const newFromBlock
+    = updates.fromBlock !== undefined ? BigInt(updates.fromBlock) : range.fromBlock;
   const newToBlock = updates.toBlock !== undefined ? BigInt(updates.toBlock) : range.toBlock;
 
   if (newFromBlock >= newToBlock) {
@@ -895,7 +902,8 @@ export const startIndexingRange = async (
       endBlock = range.toBlock;
       step = n => n + BigInt(BATCH_SIZE);
       isComplete = (current, end) => current > end;
-    } else {
+    }
+    else {
       currentBlock = range.currentBlock ? range.currentBlock - 1n : range.toBlock;
       endBlock = range.fromBlock;
       step = n => n - BigInt(BATCH_SIZE);
@@ -908,7 +916,8 @@ export const startIndexingRange = async (
     try {
       const finalizedBlock = await client.getBlock({ blockTag: 'finalized' });
       finalizedBlockNumber = finalizedBlock.number;
-    } catch {
+    }
+    catch {
       const latestBlock = await client.getBlockNumber();
       finalizedBlockNumber = latestBlock - 64n;
     }
@@ -921,7 +930,8 @@ export const startIndexingRange = async (
         batchFrom = currentBlock;
         batchTo = currentBlock + BigInt(BATCH_SIZE) - 1n;
         if (batchTo > endBlock) batchTo = endBlock;
-      } else {
+      }
+      else {
         batchTo = currentBlock;
         batchFrom = currentBlock - BigInt(BATCH_SIZE) + 1n;
         if (batchFrom < endBlock) batchFrom = endBlock;
@@ -955,12 +965,14 @@ export const startIndexingRange = async (
     });
 
     return { success: true };
-  } catch (err) {
+  }
+  catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error(`[EventIndexing] Error indexing range ${key}:`, msg);
     await updateRange({ status: 'error', errorMessage: msg });
     return { success: false, error: msg };
-  } finally {
+  }
+  finally {
     activeJobs.delete(key);
   }
 };

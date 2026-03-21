@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { OptimizedSorter, optimizedSort, sortingPerformanceMonitor, SortingPerformanceMonitor } from '../../../utils/sorting-optimization';
+import { OptimizedSorter, optimizedSort, sortingPerformanceMonitor, SortingPerformanceMonitor } from '@/utils/sorting-optimization';
 
 describe('OptimizedSorter', () => {
   let sorter: OptimizedSorter;

@@ -125,7 +125,7 @@ describe('IndexingQueueService', () => {
       let resolveIndexing: () => void;
       mockStartIndexingRange.mockImplementation(
         () =>
-          new Promise<{ success: boolean }>(resolve => {
+          new Promise<{ success: boolean }>((resolve) => {
             resolveIndexing = () => resolve({ success: true });
           }),
       );
@@ -213,7 +213,7 @@ describe('IndexingQueueService', () => {
       let resolveIndexing: () => void;
       mockStartIndexingRange.mockImplementation(
         () =>
-          new Promise<{ success: boolean }>(resolve => {
+          new Promise<{ success: boolean }>((resolve) => {
             resolveIndexing = () => resolve({ success: true });
           }),
       );
@@ -245,7 +245,7 @@ describe('IndexingQueueService', () => {
       let resolveIndexing: () => void;
       mockStartIndexingRange.mockImplementation(
         () =>
-          new Promise<{ success: boolean }>(resolve => {
+          new Promise<{ success: boolean }>((resolve) => {
             resolveIndexing = () => resolve({ success: true });
           }),
       );
@@ -278,7 +278,7 @@ describe('IndexingQueueService', () => {
       let resolveIndexing: () => void;
       mockStartIndexingRange.mockImplementation(
         () =>
-          new Promise<{ success: boolean }>(resolve => {
+          new Promise<{ success: boolean }>((resolve) => {
             resolveIndexing = () => resolve({ success: true });
           }),
       );
@@ -340,10 +340,11 @@ describe('IndexingQueueService', () => {
 
       mockStartIndexingRange.mockImplementation(() => {
         callCount++;
-        return new Promise<{ success: boolean }>(resolve => {
+        return new Promise<{ success: boolean }>((resolve) => {
           if (callCount === 1) {
             firstResolve = () => resolve({ success: true });
-          } else {
+          }
+          else {
             secondResolve = () => resolve({ success: true });
           }
         });
@@ -391,7 +392,7 @@ describe('IndexingQueueService', () => {
       let resolveIndexing: () => void;
       mockStartIndexingRange.mockImplementation(
         () =>
-          new Promise<{ success: boolean }>(resolve => {
+          new Promise<{ success: boolean }>((resolve) => {
             resolveIndexing = () => resolve({ success: true });
           }),
       );
@@ -430,7 +431,7 @@ describe('IndexingQueueService', () => {
       let resolveIndexing: () => void;
       mockStartIndexingRange.mockImplementation(
         () =>
-          new Promise<{ success: boolean }>(resolve => {
+          new Promise<{ success: boolean }>((resolve) => {
             resolveIndexing = () => resolve({ success: true });
           }),
       );
@@ -467,7 +468,7 @@ describe('IndexingQueueService', () => {
       let resolveIndexing: () => void;
       mockStartIndexingRange.mockImplementation(
         () =>
-          new Promise<{ success: boolean }>(resolve => {
+          new Promise<{ success: boolean }>((resolve) => {
             resolveIndexing = () => resolve({ success: true });
           }),
       );

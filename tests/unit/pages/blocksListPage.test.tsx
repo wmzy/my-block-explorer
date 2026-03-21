@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import '@testing-library/jest-dom';
-import TransactionsListPage from '../../../pages/TransactionsListPage';
+import BlocksListPage from '@/pages/BlocksListPage';
 
 vi.mock('../../../components/TopNavigation', () => ({
   default: ({ currentChainId }: { currentChainId: number }) => (
@@ -20,48 +20,44 @@ vi.mock('../../../config/chains', () => ({
     return null;
   },
   getChainName: (chainId: number) => (chainId === 1 ? 'Ethereum' : 'Unknown'),
-  getChainSymbol: (chainId: number) => (chainId === 1 ? 'ETH' : 'UNKNOWN'),
 }));
 
 vi.mock('@/utils/format', () => ({
   formatNumber: (n: number) => n.toLocaleString(),
-  formatRelativeTime: () => '5 min ago',
+  formatRelativeTime: () => '2 min ago',
 }));
 
-const mockTransactions = [
+const mockBlocks = [
   {
-    hash: '0xabc123def456abc123def456abc123def456abc123def456abc123def456abc1',
-    blockNumber: '18000001',
-    fromAddress: '0x1234567890abcdef1234567890abcdef12345678',
-    toAddress: '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd',
-    value: '1000000000000000000',
-    status: 1,
+    number: '18000001',
+    hash: '0xabc1',
     timestamp: '2024-01-01T00:00:00Z',
+    miner: '0x1234567890abcdef1234567890abcdef12345678',
+    gasUsed: '15000000',
+    gasLimit: '30000000',
+    transactionCount: 150,
   },
   {
-    hash: '0xdef789abc123def789abc123def789abc123def789abc123def789abc123def7',
-    blockNumber: '18000000',
-    fromAddress: '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd',
-    toAddress: '0x1234567890abcdef1234567890abcdef12345678',
-    value: '0',
-    status: 0,
+    number: '18000000',
+    hash: '0xabc0',
     timestamp: '2024-01-01T00:00:00Z',
+    miner: '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd',
+    gasUsed: '12000000',
+    gasLimit: '30000000',
+    transactionCount: 120,
   },
 ];
 
-const renderPage = (path = '/chain/1/transactions') =>
+const renderPage = (path = '/chain/1/blocks') =>
   render(
     <MemoryRouter initialEntries={[path]}>
       <Routes>
-        <Route
-          path="/chain/:chainId/transactions"
-          element={<TransactionsListPage />}
-        />
+        <Route path="/chain/:chainId/blocks" element={<BlocksListPage />} />
       </Routes>
     </MemoryRouter>,
   );
 
-describe('TransactionsListPage', () => {
+describe('BlocksListPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -71,39 +67,39 @@ describe('TransactionsListPage', () => {
       ok: true,
       json: () =>
         Promise.resolve({
-          data: mockTransactions,
-          pagination: { totalPages: 3 },
+          data: mockBlocks,
+          pagination: { totalPages: 5 },
         }),
     });
 
     renderPage();
 
     expect(screen.getByTestId('top-navigation')).toBeInTheDocument();
-    expect(screen.getByText('Transactions')).toBeInTheDocument();
+    expect(screen.getByText('Blocks')).toBeInTheDocument();
     expect(screen.getByText(/Ethereum/)).toBeInTheDocument();
   });
 
   it('displays loading state initially', () => {
     (global.fetch as any).mockReturnValue(new Promise(() => {}));
     renderPage();
-    expect(screen.getByText('Loading transactions...')).toBeInTheDocument();
+    expect(screen.getByText('Loading blocks...')).toBeInTheDocument();
   });
 
-  it('displays transactions after loading', async () => {
+  it('displays blocks after loading', async () => {
     (global.fetch as any).mockResolvedValueOnce({
       ok: true,
       json: () =>
         Promise.resolve({
-          data: mockTransactions,
-          pagination: { totalPages: 3 },
+          data: mockBlocks,
+          pagination: { totalPages: 5 },
         }),
     });
 
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText('Success')).toBeInTheDocument();
-      expect(screen.getByText('Failed')).toBeInTheDocument();
+      expect(screen.getByText('150')).toBeInTheDocument();
+      expect(screen.getByText('120')).toBeInTheDocument();
     });
   });
 
@@ -125,12 +121,9 @@ describe('TransactionsListPage', () => {
 
   it('shows unsupported chain error for invalid chain', () => {
     render(
-      <MemoryRouter initialEntries={['/chain/999/transactions']}>
+      <MemoryRouter initialEntries={['/chain/999/blocks']}>
         <Routes>
-          <Route
-            path="/chain/:chainId/transactions"
-            element={<TransactionsListPage />}
-          />
+          <Route path="/chain/:chainId/blocks" element={<BlocksListPage />} />
         </Routes>
       </MemoryRouter>,
     );
@@ -138,38 +131,20 @@ describe('TransactionsListPage', () => {
     expect(screen.getByText(/Unsupported chain ID/)).toBeInTheDocument();
   });
 
-  it('shows correct status badges', async () => {
-    (global.fetch as any).mockResolvedValueOnce({
-      ok: true,
-      json: () =>
-        Promise.resolve({
-          data: mockTransactions,
-          pagination: { totalPages: 1 },
-        }),
-    });
-
-    renderPage();
-
-    await waitFor(() => {
-      expect(screen.getByText('Success')).toBeInTheDocument();
-      expect(screen.getByText('Failed')).toBeInTheDocument();
-    });
-  });
-
   it('has pagination controls', async () => {
     (global.fetch as any).mockResolvedValueOnce({
       ok: true,
       json: () =>
         Promise.resolve({
-          data: mockTransactions,
-          pagination: { totalPages: 3 },
+          data: mockBlocks,
+          pagination: { totalPages: 5 },
         }),
     });
 
     renderPage();
 
     await waitFor(() => {
-      expect(screen.getByText('Page 1 of 3')).toBeInTheDocument();
+      expect(screen.getByText('Page 1 of 5')).toBeInTheDocument();
       expect(screen.getByText('Previous')).toBeDisabled();
       expect(screen.getByText('Next')).not.toBeDisabled();
     });

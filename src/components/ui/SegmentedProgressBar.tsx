@@ -157,9 +157,9 @@ export function SegmentedProgressBar({ segments, className }: Props) {
   return (
     <div className={cx(containerStyle, className)}>
       <div className={trackStyle}>
-        {segments.map(segment => {
-          const width =
-            totalBlocks > 0 ? ((segment.toBlock - segment.fromBlock) / totalBlocks) * 100 : 0;
+        {segments.map((segment) => {
+          const width
+            = totalBlocks > 0 ? ((segment.toBlock - segment.fromBlock) / totalBlocks) * 100 : 0;
 
           return (
             <div

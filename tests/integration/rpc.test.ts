@@ -43,9 +43,7 @@ describe('RPC Integration Tests', () => {
 
       expect(block).toBeDefined();
       expect(block.number).toBe(blockNumber);
-      expect(block.hash).toBe(
-        '0x95b198e154acbfc64109dfd22d8224fe927fd8dfdedfae01587674482ba4baf3',
-      );
+      expect(block.hash).toBe('0x95b198e154acbfc64109dfd22d8224fe927fd8dfdedfae01587674482ba4baf3');
     }, 10000);
   });
 
@@ -85,8 +83,8 @@ describe('RPC Integration Tests', () => {
         address: usdcAddress as `0x${string}`,
       });
       expect(typeof contractCode).toBe('string');
-      expect(contractCode.startsWith('0x')).toBe(true);
-      expect(contractCode.length).toBeGreaterThan(2); // Should have actual code
+      expect(contractCode?.startsWith('0x')).toBe(true);
+      expect(contractCode?.length).toBeGreaterThan(2); // Should have actual code
     }, 10000);
   });
 

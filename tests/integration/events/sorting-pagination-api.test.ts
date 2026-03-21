@@ -3,7 +3,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import app from '../../../api-app';
+import app from '@/api-app';
 
 // Mock the performance optimizer
 vi.mock('../../../services/EventPerformanceOptimizer', () => ({

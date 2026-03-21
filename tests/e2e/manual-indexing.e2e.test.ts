@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import app from '../../api-app';
+import app from '@/api-app';
 
 vi.mock('../../services/EventIndexingService', () => ({
   addIndexingRange: vi.fn(),
@@ -68,7 +68,7 @@ import {
   startIndexingRange,
   pauseIndexingRange,
   getActiveRangeJob,
-} from '../../services/EventIndexingService';
+} from '@/services/EventIndexingService';
 
 type MockFunction = ReturnType<typeof vi.fn>;
 

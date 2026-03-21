@@ -1,6 +1,15 @@
-import '@testing-library/jest-dom';
-import { beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
-import { simpleTestDb } from './testDatabase.simple';
+import { expect, afterEach, beforeAll, afterAll, beforeEach, vi } from 'vitest';
+import { cleanup } from '@testing-library/react';
+import * as matchers from '@testing-library/jest-dom/matchers';
+import { simpleTestDb } from './testDatabase';
+
+// Extend expect matchers
+expect.extend(matchers);
+
+// Cleanup after each test
+afterEach(() => {
+  cleanup();
+});
 
 // Initialize test database before all tests
 beforeAll(async () => {
@@ -35,7 +44,7 @@ beforeEach(async () => {
 // Mock window.matchMedia for responsive design tests
 Object.defineProperty(window, 'matchMedia', {
   writable: true,
-  value: vi.fn().mockImplementation(query => ({
+  value: vi.fn().mockImplementation((query: string) => ({
     matches: false,
     media: query,
     onchange: null,

@@ -291,9 +291,11 @@ export const IndexingRangeManager: React.FC<Props> = ({
         const data = await response.json();
         setRanges(data.ranges ?? []);
       }
-    } catch (error) {
+    }
+    catch (error) {
       console.error('Failed to fetch ranges:', error);
-    } finally {
+    }
+    finally {
       setLoading(false);
     }
   }, [chainId, contractAddress]);
@@ -345,13 +347,16 @@ export const IndexingRangeManager: React.FC<Props> = ({
           setOverlaps(data.overlaps);
         }
         onRefresh?.();
-      } else {
+      }
+      else {
         alert(data.message || data.error || 'Failed to add range');
       }
-    } catch (error) {
+    }
+    catch (error) {
       console.error('Failed to add range:', error);
       alert('Failed to add range');
-    } finally {
+    }
+    finally {
       setActionLoading(null);
     }
   }, [chainId, contractAddress, formState, creationBlock, fetchRanges, onRefresh]);
@@ -369,14 +374,17 @@ export const IndexingRangeManager: React.FC<Props> = ({
         );
         if (response.ok) {
           await fetchRanges();
-        } else {
+        }
+        else {
           const data = await response.json();
           alert(data.error || 'Failed to start indexing');
         }
-      } catch (error) {
+      }
+      catch (error) {
         console.error('Failed to start indexing:', error);
         alert('Failed to start indexing');
-      } finally {
+      }
+      finally {
         setActionLoading(null);
       }
     },
@@ -392,14 +400,17 @@ export const IndexingRangeManager: React.FC<Props> = ({
         );
         if (response.ok) {
           await fetchRanges();
-        } else {
+        }
+        else {
           const data = await response.json();
           alert(data.error || 'Failed to pause indexing');
         }
-      } catch (error) {
+      }
+      catch (error) {
         console.error('Failed to pause indexing:', error);
         alert('Failed to pause indexing');
-      } finally {
+      }
+      finally {
         setActionLoading(null);
       }
     },
@@ -419,14 +430,17 @@ export const IndexingRangeManager: React.FC<Props> = ({
         );
         if (response.ok) {
           await fetchRanges();
-        } else {
+        }
+        else {
           const data = await response.json();
           alert(data.error || 'Failed to resume indexing');
         }
-      } catch (error) {
+      }
+      catch (error) {
         console.error('Failed to resume indexing:', error);
         alert('Failed to resume indexing');
-      } finally {
+      }
+      finally {
         setActionLoading(null);
       }
     },
@@ -444,14 +458,17 @@ export const IndexingRangeManager: React.FC<Props> = ({
         if (response.ok) {
           await fetchRanges();
           onRefresh?.();
-        } else {
+        }
+        else {
           const data = await response.json();
           alert(data.error || 'Failed to delete range');
         }
-      } catch (error) {
+      }
+      catch (error) {
         console.error('Failed to delete range:', error);
         alert('Failed to delete range');
-      } finally {
+      }
+      finally {
         setActionLoading(null);
       }
     },
@@ -464,8 +481,8 @@ export const IndexingRangeManager: React.FC<Props> = ({
     if (!range.currentBlock) return 0;
     const totalBlocks = Number(range.toBlock) - Number(range.fromBlock) + 1;
     if (totalBlocks <= 0) return 0;
-    const currentIndexed =
-      range.direction === 'forward'
+    const currentIndexed
+      = range.direction === 'forward'
         ? Number(range.currentBlock) - Number(range.fromBlock) + 1
         : Number(range.toBlock) - Number(range.currentBlock) + 1;
     return Math.round((currentIndexed / totalBlocks) * 100);
@@ -542,7 +559,8 @@ export const IndexingRangeManager: React.FC<Props> = ({
       <div className={headerStyles}>
         <h3>Event Indexing Ranges</h3>
         <span className="creation-info">
-          Contract created at block #{creationBlock.toLocaleString()}
+          Contract created at block #
+          {creationBlock.toLocaleString()}
         </span>
         <button
           className={actionButtonStyles}
@@ -566,12 +584,21 @@ export const IndexingRangeManager: React.FC<Props> = ({
       )}
       {overlaps.length > 0 && (
         <div className={warningStyles}>
-          <strong>Warning:</strong> Some existing ranges overlap with the range. Events in
+          <strong>Warning:</strong>
+          {' '}
+          Some existing ranges overlap with the range. Events in
           overlapping blocks will be re-indexed:
           <ul style={{ margin: '8px 0 0', paddingLeft: '16px' }}>
             {overlaps.map(o => (
               <li key={o.rangeId}>
-                Range #{o.rangeId}: blocks {formatBlock(o.overlapStart)} -{' '}
+                Range #
+                {o.rangeId}
+                : blocks
+                {' '}
+                {formatBlock(o.overlapStart)}
+                {' '}
+                -
+                {' '}
                 {formatBlock(o.overlapEnd)}
                 <button
                   style={{
@@ -591,57 +618,73 @@ export const IndexingRangeManager: React.FC<Props> = ({
           </ul>
         </div>
       )}
-      {ranges.length === 0 ? (
-        <div className={emptyStateStyles}>
-          No indexing ranges configured. Add a range to start indexing events.
-        </div>
-      ) : (
-        <div className={rangeListStyles}>
-          {ranges.map(range => (
-            <div key={range.rangeId} className={rangeItemStyles}>
-              <div className={rangeInfoStyles}>
-                <div className="range-blocks">
-                  <span className={statusBadgeStyles} data-status={range.status}>
-                    {getStatusLabel(range.status)}
-                  </span>
-                  <span className={directionBadgeStyles}>
-                    {range.direction === 'forward' ? (
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                        <path d="M5 12l12M19 12" />
-                      </svg>
-                    ) : (
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                        <path d="M19 12l5 12" />
-                      </svg>
-                    )}
-                    <span>{range.direction === 'forward' ? 'Forward' : 'Backward'}</span>
-                  </span>
-                  <span style={{ marginLeft: '8px' }}>
-                    #{formatBlock(range.fromBlock)} - {formatBlock(range.toBlock)}
-                  </span>
-                </div>
-                <div className="range-progress">
-                  {range.status === 'indexing' && range.currentBlock && (
-                    <>
-                      Progress: {calculateProgress(range)}%%
-                      {range.direction === 'forward'
-                        ? `(${formatBlock(range.currentBlock)} / ${formatBlock(range.toBlock)})`
-                        : `(${formatBlock(range.fromBlock)} / ${formatBlock(range.currentBlock)})`}
-                    </>
-                  )}
-                  {range.totalEventsIndexed > 0 && (
-                    <span>{range.totalEventsIndexed.toLocaleString()} events indexed</span>
-                  )}
-                  {range.errorMessage && (
-                    <span style={{ color: '#dc2626' }}>{range.errorMessage}</span>
-                  )}
-                </div>
-              </div>
-              {renderRangeActions(range)}
+      {ranges.length === 0
+        ? (
+            <div className={emptyStateStyles}>
+              No indexing ranges configured. Add a range to start indexing events.
             </div>
-          ))}
-        </div>
-      )}
+          )
+        : (
+            <div className={rangeListStyles}>
+              {ranges.map(range => (
+                <div key={range.rangeId} className={rangeItemStyles}>
+                  <div className={rangeInfoStyles}>
+                    <div className="range-blocks">
+                      <span className={statusBadgeStyles} data-status={range.status}>
+                        {getStatusLabel(range.status)}
+                      </span>
+                      <span className={directionBadgeStyles}>
+                        {range.direction === 'forward'
+                          ? (
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                <path d="M5 12l12M19 12" />
+                              </svg>
+                            )
+                          : (
+                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                                <path d="M19 12l5 12" />
+                              </svg>
+                            )}
+                        <span>{range.direction === 'forward' ? 'Forward' : 'Backward'}</span>
+                      </span>
+                      <span style={{ marginLeft: '8px' }}>
+                        #
+                        {formatBlock(range.fromBlock)}
+                        {' '}
+                        -
+                        {' '}
+                        {formatBlock(range.toBlock)}
+                      </span>
+                    </div>
+                    <div className="range-progress">
+                      {range.status === 'indexing' && range.currentBlock && (
+                        <>
+                          Progress:
+                          {' '}
+                          {calculateProgress(range)}
+                          %%
+                          {range.direction === 'forward'
+                            ? `(${formatBlock(range.currentBlock)} / ${formatBlock(range.toBlock)})`
+                            : `(${formatBlock(range.fromBlock)} / ${formatBlock(range.currentBlock)})`}
+                        </>
+                      )}
+                      {range.totalEventsIndexed > 0 && (
+                        <span>
+                          {range.totalEventsIndexed.toLocaleString()}
+                          {' '}
+                          events indexed
+                        </span>
+                      )}
+                      {range.errorMessage && (
+                        <span style={{ color: '#dc2626' }}>{range.errorMessage}</span>
+                      )}
+                    </div>
+                  </div>
+                  {renderRangeActions(range)}
+                </div>
+              ))}
+            </div>
+          )}
       {showAddForm && (
         <div className={addFormStyles}>
           <div className={inputGroupStyles}>
@@ -668,8 +711,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
             <select
               value={formState.direction}
               onChange={e =>
-                setFormState({ ...formState, direction: e.target.value as RangeDirection })
-              }
+                setFormState({ ...formState, direction: e.target.value as RangeDirection })}
             >
               <option value="forward">Forward (old to new)</option>
               <option value="backward">Backward (new to old)</option>

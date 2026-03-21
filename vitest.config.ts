@@ -5,24 +5,17 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'jsdom',
-    include: ['src/tests/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
+    include: ['tests/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts,jsx,tsx}'],
     exclude: ['node_modules', 'dist', 'build'],
-    testTimeout: 30000, // 30秒超时，适合网络请求
+    testTimeout: 30000,
     hookTimeout: 30000,
     teardownTimeout: 30000,
-    setupFiles: ['src/tests/setup.ts'],
-    // 测试覆盖率配置
+    setupFiles: ['tests/setup.ts'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
       include: ['src/**/*.ts'],
-      exclude: [
-        'src/tests/**',
-        'src/**/*.d.ts',
-        'src/test-*.ts', // 排除旧的测试脚本
-        'src/rpc-test.ts',
-        'src/simple-test.ts',
-      ],
+      exclude: ['tests/**', 'src/**/*.d.ts'],
     },
   },
   resolve: {

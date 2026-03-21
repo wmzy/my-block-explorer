@@ -15,8 +15,8 @@ vi.mock('../../database/init', () => ({
 }));
 
 // Import after mocking
-import { ContractSourceService } from '../../services/ContractSourceService';
-import { rpcManager } from '../../services/RpcManager';
+import { ContractSourceService } from '@/services/ContractSourceService';
+import { rpcManager } from '@/services/RpcManager';
 
 describe('ContractSourceService - Proxy Detection', () => {
   let contractSourceService: ContractSourceService;
