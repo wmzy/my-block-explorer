@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import app from '@/api-app';
 
-vi.mock('../../services/EventIndexingService', () => ({
+vi.mock('@/services/EventIndexingService', () => ({
   addIndexingRange: vi.fn(),
   getIndexingRanges: vi.fn(),
   updateIndexingRange: vi.fn(),
@@ -27,7 +27,7 @@ vi.mock('../../services/EventIndexingService', () => ({
   }),
 }));
 
-vi.mock('../../services/ContractSourceService', () => ({
+vi.mock('@/services/ContractSourceService', () => ({
   ContractSourceService: class {
     getContractSource = vi.fn().mockResolvedValue({
       abi: JSON.stringify([
@@ -430,6 +430,22 @@ describe('Manual Range Indexing E2E', () => {
 
     it('should reject pause when no active job exists', async () => {
       (getActiveRangeJob as MockFunction).mockReturnValueOnce(false);
+      (getIndexingRanges as MockFunction).mockResolvedValueOnce([
+        {
+          chainId: 1,
+          address: contractAddress,
+          rangeId: 1,
+          fromBlock: '18000000',
+          toBlock: '18001000',
+          direction: 'forward',
+          currentBlock: '18000500',
+          status: 'paused',
+          totalEventsIndexed: 100,
+          priority: 1,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        },
+      ]);
 
       const response = await app.request(`${baseUrl}/ranges/1/pause`, {
         method: 'POST',

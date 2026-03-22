@@ -87,8 +87,12 @@ describe('Services - Basic Structure Tests', () => {
       const mockAddressService = {
         getAddressInfo: async () => ({}),
       };
+      const mockDb = {
+        execute: async () => {},
+        select: () => ({ from: () => ({ where: () => [] }) }),
+      };
       const service = createSearchService({
-        db: {} as any,
+        db: mockDb as any,
         searchHistory: {} as any,
         blockService: mockBlockService as any,
         transactionService: mockTransactionService as any,
