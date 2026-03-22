@@ -119,7 +119,7 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
       nonce: tx.nonce ? BigInt(tx.nonce) : null,
       inputData: tx.input ?? null,
       logsCount: receipt?.logs?.length ?? 0,
-      contractAddress: receipt?.contractAddress ? (receipt.contractAddress) : null,
+      contractAddress: receipt?.contractAddress ?? null,
       cumulativeGasUsed: receipt?.cumulativeGasUsed ? BigInt(receipt.cumulativeGasUsed) : null,
       timestamp,
       indexedAt: new Date(),

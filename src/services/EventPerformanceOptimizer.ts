@@ -231,9 +231,7 @@ export class EventPerformanceOptimizer {
    * Ensure database is initialized
    */
   private async ensureDatabaseInitialized(): Promise<void> {
-    if (!this.chainDb) {
-      this.chainDb = await multiChainDb.getChainDatabase(this.chainId);
-    }
+    this.chainDb ??= await multiChainDb.getChainDatabase(this.chainId);
   }
 
   /**

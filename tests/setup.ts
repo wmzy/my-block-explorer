@@ -17,7 +17,7 @@ vi.mock('haze-ui', () => ({
   Input: (props: Record<string, unknown>) =>
     React.createElement('input', {
       'data-testid': 'search-input',
-      placeholder: props.placeholder as string,
+      'placeholder': props.placeholder as string,
       ...props,
     }),
   Button: (props: Record<string, unknown>) =>
@@ -29,12 +29,12 @@ vi.mock('haze-ui', () => ({
     props.open
       ? React.createElement(
           'div',
-          { 'data-testid': 'dialog', role: 'dialog', 'aria-modal': 'true' },
+          { 'data-testid': 'dialog', 'role': 'dialog', 'aria-modal': 'true' },
           [
             React.createElement('div', { 'data-testid': 'dialog-title' }, props.title),
             React.createElement(
               'button',
-              { 'data-testid': 'dialog-close', onClick: props.onClose },
+              { 'data-testid': 'dialog-close', 'onClick': props.onClose },
               '×',
             ),
             props.children,
@@ -62,7 +62,7 @@ vi.mock('haze-ui', () => ({
   Tooltip: (props: Record<string, unknown>) =>
     React.createElement(
       'div',
-      { 'data-testid': 'tooltip', title: props.content, ...props },
+      { 'data-testid': 'tooltip', 'title': props.content, ...props },
       props.children,
     ),
   Dropdown: (props: Record<string, unknown>) =>
@@ -103,8 +103,8 @@ vi.mock('haze-ui', () => ({
           'button',
           {
             'data-testid': 'prev-page',
-            onClick: () => props.onChange?.((props.currentPage as number) - 1),
-            disabled: (props.currentPage as number) <= 1,
+            'onClick': () => props.onChange?.((props.currentPage as number) - 1),
+            'disabled': (props.currentPage as number) <= 1,
           },
           'Previous',
         ),
@@ -117,8 +117,8 @@ vi.mock('haze-ui', () => ({
           'button',
           {
             'data-testid': 'next-page',
-            onClick: () => props.onChange?.((props.currentPage as number) + 1),
-            disabled: (props.currentPage as number) >= (props.totalPages as number),
+            'onClick': () => props.onChange?.((props.currentPage as number) + 1),
+            'disabled': (props.currentPage as number) >= (props.totalPages as number),
           },
           'Next',
         ),
