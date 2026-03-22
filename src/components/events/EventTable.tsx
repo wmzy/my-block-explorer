@@ -557,8 +557,7 @@ const formatTimestamp = (timestamp: string): string => {
       second: '2-digit',
       hour12: false,
     });
-  }
-  catch {
+  } catch {
     return 'Invalid timestamp';
   }
 };
@@ -568,8 +567,7 @@ const formatValue = (value?: string): string => {
   try {
     const etherValue = formatEther(BigInt(value));
     return `${parseFloat(etherValue).toFixed(6)} ETH`;
-  }
-  catch {
+  } catch {
     return `${value} wei`;
   }
 };
@@ -593,8 +591,7 @@ const clientSideSort = (
       ...config,
       type: config.type ?? 'text',
     }));
-  }
-  else if (primarySort.field) {
+  } else if (primarySort.field) {
     // Use primary sort configuration
     const sortOption = defaultSortOptions.find(opt => opt.key === primarySort.field);
     finalSortConfigs = [
@@ -752,17 +749,17 @@ export const EventTable: React.FC<EventTableProps> = ({
   // Determine if we should use client-side sorting
   // Use pagination.total (server-reported count) instead of allEvents.length (loaded data)
   // This prevents incorrect total count when only a page of data is loaded
-  const shouldUseClientSideSort
-    = enableClientSideSort && pagination.total > 0 && pagination.total <= clientSideSortThreshold;
+  const shouldUseClientSideSort =
+    enableClientSideSort && pagination.total > 0 && pagination.total <= clientSideSortThreshold;
 
   // API call function
   const fetchEvents = useCallback(
-    async (cursor?: string) => {
+    async (cursor?: string, targetPage?: number) => {
       setLoading(true);
       setError(null);
 
       try {
-        const currentPage = Math.floor((pagination.startIndex ?? 0) / pagination.limit) + 1;
+        const currentPage = targetPage ?? pagination.page;
         const queryParams = new URLSearchParams({
           page: currentPage.toString(),
           pageSize: pagination.limit.toString(),
@@ -804,8 +801,7 @@ export const EventTable: React.FC<EventTableProps> = ({
               if (obj.from) queryParams.set(`${key}_from`, String(obj.from));
               if (obj.to) queryParams.set(`${key}_to`, String(obj.to));
               if (obj.like) queryParams.set(`${key}_like`, String(obj.like));
-            }
-            else {
+            } else {
               queryParams.set(key, String(value));
             }
           }
@@ -835,20 +831,19 @@ export const EventTable: React.FC<EventTableProps> = ({
           totalPages?: number;
         };
 
-        const normalizedEvents = (data.events ?? []).map((e) => {
-          const args
-            = typeof e.decodedArgs === 'string'
+        const normalizedEvents = (data.events ?? []).map(e => {
+          const args =
+            typeof e.decodedArgs === 'string'
               ? (() => {
                   try {
                     return JSON.parse(e.decodedArgs) as Record<string, unknown>;
-                  }
-                  catch {
+                  } catch {
                     return {};
                   }
                 })()
               : (e.decodedArgs ?? {});
-          const blockTimestamp
-            = typeof e.blockTimestamp === 'number'
+          const blockTimestamp =
+            typeof e.blockTimestamp === 'number'
               ? new Date(e.blockTimestamp * 1000).toISOString()
               : e.blockTimestamp;
           return { ...args, ...e, blockTimestamp } as EventData;
@@ -856,8 +851,7 @@ export const EventTable: React.FC<EventTableProps> = ({
 
         if (cursor) {
           setAllEvents(prev => [...prev, ...normalizedEvents]);
-        }
-        else {
+        } else {
           setAllEvents(normalizedEvents);
         }
 
@@ -867,18 +861,17 @@ export const EventTable: React.FC<EventTableProps> = ({
           hasMore: (data.page ?? 1) < (data.totalPages ?? 1),
           totalPages: data.totalPages,
         }));
-      }
-      catch (err) {
+      } catch (err) {
         console.error('Failed to fetch events:', err);
         setError(err instanceof Error ? err.message : 'Failed to load events');
-      }
-      finally {
+      } finally {
         setLoading(false);
       }
     },
     [
       chainId,
       contractAddress,
+      pagination.page,
       pagination.limit,
       sort,
       filters,
@@ -911,9 +904,8 @@ export const EventTable: React.FC<EventTableProps> = ({
       // For server-side sorting, reset and fetch new data
       setEvents([]);
       setPagination(prev => ({ ...prev, page: 1, nextCursor: undefined }));
-      fetchEvents();
-    }
-    else {
+      fetchEvents(undefined, 1);
+    } else {
       // For client-side sorting, just reset to first page
       setPagination(prev => ({ ...prev, page: 1 }));
     }
@@ -929,9 +921,8 @@ export const EventTable: React.FC<EventTableProps> = ({
       // For server-side sorting, reset and fetch new data
       setEvents([]);
       setPagination(prev => ({ ...prev, page: 1, nextCursor: undefined }));
-      fetchEvents();
-    }
-    else {
+      fetchEvents(undefined, 1);
+    } else {
       // For client-side sorting, just reset to first page
       setPagination(prev => ({ ...prev, page: 1 }));
     }
@@ -944,9 +935,8 @@ export const EventTable: React.FC<EventTableProps> = ({
       // For server-side sorting, reset and fetch new data
       setEvents([]);
       setPagination(prev => ({ ...prev, page: 1, nextCursor: undefined }));
-      fetchEvents();
-    }
-    else {
+      fetchEvents(undefined, 1);
+    } else {
       // For client-side sorting, just reset to first page
       setPagination(prev => ({ ...prev, page: 1 }));
     }
@@ -958,7 +948,7 @@ export const EventTable: React.FC<EventTableProps> = ({
     if (!shouldUseClientSideSort) {
       // For server-side pagination, fetch new data
       setEvents([]);
-      fetchEvents();
+      fetchEvents(undefined, 1);
     }
     // For client-side pagination, the useEffect will handle the update
   };
@@ -979,8 +969,7 @@ export const EventTable: React.FC<EventTableProps> = ({
         ...newMultiSort[existingIndex],
         direction: newMultiSort[existingIndex].direction === 'asc' ? 'desc' : 'asc',
       };
-    }
-    else {
+    } else {
       // Add new sort
       const newSortConfig: SortConfig = {
         key: currentSortField,
@@ -1013,9 +1002,8 @@ export const EventTable: React.FC<EventTableProps> = ({
       // For server-side sorting, reset and fetch new data
       setEvents([]);
       setPagination(prev => ({ ...prev, page: 1, nextCursor: undefined }));
-      fetchEvents();
-    }
-    else {
+      fetchEvents(undefined, 1);
+    } else {
       // For client-side sorting, just reset to first page
       setPagination(prev => ({ ...prev, page: 1 }));
     }
@@ -1027,17 +1015,15 @@ export const EventTable: React.FC<EventTableProps> = ({
       // Client-side pagination - just update page state
       const nextPage = pagination.page + 1;
       setPagination(prev => ({ ...prev, page: nextPage }));
-    }
-    else {
+    } else {
       // Server-side pagination
       if (pagination.nextCursor) {
         fetchEvents(pagination.nextCursor);
-      }
-      else {
+      } else {
         const nextPage = pagination.page + 1;
         setPagination(prev => ({ ...prev, page: nextPage }));
         setEvents([]);
-        fetchEvents();
+        fetchEvents(undefined, nextPage);
       }
     }
   };
@@ -1047,13 +1033,12 @@ export const EventTable: React.FC<EventTableProps> = ({
       // Client-side pagination - just update page state
       const prevPage = Math.max(1, pagination.page - 1);
       setPagination(prev => ({ ...prev, page: prevPage }));
-    }
-    else {
+    } else {
       // Server-side pagination
       const prevPage = Math.max(1, pagination.page - 1);
       setPagination(prev => ({ ...prev, page: prevPage }));
       setEvents([]);
-      fetchEvents();
+      fetchEvents(undefined, prevPage);
     }
   };
 
@@ -1061,12 +1046,11 @@ export const EventTable: React.FC<EventTableProps> = ({
     if (shouldUseClientSideSort) {
       // Client-side pagination - just update page state
       setPagination(prev => ({ ...prev, page: 1 }));
-    }
-    else {
+    } else {
       // Server-side pagination
       setPagination(prev => ({ ...prev, page: 1 }));
       setEvents([]);
-      fetchEvents();
+      fetchEvents(undefined, 1);
     }
   };
 
@@ -1076,13 +1060,12 @@ export const EventTable: React.FC<EventTableProps> = ({
       if (totalPages > 0) {
         setPagination(prev => ({ ...prev, page: totalPages }));
       }
-    }
-    else {
+    } else {
       // Server-side pagination
       if (totalPages > 0) {
         setPagination(prev => ({ ...prev, page: totalPages }));
         setEvents([]);
-        fetchEvents();
+        fetchEvents(undefined, totalPages);
       }
     }
   };
@@ -1095,7 +1078,7 @@ export const EventTable: React.FC<EventTableProps> = ({
       if (!shouldUseClientSideSort) {
         // For server-side pagination, fetch new data
         setEvents([]);
-        fetchEvents();
+        fetchEvents(undefined, pageNumber);
       }
       setPageInput('');
     }
@@ -1163,12 +1146,10 @@ export const EventTable: React.FC<EventTableProps> = ({
         hasMore: pagination.page * pagination.limit < allEvents.length,
         totalPages: Math.ceil(allEvents.length / pagination.limit),
       }));
-    }
-    else {
-      // For server-side sorting, just use the events as-is
-      if (pagination.page === 1) {
-        setEvents(allEvents.slice(0, pagination.limit));
-      }
+    } else {
+      // For server-side sorting, use the events from fetchEvents directly
+      // fetchEvents already returns the correct page of data in allEvents
+      setEvents(allEvents);
       setSortingMetrics(null);
     }
   }, [allEvents, sort, multiSort, pagination.page, pagination.limit, shouldUseClientSideSort]);
@@ -1211,7 +1192,7 @@ export const EventTable: React.FC<EventTableProps> = ({
 
     // Reset pagination and refetch
     setPagination(prev => ({ ...prev, page: 1, nextCursor: undefined }));
-    fetchEvents();
+    fetchEvents(undefined, 1);
   }, [onFiltersChange, fetchEvents]);
 
   // Render loading state
@@ -1254,16 +1235,16 @@ export const EventTable: React.FC<EventTableProps> = ({
     );
   }
 
-  const hasActiveFilters
-    = Object.keys(dynamicFilters).length > 0
-      && Object.values(dynamicFilters).some(
-        value =>
-          value !== null
-          && value !== undefined
-          && value !== ''
-          && (typeof value !== 'object'
-            || Object.values(value).some(v => v !== null && v !== undefined && v !== '')),
-      );
+  const hasActiveFilters =
+    Object.keys(dynamicFilters).length > 0 &&
+    Object.values(dynamicFilters).some(
+      value =>
+        value !== null &&
+        value !== undefined &&
+        value !== '' &&
+        (typeof value !== 'object' ||
+          Object.values(value).some(v => v !== null && v !== undefined && v !== '')),
+    );
 
   return (
     <TableContainer className={className}>
@@ -1296,9 +1277,7 @@ export const EventTable: React.FC<EventTableProps> = ({
                     fontSize: '12px',
                   }}
                 >
-                  {Object.keys(dynamicFilters).length}
-                  {' '}
-                  active
+                  {Object.keys(dynamicFilters).length} active
                 </span>
               )}
             </div>
@@ -1390,9 +1369,7 @@ export const EventTable: React.FC<EventTableProps> = ({
             >
               {pageSizeOptions.map(size => (
                 <option key={size} value={size}>
-                  {size}
-                  {' '}
-                  条
+                  {size} 条
                 </option>
               ))}
             </PageSizeSelect>
@@ -1406,9 +1383,7 @@ export const EventTable: React.FC<EventTableProps> = ({
               $active={showPerformanceInfo}
               onClick={() => setShowPerformanceInfo(!showPerformanceInfo)}
             >
-              性能:
-              {' '}
-              {sortingMetrics.sortTime.toFixed(1)}
+              性能: {sortingMetrics.sortTime.toFixed(1)}
               ms
             </PerformanceToggleButton>
 
@@ -1424,9 +1399,7 @@ export const EventTable: React.FC<EventTableProps> = ({
                 <PerformanceMetric>
                   <PerformanceMetricLabel>数据量:</PerformanceMetricLabel>
                   <PerformanceMetricValue>
-                    {Number(sortingMetrics.dataSize ?? 0).toLocaleString()}
-                    {' '}
-                    条
+                    {Number(sortingMetrics.dataSize ?? 0).toLocaleString()} 条
                   </PerformanceMetricValue>
                 </PerformanceMetric>
 
@@ -1438,9 +1411,7 @@ export const EventTable: React.FC<EventTableProps> = ({
                 <PerformanceMetric>
                   <PerformanceMetricLabel>排序时间:</PerformanceMetricLabel>
                   <PerformanceMetricValue highlight={sortingMetrics.sortTime < 10}>
-                    {sortingMetrics.sortTime.toFixed(2)}
-                    {' '}
-                    ms
+                    {sortingMetrics.sortTime.toFixed(2)} ms
                   </PerformanceMetricValue>
                 </PerformanceMetric>
 
@@ -1456,17 +1427,14 @@ export const EventTable: React.FC<EventTableProps> = ({
                     <PerformanceMetric>
                       <PerformanceMetricLabel>平均时间:</PerformanceMetricLabel>
                       <PerformanceMetricValue>
-                        {sortingMetrics.avgMetrics.avgExecutionTime.toFixed(2)}
-                        {' '}
-                        ms
+                        {sortingMetrics.avgMetrics.avgExecutionTime.toFixed(2)} ms
                       </PerformanceMetricValue>
                     </PerformanceMetric>
 
                     <PerformanceMetric>
                       <PerformanceMetricLabel>缓存命中率:</PerformanceMetricLabel>
                       <PerformanceMetricValue>
-                        {(sortingMetrics.avgMetrics.cacheHitRate * 100).toFixed(1)}
-                        %
+                        {(sortingMetrics.avgMetrics.cacheHitRate * 100).toFixed(1)}%
                       </PerformanceMetricValue>
                     </PerformanceMetric>
                   </>
@@ -1490,15 +1458,11 @@ export const EventTable: React.FC<EventTableProps> = ({
           <div>
             <SortLabel>多列排序:</SortLabel>
             <MultiSortContainer>
-              {multiSort.map((sortConfig) => {
+              {multiSort.map(sortConfig => {
                 const option = availableSortOptions.find(opt => opt.key === sortConfig.key);
                 return (
                   <MultiSortTag key={sortConfig.key}>
-                    {option?.label ?? sortConfig.key}
-                    {' '}
-                    (
-                    {sortConfig.direction === 'asc' ? '↑' : '↓'}
-                    )
+                    {option?.label ?? sortConfig.key} ({sortConfig.direction === 'asc' ? '↑' : '↓'})
                     <MultiSortRemove onClick={() => removeFromMultiSort(sortConfig.key)}>
                       ×
                     </MultiSortRemove>
@@ -1546,32 +1510,28 @@ export const EventTable: React.FC<EventTableProps> = ({
               <TimestampCell>{formatTimestamp(event.blockTimestamp)}</TimestampCell>
               <EventNameCell>{event.eventName}</EventNameCell>
               <AddressCell>
-                {event.from
-                  ? (
-                      <a
-                        href={`/chain/${chainId}/address/${event.from}`}
-                        style={{ color: '#4f46e5', textDecoration: 'none' }}
-                      >
-                        {formatAddress(event.from)}
-                      </a>
-                    )
-                  : (
-                      'N/A'
-                    )}
+                {event.from ? (
+                  <a
+                    href={`/chain/${chainId}/address/${event.from}`}
+                    style={{ color: '#4f46e5', textDecoration: 'none' }}
+                  >
+                    {formatAddress(event.from)}
+                  </a>
+                ) : (
+                  'N/A'
+                )}
               </AddressCell>
               <AddressCell>
-                {event.to
-                  ? (
-                      <a
-                        href={`/chain/${chainId}/address/${event.to}`}
-                        style={{ color: '#4f46e5', textDecoration: 'none' }}
-                      >
-                        {formatAddress(event.to)}
-                      </a>
-                    )
-                  : (
-                      'N/A'
-                    )}
+                {event.to ? (
+                  <a
+                    href={`/chain/${chainId}/address/${event.to}`}
+                    style={{ color: '#4f46e5', textDecoration: 'none' }}
+                  >
+                    {formatAddress(event.to)}
+                  </a>
+                ) : (
+                  'N/A'
+                )}
               </AddressCell>
               <ValueCell>{formatValue(event.value)}</ValueCell>
               <TransactionHashCell>
@@ -1607,32 +1567,13 @@ export const EventTable: React.FC<EventTableProps> = ({
       <PaginationContainer>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           <PaginationInfo>
-            显示第
-            {' '}
-            {pagination.startIndex ?? 1}
-            {' '}
-            -
-            {' '}
-            {pagination.endIndex ?? events.length}
-            {' '}
-            条， 共
-            {' '}
-            {pagination.total}
-            {' '}
-            条事件
+            显示第 {pagination.startIndex ?? 1} - {pagination.endIndex ?? events.length} 条， 共{' '}
+            {pagination.total} 条事件
           </PaginationInfo>
 
           {totalPages > 1 && (
             <PageInfo>
-              第
-              {' '}
-              {pagination.page}
-              {' '}
-              /
-              {' '}
-              {totalPages}
-              {' '}
-              页
+              第 {pagination.page} / {totalPages} 页
             </PageInfo>
           )}
         </div>
