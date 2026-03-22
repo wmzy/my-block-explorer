@@ -172,6 +172,38 @@ const addFormStyles = css`
   margin-top: 16px;
 `;
 
+const quickActionsStyles = css`
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
+  border-radius: 6px;
+  margin-top: 16px;
+`;
+
+const quickButtonStyles = css`
+  padding: 6px 12px;
+  border: 1px solid #0ea5e9;
+  border-radius: 4px;
+  background: white;
+  color: #0369a1;
+  font-size: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+
+  &:hover:not(:disabled) {
+    background: #e0f2fe;
+    border-color: #0284c7;
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+`;
+
 const inputGroupStyles = css`
   display: flex;
   flex-direction: column;
@@ -261,10 +293,22 @@ type AddRangeForm = {
   direction: RangeDirection;
 };
 
+type QuickMode = 'all' | 'recent' | 'first' | 'continue';
+
+type QuickCreateForm = {
+  mode: QuickMode;
+  blockCount: string;
+};
+
 const defaultFormState: AddRangeForm = {
   fromBlock: '',
   toBlock: '',
   direction: 'forward',
+};
+
+const defaultQuickFormState: QuickCreateForm = {
+  mode: 'recent',
+  blockCount: '1000',
 };
 
 export const IndexingRangeManager: React.FC<Props> = ({
@@ -278,6 +322,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
   const [loading, setLoading] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
   const [formState, setFormState] = useState<AddRangeForm>(defaultFormState);
+  const [quickFormState, setQuickFormState] = useState<QuickCreateForm>(defaultQuickFormState);
   const [overlaps, setOverlaps] = useState<Overlap[]>([]);
   const [actionLoading, setActionLoading] = useState<number | null>(null);
 
@@ -292,11 +337,9 @@ export const IndexingRangeManager: React.FC<Props> = ({
         const data = await response.json();
         setRanges(data.ranges ?? []);
       }
-    }
-    catch (error) {
+    } catch (error) {
       console.error('Failed to fetch ranges:', error);
-    }
-    finally {
+    } finally {
       setLoading(false);
     }
   }, [chainId, contractAddress]);
@@ -311,17 +354,29 @@ export const IndexingRangeManager: React.FC<Props> = ({
     }
   }, [ranges, fetchRanges]);
   const handleAddRange = useCallback(async () => {
-    const fromBlock = parseInt(formState.fromBlock);
-    const toBlock = parseInt(formState.toBlock);
-    if (isNaN(fromBlock) || isNaN(toBlock)) {
-      toast.error('Please enter valid block numbers');
+    const validBlockTags = ['latest', 'finalized', 'safe', 'earliest'];
+    const fromBlockValue = formState.fromBlock.toLowerCase();
+    const toBlockValue = formState.toBlock.toLowerCase();
+
+    const isFromTag = validBlockTags.includes(fromBlockValue);
+    const isToTag = validBlockTags.includes(toBlockValue);
+
+    const fromBlock = isFromTag ? fromBlockValue : parseInt(formState.fromBlock);
+    const toBlock = isToTag ? toBlockValue : parseInt(formState.toBlock);
+
+    if (!isFromTag && isNaN(fromBlock as number)) {
+      toast.error('Please enter valid block numbers or tags (latest, finalized, safe, earliest)');
       return;
     }
-    if (fromBlock >= toBlock) {
+    if (!isToTag && isNaN(toBlock as number)) {
+      toast.error('Please enter valid block numbers or tags (latest, finalized, safe, earliest)');
+      return;
+    }
+    if (!isFromTag && !isToTag && (fromBlock as number) >= (toBlock as number)) {
       toast.error('From block must be less than to block');
       return;
     }
-    if (creationBlock > 0 && fromBlock < creationBlock) {
+    if (!isFromTag && creationBlock > 0 && (fromBlock as number) < creationBlock) {
       toast.error(`From block cannot be before contract creation block (${creationBlock})`);
       return;
     }
@@ -333,8 +388,8 @@ export const IndexingRangeManager: React.FC<Props> = ({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            fromBlock,
-            toBlock,
+            fromBlock: isFromTag ? fromBlockValue : fromBlock,
+            toBlock: isToTag ? toBlockValue : toBlock,
             direction: formState.direction,
           }),
         },
@@ -348,19 +403,57 @@ export const IndexingRangeManager: React.FC<Props> = ({
           setOverlaps(data.overlaps);
         }
         onRefresh?.();
-      }
-      else {
+      } else {
         toast.error(data.message ?? data.error ?? 'Failed to add range');
       }
-    }
-    catch (error) {
+    } catch (error) {
       console.error('Failed to add range:', error);
       toast.error('Failed to add range');
-    }
-    finally {
+    } finally {
       setActionLoading(null);
     }
   }, [chainId, contractAddress, formState, creationBlock, fetchRanges, onRefresh]);
+  const handleQuickCreate = useCallback(async () => {
+    const { mode, blockCount } = quickFormState;
+    const needsBlockCount = ['recent', 'first', 'continue'].includes(mode);
+    const blockCountNum = needsBlockCount ? parseInt(blockCount) : 0;
+
+    if (needsBlockCount && (isNaN(blockCountNum) || blockCountNum <= 0)) {
+      toast.error('Please enter a valid block count');
+      return;
+    }
+
+    setActionLoading(-2);
+    try {
+      const response = await fetch(
+        `/api/chains/${chainId}/contracts/${contractAddress}/events/ranges/quick`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            mode,
+            blockCount: needsBlockCount ? blockCountNum : undefined,
+          }),
+        },
+      );
+      const data = await response.json();
+      if (response.ok) {
+        setQuickFormState(defaultQuickFormState);
+        await fetchRanges();
+        toast.success(
+          `Range created: blocks ${data.fromBlock?.toLocaleString() ?? '?'} - ${data.toBlock?.toLocaleString() ?? '?'}`,
+        );
+        onRefresh?.();
+      } else {
+        toast.error(data.message ?? data.error ?? 'Failed to create range');
+      }
+    } catch (error) {
+      console.error('Failed to create range:', error);
+      toast.error('Failed to create range');
+    } finally {
+      setActionLoading(null);
+    }
+  }, [chainId, contractAddress, quickFormState, fetchRanges, onRefresh]);
   const handleStartIndexing = useCallback(
     async (rangeId: number) => {
       setActionLoading(rangeId);
@@ -375,17 +468,14 @@ export const IndexingRangeManager: React.FC<Props> = ({
         );
         if (response.ok) {
           await fetchRanges();
-        }
-        else {
+        } else {
           const data = await response.json();
           toast.error(data.error ?? 'Failed to start indexing');
         }
-      }
-      catch (error) {
+      } catch (error) {
         console.error('Failed to start indexing:', error);
         toast.error('Failed to start indexing');
-      }
-      finally {
+      } finally {
         setActionLoading(null);
       }
     },
@@ -401,17 +491,14 @@ export const IndexingRangeManager: React.FC<Props> = ({
         );
         if (response.ok) {
           await fetchRanges();
-        }
-        else {
+        } else {
           const data = await response.json();
           toast.error(data.error ?? 'Failed to pause indexing');
         }
-      }
-      catch (error) {
+      } catch (error) {
         console.error('Failed to pause indexing:', error);
         toast.error('Failed to pause indexing');
-      }
-      finally {
+      } finally {
         setActionLoading(null);
       }
     },
@@ -431,17 +518,14 @@ export const IndexingRangeManager: React.FC<Props> = ({
         );
         if (response.ok) {
           await fetchRanges();
-        }
-        else {
+        } else {
           const data = await response.json();
           toast.error(data.error ?? 'Failed to resume indexing');
         }
-      }
-      catch (error) {
+      } catch (error) {
         console.error('Failed to resume indexing:', error);
         toast.error('Failed to resume indexing');
-      }
-      finally {
+      } finally {
         setActionLoading(null);
       }
     },
@@ -460,17 +544,14 @@ export const IndexingRangeManager: React.FC<Props> = ({
         if (response.ok) {
           await fetchRanges();
           onRefresh?.();
-        }
-        else {
+        } else {
           const data = await response.json();
           toast.error(data.error ?? 'Failed to delete range');
         }
-      }
-      catch (error) {
+      } catch (error) {
         console.error('Failed to delete range:', error);
         toast.error('Failed to delete range');
-      }
-      finally {
+      } finally {
         setActionLoading(null);
       }
     },
@@ -483,8 +564,8 @@ export const IndexingRangeManager: React.FC<Props> = ({
     if (!range.currentBlock) return 0;
     const totalBlocks = Number(range.toBlock) - Number(range.fromBlock) + 1;
     if (totalBlocks <= 0) return 0;
-    const currentIndexed
-      = range.direction === 'forward'
+    const currentIndexed =
+      range.direction === 'forward'
         ? Number(range.currentBlock) - Number(range.fromBlock) + 1
         : Number(range.toBlock) - Number(range.currentBlock) + 1;
     return Math.round((currentIndexed / totalBlocks) * 100);
@@ -561,8 +642,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
       <div className={headerStyles}>
         <h3>Event Indexing Ranges</h3>
         <span className="creation-info">
-          Contract created at block #
-          {creationBlock.toLocaleString()}
+          Contract created at block #{creationBlock.toLocaleString()}
         </span>
         <button
           className={actionButtonStyles}
@@ -586,21 +666,12 @@ export const IndexingRangeManager: React.FC<Props> = ({
       )}
       {overlaps.length > 0 && (
         <div className={warningStyles}>
-          <strong>Warning:</strong>
-          {' '}
-          Some existing ranges overlap with the range. Events in
+          <strong>Warning:</strong> Some existing ranges overlap with the range. Events in
           overlapping blocks will be re-indexed:
           <ul style={{ margin: '8px 0 0', paddingLeft: '16px' }}>
             {overlaps.map(o => (
               <li key={o.rangeId}>
-                Range #
-                {o.rangeId}
-                : blocks
-                {' '}
-                {formatBlock(o.overlapStart)}
-                {' '}
-                -
-                {' '}
+                Range #{o.rangeId}: blocks {formatBlock(o.overlapStart)} -{' '}
                 {formatBlock(o.overlapEnd)}
                 <button
                   style={{
@@ -620,113 +691,158 @@ export const IndexingRangeManager: React.FC<Props> = ({
           </ul>
         </div>
       )}
-      {ranges.length === 0
-        ? (
-            <div className={emptyStateStyles}>
-              No indexing ranges configured. Add a range to start indexing events.
-            </div>
-          )
-        : (
-            <div className={rangeListStyles}>
-              {ranges.map(range => (
-                <div key={range.rangeId} className={rangeItemStyles}>
-                  <div className={rangeInfoStyles}>
-                    <div className="range-blocks">
-                      <span className={statusBadgeStyles} data-status={range.status}>
-                        {getStatusLabel(range.status)}
-                      </span>
-                      <span className={directionBadgeStyles}>
-                        {range.direction === 'forward'
-                          ? (
-                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                                <path d="M5 12l12M19 12" />
-                              </svg>
-                            )
-                          : (
-                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                                <path d="M19 12l5 12" />
-                              </svg>
-                            )}
-                        <span>{range.direction === 'forward' ? 'Forward' : 'Backward'}</span>
-                      </span>
-                      <span style={{ marginLeft: '8px' }}>
-                        #
-                        {formatBlock(range.fromBlock)}
-                        {' '}
-                        -
-                        {' '}
-                        {formatBlock(range.toBlock)}
-                      </span>
-                    </div>
-                    <div className="range-progress">
-                      {range.status === 'indexing' && range.currentBlock && (
-                        <>
-                          Progress:
-                          {' '}
-                          {calculateProgress(range)}
-                          %%
-                          {range.direction === 'forward'
-                            ? `(${formatBlock(range.currentBlock)} / ${formatBlock(range.toBlock)})`
-                            : `(${formatBlock(range.fromBlock)} / ${formatBlock(range.currentBlock)})`}
-                        </>
-                      )}
-                      {range.totalEventsIndexed > 0 && (
-                        <span>
-                          {range.totalEventsIndexed.toLocaleString()}
-                          {' '}
-                          events indexed
-                        </span>
-                      )}
-                      {range.errorMessage && (
-                        <span style={{ color: '#dc2626' }}>{range.errorMessage}</span>
-                      )}
-                    </div>
-                  </div>
-                  {renderRangeActions(range)}
-                </div>
-              ))}
-            </div>
-          )}
-      {showAddForm && (
-        <div className={addFormStyles}>
-          <div className={inputGroupStyles}>
-            <label>From Block</label>
-            <input
-              type="number"
-              placeholder={creationBlock > 0 ? creationBlock.toString() : '0'}
-              value={formState.fromBlock}
-              onChange={e => setFormState({ ...formState, fromBlock: e.target.value })}
-              min={creationBlock > 0 ? creationBlock : 0}
-            />
-          </div>
-          <div className={inputGroupStyles}>
-            <label>To Block</label>
-            <input
-              type="number"
-              placeholder={latestBlock > 0 ? latestBlock.toString() : ''}
-              value={formState.toBlock}
-              onChange={e => setFormState({ ...formState, toBlock: e.target.value })}
-            />
-          </div>
-          <div className={inputGroupStyles}>
-            <label>Direction</label>
-            <select
-              value={formState.direction}
-              onChange={e =>
-                setFormState({ ...formState, direction: e.target.value as RangeDirection })}
-            >
-              <option value="forward">Forward (old to new)</option>
-              <option value="backward">Backward (new to old)</option>
-            </select>
-          </div>
-          <button
-            className={`${actionButtonStyles} primary`}
-            onClick={handleAddRange}
-            disabled={actionLoading === -1 || !formState.fromBlock || !formState.toBlock}
-          >
-            {actionLoading === -1 ? 'Adding...' : 'Add Range'}
-          </button>
+      {ranges.length === 0 ? (
+        <div className={emptyStateStyles}>
+          No indexing ranges configured. Add a range to start indexing events.
         </div>
+      ) : (
+        <div className={rangeListStyles}>
+          {ranges.map(range => (
+            <div key={range.rangeId} className={rangeItemStyles}>
+              <div className={rangeInfoStyles}>
+                <div className="range-blocks">
+                  <span className={statusBadgeStyles} data-status={range.status}>
+                    {getStatusLabel(range.status)}
+                  </span>
+                  <span className={directionBadgeStyles}>
+                    {range.direction === 'forward' ? (
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <path d="M5 12l12M19 12" />
+                      </svg>
+                    ) : (
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <path d="M19 12l5 12" />
+                      </svg>
+                    )}
+                    <span>{range.direction === 'forward' ? 'Forward' : 'Backward'}</span>
+                  </span>
+                  <span style={{ marginLeft: '8px' }}>
+                    #{formatBlock(range.fromBlock)} - {formatBlock(range.toBlock)}
+                  </span>
+                </div>
+                <div className="range-progress">
+                  {range.status === 'indexing' && range.currentBlock && (
+                    <>
+                      Progress: {calculateProgress(range)}
+                      %%
+                      {range.direction === 'forward'
+                        ? `(${formatBlock(range.currentBlock)} / ${formatBlock(range.toBlock)})`
+                        : `(${formatBlock(range.fromBlock)} / ${formatBlock(range.currentBlock)})`}
+                    </>
+                  )}
+                  {range.totalEventsIndexed > 0 && (
+                    <span>{range.totalEventsIndexed.toLocaleString()} events indexed</span>
+                  )}
+                  {range.errorMessage && (
+                    <span style={{ color: '#dc2626' }}>{range.errorMessage}</span>
+                  )}
+                </div>
+              </div>
+              {renderRangeActions(range)}
+            </div>
+          ))}
+        </div>
+      )}
+      {showAddForm && (
+        <>
+          <div className={quickActionsStyles}>
+            <span
+              style={{ fontSize: '12px', color: '#0369a1', fontWeight: 500, marginRight: '8px' }}
+            >
+              Quick Create:
+            </span>
+            <button
+              className={quickButtonStyles}
+              onClick={() => setQuickFormState({ mode: 'all', blockCount: '' })}
+              disabled={actionLoading !== null}
+            >
+              Index All
+            </button>
+            <button
+              className={quickButtonStyles}
+              onClick={() => setQuickFormState({ mode: 'recent', blockCount: '1000' })}
+              disabled={actionLoading !== null}
+            >
+              Recent Blocks
+            </button>
+            <button
+              className={quickButtonStyles}
+              onClick={() => setQuickFormState({ mode: 'first', blockCount: '1000' })}
+              disabled={actionLoading !== null}
+            >
+              First Blocks
+            </button>
+            <button
+              className={quickButtonStyles}
+              onClick={() => setQuickFormState({ mode: 'continue', blockCount: '1000' })}
+              disabled={actionLoading !== null}
+            >
+              Continue
+            </button>
+            {quickFormState.mode !== 'all' && (
+              <div className={inputGroupStyles} style={{ marginLeft: '8px' }}>
+                <input
+                  type="number"
+                  placeholder="Count"
+                  value={quickFormState.blockCount}
+                  onChange={e =>
+                    setQuickFormState({ ...quickFormState, blockCount: e.target.value })}
+                  style={{ width: '80px' }}
+                  min={1}
+                />
+              </div>
+            )}
+            <button
+              className={`${actionButtonStyles} primary`}
+              onClick={handleQuickCreate}
+              disabled={
+                actionLoading !== null ||
+                (quickFormState.mode !== 'all' && !quickFormState.blockCount)
+              }
+              style={{ marginLeft: 'auto' }}
+            >
+              {actionLoading === -2 ? 'Creating...' : 'Create'}
+            </button>
+          </div>
+          <div className={addFormStyles}>
+            <div className={inputGroupStyles}>
+              <label>From Block</label>
+              <input
+                type="text"
+                placeholder={creationBlock > 0 ? creationBlock.toString() : '0 (or earliest)'}
+                value={formState.fromBlock}
+                onChange={e => setFormState({ ...formState, fromBlock: e.target.value })}
+              />
+            </div>
+            <div className={inputGroupStyles}>
+              <label>To Block</label>
+              <input
+                type="text"
+                placeholder={latestBlock > 0 ? latestBlock.toString() : 'latest, finalized, safe'}
+                value={formState.toBlock}
+                onChange={e => setFormState({ ...formState, toBlock: e.target.value })}
+              />
+            </div>
+            <div className={inputGroupStyles}>
+              <label>Direction</label>
+              <select
+                value={formState.direction}
+                onChange={e =>
+                  setFormState({ ...formState, direction: e.target.value as RangeDirection })}
+              >
+                <option value="forward">Forward (old to new)</option>
+                <option value="backward">Backward (new to old)</option>
+              </select>
+            </div>
+            <button
+              className={`${actionButtonStyles} primary`}
+              onClick={handleAddRange}
+              disabled={actionLoading !== null || !formState.fromBlock || !formState.toBlock}
+            >
+              {actionLoading === -1 ? 'Adding...' : 'Add Range'}
+            </button>
+          </div>
+        </>
       )}
     </div>
   );

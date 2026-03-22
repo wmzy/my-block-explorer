@@ -3,6 +3,54 @@
  * 支持动态表结构生成和事件解码
  */
 
+// ============================================
+// 块标签类型 (Block Tag Types)
+// ============================================
+
+/**
+ * 特殊块标签的负数哨兵值
+ * -1 = latest (最新块)
+ * -2 = finalized (已最终确认块)
+ * -3 = safe (安全块)
+ * -4 = earliest (创世块)
+ */
+export type BlockTagSentinel = -1 | -2 | -3 | -4;
+
+/**
+ * 支持的块标签
+ */
+export type BlockTag = 'latest' | 'finalized' | 'safe' | 'earliest';
+
+/**
+ * 块标签哨兵值常量
+ */
+export const BLOCK_TAG_SENTINELS: Record<BlockTag, BlockTagSentinel> = {
+  latest: -1,
+  finalized: -2,
+  safe: -3,
+  earliest: -4,
+} as const;
+
+/**
+ * 哨兵值到块标签的反向映射
+ */
+export const SENTINEL_TO_TAG: Record<BlockTagSentinel, BlockTag> = {
+  [-1]: 'latest',
+  [-2]: 'finalized',
+  [-3]: 'safe',
+  [-4]: 'earliest',
+} as const;
+
+/**
+ * API 输入支持的块值类型
+ * 可以是数字（块号）或字符串标签
+ */
+export type BlockTagInput = number | BlockTag;
+
+// ============================================
+// 用于表创建的事件 ABI 形状（链内表管理）
+// ============================================
+
 // 用于表创建的事件 ABI 形状（链内表管理）
 export type EventAbiShape = {
   name: string;

@@ -16,6 +16,10 @@ import {
   getEventStatistics,
   getIndexingStatus,
   updateRangeStatus,
+  createRangeAll,
+  createRangeRecent,
+  createRangeFirst,
+  createRangeContinue,
 } from '../services/EventIndexingService';
 import { safeJsonResponse } from '../utils/serialization';
 import { contractSourceService } from '../services/ContractSourceService';
@@ -216,19 +220,28 @@ app.post('/chains/:chainId/contracts/:address/events/ranges', async c => {
     const body = await c.req.json();
     const { fromBlock, toBlock, direction, priority } = body;
 
-    if (typeof fromBlock !== 'number' || typeof toBlock !== 'number') {
+    const validBlockTags = ['latest', 'finalized', 'safe', 'earliest'];
+    const isValidFromBlock =
+      typeof fromBlock === 'number' ||
+      (typeof fromBlock === 'string' && validBlockTags.includes(fromBlock));
+    const isValidToBlock =
+      typeof toBlock === 'number' ||
+      (typeof toBlock === 'string' && validBlockTags.includes(toBlock));
+
+    if (!isValidFromBlock || !isValidToBlock) {
       return c.json(
         {
           error: 'Invalid request body',
-          message: 'fromBlock and toBlock are required and must be numbers',
+          message:
+            'fromBlock and toBlock are required and must be numbers or valid block tags (latest, finalized, safe, earliest)',
         },
         400,
       );
     }
 
     const response = await addIndexingRange(chainId, address, {
-      fromBlock,
-      toBlock,
+      fromBlock: fromBlock as import('@/types/events').BlockTagInput,
+      toBlock: toBlock as import('@/types/events').BlockTagInput,
       direction,
       priority,
     });
@@ -262,6 +275,95 @@ app.post('/chains/:chainId/contracts/:address/events/ranges', async c => {
     return c.json(
       {
         error: 'Failed to add indexing range',
+        message: error instanceof Error ? error.message : 'Unknown error',
+      },
+      500,
+    );
+  }
+});
+
+// POST /chains/:chainId/contracts/:address/events/ranges/quick — quick creation modes
+app.post('/chains/:chainId/contracts/:address/events/ranges/quick', async c => {
+  const result = validateChainAndAddress(c.req.param('chainId'), c.req.param('address'));
+  if ('error' in result) return c.json(result.error, result.status);
+
+  const { chainId, address } = result;
+
+  try {
+    const body = await c.req.json();
+    const { mode, blockCount, direction, priority } = body;
+
+    const validModes = ['all', 'recent', 'first', 'continue'];
+    if (!mode || typeof mode !== 'string' || !validModes.includes(mode)) {
+      return c.json(
+        {
+          error: 'Invalid request body',
+          message: 'mode is required and must be one of: all, recent, first, continue',
+        },
+        400,
+      );
+    }
+
+    const needsBlockCount = ['recent', 'first', 'continue'].includes(mode);
+    if (needsBlockCount && (typeof blockCount !== 'number' || blockCount <= 0)) {
+      return c.json(
+        {
+          error: 'Invalid request body',
+          message:
+            'blockCount is required and must be a positive number for mode: recent, first, continue',
+        },
+        400,
+      );
+    }
+
+    let response:
+      | { success: boolean; rangeId?: number; fromBlock?: number; toBlock?: number; error?: string }
+      | undefined;
+    switch (mode) {
+      case 'all':
+        response = await createRangeAll(chainId, address, { direction, priority });
+        break;
+      case 'recent':
+        response = await createRangeRecent(chainId, address, blockCount, { direction, priority });
+        break;
+      case 'first':
+        response = await createRangeFirst(chainId, address, blockCount, { direction, priority });
+        break;
+      case 'continue':
+        response = await createRangeContinue(chainId, address, blockCount, { direction, priority });
+        break;
+    }
+
+    if (!response || !response.success) {
+      return c.json(
+        {
+          error: `Failed to create range with mode: ${mode}`,
+          message: response?.error ?? 'Unknown error',
+        },
+        400,
+      );
+    }
+
+    c.header('X-Chain-Name', getChainName(chainId));
+
+    return c.json(
+      safeJsonResponse({
+        chainId,
+        chainName: getChainName(chainId),
+        contractAddress: address,
+        rangeId: response.rangeId,
+        fromBlock: response.fromBlock,
+        toBlock: response.toBlock,
+        mode,
+        timestamp: new Date().toISOString(),
+      }),
+      201,
+    );
+  } catch (error) {
+    logger.error({ err: error }, 'Quick create indexing range API error');
+    return c.json(
+      {
+        error: 'Failed to create indexing range',
         message: error instanceof Error ? error.message : 'Unknown error',
       },
       500,
