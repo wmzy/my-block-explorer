@@ -19,8 +19,7 @@ export const registerAbiEvents = (abi: Abi | readonly unknown[]): void => {
       const selector = toEventSelector(entry as AbiEvent);
       signatureToNameCache.set(selector, entry.name);
       nameToSignatureCache.set(entry.name, selector);
-    }
-    catch {
+    } catch {
       // skip malformed entries
     }
   }
@@ -33,7 +32,8 @@ export const getEventSelectorFromName = (eventName: string): string => {
   const wellKnown: Record<string, string> = {
     Transfer: 'event Transfer(address indexed from, address indexed to, uint256 value)',
     Approval: 'event Approval(address indexed owner, address indexed spender, uint256 value)',
-    OwnershipTransferred: 'event OwnershipTransferred(address indexed previousOwner, address indexed newOwner)',
+    OwnershipTransferred:
+      'event OwnershipTransferred(address indexed previousOwner, address indexed newOwner)',
   };
 
   const sig = wellKnown[eventName];
@@ -44,8 +44,9 @@ export const getEventSelectorFromName = (eventName: string): string => {
       nameToSignatureCache.set(eventName, selector);
       signatureToNameCache.set(selector, eventName);
       return selector;
+    } catch {
+      /* fall through */
     }
-    catch { /* fall through */ }
   }
 
   return `0x${'0'.repeat(64)}`;
@@ -57,28 +58,29 @@ export const decodeEventData = (
   data: string,
 ): Record<string, unknown> => {
   try {
-    if (eventName === 'Transfer' && topics.length >= 2) {
+    // topics[0] is the event signature selector, indexed params start at topics[1]
+    if (eventName === 'Transfer' && topics.length >= 3) {
       return {
-        from: topics[0],
-        to: topics[1],
+        from: topics[1],
+        to: topics[2],
         value: data && data !== '0x' ? BigInt(data) : undefined,
         raw: { topics, data },
       };
     }
 
-    if (eventName === 'Approval' && topics.length >= 2) {
+    if (eventName === 'Approval' && topics.length >= 3) {
       return {
-        owner: topics[0],
-        spender: topics[1],
+        owner: topics[1],
+        spender: topics[2],
         value: data && data !== '0x' ? BigInt(data) : undefined,
         raw: { topics, data },
       };
     }
 
-    if (eventName === 'OwnershipTransferred' && topics.length >= 2) {
+    if (eventName === 'OwnershipTransferred' && topics.length >= 3) {
       return {
-        previousOwner: topics[0],
-        newOwner: topics[1],
+        previousOwner: topics[1],
+        newOwner: topics[2],
         raw: { topics, data },
       };
     }
@@ -88,8 +90,7 @@ export const decodeEventData = (
       data,
       raw: { topics, data },
     };
-  }
-  catch (error) {
+  } catch (error) {
     console.warn('Failed to decode event data:', error);
     return {
       topics,
@@ -147,8 +148,7 @@ export const getContractCreationBlock = async (
             earliestFound = blockMin;
           }
         }
-      }
-      catch {
+      } catch {
         // RPC may reject, skip
       }
     }
@@ -160,23 +160,19 @@ export const getContractCreationBlock = async (
 
     // Fallback: start from recent blocks
     return latestBlock > 100_000n ? latestBlock - 100_000n : 0n;
-  }
-  catch (error) {
+  } catch (error) {
     console.warn('Failed to get contract creation block:', error);
     try {
       const latestBlock = await rpc.getBlockNumber();
       return latestBlock > 100_000n ? latestBlock - 100_000n : 0n;
-    }
-    catch {
+    } catch {
       return 0n;
     }
   }
 };
 
-export const getEventNameFromSignature = (
-  eventSignature: string,
-): string => {
+export const getEventNameFromSignature = (eventSignature: string): string => {
   const cached = signatureToNameCache.get(eventSignature);
   if (cached) return cached;
-  return eventSignature;
+  return 'Unknown';
 };

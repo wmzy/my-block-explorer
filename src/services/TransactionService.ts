@@ -1,7 +1,7 @@
 import { db, transactions, blocks } from '../database/init';
 import { eq, and, sql } from 'drizzle-orm';
 import { rpcManager } from './RpcManager';
-import type { Address } from 'viem';
+import type { Address, Transaction as ViemTransaction, TransactionReceipt } from 'viem';
 
 /**
  * 交易数据类型
@@ -92,14 +92,15 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
 
   const indexTransaction = async (
     chainId: number,
-    tx: any,
-    receipt?: any,
+    tx: ViemTransaction,
+    receipt?: TransactionReceipt | null,
   ): Promise<Transaction> => {
     const timestamp = receipt?.blockNumber
       ? await getBlockTimestamp(chainId, BigInt(receipt.blockNumber))
       : null;
 
-    const transactionData = {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const transactionData: any = {
       chainId,
       hash: tx.hash,
       blockNumber: tx.blockNumber ? BigInt(tx.blockNumber) : null,
@@ -118,7 +119,7 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
       nonce: tx.nonce ? BigInt(tx.nonce) : null,
       inputData: tx.input ?? null,
       logsCount: receipt?.logs?.length ?? 0,
-      contractAddress: receipt?.contractAddress ? (receipt.contractAddress as Address) : null,
+      contractAddress: receipt?.contractAddress ? (receipt.contractAddress) : null,
       cumulativeGasUsed: receipt?.cumulativeGasUsed ? BigInt(receipt.cumulativeGasUsed) : null,
       timestamp,
       indexedAt: new Date(),
@@ -126,10 +127,10 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
 
     await db
       .insert(transactions)
-      .values(transactionData as any)
+      .values(transactionData)
       .onConflictDoUpdate({
         target: [transactions.chainId, transactions.hash],
-        set: transactionData as any,
+        set: transactionData,
       });
 
     const inserted = await db
@@ -138,7 +139,7 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
       .where(and(eq(transactions.chainId, chainId), eq(transactions.hash, tx.hash)))
       .limit(1);
 
-    return formatTransaction(inserted[0] as any);
+    return formatTransaction(inserted[0]);
   };
 
   const indexBlockTransactions = async (chainId: number, blockNumber: bigint): Promise<void> => {

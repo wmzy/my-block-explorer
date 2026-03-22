@@ -429,11 +429,49 @@ export class MultiChainPerformanceManager {
   // 导出性能数据
   exportPerformanceData(): {
     timestamp: number;
-    chains: Record<number, any>;
-    summary: any;
-    alerts: any[];
+    chains: Record<
+      number,
+      { uptime: number; metrics: Record<string, unknown>; performance: unknown }
+    >;
+    summary: {
+      totalChains: number;
+      activeChains: number;
+      globalStats: MultiChainStatistics;
+      chainReports: Array<{
+        chainId: number;
+        uptime: number;
+        hasActivity: boolean;
+        performance: {
+          chainId: number;
+          uptime: number;
+          queryPerformance: Record<
+            string,
+            { averageQueryTime: number; queriesPerSecond: number; errorRate: number } | null
+          >;
+          indexingPerformance: {
+            eventsPerSecond: number;
+            averageIndexingTime: number;
+            blocksPerSecond: number;
+          } | null;
+          rpcPerformance: {
+            averageResponseTime: number;
+            callsPerSecond: number;
+            errorRate: number;
+          } | null;
+        } | null;
+      }>;
+    };
+    alerts: Array<{
+      chainId: number;
+      type: 'high_error_rate' | 'slow_queries' | 'rpc_issues' | 'indexing_slow';
+      message: string;
+      severity: 'warning' | 'error' | 'critical';
+    }>;
   } {
-    const chains: Record<number, any> = {};
+    const chains: Record<
+      number,
+      { uptime: number; metrics: Record<string, unknown>; performance: unknown }
+    > = {};
 
     for (const [chainId, monitor] of this.monitors) {
       chains[chainId] = {
@@ -494,7 +532,7 @@ export function monitorPerformance(operation: string) {
 }
 
 // 查询性能监控包装器
-export function createMonitoredQuery<T extends any[], R>(
+export function createMonitoredQuery<T extends unknown[], R>(
   queryFn: (...args: T) => Promise<R>,
   monitor: ChainPerformanceMonitor,
   operation: string,

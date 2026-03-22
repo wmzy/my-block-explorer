@@ -181,10 +181,10 @@ class PerformanceCache<T> {
  */
 export class EventPerformanceOptimizer {
   private chainId: number;
-  private chainDb: ChainDatabaseManager;
+  private chainDb: ChainDatabaseManager | null = null;
   private thresholds: PerformanceThresholds;
   private strategies: OptimizationStrategies;
-  private queryCache: PerformanceCache<any>;
+  private queryCache: PerformanceCache<unknown>;
   private metrics: PerformanceMetrics[] = [];
   private performanceBaseline: Map<string, number> = new Map();
 
@@ -194,7 +194,7 @@ export class EventPerformanceOptimizer {
     strategies: Partial<OptimizationStrategies> = {},
   ) {
     this.chainId = chainId;
-    this.chainDb = null as any; // Will be initialized lazily
+    this.chainDb = null; // Will be initialized lazily
 
     // Set default thresholds
     this.thresholds = {
@@ -281,7 +281,7 @@ export class EventPerformanceOptimizer {
           // Verify performance requirements
           this.validatePerformance(operation, duration, true);
 
-          return cachedResult;
+          return cachedResult as T;
         }
       }
 
@@ -416,7 +416,10 @@ export class EventPerformanceOptimizer {
   /**
    * Optimize database queries
    */
-  optimizeQuery(query: string, params: any[]): { optimizedQuery: string; optimizedParams: any[] } {
+  optimizeQuery(
+    query: string,
+    params: unknown[],
+  ): { optimizedQuery: string; optimizedParams: unknown[] } {
     // Apply query optimizations
     let optimizedQuery = query;
     const optimizedParams = [...params];
@@ -569,7 +572,7 @@ export class EventPerformanceOptimizer {
   /**
    * Estimate data size for caching
    */
-  private estimateDataSize(data: any): number {
+  private estimateDataSize(data: unknown): number {
     if (data === null || data === undefined) return 0;
     if (typeof data === 'string') return data.length;
     if (typeof data === 'number') return 8;

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect } from 'vitest';
 import { createBlockService, blockService } from '@/services/BlockService';
 import { createTransactionService, transactionService } from '@/services/TransactionService';
@@ -68,7 +69,9 @@ describe('Services - Basic Structure Tests', () => {
     it('should handle search method parameters correctly', () => {
       expect(() => searchService.search(1, 'test-query')).not.toThrow();
       expect(() => searchService.search(1, '12345')).not.toThrow();
-      expect(() => searchService.search(1, '0x1234567890123456789012345678901234567890')).not.toThrow();
+      expect(() =>
+        searchService.search(1, '0x1234567890123456789012345678901234567890'),
+      ).not.toThrow();
     });
 
     it('should detect search types correctly', () => {
@@ -93,7 +96,10 @@ describe('Services - Basic Structure Tests', () => {
       });
 
       const resultBlock = service.search(1, '12345');
-      const resultTx = service.search(1, '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef');
+      const resultTx = service.search(
+        1,
+        '0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef',
+      );
       const resultAddr = service.search(1, '0x1234567890123456789012345678901234567890');
 
       expect(resultBlock).resolves.toMatchObject({ type: 'block' });

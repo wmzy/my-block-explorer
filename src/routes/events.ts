@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import type { Abi } from 'viem';
 import { createLogger } from '../server/logger';
 import { getChainName, isChainSupported, getSupportedChainIds } from '../config/chains';
 import { getValidatedChainId, getValidatedAddress } from '../server/validation';
@@ -440,7 +441,7 @@ app.post('/chains/:chainId/contracts/:address/events/ranges/:rangeId/start', asy
       );
     }
 
-    const response = await startIndexingRange(chainId, address, rangeId, abi as any);
+    const response = await startIndexingRange(chainId, address, rangeId, abi as Abi);
 
     if (!response.success) {
       return c.json(
@@ -616,7 +617,7 @@ app.post('/chains/:chainId/contracts/:address/events/ranges/:rangeId/resume', as
       );
     }
 
-    const response = await resumeIndexingRange(chainId, address, rangeId, abi as any);
+    const response = await resumeIndexingRange(chainId, address, rangeId, abi as Abi);
 
     if (!response.success) {
       return c.json(

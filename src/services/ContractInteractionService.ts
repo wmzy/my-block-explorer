@@ -2,7 +2,7 @@ import { rpcManager } from './RpcManager';
 import { createRetryableRpcCall } from '../utils/errorHandler';
 import { ContractSourceService } from './ContractSourceService';
 import { createLogger } from '../server/logger';
-import type { Address } from 'viem';
+import type { Abi, Address } from 'viem';
 
 const logger = createLogger('contract-interaction-service');
 
@@ -28,7 +28,7 @@ export type ContractFunctionOutput = {
 
 export type ContractCallResult = {
   success: boolean;
-  result?: any;
+  result?: unknown;
   error?: string;
   gasUsed?: bigint;
   gasLimit?: bigint;
@@ -38,7 +38,7 @@ export type ContractCallParams = {
   chainId: number;
   contractAddress: Address;
   functionName: string;
-  args: any[];
+  args: unknown[];
   value?: bigint;
   from?: string;
 };
@@ -62,7 +62,7 @@ export class ContractInteractionService {
     writeFunctions: ContractFunction[];
   }> {
     try {
-      let abi: any[];
+      let abi: Abi;
 
       if (customABI) {
         abi = JSON.parse(customABI);
@@ -79,7 +79,9 @@ export class ContractInteractionService {
         abi = JSON.parse(contractSource.abi);
       }
 
-      const functions = abi.filter((item: any) => item.type === 'function') as ContractFunction[];
+      const functions = abi.filter(
+        (item: unknown) => (item as { type?: string }).type === 'function',
+      ) as ContractFunction[];
 
       const readFunctions = functions.filter(
         func => func.stateMutability === 'view' || func.stateMutability === 'pure',
@@ -129,7 +131,7 @@ export class ContractInteractionService {
         success: true,
         result: this.formatContractResult(result),
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error({ err: error }, 'Read contract failed');
       return {
         success: false,
@@ -173,7 +175,7 @@ export class ContractInteractionService {
         success: true,
         result: this.formatContractResult(result),
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error({ err: error }, 'Read contract failed');
       return {
         success: false,
@@ -218,7 +220,7 @@ export class ContractInteractionService {
         result: this.formatContractResult(simulation.result),
         gasUsed: simulation.request.gas,
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error({ err: error }, 'Simulate contract failed');
       return {
         success: false,
@@ -265,7 +267,7 @@ export class ContractInteractionService {
         result: this.formatContractResult(simulation.result),
         gasUsed: simulation.request.gas,
       };
-    } catch (error: any) {
+    } catch (error: unknown) {
       logger.error({ err: error }, 'Simulate contract failed');
       return {
         success: false,
@@ -388,7 +390,7 @@ export class ContractInteractionService {
    */
   validateFunctionArgs(
     contractFunction: ContractFunction,
-    args: any[],
+    args: unknown[],
   ): { valid: boolean; errors: string[] } {
     const errors: string[] = [];
 
@@ -415,7 +417,7 @@ export class ContractInteractionService {
    */
   private validateArgument(
     type: string,
-    value: any,
+    value: unknown,
     _name: string,
   ): { valid: boolean; error?: string } {
     if (value === undefined || value === null || value === '') {
@@ -432,7 +434,7 @@ export class ContractInteractionService {
 
       // 数字类型验证
       if (type.startsWith('uint') || type.startsWith('int')) {
-        const _num = BigInt(value);
+        const _num = BigInt(value as string | number | bigint | boolean);
         // 可以添加更多的范围检查
       }
 
@@ -459,7 +461,7 @@ export class ContractInteractionService {
   /**
    * 格式化合约调用结果
    */
-  private formatContractResult(result: any): any {
+  private formatContractResult(result: unknown): unknown {
     if (typeof result === 'bigint') {
       return result.toString();
     }
@@ -469,7 +471,7 @@ export class ContractInteractionService {
     }
 
     if (typeof result === 'object' && result !== null) {
-      const formatted: any = {};
+      const formatted: Record<string, unknown> = {};
       for (const [key, value] of Object.entries(result)) {
         formatted[key] = this.formatContractResult(value);
       }
@@ -482,13 +484,15 @@ export class ContractInteractionService {
   /**
    * 格式化错误信息
    */
-  private formatError(error: any): string {
-    if (error.message) {
-      return error.message;
-    }
+  private formatError(error: unknown): string {
+    if (typeof error === 'object' && error !== null) {
+      if ('message' in error && typeof error.message === 'string') {
+        return error.message;
+      }
 
-    if (error.shortMessage) {
-      return error.shortMessage;
+      if ('shortMessage' in error && typeof error.shortMessage === 'string') {
+        return error.shortMessage;
+      }
     }
 
     if (typeof error === 'string') {

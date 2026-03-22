@@ -23,7 +23,7 @@ export type ContractFunctionOutput = {
 
 export type ContractCallResult = {
   success: boolean;
-  result?: any;
+  result?: unknown;
   error?: string;
   gasUsed?: bigint;
 };
@@ -32,7 +32,7 @@ export type ContractCallParams = {
   chainId: number;
   contractAddress: string;
   functionName: string;
-  args: any[];
+  args: unknown[];
   value?: bigint;
   from?: string;
 };
@@ -45,10 +45,10 @@ export function parseContractFunctions(abi: string): {
   writeFunctions: ContractFunction[];
 } {
   try {
-    const parsedAbi = JSON.parse(abi);
+    const parsedAbi = JSON.parse(abi) as Abi;
     const functions = parsedAbi.filter(
-      (item: any) => item.type === 'function',
-    ) as ContractFunction[];
+      (item): item is ContractFunction & { type: 'function' } => item.type === 'function',
+    );
 
     const readFunctions = functions.filter(
       func => func.stateMutability === 'view' || func.stateMutability === 'pure',
@@ -104,7 +104,7 @@ export async function readContract(
       success: true,
       result: formatContractResult(result),
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Read contract failed:', error);
     return {
       success: false,
@@ -155,7 +155,7 @@ export async function simulateContract(
       result: formatContractResult(simulation.result),
       gasUsed: simulation.request.gas,
     };
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Simulate contract failed:', error);
     return {
       success: false,
@@ -242,7 +242,7 @@ async function fetchContractSource(
 /**
  * 格式化合约调用结果
  */
-function formatContractResult(result: any): any {
+function formatContractResult(result: unknown): unknown {
   if (typeof result === 'bigint') {
     return result.toString();
   }
@@ -252,7 +252,7 @@ function formatContractResult(result: any): any {
   }
 
   if (typeof result === 'object' && result !== null) {
-    const formatted: any = {};
+    const formatted: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(result)) {
       formatted[key] = formatContractResult(value);
     }
@@ -265,13 +265,15 @@ function formatContractResult(result: any): any {
 /**
  * 格式化错误信息
  */
-function formatError(error: any): string {
-  if (error.message) {
-    return error.message;
-  }
+function formatError(error: unknown): string {
+  if (typeof error === 'object' && error !== null) {
+    if ('message' in error && typeof error.message === 'string') {
+      return error.message;
+    }
 
-  if (error.shortMessage) {
-    return error.shortMessage;
+    if ('shortMessage' in error && typeof error.shortMessage === 'string') {
+      return error.shortMessage;
+    }
   }
 
   if (typeof error === 'string') {
@@ -286,7 +288,7 @@ function formatError(error: any): string {
  */
 export function validateFunctionArgs(
   contractFunction: ContractFunction,
-  args: any[],
+  args: unknown[],
 ): { valid: boolean; errors: string[] } {
   const errors: string[] = [];
 
@@ -313,7 +315,7 @@ export function validateFunctionArgs(
  */
 function validateArgument(
   type: string,
-  value: any,
+  value: unknown,
   _name: string,
 ): { valid: boolean; error?: string } {
   if (value === undefined || value === null || value === '') {
@@ -330,8 +332,10 @@ function validateArgument(
 
     // 数字类型验证
     if (type.startsWith('uint') || type.startsWith('int')) {
-      const _num = BigInt(value);
-      // 可以添加更多的范围检查
+      if (typeof value === 'string' || typeof value === 'number' || typeof value === 'bigint') {
+        const _num = BigInt(value);
+        // 可以添加更多的范围检查
+      }
     }
 
     // 字节类型验证

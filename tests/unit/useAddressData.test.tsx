@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import { useAddressData } from '@/hooks/useAddressData';
-import { getRealTimeAddressData } from '@/utils/realTimeData';
+import { getRealTimeAddressData, getContractCode } from '@/utils/realTimeData';
 
 // Mock dependencies
 vi.mock('@/utils/realTimeData');
@@ -89,7 +89,8 @@ describe('useAddressData', () => {
 
       await waitFor(() => {
         expect(mockFetch).toHaveBeenCalledWith(
-          `/api/chains/${testChainId}/addresses/${testAddress}/persistent`,
+          expect.stringContaining(`/api/chains/${testChainId}/addresses/${testAddress}/persistent`),
+          expect.any(Object),
         );
         expect(getRealTimeAddressData).toHaveBeenCalledWith(testChainId, testAddress);
       });
@@ -104,6 +105,9 @@ describe('useAddressData', () => {
         balanceWei: '1000000000000000000',
         transactionCount: 42,
         latestBlock: 18000000,
+      });
+      vi.mocked(getContractCode).mockImplementation(() => {
+        throw new Error('Contract code fetch failed');
       });
 
       const { result } = renderHook(() => useAddressData(testChainId, testAddress));
@@ -145,6 +149,9 @@ describe('useAddressData', () => {
     it('should handle both data fetch errors', async () => {
       mockFetch.mockRejectedValue(new Error('Persistent error'));
       vi.mocked(getRealTimeAddressData).mockRejectedValue(new Error('Real-time error'));
+      vi.mocked(getContractCode).mockImplementation(() => {
+        throw new Error('Contract code fetch failed');
+      });
 
       const { result } = renderHook(() => useAddressData(testChainId, testAddress));
 
@@ -226,7 +233,8 @@ describe('useAddressData', () => {
 
       await waitFor(() => {
         expect(mockFetch).toHaveBeenCalledWith(
-          `/api/chains/137/addresses/${testAddress}/persistent`,
+          expect.stringContaining(`/api/chains/137/addresses/${testAddress}/persistent`),
+          expect.any(Object),
         );
         expect(getRealTimeAddressData).toHaveBeenCalledWith(137, testAddress);
       });
@@ -265,7 +273,8 @@ describe('useAddressData', () => {
 
       await waitFor(() => {
         expect(mockFetch).toHaveBeenCalledWith(
-          `/api/chains/${testChainId}/addresses/${newAddress}/persistent`,
+          expect.stringContaining(`/api/chains/${testChainId}/addresses/${newAddress}/persistent`),
+          expect.any(Object),
         );
         expect(getRealTimeAddressData).toHaveBeenCalledWith(testChainId, newAddress);
       });

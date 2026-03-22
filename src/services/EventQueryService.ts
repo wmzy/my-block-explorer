@@ -49,7 +49,7 @@ export class EventQueryService {
   /**
    * 查询事件列表
    */
-  async queryEvents(options: EventQueryOptions): Promise<PaginatedResult<any>> {
+  async queryEvents(options: EventQueryOptions): Promise<PaginatedResult<Record<string, unknown>>> {
     const startTime = performance.now();
     const performanceMonitor = multiChainPerformanceManager.getChainMonitor(this.chainId);
 
@@ -199,10 +199,13 @@ export class EventQueryService {
       const queryTime = performance.now() - startTime;
       performanceMonitor.recordQuery('events_by_type', queryTime, true);
 
-      return result.reduce((acc: Record<string, number>, row: any) => {
-        acc[row.event_name] = Number(row.count);
-        return acc;
-      }, {});
+      return (result as Array<{ event_name: string; count: number }>).reduce(
+        (acc: Record<string, number>, row) => {
+          acc[row.event_name] = Number(row.count);
+          return acc;
+        },
+        {},
+      );
     } catch (error) {
       const queryTime = performance.now() - startTime;
       performanceMonitor.recordQuery('events_by_type', queryTime, false);
@@ -245,7 +248,7 @@ export class EventQueryService {
           break;
       }
 
-      const result = await this.chainDb.query(`
+      const result = (await this.chainDb.query(`
         SELECT
           ${intervalSql} as time_range,
           COUNT(*) as count
@@ -254,12 +257,12 @@ export class EventQueryService {
         GROUP BY time_range
         ORDER BY time_range DESC
         LIMIT ${limit}
-      `);
+      `));
 
       const queryTime = performance.now() - startTime;
       performanceMonitor.recordQuery('events_by_time_range', queryTime, true);
 
-      return result.map((row: any) => ({
+      return result.map(row => ({
         timeRange: row.time_range,
         count: Number(row.count),
       }));
@@ -302,7 +305,7 @@ export class EventQueryService {
           break;
       }
 
-      const result = await this.chainDb.query(`
+      const result = (await this.chainDb.query(`
         SELECT
           ${field} as address,
           COUNT(*) as count,
@@ -312,12 +315,12 @@ export class EventQueryService {
         GROUP BY address
         ORDER BY count DESC
         LIMIT ${limit}
-      `);
+      `));
 
       const queryTime = performance.now() - startTime;
       performanceMonitor.recordQuery('top_addresses', queryTime, true);
 
-      return result.map((row: any) => ({
+      return result.map(row => ({
         address: row.address,
         count: Number(row.count),
         percentage: Number(row.percentage),
@@ -343,7 +346,7 @@ export class EventQueryService {
     tableName: string,
     searchTerm: string,
     options: Partial<EventQueryOptions> = {},
-  ): Promise<PaginatedResult<any>> {
+  ): Promise<PaginatedResult<Record<string, unknown>>> {
     const startTime = performance.now();
     const performanceMonitor = multiChainPerformanceManager.getChainMonitor(this.chainId);
 
@@ -404,18 +407,18 @@ export class EventQueryService {
     tableName: string,
     blockHash: string,
     logIndex: number,
-  ): Promise<any | null> {
+  ): Promise<Record<string, unknown> | null> {
     const startTime = performance.now();
     const performanceMonitor = multiChainPerformanceManager.getChainMonitor(this.chainId);
 
     try {
-      const result = await this.chainDb.query(
+      const result = (await this.chainDb.query(
         `
         SELECT * FROM ${tableName}
         WHERE block_hash = ? AND log_index = ?
       `,
         [blockHash, logIndex],
-      );
+      ));
 
       const queryTime = performance.now() - startTime;
       performanceMonitor.recordQuery('event_details', queryTime, true);
@@ -438,12 +441,16 @@ export class EventQueryService {
   /**
    * 获取相似事件
    */
-  async getSimilarEvents(tableName: string, eventName: string, limit: number = 10): Promise<any[]> {
+  async getSimilarEvents(
+    tableName: string,
+    eventName: string,
+    limit: number = 10,
+  ): Promise<Record<string, unknown>[]> {
     const startTime = performance.now();
     const performanceMonitor = multiChainPerformanceManager.getChainMonitor(this.chainId);
 
     try {
-      const result = await this.chainDb.query(
+      const result = (await this.chainDb.query(
         `
         SELECT * FROM ${tableName}
         WHERE event_name = ?
@@ -451,7 +458,7 @@ export class EventQueryService {
         LIMIT ?
       `,
         [eventName, limit],
-      );
+      ));
 
       const queryTime = performance.now() - startTime;
       performanceMonitor.recordQuery('similar_events', queryTime, true);

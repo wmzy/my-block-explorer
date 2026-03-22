@@ -3,7 +3,7 @@
  * 负责解码以太坊事件日志并提供类型安全的解码结果
  */
 
-import { decodeEventLog, Log, Abi, toHex, keccak256 } from 'viem';
+import { decodeEventLog, Log, Abi, toHex, keccak256, AbiEvent } from 'viem';
 import {
   DecodedEvent,
   EventDecodingError,
@@ -203,7 +203,7 @@ export class EventDecodingService {
       }
 
       // 提取ABI项（event、function等）
-      const abiItems: any[] = [];
+      const abiItems: AbiEvent[] = [];
 
       // 匹配event定义
       const eventMatches =
@@ -235,7 +235,7 @@ export class EventDecodingService {
    * @param eventDefStr 事件定义字符串
    * @returns 解析后的事件ABI对象
    */
-  parseEventAbi(eventDefStr: string): any | null {
+  parseEventAbi(eventDefStr: string): AbiEvent | null {
     try {
       // 解析事件名称
       const nameMatch = eventDefStr.match(/event\s+(\w+)/);
@@ -251,7 +251,12 @@ export class EventDecodingService {
       }
 
       const paramsStr = paramsMatch[1];
-      const inputs: any[] = [];
+      const inputs: Array<{
+        name: string;
+        type: string;
+        indexed?: boolean;
+        internalType?: string;
+      }> = [];
 
       // 分割参数并解析
       if (paramsStr.trim()) {
@@ -301,7 +306,7 @@ export class EventDecodingService {
   /**
    * 构建Viem兼容的ABI事件定义
    */
-  private buildAbiEventDefinition(eventParams: EventParameter[]): any {
+  private buildAbiEventDefinition(eventParams: EventParameter[]): AbiEvent {
     return {
       type: 'event',
       name: eventParams[0]?.name || 'Unknown',
@@ -350,7 +355,7 @@ export class EventDecodingService {
   /**
    * 验证参数值
    */
-  private validateParameter(param: EventParameter, value: any): ValidationResult {
+  private validateParameter(param: EventParameter, value: unknown): ValidationResult {
     // 如果有自定义验证器，使用它
     const customValidator = this.validators.get(param.type);
     if (customValidator) {
@@ -373,7 +378,7 @@ export class EventDecodingService {
   /**
    * 根据类型验证值
    */
-  private validateByType(type: string, value: any): ValidationResult {
+  private validateByType(type: string, value: unknown): ValidationResult {
     // 地址类型验证
     if (type === 'address') {
       if (typeof value !== 'string' || !/^0x[a-fA-F0-9]{40}$/.test(value)) {
@@ -385,7 +390,7 @@ export class EventDecodingService {
     // 数字类型验证
     if (type.match(/^(u?)int\d+$/)) {
       try {
-        const num = BigInt(value);
+        const num = BigInt(value as string | number | bigint | boolean);
         return { valid: true, sanitizedValue: num };
       } catch {
         return { valid: false, error: 'Invalid number format' };
@@ -445,7 +450,7 @@ export class EventDecodingService {
   /**
    * 转换参数值
    */
-  private transformParameter(param: EventParameter, value: any): any {
+  private transformParameter(param: EventParameter, value: unknown): unknown {
     // 如果有自定义转换器，使用它
     const customTransformer = this.transformers.get(param.type);
     if (customTransformer) {
@@ -459,15 +464,15 @@ export class EventDecodingService {
   /**
    * 根据类型转换值
    */
-  private transformByType(type: string, value: any): any {
+  private transformByType(type: string, value: unknown): unknown {
     // 大数字转换为字符串存储
     if (type.match(/^(u?)int\d+$/)) {
-      return value.toString();
+      return String(value);
     }
 
     // 地址类型保持原样
     if (type === 'address') {
-      return value.toLowerCase();
+      return typeof value === 'string' ? value.toLowerCase() : String(value).toLowerCase();
     }
 
     // 字节类型保持原样

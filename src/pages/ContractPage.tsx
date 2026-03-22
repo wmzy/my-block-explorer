@@ -3,7 +3,7 @@ import { useParams, useNavigate, useLocation, useSearchParams } from 'react-rout
 import { css } from '@linaria/core';
 import { useControl } from 'react-use-control';
 import { getChainName, isChainSupported } from '@/config/chains';
-import { AbiParameter } from 'viem';
+import { AbiParameter, AbiFunction, AbiEvent, Abi } from 'viem';
 import {
   parseContractFunctions,
   readContract,
@@ -326,23 +326,39 @@ export default function ContractPage() {
   const parseABI = (contract: ContractSource | null): ContractABI | null => {
     if (!contract?.abi) return null;
     try {
-      const abi = JSON.parse(contract.abi);
-      const functions = abi.filter((item: any) => item.type === 'function');
-      const events = abi.filter((item: any) => item.type === 'event');
-      const errors = abi.filter((item: any) => item.type === 'error');
+      const abi = JSON.parse(contract.abi) as Abi;
+      const functions = abi.filter((item): item is AbiFunction => item.type === 'function');
+      const events = abi.filter((item): item is AbiEvent => item.type === 'event');
+      const errors = abi.filter(
+        (item): item is { type: 'error'; name: string; inputs: AbiParameter[] } =>
+          item.type === 'error',
+      );
       return {
         abi: contract.abi,
-        functions: functions.map((f: any) => ({
+        functions: functions.map(f => ({
           name: f.name,
           type: f.type,
-          inputs: f.inputs ?? [],
-          outputs: f.outputs ?? [],
-          signature: `${f.name}(${(f.inputs ?? []).map((input: any) => input.type).join(', ')})`,
+          inputs: (f.inputs ?? []).map(input => ({
+            name: input.name ?? '',
+            type: input.type,
+            internalType: input.internalType,
+          })),
+          outputs: (f.outputs ?? []).map(output => ({
+            name: output.name ?? '',
+            type: output.type,
+            internalType: output.internalType,
+          })),
+          stateMutability: f.stateMutability ?? 'nonpayable',
+          signature: `${f.name}(${(f.inputs ?? []).map(input => input.type).join(', ')})`,
         })),
-        events: events.map((e: any) => ({
+        events: events.map(e => ({
           name: e.name,
-          inputs: e.inputs ?? [],
-          signature: `${e.name}(${(e.inputs ?? []).map((input: any) => input.type).join(', ')})`,
+          inputs: (e.inputs ?? []).map(input => ({
+            name: input.name ?? '',
+            type: input.type,
+            internalType: input.internalType,
+          })),
+          signature: `${e.name}(${(e.inputs ?? []).map(input => input.type).join(', ')})`,
         })),
         errors,
         verificationStatus: contract.verificationStatus,
@@ -888,7 +904,7 @@ function EventsPanel({
 }: {
   chainId: number;
   contractAddress: `0x${string}`;
-  abiEvents: any[];
+  abiEvents: unknown[];
   creationBlock?: number;
   abi?: unknown[];
 }) {
@@ -916,7 +932,7 @@ function EventsPanel({
       <EventTable
         chainId={chainId}
         contractAddress={contractAddress}
-        abiEvents={abiEvents}
+        abiEvents={abiEvents as AbiEvent[]}
         enableDynamicFiltering={true}
         refreshKey={refreshKey}
       />
@@ -938,7 +954,7 @@ function ContractInteract({
   const [readFunctions, setReadFunctions] = useState<ContractFunction[]>([]);
   const [writeFunctions, setWriteFunctions] = useState<ContractFunction[]>([]);
   const [loading, setLoading] = useState(true);
-  const [results, setResults] = useState<Record<string, any>>({});
+  const [results, setResults] = useState<Record<string, unknown>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loadingStates, setLoadingStates] = useState<Record<string, boolean>>({});
 
@@ -973,7 +989,7 @@ function ContractInteract({
     }
   };
 
-  const callReadFunction = async (functionName: string, args: any[]) => {
+  const callReadFunction = async (functionName: string, args: unknown[]) => {
     const key = `${functionName}-${JSON.stringify(args)}`;
 
     try {
@@ -1019,7 +1035,7 @@ function ContractInteract({
 
   const simulateWriteFunction = async (
     functionName: string,
-    args: any[],
+    args: unknown[],
     value?: string,
     from?: string,
   ) => {
@@ -1333,8 +1349,8 @@ function FunctionCallForm({
   type,
 }: {
   func: ContractFunction;
-  onCall: (name: string, args: any[], value?: string, from?: string) => void;
-  results: Record<string, any>;
+  onCall: (name: string, args: unknown[], value?: string, from?: string) => void;
+  results: Record<string, unknown>;
   errors: Record<string, string>;
   loadingStates: Record<string, boolean>;
   type: 'read' | 'write';

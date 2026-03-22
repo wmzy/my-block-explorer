@@ -32,8 +32,8 @@ export interface FormattedDecodedEvent {
   contractAddress: Address;
   eventName: string;
   eventSignature: string;
-  parameters: Record<string, any>;
-  rawParameters: Record<string, any>;
+  parameters: Record<string, unknown>;
+  rawParameters: Record<string, unknown>;
   decodedData: DecodedEventLog;
 }
 
@@ -181,7 +181,7 @@ export class EventDecoderService {
    */
   private async formatDecodedEvent(
     log: Log,
-    decodedLog: any,
+    decodedLog: unknown,
     options: EventDecodingOptions,
   ): Promise<FormattedDecodedEvent> {
     // Validate required log properties
@@ -204,9 +204,10 @@ export class EventDecoderService {
     const blockTimestamp = await this.getBlockTimestamp(log.blockNumber);
 
     // Format parameters
+    const decoded = decodedLog as DecodedEventLog;
     const formattedParameters = this.formatEventParameters(
-      decodedLog.args ?? {},
-      decodedLog.eventName,
+      decoded.args ?? {},
+      decoded.eventName,
       options,
     );
 
@@ -217,11 +218,11 @@ export class EventDecoderService {
       transactionHash: log.transactionHash,
       transactionIndex: log.transactionIndex,
       contractAddress: log.address,
-      eventName: decodedLog.eventName,
-      eventSignature: this.getEventSignature(decodedLog.eventName, decodedLog.args ?? {}),
+      eventName: decoded.eventName,
+      eventSignature: this.getEventSignature(decoded.eventName, decoded.args ?? {}),
       parameters: formattedParameters,
-      rawParameters: decodedLog.args ?? {},
-      decodedData: decodedLog,
+      rawParameters: decoded.args ?? {},
+      decodedData: decoded,
     };
   }
 
@@ -229,7 +230,7 @@ export class EventDecoderService {
    * Format event parameters based on their types
    */
   private formatEventParameters(
-    args: Record<string, any>,
+    args: Record<string, unknown>,
     eventName: string,
     options: EventDecodingOptions,
     formattingOptions: ParameterFormattingOptions = {
@@ -238,8 +239,8 @@ export class EventDecoderService {
       dateFormat: 'iso',
       precision: 6,
     },
-  ): Record<string, any> {
-    const formatted: Record<string, any> = {};
+  ): Record<string, unknown> {
+    const formatted: Record<string, unknown> = {};
 
     for (const [key, value] of Object.entries(args)) {
       try {
@@ -256,7 +257,7 @@ export class EventDecoderService {
   /**
    * Format individual parameter value based on its type
    */
-  private formatParameterValue(value: any, options: ParameterFormattingOptions): any {
+  private formatParameterValue(value: unknown, options: ParameterFormattingOptions): unknown {
     // Handle null/undefined values
     if (value === null || value === undefined) {
       return value;
@@ -290,7 +291,7 @@ export class EventDecoderService {
 
     if (typeof value === 'object') {
       // Handle nested objects
-      const formatted: Record<string, any> = {};
+      const formatted: Record<string, unknown> = {};
       for (const [objKey, objValue] of Object.entries(value)) {
         formatted[objKey] = this.formatParameterValue(objValue, options);
       }
@@ -303,7 +304,7 @@ export class EventDecoderService {
   /**
    * Get event signature string
    */
-  private getEventSignature(eventName: string, args: Record<string, any>): string {
+  private getEventSignature(eventName: string, args: Record<string, unknown>): string {
     const paramTypes = Object.values(args).map(value => {
       if (typeof value === 'bigint') return 'uint256';
       if (typeof value === 'string' && value.startsWith('0x')) {

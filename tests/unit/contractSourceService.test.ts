@@ -1,20 +1,20 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Mock RpcManager
-vi.mock('../../services/RpcManager', () => ({
+const mockGetClient = vi.hoisted(() => vi.fn());
+
+vi.mock('@/services/RpcManager', () => ({
   rpcManager: {
-    getClient: vi.fn(),
+    getClient: mockGetClient,
   },
 }));
 
-// Mock database
-vi.mock('../../database/init', () => ({
+vi.mock('@/database/init', () => ({
   db: {
     query: vi.fn(),
   },
 }));
 
-// Import after mocking
 import { ContractSourceService } from '@/services/ContractSourceService';
 import { rpcManager } from '@/services/RpcManager';
 
@@ -23,18 +23,15 @@ describe('ContractSourceService - Proxy Detection', () => {
   let mockClient: any;
 
   beforeEach(() => {
-    // Reset all mocks
     vi.clearAllMocks();
 
-    // Create mock client
     mockClient = {
       getStorageAt: vi.fn(),
       getBytecode: vi.fn(),
       getCode: vi.fn(),
     };
 
-    // Mock rpcManager.getClient to return our mock client
-    (rpcManager.getClient as any).mockResolvedValue(mockClient);
+    mockGetClient.mockResolvedValue(mockClient);
 
     contractSourceService = new ContractSourceService();
   });

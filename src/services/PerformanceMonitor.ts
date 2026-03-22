@@ -12,7 +12,7 @@ interface PerformanceMetrics {
   errorType?: string;
   cacheHit?: boolean;
   dataSize?: number;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, unknown>;
 }
 
 interface PerformanceStats {

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createPublicClient, formatEther } from 'viem';
 import {
@@ -6,6 +7,7 @@ import {
   getContractCode,
   getBatchBalances,
   isContractAddress,
+  invalidateRpcClients,
 } from '@/utils/realTimeData';
 
 // Mock viem
@@ -18,6 +20,17 @@ vi.mock('viem', () => ({
   arbitrum: { id: 42161, name: 'Arbitrum' },
   optimism: { id: 10, name: 'Optimism' },
 }));
+
+// Mock fetch for rpc configs
+vi.stubGlobal(
+  'fetch',
+  vi.fn(() =>
+    Promise.resolve({
+      ok: true,
+      json: () => Promise.resolve({ configs: [] }),
+    }),
+  ),
+);
 
 describe('realTimeData', () => {
   let mockClient: any;
@@ -32,28 +45,30 @@ describe('realTimeData', () => {
 
     vi.mocked(createPublicClient).mockReturnValue(mockClient);
     vi.mocked(formatEther).mockImplementation(wei => (Number(wei) / 1e18).toString());
+    invalidateRpcClients();
   });
 
   afterEach(() => {
     vi.clearAllMocks();
+    invalidateRpcClients();
   });
 
   describe('createRpcClient', () => {
-    it('should create client for supported chains', () => {
+    it('should create client for supported chains', async () => {
       const supportedChains = [1, 137, 42161, 10, 5000];
 
-      supportedChains.forEach((chainId) => {
-        expect(() => createRpcClient(chainId)).not.toThrow();
+      for (const chainId of supportedChains) {
+        await expect(createRpcClient(chainId)).resolves.not.toThrow();
         expect(createPublicClient).toHaveBeenCalled();
-      });
+      }
     });
 
-    it('should throw error for unsupported chain', () => {
-      expect(() => createRpcClient(99999)).toThrow('Unsupported chain ID: 99999');
+    it('should throw error for unsupported chain', async () => {
+      await expect(createRpcClient(99999)).rejects.toThrow('Unsupported chain ID: 99999');
     });
 
-    it('should create client with correct configuration', () => {
-      createRpcClient(1);
+    it('should create client with correct configuration', async () => {
+      await createRpcClient(1);
 
       expect(createPublicClient).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -62,8 +77,8 @@ describe('realTimeData', () => {
       );
     });
 
-    it('should create client for Mantle with custom config', () => {
-      createRpcClient(5000);
+    it('should create client for Mantle with custom config', async () => {
+      await createRpcClient(5000);
 
       expect(createPublicClient).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -129,8 +144,9 @@ describe('realTimeData', () => {
     it('should handle RPC errors', async () => {
       mockClient.getBalance.mockRejectedValue(new Error('RPC connection failed'));
 
-      await expect(getRealTimeAddressData(testChainId, testAddress))
-        .rejects.toThrow('RPC connection failed');
+      await expect(getRealTimeAddressData(testChainId, testAddress)).rejects.toThrow(
+        'RPC connection failed',
+      );
     });
 
     it('should make parallel RPC calls', async () => {
@@ -173,8 +189,7 @@ describe('realTimeData', () => {
     it('should handle RPC errors', async () => {
       mockClient.getCode.mockRejectedValue(new Error('Contract not found'));
 
-      await expect(getContractCode(testChainId, testAddress))
-        .rejects.toThrow('Contract not found');
+      await expect(getContractCode(testChainId, testAddress)).rejects.toThrow('Contract not found');
     });
   });
 
@@ -269,21 +284,21 @@ describe('realTimeData', () => {
     it('should handle RPC errors', async () => {
       mockClient.getCode.mockRejectedValue(new Error('RPC failed'));
 
-      await expect(isContractAddress(testChainId, testAddress))
-        .rejects.toThrow('RPC failed');
+      await expect(isContractAddress(testChainId, testAddress)).rejects.toThrow('RPC failed');
     });
   });
 
   describe('error handling', () => {
-    it('should propagate RPC client creation errors', () => {
-      expect(() => createRpcClient(99999)).toThrow();
+    it('should propagate RPC client creation errors', async () => {
+      await expect(createRpcClient(99999)).rejects.toThrow();
     });
 
     it('should handle network timeout errors', async () => {
       mockClient.getBalance.mockRejectedValue(new Error('Network timeout'));
 
-      await expect(getRealTimeAddressData(1, '0x1234567890123456789012345678901234567890'))
-        .rejects.toThrow('Network timeout');
+      await expect(
+        getRealTimeAddressData(1, '0x1234567890123456789012345678901234567890'),
+      ).rejects.toThrow('Network timeout');
     });
 
     it('should handle invalid response format gracefully', async () => {

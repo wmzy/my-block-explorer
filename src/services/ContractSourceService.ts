@@ -9,6 +9,32 @@ import { addressEquals, formatAddress } from '../utils/address';
 import type { Address } from 'viem';
 import { analyzeRpcError, shouldRetryRpcError } from '../utils/rpcErrorHandler';
 
+type CallTracerCall = {
+  type: string;
+  to?: string;
+  calls?: CallTracerCall[];
+};
+
+type AbiFunction = {
+  type: 'function';
+  name: string;
+  inputs: Array<{ type: string; name?: string }>;
+  outputs: Array<{ type: string; name?: string }>;
+  stateMutability?: 'pure' | 'view' | 'nonpayable' | 'payable';
+};
+
+type AbiEvent = {
+  type: 'event';
+  name: string;
+  inputs: Array<{ type: string; name?: string; indexed?: boolean }>;
+};
+
+type AbiError = {
+  type: 'error';
+  name: string;
+  inputs: Array<{ type: string; name?: string }>;
+};
+
 export type ProxyType =
   | 'transparent'
   | 'uups'
@@ -606,7 +632,7 @@ export class ContractSourceService {
               });
 
               // 递归检查trace中的所有调用，查找合约创建
-              const findContractCreation = (call: any): boolean => {
+              const findContractCreation = (call: CallTracerCall): boolean => {
                 // 检查当前调用是否创建了目标合约
                 if (call.type === 'CREATE' || call.type === 'CREATE2') {
                   if (addressEquals(call.to ?? '', contractAddress)) {
@@ -1425,26 +1451,26 @@ export class ContractSourceService {
         return { functions: [], events: [], errors: [] };
       }
 
-      const abi = JSON.parse(contractSource.abi);
+      const abi = JSON.parse(contractSource.abi) as Array<AbiFunction | AbiEvent | AbiError>;
 
-      const functions = abi.filter((item: any) => item.type === 'function');
-      const events = abi.filter((item: any) => item.type === 'event');
-      const errors = abi.filter((item: any) => item.type === 'error');
+      const functions = abi.filter((item): item is AbiFunction => item.type === 'function');
+      const events = abi.filter((item): item is AbiEvent => item.type === 'event');
+      const errors = abi.filter((item): item is AbiError => item.type === 'error');
 
       return {
-        functions: functions.map((f: any) => ({
+        functions: functions.map(f => ({
           name: f.name,
           type: f.stateMutability ?? 'nonpayable',
           inputs: f.inputs ?? [],
           outputs: f.outputs ?? [],
           signature: this.generateFunctionSignature(f),
         })),
-        events: events.map((e: any) => ({
+        events: events.map(e => ({
           name: e.name,
           inputs: e.inputs ?? [],
           signature: this.generateEventSignature(e),
         })),
-        errors: errors.map((e: any) => ({
+        errors: errors.map(e => ({
           name: e.name,
           inputs: e.inputs ?? [],
         })),
@@ -1456,14 +1482,14 @@ export class ContractSourceService {
   }
 
   // 生成函数签名
-  private generateFunctionSignature(func: any): string {
-    const inputs = func.inputs?.map((input: any) => input.type).join(', ') ?? '';
+  private generateFunctionSignature(func: AbiFunction): string {
+    const inputs = func.inputs?.map(input => input.type).join(', ') ?? '';
     return `${func.name}(${inputs})`;
   }
 
   // 生成事件签名
-  private generateEventSignature(event: any): string {
-    const inputs = event.inputs?.map((input: any) => input.type).join(', ') ?? '';
+  private generateEventSignature(event: AbiEvent): string {
+    const inputs = event.inputs?.map(input => input.type).join(', ') ?? '';
     return `${event.name}(${inputs})`;
   }
 
@@ -1486,7 +1512,7 @@ export class ContractSourceService {
         partial: 0,
       };
 
-      rows.forEach((row: any) => {
+      rows.forEach((row: { isVerified: boolean | null; count: unknown }) => {
         stats.total += Number(row.count);
         if (row.isVerified) {
           stats.verified = Number(row.count);

@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -15,8 +16,7 @@ vi.mock('../../../components/TopNavigation', () => ({
 
 vi.mock('../../../config/chains', () => ({
   getChainInfo: (chainId: number) => {
-    if (chainId === 1)
-      return { id: 1, name: 'Ethereum', nativeCurrency: { symbol: 'ETH' } };
+    if (chainId === 1) return { id: 1, name: 'Ethereum', nativeCurrency: { symbol: 'ETH' } };
     return null;
   },
   getChainName: (chainId: number) => (chainId === 1 ? 'Ethereum' : 'Unknown'),
@@ -72,10 +72,7 @@ const renderPage = (path = `/chain/1/address/${testAddress}`) =>
   render(
     <MemoryRouter initialEntries={[path]}>
       <Routes>
-        <Route
-          path="/chain/:chainId/address/:address"
-          element={<AddressPage />}
-        />
+        <Route path="/chain/:chainId/address/:address" element={<AddressPage />} />
       </Routes>
     </MemoryRouter>,
   );
@@ -145,10 +142,7 @@ describe('AddressPage', () => {
     render(
       <MemoryRouter initialEntries={[`/chain/999/address/${testAddress}`]}>
         <Routes>
-          <Route
-            path="/chain/:chainId/address/:address"
-            element={<AddressPage />}
-          />
+          <Route path="/chain/:chainId/address/:address" element={<AddressPage />} />
         </Routes>
       </MemoryRouter>,
     );

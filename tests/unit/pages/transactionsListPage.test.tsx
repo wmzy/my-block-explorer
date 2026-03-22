@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
@@ -15,8 +16,7 @@ vi.mock('../../../components/TopNavigation', () => ({
 
 vi.mock('../../../config/chains', () => ({
   getChainInfo: (chainId: number) => {
-    if (chainId === 1)
-      return { id: 1, name: 'Ethereum', nativeCurrency: { symbol: 'ETH' } };
+    if (chainId === 1) return { id: 1, name: 'Ethereum', nativeCurrency: { symbol: 'ETH' } };
     return null;
   },
   getChainName: (chainId: number) => (chainId === 1 ? 'Ethereum' : 'Unknown'),
@@ -53,10 +53,7 @@ const renderPage = (path = '/chain/1/transactions') =>
   render(
     <MemoryRouter initialEntries={[path]}>
       <Routes>
-        <Route
-          path="/chain/:chainId/transactions"
-          element={<TransactionsListPage />}
-        />
+        <Route path="/chain/:chainId/transactions" element={<TransactionsListPage />} />
       </Routes>
     </MemoryRouter>,
   );
@@ -117,9 +114,7 @@ describe('TransactionsListPage', () => {
     renderPage();
 
     await waitFor(() => {
-      expect(
-        screen.getByText(/HTTP 500: Internal Server Error/),
-      ).toBeInTheDocument();
+      expect(screen.getByText(/HTTP 500: Internal Server Error/)).toBeInTheDocument();
     });
   });
 
@@ -127,10 +122,7 @@ describe('TransactionsListPage', () => {
     render(
       <MemoryRouter initialEntries={['/chain/999/transactions']}>
         <Routes>
-          <Route
-            path="/chain/:chainId/transactions"
-            element={<TransactionsListPage />}
-          />
+          <Route path="/chain/:chainId/transactions" element={<TransactionsListPage />} />
         </Routes>
       </MemoryRouter>,
     );

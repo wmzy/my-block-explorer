@@ -19,7 +19,7 @@ export interface ValidationResult {
   valid: boolean;
   errors: ValidationError[];
   warnings: ValidationWarning[];
-  sanitizedData?: any;
+  sanitizedData?: unknown;
 }
 
 /**
@@ -29,7 +29,7 @@ export interface ValidationError {
   field: string;
   code: string;
   message: string;
-  value?: any;
+  value?: unknown;
   severity: 'error' | 'warning';
 }
 
@@ -99,7 +99,7 @@ export class EventValidationService {
       errors.push(...addressValidation.errors);
       warnings.push(...addressValidation.warnings);
       if (addressValidation.sanitizedData) {
-        sanitizedFilters.contractAddress = addressValidation.sanitizedData;
+        sanitizedFilters.contractAddress = addressValidation.sanitizedData as Address;
       }
     }
 
@@ -109,7 +109,7 @@ export class EventValidationService {
       errors.push(...blockValidation.errors);
       warnings.push(...blockValidation.warnings);
       if (blockValidation.sanitizedData) {
-        sanitizedFilters.fromBlock = blockValidation.sanitizedData;
+        sanitizedFilters.fromBlock = blockValidation.sanitizedData as bigint;
       }
     }
 
@@ -118,7 +118,7 @@ export class EventValidationService {
       errors.push(...blockValidation.errors);
       warnings.push(...blockValidation.warnings);
       if (blockValidation.sanitizedData) {
-        sanitizedFilters.toBlock = blockValidation.sanitizedData;
+        sanitizedFilters.toBlock = blockValidation.sanitizedData as bigint;
       }
     }
 
@@ -135,7 +135,7 @@ export class EventValidationService {
       errors.push(...timestampValidation.errors);
       warnings.push(...timestampValidation.warnings);
       if (timestampValidation.sanitizedData) {
-        sanitizedFilters.fromTimestamp = timestampValidation.sanitizedData;
+        sanitizedFilters.fromTimestamp = timestampValidation.sanitizedData as number;
       }
     }
 
@@ -144,7 +144,7 @@ export class EventValidationService {
       errors.push(...timestampValidation.errors);
       warnings.push(...timestampValidation.warnings);
       if (timestampValidation.sanitizedData) {
-        sanitizedFilters.toTimestamp = timestampValidation.sanitizedData;
+        sanitizedFilters.toTimestamp = timestampValidation.sanitizedData as number;
       }
     }
 
@@ -154,7 +154,7 @@ export class EventValidationService {
       errors.push(...topicsValidation.errors);
       warnings.push(...topicsValidation.warnings);
       if (topicsValidation.sanitizedData) {
-        sanitizedFilters.topics = topicsValidation.sanitizedData;
+        sanitizedFilters.topics = topicsValidation.sanitizedData as (`0x${string}` | null)[];
       }
     }
 
@@ -208,7 +208,7 @@ export class EventValidationService {
       errors.push(...limitValidation.errors);
       warnings.push(...limitValidation.warnings);
       if (limitValidation.sanitizedData) {
-        sanitizedParams.limit = limitValidation.sanitizedData;
+        sanitizedParams.limit = limitValidation.sanitizedData as number;
       }
     }
 
@@ -218,7 +218,7 @@ export class EventValidationService {
       errors.push(...offsetValidation.errors);
       warnings.push(...offsetValidation.warnings);
       if (offsetValidation.sanitizedData) {
-        sanitizedParams.offset = offsetValidation.sanitizedData;
+        sanitizedParams.offset = offsetValidation.sanitizedData as number;
       }
     }
 
@@ -228,7 +228,7 @@ export class EventValidationService {
       errors.push(...cursorValidation.errors);
       warnings.push(...cursorValidation.warnings);
       if (cursorValidation.sanitizedData) {
-        sanitizedParams.cursor = cursorValidation.sanitizedData;
+        sanitizedParams.cursor = cursorValidation.sanitizedData as string;
       }
     }
 
@@ -237,9 +237,6 @@ export class EventValidationService {
       const directionValidation = this.validateDirection(params.direction);
       errors.push(...directionValidation.errors);
       warnings.push(...directionValidation.warnings);
-      if (directionValidation.sanitizedData) {
-        sanitizedParams.direction = directionValidation.sanitizedData;
-      }
     }
 
     const result: ValidationResult = {
@@ -257,9 +254,10 @@ export class EventValidationService {
   /**
    * Validate decoded event
    */
-  validateDecodedEvent(event: any, options: EventValidationOptions = {}): ValidationResult {
+  validateDecodedEvent(event: unknown, options: EventValidationOptions = {}): ValidationResult {
     const errors: ValidationError[] = [];
     const warnings: ValidationWarning[] = [];
+    const eventRecord = event as Record<string, unknown>;
 
     // Check required fields
     const requiredFields = [
@@ -271,7 +269,7 @@ export class EventValidationService {
       'logIndex',
     ];
     for (const field of requiredFields) {
-      if (!event[field]) {
+      if (!eventRecord[field]) {
         errors.push({
           field,
           code: 'MISSING_REQUIRED_FIELD',
@@ -282,71 +280,77 @@ export class EventValidationService {
     }
 
     // Validate chain ID
-    if (event.chainId !== undefined) {
-      const chainIdValidation = this.validateChainId(event.chainId);
+    if (eventRecord.chainId !== undefined) {
+      const chainIdValidation = this.validateChainId(eventRecord.chainId);
       errors.push(...chainIdValidation.errors);
       warnings.push(...chainIdValidation.warnings);
     }
 
     // Validate contract address
-    if (event.contractAddress) {
-      const addressValidation = this.validateAddress(event.contractAddress, 'contractAddress');
+    if (eventRecord.contractAddress) {
+      const addressValidation = this.validateAddress(
+        eventRecord.contractAddress,
+        'contractAddress',
+      );
       errors.push(...addressValidation.errors);
       warnings.push(...addressValidation.warnings);
     }
 
     // Validate transaction hash
-    if (event.txHash) {
-      const hashValidation = this.validateHash(event.txHash, 'txHash', 32);
+    if (eventRecord.txHash) {
+      const hashValidation = this.validateHash(eventRecord.txHash, 'txHash', 32);
       errors.push(...hashValidation.errors);
       warnings.push(...hashValidation.warnings);
     }
 
     // Validate block hash
-    if (event.blockHash) {
-      const hashValidation = this.validateHash(event.blockHash, 'blockHash', 32);
+    if (eventRecord.blockHash) {
+      const hashValidation = this.validateHash(eventRecord.blockHash, 'blockHash', 32);
       errors.push(...hashValidation.errors);
       warnings.push(...hashValidation.warnings);
     }
 
     // Validate block number
-    if (event.blockNumber !== undefined) {
-      const blockValidation = this.validateBlockNumber(event.blockNumber, 'blockNumber');
+    if (eventRecord.blockNumber !== undefined) {
+      const blockValidation = this.validateBlockNumber(eventRecord.blockNumber, 'blockNumber');
       errors.push(...blockValidation.errors);
       warnings.push(...blockValidation.warnings);
     }
 
     // Validate log index
-    if (event.logIndex !== undefined) {
-      const indexValidation = this.validateLogIndex(event.logIndex);
+    if (eventRecord.logIndex !== undefined) {
+      const indexValidation = this.validateLogIndex(eventRecord.logIndex);
       errors.push(...indexValidation.errors);
       warnings.push(...indexValidation.warnings);
     }
 
     // Validate event name
-    if (event.eventName) {
-      const nameValidation = this.validateEventName(event.eventName);
+    if (eventRecord.eventName) {
+      const nameValidation = this.validateEventName(eventRecord.eventName);
       errors.push(...nameValidation.errors);
       warnings.push(...nameValidation.warnings);
     }
 
     // Validate event signature
-    if (event.eventSignature) {
-      const signatureValidation = this.validateEventSignature(event.eventSignature);
+    if (eventRecord.eventSignature) {
+      const signatureValidation = this.validateEventSignature(eventRecord.eventSignature);
       errors.push(...signatureValidation.errors);
       warnings.push(...signatureValidation.warnings);
     }
 
     // Validate event arguments
-    if (event.args && typeof event.args === 'object') {
-      const argsValidation = this.validateEventArguments(event.args, event.eventName);
+    if (eventRecord.args && typeof eventRecord.args === 'object') {
+      const argsValidation = this.validateEventArguments(
+        eventRecord.args,
+        eventRecord.eventName as string | undefined,
+      );
       errors.push(...argsValidation.errors);
       warnings.push(...argsValidation.warnings);
     }
 
     // Validate indexed at timestamp
-    if (event.indexedAt) {
-      const timestampValidation = this.validateTimestamp(event.indexedAt, 'indexedAt');
+    if (eventRecord.indexedAt) {
+      const timestampValidation = this.validateTimestamp(eventRecord.indexedAt, 'indexedAt');
       errors.push(...timestampValidation.errors);
       warnings.push(...timestampValidation.warnings);
     }
@@ -367,7 +371,7 @@ export class EventValidationService {
    */
   validateEventParameters(
     parameters: DecodedEventParameter[],
-    eventAbi?: any,
+    eventAbi?: unknown,
     options: EventValidationOptions = {},
   ): ValidationResult {
     const errors: ValidationError[] = [];
@@ -439,7 +443,7 @@ export class EventValidationService {
   /**
    * Validate address
    */
-  private validateAddress(address: any, fieldName: string): ValidationResult {
+  private validateAddress(address: unknown, fieldName: string): ValidationResult {
     const errors: ValidationError[] = [];
     const warnings: ValidationWarning[] = [];
     let sanitizedAddress = address;
@@ -490,7 +494,7 @@ export class EventValidationService {
   /**
    * Validate block number
    */
-  private validateBlockNumber(blockNumber: any, fieldName: string): ValidationResult {
+  private validateBlockNumber(blockNumber: unknown, fieldName: string): ValidationResult {
     const errors: ValidationError[] = [];
     const warnings: ValidationWarning[] = [];
     let sanitizedBlockNumber = blockNumber;
@@ -561,13 +565,14 @@ export class EventValidationService {
   /**
    * Validate block range
    */
-  private validateBlockRange(fromBlock: any, toBlock: any): ValidationResult {
+  private validateBlockRange(fromBlock: unknown, toBlock: unknown): ValidationResult {
     const errors: ValidationError[] = [];
     const warnings: ValidationWarning[] = [];
 
     // Convert to numbers for comparison
-    const from = typeof fromBlock === 'bigint' ? fromBlock : BigInt(fromBlock);
-    const to = typeof toBlock === 'bigint' ? toBlock : BigInt(toBlock);
+    const from =
+      typeof fromBlock === 'bigint' ? fromBlock : BigInt(fromBlock as string | number | boolean);
+    const to = typeof toBlock === 'bigint' ? toBlock : BigInt(toBlock as string | number | boolean);
 
     if (from > to) {
       errors.push({
@@ -596,7 +601,7 @@ export class EventValidationService {
   /**
    * Validate timestamp
    */
-  private validateTimestamp(timestamp: any, fieldName: string): ValidationResult {
+  private validateTimestamp(timestamp: unknown, fieldName: string): ValidationResult {
     const errors: ValidationError[] = [];
     const warnings: ValidationWarning[] = [];
     let sanitizedTimestamp = timestamp;
@@ -673,7 +678,7 @@ export class EventValidationService {
   /**
    * Validate topics array
    */
-  private validateTopics(topics: any): ValidationResult {
+  private validateTopics(topics: unknown): ValidationResult {
     const errors: ValidationError[] = [];
     const warnings: ValidationWarning[] = [];
     const _sanitizedTopics = topics;
@@ -739,7 +744,7 @@ export class EventValidationService {
   /**
    * Validate dynamic parameter
    */
-  private validateDynamicParameter(name: string, value: any): ValidationResult {
+  private validateDynamicParameter(name: string, value: unknown): ValidationResult {
     const errors: ValidationError[] = [];
     const warnings: ValidationWarning[] = [];
 
@@ -780,7 +785,7 @@ export class EventValidationService {
   /**
    * Validate limit parameter
    */
-  private validateLimit(limit: any): ValidationResult {
+  private validateLimit(limit: unknown): ValidationResult {
     const errors: ValidationError[] = [];
     const warnings: ValidationWarning[] = [];
     let sanitizedLimit = limit;
@@ -823,7 +828,7 @@ export class EventValidationService {
   /**
    * Validate offset parameter
    */
-  private validateOffset(offset: any): ValidationResult {
+  private validateOffset(offset: unknown): ValidationResult {
     const errors: ValidationError[] = [];
     const warnings: ValidationWarning[] = [];
 
@@ -858,7 +863,7 @@ export class EventValidationService {
   /**
    * Validate cursor parameter
    */
-  private validateCursor(cursor: any): ValidationResult {
+  private validateCursor(cursor: unknown): ValidationResult {
     const errors: ValidationError[] = [];
     const warnings: ValidationWarning[] = [];
 
@@ -891,7 +896,7 @@ export class EventValidationService {
   /**
    * Validate direction parameter
    */
-  private validateDirection(direction: any): ValidationResult {
+  private validateDirection(direction: unknown): ValidationResult {
     const errors: ValidationError[] = [];
 
     if (direction !== 'asc' && direction !== 'desc') {
@@ -910,7 +915,7 @@ export class EventValidationService {
   /**
    * Validate chain ID
    */
-  private validateChainId(chainId: any): ValidationResult {
+  private validateChainId(chainId: unknown): ValidationResult {
     const errors: ValidationError[] = [];
 
     if (typeof chainId !== 'number' || !Number.isInteger(chainId)) {
@@ -937,7 +942,7 @@ export class EventValidationService {
   /**
    * Validate hash
    */
-  private validateHash(hash: any, fieldName: string, expectedLength: number): ValidationResult {
+  private validateHash(hash: unknown, fieldName: string, expectedLength: number): ValidationResult {
     const errors: ValidationError[] = [];
 
     if (typeof hash !== 'string') {
@@ -973,7 +978,7 @@ export class EventValidationService {
   /**
    * Validate log index
    */
-  private validateLogIndex(logIndex: any): ValidationResult {
+  private validateLogIndex(logIndex: unknown): ValidationResult {
     const errors: ValidationError[] = [];
 
     if (typeof logIndex !== 'number' || !Number.isInteger(logIndex)) {
@@ -1000,7 +1005,7 @@ export class EventValidationService {
   /**
    * Validate event name
    */
-  private validateEventName(eventName: any): ValidationResult {
+  private validateEventName(eventName: unknown): ValidationResult {
     const errors: ValidationError[] = [];
     const warnings: ValidationWarning[] = [];
 
@@ -1026,7 +1031,7 @@ export class EventValidationService {
   /**
    * Validate event signature
    */
-  private validateEventSignature(signature: any): ValidationResult {
+  private validateEventSignature(signature: unknown): ValidationResult {
     const errors: ValidationError[] = [];
 
     if (typeof signature !== 'string') {
@@ -1053,7 +1058,7 @@ export class EventValidationService {
   /**
    * Validate event arguments
    */
-  private validateEventArguments(args: any, eventName?: string): ValidationResult {
+  private validateEventArguments(args: unknown, eventName?: string): ValidationResult {
     const errors: ValidationError[] = [];
     const warnings: ValidationWarning[] = [];
 

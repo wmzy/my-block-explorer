@@ -9,7 +9,7 @@ export interface FormField {
   required?: boolean;
   indexed?: boolean;
   placeholder?: string;
-  options?: Array<{ value: any; label: string }>;
+  options?: Array<{ value: unknown; label: string }>;
   validation?: ValidationRule[];
   pattern?: RegExp;
   maxLength?: number;
@@ -35,6 +35,7 @@ export interface ValidationRule {
   itemType?: string;
 }
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
 export interface FormData {
   [key: string]: any;
 }
