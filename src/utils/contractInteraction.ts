@@ -35,6 +35,7 @@ export type ContractCallParams = {
   args: unknown[];
   value?: bigint;
   from?: string;
+  blockNumber?: bigint;
 };
 
 /**
@@ -97,6 +98,7 @@ export async function readContract(
         abi,
         functionName: params.functionName,
         args: params.args,
+        blockNumber: params.blockNumber,
       });
     });
 

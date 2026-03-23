@@ -16,6 +16,9 @@ import RpcConfig from '../components/RpcConfig';
 import EventTable from '../components/events/EventTable';
 import EventStatistics from '../components/events/EventStatistics';
 import IndexingRangeManager from '../components/events/IndexingRangeManager';
+import { Collapsible } from '@/components/ui/Collapsible';
+import { getFunctionSelector, formatSelectorForDisplay } from '@/utils/functionSelector';
+import { formatResultWithLinks } from '@/utils/addressTypeDetection';
 
 type ProxyType =
   | 'transparent'
@@ -550,18 +553,18 @@ export default function ContractPage() {
                         >
                           {(
                             {
-                              'transparent': 'EIP-1967 Transparent',
-                              'uups': 'UUPS',
-                              'beacon': 'Beacon',
-                              'minimal': 'Minimal',
-                              'zeppelinos': 'ZeppelinOS',
+                              transparent: 'EIP-1967 Transparent',
+                              uups: 'UUPS',
+                              beacon: 'Beacon',
+                              minimal: 'Minimal',
+                              zeppelinos: 'ZeppelinOS',
                               'gnosis-safe': 'Gnosis Safe',
-                              'diamond': 'Diamond (EIP-2535)',
-                              'eip1167': 'EIP-1167 Clone',
-                              'unknown': 'Unknown',
+                              diamond: 'Diamond (EIP-2535)',
+                              eip1167: 'EIP-1167 Clone',
+                              unknown: 'Unknown',
                             } as Record<string, string>
                           )[contractSource.proxyType ?? 'unknown'] ??
-                          contractSource.proxyType?.toUpperCase()}{' '}
+                            contractSource.proxyType?.toUpperCase()}{' '}
                           Proxy
                         </span>
                       </span>
@@ -574,9 +577,11 @@ export default function ContractPage() {
                             href={`/chain/${currentChainId}/contract/${contractSource.implementationAddress}`}
                             style={{ color: '#007bff', textDecoration: 'none' }}
                             onMouseOver={e =>
-                              ((e.target as HTMLElement).style.textDecoration = 'underline')}
+                              ((e.target as HTMLElement).style.textDecoration = 'underline')
+                            }
                             onMouseOut={e =>
-                              ((e.target as HTMLElement).style.textDecoration = 'none')}
+                              ((e.target as HTMLElement).style.textDecoration = 'none')
+                            }
                           >
                             {contractSource.implementationContract?.name
                               ? `${contractSource.implementationContract.name} (${contractSource.implementationAddress})`
@@ -598,9 +603,11 @@ export default function ContractPage() {
                           href={`/chain/${currentChainId}/tx/${creationInfo.txHash}`}
                           style={{ color: '#007bff', textDecoration: 'none' }}
                           onMouseOver={e =>
-                            ((e.target as HTMLElement).style.textDecoration = 'underline')}
+                            ((e.target as HTMLElement).style.textDecoration = 'underline')
+                          }
                           onMouseOut={e =>
-                            ((e.target as HTMLElement).style.textDecoration = 'none')}
+                            ((e.target as HTMLElement).style.textDecoration = 'none')
+                          }
                         >
                           {creationInfo.txHash}
                         </a>
@@ -613,9 +620,11 @@ export default function ContractPage() {
                           href={`/chain/${currentChainId}/block/${creationInfo.blockNumber}`}
                           style={{ color: '#007bff', textDecoration: 'none' }}
                           onMouseOver={e =>
-                            ((e.target as HTMLElement).style.textDecoration = 'underline')}
+                            ((e.target as HTMLElement).style.textDecoration = 'underline')
+                          }
                           onMouseOut={e =>
-                            ((e.target as HTMLElement).style.textDecoration = 'none')}
+                            ((e.target as HTMLElement).style.textDecoration = 'none')
+                          }
                         >
                           #{creationInfo.blockNumber}
                         </a>
@@ -628,9 +637,11 @@ export default function ContractPage() {
                           href={`/chain/${currentChainId}/address/${creationInfo.creator}`}
                           style={{ color: '#007bff', textDecoration: 'none' }}
                           onMouseOver={e =>
-                            ((e.target as HTMLElement).style.textDecoration = 'underline')}
+                            ((e.target as HTMLElement).style.textDecoration = 'underline')
+                          }
                           onMouseOut={e =>
-                            ((e.target as HTMLElement).style.textDecoration = 'none')}
+                            ((e.target as HTMLElement).style.textDecoration = 'none')
+                          }
                         >
                           {creationInfo.creator}
                         </a>
@@ -752,13 +763,13 @@ export default function ContractPage() {
                   )}
                   {effectiveABI &&
                     (effectiveABI.functions.length > 0 || effectiveABI.events.length > 0) && (
-                    <button
-                      className={`tab ${activeTab === 'interact' ? 'active' : ''}`}
-                      onClick={() => setActiveTab('interact')}
-                    >
-                      Interact
-                    </button>
-                  )}
+                      <button
+                        className={`tab ${activeTab === 'interact' ? 'active' : ''}`}
+                        onClick={() => setActiveTab('interact')}
+                      >
+                        Interact
+                      </button>
+                    )}
                 </>
               )}
             </div>
@@ -989,7 +1000,13 @@ function ContractInteract({
     }
   };
 
-  const callReadFunction = async (functionName: string, args: unknown[]) => {
+  const callReadFunction = async (
+    functionName: string,
+    args: unknown[],
+    _value?: string,
+    _from?: string,
+    blockNumber?: bigint,
+  ) => {
     const key = `${functionName}-${JSON.stringify(args)}`;
 
     try {
@@ -1015,6 +1032,7 @@ function ContractInteract({
         functionName,
         args,
         abi: targetABI,
+        blockNumber,
       });
 
       if (result.success) {
@@ -1166,6 +1184,7 @@ function ContractInteract({
                 errors={errors}
                 loadingStates={loadingStates}
                 type="read"
+                chainId={chainId}
               />
             ))}
           </div>
@@ -1190,6 +1209,7 @@ function ContractInteract({
                 errors={errors}
                 loadingStates={loadingStates}
                 type="write"
+                chainId={chainId}
               />
             ))}
           </div>
@@ -1339,6 +1359,15 @@ const functionErrorContentStyles = css`
   color: #b71c1c;
 `;
 
+const selectorStyles = css`
+  font-family: monospace;
+  font-size: 11px;
+  padding: 2px 6px;
+  background: #e8f0fe;
+  border-radius: 4px;
+  color: #1a73e8;
+`;
+
 // 函数调用表单组件
 function FunctionCallForm({
   func,
@@ -1347,17 +1376,29 @@ function FunctionCallForm({
   errors,
   loadingStates,
   type,
+  chainId,
 }: {
   func: ContractFunction;
-  onCall: (name: string, args: unknown[], value?: string, from?: string) => void;
+  onCall: (
+    name: string,
+    args: unknown[],
+    value?: string,
+    from?: string,
+    blockNumber?: bigint,
+  ) => void;
   results: Record<string, unknown>;
   errors: Record<string, string>;
   loadingStates: Record<string, boolean>;
   type: 'read' | 'write';
+  chainId: number;
 }) {
   const [args, setArgs] = useState<string[]>(func.inputs.map(() => ''));
   const [value, setValue] = useState('');
   const [from, setFrom] = useState('');
+  const [blockNumber, setBlockNumber] = useState('');
+
+  const selector = getFunctionSelector(func);
+  const selectorDisplay = formatSelectorForDisplay(selector);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1380,7 +1421,8 @@ function FunctionCallForm({
     });
 
     if (type === 'read') {
-      onCall(func.name, processedArgs);
+      const bn = blockNumber ? BigInt(blockNumber) : undefined;
+      onCall(func.name, processedArgs, undefined, undefined, bn);
     } else {
       onCall(func.name, processedArgs, value || undefined, from || undefined);
     }
@@ -1399,13 +1441,19 @@ function FunctionCallForm({
   const error = errors[resultKey];
   const isLoading = loadingStates[resultKey];
 
-  return (
-    <div className={functionFormStyles}>
-      <div className={type === 'read' ? functionNameReadStyles : functionNameWriteStyles}>
-        {func.name}
-        <span className={mutabilityStyles}>{func.stateMutability}</span>
-      </div>
+  const headerTitle = (
+    <span className={type === 'read' ? functionNameReadStyles : functionNameWriteStyles}>
+      {func.name}
+      <span className={mutabilityStyles}>{func.stateMutability}</span>
+    </span>
+  );
 
+  const badge = selectorDisplay ? (
+    <span className={selectorStyles}>{selectorDisplay}</span>
+  ) : undefined;
+
+  return (
+    <Collapsible title={headerTitle} defaultExpanded={false} badge={badge}>
       <form onSubmit={handleSubmit}>
         {/* Function Arguments */}
         {func.inputs.map((input, index) => (
@@ -1426,6 +1474,20 @@ function FunctionCallForm({
             />
           </div>
         ))}
+
+        {/* Read function blockNumber field */}
+        {type === 'read' && (
+          <div className={inputGroupStyles}>
+            <label className={labelStyles}>Block Number (optional, latest if empty)</label>
+            <input
+              type="text"
+              value={blockNumber}
+              onChange={e => setBlockNumber(e.target.value)}
+              placeholder="Latest"
+              className={inputStyles}
+            />
+          </div>
+        )}
 
         {/* Write function additional fields */}
         {type === 'write' && (
@@ -1468,9 +1530,14 @@ function FunctionCallForm({
         {result !== undefined && (
           <div className={resultSuccessStyles}>
             <div className={resultTitleStyles}>Result:</div>
-            <pre className={resultContentStyles}>
-              {typeof result === 'object' ? JSON.stringify(result, null, 2) : String(result)}
-            </pre>
+            <div className={resultContentStyles}>
+              {typeof result === 'object'
+                ? formatResultWithLinks(result, {
+                    chainId,
+                    outputs: func.outputs,
+                  })
+                : String(result)}
+            </div>
           </div>
         )}
 
@@ -1482,6 +1549,6 @@ function FunctionCallForm({
           </div>
         )}
       </form>
-    </div>
+    </Collapsible>
   );
 }
