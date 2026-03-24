@@ -57,7 +57,7 @@ export type ContractSource = {
   abi: string;
   constructorArguments?: string;
   verificationStatus: 'verified' | 'unverified' | 'partial';
-  verificationSource: 'sourcify' | 'etherscan' | 'mantle-explorer' | 'manual' | 'unknown';
+  verificationSource: 'sourcify' | 'blockscan' | 'manual' | 'unknown';
   verifiedAt?: Date;
   lastChecked: Date;
   isProxy?: boolean;
@@ -711,10 +711,10 @@ export class ContractSourceService {
         return sourcifyResult;
       }
 
-      const explorerResult = await this.fetchFromChainExplorer(chainId, address);
-      if (explorerResult) {
-        await this.saveToDatabase(explorerResult);
-        return explorerResult;
+      const blockscanResult = await this.fetchFromBlockscan(chainId, address);
+      if (blockscanResult) {
+        await this.saveToDatabase(blockscanResult);
+        return blockscanResult;
       }
 
       const unverifiedContract: ContractSource = {
@@ -836,78 +836,47 @@ export class ContractSourceService {
     }
   }
 
-  // 从链特定的区块浏览器获取合约源码
-  private async fetchFromChainExplorer(
+  // 从 Blockscan 获取合约源码
+  private async fetchFromBlockscan(
     chainId: number,
     address: Address,
   ): Promise<ContractSource | null> {
     try {
-      // 根据链ID选择对应的API
-      const explorerConfig = this.getExplorerConfig(chainId);
-      if (!explorerConfig) {
-        return null;
-      }
-
-      const url = `${explorerConfig.apiUrl}?module=contract&action=getsourcecode&address=${address}`;
+      const url = `https://vscode.blockscan.com/srcapi/${chainId}/${address}`;
       const response = await fetch(url);
 
       if (!response.ok) {
-        logger.error({ status: response.status }, 'Explorer API error');
+        logger.info({ address, chainId, status: response.status }, 'Blockscan API error');
         return null;
       }
 
       const data = await response.json();
 
-      if (data.status !== '1' || !data.result || data.result.length === 0) {
-        return null;
-      }
-
-      const contractData = data.result[0];
-
-      // 检查是否有源码
-      if (!contractData.SourceCode || contractData.SourceCode.trim() === '') {
+      // Blockscan returns { sourceCode, abi, contractName, compilerVersion, etc }
+      // Adapt parsing based on actual API response structure
+      if (!data.sourceCode && !data.abi) {
         return null;
       }
 
       return {
         chainId,
         address,
-        name: contractData.ContractName ?? 'Unknown',
-        compilerVersion: contractData.CompilerVersion ?? 'Unknown',
-        optimizationEnabled: contractData.OptimizationUsed === '1',
-        optimizationRuns: parseInt(contractData.Runs ?? '200'),
-        sourceCode: contractData.SourceCode ?? '',
-        abi: contractData.ABI ?? '[]',
-        constructorArguments: contractData.ConstructorArguments ?? '',
-        verificationStatus: 'verified',
-        verificationSource: explorerConfig.name,
+        name: data.contractName ?? data.name ?? 'Unknown',
+        compilerVersion: data.compilerVersion ?? 'Unknown',
+        optimizationEnabled: data.optimizationEnabled ?? false,
+        optimizationRuns: data.optimizationRuns ?? parseInt(data.runs ?? '200'),
+        sourceCode: data.sourceCode ?? '',
+        abi: data.abi ?? '[]',
+        constructorArguments: data.constructorArguments ?? '',
+        verificationStatus: data.sourceCode ? 'verified' : 'partial',
+        verificationSource: 'blockscan',
         verifiedAt: new Date(),
         lastChecked: new Date(),
       };
     } catch (error) {
-      logger.error({ err: error }, 'Chain explorer fetch error');
+      logger.error({ err: error }, 'Blockscan fetch error');
       return null;
     }
-  }
-
-  // 获取链特定的区块浏览器配置
-  private getExplorerConfig(
-    chainId: number,
-  ): { name: 'mantle-explorer' | 'etherscan'; apiUrl: string } | null {
-    const configs: Record<number, { name: 'mantle-explorer' | 'etherscan'; apiUrl: string }> = {
-      5000: {
-        // Mantle
-        name: 'mantle-explorer',
-        apiUrl: 'https://explorer.mantle.xyz/api',
-      },
-      // 可以添加更多链的配置
-      // 1: { // Ethereum
-      //   name: "etherscan",
-      //   apiUrl: "https://api.etherscan.io/api"
-      // },
-    };
-
-    return configs[chainId] || null;
   }
 
   // 检查地址是否为合约
@@ -939,14 +908,11 @@ export class ContractSourceService {
       // 尝试从 Sourcify 获取代理合约源码
       proxyContract = await this.fetchFromSourcify(chainId, address);
 
-      // 如果 Sourcify 没有，尝试从区块浏览器获取
       if (!proxyContract) {
-        const explorerResult = await this.fetchFromChainExplorer(chainId, address);
+        const blockscanResult = await this.fetchFromBlockscan(chainId, address);
 
-        // 检查区块浏览器返回的是否是代理合约本身的源码
-        // 如果返回的地址与请求的地址不同，说明返回的是实现合约的源码
-        if (explorerResult && addressEquals(explorerResult.address, address)) {
-          proxyContract = explorerResult;
+        if (blockscanResult && addressEquals(blockscanResult.address, address)) {
+          proxyContract = blockscanResult;
         }
       }
 
