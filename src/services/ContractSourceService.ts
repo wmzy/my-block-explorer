@@ -852,23 +852,52 @@ export class ContractSourceService {
 
       const data = await response.json();
 
-      // Blockscan returns { sourceCode, abi, contractName, compilerVersion, etc }
-      // Adapt parsing based on actual API response structure
-      if (!data.sourceCode && !data.abi) {
+      // BlockScan returns data in nested "result" field as JSON string for some chains
+      // e.g., { status: "1", result: "{ \"language\": \"Solidity\", \"sources\": {...} }" }
+      let sourceData = data;
+      if (typeof data.result === 'string') {
+        try {
+          sourceData = JSON.parse(data.result);
+        } catch {
+          logger.info({ address, chainId }, 'BlockScan returned invalid JSON in result');
+          return null;
+        }
+      }
+
+      // Check for source code or ABI in the parsed data
+      if (!sourceData.sourceCode && !sourceData.abi && !sourceData.sources) {
+        logger.info(
+          { address, chainId, hasResult: !!data.result, keys: Object.keys(sourceData) },
+          'BlockScan response has no sourceCode, abi, or sources',
+        );
         return null;
+      }
+
+      // Build source code from sources map if available (newer BlockScan format)
+      let sourceCode = sourceData.sourceCode ?? '';
+      if (sourceData.sources && typeof sourceData.sources === 'object') {
+        const sourceEntries = Object.entries(sourceData.sources);
+        const solFiles = sourceEntries.filter(([name]) => name.endsWith('.sol'));
+        if (solFiles.length > 0) {
+          sourceCode = solFiles
+            .map(
+              ([name, src]) => `// File: ${name}\n${(src as { content?: string }).content ?? ''}`,
+            )
+            .join('\n\n');
+        }
       }
 
       return {
         chainId,
         address,
-        name: data.contractName ?? data.name ?? 'Unknown',
-        compilerVersion: data.compilerVersion ?? 'Unknown',
-        optimizationEnabled: data.optimizationEnabled ?? false,
-        optimizationRuns: data.optimizationRuns ?? parseInt(data.runs ?? '200'),
-        sourceCode: data.sourceCode ?? '',
-        abi: data.abi ?? '[]',
-        constructorArguments: data.constructorArguments ?? '',
-        verificationStatus: data.sourceCode ? 'verified' : 'partial',
+        name: sourceData.contractName ?? sourceData.name ?? 'Unknown',
+        compilerVersion: sourceData.compilerVersion ?? 'Unknown',
+        optimizationEnabled: sourceData.optimizationEnabled ?? false,
+        optimizationRuns: sourceData.optimizationRuns ?? parseInt(sourceData.runs ?? '200'),
+        sourceCode,
+        abi: sourceData.abi ?? '[]',
+        constructorArguments: sourceData.constructorArguments ?? '',
+        verificationStatus: sourceCode ? 'verified' : 'partial',
         verificationSource: 'blockscan',
         verifiedAt: new Date(),
         lastChecked: new Date(),
@@ -1372,6 +1401,22 @@ export class ContractSourceService {
     } catch (error) {
       logger.error({ err: error }, 'Failed to get contract stats');
       return { total: 0, verified: 0, unverified: 0, partial: 0 };
+    }
+  }
+
+  async clearCache(chainId: number, address: Address): Promise<void> {
+    try {
+      const formattedAddress = formatAddress(address);
+
+      await db
+        .delete(contractSources)
+        .where(
+          and(eq(contractSources.chainId, chainId), eq(contractSources.address, formattedAddress)),
+        );
+
+      logger.info({ chainId, address: formattedAddress }, 'Cleared contract source cache');
+    } catch (error) {
+      logger.error({ err: error, chainId, address }, 'Failed to clear contract source cache');
     }
   }
 }

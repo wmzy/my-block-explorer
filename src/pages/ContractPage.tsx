@@ -304,6 +304,7 @@ export default function ContractPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [creationLoading, setCreationLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [creationError, setCreationError] = useState<string | null>(null);
   const [, setShowRpcConfig, rpcConfigControl] = useControl<boolean>(null, false);
   type TabId =
@@ -454,6 +455,23 @@ export default function ContractPage() {
     }
   };
 
+  const handleClearCache = async () => {
+    if (!chainId || !address) return;
+
+    setRefreshing(true);
+
+    try {
+      await fetch(`/api/chains/${currentChainId}/contracts/${address}/clear-cache`, {
+        method: 'POST',
+      });
+      await fetchContractData();
+    } catch (err) {
+      console.error('Failed to clear cache:', err);
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
   if (!chainId || !address) {
     return (
       <>
@@ -509,7 +527,34 @@ export default function ContractPage() {
         {contractSource && (
           <>
             <div className={cardStyles}>
-              <h2>Contract Information</h2>
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  marginBottom: '16px',
+                }}
+              >
+                <h2 style={{ margin: 0 }}>Contract Information</h2>
+                <button
+                  onClick={handleClearCache}
+                  disabled={refreshing}
+                  style={{
+                    padding: '6px 12px',
+                    background: refreshing ? '#e9ecef' : '#007bff',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '4px',
+                    cursor: refreshing ? 'not-allowed' : 'pointer',
+                    fontSize: '13px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                  }}
+                >
+                  {refreshing ? 'Refreshing...' : '↻ Force Refresh'}
+                </button>
+              </div>
               <div className={infoGridStyles}>
                 {contractSource.name && (
                   <div className="info-item">

@@ -62,6 +62,20 @@ app.get('/chains/:chainId/contracts/:address/source', async c => {
   }
 });
 
+app.post('/chains/:chainId/contracts/:address/clear-cache', async c => {
+  const chainId = getValidatedChainId(c.req.param('chainId'));
+  const address = getValidatedAddress(c.req.param('address'));
+
+  try {
+    await contractSourceService.clearCache(chainId, address);
+
+    return c.json({ success: true, message: 'Cache cleared' });
+  } catch (error) {
+    logger.error({ err: error }, 'Clear contract cache API error');
+    return c.json({ error: 'Failed to clear contract cache' }, 500);
+  }
+});
+
 app.get('/chains/:chainId/contracts/:address/abi', async c => {
   const chainId = getValidatedChainId(c.req.param('chainId'));
   const address = getValidatedAddress(c.req.param('address'));
