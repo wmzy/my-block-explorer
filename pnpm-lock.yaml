@@ -38,6 +38,9 @@ importers:
       echarts-for-react:
         specifier: ^3.0.6
         version: 3.0.6(echarts@6.0.0)(react@19.2.4)
+      evmole:
+        specifier: ^0.8.4
+        version: 0.8.4
       haze-ui:
         specifier: ^1.4.1
         version: 1.4.1(@linaria/core@7.0.0)(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
@@ -68,6 +71,12 @@ importers:
       sonner:
         specifier: ^2.0.7
         version: 2.0.7(react-dom@19.2.4(react@19.2.4))(react@19.2.4)
+      storage-layout-fetcher:
+        specifier: ^0.2.0
+        version: 0.2.0
+      undici:
+        specifier: ^7.24.5
+        version: 7.24.5
       viem:
         specifier: ^2.47.5
         version: 2.47.5(typescript@5.9.3)(zod@4.3.6)
@@ -1114,6 +1123,9 @@ packages:
   '@scure/bip39@1.6.0':
     resolution: {integrity: sha512-+lF0BbLiJNwVlev4eKelw1WWLaiKXw7sSl8T6FvBlWkdX+94aGJ4o8XjUdlyhTCjd8c+B3KT3JfS8P0bLRNU6A==}
 
+  '@solidity-parser/parser@0.20.2':
+    resolution: {integrity: sha512-rbu0bzwNvMcwAjH86hiEAcOeRI2EeK8zCkHDrFykh/Al8mvJeFmjy3UrE7GYQjNwOgbGUUtCn5/k8CB8zIu7QA==}
+
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
 
@@ -1738,6 +1750,9 @@ packages:
   eventemitter3@5.0.1:
     resolution: {integrity: sha512-GWkBvjiSZK87ELrYOSESUYeVIc9mvLLf/nXalMOS5dYrgZq9o5OVkbZAVM06CVxYsCwH9BDZFPlQTlPA1j4ahA==}
 
+  evmole@0.8.4:
+    resolution: {integrity: sha512-O4CNaS4wLv0jOu2PGYA8w2Rx9iyBMOcghHZNYc7N6v4Mmm6Sz+PgPtBOAbQJXdhHVP/MAAcbItqg9Bf6Lxwvxg==}
+
   expand-template@2.0.3:
     resolution: {integrity: sha512-XYfuKMvj4O35f/pOXLObndIRvyQ+/+6AhODh+OKWj9S9498pHHn/IMszH+gt0fBCRWMNfk1ZSp5x3AifmnI2vg==}
     engines: {node: '>=6'}
@@ -1769,6 +1784,9 @@ packages:
     peerDependenciesMeta:
       picomatch:
         optional: true
+
+  fetch-fun@0.4.0:
+    resolution: {integrity: sha512-GZmJ+T0O7x1W4s9cMIfd9rmdGzM3WKd5xYw/c+cN3aisljm8+mQlgxcZMlgPZg0MKMyeT2pa9y7fgli460syHg==}
 
   file-entry-cache@8.0.0:
     resolution: {integrity: sha512-XXTUwCvisa5oacNGRP9SfNtYBNAMi+RPwBFmblZEF7N7swHYQS6/Zfk7SRwx4D5j3CH211YNRco1DEMNVfZCnQ==}
@@ -2151,6 +2169,10 @@ packages:
     resolution: {integrity: sha512-LaNjtRWUBY++zB5nE/NwcaoMylSPk+S+ZHNB1TzdbMJMny6dynpAGt7X/tl/QYq3TIeE6nxHppbo2LGymrG5Pw==}
     engines: {node: '>=10'}
 
+  p-throttle@8.1.0:
+    resolution: {integrity: sha512-c1wmXavsHZIC4g1OLhOsafK6jZSAeMo0Ap3yivj59PUcCkpacy5YgWdgIp/dB4vp1JZrfBSsPCR0YuADB+ENLQ==}
+    engines: {node: '>=20'}
+
   parent-module@1.0.1:
     resolution: {integrity: sha512-GQ2EWRpQV8/o+Aw8YqtfZZPfNRWZYkbidE9k5rpl/hC3vtHHBfGm2Ifi6qWV+coDGkrUKZAxE3Lot5kcsRlh+g==}
     engines: {node: '>=6'}
@@ -2406,6 +2428,9 @@ packages:
   std-env@4.0.0:
     resolution: {integrity: sha512-zUMPtQ/HBY3/50VbpkupYHbRroTRZJPRLvreamgErJVys0ceuzMkD44J/QjqhHjOzK42GQ3QZIeFG1OYfOtKqQ==}
 
+  storage-layout-fetcher@0.2.0:
+    resolution: {integrity: sha512-OKIQmXrdASU9SygLudqWEH15kjEAS5nQUY68wAj9hHCqVhEgsWRE4iN0CBtfCUOYxfFNh+wfx50LFBf32XTrWg==}
+
   string_decoder@1.3.0:
     resolution: {integrity: sha512-hkRX8U1WjJFd8LsDJ2yQ/wWWxaopEsABU1XfkM8A+j0+85JAGppt16cr1Whg6KIbb4okU6Mql6BOj+uup/wKeA==}
 
@@ -2519,8 +2544,8 @@ packages:
   undici-types@7.18.2:
     resolution: {integrity: sha512-AsuCzffGHJybSaRrmr5eHr81mwJU3kjw6M+uprWvCXiNeN9SOGwQ3Jn8jb8m3Z6izVgknn1R0FTCEAP2QrLY/w==}
 
-  undici@7.24.4:
-    resolution: {integrity: sha512-BM/JzwwaRXxrLdElV2Uo6cTLEjhSb3WXboncJamZ15NgUURmvlXvxa6xkwIOILIjPNo9i8ku136ZvWV0Uly8+w==}
+  undici@7.24.5:
+    resolution: {integrity: sha512-3IWdCpjgxp15CbJnsi/Y9TCDE7HWVN19j1hmzVhoAkY/+CJx449tVxT5wZc1Gwg8J+P0LWvzlBzxYRnHJ+1i7Q==}
     engines: {node: '>=20.18.1'}
 
   update-browserslist-db@1.2.3:
@@ -3447,6 +3472,8 @@ snapshots:
       '@noble/hashes': 1.8.0
       '@scure/base': 1.2.6
 
+  '@solidity-parser/parser@0.20.2': {}
+
   '@standard-schema/spec@1.1.0': {}
 
   '@stylistic/eslint-plugin@5.10.0(eslint@10.0.3)':
@@ -4137,6 +4164,8 @@ snapshots:
 
   eventemitter3@5.0.1: {}
 
+  evmole@0.8.4: {}
+
   expand-template@2.0.3:
     optional: true
 
@@ -4155,6 +4184,8 @@ snapshots:
   fdir@6.5.0(picomatch@4.0.3):
     optionalDependencies:
       picomatch: 4.0.3
+
+  fetch-fun@0.4.0: {}
 
   file-entry-cache@8.0.0:
     dependencies:
@@ -4326,7 +4357,7 @@ snapshots:
       saxes: 6.0.0
       symbol-tree: 3.2.4
       tough-cookie: 6.0.1
-      undici: 7.24.4
+      undici: 7.24.5
       w3c-xmlserializer: 5.0.0
       webidl-conversions: 8.0.1
       whatwg-mimetype: 5.0.0
@@ -4508,6 +4539,8 @@ snapshots:
   p-locate@5.0.0:
     dependencies:
       p-limit: 3.1.0
+
+  p-throttle@8.1.0: {}
 
   parent-module@1.0.1:
     dependencies:
@@ -4776,6 +4809,14 @@ snapshots:
 
   std-env@4.0.0: {}
 
+  storage-layout-fetcher@0.2.0:
+    dependencies:
+      '@solidity-parser/parser': 0.20.2
+      fetch-fun: 0.4.0
+      magic-string: 0.30.21
+      p-throttle: 8.1.0
+      semver: 7.7.4
+
   string_decoder@1.3.0:
     dependencies:
       safe-buffer: 5.2.1
@@ -4889,7 +4930,7 @@ snapshots:
 
   undici-types@7.18.2: {}
 
-  undici@7.24.4: {}
+  undici@7.24.5: {}
 
   update-browserslist-db@1.2.3(browserslist@4.28.1):
     dependencies:

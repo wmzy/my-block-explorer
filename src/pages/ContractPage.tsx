@@ -5,10 +5,15 @@ import { useControl } from 'react-use-control';
 import { getChainName, isChainSupported } from '@/config/chains';
 import { AbiParameter, AbiFunction, AbiEvent, Abi } from 'viem';
 import {
-  parseContractFunctions,
+  parseContractFunctionsUnified,
+  filterFunctions,
   readContract,
   simulateContract,
   type ContractFunction,
+  type EnhancedContractFunction,
+  type FilterState,
+  type ReadWriteFilter,
+  type SourceFilter,
 } from '../utils/contractInteraction';
 import TopNavigation from '../components/TopNavigation';
 import RpcFunctionError from '../components/RpcFunctionError';
@@ -19,6 +24,9 @@ import IndexingRangeManager from '../components/events/IndexingRangeManager';
 import { Collapsible } from '@/components/ui/Collapsible';
 import { getFunctionSelector, formatSelectorForDisplay } from '@/utils/functionSelector';
 import { formatResultWithLinks } from '@/utils/addressTypeDetection';
+import { StorageLayoutView } from '@/components/storage';
+import type { StorageLayout } from '@/types/storage';
+import { useStorageLayout } from '@/hooks/useStorageLayout';
 
 type ProxyType =
   | 'transparent'
@@ -306,8 +314,8 @@ export default function ContractPage() {
     | 'functions'
     | 'events'
     | 'interact'
-    | 'read-proxy'
-    | 'write-proxy';
+    | 'storage';
+  const [storageTarget, setStorageTarget] = useState<'proxy' | 'impl'>('impl');
 
   const tabFromUrl = (searchParams.get('tab') ??
     (location.pathname.endsWith('/events') ? 'events' : '')) as TabId | '';
@@ -384,7 +392,7 @@ export default function ContractPage() {
 
   useEffect(() => {
     if (contractSource?.isProxy && contractSource?.implementationContract && !tabFromUrl) {
-      setActiveTab('read-proxy');
+      setActiveTab('interact');
     }
   }, [contractSource]);
 
@@ -687,16 +695,10 @@ export default function ContractPage() {
               {isProxy ? (
                 <>
                   <button
-                    className={`tab ${activeTab === 'read-proxy' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('read-proxy')}
+                    className={`tab ${activeTab === 'interact' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('interact')}
                   >
-                    Read as Proxy
-                  </button>
-                  <button
-                    className={`tab ${activeTab === 'write-proxy' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('write-proxy')}
-                  >
-                    Write as Proxy
+                    Interact
                   </button>
                   <button
                     className={`tab ${activeTab === 'source' ? 'active' : ''}`}
@@ -730,6 +732,12 @@ export default function ContractPage() {
                       Events ({effectiveABI.events.length})
                     </button>
                   )}
+                  <button
+                    className={`tab ${activeTab === 'storage' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('storage')}
+                  >
+                    Storage
+                  </button>
                 </>
               ) : (
                 <>
@@ -761,6 +769,12 @@ export default function ContractPage() {
                       Events ({effectiveABI.events.length})
                     </button>
                   )}
+                  <button
+                    className={`tab ${activeTab === 'storage' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('storage')}
+                  >
+                    Storage
+                  </button>
                   {effectiveABI &&
                     (effectiveABI.functions.length > 0 || effectiveABI.events.length > 0) && (
                       <button
@@ -774,23 +788,12 @@ export default function ContractPage() {
               )}
             </div>
 
-            {/* Read as Proxy */}
-            {activeTab === 'read-proxy' && isProxy && (
+            {/* Contract Interaction - unified for both proxy and non-proxy */}
+            {activeTab === 'interact' && (
               <ContractInteract
                 chainId={currentChainId}
                 contractAddress={address}
                 contractSource={contractSource}
-                mode="read"
-              />
-            )}
-
-            {/* Write as Proxy */}
-            {activeTab === 'write-proxy' && isProxy && (
-              <ContractInteract
-                chainId={currentChainId}
-                contractAddress={address}
-                contractSource={contractSource}
-                mode="write"
               />
             )}
 
@@ -880,6 +883,16 @@ export default function ContractPage() {
               />
             )}
 
+            {activeTab === 'storage' && (
+              <StoragePanel
+                chainId={currentChainId}
+                address={address as `0x${string}`}
+                contractSource={contractSource}
+                storageTarget={storageTarget}
+                onStorageTargetChange={setStorageTarget}
+              />
+            )}
+
             {/* Interact (non-proxy only) */}
             {activeTab === 'interact' && !isProxy && (
               <ContractInteract
@@ -962,18 +975,31 @@ function ContractInteract({
   contractSource: ContractSource | null;
   mode?: 'all' | 'read' | 'write';
 }) {
-  const [readFunctions, setReadFunctions] = useState<ContractFunction[]>([]);
-  const [writeFunctions, setWriteFunctions] = useState<ContractFunction[]>([]);
+  const [allFunctions, setAllFunctions] = useState<EnhancedContractFunction[]>([]);
   const [loading, setLoading] = useState(true);
   const [results, setResults] = useState<Record<string, unknown>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loadingStates, setLoadingStates] = useState<Record<string, boolean>>({});
+  const [globalBlockNumber, setGlobalBlockNumber] = useState('');
+  const [filters, setFilters] = useState<FilterState>({
+    readWrite: 'all',
+    source: 'all',
+    name: '',
+  });
+  const [debouncedNameFilter, setDebouncedNameFilter] = useState('');
 
   useEffect(() => {
     if (contractSource?.abi) {
       loadContractFunctions();
     }
   }, [chainId, contractAddress, contractSource]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedNameFilter(filters.name);
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [filters.name]);
 
   const loadContractFunctions = async () => {
     try {
@@ -983,16 +1009,14 @@ function ContractInteract({
         return;
       }
 
-      // 获取要使用的 ABI（代理合约使用实现合约的 ABI）
-      let targetABI = contractSource.abi;
-      if (contractSource.isProxy && contractSource.implementationContract) {
-        targetABI = contractSource.implementationContract.abi;
-      }
+      const proxyABI = contractSource.abi;
+      const implABI =
+        contractSource.isProxy && contractSource.implementationContract
+          ? contractSource.implementationContract.abi
+          : undefined;
 
-      // 直接解析 ABI 获取函数列表
-      const { readFunctions, writeFunctions } = parseContractFunctions(targetABI);
-      setReadFunctions(readFunctions);
-      setWriteFunctions(writeFunctions);
+      const functions = parseContractFunctionsUnified(proxyABI, implABI);
+      setAllFunctions(functions);
     } catch (error) {
       console.error('Failed to load contract functions:', error);
     } finally {
@@ -1005,9 +1029,8 @@ function ContractInteract({
     args: unknown[],
     _value?: string,
     _from?: string,
-    blockNumber?: bigint,
   ) => {
-    const key = `${functionName}-${JSON.stringify(args)}`;
+    const key = `${functionName}-${JSON.stringify(args)}-${globalBlockNumber || 'latest'}`;
 
     try {
       setLoadingStates(prev => ({ ...prev, [key]: true }));
@@ -1032,7 +1055,7 @@ function ContractInteract({
         functionName,
         args,
         abi: targetABI,
-        blockNumber,
+        blockNumber: globalBlockNumber ? BigInt(globalBlockNumber) : undefined,
       });
 
       if (result.success) {
@@ -1141,8 +1164,10 @@ function ContractInteract({
     );
   }
 
-  const showRead = mode === 'all' || mode === 'read';
-  const showWrite = mode === 'all' || mode === 'write';
+  const filteredFunctions = filterFunctions(allFunctions, {
+    ...filters,
+    name: debouncedNameFilter,
+  });
 
   return (
     <>
@@ -1158,11 +1183,7 @@ function ContractInteract({
             color: '#1a56db',
           }}
         >
-          {mode === 'read'
-            ? 'Reading from implementation contract via proxy address.'
-            : mode === 'write'
-              ? 'Writing to implementation contract via proxy address. These are simulations only.'
-              : 'Interacting with implementation contract via proxy address.'}
+          Interacting with implementation contract via proxy address.
           {contractSource.implementationAddress && (
             <span style={{ marginLeft: '8px', fontFamily: 'monospace', fontSize: '12px' }}>
               Implementation: {contractSource.implementationAddress}
@@ -1171,60 +1192,152 @@ function ContractInteract({
         </div>
       )}
 
-      {showRead && readFunctions.length > 0 && (
-        <div className={cardStyles}>
-          <h2>{mode === 'read' ? title : 'Read Functions'}</h2>
-          <div className={functionListStyles}>
-            {readFunctions.map((func, index) => (
-              <FunctionCallForm
-                key={`read-${index}`}
-                func={func}
-                onCall={callReadFunction}
-                results={results}
-                errors={errors}
-                loadingStates={loadingStates}
-                type="read"
-                chainId={chainId}
-              />
-            ))}
+      <div className={filterControlsStyles}>
+        <div className={filterGroupStyles}>
+          <label className={filterLabelStyles}>Type:</label>
+          <select
+            value={filters.readWrite}
+            onChange={e =>
+              setFilters(prev => ({ ...prev, readWrite: e.target.value as ReadWriteFilter }))
+            }
+            className={filterSelectStyles}
+          >
+            <option value="all">All</option>
+            <option value="read">Read</option>
+            <option value="write">Write</option>
+          </select>
+        </div>
+
+        {isProxyMode && (
+          <div className={filterGroupStyles}>
+            <label className={filterLabelStyles}>Source:</label>
+            <select
+              value={filters.source}
+              onChange={e =>
+                setFilters(prev => ({ ...prev, source: e.target.value as SourceFilter }))
+              }
+              className={filterSelectStyles}
+            >
+              <option value="all">All</option>
+              <option value="proxy">Proxy</option>
+              <option value="impl">Implementation</option>
+            </select>
           </div>
+        )}
+
+        <div className={filterGroupStyles}>
+          <label className={filterLabelStyles}>Name:</label>
+          <input
+            type="text"
+            value={filters.name}
+            onChange={e => setFilters(prev => ({ ...prev, name: e.target.value }))}
+            placeholder="Filter by name..."
+            className={filterInputStyles}
+          />
+        </div>
+
+        <div className={filterGroupStyles}>
+          <label className={filterLabelStyles}>Block:</label>
+          <input
+            type="text"
+            value={globalBlockNumber}
+            onChange={e => setGlobalBlockNumber(e.target.value)}
+            placeholder="Latest"
+            className={filterInputStyles}
+          />
+          <button
+            type="button"
+            onClick={() => setGlobalBlockNumber('')}
+            className={resetButtonStyles}
+          >
+            Reset
+          </button>
+        </div>
+      </div>
+
+      {!isProxyMode && (
+        <div style={{ marginBottom: '16px', fontSize: '14px', color: '#666' }}>
+          Write functions are simulations only. To execute transactions, use a Web3 wallet.
         </div>
       )}
 
-      {showWrite && writeFunctions.length > 0 && (
-        <div className={cardStyles}>
-          <h2>{mode === 'write' ? title : 'Write Functions (Simulation)'}</h2>
-          {!isProxyMode && (
-            <div style={{ marginBottom: '20px', fontSize: '14px', color: '#666' }}>
-              These are simulations only. To execute transactions, use a Web3 wallet.
-            </div>
-          )}
-          <div className={functionListStyles}>
-            {writeFunctions.map((func, index) => (
-              <FunctionCallForm
-                key={`write-${index}`}
-                func={func}
-                onCall={simulateWriteFunction}
-                results={results}
-                errors={errors}
-                loadingStates={loadingStates}
-                type="write"
-                chainId={chainId}
-              />
-            ))}
-          </div>
+      {filteredFunctions.length > 0 ? (
+        <div className={functionListStyles}>
+          {filteredFunctions.map((func, index) => (
+            <FunctionCallForm
+              key={`${func.source}-${func.interactionType}-${index}`}
+              func={func}
+              onCall={func.interactionType === 'read' ? callReadFunction : simulateWriteFunction}
+              results={results}
+              errors={errors}
+              loadingStates={loadingStates}
+              chainId={chainId}
+              blockNumber={globalBlockNumber}
+            />
+          ))}
         </div>
-      )}
-
-      {showRead && readFunctions.length === 0 && showWrite && writeFunctions.length === 0 && (
+      ) : (
         <div className={cardStyles}>
           <h2>{title}</h2>
-          <div>No functions found in the contract ABI</div>
+          <div>No functions match the current filters</div>
         </div>
       )}
     </>
   );
 }
+
+const filterControlsStyles = css`
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  padding: 16px;
+  background: #f8f9fa;
+  border: 1px solid #e1e5e9;
+  border-radius: 8px;
+  margin-bottom: 20px;
+`;
+
+const filterGroupStyles = css`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+`;
+
+const filterLabelStyles = css`
+  font-size: 14px;
+  font-weight: 500;
+  color: #666;
+`;
+
+const filterSelectStyles = css`
+  padding: 6px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  background: white;
+`;
+
+const filterInputStyles = css`
+  padding: 6px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  width: 150px;
+`;
+
+const resetButtonStyles = css`
+  padding: 6px 12px;
+  background: #6c757d;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+
+  &:hover {
+    background: #5a6268;
+  }
+`;
 
 // CSS样式定义
 const functionFormStyles = css`
@@ -1375,27 +1488,20 @@ function FunctionCallForm({
   results,
   errors,
   loadingStates,
-  type,
   chainId,
+  blockNumber,
 }: {
-  func: ContractFunction;
-  onCall: (
-    name: string,
-    args: unknown[],
-    value?: string,
-    from?: string,
-    blockNumber?: bigint,
-  ) => void;
+  func: EnhancedContractFunction;
+  onCall: (name: string, args: unknown[], value?: string, from?: string) => void;
   results: Record<string, unknown>;
   errors: Record<string, string>;
   loadingStates: Record<string, boolean>;
-  type: 'read' | 'write';
   chainId: number;
+  blockNumber: string;
 }) {
   const [args, setArgs] = useState<string[]>(func.inputs.map(() => ''));
   const [value, setValue] = useState('');
   const [from, setFrom] = useState('');
-  const [blockNumber, setBlockNumber] = useState('');
 
   const selector = getFunctionSelector(func);
   const selectorDisplay = formatSelectorForDisplay(selector);
@@ -1420,17 +1526,12 @@ function FunctionCallForm({
       return arg;
     });
 
-    if (type === 'read') {
-      const bn = blockNumber ? BigInt(blockNumber) : undefined;
-      onCall(func.name, processedArgs, undefined, undefined, bn);
-    } else {
-      onCall(func.name, processedArgs, value || undefined, from || undefined);
-    }
+    onCall(func.name, processedArgs, value || undefined, from || undefined);
   };
 
   const getResultKey = () => {
-    if (type === 'read') {
-      return `${func.name}-${JSON.stringify(args)}`;
+    if (func.interactionType === 'read') {
+      return `${func.name}-${JSON.stringify(args)}-${blockNumber || 'latest'}`;
     } else {
       return `${func.name}-${JSON.stringify(args)}-${value || ''}-${from || ''}`;
     }
@@ -1442,15 +1543,28 @@ function FunctionCallForm({
   const isLoading = loadingStates[resultKey];
 
   const headerTitle = (
-    <span className={type === 'read' ? functionNameReadStyles : functionNameWriteStyles}>
+    <span
+      className={func.interactionType === 'read' ? functionNameReadStyles : functionNameWriteStyles}
+    >
       {func.name}
       <span className={mutabilityStyles}>{func.stateMutability}</span>
     </span>
   );
 
-  const badge = selectorDisplay ? (
-    <span className={selectorStyles}>{selectorDisplay}</span>
-  ) : undefined;
+  const badge = (
+    <span style={{ display: 'flex', gap: '4px' }}>
+      {selectorDisplay && <span className={selectorStyles}>{selectorDisplay}</span>}
+      <span
+        className={selectorStyles}
+        style={{ background: func.interactionType === 'read' ? '#d4edda' : '#fff3cd' }}
+      >
+        {func.interactionType}
+      </span>
+      <span className={selectorStyles} style={{ background: '#e8f0fe' }}>
+        {func.source}
+      </span>
+    </span>
+  );
 
   return (
     <Collapsible title={headerTitle} defaultExpanded={false} badge={badge}>
@@ -1475,22 +1589,8 @@ function FunctionCallForm({
           </div>
         ))}
 
-        {/* Read function blockNumber field */}
-        {type === 'read' && (
-          <div className={inputGroupStyles}>
-            <label className={labelStyles}>Block Number (optional, latest if empty)</label>
-            <input
-              type="text"
-              value={blockNumber}
-              onChange={e => setBlockNumber(e.target.value)}
-              placeholder="Latest"
-              className={inputStyles}
-            />
-          </div>
-        )}
-
         {/* Write function additional fields */}
-        {type === 'write' && (
+        {func.interactionType === 'write' && (
           <>
             {func.stateMutability === 'payable' && (
               <div className={inputGroupStyles}>
@@ -1521,9 +1621,9 @@ function FunctionCallForm({
         <button
           type="submit"
           disabled={isLoading}
-          className={type === 'read' ? buttonReadStyles : buttonWriteStyles}
+          className={func.interactionType === 'read' ? buttonReadStyles : buttonWriteStyles}
         >
-          {isLoading ? 'Loading...' : type === 'read' ? 'Query' : 'Simulate'}
+          {isLoading ? 'Loading...' : func.interactionType === 'read' ? 'Query' : 'Simulate'}
         </button>
 
         {/* Results */}
@@ -1550,5 +1650,77 @@ function FunctionCallForm({
         )}
       </form>
     </Collapsible>
+  );
+}
+
+function StoragePanel({
+  chainId,
+  address,
+  contractSource,
+  storageTarget,
+  onStorageTargetChange,
+}: {
+  chainId: number;
+  address: `0x${string}`;
+  contractSource: ContractSource | null;
+  storageTarget: 'proxy' | 'impl';
+  onStorageTargetChange: (target: 'proxy' | 'impl') => void;
+}) {
+  const targetAddress =
+    storageTarget === 'impl' ? (contractSource?.implementationAddress ?? address) : address;
+
+  const { layout, loading, error } = useStorageLayout(chainId, targetAddress);
+
+  const isProxy = contractSource?.isProxy && !!contractSource?.implementationAddress;
+
+  if (!isProxy && contractSource?.verificationStatus !== 'verified') {
+    return (
+      <div className={cardStyles}>
+        <h2>Storage Layout</h2>
+        <div className={errorStyles}>Storage layout is only available for verified contracts.</div>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className={cardStyles}>
+        <h2>Storage Layout</h2>
+        <div className={loadingStyles}>Loading storage layout...</div>
+      </div>
+    );
+  }
+
+  if (error || !layout) {
+    return (
+      <div className={cardStyles}>
+        <h2>Storage Layout</h2>
+        <div className={errorStyles}>
+          {error ?? 'Storage layout not available for this contract.'}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={cardStyles}>
+      {isProxy && (
+        <div style={{ marginBottom: '16px', display: 'flex', gap: '8px' }}>
+          <button
+            className={storageTarget === 'proxy' ? 'tab active' : 'tab'}
+            onClick={() => onStorageTargetChange('proxy')}
+          >
+            Proxy Storage
+          </button>
+          <button
+            className={storageTarget === 'impl' ? 'tab active' : 'tab'}
+            onClick={() => onStorageTargetChange('impl')}
+          >
+            Implementation Storage
+          </button>
+        </div>
+      )}
+      <StorageLayoutView chainId={chainId} address={targetAddress} layout={layout} />
+    </div>
   );
 }

@@ -325,6 +325,20 @@ export const eventTableRegistry = duckdbTable(
   table => [primaryKey({ columns: [table.chainId, table.contractAddress, table.eventSignature] })],
 );
 
+export const storageLayouts = duckdbTable(
+  'storage_layouts',
+  {
+    ...chainAddressColumns,
+    layout: text().notNull(),
+    source: varchar({ length: 20 }),
+    isProxy: boolean().default(false),
+    implementationAddress: address(),
+    createdAt: datetime().default(sql`now()`),
+    updatedAt: datetime().default(sql`now()`),
+  },
+  table => [primaryKey({ columns: [table.chainId, table.address] })],
+);
+
 // 导出类型推断
 export type EventTableRegistry = typeof eventTableRegistry.$inferSelect;
 export type NewEventTableRegistry = typeof eventTableRegistry.$inferInsert;
@@ -355,3 +369,6 @@ export type NewIndexingRange = typeof indexingRanges.$inferInsert;
 
 export type ContractEvent = typeof contractEvents.$inferSelect;
 export type NewContractEvent = typeof contractEvents.$inferInsert;
+
+export type StorageLayoutRecord = typeof storageLayouts.$inferSelect;
+export type NewStorageLayoutRecord = typeof storageLayouts.$inferInsert;

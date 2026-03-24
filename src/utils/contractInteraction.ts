@@ -362,3 +362,138 @@ function validateArgument(
     return { valid: false, error: `Invalid ${type} value` };
   }
 }
+
+// Source tag for proxy contracts: 'proxy' = admin functions on proxy, 'impl' = implementation contract
+export type FunctionSource = 'proxy' | 'impl';
+
+// Enhanced function type with source and interaction type tags
+export type EnhancedContractFunction = ContractFunction & {
+  interactionType: 'read' | 'write';
+  source: FunctionSource;
+};
+
+// Filter types for function filtering
+export type ReadWriteFilter = 'all' | 'read' | 'write';
+export type SourceFilter = 'all' | 'proxy' | 'impl';
+
+export type FilterState = {
+  readWrite: ReadWriteFilter;
+  source: SourceFilter;
+  name: string;
+};
+
+/**
+ * Parse both proxy and implementation ABIs, tagging functions by source
+ * For non-proxy contracts, all functions are tagged as 'impl'
+ */
+export function parseContractFunctionsUnified(
+  proxyABI: string | undefined,
+  implABI: string | undefined,
+): EnhancedContractFunction[] {
+  const functions: EnhancedContractFunction[] = [];
+
+  // Parse implementation ABI (or proxy ABI if no impl)
+  const targetABI = implABI ?? proxyABI;
+  if (targetABI) {
+    try {
+      const parsed = JSON.parse(targetABI) as Abi;
+      const funcs = parsed.filter(
+        (item): item is ContractFunction & { type: 'function' } => item.type === 'function',
+      );
+
+      for (const func of funcs) {
+        const isRead = func.stateMutability === 'view' || func.stateMutability === 'pure';
+        functions.push({
+          name: func.name,
+          type: func.type,
+          inputs: (func.inputs ?? []).map(input => ({
+            name: input.name ?? '',
+            type: input.type,
+            internalType: input.internalType,
+          })),
+          outputs: (func.outputs ?? []).map(output => ({
+            name: output.name ?? '',
+            type: output.type,
+            internalType: output.internalType,
+          })),
+          stateMutability: func.stateMutability ?? 'nonpayable',
+          interactionType: isRead ? 'read' : 'write',
+          source: implABI ? 'impl' : 'impl',
+        });
+      }
+    } catch (error) {
+      console.error('Failed to parse ABI:', error);
+    }
+  }
+
+  // If this is a proxy contract AND we have a separate proxy ABI, also add proxy functions
+  // Note: Most proxy admin functions are NOT in the proxy ABI, but some custom proxies may have them
+  if (proxyABI && implABI && proxyABI !== implABI) {
+    try {
+      const parsed = JSON.parse(proxyABI) as Abi;
+      const funcs = parsed.filter(
+        (item): item is ContractFunction & { type: 'function' } => item.type === 'function',
+      );
+
+      for (const func of funcs) {
+        // Skip functions that exist in impl (avoid duplicates)
+        const existsInImpl = functions.some(f => f.name === func.name);
+        if (existsInImpl) continue;
+
+        const isRead = func.stateMutability === 'view' || func.stateMutability === 'pure';
+        functions.push({
+          name: func.name,
+          type: func.type,
+          inputs: (func.inputs ?? []).map(input => ({
+            name: input.name ?? '',
+            type: input.type,
+            internalType: input.internalType,
+          })),
+          outputs: (func.outputs ?? []).map(output => ({
+            name: output.name ?? '',
+            type: output.type,
+            internalType: output.internalType,
+          })),
+          stateMutability: func.stateMutability ?? 'nonpayable',
+          interactionType: isRead ? 'read' : 'write',
+          source: 'proxy',
+        });
+      }
+    } catch (error) {
+      console.error('Failed to parse proxy ABI:', error);
+    }
+  }
+
+  return functions;
+}
+
+/**
+ * Filter functions by read/write, source (proxy/impl), and name
+ */
+export function filterFunctions(
+  functions: EnhancedContractFunction[],
+  filters: FilterState,
+): EnhancedContractFunction[] {
+  return functions.filter(func => {
+    // Filter by read/write
+    if (filters.readWrite !== 'all' && func.interactionType !== filters.readWrite) {
+      return false;
+    }
+
+    // Filter by source (only for proxy contracts)
+    if (filters.source !== 'all' && func.source !== filters.source) {
+      return false;
+    }
+
+    // Filter by name (case-insensitive substring)
+    if (filters.name) {
+      const nameLower = func.name.toLowerCase();
+      const searchLower = filters.name.toLowerCase();
+      if (!nameLower.includes(searchLower)) {
+        return false;
+      }
+    }
+
+    return true;
+  });
+}

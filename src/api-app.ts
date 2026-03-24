@@ -14,6 +14,7 @@ import contractsRoutes from './routes/contracts';
 import eventsRoutes from './routes/events';
 import performanceRoutes from './routes/performance';
 import rpcConfigRoutes from './routes/rpc-config';
+import storageRoutes from './routes/storage';
 
 const logger = createLogger('api-app');
 
@@ -30,13 +31,10 @@ app.onError((e, c) => {
 
   logger.error(e, 'Unhandled API error');
 
-  return c.json(
-    createApiError(500, 'Internal Server Error', e.message),
-    500,
-  );
+  return c.json(createApiError(500, 'Internal Server Error', e.message), 500);
 });
 
-app.get('/api', (c) => {
+app.get('/api', c => {
   return c.json({
     name: 'Block Explorer API',
     version: '1.0.0',
@@ -53,7 +51,7 @@ app.get('/api', (c) => {
   });
 });
 
-app.get('/api/health', (c) => {
+app.get('/api/health', c => {
   return c.json({
     status: 'healthy',
     message: 'Block Explorer API is running',
@@ -71,26 +69,22 @@ app.route('/api', contractsRoutes);
 app.route('/api', eventsRoutes);
 app.route('/api', performanceRoutes);
 app.route('/api', rpcConfigRoutes);
+app.route('/api', storageRoutes);
 
-app.notFound((c) => {
+app.notFound(c => {
   return c.json(
-    createApiError(
-      404,
-      'Not Found',
-      `API endpoint not found: ${c.req.path}`,
-      {
-        availableEndpoints: [
-          '/api',
-          '/api/health',
-          '/api/search?q={query}',
-          '/api/stats/overview',
-          '/api/chains/{chainId}/blocks',
-          '/api/chains/{chainId}/transactions',
-          '/api/chains/{chainId}/addresses/{address}',
-          '/api/chains/{chainId}/contracts/{address}/events',
-        ],
-      },
-    ),
+    createApiError(404, 'Not Found', `API endpoint not found: ${c.req.path}`, {
+      availableEndpoints: [
+        '/api',
+        '/api/health',
+        '/api/search?q={query}',
+        '/api/stats/overview',
+        '/api/chains/{chainId}/blocks',
+        '/api/chains/{chainId}/transactions',
+        '/api/chains/{chainId}/addresses/{address}',
+        '/api/chains/{chainId}/contracts/{address}/events',
+      ],
+    }),
     404,
   );
 });

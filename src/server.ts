@@ -1,5 +1,17 @@
 import { serve } from '@hono/node-server';
+import { setGlobalDispatcher, ProxyAgent } from 'undici';
 import apiApp from './api-app';
+
+const PROXY_URL =
+  process.env.HTTPS_PROXY ??
+  process.env.https_proxy ??
+  process.env.HTTP_PROXY ??
+  process.env.http_proxy;
+
+if (PROXY_URL) {
+  setGlobalDispatcher(new ProxyAgent(PROXY_URL));
+  console.log(`🔄 Global proxy configured: ${PROXY_URL}`);
+}
 
 const port = parseInt(process.env.PORT ?? '8201');
 
