@@ -98,6 +98,14 @@ export const useContractCreation = (chainId: number, address: string) =>
     enabled: chainId > 0 && address.length > 0,
   });
 
+export const useStorageLayout = (chainId: number, address: string) =>
+  useQuery({
+    queryKey: ['contracts', 'storage-layout', chainId, address],
+    queryFn: () => apiClient.getStorageLayout(chainId, address),
+    enabled: chainId > 0 && address.length > 0,
+    staleTime: Infinity,
+  });
+
 export const useHealth = () =>
   useQuery({
     queryKey: ['health'],

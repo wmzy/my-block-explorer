@@ -1,4 +1,5 @@
 import { css } from '@linaria/core';
+import { useState } from 'react';
 import type { Hex } from 'viem';
 import type { StorageLayout, TypesMap } from '@/types/storage';
 import { StorageMember } from './StorageMember';
@@ -67,6 +68,27 @@ const valueContainerStyle = css`
   gap: var(--haze-space-2);
 `;
 
+const headerStyle = css`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--haze-space-3);
+`;
+
+const buttonStyle = css`
+  padding: var(--haze-space-1) var(--haze-space-3);
+  font-size: var(--haze-text-sm);
+  color: var(--haze-color-primary);
+  background: transparent;
+  border: 1px solid var(--haze-color-primary);
+  border-radius: var(--haze-radius-sm);
+  cursor: pointer;
+
+  &:hover {
+    background: var(--haze-color-bg-elevated);
+  }
+`;
+
 export type StorageLayoutViewProps = {
   chainId: number;
   address: string;
@@ -83,10 +105,18 @@ export function getSlotCode(type: 'hex' | 'bigint', slotCode?: SlotCode): string
 
 export function StorageLayoutView({ chainId, address, layout }: StorageLayoutViewProps) {
   const { storage, types } = layout;
+  const [showValues, setShowValues] = useState(false);
 
   return (
     <div className={containerStyle}>
-      <h2 className={titleStyle}>Storage Layout</h2>
+      <div className={headerStyle}>
+        <h2 className={titleStyle}>Storage Layout</h2>
+        {!showValues && (
+          <button className={buttonStyle} onClick={() => setShowValues(true)}>
+            Load values
+          </button>
+        )}
+      </div>
       <ol className={listStyle}>
         {storage.map(member => {
           const type = types?.[member.type];
@@ -112,6 +142,7 @@ export function StorageLayoutView({ chainId, address, layout }: StorageLayoutVie
                   chainId={chainId}
                   address={address}
                   baseSlot={slot}
+                  showValues={showValues}
                 />
               </div>
             </li>

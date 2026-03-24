@@ -52,6 +52,7 @@ export type StorageValueArrayProps = {
   chainId: number;
   address: string;
   path: string;
+  showValues?: boolean;
 };
 
 function isFixedArrayType(type: StorageArray | StorageDynamicArray): type is StorageArray {
@@ -71,6 +72,7 @@ export function StorageValueArray({
   chainId,
   address,
   path,
+  showValues = false,
 }: StorageValueArrayProps) {
   if (isDynamicArrayType(type)) {
     return (
@@ -81,6 +83,7 @@ export function StorageValueArray({
         chainId={chainId}
         address={address}
         path={path}
+        showValues={showValues}
       />
     );
   }
@@ -94,6 +97,7 @@ export function StorageValueArray({
         chainId={chainId}
         address={address}
         path={path}
+        showValues={showValues}
       />
     );
   }
@@ -108,6 +112,7 @@ function FixedArrayView({
   chainId,
   address,
   path,
+  showValues = false,
 }: {
   slot: Hex;
   type: StorageArray;
@@ -115,6 +120,7 @@ function FixedArrayView({
   chainId: number;
   address: string;
   path: string;
+  showValues?: boolean;
 }) {
   const baseType = types[type.base];
   if (!baseType) {
@@ -156,6 +162,7 @@ function FixedArrayView({
                 chainId={chainId}
                 address={address}
                 path={`${path}[${i}]`}
+                showValues={showValues}
               />
             </div>
           );
@@ -172,6 +179,7 @@ function DynamicArrayView({
   chainId,
   address,
   path,
+  showValues = false,
 }: {
   slot: Hex;
   type: StorageDynamicArray;
@@ -179,6 +187,7 @@ function DynamicArrayView({
   chainId: number;
   address: string;
   path: string;
+  showValues?: boolean;
 }) {
   const baseType = types[type.base];
   if (!baseType) {
@@ -194,6 +203,7 @@ function DynamicArrayView({
         chainId={chainId}
         address={address}
         path={path}
+        showValues={showValues}
       />
     </Collapsible>
   );
@@ -206,6 +216,7 @@ function ArrayElementsWithLength({
   chainId,
   address,
   path,
+  showValues = false,
 }: {
   slot: Hex;
   baseType: (typeof types)[string];
@@ -213,6 +224,7 @@ function ArrayElementsWithLength({
   chainId: number;
   address: string;
   path: string;
+  showValues?: boolean;
 }) {
   const numberOfBytes = Number(baseType.numberOfBytes);
   const nOfSlot = Math.floor(32 / numberOfBytes);
@@ -244,6 +256,7 @@ function ArrayElementsWithLength({
                 chainId={chainId}
                 address={address}
                 path={`${path}[${i}]`}
+                showValues={showValues}
               />
             </div>
           );

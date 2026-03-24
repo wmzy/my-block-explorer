@@ -32,6 +32,7 @@ export type StorageValueBytesProps = {
   chainId: number;
   address: string;
   isString?: boolean;
+  showValues?: boolean;
 };
 
 function isLongValue(data: Hex): boolean {
@@ -47,8 +48,13 @@ export function StorageValueBytes({
   chainId,
   address,
   isString = false,
+  showValues = false,
 }: StorageValueBytesProps) {
-  const { value, loading } = useStorageAt(chainId, address, slot);
+  const { value, loading } = useStorageAt(showValues ? chainId : undefined, address, slot);
+
+  if (!showValues) {
+    return <span className={loadingStyle}>-</span>;
+  }
 
   if (loading) {
     return <span className={loadingStyle}>...</span>;
@@ -69,6 +75,7 @@ export function StorageValueBytes({
         chainId={chainId}
         address={address}
         formatValue={formatValue}
+        showValues={showValues}
       />
     );
   }
@@ -84,6 +91,7 @@ export function StorageValueBytes({
         chainId={chainId}
         address={address}
         formatValue={formatValue}
+        showValues={showValues}
       />
     );
   }
@@ -103,12 +111,14 @@ function LongBytesValue({
   chainId,
   address,
   formatValue,
+  showValues = false,
 }: {
   slot: Hex;
   length: bigint;
   chainId: number;
   address: string;
   formatValue: (hex: Hex) => string;
+  showValues?: boolean;
 }) {
   const [value, setValue] = useState<string>('');
   const firstSlot = keccak256(pad(slot, { size: 32 }));

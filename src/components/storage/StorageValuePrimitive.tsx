@@ -37,6 +37,7 @@ export type StorageValuePrimitiveProps = {
   type: InplaceStorageType;
   chainId: number;
   address: string;
+  showValues?: boolean;
 };
 
 function getAbiTypeLabel(type: InplaceStorageType): string {
@@ -52,8 +53,13 @@ export function StorageValuePrimitive({
   type,
   chainId,
   address,
+  showValues = false,
 }: StorageValuePrimitiveProps) {
-  const { value, loading, error } = useStorageAt(chainId, address, slot);
+  const { value, loading, error } = useStorageAt(showValues ? chainId : undefined, address, slot);
+
+  if (!showValues) {
+    return <span className={loadingStyle}>-</span>;
+  }
 
   if (loading) {
     return <span className={loadingStyle}>...</span>;

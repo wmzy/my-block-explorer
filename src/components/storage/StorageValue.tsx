@@ -24,6 +24,7 @@ export type StorageValueProps = {
   chainId: number;
   address: string;
   path: string;
+  showValues?: boolean;
 };
 
 export function StorageValue({
@@ -35,6 +36,7 @@ export function StorageValue({
   chainId,
   address,
   path,
+  showValues = false,
 }: StorageValueProps) {
   if (type.encoding === 'inplace') {
     if (type.label.startsWith('struct ')) {
@@ -46,6 +48,7 @@ export function StorageValue({
           chainId={chainId}
           address={address}
           path={path}
+          showValues={showValues}
         />
       );
     }
@@ -61,6 +64,7 @@ export function StorageValue({
           chainId={chainId}
           address={address}
           path={path}
+          showValues={showValues}
         />
       );
     }
@@ -73,6 +77,7 @@ export function StorageValue({
         type={type as InplaceStorageType}
         chainId={chainId}
         address={address}
+        showValues={showValues}
       />
     );
   }
@@ -88,6 +93,7 @@ export function StorageValue({
         chainId={chainId}
         address={address}
         path={path}
+        showValues={showValues}
       />
     );
   }
@@ -99,6 +105,7 @@ export function StorageValue({
         chainId={chainId}
         address={address}
         isString={type.label === 'string'}
+        showValues={showValues}
       />
     );
   }
@@ -112,6 +119,7 @@ export function StorageValue({
         chainId={chainId}
         address={address}
         path={path}
+        showValues={showValues}
       />
     );
   }

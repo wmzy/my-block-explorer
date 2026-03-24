@@ -37,6 +37,7 @@ export type StorageMemberProps = {
   baseSlot?: Hex;
   baseSlotCode?: ['hex' | 'bigint', string];
   offsetOverride?: number;
+  showValues?: boolean;
 };
 
 export function StorageMember({
@@ -47,6 +48,7 @@ export function StorageMember({
   baseSlot,
   baseSlotCode,
   offsetOverride,
+  showValues = false,
 }: StorageMemberProps) {
   const type = types[member.type];
   if (!type) {
@@ -58,14 +60,15 @@ export function StorageMember({
   }
 
   const displayOffset = offsetOverride ?? member.offset;
+  const computedSlot =
+    baseSlot ??
+    (`0x${BigInt(member.slot.startsWith('0x') ? member.slot : `0x${member.slot}`).toString(16)}` as Hex);
 
   const renderValue = () => {
+    if (!showValues) return null;
     return (
       <StorageValue
-        slot={
-          baseSlot ??
-          (`0x${BigInt(member.slot.startsWith('0x') ? member.slot : `0x${member.slot}`).toString(16)}` as Hex)
-        }
+        slot={computedSlot}
         slotCode={baseSlotCode}
         offset={displayOffset}
         type={type}
@@ -73,6 +76,7 @@ export function StorageMember({
         chainId={chainId}
         address={address}
         path={member.label}
+        showValues={showValues}
       />
     );
   };
@@ -85,10 +89,8 @@ export function StorageMember({
         <SlotDisplay
           chainId={chainId}
           address={address}
-          slot={
-            baseSlot ??
-            (`0x${BigInt(member.slot.startsWith('0x') ? member.slot : `0x${member.slot}`).toString(16)}` as Hex)
-          }
+          slot={computedSlot}
+          showValues={showValues}
         />
         {renderValue()}
       </div>

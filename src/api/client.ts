@@ -54,8 +54,7 @@ export class ApiClient {
 
       const data = await response.json();
       return { data, headers: response.headers };
-    }
-    catch (error) {
+    } catch (error) {
       clearTimeout(timeoutId);
 
       if (error instanceof ApiError) {
@@ -231,24 +230,11 @@ export class ApiClient {
     return data;
   }
 
-  // RPC config APIs
-  async getRpcConfigs(): Promise<Record<string, unknown>> {
-    const { data } = await this.get<Record<string, unknown>>('/api/rpc-configs');
+  async getStorageLayout(chainId: number, address: string): Promise<Record<string, unknown>> {
+    const { data } = await this.get<Record<string, unknown>>(
+      `/api/chains/${chainId}/contracts/${address}/storage-layout`,
+    );
     return data;
-  }
-
-  async saveRpcConfig(config: Record<string, unknown>): Promise<Record<string, unknown>> {
-    const { data } = await this.post<Record<string, unknown>>('/api/rpc-configs', config);
-    return data;
-  }
-
-  async deleteRpcConfig(chainId: number): Promise<Record<string, unknown>> {
-    const { data } = await this.del<Record<string, unknown>>(`/api/rpc-configs/${chainId}`);
-    return data;
-  }
-
-  setBaseUrl(baseUrl: string): void {
-    this.baseUrl = baseUrl;
   }
 
   getBaseUrl(): string {

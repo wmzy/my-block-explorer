@@ -393,7 +393,7 @@ export class ContractSourceService {
             left = mid + 1n;
             logger.info(
               { midNumber, left: left.toString(), right: right.toString() },
-              'Contract doesn\'t exist at block, searching later',
+              "Contract doesn't exist at block, searching later",
             );
           }
         } catch (error) {
@@ -428,7 +428,7 @@ export class ContractSourceService {
           }
 
           // 无论如何，假设合约在此区块不存在，向右搜索
-          logger.info('Due to error, assuming contract doesn\'t exist and searching later');
+          logger.info("Due to error, assuming contract doesn't exist and searching later");
           left = mid + 1n;
         }
 
@@ -581,7 +581,7 @@ export class ContractSourceService {
                   expected: contractAddress,
                   got: receipt.contractAddress ? formatAddress(receipt.contractAddress) : 'null',
                 },
-                'Contract address doesn\'t match',
+                "Contract address doesn't match",
               );
             }
           } else {
@@ -698,143 +698,25 @@ export class ContractSourceService {
     }
   }
 
-  // 获取合约源码（优先级：数据库 -> Sourcify -> 返回未验证状态）
-  async getContractSource(
-    chainId: number,
-    address: Address,
-    options?: { skipCache?: boolean },
-  ): Promise<ContractSource | null> {
-    logger.info({ address, chainId }, 'Getting contract source');
-
+  async getContractSource(chainId: number, address: Address): Promise<ContractSource | null> {
     try {
-      // 1. 先从数据库查找缓存的合约信息
-      if (options?.skipCache) {
-        logger.info('Skipping cache due to refresh request');
-      }
-      logger.info('Step 1: Checking database cache for contract source');
-      const cached = options?.skipCache ? null : await this.getFromDatabase(chainId, address);
-      if (cached && this.isCacheValid(cached)) {
-        logger.info(
-          {
-            address,
-            verificationStatus: cached.verificationStatus,
-            isProxy: cached.isProxy,
-            lastChecked: cached.lastChecked,
-          },
-          'Found cached contract source',
-        );
-
-        // 对于已验证的合约，检查是否需要更新代理信息
-        if (cached.verificationStatus === 'verified') {
-          // Only re-detect proxy when proxy status is genuinely unknown
-          if (cached.isProxy === undefined || cached.isProxy === null) {
-            logger.info('Cached verified contract missing or incomplete proxy info, checking');
-            const proxyInfo = await this.detectProxy(chainId, address);
-            if (proxyInfo.isProxy) {
-              logger.warn('Cached verified contract is actually a proxy, need to refresh cache');
-              // 继续执行重新获取逻辑
-            } else {
-              logger.info('Returning cached verified contract (confirmed non-proxy)');
-              return cached;
-            }
-          } else {
-            logger.info('Returning cached verified contract (proxy info complete)');
-            // 如果是代理合约，需要动态加载实现合约信息
-            if (cached.isProxy && cached.implementationAddress) {
-              logger.info('Loading implementation contract for cached proxy');
-              const implementationContract = await this.getContractSource(
-                chainId,
-                cached.implementationAddress,
-              );
-              return {
-                ...cached,
-                implementationContract: implementationContract ?? undefined,
-              };
-            }
-            return cached;
-          }
-        }
-
-        // 对于未验证的合约，检查是否需要更新代理信息
-        if (!cached.isProxy) {
-          logger.info('Checking if cached unverified contract is actually a proxy');
-          const proxyInfo = await this.detectProxy(chainId, address);
-          if (proxyInfo.isProxy) {
-            logger.warn('Cached contract is actually a proxy, need to refresh cache');
-            // 继续执行重新获取逻辑
-          } else {
-            logger.info('Returning cached contract source (verified non-proxy)');
-            return cached;
-          }
-        } else {
-          logger.info('Returning cached proxy contract source');
-          return cached;
-        }
-      } else if (cached) {
-        logger.info(
-          { lastChecked: cached.lastChecked },
-          'Found cached contract but cache is invalid/expired',
-        );
-      } else {
-        logger.info('No cached contract source found');
+      const cached = await this.getFromDatabase(chainId, address);
+      if (cached) {
+        return cached;
       }
 
-      // 2. 检查是否为合约
-      const isContract = await this.isContractAddress(chainId, address);
-      if (!isContract) {
-        return null;
-      }
-
-      logger.info('Step 2: Fetching contract source from external sources');
-
-      // 3. 尝试从 Sourcify 获取（包含 proxyResolution）
-      logger.info('Trying Sourcify');
       const sourcifyResult = await this.fetchFromSourcify(chainId, address);
       if (sourcifyResult) {
-        logger.info(
-          { isProxy: sourcifyResult.isProxy, proxyType: sourcifyResult.proxyType },
-          'Found contract source from Sourcify',
-        );
         await this.saveToDatabase(sourcifyResult);
         return sourcifyResult;
       }
 
-      // 3.5. 尝试从链特定的区块浏览器获取
-      logger.info('Trying chain-specific explorer');
       const explorerResult = await this.fetchFromChainExplorer(chainId, address);
-
-      // 4. 对非 Sourcify 来源，使用 detectProxy 做本地代理检测
-      const baseContract = explorerResult ?? null;
-      const proxyInfo = await this.detectProxy(chainId, address);
-
-      if (proxyInfo.isProxy) {
-        logger.info(
-          { proxyType: proxyInfo.proxyType, implementation: proxyInfo.implementationAddress },
-          'Local proxy detection found proxy',
-        );
-        const proxyContract = await this.handleProxyContract(chainId, address, proxyInfo);
-        if (proxyContract) {
-          if (baseContract) {
-            proxyContract.sourceCode = baseContract.sourceCode ?? proxyContract.sourceCode;
-            proxyContract.abi = baseContract.abi ?? proxyContract.abi;
-            proxyContract.name = baseContract.name ?? proxyContract.name;
-            proxyContract.compilerVersion =
-              baseContract.compilerVersion ?? proxyContract.compilerVersion;
-            proxyContract.verificationStatus = baseContract.verificationStatus;
-            proxyContract.verificationSource = baseContract.verificationSource;
-          }
-          await this.saveToDatabase(proxyContract);
-          return proxyContract;
-        }
+      if (explorerResult) {
+        await this.saveToDatabase(explorerResult);
+        return explorerResult;
       }
 
-      if (baseContract) {
-        await this.saveToDatabase(baseContract);
-        return baseContract;
-      }
-
-      // 5. 如果都没找到，返回未验证状态
-      logger.info('No verified source found, creating unverified record');
       const unverifiedContract: ContractSource = {
         chainId,
         address,
@@ -844,7 +726,6 @@ export class ContractSourceService {
         verificationSource: 'unknown',
         lastChecked: new Date(),
       };
-
       await this.saveToDatabase(unverifiedContract);
       return unverifiedContract;
     } catch (error) {
@@ -1208,7 +1089,7 @@ export class ContractSourceService {
         if (
           implementationData &&
           implementationData !==
-          '0x0000000000000000000000000000000000000000000000000000000000000000'
+            '0x0000000000000000000000000000000000000000000000000000000000000000'
         ) {
           // 提取地址（后20字节）
           const implementationAddress = `0x${implementationData.slice(-40)}`;

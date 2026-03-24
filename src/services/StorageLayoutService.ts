@@ -80,7 +80,7 @@ export class StorageLayoutService {
           { chainId, address, count: layout.storage.length },
           'Fetched storage layout from explorer',
         );
-        this.saveToDatabase(chainId, address, layout, 'fetcher').catch(() => {});
+        await this.saveToDatabase(chainId, address, layout, 'fetcher');
         return { found: true, layout, source: 'fetcher' };
       }
     } catch (error) {
@@ -98,7 +98,7 @@ export class StorageLayoutService {
           { chainId, address, count: layout.storage.length },
           'Fetched storage layout from evmole',
         );
-        this.saveToDatabase(chainId, address, layout, 'evmole').catch(() => {});
+        await this.saveToDatabase(chainId, address, layout, 'evmole');
         return { found: true, layout, source: 'evmole' };
       }
     } catch (error) {
@@ -106,7 +106,7 @@ export class StorageLayoutService {
     }
 
     logger.info({ chainId, address }, 'No storage layout found from any source');
-    this.cacheNotFound(chainId, address).catch(() => {});
+    await this.cacheNotFound(chainId, address);
 
     return { found: false, error: 'Storage layout not available for this contract' };
   }

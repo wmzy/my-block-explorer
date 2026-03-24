@@ -41,7 +41,8 @@ block-explorer/
 | Add new chain        | `src/config/chains.ts`                                                          | Viem chains auto-supported                          |
 | RPC client creation  | `src/utils/realTimeData.ts` (frontend), `src/services/RpcManager.ts` (backend)  | Both cache per chainId                              |
 | Event indexing       | `src/services/EventIndexingService.ts` + `src/services/IndexingQueueService.ts` | Manual range-based, serial queue, 2000 blocks/batch |
-| Contract source/ABI  | `src/services/ContractSourceService.ts`                                         | Sourcify → Etherscan fallback                       |
+| Contract source/ABI  | `src/services/ContractSourceService.ts`                                         | DB → Sourcify/Etherspan fallback, immutable         |
+| Storage layout       | `src/services/StorageLayoutService.ts`                                          | DB → storage-layout-fetcher, immutable              |
 | UI components        | `src/components/ui/`                                                            | Haze UI wrappers + Linaria                          |
 | Address data hook    | `src/hooks/useAddressData.ts`                                                   | Hybrid: API (persistent) + RPC (realtime)           |
 
@@ -108,11 +109,27 @@ Ephemeral (RPC direct):
 └── Contract read/simulate
 
 Persistent (Backend API → DuckDB):
-├── Contract source/ABI
+├── Contract source/ABI (immutable)
 ├── Contract events (indexed)
 ├── Address metadata
+├── Storage layout (immutable)
 └── Search index
 ```
+
+### Immutable Data Caching Strategy
+
+Contract source/ABI and storage layout are **immutable** — they never change
+after compilation. Cached data is valid forever; no refresh needed.
+
+```
+Request → DB lookup → Found: return immediately
+                      Not found: fetch from external API → save to DB → return
+```
+
+- Contract source: `ContractSourceService.getContractSource()` — DB → Sourcify →
+  Etherscan
+- Storage layout: `StorageLayoutService.getStorageLayout()` — DB →
+  storage-layout-fetcher
 
 ### Custom DuckDB-PostgreSQL Adapter
 

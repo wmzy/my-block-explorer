@@ -26,7 +26,7 @@ import { getFunctionSelector, formatSelectorForDisplay } from '@/utils/functionS
 import { formatResultWithLinks } from '@/utils/addressTypeDetection';
 import { StorageLayoutView } from '@/components/storage';
 import type { StorageLayout } from '@/types/storage';
-import { useStorageLayout } from '@/hooks/useStorageLayout';
+import { useStorageLayout } from '@/hooks/useBlockchainQueries';
 
 type ProxyType =
   | 'transparent'
@@ -1669,7 +1669,7 @@ function StoragePanel({
   const targetAddress =
     storageTarget === 'impl' ? (contractSource?.implementationAddress ?? address) : address;
 
-  const { layout, loading, error } = useStorageLayout(chainId, targetAddress);
+  const { data, isLoading, error } = useStorageLayout(chainId, targetAddress);
 
   const isProxy = contractSource?.isProxy && !!contractSource?.implementationAddress;
 
@@ -1682,7 +1682,7 @@ function StoragePanel({
     );
   }
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className={cardStyles}>
         <h2>Storage Layout</h2>
@@ -1691,16 +1691,20 @@ function StoragePanel({
     );
   }
 
-  if (error || !layout) {
+  if (error || !data) {
     return (
       <div className={cardStyles}>
         <h2>Storage Layout</h2>
         <div className={errorStyles}>
-          {error ?? 'Storage layout not available for this contract.'}
+          {error instanceof Error
+            ? error.message
+            : 'Storage layout not available for this contract.'}
         </div>
       </div>
     );
   }
+
+  const layout = data.layout as StorageLayout;
 
   return (
     <div className={cardStyles}>

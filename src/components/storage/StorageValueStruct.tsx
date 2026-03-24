@@ -37,6 +37,7 @@ export type StorageValueStructProps = {
   chainId: number;
   address: string;
   path: string;
+  showValues?: boolean;
 };
 
 export function StorageValueStruct({
@@ -46,6 +47,7 @@ export function StorageValueStruct({
   chainId,
   address,
   path,
+  showValues = false,
 }: StorageValueStructProps) {
   return (
     <Collapsible title="Struct" badge={type.label}>
@@ -77,6 +79,7 @@ export function StorageValueStruct({
                   address={address}
                   baseSlot={memberSlot}
                   offsetOverride={member.offset}
+                  showValues={showValues}
                 />
               </div>
             );

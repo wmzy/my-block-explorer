@@ -36,15 +36,24 @@ export type SlotDisplayProps = {
   address: string;
   slot: Hex;
   className?: string;
+  showValues?: boolean;
 };
 
-export function SlotDisplay({ chainId, address, slot, className }: SlotDisplayProps) {
-  const { value, loading } = useStorageAt(chainId, address, slot);
+export function SlotDisplay({
+  chainId,
+  address,
+  slot,
+  className,
+  showValues = false,
+}: SlotDisplayProps) {
+  const { value, loading } = useStorageAt(showValues ? chainId : undefined, address, slot);
 
   return (
     <div className={cx(slotDisplayStyle, className)}>
       <span className={slotLabelStyle}>slot:</span>
-      {loading ? (
+      {!showValues ? (
+        <span className={slotLoadingStyle}>-</span>
+      ) : loading ? (
         <span className={slotLoadingStyle}>...</span>
       ) : (
         <span className={slotValueStyle} title={value ?? undefined}>

@@ -57,6 +57,7 @@ export type StorageValueMappingProps = {
   chainId: number;
   address: string;
   path: string;
+  showValues?: boolean;
 };
 
 function encodeKey(key: string, keyType: string): { encoded: Hex; code: string } | null {
@@ -94,6 +95,7 @@ export function StorageValueMapping({
   chainId,
   address,
   path,
+  showValues = false,
 }: StorageValueMappingProps) {
   const [key, setKey] = useState<string>('');
   const valueType = types[type.value];
