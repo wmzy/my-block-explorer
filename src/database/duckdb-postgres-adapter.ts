@@ -13,6 +13,8 @@ const logger = createLogger('duckdb-postgres-adapter');
 export class DuckDBPostgresAdapter {
   private instance: DuckDBInstance | null = null;
   private isInitialized = false;
+  private isInitializing = false;
+  private isMigrating = false;
   private dbPath: string;
 
   constructor(connectionString: string) {
@@ -35,14 +37,23 @@ export class DuckDBPostgresAdapter {
     return join(process.cwd(), 'data', 'blockchain.db');
   }
 
-  /**
-   * 初始化数据库连接
-   */
   private async connect(): Promise<void> {
     if (this.instance) return;
 
-    this.instance = await DuckDBInstance.create(this.dbPath);
-    await this.ensureTables();
+    if (this.isInitializing) {
+      while (this.isInitializing) {
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
+      return;
+    }
+
+    this.isInitializing = true;
+    try {
+      this.instance = await DuckDBInstance.create(this.dbPath);
+      await this.ensureTables();
+    } finally {
+      this.isInitializing = false;
+    }
   }
 
   private async ensureTables(): Promise<void> {
@@ -53,21 +64,138 @@ export class DuckDBPostgresAdapter {
       await conn.run(
         `CREATE TABLE IF NOT EXISTS "drizzle"."__drizzle_migrations" (
           id INTEGER PRIMARY KEY,
+          name text,
           hash text NOT NULL,
           created_at bigint
         )`,
+      );
+      await conn.run(
+        `ALTER TABLE "drizzle"."__drizzle_migrations" ADD COLUMN IF NOT EXISTS name text`,
       );
     } finally {
       conn.disconnectSync();
     }
 
+    await this.migrate();
+  }
+
+  public async migrate(options: { migrationsFolder?: string } = {}): Promise<void> {
+    if (this.isMigrating) {
+      logger.info('Migration already in progress, skipping');
+      return;
+    }
+    this.isMigrating = true;
+
     try {
-      const { db } = await import('./drizzle');
-      const { migrate } = await import('drizzle-orm/postgres-js/migrator');
-      await migrate(db, { migrationsFolder: './drizzle' });
+      const migrationsDir = options.migrationsFolder ?? './drizzle';
+      const fs = await import('fs');
+      const path = await import('path');
+
+      const files = fs
+        .readdirSync(migrationsDir)
+        .filter(f => f.endsWith('.sql'))
+        .sort();
+
+      for (const file of files) {
+        const filePath = path.join(migrationsDir, file);
+        const sql = fs.readFileSync(filePath, 'utf-8');
+        const hash = await this.hashString(sql);
+        const migrationName = file.replace('.sql', '');
+
+        const existingRecord = await this.getMigrationRecord(migrationName);
+
+        if (existingRecord) {
+          if (existingRecord.hash !== hash) {
+            throw new Error(
+              `Migration ${migrationName} has dirty data: recorded hash ${existingRecord.hash} does not match current ${hash}. ` +
+                `Migration file was modified after execution. Clean up __drizzle_migrations table and re-run.`,
+            );
+          }
+          logger.info({ file, hash }, 'Migration already applied, skipping');
+          continue;
+        }
+
+        const statements = this.parseMigration(sql);
+        logger.info({ file, statements: statements.length }, 'Running migration');
+
+        for (const statement of statements) {
+          if (statement.trim()) {
+            await this.executeStatement(statement);
+          }
+        }
+
+        await this.recordMigration(migrationName, hash);
+        logger.info({ file }, 'Migration completed');
+      }
+
       logger.info('Database migrations applied');
+    } finally {
+      this.isMigrating = false;
+    }
+  }
+
+  private parseMigration(sql: string): string[] {
+    return sql
+      .split(/-->\s*statement-breakpoint/)
+      .map(s => s.trim())
+      .filter(Boolean);
+  }
+
+  private async hashString(str: string): Promise<string> {
+    const encoder = new TextEncoder();
+    const data = encoder.encode(str);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  private async getMigrationRecord(
+    migrationName: string,
+  ): Promise<{ name: string; hash: string } | null> {
+    if (!this.instance) return null;
+    const conn = await this.instance.connect();
+    try {
+      const result = await conn.runAndReadAll(
+        'SELECT name, hash FROM "drizzle"."__drizzle_migrations" WHERE name = $1',
+        [migrationName],
+      );
+      const rows = result.getRowObjects();
+      return rows.length > 0
+        ? { name: rows[0].name as string, hash: rows[0].hash as string }
+        : null;
+    } finally {
+      conn.disconnectSync();
+    }
+  }
+
+  private async recordMigration(migrationName: string, hash: string): Promise<void> {
+    if (!this.instance) return;
+    const conn = await this.instance.connect();
+    try {
+      const result = await conn.runAndReadAll(
+        'SELECT COALESCE(MAX(id), 0) + 1 as next_id FROM "drizzle"."__drizzle_migrations"',
+      );
+      const nextId = result.getRowObjects()[0]?.next_id ?? 1;
+
+      await conn.run(
+        'INSERT INTO "drizzle"."__drizzle_migrations" (id, name, hash, created_at) VALUES ($1, $2, $3, $4)',
+        [nextId, migrationName, hash, Date.now()],
+      );
+    } finally {
+      conn.disconnectSync();
+    }
+  }
+
+  private async executeStatement(statement: string): Promise<void> {
+    if (!this.instance) return;
+    const conn = await this.instance.connect();
+    try {
+      await conn.run(statement);
     } catch (error) {
-      logger.error({ err: error }, 'Failed to run migrations');
+      logger.error({ err: error, statement }, 'Migration statement failed');
+      throw error;
+    } finally {
+      conn.disconnectSync();
     }
   }
 
@@ -117,7 +245,6 @@ export class DuckDBPostgresAdapter {
       throw new Error('Database not initialized');
     }
 
-    // 处理模板字符串格式 (Drizzle 使用的格式)
     let queryText: string;
     let queryParams: unknown[];
 
@@ -125,13 +252,17 @@ export class DuckDBPostgresAdapter {
       queryText = sql;
       queryParams = params;
     } else {
-      // 处理模板字符串 + 参数
       queryText = sql.join('?');
       queryParams = params;
     }
 
-    // 注意：DuckDB 原生支持 PostgreSQL 风格的参数占位符 ($1, $2, ...)
-    // 不需要转换为 ? 风格
+    if (queryText.toUpperCase().includes('DEFAULT')) {
+      if (queryText.includes('default now()')) {
+        const ts = new Date().toISOString();
+        queryText = queryText.replace(/default now\(\)/gi, `'${ts}'`);
+      }
+      queryText = queryText.replace(/\bdefault\b/gi, 'NULL');
+    }
 
     try {
       return await this.executeQuery(queryText, queryParams);
@@ -342,6 +473,7 @@ export function createDuckDBAdapter(connectionString: string) {
     end: typeof adapter.end;
     on: typeof adapter.on;
     off: typeof adapter.off;
+    migrate: typeof adapter.migrate;
     unsafe: (
       query: string,
       params?: unknown[],
@@ -361,13 +493,13 @@ export function createDuckDBAdapter(connectionString: string) {
   sql.end = adapter.end.bind(adapter);
   sql.on = adapter.on.bind(adapter);
   sql.off = adapter.off.bind(adapter);
+  sql.migrate = adapter.migrate.bind(adapter);
 
   sql.unsafe = (query: string, params?: unknown[]) => {
     const queryPromise = adapter.query(query, ...(params ?? []));
     return adapter.extendQueryPromise(queryPromise, query, params ?? []);
   };
 
-  // 添加 Drizzle 需要的 options 属性
   sql.options = {
     parsers: {},
     serializers: {},
@@ -376,11 +508,10 @@ export function createDuckDBAdapter(connectionString: string) {
     },
   };
 
-  // 添加其他 postgres 客户端属性
   sql.parameters = {};
   sql.types = {};
 
   sql.getDuckDB = adapter.getDuckDB.bind(adapter);
 
-  return sql as unknown as Sql & Pick<DuckDBPostgresAdapter, 'getDuckDB'>;
+  return sql as unknown as Sql & Pick<DuckDBPostgresAdapter, 'getDuckDB' | 'migrate'>;
 }

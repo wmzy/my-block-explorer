@@ -884,16 +884,48 @@ export class ContractSourceService {
               ([name, src]) => `// File: ${name}\n${(src as { content?: string }).content ?? ''}`,
             )
             .join('\n\n');
+
+          // Extract contract name from first source file if not provided
+          if (!sourceData.contractName && !sourceData.name) {
+            for (const [, src] of solFiles) {
+              const content = (src as { content?: string }).content ?? '';
+              const contractMatch = content.match(/contract\s+(\w+)\s+(is|{)/);
+              if (contractMatch) {
+                sourceData.name = contractMatch[1];
+                break;
+              }
+            }
+          }
+
+          // Extract compiler version from pragma if not provided
+          if (!sourceData.compilerVersion) {
+            for (const [, src] of solFiles) {
+              const content = (src as { content?: string }).content ?? '';
+              const pragmaMatch = content.match(/pragma\s+solidity\s+\^?(\d+\.\d+\.\d+)/);
+              if (pragmaMatch) {
+                sourceData.compilerVersion = pragmaMatch[1];
+                break;
+              }
+            }
+          }
         }
       }
+
+      // Extract optimization settings if available
+      const optimizationEnabled =
+        sourceData.settings?.optimizer?.enabled ?? sourceData.optimizationEnabled ?? false;
+      const optimizationRuns =
+        sourceData.settings?.optimizer?.runs ??
+        sourceData.optimizationRuns ??
+        parseInt(sourceData.runs ?? '200');
 
       return {
         chainId,
         address,
         name: sourceData.contractName ?? sourceData.name ?? 'Unknown',
         compilerVersion: sourceData.compilerVersion ?? 'Unknown',
-        optimizationEnabled: sourceData.optimizationEnabled ?? false,
-        optimizationRuns: sourceData.optimizationRuns ?? parseInt(sourceData.runs ?? '200'),
+        optimizationEnabled,
+        optimizationRuns,
         sourceCode,
         abi: sourceData.abi ?? '[]',
         constructorArguments: sourceData.constructorArguments ?? '',
