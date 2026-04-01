@@ -46,6 +46,11 @@ export type ProxyType =
   | 'eip1167'
   | 'unknown';
 
+export type ContractFile = {
+  filename: string;
+  content: string;
+};
+
 export type ContractSource = {
   chainId: number;
   address: Address;
@@ -54,6 +59,7 @@ export type ContractSource = {
   optimizationEnabled?: boolean;
   optimizationRuns?: number;
   sourceCode: string;
+  sourceFiles?: ContractFile[];
   abi: string;
   constructorArguments?: string;
   verificationStatus: 'verified' | 'unverified' | 'partial';
@@ -76,11 +82,6 @@ export type ContractCreationInfo = {
   timestamp: number;
   gasUsed: bigint;
   gasPrice: bigint;
-};
-
-export type ContractFile = {
-  filename: string;
-  content: string;
 };
 
 export class ContractSourceService {
@@ -799,6 +800,7 @@ export class ContractSourceService {
       const compilerVersion = data.compilation?.compilerVersion ?? '';
 
       let sourceCode = '';
+      let sourceFiles: ContractFile[] | undefined;
       if (data.sources && typeof data.sources === 'object') {
         type SourceFile = { content?: string };
         type Sources = Record<string, SourceFile>;
@@ -812,6 +814,10 @@ export class ContractSourceService {
           sourceCode = solFiles
             .map(([name, src]) => `// File: ${name}\n${src.content ?? ''}`)
             .join('\n\n');
+          sourceFiles = solFiles.map(([name, src]) => ({
+            filename: name,
+            content: src.content ?? '',
+          }));
         }
       }
 
@@ -821,6 +827,7 @@ export class ContractSourceService {
         name: contractName,
         compilerVersion,
         sourceCode,
+        sourceFiles,
         abi,
         verificationStatus: isPartial ? 'partial' : 'verified',
         verificationSource: 'sourcify',
@@ -891,6 +898,7 @@ export class ContractSourceService {
       }
 
       let sourceCode = '';
+      let sourceFiles: ContractFile[] | undefined;
       if (sourceData.sources && typeof sourceData.sources === 'object') {
         const solFiles = Object.entries(sourceData.sources).filter(([name]) =>
           name.endsWith('.sol'),
@@ -901,6 +909,12 @@ export class ContractSourceService {
               ([name, src]) => `// File: ${name}\n${(src as { content?: string }).content ?? ''}`,
             )
             .join('\n\n');
+        }
+        if (solFiles.length > 1) {
+          sourceFiles = solFiles.map(([name, src]) => ({
+            filename: name,
+            content: (src as { content?: string }).content ?? '',
+          }));
         }
       }
 
@@ -941,6 +955,7 @@ export class ContractSourceService {
         optimizationEnabled,
         optimizationRuns,
         sourceCode,
+        sourceFiles,
         abi,
         constructorArguments: '',
         verificationStatus: sourceCode ? 'verified' : 'partial',

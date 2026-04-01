@@ -31,6 +31,7 @@ import {
   useContractSource,
   useContractCreation,
 } from '@/hooks/useBlockchainQueries';
+import { SourceCodeViewer } from '@/components/SourceCodeViewer';
 
 type ProxyType =
   | 'transparent'
@@ -43,6 +44,11 @@ type ProxyType =
   | 'eip1167'
   | 'unknown';
 
+type ContractFile = {
+  filename: string;
+  content: string;
+};
+
 type ContractSource = {
   chainId: number;
   address: string;
@@ -51,6 +57,7 @@ type ContractSource = {
   optimizationEnabled?: boolean;
   optimizationRuns?: number;
   sourceCode: string;
+  sourceFiles?: ContractFile[];
   abi: string;
   constructorArguments?: string;
   verificationStatus: 'verified' | 'unverified' | 'partial';
@@ -801,7 +808,10 @@ export default function ContractPage() {
               <div className={cardStyles}>
                 <h2>{isProxy ? 'Proxy Contract Source' : 'Source Code'}</h2>
                 {contractSource.sourceCode ? (
-                  <div className={codeStyles}>{contractSource.sourceCode}</div>
+                  <SourceCodeViewer
+                    sourceCode={contractSource.sourceCode}
+                    sourceFiles={contractSource.sourceFiles}
+                  />
                 ) : (
                   <div>No source code available</div>
                 )}
@@ -815,9 +825,10 @@ export default function ContractPage() {
                   Implementation Source ({contractSource.implementationContract?.name ?? 'Unknown'})
                 </h2>
                 {contractSource.implementationContract?.sourceCode ? (
-                  <div className={codeStyles}>
-                    {contractSource.implementationContract.sourceCode}
-                  </div>
+                  <SourceCodeViewer
+                    sourceCode={contractSource.implementationContract.sourceCode}
+                    sourceFiles={contractSource.implementationContract.sourceFiles}
+                  />
                 ) : (
                   <div>No source code available for implementation contract</div>
                 )}
@@ -828,11 +839,13 @@ export default function ContractPage() {
             {activeTab === 'abi' && (
               <div className={cardStyles}>
                 <h2>{isProxy ? 'Proxy ABI' : 'Contract ABI'}</h2>
-                <div className={codeStyles}>
-                  {contractSource.abi
-                    ? JSON.stringify(JSON.parse(contractSource.abi), null, 2)
-                    : 'No ABI available'}
-                </div>
+                <SourceCodeViewer
+                  sourceCode={
+                    contractSource.abi
+                      ? JSON.stringify(JSON.parse(contractSource.abi), null, 2)
+                      : 'No ABI available'
+                  }
+                />
               </div>
             )}
 
@@ -842,11 +855,17 @@ export default function ContractPage() {
                 <h2>
                   Implementation ABI ({contractSource.implementationContract?.name ?? 'Unknown'})
                 </h2>
-                <div className={codeStyles}>
-                  {contractSource.implementationContract?.abi
-                    ? JSON.stringify(JSON.parse(contractSource.implementationContract.abi), null, 2)
-                    : 'No ABI available for implementation contract'}
-                </div>
+                <SourceCodeViewer
+                  sourceCode={
+                    contractSource.implementationContract?.abi
+                      ? JSON.stringify(
+                          JSON.parse(contractSource.implementationContract.abi),
+                          null,
+                          2,
+                        )
+                      : 'No ABI available for implementation contract'
+                  }
+                />
               </div>
             )}
 
