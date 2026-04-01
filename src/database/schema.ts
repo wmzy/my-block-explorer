@@ -214,6 +214,7 @@ export const contractSources = duckdbTable(
     implementation: address(),
     swarmSource: varchar({ length: 100 }),
     isVerified: boolean().default(false),
+    verificationSource: varchar({ length: 50 }),
     verificationDate: datetime().default(sql`now()`),
     lastUpdated: datetime().default(sql`now()`),
   },

@@ -1,6 +1,7 @@
 import { DuckDBInstance } from '@duckdb/node-api';
 import { join } from 'path';
-import { mkdir } from 'fs/promises';
+import { mkdir, unlink } from 'fs/promises';
+import { existsSync } from 'fs';
 import { type Sql } from 'postgres';
 import { createLogger } from '../server/logger';
 
@@ -49,10 +50,41 @@ export class DuckDBPostgresAdapter {
 
     this.isInitializing = true;
     try {
+      await this.recoverWal();
       this.instance = await DuckDBInstance.create(this.dbPath);
+      await this.checkpointWal();
       await this.ensureTables();
+    } catch (error) {
+      this.instance = null;
+      throw error;
     } finally {
       this.isInitializing = false;
+    }
+  }
+
+  private async recoverWal(): Promise<void> {
+    const walPath = this.dbPath + '.wal';
+    if (existsSync(walPath)) {
+      try {
+        const testInstance = await DuckDBInstance.create(this.dbPath);
+        const conn = await testInstance.connect();
+        await conn.run('PRAGMA wal_checkpoint(TRUNCATE)');
+        conn.disconnectSync();
+      } catch {
+        logger.warn({ walPath }, 'Removing corrupted WAL file');
+        await unlink(walPath).catch(() => {});
+      }
+    }
+  }
+
+  private async checkpointWal(): Promise<void> {
+    if (!this.instance) return;
+    const conn = await this.instance.connect();
+    try {
+      await conn.run('PRAGMA wal_checkpoint(TRUNCATE)');
+    } catch {
+    } finally {
+      conn.disconnectSync();
     }
   }
 
@@ -84,6 +116,11 @@ export class DuckDBPostgresAdapter {
       logger.info('Migration already in progress, skipping');
       return;
     }
+
+    if (!this.instance) {
+      await this.connect();
+    }
+
     this.isMigrating = true;
 
     try {
@@ -111,16 +148,24 @@ export class DuckDBPostgresAdapter {
                 `Migration file was modified after execution. Clean up __drizzle_migrations table and re-run.`,
             );
           }
-          logger.info({ file, hash }, 'Migration already applied, skipping');
-          continue;
+
+          if (await this.verifyMigrationTables(sql)) {
+            logger.info({ file, hash }, 'Migration already applied, skipping');
+            continue;
+          }
+
+          logger.info({ file }, 'Migration recorded but tables missing, re-applying');
+          await this.deleteMigrationRecord(migrationName);
         }
 
         const statements = this.parseMigration(sql);
         logger.info({ file, statements: statements.length }, 'Running migration');
 
+        const isReapply = !!existingRecord;
         for (const statement of statements) {
           if (statement.trim()) {
-            await this.executeStatement(statement);
+            const isCreateTable = /^\s*CREATE\s+TABLE/i.test(statement);
+            await this.executeStatement(statement, isReapply && isCreateTable);
           }
         }
 
@@ -168,6 +213,18 @@ export class DuckDBPostgresAdapter {
     }
   }
 
+  private async deleteMigrationRecord(migrationName: string): Promise<void> {
+    if (!this.instance) return;
+    const conn = await this.instance.connect();
+    try {
+      await conn.run('DELETE FROM "drizzle"."__drizzle_migrations" WHERE name = $1', [
+        migrationName,
+      ]);
+    } finally {
+      conn.disconnectSync();
+    }
+  }
+
   private async recordMigration(migrationName: string, hash: string): Promise<void> {
     if (!this.instance) return;
     const conn = await this.instance.connect();
@@ -186,12 +243,50 @@ export class DuckDBPostgresAdapter {
     }
   }
 
-  private async executeStatement(statement: string): Promise<void> {
+  private async verifyMigrationTables(sql: string): Promise<boolean> {
+    if (!this.instance) return false;
+
+    const tableNames = this.extractTableNames(sql);
+    if (tableNames.length === 0) return true;
+
+    const conn = await this.instance.connect();
+    try {
+      const result = await conn.runAndReadAll(
+        'SELECT table_name FROM information_schema.tables WHERE table_schema = current_schema()',
+      );
+      const existingTables = new Set(
+        result.getRowObjects().map((r: Record<string, unknown>) => r.table_name as string),
+      );
+
+      return tableNames.every(name => existingTables.has(name));
+    } finally {
+      conn.disconnectSync();
+    }
+  }
+
+  private extractTableNames(sql: string): string[] {
+    const names = new Set<string>();
+
+    const createMatches = sql.matchAll(
+      /CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?["`]?(\w+)["`]?/gi,
+    );
+    for (const match of createMatches) {
+      names.add(match[1].toLowerCase());
+    }
+
+    return Array.from(names);
+  }
+
+  private async executeStatement(statement: string, ignoreIfExists = false): Promise<void> {
     if (!this.instance) return;
     const conn = await this.instance.connect();
     try {
       await conn.run(statement);
     } catch (error) {
+      const message = (error as Error).message;
+      if (ignoreIfExists && /already exists|already have/i.test(message)) {
+        return;
+      }
       logger.error({ err: error, statement }, 'Migration statement failed');
       throw error;
     } finally {

@@ -1,0 +1,1 @@
+ALTER TABLE "contract_sources" ADD COLUMN "verification_source" varchar(50);

@@ -1,6 +1,7 @@
 import { serve } from '@hono/node-server';
 import { setGlobalDispatcher, ProxyAgent } from 'undici';
 import apiApp from './api-app';
+import { db } from './database/drizzle';
 
 const PROXY_URL =
   process.env.HTTPS_PROXY ??
@@ -19,7 +20,7 @@ console.log('🚀 Starting Block Explorer Server...');
 console.log(`📍 Port: ${port}`);
 console.log(`🌍 Environment: ${process.env.NODE_ENV ?? 'development'}`);
 
-serve(
+const server = serve(
   {
     fetch: apiApp.fetch,
     port,
@@ -41,3 +42,16 @@ serve(
     }
   },
 );
+
+const shutdown = async () => {
+  console.log('\n🛑 Shutting down gracefully...');
+  try {
+    await (db.$client as any).end?.();
+  } catch {}
+  server.close(() => {
+    process.exit(0);
+  });
+};
+
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);

@@ -2,16 +2,28 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import { createDuckDBAdapter } from './duckdb-postgres-adapter';
 import * as schema from './schema';
 
-// 创建 DuckDB 适配器
-const duckdbAdapter = createDuckDBAdapter(
-  process.env.DATABASE_URL ?? 'duckdb://data/blockchain.db',
-);
+const GLOBAL_KEY = '__block_explorer_duckdb_adapter__';
+const MODULE_KEY = '__block_explorer_module_hash__';
+const CURRENT_HASH = 'v2-wal-recovery';
 
-// 配置 Drizzle ORM，确保与 drizzle.config.ts 中的 casing 配置一致
+const needsReset = (globalThis as any)[MODULE_KEY] !== CURRENT_HASH;
+
+if (needsReset) {
+  delete (globalThis as any)[GLOBAL_KEY];
+  (globalThis as any)[MODULE_KEY] = CURRENT_HASH;
+}
+
+const duckdbAdapter =
+  (globalThis as any)[GLOBAL_KEY] ??
+  createDuckDBAdapter(process.env.DATABASE_URL ?? 'duckdb://data/blockchain.db');
+
+if (!(globalThis as any)[GLOBAL_KEY]) {
+  (globalThis as any)[GLOBAL_KEY] = duckdbAdapter;
+}
+
 export const db = drizzle(duckdbAdapter, {
   schema,
-  casing: 'snake_case', // 与 drizzle.config.ts 保持一致
+  casing: 'snake_case',
 });
 
-// 导出所有表和类型
 export * from './schema';

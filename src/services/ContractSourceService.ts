@@ -701,20 +701,23 @@ export class ContractSourceService {
   async getContractSource(chainId: number, address: Address): Promise<ContractSource | null> {
     try {
       const cached = await this.getFromDatabase(chainId, address);
-      if (cached) {
+      if (cached && cached.verificationStatus === 'verified' && cached.sourceCode) {
+        if (cached.isProxy) {
+          return await this.enhanceWithProxyInfo(cached);
+        }
         return cached;
       }
 
       const sourcifyResult = await this.fetchFromSourcify(chainId, address);
       if (sourcifyResult) {
         await this.saveToDatabase(sourcifyResult);
-        return sourcifyResult;
+        return this.enhanceWithProxyInfo(sourcifyResult);
       }
 
       const blockscanResult = await this.fetchFromBlockscan(chainId, address);
       if (blockscanResult) {
         await this.saveToDatabase(blockscanResult);
-        return blockscanResult;
+        return this.enhanceWithProxyInfo(blockscanResult);
       }
 
       const unverifiedContract: ContractSource = {
@@ -852,83 +855,80 @@ export class ContractSourceService {
 
       const data = await response.json();
 
-      // BlockScan returns data in nested "result" field as JSON string for some chains
-      // e.g., { status: "1", result: "{ \"language\": \"Solidity\", \"sources\": {...} }" }
-      let sourceData = data;
-      if (typeof data.result === 'string') {
-        try {
-          sourceData = JSON.parse(data.result);
-        } catch {
-          logger.info({ address, chainId }, 'BlockScan returned invalid JSON in result');
-          return null;
-        }
-      }
-
-      // Check for source code or ABI in the parsed data
-      if (!sourceData.sourceCode && !sourceData.abi && !sourceData.sources) {
-        logger.info(
-          { address, chainId, hasResult: !!data.result, keys: Object.keys(sourceData) },
-          'BlockScan response has no sourceCode, abi, or sources',
-        );
+      if (data.status !== '1' || !data.result) {
         return null;
       }
 
-      // Build source code from sources map if available (newer BlockScan format)
-      let sourceCode = sourceData.sourceCode ?? '';
+      let sourceData: {
+        language?: string;
+        sources?: Record<string, { content?: string }>;
+        settings?: { optimizer?: { enabled?: boolean; runs?: number }; evmVersion?: string };
+        compilerVersion?: string;
+      };
+      try {
+        sourceData = JSON.parse(data.result);
+      } catch {
+        const ext = data.ext ?? 'sol';
+        sourceData = {
+          language: 'Solidity',
+          sources: { [`contract.${ext}`]: { content: data.result } },
+          settings: { optimizer: { enabled: false, runs: 200 } },
+        };
+      }
+
+      let sourceCode = '';
       if (sourceData.sources && typeof sourceData.sources === 'object') {
-        const sourceEntries = Object.entries(sourceData.sources);
-        const solFiles = sourceEntries.filter(([name]) => name.endsWith('.sol'));
+        const solFiles = Object.entries(sourceData.sources).filter(([name]) =>
+          name.endsWith('.sol'),
+        );
         if (solFiles.length > 0) {
           sourceCode = solFiles
             .map(
               ([name, src]) => `// File: ${name}\n${(src as { content?: string }).content ?? ''}`,
             )
             .join('\n\n');
+        }
+      }
 
-          // Extract contract name from first source file if not provided
-          if (!sourceData.contractName && !sourceData.name) {
-            for (const [, src] of solFiles) {
-              const content = (src as { content?: string }).content ?? '';
-              const contractMatch = content.match(/contract\s+(\w+)\s+(is|{)/);
-              if (contractMatch) {
-                sourceData.name = contractMatch[1];
-                break;
-              }
+      const name = data.contractName ?? 'Unknown';
+
+      let compilerVersion = sourceData.compilerVersion ?? '';
+      if (!compilerVersion) {
+        if (sourceData.sources) {
+          for (const [, src] of Object.entries(sourceData.sources)) {
+            const content = (src as { content?: string }).content ?? '';
+            const pragmaMatch = content.match(/pragma\s+solidity\s+\^?(\d+\.\d+\.\d+)/);
+            if (pragmaMatch) {
+              compilerVersion = pragmaMatch[1];
+              break;
             }
           }
-
-          // Extract compiler version from pragma if not provided
-          if (!sourceData.compilerVersion) {
-            for (const [, src] of solFiles) {
-              const content = (src as { content?: string }).content ?? '';
-              const pragmaMatch = content.match(/pragma\s+solidity\s+\^?(\d+\.\d+\.\d+)/);
-              if (pragmaMatch) {
-                sourceData.compilerVersion = pragmaMatch[1];
-                break;
-              }
-            }
+        }
+        if (!compilerVersion) {
+          const evmVersion = sourceData.settings?.evmVersion;
+          if (evmVersion === 'paris' || evmVersion === 'shanghai') {
+            compilerVersion = '0.8.20';
+          } else {
+            compilerVersion = '0.8.0';
           }
         }
       }
 
-      // Extract optimization settings if available
-      const optimizationEnabled =
-        sourceData.settings?.optimizer?.enabled ?? sourceData.optimizationEnabled ?? false;
-      const optimizationRuns =
-        sourceData.settings?.optimizer?.runs ??
-        sourceData.optimizationRuns ??
-        parseInt(sourceData.runs ?? '200');
+      const optimizationEnabled = sourceData.settings?.optimizer?.enabled ?? false;
+      const optimizationRuns = sourceData.settings?.optimizer?.runs ?? 200;
+
+      const abi = await this.fetchAbiFromExplorer(chainId, address);
 
       return {
         chainId,
         address,
-        name: sourceData.contractName ?? sourceData.name ?? 'Unknown',
-        compilerVersion: sourceData.compilerVersion ?? 'Unknown',
+        name,
+        compilerVersion,
         optimizationEnabled,
         optimizationRuns,
         sourceCode,
-        abi: sourceData.abi ?? '[]',
-        constructorArguments: sourceData.constructorArguments ?? '',
+        abi,
+        constructorArguments: '',
         verificationStatus: sourceCode ? 'verified' : 'partial',
         verificationSource: 'blockscan',
         verifiedAt: new Date(),
@@ -938,6 +938,24 @@ export class ContractSourceService {
       logger.error({ err: error }, 'Blockscan fetch error');
       return null;
     }
+  }
+
+  // 从 Explorer Etherscan-compatible API 获取 ABI
+  private async fetchAbiFromExplorer(chainId: number, address: Address): Promise<string> {
+    try {
+      const url = `https://api.routescan.io/v2/network/mainnet/evm/${chainId}/etherscan?module=contract&action=getsourcecode&address=${address}`;
+      const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
+      if (!response.ok) return '[]';
+
+      const data = await response.json();
+      if (data.status === '1' && Array.isArray(data.result) && data.result.length > 0) {
+        const abi = data.result[0].ABI;
+        if (abi && abi !== 'Contract source code not verified') {
+          return abi;
+        }
+      }
+    } catch {}
+    return '[]';
   }
 
   // 检查地址是否为合约
@@ -1048,7 +1066,13 @@ export class ContractSourceService {
         return contract;
       }
 
-      // 获取实现合约的源码
+      await this.saveProxyInfo(
+        contract.chainId,
+        contract.address,
+        proxyInfo.proxyType,
+        proxyInfo.implementationAddress,
+      );
+
       let implementationContract: ContractSource | null = null;
       if (proxyInfo.implementationAddress) {
         implementationContract = await this.getContractSource(
@@ -1250,7 +1274,8 @@ export class ContractSourceService {
         abi: row.abi ?? '',
         constructorArguments: row.constructorArguments ?? undefined,
         verificationStatus: row.isVerified ? 'verified' : 'unverified',
-        verificationSource: 'unknown',
+        verificationSource:
+          (row.verificationSource as 'sourcify' | 'blockscan' | 'manual' | 'unknown') ?? 'unknown',
         verifiedAt: row.verificationDate ?? undefined,
         lastChecked: row.lastUpdated ?? new Date(),
         isProxy: row.proxy ? true : false,
@@ -1289,6 +1314,7 @@ export class ContractSourceService {
           abi: contractSource.abi ?? null,
           constructorArguments: constructorArgs,
           isVerified: contractSource.verificationStatus === 'verified',
+          verificationSource: contractSource.verificationSource ?? null,
           proxy: contractSource.proxyType ?? null,
           implementation: implAddress,
           verificationDate: contractSource.verifiedAt ?? new Date(),
@@ -1304,6 +1330,7 @@ export class ContractSourceService {
             abi: contractSource.abi ?? null,
             constructorArguments: constructorArgs,
             isVerified: contractSource.verificationStatus === 'verified',
+            verificationSource: contractSource.verificationSource ?? null,
             proxy: contractSource.proxyType ?? null,
             implementation: implAddress,
             verificationDate: contractSource.verifiedAt ?? new Date(),
@@ -1312,6 +1339,30 @@ export class ContractSourceService {
         });
     } catch (error) {
       logger.error({ err: error }, 'Failed to save contract source');
+    }
+  }
+
+  private async saveProxyInfo(
+    chainId: number,
+    address: Address,
+    proxyType: ProxyType | undefined,
+    implementationAddress: Address | undefined,
+  ): Promise<void> {
+    try {
+      const implAddress: `0x${string}` | null = implementationAddress
+        ? formatAddress(implementationAddress)
+        : null;
+
+      await db
+        .update(contractSources)
+        .set({
+          proxy: proxyType ?? null,
+          implementation: implAddress,
+          lastUpdated: new Date(),
+        })
+        .where(and(eq(contractSources.chainId, chainId), eq(contractSources.address, address)));
+    } catch (error) {
+      logger.error({ err: error }, 'Failed to save proxy info');
     }
   }
 
