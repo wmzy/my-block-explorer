@@ -26,7 +26,11 @@ import { getFunctionSelector, formatSelectorForDisplay } from '@/utils/functionS
 import { formatResultWithLinks } from '@/utils/addressTypeDetection';
 import { StorageLayoutView } from '@/components/storage';
 import type { StorageLayout } from '@/types/storage';
-import { useStorageLayout } from '@/hooks/useBlockchainQueries';
+import {
+  useStorageLayout,
+  useContractSource,
+  useContractCreation,
+} from '@/hooks/useBlockchainQueries';
 
 type ProxyType =
   | 'transparent'
@@ -299,13 +303,7 @@ export default function ContractPage() {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  const [contractSource, setContractSource] = useState<ContractSource | null>(null);
-  const [creationInfo, setCreationInfo] = useState<ContractCreationInfo | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [creationLoading, setCreationLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [creationError, setCreationError] = useState<string | null>(null);
   const [, setShowRpcConfig, rpcConfigControl] = useControl<boolean>(null, false);
   type TabId =
     | 'source'
@@ -328,6 +326,26 @@ export default function ContractPage() {
   };
 
   const currentChainId = parseInt(chainId ?? '1');
+
+  const {
+    data: sourceResponse,
+    isLoading: sourceLoading,
+    error: sourceError,
+    refetch: refetchSource,
+  } = useContractSource(currentChainId, address ?? '');
+  const {
+    data: creationResponse,
+    isLoading: creationLoading,
+    error: creationError,
+    refetch: refetchCreation,
+  } = useContractCreation(currentChainId, address ?? '');
+
+  const contractSource = sourceResponse?.contractSource as ContractSource | undefined;
+  const creationInfo = creationResponse?.found
+    ? (creationResponse?.creation as ContractCreationInfo)
+    : null;
+  const loading = sourceLoading;
+  const error = sourceError?.message ?? null;
 
   const handleChainChange = (newChainId: number) => {
     navigate(`/chain/${newChainId}/contract/${address}`, { replace: true });
@@ -380,80 +398,15 @@ export default function ContractPage() {
     }
   };
 
-  const proxyABI = parseABI(contractSource);
+  const proxyABI = parseABI(contractSource ?? null);
   const implABI = parseABI(contractSource?.implementationContract ?? null);
   const effectiveABI = isProxy ? implABI : proxyABI;
-
-  useEffect(() => {
-    if (!chainId || !address) return;
-
-    fetchContractData();
-    fetchContractCreationInfo();
-  }, [chainId, address]);
 
   useEffect(() => {
     if (contractSource?.isProxy && contractSource?.implementationContract && !tabFromUrl) {
       setActiveTab('interact');
     }
   }, [contractSource]);
-
-  const fetchContractData = async () => {
-    if (!chainId || !address) return;
-
-    setLoading(true);
-    setError(null);
-
-    try {
-      const sourceResponse = await fetch(
-        `/api/chains/${currentChainId}/contracts/${address}/source`,
-      );
-
-      if (!sourceResponse.ok) {
-        if (sourceResponse.status === 404) {
-          throw new Error('Contract not found or not verified');
-        }
-        throw new Error(`HTTP ${sourceResponse.status}: ${sourceResponse.statusText}`);
-      }
-
-      const sourceData = await sourceResponse.json();
-      setContractSource(sourceData.contractSource);
-    } catch (err) {
-      console.error('Failed to fetch contract data:', err);
-      setError(err instanceof Error ? err.message : 'Failed to fetch contract information');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const fetchContractCreationInfo = async () => {
-    if (!chainId || !address) return;
-
-    setCreationLoading(true);
-    setCreationError(null);
-
-    try {
-      const response = await fetch(`/api/chains/${currentChainId}/contracts/${address}/creation`);
-
-      if (response.ok) {
-        const data = await response.json();
-        if (data.found) {
-          setCreationInfo(data.creation);
-        } else {
-          // 没有找到创建信息，可能是RPC节点限制
-          setCreationError('无法获取合约创建信息，可能是RPC节点不支持历史状态查询');
-        }
-      } else {
-        const errorData = await response.json().catch(() => ({}));
-        setCreationError(errorData.error ?? `HTTP ${response.status}: ${response.statusText}`);
-      }
-    } catch (err) {
-      console.error('Failed to fetch contract creation info:', err);
-      const errorMessage = err instanceof Error ? err.message : String(err);
-      setCreationError(errorMessage);
-    } finally {
-      setCreationLoading(false);
-    }
-  };
 
   const handleClearCache = async () => {
     if (!chainId || !address) return;
@@ -464,7 +417,8 @@ export default function ContractPage() {
       await fetch(`/api/chains/${currentChainId}/contracts/${address}/clear-cache`, {
         method: 'POST',
       });
-      await fetchContractData();
+      await refetchSource();
+      await refetchCreation();
     } catch (err) {
       console.error('Failed to clear cache:', err);
     } finally {
@@ -728,9 +682,9 @@ export default function ContractPage() {
                     functionName="getContractCreationInfo"
                     chainId={currentChainId}
                     chainName={getChainName(currentChainId)}
-                    error={creationError}
+                    error={creationError.message}
                     onConfigureRpc={() => setShowRpcConfig(true)}
-                    onRetry={fetchContractCreationInfo}
+                    onRetry={refetchCreation}
                   />
                 )}
               </div>
@@ -955,8 +909,7 @@ export default function ContractPage() {
           open={rpcConfigControl}
           chainId={currentChainId}
           onConfigSaved={() => {
-            setCreationError(null);
-            fetchContractCreationInfo();
+            refetchCreation();
           }}
         />
       </div>

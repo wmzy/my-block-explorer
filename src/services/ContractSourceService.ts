@@ -701,6 +701,20 @@ export class ContractSourceService {
   async getContractSource(chainId: number, address: Address): Promise<ContractSource | null> {
     try {
       const cached = await this.getFromDatabase(chainId, address);
+      logger.info(
+        {
+          chainId,
+          address,
+          cached: cached
+            ? {
+                verificationStatus: cached.verificationStatus,
+                hasSource: !!cached.sourceCode,
+                isProxy: cached.isProxy,
+              }
+            : null,
+        },
+        'getContractSource: cache lookup result',
+      );
       if (cached && cached.verificationStatus === 'verified' && cached.sourceCode) {
         if (cached.isProxy) {
           return await this.enhanceWithProxyInfo(cached);
@@ -760,7 +774,7 @@ export class ContractSourceService {
       const baseUrl = 'https://sourcify.dev/server/v2';
       const contractUrl = `${baseUrl}/contract/${chainId}/${address}?fields=abi,sources,compilation,proxyResolution`;
 
-      const response = await fetch(contractUrl);
+      const response = await fetch(contractUrl, { signal: AbortSignal.timeout(10000) });
 
       if (!response.ok) {
         if (response.status === 404) {
@@ -1049,16 +1063,29 @@ export class ContractSourceService {
     },
   ): Promise<ContractSource> {
     try {
-      // 如果没有传入代理信息，则检测
       if (!proxyInfo) {
-        proxyInfo = await this.detectProxy(contract.chainId, contract.address);
-
-        // 如果通过存储槽检测没有发现代理，尝试通过名称检测
-        if (!proxyInfo.isProxy && contract.name?.toLowerCase().includes('proxy')) {
+        if (contract.isProxy && contract.implementationAddress) {
           proxyInfo = {
             isProxy: true,
-            proxyType: 'unknown',
+            proxyType: contract.proxyType,
+            implementationAddress: contract.implementationAddress,
           };
+        } else if (contract.isProxy && !contract.implementationAddress) {
+          proxyInfo = await this.detectProxy(contract.chainId, contract.address);
+          if (!proxyInfo.isProxy && contract.name?.toLowerCase().includes('proxy')) {
+            proxyInfo = {
+              isProxy: true,
+              proxyType: 'unknown',
+            };
+          }
+        } else {
+          proxyInfo = await this.detectProxy(contract.chainId, contract.address);
+          if (!proxyInfo.isProxy && contract.name?.toLowerCase().includes('proxy')) {
+            proxyInfo = {
+              isProxy: true,
+              proxyType: 'unknown',
+            };
+          }
         }
       }
 
