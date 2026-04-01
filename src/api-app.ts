@@ -15,6 +15,7 @@ import eventsRoutes from './routes/events';
 import performanceRoutes from './routes/performance';
 import rpcConfigRoutes from './routes/rpc-config';
 import storageRoutes from './routes/storage';
+import debugRoutes from './routes/debug';
 
 const logger = createLogger('api-app');
 
@@ -70,6 +71,7 @@ app.route('/api', eventsRoutes);
 app.route('/api', performanceRoutes);
 app.route('/api', rpcConfigRoutes);
 app.route('/api', storageRoutes);
+app.route('/debug', debugRoutes);
 
 app.notFound(c => {
   return c.json(
