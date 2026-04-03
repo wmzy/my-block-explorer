@@ -13,7 +13,6 @@ import {
   type EnhancedContractFunction,
   type FilterState,
   type ReadWriteFilter,
-  type SourceFilter,
 } from '../utils/contractInteraction';
 import TopNavigation from '../components/TopNavigation';
 import RpcFunctionError from '../components/RpcFunctionError';
@@ -128,8 +127,14 @@ const headerStyles = css`
 
 const tabsStyles = css`
   display: flex;
+  justify-content: space-between;
+  align-items: center;
   border-bottom: 1px solid #e1e5e9;
   margin-bottom: 20px;
+
+  .tabs-left {
+    display: flex;
+  }
 
   .tab {
     padding: 12px 20px;
@@ -148,6 +153,45 @@ const tabsStyles = css`
     &.active {
       color: #007bff;
       border-bottom-color: #007bff;
+    }
+  }
+`;
+
+const proxyToggleStyles = css`
+  display: flex;
+  align-items: center;
+
+  .toggle-label {
+    font-size: 13px;
+    color: #666;
+    margin-right: 8px;
+  }
+
+  .toggle-group {
+    display: flex;
+    background: #f0f0f0;
+    border-radius: 16px;
+    padding: 2px;
+  }
+
+  .toggle-option {
+    padding: 4px 12px;
+    font-size: 13px;
+    border: none;
+    background: none;
+    cursor: pointer;
+    border-radius: 14px;
+    color: #666;
+    transition: all 0.2s;
+
+    &:hover {
+      color: #1a1a1a;
+    }
+
+    &.active {
+      background: white;
+      color: #007bff;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
     }
   }
 `;
@@ -312,16 +356,8 @@ export default function ContractPage() {
 
   const [refreshing, setRefreshing] = useState(false);
   const [, setShowRpcConfig, rpcConfigControl] = useControl<boolean>(null, false);
-  type TabId =
-    | 'source'
-    | 'source-impl'
-    | 'abi'
-    | 'abi-impl'
-    | 'functions'
-    | 'events'
-    | 'interact'
-    | 'storage';
-  const [storageTarget, setStorageTarget] = useState<'proxy' | 'impl'>('impl');
+  type TabId = 'source' | 'abi' | 'interact' | 'events' | 'storage';
+  const [contractTarget, setContractTarget] = useState<'proxy' | 'impl'>('impl');
 
   const tabFromUrl = (searchParams.get('tab') ??
     (location.pathname.endsWith('/events') ? 'events' : '')) as TabId | '';
@@ -407,7 +443,7 @@ export default function ContractPage() {
 
   const proxyABI = parseABI(contractSource ?? null);
   const implABI = parseABI(contractSource?.implementationContract ?? null);
-  const effectiveABI = isProxy ? implABI : proxyABI;
+  const effectiveABI = isProxy ? (contractTarget === 'impl' ? implABI : proxyABI) : proxyABI;
 
   useEffect(() => {
     if (contractSource?.isProxy && contractSource?.implementationContract && !tabFromUrl) {
@@ -698,116 +734,79 @@ export default function ContractPage() {
             </div>
 
             <div className={tabsStyles}>
-              {isProxy ? (
-                <>
+              <div className="tabs-left">
+                <button
+                  className={`tab ${activeTab === 'source' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('source')}
+                >
+                  Source Code
+                </button>
+                <button
+                  className={`tab ${activeTab === 'abi' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('abi')}
+                >
+                  ABI
+                </button>
+                {effectiveABI && effectiveABI.events.length > 0 && (
                   <button
-                    className={`tab ${activeTab === 'interact' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('interact')}
+                    className={`tab ${activeTab === 'events' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('events')}
                   >
-                    Interact
+                    Events ({effectiveABI.events.length})
                   </button>
-                  <button
-                    className={`tab ${activeTab === 'source' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('source')}
-                  >
-                    Source (Proxy)
-                  </button>
-                  <button
-                    className={`tab ${activeTab === 'source-impl' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('source-impl')}
-                  >
-                    Source (Impl)
-                  </button>
-                  <button
-                    className={`tab ${activeTab === 'abi' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('abi')}
-                  >
-                    ABI (Proxy)
-                  </button>
-                  <button
-                    className={`tab ${activeTab === 'abi-impl' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('abi-impl')}
-                  >
-                    ABI (Impl)
-                  </button>
-                  {effectiveABI && effectiveABI.events.length > 0 && (
+                )}
+                <button
+                  className={`tab ${activeTab === 'storage' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('storage')}
+                >
+                  Storage
+                </button>
+                <button
+                  className={`tab ${activeTab === 'interact' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('interact')}
+                >
+                  Interact
+                </button>
+              </div>
+              {isProxy && (
+                <div className={proxyToggleStyles}>
+                  <span className="toggle-label">View:</span>
+                  <div className="toggle-group">
                     <button
-                      className={`tab ${activeTab === 'events' ? 'active' : ''}`}
-                      onClick={() => setActiveTab('events')}
+                      className={`toggle-option ${contractTarget === 'proxy' ? 'active' : ''}`}
+                      onClick={() => setContractTarget('proxy')}
                     >
-                      Events ({effectiveABI.events.length})
+                      Proxy
                     </button>
-                  )}
-                  <button
-                    className={`tab ${activeTab === 'storage' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('storage')}
-                  >
-                    Storage
-                  </button>
-                </>
-              ) : (
-                <>
-                  <button
-                    className={`tab ${activeTab === 'source' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('source')}
-                  >
-                    Source Code
-                  </button>
-                  <button
-                    className={`tab ${activeTab === 'abi' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('abi')}
-                  >
-                    ABI
-                  </button>
-                  {effectiveABI && effectiveABI.functions.length > 0 && (
                     <button
-                      className={`tab ${activeTab === 'functions' ? 'active' : ''}`}
-                      onClick={() => setActiveTab('functions')}
+                      className={`toggle-option ${contractTarget === 'impl' ? 'active' : ''}`}
+                      onClick={() => setContractTarget('impl')}
                     >
-                      Functions ({effectiveABI.functions.length})
+                      Implementation
                     </button>
-                  )}
-                  {effectiveABI && effectiveABI.events.length > 0 && (
-                    <button
-                      className={`tab ${activeTab === 'events' ? 'active' : ''}`}
-                      onClick={() => setActiveTab('events')}
-                    >
-                      Events ({effectiveABI.events.length})
-                    </button>
-                  )}
-                  <button
-                    className={`tab ${activeTab === 'storage' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('storage')}
-                  >
-                    Storage
-                  </button>
-                  {effectiveABI &&
-                    (effectiveABI.functions.length > 0 || effectiveABI.events.length > 0) && (
-                      <button
-                        className={`tab ${activeTab === 'interact' ? 'active' : ''}`}
-                        onClick={() => setActiveTab('interact')}
-                      >
-                        Interact
-                      </button>
-                    )}
-                </>
+                  </div>
+                </div>
               )}
             </div>
 
-            {/* Contract Interaction - unified for both proxy and non-proxy */}
-            {activeTab === 'interact' && (
-              <ContractInteract
-                chainId={currentChainId}
-                contractAddress={address}
-                contractSource={contractSource}
-              />
-            )}
-
-            {/* Source Code - proxy contract itself */}
+            {/* Source Code */}
             {activeTab === 'source' && (
               <div className={cardStyles}>
-                <h2>{isProxy ? 'Proxy Contract Source' : 'Source Code'}</h2>
-                {contractSource.sourceCode ? (
+                <h2>
+                  {isProxy
+                    ? contractTarget === 'impl'
+                      ? `Implementation Source (${
+                          contractSource.implementationContract?.name ?? 'Unknown'
+                        })`
+                      : 'Proxy Contract Source'
+                    : 'Source Code'}
+                </h2>
+                {contractTarget === 'impl' && contractSource.implementationContract?.sourceCode ? (
+                  <SourceCodeViewer
+                    sourceCode={contractSource.implementationContract.sourceCode}
+                    sourceFiles={contractSource.implementationContract.sourceFiles}
+                  />
+                ) : contractSource.sourceCode ? (
                   <SourceCodeViewer
                     sourceCode={contractSource.sourceCode}
                     sourceFiles={contractSource.sourceFiles}
@@ -818,76 +817,31 @@ export default function ContractPage() {
               </div>
             )}
 
-            {/* Source Code - implementation */}
-            {activeTab === 'source-impl' && isProxy && (
-              <div className={cardStyles}>
-                <h2>
-                  Implementation Source ({contractSource.implementationContract?.name ?? 'Unknown'})
-                </h2>
-                {contractSource.implementationContract?.sourceCode ? (
-                  <SourceCodeViewer
-                    sourceCode={contractSource.implementationContract.sourceCode}
-                    sourceFiles={contractSource.implementationContract.sourceFiles}
-                  />
-                ) : (
-                  <div>No source code available for implementation contract</div>
-                )}
-              </div>
-            )}
-
-            {/* ABI - proxy */}
+            {/* ABI */}
             {activeTab === 'abi' && (
               <div className={cardStyles}>
-                <h2>{isProxy ? 'Proxy ABI' : 'Contract ABI'}</h2>
-                <SourceCodeViewer
-                  sourceCode={
-                    contractSource.abi
-                      ? JSON.stringify(JSON.parse(contractSource.abi), null, 2)
-                      : 'No ABI available'
-                  }
-                />
-              </div>
-            )}
-
-            {/* ABI - implementation */}
-            {activeTab === 'abi-impl' && isProxy && (
-              <div className={cardStyles}>
                 <h2>
-                  Implementation ABI ({contractSource.implementationContract?.name ?? 'Unknown'})
+                  {isProxy
+                    ? contractTarget === 'impl'
+                      ? `Implementation ABI (${
+                          contractSource.implementationContract?.name ?? 'Unknown'
+                        })`
+                      : 'Proxy Contract ABI'
+                    : 'Contract ABI'}
                 </h2>
                 <SourceCodeViewer
                   sourceCode={
-                    contractSource.implementationContract?.abi
+                    contractTarget === 'impl' && contractSource.implementationContract?.abi
                       ? JSON.stringify(
                           JSON.parse(contractSource.implementationContract.abi),
                           null,
                           2,
                         )
-                      : 'No ABI available for implementation contract'
+                      : contractSource.abi
+                        ? JSON.stringify(JSON.parse(contractSource.abi), null, 2)
+                        : 'No ABI available'
                   }
                 />
-              </div>
-            )}
-
-            {/* Functions (non-proxy only) */}
-            {activeTab === 'functions' && !isProxy && (
-              <div className={cardStyles}>
-                <h2>Contract Functions</h2>
-                {effectiveABI && effectiveABI.functions.length > 0 ? (
-                  <div className={functionListStyles}>
-                    {effectiveABI.functions.map((func, index) => (
-                      <div key={index} className={`function-item ${func.type}`}>
-                        <div className="function-signature">
-                          {func.name}(
-                          {func.inputs.map(input => `${input.type} ${input.name}`).join(', ')})
-                        </div>
-                        <span className="function-type">{func.type}</span>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div>No functions found</div>
-                )}
               </div>
             )}
 
@@ -906,18 +860,16 @@ export default function ContractPage() {
                 chainId={currentChainId}
                 address={address as `0x${string}`}
                 contractSource={contractSource}
-                storageTarget={storageTarget}
-                onStorageTargetChange={setStorageTarget}
+                contractTarget={contractTarget}
               />
             )}
 
-            {/* Interact (non-proxy only) */}
-            {activeTab === 'interact' && !isProxy && (
+            {activeTab === 'interact' && (
               <ContractInteract
                 chainId={currentChainId}
                 contractAddress={address}
                 contractSource={contractSource}
-                mode="all"
+                contractTarget={isProxy ? contractTarget : undefined}
               />
             )}
           </>
@@ -985,11 +937,13 @@ function ContractInteract({
   chainId,
   contractAddress,
   contractSource,
+  contractTarget,
   mode = 'all',
 }: {
   chainId: number;
   contractAddress: string;
   contractSource: ContractSource | null;
+  contractTarget?: 'proxy' | 'impl';
   mode?: 'all' | 'read' | 'write';
 }) {
   const [allFunctions, setAllFunctions] = useState<EnhancedContractFunction[]>([]);
@@ -1183,6 +1137,7 @@ function ContractInteract({
 
   const filteredFunctions = filterFunctions(allFunctions, {
     ...filters,
+    source: contractTarget ?? 'all',
     name: debouncedNameFilter,
   });
 
@@ -1224,23 +1179,6 @@ function ContractInteract({
             <option value="write">Write</option>
           </select>
         </div>
-
-        {isProxyMode && (
-          <div className={filterGroupStyles}>
-            <label className={filterLabelStyles}>Source:</label>
-            <select
-              value={filters.source}
-              onChange={e =>
-                setFilters(prev => ({ ...prev, source: e.target.value as SourceFilter }))
-              }
-              className={filterSelectStyles}
-            >
-              <option value="all">All</option>
-              <option value="proxy">Proxy</option>
-              <option value="impl">Implementation</option>
-            </select>
-          </div>
-        )}
 
         <div className={filterGroupStyles}>
           <label className={filterLabelStyles}>Name:</label>
@@ -1674,17 +1612,15 @@ function StoragePanel({
   chainId,
   address,
   contractSource,
-  storageTarget,
-  onStorageTargetChange,
+  contractTarget,
 }: {
   chainId: number;
   address: `0x${string}`;
   contractSource: ContractSource | null;
-  storageTarget: 'proxy' | 'impl';
-  onStorageTargetChange: (target: 'proxy' | 'impl') => void;
+  contractTarget: 'proxy' | 'impl';
 }) {
   const targetAddress =
-    storageTarget === 'impl' ? (contractSource?.implementationAddress ?? address) : address;
+    contractTarget === 'impl' ? (contractSource?.implementationAddress ?? address) : address;
 
   const { data, isLoading, error } = useStorageLayout(chainId, targetAddress);
 
@@ -1725,22 +1661,6 @@ function StoragePanel({
 
   return (
     <div className={cardStyles}>
-      {isProxy && (
-        <div style={{ marginBottom: '16px', display: 'flex', gap: '8px' }}>
-          <button
-            className={storageTarget === 'proxy' ? 'tab active' : 'tab'}
-            onClick={() => onStorageTargetChange('proxy')}
-          >
-            Proxy Storage
-          </button>
-          <button
-            className={storageTarget === 'impl' ? 'tab active' : 'tab'}
-            onClick={() => onStorageTargetChange('impl')}
-          >
-            Implementation Storage
-          </button>
-        </div>
-      )}
       <StorageLayoutView chainId={chainId} address={targetAddress} layout={layout} />
     </div>
   );
