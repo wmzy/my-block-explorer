@@ -137,6 +137,7 @@ export class ChainEventTableManager {
         tableSchema: JSON.stringify(eventAbi),
         isActive: true,
         updatedAt: new Date(),
+        createdAt: new Date(),
       })
       .onConflictDoUpdate({
         target: [eventTableRegistry.contractAddress, eventTableRegistry.eventSignature],

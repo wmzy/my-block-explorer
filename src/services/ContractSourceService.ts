@@ -1374,6 +1374,7 @@ export class ContractSourceService {
           proxy: contractSource.proxyType ?? null,
           implementation: implAddress,
           verificationDate: contractSource.verifiedAt ?? new Date(),
+          lastUpdated: contractSource.lastChecked ?? new Date(),
         })
         .onConflictDoUpdate({
           target: [contractSources.chainId, contractSources.address],

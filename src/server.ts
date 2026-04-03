@@ -47,7 +47,9 @@ const shutdown = async () => {
   console.log('\n🛑 Shutting down gracefully...');
   try {
     await (db.$client as any).end?.();
-  } catch {}
+  } catch (error) {
+    console.warn('Shutdown checkpoint failed:', error);
+  }
   server.close(() => {
     process.exit(0);
   });

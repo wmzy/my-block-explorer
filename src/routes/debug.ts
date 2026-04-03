@@ -36,8 +36,18 @@ app.post('/db/query', async c => {
     });
   } catch (error) {
     logger.error({ err: error }, 'Debug DB query error');
+    const causeChain: string[] = [];
+    let current: unknown = error;
+    if (error instanceof Error) {
+      causeChain.push(error.message);
+      current = error as unknown;
+    }
     return c.json(
-      createApiError(500, 'Query Failed', error instanceof Error ? error.message : 'Unknown error'),
+      createApiError(
+        500,
+        'Query Failed',
+        error instanceof Error ? causeChain.join('\n') : 'Unknown error',
+      ),
       500,
     );
   }

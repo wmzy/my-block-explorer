@@ -15,8 +15,11 @@ export class DuckDBPostgresAdapter {
   private instance: DuckDBInstance | null = null;
   private isInitialized = false;
   private isInitializing = false;
+  private isFullInitializing = false;
   private isMigrating = false;
   private dbPath: string;
+  private checkpointTimer: ReturnType<typeof setInterval> | null = null;
+  private static readonly CHECKPOINT_INTERVAL_MS = 60_000;
 
   constructor(connectionString: string) {
     // 解析连接字符串，提取数据库路径
@@ -51,7 +54,7 @@ export class DuckDBPostgresAdapter {
     this.isInitializing = true;
     try {
       await this.recoverWal();
-      this.instance = await DuckDBInstance.create(this.dbPath);
+      this.instance = await this.createInstance();
       await this.checkpointWal();
       await this.ensureTables();
     } catch (error) {
@@ -62,17 +65,44 @@ export class DuckDBPostgresAdapter {
     }
   }
 
+  private async createInstance(): Promise<DuckDBInstance> {
+    try {
+      return await DuckDBInstance.create(this.dbPath);
+    } catch (error) {
+      const msg = (error as Error).message ?? '';
+      if (msg.includes('replaying WAL') || msg.includes('WAL file')) {
+        const walPath = this.dbPath + '.wal';
+        logger.warn(
+          { err: error, walPath },
+          'WAL replay failed on instance creation, deleting WAL and retrying',
+        );
+        try {
+          await unlink(walPath);
+        } catch (unlinkError) {
+          logger.warn({ err: unlinkError, walPath }, 'Failed to delete WAL during fallback');
+        }
+        return await DuckDBInstance.create(this.dbPath);
+      }
+      throw error;
+    }
+  }
+
   private async recoverWal(): Promise<void> {
     const walPath = this.dbPath + '.wal';
     if (existsSync(walPath)) {
       try {
         const testInstance = await DuckDBInstance.create(this.dbPath);
         const conn = await testInstance.connect();
-        await conn.run('PRAGMA wal_checkpoint(TRUNCATE)');
+        await conn.run('CHECKPOINT');
         conn.disconnectSync();
-      } catch {
-        logger.warn({ walPath }, 'Removing corrupted WAL file');
-        await unlink(walPath).catch(() => {});
+        testInstance.closeSync();
+      } catch (error) {
+        logger.warn({ err: error, walPath }, 'WAL recovery failed, deleting corrupted WAL');
+        try {
+          await unlink(walPath);
+        } catch (unlinkError) {
+          logger.warn({ err: unlinkError, walPath }, 'Failed to delete corrupted WAL');
+        }
       }
     }
   }
@@ -81,8 +111,9 @@ export class DuckDBPostgresAdapter {
     if (!this.instance) return;
     const conn = await this.instance.connect();
     try {
-      await conn.run('PRAGMA wal_checkpoint(TRUNCATE)');
-    } catch {
+      await conn.run('CHECKPOINT');
+    } catch (error) {
+      logger.warn({ err: error }, 'Checkpoint failed');
     } finally {
       conn.disconnectSync();
     }
@@ -351,11 +382,12 @@ export class DuckDBPostgresAdapter {
       queryParams = params;
     }
 
+    // DuckDB's prepared statement API (runAndReadAll with params) does not support
+    // the DEFAULT keyword mixed with parameterized values ($1, $2...) in INSERT.
+    // Drizzle's PostgreSQL dialect always generates `default` for unprovided columns
+    // that have .default() in the schema. Replace with NULL since all default columns
+    // are nullable in our schema.
     if (queryText.toUpperCase().includes('DEFAULT')) {
-      if (queryText.includes('default now()')) {
-        const ts = new Date().toISOString();
-        queryText = queryText.replace(/default now\(\)/gi, `'${ts}'`);
-      }
       queryText = queryText.replace(/\bdefault\b/gi, 'NULL');
     }
 
@@ -384,11 +416,17 @@ export class DuckDBPostgresAdapter {
       // 创建事务 SQL 对象，使用同一个连接
       const transactionSql: TransactionSql = {
         query: async (sql: string, ...params: unknown[]) => {
-          return await this.executeQuery(sql, params, connection);
+          const queryText = sql.toUpperCase().includes('DEFAULT')
+            ? sql.replace(/\bdefault\b/gi, 'NULL')
+            : sql;
+          return await this.executeQuery(queryText, params, connection);
         },
         unsafe: (query: string, params?: unknown[]) => {
+          const queryText = query.toUpperCase().includes('DEFAULT')
+            ? query.replace(/\bdefault\b/gi, 'NULL')
+            : query;
           const queryPromise = (async () => {
-            return await this.executeQuery(query, params ?? [], connection);
+            return await this.executeQuery(queryText, params ?? [], connection);
           })();
           return this.extendQueryPromise(queryPromise, query, params ?? []);
         },
@@ -432,8 +470,13 @@ export class DuckDBPostgresAdapter {
 
   // 错误适配 - 将 DuckDB 错误转换为 PostgreSQL 兼容格式
   private adaptError(error: Error): Error & { code?: string } {
-    const adaptedError = new Error(error.message) as Error & { code?: string };
-    adaptedError.code = this.mapErrorCode(error.message);
+    const code = this.mapErrorCode(error.message);
+    const adaptedError = new Error(`[${code}] ${error.message}`) as Error & {
+      code?: string;
+      cause?: unknown;
+    };
+    adaptedError.cause = error;
+    adaptedError.code = code;
     return adaptedError;
   }
 
@@ -473,24 +516,59 @@ export class DuckDBPostgresAdapter {
 
   // 初始化数据库
   private async initialize(): Promise<void> {
-    await this.connect();
+    if (this.isInitialized) return;
 
-    // 确保数据目录存在，创建基本schema
-    try {
-      await this.exec(`CREATE SCHEMA IF NOT EXISTS main`);
-    } catch (error) {
-      // 忽略schema已存在的错误
-      logger.warn({ err: error }, 'Schema creation warning');
+    if (this.isFullInitializing) {
+      while (this.isFullInitializing) {
+        await new Promise(resolve => setTimeout(resolve, 10));
+      }
+      return;
     }
 
-    this.isInitialized = true;
+    this.isFullInitializing = true;
+    try {
+      await this.connect();
+      this.isInitialized = true;
+      this.startPeriodicCheckpoint();
+    } catch (error) {
+      this.isInitialized = false;
+      throw error;
+    } finally {
+      this.isFullInitializing = false;
+    }
   }
 
   // 实现 postgres 的连接管理
   async end(): Promise<void> {
+    this.stopPeriodicCheckpoint();
     if (this.instance) {
-      // DuckDB Neo 实例会自动清理
+      try {
+        const conn = await this.instance.connect();
+        await conn.run('CHECKPOINT');
+        conn.disconnectSync();
+      } catch (error) {
+        logger.warn({ err: error }, 'Final checkpoint failed');
+      }
+      this.instance.closeSync();
       this.instance = null;
+    }
+  }
+
+  private startPeriodicCheckpoint(): void {
+    if (this.checkpointTimer) return;
+    this.checkpointTimer = setInterval(() => {
+      this.checkpointWal().catch(err => logger.warn({ err }, 'Periodic checkpoint failed'));
+    }, DuckDBPostgresAdapter.CHECKPOINT_INTERVAL_MS);
+    // Allow the process to exit even if this timer is still running
+    if (this.checkpointTimer.unref) {
+      this.checkpointTimer.unref();
+    }
+  }
+
+  private stopPeriodicCheckpoint(): void {
+    if (this.checkpointTimer) {
+      clearInterval(this.checkpointTimer);
+      this.checkpointTimer = null;
     }
   }
 

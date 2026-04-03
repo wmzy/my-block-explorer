@@ -205,6 +205,8 @@ export class StorageLayoutService {
           source,
           isProxy: false,
           implementationAddress: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
         })
         .onConflictDoUpdate({
           target: [storageLayouts.chainId, storageLayouts.address],
@@ -271,6 +273,8 @@ export class StorageLayoutService {
           source: null,
           isProxy: false,
           implementationAddress: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
         })
         .onConflictDoUpdate({
           target: [storageLayouts.chainId, storageLayouts.address],

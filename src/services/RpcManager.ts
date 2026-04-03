@@ -120,6 +120,8 @@ export class RpcManager {
           chainId: config.chainId,
           name: config.customRpcUrl ? `Custom RPC` : null,
           url: config.customRpcUrl ?? null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
         })
         .onConflictDoUpdate({
           target: userRpcConfigs.chainId,
