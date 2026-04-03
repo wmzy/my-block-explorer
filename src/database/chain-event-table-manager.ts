@@ -3,9 +3,11 @@
  * 为每个链管理独立的事件表，不支持跨链查询
  */
 
+import { eq, and, lt, or, sql } from 'drizzle-orm';
 import { createLogger } from '../server/logger';
 import { ChainDatabaseManager } from './chain-database-manager';
 import { ChainSchemaManager } from './chain-schema-manager';
+import { eventTableRegistry } from './chain-schema';
 import { EventParameter, EventIndexingConfig, EventAbiShape } from '../types/events';
 import type { AbiEvent } from 'viem';
 
@@ -118,19 +120,33 @@ export class ChainEventTableManager {
    * 注册事件表到元数据表
    */
   private async registerEventTable(
-    _contractAddress: string,
-    _eventSignature: string,
-    _eventName: string,
-    _tableName: string,
-    _eventAbi: EventAbiShape,
+    contractAddress: string,
+    eventSignature: string,
+    eventName: string,
+    tableName: string,
+    eventAbi: EventAbiShape,
   ): Promise<void> {
-    const sql = `
-      INSERT OR REPLACE INTO event_table_registry (
-        contract_address, event_signature, event_name, table_name, table_schema, updated_at
-      ) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-    `;
-
-    await this.chainDb.exec(sql);
+    const db = this.chainDb.getDrizzle();
+    await db
+      .insert(eventTableRegistry)
+      .values({
+        contractAddress: contractAddress as `0x${string}`,
+        eventSignature,
+        eventName,
+        tableName,
+        tableSchema: JSON.stringify(eventAbi),
+        isActive: true,
+        updatedAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: [eventTableRegistry.contractAddress, eventTableRegistry.eventSignature],
+        set: {
+          tableName,
+          eventName,
+          tableSchema: sql`excluded.table_schema`,
+          updatedAt: new Date(),
+        },
+      });
   }
 
   /**
@@ -360,15 +376,18 @@ export class ChainEventTableManager {
    */
   async getContractEventTables(contractAddress: string): Promise<string[]> {
     try {
-      const result = await this.chainDb.query(
-        `
-        SELECT table_name FROM event_table_registry
-        WHERE contract_address = ? AND is_active = TRUE
-      `,
-        [contractAddress],
-      );
+      const db = this.chainDb.getDrizzle();
+      const results = await db
+        .select({ tableName: eventTableRegistry.tableName })
+        .from(eventTableRegistry)
+        .where(
+          and(
+            eq(eventTableRegistry.contractAddress, contractAddress as `0x${string}`),
+            eq(eventTableRegistry.isActive, true),
+          ),
+        );
 
-      return result.map(row => (row as { table_name: string }).table_name);
+      return results.map(r => r.tableName);
     } catch (error) {
       // If the table doesn't exist, return empty array
       if (error instanceof Error && error.message.includes('does not exist')) {
@@ -386,9 +405,9 @@ export class ChainEventTableManager {
   async dropEventTable(tableName: string): Promise<void> {
     try {
       await this.chainDb.exec(`DROP TABLE IF EXISTS ${tableName}`);
-      await this.chainDb.query(`DELETE FROM event_table_registry WHERE table_name = ?`, [
-        tableName,
-      ]);
+
+      const db = this.chainDb.getDrizzle();
+      await db.delete(eventTableRegistry).where(eq(eventTableRegistry.tableName, tableName));
 
       this.createdTables.delete(tableName);
       logger.info({ tableName }, 'Dropped event table');
@@ -455,24 +474,24 @@ export class ChainEventTableManager {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - daysOld);
 
-    const result = await this.chainDb.query(
-      `
-      SELECT table_name FROM event_table_registry
-      WHERE last_accessed < ? OR last_accessed IS NULL
-    `,
-      [cutoffDate.toISOString()],
-    );
+    const db = this.chainDb.getDrizzle();
+    const results = await db
+      .select({ tableName: eventTableRegistry.tableName })
+      .from(eventTableRegistry)
+      .where(
+        or(
+          lt(eventTableRegistry.lastAccessed, cutoffDate),
+          sql`${eventTableRegistry.lastAccessed} IS NULL`,
+        ),
+      );
 
     let cleanedCount = 0;
-    for (const row of result) {
+    for (const row of results) {
       try {
-        await this.dropEventTable((row as { table_name: string }).table_name);
+        await this.dropEventTable(row.tableName);
         cleanedCount++;
       } catch (error) {
-        logger.error(
-          { err: error, tableName: (row as { table_name: string }).table_name },
-          'Failed to cleanup table',
-        );
+        logger.error({ err: error, tableName: row.tableName }, 'Failed to cleanup table');
       }
     }
 

@@ -5,7 +5,9 @@
  */
 
 import { decodeEventLog, formatUnits, Abi, AbiEvent, Address, Log } from 'viem';
+import { eq } from 'drizzle-orm';
 import { multiChainDb, ChainDatabaseManager } from '../database/chain-database-manager';
+import { blocks } from '../database/chain-schema';
 import { ChainEventTableManager } from '../database/chain-event-table-manager';
 import { multiChainPerformanceManager } from '../database/performance-monitor';
 import { EventDecodingError, DecodedEventLog, DecodedEventParameter } from '../types/events';
@@ -322,17 +324,15 @@ export class EventDecoderService {
    */
   private async getBlockTimestamp(blockNumber: bigint): Promise<string> {
     try {
-      // First try to get from database cache
-      const result = await this.chainDb.query('SELECT timestamp FROM blocks WHERE number = ?', [
-        blockNumber.toString(),
-      ]);
-
-      if (result.length > 0) {
-        return new Date((result[0] as { timestamp: string | number }).timestamp).toISOString();
+      const db = this.chainDb.getDrizzle();
+      const result = await db
+        .select({ timestamp: blocks.timestamp })
+        .from(blocks)
+        .where(eq(blocks.number, blockNumber))
+        .limit(1);
+      if (result.length > 0 && result[0].timestamp) {
+        return new Date(result[0].timestamp).toISOString();
       }
-
-      // If not in cache, return current time as fallback
-      // In production, this would fetch from blockchain
       return new Date().toISOString();
     } catch (error) {
       console.warn('Failed to get block timestamp:', error);

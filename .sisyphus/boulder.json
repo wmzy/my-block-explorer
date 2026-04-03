@@ -11,9 +11,19 @@
     "ses_2f4df74e8ffeAgnwD61w5oRFk8",
     "ses_2f4cdf68dfferZYxMvrKKypumN",
     "ses_2f4cdc31affeWlpIy5mARKM83j",
-    "ses_2f489e0f7ffeF6k4Mk0J0nIV0d"
+    "ses_2f489e0f7ffeF6k4Mk0J0nIV0d",
+    "ses_2b6a12d17ffeBulUqV8LF4BNVo",
+    "ses_2b69b34a9ffeSkbQBWS74OS4rQ",
+    "ses_2b6974ea2ffeYFD05Kk25zp2wL",
+    "ses_2b6949d34ffevIgZhhrOnw1Bgj",
+    "ses_2b68e998bffeYzpOxkuqVLWJEm",
+    "ses_2b68b44e1ffe4rZTmDjvcRhZQn",
+    "ses_2adb0519dffe6i7QY5w6UR3g1t",
+    "ses_2adab270dffe0FHMLLS5p0dHlg",
+    "ses_2ad79be76ffePUWH9EaLJvGFLU"
   ],
   "plan_name": "manual-index-segments",
   "agent": "atlas",
-  "status": "completed"
+  "status": "completed",
+  "task_sessions": {}
 }

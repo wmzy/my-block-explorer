@@ -4,9 +4,9 @@
  */
 
 import { MultiChainDatabaseManager } from './chain-database-manager';
-import { ChainSchemaManager } from './chain-schema-manager';
 import { ChainEventTableManager } from './chain-event-table-manager';
 import { multiChainPerformanceManager } from './performance-monitor';
+import { sql } from 'drizzle-orm';
 import {
   getChainDatabaseConfig,
   validateMultiChainConfig,
@@ -250,24 +250,9 @@ export class MultiChainEnvironment {
   // 初始化单个链
   private async initializeSingleChain(chainId: number): Promise<void> {
     try {
-      // 获取链数据库管理器
       const chainDb = await this.multiChainDb.getChainDatabase(chainId);
-
-      // 创建基础表结构
-      const schemaManager = new ChainSchemaManager(chainId);
-      const tableCreationSQLs = schemaManager.getAllTableCreationSQL();
-      const indexCreationSQLs = schemaManager.getIndexCreationSQL();
-
-      // 执行表创建
-      for (const sql of tableCreationSQLs) {
-        await chainDb.exec(sql);
-      }
-
-      // 执行索引创建
-      for (const sql of indexCreationSQLs) {
-        await chainDb.exec(sql);
-      }
-
+      const db = chainDb.getDrizzle();
+      await db.execute(sql`SELECT 1`);
       console.log(`🗄️ Chain ${chainId} database schema created`);
     } catch (error) {
       throw new ChainDatabaseError(

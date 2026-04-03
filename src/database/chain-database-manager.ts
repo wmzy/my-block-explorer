@@ -1,95 +1,75 @@
-/**
- * 分链数据库管理器
- * 每个链使用独立的数据库文件，不支持跨链查询
- */
-
-import { createLogger } from '../server/logger';
-import { DuckDBManager } from './duckdb';
-import type { DuckDBValue } from '@duckdb/node-api';
-
-const logger = createLogger('chain-database-manager');
+import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { join } from 'path';
 import { mkdir } from 'fs/promises';
+import { createLogger } from '../server/logger';
+import { createDuckDBAdapter } from './duckdb-postgres-adapter';
 import { getChainName, getChainType } from '../config/chains';
+import * as chainSchema from './chain-schema';
 
-/**
- * 单个链的数据库管理器
- */
+const logger = createLogger('chain-database-manager');
+
 export class ChainDatabaseManager {
   private chainId: number;
-  private dbManager: DuckDBManager;
   private dbPath: string;
+  private sql: ReturnType<typeof createDuckDBAdapter>;
+  private drizzleInstance: PostgresJsDatabase<typeof chainSchema> | null = null;
 
   constructor(chainId: number) {
     this.chainId = chainId;
     this.dbPath = this.generateDatabasePath(chainId);
-    this.dbManager = new DuckDBManager(this.dbPath);
+
+    const connectionString = `duckdb://${this.dbPath}`;
+    this.sql = createDuckDBAdapter(connectionString);
   }
 
-  /**
-   * 生成数据库文件路径
-   */
   private generateDatabasePath(chainId: number): string {
     const dataDir = join(process.cwd(), 'data', 'chains');
     const chainName = getChainName(chainId).toLowerCase().replace(/\s+/g, '-');
     const chainType = getChainType(chainId);
-
     return join(dataDir, chainType, `${chainName}-${chainId}.db`);
   }
 
-  /**
-   * 初始化链数据库
-   */
   async initialize(): Promise<void> {
-    // 确保数据目录存在
     const dataDir = join(process.cwd(), 'data', 'chains');
     await mkdir(dataDir, { recursive: true });
 
-    await this.dbManager.initialize();
+    // Eagerly trigger the adapter's lazy connect + ensureTables path
+    await this.sql.unsafe('SELECT 1');
     logger.info(
       { chainId: this.chainId, chainName: getChainName(this.chainId) },
       'Initialized database for chain',
     );
   }
 
-  /**
-   * 执行查询
-   */
   async query<T = unknown>(sql: string, params: unknown[] = []): Promise<T[]> {
-    return this.dbManager.query<T>(sql, params as DuckDBValue[]);
+    const result =
+      params.length > 0
+        ? await (this.sql.unsafe as (q: string, p?: unknown[]) => Promise<unknown[]>)(sql, params)
+        : await (this.sql.unsafe as (q: string) => Promise<unknown[]>)(sql);
+    return result as T[];
   }
 
-  /**
-   * 执行SQL语句
-   */
   async exec(sql: string): Promise<void> {
-    return this.dbManager.exec(sql);
+    await this.sql.unsafe(sql);
   }
 
-  /**
-   * 执行事务
-   */
   async transaction<T>(callback: () => Promise<T>): Promise<T> {
-    return this.dbManager.transaction(callback);
+    return this.sql.begin(async () => callback()) as Promise<T>;
   }
 
-  /**
-   * 关闭数据库连接
-   */
   async close(): Promise<void> {
-    return this.dbManager.close();
+    await this.sql.end();
   }
 
-  /**
-   * 获取数据库路径
-   */
   getDatabasePath(): string {
     return this.dbPath;
   }
 
-  /**
-   * 获取链ID
-   */
+  getDrizzle(): PostgresJsDatabase<typeof chainSchema> {
+    this.drizzleInstance ??= drizzle(this.sql, { schema: chainSchema, casing: 'snake_case' });
+    return this.drizzleInstance;
+  }
+
   getChainId(): number {
     return this.chainId;
   }
