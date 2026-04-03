@@ -201,6 +201,7 @@ export const contractSources = duckdbTable(
   {
     ...chainAddressColumns,
     sourceCode: text(),
+    sourceFiles: text(), // JSON array of { filename, content } for multi-file contracts
     abi: text(),
     contractName: varchar({ length: 255 }),
     compilerVersion: varchar({ length: 50 }),

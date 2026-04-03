@@ -1305,6 +1305,14 @@ export class ContractSourceService {
       }
 
       const row = rows[0];
+      let sourceFiles: ContractFile[] | undefined;
+      if (row.sourceFiles) {
+        try {
+          sourceFiles = JSON.parse(row.sourceFiles);
+        } catch {
+          // ignore malformed JSON
+        }
+      }
       return {
         chainId: row.chainId,
         address: row.address,
@@ -1313,6 +1321,7 @@ export class ContractSourceService {
         optimizationEnabled: row.optimizationUsed ?? undefined,
         optimizationRuns: row.runs ?? undefined,
         sourceCode: row.sourceCode ?? '',
+        sourceFiles,
         abi: row.abi ?? '',
         constructorArguments: row.constructorArguments ?? undefined,
         verificationStatus: row.isVerified ? 'verified' : 'unverified',
@@ -1343,6 +1352,10 @@ export class ContractSourceService {
         ? (contractSource.constructorArguments as `0x${string}`)
         : null;
 
+      const sourceFilesJson = contractSource.sourceFiles?.length
+        ? JSON.stringify(contractSource.sourceFiles)
+        : null;
+
       await db
         .insert(contractSources)
         .values({
@@ -1353,6 +1366,7 @@ export class ContractSourceService {
           optimizationUsed: contractSource.optimizationEnabled ?? null,
           runs: contractSource.optimizationRuns ?? null,
           sourceCode: contractSource.sourceCode ?? null,
+          sourceFiles: sourceFilesJson,
           abi: contractSource.abi ?? null,
           constructorArguments: constructorArgs,
           isVerified: contractSource.verificationStatus === 'verified',
@@ -1369,6 +1383,7 @@ export class ContractSourceService {
             optimizationUsed: contractSource.optimizationEnabled ?? null,
             runs: contractSource.optimizationRuns ?? null,
             sourceCode: contractSource.sourceCode ?? null,
+            sourceFiles: sourceFilesJson,
             abi: contractSource.abi ?? null,
             constructorArguments: constructorArgs,
             isVerified: contractSource.verificationStatus === 'verified',

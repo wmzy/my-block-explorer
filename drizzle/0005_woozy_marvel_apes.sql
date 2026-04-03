@@ -1,0 +1,1 @@
+ALTER TABLE "contract_sources" ADD COLUMN "source_files" text;
