@@ -1,5 +1,7 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { css } from '@linaria/core';
+// @ts-expect-error haze-ui has no type declarations for Tree
+import { Tree } from 'haze-ui';
 
 type SourceFile = {
   filename: string;
@@ -11,6 +13,14 @@ type SourceCodeViewerProps = {
   sourceFiles?: SourceFile[];
 };
 
+type TreeNode = {
+  key: string;
+  title: string;
+  isLeaf?: boolean;
+  content?: string;
+  children?: TreeNode[];
+};
+
 const containerStyles = css`
   position: relative;
   border: 1px solid #e1e5e9;
@@ -18,50 +28,33 @@ const containerStyles = css`
   overflow: hidden;
 `;
 
-const tabBarStyles = css`
+const layoutStyles = css`
   display: flex;
-  overflow-x: auto;
-  border-bottom: 1px solid #e1e5e9;
-  background: #f0f2f5;
-  scrollbar-width: thin;
-
-  &::-webkit-scrollbar {
-    height: 4px;
-  }
-
-  &::-webkit-scrollbar-thumb {
-    background: #c0c4cc;
-    border-radius: 2px;
-  }
+  min-height: 400px;
+  width: 100%;
+  overflow: hidden;
 `;
 
-const tabStyles = css`
-  padding: 8px 16px;
-  font-size: 13px;
-  font-family:
-    'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
-  color: #666;
-  background: transparent;
-  border: none;
-  border-bottom: 2px solid transparent;
-  cursor: pointer;
-  white-space: nowrap;
-  transition:
-    color 0.15s,
-    border-color 0.15s,
-    background 0.15s;
+const treeContainerStyles = css`
+  width: 260px;
+  min-width: 200px;
+  max-width: 260px;
+  border-right: 1px solid #e1e5e9;
+  background: #fafbfc;
+  overflow-y: auto;
+  padding: 8px;
+  flex-shrink: 0;
+`;
 
-  &:hover {
-    color: #333;
-    background: #e8eaed;
-  }
+const treeWrapperStyles = css`
+  overflow-x: hidden;
+`;
 
-  &.active {
-    color: #1a1a1a;
-    border-bottom-color: #2563eb;
-    background: white;
-    font-weight: 500;
-  }
+const codeAreaStyles = css`
+  flex: 1;
+  min-width: 0;
+  position: relative;
+  overflow: hidden;
 `;
 
 const codeContainerStyles = css`
@@ -113,12 +106,70 @@ const copyButtonStyles = css`
   }
 `;
 
+function buildTreeData(sourceFiles: SourceFile[]): TreeNode[] {
+  const root: Record<string, any> = {};
+
+  for (const file of sourceFiles) {
+    const parts = file.filename.split('/').filter(Boolean);
+    let current = root;
+
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      const isFile = i === parts.length - 1;
+      const key = parts.slice(0, i + 1).join('/');
+
+      if (!current[part]) {
+        current[part] = {
+          key,
+          title: part,
+          isLeaf: isFile,
+          content: isFile ? file.content : undefined,
+          children: {},
+        };
+      }
+
+      current = current[part].children;
+    }
+  }
+
+  function nodeToTree(node: Record<string, any>): TreeNode[] {
+    return Object.values(node).map((item: any) => ({
+      key: item.key,
+      title: item.title,
+      isLeaf: item.isLeaf,
+      content: item.content,
+      children: item.isLeaf ? undefined : nodeToTree(item.children),
+    }));
+  }
+
+  return nodeToTree(root);
+}
+
+function findContentByKey(nodes: TreeNode[], key: string): string | null {
+  for (const node of nodes) {
+    if (node.key === key) return (node as any).content ?? null;
+    if (node.children) {
+      const found = findContentByKey(node.children, key);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
 export function SourceCodeViewer({ sourceCode, sourceFiles }: SourceCodeViewerProps) {
   const hasMultipleFiles = sourceFiles && sourceFiles.length > 1;
-  const [activeIndex, setActiveIndex] = useState(0);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
+  const [expandedKeys, setExpandedKeys] = useState<string[]>([]);
   const [copied, setCopied] = useState(false);
 
-  const activeContent = hasMultipleFiles ? (sourceFiles[activeIndex]?.content ?? '') : sourceCode;
+  const treeData = useMemo(
+    () => (hasMultipleFiles ? buildTreeData(sourceFiles!) : []),
+    [sourceFiles, hasMultipleFiles],
+  );
+
+  const activeContent = hasMultipleFiles
+    ? ((selectedKey ? findContentByKey(treeData, selectedKey) : null) ?? sourceCode)
+    : sourceCode;
 
   const handleCopy = useCallback(() => {
     navigator.clipboard
@@ -147,25 +198,33 @@ export function SourceCodeViewer({ sourceCode, sourceFiles }: SourceCodeViewerPr
 
   return (
     <div className={containerStyles}>
-      <div className={tabBarStyles}>
-        {sourceFiles.map((file, index) => (
-          <button
-            key={file.filename}
-            className={`${tabStyles} ${index === activeIndex ? 'active' : ''}`}
-            onClick={() => {
-              setActiveIndex(index);
-              setCopied(false);
-            }}
-          >
-            {file.filename}
+      <div className={layoutStyles}>
+        <div className={treeContainerStyles}>
+          <div className={treeWrapperStyles}>
+            <Tree
+              treeData={treeData}
+              selectable
+              showLine
+              showIcon
+              blockNode
+              selectedKeys={selectedKey ? [selectedKey] : []}
+              expandedKeys={expandedKeys}
+              onSelect={(keys: string[]) => {
+                if (keys.length > 0) {
+                  setSelectedKey(keys[0]);
+                  setCopied(false);
+                }
+              }}
+              onExpand={(keys: string[]) => setExpandedKeys(keys)}
+            />
+          </div>
+        </div>
+        <div className={codeAreaStyles}>
+          <button className={`${copyButtonStyles} ${copied ? 'copied' : ''}`} onClick={handleCopy}>
+            {copied ? 'Copied!' : 'Copy'}
           </button>
-        ))}
-      </div>
-      <div className={codeContainerStyles}>
-        <button className={`${copyButtonStyles} ${copied ? 'copied' : ''}`} onClick={handleCopy}>
-          {copied ? 'Copied!' : 'Copy'}
-        </button>
-        <pre className={codeBlockStyles}>{activeContent}</pre>
+          <pre className={codeBlockStyles}>{activeContent}</pre>
+        </div>
       </div>
     </div>
   );

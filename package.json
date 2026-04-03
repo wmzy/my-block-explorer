@@ -41,7 +41,7 @@
     "echarts": "^6.0.0",
     "echarts-for-react": "^3.0.6",
     "evmole": "^0.8.4",
-    "haze-ui": "^1.4.2",
+    "haze-ui": "^1.5.5",
     "hono": "^4.12.8",
     "pino": "^10.3.1",
     "pino-pretty": "^13.1.3",
