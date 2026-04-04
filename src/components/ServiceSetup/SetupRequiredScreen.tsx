@@ -172,8 +172,7 @@ export function SetupRequiredScreen({
 }: SetupRequiredScreenProps) {
   const [url, setUrl] = useState('');
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleConnect = async () => {
     const trimmedUrl = url.trim();
     if (!trimmedUrl) return;
     await onSetApiUrl(trimmedUrl);
@@ -236,7 +235,7 @@ export function SetupRequiredScreen({
             Connect to a remote API service (hosted by you or others).
           </p>
 
-          <form className={formStyle} onSubmit={handleSubmit}>
+          <form className={formStyle} onSubmit={e => e.preventDefault()}>
             <div className={inputGroupStyle}>
               <label className={labelStyle} htmlFor="api-url">
                 API URL
@@ -257,6 +256,7 @@ export function SetupRequiredScreen({
                 variant="primary"
                 loading={isConnecting}
                 disabled={!url.trim() || isConnecting}
+                onClick={handleConnect}
               >
                 Connect
               </Button>
