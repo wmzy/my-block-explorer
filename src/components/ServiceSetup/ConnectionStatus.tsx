@@ -1,20 +1,8 @@
 import { css } from '@linaria/core';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { StatusBadge } from '@/components/ui/Badge';
-import { ApiClient } from '@/api/client';
-
-type ConnectionStatusProps = {
-  className?: string;
-};
-
-type HealthStatus = 'online' | 'offline' | 'unknown';
-
-type HealthData = {
-  status: 'healthy' | 'unhealthy';
-  version?: string;
-};
-
-const STORAGE_KEY = 'my-block-explorer-api-url';
+import { Button } from '@/components/ui/Button';
+import { useServiceDiscovery } from '@/hooks/ServiceDiscoveryContext';
 
 const containerStyle = css`
   position: fixed;
@@ -42,7 +30,7 @@ const expandedPanelStyle = css`
   border: 1px solid var(--haze-color-border);
   border-radius: var(--haze-radius-lg);
   padding: var(--haze-space-3);
-  min-width: 200px;
+  min-width: 220px;
   box-shadow: var(--haze-shadow-md);
 
   @media (prefers-color-scheme: dark) {
@@ -72,48 +60,88 @@ const valueStyle = css`
   text-align: right;
 `;
 
+const actionsStyle = css`
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--haze-space-2);
+  padding-top: var(--haze-space-2);
+  border-top: 1px solid var(--haze-color-border);
+`;
+
+type ConnectionStatusProps = {
+  className?: string;
+};
+
 export function ConnectionStatus({ className: _className }: ConnectionStatusProps) {
-  const [status, setStatus] = useState<HealthStatus>('unknown');
+  const { status, serviceInfo, isConnected, isScanning, disconnect, reconnect } =
+    useServiceDiscovery();
+
   const [isExpanded, setIsExpanded] = useState(false);
-  const [serviceUrl, setServiceUrl] = useState<string>('');
-  const [version, setVersion] = useState<string | undefined>();
+  const reconnectingRef = useRef(false);
 
-  const checkHealth = useCallback(async () => {
-    const savedUrl = localStorage.getItem(STORAGE_KEY);
-    if (!savedUrl) {
-      setStatus('unknown');
-      return;
-    }
+  // Auto-reconnect: poll every 30s, silently attempt reconnect on service loss
+  useEffect(() => {
+    if (!isConnected) return;
 
-    setServiceUrl(savedUrl);
+    let cancelled = false;
 
-    try {
-      const testClient = new ApiClient(savedUrl, 5000);
-      const health = await testClient.getHealth();
+    const timer = setInterval(async () => {
+      if (cancelled || reconnectingRef.current) return;
 
-      if ((health as HealthData).status === 'healthy') {
-        setStatus('online');
-        setVersion((health as HealthData).version);
-      } else {
-        setStatus('offline');
+      try {
+        const savedUrl = localStorage.getItem('my-block-explorer-api-url');
+        if (!savedUrl) return;
+
+        const response = await fetch(`${savedUrl}/api/health`, {
+          signal: AbortSignal.timeout(5000),
+        });
+        if (!response.ok) throw new Error('unhealthy');
+      } catch {
+        reconnectingRef.current = true;
+        try {
+          await reconnect();
+        } catch {
+          // Silent: auto-reconnect failure does not surface errors
+        } finally {
+          reconnectingRef.current = false;
+        }
       }
-    } catch {
-      setStatus('offline');
-    }
+    }, 30000);
+
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [isConnected, reconnect]);
+
+  const handleToggle = useCallback(() => {
+    setIsExpanded(prev => !prev);
   }, []);
 
-  useEffect(() => {
-    checkHealth();
-    const interval = setInterval(checkHealth, 30000);
-    return () => clearInterval(interval);
-  }, [checkHealth]);
+  const handleDisconnect = useCallback(() => {
+    disconnect();
+    setIsExpanded(false);
+  }, [disconnect]);
 
-  const handleToggle = () => {
-    setIsExpanded(prev => !prev);
-  };
+  const handleReconnect = useCallback(async () => {
+    try {
+      await reconnect();
+    } catch {
+      // User-initiated: failure is reflected in status
+    }
+  }, [reconnect]);
 
-  const statusText =
-    status === 'online' ? 'Connected' : status === 'offline' ? 'Disconnected' : 'Unknown';
+  const badgeStatus = isConnected ? 'online' : status === 'discovering' ? 'unknown' : 'offline';
+
+  const statusText = isConnected
+    ? 'Connected'
+    : status === 'discovering'
+      ? 'Scanning...'
+      : status === 'not-found'
+        ? 'Disconnected'
+        : status === 'error'
+          ? 'Error'
+          : 'Unknown';
 
   return (
     <div className={containerStyle}>
@@ -125,14 +153,31 @@ export function ConnectionStatus({ className: _className }: ConnectionStatusProp
           </div>
           <div className={expandedRowStyle}>
             <span className={labelStyle}>URL</span>
-            <span className={valueStyle}>{serviceUrl || 'Not configured'}</span>
+            <span className={valueStyle}>{serviceInfo?.url ?? 'Not configured'}</span>
           </div>
-          {version && (
+          {serviceInfo?.version && (
             <div className={expandedRowStyle}>
               <span className={labelStyle}>Version</span>
-              <span className={valueStyle}>{version}</span>
+              <span className={valueStyle}>{serviceInfo.version}</span>
             </div>
           )}
+          <div className={actionsStyle}>
+            {isConnected && (
+              <Button variant="danger" size="sm" onClick={handleDisconnect}>
+                Disconnect
+              </Button>
+            )}
+            {status === 'not-found' && !isScanning && (
+              <Button variant="primary" size="sm" onClick={handleReconnect}>
+                Reconnect
+              </Button>
+            )}
+            {status === 'discovering' && isScanning && (
+              <Button variant="secondary" size="sm" disabled>
+                Scanning...
+              </Button>
+            )}
+          </div>
         </div>
       )}
       <div
@@ -146,7 +191,7 @@ export function ConnectionStatus({ className: _className }: ConnectionStatusProp
         }}
         className={clickableBadgeStyle}
       >
-        <StatusBadge status={status}>{statusText}</StatusBadge>
+        <StatusBadge status={badgeStatus}>{statusText}</StatusBadge>
       </div>
     </div>
   );

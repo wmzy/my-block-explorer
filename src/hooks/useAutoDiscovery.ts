@@ -1,16 +1,16 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { ApiClient, apiClient } from '@/api/client';
 
-// 默认端口范围
 const DEFAULT_PORTS = [8201, 8202, 8203, 8204, 8205];
 const DEFAULT_HOST = 'localhost';
+const STORAGE_KEY = 'my-block-explorer-api-url';
 
 export type DiscoveryStatus =
-  | 'idle' // 未开始
-  | 'discovering' // 发现中
-  | 'found' // 找到服务
-  | 'not-found' // 未找到服务
-  | 'error'; // 发现过程出错
+  | 'idle' // Not started
+  | 'discovering' // Scanning in progress
+  | 'found' // Service found
+  | 'not-found' // No service found
+  | 'error'; // Discovery error
 
 export type ServiceInfo = {
   host: string;
@@ -27,7 +27,10 @@ export function useAutoDiscovery() {
   const [isScanning, setIsScanning] = useState(false);
   const [currentPort, setCurrentPort] = useState<number | null>(null);
 
-  // 测试单个端口
+  // Derived: true when connected to a service
+  const isConnected = useMemo(() => status === 'found', [status]);
+
+  // Test a single port
   const testPort = useCallback(
     async (port: number, host = DEFAULT_HOST): Promise<ServiceInfo | null> => {
       const url = `http://${host}:${port}`;
@@ -48,7 +51,7 @@ export function useAutoDiscovery() {
           };
         }
       } catch (_error) {
-        // 端口不可用或服务不响应
+        // Port unavailable or service not responding
       }
 
       return null;
@@ -56,7 +59,7 @@ export function useAutoDiscovery() {
     [],
   );
 
-  // 扫描端口范围
+  // Scan port range
   const discover = useCallback(
     async (ports = DEFAULT_PORTS, host = DEFAULT_HOST): Promise<ServiceInfo | null> => {
       setStatus('discovering');
@@ -75,14 +78,12 @@ export function useAutoDiscovery() {
             setIsScanning(false);
             setCurrentPort(null);
 
-            // 更新API客户端的基础URL
             apiClient.setBaseUrl(service.url);
 
             return service;
           }
         }
 
-        // 没有找到任何可用服务
         setStatus('not-found');
         setIsScanning(false);
         setCurrentPort(null);
@@ -98,10 +99,9 @@ export function useAutoDiscovery() {
     [testPort],
   );
 
-  // 自动发现（页面加载时）
+  // Auto-discover on page load
   const autoDiscover = useCallback(async () => {
-    // 首先检查是否已经配置了服务URL
-    const savedUrl = localStorage.getItem('my-block-explorer-api-url');
+    const savedUrl = localStorage.getItem(STORAGE_KEY);
     if (savedUrl) {
       try {
         const testApiClient = new ApiClient(savedUrl, 3000);
@@ -122,16 +122,15 @@ export function useAutoDiscovery() {
           return serviceInfo;
         }
       } catch {
-        // 保存的URL无效，清除并继续自动发现
-        localStorage.removeItem('my-block-explorer-api-url');
+        // Saved URL invalid, clear and continue scanning
+        localStorage.removeItem(STORAGE_KEY);
       }
     }
 
-    // 进行自动发现
     return discover();
   }, [discover]);
 
-  // 手动设置API URL
+  // Manually set API URL
   const setApiUrl = useCallback(async (url: string): Promise<boolean> => {
     try {
       const testApiClient = new ApiClient(url, 5000);
@@ -150,10 +149,7 @@ export function useAutoDiscovery() {
         setStatus('found');
         setError(null);
 
-        // 保存到本地存储
-        localStorage.setItem('my-block-explorer-api-url', url);
-
-        // 更新API客户端
+        localStorage.setItem(STORAGE_KEY, url);
         apiClient.setBaseUrl(url);
 
         return true;
@@ -166,18 +162,66 @@ export function useAutoDiscovery() {
     }
   }, []);
 
-  // 重置发现状态
+  // Reset discovery state completely
   const reset = useCallback(() => {
     setStatus('idle');
     setServiceInfo(null);
     setError(null);
     setIsScanning(false);
     setCurrentPort(null);
-    localStorage.removeItem('my-block-explorer-api-url');
+    localStorage.removeItem(STORAGE_KEY);
     apiClient.setBaseUrl('');
   }, []);
 
-  // 页面加载时自动运行发现
+  // Disconnect from current service (preserves saved URL for reconnect)
+  const disconnect = useCallback(() => {
+    apiClient.setBaseUrl('');
+    setServiceInfo(null);
+    setError(null);
+    setIsScanning(false);
+    setCurrentPort(null);
+    setStatus('not-found');
+    // Intentionally keep localStorage URL for reconnect
+  }, []);
+
+  // Reconnect: try saved URL first, fallback to port scan
+  const reconnect = useCallback(async (): Promise<ServiceInfo | null> => {
+    const savedUrl = localStorage.getItem(STORAGE_KEY);
+
+    if (savedUrl) {
+      setStatus('discovering');
+      setIsScanning(true);
+      setError(null);
+
+      try {
+        const testApiClient = new ApiClient(savedUrl, 3000);
+        const health = await testApiClient.getHealth();
+
+        if (health?.status) {
+          const url = new URL(savedUrl);
+          const info: ServiceInfo = {
+            host: url.hostname,
+            port: parseInt(url.port, 10),
+            url: savedUrl,
+            version: health.version as string | undefined,
+          };
+
+          setServiceInfo(info);
+          setStatus('found');
+          setIsScanning(false);
+          apiClient.setBaseUrl(savedUrl);
+          return info;
+        }
+      } catch {
+        // Saved URL no longer valid, fall through to full scan
+      }
+    }
+
+    // Fallback to port scanning
+    return discover();
+  }, [discover]);
+
+  // Auto-discover on mount
   useEffect(() => {
     autoDiscover();
   }, [autoDiscover]);
@@ -188,10 +232,13 @@ export function useAutoDiscovery() {
     error,
     isScanning,
     currentPort,
+    isConnected,
     discover,
     autoDiscover,
     setApiUrl,
     reset,
+    disconnect,
+    reconnect,
     testPort,
   };
 }

@@ -2,13 +2,14 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { App } from './App';
 import { ServiceSetup } from '@/components/ServiceSetup';
-import { useAutoDiscovery } from '@/hooks/useAutoDiscovery';
+import { ServiceDiscoveryProvider } from '@/hooks/ServiceDiscoveryContext';
+import { useServiceDiscovery } from '@/hooks/ServiceDiscoveryContext';
 import 'haze-ui/styles.css';
 import '@/styles/global';
 
 function Root() {
   const { status, serviceInfo, error, isScanning, currentPort, setApiUrl, discover, reset } =
-    useAutoDiscovery();
+    useServiceDiscovery();
 
   if (status !== 'found') {
     return (
@@ -37,6 +38,8 @@ const root = createRoot(container);
 
 root.render(
   <React.StrictMode>
-    <Root />
+    <ServiceDiscoveryProvider>
+      <Root />
+    </ServiceDiscoveryProvider>
   </React.StrictMode>,
 );
