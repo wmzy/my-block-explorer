@@ -21,11 +21,11 @@ const clickableBadgeStyle = css`
 
   &:hover {
     opacity: 0.85;
-    transform: translateY(-1px);
+    transform: translateY(-1px) scale(1.02);
   }
 
   &:active {
-    transform: translateY(0);
+    transform: translateY(0) scale(1);
   }
 `;
 
@@ -36,30 +36,22 @@ const expandedPanelStyle = css`
   background: var(--haze-color-bg);
   border: 1px solid var(--haze-color-border);
   border-radius: var(--haze-radius-lg);
-  padding: var(--haze-space-4);
-  min-width: 280px;
+  padding: var(--haze-space-5);
+  min-width: 300px;
   box-shadow:
-    0 10px 25px rgba(0, 0, 0, 0.1),
-    0 0 0 1px rgba(255, 255, 255, 0.05) inset;
-  animation: panel-slide-up 0.2s ease-out;
+    0 20px 60px rgba(0, 0, 0, 0.12),
+    0 0 0 1px var(--haze-color-border);
+  animation: panel-enter 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 
-  @keyframes panel-slide-up {
+  @keyframes panel-enter {
     from {
       opacity: 0;
-      transform: translateY(8px);
+      transform: translateY(8px) scale(0.96);
     }
     to {
       opacity: 1;
-      transform: translateY(0);
+      transform: translateY(0) scale(1);
     }
-  }
-
-  @media (prefers-color-scheme: dark) {
-    background: var(--haze-color-bg-raised);
-    border-color: rgba(255, 255, 255, 0.08);
-    box-shadow:
-      0 10px 25px rgba(0, 0, 0, 0.3),
-      0 0 0 1px rgba(255, 255, 255, 0.03) inset;
   }
 `;
 
@@ -69,14 +61,10 @@ const expandedRowStyle = css`
   align-items: flex-start;
   gap: var(--haze-space-4);
   font-size: var(--haze-text-sm);
-  padding: var(--haze-space-2) 0;
+  padding: var(--haze-space-3) 0;
 
   &:not(:last-child) {
     border-bottom: 1px solid var(--haze-color-border);
-  }
-
-  @media (prefers-color-scheme: dark) {
-    border-color: rgba(255, 255, 255, 0.06);
   }
 `;
 
@@ -100,53 +88,36 @@ const urlValueStyle = css`
   word-break: break-all;
   text-align: right;
   font-size: var(--haze-text-sm);
-  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
-  background-color: var(--haze-color-bg-subtle, #f3f4f6);
-  padding: var(--haze-space-1) var(--haze-space-2);
+  font-family: var(--haze-font-mono);
+  background-color: var(--haze-color-bg-muted);
+  padding: var(--haze-space-1) var(--haze-space-3);
   border-radius: var(--haze-radius-sm);
+  border: 1px solid var(--haze-color-border);
   max-width: 200px;
   overflow: hidden;
   text-overflow: ellipsis;
-
-  @media (prefers-color-scheme: dark) {
-    background-color: rgba(0, 0, 0, 0.2);
-    color: #e5e7eb;
-  }
 `;
 
 const actionsStyle = css`
   display: flex;
   justify-content: flex-end;
   gap: var(--haze-space-2);
-  margin-top: var(--haze-space-3);
-  padding-top: var(--haze-space-3);
+  margin-top: var(--haze-space-4);
+  padding-top: var(--haze-space-4);
   border-top: 1px solid var(--haze-color-border);
-
-  @media (prefers-color-scheme: dark) {
-    border-color: rgba(255, 255, 255, 0.06);
-  }
 `;
 
 const versionBadgeStyle = css`
   display: inline-flex;
   align-items: center;
   padding: var(--haze-space-1) var(--haze-space-2);
-  background: linear-gradient(135deg, rgba(102, 126, 234, 0.1) 0%, rgba(118, 75, 162, 0.1) 100%);
-  border: 1px solid rgba(102, 126, 234, 0.2);
+  background: color-mix(in srgb, var(--haze-color-primary) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--haze-color-primary) 25%, transparent);
   border-radius: var(--haze-radius-sm);
   font-size: var(--haze-text-xs);
-  color: #667eea;
-  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
-
-  @media (prefers-color-scheme: dark) {
-    background: linear-gradient(
-      135deg,
-      rgba(129, 140, 248, 0.15) 0%,
-      rgba(167, 139, 250, 0.15) 100%
-    );
-    border-color: rgba(129, 140, 248, 0.25);
-    color: #a78bfa;
-  }
+  color: var(--haze-color-primary);
+  font-weight: var(--haze-weight-medium);
+  font-family: var(--haze-font-mono);
 `;
 
 type ConnectionStatusProps = {

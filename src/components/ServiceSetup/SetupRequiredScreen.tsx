@@ -37,6 +37,18 @@ const containerStyle = css`
 const contentWrapperStyle = css`
   width: 100%;
   max-width: 540px;
+  animation: content-enter 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+
+  @keyframes content-enter {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
 `;
 
 const headerSectionStyle = css`
@@ -45,61 +57,40 @@ const headerSectionStyle = css`
 `;
 
 const titleStyle = css`
-  font-size: var(--haze-text-3xl);
+  font-size: var(--haze-text-4xl, 36px);
   font-weight: var(--haze-weight-bold);
   color: #ffffff;
   margin: 0 0 var(--haze-space-2) 0;
-  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-
-  @media (prefers-color-scheme: dark) {
-    color: #f9fafb;
-    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-  }
+  letter-spacing: -0.02em;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.2);
 `;
 
 const descriptionStyle = css`
   font-size: var(--haze-text-base);
-  color: rgba(255, 255, 255, 0.85);
+  color: rgba(255, 255, 255, 0.75);
   margin: 0;
   line-height: var(--haze-leading-relaxed);
-
-  @media (prefers-color-scheme: dark) {
-    color: rgba(249, 250, 251, 0.85);
-  }
 `;
 
 const cardStyle = css`
   margin-bottom: var(--haze-space-4);
-  border-radius: var(--haze-radius-lg);
-  box-shadow:
-    0 4px 6px -1px rgba(0, 0, 0, 0.1),
-    0 2px 4px -2px rgba(0, 0, 0, 0.1),
-    0 0 0 1px rgba(255, 255, 255, 0.1) inset;
+  background: rgba(255, 255, 255, 0.12);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: var(--haze-radius-xl, 16px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
   transition:
     transform 0.2s ease,
-    box-shadow 0.2s ease;
+    box-shadow 0.2s ease,
+    background 0.2s ease,
+    border-color 0.2s ease;
 
   &:hover {
+    background: rgba(255, 255, 255, 0.16);
+    border-color: rgba(255, 255, 255, 0.25);
     transform: translateY(-2px);
-    box-shadow:
-      0 10px 15px -3px rgba(0, 0, 0, 0.1),
-      0 4px 6px -4px rgba(0, 0, 0, 0.1),
-      0 0 0 1px rgba(255, 255, 255, 0.15) inset;
-  }
-
-  @media (prefers-color-scheme: dark) {
-    background-color: var(--haze-color-bg-dark, #1f2937);
-    box-shadow:
-      0 4px 6px -1px rgba(0, 0, 0, 0.3),
-      0 2px 4px -2px rgba(0, 0, 0, 0.2),
-      0 0 0 1px rgba(255, 255, 255, 0.05) inset;
-
-    &:hover {
-      box-shadow:
-        0 10px 15px -3px rgba(0, 0, 0, 0.4),
-        0 4px 6px -4px rgba(0, 0, 0, 0.25),
-        0 0 0 1px rgba(255, 255, 255, 0.08) inset;
-    }
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
   }
 `;
 
@@ -112,17 +103,14 @@ const recommendedBadgeStyle = css`
   align-items: center;
   gap: var(--haze-space-1);
   padding: var(--haze-space-1) var(--haze-space-3);
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.15));
+  border: 1px solid rgba(255, 255, 255, 0.2);
   color: #ffffff;
   font-size: var(--haze-text-xs);
   font-weight: var(--haze-weight-semibold);
   border-radius: 9999px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-
-  @media (prefers-color-scheme: dark) {
-    background: linear-gradient(135deg, #818cf8 0%, #a78bfa 100%);
-  }
 `;
 
 const cardTitleRowStyle = css`
@@ -135,23 +123,15 @@ const cardTitleRowStyle = css`
 const cardTitleStyle = css`
   font-size: var(--haze-text-lg);
   font-weight: var(--haze-weight-semibold);
-  color: var(--haze-color-text);
+  color: rgba(255, 255, 255, 0.95);
   margin: 0;
-
-  @media (prefers-color-scheme: dark) {
-    color: var(--haze-color-text-dark, #f9fafb);
-  }
 `;
 
 const cardDescriptionStyle = css`
   font-size: var(--haze-text-sm);
-  color: var(--haze-color-text-secondary);
+  color: rgba(255, 255, 255, 0.65);
   margin: 0 0 var(--haze-space-5) 0;
   line-height: var(--haze-leading-relaxed);
-
-  @media (prefers-color-scheme: dark) {
-    color: var(--haze-color-text-secondary-dark, #9ca3af);
-  }
 `;
 
 const stepsContainerStyle = css`
@@ -170,20 +150,15 @@ const stepNumberStyle = css`
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.25), rgba(255, 255, 255, 0.1));
+  border: 1px solid rgba(255, 255, 255, 0.2);
   color: #ffffff;
-  font-size: var(--haze-text-sm);
+  font-size: var(--haze-text-base);
   font-weight: var(--haze-weight-bold);
   flex-shrink: 0;
-  box-shadow: 0 2px 4px rgba(102, 126, 234, 0.3);
-
-  @media (prefers-color-scheme: dark) {
-    background: linear-gradient(135deg, #818cf8 0%, #a78bfa 100%);
-    box-shadow: 0 2px 4px rgba(129, 140, 248, 0.4);
-  }
 `;
 
 const stepContentStyle = css`
@@ -194,12 +169,8 @@ const stepContentStyle = css`
 const stepLabelStyle = css`
   font-size: var(--haze-text-sm);
   font-weight: var(--haze-weight-medium);
-  color: var(--haze-color-text);
+  color: rgba(255, 255, 255, 0.85);
   margin: 0 0 var(--haze-space-2) 0;
-
-  @media (prefers-color-scheme: dark) {
-    color: var(--haze-color-text-dark, #f9fafb);
-  }
 `;
 
 const codeBlockWrapperStyle = css`
@@ -207,42 +178,29 @@ const codeBlockWrapperStyle = css`
 `;
 
 const codeBlockStyle = css`
-  background-color: var(--haze-color-bg-subtle, #f3f4f6);
-  border: 1px solid var(--haze-color-border, #e5e7eb);
+  display: block;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: var(--haze-radius-md);
   padding: var(--haze-space-3) var(--haze-space-4);
-  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  font-family: var(--haze-font-mono);
   font-size: var(--haze-text-sm);
-  color: var(--haze-color-text);
+  color: rgba(255, 255, 255, 0.9);
   overflow-x: auto;
   margin: 0;
   white-space: pre;
-
-  @media (prefers-color-scheme: dark) {
-    background-color: #1f2937;
-    border-color: #374151;
-    color: #e5e7eb;
-  }
 `;
 
 const commandPartStyle = css`
-  color: var(--haze-color-primary, #667eea);
+  color: rgba(255, 255, 255, 0.95);
   font-weight: var(--haze-weight-medium);
-
-  @media (prefers-color-scheme: dark) {
-    color: #818cf8;
-  }
 `;
 
 const argPartStyle = css`
-  color: #059669;
-
-  @media (prefers-color-scheme: dark) {
-    color: #34d399;
-  }
+  color: rgba(134, 239, 172, 0.9);
 `;
 
-const copyButtonStyle = css`
+const codeActionStyle = css`
   position: absolute;
   top: var(--haze-space-2);
   right: var(--haze-space-2);
@@ -254,183 +212,13 @@ const copyButtonStyle = css`
   }
 `;
 
-const tabContainerStyle = css`
-  display: flex;
-  gap: var(--haze-space-1);
-  margin-bottom: var(--haze-space-3);
-  padding: var(--haze-space-1);
-  background-color: var(--haze-color-bg-subtle, #f3f4f6);
-  border-radius: var(--haze-radius-md);
-  border: 1px solid var(--haze-color-border, #e5e7eb);
-
-  @media (prefers-color-scheme: dark) {
-    background-color: #1f2937;
-    border-color: #374151;
-  }
-`;
-
-const tabStyle = css`
-  flex: 1;
-  padding: var(--haze-space-2) var(--haze-space-3);
-  border: none;
-  border-radius: var(--haze-radius-sm);
-  font-size: var(--haze-text-sm);
-  font-weight: var(--haze-weight-medium);
-  cursor: pointer;
-  transition: all 0.15s ease;
-  background-color: transparent;
-  color: var(--haze-color-text-secondary);
-
-  &:hover {
-    background-color: rgba(255, 255, 255, 0.5);
-  }
-
-  &.activeTab {
-    background-color: #ffffff;
-    color: var(--haze-color-text);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  }
-
-  @media (prefers-color-scheme: dark) {
-    color: var(--haze-color-text-secondary-dark, #9ca3af);
-
-    &:hover {
-      background-color: rgba(255, 255, 255, 0.1);
-    }
-
-    &.activeTab {
-      background-color: #374151;
-      color: #f9fafb;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-    }
-  }
-`;
-
-const dividerStyle = css`
-  display: flex;
-  align-items: center;
-  gap: var(--haze-space-4);
-  margin: var(--haze-space-4) 0;
-
-  &::before,
-  &::after {
-    content: '';
-    flex: 1;
-    height: 1px;
-    background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.3), transparent);
-  }
-
-  @media (prefers-color-scheme: dark) {
-    &::before,
-    &::after {
-      background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.15), transparent);
-    }
-  }
-`;
-
-const dividerTextStyle = css`
-  font-size: var(--haze-text-xs);
-  color: rgba(255, 255, 255, 0.6);
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-
-  @media (prefers-color-scheme: dark) {
-    color: rgba(249, 250, 251, 0.5);
-  }
-`;
-
-const remoteCardTitleStyle = css`
-  font-size: var(--haze-text-lg);
-  font-weight: var(--haze-weight-semibold);
-  color: var(--haze-color-text);
-  margin: 0 0 var(--haze-space-3) 0;
-
-  @media (prefers-color-scheme: dark) {
-    color: var(--haze-color-text-dark, #f9fafb);
-  }
-`;
-
-const remoteCardDescriptionStyle = css`
-  font-size: var(--haze-text-sm);
-  color: var(--haze-color-text-secondary);
-  margin: 0 0 var(--haze-space-4) 0;
-
-  @media (prefers-color-scheme: dark) {
-    color: var(--haze-color-text-secondary-dark, #9ca3af);
-  }
-`;
-
-const formStyle = css`
-  display: flex;
-  flex-direction: column;
-  gap: var(--haze-space-4);
-`;
-
-const inputGroupStyle = css`
-  display: flex;
-  flex-direction: column;
-  gap: var(--haze-space-2);
-`;
-
-const labelStyle = css`
-  font-size: var(--haze-text-sm);
-  font-weight: var(--haze-weight-medium);
-  color: var(--haze-color-text);
-
-  @media (prefers-color-scheme: dark) {
-    color: var(--haze-color-text-dark, #f9fafb);
-  }
-`;
-
-const inputStyle = css`
-  width: 100%;
-  padding: var(--haze-space-3);
-  border: 1px solid var(--haze-color-border, #e5e7eb);
-  border-radius: var(--haze-radius-md);
-  font-size: var(--haze-text-base);
-  color: var(--haze-color-text);
-  background-color: var(--haze-color-bg, #ffffff);
-  transition:
-    border-color 0.15s ease,
-    box-shadow 0.15s ease;
-
-  &::placeholder {
-    color: var(--haze-color-text-tertiary, #9ca3af);
-  }
-
-  &:focus {
-    outline: none;
-    border-color: var(--haze-color-primary, #667eea);
-    box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.15);
-  }
-
-  @media (prefers-color-scheme: dark) {
-    background-color: #1f2937;
-    border-color: #374151;
-    color: #f9fafb;
-
-    &:focus {
-      border-color: #818cf8;
-      box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.2);
-    }
-  }
-`;
-
-const buttonGroupStyle = css`
-  display: flex;
-  justify-content: flex-end;
-`;
-
-const errorWrapperStyle = css`
-  margin-top: var(--haze-space-3);
-`;
-
 const copiedToastStyle = css`
   position: absolute;
   top: var(--haze-space-2);
   right: var(--haze-space-2);
   padding: var(--haze-space-1) var(--haze-space-2);
-  background-color: #059669;
+  background: rgba(34, 197, 94, 0.9);
+  backdrop-filter: blur(8px);
   color: #ffffff;
   font-size: var(--haze-text-xs);
   font-weight: var(--haze-weight-medium);
@@ -450,6 +238,111 @@ const copiedToastStyle = css`
       transform: translateY(-4px);
     }
   }
+`;
+
+const tabContainerStyle = css`
+  display: flex;
+  gap: var(--haze-space-1);
+  margin-bottom: var(--haze-space-3);
+  padding: 3px;
+  background: rgba(0, 0, 0, 0.15);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--haze-radius-md);
+`;
+
+const tabStyle = css`
+  flex: 1;
+  padding: var(--haze-space-2) var(--haze-space-3);
+  border: none;
+  border-radius: var(--haze-radius-sm);
+  font-size: var(--haze-text-sm);
+  font-weight: var(--haze-weight-medium);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  background-color: transparent;
+  color: rgba(255, 255, 255, 0.6);
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.1);
+  }
+
+  &.activeTab {
+    background: rgba(255, 255, 255, 0.2);
+    color: #ffffff;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  }
+`;
+
+const dividerStyle = css`
+  display: flex;
+  align-items: center;
+  gap: var(--haze-space-4);
+  margin: var(--haze-space-4) 0;
+
+  &::before,
+  &::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.2), transparent);
+  }
+`;
+
+const dividerTextStyle = css`
+  font-size: var(--haze-text-xs);
+  color: rgba(255, 255, 255, 0.4);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+`;
+
+const formStyle = css`
+  display: flex;
+  flex-direction: column;
+  gap: var(--haze-space-4);
+`;
+
+const inputGroupStyle = css`
+  display: flex;
+  flex-direction: column;
+  gap: var(--haze-space-2);
+`;
+
+const labelStyle = css`
+  font-size: var(--haze-text-sm);
+  font-weight: var(--haze-weight-medium);
+  color: rgba(255, 255, 255, 0.7);
+`;
+
+const inputStyle = css`
+  width: 100%;
+  padding: var(--haze-space-3);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: var(--haze-radius-md);
+  font-size: var(--haze-text-base);
+  color: #ffffff;
+  background: rgba(0, 0, 0, 0.15);
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+
+  &::placeholder {
+    color: rgba(255, 255, 255, 0.35);
+  }
+
+  &:focus {
+    outline: none;
+    border-color: rgba(255, 255, 255, 0.4);
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.1);
+  }
+`;
+
+const buttonGroupStyle = css`
+  display: flex;
+  justify-content: flex-end;
+`;
+
+const errorWrapperStyle = css`
+  margin-top: var(--haze-space-3);
 `;
 
 export function SetupRequiredScreen({
@@ -535,7 +428,7 @@ export function SetupRequiredScreen({
                     <Button
                       variant="ghost"
                       size="sm"
-                      className={copyButtonStyle}
+                      className={codeActionStyle}
                       onClick={handleCopy}
                     >
                       Copy
@@ -563,10 +456,8 @@ export function SetupRequiredScreen({
 
         <Card className={cardStyle}>
           <CardContent className={cardContentStyle}>
-            <h2 className={remoteCardTitleStyle}>Connect to Remote API</h2>
-            <p className={remoteCardDescriptionStyle}>
-              Connect to an externally hosted API service.
-            </p>
+            <h2 className={cardTitleStyle}>Connect to Remote API</h2>
+            <p className={cardDescriptionStyle}>Connect to an externally hosted API service.</p>
 
             <form className={formStyle} onSubmit={e => e.preventDefault()}>
               <div className={inputGroupStyle}>
