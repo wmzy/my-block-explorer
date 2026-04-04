@@ -18,36 +18,18 @@ export function App() {
   return (
     <ErrorBoundary>
       <AppQueryProvider>
-        <BrowserRouter>
+        <BrowserRouter basename={import.meta.env.BASE_URL}>
           <div className={cx(globalStyles, hazeThemeWrapper, lightTheme, spacing, typography)}>
             <ToastContainer>
               <Routes>
                 <Route path="/chain/:chainId" element={<HomePage />} />
                 <Route path="/chain/:chainId/blocks" element={<BlocksListPage />} />
-                <Route
-                  path="/chain/:chainId/transactions"
-                  element={<TransactionsListPage />}
-                />
-                <Route
-                  path="/chain/:chainId/block/:blockNumber"
-                  element={<BlockPage />}
-                />
-                <Route
-                  path="/chain/:chainId/tx/:txHash"
-                  element={<TransactionPage />}
-                />
-                <Route
-                  path="/chain/:chainId/address/:address"
-                  element={<AddressPage />}
-                />
-                <Route
-                  path="/chain/:chainId/contract/:address"
-                  element={<ContractPage />}
-                />
-                <Route
-                  path="/chain/:chainId/contract/:address/events"
-                  element={<ContractPage />}
-                />
+                <Route path="/chain/:chainId/transactions" element={<TransactionsListPage />} />
+                <Route path="/chain/:chainId/block/:blockNumber" element={<BlockPage />} />
+                <Route path="/chain/:chainId/tx/:txHash" element={<TransactionPage />} />
+                <Route path="/chain/:chainId/address/:address" element={<AddressPage />} />
+                <Route path="/chain/:chainId/contract/:address" element={<ContractPage />} />
+                <Route path="/chain/:chainId/contract/:address/events" element={<ContractPage />} />
                 <Route path="/search" element={<SearchPage />} />
                 <Route path="/" element={<Navigate to="/chain/1" replace />} />
                 <Route path="*" element={<NotFoundPage />} />
