@@ -100,8 +100,8 @@ export const DynamicFormGenerator: React.FC<DynamicFormGeneratorProps> = ({
       case 'bool':
         baseField.type = 'checkbox';
         baseField.options = [
-          { value: true, label: 'True' },
-          { value: false, label: 'False' },
+          { value: 'true' as unknown as string, label: 'True' },
+          { value: 'false' as unknown as string, label: 'False' },
         ];
         break;
 
@@ -406,7 +406,7 @@ export const DynamicFormGenerator: React.FC<DynamicFormGeneratorProps> = ({
                 onChange={e => handleFieldChange(fieldName, e.target.value)}
                 disabled={disabled}
               >
-                {field.options?.map(option => (
+                {field.options?.map((option: { value: string; label: string }) => (
                   <option key={option.value} value={option.value}>
                     {option.label}
                   </option>

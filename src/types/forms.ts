@@ -9,7 +9,7 @@ export interface FormField {
   required?: boolean;
   indexed?: boolean;
   placeholder?: string;
-  options?: Array<{ value: unknown; label: string }>;
+  options?: Array<{ value: string; label: string }>;
   validation?: ValidationRule[];
   pattern?: RegExp;
   maxLength?: number;

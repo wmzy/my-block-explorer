@@ -240,6 +240,10 @@ export class ApiClient {
   getBaseUrl(): string {
     return this.baseUrl;
   }
+
+  setBaseUrl(url: string): void {
+    this.baseUrl = url;
+  }
 }
 
 export const apiClient = new ApiClient();

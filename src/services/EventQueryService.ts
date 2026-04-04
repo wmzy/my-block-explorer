@@ -248,7 +248,7 @@ export class EventQueryService {
           break;
       }
 
-      const result = (await this.chainDb.query(`
+      const result = await this.chainDb.query(`
         SELECT
           ${intervalSql} as time_range,
           COUNT(*) as count
@@ -257,12 +257,12 @@ export class EventQueryService {
         GROUP BY time_range
         ORDER BY time_range DESC
         LIMIT ${limit}
-      `));
+      `);
 
       const queryTime = performance.now() - startTime;
       performanceMonitor.recordQuery('events_by_time_range', queryTime, true);
 
-      return result.map(row => ({
+      return (result as Record<string, string>[]).map(row => ({
         timeRange: row.time_range,
         count: Number(row.count),
       }));
@@ -305,7 +305,7 @@ export class EventQueryService {
           break;
       }
 
-      const result = (await this.chainDb.query(`
+      const result = await this.chainDb.query(`
         SELECT
           ${field} as address,
           COUNT(*) as count,
@@ -315,12 +315,12 @@ export class EventQueryService {
         GROUP BY address
         ORDER BY count DESC
         LIMIT ${limit}
-      `));
+      `);
 
       const queryTime = performance.now() - startTime;
       performanceMonitor.recordQuery('top_addresses', queryTime, true);
 
-      return result.map(row => ({
+      return (result as Record<string, string>[]).map(row => ({
         address: row.address,
         count: Number(row.count),
         percentage: Number(row.percentage),
@@ -412,18 +412,20 @@ export class EventQueryService {
     const performanceMonitor = multiChainPerformanceManager.getChainMonitor(this.chainId);
 
     try {
-      const result = (await this.chainDb.query(
+      const result = await this.chainDb.query(
         `
         SELECT * FROM ${tableName}
         WHERE block_hash = ? AND log_index = ?
       `,
         [blockHash, logIndex],
-      ));
+      );
 
       const queryTime = performance.now() - startTime;
       performanceMonitor.recordQuery('event_details', queryTime, true);
 
-      return result.length > 0 ? result[0] : null;
+      return (result as Record<string, unknown>[]).length > 0
+        ? (result as Record<string, unknown>[])[0]
+        : null;
     } catch (error) {
       const queryTime = performance.now() - startTime;
       performanceMonitor.recordQuery('event_details', queryTime, false);
@@ -450,7 +452,7 @@ export class EventQueryService {
     const performanceMonitor = multiChainPerformanceManager.getChainMonitor(this.chainId);
 
     try {
-      const result = (await this.chainDb.query(
+      const result = await this.chainDb.query(
         `
         SELECT * FROM ${tableName}
         WHERE event_name = ?
@@ -458,12 +460,12 @@ export class EventQueryService {
         LIMIT ?
       `,
         [eventName, limit],
-      ));
+      );
 
       const queryTime = performance.now() - startTime;
       performanceMonitor.recordQuery('similar_events', queryTime, true);
 
-      return result;
+      return result as Record<string, unknown>[];
     } catch (error) {
       const queryTime = performance.now() - startTime;
       performanceMonitor.recordQuery('similar_events', queryTime, false);
