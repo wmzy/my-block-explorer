@@ -12,6 +12,7 @@ import { SearchPage } from './pages/SearchPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { AppQueryProvider } from './hooks/useQueryClient';
+import { ConnectionStatus } from '@/components/ServiceSetup';
 import { globalStyles, hazeThemeWrapper } from '@/styles/global';
 
 export function App() {
@@ -35,6 +36,7 @@ export function App() {
                 <Route path="*" element={<NotFoundPage />} />
               </Routes>
             </ToastContainer>
+            <ConnectionStatus />
           </div>
         </BrowserRouter>
       </AppQueryProvider>
