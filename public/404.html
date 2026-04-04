@@ -6,15 +6,21 @@
     <title>Redirecting...</title>
     <script type="text/javascript">
       (function () {
-        var pathSegmentsToKeep = 1;
         var l = window.location;
-        var newPath = l.pathname
-          .split('/')
-          .slice(0, 1 + pathSegmentsToKeep)
-          .join('/')
-          .replace(/\/+$/, '');
-        if (l.pathname.endsWith('/')) newPath += '/';
-        l.replace(l.protocol + '//' + l.host + newPath + '/index.html' + (l.hash || ''));
+        if (l.pathname.indexOf('/index.html') !== -1) return;
+        var base = '/my-block-explorer/';
+        var rawPath = l.pathname;
+        if (rawPath.indexOf(base) === 0) {
+          rawPath = rawPath.substring(base.length);
+        }
+        if (rawPath.charAt(0) === '/') rawPath = rawPath.substring(1);
+        if (!rawPath || rawPath === 'index.html') {
+          l.replace(l.protocol + '//' + l.host + base + 'index.html');
+        } else {
+          var existingHash = l.hash ? l.hash.substring(1) : '';
+          var route = existingHash || rawPath;
+          l.replace(l.protocol + '//' + l.host + base + 'index.html#/' + route + (l.search || ''));
+        }
       })();
     </script>
   </head>

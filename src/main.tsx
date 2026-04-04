@@ -7,6 +7,23 @@ import { useServiceDiscovery } from '@/hooks/ServiceDiscoveryContext';
 import 'haze-ui/styles.css';
 import '@/styles/global';
 
+// SPA route recovery for GitHub Pages 404 redirect
+// 404.html encodes the original path into the hash (e.g. #/chain/1)
+// We restore it to history before React Router initializes
+(function restoreSpaRoute() {
+  const hash = window.location.hash;
+  if (hash && hash.startsWith('#/')) {
+    const route = hash.slice(2); // strip '#/'
+    const base = import.meta.env.BASE_URL?.replace(/\/+$/, '') ?? '';
+    const targetPath = base + '/' + route;
+    if (window.location.pathname !== targetPath) {
+      window.history.replaceState(null, '', targetPath);
+    }
+    // Clean up hash so React Router sees a clean path
+    window.location.hash = '';
+  }
+})();
+
 function Root() {
   const { status, serviceInfo, error, isScanning, currentPort, setApiUrl, discover, reset } =
     useServiceDiscovery();
