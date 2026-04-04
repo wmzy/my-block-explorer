@@ -37,7 +37,7 @@ app.onError((e, c) => {
 
 app.get('/api', c => {
   return c.json({
-    name: 'Block Explorer API',
+    name: 'My Block Explorer API',
     version: '1.0.0',
     description: 'A modern blockchain explorer API',
     endpoints: {
@@ -55,7 +55,7 @@ app.get('/api', c => {
 app.get('/api/health', c => {
   return c.json({
     status: 'healthy',
-    message: 'Block Explorer API is running',
+    message: 'My Block Explorer API is running',
     version: '1.0.0',
     timestamp: new Date().toISOString(),
   });

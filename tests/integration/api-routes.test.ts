@@ -10,7 +10,7 @@ describe('API routes', () => {
 
       const data = await response.json();
       expect(data).toMatchObject({
-        name: 'Block Explorer API',
+        name: 'My Block Explorer API',
         version: '1.0.0',
         description: 'A modern blockchain explorer API',
       });
@@ -28,7 +28,7 @@ describe('API routes', () => {
       const data = await response.json();
       expect(data).toMatchObject({
         status: 'healthy',
-        message: 'Block Explorer API is running',
+        message: 'My Block Explorer API is running',
         version: '1.0.0',
       });
       expect(data).toHaveProperty('timestamp');

@@ -314,13 +314,7 @@ function ChainSelector({
         <div className={selectorContent}>
           <div className={selectorName}>{currentChain?.name ?? `Chain ${currentChainId}`}</div>
           <div className={selectorMeta}>
-            ID:
-            {' '}
-            {currentChainId}
-            {' '}
-            •
-            {' '}
-            {currentChain?.nativeCurrency.symbol}
+            ID: {currentChainId} • {currentChain?.nativeCurrency.symbol}
             {isPopularChain(currentChainId) && ' ⭐'}
           </div>
         </div>
@@ -334,7 +328,7 @@ function ChainSelector({
               placeholder="Search chain name, ID, or symbol..."
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
-              onKeyDown={(e) => {
+              onKeyDown={e => {
                 if (e.key === 'Escape') setIsOpen(false);
                 else if (e.key === 'Enter' && filteredChains.length > 0) {
                   onChainChange(filteredChains[0].id);
@@ -347,9 +341,7 @@ function ChainSelector({
               <div className={dropdownHint}>
                 <span>
                   Found
-                  {filteredChains.length}
-                  {' '}
-                  chains
+                  {filteredChains.length} chains
                 </span>
                 {filteredChains.length > 0 && <span>Press Enter to select first</span>}
               </div>
@@ -357,48 +349,40 @@ function ChainSelector({
           </div>
 
           <div className={dropdownList}>
-            {filteredChains.length === 0
-              ? (
-                  <div className={dropdownEmpty}>No matching chains found</div>
-                )
-              : (
-                  filteredChains.map((chain) => {
-                    const chainType = getChainType(chain.id);
-                    const isActive = currentChainId === chain.id;
+            {filteredChains.length === 0 ? (
+              <div className={dropdownEmpty}>No matching chains found</div>
+            ) : (
+              filteredChains.map(chain => {
+                const chainType = getChainType(chain.id);
+                const isActive = currentChainId === chain.id;
 
-                    return (
-                      <button
-                        key={chain.id}
-                        onClick={() => {
-                          onChainChange(chain.id);
-                          setIsOpen(false);
-                          setSearchTerm('');
-                        }}
-                        className={cx(chainItem, isActive ? chainItemActive : undefined)}
-                      >
-                        <div className={chainItemRow}>
-                          <div>
-                            <div className={chainItemName}>
-                              {chain.name}
-                              {isPopularChain(chain.id) && <span>⭐</span>}
-                              {chainType === 'testnet' && <span className={testnetBadge}>Testnet</span>}
-                            </div>
-                            <div className={chainItemMeta}>
-                              ID:
-                              {' '}
-                              {chain.id}
-                              {' '}
-                              •
-                              {' '}
-                              {chain.nativeCurrency.symbol}
-                            </div>
-                          </div>
-                          {isActive && <span style={{ color: 'var(--haze-color-primary)' }}>✓</span>}
+                return (
+                  <button
+                    key={chain.id}
+                    onClick={() => {
+                      onChainChange(chain.id);
+                      setIsOpen(false);
+                      setSearchTerm('');
+                    }}
+                    className={cx(chainItem, isActive ? chainItemActive : undefined)}
+                  >
+                    <div className={chainItemRow}>
+                      <div>
+                        <div className={chainItemName}>
+                          {chain.name}
+                          {isPopularChain(chain.id) && <span>⭐</span>}
+                          {chainType === 'testnet' && <span className={testnetBadge}>Testnet</span>}
                         </div>
-                      </button>
-                    );
-                  })
-                )}
+                        <div className={chainItemMeta}>
+                          ID: {chain.id} • {chain.nativeCurrency.symbol}
+                        </div>
+                      </div>
+                      {isActive && <span style={{ color: 'var(--haze-color-primary)' }}>✓</span>}
+                    </div>
+                  </button>
+                );
+              })
+            )}
           </div>
         </div>
       )}
@@ -436,8 +420,7 @@ export default function TopNavigation({
       const data = await response.json();
       setSearchHistory(data.history ?? []);
       setHistoryLoaded(true);
-    }
-    catch {
+    } catch {
       // silently fail
     }
   }, []);
@@ -451,9 +434,9 @@ export default function TopNavigation({
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as Element;
       if (
-        showHistory
-        && searchContainerRef.current
-        && !searchContainerRef.current.contains(target)
+        showHistory &&
+        searchContainerRef.current &&
+        !searchContainerRef.current.contains(target)
       ) {
         setShowHistory(false);
       }
@@ -475,14 +458,11 @@ export default function TopNavigation({
     // Navigate directly based on query pattern
     if (query.startsWith('0x') && query.length === 42) {
       navigate(`/chain/${currentChainId}/address/${query}`);
-    }
-    else if (query.startsWith('0x') && query.length === 66) {
+    } else if (query.startsWith('0x') && query.length === 66) {
       navigate(`/chain/${currentChainId}/tx/${query}`);
-    }
-    else if (/^\d+$/.test(query)) {
+    } else if (/^\d+$/.test(query)) {
       navigate(`/chain/${currentChainId}/block/${query}`);
-    }
-    else {
+    } else {
       navigate(`/search?q=${encodeURIComponent(query)}`);
     }
   };
@@ -494,20 +474,16 @@ export default function TopNavigation({
     try {
       if (onSearch) {
         await onSearch(searchQuery.trim());
-      }
-      else {
+      } else {
         const query = searchQuery.trim();
 
         if (query.startsWith('0x') && query.length === 42) {
           navigate(`/chain/${currentChainId}/address/${query}`);
-        }
-        else if (query.startsWith('0x') && query.length === 66) {
+        } else if (query.startsWith('0x') && query.length === 66) {
           navigate(`/chain/${currentChainId}/tx/${query}`);
-        }
-        else if (/^\d+$/.test(query)) {
+        } else if (/^\d+$/.test(query)) {
           navigate(`/chain/${currentChainId}/block/${query}`);
-        }
-        else {
+        } else {
           const response = await fetch(
             `/api/chains/${currentChainId}/search?q=${encodeURIComponent(query)}`,
           );
@@ -528,11 +504,9 @@ export default function TopNavigation({
           }
         }
       }
-    }
-    catch (error) {
+    } catch (error) {
       console.error('Search failed:', error);
-    }
-    finally {
+    } finally {
       setLoading(false);
       setShowHistory(false);
       setHistoryLoaded(false);
@@ -545,7 +519,7 @@ export default function TopNavigation({
         <div className={navInner}>
           <div onClick={() => navigate(`/chain/${currentChainId}`)} className={logoStyle}>
             <span style={{ fontSize: '24px' }}>🚀</span>
-            <span className={logoText}>Block Explorer</span>
+            <span className={logoText}>My Block Explorer</span>
           </div>
 
           <div ref={searchContainerRef} className={searchArea}>
@@ -557,7 +531,7 @@ export default function TopNavigation({
                 placeholder={
                   searchPlaceholder ?? `Search on ${chainInfo?.name ?? 'current chain'}...`
                 }
-                onKeyDown={(e) => {
+                onKeyDown={e => {
                   if (e.key === 'Enter') handleSearch();
                   if (e.key === 'Escape') setShowHistory(false);
                 }}

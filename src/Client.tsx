@@ -33,8 +33,7 @@ export function Client() {
         const response = await fetch('/api/health');
         const data = await response.json();
         setHealth(data);
-      }
-      catch (error) {
+      } catch (error) {
         console.error('Failed to fetch health:', error);
       }
     };
@@ -50,11 +49,9 @@ export function Client() {
       const response = await fetch(`/api/search?q=${encodeURIComponent(searchQuery)}`);
       const data = await response.json();
       setSearchResult(data);
-    }
-    catch (error) {
+    } catch (error) {
       console.error('Search failed:', error);
-    }
-    finally {
+    } finally {
       setLoading(false);
     }
   };
@@ -76,7 +73,7 @@ export function Client() {
             textAlign: 'center',
           }}
         >
-          🚀 Block Explorer
+          🚀 My Block Explorer
         </h1>
 
         {/* Health Status */}
@@ -90,34 +87,24 @@ export function Client() {
           }}
         >
           <h2 style={{ margin: '0 0 16px 0', color: '#374151' }}>API Status</h2>
-          {health
-            ? (
-                <div style={{ color: '#059669' }}>
-                  <p>
-                    <strong>Status:</strong>
-                    {' '}
-                    {health.status}
-                  </p>
-                  <p>
-                    <strong>Message:</strong>
-                    {' '}
-                    {health.message}
-                  </p>
-                  <p>
-                    <strong>Version:</strong>
-                    {' '}
-                    {health.version}
-                  </p>
-                  <p>
-                    <strong>Last Check:</strong>
-                    {' '}
-                    {new Date(health.timestamp).toLocaleString()}
-                  </p>
-                </div>
-              )
-            : (
-                <p style={{ color: '#dc2626' }}>Loading API status...</p>
-              )}
+          {health ? (
+            <div style={{ color: '#059669' }}>
+              <p>
+                <strong>Status:</strong> {health.status}
+              </p>
+              <p>
+                <strong>Message:</strong> {health.message}
+              </p>
+              <p>
+                <strong>Version:</strong> {health.version}
+              </p>
+              <p>
+                <strong>Last Check:</strong> {new Date(health.timestamp).toLocaleString()}
+              </p>
+            </div>
+          ) : (
+            <p style={{ color: '#dc2626' }}>Loading API status...</p>
+          )}
         </div>
 
         {/* Search */}
@@ -176,19 +163,13 @@ export function Client() {
             >
               <h3 style={{ margin: '0 0 12px 0', color: '#374151' }}>Search Result</h3>
               <p>
-                <strong>Query:</strong>
-                {' '}
-                {searchResult.query}
+                <strong>Query:</strong> {searchResult.query}
               </p>
               <p>
-                <strong>Type:</strong>
-                {' '}
-                {searchResult.type}
+                <strong>Type:</strong> {searchResult.type}
               </p>
               <p>
-                <strong>Message:</strong>
-                {' '}
-                {searchResult.result.message}
+                <strong>Message:</strong> {searchResult.result.message}
               </p>
 
               {searchResult.result.suggestions.length > 0 && (

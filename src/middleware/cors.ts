@@ -1,25 +1,25 @@
 import { cors } from 'hono/cors';
 
-// CORS中间件配置
+// CORS middleware configuration
 export const corsMiddleware = cors({
-  origin: (origin) => {
-    // 开发环境允许所有来源
+  origin: origin => {
+    // Allow all origins in development
     if (process.env.NODE_ENV === 'development') {
-      return origin || '*';
+      return origin ?? '*';
     }
 
-    // 生产环境只允许特定来源
+    // Production: allow specific origins (GitHub Pages + local dev)
     const allowedOrigins = [
-      'https://your-domain.com',
-      'https://localhost:3000',
+      'https://wmzy.github.io',
       'http://localhost:3000',
+      'http://localhost:8201',
     ];
 
-    return allowedOrigins.includes(origin || '') ? origin : null;
+    return allowedOrigins.includes(origin ?? '') ? origin : allowedOrigins[0];
   },
   allowMethods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
   exposeHeaders: ['X-Response-Time', 'X-Data-Source', 'X-Chain-Id'],
   credentials: true,
-  maxAge: 86400, // 24小时
+  maxAge: 86400,
 });

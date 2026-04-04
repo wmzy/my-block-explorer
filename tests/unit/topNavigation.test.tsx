@@ -77,7 +77,7 @@ describe('TopNavigation', () => {
   it('renders the logo and navigation elements', () => {
     renderTopNavigation();
 
-    expect(screen.getByText('Block Explorer')).toBeInTheDocument();
+    expect(screen.getByText('My Block Explorer')).toBeInTheDocument();
     expect(
       screen.getByPlaceholderText('Search address, tx hash, or block number...'),
     ).toBeInTheDocument();
@@ -179,7 +179,7 @@ describe('TopNavigation', () => {
     // The component works correctly - this is a test infrastructure limitation
     renderTopNavigation({ currentChainId: 5000 });
 
-    const logo = screen.getByText('Block Explorer');
+    const logo = screen.getByText('My Block Explorer');
     expect(logo.closest('div')).toHaveStyle('cursor: pointer');
 
     // Test click functionality

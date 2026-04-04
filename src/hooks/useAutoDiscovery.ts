@@ -5,12 +5,12 @@ import { ApiClient, apiClient } from '@/api/client';
 const DEFAULT_PORTS = [8201, 8202, 8203, 8204, 8205];
 const DEFAULT_HOST = 'localhost';
 
-export type DiscoveryStatus
-  = | 'idle' // 未开始
-    | 'discovering' // 发现中
-    | 'found' // 找到服务
-    | 'not-found' // 未找到服务
-    | 'error'; // 发现过程出错
+export type DiscoveryStatus =
+  | 'idle' // 未开始
+  | 'discovering' // 发现中
+  | 'found' // 找到服务
+  | 'not-found' // 未找到服务
+  | 'error'; // 发现过程出错
 
 export type ServiceInfo = {
   host: string;
@@ -47,8 +47,7 @@ export function useAutoDiscovery() {
             latency,
           };
         }
-      }
-      catch (_error) {
+      } catch (_error) {
         // 端口不可用或服务不响应
       }
 
@@ -88,8 +87,7 @@ export function useAutoDiscovery() {
         setIsScanning(false);
         setCurrentPort(null);
         return null;
-      }
-      catch (error) {
+      } catch (error) {
         setError(error instanceof Error ? error.message : 'Discovery failed');
         setStatus('error');
         setIsScanning(false);
@@ -103,7 +101,7 @@ export function useAutoDiscovery() {
   // 自动发现（页面加载时）
   const autoDiscover = useCallback(async () => {
     // 首先检查是否已经配置了服务URL
-    const savedUrl = localStorage.getItem('block-explorer-api-url');
+    const savedUrl = localStorage.getItem('my-block-explorer-api-url');
     if (savedUrl) {
       try {
         const testApiClient = new ApiClient(savedUrl, 3000);
@@ -123,10 +121,9 @@ export function useAutoDiscovery() {
           apiClient.setBaseUrl(savedUrl);
           return serviceInfo;
         }
-      }
-      catch {
+      } catch {
         // 保存的URL无效，清除并继续自动发现
-        localStorage.removeItem('block-explorer-api-url');
+        localStorage.removeItem('my-block-explorer-api-url');
       }
     }
 
@@ -154,7 +151,7 @@ export function useAutoDiscovery() {
         setError(null);
 
         // 保存到本地存储
-        localStorage.setItem('block-explorer-api-url', url);
+        localStorage.setItem('my-block-explorer-api-url', url);
 
         // 更新API客户端
         apiClient.setBaseUrl(url);
@@ -163,8 +160,7 @@ export function useAutoDiscovery() {
       }
 
       return false;
-    }
-    catch (error) {
+    } catch (error) {
       setError(error instanceof Error ? error.message : 'Invalid API URL');
       return false;
     }
@@ -177,7 +173,7 @@ export function useAutoDiscovery() {
     setError(null);
     setIsScanning(false);
     setCurrentPort(null);
-    localStorage.removeItem('block-explorer-api-url');
+    localStorage.removeItem('my-block-explorer-api-url');
     apiClient.setBaseUrl('');
   }, []);
 

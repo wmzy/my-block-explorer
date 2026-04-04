@@ -1,36 +1,36 @@
-import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react";
-import wyw from "@wyw-in-js/vite";
-import path from "path";
-import type { Plugin } from "vite";
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import wyw from '@wyw-in-js/vite';
+import path from 'path';
+import type { Plugin } from 'vite';
 
 // Custom plugin to integrate Hono API app
 function honoApiPlugin(): Plugin {
   return {
-    name: "hono-api",
+    name: 'hono-api',
     configureServer(server) {
-      server.middlewares.use("/api", async (req, res, next) => {
+      server.middlewares.use('/api', async (req, res, next) => {
         try {
           // Dynamically import the API app to support HMR
-          const { default: apiApp } = await import("./src/api-app");
+          const { default: apiApp } = await import('./src/api-app');
 
           // Convert Node.js request to Hono request
           // Restore the full path including /api prefix
-          const fullPath = "/api" + (req.url || "");
+          const fullPath = '/api' + (req.url || '');
           const url = new URL(fullPath, `http://${req.headers.host}`);
 
           // Handle request body for POST/PUT/PATCH requests
           let body: string | undefined = undefined;
-          if (req.method !== "GET" && req.method !== "HEAD") {
+          if (req.method !== 'GET' && req.method !== 'HEAD') {
             body = await new Promise<string>((resolve, reject) => {
-              let data = "";
-              req.on("data", (chunk) => {
+              let data = '';
+              req.on('data', chunk => {
                 data += chunk;
               });
-              req.on("end", () => {
+              req.on('end', () => {
                 resolve(data);
               });
-              req.on("error", reject);
+              req.on('error', reject);
             });
           }
 
@@ -55,10 +55,10 @@ function honoApiPlugin(): Plugin {
           const responseBody = await response.text();
           res.end(responseBody);
         } catch (error) {
-          console.error("API Error:", error);
+          console.error('API Error:', error);
           res.statusCode = 500;
-          res.setHeader("Content-Type", "application/json");
-          res.end(JSON.stringify({ error: "Internal Server Error" }));
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ error: 'Internal Server Error' }));
         }
       });
     },
@@ -66,49 +66,50 @@ function honoApiPlugin(): Plugin {
 }
 
 export default defineConfig({
+  base: process.env.VITE_BASE ?? '/',
   plugins: [
     react({
-      exclude: ["node_modules/**"],
+      exclude: ['node_modules/**'],
     }),
     wyw({
-      sourceMap: process.env.NODE_ENV !== "production",
-      displayName: process.env.NODE_ENV !== "production",
-      exclude: ["node_modules/**"],
+      sourceMap: process.env.NODE_ENV !== 'production',
+      displayName: process.env.NODE_ENV !== 'production',
+      exclude: ['node_modules/**'],
       evaluate: false,
     }),
     honoApiPlugin(),
   ],
-  root: "./",
+  root: './',
   resolve: {
     alias: {
-      "@": path.resolve(__dirname, "./src"),
+      '@': path.resolve(__dirname, './src'),
     },
   },
   build: {
-    outDir: "./dist/client",
+    outDir: './dist/client',
     emptyOutDir: true,
     sourcemap: true,
-    target: "esnext",
+    target: 'esnext',
     rollupOptions: {
       input: {
-        main: path.resolve(__dirname, "index.html"),
+        main: path.resolve(__dirname, 'index.html'),
       },
       output: {
         manualChunks(id) {
-          if (id.includes("node_modules/react-dom") || id.includes("node_modules/react/")) return "vendor";
-          if (id.includes("node_modules/react-router")) return "router";
-          if (id.includes("node_modules/echarts")) return "charts";
+          if (id.includes('node_modules/react-dom') || id.includes('node_modules/react/'))
+            return 'vendor';
+          if (id.includes('node_modules/react-router')) return 'router';
+          if (id.includes('node_modules/echarts')) return 'charts';
         },
       },
     },
   },
   server: {
-    port: parseInt(process.env.PORT || "3000"),
+    port: parseInt(process.env.PORT || '3000'),
     host: true,
   },
-  publicDir: path.resolve(__dirname, "public"),
-  // 支持服务端渲染和API路由
+  publicDir: path.resolve(__dirname, 'public'),
   ssr: {
-    noExternal: ["hono"],
+    noExternal: ['hono'],
   },
 });

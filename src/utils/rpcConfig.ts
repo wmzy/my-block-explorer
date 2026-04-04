@@ -1,6 +1,6 @@
 import type { RpcConfig, RpcStatus } from '../types/rpc';
 
-const RPC_CONFIG_KEY = 'block-explorer-rpc-configs';
+const RPC_CONFIG_KEY = 'my-block-explorer-rpc-configs';
 
 // 默认RPC配置
 const DEFAULT_RPC_CONFIGS: RpcConfig[] = [

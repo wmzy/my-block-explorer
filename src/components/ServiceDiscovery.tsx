@@ -91,8 +91,8 @@ const codeBlock = css`
 `;
 
 export function ServiceDiscovery() {
-  const { status, serviceInfo, error, isScanning, currentPort, discover, setApiUrl, reset }
-    = useAutoDiscovery();
+  const { status, serviceInfo, error, isScanning, currentPort, discover, setApiUrl, reset } =
+    useAutoDiscovery();
 
   const [customUrl, setCustomUrl] = useState('');
   const [isConnecting, setIsConnecting] = useState(false);
@@ -119,19 +119,19 @@ export function ServiceDiscovery() {
       case 'discovering':
         return {
           badge: <StatusBadge status="pending">正在扫描</StatusBadge>,
-          message: '正在扫描本地端口以查找Block Explorer服务...',
+          message: '正在扫描本地端口以查找My Block Explorer服务...',
           submessage: currentPort ? `当前检查端口: ${currentPort}` : '',
         };
       case 'found':
         return {
           badge: <StatusBadge status="online">服务已连接</StatusBadge>,
-          message: `已找到Block Explorer服务`,
+          message: `已找到My Block Explorer服务`,
           submessage: serviceInfo ? `地址: ${serviceInfo.url}` : '',
         };
       case 'not-found':
         return {
           badge: <StatusBadge status="offline">未找到服务</StatusBadge>,
-          message: '在默认端口范围内未找到Block Explorer服务',
+          message: '在默认端口范围内未找到My Block Explorer服务',
           submessage: '请确保本地服务正在运行，或手动输入API地址',
         };
       case 'error':
@@ -143,7 +143,7 @@ export function ServiceDiscovery() {
       default:
         return {
           badge: <Badge variant="default">准备就绪</Badge>,
-          message: '准备搜索Block Explorer服务',
+          message: '准备搜索My Block Explorer服务',
           submessage: '',
         };
     }
@@ -155,7 +155,7 @@ export function ServiceDiscovery() {
     <div className={container}>
       <Card className={discoveryCard}>
         <CardHeader>
-          <CardTitle>Block Explorer</CardTitle>
+          <CardTitle>My Block Explorer</CardTitle>
           <p
             className={css`
               color: #64748b;
@@ -207,21 +207,16 @@ export function ServiceDiscovery() {
                 `}
               >
                 <div>
-                  地址:
-                  {' '}
-                  <code>{serviceInfo.url}</code>
+                  地址: <code>{serviceInfo.url}</code>
                 </div>
                 {serviceInfo.version && (
                   <div>
-                    版本:
-                    {' '}
-                    <code>{serviceInfo.version}</code>
+                    版本: <code>{serviceInfo.version}</code>
                   </div>
                 )}
                 {serviceInfo.latency && (
                   <div>
-                    延迟:
-                    {' '}
+                    延迟:{' '}
                     <code>
                       {serviceInfo.latency}
                       ms
@@ -311,7 +306,7 @@ export function ServiceDiscovery() {
                   color: #64748b;
                 `}
               >
-                如果您还没有运行Block Explorer服务，请按照以下步骤安装：
+                如果您还没有运行My Block Explorer服务，请按照以下步骤安装：
               </p>
 
               <div
@@ -329,9 +324,9 @@ export function ServiceDiscovery() {
                   1. 克隆项目并安装依赖：
                 </div>
                 <div className={codeBlock}>
-                  git clone &lt;repository-url&gt; block-explorer
+                  git clone &lt;repository-url&gt; my-block-explorer
                   <br />
-                  cd block-explorer
+                  cd my-block-explorer
                   <br />
                   npm install
                 </div>
