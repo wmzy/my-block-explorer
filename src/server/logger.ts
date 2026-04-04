@@ -9,7 +9,7 @@ const rootLogger = pino({
       const message = err.message ?? '';
       const truncated =
         message.length > MAX_ERROR_LENGTH
-          ? message.slice(0, MAX_ERROR_LENGTH) + '...[truncated]'
+          ? `${message.slice(0, MAX_ERROR_LENGTH)}...[truncated]`
           : message;
       return {
         ...err,

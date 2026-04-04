@@ -37,10 +37,8 @@ app.post('/db/query', async c => {
   } catch (error) {
     logger.error({ err: error }, 'Debug DB query error');
     const causeChain: string[] = [];
-    let current: unknown = error;
     if (error instanceof Error) {
       causeChain.push(error.message);
-      current = error as unknown;
     }
     return c.json(
       createApiError(

@@ -1,6 +1,5 @@
 import { useState, useCallback, useMemo } from 'react';
 import { css } from '@linaria/core';
-// @ts-expect-error haze-ui has no type declarations for Tree
 import { Tree } from 'haze-ui';
 
 type SourceFile = {
@@ -106,8 +105,16 @@ const copyButtonStyles = css`
   }
 `;
 
+type TreeNodeInternal = {
+  key: string;
+  title: string;
+  isLeaf: boolean;
+  content?: string;
+  children: Record<string, TreeNodeInternal>;
+};
+
 function buildTreeData(sourceFiles: SourceFile[]): TreeNode[] {
-  const root: Record<string, any> = {};
+  const root: Record<string, TreeNodeInternal> = {};
 
   for (const file of sourceFiles) {
     const parts = file.filename.split('/').filter(Boolean);
@@ -123,7 +130,7 @@ function buildTreeData(sourceFiles: SourceFile[]): TreeNode[] {
           key,
           title: part,
           isLeaf: isFile,
-          content: isFile ? file.content : undefined,
+          ...(isFile ? { content: file.content } : {}),
           children: {},
         };
       }
@@ -132,8 +139,8 @@ function buildTreeData(sourceFiles: SourceFile[]): TreeNode[] {
     }
   }
 
-  function nodeToTree(node: Record<string, any>): TreeNode[] {
-    return Object.values(node).map((item: any) => ({
+  function nodeToTree(node: Record<string, TreeNodeInternal>): TreeNode[] {
+    return Object.values(node).map(item => ({
       key: item.key,
       title: item.title,
       isLeaf: item.isLeaf,
@@ -147,7 +154,7 @@ function buildTreeData(sourceFiles: SourceFile[]): TreeNode[] {
 
 function findContentByKey(nodes: TreeNode[], key: string): string | null {
   for (const node of nodes) {
-    if (node.key === key) return (node as any).content ?? null;
+    if (node.key === key) return node.content ?? null;
     if (node.children) {
       const found = findContentByKey(node.children, key);
       if (found) return found;
@@ -163,7 +170,7 @@ export function SourceCodeViewer({ sourceCode, sourceFiles }: SourceCodeViewerPr
   const [copied, setCopied] = useState(false);
 
   const treeData = useMemo(
-    () => (hasMultipleFiles ? buildTreeData(sourceFiles!) : []),
+    () => (hasMultipleFiles ? buildTreeData(sourceFiles) : []),
     [sourceFiles, hasMultipleFiles],
   );
 

@@ -65,8 +65,8 @@ function isDynamicArrayType(type: StorageArray | StorageDynamicArray): type is S
 
 export function StorageValueArray({
   slot,
-  slotCode,
-  offset,
+  slotCode: _slotCode,
+  offset: _offset,
   type,
   types,
   chainId,

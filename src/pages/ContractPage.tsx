@@ -210,7 +210,7 @@ const cardStyles = css`
   }
 `;
 
-const codeStyles = css`
+const _codeStyles = css`
   background: #f8f9fa;
   border: 1px solid #e1e5e9;
   border-radius: 6px;
@@ -603,18 +603,18 @@ export default function ContractPage() {
                         >
                           {(
                             {
-                              transparent: 'EIP-1967 Transparent',
-                              uups: 'UUPS',
-                              beacon: 'Beacon',
-                              minimal: 'Minimal',
-                              zeppelinos: 'ZeppelinOS',
+                              'transparent': 'EIP-1967 Transparent',
+                              'uups': 'UUPS',
+                              'beacon': 'Beacon',
+                              'minimal': 'Minimal',
+                              'zeppelinos': 'ZeppelinOS',
                               'gnosis-safe': 'Gnosis Safe',
-                              diamond: 'Diamond (EIP-2535)',
-                              eip1167: 'EIP-1167 Clone',
-                              unknown: 'Unknown',
+                              'diamond': 'Diamond (EIP-2535)',
+                              'eip1167': 'EIP-1167 Clone',
+                              'unknown': 'Unknown',
                             } as Record<string, string>
                           )[contractSource.proxyType ?? 'unknown'] ??
-                            contractSource.proxyType?.toUpperCase()}{' '}
+                          contractSource.proxyType?.toUpperCase()}{' '}
                           Proxy
                         </span>
                       </span>
@@ -627,11 +627,9 @@ export default function ContractPage() {
                             href={`/chain/${currentChainId}/contract/${contractSource.implementationAddress}`}
                             style={{ color: '#007bff', textDecoration: 'none' }}
                             onMouseOver={e =>
-                              ((e.target as HTMLElement).style.textDecoration = 'underline')
-                            }
+                              ((e.target as HTMLElement).style.textDecoration = 'underline')}
                             onMouseOut={e =>
-                              ((e.target as HTMLElement).style.textDecoration = 'none')
-                            }
+                              ((e.target as HTMLElement).style.textDecoration = 'none')}
                           >
                             {contractSource.implementationContract?.name
                               ? `${contractSource.implementationContract.name} (${contractSource.implementationAddress})`
@@ -653,11 +651,9 @@ export default function ContractPage() {
                           href={`/chain/${currentChainId}/tx/${creationInfo.txHash}`}
                           style={{ color: '#007bff', textDecoration: 'none' }}
                           onMouseOver={e =>
-                            ((e.target as HTMLElement).style.textDecoration = 'underline')
-                          }
+                            ((e.target as HTMLElement).style.textDecoration = 'underline')}
                           onMouseOut={e =>
-                            ((e.target as HTMLElement).style.textDecoration = 'none')
-                          }
+                            ((e.target as HTMLElement).style.textDecoration = 'none')}
                         >
                           {creationInfo.txHash}
                         </a>
@@ -670,11 +666,9 @@ export default function ContractPage() {
                           href={`/chain/${currentChainId}/block/${creationInfo.blockNumber}`}
                           style={{ color: '#007bff', textDecoration: 'none' }}
                           onMouseOver={e =>
-                            ((e.target as HTMLElement).style.textDecoration = 'underline')
-                          }
+                            ((e.target as HTMLElement).style.textDecoration = 'underline')}
                           onMouseOut={e =>
-                            ((e.target as HTMLElement).style.textDecoration = 'none')
-                          }
+                            ((e.target as HTMLElement).style.textDecoration = 'none')}
                         >
                           #{creationInfo.blockNumber}
                         </a>
@@ -687,11 +681,9 @@ export default function ContractPage() {
                           href={`/chain/${currentChainId}/address/${creationInfo.creator}`}
                           style={{ color: '#007bff', textDecoration: 'none' }}
                           onMouseOver={e =>
-                            ((e.target as HTMLElement).style.textDecoration = 'underline')
-                          }
+                            ((e.target as HTMLElement).style.textDecoration = 'underline')}
                           onMouseOut={e =>
-                            ((e.target as HTMLElement).style.textDecoration = 'none')
-                          }
+                            ((e.target as HTMLElement).style.textDecoration = 'none')}
                         >
                           {creationInfo.creator}
                         </a>
@@ -795,9 +787,7 @@ export default function ContractPage() {
                 <h2>
                   {isProxy
                     ? contractTarget === 'impl'
-                      ? `Implementation Source (${
-                          contractSource.implementationContract?.name ?? 'Unknown'
-                        })`
+                      ? `Implementation Source (${contractSource.implementationContract?.name ?? 'Unknown'})`
                       : 'Proxy Contract Source'
                     : 'Source Code'}
                 </h2>
@@ -823,9 +813,7 @@ export default function ContractPage() {
                 <h2>
                   {isProxy
                     ? contractTarget === 'impl'
-                      ? `Implementation ABI (${
-                          contractSource.implementationContract?.name ?? 'Unknown'
-                        })`
+                      ? `Implementation ABI (${contractSource.implementationContract?.name ?? 'Unknown'})`
                       : 'Proxy Contract ABI'
                     : 'Contract ABI'}
                 </h2>
@@ -1170,8 +1158,7 @@ function ContractInteract({
           <select
             value={filters.readWrite}
             onChange={e =>
-              setFilters(prev => ({ ...prev, readWrite: e.target.value as ReadWriteFilter }))
-            }
+              setFilters(prev => ({ ...prev, readWrite: e.target.value as ReadWriteFilter }))}
             className={filterSelectStyles}
           >
             <option value="all">All</option>
@@ -1295,7 +1282,7 @@ const resetButtonStyles = css`
 `;
 
 // CSS样式定义
-const functionFormStyles = css`
+const _functionFormStyles = css`
   border: 1px solid #ddd;
   border-radius: 8px;
   padding: 16px;

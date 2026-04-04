@@ -60,9 +60,9 @@ export function StorageMember({
   }
 
   const displayOffset = offsetOverride ?? member.offset;
-  const computedSlot =
+  const computedSlot: Hex =
     baseSlot ??
-    (`0x${BigInt(member.slot.startsWith('0x') ? member.slot : `0x${member.slot}`).toString(16)}` as Hex);
+    `0x${BigInt(member.slot.startsWith('0x') ? member.slot : `0x${member.slot}`).toString(16)}`;
 
   const renderValue = () => {
     if (!showValues) return null;

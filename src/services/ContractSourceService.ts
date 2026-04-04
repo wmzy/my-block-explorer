@@ -394,7 +394,7 @@ export class ContractSourceService {
             left = mid + 1n;
             logger.info(
               { midNumber, left: left.toString(), right: right.toString() },
-              "Contract doesn't exist at block, searching later",
+              `Contract doesn't exist at block, searching later`,
             );
           }
         } catch (error) {
@@ -429,7 +429,7 @@ export class ContractSourceService {
           }
 
           // 无论如何，假设合约在此区块不存在，向右搜索
-          logger.info("Due to error, assuming contract doesn't exist and searching later");
+          logger.info(`Due to error, assuming contract doesn't exist and searching later`);
           left = mid + 1n;
         }
 
@@ -582,7 +582,7 @@ export class ContractSourceService {
                   expected: contractAddress,
                   got: receipt.contractAddress ? formatAddress(receipt.contractAddress) : 'null',
                 },
-                "Contract address doesn't match",
+                `Contract address doesn't match`,
               );
             }
           } else {
@@ -716,7 +716,7 @@ export class ContractSourceService {
         },
         'getContractSource: cache lookup result',
       );
-      if (cached && cached.verificationStatus === 'verified' && cached.sourceCode) {
+      if (cached?.verificationStatus === 'verified' && cached.sourceCode) {
         if (cached.isProxy) {
           return await this.enhanceWithProxyInfo(cached);
         }
@@ -983,7 +983,9 @@ export class ContractSourceService {
           return abi;
         }
       }
-    } catch {}
+    } catch {
+      // ignore
+    }
     return '[]';
   }
 
@@ -1180,9 +1182,7 @@ export class ContractSourceService {
         });
 
         if (
-          implementationData &&
-          implementationData !==
-            '0x0000000000000000000000000000000000000000000000000000000000000000'
+          implementationData && implementationData !== '0x0000000000000000000000000000000000000000000000000000000000000000'
         ) {
           // 提取地址（后20字节）
           const implementationAddress = `0x${implementationData.slice(-40)}`;

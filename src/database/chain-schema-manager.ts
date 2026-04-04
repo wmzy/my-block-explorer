@@ -80,20 +80,20 @@ export class ChainSchemaManager {
 
   private mapAbiTypeToDb(abiType: string): string {
     const typeMapping: Record<string, string> = {
-      uint: 'TEXT',
-      int: 'TEXT',
-      address: 'VARCHAR(42)',
-      bool: 'BOOLEAN',
-      bytes: 'TEXT',
-      string: 'TEXT',
-      uint256: 'TEXT',
-      int256: 'TEXT',
+      'uint': 'TEXT',
+      'int': 'TEXT',
+      'address': 'VARCHAR(42)',
+      'bool': 'BOOLEAN',
+      'bytes': 'TEXT',
+      'string': 'TEXT',
+      'uint256': 'TEXT',
+      'int256': 'TEXT',
       'address[]': 'TEXT',
       'uint256[]': 'TEXT',
       'int256[]': 'TEXT',
       'bool[]': 'TEXT',
-      bytes32: 'VARCHAR(66)',
-      tuple: 'TEXT',
+      'bytes32': 'VARCHAR(66)',
+      'tuple': 'TEXT',
       'tuple[]': 'TEXT',
     };
 

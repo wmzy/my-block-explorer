@@ -71,7 +71,7 @@ export class DuckDBPostgresAdapter {
     } catch (error) {
       const msg = (error as Error).message ?? '';
       if (msg.includes('replaying WAL') || msg.includes('WAL file')) {
-        const walPath = this.dbPath + '.wal';
+        const walPath = `${this.dbPath}.wal`;
         logger.warn(
           { err: error, walPath },
           'WAL replay failed on instance creation, deleting WAL and retrying',
@@ -88,7 +88,7 @@ export class DuckDBPostgresAdapter {
   }
 
   private async recoverWal(): Promise<void> {
-    const walPath = this.dbPath + '.wal';
+    const walPath = `${this.dbPath}.wal`;
     if (existsSync(walPath)) {
       try {
         const testInstance = await DuckDBInstance.create(this.dbPath);
@@ -176,7 +176,7 @@ export class DuckDBPostgresAdapter {
           if (existingRecord.hash !== hash) {
             throw new Error(
               `Migration ${migrationName} has dirty data: recorded hash ${existingRecord.hash} does not match current ${hash}. ` +
-                `Migration file was modified after execution. Clean up __drizzle_migrations table and re-run.`,
+              `Migration file was modified after execution. Clean up __drizzle_migrations table and re-run.`,
             );
           }
 
@@ -641,25 +641,25 @@ export function createDuckDBAdapter(connectionString: string) {
 
   const sql = (async (query: string | TemplateStringsArray, ...params: unknown[]) =>
     adapter.query(query, ...params)) as SqlFunction & {
-    begin: typeof adapter.begin;
-    transaction: typeof adapter.begin;
-    end: typeof adapter.end;
-    on: typeof adapter.on;
-    off: typeof adapter.off;
-    migrate: typeof adapter.migrate;
-    unsafe: (
-      query: string,
-      params?: unknown[],
-    ) => Promise<Record<string, unknown>[]> & PostgresQueryExtensions;
-    options: {
-      parsers: Record<string, unknown>;
-      serializers: Record<string, unknown>;
-      transform: Record<string, unknown>;
+      begin: typeof adapter.begin;
+      transaction: typeof adapter.begin;
+      end: typeof adapter.end;
+      on: typeof adapter.on;
+      off: typeof adapter.off;
+      migrate: typeof adapter.migrate;
+      unsafe: (
+        query: string,
+        params?: unknown[],
+      ) => Promise<Record<string, unknown>[]> & PostgresQueryExtensions;
+      options: {
+        parsers: Record<string, unknown>;
+        serializers: Record<string, unknown>;
+        transform: Record<string, unknown>;
+      };
+      parameters: Record<string, unknown>;
+      types: Record<string, unknown>;
+      getDuckDB: typeof adapter.getDuckDB;
     };
-    parameters: Record<string, unknown>;
-    types: Record<string, unknown>;
-    getDuckDB: typeof adapter.getDuckDB;
-  };
 
   sql.begin = adapter.begin.bind(adapter);
   sql.transaction = adapter.begin.bind(adapter);

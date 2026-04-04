@@ -1,7 +1,7 @@
 import { css } from '@linaria/core';
 import { useState } from 'react';
 import type { Hex } from 'viem';
-import type { StorageLayout, TypesMap } from '@/types/storage';
+import type { StorageLayout } from '@/types/storage';
 import { StorageMember } from './StorageMember';
 
 export type SlotCode = ['hex' | 'bigint', string];
@@ -122,8 +122,7 @@ export function StorageLayoutView({ chainId, address, layout }: StorageLayoutVie
           const type = types?.[member.type];
           if (!type) return null;
 
-          const slot =
-            `0x${BigInt(member.slot.startsWith('0x') ? member.slot : `0x${member.slot}`).toString(16)}` as Hex;
+          const slot = `0x${BigInt(member.slot.startsWith('0x') ? member.slot : `0x${member.slot}`).toString(16)}`;
 
           return (
             <li key={`${member.slot}-${member.offset}`} className={listItemStyle}>
@@ -138,10 +137,10 @@ export function StorageLayoutView({ chainId, address, layout }: StorageLayoutVie
               <div className={valueContainerStyle}>
                 <StorageMember
                   member={member}
-                  types={types as TypesMap}
+                  types={types}
                   chainId={chainId}
                   address={address}
-                  baseSlot={slot}
+                  baseSlot={slot as Hex}
                   showValues={showValues}
                 />
               </div>

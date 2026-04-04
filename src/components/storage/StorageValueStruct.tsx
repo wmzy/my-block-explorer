@@ -46,7 +46,7 @@ export function StorageValueStruct({
   types,
   chainId,
   address,
-  path,
+  path: _path,
   showValues = false,
 }: StorageValueStructProps) {
   return (
@@ -64,8 +64,7 @@ export function StorageValueStruct({
               );
             }
 
-            const memberSlot =
-              `0x${(BigInt(slot) + BigInt(member.slot.startsWith('0x') ? member.slot : `0x${member.slot}`)).toString(16)}` as Hex;
+            const memberSlot: Hex = `0x${(BigInt(slot) + BigInt(member.slot.startsWith('0x') ? member.slot : `0x${member.slot}`)).toString(16)}`;
 
             return (
               <div key={member.label} className={memberWrapperStyle}>

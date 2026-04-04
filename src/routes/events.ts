@@ -334,7 +334,7 @@ app.post('/chains/:chainId/contracts/:address/events/ranges/quick', async c => {
         break;
     }
 
-    if (!response || !response.success) {
+    if (!response?.success) {
       return c.json(
         {
           error: `Failed to create range with mode: ${mode}`,

@@ -46,7 +46,7 @@ export function createServer(options: ServerOptions = {}) {
   const shutdown = async () => {
     console.log('Shutting down gracefully...');
     try {
-      await (db.$client as any).end?.();
+      await (db.$client).end?.();
     } catch (error) {
       console.warn('Shutdown checkpoint failed:', error);
     }

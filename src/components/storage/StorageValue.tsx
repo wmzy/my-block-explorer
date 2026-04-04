@@ -1,12 +1,5 @@
 import type { Hex } from 'viem';
-import type {
-  StorageType,
-  TypesMap,
-  StorageStruct,
-  StorageArray,
-  StorageDynamicArray,
-  InplaceStorageType,
-} from '@/types/storage';
+import type { StorageType, TypesMap } from '@/types/storage';
 import { StorageValuePrimitive } from './StorageValuePrimitive';
 import { StorageValueArray } from './StorageValueArray';
 import { StorageValueMapping } from './StorageValueMapping';
@@ -43,7 +36,7 @@ export function StorageValue({
       return (
         <StorageValueStruct
           slot={slot}
-          type={type as StorageStruct}
+          type={type}
           types={types}
           chainId={chainId}
           address={address}
@@ -59,7 +52,7 @@ export function StorageValue({
           slot={slot}
           slotCode={slotCode}
           offset={offset}
-          type={type as StorageArray}
+          type={type}
           types={types}
           chainId={chainId}
           address={address}
@@ -74,7 +67,7 @@ export function StorageValue({
         slot={slot}
         slotCode={slotCode}
         offset={offset}
-        type={type as InplaceStorageType}
+        type={type}
         chainId={chainId}
         address={address}
         showValues={showValues}
@@ -88,7 +81,7 @@ export function StorageValue({
         slot={slot}
         slotCode={slotCode}
         offset={0}
-        type={type as StorageDynamicArray}
+        type={type}
         types={types}
         chainId={chainId}
         address={address}

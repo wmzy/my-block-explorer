@@ -1,4 +1,4 @@
-import { css, cx } from '@linaria/core';
+import { css } from '@linaria/core';
 import { decodeAbiParameters, pad, slice } from 'viem';
 import type { Hex } from 'viem';
 import type { InplaceStorageType } from '@/types/storage';

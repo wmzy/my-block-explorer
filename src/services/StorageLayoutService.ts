@@ -121,10 +121,10 @@ export class StorageLayoutService {
 
       const layout = await fetcherModule.fetchStorageLayout(fetcher, address);
 
-      if (layout && layout.storage && Array.isArray(layout.storage)) {
+      if (layout?.storage && Array.isArray(layout.storage)) {
         return {
-          storage: layout.storage as StorageMember[],
-          types: layout.types as TypesMap | null,
+          storage: layout.storage,
+          types: layout.types,
         };
       }
 
@@ -249,7 +249,7 @@ export class StorageLayoutService {
     }
 
     try {
-      const layout = JSON.parse(row.layout as string) as StorageLayout;
+      const layout = JSON.parse(row.layout) as StorageLayout;
       return {
         layout,
         source: (row.source as 'fetcher' | 'evmole') ?? 'fetcher',

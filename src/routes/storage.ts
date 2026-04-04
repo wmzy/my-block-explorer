@@ -1,7 +1,5 @@
 import { Hono } from 'hono';
-import type { Address } from 'viem';
 import { createLogger } from '../server/logger';
-import type { StorageLayoutResponse } from '../types/storage';
 import { rpcManager } from '../services/RpcManager';
 import { storageLayoutService } from '../services/StorageLayoutService';
 import { getChainName } from '../config/chains';
@@ -65,13 +63,13 @@ app.get('/chains/:chainId/contracts/:address/storage/:slot', async c => {
     if (slotNumber < 0n) {
       return c.json({ error: 'Invalid slot: must be non-negative' }, 400);
     }
-    slot = `0x${slotNumber.toString(16)}` as `0x${string}`;
+    slot = `0x${slotNumber.toString(16)}`;
   }
 
   try {
     const client = await rpcManager.getClient(chainId);
     const value = await client.getStorageAt({
-      address: address as Address,
+      address,
       slot,
     });
 

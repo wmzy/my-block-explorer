@@ -57,7 +57,7 @@ Environment:
     process.exit(1);
   }
 
-  const { port } = createServer({ port: portArg });
+  const { port: _port } = createServer({ port: portArg });
 
   if (values.open) {
     const url = process.env.FRONTEND_URL ?? DEFAULT_FRONTEND_URL;

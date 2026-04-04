@@ -95,7 +95,7 @@ export function StorageValueMapping({
   chainId,
   address,
   path,
-  showValues = false,
+  showValues: _showValues = false,
 }: StorageValueMappingProps) {
   const [key, setKey] = useState<string>('');
   const valueType = types[type.value];

@@ -111,7 +111,7 @@ function LongBytesValue({
   chainId,
   address,
   formatValue,
-  showValues = false,
+  showValues: _showValues = false,
 }: {
   slot: Hex;
   length: bigint;
@@ -121,22 +121,31 @@ function LongBytesValue({
   showValues?: boolean;
 }) {
   const [value, setValue] = useState<string>('');
+  const [loading, setLoading] = useState(true);
   const firstSlot = keccak256(pad(slot, { size: 32 }));
   const slotsNeeded = Math.ceil(Number(length) / 32);
 
   useEffect(() => {
     let cancelled = false;
+    setLoading(true);
 
     Promise.all(
-      [...new Array(slotsNeeded).keys()].map(
-        i => useStorageAt(chainId, address, toHex(hexToBigInt(firstSlot) + BigInt(i))).value,
-      ),
+      [...new Array(slotsNeeded).keys()].map(async i => {
+        const slotHex = toHex(hexToBigInt(firstSlot) + BigInt(i));
+        const response = await fetch(
+          `/api/chains/${chainId}/contracts/${address}/storage/${slotHex}`,
+        );
+        if (!response.ok) return null;
+        const data = await response.json();
+        return data.value as Hex | null;
+      }),
     ).then(results => {
       if (cancelled) return;
       const validResults = results.filter((r): r is Hex => r !== null);
       const concatenated = concatHex(validResults);
       const formatted = formatValue(slice(concatenated, 0, Number(length)));
       setValue(formatted);
+      setLoading(false);
     });
 
     return () => {
@@ -144,7 +153,7 @@ function LongBytesValue({
     };
   }, [chainId, address, firstSlot, slotsNeeded, formatValue, length]);
 
-  if (!value) {
+  if (loading || !value) {
     return <span className={loadingStyle}>Loading...</span>;
   }
 
