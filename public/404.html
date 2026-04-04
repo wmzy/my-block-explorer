@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Redirecting...</title>
+    <script type="text/javascript">
+      (function () {
+        var pathSegmentsToKeep = 1;
+        var l = window.location;
+        var newPath = l.pathname
+          .split('/')
+          .slice(0, 1 + pathSegmentsToKeep)
+          .join('/')
+          .replace(/\/+$/, '');
+        if (l.pathname.endsWith('/')) newPath += '/';
+        l.replace(l.protocol + '//' + l.host + newPath + '/index.html' + (l.hash || ''));
+      })();
+    </script>
+  </head>
+  <body></body>
+</html>
