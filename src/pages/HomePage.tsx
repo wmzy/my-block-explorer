@@ -2,12 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { css } from '@linaria/core';
 import { formatEther, formatGwei } from 'viem';
-import {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardContent,
-} from '../components/ui/Card';
+import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/Card';
 import TopNavigation from '../components/TopNavigation';
 import { getChainInfo, getChainSymbol } from '@/config/chains';
 import {
@@ -19,12 +14,7 @@ import {
 } from '@/utils/format';
 import { PageContainer } from '@/components/ui/PageLayout';
 import { LoadingState } from '@/components/ui/LoadingState';
-import {
-  getLatestBlocks,
-  getBlockTransactions,
-  type RpcBlock,
-  type RpcTransaction,
-} from '@/utils/blockRpcData';
+import { getBlockTransactions, type RpcBlock, type RpcTransaction } from '@/utils/blockRpcData';
 import { createRpcClient } from '@/utils/realTimeData';
 
 const MAX_LIST_ITEMS = 10;
@@ -194,9 +184,7 @@ export default function HomePage() {
 
   const [blocks, setBlocks] = useState<RpcBlock[]>([]);
   const [transactions, setTransactions] = useState<RpcTransaction[]>([]);
-  const [latestBlockNumber, setLatestBlockNumber] = useState<bigint | null>(
-    null,
-  );
+  const [latestBlockNumber, setLatestBlockNumber] = useState<bigint | null>(null);
   const [gasPrice, setGasPrice] = useState<bigint | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -208,62 +196,62 @@ export default function HomePage() {
     }
   }, [chainInfo, navigate]);
 
-  // Initial load: fetch 10 blocks + their transactions
   const initialLoad = useCallback(async () => {
     try {
       setLoading(true);
-      const [blockData, client] = await Promise.all([
-        getLatestBlocks(currentChainId, MAX_LIST_ITEMS),
-        createRpcClient(currentChainId),
-      ]);
+      const client = await createRpcClient(currentChainId);
+      const currentBlockNumber = await client.getBlockNumber();
 
-      setBlocks(blockData.blocks);
-      setLatestBlockNumber(blockData.latestBlockNumber);
-      prevBlockNumberRef.current = blockData.latestBlockNumber;
+      const block = await client.getBlock({ blockNumber: currentBlockNumber });
+      const latestBlock: RpcBlock = {
+        number: block.number.toString(),
+        hash: block.hash,
+        parentHash: block.parentHash,
+        timestamp: new Date(Number(block.timestamp) * 1000).toISOString(),
+        miner: ((block as Record<string, unknown>).miner as string) ?? '',
+        gasUsed: block.gasUsed.toString(),
+        gasLimit: block.gasLimit.toString(),
+        baseFeePerGas: block.baseFeePerGas?.toString(),
+        transactionCount: block.transactions.length,
+        sizeBytes: Number(block.size),
+      };
+
+      setBlocks([latestBlock]);
+      setLatestBlockNumber(currentBlockNumber);
+      prevBlockNumberRef.current = currentBlockNumber;
 
       const gp = await client.getGasPrice().catch(() => null);
       setGasPrice(gp);
 
-      // Collect transactions from the fetched blocks
-      const latestBlock = blockData.blocks[0];
-      if (latestBlock) {
-        const txs = await getBlockTransactions(
-          currentChainId,
-          BigInt(latestBlock.number),
-        ).catch(() => []);
+      if (block.transactions.length > 0) {
+        const txs = await getBlockTransactions(currentChainId, currentBlockNumber).catch(() => []);
         setTransactions(txs.slice(0, MAX_LIST_ITEMS));
       }
-    }
-    catch (err) {
+    } catch (err) {
       console.error('Failed to load homepage data:', err);
-    }
-    finally {
+    } finally {
       setLoading(false);
     }
   }, [currentChainId]);
 
-  // Poll: fetch only the latest block and prepend
   const poll = useCallback(async () => {
     try {
       const client = await createRpcClient(currentChainId);
       const currentBlockNumber = await client.getBlockNumber();
 
-      // Update gas price
       const gp = await client.getGasPrice().catch(() => null);
       setGasPrice(gp);
 
       const prev = prevBlockNumberRef.current;
       if (prev !== null && currentBlockNumber <= prev) return;
 
-      // Fetch only the new block
       const block = await client.getBlock({ blockNumber: currentBlockNumber });
       const newBlock: RpcBlock = {
         number: block.number.toString(),
         hash: block.hash,
         parentHash: block.parentHash,
         timestamp: new Date(Number(block.timestamp) * 1000).toISOString(),
-        miner:
-          ((block as Record<string, unknown>).miner as string) ?? '',
+        miner: ((block as Record<string, unknown>).miner as string) ?? '',
         gasUsed: block.gasUsed.toString(),
         gasLimit: block.gasLimit.toString(),
         baseFeePerGas: block.baseFeePerGas?.toString(),
@@ -275,21 +263,14 @@ export default function HomePage() {
       setLatestBlockNumber(currentBlockNumber);
       prevBlockNumberRef.current = currentBlockNumber;
 
-      // Fetch transactions from the new block
       if (block.transactions.length > 0) {
-        const txs = await getBlockTransactions(
-          currentChainId,
-          currentBlockNumber,
-        ).catch(() => []);
+        const txs = await getBlockTransactions(currentChainId, currentBlockNumber).catch(() => []);
 
         if (txs.length > 0) {
-          setTransactions(prev =>
-            [...txs, ...prev].slice(0, MAX_LIST_ITEMS),
-          );
+          setTransactions(prev => [...txs, ...prev].slice(0, MAX_LIST_ITEMS));
         }
       }
-    }
-    catch (err) {
+    } catch (err) {
       console.error('Poll error:', err);
     }
   }, [currentChainId]);
@@ -316,35 +297,18 @@ export default function HomePage() {
 
   if (!chainInfo) return null;
 
-  const gasUsedPercent
-    = blocks[0]
-      ? (
-          (Number(blocks[0].gasUsed) / Number(blocks[0].gasLimit))
-          * 100
-        ).toFixed(1)
-      : null;
+  const gasUsedPercent = blocks[0]
+    ? ((Number(blocks[0].gasUsed) / Number(blocks[0].gasLimit)) * 100).toFixed(1)
+    : null;
 
   return (
     <>
-      <TopNavigation
-        currentChainId={currentChainId}
-        onChainChange={handleChainChange}
-      />
+      <TopNavigation currentChainId={currentChainId} onChainChange={handleChainChange} />
       <PageContainer>
         <div className={hero}>
-          <h1 className={titleStyle}>
-            {chainInfo.name}
-            {' '}
-            Explorer
-          </h1>
+          <h1 className={titleStyle}>{chainInfo.name} Explorer</h1>
           <p className={subtitleStyle}>
-            Chain ID:
-            {' '}
-            {chainInfo.id}
-            {' '}
-            ·
-            {' '}
-            {symbol}
+            Chain ID: {chainInfo.id} · {symbol}
           </p>
         </div>
 
@@ -352,25 +316,19 @@ export default function HomePage() {
         <div className={statsBar}>
           <Card className={statItem}>
             <div className={statValueStyle}>
-              {latestBlockNumber !== null
-                ? formatNumber(latestBlockNumber)
-                : '—'}
+              {latestBlockNumber !== null ? formatNumber(latestBlockNumber) : '—'}
             </div>
             <div className={statLabelStyle}>Latest Block</div>
           </Card>
           <Card className={statItem}>
             <div className={statValueStyle}>
-              {gasPrice !== null
-                ? `${parseFloat(formatGwei(gasPrice)).toFixed(2)} Gwei`
-                : '—'}
+              {gasPrice !== null ? `${parseFloat(formatGwei(gasPrice)).toFixed(2)} Gwei` : '—'}
             </div>
             <div className={statLabelStyle}>Gas Price</div>
           </Card>
           <Card className={statItem}>
             <div className={statValueStyle}>
-              {blocks[0]
-                ? formatNumber(blocks[0].transactionCount)
-                : '—'}
+              {blocks[0] ? formatNumber(blocks[0].transactionCount) : '—'}
             </div>
             <div className={statLabelStyle}>Txns in Latest Block</div>
           </Card>
@@ -405,14 +363,11 @@ export default function HomePage() {
                         >
                           {formatNumber(block.number)}
                         </Link>
-                        <span className={listMeta}>
-                          {formatRelativeTime(block.timestamp)}
-                        </span>
+                        <span className={listMeta}>{formatRelativeTime(block.timestamp)}</span>
                       </div>
                       <div className={listRow}>
                         <span className={listSecondary}>
-                          Miner
-                          {' '}
+                          Miner{' '}
                           <Link
                             to={`/chain/${currentChainId}/address/${block.miner}`}
                             className={listPrimary}
@@ -421,34 +376,18 @@ export default function HomePage() {
                             {formatAddress(block.miner, 4)}
                           </Link>
                         </span>
-                        <span className={listValue}>
-                          {block.transactionCount}
-                          {' '}
-                          txns
-                        </span>
+                        <span className={listValue}>{block.transactionCount} txns</span>
                       </div>
                       {block.baseFeePerGas && (
                         <div className={listSecondary}>
-                          Base fee:
-                          {' '}
-                          {parseFloat(
-                            formatGwei(BigInt(block.baseFeePerGas)),
-                          ).toFixed(4)}
-                          {' '}
-                          Gwei · Size:
-                          {' '}
-                          {formatNumber(block.sizeBytes ?? 0)}
-                          {' '}
-                          B
+                          Base fee: {parseFloat(formatGwei(BigInt(block.baseFeePerGas))).toFixed(4)}{' '}
+                          Gwei · Size: {formatNumber(block.sizeBytes ?? 0)} B
                         </div>
                       )}
                     </div>
                   </div>
                 ))}
-                <Link
-                  to={`/chain/${currentChainId}/blocks`}
-                  className={viewAllLink}
-                >
+                <Link to={`/chain/${currentChainId}/blocks`} className={viewAllLink}>
                   View all blocks →
                 </Link>
               </CardContent>
@@ -467,10 +406,7 @@ export default function HomePage() {
                     <div className={listIcon}>Tx</div>
                     <div className={listBody}>
                       <div className={listRow}>
-                        <Link
-                          to={`/chain/${currentChainId}/tx/${tx.hash}`}
-                          className={listPrimary}
-                        >
+                        <Link to={`/chain/${currentChainId}/tx/${tx.hash}`} className={listPrimary}>
                           {formatHash(tx.hash, 6)}
                         </Link>
                         <span className={listMeta}>
@@ -481,8 +417,7 @@ export default function HomePage() {
                       </div>
                       <div className={listRow}>
                         <span className={listSecondary}>
-                          From
-                          {' '}
+                          From{' '}
                           <Link
                             to={`/chain/${currentChainId}/address/${tx.fromAddress}`}
                             className={listPrimary}
@@ -506,21 +441,14 @@ export default function HomePage() {
                       </div>
                       <div className={listRow}>
                         <span className={listValue}>
-                          {formatEth(tx.value)}
-                          {' '}
-                          {symbol}
+                          {formatEth(tx.value)} {symbol}
                         </span>
                         {tx.gasUsed && tx.effectiveGasPrice && (
                           <span className={listSecondary}>
-                            Fee:
-                            {' '}
+                            Fee:{' '}
                             {parseFloat(
-                              formatEther(
-                                BigInt(tx.gasUsed)
-                                * BigInt(tx.effectiveGasPrice),
-                              ),
-                            ).toFixed(6)}
-                            {' '}
+                              formatEther(BigInt(tx.gasUsed) * BigInt(tx.effectiveGasPrice)),
+                            ).toFixed(6)}{' '}
                             {symbol}
                           </span>
                         )}
@@ -533,10 +461,7 @@ export default function HomePage() {
                     No transactions in recent blocks
                   </div>
                 )}
-                <Link
-                  to={`/chain/${currentChainId}/transactions`}
-                  className={viewAllLink}
-                >
+                <Link to={`/chain/${currentChainId}/transactions`} className={viewAllLink}>
                   View all transactions →
                 </Link>
               </CardContent>
