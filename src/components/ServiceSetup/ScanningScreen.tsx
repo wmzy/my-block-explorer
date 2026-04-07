@@ -25,9 +25,9 @@ const cardStyle = css`
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: var(--haze-radius-lg);
+  border-radius: var(--haze-radius-xl, 20px);
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
-  padding: var(--haze-space-10) var(--haze-space-12);
+  padding: var(--haze-space-10) var(--haze-space-8);
   text-align: center;
   max-width: 420px;
   width: 90%;
@@ -135,7 +135,7 @@ const titleStyle = css`
   font-weight: var(--haze-weight-bold);
   color: rgba(255, 255, 255, 0.95);
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-  margin: 0 0 var(--haze-space-4) 0;
+  margin: 0 0 var(--haze-space-5) 0;
 `;
 
 const portStatusStyle = css`

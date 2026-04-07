@@ -53,7 +53,7 @@ const contentWrapperStyle = css`
 
 const headerSectionStyle = css`
   text-align: center;
-  margin-bottom: var(--haze-space-6);
+  margin-bottom: var(--haze-space-8);
 `;
 
 const titleStyle = css`
@@ -78,7 +78,7 @@ const cardStyle = css`
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: var(--haze-radius-xl, 16px);
+  border-radius: var(--haze-radius-xl, 20px);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
   transition:
     transform 0.2s ease,
@@ -95,7 +95,7 @@ const cardStyle = css`
 `;
 
 const cardContentStyle = css`
-  padding: var(--haze-space-6);
+  padding: var(--haze-space-8);
 `;
 
 const recommendedBadgeStyle = css`
@@ -130,20 +130,20 @@ const cardTitleStyle = css`
 const cardDescriptionStyle = css`
   font-size: var(--haze-text-sm);
   color: rgba(255, 255, 255, 0.65);
-  margin: 0 0 var(--haze-space-5) 0;
+  margin: 0 0 var(--haze-space-6) 0;
   line-height: var(--haze-leading-relaxed);
 `;
 
 const stepsContainerStyle = css`
   display: flex;
   flex-direction: column;
-  gap: var(--haze-space-4);
+  gap: var(--haze-space-5);
 `;
 
 const stepItemStyle = css`
   display: flex;
   align-items: flex-start;
-  gap: var(--haze-space-3);
+  gap: var(--haze-space-4);
 `;
 
 const stepNumberStyle = css`
@@ -181,8 +181,8 @@ const codeBlockStyle = css`
   display: block;
   background: rgba(0, 0, 0, 0.25);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: var(--haze-radius-md);
-  padding: var(--haze-space-3) var(--haze-space-4);
+  border-radius: var(--haze-radius-lg, 12px);
+  padding: var(--haze-space-4) var(--haze-space-5);
   font-family: var(--haze-font-mono);
   font-size: var(--haze-text-sm);
   color: rgba(255, 255, 255, 0.9);
@@ -243,11 +243,11 @@ const copiedToastStyle = css`
 const tabContainerStyle = css`
   display: flex;
   gap: var(--haze-space-1);
-  margin-bottom: var(--haze-space-3);
-  padding: 3px;
+  margin-bottom: var(--haze-space-4);
+  padding: 4px;
   background: rgba(0, 0, 0, 0.15);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: var(--haze-radius-md);
+  border-radius: var(--haze-radius-lg, 12px);
 `;
 
 const tabStyle = css`
@@ -277,7 +277,7 @@ const dividerStyle = css`
   display: flex;
   align-items: center;
   gap: var(--haze-space-4);
-  margin: var(--haze-space-4) 0;
+  margin: var(--haze-space-5) 0;
 
   &::before,
   &::after {
@@ -298,13 +298,13 @@ const dividerTextStyle = css`
 const formStyle = css`
   display: flex;
   flex-direction: column;
-  gap: var(--haze-space-4);
+  gap: var(--haze-space-5);
 `;
 
 const inputGroupStyle = css`
   display: flex;
   flex-direction: column;
-  gap: var(--haze-space-2);
+  gap: var(--haze-space-3);
 `;
 
 const labelStyle = css`
@@ -315,9 +315,9 @@ const labelStyle = css`
 
 const inputStyle = css`
   width: 100%;
-  padding: var(--haze-space-3);
+  padding: var(--haze-space-3) var(--haze-space-4);
   border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: var(--haze-radius-md);
+  border-radius: var(--haze-radius-lg, 12px);
   font-size: var(--haze-text-base);
   color: #ffffff;
   background: rgba(0, 0, 0, 0.15);
@@ -333,6 +333,61 @@ const inputStyle = css`
     outline: none;
     border-color: rgba(255, 255, 255, 0.4);
     box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.1);
+  }
+`;
+
+const glassGhostButtonStyle = css`
+  color: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: var(--haze-radius-sm);
+  padding: var(--haze-space-1) var(--haze-space-3);
+  font-size: var(--haze-text-xs);
+  font-weight: var(--haze-weight-medium);
+  transition: all 0.15s ease;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.15);
+    color: #ffffff;
+    border-color: rgba(255, 255, 255, 0.25);
+  }
+`;
+
+const glassSecondaryButtonStyle = css`
+  color: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: var(--haze-radius-md);
+  padding: var(--haze-space-2) var(--haze-space-4);
+  font-size: var(--haze-text-sm);
+  font-weight: var(--haze-weight-medium);
+  transition: all 0.15s ease;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.18);
+    color: #ffffff;
+  }
+`;
+
+const glassPrimaryButtonStyle = css`
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: var(--haze-radius-md);
+  padding: var(--haze-space-2) var(--haze-space-5);
+  font-size: var(--haze-text-sm);
+  font-weight: var(--haze-weight-semibold);
+  transition: all 0.2s ease;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.28);
+    border-color: rgba(255, 255, 255, 0.4);
+    box-shadow: 0 2px 8px rgba(255, 255, 255, 0.15);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 `;
 
@@ -428,7 +483,7 @@ export function SetupRequiredScreen({
                     <Button
                       variant="ghost"
                       size="sm"
-                      className={codeActionStyle}
+                      className={cx(codeActionStyle, glassGhostButtonStyle)}
                       onClick={handleCopy}
                     >
                       Copy
@@ -441,7 +496,12 @@ export function SetupRequiredScreen({
                 <div className={stepNumberStyle}>2</div>
                 <div className={stepContentStyle}>
                   <p className={stepLabelStyle}>The page will automatically detect the service</p>
-                  <Button variant="secondary" size="sm" onClick={handleRefresh}>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    className={glassSecondaryButtonStyle}
+                    onClick={handleRefresh}
+                  >
                     Refresh
                   </Button>
                 </div>
@@ -478,6 +538,7 @@ export function SetupRequiredScreen({
               <div className={buttonGroupStyle}>
                 <Button
                   variant="primary"
+                  className={glassPrimaryButtonStyle}
                   loading={isConnecting}
                   disabled={!url.trim() || isConnecting}
                   onClick={handleConnect}
