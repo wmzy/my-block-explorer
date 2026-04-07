@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { css } from '@linaria/core';
 import { useControl } from 'react-use-control';
@@ -603,18 +603,18 @@ export default function ContractPage() {
                         >
                           {(
                             {
-                              'transparent': 'EIP-1967 Transparent',
-                              'uups': 'UUPS',
-                              'beacon': 'Beacon',
-                              'minimal': 'Minimal',
-                              'zeppelinos': 'ZeppelinOS',
+                              transparent: 'EIP-1967 Transparent',
+                              uups: 'UUPS',
+                              beacon: 'Beacon',
+                              minimal: 'Minimal',
+                              zeppelinos: 'ZeppelinOS',
                               'gnosis-safe': 'Gnosis Safe',
-                              'diamond': 'Diamond (EIP-2535)',
-                              'eip1167': 'EIP-1167 Clone',
-                              'unknown': 'Unknown',
+                              diamond: 'Diamond (EIP-2535)',
+                              eip1167: 'EIP-1167 Clone',
+                              unknown: 'Unknown',
                             } as Record<string, string>
                           )[contractSource.proxyType ?? 'unknown'] ??
-                          contractSource.proxyType?.toUpperCase()}{' '}
+                            contractSource.proxyType?.toUpperCase()}{' '}
                           Proxy
                         </span>
                       </span>
@@ -627,9 +627,11 @@ export default function ContractPage() {
                             href={`/chain/${currentChainId}/contract/${contractSource.implementationAddress}`}
                             style={{ color: '#007bff', textDecoration: 'none' }}
                             onMouseOver={e =>
-                              ((e.target as HTMLElement).style.textDecoration = 'underline')}
+                              ((e.target as HTMLElement).style.textDecoration = 'underline')
+                            }
                             onMouseOut={e =>
-                              ((e.target as HTMLElement).style.textDecoration = 'none')}
+                              ((e.target as HTMLElement).style.textDecoration = 'none')
+                            }
                           >
                             {contractSource.implementationContract?.name
                               ? `${contractSource.implementationContract.name} (${contractSource.implementationAddress})`
@@ -651,9 +653,11 @@ export default function ContractPage() {
                           href={`/chain/${currentChainId}/tx/${creationInfo.txHash}`}
                           style={{ color: '#007bff', textDecoration: 'none' }}
                           onMouseOver={e =>
-                            ((e.target as HTMLElement).style.textDecoration = 'underline')}
+                            ((e.target as HTMLElement).style.textDecoration = 'underline')
+                          }
                           onMouseOut={e =>
-                            ((e.target as HTMLElement).style.textDecoration = 'none')}
+                            ((e.target as HTMLElement).style.textDecoration = 'none')
+                          }
                         >
                           {creationInfo.txHash}
                         </a>
@@ -666,9 +670,11 @@ export default function ContractPage() {
                           href={`/chain/${currentChainId}/block/${creationInfo.blockNumber}`}
                           style={{ color: '#007bff', textDecoration: 'none' }}
                           onMouseOver={e =>
-                            ((e.target as HTMLElement).style.textDecoration = 'underline')}
+                            ((e.target as HTMLElement).style.textDecoration = 'underline')
+                          }
                           onMouseOut={e =>
-                            ((e.target as HTMLElement).style.textDecoration = 'none')}
+                            ((e.target as HTMLElement).style.textDecoration = 'none')
+                          }
                         >
                           #{creationInfo.blockNumber}
                         </a>
@@ -681,9 +687,11 @@ export default function ContractPage() {
                           href={`/chain/${currentChainId}/address/${creationInfo.creator}`}
                           style={{ color: '#007bff', textDecoration: 'none' }}
                           onMouseOver={e =>
-                            ((e.target as HTMLElement).style.textDecoration = 'underline')}
+                            ((e.target as HTMLElement).style.textDecoration = 'underline')
+                          }
                           onMouseOut={e =>
-                            ((e.target as HTMLElement).style.textDecoration = 'none')}
+                            ((e.target as HTMLElement).style.textDecoration = 'none')
+                          }
                         >
                           {creationInfo.creator}
                         </a>
@@ -784,13 +792,23 @@ export default function ContractPage() {
             {/* Source Code */}
             {activeTab === 'source' && (
               <div className={cardStyles}>
-                <h2>
-                  {isProxy
-                    ? contractTarget === 'impl'
-                      ? `Implementation Source (${contractSource.implementationContract?.name ?? 'Unknown'})`
-                      : 'Proxy Contract Source'
-                    : 'Source Code'}
-                </h2>
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: '16px',
+                  }}
+                >
+                  <h2 style={{ margin: 0 }}>
+                    {isProxy
+                      ? contractTarget === 'impl'
+                        ? `Implementation Source (${contractSource.implementationContract?.name ?? 'Unknown'})`
+                        : 'Proxy Contract Source'
+                      : 'Source Code'}
+                  </h2>
+                  <OpenInIdeButton chainId={currentChainId} address={address} />
+                </div>
                 {contractTarget === 'impl' && contractSource.implementationContract?.sourceCode ? (
                   <SourceCodeViewer
                     sourceCode={contractSource.implementationContract.sourceCode}
@@ -1158,7 +1176,8 @@ function ContractInteract({
           <select
             value={filters.readWrite}
             onChange={e =>
-              setFilters(prev => ({ ...prev, readWrite: e.target.value as ReadWriteFilter }))}
+              setFilters(prev => ({ ...prev, readWrite: e.target.value as ReadWriteFilter }))
+            }
             className={filterSelectStyles}
           >
             <option value="all">All</option>
@@ -1649,6 +1668,155 @@ function StoragePanel({
   return (
     <div className={cardStyles}>
       <StorageLayoutView chainId={chainId} address={targetAddress} layout={layout} />
+    </div>
+  );
+}
+
+type DetectedIde = {
+  id: string;
+  displayName: string;
+};
+
+function OpenInIdeButton({ chainId, address }: { chainId: number; address: string }) {
+  const [detectedIdes, setDetectedIdes] = useState<DetectedIde[]>([]);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [opening, setOpening] = useState(false);
+  const [opened, setOpened] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    fetch(`/api/chains/${chainId}/contracts/${address}/ides`)
+      .then(res => res.json())
+      .then(data => setDetectedIdes(data.ides ?? []))
+      .catch(() => setDetectedIdes([]));
+  }, [chainId, address]);
+
+  useEffect(() => {
+    if (!dropdownOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setDropdownOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [dropdownOpen]);
+
+  const handleOpen = useCallback(
+    async (ideId: string) => {
+      setDropdownOpen(false);
+      setOpening(true);
+      setOpened(false);
+
+      try {
+        await fetch(`/api/chains/${chainId}/contracts/${address}/open-in-ide`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ide: ideId }),
+        });
+        setOpened(true);
+        setTimeout(() => setOpened(false), 2000);
+      } catch {
+        // Error silently
+      } finally {
+        setOpening(false);
+      }
+    },
+    [chainId, address],
+  );
+
+  const baseBtnStyle: React.CSSProperties = {
+    padding: '6px 12px',
+    background: 'white',
+    color: '#333',
+    border: '1px solid #d0d5dd',
+    borderRadius: '4px',
+    cursor: 'pointer',
+    fontSize: '13px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    transition: 'all 0.15s',
+    fontFamily: 'inherit',
+    whiteSpace: 'nowrap',
+  };
+
+  if (detectedIdes.length === 0) {
+    return (
+      <button {...{ style: { ...baseBtnStyle, opacity: 0.5, cursor: 'not-allowed' } }} disabled>
+        Open in IDE
+      </button>
+    );
+  }
+
+  if (detectedIdes.length === 1) {
+    return (
+      <button
+        style={{
+          ...baseBtnStyle,
+          ...(opened ? { color: '#16a34a', borderColor: '#16a34a', background: '#f0fdf4' } : {}),
+        }}
+        onClick={() => handleOpen(detectedIdes[0].id)}
+        disabled={opening}
+      >
+        {opening ? 'Opening...' : opened ? 'Opened!' : `Open in ${detectedIdes[0].displayName}`}
+      </button>
+    );
+  }
+
+  return (
+    <div ref={dropdownRef} style={{ position: 'relative' }}>
+      <button
+        style={{
+          ...baseBtnStyle,
+          ...(opened ? { color: '#16a34a', borderColor: '#16a34a', background: '#f0fdf4' } : {}),
+        }}
+        onClick={() => setDropdownOpen(prev => !prev)}
+        disabled={opening}
+      >
+        {opening ? 'Opening...' : opened ? 'Opened!' : 'Open in IDE ▾'}
+      </button>
+      {dropdownOpen && (
+        <div
+          style={{
+            position: 'absolute',
+            top: '100%',
+            left: 0,
+            marginTop: '4px',
+            background: 'white',
+            border: '1px solid #d0d5dd',
+            borderRadius: '6px',
+            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
+            minWidth: '140px',
+            zIndex: 10,
+            overflow: 'hidden',
+          }}
+        >
+          {detectedIdes.map(ide => (
+            <button
+              key={ide.id}
+              style={{
+                display: 'block',
+                width: '100%',
+                padding: '8px 12px',
+                fontSize: '13px',
+                color: '#333',
+                background: 'none',
+                border: 'none',
+                borderBottom: '1px solid #e8ecef',
+                cursor: 'pointer',
+                textAlign: 'left',
+                fontFamily: 'inherit',
+              }}
+              onMouseOver={e => ((e.target as HTMLElement).style.background = '#f0f4f8')}
+              onMouseOut={e => ((e.target as HTMLElement).style.background = 'none')}
+              onClick={() => handleOpen(ide.id)}
+            >
+              {ide.displayName}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

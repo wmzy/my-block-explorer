@@ -7,6 +7,12 @@ import { contractInteractionService } from '../services/ContractInteractionServi
 import { getChainName, isChainSupported } from '../config/chains';
 import { getValidatedChainId, getValidatedAddress } from '../server/validation';
 import { safeJsonResponse } from '../utils/serialization';
+import {
+  detectInstalledIdes,
+  getDetectedIdesInfo,
+  openInIde,
+  type IdeId,
+} from '../services/IdeService';
 
 const app = new Hono();
 
@@ -408,6 +414,68 @@ app.get('/chains/:chainId/contracts/:address/creation', async c => {
   } catch (error) {
     logger.error({ err: error }, 'Contract creation info API error');
     return c.json({ error: 'Failed to get contract creation info' }, 500);
+  }
+});
+
+app.get('/chains/:chainId/contracts/:address/ides', async c => {
+  const ides = getDetectedIdesInfo();
+
+  return c.json({
+    ides,
+    timestamp: new Date().toISOString(),
+  });
+});
+
+app.post('/chains/:chainId/contracts/:address/open-in-ide', async c => {
+  const chainId = getValidatedChainId(c.req.param('chainId'));
+  const address = getValidatedAddress(c.req.param('address'));
+
+  try {
+    const body = await c.req.json();
+    const ide = body.ide as IdeId;
+
+    const validIdes: IdeId[] = ['vscode', 'cursor', 'zed', 'webstorm', 'sublime'];
+    if (!ide || !validIdes.includes(ide)) {
+      return c.json(
+        { error: 'Unsupported IDE. Must be one of: vscode, cursor, zed, webstorm, sublime' },
+        400,
+      );
+    }
+
+    const installedIdes = detectInstalledIdes();
+    if (!installedIdes.includes(ide)) {
+      return c.json({ error: `${ide} is not installed or not in PATH` }, 400);
+    }
+
+    const contractSource = await contractSourceService.getContractSource(chainId, address);
+    if (!contractSource) {
+      return c.json({ error: 'Contract not found or not a contract address' }, 404);
+    }
+
+    const targetSource = contractSource.implementationContract ?? contractSource;
+    const contractName = targetSource.name ?? `contract-${address.slice(0, 8)}`;
+
+    const result = await openInIde(
+      ide,
+      contractName,
+      address,
+      chainId,
+      targetSource.sourceCode,
+      targetSource.sourceFiles,
+      targetSource.compilerVersion,
+      targetSource.optimizationEnabled,
+      targetSource.optimizationRuns,
+    );
+
+    return c.json({
+      success: true,
+      directory: result.directory,
+      ide,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    logger.error({ err: error }, 'Open in IDE API error');
+    return c.json({ error: 'Failed to open contract in IDE' }, 500);
   }
 });
 
