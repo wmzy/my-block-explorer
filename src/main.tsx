@@ -15,10 +15,10 @@ import '@/styles/global';
 // We restore it to history before React Router initializes
 (function restoreSpaRoute() {
   const hash = window.location.hash;
-  if (hash && hash.startsWith('#/')) {
+  if (hash?.startsWith('#/')) {
     const route = hash.slice(2); // strip '#/'
     const base = import.meta.env.BASE_URL?.replace(/\/+$/, '') ?? '';
-    const targetPath = base + '/' + route;
+    const targetPath = `${base}/${route}`;
     if (window.location.pathname !== targetPath) {
       window.history.replaceState(null, '', targetPath);
     }
