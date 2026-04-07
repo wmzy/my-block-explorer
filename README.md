@@ -1,4 +1,4 @@
-# Block Explorer
+# My Block Explorer
 
 一个现代化的多链区块链浏览器，基于 DuckDB 和 Viem 构建，支持 Ethereum 及兼容网络。
 
@@ -16,9 +16,14 @@
 - 🔄 **实时解码**: 基于 Viem 的事件日志实时解码
 - 📊 **性能监控**: 1-9ms 响应时间保证，实时性能监控
 
+## 使用
+
+[https://wmzy.github.io/my-block-explorer/](https://wmzy.github.io/my-block-explorer/)
+
 ## 🏗️ 技术栈
 
 ### 前端
+
 - **React 19** - 用户界面库
 - **React Router v7.5** - 路由管理
 - **Vite 6** - 构建工具
@@ -27,6 +32,7 @@
 - **TypeScript 5.7** - 类型安全
 
 ### 后端
+
 - **Hono 5.0** - 轻量级 Web 框架
 - **Node.js 22** - 运行时环境
 - **DuckDB 1.1** - 嵌入式分析数据库
@@ -35,6 +41,7 @@
 - **Pino 9.5** - 高性能日志库
 
 ### 部署
+
 - **Cloudflare Pages** - 前端静态托管
 - **本地服务器** - 后端 API 服务
 
@@ -48,27 +55,31 @@
 ### 安装和运行
 
 1. **克隆项目**
+
    ```bash
    git clone <repository-url>
    cd block-explorer
    ```
 
 2. **安装依赖**
+
    ```bash
    pnpm install
    ```
 
 3. **环境配置**
+
    ```bash
    cp .env.example .env
    # 编辑 .env 文件，配置必要的环境变量
    ```
 
 4. **启动开发服务**
+
    ```bash
    # 同时启动前端和后端
    pnpm dev
-   
+
    # 或分别启动
    pnpm dev:client  # 前端开发服务器 (http://localhost:3000)
    pnpm dev:server  # 后端 API 服务器 (http://localhost:8201)
@@ -91,59 +102,6 @@ pnpm db:migrate
 pnpm db:studio
 ```
 
-## 📁 项目结构
-
-```
-block-explorer/
-├── src/
-│   ├── shared/          # 共享类型和工具
-│   │   ├── types/       # TypeScript 类型定义
-│   │   ├── utils/       # 工具函数
-│   │   └── config/      # 链配置
-│   ├── server/          # 后端代码
-│   │   ├── database/    # 数据库相关
-│   │   ├── services/    # 业务逻辑层
-│   │   ├── routes/      # API 路由
-│   │   └── middleware/  # 中间件
-│   └── client/          # 前端代码
-│       ├── components/  # React 组件
-│       ├── pages/       # 页面组件
-│       ├── hooks/       # 自定义 Hooks
-│       └── api/         # API 客户端
-├── docs/               # 文档
-├── dist/              # 构建输出
-└── data/              # 数据库文件
-```
-
-## 🔗 API 端点
-
-### 区块相关
-- `GET /api/chains/{chainId}/blocks` - 获取最新区块列表
-- `GET /api/chains/{chainId}/blocks/{blockNumber}` - 根据区块号获取区块
-- `GET /api/chains/{chainId}/blocks/hash/{blockHash}` - 根据哈希获取区块
-
-### 交易相关
-- `GET /api/chains/{chainId}/transactions/{txHash}` - 获取交易详情
-- `GET /api/chains/{chainId}/addresses/{address}/transactions` - 获取地址交易
-
-### 地址相关
-- `GET /api/chains/{chainId}/addresses/{address}` - 获取地址信息
-- `GET /api/chains/{chainId}/addresses/{address}/balance` - 获取地址余额
-
-### 合约事件相关 🆕
-- `GET /api/chains/{chainId}/contracts/{address}/events/indexing-status` - 获取合约事件索引状态
-- `GET /api/chains/{chainId}/contracts/{address}/events` - 查询合约事件列表（支持过滤和分页）
-
-### 性能监控相关 🆕
-- `GET /api/performance/events` - 事件系统性能指标
-- `POST /api/performance/clear-cache` - 清除性能缓存
-- `POST /api/performance/warmup` - 预热性能缓存
-
-### 搜索和统计
-- `GET /api/search?q={query}` - 通用搜索
-- `GET /api/stats/overview` - 系统概览统计
-- `GET /api/health` - 健康检查
-
 ## 🔧 配置说明
 
 ### 环境变量
@@ -157,29 +115,14 @@ SERVER_PORT=8201
 # 数据库配置
 DATABASE_URL=duckdb://data/blockchain.db
 
-# RPC 配置 (可选)
-ALCHEMY_API_KEY=your_key
-INFURA_API_KEY=your_key
 ```
-
-### 链配置
-
-系统默认支持以下链：
-
-| 链名称 | Chain ID | 符号 | RPC |
-|--------|----------|------|-----|
-| Ethereum | 1 | ETH | Alchemy/Infura |
-| Polygon | 137 | MATIC | Polygon RPC |
-| BSC | 56 | BNB | BSC RPC |
-| Arbitrum | 42161 | ETH | Arbitrum RPC |
-| Base | 8453 | ETH | Base RPC |
-| Optimism | 10 | ETH | Optimism RPC |
 
 ## 🏠 部署
 
 ### 前端部署 (Cloudflare Pages)
 
 1. **构建前端**
+
    ```bash
    pnpm build:client
    ```
@@ -191,6 +134,7 @@ INFURA_API_KEY=your_key
 ### 后端部署 (本地服务器)
 
 1. **构建后端**
+
    ```bash
    pnpm build:server
    ```
@@ -225,7 +169,7 @@ export class DuckDBPostgresAdapter {
   async query(sql: string, ...params: any[]): Promise<any[]> {
     // 将 PostgreSQL 查询转换为 DuckDB 兼容格式
   }
-  
+
   async begin(callback: Function): Promise<any> {
     // 事务支持
   }
