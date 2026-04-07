@@ -26,12 +26,7 @@ const containerStyle = css`
   align-items: center;
   justify-content: center;
   padding: var(--haze-space-4);
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
-  background-attachment: fixed;
-
-  @media (prefers-color-scheme: dark) {
-    background: linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #4c1d95 100%);
-  }
+  background: var(--haze-color-bg);
 `;
 
 const contentWrapperStyle = css`
@@ -59,38 +54,33 @@ const headerSectionStyle = css`
 const titleStyle = css`
   font-size: var(--haze-text-4xl, 36px);
   font-weight: var(--haze-weight-bold);
-  color: #ffffff;
+  color: var(--haze-color-text);
   margin: 0 0 var(--haze-space-2) 0;
   letter-spacing: -0.02em;
-  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.2);
 `;
 
 const descriptionStyle = css`
   font-size: var(--haze-text-base);
-  color: rgba(255, 255, 255, 0.75);
+  color: var(--haze-color-text-secondary);
   margin: 0;
   line-height: var(--haze-leading-relaxed);
 `;
 
 const cardStyle = css`
   margin-bottom: var(--haze-space-4);
-  background: rgba(255, 255, 255, 0.12);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.18);
-  border-radius: var(--haze-radius-xl, 20px);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+  background: var(--haze-color-bg-subtle);
+  border: 1px solid var(--haze-color-border);
+  border-radius: var(--haze-radius-xl);
+  box-shadow: var(--haze-shadow-md);
   transition:
     transform 0.2s ease,
     box-shadow 0.2s ease,
-    background 0.2s ease,
     border-color 0.2s ease;
 
   &:hover {
-    background: rgba(255, 255, 255, 0.16);
-    border-color: rgba(255, 255, 255, 0.25);
+    border-color: var(--haze-color-border-hover);
     transform: translateY(-2px);
-    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.12);
+    box-shadow: var(--haze-shadow-lg);
   }
 `;
 
@@ -103,9 +93,9 @@ const recommendedBadgeStyle = css`
   align-items: center;
   gap: var(--haze-space-1);
   padding: var(--haze-space-1) var(--haze-space-3);
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0.15));
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  color: #ffffff;
+  background: var(--haze-color-primary-subtle);
+  border: 1px solid var(--haze-color-primary);
+  color: var(--haze-color-primary);
   font-size: var(--haze-text-xs);
   font-weight: var(--haze-weight-semibold);
   border-radius: 9999px;
@@ -123,13 +113,13 @@ const cardTitleRowStyle = css`
 const cardTitleStyle = css`
   font-size: var(--haze-text-lg);
   font-weight: var(--haze-weight-semibold);
-  color: rgba(255, 255, 255, 0.95);
+  color: var(--haze-color-text);
   margin: 0;
 `;
 
 const cardDescriptionStyle = css`
   font-size: var(--haze-text-sm);
-  color: rgba(255, 255, 255, 0.65);
+  color: var(--haze-color-text-secondary);
   margin: 0 0 var(--haze-space-6) 0;
   line-height: var(--haze-leading-relaxed);
 `;
@@ -153,9 +143,9 @@ const stepNumberStyle = css`
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.25), rgba(255, 255, 255, 0.1));
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  color: #ffffff;
+  background: var(--haze-color-primary-subtle);
+  border: 1px solid var(--haze-color-primary);
+  color: var(--haze-color-primary);
   font-size: var(--haze-text-base);
   font-weight: var(--haze-weight-bold);
   flex-shrink: 0;
@@ -169,7 +159,7 @@ const stepContentStyle = css`
 const stepLabelStyle = css`
   font-size: var(--haze-text-sm);
   font-weight: var(--haze-weight-medium);
-  color: rgba(255, 255, 255, 0.85);
+  color: var(--haze-color-text);
   margin: 0 0 var(--haze-space-2) 0;
 `;
 
@@ -179,25 +169,25 @@ const codeBlockWrapperStyle = css`
 
 const codeBlockStyle = css`
   display: block;
-  background: rgba(0, 0, 0, 0.25);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: var(--haze-radius-lg, 12px);
+  background: var(--haze-color-bg-muted);
+  border: 1px solid var(--haze-color-border);
+  border-radius: var(--haze-radius-lg);
   padding: var(--haze-space-4) var(--haze-space-5);
   font-family: var(--haze-font-mono);
   font-size: var(--haze-text-sm);
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--haze-color-text);
   overflow-x: auto;
   margin: 0;
   white-space: pre;
 `;
 
 const commandPartStyle = css`
-  color: rgba(255, 255, 255, 0.95);
+  color: var(--haze-color-text);
   font-weight: var(--haze-weight-medium);
 `;
 
 const argPartStyle = css`
-  color: rgba(134, 239, 172, 0.9);
+  color: var(--haze-color-success);
 `;
 
 const codeActionStyle = css`
@@ -217,9 +207,8 @@ const copiedToastStyle = css`
   top: var(--haze-space-2);
   right: var(--haze-space-2);
   padding: var(--haze-space-1) var(--haze-space-2);
-  background: rgba(34, 197, 94, 0.9);
-  backdrop-filter: blur(8px);
-  color: #ffffff;
+  background: var(--haze-color-success);
+  color: var(--haze-color-text-inverse);
   font-size: var(--haze-text-xs);
   font-weight: var(--haze-weight-medium);
   border-radius: var(--haze-radius-sm);
@@ -245,9 +234,9 @@ const tabContainerStyle = css`
   gap: var(--haze-space-1);
   margin-bottom: var(--haze-space-4);
   padding: 4px;
-  background: rgba(0, 0, 0, 0.15);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: var(--haze-radius-lg, 12px);
+  background: var(--haze-color-bg-muted);
+  border: 1px solid var(--haze-color-border);
+  border-radius: var(--haze-radius-lg);
 `;
 
 const tabStyle = css`
@@ -260,16 +249,16 @@ const tabStyle = css`
   cursor: pointer;
   transition: all 0.15s ease;
   background-color: transparent;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--haze-color-text-muted);
 
   &:hover {
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--haze-color-bg-subtle);
   }
 
   &.activeTab {
-    background: rgba(255, 255, 255, 0.2);
-    color: #ffffff;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+    background: var(--haze-color-bg);
+    color: var(--haze-color-text);
+    box-shadow: var(--haze-shadow-sm);
   }
 `;
 
@@ -284,13 +273,13 @@ const dividerStyle = css`
     content: '';
     flex: 1;
     height: 1px;
-    background: linear-gradient(to right, transparent, rgba(255, 255, 255, 0.2), transparent);
+    background: var(--haze-color-border);
   }
 `;
 
 const dividerTextStyle = css`
   font-size: var(--haze-text-xs);
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--haze-color-text-muted);
   text-transform: uppercase;
   letter-spacing: 0.1em;
 `;
@@ -310,84 +299,29 @@ const inputGroupStyle = css`
 const labelStyle = css`
   font-size: var(--haze-text-sm);
   font-weight: var(--haze-weight-medium);
-  color: rgba(255, 255, 255, 0.7);
+  color: var(--haze-color-text-secondary);
 `;
 
 const inputStyle = css`
   width: 100%;
   padding: var(--haze-space-3) var(--haze-space-4);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: var(--haze-radius-lg, 12px);
+  border: 1px solid var(--haze-color-border);
+  border-radius: var(--haze-radius-lg);
   font-size: var(--haze-text-base);
-  color: #ffffff;
-  background: rgba(0, 0, 0, 0.15);
+  color: var(--haze-color-text);
+  background: var(--haze-color-bg);
   transition:
     border-color 0.15s ease,
     box-shadow 0.15s ease;
 
   &::placeholder {
-    color: rgba(255, 255, 255, 0.35);
+    color: var(--haze-color-text-muted);
   }
 
   &:focus {
     outline: none;
-    border-color: rgba(255, 255, 255, 0.4);
-    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.1);
-  }
-`;
-
-const glassGhostButtonStyle = css`
-  color: rgba(255, 255, 255, 0.7);
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: var(--haze-radius-sm);
-  padding: var(--haze-space-1) var(--haze-space-3);
-  font-size: var(--haze-text-xs);
-  font-weight: var(--haze-weight-medium);
-  transition: all 0.15s ease;
-
-  &:hover {
-    background: rgba(255, 255, 255, 0.15);
-    color: #ffffff;
-    border-color: rgba(255, 255, 255, 0.25);
-  }
-`;
-
-const glassSecondaryButtonStyle = css`
-  color: rgba(255, 255, 255, 0.8);
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: var(--haze-radius-md);
-  padding: var(--haze-space-2) var(--haze-space-4);
-  font-size: var(--haze-text-sm);
-  font-weight: var(--haze-weight-medium);
-  transition: all 0.15s ease;
-
-  &:hover {
-    background: rgba(255, 255, 255, 0.18);
-    color: #ffffff;
-  }
-`;
-
-const glassPrimaryButtonStyle = css`
-  color: #ffffff;
-  background: rgba(255, 255, 255, 0.2);
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  border-radius: var(--haze-radius-md);
-  padding: var(--haze-space-2) var(--haze-space-5);
-  font-size: var(--haze-text-sm);
-  font-weight: var(--haze-weight-semibold);
-  transition: all 0.2s ease;
-
-  &:hover {
-    background: rgba(255, 255, 255, 0.28);
-    border-color: rgba(255, 255, 255, 0.4);
-    box-shadow: 0 2px 8px rgba(255, 255, 255, 0.15);
-  }
-
-  &:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
+    border-color: var(--haze-color-primary);
+    box-shadow: 0 0 0 3px var(--haze-color-focus-ring);
   }
 `;
 
@@ -483,7 +417,7 @@ export function SetupRequiredScreen({
                     <Button
                       variant="ghost"
                       size="sm"
-                      className={cx(codeActionStyle, glassGhostButtonStyle)}
+                      className={codeActionStyle}
                       onClick={handleCopy}
                     >
                       Copy
@@ -496,12 +430,7 @@ export function SetupRequiredScreen({
                 <div className={stepNumberStyle}>2</div>
                 <div className={stepContentStyle}>
                   <p className={stepLabelStyle}>The page will automatically detect the service</p>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    className={glassSecondaryButtonStyle}
-                    onClick={handleRefresh}
-                  >
+                  <Button variant="secondary" size="sm" onClick={handleRefresh}>
                     Refresh
                   </Button>
                 </div>
@@ -538,7 +467,6 @@ export function SetupRequiredScreen({
               <div className={buttonGroupStyle}>
                 <Button
                   variant="primary"
-                  className={glassPrimaryButtonStyle}
                   loading={isConnecting}
                   disabled={!url.trim() || isConnecting}
                   onClick={handleConnect}

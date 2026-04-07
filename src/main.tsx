@@ -1,9 +1,12 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
+import { cx } from '@linaria/core';
+import { lightTheme, spacing, typography } from 'haze-ui';
 import { App } from './App';
 import { ServiceSetup } from '@/components/ServiceSetup';
 import { ServiceDiscoveryProvider } from '@/hooks/ServiceDiscoveryContext';
 import { useServiceDiscovery } from '@/hooks/ServiceDiscoveryContext';
+import { hazeThemeWrapper } from '@/styles/global';
 import 'haze-ui/styles.css';
 import '@/styles/global';
 
@@ -28,22 +31,24 @@ function Root() {
   const { status, serviceInfo, error, isScanning, currentPort, setApiUrl, discover, reset } =
     useServiceDiscovery();
 
-  if (status !== 'found') {
-    return (
-      <ServiceSetup
-        status={status}
-        serviceInfo={serviceInfo}
-        error={error}
-        isScanning={isScanning}
-        currentPort={currentPort}
-        setApiUrl={setApiUrl}
-        discover={discover}
-        reset={reset}
-      />
-    );
-  }
-
-  return <App />;
+  return (
+    <div className={cx(hazeThemeWrapper, lightTheme, spacing, typography)}>
+      {status !== 'found' ? (
+        <ServiceSetup
+          status={status}
+          serviceInfo={serviceInfo}
+          error={error}
+          isScanning={isScanning}
+          currentPort={currentPort}
+          setApiUrl={setApiUrl}
+          discover={discover}
+          reset={reset}
+        />
+      ) : (
+        <App />
+      )}
+    </div>
+  );
 }
 
 const container = document.getElementById('root');

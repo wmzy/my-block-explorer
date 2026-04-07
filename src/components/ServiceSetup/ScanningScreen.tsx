@@ -12,21 +12,14 @@ const containerStyle = css`
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
-  background-attachment: fixed;
-
-  @media (prefers-color-scheme: dark) {
-    background: linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #4c1d95 100%);
-  }
+  background: var(--haze-color-bg);
 `;
 
 const cardStyle = css`
-  background: rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: var(--haze-radius-xl, 20px);
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+  background: var(--haze-color-bg-subtle);
+  border: 1px solid var(--haze-color-border);
+  border-radius: var(--haze-radius-xl);
+  box-shadow: var(--haze-shadow-lg);
   padding: var(--haze-space-10) var(--haze-space-8);
   text-align: center;
   max-width: 420px;
@@ -53,7 +46,7 @@ const scanLineStyle = css`
   left: 0;
   right: 0;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.15), transparent);
+  background: var(--haze-color-border);
   animation: scan-line 3s ease-in-out infinite;
 
   @keyframes scan-line {
@@ -82,7 +75,7 @@ const iconContainerStyle = css`
 const pulseRingStyle = css`
   position: absolute;
   inset: 0;
-  border: 2px solid rgba(255, 255, 255, 0.3);
+  border: 2px solid var(--haze-color-border);
   border-radius: 50%;
   animation: pulse-ring 2s ease-out infinite;
 
@@ -101,18 +94,18 @@ const pulseRingStyle = css`
 const pulseIconStyle = css`
   position: absolute;
   inset: 14px;
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--haze-color-bg-muted);
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 4px 20px rgba(255, 255, 255, 0.1);
+  box-shadow: var(--haze-shadow-sm);
 
   &::after {
     content: '';
     width: 18px;
     height: 18px;
-    border: 2px solid rgba(255, 255, 255, 0.6);
+    border: 2px solid var(--haze-color-primary);
     border-radius: 50%;
     animation: pulse-core 1.8s ease-in-out infinite;
   }
@@ -133,15 +126,14 @@ const pulseIconStyle = css`
 const titleStyle = css`
   font-size: var(--haze-text-2xl);
   font-weight: var(--haze-weight-bold);
-  color: rgba(255, 255, 255, 0.95);
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+  color: var(--haze-color-text);
   margin: 0 0 var(--haze-space-5) 0;
 `;
 
 const portStatusStyle = css`
   font-size: var(--haze-text-lg);
   font-weight: var(--haze-weight-semibold);
-  color: rgba(255, 255, 255, 0.75);
+  color: var(--haze-color-text-secondary);
   margin: 0 0 var(--haze-space-6) 0;
   min-height: 28px;
   font-family: var(--haze-font-mono);
@@ -154,14 +146,14 @@ const progressContainerStyle = css`
 const progressBarBgStyle = css`
   width: 100%;
   height: 6px;
-  background-color: rgba(255, 255, 255, 0.1);
+  background-color: var(--haze-color-bg-muted);
   border-radius: var(--haze-radius-sm);
   overflow: hidden;
 `;
 
 const progressBarFillStyle = css`
   height: 100%;
-  background: linear-gradient(90deg, rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0.7));
+  background: var(--haze-color-primary);
   border-radius: var(--haze-radius-sm);
   transition: width 0.3s ease;
   position: relative;
@@ -173,7 +165,7 @@ const progressBarFillStyle = css`
     background: linear-gradient(
       90deg,
       transparent 0%,
-      rgba(255, 255, 255, 0.4) 50%,
+      var(--haze-color-text-inverse) 50%,
       transparent 100%
     );
     animation: shimmer 2s infinite;
@@ -191,7 +183,7 @@ const progressBarFillStyle = css`
 
 const progressTextStyle = css`
   font-size: var(--haze-text-sm);
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--haze-color-text-muted);
   margin: var(--haze-space-2) 0 0 0;
 `;
 
@@ -207,19 +199,19 @@ const portDotStyle = css`
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background-color: rgba(255, 255, 255, 0.2);
+  background-color: var(--haze-color-text-muted);
   transition: all 0.3s ease;
 `;
 
 const portDotActiveStyle = css`
-  background-color: rgba(255, 255, 255, 0.9);
-  box-shadow: 0 0 8px rgba(255, 255, 255, 0.4);
+  background-color: var(--haze-color-primary);
+  box-shadow: 0 0 8px var(--haze-color-primary);
   transform: scale(1.3);
 `;
 
 const portDotCheckedStyle = css`
-  background-color: rgba(134, 239, 172, 0.8);
-  box-shadow: 0 0 6px rgba(134, 239, 172, 0.4);
+  background-color: var(--haze-color-success);
+  box-shadow: 0 0 6px var(--haze-color-success);
 `;
 
 export function ScanningScreen({ currentPort, portIndex, totalPorts }: ScanningScreenProps) {

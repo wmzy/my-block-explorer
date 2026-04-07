@@ -39,7 +39,7 @@ const expandedPanelStyle = css`
   padding: var(--haze-space-5);
   min-width: 300px;
   box-shadow:
-    0 20px 60px rgba(0, 0, 0, 0.12),
+    var(--haze-shadow-lg),
     0 0 0 1px var(--haze-color-border);
   animation: panel-enter 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 
