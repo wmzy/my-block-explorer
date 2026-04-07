@@ -1,5 +1,6 @@
 import { createPublicClient, http, formatEther, type PublicClient } from 'viem';
 import { getChainInfo } from '@/config/chains';
+import { apiClient } from '@/api/client';
 
 const clientCache = new Map<number, PublicClient>();
 const customRpcUrls = new Map<number, string>();
@@ -12,10 +13,11 @@ const loadRpcConfigs = (): Promise<void> => {
   if (rpcConfigsLoaded) return Promise.resolve();
   if (rpcConfigsPromise) return rpcConfigsPromise;
 
-  rpcConfigsPromise = fetch('/api/rpc-configs')
+  const baseUrl = apiClient.getBaseUrl();
+  rpcConfigsPromise = fetch(`${baseUrl}/api/rpc-configs`)
     .then(res => (res.ok ? res.json() : { configs: [] }))
     .then((data: { configs?: RpcConfigEntry[] }) => {
-      (data.configs ?? []).forEach((cfg) => {
+      (data.configs ?? []).forEach(cfg => {
         if (cfg.url) customRpcUrls.set(cfg.chainId, cfg.url);
       });
       rpcConfigsLoaded = true;
@@ -70,10 +72,7 @@ export const createRpcClient = async (chainId: number): Promise<PublicClient> =>
 /**
  * 获取地址实时数据
  */
-export const getRealTimeAddressData = async (
-  chainId: number,
-  address: string,
-) => {
+export const getRealTimeAddressData = async (chainId: number, address: string) => {
   const client = await createRpcClient(chainId);
 
   const [balance, txCount, latestBlock] = await Promise.all([
@@ -101,16 +100,11 @@ export const getContractCode = async (chainId: number, address: string) => {
 /**
  * 批量获取多个地址的余额
  */
-export const getBatchBalances = async (
-  chainId: number,
-  addresses: string[],
-) => {
+export const getBatchBalances = async (chainId: number, addresses: string[]) => {
   const client = await createRpcClient(chainId);
 
   const balances = await Promise.all(
-    addresses.map(address =>
-      client.getBalance({ address: address as `0x${string}` }),
-    ),
+    addresses.map(address => client.getBalance({ address: address as `0x${string}` })),
   );
 
   return addresses.map((address, index) => ({
@@ -123,10 +117,7 @@ export const getBatchBalances = async (
 /**
  * 检查地址是否为合约
  */
-export const isContractAddress = async (
-  chainId: number,
-  address: string,
-): Promise<boolean> => {
+export const isContractAddress = async (chainId: number, address: string): Promise<boolean> => {
   const client = await createRpcClient(chainId);
   const code = await client.getCode({ address: address as `0x${string}` });
   return Boolean(code && code !== '0x' && code.length > 2);

@@ -1,4 +1,5 @@
 import { invalidateRpcClients } from './realTimeData';
+import { apiClient } from '@/api/client';
 
 // RPC配置管理服务
 export type RpcConfig = {
@@ -22,7 +23,8 @@ export type RpcTestResult = {
 
 // 获取所有RPC配置
 export async function getRpcConfigs(): Promise<RpcConfig[]> {
-  const response = await fetch('/api/rpc-configs');
+  const baseUrl = apiClient.getBaseUrl();
+  const response = await fetch(`${baseUrl}/api/rpc-configs`);
   if (!response.ok) {
     throw new Error('Failed to fetch RPC configs');
   }
@@ -38,7 +40,8 @@ export async function saveRpcConfig(config: {
   supportsHistory?: boolean;
   maxEventRange?: number;
 }): Promise<void> {
-  const response = await fetch('/api/rpc-configs', {
+  const baseUrl = apiClient.getBaseUrl();
+  const response = await fetch(`${baseUrl}/api/rpc-configs`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -56,7 +59,8 @@ export async function saveRpcConfig(config: {
 
 // 删除RPC配置
 export async function deleteRpcConfig(chainId: number): Promise<void> {
-  const response = await fetch(`/api/rpc-configs/${chainId}`, {
+  const baseUrl = apiClient.getBaseUrl();
+  const response = await fetch(`${baseUrl}/api/rpc-configs/${chainId}`, {
     method: 'DELETE',
   });
 
