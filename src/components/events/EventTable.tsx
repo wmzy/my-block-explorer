@@ -1220,21 +1220,6 @@ export const EventTable: React.FC<EventTableProps> = ({
     );
   }
 
-  // Render empty state
-  if (events.length === 0 && !loading) {
-    return (
-      <TableContainer className={className}>
-        <EmptyStateContainer>
-          <EmptyStateIcon>📋</EmptyStateIcon>
-          <EmptyStateTitle>未找到事件</EmptyStateTitle>
-          <EmptyStateDescription>
-            此合约尚未发出任何事件，或没有事件匹配当前的过滤器。
-          </EmptyStateDescription>
-        </EmptyStateContainer>
-      </TableContainer>
-    );
-  }
-
   const hasActiveFilters =
     Object.keys(dynamicFilters).length > 0 &&
     Object.values(dynamicFilters).some(
@@ -1328,316 +1313,333 @@ export const EventTable: React.FC<EventTableProps> = ({
         </div>
       )}
 
-      {/* Enhanced Sorting Controls */}
-      <SortControlsContainer>
-        <SortOptionsContainer>
-          <SortLabel>排序:</SortLabel>
-          <SortSelect
-            value={currentSortField}
-            onChange={e => handleSortFieldChange(e.target.value)}
-          >
-            {availableSortOptions.map(option => (
-              <option key={option.key} value={option.key}>
-                {option.label}
-              </option>
-            ))}
-          </SortSelect>
-          <SortDirectionButton
-            $active={sort.direction === 'desc'}
-            onClick={() => handleSortDirectionChange(sort.direction === 'asc' ? 'desc' : 'asc')}
-          >
-            {sort.direction === 'asc' ? '↑ 升序' : '↓ 降序'}
-          </SortDirectionButton>
+      {events.length === 0 && !loading ? (
+        <EmptyStateContainer>
+          <EmptyStateIcon>📋</EmptyStateIcon>
+          <EmptyStateTitle>未找到事件</EmptyStateTitle>
+          <EmptyStateDescription>
+            此合约尚未发出任何事件，或没有事件匹配当前的过滤器。
+          </EmptyStateDescription>
+        </EmptyStateContainer>
+      ) : (
+        <>
+          {/* Enhanced Sorting Controls */}
+          <SortControlsContainer>
+            <SortOptionsContainer>
+              <SortLabel>排序:</SortLabel>
+              <SortSelect
+                value={currentSortField}
+                onChange={e => handleSortFieldChange(e.target.value)}
+              >
+                {availableSortOptions.map(option => (
+                  <option key={option.key} value={option.key}>
+                    {option.label}
+                  </option>
+                ))}
+              </SortSelect>
+              <SortDirectionButton
+                $active={sort.direction === 'desc'}
+                onClick={() => handleSortDirectionChange(sort.direction === 'asc' ? 'desc' : 'asc')}
+              >
+                {sort.direction === 'asc' ? '↑ 升序' : '↓ 降序'}
+              </SortDirectionButton>
 
-          {enableMultiSort && (
-            <>
-              <AddSortButton onClick={addToMultiSort}>+ 添加到多列排序</AddSortButton>
-              <AddSortButton onClick={() => setShowAdvancedSort(!showAdvancedSort)}>
-                {showAdvancedSort ? '隐藏' : '显示'}
-                高级排序
-              </AddSortButton>
-            </>
-          )}
-        </SortOptionsContainer>
+              {enableMultiSort && (
+                <>
+                  <AddSortButton onClick={addToMultiSort}>+ 添加到多列排序</AddSortButton>
+                  <AddSortButton onClick={() => setShowAdvancedSort(!showAdvancedSort)}>
+                    {showAdvancedSort ? '隐藏' : '显示'}
+                    高级排序
+                  </AddSortButton>
+                </>
+              )}
+            </SortOptionsContainer>
 
-        {enableCustomPageSize && (
-          <PageSizeControl>
-            <PageSizeLabel>每页显示:</PageSizeLabel>
-            <PageSizeSelect
-              value={pagination.limit}
-              onChange={e => handlePageSizeChange(Number(e.target.value))}
-            >
-              {pageSizeOptions.map(size => (
-                <option key={size} value={size}>
-                  {size} 条
-                </option>
-              ))}
-            </PageSizeSelect>
-          </PageSizeControl>
-        )}
-
-        {/* Performance Info Toggle and Display */}
-        {shouldUseClientSideSort && sortingMetrics && (
-          <div style={{ position: 'relative' }}>
-            <PerformanceToggleButton
-              $active={showPerformanceInfo}
-              onClick={() => setShowPerformanceInfo(!showPerformanceInfo)}
-            >
-              性能: {sortingMetrics.sortTime.toFixed(1)}
-              ms
-            </PerformanceToggleButton>
-
-            {showPerformanceInfo && (
-              <PerformanceInfoContainer>
-                <PerformanceHeader>
-                  排序性能指标
-                  <PerformanceCloseButton onClick={() => setShowPerformanceInfo(false)}>
-                    ×
-                  </PerformanceCloseButton>
-                </PerformanceHeader>
-
-                <PerformanceMetric>
-                  <PerformanceMetricLabel>数据量:</PerformanceMetricLabel>
-                  <PerformanceMetricValue>
-                    {Number(sortingMetrics.dataSize ?? 0).toLocaleString()} 条
-                  </PerformanceMetricValue>
-                </PerformanceMetric>
-
-                <PerformanceMetric>
-                  <PerformanceMetricLabel>排序算法:</PerformanceMetricLabel>
-                  <PerformanceMetricValue>{sortingMetrics.algorithm}</PerformanceMetricValue>
-                </PerformanceMetric>
-
-                <PerformanceMetric>
-                  <PerformanceMetricLabel>排序时间:</PerformanceMetricLabel>
-                  <PerformanceMetricValue highlight={sortingMetrics.sortTime < 10}>
-                    {sortingMetrics.sortTime.toFixed(2)} ms
-                  </PerformanceMetricValue>
-                </PerformanceMetric>
-
-                <PerformanceMetric>
-                  <PerformanceMetricLabel>缓存命中:</PerformanceMetricLabel>
-                  <PerformanceMetricValue highlight={sortingMetrics.cacheHit}>
-                    {sortingMetrics.cacheHit ? '是' : '否'}
-                  </PerformanceMetricValue>
-                </PerformanceMetric>
-
-                {sortingMetrics.avgMetrics && (
-                  <>
-                    <PerformanceMetric>
-                      <PerformanceMetricLabel>平均时间:</PerformanceMetricLabel>
-                      <PerformanceMetricValue>
-                        {sortingMetrics.avgMetrics.avgExecutionTime.toFixed(2)} ms
-                      </PerformanceMetricValue>
-                    </PerformanceMetric>
-
-                    <PerformanceMetric>
-                      <PerformanceMetricLabel>缓存命中率:</PerformanceMetricLabel>
-                      <PerformanceMetricValue>
-                        {(sortingMetrics.avgMetrics.cacheHitRate * 100).toFixed(1)}%
-                      </PerformanceMetricValue>
-                    </PerformanceMetric>
-                  </>
-                )}
-
-                <PerformanceMetric>
-                  <PerformanceMetricLabel>排序模式:</PerformanceMetricLabel>
-                  <PerformanceMetricValue highlight>客户端</PerformanceMetricValue>
-                </PerformanceMetric>
-              </PerformanceInfoContainer>
-            )}
-          </div>
-        )}
-      </SortControlsContainer>
-
-      {/* Advanced Multi-Sort Controls */}
-      {showAdvancedSort && enableMultiSort && multiSort.length > 0 && (
-        <SortControlsContainer
-          style={{ background: '#f1f5f9', paddingTop: '8px', paddingBottom: '8px' }}
-        >
-          <div>
-            <SortLabel>多列排序:</SortLabel>
-            <MultiSortContainer>
-              {multiSort.map(sortConfig => {
-                const option = availableSortOptions.find(opt => opt.key === sortConfig.key);
-                return (
-                  <MultiSortTag key={sortConfig.key}>
-                    {option?.label ?? sortConfig.key} ({sortConfig.direction === 'asc' ? '↑' : '↓'})
-                    <MultiSortRemove onClick={() => removeFromMultiSort(sortConfig.key)}>
-                      ×
-                    </MultiSortRemove>
-                  </MultiSortTag>
-                );
-              })}
-              <AddSortButton onClick={clearMultiSort}>清除全部</AddSortButton>
-              <AddSortButton onClick={applyMultiSort}>应用多列排序</AddSortButton>
-            </MultiSortContainer>
-          </div>
-        </SortControlsContainer>
-      )}
-
-      <Table>
-        <TableHeader>
-          <tr>
-            <TableHeaderCell sortable onClick={() => handleSort('block_number')}>
-              区块号
-              <SortIndicator>
-                {sort.field === 'block_number' ? (sort.direction === 'asc' ? '↑' : '↓') : '↕'}
-              </SortIndicator>
-            </TableHeaderCell>
-            <TableHeaderCell sortable onClick={() => handleSort('block_timestamp')}>
-              时间
-              <SortIndicator>
-                {sort.field === 'block_timestamp' ? (sort.direction === 'asc' ? '↑' : '↓') : '↕'}
-              </SortIndicator>
-            </TableHeaderCell>
-            <TableHeaderCell sortable onClick={() => handleSort('event_name')}>
-              事件
-              <SortIndicator>
-                {sort.field === 'event_name' ? (sort.direction === 'asc' ? '↑' : '↓') : '↕'}
-              </SortIndicator>
-            </TableHeaderCell>
-            <TableHeaderCell>发送方</TableHeaderCell>
-            <TableHeaderCell>接收方</TableHeaderCell>
-            <TableHeaderCell>金额</TableHeaderCell>
-            <TableHeaderCell>交易哈希</TableHeaderCell>
-          </tr>
-        </TableHeader>
-        <TableBody>
-          {events.map((event, index) => (
-            <tr key={`${event.transactionHash}-${index}`}>
-              <TableCell>{event.blockNumber}</TableCell>
-              <TimestampCell>{formatTimestamp(event.blockTimestamp)}</TimestampCell>
-              <EventNameCell>{event.eventName}</EventNameCell>
-              <AddressCell>
-                {event.from ? (
-                  <a
-                    href={`/chain/${chainId}/address/${event.from}`}
-                    style={{ color: '#4f46e5', textDecoration: 'none' }}
-                  >
-                    {formatAddress(event.from)}
-                  </a>
-                ) : (
-                  'N/A'
-                )}
-              </AddressCell>
-              <AddressCell>
-                {event.to ? (
-                  <a
-                    href={`/chain/${chainId}/address/${event.to}`}
-                    style={{ color: '#4f46e5', textDecoration: 'none' }}
-                  >
-                    {formatAddress(event.to)}
-                  </a>
-                ) : (
-                  'N/A'
-                )}
-              </AddressCell>
-              <ValueCell>{formatValue(event.value)}</ValueCell>
-              <TransactionHashCell>
-                <a
-                  href={`/chain/${chainId}/tx/${event.transactionHash}`}
-                  style={{ color: '#4f46e5', textDecoration: 'none' }}
+            {enableCustomPageSize && (
+              <PageSizeControl>
+                <PageSizeLabel>每页显示:</PageSizeLabel>
+                <PageSizeSelect
+                  value={pagination.limit}
+                  onChange={e => handlePageSizeChange(Number(e.target.value))}
                 >
-                  {formatTransactionHash(event.transactionHash)}
-                </a>
-              </TransactionHashCell>
-            </tr>
-          ))}
-        </TableBody>
-      </Table>
+                  {pageSizeOptions.map(size => (
+                    <option key={size} value={size}>
+                      {size} 条
+                    </option>
+                  ))}
+                </PageSizeSelect>
+              </PageSizeControl>
+            )}
 
-      {/* Loading indicator for pagination */}
-      {loading && events.length > 0 && (
-        <LoadingContainer>
-          <LoadingSpinner />
-          <span style={{ marginLeft: 12 }}>Loading more events...</span>
-        </LoadingContainer>
-      )}
+            {/* Performance Info Toggle and Display */}
+            {shouldUseClientSideSort && sortingMetrics && (
+              <div style={{ position: 'relative' }}>
+                <PerformanceToggleButton
+                  $active={showPerformanceInfo}
+                  onClick={() => setShowPerformanceInfo(!showPerformanceInfo)}
+                >
+                  性能: {sortingMetrics.sortTime.toFixed(1)}
+                  ms
+                </PerformanceToggleButton>
 
-      {/* Error overlay for pagination errors */}
-      {error && events.length > 0 && (
-        <ErrorContainer>
-          <ErrorMessage>Error loading more events</ErrorMessage>
-          <RetryButton onClick={handleRetry}>重试</RetryButton>
-        </ErrorContainer>
-      )}
+                {showPerformanceInfo && (
+                  <PerformanceInfoContainer>
+                    <PerformanceHeader>
+                      排序性能指标
+                      <PerformanceCloseButton onClick={() => setShowPerformanceInfo(false)}>
+                        ×
+                      </PerformanceCloseButton>
+                    </PerformanceHeader>
 
-      {/* Enhanced Pagination controls */}
-      <PaginationContainer>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <PaginationInfo>
-            显示第 {pagination.startIndex ?? 1} - {pagination.endIndex ?? events.length} 条， 共{' '}
-            {pagination.total} 条事件
-          </PaginationInfo>
+                    <PerformanceMetric>
+                      <PerformanceMetricLabel>数据量:</PerformanceMetricLabel>
+                      <PerformanceMetricValue>
+                        {Number(sortingMetrics.dataSize ?? 0).toLocaleString()} 条
+                      </PerformanceMetricValue>
+                    </PerformanceMetric>
 
-          {totalPages > 1 && (
-            <PageInfo>
-              第 {pagination.page} / {totalPages} 页
-            </PageInfo>
-          )}
-        </div>
+                    <PerformanceMetric>
+                      <PerformanceMetricLabel>排序算法:</PerformanceMetricLabel>
+                      <PerformanceMetricValue>{sortingMetrics.algorithm}</PerformanceMetricValue>
+                    </PerformanceMetric>
 
-        <PaginationControls>
-          <PaginationButton
-            onClick={handleFirstPage}
-            disabled={pagination.page <= 1 || loading}
-            title="第一页"
-          >
-            ⇤
-          </PaginationButton>
+                    <PerformanceMetric>
+                      <PerformanceMetricLabel>排序时间:</PerformanceMetricLabel>
+                      <PerformanceMetricValue highlight={sortingMetrics.sortTime < 10}>
+                        {sortingMetrics.sortTime.toFixed(2)} ms
+                      </PerformanceMetricValue>
+                    </PerformanceMetric>
 
-          <PaginationButton
-            onClick={handlePrevPage}
-            disabled={pagination.page <= 1 || loading}
-            title="上一页"
-          >
-            ←
-          </PaginationButton>
+                    <PerformanceMetric>
+                      <PerformanceMetricLabel>缓存命中:</PerformanceMetricLabel>
+                      <PerformanceMetricValue highlight={sortingMetrics.cacheHit}>
+                        {sortingMetrics.cacheHit ? '是' : '否'}
+                      </PerformanceMetricValue>
+                    </PerformanceMetric>
 
-          {totalPages > 1 && (
-            <>
-              <PaginationSeparator />
+                    {sortingMetrics.avgMetrics && (
+                      <>
+                        <PerformanceMetric>
+                          <PerformanceMetricLabel>平均时间:</PerformanceMetricLabel>
+                          <PerformanceMetricValue>
+                            {sortingMetrics.avgMetrics.avgExecutionTime.toFixed(2)} ms
+                          </PerformanceMetricValue>
+                        </PerformanceMetric>
 
-              <GoToPageContainer>
-                <GoToPageLabel>跳转到:</GoToPageLabel>
-                <PaginationInput
-                  type="number"
-                  value={pageInput}
-                  onChange={handlePageInputChange}
-                  onKeyPress={handlePageInputKeyPress}
-                  placeholder={pagination.page.toString()}
-                  min={1}
-                  max={totalPages}
-                />
-                <PaginationButton onClick={handleGoToPage} disabled={!pageInput || loading}>
-                  确定
-                </PaginationButton>
-              </GoToPageContainer>
+                        <PerformanceMetric>
+                          <PerformanceMetricLabel>缓存命中率:</PerformanceMetricLabel>
+                          <PerformanceMetricValue>
+                            {(sortingMetrics.avgMetrics.cacheHitRate * 100).toFixed(1)}%
+                          </PerformanceMetricValue>
+                        </PerformanceMetric>
+                      </>
+                    )}
 
-              <PaginationSeparator />
-            </>
-          )}
+                    <PerformanceMetric>
+                      <PerformanceMetricLabel>排序模式:</PerformanceMetricLabel>
+                      <PerformanceMetricValue highlight>客户端</PerformanceMetricValue>
+                    </PerformanceMetric>
+                  </PerformanceInfoContainer>
+                )}
+              </div>
+            )}
+          </SortControlsContainer>
 
-          <PaginationButton
-            onClick={handleNextPage}
-            disabled={(!pagination.hasMore && pagination.page >= totalPages) || loading}
-            title="下一页"
-          >
-            →
-          </PaginationButton>
-
-          {totalPages > 1 && (
-            <PaginationButton
-              onClick={handleLastPage}
-              disabled={pagination.page >= totalPages || loading}
-              title="最后一页"
+          {/* Advanced Multi-Sort Controls */}
+          {showAdvancedSort && enableMultiSort && multiSort.length > 0 && (
+            <SortControlsContainer
+              style={{ background: '#f1f5f9', paddingTop: '8px', paddingBottom: '8px' }}
             >
-              ⇥
-            </PaginationButton>
+              <div>
+                <SortLabel>多列排序:</SortLabel>
+                <MultiSortContainer>
+                  {multiSort.map(sortConfig => {
+                    const option = availableSortOptions.find(opt => opt.key === sortConfig.key);
+                    return (
+                      <MultiSortTag key={sortConfig.key}>
+                        {option?.label ?? sortConfig.key} (
+                        {sortConfig.direction === 'asc' ? '↑' : '↓'})
+                        <MultiSortRemove onClick={() => removeFromMultiSort(sortConfig.key)}>
+                          ×
+                        </MultiSortRemove>
+                      </MultiSortTag>
+                    );
+                  })}
+                  <AddSortButton onClick={clearMultiSort}>清除全部</AddSortButton>
+                  <AddSortButton onClick={applyMultiSort}>应用多列排序</AddSortButton>
+                </MultiSortContainer>
+              </div>
+            </SortControlsContainer>
           )}
-        </PaginationControls>
-      </PaginationContainer>
+
+          <Table>
+            <TableHeader>
+              <tr>
+                <TableHeaderCell sortable onClick={() => handleSort('block_number')}>
+                  区块号
+                  <SortIndicator>
+                    {sort.field === 'block_number' ? (sort.direction === 'asc' ? '↑' : '↓') : '↕'}
+                  </SortIndicator>
+                </TableHeaderCell>
+                <TableHeaderCell sortable onClick={() => handleSort('block_timestamp')}>
+                  时间
+                  <SortIndicator>
+                    {sort.field === 'block_timestamp'
+                      ? sort.direction === 'asc'
+                        ? '↑'
+                        : '↓'
+                      : '↕'}
+                  </SortIndicator>
+                </TableHeaderCell>
+                <TableHeaderCell sortable onClick={() => handleSort('event_name')}>
+                  事件
+                  <SortIndicator>
+                    {sort.field === 'event_name' ? (sort.direction === 'asc' ? '↑' : '↓') : '↕'}
+                  </SortIndicator>
+                </TableHeaderCell>
+                <TableHeaderCell>发送方</TableHeaderCell>
+                <TableHeaderCell>接收方</TableHeaderCell>
+                <TableHeaderCell>金额</TableHeaderCell>
+                <TableHeaderCell>交易哈希</TableHeaderCell>
+              </tr>
+            </TableHeader>
+            <TableBody>
+              {events.map((event, index) => (
+                <tr key={`${event.transactionHash}-${index}`}>
+                  <TableCell>{event.blockNumber}</TableCell>
+                  <TimestampCell>{formatTimestamp(event.blockTimestamp)}</TimestampCell>
+                  <EventNameCell>{event.eventName}</EventNameCell>
+                  <AddressCell>
+                    {event.from ? (
+                      <a
+                        href={`/chain/${chainId}/address/${event.from}`}
+                        style={{ color: '#4f46e5', textDecoration: 'none' }}
+                      >
+                        {formatAddress(event.from)}
+                      </a>
+                    ) : (
+                      'N/A'
+                    )}
+                  </AddressCell>
+                  <AddressCell>
+                    {event.to ? (
+                      <a
+                        href={`/chain/${chainId}/address/${event.to}`}
+                        style={{ color: '#4f46e5', textDecoration: 'none' }}
+                      >
+                        {formatAddress(event.to)}
+                      </a>
+                    ) : (
+                      'N/A'
+                    )}
+                  </AddressCell>
+                  <ValueCell>{formatValue(event.value)}</ValueCell>
+                  <TransactionHashCell>
+                    <a
+                      href={`/chain/${chainId}/tx/${event.transactionHash}`}
+                      style={{ color: '#4f46e5', textDecoration: 'none' }}
+                    >
+                      {formatTransactionHash(event.transactionHash)}
+                    </a>
+                  </TransactionHashCell>
+                </tr>
+              ))}
+            </TableBody>
+          </Table>
+
+          {/* Loading indicator for pagination */}
+          {loading && events.length > 0 && (
+            <LoadingContainer>
+              <LoadingSpinner />
+              <span style={{ marginLeft: 12 }}>Loading more events...</span>
+            </LoadingContainer>
+          )}
+
+          {/* Error overlay for pagination errors */}
+          {error && events.length > 0 && (
+            <ErrorContainer>
+              <ErrorMessage>Error loading more events</ErrorMessage>
+              <RetryButton onClick={handleRetry}>重试</RetryButton>
+            </ErrorContainer>
+          )}
+
+          {/* Enhanced Pagination controls */}
+          <PaginationContainer>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+              <PaginationInfo>
+                显示第 {pagination.startIndex ?? 1} - {pagination.endIndex ?? events.length} 条， 共{' '}
+                {pagination.total} 条事件
+              </PaginationInfo>
+
+              {totalPages > 1 && (
+                <PageInfo>
+                  第 {pagination.page} / {totalPages} 页
+                </PageInfo>
+              )}
+            </div>
+
+            <PaginationControls>
+              <PaginationButton
+                onClick={handleFirstPage}
+                disabled={pagination.page <= 1 || loading}
+                title="第一页"
+              >
+                ⇤
+              </PaginationButton>
+
+              <PaginationButton
+                onClick={handlePrevPage}
+                disabled={pagination.page <= 1 || loading}
+                title="上一页"
+              >
+                ←
+              </PaginationButton>
+
+              {totalPages > 1 && (
+                <>
+                  <PaginationSeparator />
+
+                  <GoToPageContainer>
+                    <GoToPageLabel>跳转到:</GoToPageLabel>
+                    <PaginationInput
+                      type="number"
+                      value={pageInput}
+                      onChange={handlePageInputChange}
+                      onKeyPress={handlePageInputKeyPress}
+                      placeholder={pagination.page.toString()}
+                      min={1}
+                      max={totalPages}
+                    />
+                    <PaginationButton onClick={handleGoToPage} disabled={!pageInput || loading}>
+                      确定
+                    </PaginationButton>
+                  </GoToPageContainer>
+
+                  <PaginationSeparator />
+                </>
+              )}
+
+              <PaginationButton
+                onClick={handleNextPage}
+                disabled={(!pagination.hasMore && pagination.page >= totalPages) || loading}
+                title="下一页"
+              >
+                →
+              </PaginationButton>
+
+              {totalPages > 1 && (
+                <PaginationButton
+                  onClick={handleLastPage}
+                  disabled={pagination.page >= totalPages || loading}
+                  title="最后一页"
+                >
+                  ⇥
+                </PaginationButton>
+              )}
+            </PaginationControls>
+          </PaginationContainer>
+        </>
+      )}
     </TableContainer>
   );
 };
