@@ -66,7 +66,8 @@ export class ChainEventTableManager {
       };
 
       // 创建事件表
-      await this.chainDb.exec(this.schemaManager.getCreateEventTableSQL(tableName, eventAbi));
+      const createTableSQL = await this.schemaManager.getCreateEventTableSQL(tableName, eventAbi);
+      await this.chainDb.exec(createTableSQL);
 
       // 创建索引
       const indexes = this.schemaManager.getEventTableIndexesSQL(tableName, eventAbi);

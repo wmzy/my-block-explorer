@@ -1,48 +1,107 @@
-/**
- * 链特定表结构管理器
- * 仅保留动态事件表相关的 schema 生成方法
- */
+import { generateDrizzleJson, generateMigration } from 'drizzle-kit/api';
+import { sql } from 'drizzle-orm';
+import {
+  pgTable,
+  varchar,
+  integer,
+  text,
+  boolean,
+  customType,
+  primaryKey,
+} from 'drizzle-orm/pg-core';
+import type { AbiEvent, AbiParameter } from 'viem';
 
-import { AbiEvent, AbiParameter } from 'viem';
+const timestampS = customType<{ data: number; driverData: string }>({
+  dataType: () => 'TIMESTAMP_S',
+  toDriver: (value: number) => {
+    if (typeof value === 'number') {
+      return new Date(value * 1000).toISOString();
+    }
+    return String(value);
+  },
+  fromDriver: (value: string) => Math.floor(new Date(value).getTime() / 1000),
+});
 
-/**
- * 动态事件表 schema 管理器
- */
+const timestampMs = customType<{ data: Date; driverData: string }>({
+  dataType: () => 'TIMESTAMP_MS',
+  toDriver: (value: Date) => value.toISOString(),
+  fromDriver: (value: string) => new Date(value),
+});
+
+function abiTypeToColumn(abiType: string, nullable: boolean) {
+  let col;
+
+  if (abiType === 'bool') {
+    col = boolean();
+  } else if (abiType === 'address') {
+    col = varchar({ length: 42 });
+  } else if (/^bytes(\d+)$/.test(abiType)) {
+    const byteLen = parseInt(abiType.match(/^bytes(\d+)$/)![1]);
+    col = varchar({ length: 2 + byteLen * 2 });
+  } else {
+    // uint*, int*, string, bytes, tuple, arrays → TEXT
+    col = text();
+  }
+
+  return nullable ? col : col.notNull();
+}
+
+function buildEventTableSchema(tableName: string, eventAbi: AbiEvent) {
+  const baseColumns = {
+    blockHash: varchar().notNull(),
+    logIndex: integer().notNull(),
+    transactionHash: varchar().notNull(),
+    transactionIndex: integer(),
+    blockNumber: varchar({ length: 32 }).notNull(), // bignum → VARCHAR(32)
+    contractAddress: varchar().notNull(),
+    eventName: varchar().notNull(),
+    eventSignature: varchar().notNull(),
+  };
+
+  const dynamicColumns: Record<
+    string,
+    ReturnType<typeof text | typeof varchar | typeof boolean>
+  > = {};
+  if (eventAbi.inputs) {
+    for (const input of eventAbi.inputs as (AbiParameter & { indexed?: boolean })[]) {
+      if (!input.name) continue;
+      dynamicColumns[input.name] = abiTypeToColumn(input.type, !input.indexed);
+    }
+  }
+
+  const allColumns = {
+    ...baseColumns,
+    ...dynamicColumns,
+    blockTimestamp: timestampS().notNull(),
+    decodedAt: timestampS().default(sql`CURRENT_TIMESTAMP`),
+    indexedAt: timestampMs().default(sql`CURRENT_TIMESTAMP`),
+  };
+
+  return pgTable(tableName, allColumns, t => [primaryKey({ columns: [t.blockHash, t.logIndex] })]);
+}
+
 export class ChainSchemaManager {
-  constructor(_chainId?: number) {
-    // Kept for backward compatibility but no longer used internally
+  constructor(_chainId?: number) {}
+
+  async getCreateEventTableSQL(tableName: string, eventAbi: AbiEvent): Promise<string> {
+    const eventTable = buildEventTableSchema(tableName, eventAbi);
+
+    const emptySnapshot = generateDrizzleJson({});
+    const fullSnapshot = generateDrizzleJson(
+      { [tableName]: eventTable },
+      undefined,
+      undefined,
+      'snake_case',
+    );
+
+    const sqlStatements = await generateMigration(emptySnapshot, fullSnapshot);
+
+    // drizzle-kit omits IF NOT EXISTS; inject it for idempotent table creation
+    return sqlStatements
+      .map(stmt => stmt.replace('CREATE TABLE', 'CREATE TABLE IF NOT EXISTS'))
+      .join(';\n');
   }
 
-  /**
-   * 创建动态事件表的SQL
-   */
-  getCreateEventTableSQL(tableName: string, eventAbi: AbiEvent): string {
-    const columns = this.generateEventColumns(eventAbi);
-
-    return `
-      CREATE TABLE IF NOT EXISTS ${tableName} (
-        block_hash VARCHAR NOT NULL,
-        log_index INTEGER NOT NULL,
-        transaction_hash VARCHAR NOT NULL,
-        transaction_index INTEGER,
-        block_number BIGINT NOT NULL,
-        block_timestamp TIMESTAMP NOT NULL,
-        contract_address VARCHAR NOT NULL,
-        event_name VARCHAR NOT NULL,
-        event_signature VARCHAR NOT NULL,
-        ${columns.join(',\n        ')}
-        decoded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        indexed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        PRIMARY KEY (block_hash, log_index),
-        FOREIGN KEY (block_number) REFERENCES blocks(number),
-        FOREIGN KEY (transaction_hash) REFERENCES transactions(hash)
-      )
-    `;
-  }
-
-  /**
-   * 生成事件表索引SQL
-   */
   getEventTableIndexesSQL(tableName: string, eventAbi: AbiEvent): string[] {
     const indexes = [
       `CREATE INDEX IF NOT EXISTS idx_${tableName}_block_timestamp ON ${tableName} (block_timestamp)`,
@@ -54,68 +113,15 @@ export class ChainSchemaManager {
     ];
 
     if (eventAbi.inputs) {
-      eventAbi.inputs.forEach((input: AbiParameter & { indexed?: boolean }) => {
+      for (const input of eventAbi.inputs as (AbiParameter & { indexed?: boolean })[]) {
         if (input.indexed && input.name) {
           indexes.push(
             `CREATE INDEX IF NOT EXISTS idx_${tableName}_${input.name} ON ${tableName} (${input.name})`,
           );
         }
-      });
+      }
     }
 
     return indexes;
-  }
-
-  private generateEventColumns(eventAbi: AbiEvent): string[] {
-    if (!eventAbi.inputs) {
-      return [];
-    }
-
-    return eventAbi.inputs.map((input: AbiParameter & { indexed?: boolean }) => {
-      const dbType = this.mapAbiTypeToDb(input.type);
-      const nullable = !input.indexed;
-      return `${input.name} ${dbType}${nullable ? '' : ' NOT NULL'}`;
-    });
-  }
-
-  private mapAbiTypeToDb(abiType: string): string {
-    const typeMapping: Record<string, string> = {
-      'uint': 'TEXT',
-      'int': 'TEXT',
-      'address': 'VARCHAR(42)',
-      'bool': 'BOOLEAN',
-      'bytes': 'TEXT',
-      'string': 'TEXT',
-      'uint256': 'TEXT',
-      'int256': 'TEXT',
-      'address[]': 'TEXT',
-      'uint256[]': 'TEXT',
-      'int256[]': 'TEXT',
-      'bool[]': 'TEXT',
-      'bytes32': 'VARCHAR(66)',
-      'tuple': 'TEXT',
-      'tuple[]': 'TEXT',
-    };
-
-    if (abiType.endsWith('[]')) {
-      return 'TEXT';
-    }
-
-    const uintMatch = abiType.match(/^uint(\d+)$/);
-    if (uintMatch) {
-      return 'TEXT';
-    }
-
-    const intMatch = abiType.match(/^int(\d+)$/);
-    if (intMatch) {
-      return 'TEXT';
-    }
-
-    const bytesMatch = abiType.match(/^bytes(\d+)$/);
-    if (bytesMatch) {
-      return `VARCHAR(${2 + parseInt(bytesMatch[1]) * 2})`;
-    }
-
-    return typeMapping[abiType] || 'TEXT';
   }
 }

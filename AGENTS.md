@@ -48,18 +48,19 @@ block-explorer/
 
 ## CODE MAP
 
-| Symbol                 | Type      | Location                                      | Role                                 |
-| ---------------------- | --------- | --------------------------------------------- | ------------------------------------ |
-| `rpcManager`           | Singleton | `src/services/RpcManager.ts:218`              | Central RPC client manager           |
-| `createDuckDBAdapter`  | Function  | `src/database/duckdb-postgres-adapter.ts:430` | PostgreSQL→DuckDB bridge for Drizzle |
-| `createRpcClient`      | Function  | `src/utils/realTimeData.ts:61`                | Frontend viem client factory         |
-| `indexingQueueService` | Singleton | `src/services/IndexingQueueService.ts`        | Serial queue for range indexing      |
-| `startIndexingRange`   | Function  | `src/services/EventIndexingService.ts`        | Range-based batch indexing entry     |
-| `SegmentedProgressBar` | Component | `src/components/ui/SegmentedProgressBar.tsx`  | Segmented progress bar UI            |
-| `useAddressData`       | Hook      | `src/hooks/useAddressData.ts:44`              | Data separation hook                 |
-| `apiClient`            | Class     | `src/api/client.ts:278`                       | Backend API client                   |
-| `getChainInfo`         | Function  | `src/config/chains.ts:23`                     | Viem chain lookup                    |
-| `honoApiPlugin`        | Plugin    | `vite.config.ts:8-66`                         | Vite→Hono bridge (dev only)          |
+| Symbol                 | Type      | Location                                      | Role                                        |
+| ---------------------- | --------- | --------------------------------------------- | ------------------------------------------- |
+| `rpcManager`           | Singleton | `src/services/RpcManager.ts:218`              | Central RPC client manager                  |
+| `createDuckDBAdapter`  | Function  | `src/database/duckdb-postgres-adapter.ts:430` | PostgreSQL→DuckDB bridge for Drizzle        |
+| `createRpcClient`      | Function  | `src/utils/realTimeData.ts:61`                | Frontend viem client factory                |
+| `indexingQueueService` | Singleton | `src/services/IndexingQueueService.ts`        | Serial queue for range indexing             |
+| `startIndexingRange`   | Function  | `src/services/EventIndexingService.ts`        | Range-based batch indexing entry            |
+| `SegmentedProgressBar` | Component | `src/components/ui/SegmentedProgressBar.tsx`  | Segmented progress bar UI                   |
+| `useAddressData`       | Hook      | `src/hooks/useAddressData.ts:44`              | Data separation hook                        |
+| `apiClient`            | Class     | `src/api/client.ts:278`                       | Backend API client                          |
+| `getChainInfo`         | Function  | `src/config/chains.ts:23`                     | Viem chain lookup                           |
+| `honoApiPlugin`        | Plugin    | `vite.config.ts:8-66`                         | Vite→Hono bridge (dev only)                 |
+| `ChainSchemaManager`   | Class     | `src/database/chain-schema-manager.ts`        | Dynamic event table SQL via drizzle-kit/api |
 
 ## CONVENTIONS
 
