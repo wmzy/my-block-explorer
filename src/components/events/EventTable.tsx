@@ -6,7 +6,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { styled } from '@linaria/react';
 import { Address, formatEther, AbiEvent } from 'viem';
-import DynamicEventFilterForm, { type EventFilters } from './DynamicEventFilterForm';
+import { EventFilterPanel, type EventFilterState } from './EventFilterPanel';
 
 // Types
 type EventData = {
@@ -35,7 +35,7 @@ type EventTableProps = {
   // Enhanced filtering props
   abiEvents?: AbiEvent[];
   enableDynamicFiltering?: boolean;
-  onFiltersChange?: (filters: EventFilters) => void;
+  onFiltersChange?: (filters: EventFilterState) => void;
   refreshKey?: number;
 };
 
@@ -629,6 +629,34 @@ const paginateData = (data: EventData[], page: number, limit: number): EventData
   return data.slice(startIndex, endIndex);
 };
 
+const applyAbiFilters = (events: EventData[], abiFilters?: Record<string, string>): EventData[] => {
+  if (!abiFilters || Object.keys(abiFilters).length === 0) {
+    return events;
+  }
+
+  return events.filter(event => {
+    for (const [key, filterValue] of Object.entries(abiFilters)) {
+      if (!filterValue) continue;
+
+      const eventValue = event[key];
+      if (eventValue === undefined) return false;
+
+      const eventValueStr = String(eventValue).toLowerCase();
+      const filterValueLower = filterValue.toLowerCase();
+
+      if (typeof eventValue === 'string' && eventValue.startsWith('0x')) {
+        if (!eventValueStr.includes(filterValueLower)) return false;
+      } else if (typeof eventValue === 'boolean') {
+        const boolStr = eventValue ? 'true' : 'false';
+        if (boolStr !== filterValueLower) return false;
+      } else {
+        if (eventValueStr !== filterValueLower) return false;
+      }
+    }
+    return true;
+  });
+};
+
 // Default sort options
 const defaultSortOptions: SortOption[] = [
   {
@@ -743,8 +771,7 @@ export const EventTable: React.FC<EventTableProps> = ({
   const [showPerformanceInfo, setShowPerformanceInfo] = useState(false);
 
   // Enhanced filtering state
-  const [dynamicFilters, setDynamicFilters] = useState<EventFilters>({});
-  const [showFilterForm, setShowFilterForm] = useState(enableDynamicFiltering);
+  const [dynamicFilters, setDynamicFilters] = useState<EventFilterState>({});
 
   // Determine if we should use client-side sorting
   // Use pagination.total (server-reported count) instead of allEvents.length (loaded data)
@@ -793,19 +820,16 @@ export const EventTable: React.FC<EventTableProps> = ({
           }
         });
 
-        // Add dynamic filters from ABI-based filtering
-        Object.entries(dynamicFilters).forEach(([key, value]) => {
-          if (value !== undefined && value !== null && value !== '') {
-            if (typeof value === 'object' && value !== null) {
-              const obj = value as Record<string, unknown>;
-              if (obj.from) queryParams.set(`${key}_from`, String(obj.from));
-              if (obj.to) queryParams.set(`${key}_to`, String(obj.to));
-              if (obj.like) queryParams.set(`${key}_like`, String(obj.like));
-            } else {
-              queryParams.set(key, String(value));
-            }
-          }
-        });
+        // Add dynamic filters (backend only supports eventName, fromBlock, toBlock)
+        if (dynamicFilters.eventName) {
+          queryParams.set('eventName', dynamicFilters.eventName);
+        }
+        if (dynamicFilters.fromBlock !== undefined) {
+          queryParams.set('fromBlock', dynamicFilters.fromBlock.toString());
+        }
+        if (dynamicFilters.toBlock !== undefined) {
+          queryParams.set('toBlock', dynamicFilters.toBlock.toString());
+        }
 
         const url = `/api/chains/${chainId}/contracts/${contractAddress}/events?${queryParams}`;
 
@@ -886,13 +910,11 @@ export const EventTable: React.FC<EventTableProps> = ({
     fetchEvents();
   }, [chainId, contractAddress, refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Refetch when filters or pagination change (but not on initial load)
   useEffect(() => {
-    // Skip on initial mount by checking if we already have events
     if (allEvents.length > 0) {
       fetchEvents();
     }
-  }, [dynamicFilters, pagination.limit, sort.field, sort.direction]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [pagination.limit, sort.field, sort.direction]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Enhanced sorting handlers
   const handleSort = (field: string) => {
@@ -1113,46 +1135,47 @@ export const EventTable: React.FC<EventTableProps> = ({
     calculatePaginationInfo();
   }, [calculatePaginationInfo]);
 
-  // Apply client-side sorting and pagination when data changes
   useEffect(() => {
     if (shouldUseClientSideSort) {
       const startTime = performance.now();
 
-      // Apply client-side sorting with performance monitoring
-      const sortedData = clientSideSort(allEvents, multiSort, sort);
-
-      // Apply client-side pagination
+      const filteredData = applyAbiFilters(allEvents, dynamicFilters.abiFilters);
+      const sortedData = clientSideSort(filteredData, multiSort, sort);
       const paginatedData = paginateData(sortedData, pagination.page, pagination.limit);
 
       const sortTime = performance.now() - startTime;
 
-      // Get performance metrics from the monitor
       const avgMetrics = sortingPerformanceMonitor.getAverageMetrics();
       const recentMetrics = sortingPerformanceMonitor.getMetricsByAlgorithm();
 
       setEvents(paginatedData);
       setSortingMetrics({
         sortTime,
-        dataSize: allEvents.length,
+        dataSize: filteredData.length,
         algorithm: recentMetrics['optimized'] ? 'optimized' : 'standard',
-        cacheHit: sortTime < 5, // Assume cache hit if very fast
+        cacheHit: sortTime < 5,
         avgMetrics,
       });
 
-      // Update pagination info for client-side data
       setPagination(prev => ({
         ...prev,
-        total: allEvents.length,
-        hasMore: pagination.page * pagination.limit < allEvents.length,
-        totalPages: Math.ceil(allEvents.length / pagination.limit),
+        total: filteredData.length,
+        hasMore: pagination.page * pagination.limit < filteredData.length,
+        totalPages: Math.ceil(filteredData.length / pagination.limit),
       }));
     } else {
-      // For server-side sorting, use the events from fetchEvents directly
-      // fetchEvents already returns the correct page of data in allEvents
       setEvents(allEvents);
       setSortingMetrics(null);
     }
-  }, [allEvents, sort, multiSort, pagination.page, pagination.limit, shouldUseClientSideSort]);
+  }, [
+    allEvents,
+    sort,
+    multiSort,
+    pagination.page,
+    pagination.limit,
+    shouldUseClientSideSort,
+    dynamicFilters,
+  ]);
 
   const handleRetry = () => {
     setError(null);
@@ -1161,39 +1184,24 @@ export const EventTable: React.FC<EventTableProps> = ({
 
   // Enhanced filtering handlers
   const handleFilterChange = useCallback(
-    (newFilters: EventFilters) => {
+    (newFilters: EventFilterState) => {
       setDynamicFilters(newFilters);
       onFiltersChange?.(newFilters);
-
-      // Reset pagination and refetch
-      setPagination(prev => ({ ...prev, page: 1, nextCursor: undefined }));
     },
     [onFiltersChange],
   );
 
   const handleFilterApply = useCallback(
-    (appliedFilters: EventFilters) => {
+    (appliedFilters: EventFilterState) => {
       setDynamicFilters(appliedFilters);
       onFiltersChange?.(appliedFilters);
 
       // Reset pagination and refetch
       setPagination(prev => ({ ...prev, page: 1, nextCursor: undefined }));
+      fetchEvents(undefined, 1);
     },
-    [onFiltersChange],
+    [onFiltersChange, fetchEvents],
   );
-
-  const toggleFilterForm = useCallback(() => {
-    setShowFilterForm(prev => !prev);
-  }, []);
-
-  const clearAllFilters = useCallback(() => {
-    setDynamicFilters({});
-    onFiltersChange?.({});
-
-    // Reset pagination and refetch
-    setPagination(prev => ({ ...prev, page: 1, nextCursor: undefined }));
-    fetchEvents(undefined, 1);
-  }, [onFiltersChange, fetchEvents]);
 
   // Render loading state
   if (loading && events.length === 0) {
@@ -1220,97 +1228,16 @@ export const EventTable: React.FC<EventTableProps> = ({
     );
   }
 
-  const hasActiveFilters =
-    Object.keys(dynamicFilters).length > 0 &&
-    Object.values(dynamicFilters).some(
-      value =>
-        value !== null &&
-        value !== undefined &&
-        value !== '' &&
-        (typeof value !== 'object' ||
-          Object.values(value).some(v => v !== null && v !== undefined && v !== '')),
-    );
-
   return (
     <TableContainer className={className}>
-      {/* Enhanced Filtering Controls */}
-      {enableDynamicFiltering && (
-        <div
-          style={{
-            background: '#f8fafc',
-            borderBottom: '1px solid #e2e8f0',
-            padding: '16px',
-          }}
-        >
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginBottom: showFilterForm ? '16px' : '0',
-            }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <h4 style={{ margin: 0, fontSize: '16px', fontWeight: '600' }}>Event Filters</h4>
-              {hasActiveFilters && (
-                <span
-                  style={{
-                    background: '#007bff',
-                    color: 'white',
-                    padding: '2px 8px',
-                    borderRadius: '12px',
-                    fontSize: '12px',
-                  }}
-                >
-                  {Object.keys(dynamicFilters).length} active
-                </span>
-              )}
-            </div>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <button
-                onClick={toggleFilterForm}
-                style={{
-                  padding: '6px 12px',
-                  background: showFilterForm ? '#e3f2fd' : '#f8f9fa',
-                  border: '1px solid #dee2e6',
-                  borderRadius: '4px',
-                  cursor: 'pointer',
-                  fontSize: '12px',
-                }}
-              >
-                {showFilterForm ? 'Hide Filters' : 'Show Filters'}
-              </button>
-              {hasActiveFilters && (
-                <button
-                  onClick={clearAllFilters}
-                  style={{
-                    padding: '6px 12px',
-                    background: '#dc3545',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: 'pointer',
-                    fontSize: '12px',
-                  }}
-                >
-                  Clear All
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* Dynamic Filter Form */}
-          {showFilterForm && abiEvents.length > 0 && (
-            <DynamicEventFilterForm
-              contractAddress={contractAddress}
-              abiEvents={abiEvents}
-              onFilterChange={handleFilterChange}
-              onApplyFilters={handleFilterApply}
-              initialFilters={dynamicFilters}
-              disabled={loading}
-            />
-          )}
-        </div>
+      {enableDynamicFiltering && abiEvents.length > 0 && (
+        <EventFilterPanel
+          abiEvents={abiEvents}
+          initialFilters={dynamicFilters}
+          onApply={handleFilterApply}
+          onFiltersChange={handleFilterChange}
+          disabled={loading}
+        />
       )}
 
       {events.length === 0 && !loading ? (
