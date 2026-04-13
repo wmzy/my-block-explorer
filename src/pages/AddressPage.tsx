@@ -5,6 +5,7 @@ import { getChainInfo, getChainName, getChainSymbol } from '../config/chains';
 import TopNavigation from '../components/TopNavigation';
 import { useAddressData } from '../hooks/useAddressData';
 import { formatRelativeTime } from '@/utils/format';
+import { getExternalToolLinks } from '@/config/externalTools';
 import { PageContainer, PageHeader, BackButton } from '@/components/ui/PageLayout';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { InfoGrid, InfoItem } from '@/components/ui/InfoGrid';
@@ -14,6 +15,7 @@ import { ErrorState } from '@/components/ui/ErrorState';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { CopyableHash } from '@/components/ui/CopyableHash';
+import { ExternalLinks } from '@/components/ui/ExternalLinks';
 import { Alert } from 'haze-ui';
 
 const headerRow = css`
@@ -83,11 +85,9 @@ export default function AddressPage() {
         if (data.pagination) {
           setTxTotalPages(data.pagination.totalPages ?? 1);
         }
-      }
-      catch (err) {
+      } catch (err) {
         setTxError(err instanceof Error ? err.message : 'Failed to fetch transactions');
-      }
-      finally {
+      } finally {
         setTxLoading(false);
       }
     },
@@ -120,8 +120,7 @@ export default function AddressPage() {
       if (v === 0) return `0 ${symbol}`;
       if (v < 0.0001) return `<0.0001 ${symbol}`;
       return `${v.toFixed(4)} ${symbol}`;
-    }
-    catch {
+    } catch {
       return value;
     }
   };
@@ -130,11 +129,11 @@ export default function AddressPage() {
     navigate(`/chain/${newChainId}/address/${address}`, { replace: true });
   };
 
-  const isInitialLoading
-    = addressData.loading.persistent
-      && addressData.loading.realTime
-      && !addressData.persistent
-      && !addressData.realTime;
+  const isInitialLoading =
+    addressData.loading.persistent &&
+    addressData.loading.realTime &&
+    !addressData.persistent &&
+    !addressData.realTime;
   const hasError = addressData.error.persistent ?? addressData.error.realTime;
   const errorMessage = addressData.error.persistent ?? addressData.error.realTime;
   if (!chainInfo) {
@@ -218,15 +217,15 @@ export default function AddressPage() {
                     <InfoItem label="Contract Name">{addressData.persistent.contractName}</InfoItem>
                   )}
 
-                  {addressData.persistent?.isContract
-                    && addressData.persistent.verificationStatus && (
-                    <InfoItem label="Verification Status">
-                      {addressData.persistent.verificationStatus === 'verified' && 'Verified'}
-                      {addressData.persistent.verificationStatus === 'partial'
-                        && 'Partially Verified'}
-                      {addressData.persistent.verificationStatus === 'unverified' && 'Unverified'}
-                    </InfoItem>
-                  )}
+                  {addressData.persistent?.isContract &&
+                    addressData.persistent.verificationStatus && (
+                      <InfoItem label="Verification Status">
+                        {addressData.persistent.verificationStatus === 'verified' && 'Verified'}
+                        {addressData.persistent.verificationStatus === 'partial' &&
+                          'Partially Verified'}
+                        {addressData.persistent.verificationStatus === 'unverified' && 'Unverified'}
+                      </InfoItem>
+                    )}
 
                   {addressData.persistent?.isContract && (
                     <InfoItem label="Contract">
@@ -271,6 +270,10 @@ export default function AddressPage() {
                   )}
 
                   <InfoItem label="Last Updated">{new Date().toLocaleString()}</InfoItem>
+
+                  <InfoItem label="External Tools">
+                    <ExternalLinks links={getExternalToolLinks(currentChainId, address)} />
+                  </InfoItem>
                 </InfoGrid>
               </CardContent>
             </Card>
@@ -300,33 +303,27 @@ export default function AddressPage() {
 
                 {txError && <ErrorState message={txError} />}
 
-                {!txLoading
-                  && !txError
-                  && transactions.length === 0
-                  && txTotal > 0
-                  && txMethod === 'binary-search-skipped' && (
-                  <Alert variant="info">
-                    Cannot discover transactions for this address. This address has
-                    {' '}
-                    {txTotal}
-                    {' '}
-                    nonce but 0 native token balance.
-                  </Alert>
-                )}
+                {!txLoading &&
+                  !txError &&
+                  transactions.length === 0 &&
+                  txTotal > 0 &&
+                  txMethod === 'binary-search-skipped' && (
+                    <Alert variant="info">
+                      Cannot discover transactions for this address. This address has {txTotal}{' '}
+                      nonce but 0 native token balance.
+                    </Alert>
+                  )}
 
-                {!txLoading
-                  && !txError
-                  && transactions.length === 0
-                  && txTotal > 0
-                  && txMethod !== 'binary-search-skipped' && (
-                  <Alert variant="warning">
-                    No transactions found in recent blocks. This address has
-                    {' '}
-                    {txTotal}
-                    {' '}
-                    transactions, but they may be outside the search range.
-                  </Alert>
-                )}
+                {!txLoading &&
+                  !txError &&
+                  transactions.length === 0 &&
+                  txTotal > 0 &&
+                  txMethod !== 'binary-search-skipped' && (
+                    <Alert variant="warning">
+                      No transactions found in recent blocks. This address has {txTotal}{' '}
+                      transactions, but they may be outside the search range.
+                    </Alert>
+                  )}
 
                 {!txLoading && !txError && transactions.length === 0 && txTotal === 0 && (
                   <Alert variant="info">No transactions found</Alert>
@@ -334,14 +331,7 @@ export default function AddressPage() {
 
                 {!txLoading && transactions.length > 0 && txMethod === 'binary-search' && (
                   <div className={infoNote}>
-                    Found
-                    {' '}
-                    {transactions.length}
-                    {' '}
-                    of ~
-                    {txTotal}
-                    {' '}
-                    transactions via balance-change binary
+                    Found {transactions.length} of ~{txTotal} transactions via balance-change binary
                     search.
                   </div>
                 )}
@@ -361,7 +351,7 @@ export default function AddressPage() {
                         </tr>
                       </thead>
                       <tbody>
-                        {transactions.map((tx) => {
+                        {transactions.map(tx => {
                           const dir = getDirection(tx);
                           return (
                             <tr key={tx.hash}>
