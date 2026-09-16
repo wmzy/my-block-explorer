@@ -33,6 +33,15 @@ const realTimeData = (balance: string): RealTimeAddressData => ({
   balanceWei: `${balance}000000000000000000`,
   transactionCount: 42,
   latestBlock: 18_000_000,
+  // The service stamps the real clock at success time; assertions compare
+  // RPC fields and only require a numeric stamp (see honesty test below).
+  lastUpdatedAt: Date.now(),
+});
+
+/** Full-value matcher that ignores the exact clock of the stamped timestamp. */
+const settledLike = (balance: string) => ({
+  ...realTimeData(balance),
+  lastUpdatedAt: expect.any(Number) as number,
 });
 
 function deferred<T>() {
@@ -79,7 +88,7 @@ describe('useRealTimeAddressData', () => {
     expect(result.current.error).toBeUndefined();
 
     await waitFor(() => expect(result.current.loading).toBe(false));
-    expect(result.current.data).toEqual(realTimeData('1.0'));
+    expect(result.current.data).toEqual(settledLike('1.0'));
     expect(result.current.error).toBeUndefined();
     expect(mockedRealTime).toHaveBeenCalledWith(testChainId, testAddress);
   });
@@ -97,6 +106,28 @@ describe('useRealTimeAddressData', () => {
     expect(result.current.loading).toBe(false);
   });
 
+  it('stamps lastUpdatedAt at success time — never on failure', async () => {
+    // Success path: the stamp is the clock at fetch completion.
+    mockedRealTime.mockResolvedValue(realTimeData('1.0'));
+    const before = Date.now();
+    const success = renderHook(() => useRealTimeAddressData(testChainId, testAddress));
+    await waitFor(() => expect(success.result.current.loading).toBe(false));
+    const after = Date.now();
+    const stamped = success.result.current.data?.lastUpdatedAt;
+    expect(typeof stamped).toBe('number');
+    expect(stamped).toBeGreaterThanOrEqual(before);
+    expect(stamped).toBeLessThanOrEqual(after);
+    success.unmount();
+
+    // Failure path: no entry, hence no timestamp to mislead the UI with.
+    mockedRealTime.mockRejectedValue(new Error('Real-time data fetch failed'));
+    const failure = renderHook(() =>
+      useRealTimeAddressData(testChainId, otherAddress),
+    );
+    await waitFor(() => expect(failure.result.current.loading).toBe(false));
+    expect(failure.result.current.data).toBeUndefined();
+  });
+
   it('switching address honestly re-enters loading until the new key settles', async () => {
     const forFirst = deferred<RealTimeAddressData>();
     const forSecond = deferred<RealTimeAddressData>();
@@ -112,7 +143,7 @@ describe('useRealTimeAddressData', () => {
       forFirst.resolve(realTimeData('1.0'));
     });
     await waitFor(() => {
-      expect(result.current.data).toEqual(realTimeData('1.0'));
+      expect(result.current.data).toEqual(settledLike('1.0'));
       expect(result.current.loading).toBe(false);
     });
 
@@ -127,7 +158,7 @@ describe('useRealTimeAddressData', () => {
       forSecond.resolve(realTimeData('2.0'));
     });
     await waitFor(() => {
-      expect(result.current.data).toEqual(realTimeData('2.0'));
+      expect(result.current.data).toEqual(settledLike('2.0'));
       expect(result.current.loading).toBe(false);
     });
   });
@@ -153,13 +184,13 @@ describe('useRealTimeAddressData', () => {
     await act(async () => {
       resolvers[1](realTimeData('2.0'));
     });
-    await waitFor(() => expect(result.current.data).toEqual(realTimeData('2.0')));
+    await waitFor(() => expect(result.current.data).toEqual(settledLike('2.0')));
 
     // The stale entry resolves afterwards — the newer data stays put.
     await act(async () => {
       resolvers[0](realTimeData('1.0'));
     });
-    expect(result.current.data).toEqual(realTimeData('2.0'));
+    expect(result.current.data).toEqual(settledLike('2.0'));
   });
 });
 

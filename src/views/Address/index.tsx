@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { css } from '@linaria/core';
 import { TypedLink, useMatched } from '@native-router/react';
 import { navigate } from '@native-router/core';
+import { formatUnits } from 'viem';
 import { Alert } from 'haze-ui';
 import { getChainInfo, getChainName, getChainSymbol } from '@/config/chains';
 import TopNavigation from '@/components/TopNavigation';
@@ -146,10 +147,24 @@ export default function Address() {
   const formatAddr = (a: string) => (a ? `${a.slice(0, 8)}...${a.slice(-6)}` : 'N/A');
   const formatHash = (h: string) => (h ? `${h.slice(0, 10)}...${h.slice(-8)}` : '');
 
+  // BigInt-safe block number display; falls back to the raw string when a
+  // row arrives without a parseable number (pending txs).
+  const formatBlockNumber = (n: string) => {
+    try {
+      return Number(BigInt(n)).toLocaleString();
+    } catch {
+      return n;
+    }
+  };
+
   const formatTxValue = (value: string) => {
     const symbol = getChainSymbol(currentChainId);
     try {
-      const v = parseFloat(value) / 1e18;
+      // BigInt-safe wei → whole-token conversion honoring the chain's
+      // native-currency decimals (most are 18; parseFloat/1e18 would both
+      // hardcode the wrong divisor and lose precision past 2^53).
+      const decimals = chainInfo?.nativeCurrency.decimals ?? 18;
+      const v = Number(formatUnits(BigInt(value), decimals));
       if (v === 0) return `0 ${symbol}`;
       if (v < 0.0001) return `<0.0001 ${symbol}`;
       return `${v.toFixed(4)} ${symbol}`;
@@ -290,7 +305,12 @@ export default function Address() {
 
                   {persistent?.contractCreator && (
                     <InfoItem label="Contract Creator">
-                      {formatAddr(persistent.contractCreator)}
+                      <TypedLink
+                        to={`/chain/${currentChainId}/address/${persistent.contractCreator}`}
+                        className={linkStyle}
+                      >
+                        {formatAddr(persistent.contractCreator)}
+                      </TypedLink>
                     </InfoItem>
                   )}
 
@@ -313,7 +333,11 @@ export default function Address() {
                     </InfoItem>
                   )}
 
-                  <InfoItem label="Last Updated">{new Date().toLocaleString()}</InfoItem>
+                  {realTimeQuery.data && (
+                    <InfoItem label="Last Updated">
+                      Updated {formatRelativeTime(realTimeQuery.data.lastUpdatedAt)}
+                    </InfoItem>
+                  )}
 
                   <InfoItem label="External Tools">
                     <ExternalLinks links={getExternalToolLinks(currentChainId, address)} />
@@ -353,8 +377,9 @@ export default function Address() {
                   txTotal > 0 &&
                   txMethod === 'binary-search-skipped' && (
                   <Alert variant="info">
-                    Cannot discover transactions for this address. This address has {txTotal}{' '}
-                    nonce but 0 native token balance.
+                    This address has {txTotal} transactions but no native token balance.
+                    Transaction history is discovered by scanning balance changes; contract
+                    interactions and token transfers may not appear.
                   </Alert>
                 )}
 
@@ -411,7 +436,7 @@ export default function Address() {
                                   to={`/chain/${currentChainId}/block/${tx.blockNumber}`}
                                   className={linkStyle}
                                 >
-                                  {parseInt(tx.blockNumber).toLocaleString()}
+                                  {formatBlockNumber(tx.blockNumber)}
                                 </TypedLink>
                               </td>
                               <td>{tx.timestamp ? formatRelativeTime(tx.timestamp) : 'N/A'}</td>

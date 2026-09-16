@@ -17,6 +17,12 @@ export type RealTimeAddressData = {
   balanceWei: string;
   transactionCount: number;
   latestBlock: number;
+  // Freshness stamp (ms since epoch) of the successful RPC read that
+  // produced this payload. Recorded only on the success path, so views can
+  // render an honest "Updated <relative time>" and stay silent before the
+  // first successful fetch. Cached entries keep the stamp of the fetch
+  // that filled them — the moment the shown numbers were actually read.
+  lastUpdatedAt: number;
 };
 
 // viem's getCode resolves the deployed bytecode hex ('0x' for EOAs) or
@@ -25,12 +31,15 @@ export type ContractCode = Awaited<ReturnType<typeof getContractCode>>;
 
 // Gated fetches: invalid args resolve undefined without touching the RPC —
 // the same disabled shape the other services use for gated keys.
-export function fetchRealTimeAddressData(
+export async function fetchRealTimeAddressData(
   chainId: number,
   address: string,
 ): Promise<RealTimeAddressData | undefined> {
-  if (!(chainId > 0) || address.length === 0) return Promise.resolve(undefined);
-  return getRealTimeAddressData(chainId, address);
+  if (!(chainId > 0) || address.length === 0) return undefined;
+  const data = await getRealTimeAddressData(chainId, address);
+  // Success-only stamp: reached only after the RPC reads resolve, so a
+  // failed or in-flight fetch never records an update time.
+  return { ...data, lastUpdatedAt: Date.now() };
 }
 
 export function fetchContractCode(

@@ -4,10 +4,14 @@
 // /transactions endpoints only serve indexed chains; mainnet rows are absent
 // until an indexing run, so the list/detail views cannot consume them.
 //
-// Pagination is cursor-based (beforeBlock), mirroring the old pages: page 1
-// fetches the head and returns latestBlockNumber; page N computes its cursor
-// from that number. Caches are keyed by the cursor, so the head entry stays
-// warm while paging.
+// Pagination is cursor-based, mirroring the old pages: page 1 fetches the
+// head and returns latestBlockNumber; later pages resume from a cursor and
+// caches are keyed by it, so the head entry stays warm while paging. Blocks
+// stride by a plain block-number cursor; transactions use a composite
+// (blockNumber * 1_000_000 + transactionIndex) cursor — a page collects
+// strictly older positions and explicitly reports hasMore/nextCursor, so
+// dense chains keep every transaction and sparse chains page past empty
+// blocks (see getLatestTransactions in utils/blockRpcData).
 import type { RpcBlock, RpcTransaction } from '@/utils/blockRpcData';
 import {
   getBlockByNumber,
@@ -25,6 +29,10 @@ export type LatestBlocksPage = {
 export type LatestTransactionsPage = {
   transactions: RpcTransaction[];
   latestBlockNumber: bigint;
+  /** false only when the walk consumed every block down to genesis. */
+  hasMore: boolean;
+  /** Continuation cursor for the next page; undefined when hasMore is false. */
+  nextCursor: bigint | undefined;
 };
 
 // bigint is not a stable hash-args key across serializations; the cursor
@@ -44,13 +52,13 @@ async function fetchLatestBlocks(
 async function fetchLatestTransactions(
   chainId: number,
   limit: number,
-  beforeBlockStr?: string,
+  cursorStr?: string,
   signal?: AbortSignal,
 ): Promise<LatestTransactionsPage | undefined> {
   if (!(chainId > 0) || limit <= 0) return undefined;
-  const beforeBlock = beforeBlockStr !== undefined ? BigInt(beforeBlockStr) : undefined;
+  const cursor = cursorStr !== undefined ? BigInt(cursorStr) : undefined;
   void signal;
-  return getLatestTransactions(chainId, limit, beforeBlock);
+  return getLatestTransactions(chainId, limit, cursor);
 }
 
 async function fetchBlockByNumber(
@@ -116,12 +124,12 @@ export function useLatestBlocks(chainId: number, limit: number, beforeBlock?: bi
   ]);
 }
 
-/** Latest transactions page (5-block cursor stride, matching the old page). */
-export function useLatestTransactions(chainId: number, limit: number, beforeBlock?: bigint) {
+/** Latest transactions page; omit the cursor for the head page. */
+export function useLatestTransactions(chainId: number, limit: number, cursor?: bigint) {
   return useLatestTransactionsQuery([
     chainId,
     limit,
-    beforeBlock !== undefined ? beforeBlock.toString() : undefined,
+    cursor !== undefined ? cursor.toString() : undefined,
   ]);
 }
 

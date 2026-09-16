@@ -141,10 +141,14 @@ describe('Chains Configuration', () => {
   });
 
   describe('getSortedChains', () => {
-    it('应该返回排序后的链列表', () => {
+    it('returns every supported chain id exactly once', () => {
       const sortedChains = getSortedChains();
       expect(Array.isArray(sortedChains)).toBe(true);
-      expect(sortedChains.length).toBe(SUPPORTED_CHAINS.length);
+      // viem's barrel exports contain alias duplicates (same chain id under
+      // different exports); the sorted list must serve each id once.
+      const ids = sortedChains.map(chain => chain.id);
+      expect(new Set(ids).size).toBe(ids.length);
+      expect(ids.length).toBe(new Set(SUPPORTED_CHAINS.map(c => c.id)).size);
     });
 
     it('热门链应该排在前面', () => {

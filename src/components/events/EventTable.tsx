@@ -11,7 +11,8 @@ import { EventFilterPanel, type EventFilterState } from './EventFilterPanel';
 // Types
 type EventData = {
   blockNumber: number;
-  blockTimestamp: string;
+  // null when the block timestamp could not be fetched; rendered as a placeholder
+  blockTimestamp: string | null;
   transactionHash: `0x${string}`;
   eventName: string;
   from?: string;
@@ -545,9 +546,13 @@ const formatTransactionHash = (hash: string): string => {
   return `${hash.slice(0, 10)}...${hash.slice(-8)}`;
 };
 
-const formatTimestamp = (timestamp: string): string => {
+const formatTimestamp = (timestamp: string | null | undefined): string => {
+  // Missing (never-fetched) or unparseable timestamps render as an explicit
+  // placeholder instead of a fabricated or Invalid Date.
+  if (!timestamp) return '—';
   try {
     const date = new Date(timestamp);
+    if (Number.isNaN(date.getTime())) return '—';
     return date.toLocaleString('en-US', {
       year: 'numeric',
       month: 'short',
@@ -558,7 +563,7 @@ const formatTimestamp = (timestamp: string): string => {
       hour12: false,
     });
   } catch {
-    return 'Invalid timestamp';
+    return '—';
   }
 };
 
@@ -847,7 +852,7 @@ export const EventTable: React.FC<EventTableProps> = ({
         const data = (await response.json()) as {
           events: Array<{
             decodedArgs?: string | Record<string, unknown>;
-            blockTimestamp?: number | string;
+            blockTimestamp?: number | string | null;
             [key: string]: unknown;
           }>;
           total?: number;
@@ -866,10 +871,11 @@ export const EventTable: React.FC<EventTableProps> = ({
                   }
                 })()
               : (e.decodedArgs ?? {});
+          // null (timestamp never fetched) stays null and renders as a placeholder
           const blockTimestamp =
             typeof e.blockTimestamp === 'number'
               ? new Date(e.blockTimestamp * 1000).toISOString()
-              : e.blockTimestamp;
+              : (e.blockTimestamp ?? null);
           return { ...args, ...e, blockTimestamp } as EventData;
         });
 

@@ -38,8 +38,14 @@ describe('route table', () => {
     ]);
   });
 
-  it('redirects \'/\' to the Ethereum home with replace semantics', () => {
-    expect(byPath('/').redirect).toEqual({ path: '/chain/1', replace: true });
+  it('renders the dynamic landing component on \'/\' (remembered-chain redirect)', async () => {
+    // Landing replaces the old static `redirect: {path: '/chain/1'}`: the
+    // target is resolved at runtime (remembered chain → preferred chain),
+    // so the route table must no longer hardcode any chain target.
+    expect(children.every(r => r.redirect === undefined)).toBe(true);
+    const load = byPath('/').component as LazyView;
+    const mod = await load();
+    expect(typeof mod.default).toBe('function');
   });
 
   it('wires the immutable contract-source loader on both contract routes', () => {

@@ -2,10 +2,12 @@ import { Hono } from 'hono';
 import { searchService } from '../services/SearchService';
 import {
   getChainName,
+  getSortedChains,
   getSupportedChainIds,
   isChainSupported,
   getChainSymbol,
 } from '../config/chains';
+import { detectSearchType, sanitizeInput } from '../utils/validation';
 import { safeJsonResponse } from '../utils/serialization';
 import { createLogger } from '../server/logger';
 
@@ -39,10 +41,29 @@ app.get('/search', async (c) => {
   }
 
   try {
+    // Same detection as every other entry point (utils/validation is the
+    // single source of truth). Transaction/block hashes and block numbers
+    // are chain-relative: without a chain in scope the global endpoint
+    // cannot resolve them, so it reports the ambiguity plus the chains to
+    // retry on instead of silently searching one default chain.
+    const sanitized = sanitizeInput(query.trim());
+    const searchType = detectSearchType(sanitized);
+
+    if (searchType === 'hash' || searchType === 'block') {
+      return c.json({
+        found: false,
+        needsChain: true,
+        type: searchType === 'hash' ? 'transaction' : 'block',
+        query: sanitized,
+        supportedChains: getSortedChains().map(chain => ({ chainId: chain.id, name: chain.name })),
+        timestamp: new Date().toISOString(),
+      });
+    }
+
     const chainIds = getSupportedChainIds();
     const defaultChainId = chainIds[0] ?? 1;
 
-    const result = await searchService.search(defaultChainId, query);
+    const result = await searchService.search(defaultChainId, sanitized);
     return c.json({
       ...result,
       timestamp: new Date().toISOString(),

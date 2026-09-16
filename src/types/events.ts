@@ -541,8 +541,9 @@ export type DecodedEvent = {
   transactionIndex: number;
   logIndex: number;
 
-  // 时间信息
-  blockTimestamp: number;
+  // 时间信息 — null when the block timestamp could not be fetched; never a
+  // fabricated placeholder.
+  blockTimestamp: number | null;
 
   // 解码数据
   args: DecodedEventData;

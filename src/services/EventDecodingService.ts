@@ -99,8 +99,8 @@ export class EventDecodingService {
         transactionIndex: log.transactionIndex!,
         logIndex: log.logIndex!,
 
-        // 时间信息
-        blockTimestamp: blockTimestamp ?? 0,
+        // 时间信息 — absent stays null; a zero would fake epoch time
+        blockTimestamp: blockTimestamp ?? null,
 
         // 解码数据
         args: formattedArgs,

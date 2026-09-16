@@ -11,6 +11,7 @@ import {
 } from '@/utils/contractInteraction';
 import { FunctionCallForm } from './FunctionCallForm';
 import { cardStyles } from './styles';
+import { argsKey } from './types';
 import type { ContractSource } from './types';
 
 const functionListStyles = css`
@@ -135,6 +136,11 @@ export function ContractInteract({
   useEffect(() => {
     if (contractSource?.abi) {
       loadContractFunctions();
+    } else {
+      // Nothing to parse without an ABI: stop loading so the
+      // 'Contract ABI not available' fallback below is reachable instead
+      // of an endless spinner.
+      setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reload only when the contract data itself changes
   }, [chainId, contractAddress, contractSource]);
@@ -172,10 +178,11 @@ export function ContractInteract({
   const callReadFunction = async (
     functionName: string,
     args: unknown[],
+    rawArgs: string[],
     _value?: string,
     _from?: string,
   ) => {
-    const key = `${functionName}-${JSON.stringify(args)}-${globalBlockNumber || 'latest'}`;
+    const key = `${functionName}-${argsKey(rawArgs)}-${globalBlockNumber || 'latest'}`;
 
     try {
       setLoadingStates(prev => ({ ...prev, [key]: true }));
@@ -222,10 +229,11 @@ export function ContractInteract({
   const simulateWriteFunction = async (
     functionName: string,
     args: unknown[],
+    rawArgs: string[],
     value?: string,
     from?: string,
   ) => {
-    const key = `${functionName}-${JSON.stringify(args)}-${value ?? ''}-${from ?? ''}`;
+    const key = `${functionName}-${argsKey(rawArgs)}-${value ?? ''}-${from ?? ''}`;
 
     try {
       setLoadingStates(prev => ({ ...prev, [key]: true }));
@@ -383,11 +391,9 @@ export function ContractInteract({
         </div>
       </div>
 
-      {!isProxyMode && (
-        <div style={{ marginBottom: '16px', fontSize: '14px', color: '#666' }}>
-          Write functions are simulations only. To execute transactions, use a Web3 wallet.
-        </div>
-      )}
+      <div style={{ marginBottom: '16px', fontSize: '14px', color: '#666' }}>
+        Write functions are simulations only. To execute transactions, use a Web3 wallet.
+      </div>
 
       {filteredFunctions.length > 0 ? (
         <div className={functionListStyles}>

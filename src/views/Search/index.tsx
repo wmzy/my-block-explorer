@@ -1,25 +1,21 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { css } from '@linaria/core';
+import { z } from 'zod';
 import { Input } from 'haze-ui';
 import { navigate } from '@native-router/core';
-import { useRouter } from '@native-router/react';
+import { useRouter, useSearch } from '@native-router/react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { ErrorState } from '@/components/ui/ErrorState';
-import { fetchChainSearch, fetchSearch } from '@/services/search';
+import { getChainName } from '@/config/chains';
+import { fetchChainSearch, fetchSearch, type SearchResult } from '@/services/search';
 import { detectSearchType, sanitizeInput } from '@/utils/validation';
 import type { Block, Transaction, AddressInfo } from '@/types/blockchain';
 
-type SearchData = Block | Transaction | AddressInfo;
-
-type SearchResult = {
-  found: boolean;
-  type: string;
-  data?: SearchData;
-  chainId?: number;
-  supportedChains?: Array<{ chainId: number; name: string }>;
-};
+const searchSchema = z.object({
+  q: z.string().optional().catch(undefined),
+});
 
 const searchContainer = css`
   max-width: 600px;
@@ -81,15 +77,25 @@ const chainId = css`
   color: var(--haze-color-text-secondary);
 `;
 
+const suggestionList = css`
+  margin-top: var(--haze-space-3);
+  font-size: var(--haze-text-xs);
+  color: var(--haze-color-text-secondary);
+  line-height: 1.6;
+`;
+
 const exampleQueries = [
-  { label: 'Address', value: '0x742d35Cc6634C0532925a3b8D489319BaAE7fe', type: 'address' },
+  {
+    label: 'Address',
+    value: '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045',
+    type: 'address',
+  },
   {
     label: 'Tx Hash',
     value: '0x5c504ed432cb51138bcf09aa5e8a410dd4a1e204ef84bfed1be16dfba1b22060',
     type: 'hash',
   },
   { label: 'Block Number', value: '18000000', type: 'block' },
-  { label: 'ENS', value: 'vitalik.eth', type: 'ens' },
 ];
 
 export default function Search() {
@@ -98,6 +104,8 @@ export default function Search() {
   const [result, setResult] = useState<SearchResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
+  const { q: qParam } = useSearch(searchSchema);
+  const deepLinkedRef = useRef(false);
 
   const handleSearch = async (searchQuery = query) => {
     if (!searchQuery.trim()) return;
@@ -117,7 +125,7 @@ export default function Search() {
     setResult(null);
 
     try {
-      const searchResult = (await fetchSearch(sanitized)) as SearchResult | undefined;
+      const searchResult = await fetchSearch(sanitized);
       if (!searchResult) return;
 
       setResult(searchResult);
@@ -141,6 +149,17 @@ export default function Search() {
     }
   };
 
+  // Deep link: ?q=<query> prefills the input and runs the search once on
+  // mount. handleSearch is intentionally left out of the deps — it is
+  // recreated every render and re-running the search would loop.
+  useEffect(() => {
+    if (deepLinkedRef.current || !qParam) return;
+    deepLinkedRef.current = true;
+    setQuery(qParam);
+    void handleSearch(qParam);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [qParam]);
+
   const handleChainSelect = async (selectedChainId: number) => {
     if (!query.trim()) return;
 
@@ -149,19 +168,26 @@ export default function Search() {
     setError(null);
 
     try {
-      const searchResult = (await fetchChainSearch(selectedChainId, sanitized)) as
-        | SearchResult
-        | undefined;
+      const searchResult = await fetchChainSearch(selectedChainId, sanitized);
       if (!searchResult) return;
 
+      if (!searchResult.found || !searchResult.data) {
+        setError(`No results found on ${getChainName(selectedChainId)}`);
+        return;
+      }
+
+      const chainId = searchResult.chainId ?? selectedChainId;
+
       if (searchResult.type === 'address') {
-        navigate(router, `/chain/${selectedChainId}/address/${sanitized}`).catch(
-          () => undefined,
-        );
+        navigate(router, `/chain/${chainId}/address/${sanitized}`).catch(() => undefined);
       } else if (searchResult.type === 'transaction') {
-        navigate(router, `/chain/${selectedChainId}/tx/${sanitized}`).catch(() => undefined);
+        const data = searchResult.data as Transaction;
+        navigate(router, `/chain/${chainId}/tx/${data.hash}`).catch(() => undefined);
       } else if (searchResult.type === 'block') {
-        navigate(router, `/chain/${selectedChainId}/block/${sanitized}`).catch(() => undefined);
+        // Navigate by block number — the detail route only accepts numbers,
+        // and the query itself may have been a block hash.
+        const data = searchResult.data as Block;
+        navigate(router, `/chain/${chainId}/block/${data.number}`).catch(() => undefined);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Search failed');
@@ -218,7 +244,20 @@ export default function Search() {
 
       {error && <ErrorState message={error} className={resultCard} />}
 
-      {result?.type.includes('_select_chain') && (
+      {result && !result.found && !result.needsChain && (
+        <div className={resultCard}>
+          <ErrorState message={`No results found for "${result.query ?? query}"`} />
+          {result.suggestions && result.suggestions.length > 0 && (
+            <div className={suggestionList}>
+              {result.suggestions.map(suggestion => (
+                <div key={suggestion}>{suggestion}</div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {result?.needsChain && result.supportedChains && (
         <Card className={resultCard}>
           <CardHeader>
             <CardTitle>Select Network</CardTitle>
@@ -234,7 +273,7 @@ export default function Search() {
             </p>
 
             <div className={chainSelector}>
-              {result.supportedChains?.map(chain => (
+              {result.supportedChains.map(chain => (
                 <div
                   key={chain.chainId}
                   className={chainOption}

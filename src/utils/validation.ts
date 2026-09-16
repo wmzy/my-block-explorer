@@ -1,30 +1,30 @@
-// 验证工具函数
+// Validation utility functions
 
 import { isAddress, isHash } from 'viem';
 
 /**
- * 验证以太坊地址
+ * Validate an Ethereum address
  */
 export function isValidAddress(address: string): boolean {
   return isAddress(address);
 }
 
 /**
- * 验证交易哈希
+ * Validate a transaction hash
  */
 export function isValidTransactionHash(hash: string): boolean {
   return isHash(hash);
 }
 
 /**
- * 验证区块哈希
+ * Validate a block hash
  */
 export function isValidBlockHash(hash: string): boolean {
   return isHash(hash);
 }
 
 /**
- * 验证区块号
+ * Validate a block number
  */
 export function isValidBlockNumber(blockNumber: string | number): boolean {
   const num = typeof blockNumber === 'string' ? parseInt(blockNumber, 10) : blockNumber;
@@ -32,7 +32,7 @@ export function isValidBlockNumber(blockNumber: string | number): boolean {
 }
 
 /**
- * 验证链ID
+ * Validate a chain ID
  */
 export function isValidChainId(chainId: string | number): boolean {
   const num = typeof chainId === 'string' ? parseInt(chainId, 10) : chainId;
@@ -40,7 +40,7 @@ export function isValidChainId(chainId: string | number): boolean {
 }
 
 /**
- * 验证分页参数
+ * Validate pagination parameters
  */
 export function validatePaginationParams(page?: string | number, limit?: string | number) {
   const pageNum = typeof page === 'string' ? parseInt(page, 10) : (page ?? 1);
@@ -58,24 +58,24 @@ export function validatePaginationParams(page?: string | number, limit?: string 
 }
 
 /**
- * 检测搜索输入类型
+ * Detect the type of a search input
  */
 export function detectSearchType(input: string): 'address' | 'hash' | 'block' | 'unknown' {
   if (!input || typeof input !== 'string') return 'unknown';
 
   const trimmed = input.trim();
 
-  // 地址检测
+  // Address detection
   if (isValidAddress(trimmed)) {
     return 'address';
   }
 
-  // 哈希检测 (交易或区块哈希)
+  // Hash detection (transaction or block hash)
   if (isValidTransactionHash(trimmed) || isValidBlockHash(trimmed)) {
     return 'hash';
   }
 
-  // 区块号检测
+  // Block number detection
   if (/^\d+$/.test(trimmed) && isValidBlockNumber(trimmed)) {
     return 'block';
   }
@@ -84,15 +84,16 @@ export function detectSearchType(input: string): 'address' | 'hash' | 'block' | 
 }
 
 /**
- * 清理和规范化输入
+ * Clean and normalize input: trim surrounding whitespace and prefix '0x' onto
+ * bare 40/64-character hex strings. Letter case is preserved (EVM hex values
+ * are case-insensitive, but checksummed addresses keep their casing).
  */
 export function sanitizeInput(input: string): string {
   if (!input || typeof input !== 'string') return '';
 
-  // 移除首尾空格并转换为小写（除了需要保持大小写的情况）
   let cleaned = input.trim();
 
-  // 对于地址和哈希，确保以0x开头
+  // Ensure addresses and hashes start with '0x'
   if (/^[a-fA-F0-9]{40}$/.test(cleaned)) {
     cleaned = `0x${cleaned}`;
   }
@@ -104,7 +105,7 @@ export function sanitizeInput(input: string): string {
 }
 
 /**
- * 验证时间范围
+ * Validate a time range
  */
 export function validateTimeRange(from?: string, to?: string) {
   if (!from && !to) return { from: undefined, to: undefined };
@@ -128,7 +129,7 @@ export function validateTimeRange(from?: string, to?: string) {
 }
 
 /**
- * 验证区块范围
+ * Validate a block range
  */
 export function validateBlockRange(fromBlock?: string | number, toBlock?: string | number) {
   if (!fromBlock && !toBlock) return { fromBlock: undefined, toBlock: undefined };

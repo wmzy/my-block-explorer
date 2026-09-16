@@ -60,3 +60,13 @@ export type ContractABI = {
   errors: AbiParameter[];
   verificationStatus: string;
 };
+
+// Canonical key fragment for a call's raw string inputs. Both
+// FunctionCallForm (display lookup) and ContractInteract (storage) must
+// derive their result/error keys through this helper, so a result written
+// by the parent is found by the form even though argument values are
+// type-converted before the call (e.g. bool 'true' -> true). Raw inputs
+// are trimmed so stray whitespace does not fork the keys.
+export function argsKey(rawArgs: readonly string[]): string {
+  return JSON.stringify(rawArgs.map(arg => arg.trim()));
+}

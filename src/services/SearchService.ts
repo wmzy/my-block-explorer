@@ -6,9 +6,14 @@ import { blockService, type Block } from './BlockService';
 const logger = createLogger('search-service');
 import { transactionService, type Transaction } from './TransactionService';
 import { addressService, type AddressInfo } from './AddressService';
+// Single source of truth for search-input detection, shared with the frontend.
+// Relative import: this module is bundled into the Hono API graph, which the
+// Vite config also bundles (honoApiPlugin dynamic import); that esbuild pass
+// does not resolve the '@/' alias, so runtime value imports must stay relative.
+import { detectSearchType, sanitizeInput } from '../utils/validation';
 
 /**
- * 搜索结果类型
+ * Search result type
  */
 export type SearchResultType = 'block' | 'transaction' | 'address' | 'unknown';
 
@@ -33,50 +38,30 @@ type SearchServiceDeps = {
 const createSearchService = (deps: SearchServiceDeps) => {
   const { db, blockService, transactionService, addressService } = deps;
 
-  const detectSearchType = (query: string): SearchResultType => {
-    if (/^\d+$/.test(query)) {
-      return 'block';
-    }
-
-    if (/^0x[a-fA-F0-9]{64}$/.test(query)) {
-      return 'transaction';
-    }
-
-    if (/^0x[a-fA-F0-9]{40}$/.test(query)) {
-      return 'address';
-    }
-
-    if (query.includes('.')) {
-      return 'address';
-    }
-
-    return 'unknown';
-  };
-
   const getBlockSuggestions = async (chainId: number): Promise<string[]> => {
     try {
       const latestBlock = await blockService.getLatestBlock(chainId);
-      const suggestions = ['请输入有效的区块号或区块哈希'];
+      const suggestions = ['Enter a valid block number or block hash'];
 
       if (latestBlock) {
-        suggestions.push(`最新区块号：${latestBlock.number.toString()}`);
-        suggestions.push(`最新区块哈希：${latestBlock.hash}`);
+        suggestions.push(`Latest block number: ${latestBlock.number.toString()}`);
+        suggestions.push(`Latest block hash: ${latestBlock.hash}`);
       }
 
       return suggestions;
     }
     catch {
-      return ['请输入有效的区块号或区块哈希'];
+      return ['Enter a valid block number or block hash'];
     }
   };
 
   const getTransactionSuggestions = async (chainId: number): Promise<string[]> => {
     try {
       const recentTxs = await transactionService.getLatestTransactions(chainId, 3);
-      const suggestions = ['请输入有效的交易哈希（0x开头的64位字符串）'];
+      const suggestions = ['Enter a valid transaction hash (0x-prefixed, 64 hex chars)'];
 
       if (recentTxs.length > 0) {
-        suggestions.push('最近的交易：');
+        suggestions.push('Recent transactions:');
         recentTxs.forEach((tx) => {
           suggestions.push(`${tx.hash}`);
         });
@@ -85,7 +70,7 @@ const createSearchService = (deps: SearchServiceDeps) => {
       return suggestions;
     }
     catch {
-      return ['请输入有效的交易哈希（0x开头的64位字符串）'];
+      return ['Enter a valid transaction hash (0x-prefixed, 64 hex chars)'];
     }
   };
 
@@ -251,11 +236,11 @@ const createSearchService = (deps: SearchServiceDeps) => {
       chainId,
       found: false,
       suggestions: [
-        '请输入有效的区块号、交易哈希或地址',
-        '区块号：纯数字（如 18000000）',
-        '交易哈希：0x开头的64位十六进制字符串',
-        '地址：0x开头的40位十六进制字符串',
-        '区块哈希：0x开头的64位十六进制字符串',
+        'Enter a valid block number, transaction hash, or address',
+        'Block number: plain digits (e.g. 18000000)',
+        'Transaction hash: 0x-prefixed 64-character hex string',
+        'Address: 0x-prefixed 40-character hex string',
+        'Block hash: 0x-prefixed 64-character hex string',
       ],
     };
   };
@@ -275,18 +260,28 @@ const createSearchService = (deps: SearchServiceDeps) => {
       }
 
       try {
-        const searchType = detectSearchType(trimmedQuery);
-        await recordSearch(chainId, trimmedQuery, searchType);
+        // Same normalization + detection as the frontend: the shared helpers
+        // in utils/validation are the single source of truth. The shared
+        // detector reports 'hash' for tx/block hashes; searchTransaction
+        // resolves those (tx lookup first, block-hash fallback), so 'hash'
+        // is recorded as 'transaction' in search history.
+        const sanitizedQuery = sanitizeInput(trimmedQuery);
+        const searchType = detectSearchType(sanitizedQuery);
+        await recordSearch(
+          chainId,
+          sanitizedQuery,
+          searchType === 'hash' ? 'transaction' : searchType,
+        );
 
         switch (searchType) {
           case 'block':
-            return await searchBlock(chainId, trimmedQuery);
-          case 'transaction':
-            return await searchTransaction(chainId, trimmedQuery);
+            return await searchBlock(chainId, sanitizedQuery);
+          case 'hash':
+            return await searchTransaction(chainId, sanitizedQuery);
           case 'address':
-            return await searchAddress(chainId, trimmedQuery);
+            return await searchAddress(chainId, sanitizedQuery);
           default:
-            return await searchAll(chainId, trimmedQuery);
+            return await searchAll(chainId, sanitizedQuery);
         }
       }
       catch (error) {

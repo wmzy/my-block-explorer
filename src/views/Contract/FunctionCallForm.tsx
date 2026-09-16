@@ -1,10 +1,12 @@
 import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { css } from '@linaria/core';
+import { parseEther } from 'viem';
 import { Collapsible } from '@/components/ui/Collapsible';
 import { getFunctionSelector, formatSelectorForDisplay } from '@/utils/functionSelector';
 import { formatResultWithLinks } from '@/utils/addressTypeDetection';
 import type { EnhancedContractFunction } from '@/utils/contractInteraction';
+import { argsKey } from './types';
 
 const functionNameReadStyles = css`
   font-weight: 600;
@@ -44,6 +46,20 @@ const inputStyles = css`
   border-radius: 4px;
   font-family: monospace;
   font-size: 13px;
+`;
+
+const fieldErrorStyles = css`
+  margin-top: 4px;
+  font-size: 12px;
+  color: #c62828;
+`;
+
+const weiHintStyles = css`
+  margin-top: 4px;
+  font-family: monospace;
+  font-size: 11px;
+  color: #888;
+  word-break: break-all;
 `;
 
 const buttonReadStyles = css`
@@ -140,8 +156,8 @@ const selectorStyles = css`
 `;
 
 // One collapsible form per function: typed argument inputs (payable adds
-// value/from), Query vs Simulate submit, and per-call result/error slots
-// keyed by call signature.
+// an ETH value field plus from), Query vs Simulate submit, and per-call
+// result/error slots keyed by call signature.
 export function FunctionCallForm({
   func,
   onCall,
@@ -152,7 +168,13 @@ export function FunctionCallForm({
   blockNumber,
 }: {
   func: EnhancedContractFunction;
-  onCall: (name: string, args: unknown[], value?: string, from?: string) => void;
+  onCall: (
+    name: string,
+    args: unknown[],
+    rawArgs: string[],
+    value?: string,
+    from?: string,
+  ) => void;
   results: Record<string, unknown>;
   errors: Record<string, string>;
   loadingStates: Record<string, boolean>;
@@ -160,40 +182,73 @@ export function FunctionCallForm({
   blockNumber: string;
 }) {
   const [args, setArgs] = useState<string[]>(func.inputs.map(() => ''));
+  const [argErrors, setArgErrors] = useState<string[]>(func.inputs.map(() => ''));
   const [value, setValue] = useState('');
+  const [valueError, setValueError] = useState('');
   const [from, setFrom] = useState('');
 
   const selector = getFunctionSelector(func);
   const selectorDisplay = formatSelectorForDisplay(selector);
 
+  const isPayable = func.interactionType === 'write' && func.stateMutability === 'payable';
+
+  // Wei equivalent of the current ETH input; '' when empty or not (yet)
+  // parseable. Used both as the key fragment shared with the parent and as
+  // the wei helper display under the field.
+  const valueWei = (() => {
+    const trimmed = value.trim();
+    if (trimmed === '') return '';
+    try {
+      return parseEther(trimmed).toString();
+    } catch {
+      return '';
+    }
+  })();
+
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
 
+    // Every ABI input is required: block the submit and flag empty fields.
+    const newArgErrors = args.map(arg => (arg.trim() === '' ? 'Required' : ''));
+    setArgErrors(newArgErrors);
+
+    // Payable value is entered in ETH and converted to wei via parseEther.
+    // Validate here so an invalid amount gets a field-level error instead
+    // of surfacing as a generic network error after submission.
+    let newValueError = '';
+    let wei: string | undefined;
+    if (isPayable && value.trim() !== '') {
+      try {
+        wei = parseEther(value.trim()).toString();
+      } catch {
+        newValueError = 'Invalid ETH amount';
+      }
+    }
+    setValueError(newValueError);
+
+    if (newArgErrors.some(err => err !== '') || newValueError !== '') {
+      return;
+    }
+
     // Convert argument types where the string input needs it
     const processedArgs = args.map((arg, index) => {
-      const inputType = func.inputs[index].type;
+      const trimmed = arg.trim();
 
-      if (arg.trim() === '') return '';
-
-      if (inputType.startsWith('uint') || inputType.startsWith('int')) {
-        return arg;
+      if (func.inputs[index].type === 'bool') {
+        return trimmed.toLowerCase() === 'true';
       }
 
-      if (inputType === 'bool') {
-        return arg.toLowerCase() === 'true';
-      }
-
-      return arg;
+      return trimmed;
     });
 
-    onCall(func.name, processedArgs, value || undefined, from || undefined);
+    onCall(func.name, processedArgs, args, wei, from.trim() || undefined);
   };
 
   const getResultKey = () => {
     if (func.interactionType === 'read') {
-      return `${func.name}-${JSON.stringify(args)}-${blockNumber || 'latest'}`;
+      return `${func.name}-${argsKey(args)}-${blockNumber || 'latest'}`;
     } else {
-      return `${func.name}-${JSON.stringify(args)}-${value || ''}-${from || ''}`;
+      return `${func.name}-${argsKey(args)}-${valueWei}-${from.trim()}`;
     }
   };
 
@@ -242,10 +297,16 @@ export function FunctionCallForm({
                 const newArgs = [...args];
                 newArgs[index] = e.target.value;
                 setArgs(newArgs);
+                if (argErrors[index]) {
+                  const newErrors = [...argErrors];
+                  newErrors[index] = '';
+                  setArgErrors(newErrors);
+                }
               }}
               placeholder={`Enter ${input.type}`}
               className={inputStyles}
             />
+            {argErrors[index] && <div className={fieldErrorStyles}>{argErrors[index]}</div>}
           </div>
         ))}
 
@@ -254,14 +315,19 @@ export function FunctionCallForm({
           <>
             {func.stateMutability === 'payable' && (
               <div className={inputGroupStyles}>
-                <label className={labelStyles}>Value (wei)</label>
+                <label className={labelStyles}>Value (ETH)</label>
                 <input
                   type="text"
                   value={value}
-                  onChange={e => setValue(e.target.value)}
+                  onChange={e => {
+                    setValue(e.target.value);
+                    setValueError('');
+                  }}
                   placeholder="0"
                   className={inputStyles}
                 />
+                {valueWei && <div className={weiHintStyles}>= {valueWei} wei</div>}
+                {valueError && <div className={fieldErrorStyles}>{valueError}</div>}
               </div>
             )}
 

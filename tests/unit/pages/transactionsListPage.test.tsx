@@ -36,13 +36,21 @@ vi.mock('@/config/chains', () => ({
   getChainSymbol: (chainId: number) => (chainId === 1 ? 'ETH' : 'UNKNOWN'),
 }));
 
-vi.mock('@/utils/format', () => ({
-  formatNumber: (n: number) => n.toLocaleString(),
-  formatRelativeTime: () => '5 min ago',
-}));
+// Real formatters are pure functions; keep them (formatEth included) instead
+// of a hand-listed factory that silently breaks when the view imports more.
+// Only relative time is pinned for determinism.
+vi.mock('@/utils/format', async importOriginal => {
+  const actual = await importOriginal<typeof import('@/utils/format')>();
+  return { ...actual, formatRelativeTime: () => '5 min ago' };
+});
 
 type TransactionsHookResult = {
-  data?: { transactions?: unknown[]; latestBlockNumber?: bigint };
+  data?: {
+    transactions?: unknown[];
+    latestBlockNumber?: bigint;
+    hasMore?: boolean;
+    nextCursor?: bigint;
+  };
   loading: boolean;
   error?: Error;
   refetch?: () => void;
@@ -158,10 +166,29 @@ describe('TransactionsList view', () => {
     expect(await screen.findByText(/Unsupported chain ID/)).toBeInTheDocument();
   });
 
-  it('paginates via the beforeBlock cursor computed from the head page', async () => {
-    const twenty = Array.from({ length: 20 }, (_, i) => makeTx(18000001 - i, 1));
+  it('renders Pending for transactions without a receipt (status -1)', async () => {
     mockUseLatestTransactions.mockReturnValue({
-      data: { transactions: twenty, latestBlockNumber: 18000001n },
+      data: {
+        transactions: [makeTx(18000001, -1), makeTx(18000000, 1)],
+        latestBlockNumber: 18000001n,
+        hasMore: false,
+      },
+      loading: false,
+      error: undefined,
+    });
+    renderTransactionsList('/chain/1/transactions');
+
+    expect(await screen.findByText('Pending')).toBeInTheDocument();
+    expect(screen.getByText('Success')).toBeInTheDocument();
+    // A pending tx must never be labeled Failed
+    expect(screen.queryByText('Failed')).not.toBeInTheDocument();
+  });
+
+  it('paginates via the continuation cursor the service returned', async () => {
+    const twenty = Array.from({ length: 20 }, (_, i) => makeTx(18000001 - i, 1));
+    const nextCursor = 17_999_982_000_005n; // (block 17999982, index 5)
+    mockUseLatestTransactions.mockReturnValue({
+      data: { transactions: twenty, latestBlockNumber: 18000001n, hasMore: true, nextCursor },
       loading: false,
       error: undefined,
     });
@@ -172,7 +199,38 @@ describe('TransactionsList view', () => {
     expect(screen.getByText('Older')).not.toBeDisabled();
 
     fireEvent.click(screen.getByText('Older'));
-    // page 2 cursor: 18000001 - 5
-    expect(mockUseLatestTransactions).toHaveBeenLastCalledWith(1, 20, 17999996n);
+    // page 2 resumes exactly at the cursor page 1 returned — no fixed stride
+    expect(mockUseLatestTransactions).toHaveBeenLastCalledWith(1, 20, nextCursor);
+  });
+
+  it('disables Older when the service reports no older transactions', async () => {
+    mockUseLatestTransactions.mockReturnValue({
+      data: {
+        transactions: [makeTx(18000001, 1)],
+        latestBlockNumber: 18000001n,
+        hasMore: false,
+        nextCursor: undefined,
+      },
+      loading: false,
+      error: undefined,
+    });
+    renderTransactionsList('/chain/1/transactions');
+
+    expect(await screen.findByText('Success')).toBeInTheDocument();
+    expect(screen.getByText('Older')).toBeDisabled();
+  });
+
+  it('seeds the first page from the ?block= deep link', async () => {
+    mockUseLatestTransactions.mockReturnValue({
+      data: undefined,
+      loading: false,
+      error: undefined,
+    });
+    renderTransactionsList('/chain/1/transactions?block=18000000');
+
+    // wait for the lazy view to resolve and mount
+    expect(await screen.findByText('No transactions found')).toBeInTheDocument();
+    // cursor = (18000000 + 1) * 1_000_000: start AT block 18000000, walk down
+    expect(mockUseLatestTransactions).toHaveBeenCalledWith(1, 20, 18_000_001_000_000n);
   });
 });

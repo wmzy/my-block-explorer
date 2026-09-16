@@ -90,6 +90,26 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
     }
   };
 
+  // viem receipt.status is the string 'success' | 'reverted'; the DB column
+  // is an integer (1 success / 0 failed). Null only when no receipt exists
+  // (pending) — the raw string made every insert throw a DuckDB conversion
+  // error, silently breaking tx-by-hash search and block tx caching.
+  const toDbTxStatus = (receipt: TransactionReceipt | null | undefined): 0 | 1 | null =>
+    receipt ? (receipt.status === 'success' ? 1 : 0) : null;
+
+  // viem tx.type is a label ('eip1559', ...) or hex string; the column is an
+  // integer. Unknown labels fall back to 0 (legacy).
+  const toDbTxType = (txType: ViemTransaction['type']): number => {
+    if (typeof txType === 'number') return txType;
+    if (txType === 'eip2930') return 1;
+    if (txType === 'eip1559') return 2;
+    if (txType === 'eip4844') return 3;
+    if (txType === 'eip7702') return 4;
+    if (txType === 'legacy' || txType === undefined || txType === null) return 0;
+    const parsed = Number(txType);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+
   const indexTransaction = async (
     chainId: number,
     tx: ViemTransaction,
@@ -114,8 +134,8 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
       maxPriorityFeePerGas: tx.maxPriorityFeePerGas ? BigInt(tx.maxPriorityFeePerGas) : null,
       gasUsed: receipt?.gasUsed ? BigInt(receipt.gasUsed) : null,
       effectiveGasPrice: receipt?.effectiveGasPrice ? BigInt(receipt.effectiveGasPrice) : null,
-      status: receipt?.status ?? null,
-      type: tx.type ?? 0,
+      status: toDbTxStatus(receipt),
+      type: toDbTxType(tx.type),
       nonce: tx.nonce ? BigInt(tx.nonce) : null,
       inputData: tx.input ?? null,
       logsCount: receipt?.logs?.length ?? 0,

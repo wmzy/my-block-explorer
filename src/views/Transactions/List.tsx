@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { navigate } from '@native-router/core';
-import { TypedLink, useMatched } from '@native-router/react';
+import { TypedLink, useMatched, useSearch } from '@native-router/react';
+import { z } from 'zod';
 
 import TopNavigation from '@/components/TopNavigation';
 import { Badge } from '@/components/ui/Badge';
@@ -11,11 +12,15 @@ import { TableSkeleton } from '@/components/ui/LoadingState';
 import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
 import { getChainInfo, getChainName, getChainSymbol } from '@/config/chains';
 import { useLatestTransactions } from '@/services/chainRpc';
-import { formatNumber, formatRelativeTime } from '@/utils/format';
+import { txCursorFromBlock } from '@/utils/blockRpcData';
+import { formatEth, formatNumber, formatRelativeTime } from '@/utils/format';
 
 const LIMIT = 20;
-// 5-block cursor stride per page, matching the old RPC walk.
-const PAGE_STRIDE = 5;
+
+// Optional ?block=N deep link: the list starts at block N and pages down.
+const searchSchema = z.object({
+  block: z.coerce.number().int().min(0).optional().catch(undefined),
+});
 
 const formatHash = (hash: string): string => {
   if (!hash || hash.length < 16) return hash;
@@ -29,36 +34,74 @@ const formatAddr = (addr: string): string => {
 
 const formatValue = (value: string, symbol: string): string => {
   try {
-    const valueInEth = parseFloat(value) / Math.pow(10, 18);
-    if (valueInEth === 0) return `0 ${symbol}`;
-    if (valueInEth < 0.0001) return `<0.0001 ${symbol}`;
-    return `${valueInEth.toFixed(4)} ${symbol}`;
+    const wei = BigInt(value);
+    if (wei === 0n) return `0 ${symbol}`;
+    // 0.0001 ETH in integer wei — the display floor, compared exactly.
+    if (wei < 10n ** 14n) return `<0.0001 ${symbol}`;
+    return `${formatEth(wei, 4)} ${symbol}`;
   } catch {
     return `${value} wei`;
   }
 };
 
+// status: 1 → success, 0 → failed, -1 → pending (no receipt yet, NOT failed).
+function TxStatusBadge({ status }: { status: number }) {
+  if (status === 1) {
+    return (
+      <Badge variant="success" size="sm">
+        Success
+      </Badge>
+    );
+  }
+  if (status === 0) {
+    return (
+      <Badge variant="error" size="sm">
+        Failed
+      </Badge>
+    );
+  }
+  return (
+    <Badge variant="default" size="sm">
+      Pending
+    </Badge>
+  );
+}
+
 export default function TransactionsList() {
   const { params, router } = useMatched();
+  const { block: blockParam } = useSearch(searchSchema);
   const [page, setPage] = useState(1);
 
   const currentChainId = Number.parseInt(params.chainId ?? '1', 10);
   const chainInfo = getChainInfo(currentChainId);
   const symbol = getChainSymbol(currentChainId);
 
-  // Cursor pagination via the head entry (same two-query pattern as the
-  // blocks list; see Blocks/List.tsx).
-  const headQuery = useLatestTransactions(currentChainId, LIMIT);
-  const latestBlockNumber = headQuery.data?.latestBlockNumber ?? null;
-  const beforeBlock =
-    latestBlockNumber !== null && page > 1
-      ? latestBlockNumber - BigInt((page - 1) * PAGE_STRIDE)
-      : undefined;
-  const pageQuery = useLatestTransactions(currentChainId, LIMIT, beforeBlock);
+  // Cursor pagination: page 1 is the head — or the ?block=N deep-link seed
+  // (cursor = (N+1, 0): start at block N and walk down); every older page
+  // resumes from the nextCursor its predecessor returned, so pages tile the
+  // (blockNumber, transactionIndex) sequence with no duplicate and no gap.
+  const initialCursor = blockParam !== undefined ? txCursorFromBlock(blockParam) : undefined;
+  const [cursorStack, setCursorStack] = useState<readonly (bigint | undefined)[]>([
+    initialCursor,
+  ]);
 
-  const query = page === 1 ? headQuery : pageQuery;
+  // The deep link seeds page 1 only; a changed ?block param re-seeds the
+  // walk. Functional updates keep the mount pass a no-op.
+  useEffect(() => {
+    setCursorStack(prev => (prev[0] === initialCursor ? prev : [initialCursor]));
+    setPage(prev => (prev === 1 ? prev : 1));
+  }, [initialCursor]);
+
+  const query = useLatestTransactions(currentChainId, LIMIT, cursorStack[page - 1]);
   const { data, loading, error, refetch } = query;
   const transactions = data?.transactions ?? [];
+
+  const goOlder = () => {
+    const next = data?.nextCursor;
+    if (next === undefined) return;
+    setCursorStack(prev => (prev.length > page ? prev : [...prev, next]));
+    setPage(prev => prev + 1);
+  };
 
   const handleChainChange = (newChainId: number) => {
     void navigate(router, `/chain/${newChainId}/transactions`).catch(() => undefined);
@@ -94,7 +137,13 @@ export default function TransactionsList() {
         )}
 
         {!loading && !error && transactions.length === 0 && (
-          <ErrorState message="No transactions found" />
+          <ErrorState
+            message={
+              data?.hasMore === true
+                ? 'No transactions in the scanned range — go older to continue'
+                : 'No transactions found'
+            }
+          />
         )}
 
         {transactions.length > 0 && (
@@ -125,7 +174,7 @@ export default function TransactionsList() {
                       to={`/chain/${currentChainId}/block/${tx.blockNumber}`}
                       className={linkStyle}
                     >
-                      {formatNumber(parseInt(tx.blockNumber))}
+                      {formatNumber(BigInt(tx.blockNumber))}
                     </TypedLink>
                   </td>
                   <td>{tx.timestamp ? formatRelativeTime(tx.timestamp) : 'N/A'}</td>
@@ -145,9 +194,7 @@ export default function TransactionsList() {
                   </td>
                   <td className={monoStyle}>{formatValue(tx.value, symbol)}</td>
                   <td>
-                    <Badge variant={tx.status === 1 ? 'success' : 'error'} size="sm">
-                      {tx.status === 1 ? 'Success' : 'Failed'}
-                    </Badge>
+                    <TxStatusBadge status={tx.status} />
                   </td>
                 </tr>
               ))}
@@ -155,18 +202,18 @@ export default function TransactionsList() {
           </DataTable>
         )}
 
-        {transactions.length > 0 && (
+        {(transactions.length > 0 || data?.hasMore === true) && (
           <Pagination
             page={page}
             pageInfo={`Page ${page}${
-              latestBlockNumber !== null
-                ? ` • Latest block: ${formatNumber(Number(latestBlockNumber))}`
+              data?.latestBlockNumber !== undefined
+                ? ` • Latest block: ${formatNumber(data.latestBlockNumber)}`
                 : ''
             }`}
             hasPrev={page > 1}
-            hasNext={transactions.length >= LIMIT}
-            onPrev={() => setPage(p => Math.max(1, p - 1))}
-            onNext={() => setPage(p => p + 1)}
+            hasNext={data?.hasMore === true}
+            onPrev={() => setPage(prev => Math.max(1, prev - 1))}
+            onNext={goOlder}
             prevLabel="Newer"
             nextLabel="Older"
           />

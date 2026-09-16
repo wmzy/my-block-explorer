@@ -20,10 +20,11 @@ import NotFound from './NotFound';
 const routes = createRoutes({
   children: [
     {
-      // Landing redirect, replace semantics preserved from the old
-      // <Navigate to="/chain/1" replace /> entry route.
+      // Landing: dynamic target (remembered chain from localStorage, else
+      // the preferred chain) with replace semantics, resolved at mount by
+      // the Landing view instead of the old static /chain/1 redirect.
       path: '/',
-      redirect: { path: '/chain/1', replace: true },
+      component: () => import('./Home/Landing'),
     },
     {
       path: '/chain/:chainId',

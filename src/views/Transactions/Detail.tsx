@@ -10,15 +10,23 @@ import { LoadingState } from '@/components/ui/LoadingState';
 import { PageContainer, PageHeader, BackButton } from '@/components/ui/PageLayout';
 import { getChainInfo, getChainName, getChainSymbol } from '@/config/chains';
 import { useTransactionByHash } from '@/services/chainRpc';
+import { formatEth, formatGasPrice, formatNumber } from '@/utils/format';
 
 const getTxTypeText = (type: number): string => {
-  const types: Record<number, string> = { 0: 'Legacy', 1: 'EIP-2930', 2: 'EIP-1559' };
+  const types: Record<number, string> = {
+    0: 'Legacy',
+    1: 'EIP-2930',
+    2: 'EIP-1559',
+    3: 'EIP-4844 (Blob)',
+  };
   return types[type] ?? `Type ${type}`;
 };
 
+// Gas amounts are plain unit counts: BigInt-parse first (block gas figures
+// stay far below Number.MAX_SAFE_INTEGER, so the Number step is exact).
 const formatGas = (gas: string): string => {
   try {
-    return parseInt(gas).toLocaleString();
+    return Number(BigInt(gas)).toLocaleString();
   } catch {
     return gas;
   }
@@ -26,12 +34,34 @@ const formatGas = (gas: string): string => {
 
 const formatValue = (value: string, symbol: string): string => {
   try {
-    const valueInEth = parseFloat(value) / Math.pow(10, 18);
-    return `${valueInEth.toFixed(6)} ${symbol}`;
+    return `${formatEth(value, 6)} ${symbol}`;
   } catch {
     return `${value} wei`;
   }
 };
+
+// status: 1 → success, 0 → failed, -1 → pending (no receipt yet, NOT failed).
+function TxStatusBadge({ status }: { status: number }) {
+  if (status === 1) {
+    return (
+      <Badge variant="success" size="sm">
+        Success
+      </Badge>
+    );
+  }
+  if (status === 0) {
+    return (
+      <Badge variant="error" size="sm">
+        Failed
+      </Badge>
+    );
+  }
+  return (
+    <Badge variant="default" size="sm">
+      Pending
+    </Badge>
+  );
+}
 
 export default function TransactionDetail() {
   const { params, router } = useMatched();
@@ -45,7 +75,10 @@ export default function TransactionDetail() {
   const { data: txInfo, loading, error } = useTransactionByHash(currentChainId, txHash);
 
   const handleChainChange = (newChainId: number) => {
-    void navigate(router, `/chain/${newChainId}`).catch(() => undefined);
+    // Same-params refresh: the hash is chain-agnostic, so switching chains
+    // re-resolves this exact transaction on the target chain's RPC instead
+    // of kicking the user back to the chain home page.
+    void navigate(router, `/chain/${newChainId}/tx/${txHash}`).catch(() => undefined);
   };
 
   if (!chainInfo) {
@@ -93,11 +126,11 @@ export default function TransactionDetail() {
               <InfoGrid>
                 <InfoItem label="Transaction Hash">{txInfo.hash}</InfoItem>
                 <InfoItem label="Status">
-                  <Badge variant={txInfo.status === 1 ? 'success' : 'error'} size="sm">
-                    {txInfo.status === 1 ? 'Success' : 'Failed'}
-                  </Badge>
+                  <TxStatusBadge status={txInfo.status} />
                 </InfoItem>
-                <InfoItem label="Block Number">{parseInt(txInfo.blockNumber).toLocaleString()}</InfoItem>
+                <InfoItem label="Block Number">
+                  {formatNumber(BigInt(txInfo.blockNumber))}
+                </InfoItem>
                 <InfoItem label="Transaction Index">{txInfo.transactionIndex}</InfoItem>
                 <InfoItem label="From">{txInfo.fromAddress}</InfoItem>
                 <InfoItem label="To">{txInfo.toAddress}</InfoItem>
@@ -110,30 +143,42 @@ export default function TransactionDetail() {
                 )}
                 {txInfo.gasPrice && (
                   <InfoItem label="Gas Price">
-                    {formatGas(txInfo.gasPrice)}
+                    {formatGasPrice(txInfo.gasPrice)}
                     {' '}
-                    wei
+                    gwei
                   </InfoItem>
                 )}
                 {txInfo.maxFeePerGas && (
                   <InfoItem label="Max Fee Per Gas">
-                    {formatGas(txInfo.maxFeePerGas)}
+                    {formatGasPrice(txInfo.maxFeePerGas)}
                     {' '}
-                    wei
+                    gwei
                   </InfoItem>
                 )}
                 {txInfo.maxPriorityFeePerGas && (
                   <InfoItem label="Max Priority Fee Per Gas">
-                    {formatGas(txInfo.maxPriorityFeePerGas)}
+                    {formatGasPrice(txInfo.maxPriorityFeePerGas)}
                     {' '}
-                    wei
+                    gwei
+                  </InfoItem>
+                )}
+                {txInfo.maxFeePerBlobGas && (
+                  <InfoItem label="Max Fee Per Blob Gas">
+                    {formatGasPrice(txInfo.maxFeePerBlobGas)}
+                    {' '}
+                    gwei
+                  </InfoItem>
+                )}
+                {txInfo.blobVersionedHashes && txInfo.blobVersionedHashes.length > 0 && (
+                  <InfoItem label="Blob Versioned Hashes">
+                    {txInfo.blobVersionedHashes.join(', ')}
                   </InfoItem>
                 )}
                 {txInfo.effectiveGasPrice && (
                   <InfoItem label="Effective Gas Price">
-                    {formatGas(txInfo.effectiveGasPrice)}
+                    {formatGasPrice(txInfo.effectiveGasPrice)}
                     {' '}
-                    wei
+                    gwei
                   </InfoItem>
                 )}
                 <InfoItem label="Nonce">{txInfo.nonce}</InfoItem>

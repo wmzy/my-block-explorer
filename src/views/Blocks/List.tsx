@@ -14,10 +14,12 @@ import { formatNumber, formatRelativeTime } from '@/utils/format';
 
 const LIMIT = 20;
 
+// Gas quantities are on-chain integers serialized as strings; parse them
+// BigInt-safe (parseInt would lose precision past 2^53).
 const formatGasUsage = (used: string, limit: string): string => {
   try {
-    const usedNum = parseInt(used);
-    const limitNum = parseInt(limit);
+    const usedNum = Number(BigInt(used));
+    const limitNum = Number(BigInt(limit));
     const percentage = ((usedNum / limitNum) * 100).toFixed(1);
     return `${formatNumber(usedNum)} (${percentage}%)`;
   } catch {
@@ -106,7 +108,7 @@ export default function BlocksList() {
                       to={`/chain/${currentChainId}/block/${block.number}`}
                       className={linkStyle}
                     >
-                      {formatNumber(parseInt(block.number))}
+                      {formatNumber(BigInt(block.number))}
                     </TypedLink>
                   </td>
                   <td>{block.timestamp ? formatRelativeTime(block.timestamp) : 'N/A'}</td>

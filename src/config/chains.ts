@@ -131,22 +131,31 @@ export function getChainType(chainId: number): 'mainnet' | 'testnet' | 'unknown'
 
 // 按类型和受欢迎程度排序链
 export function getSortedChains(): Chain[] {
-  return SUPPORTED_CHAINS.sort((a, b) => {
-    // 首先按是否为常用链排序
+  // Object.values(chains) contains multiple exports sharing one chain id
+  // (aliases and testnet twins); dedupe by id or selector cards repeat.
+  const seen = new Set<number>();
+  const unique = SUPPORTED_CHAINS.filter(chain => {
+    if (seen.has(chain.id)) return false;
+    seen.add(chain.id);
+    return true;
+  });
+
+  return unique.sort((a, b) => {
+    // Popular chains first
     const aIsPopular = isPopularChain(a.id);
     const bIsPopular = isPopularChain(b.id);
 
     if (aIsPopular && !bIsPopular) return -1;
     if (!aIsPopular && bIsPopular) return 1;
 
-    // 然后按类型排序（主网优先）
+    // Then by type (mainnets first)
     const aType = getChainType(a.id);
     const bType = getChainType(b.id);
 
     if (aType === 'mainnet' && bType !== 'mainnet') return -1;
     if (aType !== 'mainnet' && bType === 'mainnet') return 1;
 
-    // 最后按名称排序
+    // Finally by name
     return a.name.localeCompare(b.name);
   });
 }

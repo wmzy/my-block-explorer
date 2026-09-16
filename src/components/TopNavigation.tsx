@@ -12,6 +12,9 @@ import {
   isPopularChain,
   getChainType,
 } from '@/config/chains';
+import { detectSearchType, sanitizeInput } from '@/utils/validation';
+import { api, get } from '@/util/http';
+import { fetchChainSearch } from '@/services/search';
 
 type TopNavigationProps = {
   currentChainId: number;
@@ -64,6 +67,37 @@ const searchArea = css`
 const searchRow = css`
   display: flex;
   gap: var(--haze-space-2);
+`;
+
+const searchNotice = css`
+  margin-top: var(--haze-space-2);
+  padding: var(--haze-space-2) var(--haze-space-3);
+  font-size: var(--haze-text-xs);
+  color: var(--haze-color-text-secondary);
+  background: var(--haze-color-bg-subtle);
+  border: 1px solid var(--haze-color-border);
+  border-radius: var(--haze-radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--haze-space-2);
+`;
+
+const searchNoticeLink = css`
+  border: none;
+  background: transparent;
+  color: var(--haze-color-primary);
+  cursor: pointer;
+  font-size: var(--haze-text-xs);
+  font-weight: var(--haze-weight-medium);
+  padding: 0;
+  text-decoration: underline;
+  font-family: var(--haze-font-sans);
+  flex-shrink: 0;
+
+  &:hover {
+    text-decoration: none;
+  }
 `;
 
 const rightControls = css`
@@ -397,6 +431,14 @@ type SearchHistoryItem = {
   searchedAt: string;
 };
 
+// Subset of the /api/chains/:id/search response this component acts on. The
+// block payload's number arrives as a string (BigInt-safe serialization).
+type ChainSearchResponse = {
+  found?: boolean;
+  type?: string;
+  data?: { number?: string | number } | null;
+};
+
 export default function TopNavigation({
   currentChainId,
   onChainChange,
@@ -410,6 +452,9 @@ export default function TopNavigation({
   const [showHistory, setShowHistory] = useState(false);
   const [searchHistory, setSearchHistory] = useState<SearchHistoryItem[]>([]);
   const [historyLoaded, setHistoryLoaded] = useState(false);
+  // Query that found nothing on the current chain; rendered as an inline
+  // hint under the search box and cleared as soon as the input changes.
+  const [missedQuery, setMissedQuery] = useState<string | null>(null);
   const searchContainerRef = React.useRef<HTMLDivElement>(null);
 
   // Fire-and-forget in-app navigation; a superseded navigation rejects with
@@ -422,9 +467,13 @@ export default function TopNavigation({
 
   const fetchSearchHistory = React.useCallback(async () => {
     try {
-      const response = await fetch('/api/search/history?limit=50');
-      if (!response.ok) return;
-      const data = await response.json();
+      // Same reasoning as the hash-search call: go through the discovered
+      // api base instead of a raw same-origin fetch.
+      const data = await get<{ history?: SearchHistoryItem[] }>(
+        '/api/search/history',
+        { limit: 50 },
+        api,
+      );
       setSearchHistory(data.history ?? []);
       setHistoryLoaded(true);
     } catch {
@@ -458,58 +507,69 @@ export default function TopNavigation({
     return searchHistory.filter(item => item.query.toLowerCase().includes(q));
   }, [searchQuery, searchHistory]);
 
+  // Shared query dispatcher for the search box and history items. It uses
+  // the same sanitize/detect pair as every other surface (utils/validation
+  // is the single source of truth): addresses and block numbers deep-link
+  // straight to the current chain's pages; hashes need the per-chain search
+  // API (transaction lookup first, block-hash fallback) to know which page
+  // they belong to; anything else goes to the full Search view.
+  const navigateForQuery = async (rawQuery: string) => {
+    const query = sanitizeInput(rawQuery.trim());
+    const searchType = detectSearchType(query);
+
+    if (searchType === 'address') {
+      goTo(`/chain/${currentChainId}/address/${query}`);
+      return;
+    }
+
+    if (searchType === 'block') {
+      goTo(`/chain/${currentChainId}/block/${query}`);
+      return;
+    }
+
+    if (searchType === 'hash') {
+      // Through the shared http layer (runtime-discovered api base), NOT a
+      // raw same-origin fetch: in dev the same-origin /api is the Vite
+      // bridge's own backend instance, which competes with the discovered
+      // service for the single-writer DuckDB and serves different data.
+      const data = await fetchChainSearch(currentChainId, query);
+      const payload = data as ChainSearchResponse | undefined;
+
+      if (payload?.found) {
+        if (payload.type === 'transaction') {
+          goTo(`/chain/${currentChainId}/tx/${query}`);
+          return;
+        }
+        if (payload.type === 'block' && payload.data?.number !== undefined) {
+          // The block detail route only accepts numbers, not hashes.
+          goTo(`/chain/${currentChainId}/block/${String(payload.data.number)}`);
+          return;
+        }
+      }
+
+      setMissedQuery(query);
+      return;
+    }
+
+    goTo(`/search?q=${encodeURIComponent(query)}`);
+  };
+
   const selectHistoryItem = (query: string) => {
     setSearchQuery(query);
     setShowHistory(false);
-
-    // Navigate directly based on query pattern
-    if (query.startsWith('0x') && query.length === 42) {
-      goTo(`/chain/${currentChainId}/address/${query}`);
-    } else if (query.startsWith('0x') && query.length === 66) {
-      goTo(`/chain/${currentChainId}/tx/${query}`);
-    } else if (/^\d+$/.test(query)) {
-      goTo(`/chain/${currentChainId}/block/${query}`);
-    } else {
-      goTo(`/search?q=${encodeURIComponent(query)}`);
-    }
+    void navigateForQuery(query);
   };
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) return;
 
     setLoading(true);
+    setMissedQuery(null);
     try {
       if (onSearch) {
         await onSearch(searchQuery.trim());
       } else {
-        const query = searchQuery.trim();
-
-        if (query.startsWith('0x') && query.length === 42) {
-          goTo(`/chain/${currentChainId}/address/${query}`);
-        } else if (query.startsWith('0x') && query.length === 66) {
-          goTo(`/chain/${currentChainId}/tx/${query}`);
-        } else if (/^\d+$/.test(query)) {
-          goTo(`/chain/${currentChainId}/block/${query}`);
-        } else {
-          const response = await fetch(
-            `/api/chains/${currentChainId}/search?q=${encodeURIComponent(query)}`,
-          );
-          const data = await response.json();
-
-          if (data.found && data.data) {
-            switch (data.type) {
-              case 'address':
-                goTo(`/chain/${currentChainId}/address/${query}`);
-                break;
-              case 'transaction':
-                goTo(`/chain/${currentChainId}/tx/${query}`);
-                break;
-              case 'block':
-                goTo(`/chain/${currentChainId}/block/${query}`);
-                break;
-            }
-          }
-        }
+        await navigateForQuery(searchQuery);
       }
     } catch (error) {
       console.error('Search failed:', error);
@@ -533,7 +593,10 @@ export default function TopNavigation({
             <div className={searchRow}>
               <Input
                 value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
+                onChange={e => {
+                  setSearchQuery(e.target.value);
+                  setMissedQuery(null);
+                }}
                 onFocus={handleSearchFocus}
                 placeholder={
                   searchPlaceholder ?? `Search on ${chainInfo?.name ?? 'current chain'}...`
@@ -547,6 +610,19 @@ export default function TopNavigation({
                 {loading ? '...' : 'Search'}
               </Button>
             </div>
+
+            {missedQuery !== null && (
+              <div className={searchNotice}>
+                <span>No results on {chainInfo?.name ?? 'this chain'} — try full search</span>
+                <button
+                  type="button"
+                  className={searchNoticeLink}
+                  onClick={() => goTo(`/search?q=${encodeURIComponent(missedQuery)}`)}
+                >
+                  Search all networks
+                </button>
+              </div>
+            )}
 
             {showHistory && filteredHistory.length > 0 && (
               <div className={historyDropdown}>

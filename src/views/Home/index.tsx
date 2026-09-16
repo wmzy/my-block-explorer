@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { css } from '@linaria/core';
-import { formatEther, formatGwei } from 'viem';
+import { Alert } from 'haze-ui';
 import { navigate } from '@native-router/core';
 import { TypedLink, useMatched } from '@native-router/react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
@@ -15,7 +15,10 @@ import {
 } from '@/utils/format';
 import { PageContainer } from '@/components/ui/PageLayout';
 import { LoadingState } from '@/components/ui/LoadingState';
+import { Button } from '@/components/ui/Button';
+import { ErrorState } from '@/components/ui/ErrorState';
 import { useLatestBlocksFeed, useLatestTransactionsFeed } from '@/services/homeFeed';
+import { redirectReplace, rememberChainId, resolveLandingChainPath } from './Landing';
 
 // --- styles ---
 
@@ -169,6 +172,30 @@ const cardHeaderRow = css`
   align-items: center;
 `;
 
+// Message + Retry row inside the stale-data warning alert.
+const staleBannerRow = css`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--haze-space-3);
+  flex-wrap: wrap;
+`;
+
+// --- helpers ---
+
+// BigInt-safe fixed-decimal formatting: divides and rounds (half up) in
+// integer arithmetic instead of round-tripping viem's formatted strings
+// through parseFloat, so on-chain magnitudes never lose precision to a
+// double. `decimals` is the value's token scale (gwei = 9, ether = 18).
+function formatFixed(value: bigint, decimals: number, fractionDigits: number): string {
+  const unit = 10n ** BigInt(decimals - fractionDigits);
+  const scaled = (value + unit / 2n) / unit;
+  const fractionScale = 10n ** BigInt(fractionDigits);
+  const whole = scaled / fractionScale;
+  const fraction = scaled % fractionScale;
+  return `${whole}.${fraction.toString().padStart(fractionDigits, '0')}`;
+}
+
 // --- component ---
 
 export default function Home() {
@@ -189,21 +216,39 @@ export default function Home() {
   // lists settled.
   const loading = blocksFeed.loading || transactionsFeed.loading;
 
-  // Parity with the old page's per-loop error logging on failed fetches.
-  useEffect(() => {
-    if (blocksFeed.error) console.error('Failed to load homepage data:', blocksFeed.error);
-  }, [blocksFeed.error]);
+  // Either feed failing means live updates stopped. dataUpdatedAt is only
+  // stamped on successful fetches (verified against react-toolroom's
+  // result-commit path), so the oldest of the two bounds how old the data
+  // still on screen is.
+  const feedError = blocksFeed.error ?? transactionsFeed.error;
+  const updatedAts = [blocksFeed.dataUpdatedAt, transactionsFeed.dataUpdatedAt].filter(
+    (updatedAt): updatedAt is number => updatedAt !== undefined,
+  );
+  const lastUpdatedAt = updatedAts.length > 0 ? Math.min(...updatedAts) : undefined;
+  // Stale: fetching fails but earlier data is still shown (warning banner).
+  const showStaleBanner = feedError !== undefined && lastUpdatedAt !== undefined;
+  // Dead: fetching fails and nothing was ever fetched (full-width error).
+  const showFatalError = feedError !== undefined && lastUpdatedAt === undefined;
 
-  useEffect(() => {
-    if (transactionsFeed.error) console.error('Poll error:', transactionsFeed.error);
-  }, [transactionsFeed.error]);
+  const handleRetry = () => {
+    void Promise.resolve(blocksFeed.refetch()).catch(() => undefined);
+    void Promise.resolve(transactionsFeed.refetch()).catch(() => undefined);
+  };
 
-  // Unknown chain: the old page replaced the entry with /chain/1 (the
-  // imperative navigate here always pushes; replace-style redirects belong
-  // to route guards once the route table lands at integration).
+  // Remember the current valid chain as the landing target for the next
+  // visit and for unknown-chain redirects.
+  useEffect(() => {
+    if (chainInfo) {
+      rememberChainId(chainInfo.id);
+    }
+  }, [chainInfo]);
+
+  // Unknown chain: replace the bad entry with the landing target
+  // (remembered valid chain, else preferred chain) instead of pushing on
+  // top of it, so the back button never resurfaces the unknown chain.
   useEffect(() => {
     if (!chainInfo) {
-      void navigate(router, '/chain/1').catch(() => undefined);
+      redirectReplace(router, resolveLandingChainPath()).catch(() => undefined);
     }
   }, [chainInfo, router]);
 
@@ -238,7 +283,7 @@ export default function Home() {
           </Card>
           <Card className={statItem}>
             <div className={statValueStyle}>
-              {gasPrice !== null ? `${parseFloat(formatGwei(gasPrice)).toFixed(2)} Gwei` : '—'}
+              {gasPrice !== null ? `${formatFixed(gasPrice, 9, 2)} Gwei` : '—'}
             </div>
             <div className={statLabelStyle}>Gas Price</div>
           </Card>
@@ -256,9 +301,32 @@ export default function Home() {
           </Card>
         </div>
 
+        {/* Stale branch: fetch failing but old data still on screen */}
+        {showStaleBanner && lastUpdatedAt !== undefined && (
+          <Alert variant="warning">
+            <div className={staleBannerRow}>
+              <span>
+                Live data unavailable — showing data from{' '}
+                {formatRelativeTime(lastUpdatedAt)}
+              </span>
+              <Button variant="outline" size="sm" onClick={handleRetry}>
+                Retry
+              </Button>
+            </div>
+          </Alert>
+        )}
+
         {loading && <LoadingState message="Loading blockchain data..." />}
 
-        {!loading && (
+        {/* Dead branch: fetch failing and nothing ever fetched */}
+        {!loading && showFatalError && (
+          <ErrorState
+            message="Live data is unavailable and no previous data to show."
+            onRetry={handleRetry}
+          />
+        )}
+
+        {!loading && !showFatalError && (
           <div className={columnsLayout}>
             {/* Latest Blocks */}
             <Card>
@@ -296,8 +364,8 @@ export default function Home() {
                       </div>
                       {block.baseFeePerGas && (
                         <div className={listSecondary}>
-                          Base fee: {parseFloat(formatGwei(BigInt(block.baseFeePerGas))).toFixed(4)}{' '}
-                          Gwei · Size: {formatNumber(block.sizeBytes ?? 0)} B
+                          Base fee: {formatFixed(BigInt(block.baseFeePerGas), 9, 4)} Gwei ·
+                          Size: {formatNumber(block.sizeBytes ?? 0)} B
                         </div>
                       )}
                     </div>
@@ -365,9 +433,11 @@ export default function Home() {
                         {tx.gasUsed && tx.effectiveGasPrice && (
                           <span className={listSecondary}>
                             Fee:{' '}
-                            {parseFloat(
-                              formatEther(BigInt(tx.gasUsed) * BigInt(tx.effectiveGasPrice)),
-                            ).toFixed(6)}{' '}
+                            {formatFixed(
+                              BigInt(tx.gasUsed) * BigInt(tx.effectiveGasPrice),
+                              18,
+                              6,
+                            )}{' '}
                             {symbol}
                           </span>
                         )}

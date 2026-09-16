@@ -79,33 +79,47 @@ const fetchLogsWithRetry = async (
   return [];
 };
 
+// Max parallel getBlock calls when resolving timestamps for one batch.
+const BLOCK_TIMESTAMP_CONCURRENCY = 8;
+
 const fetchBlockTimestamps = async (
   chainId: number,
   blockNumbers: bigint[],
-): Promise<Map<bigint, number>> => {
+): Promise<Map<bigint, number | null>> => {
   const client = await rpcManager.getClient(chainId);
-  const map = new Map<bigint, number>();
+  const map = new Map<bigint, number | null>();
   const unique = [...new Set(blockNumbers)];
 
-  const results = await Promise.allSettled(
-    unique.map(async bn => {
-      const block = await client.getBlock({ blockNumber: bn });
-      return { bn, ts: Number(block.timestamp) };
-    }),
-  );
-
-  for (const r of results) {
-    if (r.status === 'fulfilled') {
-      map.set(r.value.bn, r.value.ts);
+  // Bounded worker pool over a shared cursor: a batch of BATCH_SIZE logs could
+  // otherwise fire one getBlock request per block all at once.
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < unique.length) {
+      const bn = unique[cursor];
+      cursor += 1;
+      try {
+        const block = await client.getBlock({ blockNumber: bn });
+        map.set(bn, Number(block.timestamp));
+      } catch {
+        // Honest-data policy: when a block timestamp cannot be fetched we
+        // record null instead of fabricating a value. The row is stored with
+        // a NULL block_timestamp and gets backfilled on a later re-scan.
+        map.set(bn, null);
+      }
     }
-  }
+  };
+
+  await Promise.all(
+    Array.from({ length: Math.min(BLOCK_TIMESTAMP_CONCURRENCY, unique.length) }, () => worker()),
+  );
   return map;
 };
 
-const decodeLogs = (logs: Log[], abi: Abi, blockTimestamps: Map<bigint, number>) => {
+const decodeLogs = (logs: Log[], abi: Abi, blockTimestamps: Map<bigint, number | null>) => {
   const decoded: Array<{
     blockNumber: bigint;
-    blockTimestamp: number;
+    // null when the block timestamp could not be fetched; never fabricated
+    blockTimestamp: number | null;
     transactionHash: `0x${string}`;
     transactionIndex: number;
     logIndex: number;
@@ -133,7 +147,7 @@ const decodeLogs = (logs: Log[], abi: Abi, blockTimestamps: Map<bigint, number>)
 
       decoded.push({
         blockNumber: log.blockNumber ?? 0n,
-        blockTimestamp: blockTimestamps.get(log.blockNumber ?? 0n) ?? Math.floor(Date.now() / 1000),
+        blockTimestamp: blockTimestamps.get(log.blockNumber ?? 0n) ?? null,
         transactionHash: log.transactionHash ?? ('0x' as `0x${string}`),
         transactionIndex: log.transactionIndex ?? 0,
         logIndex: log.logIndex ?? 0,
@@ -149,7 +163,7 @@ const decodeLogs = (logs: Log[], abi: Abi, blockTimestamps: Map<bigint, number>)
     } catch {
       decoded.push({
         blockNumber: log.blockNumber ?? 0n,
-        blockTimestamp: blockTimestamps.get(log.blockNumber ?? 0n) ?? Math.floor(Date.now() / 1000),
+        blockTimestamp: blockTimestamps.get(log.blockNumber ?? 0n) ?? null,
         transactionHash: log.transactionHash ?? ('0x' as `0x${string}`),
         transactionIndex: log.transactionIndex ?? 0,
         logIndex: log.logIndex ?? 0,
@@ -168,6 +182,25 @@ const decodeLogs = (logs: Log[], abi: Abi, blockTimestamps: Map<bigint, number>)
 };
 
 const INSERT_CHUNK_SIZE = 50;
+
+// Insert rows with a timestamp-only backfill upsert: on PK conflict the stored
+// block_timestamp is kept unless it is NULL, so later scans covering the same
+// blocks (overlapping or re-created ranges) repair rows whose getBlock call
+// previously failed while never overwriting a known-good timestamp. Dedup
+// semantics are otherwise unchanged. A plain resume continues past the
+// checkpoint, so rows skipped there are only repaired by such a re-scan —
+// preferred over storing a fabricated timestamp.
+const insertEventChunk = async (rows: Array<typeof contractEvents.$inferInsert>) => {
+  await db
+    .insert(contractEvents)
+    .values(rows)
+    .onConflictDoUpdate({
+      target: [contractEvents.chainId, contractEvents.transactionHash, contractEvents.logIndex],
+      set: {
+        blockTimestamp: sql`coalesce(${contractEvents.blockTimestamp}, excluded.block_timestamp)`,
+      },
+    });
+};
 
 const insertEvents = async (
   chainId: number,
@@ -200,11 +233,11 @@ const insertEvents = async (
   for (let i = 0; i < rows.length; i += INSERT_CHUNK_SIZE) {
     const chunk = rows.slice(i, i + INSERT_CHUNK_SIZE);
     try {
-      await db.insert(contractEvents).values(chunk).onConflictDoNothing();
+      await insertEventChunk(chunk);
     } catch {
       for (const row of chunk) {
         try {
-          await db.insert(contractEvents).values(row).onConflictDoNothing();
+          await insertEventChunk([row]);
         } catch {
           // skip duplicates
         }
