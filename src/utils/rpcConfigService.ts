@@ -1,5 +1,5 @@
 import { invalidateRpcClients } from './realTimeData';
-import { apiClient } from '@/api/client';
+import { del, get, post } from '@/util/http';
 
 // RPC配置管理服务
 export type RpcConfig = {
@@ -23,13 +23,8 @@ export type RpcTestResult = {
 
 // 获取所有RPC配置
 export async function getRpcConfigs(): Promise<RpcConfig[]> {
-  const baseUrl = apiClient.getBaseUrl();
-  const response = await fetch(`${baseUrl}/api/rpc-configs`);
-  if (!response.ok) {
-    throw new Error('Failed to fetch RPC configs');
-  }
-  const data = await response.json();
-  return data.configs;
+  const data = await get<{ configs?: RpcConfig[] }>('/api/rpc-configs');
+  return data.configs ?? [];
 }
 
 // 保存RPC配置
@@ -40,34 +35,16 @@ export async function saveRpcConfig(config: {
   supportsHistory?: boolean;
   maxEventRange?: number;
 }): Promise<void> {
-  const baseUrl = apiClient.getBaseUrl();
-  const response = await fetch(`${baseUrl}/api/rpc-configs`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(config),
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.error ?? 'Failed to save RPC config');
-  }
+  // Error text note: the endpoint answers {error} not {message}, so failures
+  // surface as ApiError('HTTP <status>'); consumers show their own toast.
+  await post('/api/rpc-configs', config);
 
   invalidateRpcClients();
 }
 
 // 删除RPC配置
 export async function deleteRpcConfig(chainId: number): Promise<void> {
-  const baseUrl = apiClient.getBaseUrl();
-  const response = await fetch(`${baseUrl}/api/rpc-configs/${chainId}`, {
-    method: 'DELETE',
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({}));
-    throw new Error(error.error ?? 'Failed to delete RPC config');
-  }
+  await del(`/api/rpc-configs/${chainId}`);
 
   invalidateRpcClients();
 }

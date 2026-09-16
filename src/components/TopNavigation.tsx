@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { navigate } from '@native-router/core';
+import { useRouter } from '@native-router/react';
 import { css, cx } from '@linaria/core';
 import { Input, Button } from 'haze-ui';
 import { useControl } from 'react-use-control';
@@ -402,7 +403,7 @@ export default function TopNavigation({
   onSearch,
   searchPlaceholder,
 }: TopNavigationProps) {
-  const navigate = useNavigate();
+  const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
   const [, setShowRpcConfig, rpcConfigControl] = useControl<boolean>(null, false);
   const [loading, setLoading] = useState(false);
@@ -410,6 +411,12 @@ export default function TopNavigation({
   const [searchHistory, setSearchHistory] = useState<SearchHistoryItem[]>([]);
   const [historyLoaded, setHistoryLoaded] = useState(false);
   const searchContainerRef = React.useRef<HTMLDivElement>(null);
+
+  // Fire-and-forget in-app navigation; a superseded navigation rejects with
+  // NavigationCancelledError, swallowed here as "stay on the old view".
+  const goTo = (to: string) => {
+    navigate(router, to).catch(() => undefined);
+  };
 
   const chainInfo = getChainInfo(currentChainId);
 
@@ -457,13 +464,13 @@ export default function TopNavigation({
 
     // Navigate directly based on query pattern
     if (query.startsWith('0x') && query.length === 42) {
-      navigate(`/chain/${currentChainId}/address/${query}`);
+      goTo(`/chain/${currentChainId}/address/${query}`);
     } else if (query.startsWith('0x') && query.length === 66) {
-      navigate(`/chain/${currentChainId}/tx/${query}`);
+      goTo(`/chain/${currentChainId}/tx/${query}`);
     } else if (/^\d+$/.test(query)) {
-      navigate(`/chain/${currentChainId}/block/${query}`);
+      goTo(`/chain/${currentChainId}/block/${query}`);
     } else {
-      navigate(`/search?q=${encodeURIComponent(query)}`);
+      goTo(`/search?q=${encodeURIComponent(query)}`);
     }
   };
 
@@ -478,11 +485,11 @@ export default function TopNavigation({
         const query = searchQuery.trim();
 
         if (query.startsWith('0x') && query.length === 42) {
-          navigate(`/chain/${currentChainId}/address/${query}`);
+          goTo(`/chain/${currentChainId}/address/${query}`);
         } else if (query.startsWith('0x') && query.length === 66) {
-          navigate(`/chain/${currentChainId}/tx/${query}`);
+          goTo(`/chain/${currentChainId}/tx/${query}`);
         } else if (/^\d+$/.test(query)) {
-          navigate(`/chain/${currentChainId}/block/${query}`);
+          goTo(`/chain/${currentChainId}/block/${query}`);
         } else {
           const response = await fetch(
             `/api/chains/${currentChainId}/search?q=${encodeURIComponent(query)}`,
@@ -492,13 +499,13 @@ export default function TopNavigation({
           if (data.found && data.data) {
             switch (data.type) {
               case 'address':
-                navigate(`/chain/${currentChainId}/address/${query}`);
+                goTo(`/chain/${currentChainId}/address/${query}`);
                 break;
               case 'transaction':
-                navigate(`/chain/${currentChainId}/tx/${query}`);
+                goTo(`/chain/${currentChainId}/tx/${query}`);
                 break;
               case 'block':
-                navigate(`/chain/${currentChainId}/block/${query}`);
+                goTo(`/chain/${currentChainId}/block/${query}`);
                 break;
             }
           }
@@ -517,7 +524,7 @@ export default function TopNavigation({
     <>
       <nav className={nav}>
         <div className={navInner}>
-          <div onClick={() => navigate(`/chain/${currentChainId}`)} className={logoStyle}>
+          <div onClick={() => goTo(`/chain/${currentChainId}`)} className={logoStyle}>
             <span style={{ fontSize: '24px' }}>🚀</span>
             <span className={logoText}>My Block Explorer</span>
           </div>

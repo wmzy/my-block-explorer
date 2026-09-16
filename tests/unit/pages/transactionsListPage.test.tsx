@@ -1,20 +1,33 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { MemoryRouter, View, createRoutes } from '@native-router/react';
 import '@testing-library/jest-dom';
-import TransactionsListPage from '@/pages/TransactionsListPage';
+import TransactionsList from '@/views/Transactions/List';
 
-vi.mock('../../../src/components/TopNavigation', () => ({
+vi.mock('@/components/TopNavigation', () => ({
   default: ({ currentChainId }: { currentChainId: number }) => (
     <div data-testid="top-navigation">
-      TopNav chain=
+      chain:
       {currentChainId}
     </div>
   ),
 }));
 
-vi.mock('../../../src/config/chains', () => ({
+// CopyableHash still takes plain href strings; stubbed here to keep the
+// view test isolated from the shared component internals.
+vi.mock('@/components/ui/CopyableHash', () => ({
+  CopyableHash: ({
+    value,
+    truncated,
+    href,
+  }: {
+    value: string;
+    truncated?: string;
+    href?: string;
+  }) => (href ? <a href={href}>{truncated ?? value}</a> : <span>{truncated ?? value}</span>),
+}));
+
+vi.mock('@/config/chains', () => ({
   getChainInfo: (chainId: number) => {
     if (chainId === 1) return { id: 1, name: 'Ethereum', nativeCurrency: { symbol: 'ETH' } };
     return null;
@@ -28,142 +41,138 @@ vi.mock('@/utils/format', () => ({
   formatRelativeTime: () => '5 min ago',
 }));
 
-const mockTransactions = [
-  {
-    hash: '0xabc123def456abc123def456abc123def456abc123def456abc123def456abc1',
-    blockNumber: '18000001',
-    fromAddress: '0x1234567890abcdef1234567890abcdef12345678',
-    toAddress: '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd',
-    value: '1000000000000000000',
-    status: 1,
-    timestamp: '2024-01-01T00:00:00Z',
-  },
-  {
-    hash: '0xdef789abc123def789abc123def789abc123def789abc123def789abc123def7',
-    blockNumber: '18000000',
-    fromAddress: '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd',
-    toAddress: '0x1234567890abcdef1234567890abcdef12345678',
-    value: '0',
-    status: 0,
-    timestamp: '2024-01-01T00:00:00Z',
-  },
-];
+type TransactionsHookResult = {
+  data?: { transactions?: unknown[]; latestBlockNumber?: bigint };
+  loading: boolean;
+  error?: Error;
+  refetch?: () => void;
+};
 
-const renderPage = (path = '/chain/1/transactions') =>
+const mockUseLatestTransactions = vi.fn<(...args: unknown[]) => TransactionsHookResult>();
+
+vi.mock('@/services/chainRpc', () => ({
+  useLatestTransactions: (...args: unknown[]) => mockUseLatestTransactions(...args),
+}));
+
+const makeTx = (blockNumber: number, status: number) => ({
+  hash: `0xtx${blockNumber}`,
+  blockNumber: String(blockNumber),
+  fromAddress: '0x1234567890abcdef1234567890abcdef12345678',
+  toAddress: '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd',
+  value: '1000000000000000000',
+  status,
+  timestamp: '2024-01-01T00:00:00Z',
+});
+
+const renderTransactionsList = (path: string) =>
   render(
-    <MemoryRouter initialEntries={[path]}>
-      <Routes>
-        <Route path="/chain/:chainId/transactions" element={<TransactionsListPage />} />
-      </Routes>
+    <MemoryRouter
+      routes={createRoutes([
+        { path: '/chain/:chainId/transactions', component: () => TransactionsList },
+      ])}
+      initialEntries={[path]}
+    >
+      <View />
     </MemoryRouter>,
   );
 
-describe('TransactionsListPage', () => {
+describe('TransactionsList view', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockUseLatestTransactions.mockReturnValue({
+      data: undefined,
+      loading: false,
+      error: undefined,
+    });
   });
 
-  it('renders TopNavigation and page header', async () => {
-    (global.fetch as any).mockResolvedValueOnce({
-      ok: true,
-      json: () =>
-        Promise.resolve({
-          data: mockTransactions,
-          pagination: { totalPages: 3 },
-        }),
-    });
+  it('renders TopNavigation and page header, querying the head page', async () => {
+    renderTransactionsList('/chain/1/transactions');
 
-    renderPage();
-
-    expect(screen.getByTestId('top-navigation')).toBeInTheDocument();
+    expect(await screen.findByTestId('top-navigation')).toBeInTheDocument();
     expect(screen.getByText('Transactions')).toBeInTheDocument();
     expect(screen.getByText(/Ethereum/)).toBeInTheDocument();
+    expect(mockUseLatestTransactions).toHaveBeenCalledWith(1, 20, undefined);
   });
 
-  it('displays loading state initially', () => {
-    (global.fetch as any).mockReturnValue(new Promise(() => {}));
-    renderPage();
-    expect(screen.getAllByTestId('skeleton').length).toBeGreaterThan(0);
+  it('displays loading skeleton while the query is in flight', async () => {
+    mockUseLatestTransactions.mockReturnValue({
+      data: undefined,
+      loading: true,
+      error: undefined,
+    });
+    renderTransactionsList('/chain/1/transactions');
+    expect((await screen.findAllByTestId('skeleton')).length).toBeGreaterThan(0);
   });
 
-  it.skip('displays transactions after loading', async () => {
-    (global.fetch as any).mockResolvedValueOnce({
-      ok: true,
-      json: () =>
-        Promise.resolve({
-          data: mockTransactions,
-          pagination: { totalPages: 3 },
-        }),
+  it('displays transactions with status badges after loading', async () => {
+    mockUseLatestTransactions.mockReturnValue({
+      data: {
+        transactions: [makeTx(18000001, 1), makeTx(18000000, 0)],
+        latestBlockNumber: 18000001n,
+      },
+      loading: false,
+      error: undefined,
     });
+    renderTransactionsList('/chain/1/transactions');
 
-    renderPage();
-
-    await waitFor(() => {
-      expect(screen.getByText('Success')).toBeInTheDocument();
-      expect(screen.getByText('Failed')).toBeInTheDocument();
-    });
-  });
-
-  it.skip('displays error on fetch failure', async () => {
-    (global.fetch as any).mockResolvedValueOnce({
-      ok: false,
-      status: 500,
-      statusText: 'Internal Server Error',
-    });
-
-    renderPage();
-
-    await waitFor(() => {
-      expect(screen.getByText(/HTTP 500: Internal Server Error/)).toBeInTheDocument();
-    });
-  });
-
-  it('shows unsupported chain error for invalid chain', () => {
-    render(
-      <MemoryRouter initialEntries={['/chain/999/transactions']}>
-        <Routes>
-          <Route path="/chain/:chainId/transactions" element={<TransactionsListPage />} />
-        </Routes>
-      </MemoryRouter>,
+    expect(await screen.findByText('Success')).toBeInTheDocument();
+    expect(screen.getByText('Failed')).toBeInTheDocument();
+    expect(screen.getAllByText('5 min ago').length).toBe(2);
+    expect(screen.getAllByText('1.0000 ETH').length).toBe(2);
+    // Block number and hash links navigate within the app
+    expect(screen.getByText('18,000,001').closest('a')?.getAttribute('href')).toBe(
+      '/chain/1/block/18000001',
     );
-
-    expect(screen.getByText(/Unsupported chain ID/)).toBeInTheDocument();
+    expect(screen.getByText('0xtx18000001').closest('a')?.getAttribute('href')).toBe(
+      '/chain/1/tx/0xtx18000001',
+    );
   });
 
-  it.skip('shows correct status badges', async () => {
-    (global.fetch as any).mockResolvedValueOnce({
-      ok: true,
-      json: () =>
-        Promise.resolve({
-          data: mockTransactions,
-          pagination: { totalPages: 1 },
-        }),
+  it('displays error state when the query fails', async () => {
+    mockUseLatestTransactions.mockReturnValue({
+      data: undefined,
+      loading: false,
+      error: new Error('Failed to get transactions'),
+      refetch: vi.fn(),
     });
+    renderTransactionsList('/chain/1/transactions');
 
-    renderPage();
-
-    await waitFor(() => {
-      expect(screen.getByText('Success')).toBeInTheDocument();
-      expect(screen.getByText('Failed')).toBeInTheDocument();
-    });
+    expect(await screen.findByText(/Failed to get transactions/)).toBeInTheDocument();
+    expect(screen.getByText('Retry')).toBeInTheDocument();
   });
 
-  it.skip('has pagination controls', async () => {
-    (global.fetch as any).mockResolvedValueOnce({
-      ok: true,
-      json: () =>
-        Promise.resolve({
-          data: mockTransactions,
-          pagination: { totalPages: 3 },
-        }),
+  it('shows empty state when the head page is empty', async () => {
+    mockUseLatestTransactions.mockReturnValue({
+      data: { transactions: [], latestBlockNumber: 18000001n },
+      loading: false,
+      error: undefined,
     });
+    renderTransactionsList('/chain/1/transactions');
 
-    renderPage();
+    expect(await screen.findByText('No transactions found')).toBeInTheDocument();
+  });
 
-    await waitFor(() => {
-      expect(screen.getByText(/Page 1/)).toBeInTheDocument();
-      expect(screen.getByText('Newer')).toBeDisabled();
-      expect(screen.getByText('Older')).not.toBeDisabled();
+  it('shows unsupported chain error for invalid chain', async () => {
+    renderTransactionsList('/chain/999/transactions');
+    expect(await screen.findByText(/Unsupported chain ID/)).toBeInTheDocument();
+  });
+
+  it('paginates via the beforeBlock cursor computed from the head page', async () => {
+    const twenty = Array.from({ length: 20 }, (_, i) => makeTx(18000001 - i, 1));
+    mockUseLatestTransactions.mockReturnValue({
+      data: { transactions: twenty, latestBlockNumber: 18000001n },
+      loading: false,
+      error: undefined,
     });
+    renderTransactionsList('/chain/1/transactions');
+
+    expect(await screen.findByText(/Page 1/)).toBeInTheDocument();
+    expect(screen.getByText('Newer')).toBeDisabled();
+    expect(screen.getByText('Older')).not.toBeDisabled();
+
+    fireEvent.click(screen.getByText('Older'));
+    // page 2 cursor: 18000001 - 5
+    expect(mockUseLatestTransactions).toHaveBeenLastCalledWith(1, 20, 17999996n);
   });
 });

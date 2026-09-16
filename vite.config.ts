@@ -1,6 +1,7 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import wyw from '@wyw-in-js/vite';
+import hazeCss from 'vite-plugin-haze-ui';
 import path from 'path';
 import type { Plugin } from 'vite';
 
@@ -86,6 +87,9 @@ function honoApiPlugin(): Plugin {
 export default defineConfig({
   base: process.env.VITE_BASE ?? '/',
   plugins: [
+    // On-demand CSS collection: scans haze-ui named imports and injects the
+    // matching CSS side-effect imports (mechanism: vite-plugin-haze-ui README).
+    hazeCss(),
     react({
       exclude: ['node_modules/**'],
     }),
@@ -93,7 +97,6 @@ export default defineConfig({
       sourceMap: process.env.NODE_ENV !== 'production',
       displayName: process.env.NODE_ENV !== 'production',
       exclude: ['node_modules/**'],
-      evaluate: false,
     }),
     honoApiPlugin(),
   ],

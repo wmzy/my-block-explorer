@@ -1,6 +1,6 @@
 import { css, cx } from '@linaria/core';
 import type { Hex } from 'viem';
-import { useStorageAt } from '@/hooks/useStorageLayout';
+import { useStorageAt } from '@/hooks/useStorageAt';
 
 const slotDisplayStyle = css`
   display: flex;

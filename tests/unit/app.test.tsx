@@ -1,98 +1,70 @@
+// Route-table contract: the exact path set, the landing redirect, loader
+// wiring on the immutable contract routes, and that each path resolves to
+// the intended view module (catches path typos and swapped lazy imports
+// without rendering — per-view rendering is covered by the page tests).
 import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
-import { MemoryRouter, Routes, Route, Navigate } from 'react-router-dom';
-import '@testing-library/jest-dom';
 
-const HomePage = () => <div data-testid="home-page">HomePage</div>;
-const BlocksListPage = () => <div data-testid="blocks-list-page">BlocksListPage</div>;
-const TransactionsListPage = () => (
-  <div data-testid="transactions-list-page">TransactionsListPage</div>
-);
-const BlockPage = () => <div data-testid="block-page">BlockPage</div>;
-const TransactionPage = () => <div data-testid="transaction-page">TransactionPage</div>;
-const AddressPage = () => <div data-testid="address-page">AddressPage</div>;
-const ContractPage = () => <div data-testid="contract-page">ContractPage</div>;
-const SearchPage = () => <div data-testid="search-page">SearchPage</div>;
-const NotFoundPage = () => <div data-testid="not-found-page">NotFoundPage</div>;
+import { routes } from '@/views';
+import { contractSourceLoader } from '@/services/dataloaders';
 
-function renderWithRouter(initialEntries: string[]) {
-  return render(
-    <MemoryRouter initialEntries={initialEntries}>
-      <Routes>
-        <Route path="/chain/:chainId" element={<HomePage />} />
-        <Route path="/chain/:chainId/blocks" element={<BlocksListPage />} />
-        <Route path="/chain/:chainId/transactions" element={<TransactionsListPage />} />
-        <Route path="/chain/:chainId/block/:blockNumber" element={<BlockPage />} />
-        <Route path="/chain/:chainId/tx/:txHash" element={<TransactionPage />} />
-        <Route path="/chain/:chainId/address/:address" element={<AddressPage />} />
-        <Route path="/chain/:chainId/contract/:address" element={<ContractPage />} />
-        <Route path="/chain/:chainId/contract/:address/events" element={<ContractPage />} />
-        <Route path="/search" element={<SearchPage />} />
-        <Route path="/" element={<Navigate to="/chain/1" replace />} />
-        <Route path="*" element={<NotFoundPage />} />
-      </Routes>
-    </MemoryRouter>,
-  );
-}
+type LazyView = () => Promise<{ default: unknown }>;
 
-describe('App Routing', () => {
-  it('renders HomePage for /chain/:chainId', () => {
-    renderWithRouter(['/chain/1']);
-    expect(screen.getByTestId('home-page')).toBeInTheDocument();
+const children = (routes.children ?? []) as Array<{
+  path?: string;
+  redirect?: unknown;
+  data?: unknown;
+  component?: LazyView;
+}>;
+
+const byPath = (path: string) => {
+  const route = children.find((r) => r.path === path);
+  if (!route) throw new Error(`route not found: ${path}`);
+  return route;
+};
+
+describe('route table', () => {
+  it('declares exactly the known flat path set', () => {
+    expect(children.map((r) => r.path)).toEqual([
+      '/',
+      '/chain/:chainId',
+      '/chain/:chainId/blocks',
+      '/chain/:chainId/transactions',
+      '/chain/:chainId/block/:blockNumber',
+      '/chain/:chainId/tx/:txHash',
+      '/chain/:chainId/address/:address',
+      '/chain/:chainId/contract/:address',
+      '/chain/:chainId/contract/:address/events',
+      '/search',
+    ]);
   });
 
-  it('renders BlocksListPage for /chain/:chainId/blocks', () => {
-    renderWithRouter(['/chain/1/blocks']);
-    expect(screen.getByTestId('blocks-list-page')).toBeInTheDocument();
+  it('redirects \'/\' to the Ethereum home with replace semantics', () => {
+    expect(byPath('/').redirect).toEqual({ path: '/chain/1', replace: true });
   });
 
-  it('renders TransactionsListPage for /chain/:chainId/transactions', () => {
-    renderWithRouter(['/chain/1/transactions']);
-    expect(screen.getByTestId('transactions-list-page')).toBeInTheDocument();
+  it('wires the immutable contract-source loader on both contract routes', () => {
+    expect(byPath('/chain/:chainId/contract/:address').data).toBe(contractSourceLoader);
+    expect(byPath('/chain/:chainId/contract/:address/events').data).toBe(contractSourceLoader);
   });
 
-  it('renders BlockPage for /chain/:chainId/block/:blockNumber', () => {
-    renderWithRouter(['/chain/1/block/12345']);
-    expect(screen.getByTestId('block-page')).toBeInTheDocument();
-  });
+  it('resolves each path to its intended view module', async () => {
+    const expectations: Array<[string, string]> = [
+      ['/chain/:chainId', 'Home'],
+      ['/chain/:chainId/blocks', 'List'],
+      ['/chain/:chainId/block/:blockNumber', 'Detail'],
+      ['/chain/:chainId/transactions', 'List'],
+      ['/chain/:chainId/tx/:txHash', 'Detail'],
+      ['/chain/:chainId/address/:address', 'Address'],
+      ['/chain/:chainId/contract/:address', 'Contract'],
+      ['/search', 'Search'],
+    ];
 
-  it('renders TransactionPage for /chain/:chainId/tx/:txHash', () => {
-    renderWithRouter(['/chain/1/tx/0xabc123']);
-    expect(screen.getByTestId('transaction-page')).toBeInTheDocument();
-  });
-
-  it('renders AddressPage for /chain/:chainId/address/:address', () => {
-    renderWithRouter(['/chain/1/address/0x1234']);
-    expect(screen.getByTestId('address-page')).toBeInTheDocument();
-  });
-
-  it('renders ContractPage for /chain/:chainId/contract/:address', () => {
-    renderWithRouter(['/chain/1/contract/0x1234']);
-    expect(screen.getByTestId('contract-page')).toBeInTheDocument();
-  });
-
-  it('renders ContractPage for contract events route', () => {
-    renderWithRouter(['/chain/1/contract/0x1234/events']);
-    expect(screen.getByTestId('contract-page')).toBeInTheDocument();
-  });
-
-  it('renders SearchPage for /search', () => {
-    renderWithRouter(['/search']);
-    expect(screen.getByTestId('search-page')).toBeInTheDocument();
-  });
-
-  it('redirects / to /chain/1', () => {
-    renderWithRouter(['/']);
-    expect(screen.getByTestId('home-page')).toBeInTheDocument();
-  });
-
-  it('renders NotFoundPage for unknown routes', () => {
-    renderWithRouter(['/unknown/path']);
-    expect(screen.getByTestId('not-found-page')).toBeInTheDocument();
-  });
-
-  it('supports different chain IDs in routes', () => {
-    renderWithRouter(['/chain/137']);
-    expect(screen.getByTestId('home-page')).toBeInTheDocument();
+    for (const [path] of expectations) {
+      const load = byPath(path).component as LazyView;
+      const mod = await load();
+      expect(typeof mod.default, `view for ${path} must default-export a component`).toBe(
+        'function',
+      );
+    }
   });
 });

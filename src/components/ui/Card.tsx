@@ -1,5 +1,12 @@
 import { css, cx } from '@linaria/core';
-import { Card as HazeCard } from 'haze-ui';
+// Per-component submodule import instead of the 'haze-ui' barrel: the local
+// wrapper shares the component name, so a barrel import would need an `as`
+// alias — which vite-plugin-haze-ui (1.0.1) cannot map to CSS when the braces
+// keep Prettier's inner spaces. Non-barrel specifiers are outside the plugin's
+// collection; the explicit CSS side-effect import below mirrors what the
+// plugin injects for barrel imports (css-manifest.json families: Card -> card).
+import { Card as HazeCard } from 'haze-ui/components/Card';
+import 'haze-ui/css/card.css';
 import type { ReactNode } from 'react';
 
 export type CardProps = {

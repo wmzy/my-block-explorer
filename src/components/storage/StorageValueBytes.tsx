@@ -2,7 +2,7 @@ import { css } from '@linaria/core';
 import { useState, useEffect } from 'react';
 import { concatHex, hexToBigInt, hexToString, keccak256, pad, slice, toHex } from 'viem';
 import type { Hex } from 'viem';
-import { useStorageAt } from '@/hooks/useStorageLayout';
+import { useStorageAt } from '@/hooks/useStorageAt';
 
 const bytesContainerStyle = css`
   display: flex;

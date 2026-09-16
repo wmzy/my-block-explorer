@@ -74,7 +74,7 @@ describe('Services - Basic Structure Tests', () => {
       ).not.toThrow();
     });
 
-    it('should detect search types correctly', () => {
+    it('should detect search types correctly', async () => {
       const mockBlockService = {
         getBlockByNumber: async () => null,
         getBlockByHash: async () => null,
@@ -106,9 +106,9 @@ describe('Services - Basic Structure Tests', () => {
       );
       const resultAddr = service.search(1, '0x1234567890123456789012345678901234567890');
 
-      expect(resultBlock).resolves.toMatchObject({ type: 'block' });
-      expect(resultTx).resolves.toMatchObject({ type: 'transaction' });
-      expect(resultAddr).resolves.toMatchObject({ type: 'address' });
+      await expect(resultBlock).resolves.toMatchObject({ type: 'block' });
+      await expect(resultTx).resolves.toMatchObject({ type: 'transaction' });
+      await expect(resultAddr).resolves.toMatchObject({ type: 'address' });
     });
   });
 

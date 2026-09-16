@@ -1,18 +1,22 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
-import { BrowserRouter } from 'react-router-dom';
 import '@testing-library/jest-dom';
 import TopNavigation from '@/components/TopNavigation';
 
-// Mock react-router-dom
-const mockNavigate = vi.fn();
-vi.mock('react-router-dom', async () => {
-  const actual = await vi.importActual('react-router-dom');
-  return {
-    ...actual,
-    useNavigate: () => mockNavigate,
-  };
-});
+// Mock @native-router: TopNavigation reads the router via useRouter and
+// navigates through the core navigate(router, to) free function. Stubbing
+// both keeps the component's routing contract observable without mounting a
+// HistoryRouter (painless view-test style, the lighter path).
+const { mockRouter, mockNavigate } = vi.hoisted(() => ({
+  mockRouter: { name: 'mock-router' },
+  mockNavigate: vi.fn((): Promise<void> => Promise.resolve(undefined)),
+}));
+vi.mock('@native-router/react', () => ({
+  useRouter: () => mockRouter,
+}));
+vi.mock('@native-router/core', () => ({
+  navigate: mockNavigate,
+}));
 
 // Mock RpcConfig
 vi.mock('../../src/components/RpcConfig', () => ({
@@ -62,11 +66,7 @@ const renderTopNavigation = (props = {}) => {
     searchPlaceholder: 'Search address, tx hash, or block number...',
   };
 
-  return render(
-    <BrowserRouter>
-      <TopNavigation {...defaultProps} {...props} />
-    </BrowserRouter>,
-  );
+  return render(<TopNavigation {...defaultProps} {...props} />);
 };
 
 describe('TopNavigation', () => {
@@ -184,7 +184,7 @@ describe('TopNavigation', () => {
 
     // Test click functionality
     fireEvent.click(logo);
-    expect(mockNavigate).toHaveBeenCalledWith('/chain/5000');
+    expect(mockNavigate).toHaveBeenCalledWith(mockRouter, '/chain/5000');
   });
 
   it('uses custom search placeholder', () => {

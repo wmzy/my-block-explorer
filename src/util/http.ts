@@ -1,0 +1,98 @@
+import * as ff from 'fetch-fun';
+
+import { getApiBase } from '@/util/apiBase';
+import { ApiError } from '@/util/apiError';
+
+// Backend error bodies are {message, code?, details?}. Anything else
+// (e.g. an HTML error page) degrades to undefined by fetch-fun's JSON
+// reader, so extract fields defensively instead of trusting the shape.
+function toApiError(e: ff.HTTPError): ApiError {
+  const body: Record<string, unknown> =
+    typeof e.data === 'object' && e.data !== null
+      ? (e.data as Record<string, unknown>)
+      : {};
+  const message = typeof body.message === 'string' ? body.message : undefined;
+  const code = typeof body.code === 'string' ? body.code : undefined;
+  const details = 'details' in body ? body.details : undefined;
+  return new ApiError(message ?? `HTTP ${e.status}`, e.status, code, details);
+}
+
+// Base chain: JSON headers, a per-attempt 10s timeout budget, and error
+// mapping to ApiError. No auth machinery and no retry in this app: the
+// backend is GET-dominant and the only writes are contract reads and
+// rpc-config management, none of which should replay.
+const base = ff
+  .create()
+  .pipe(ff.header, 'content-type', 'application/json')
+  .pipe(ff.header, 'accept', 'application/json')
+  .pipe(ff.timeout, 10_000)
+  .pipe(ff.mapError, (e: unknown) => {
+    if (e instanceof ff.HTTPError) return toApiError(e);
+    if (e instanceof ff.TimeoutError) {
+      return new ApiError('Request timeout', 408);
+    }
+    if (e instanceof ff.NetworkError) {
+      return new ApiError(e.message, 0);
+    }
+    // User aborts and foreign errors pass through unchanged: an aborted
+    // query is a cancellation, not a failure to surface as an error state.
+    return e;
+  });
+
+// Request functions only accept chains derived from `api`: the phantom
+// brand cannot be constructed outside this module, so the header/timeout/
+// mapError invariants are guaranteed at the type level, not by convention.
+// The brand flows through `pipe` and the exported combinators.
+declare const apiBrand: unique symbol;
+
+/** Options accepted as the trailing argument of the request helpers. */
+export type ApiClient = ff.Options & ff.Pipe & { readonly [apiBrand]: never };
+
+export const api: ApiClient = base as unknown as ApiClient;
+
+// The API base is discovered at runtime, so it cannot be baked into the
+// chain: resolve it per request. '' keeps the URL relative (same-origin).
+function based(o: ApiClient): ff.Options {
+  return ff.baseUrl(o, getApiBase());
+}
+
+// ff.signal requires a non-null signal: this wrapper accepts undefined
+// (query-layer signals are per-request transient) and spreads it through,
+// which is runtime-equivalent.
+export function withSignal<T extends ff.Options>(o: T, signal?: AbortSignal): T {
+  return { ...o, signal };
+}
+
+export function get<T = unknown>(
+  url: string,
+  params?: Record<string, string | number | undefined>,
+  o: ApiClient = api,
+) {
+  let chain = ff.url(ff.method(based(o), 'get'), url);
+  if (params) {
+    // Drop undefined entries so optional filters stay out of the URL.
+    const defined = Object.fromEntries(
+      Object.entries(params).filter(([, v]) => v !== undefined),
+    ) as Record<string, string | number | boolean>;
+    chain = ff.query(chain, defined);
+  }
+  return ff.fetchJSON<T>(chain) as Promise<T>;
+}
+
+export function del<T = unknown>(url: string, o: ApiClient = api) {
+  return ff.fetchJSON<T>(ff.url(ff.method(based(o), 'delete'), url)) as Promise<T>;
+}
+
+export function post<T = unknown>(url: string, data: unknown, o: ApiClient = api) {
+  return sendJSON<T>('post', url, data, o);
+}
+
+export function put<T = unknown>(url: string, data: unknown, o: ApiClient = api) {
+  return sendJSON<T>('put', url, data, o);
+}
+
+function sendJSON<T>(m: string, url: string, data: unknown, o: ApiClient): Promise<T> {
+  return ff.fetchJSON<T>(
+    ff.body(ff.method(ff.url(based(o), url), m), JSON.stringify(data)),
+  ) as Promise<T>;
+}

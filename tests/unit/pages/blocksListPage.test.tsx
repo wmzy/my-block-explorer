@@ -1,20 +1,33 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { MemoryRouter, View, createRoutes } from '@native-router/react';
 import '@testing-library/jest-dom';
-import BlocksListPage from '@/pages/BlocksListPage';
+import BlocksList from '@/views/Blocks/List';
 
-vi.mock('../../../src/components/TopNavigation', () => ({
+vi.mock('@/components/TopNavigation', () => ({
   default: ({ currentChainId }: { currentChainId: number }) => (
     <div data-testid="top-navigation">
-      TopNav chain=
+      chain:
       {currentChainId}
     </div>
   ),
 }));
 
-vi.mock('../../../src/config/chains', () => ({
+// CopyableHash still takes plain href strings; stubbed here to keep the
+// view test isolated from the shared component internals.
+vi.mock('@/components/ui/CopyableHash', () => ({
+  CopyableHash: ({
+    value,
+    truncated,
+    href,
+  }: {
+    value: string;
+    truncated?: string;
+    href?: string;
+  }) => (href ? <a href={href}>{truncated ?? value}</a> : <span>{truncated ?? value}</span>),
+}));
+
+vi.mock('@/config/chains', () => ({
   getChainInfo: (chainId: number) => {
     if (chainId === 1) return { id: 1, name: 'Ethereum', nativeCurrency: { symbol: 'ETH' } };
     return null;
@@ -27,124 +40,125 @@ vi.mock('@/utils/format', () => ({
   formatRelativeTime: () => '2 min ago',
 }));
 
-const mockBlocks = [
-  {
-    number: '18000001',
-    hash: '0xabc1',
-    timestamp: '2024-01-01T00:00:00Z',
-    miner: '0x1234567890abcdef1234567890abcdef12345678',
-    gasUsed: '15000000',
-    gasLimit: '30000000',
-    transactionCount: 150,
-  },
-  {
-    number: '18000000',
-    hash: '0xabc0',
-    timestamp: '2024-01-01T00:00:00Z',
-    miner: '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd',
-    gasUsed: '12000000',
-    gasLimit: '30000000',
-    transactionCount: 120,
-  },
-];
+type BlocksHookResult = {
+  data?: { blocks?: unknown[]; latestBlockNumber?: bigint };
+  loading: boolean;
+  error?: Error;
+  refetch?: () => void;
+};
 
-const renderPage = (path = '/chain/1/blocks') =>
+const mockUseLatestBlocks = vi.fn<(...args: unknown[]) => BlocksHookResult>();
+
+vi.mock('@/services/chainRpc', () => ({
+  useLatestBlocks: (...args: unknown[]) => mockUseLatestBlocks(...args),
+}));
+
+const makeBlock = (number: number) => ({
+  number: String(number),
+  hash: `0xhash${number}`,
+  timestamp: '2024-01-01T00:00:00Z',
+  miner: '0x1234567890abcdef1234567890abcdef12345678',
+  gasUsed: '15000000',
+  gasLimit: '30000000',
+  transactionCount: 150,
+});
+
+const renderBlocksList = (path: string) =>
   render(
-    <MemoryRouter initialEntries={[path]}>
-      <Routes>
-        <Route path="/chain/:chainId/blocks" element={<BlocksListPage />} />
-      </Routes>
+    <MemoryRouter
+      routes={createRoutes([{ path: '/chain/:chainId/blocks', component: () => BlocksList }])}
+      initialEntries={[path]}
+    >
+      <View />
     </MemoryRouter>,
   );
 
-describe('BlocksListPage', () => {
+describe('BlocksList view', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockUseLatestBlocks.mockReturnValue({ data: undefined, loading: false, error: undefined });
   });
 
-  it('renders TopNavigation and page header', async () => {
-    (global.fetch as any).mockResolvedValueOnce({
-      ok: true,
-      json: () =>
-        Promise.resolve({
-          data: mockBlocks,
-          pagination: { totalPages: 5 },
-        }),
-    });
+  it('renders TopNavigation and page header, querying the head page', async () => {
+    renderBlocksList('/chain/1/blocks');
 
-    renderPage();
-
-    expect(screen.getByTestId('top-navigation')).toBeInTheDocument();
+    expect(await screen.findByTestId('top-navigation')).toBeInTheDocument();
     expect(screen.getByText('Blocks')).toBeInTheDocument();
     expect(screen.getByText(/Ethereum/)).toBeInTheDocument();
+    // head query (no cursor) — called once per render for page 1
+    expect(mockUseLatestBlocks).toHaveBeenCalledWith(1, 20, undefined);
   });
 
-  it('displays loading state initially', () => {
-    (global.fetch as any).mockReturnValue(new Promise(() => {}));
-    renderPage();
-    expect(screen.getAllByTestId('skeleton').length).toBeGreaterThan(0);
+  it('displays loading skeleton while the query is in flight', async () => {
+    mockUseLatestBlocks.mockReturnValue({ data: undefined, loading: true, error: undefined });
+    renderBlocksList('/chain/1/blocks');
+    expect((await screen.findAllByTestId('skeleton')).length).toBeGreaterThan(0);
   });
 
-  it.skip('displays blocks after loading', async () => {
-    (global.fetch as any).mockResolvedValueOnce({
-      ok: true,
-      json: () =>
-        Promise.resolve({
-          data: mockBlocks,
-          pagination: { totalPages: 5 },
-        }),
+  it('displays blocks after loading', async () => {
+    mockUseLatestBlocks.mockReturnValue({
+      data: { blocks: [makeBlock(18000001), makeBlock(18000000)], latestBlockNumber: 18000001n },
+      loading: false,
+      error: undefined,
     });
+    renderBlocksList('/chain/1/blocks');
 
-    renderPage();
-
-    await waitFor(() => {
-      expect(screen.getByText('150')).toBeInTheDocument();
-      expect(screen.getByText('120')).toBeInTheDocument();
-    });
-  });
-
-  it.skip('displays error on fetch failure', async () => {
-    (global.fetch as any).mockResolvedValueOnce({
-      ok: false,
-      status: 500,
-      statusText: 'Internal Server Error',
-    });
-
-    renderPage();
-
-    await waitFor(() => {
-      expect(screen.getByText(/HTTP 500: Internal Server Error/)).toBeInTheDocument();
-    });
-  });
-
-  it('shows unsupported chain error for invalid chain', () => {
-    render(
-      <MemoryRouter initialEntries={['/chain/999/blocks']}>
-        <Routes>
-          <Route path="/chain/:chainId/blocks" element={<BlocksListPage />} />
-        </Routes>
-      </MemoryRouter>,
+    expect(await screen.findByText('18,000,001')).toBeInTheDocument();
+    expect(screen.getByText('18,000,000')).toBeInTheDocument();
+    expect(screen.getAllByText('150').length).toBe(2);
+    expect(screen.getAllByText(/50.0%/).length).toBe(2);
+    expect(screen.getAllByText('2 min ago').length).toBe(2);
+    // Links navigate within the app via TypedLink with plain to strings
+    expect(screen.getByText('18,000,001').closest('a')?.getAttribute('href')).toBe(
+      '/chain/1/block/18000001',
     );
-
-    expect(screen.getByText(/Unsupported chain ID/)).toBeInTheDocument();
+    expect(screen.getAllByText('0x123456...345678').length).toBe(2);
   });
 
-  it.skip('has pagination controls', async () => {
-    (global.fetch as any).mockResolvedValueOnce({
-      ok: true,
-      json: () =>
-        Promise.resolve({
-          data: mockBlocks,
-          pagination: { totalPages: 5 },
-        }),
+  it('displays error state when the query fails', async () => {
+    mockUseLatestBlocks.mockReturnValue({
+      data: undefined,
+      loading: false,
+      error: new Error('Failed to get blocks'),
+      refetch: vi.fn(),
     });
+    renderBlocksList('/chain/1/blocks');
 
-    renderPage();
+    expect(await screen.findByText(/Failed to get blocks/)).toBeInTheDocument();
+    expect(screen.getByText('Retry')).toBeInTheDocument();
+  });
 
-    await waitFor(() => {
-      expect(screen.getByText(/Page 1/)).toBeInTheDocument();
-      expect(screen.getByText('Newer')).toBeDisabled();
-      expect(screen.getByText('Older')).not.toBeDisabled();
+  it('shows empty state when the head page is empty', async () => {
+    mockUseLatestBlocks.mockReturnValue({
+      data: { blocks: [], latestBlockNumber: 18000001n },
+      loading: false,
+      error: undefined,
     });
+    renderBlocksList('/chain/1/blocks');
+
+    expect(await screen.findByText('No blocks found')).toBeInTheDocument();
+  });
+
+  it('shows unsupported chain error for invalid chain', async () => {
+    renderBlocksList('/chain/999/blocks');
+    expect(await screen.findByText(/Unsupported chain ID/)).toBeInTheDocument();
+  });
+
+  it('paginates via the beforeBlock cursor computed from the head page', async () => {
+    const twenty = Array.from({ length: 20 }, (_, i) => makeBlock(18000001 - i));
+    mockUseLatestBlocks.mockReturnValue({
+      data: { blocks: twenty, latestBlockNumber: 18000001n },
+      loading: false,
+      error: undefined,
+    });
+    renderBlocksList('/chain/1/blocks');
+
+    expect(await screen.findByText(/Page 1/)).toBeInTheDocument();
+    expect(screen.getByText('Newer')).toBeDisabled();
+    expect(screen.getByText('Older')).not.toBeDisabled();
+
+    fireEvent.click(screen.getByText('Older'));
+    // page 2 cursor: 18000001 - 20 + 1
+    expect(mockUseLatestBlocks).toHaveBeenLastCalledWith(1, 20, 17999982n);
   });
 });

@@ -1,7 +1,7 @@
 import { css, cx } from '@linaria/core';
 import { Tooltip, useToast } from 'haze-ui';
+import { TypedLink } from '@native-router/react';
 import { linkStyle } from './DataTable';
-import { Link } from 'react-router-dom';
 
 const copyable = css`
   cursor: pointer;
@@ -36,9 +36,9 @@ export function CopyableHash({ value, truncated, href, className }: CopyableHash
 
   const content = href
     ? (
-        <Link to={href} className={cx(linkStyle, className)}>
+        <TypedLink to={href} className={cx(linkStyle, className)}>
           {display}
-        </Link>
+        </TypedLink>
       )
     : (
         <span className={cx(linkStyle, copyable, className)} onClick={handleCopy}>

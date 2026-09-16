@@ -1,9 +1,46 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { ApiClient, apiClient } from '@/api/client';
+import { setApiBase } from '@/util/apiBase';
 
 const DEFAULT_PORTS = [8201, 8202, 8203, 8204, 8205];
 const DEFAULT_HOST = 'localhost';
 const STORAGE_KEY = 'my-block-explorer-api-url';
+
+// Probe a candidate base URL for a live backend. The old code instantiated a
+// throwaway ApiClient per probe; the probes never go through the global base
+// (util/http always prefixes getApiBase()), so this stays a direct fetch with
+// the probe's own timeout. Same error contract as before: throws on failure,
+// callers decide whether that means "port closed" or "invalid URL".
+async function probeHealth(
+  url: string,
+  timeoutMs: number,
+): Promise<Record<string, unknown>> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(`${url}/api/health`, {
+      signal: controller.signal,
+      headers: { Accept: 'application/json' },
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}`);
+    }
+
+    const health = await response.json();
+    if (typeof health !== 'object' || health === null) {
+      throw new Error('Invalid health response');
+    }
+    return health as Record<string, unknown>;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error('Request timeout', { cause: error });
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 export type DiscoveryStatus =
   | 'idle' // Not started
@@ -34,11 +71,9 @@ export function useAutoDiscovery() {
   const testPort = useCallback(
     async (port: number, host = DEFAULT_HOST): Promise<ServiceInfo | null> => {
       const url = `http://${host}:${port}`;
-      const testApiClient = new ApiClient(url, 3000);
-
       try {
         const startTime = Date.now();
-        const health = await testApiClient.getHealth();
+        const health = await probeHealth(url, 3000);
         const latency = Date.now() - startTime;
 
         if (health?.status) {
@@ -78,7 +113,7 @@ export function useAutoDiscovery() {
             setIsScanning(false);
             setCurrentPort(null);
 
-            apiClient.setBaseUrl(service.url);
+            setApiBase(service.url);
 
             return service;
           }
@@ -104,8 +139,7 @@ export function useAutoDiscovery() {
     const savedUrl = localStorage.getItem(STORAGE_KEY);
     if (savedUrl) {
       try {
-        const testApiClient = new ApiClient(savedUrl, 3000);
-        const health = await testApiClient.getHealth();
+        const health = await probeHealth(savedUrl, 3000);
 
         if (health?.status) {
           const url = new URL(savedUrl);
@@ -118,7 +152,7 @@ export function useAutoDiscovery() {
 
           setServiceInfo(serviceInfo);
           setStatus('found');
-          apiClient.setBaseUrl(savedUrl);
+          setApiBase(savedUrl);
           return serviceInfo;
         }
       } catch {
@@ -133,8 +167,7 @@ export function useAutoDiscovery() {
   // Manually set API URL
   const setApiUrl = useCallback(async (url: string): Promise<boolean> => {
     try {
-      const testApiClient = new ApiClient(url, 5000);
-      const health = await testApiClient.getHealth();
+      const health = await probeHealth(url, 5000);
 
       if (health?.status) {
         const urlObj = new URL(url);
@@ -150,7 +183,7 @@ export function useAutoDiscovery() {
         setError(null);
 
         localStorage.setItem(STORAGE_KEY, url);
-        apiClient.setBaseUrl(url);
+        setApiBase(url);
 
         return true;
       }
@@ -170,12 +203,12 @@ export function useAutoDiscovery() {
     setIsScanning(false);
     setCurrentPort(null);
     localStorage.removeItem(STORAGE_KEY);
-    apiClient.setBaseUrl('');
+    setApiBase('');
   }, []);
 
   // Disconnect from current service (preserves saved URL for reconnect)
   const disconnect = useCallback(() => {
-    apiClient.setBaseUrl('');
+    setApiBase('');
     setServiceInfo(null);
     setError(null);
     setIsScanning(false);
@@ -194,8 +227,7 @@ export function useAutoDiscovery() {
       setError(null);
 
       try {
-        const testApiClient = new ApiClient(savedUrl, 3000);
-        const health = await testApiClient.getHealth();
+        const health = await probeHealth(savedUrl, 3000);
 
         if (health?.status) {
           const url = new URL(savedUrl);
@@ -209,7 +241,7 @@ export function useAutoDiscovery() {
           setServiceInfo(info);
           setStatus('found');
           setIsScanning(false);
-          apiClient.setBaseUrl(savedUrl);
+          setApiBase(savedUrl);
           return info;
         }
       } catch {

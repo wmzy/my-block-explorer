@@ -1,5 +1,13 @@
 import { css, cx } from '@linaria/core';
-import { Button as HazeButton } from 'haze-ui';
+// Imported from the per-component submodule instead of the 'haze-ui' barrel:
+// the local wrapper shares the component's name, so a barrel import would need
+// an `as` alias — and vite-plugin-haze-ui (1.0.1) fails to map aliased named
+// imports whose braces keep Prettier's inner spaces. Non-barrel specifiers are
+// outside the plugin's collection; the explicit CSS side-effect import below
+// mirrors exactly what the plugin injects for barrel imports
+// (haze-ui css-manifest.json families: Button -> button).
+import { Button as HazeButton } from 'haze-ui/components/Button';
+import 'haze-ui/css/button.css';
 import type { ComponentPropsWithoutRef, ReactNode } from 'react';
 
 const spinnerStyle = css`

@@ -4,7 +4,6 @@ import type {
   TypesMap,
   StorageStruct,
   StorageArray,
-  InplaceStorageType,
 } from '@/types/storage';
 import { StorageValuePrimitive } from './StorageValuePrimitive';
 import { StorageValueArray } from './StorageValueArray';
@@ -73,7 +72,7 @@ export function StorageValue({
         slot={slot}
         slotCode={slotCode}
         offset={offset}
-        type={type as InplaceStorageType}
+        type={type}
         chainId={chainId}
         address={address}
         showValues={showValues}

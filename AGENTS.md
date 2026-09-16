@@ -16,14 +16,18 @@ block-explorer/
 ├── src/
 │   ├── api-app.ts          # Hono API entry (all routes)
 │   ├── server.ts           # Node server entry
-│   ├── main.tsx            # React entry
-│   ├── App.tsx             # React Router setup
-│   ├── services/           # Business logic (chain-agnostic)
+│   ├── index.tsx           # React entry (tokens.css + theme.css, service-discovery gate)
+│   ├── views/              # Route-table + views (native-router, flat routing)
+│   │   └── index.tsx       # createRoutes table, AppPaths, HistoryRouter App
+│   ├── services/           # Backend services (*Service.ts) + FRONTEND data services
+│   │   ├── blocks.ts etc.  # fetch fns + createQueryCache hooks (frontend)
+│   │   └── dataloaders.ts  # createDataLoader triplets (immutable routes)
 │   ├── database/           # DuckDB + custom adapter + schema
-│   ├── utils/              # RPC data layer + formatting
+│   ├── utils/              # RPC data layer + formatting (backend+shared)
+│   ├── util/               # Frontend infra: http.ts (fetch-fun), apiBase.ts,
+│   │                       # useQuery.ts (query layer), loaderCache.ts, dataLoader.ts
 │   ├── components/         # React components (ui/, events/, forms/)
-│   ├── pages/              # Page components
-│   ├── hooks/              # Custom hooks (data separation)
+│   ├── hooks/              # Service discovery, useStorageAt (query hooks live in services/)
 │   ├── routes/             # Hono route handlers
 │   ├── config/             # Multi-chain configuration (viem chains)
 │   └── types/              # TypeScript definitions
@@ -44,7 +48,9 @@ block-explorer/
 | Contract source/ABI  | `src/services/ContractSourceService.ts`                                         | DB → Sourcify/Etherspan fallback, immutable         |
 | Storage layout       | `src/services/StorageLayoutService.ts`                                          | DB → storage-layout-fetcher, immutable              |
 | UI components        | `src/components/ui/`                                                            | Haze UI wrappers + Linaria                          |
-| Address data hook    | `src/hooks/useAddressData.ts`                                                   | Hybrid: API (persistent) + RPC (realtime)           |
+| Frontend data hooks  | `src/services/{blocks,transactions,addresses,contracts,search,stats}.ts`         | react-toolroom query layer (`src/util/useQuery.ts`) |
+| Address realtime     | `src/services/addressRealTime.ts` + `services/addresses.ts`                     | RPC channel + persistent channel composed in view   |
+| HTTP layer           | `src/util/http.ts` (fetch-fun) + `src/util/apiBase.ts`                          | Runtime-discovered API base URL                     |
 
 ## CODE MAP
 
@@ -56,8 +62,9 @@ block-explorer/
 | `indexingQueueService` | Singleton | `src/services/IndexingQueueService.ts`        | Serial queue for range indexing             |
 | `startIndexingRange`   | Function  | `src/services/EventIndexingService.ts`        | Range-based batch indexing entry            |
 | `SegmentedProgressBar` | Component | `src/components/ui/SegmentedProgressBar.tsx`  | Segmented progress bar UI                   |
-| `useAddressData`       | Hook      | `src/hooks/useAddressData.ts:44`              | Data separation hook                        |
-| `apiClient`            | Class     | `src/api/client.ts:278`                       | Backend API client                          |
+| `useAddressData`→split | Hook | `src/services/{addresses,addressRealTime}.ts` | Replaced by two query hooks composed in `views/Address` |
+| `http` get/post/put/del | Module | `src/util/http.ts` | fetch-fun chain; base from `util/apiBase.ts` |
+| `routes`/`AppPaths` | Table | `src/views/index.tsx` | native-router flat route table + typed links |
 | `getChainInfo`         | Function  | `src/config/chains.ts:23`                     | Viem chain lookup                           |
 | `honoApiPlugin`        | Plugin    | `vite.config.ts:8-66`                         | Vite→Hono bridge (dev only)                 |
 | `ChainSchemaManager`   | Class     | `src/database/chain-schema-manager.ts`        | Dynamic event table SQL via drizzle-kit/api |
@@ -87,8 +94,16 @@ block-explorer/
 ### React
 
 - Linaria `css` tag for styles, `cx()` for composition
-- CSS variables from haze-ui theme (`--haze-*`)
-- TanStack Query for server state
+- CSS variables from haze-ui theme (`--haze-*`); tokens via `haze-ui/css/tokens.css`
+  + `src/theme.css` at entry; component CSS auto-injected by `vite-plugin-haze-ui`
+  (**never alias named haze-ui imports** — `{ Button as B }` breaks the plugin's scan)
+- Routing: `@native-router/react` — flat `createRoutes` table in `src/views/index.tsx`,
+  `TypedLink<AppPaths>` for links, `useMatched()` for params, `useSearch(schema)` for query
+- Server state: `react-toolroom/async` via `src/util/useQuery.ts` (`createQueryCache` +
+  `bindQueryFn` + `createQueryHook`); hooks return `{data, loading, error}`; polling via
+  `src/services/polledQuery.ts`; **no TanStack Query, no React Router**
+- HTTP: `src/util/http.ts` (fetch-fun) — API base resolved at runtime from
+  `src/util/apiBase.ts` (service-discovery gate at entry)
 
 ## ANTI-PATTERNS (THIS PROJECT)
 
@@ -150,28 +165,31 @@ for unified dev experience.
 ## COMMANDS
 
 ```bash
+# This repo uses pnpm (npm breaks on the pnpm node_modules layout)
+
 # Development
-npm run dev              # Start both (Vite on 3000, Hono in-process)
-npm run dev:server       # Server only on 8201
+pnpm dev                 # Vite dev server on 3000 (Hono API bridged in-process)
+pnpm dev:server          # Server only on 8201
 
 # Build
-npm run build            # Build client + server
-npm run build:client     # Vite build + SPA _redirects
-npm run build:server     # tsc compilation
+pnpm build               # Build client + server
+pnpm build:client        # Vite build + SPA _redirects
+pnpm build:server        # tsup compilation
 
 # Database
-npm run db:generate      # Generate migrations
-npm run db:migrate       # Apply migrations
-npm run db:studio        # Drizzle Studio
+pnpm db:generate         # Generate migrations
+pnpm db:migrate          # Apply migrations
+pnpm db:studio           # Drizzle Studio
 
 # Testing
-npm test                 # Vitest all
-npm run test:unit        # Unit tests
-npm run test:integration # Integration tests
+pnpm test                # Vitest all
+pnpm test:unit           # Unit tests
+pnpm test:integration    # Integration tests
 
 # Quality
-npm run lint             # ESLint
-npm run format           # Prettier
+pnpm lint                # ESLint
+pnpm format              # Prettier
+pnpm typecheck           # tsc --noEmit
 ```
 
 ## NOTES

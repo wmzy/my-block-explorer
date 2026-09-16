@@ -2,7 +2,7 @@ import { css } from '@linaria/core';
 import { decodeAbiParameters, pad, slice } from 'viem';
 import type { Hex } from 'viem';
 import type { InplaceStorageType } from '@/types/storage';
-import { useStorageAt } from '@/hooks/useStorageLayout';
+import { useStorageAt } from '@/hooks/useStorageAt';
 
 const valueContainerStyle = css`
   display: flex;

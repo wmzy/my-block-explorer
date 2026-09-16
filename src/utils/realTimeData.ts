@@ -1,6 +1,6 @@
 import { createPublicClient, http, formatEther, type PublicClient } from 'viem';
 import { getChainInfo } from '@/config/chains';
-import { apiClient } from '@/api/client';
+import { get } from '@/util/http';
 
 const clientCache = new Map<number, PublicClient>();
 const customRpcUrls = new Map<number, string>();
@@ -13,10 +13,8 @@ const loadRpcConfigs = (): Promise<void> => {
   if (rpcConfigsLoaded) return Promise.resolve();
   if (rpcConfigsPromise) return rpcConfigsPromise;
 
-  const baseUrl = apiClient.getBaseUrl();
-  rpcConfigsPromise = fetch(`${baseUrl}/api/rpc-configs`)
-    .then(res => (res.ok ? res.json() : { configs: [] }))
-    .then((data: { configs?: RpcConfigEntry[] }) => {
+  rpcConfigsPromise = get<{ configs?: RpcConfigEntry[] }>('/api/rpc-configs')
+    .then(data => {
       (data.configs ?? []).forEach(cfg => {
         if (cfg.url) customRpcUrls.set(cfg.chainId, cfg.url);
       });
