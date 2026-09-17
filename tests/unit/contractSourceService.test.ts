@@ -9,14 +9,34 @@ vi.mock('@/services/RpcManager', () => ({
   },
 }));
 
-vi.mock('@/database/init', () => ({
-  db: {
-    query: vi.fn(),
-  },
+// Partial mock: the real schema table exports stay intact so drizzle
+// operators (eq/and) receive real columns; only the db client is faked.
+const mockDb = vi.hoisted(() => ({
+  query: vi.fn(),
+  select: vi.fn(),
+  insert: vi.fn(),
+  delete: vi.fn(),
 }));
 
+vi.mock('@/database/init', async importOriginal => {
+  const actual = await importOriginal<typeof import('@/database/init')>();
+  return {
+    ...actual,
+    db: mockDb,
+  };
+});
+
 import { ContractSourceService } from '@/services/ContractSourceService';
+import {
+  PROXY_CACHE_TTL_HOURS,
+  UNVERIFIED_CACHE_TTL_HOURS,
+  VERIFIED_CACHE_TTL_HOURS,
+  CREATION_FAILURE_CACHE_TTL_HOURS,
+  type ContractSource,
+  type ContractCreationInfo,
+} from '@/services/ContractSourceService';
 import { formatAddress } from '@/utils/address';
+import type { Address } from 'viem';
 
 describe('ContractSourceService - Proxy Detection', () => {
   let contractSourceService: ContractSourceService;
@@ -298,6 +318,184 @@ describe('ContractSourceService - Proxy Detection', () => {
       expect(result.isProxy).toBe(true);
       expect(result.proxyType).toBe('transparent');
       expect(result.implementationAddress).toBe(implementationAddress.toLowerCase());
+    });
+  });
+});
+
+describe('ContractSourceService - cache TTL policy', () => {
+  const MS_PER_HOUR = 1000 * 60 * 60;
+  const hoursAgo = (hours: number) => new Date(Date.now() - hours * MS_PER_HOUR);
+
+  const makeSource = (overrides: Partial<ContractSource> = {}): ContractSource => ({
+    chainId: 1,
+    address: '0x1234567890123456789012345678901234567890',
+    sourceCode: '// source',
+    abi: '[]',
+    verificationStatus: 'verified',
+    verificationSource: 'sourcify',
+    lastChecked: new Date(),
+    ...overrides,
+  });
+
+  // Typed access to the private cache methods without `any`.
+  type ServiceInternals = {
+    isCacheValid: (source: ContractSource) => boolean;
+    getCachedCreationInfo: (
+      chainId: number,
+      address: Address,
+    ) => Promise<ContractCreationInfo | null>;
+    isContractAddress: (chainId: number, address: Address) => Promise<boolean>;
+  };
+  const internals = (service: ContractSourceService) => service as unknown as ServiceInternals;
+
+  describe('isCacheValid tiers', () => {
+    let service: ContractSourceService;
+
+    beforeEach(() => {
+      service = new ContractSourceService();
+    });
+
+    it('keeps a verified non-proxy source valid for 30 days', () => {
+      const { isCacheValid } = internals(service);
+
+      expect(
+        isCacheValid(
+          makeSource({ lastChecked: hoursAgo(VERIFIED_CACHE_TTL_HOURS - 1) }),
+        ),
+      ).toBe(true);
+      expect(isCacheValid(makeSource({ lastChecked: hoursAgo(VERIFIED_CACHE_TTL_HOURS + 1) }))).toBe(
+        false,
+      );
+    });
+
+    it('expires a proxy source after 24 hours even when verified', () => {
+      // Regression: proxies previously shared the verified 30-day tier, but
+      // an upgrade can swap the implementation at any time.
+      const { isCacheValid } = internals(service);
+
+      const proxySource = makeSource({
+        isProxy: true,
+        proxyType: 'transparent',
+        lastChecked: hoursAgo(PROXY_CACHE_TTL_HOURS - 1),
+      });
+      expect(isCacheValid(proxySource)).toBe(true);
+
+      expect(
+        isCacheValid(
+          makeSource({
+            isProxy: true,
+            proxyType: 'transparent',
+            lastChecked: hoursAgo(PROXY_CACHE_TTL_HOURS + 1),
+          }),
+        ),
+      ).toBe(false);
+    });
+
+    it('expires an unverified source after 3 days', () => {
+      const { isCacheValid } = internals(service);
+
+      expect(
+        isCacheValid(
+          makeSource({
+            verificationStatus: 'unverified',
+            lastChecked: hoursAgo(UNVERIFIED_CACHE_TTL_HOURS - 1),
+          }),
+        ),
+      ).toBe(true);
+      expect(
+        isCacheValid(
+          makeSource({
+            verificationStatus: 'unverified',
+            lastChecked: hoursAgo(UNVERIFIED_CACHE_TTL_HOURS + 1),
+          }),
+        ),
+      ).toBe(false);
+    });
+
+    it('prefers the proxy tier over the unverified tier', () => {
+      const { isCacheValid } = internals(service);
+
+      // 71h old: still inside the 3-day unverified window, but well past
+      // the proxy window.
+      expect(
+        isCacheValid(
+          makeSource({
+            isProxy: true,
+            verificationStatus: 'unverified',
+            lastChecked: hoursAgo(UNVERIFIED_CACHE_TTL_HOURS - 1),
+          }),
+        ),
+      ).toBe(false);
+    });
+  });
+
+  describe('contract creation failure cache expiry', () => {
+    const address = '0x1234567890123456789012345678901234567890' as Address;
+
+    const failureRow = (lastUpdated: Date) => ({
+      chainId: 1,
+      address,
+      creationTxHash: null,
+      creationBlockNumber: null,
+      creatorAddress: null,
+      factoryAddress: null,
+      creationMethod: 'not_a_contract',
+      lastUpdated,
+    });
+
+    let service: ContractSourceService;
+    let selectQueue: Array<Array<unknown>>;
+
+    beforeEach(() => {
+      vi.clearAllMocks();
+      service = new ContractSourceService();
+      selectQueue = [];
+
+      mockDb.select.mockImplementation(() => ({
+        from: () => ({
+          where: () => ({
+            limit: async () => (selectQueue.length > 0 ? selectQueue.shift() : []),
+          }),
+        }),
+      }));
+      mockDb.delete.mockImplementation(() => ({ where: async () => undefined }));
+      mockDb.insert.mockImplementation(() => ({ values: async () => undefined }));
+    });
+
+    it('signals a fresh failure row as CACHED_FAILURE', async () => {
+      selectQueue.push([failureRow(hoursAgo(CREATION_FAILURE_CACHE_TTL_HOURS - 1))]);
+
+      await expect(internals(service).getCachedCreationInfo(1, address)).rejects.toThrow(
+        'CACHED_FAILURE:not_a_contract',
+      );
+    });
+
+    it('short-circuits the search for a fresh failure row', async () => {
+      selectQueue.push([failureRow(hoursAgo(CREATION_FAILURE_CACHE_TTL_HOURS - 1))]);
+      const isContractSpy = vi
+        .spyOn(internals(service), 'isContractAddress')
+        .mockResolvedValue(false);
+
+      const result = await service.getContractCreationInfo(1, address);
+
+      expect(result).toBeNull();
+      expect(isContractSpy).not.toHaveBeenCalled();
+    });
+
+    it('deletes an expired failure row and reruns the search', async () => {
+      // First select: expired failure row. Second: cacheFailedSearch's
+      // existing-row check finds nothing, so a new row is inserted.
+      selectQueue.push([failureRow(hoursAgo(CREATION_FAILURE_CACHE_TTL_HOURS + 1))], []);
+      const isContractSpy = vi
+        .spyOn(internals(service), 'isContractAddress')
+        .mockResolvedValue(false);
+
+      const result = await service.getContractCreationInfo(1, address);
+
+      expect(result).toBeNull();
+      expect(mockDb.delete).toHaveBeenCalledTimes(1);
+      expect(isContractSpy).toHaveBeenCalledTimes(1);
+      expect(mockDb.insert).toHaveBeenCalledTimes(1);
     });
   });
 });

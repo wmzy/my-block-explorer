@@ -1,5 +1,6 @@
 import * as ff from 'fetch-fun';
 
+import { getAdminToken } from '@/util/adminAuth';
 import { getApiBase } from '@/util/apiBase';
 import { ApiError } from '@/util/apiError';
 
@@ -18,9 +19,10 @@ function toApiError(e: ff.HTTPError): ApiError {
 }
 
 // Base chain: JSON headers, a per-attempt 10s timeout budget, and error
-// mapping to ApiError. No auth machinery and no retry in this app: the
-// backend is GET-dominant and the only writes are contract reads and
-// rpc-config management, none of which should replay.
+// mapping to ApiError. No retry in this app: the backend is GET-dominant
+// and the only writes are contract reads and rpc-config management, none
+// of which should replay. The x-admin-token header (when a token is set
+// via util/adminAuth) is injected per request in based() below.
 const base = ff
   .create()
   .pipe(ff.header, 'content-type', 'application/json')
@@ -52,8 +54,14 @@ export const api: ApiClient = base as unknown as ApiClient;
 
 // The API base is discovered at runtime, so it cannot be baked into the
 // chain: resolve it per request. '' keeps the URL relative (same-origin).
+// The admin token is likewise runtime state and rides along whenever set,
+// so gated endpoints (rpc-config, cache invalidation) work once the user
+// has entered a token — no per-call opt-in.
 function based(o: ApiClient): ff.Options {
-  return ff.baseUrl(o, getApiBase());
+  let chain = ff.baseUrl(o, getApiBase());
+  const token = getAdminToken();
+  if (token) chain = ff.header(chain, 'x-admin-token', token);
+  return chain;
 }
 
 // ff.signal requires a non-null signal: this wrapper accepts undefined

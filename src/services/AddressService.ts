@@ -28,12 +28,16 @@ export type PersistentAddressData = {
 
 /**
  * 地址信息类型（getAddressInfo 返回类型）
+ *
+ * Balance and transaction count are deliberately absent: this payload is
+ * the persistent/indexer channel only. Live values come from the realtime
+ * RPC channel (services/addressRealTime.ts) — the API previously
+ * hard-coded balance '0' / transactionCount 0 here, which no consumer
+ * could trust.
  */
 export type AddressInfo = PersistentAddressData & {
   chainId: number;
   address: Address;
-  balance: string;
-  transactionCount: number;
   lastQueried: Date;
 };
 
@@ -472,8 +476,6 @@ const createAddressService = (deps: AddressServiceDeps) => {
       return {
         chainId,
         address,
-        balance: '0',
-        transactionCount: 0,
         ...persistentData,
         lastQueried: new Date(),
       };

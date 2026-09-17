@@ -1,207 +1,138 @@
 # My Block Explorer
 
-一个现代化的多链区块链浏览器，基于 DuckDB 和 Viem 构建，支持 Ethereum 及兼容网络。
+A self-hosted, **single-user** block explorer for EVM developers. Browse any viem-supported chain, index contract events into local DuckDB files, inspect verified sources, storage layouts, and read/simulate contracts — all on your own machine.
 
-## ✨ 特性
+> **This is not a multi-tenant service.** DuckDB allows a single writer per database file, and the event-indexing API is unauthenticated by design (see [Security](#security--admin)). Run it for yourself locally; if you ever expose the API on a shared network, put it behind a reverse proxy with authentication first.
 
-- 🚀 **极致性能**: 地址查询响应时间 1-9ms，性能提升 99%+
-- 🔗 **多链支持**: 支持 Ethereum, Polygon, BSC, Arbitrum, Base, Optimism
-- 📊 **智能缓存**: 持久化数据数据库缓存，实时数据前端直连
-- 📱 **响应式设计**: 现代化的用户界面，支持移动端
-- ⚡ **按需索引**: 只索引用户访问的数据，降低存储成本
-- 🔍 **智能搜索**: 自动识别搜索类型（地址/交易/区块）
-- 🛠️ **零配置**: 前端自动发现本地服务，开箱即用
-- 🎨 **类型安全**: 完整的 TypeScript 支持
-- 📋 **事件索引**: 智能合约事件索引与查询系统
-- 🔄 **实时解码**: 基于 Viem 的事件日志实时解码
-- 📊 **性能监控**: 1-9ms 响应时间保证，实时性能监控
+Live frontend-only demo (no local backend — the API-dependent features need your own server): https://wmzy.github.io/my-block-explorer/
 
-## 使用
+## Features
 
-[https://wmzy.github.io/my-block-explorer/](https://wmzy.github.io/my-block-explorer/)
+- **700+ chains, zero config** — every chain defined in `viem/chains` (732 in the pinned viem version) works out of the box; 10 popular chains are pinned at the top of the chain picker (`POPULAR_CHAINS` in `src/config/chains.ts`)
+- **On-demand event indexing** — index specific block ranges for a contract, query decoded events with argument filters, export CSV
+- **Contract tools** — verified source & ABI (Sourcify → Etherscan fallback), storage layout + slot reads, `read`/`simulate`/`estimate-gas`
+- **Data separation** — ephemeral data (balances, latest blocks) is fetched in the browser directly from RPC; persistent data (sources, events, search history) is cached in DuckDB behind the local API
+- **Auto-discovery** — the frontend finds a local backend by scanning `localhost:8201-8205`, with a manual URL fallback
 
-## 🏗️ 技术栈
+## Tech stack
 
-### 前端
+Exact versions in `package.json`.
 
-- **React 19** - 用户界面库
-- **React Router v7.5** - 路由管理
-- **Vite 6** - 构建工具
-- **Linaria 6.2** - CSS-in-JS 样式方案 (基于 wyw-in-js)
-- **ECharts 5.5** - 数据可视化
-- **TypeScript 5.7** - 类型安全
+| Area | Choice |
+| --- | --- |
+| UI | React 19, `@native-router/react` (flat typed route table — not React Router), haze-ui component library + Linaria (`@wyw-in-js/vite`) styling, ECharts |
+| Build | Vite 8 (`@vitejs/plugin-react`, `vite-plugin-haze-ui` for on-demand CSS) |
+| Server state | `react-toolroom` query layer (`src/util/useQuery.ts`) |
+| HTTP | `fetch-fun` (`src/util/http.ts`), API base resolved at runtime by service discovery |
+| API | Hono 4 on Node.js 22 (embedded in the Vite dev server, or standalone) |
+| Storage | DuckDB (`@duckdb/node-api`) via a custom PostgreSQL-compatible adapter for Drizzle ORM |
+| Chain access | viem 2 (both frontend and backend create per-chain clients) |
 
-### 后端
+## Getting started
 
-- **Hono 5.0** - 轻量级 Web 框架
-- **Node.js 22** - 运行时环境
-- **DuckDB 1.1** - 嵌入式分析数据库
-- **Drizzle ORM 0.36** - 类型安全的 ORM
-- **Viem 2.21** - 以太坊开发库
-- **Pino 9.5** - 高性能日志库
-
-### 部署
-
-- **Cloudflare Pages** - 前端静态托管
-- **本地服务器** - 后端 API 服务
-
-## 🚀 快速开始
-
-### 环境要求
-
-- Node.js 22+
-- npm 或 pnpm
-
-### 安装和运行
-
-1. **克隆项目**
-
-   ```bash
-   git clone <repository-url>
-   cd block-explorer
-   ```
-
-2. **安装依赖**
-
-   ```bash
-   pnpm install
-   ```
-
-3. **环境配置**
-
-   ```bash
-   cp .env.example .env
-   # 编辑 .env 文件，配置必要的环境变量
-   ```
-
-4. **启动开发服务**
-
-   ```bash
-   # 同时启动前端和后端
-   pnpm dev
-
-   # 或分别启动
-   pnpm dev:client  # 前端开发服务器 (http://localhost:3000)
-   pnpm dev:server  # 后端 API 服务器 (http://localhost:8201)
-   ```
-
-5. **访问应用**
-   - 前端: http://localhost:3000
-   - 后端 API: http://localhost:8201/api
-
-### 数据库管理
+Requires Node.js 22+ and [pnpm](https://pnpm.io/) (the repo's node_modules layout breaks npm).
 
 ```bash
-# 生成数据库迁移
-pnpm db:generate
-
-# 执行迁移
-pnpm db:migrate
-
-# 数据库可视化管理
-pnpm db:studio
+pnpm install
+pnpm dev          # Vite dev server on http://localhost:3000, Hono API bridged in-process at /api
 ```
 
-## 🔧 配置说明
+No environment setup is required to start — see [Configuration](#configuration) for the optional variables that actually exist in code.
 
-### 环境变量
+Standalone backend instead of the bridged one (useful when the Vite bridge instance and a `tsx` watch instance would fight over the same DuckDB file):
 
 ```bash
-# 基础配置
-NODE_ENV=development
-CLIENT_PORT=3000
-SERVER_PORT=8201
-
-# 数据库配置
-DATABASE_URL=duckdb://data/blockchain.db
-
+pnpm dev:server   # tsx watch src/cli.ts --port 8201 --no-open → http://localhost:8201
 ```
 
-## 🏠 部署
-
-### 前端部署 (Cloudflare Pages)
-
-1. **构建前端**
-
-   ```bash
-   pnpm build:client
-   ```
-
-2. **部署到 Cloudflare Pages**
-   - 将 `dist/client` 目录部署到 Cloudflare Pages
-   - 配置 `_redirects` 文件支持 SPA 路由
-
-### 后端部署 (本地服务器)
-
-1. **构建后端**
-
-   ```bash
-   pnpm build:server
-   ```
-
-2. **启动生产服务**
-   ```bash
-   pnpm start:server
-   ```
-
-## 🧪 测试
+### Production build
 
 ```bash
-# 运行测试
-pnpm test
-
-# 运行测试并显示覆盖率
-pnpm test:coverage
-
-# 运行测试 UI
-pnpm test:ui
+pnpm build        # client (dist/client) + server (dist/server)
+pnpm start        # node dist/server/cli.js — API-only server on 8201 (opens the hosted frontend in your browser)
+pnpm build:pages  # frontend-only build with VITE_BASE=/my-block-explorer/ for the GitHub Pages demo
 ```
 
-## 📊 核心架构
+The standalone server does **not** serve the built frontend — the frontend is static hosting (Pages/CDN or the Vite dev server) and connects to the API by URL; see [Ports and service discovery](#ports-and-service-discovery).
 
-### DuckDB-PostgreSQL 适配器
+### Database migrations
 
-项目实现了一个创新的适配器，让 Drizzle ORM 可以直接使用 DuckDB：
-
-```typescript
-// 适配器核心实现
-export class DuckDBPostgresAdapter {
-  async query(sql: string, ...params: any[]): Promise<any[]> {
-    // 将 PostgreSQL 查询转换为 DuckDB 兼容格式
-  }
-
-  async begin(callback: Function): Promise<any> {
-    // 事务支持
-  }
-}
+```bash
+pnpm db:generate   # generate Drizzle migrations
+pnpm db:migrate    # apply them
+pnpm db:studio     # Drizzle Studio
 ```
 
-### 性能优化架构
+### Tests / quality
 
-- **数据分离**: 持久化数据（合约信息）存储在数据库，实时数据（余额）前端直接获取
-- **智能缓存**: 数据库缓存不变数据，响应时间 1-9ms
-- **按需索引**: 只有用户访问的数据才会被索引
-- **增量同步**: 支持增量数据同步，减少资源消耗
+```bash
+pnpm test            # Vitest (all)
+pnpm test:unit       # tests/unit only
+pnpm test:integration# tests/integration only
+pnpm typecheck       # tsc --noEmit
+pnpm lint            # ESLint
+```
 
-详见：[性能优化文档](./docs/optimization/README.md)
+## Ports and service discovery
 
-### 多链架构
+- **Dev (default):** `pnpm dev` runs everything on port **3000**; requests to `/api/*` are handled by the Hono app inside the Vite dev process (`honoApiPlugin` in `vite.config.ts`).
+- **Standalone:** `pnpm dev:server` / `pnpm start` listen on **8201** (`PORT` env override; the CLI also accepts `--port`).
+- **Discovery:** on load the frontend scans `localhost:8201-8205`, probing `GET /api/health` on each (`src/hooks/useAutoDiscovery.ts`). If none respond it shows a setup screen where you can enter a backend URL manually; the choice persists in localStorage.
+- **A hosted frontend cannot auto-discover a remote backend.** The scan is localhost-only. When using the GitHub Pages build (or any static hosting) you must type your backend URL into the setup screen, and the backend must allow the frontend's origin (the standalone server enables CORS for that reason).
 
-- **统一存储**: 单个 DuckDB 文件存储所有链的数据
-- **链维度**: 使用 `chain_id` 作为数据分区维度
-- **通用服务**: 所有服务都是链无关的，提高代码复用
+## Data layout
 
-## 🤝 贡献
+- Shared/main database: `data/blockchain.db` (`DATABASE_URL`, default `duckdb://data/blockchain.db`) — contract sources, search history, user RPC configs.
+- Per-chain event databases: `data/chains/{type}/{name}-{id}.db` (e.g. `data/chains/mainnet/Ethereum-1.db`) — indexed event ranges and decoded logs, isolated per chain. The legacy single-file layout and the per-chain layout coexist.
 
-欢迎提交 Issue 和 Pull Request！
+## Configuration
 
-## 📄 许可证
+Environment variables actually read by the code (no example env file ships with the repo; RPC URLs come from viem chain defaults plus admin-gated overrides in the DB — not from env):
 
-MIT License
+| Variable | Where | Effect |
+| --- | --- | --- |
+| `PORT` | server / vite | Standalone API port (default 8201); Vite dev server port (default 3000) |
+| `DATABASE_URL` | `src/database/drizzle.ts` | Main DuckDB file (default `duckdb://data/blockchain.db`) |
+| `ADMIN_TOKEN` | `src/middleware/admin-token.ts` | Enables admin-gated endpoints (see below) |
+| `ENABLE_DEBUG_API` | `src/api-app.ts` | `1` mounts `/debug/db/query` (raw SQL) — dev only |
+| `LOG_LEVEL` | logger | pino level (default `info`) |
+| `HTTP_PROXY` / `HTTPS_PROXY` | server | Proxy for outbound RPC calls |
+| `FRONTEND_URL` | CLI | URL opened by the CLI's `--open` flag |
+| `VITE_BASE` | build time | Base path for the Pages build (`pnpm build:pages` sets it) |
 
-## 🔗 相关链接
+## Security & admin
 
-- [DuckDB 文档](https://duckdb.org/docs/)
-- [Viem 文档](https://viem.sh/)
-- [Drizzle ORM 文档](https://orm.drizzle.team/)
-- [Hono 文档](https://hono.dev/)
+The trust model is **one local user**. Read endpoints are open; a small set of mutating/admin endpoints is gated by a shared secret, and everything else that writes (event-indexing ranges) is intentionally unauthenticated.
+
+- **`ADMIN_TOKEN`** (server env) gates admin endpoints via the `x-admin-token` header, compared with `timingSafeEqual`. **Fail-closed:** if `ADMIN_TOKEN` is unset, every gated request is rejected with 403 — there is no default token.
+- Gated endpoints:
+  - `GET` / `POST` / `DELETE /api/rpc-configs` (custom RPC endpoint management — reads included)
+  - `POST /api/chains/:chainId/contracts/:address/clear-cache` (drop cached contract source)
+  - `DELETE /api/chains/:chainId/contracts/:address/storage-layout/cache` (drop cached storage layout)
+  - everything under `/api/performance/*`
+- In the UI, open the ⚙️ RPC settings modal and fill the **"Admin token (stored in this browser)"** field; it is kept in localStorage and attached to requests automatically (`src/util/adminAuth.ts`).
+- **`ENABLE_DEBUG_API=1`** mounts `POST /debug/db/query`, which executes arbitrary SQL against your databases. Never enable it on anything reachable by others.
+- **Event-indexing range writes are unauthenticated by design** (`POST/PATCH/DELETE …/events/ranges*`, `start`/`pause`/`resume`). Combined with DuckDB's single-writer model, this is fine for a local single-user deployment but **must not** be exposed on a shared or public network — put the API behind an authenticated reverse proxy (e.g. nginx with basic auth / mTLS) if more than your own browser can reach it.
+
+## How the backend behaves
+
+Details a developer will run into:
+
+- **Event indexing is manual and range-based.** You add a block range for a contract; `EventIndexingService` walks it in batches (one serial job per range — no global queue). `start`/`resume` return `202` immediately; the UI polls range status. On server start, ranges left in `indexing` by a previous process are reconciled to `error` with *"Interrupted by server restart — resume to continue"*.
+- **Cache TTLs** for persisted fetches: verified contract source 30 days; proxy contracts 24 h; unverified source 3 days; contract-creation lookup failure 24 h; storage-layout `NOT_FOUND` 24 h.
+- **Address API returns persistent data only** — no balance or transaction count (the UI reads those live from RPC). Transaction history is heuristic (balance-change binary search) and the response reports `coverage` (`complete`/`partial`/`none`); unknown coverage renders a "source unknown" banner instead of pretending the history is complete.
+- **Search** responses may carry `degraded: true` + `degradedReasons` when an upstream lookup failed — the UI offers a retry rather than "no results". ENS names are **not** resolved server-side; the browser resolves them against a mainnet RPC. `search_history` ids are int32-safe (epoch-seconds based).
+- **Event statistics** show an "Indexing coverage" metric: the union of all ranges (overlaps merge, in-flight ranges count walked blocks). CSV export has a hard 100,000-row cap (`400` above it) and the UI disables the export button preflight when the filtered total exceeds it.
+
+## Docs
+
+- [Deployment](docs/DEPLOYMENT.md)
+- [Installation](docs/INSTALLATION.md)
+- [Configuration](docs/CONFIG.md)
+- [API reference](docs/API.md)
+- [All-chains support](docs/ALL_CHAINS_SUPPORT.md)
+- [Architecture](docs/ARCHITECTURE.md) (historical design notes)
+
+## License
+
+MIT

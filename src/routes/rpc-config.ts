@@ -10,7 +10,9 @@ import { requireAdminToken } from '../middleware/admin-token';
 
 const app = new Hono();
 
-app.get('/rpc-configs', async (c) => {
+// Custom RPC URLs can embed API keys, so reads are admin-gated too —
+// not just the mutations.
+app.get('/rpc-configs', requireAdminToken, async (c) => {
   try {
     const configs = await db.select().from(userRpcConfigs);
 

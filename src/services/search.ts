@@ -22,6 +22,14 @@ export type SearchResult = {
   supportedChains?: SupportedChainRef[];
   suggestions?: string[];
   error?: string | null;
+  /**
+   * True when not-found AND a data source errored — not a definitive
+   * "no results" answer; offer retry instead.
+   */
+  degraded?: boolean | null;
+  degradedReasons?: string[] | null;
+  /** Human-readable note (e.g. ENS names resolve client-side). */
+  message?: string | null;
   data?: unknown;
 };
 

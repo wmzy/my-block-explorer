@@ -39,6 +39,22 @@ vi.mock('../../src/util/http', () => ({
   withSignal: (o: unknown) => o,
 }));
 
+// Client-side ENS resolution runs over a mainnet RPC client; the mock keeps
+// it observable (and offline) in tests.
+const { mockCreateRpcClient, mockGetEnsAddress } = vi.hoisted(() => {
+  const getEnsAddress = vi.fn(
+    (): Promise<string | null> =>
+      Promise.resolve('0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'),
+  );
+  return {
+    mockGetEnsAddress: getEnsAddress,
+    mockCreateRpcClient: vi.fn((_chainId: number) => Promise.resolve({ getEnsAddress })),
+  };
+});
+vi.mock('../../src/utils/realTimeData', () => ({
+  createRpcClient: (_chainId: number) => mockCreateRpcClient(_chainId),
+}));
+
 // Mock chains config
 vi.mock('../../src/config/chains', () => ({
   getChainInfo: (chainId: number) => {
@@ -296,15 +312,80 @@ describe('TopNavigation', () => {
     renderTopNavigation({ currentChainId: 137, onSearch: undefined });
 
     const searchInput = screen.getByPlaceholderText('Search address, tx hash, or block number...');
-    fireEvent.change(searchInput, { target: { value: 'vitalik.eth' } });
+    fireEvent.change(searchInput, { target: { value: 'uniswap' } });
     fireEvent.click(screen.getByText('Search'));
 
     await waitFor(() => {
       expect(mockNavigate).toHaveBeenCalledWith(
         mockRouter,
-        `/search?q=${encodeURIComponent('vitalik.eth')}&chain=137`,
+        `/search?q=${encodeURIComponent('uniswap')}&chain=137`,
       );
     });
+  });
+
+  it('resolves ENS names client-side and navigates on the current chain', async () => {
+    renderTopNavigation({ currentChainId: 137, onSearch: undefined });
+
+    const searchInput = screen.getByPlaceholderText('Search address, tx hash, or block number...');
+    fireEvent.change(searchInput, { target: { value: 'vitalik.eth' } });
+    fireEvent.click(screen.getByText('Search'));
+
+    // Resolution goes through a mainnet client (ENS registry lives there);
+    // the resolved address opens on the chain the user is on.
+    await waitFor(() => {
+      expect(mockCreateRpcClient).toHaveBeenCalledWith(1);
+      expect(mockNavigate).toHaveBeenCalledWith(
+        mockRouter,
+        '/chain/137/address/0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045',
+      );
+    });
+    // Brief confirmation stays visible under the search box.
+    expect(await screen.findByText(/Resolved vitalik\.eth → /)).toBeInTheDocument();
+  });
+
+  it('shows a friendly hint when an ENS name does not resolve', async () => {
+    mockGetEnsAddress.mockResolvedValueOnce(null);
+    renderTopNavigation({ currentChainId: 1, onSearch: undefined });
+
+    const searchInput = screen.getByPlaceholderText('Search address, tx hash, or block number...');
+    fireEvent.change(searchInput, { target: { value: 'nosuchname.eth' } });
+    fireEvent.click(screen.getByText('Search'));
+
+    expect(await screen.findByText('Could not resolve ENS name "nosuchname.eth"')).toBeInTheDocument();
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('still hints when a hash search finds nothing on the current chain', async () => {
+    mockGet.mockResolvedValueOnce({ found: false, degraded: false, type: 'transaction' });
+    renderTopNavigation({ currentChainId: 1, onSearch: undefined });
+
+    const searchInput = screen.getByPlaceholderText('Search address, tx hash, or block number...');
+    fireEvent.change(searchInput, { target: { value: `0x${'ab'.repeat(32)}` } });
+    fireEvent.click(screen.getByText('Search'));
+
+    expect(
+      await screen.findByText(/No results on Ethereum — try full search/),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Search all networks')).toBeInTheDocument();
+  });
+
+  it('reports a degraded hash search as a failure, not "no results"', async () => {
+    mockGet.mockResolvedValueOnce({
+      found: false,
+      degraded: true,
+      degradedReasons: ['transaction-lookup-failed'],
+      type: 'transaction',
+    });
+    renderTopNavigation({ currentChainId: 1, onSearch: undefined });
+
+    const searchInput = screen.getByPlaceholderText('Search address, tx hash, or block number...');
+    fireEvent.change(searchInput, { target: { value: `0x${'ab'.repeat(32)}` } });
+    fireEvent.click(screen.getByText('Search'));
+
+    expect(await screen.findByText(/Search failed on Ethereum/)).toBeInTheDocument();
+    expect(screen.queryByText(/No results on Ethereum/)).not.toBeInTheDocument();
+    // The full-search escape hatch stays available on failure too.
+    expect(screen.getByText('Search all networks')).toBeInTheDocument();
   });
 });
 

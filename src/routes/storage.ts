@@ -5,6 +5,7 @@ import { storageLayoutService } from '../services/StorageLayoutService';
 import { getChainName } from '../config/chains';
 import { getValidatedChainId, getValidatedAddress } from '../server/validation';
 import { safeJsonResponse } from '../utils/serialization';
+import { requireAdminToken } from '../middleware/admin-token';
 
 const logger = createLogger('storage-routes');
 
@@ -44,6 +45,23 @@ app.get('/chains/:chainId/contracts/:address/storage-layout', async c => {
   } catch (error) {
     logger.error({ err: error, chainId, address }, 'Storage layout API error');
     return c.json({ error: 'Failed to get storage layout' }, 500);
+  }
+});
+
+// Admin-gated cache invalidation. clearCache deletes unconditionally and
+// treats a missing entry as a no-op, so a 200 is returned even when
+// nothing was cached for the pair.
+app.delete('/chains/:chainId/contracts/:address/storage-layout/cache', requireAdminToken, async c => {
+  const chainId = getValidatedChainId(c.req.param('chainId'));
+  const address = getValidatedAddress(c.req.param('address'));
+
+  try {
+    await storageLayoutService.clearCache(chainId, address);
+
+    return c.json({ success: true, message: 'Storage layout cache cleared' });
+  } catch (error) {
+    logger.error({ err: error, chainId, address }, 'Clear storage layout cache API error');
+    return c.json({ error: 'Failed to clear storage layout cache' }, 500);
   }
 });
 

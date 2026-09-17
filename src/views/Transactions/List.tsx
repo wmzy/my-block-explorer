@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { navigate } from '@native-router/core';
 import { TypedLink, useMatched, useSearch } from '@native-router/react';
 import { z } from 'zod';
 
@@ -11,6 +10,7 @@ import { ErrorState } from '@/components/ui/ErrorState';
 import { TableSkeleton } from '@/components/ui/LoadingState';
 import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
 import { getChainInfo, getChainName, getChainSymbol } from '@/config/chains';
+import { redirectReplace } from '@/views/Home/Landing';
 import { useLatestTransactions } from '@/services/chainRpc';
 import { txCursorFromBlock } from '@/utils/blockRpcData';
 import { formatEth, formatNumber, formatRelativeTime } from '@/utils/format';
@@ -103,8 +103,11 @@ export default function TransactionsList() {
     setPage(prev => prev + 1);
   };
 
+  // Chain switches replace the current entry via the shared Wave A helper;
+  // the list legitimately drops a ?block= deep-link param on switch (the
+  // seeded block belongs to the old chain).
   const handleChainChange = (newChainId: number) => {
-    void navigate(router, `/chain/${newChainId}/transactions`).catch(() => undefined);
+    void redirectReplace(router, `/chain/${newChainId}/transactions`).catch(() => undefined);
   };
 
   if (!chainInfo) {

@@ -227,22 +227,31 @@ const PaginationInput = styled.input`
   }
 `;
 
-const ExportCsvButton = styled.a`
+const ExportCsvButton = styled.a<{ $disabled?: boolean }>`
   padding: 8px 12px;
   margin-left: 8px;
-  border: 1px solid #3b82f6;
-  background: #3b82f6;
-  color: white;
+  border: 1px solid ${props => (props.$disabled ? '#d1d5db' : '#3b82f6')};
+  background: ${props => (props.$disabled ? '#f3f4f6' : '#3b82f6')};
+  color: ${props => (props.$disabled ? '#9ca3af' : 'white')};
   border-radius: 4px;
-  cursor: pointer;
+  cursor: ${props => (props.$disabled ? 'not-allowed' : 'pointer')};
   font-size: 14px;
   text-decoration: none;
   white-space: nowrap;
 
   &:hover {
-    background: #2563eb;
-    border-color: #2563eb;
+    background: ${props => (props.$disabled ? '#f3f4f6' : '#2563eb')};
+    border-color: ${props => (props.$disabled ? '#d1d5db' : '#2563eb')};
   }
+`;
+
+// Inline preflight notice shown when the current filtered total exceeds the
+// export cap, replacing a click that would only land on the backend 400.
+const ExportLimitNotice = styled.span`
+  margin-left: 12px;
+  font-size: 12px;
+  color: #b45309;
+  white-space: nowrap;
 `;
 
 const GoToPageContainer = styled.div`
@@ -718,6 +727,12 @@ const defaultSortOptions: SortOption[] = [
 ];
 
 const pageSizeOptions = [10, 20, 50, 100, 200];
+
+// Mirrors EXPORT_MAX_ROWS in src/services/EventExportService.ts, enforced by
+// the /events/export route in src/routes/events.ts (which 400s above it).
+// Keep both values in sync. The backend 400 remains the backstop for cases
+// where the client-side total is unknown.
+const EXPORT_MAX_ROWS = 100_000;
 
 // Main component
 export const EventTable: React.FC<EventTableProps> = ({
@@ -1223,6 +1238,13 @@ export const EventTable: React.FC<EventTableProps> = ({
     return `${getApiBase()}/api/chains/${chainId}/contracts/${contractAddress}/events/export${query ? `?${query}` : ''}`;
   }, [chainId, contractAddress, dynamicFilters]);
 
+  // The server-reported total of the current filtered query (set by every
+  // fetchEvents response) drives the export preflight. When the response
+  // carried no total, pagination.total falls back to the loaded page size —
+  // far below the cap — so the button stays enabled and the backend 400
+  // remains the backstop, per design.
+  const exportExceedsLimit = pagination.total > EXPORT_MAX_ROWS;
+
   // Render loading state
   if (loading && events.length === 0) {
     return (
@@ -1585,9 +1607,24 @@ export const EventTable: React.FC<EventTableProps> = ({
               )}
 
               {pagination.total > 0 && (
-                <ExportCsvButton href={exportHref} download>
-                  Export CSV
-                </ExportCsvButton>
+                <>
+                  {/* Export preflight: the query total is known here, so
+                      refuse above the cap up front instead of letting the
+                      click hit the backend 400. */}
+                  {exportExceedsLimit && (
+                    <ExportLimitNotice>
+                      Too many rows ({pagination.total.toLocaleString()}) — export limit is
+                      100,000. Narrow your filters.
+                    </ExportLimitNotice>
+                  )}
+                  <ExportCsvButton
+                    {...(exportExceedsLimit ? {} : { href: exportHref, download: true })}
+                    $disabled={exportExceedsLimit}
+                    aria-disabled={exportExceedsLimit ? true : undefined}
+                  >
+                    Export CSV
+                  </ExportCsvButton>
+                </>
               )}
             </PaginationControls>
           </PaginationContainer>

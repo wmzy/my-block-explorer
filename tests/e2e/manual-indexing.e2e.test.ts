@@ -10,6 +10,8 @@ vi.mock('@/services/EventIndexingService', () => ({
   pauseIndexingRange: vi.fn(),
   resumeIndexingRange: vi.fn().mockResolvedValue({ success: true }),
   getActiveRangeJob: vi.fn(),
+  // api-app calls this at module scope; it must resolve or import fails.
+  reconcileInterruptedRanges: vi.fn().mockResolvedValue(undefined),
   getContractEvents: vi
     .fn()
     .mockResolvedValue({ events: [], total: 0, page: 1, pageSize: 50, totalPages: 0 }),

@@ -96,7 +96,8 @@ describe('scenario hooks (result shape + caching)', () => {
   });
 
   it('useAddressInfo: {data, loading, error} settles loading→data', async () => {
-    mockedGet.mockResolvedValue({ balance: '1' });
+    const payload = { chainId: 1, address: { isContract: false } };
+    mockedGet.mockResolvedValue(payload);
     const { result } = renderHook(() => useAddressInfo(1, '0xabc'));
 
     expect(result.current.data).toBeUndefined();
@@ -104,7 +105,7 @@ describe('scenario hooks (result shape + caching)', () => {
     expect(result.current.error).toBeUndefined();
 
     await waitFor(() => expect(result.current.loading).toBe(false));
-    expect(result.current.data).toEqual({ balance: '1' });
+    expect(result.current.data).toEqual(payload);
     expect(result.current.error).toBeUndefined();
   });
 
@@ -132,17 +133,19 @@ describe('scenario hooks (result shape + caching)', () => {
   });
 
   it('keyed args: switching address refetches and isolates data', async () => {
+    const eoaPayload = { chainId: 1, address: { isContract: false } };
+    const contractPayload = { chainId: 1, address: { isContract: true } };
     mockedGet.mockImplementation(async (url: string) =>
-      url.includes('0xaaa') ? { balance: '1' } : { balance: '2' },
+      url.includes('0xaaa') ? eoaPayload : contractPayload,
     );
     const { result, rerender } = renderHook(
       ({ addr }: { addr: string }) => useAddressInfo(1, addr),
       { initialProps: { addr: '0xaaa' } },
     );
-    await waitFor(() => expect(result.current.data).toEqual({ balance: '1' }));
+    await waitFor(() => expect(result.current.data).toEqual(eoaPayload));
 
     rerender({ addr: '0xbbb' });
-    await waitFor(() => expect(result.current.data).toEqual({ balance: '2' }));
+    await waitFor(() => expect(result.current.data).toEqual(contractPayload));
     expect(mockedGet).toHaveBeenCalledTimes(2);
   });
 });

@@ -65,9 +65,10 @@ describe('API routes', () => {
   });
 
   describe('admin gating (no env vars)', () => {
-    // Fail-closed wiring: the mutating rpc-config endpoints and the whole
-    // performance subtree reject without ADMIN_TOKEN, and the debug routes
-    // stay unmounted when ENABLE_DEBUG_API is not opted in.
+    // Fail-closed wiring: the rpc-config endpoints (reads included —
+    // custom RPC URLs can embed API keys) and the whole performance
+    // subtree reject without ADMIN_TOKEN, and the debug routes stay
+    // unmounted when ENABLE_DEBUG_API is not opted in.
     beforeEach(() => {
       vi.stubEnv('ADMIN_TOKEN', '');
     });
@@ -76,8 +77,25 @@ describe('API routes', () => {
       vi.unstubAllEnvs();
     });
 
-    it('keeps GET /api/rpc-configs public (frontend RPC resolution)', async () => {
+    it('rejects GET /api/rpc-configs (custom URLs may embed API keys)', async () => {
       const response = await app.request('/api/rpc-configs', { method: 'GET' });
+
+      expect(response.status).toBe(403);
+
+      const data = await response.json();
+      expect(data.error).toBe('Forbidden');
+      expect(data.message).toBe(
+        'Admin operations are disabled. Set ADMIN_TOKEN on the server to enable them.',
+      );
+    });
+
+    it('lets GET /api/rpc-configs through with a matching x-admin-token', async () => {
+      vi.stubEnv('ADMIN_TOKEN', 'test-admin-token');
+
+      const response = await app.request('/api/rpc-configs', {
+        method: 'GET',
+        headers: { 'x-admin-token': 'test-admin-token' },
+      });
 
       expect(response.status).toBe(200);
 

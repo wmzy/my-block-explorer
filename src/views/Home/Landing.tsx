@@ -15,6 +15,16 @@ import { getSortedChains, isChainSupported } from '@/config/chains';
 
 export const LAST_CHAIN_STORAGE_KEY = 'be:lastChainId';
 
+// Reader for the remembered chain: a valid supported id, or undefined when
+// nothing valid is remembered (missing key, malformed value, unsupported
+// chain). Shared by the landing redirect, the search context and the router
+// error view's back link so they all agree on "the chain I was browsing".
+export function readRememberedChainId(): number | undefined {
+  const raw = localStorage.getItem(LAST_CHAIN_STORAGE_KEY);
+  const remembered = raw !== null ? Number.parseInt(raw, 10) : Number.NaN;
+  return Number.isInteger(remembered) && isChainSupported(remembered) ? remembered : undefined;
+}
+
 // Preferred entry chain: mainnet when supported (the intuitive default for
 // an Ethereum-family explorer), else the head of the sorted chain list.
 // getSupportedChainIds()[0] would instead land on whatever chain viem's
@@ -28,12 +38,10 @@ function getPreferredChainId(): number {
 // Landing target shared by this view and Home's unknown-chain redirect:
 // remembered valid chain -> preferred chain -> /chain/1.
 export function resolveLandingChainPath(): string {
-  const raw = localStorage.getItem(LAST_CHAIN_STORAGE_KEY);
-  const remembered = raw !== null ? Number.parseInt(raw, 10) : Number.NaN;
-  if (Number.isInteger(remembered) && isChainSupported(remembered)) {
-    return `/chain/${remembered}`;
-  }
-  return `/chain/${getPreferredChainId()}`;
+  const remembered = readRememberedChainId();
+  return remembered !== undefined
+    ? `/chain/${remembered}`
+    : `/chain/${getPreferredChainId()}`;
 }
 
 // Persist the chain worth landing on next time. Callers only pass ids that

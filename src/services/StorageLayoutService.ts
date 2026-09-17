@@ -16,6 +16,12 @@ const logger = createLogger('storage-layout-service');
 
 const GLOBAL_TIMEOUT_MS = 20_000;
 const FETCHER_TIMEOUT_MS = 8_000;
+const MS_PER_HOUR = 1000 * 60 * 60;
+
+// "Not found" results are negative-cached for a bounded window only: the
+// contract may be verified (or even deployed) later, so a permanent
+// NOT_FOUND row would keep serving a false negative forever.
+const NOT_FOUND_CACHE_TTL_HOURS = 24;
 
 type Fetcher = {
   explorers: Array<{ type: string; client: unknown; key?: string }>;
@@ -245,7 +251,28 @@ export class StorageLayoutService {
     const row = rows[0];
 
     if (row.layout === 'NOT_FOUND') {
-      throw new Error('CACHED_NOT_FOUND');
+      // Negative entries expire after NOT_FOUND_CACHE_TTL_HOURS instead of
+      // sticking forever; updatedAt is when the miss was recorded.
+      const ageHours = (Date.now() - (row.updatedAt?.getTime() ?? 0)) / MS_PER_HOUR;
+      if (ageHours < NOT_FOUND_CACHE_TTL_HOURS) {
+        throw new Error('CACHED_NOT_FOUND');
+      }
+
+      // Expired negative entry: drop it so the caller refetches (and
+      // re-caches a hit or a fresh miss via cacheNotFound).
+      logger.info(
+        { chainId, address: formattedAddress, ageHours: ageHours.toFixed(1) },
+        'Cached NOT_FOUND entry expired, removing row',
+      );
+      await db
+        .delete(storageLayouts)
+        .where(
+          and(
+            eq(storageLayouts.chainId, chainId),
+            eq(storageLayouts.address, formattedAddress),
+          ),
+        );
+      return null;
     }
 
     try {

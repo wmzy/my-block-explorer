@@ -6,13 +6,18 @@ import { formatUnits } from 'viem';
 import { Alert } from 'haze-ui';
 import { getChainInfo, getChainName, getChainSymbol } from '@/config/chains';
 import TopNavigation from '@/components/TopNavigation';
-import { useAddressInfo, useAddressTransactions } from '@/services/addresses';
+import {
+  useAddressInfo,
+  useAddressTransactions,
+  type AddressInfoResponse,
+} from '@/services/addresses';
 import {
   useContractCode,
   useRealTimeAddressData,
 } from '@/services/addressRealTime';
 import { formatRelativeTime } from '@/utils/format';
 import { getExternalToolLinks } from '@/config/externalTools';
+import { redirectReplace } from '@/views/Home/Landing';
 import { PageContainer, PageHeader, BackButton } from '@/components/ui/PageLayout';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { InfoGrid, InfoItem } from '@/components/ui/InfoGrid';
@@ -62,23 +67,11 @@ type TxRecord = {
   timestamp?: string;
 };
 
-// The services layer types this endpoint loosely (AddressInfo from
-// @/types); the server actually responds with a wrapper whose `address`
-// member carries the persistent fields (isContract, contractName,
-// verificationStatus, creation/proxy info). The view reads through these
-// runtime shapes instead.
-type AddressInfoEnvelope = {
-  address?: {
-    isContract: boolean;
-    contractName?: string;
-    verificationStatus?: 'verified' | 'unverified' | 'partial';
-    contractCreationBlock?: number;
-    contractCreator?: string;
-    isProxy?: boolean;
-    proxyType?: string;
-    implementationAddress?: string;
-  };
-};
+// The address-info endpoint is typed by its service (AddressInfoResponse):
+// a wrapper whose `address` member carries the persistent fields
+// (isContract, contractName, verificationStatus, creation/proxy info).
+// Balance and transaction count never ride on this channel — they come
+// from the realtime hook below.
 
 type AddressTxPage = {
   transactions: TxRecord[];
@@ -133,8 +126,8 @@ export default function Address() {
     (txPage - 1) * txLimit,
   );
 
-  const persistent =
-    (infoQuery.data as AddressInfoEnvelope | undefined)?.address;
+  const persistent: AddressInfoResponse['address'] | undefined =
+    infoQuery.data?.address;
   const code = codeQuery.data;
   // Persistent record wins; the RPC code read only decides when the
   // persistent channel settled without data.
@@ -195,10 +188,11 @@ export default function Address() {
     }
   };
 
-  // Native-router navigate has no replace mode from views — the chain
-  // switch pushes a history entry (the old page replaced it).
+  // Chain switch replaces the current history entry (the old page's
+  // semantics) via preload + commitReplace, so Back from the switched
+  // view never resurfaces the same address on the previous chain.
   const handleChainChange = (newChainId: number) => {
-    void navigate(router, `/chain/${newChainId}/address/${address}`).catch(
+    void redirectReplace(router, `/chain/${newChainId}/address/${address}`).catch(
       () => undefined,
     );
   };
@@ -471,10 +465,30 @@ export default function Address() {
                   </>
                 )}
 
+                {/* Trusted empty ONLY for authoritative coverage: the RPC
+                    nonce proved the address has no transactions. Anything
+                    else that looks empty must not read as "no history". */}
                 {!txQuery.loading && !txQuery.error
                   && transactions.length === 0 && txTotal === 0
-                  && (txCoverage === 'complete' || txCoverage === undefined) && (
+                  && txCoverage === 'complete' && (
                   <Alert variant="info">No transactions found</Alert>
+                )}
+
+                {/* Pre-coverage cached payload (no coverage/method tags):
+                    the empty list is unverified, so say so instead of
+                    implying a trusted empty result. */}
+                {!txQuery.loading && !txQuery.error
+                  && transactions.length === 0 && txTotal === 0
+                  && txCoverage === undefined && (
+                  <>
+                    <Alert variant="warning">
+                      Transaction data source unknown — history may be
+                      incomplete. Verify on an external explorer.
+                    </Alert>
+                    <div className={bannerLinks}>
+                      <ExternalLinks links={externalToolLinks} />
+                    </div>
+                  </>
                 )}
 
                 {transactions.length > 0 && (

@@ -34,17 +34,18 @@ import {
 } from '@/services/EventExportService';
 
 const CHAIN_ID = 1;
-const ADDRESS = `0x${'aa'.repeat(20)}`;
-const OTHER_ADDRESS = `0x${'bb'.repeat(20)}`;
+const ADDRESS = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+const OTHER_ADDRESS = '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 
 let txCounter = 0;
+const nextTxHash = (): `0x${string}` => `0x${txCounter.toString(16).padStart(64, '0')}`;
 const insertEvent = async (overrides: Partial<typeof contractEvents.$inferInsert> = {}) => {
   txCounter += 1;
   await db.insert(contractEvents).values({
     chainId: CHAIN_ID,
     contractAddress: ADDRESS,
     blockNumber: 1000n,
-    transactionHash: `0x${txCounter.toString(16).padStart(64, '0')}`,
+    transactionHash: nextTxHash(),
     logIndex: 0,
     eventName: 'Transfer',
     eventSignature: '0x1111',

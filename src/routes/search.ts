@@ -153,6 +153,9 @@ app.get('/chains/:chainId/search', async (c) => {
       data: searchResult.data ?? null,
       suggestions: searchResult.suggestions ?? [],
       error: searchResult.error ?? null,
+      degraded: searchResult.degraded ?? null,
+      degradedReasons: searchResult.degradedReasons ?? null,
+      message: searchResult.message ?? null,
       timestamp: new Date().toISOString(),
     });
 

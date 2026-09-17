@@ -12,6 +12,8 @@ import RpcConfig from '@/components/RpcConfig';
 import { ExternalLinks } from '@/components/ui/ExternalLinks';
 import { SourceCodeViewer } from '@/components/SourceCodeViewer';
 import { post } from '@/util/http';
+import { ApiError } from '@/util/apiError';
+import { redirectReplace } from '@/views/Home/Landing';
 import { useContractCreation, useContractSource } from '@/services/contracts';
 import { EventsPanel } from './EventsPanel';
 import { ContractInteract } from './ContractInteract';
@@ -222,6 +224,77 @@ const statusBadgeStyles = css`
   }
 `;
 
+// Force Refresh outcome banner inside the contract information card; the
+// palette matches the verification status badges above it.
+const cacheNoticeStyles = css`
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-size: 13px;
+
+  &.ok {
+    background: #d4edda;
+    color: #155724;
+  }
+
+  &.error {
+    background: #f8d7da;
+    color: #721c24;
+  }
+`;
+
+// Inline unlock pointer rendered by the ABI/Interact tabs when the contract
+// has no server ABI and nothing pasted yet.
+const abiUnlockStyles = css`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+  background: #fff8e6;
+  border: 1px solid #f0a500;
+  border-radius: 6px;
+  font-size: 14px;
+  color: #8a6d3b;
+`;
+
+const abiUnlockButtonStyles = css`
+  padding: 6px 14px;
+  font-size: 13px;
+  border: 1px solid #f0a500;
+  border-radius: 4px;
+  background: #f0a500;
+  color: white;
+  font-weight: 500;
+  cursor: pointer;
+
+  &:hover {
+    background: #d69200;
+    border-color: #d69200;
+  }
+`;
+
+// Shown by the ABI and Interact tab panels when the contract is unverified
+// without a pasted ABI: the panel below the tab bar is the only way to
+// unlock the tab, so the pointer jumps focus straight to its textarea.
+function AbiUnlockHint({ onFocusPanel }: { onFocusPanel: () => void }) {
+  return (
+    <div className={cardStyles}>
+      <h2>Paste an ABI to unlock this tab</h2>
+      <div className={abiUnlockStyles}>
+        <span>
+          No ABI is available for this contract. Use the custom ABI panel below the tab bar
+          to paste one.
+        </span>
+        <button type="button" className={abiUnlockButtonStyles} onClick={onFocusPanel}>
+          Open custom ABI panel
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // Tab state lives in the ?tab= search param (kept in the URL on tab clicks
 // so reloads/back land on the same tab). Unknown values degrade to the
 // default tab instead of failing the search parse.
@@ -268,6 +341,14 @@ export default function Contract() {
   const { tab: tabParam } = useSearch(contractSearchSchema);
 
   const [refreshing, setRefreshing] = useState(false);
+  // Visible outcome of the last Force Refresh: success notice or failure
+  // reason (403 gets the admin-token pointer). Null until one exists.
+  const [cacheNotice, setCacheNotice] = useState<{ kind: 'ok' | 'error'; text: string } | null>(
+    null,
+  );
+  // Increments to focus + scroll the custom ABI panel's textarea (the
+  // unlock pointers rendered by the locked ABI/Interact tabs).
+  const [abiFocusSignal, setAbiFocusSignal] = useState(0);
   const [, setShowRpcConfig, rpcConfigControl] = useControl<boolean>(null, false);
   const [contractTarget, setContractTarget] = useState<'proxy' | 'impl'>('impl');
 
@@ -310,8 +391,11 @@ export default function Contract() {
   const loading = sourceLoading;
   const error = sourceError?.message ?? null;
 
+  // Chain switches replace the current entry via the shared Wave A helper,
+  // keeping the address param so the same contract reloads on the target
+  // chain without pushing a history entry.
   const handleChainChange = (newChainId: number) => {
-    void navigate(router, `/chain/${newChainId}/contract/${address ?? ''}`).catch(
+    void redirectReplace(router, `/chain/${newChainId}/contract/${address ?? ''}`).catch(
       () => undefined,
     );
   };
@@ -341,6 +425,10 @@ export default function Contract() {
       : null
     : serverAbi;
   const customAbiActive = serverAbiUnavailable && !!effectiveABI;
+  // ABI-dependent tabs with nothing to show: no server ABI and no pasted
+  // ABI applied. The tab shell keeps the tabs clickable; the panels below
+  // render the unlock pointer instead of their bare empty states.
+  const abiLocked = serverAbiUnavailable && !effectiveABI;
 
   useEffect(() => {
     if (contractSource?.isProxy && contractSource?.implementationContract && !tabFromUrl) {
@@ -353,6 +441,8 @@ export default function Contract() {
   // without a remount): re-read the per-contract key whenever they change.
   useEffect(() => {
     setCustomAbiRaw(readStoredCustomAbi(currentChainId, address ?? ''));
+    // A notice from the previous contract never carries over.
+    setCacheNotice(null);
   }, [currentChainId, address]);
 
   const handleApplyCustomAbi = (raw: string) => {
@@ -377,13 +467,22 @@ export default function Contract() {
     if (!chainId || !address) return;
 
     setRefreshing(true);
+    setCacheNotice(null);
 
     try {
       await post(`/api/chains/${currentChainId}/contracts/${address}/clear-cache`, {});
       await refetchSource();
       await refetchCreation();
+      setCacheNotice({ kind: 'ok', text: 'Cache cleared — reloading source' });
     } catch (err) {
       console.error('Failed to clear cache:', err);
+      setCacheNotice({
+        kind: 'error',
+        text:
+          err instanceof ApiError && err.status === 403
+            ? 'Requires admin token — set it via ⚙️ RPC → Admin token. The server must have ADMIN_TOKEN configured.'
+            : 'Failed to clear cache — the explorer API is unreachable or returned an error.',
+      });
     } finally {
       setRefreshing(false);
     }
@@ -475,6 +574,11 @@ export default function Contract() {
                   {refreshing ? 'Refreshing...' : '↻ Force Refresh'}
                 </button>
               </div>
+              {cacheNotice && (
+                <div role="status" className={`${cacheNoticeStyles} ${cacheNotice.kind}`}>
+                  {cacheNotice.text}
+                </div>
+              )}
               <div className={infoGridStyles}>
                 {contractSource.name && (
                   <div className="info-item">
@@ -721,6 +825,7 @@ export default function Contract() {
                 storedRaw={customAbiRaw ?? ''}
                 onApply={handleApplyCustomAbi}
                 onClear={handleClearCustomAbi}
+                focusSignal={abiFocusSignal}
               />
             )}
 
@@ -761,30 +866,33 @@ export default function Contract() {
             )}
 
             {/* ABI */}
-            {activeTab === 'abi' && (
-              <div className={cardStyles}>
-                <h2>
-                  {isProxy
-                    ? contractTarget === 'impl'
-                      ? `Implementation ABI (${contractSource.implementationContract?.name ?? 'Unknown'})`
-                      : 'Proxy Contract ABI'
-                    : 'Contract ABI'}
-                </h2>
-                <SourceCodeViewer
-                  sourceCode={
-                    contractTarget === 'impl' && contractSource.implementationContract?.abi
-                      ? JSON.stringify(
-                          JSON.parse(contractSource.implementationContract.abi),
-                          null,
-                          2,
-                        )
-                      : contractSource.abi
-                        ? JSON.stringify(JSON.parse(contractSource.abi), null, 2)
-                        : 'No ABI available'
-                  }
-                />
-              </div>
-            )}
+            {activeTab === 'abi' &&
+              (abiLocked ? (
+                <AbiUnlockHint onFocusPanel={() => setAbiFocusSignal(n => n + 1)} />
+              ) : (
+                <div className={cardStyles}>
+                  <h2>
+                    {isProxy
+                      ? contractTarget === 'impl'
+                        ? `Implementation ABI (${contractSource.implementationContract?.name ?? 'Unknown'})`
+                        : 'Proxy Contract ABI'
+                      : 'Contract ABI'}
+                  </h2>
+                  <SourceCodeViewer
+                    sourceCode={
+                      contractTarget === 'impl' && contractSource.implementationContract?.abi
+                        ? JSON.stringify(
+                            JSON.parse(contractSource.implementationContract.abi),
+                            null,
+                            2,
+                          )
+                        : contractSource.abi
+                          ? JSON.stringify(JSON.parse(contractSource.abi), null, 2)
+                          : 'No ABI available'
+                    }
+                  />
+                </div>
+              ))}
 
             {activeTab === 'events' && (
               <EventsPanel
@@ -805,15 +913,18 @@ export default function Contract() {
               />
             )}
 
-            {activeTab === 'interact' && (
-              <ContractInteract
-                chainId={currentChainId}
-                contractAddress={address}
-                contractSource={contractSource}
-                contractTarget={isProxy ? contractTarget : undefined}
-                abiOverride={serverAbiUnavailable && customAbiRaw ? customAbiRaw : undefined}
-              />
-            )}
+            {activeTab === 'interact' &&
+              (abiLocked ? (
+                <AbiUnlockHint onFocusPanel={() => setAbiFocusSignal(n => n + 1)} />
+              ) : (
+                <ContractInteract
+                  chainId={currentChainId}
+                  contractAddress={address}
+                  contractSource={contractSource}
+                  contractTarget={isProxy ? contractTarget : undefined}
+                  abiOverride={serverAbiUnavailable && customAbiRaw ? customAbiRaw : undefined}
+                />
+              ))}
           </>
         )}
 

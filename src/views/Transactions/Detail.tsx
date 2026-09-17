@@ -16,6 +16,7 @@ import { InfoGrid, InfoItem } from '@/components/ui/InfoGrid';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { PageContainer, PageHeader, BackButton } from '@/components/ui/PageLayout';
 import { getChainInfo, getChainName, getChainSymbol } from '@/config/chains';
+import { redirectReplace } from '@/views/Home/Landing';
 import { useContractSource } from '@/services/contracts';
 import { useTransactionByHash } from '@/services/chainRpc';
 import type { RpcLogEntry } from '@/utils/blockRpcData';
@@ -355,10 +356,11 @@ export default function TransactionDetail() {
   }, [sourceResponse]);
 
   const handleChainChange = (newChainId: number) => {
-    // Same-params refresh: the hash is chain-agnostic, so switching chains
-    // re-resolves this exact transaction on the target chain's RPC instead
-    // of kicking the user back to the chain home page.
-    void navigate(router, `/chain/${newChainId}/tx/${txHash}`).catch(() => undefined);
+    // Same-params refresh via the shared replace helper: the hash is
+    // chain-agnostic, so switching chains re-resolves this exact
+    // transaction on the target chain's RPC instead of kicking the user
+    // back to the chain home page, without pushing a history entry.
+    void redirectReplace(router, `/chain/${newChainId}/tx/${txHash}`).catch(() => undefined);
   };
 
   if (!chainInfo) {

@@ -5,17 +5,25 @@
 // info card + tab bar, the unsupported-chain branch, the /events default
 // tab, the ?tab= write path, and the chain-switch navigation. Router view
 // commits resolve asynchronously, so first paint assertions use findBy*.
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, View, createRoutes, useSearchParams } from '@native-router/react';
 
 import Contract from '@/views/Contract';
+import { post } from '@/util/http';
+import { ApiError } from '@/util/apiError';
 import {
   useContractCreation,
   useContractSource,
   useStorageLayout,
 } from '@/services/contracts';
+
+// jsdom implements neither Element.scrollIntoView nor :focus scrolling; the
+// custom ABI panel's focus signal calls both.
+beforeAll(() => {
+  Element.prototype.scrollIntoView = vi.fn();
+});
 
 vi.mock('@/services/contracts', () => ({
   useContractSource: vi.fn(),
@@ -179,6 +187,8 @@ function renderAt(path: string) {
 
 beforeEach(() => {
   sessionStorage.clear();
+  vi.mocked(post).mockReset();
+  vi.mocked(post).mockResolvedValue({});
   vi.mocked(useContractSource).mockReturnValue(mockHookResult(verifiedSourceResponse));
   vi.mocked(useContractCreation).mockReturnValue(mockHookResult({ found: false }));
   vi.mocked(useStorageLayout).mockReturnValue(mockHookResult(undefined));
@@ -310,11 +320,74 @@ describe('Contract view custom ABI unlock', () => {
     expect(await screen.findByRole('button', { name: 'Events (1)' })).toBeInTheDocument();
     expect(screen.getByLabelText('Custom ABI JSON')).toHaveValue(CUSTOM_ABI);
 
-    await user.click(screen.getByRole('button', { name: 'Clear custom ABI' }));
+    await user.click(await screen.findByRole('button', { name: 'Clear custom ABI' }));
 
     expect(screen.queryByRole('button', { name: /^Events/ })).not.toBeInTheDocument();
     expect(screen.queryByText('Custom ABI')).not.toBeInTheDocument();
     expect(sessionStorage.getItem(CUSTOM_ABI_STORAGE_KEY)).toBeNull();
     expect(screen.getByLabelText('Custom ABI JSON')).toHaveValue('');
+  });
+});
+
+describe('Contract view locked tabs and force refresh', () => {
+  it('points the locked ABI and Interact tabs at the custom ABI panel', async () => {
+    const user = userEvent.setup();
+    vi.mocked(useContractSource).mockReturnValue(mockHookResult(unverifiedSourceResponse));
+    renderAt(`/chain/1/contract/${ADDRESS}`);
+
+    // ABI tab: unlock pointer instead of the bare "No ABI available".
+    await user.click(await screen.findByRole('button', { name: 'ABI' }));
+    expect(
+      await screen.findByRole('heading', { name: 'Paste an ABI to unlock this tab' }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Open custom ABI panel' }),
+    ).toBeInTheDocument();
+
+    // The pointer focuses the panel's textarea (the panel sits below the
+    // tab bar).
+    await user.click(screen.getByRole('button', { name: 'Open custom ABI panel' }));
+    expect(screen.getByLabelText('Custom ABI JSON')).toHaveFocus();
+
+    // Interact tab: same pointer, and the interact panel itself is not
+    // mounted with nothing to render.
+    await user.click(screen.getByRole('button', { name: 'Interact' }));
+    expect(
+      screen.getByRole('heading', { name: 'Paste an ABI to unlock this tab' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId('contract-interact')).not.toBeInTheDocument();
+  });
+
+  it('shows a success notice after a force refresh clears the cache', async () => {
+    const user = userEvent.setup();
+    renderAt(`/chain/1/contract/${ADDRESS}`);
+
+    await user.click(await screen.findByRole('button', { name: '↻ Force Refresh' }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Cache cleared — reloading source',
+    );
+  });
+
+  it('explains the admin-token requirement when the clear-cache call answers 403', async () => {
+    const user = userEvent.setup();
+    vi.mocked(post).mockRejectedValueOnce(new ApiError('admin token required', 403));
+    renderAt(`/chain/1/contract/${ADDRESS}`);
+
+    await user.click(await screen.findByRole('button', { name: '↻ Force Refresh' }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent(
+      'Requires admin token — set it via ⚙️ RPC → Admin token. The server must have ADMIN_TOKEN configured.',
+    );
+  });
+
+  it('shows a plain failure notice for non-403 clear-cache errors', async () => {
+    const user = userEvent.setup();
+    vi.mocked(post).mockRejectedValueOnce(new ApiError('boom', 500));
+    renderAt(`/chain/1/contract/${ADDRESS}`);
+
+    await user.click(await screen.findByRole('button', { name: '↻ Force Refresh' }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent(/Failed to clear cache/);
   });
 });

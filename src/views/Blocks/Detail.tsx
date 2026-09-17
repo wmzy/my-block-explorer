@@ -12,6 +12,7 @@ import { LoadingState } from '@/components/ui/LoadingState';
 import { PageContainer, PageHeader, BackButton } from '@/components/ui/PageLayout';
 import { linkStyle } from '@/components/ui/DataTable';
 import { getChainInfo, getChainName } from '@/config/chains';
+import { redirectReplace } from '@/views/Home/Landing';
 import { useBlockByNumber } from '@/services/chainRpc';
 import { formatRelativeTime } from '@/utils/format';
 import { createRpcClient } from '@/utils/realTimeData';
@@ -114,7 +115,7 @@ export default function BlockDetail() {
   // detail view reloads for the new chain instead of landing on the home
   // page.
   const handleChainChange = (newChainId: number) => {
-    void navigate(router, `/chain/${newChainId}/block/${blockNumberStr}`).catch(
+    void redirectReplace(router, `/chain/${newChainId}/block/${blockNumberStr}`).catch(
       () => undefined,
     );
   };

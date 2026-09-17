@@ -35,6 +35,22 @@ const MASTER_COPY_ABI = [
 const isValidResultAddress = (value: unknown): value is `0x${string}` =>
   typeof value === 'string' && /^0x[0-9a-fA-F]{40}$/.test(value) && !/^0x0{40}$/i.test(value);
 
+const MS_PER_HOUR = 1000 * 60 * 60;
+
+// Cache TTL tiers (in hours) for contract source records.
+// Verified non-proxy source code is immutable on-chain, so it caches long.
+export const VERIFIED_CACHE_TTL_HOURS = 24 * 30;
+// A proxy's implementation can change at any time via an upgrade, so
+// "immutable" does not hold for proxy entries — keep them short-lived
+// even when the proxy itself is verified.
+export const PROXY_CACHE_TTL_HOURS = 24;
+// Unverified contracts may get verified later; re-check sooner.
+export const UNVERIFIED_CACHE_TTL_HOURS = 24 * 3;
+// Failed contract-creation searches must not stick forever: a contract
+// queried seconds before its deployment would otherwise stay "not found"
+// until the row is manually cleared.
+export const CREATION_FAILURE_CACHE_TTL_HOURS = 24;
+
 type CallTracerCall = {
   type: string;
   to?: string;
@@ -223,12 +239,34 @@ export class ContractSourceService {
 
       // 检查是否是失败的搜索记录
       if (!row.creationTxHash) {
+        // Failure rows expire after CREATION_FAILURE_CACHE_TTL_HOURS: a
+        // contract queried seconds before deployment/verification must not
+        // stay "not found" forever. lastUpdated is the failure timestamp.
+        const ageHours = (Date.now() - (row.lastUpdated?.getTime() ?? 0)) / MS_PER_HOUR;
+        if (ageHours < CREATION_FAILURE_CACHE_TTL_HOURS) {
+          logger.info(
+            { address, reason: row.creationMethod ?? 'unknown', ageHours: ageHours.toFixed(1) },
+            'Found fresh cached failed search',
+          );
+          // 抛出特殊错误表示这是缓存的失败结果
+          throw new Error(`CACHED_FAILURE:${row.creationMethod ?? 'unknown'}`);
+        }
+
+        // Expired failure entry: drop it so the fresh search below can run
+        // and re-cache (cacheFailedSearch skips inserts when a row exists).
         logger.info(
-          { address, reason: row.creationMethod ?? 'unknown' },
-          'Found cached failed search',
+          { address, reason: row.creationMethod ?? 'unknown', ageHours: ageHours.toFixed(1) },
+          'Cached failed search expired, removing entry',
         );
-        // 抛出特殊错误表示这是缓存的失败结果
-        throw new Error(`CACHED_FAILURE:${row.creationMethod ?? 'unknown'}`);
+        await db
+          .delete(contractCreationInfo)
+          .where(
+            and(
+              eq(contractCreationInfo.chainId, chainId),
+              eq(contractCreationInfo.address, address),
+            ),
+          );
+        return null;
       }
 
       return {
@@ -240,6 +278,12 @@ export class ContractSourceService {
         gasPrice: BigInt(0),
       };
     } catch (error) {
+      // The failure sentinel must reach the caller's CACHED_FAILURE handler
+      // so a fresh failure row short-circuits the search; swallowing it here
+      // would make the failure cache a no-op.
+      if (error instanceof Error && error.message.startsWith('CACHED_FAILURE:')) {
+        throw error;
+      }
       logger.warn({ err: error, address }, 'Failed to get cached creation info');
       return null;
     }
@@ -1505,18 +1549,22 @@ export class ContractSourceService {
   private isCacheValid(contractSource: ContractSource): boolean {
     const now = new Date();
     const lastChecked = contractSource.lastChecked;
-    const hoursDiff = (now.getTime() - lastChecked.getTime()) / (1000 * 60 * 60);
+    const hoursDiff = (now.getTime() - lastChecked.getTime()) / MS_PER_HOUR;
 
-    // 缓存策略：
-    // - 已验证的合约：30天（合约源码不会变）
-    // - 未验证的合约：3天（可能后续会被验证）
-    // - 代理合约：30天（代理关系通常不会变）
+    // Cache TTL policy (see the *_CACHE_TTL_HOURS constants above):
+    // - Verified non-proxy contracts: 30 days (source code cannot change)
+    // - Proxy contracts: 24 hours — the implementation address can change
+    //   at any time via an upgrade, so "immutable" does not hold even for
+    //   a verified proxy
+    // - Unverified contracts: 3 days (may get verified later)
     let maxHours: number;
 
-    if (contractSource.verificationStatus === 'verified' || contractSource.isProxy) {
-      maxHours = 24 * 30; // 30天
+    if (contractSource.isProxy) {
+      maxHours = PROXY_CACHE_TTL_HOURS;
+    } else if (contractSource.verificationStatus === 'verified') {
+      maxHours = VERIFIED_CACHE_TTL_HOURS;
     } else {
-      maxHours = 24 * 3; // 3天
+      maxHours = UNVERIFIED_CACHE_TTL_HOURS;
     }
 
     const isValid = hoursDiff < maxHours;

@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useId } from 'react';
 import { css } from '@linaria/core';
 import { Dialog } from 'haze-ui';
 import { useControl, type Control } from 'react-use-control';
 import { toast } from 'sonner';
 import { ApiError } from '../util/apiError';
+import { clearAdminToken, hasAdminToken, setAdminToken } from '../util/adminAuth';
 import { getChainName } from '../config/chains';
 import { getRpcPresets, type RpcPreset } from '../config/rpcPresets';
 import {
@@ -243,6 +244,17 @@ const buttonStyles = css`
   }
 `;
 
+const adminNoticeStyles = css`
+  background: #fff3cd;
+  border: 1px solid #ffe69c;
+  color: #664d03;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  margin-bottom: 12px;
+`;
+
 type Props = {
   open?: Control<boolean>;
   onClose?: () => void;
@@ -266,8 +278,15 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
   const [loading, setLoading] = useState(false);
   const [testResult, setTestResult] = useState<RpcTestResult | null>(null);
 
+  // Admin token entry: rpc-config reads are gated server-side, so the
+  // modal always offers the field and flags a 403 from the config fetch.
+  const [adminTokenInput, setAdminTokenInput] = useState('');
+  const [adminTokenStored, setAdminTokenStored] = useState(() => hasAdminToken());
+  const [configLoadForbidden, setConfigLoadForbidden] = useState(false);
+
   const chainName = getChainName(chainId);
   const presets = getRpcPresets(chainId);
+  const adminTokenInputId = useId();
 
   useEffect(() => {
     if (isOpen) {
@@ -280,10 +299,41 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
       const configs = await getRpcConfigs();
       const chainConfig = configs.find(c => c.chainId === chainId);
       setCurrentConfig(chainConfig ?? null);
+      setConfigLoadForbidden(false);
     }
     catch (error) {
       console.error('Failed to load current config:', error);
+      // 403 means the admin gate rejected us; show the token notice
+      // instead of silently swallowing the failure.
+      if (error instanceof ApiError && error.status === 403) {
+        setConfigLoadForbidden(true);
+        setCurrentConfig(null);
+      }
+      else {
+        setConfigLoadForbidden(false);
+      }
     }
+  };
+
+  const handleSaveAdminToken = async () => {
+    const token = adminTokenInput.trim();
+    if (!token) return;
+
+    setAdminToken(token);
+    setAdminTokenStored(true);
+    setAdminTokenInput('');
+    toast.success('Admin token saved.');
+    // The http layer picks the token up on the next request; refetch so
+    // the gated config list (and the 403 notice) updates immediately.
+    await loadCurrentConfig();
+  };
+
+  const handleClearAdminToken = async () => {
+    clearAdminToken();
+    setAdminTokenStored(false);
+    setAdminTokenInput('');
+    toast.success('Admin token cleared.');
+    await loadCurrentConfig();
   };
 
   const handlePresetSelect = async (preset: RpcPreset) => {
@@ -656,6 +706,46 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
           </form>
         </div>
       )}
+      {/* Admin token: rpc-config reads/writes are gated server-side by ADMIN_TOKEN */}
+      <div className={sectionStyles}>
+        <h3>Admin token</h3>
+        {configLoadForbidden && (
+          <div className={adminNoticeStyles}>
+            Admin token required — set it below. Server must have ADMIN_TOKEN configured.
+          </div>
+        )}
+        <div className={customFormStyles}>
+          <div className="form-group">
+            <label htmlFor={adminTokenInputId}>Admin token (stored in this browser)</label>
+            <input
+              id={adminTokenInputId}
+              type="password"
+              value={adminTokenInput}
+              onChange={e => setAdminTokenInput(e.target.value)}
+              placeholder="Must match the server's ADMIN_TOKEN"
+              autoComplete="off"
+            />
+          </div>
+        </div>
+        <div className={`${buttonStyles} btn-group`}>
+          <button
+            type="button"
+            className="btn primary small"
+            onClick={handleSaveAdminToken}
+            disabled={!adminTokenInput.trim()}
+          >
+            Save
+          </button>
+          <button
+            type="button"
+            className="btn secondary small"
+            onClick={handleClearAdminToken}
+            disabled={!adminTokenStored}
+          >
+            Clear
+          </button>
+        </div>
+      </div>
     </Dialog>
   );
 }

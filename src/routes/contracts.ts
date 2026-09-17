@@ -7,6 +7,7 @@ import { contractInteractionService } from '../services/ContractInteractionServi
 import { getChainName, isChainSupported } from '../config/chains';
 import { getValidatedChainId, getValidatedAddress } from '../server/validation';
 import { safeJsonResponse } from '../utils/serialization';
+import { requireAdminToken } from '../middleware/admin-token';
 import {
   detectInstalledIdes,
   getDetectedIdesInfo,
@@ -68,7 +69,9 @@ app.get('/chains/:chainId/contracts/:address/source', async c => {
   }
 });
 
-app.post('/chains/:chainId/contracts/:address/clear-cache', async c => {
+// Admin-gated: cache invalidation is an operator action (the frontend's
+// Force Refresh sends the x-admin-token header).
+app.post('/chains/:chainId/contracts/:address/clear-cache', requireAdminToken, async c => {
   const chainId = getValidatedChainId(c.req.param('chainId'));
   const address = getValidatedAddress(c.req.param('address'));
 

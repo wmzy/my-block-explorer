@@ -1,6 +1,6 @@
 # Block Explorer - Project Knowledge Base
 
-**Generated:** 2026-03-20 **Commit:** bd8270f **Branch:** 001-abi
+**Generated:** 2026-09-17 **Commit:** bd8270f **Branch:** 001-abi
 
 ## OVERVIEW
 
@@ -44,7 +44,7 @@ block-explorer/
 | Modify DB schema     | `src/database/schema.ts`                                                        | Run `npm run db:generate`                           |
 | Add new chain        | `src/config/chains.ts`                                                          | Viem chains auto-supported                          |
 | RPC client creation  | `src/utils/realTimeData.ts` (frontend), `src/services/RpcManager.ts` (backend)  | Both cache per chainId                              |
-| Event indexing       | `src/services/EventIndexingService.ts` + `src/services/IndexingQueueService.ts` | Manual range-based, serial queue, 2000 blocks/batch |
+| Event indexing       | `src/services/EventIndexingService.ts`                                           | Manual range-based; one serial job per range (no global queue); `reconcileInterruptedRanges()` runs at startup |
 | Contract source/ABI  | `src/services/ContractSourceService.ts`                                         | DB → Sourcify/Etherspan fallback, immutable         |
 | Storage layout       | `src/services/StorageLayoutService.ts`                                          | DB → storage-layout-fetcher, immutable              |
 | UI components        | `src/components/ui/`                                                            | Haze UI wrappers + Linaria                          |
@@ -59,8 +59,7 @@ block-explorer/
 | `rpcManager`           | Singleton | `src/services/RpcManager.ts:218`              | Central RPC client manager                  |
 | `createDuckDBAdapter`  | Function  | `src/database/duckdb-postgres-adapter.ts:430` | PostgreSQL→DuckDB bridge for Drizzle        |
 | `createRpcClient`      | Function  | `src/utils/realTimeData.ts:61`                | Frontend viem client factory                |
-| `indexingQueueService` | Singleton | `src/services/IndexingQueueService.ts`        | Serial queue for range indexing             |
-| `startIndexingRange`   | Function  | `src/services/EventIndexingService.ts`        | Range-based batch indexing entry            |
+| `startIndexingRange`   | Function  | `src/services/EventIndexingService.ts`        | Range-based batch indexing entry; serial per-range job |
 | `SegmentedProgressBar` | Component | `src/components/ui/SegmentedProgressBar.tsx`  | Segmented progress bar UI                   |
 | `useAddressData`→split | Hook | `src/services/{addresses,addressRealTime}.ts` | Replaced by two query hooks composed in `views/Address` |
 | `http` get/post/put/del | Module | `src/util/http.ts` | fetch-fun chain; base from `util/apiBase.ts` |
@@ -111,8 +110,6 @@ block-explorer/
 - **No `console.log`** — Use `console.warn`/`console.error` or pino logger
 - **No SERIAL type** — DuckDB incompatible; use composite primary keys
 - **No Chinese comments** — English only (project standard)
-- **Don't duplicate routes** — `src/api/event-endpoints.ts` and
-  `src/routes/events.ts` overlap (known issue)
 
 ## UNIQUE STYLES
 
@@ -196,22 +193,46 @@ pnpm typecheck           # tsc --noEmit
 
 - **Node.js 22+ required** — Uses latest features
 - **No CI/CD** — `.github/workflows` missing (known gap)
-- **Test dirs duplicated** — `src/tests/`, `tests/`, `test/` all exist
-  (consolidation needed)
+- **Test layout** — `tests/` (unit + integration + e2e) is the live suite;
+  historical `src/tests/` / `test/` dirs no longer exist
 - **Barrel exports incomplete** — `src/utils/index.ts` only exports 2 of 19
   utils
 - **Proxy port 7890** — Set `HTTP_PROXY`/`HTTPS_PROXY` if network issues
-- **Admin env vars** — `ENABLE_DEBUG_API=1` mounts `/debug/*` (default off);
-  `ADMIN_TOKEN` gates rpc-config mutations + all `/api/performance/*`
-  (fail closed when unset; header `x-admin-token`)
+- **Admin auth** — `ADMIN_TOKEN` (env) gates admin endpoints via
+  `src/middleware/admin-token.ts` + `x-admin-token` header (timing-safe
+  compare, **fail closed** when unset). Gated surface: rpc-config
+  GET/POST/DELETE (`/api/rpc-configs`), contract source cache clear
+  (`POST .../contracts/:address/clear-cache`), storage-layout cache clear
+  (`DELETE .../contracts/:address/storage-layout/cache`), and all
+  `/api/performance/*`. Browser side: token stored in localStorage by
+  `src/util/adminAuth.ts`, injected by `util/http.ts`; ⚙️ RPC modal has the
+  "Admin token (stored in this browser)" field. `ENABLE_DEBUG_API=1` mounts
+  `/debug/db/query` (raw SQL; default off, never enable in production)
+- **Cache TTLs (persistent fetch caches)** — verified contract source 30d;
+  proxy 24h; unverified source 3d; creation-lookup failure 24h;
+  storage-layout `NOT_FOUND` 24h (`ContractSourceService`,
+  `StorageLayoutService`)
 - **Event indexing start is async** — `POST .../events/ranges/:id/start|resume`
   returns `202` immediately; progress via `GET .../events/ranges` polling
-  (frontend polls 3s). `argFilters`/`topicN` push decoded-arg filtering into
-  DuckDB; `GET .../events/export` streams CSV (100k-row cap → 400)
+  (frontend polls 3s). One serial job per range — there is no global queue
+  (the former queue service was removed). On startup `reconcileInterruptedRanges()`
+  flips ranges stuck in `indexing` to `error` with
+  "Interrupted by server restart — resume to continue". `argFilters`/`topicN`
+  push decoded-arg filtering into DuckDB; `GET .../events/export` streams CSV
+  (100k-row cap → 400; the UI disables the export button preflight when the
+  filtered total exceeds the cap). Event statistics render "Indexing
+  coverage" — union of ranges, overlap-safe sweep-merge
 - **Address tx history is heuristic** — balance-change binary search; the
   transactions endpoint reports `coverage`/`reason`/`searchWindowBlocks`
-  and the UI renders honest partial-data banners. Never present it as
-  complete history
+  and the UI renders honest partial-data banners ("source unknown" when
+  coverage is unknown). Never present it as complete history. The address
+  API no longer returns balance/transactionCount — the UI reads those live
+  from RPC (`services/addressRealTime.ts`)
+- **Search degradation is explicit** — responses can carry
+  `degraded`/`degradedReasons`; the UI offers retry instead of "no results".
+  ENS names resolve client-side against a mainnet RPC (server returns
+  suggestions only). `search_history` ids are int32-safe (epoch-seconds
+  scheme, `SearchService`)
 - **Custom ABI** — unverified contracts accept a pasted ABI
   (sessionStorage `custom-abi:{chainId}:{address}`) that unlocks
   Events/Interact tabs locally

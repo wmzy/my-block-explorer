@@ -60,7 +60,9 @@ export function validatePaginationParams(page?: string | number, limit?: string 
 /**
  * Detect the type of a search input
  */
-export function detectSearchType(input: string): 'address' | 'hash' | 'block' | 'unknown' {
+export function detectSearchType(
+  input: string,
+): 'address' | 'hash' | 'block' | 'ens' | 'unknown' {
   if (!input || typeof input !== 'string') return 'unknown';
 
   const trimmed = input.trim();
@@ -78,6 +80,13 @@ export function detectSearchType(input: string): 'address' | 'hash' | 'block' | 
   // Block number detection
   if (/^\d+$/.test(trimmed) && isValidBlockNumber(trimmed)) {
     return 'block';
+  }
+
+  // ENS name detection (e.g. 'vitalik.eth', 'a.b.eth'). ENS names are
+  // resolved in the browser against a mainnet client; consumers must
+  // handle the 'ens' type without a server round-trip.
+  if (/^[a-z0-9-]+(\.[a-z0-9-]+)*\.eth$/i.test(trimmed)) {
+    return 'ens';
   }
 
   return 'unknown';

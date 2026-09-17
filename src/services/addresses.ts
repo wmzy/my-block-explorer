@@ -1,18 +1,56 @@
 // Addresses service: info and paginated transactions.
-import type { AddressInfo, Transaction } from '@/types/index';
+import type { Transaction } from '@/types/index';
 
 import { api, get, withSignal } from '@/util/http';
 import { bindQueryFn, createQueryCache, createQueryHook } from '@/util/useQuery';
 
-export type AddressTransactionPage = { transactions: Transaction[]; total: number };
+// Honesty fields come from the heuristic-history backend when it ran:
+// coverage 'complete' is the only trusted-empty signal; 'partial'/'none'
+// carry reason/searchWindowBlocks. Absent on legacy cached payloads.
+export type AddressTransactionPage = {
+  transactions: Transaction[];
+  total: number;
+  method?: string;
+  coverage?: 'complete' | 'partial' | 'none';
+  reason?: 'no-transactions' | 'zero-balance' | 'search-failed';
+  searchWindowBlocks?: number;
+};
+
+// Response envelope of GET /api/chains/:chainId/addresses/:address. The
+// `address` member carries only persistent/indexer fields: balance and
+// transaction count are deliberately absent from this payload (the API
+// used to hard-code '0'/0 here) — live values come from the realtime RPC
+// channel in addressRealTime.ts. Date fields arrive JSON-serialized.
+export type AddressInfoResponse = {
+  chainId: number;
+  chainName: string;
+  timestamp: string;
+  address: {
+    address: string;
+    isContract: boolean;
+    contractCreationTx?: string;
+    contractCreationBlock?: number;
+    contractCreator?: string;
+    contractName?: string;
+    verificationStatus?: 'verified' | 'unverified' | 'partial';
+    sourceCodeAvailable?: boolean;
+    compilerVersion?: string;
+    isProxy?: boolean;
+    proxyType?: string;
+    implementationAddress?: string;
+    firstSeenBlock?: number;
+    firstSeenTimestamp?: string;
+    lastQueried?: string;
+  };
+};
 
 export function fetchAddressInfo(
   chainId: number,
   address: string,
   signal?: AbortSignal,
-): Promise<AddressInfo | undefined> {
+): Promise<AddressInfoResponse | undefined> {
   if (!(chainId > 0) || address.length === 0) return Promise.resolve(undefined);
-  return get<AddressInfo>(
+  return get<AddressInfoResponse>(
     `/api/chains/${chainId}/addresses/${address}`,
     undefined,
     withSignal(api, signal),
@@ -36,7 +74,7 @@ export function fetchAddressTransactions(
   );
 }
 
-export const addressInfoCache = createQueryCache<AddressInfo | undefined, [
+export const addressInfoCache = createQueryCache<AddressInfoResponse | undefined, [
   number,
   string,
 ]>('addresses-info');

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, View, createRoutes } from '@native-router/react';
 import '@testing-library/jest-dom';
 import BlocksList from '@/views/Blocks/List';
@@ -43,8 +43,10 @@ vi.mock('@/utils/format', () => ({
 type BlocksHookResult = {
   data?: { blocks?: unknown[]; latestBlockNumber?: bigint };
   loading: boolean;
+  fetching?: boolean;
   error?: Error;
   refetch?: () => void;
+  dataUpdatedAt?: number;
 };
 
 const mockUseLatestBlocks = vi.fn<(...args: unknown[]) => BlocksHookResult>();
@@ -99,7 +101,9 @@ describe('BlocksList view', () => {
     mockUseLatestBlocks.mockReturnValue({
       data: { blocks: [makeBlock(18000001), makeBlock(18000000)], latestBlockNumber: 18000001n },
       loading: false,
+      fetching: false,
       error: undefined,
+      dataUpdatedAt: 1,
     });
     renderBlocksList('/chain/1/blocks');
 
@@ -132,10 +136,13 @@ describe('BlocksList view', () => {
     mockUseLatestBlocks.mockReturnValue({
       data: { blocks: [], latestBlockNumber: 18000001n },
       loading: false,
+      fetching: false,
       error: undefined,
+      dataUpdatedAt: 1,
     });
     renderBlocksList('/chain/1/blocks');
 
+    // Proper empty state (info alert), not a loading placeholder.
     expect(await screen.findByText('No blocks found')).toBeInTheDocument();
   });
 
@@ -149,7 +156,9 @@ describe('BlocksList view', () => {
     mockUseLatestBlocks.mockReturnValue({
       data: { blocks: twenty, latestBlockNumber: 18000001n },
       loading: false,
+      fetching: false,
       error: undefined,
+      dataUpdatedAt: 1,
     });
     renderBlocksList('/chain/1/blocks');
 
@@ -160,5 +169,47 @@ describe('BlocksList view', () => {
     fireEvent.click(screen.getByText('Older'));
     // page 2 cursor: 18000001 - 20 + 1
     expect(mockUseLatestBlocks).toHaveBeenLastCalledWith(1, 20, 17999982n);
+  });
+
+  it('freezes the pagination anchor while the head advances; Refresh re-anchors', async () => {
+    // The head answer moves between renders: the walk must keep paging from
+    // the head frozen at first load until the Refresh control re-anchors.
+    let head = 18000001n;
+    let tick = 1;
+    const refetch = vi.fn();
+    mockUseLatestBlocks.mockImplementation(() => ({
+      data: {
+        blocks: Array.from({ length: 20 }, (_, i) => makeBlock(Number(head) - i)),
+        latestBlockNumber: head,
+      },
+      loading: false,
+      fetching: false,
+      error: undefined,
+      refetch,
+      dataUpdatedAt: tick,
+    }));
+    renderBlocksList('/chain/1/blocks');
+
+    expect(await screen.findByText(/Page 1/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '↻ Refresh' })).toBeInTheDocument();
+
+    // Chain advanced by 10 blocks; paging to 2 must still use the frozen
+    // anchor (18000001), not the live head (18000011).
+    head = 18000011n;
+    tick = 2;
+    fireEvent.click(screen.getByText('Older'));
+    await waitFor(() =>
+      expect(mockUseLatestBlocks).toHaveBeenLastCalledWith(1, 20, 17999982n),
+    );
+
+    // Refresh re-anchors at the live head: page 1 cursor becomes
+    // 18000011 + 1.
+    tick = 3;
+    fireEvent.click(screen.getByRole('button', { name: '↻ Refresh' }));
+    await waitFor(() =>
+      expect(mockUseLatestBlocks).toHaveBeenLastCalledWith(1, 20, 18000012n),
+    );
+    expect(refetch).toHaveBeenCalled();
+    expect(await screen.findByText(/Page 1/)).toBeInTheDocument();
   });
 });

@@ -16,6 +16,7 @@ import performanceRoutes from './routes/performance';
 import rpcConfigRoutes from './routes/rpc-config';
 import storageRoutes from './routes/storage';
 import debugRoutes from './routes/debug';
+import { reconcileInterruptedRanges } from './services/EventIndexingService';
 
 const logger = createLogger('api-app');
 
@@ -75,6 +76,14 @@ app.route('/api', storageRoutes);
 if (process.env.ENABLE_DEBUG_API === '1') {
   app.route('/debug', debugRoutes);
 }
+
+// Startup reconciliation: flip indexing ranges stranded by a previous
+// process to 'error' so Resume becomes available (see
+// reconcileInterruptedRanges). Fire-and-forget — module load must not block
+// on the database, and a failure to reconcile is logged, not fatal.
+void reconcileInterruptedRanges().catch(err =>
+  logger.error({ err }, 'Failed to reconcile interrupted indexing ranges'),
+);
 
 app.notFound(c => {
   return c.json(

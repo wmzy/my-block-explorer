@@ -75,6 +75,33 @@ describe('EventTable server-side filtering and export', () => {
     expect(screen.queryByRole('link', { name: 'Export CSV' })).toBeNull();
   });
 
+  it('disables export with an inline notice when the filtered total exceeds the cap', async () => {
+    mockGet(150_000);
+    renderTable();
+
+    // Rendered as a disabled control: no href means nothing to navigate to,
+    // and the notice names the actual query total.
+    const control = await screen.findByText('Export CSV');
+    expect(control).not.toHaveAttribute('href');
+    expect(control).toHaveAttribute('aria-disabled', 'true');
+    expect(
+      screen.getByText(
+        'Too many rows (150,000) — export limit is 100,000. Narrow your filters.',
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('keeps export enabled at exactly the 100,000-row cap', async () => {
+    mockGet(100_000);
+    renderTable();
+
+    const link = await screen.findByRole('link', { name: 'Export CSV' });
+    expect(link.getAttribute('href')).toBe(
+      `/api/chains/1/contracts/${ADDRESS}/events/export`,
+    );
+    expect(screen.queryByText(/Too many rows/)).toBeNull();
+  });
+
   it('sends applied ABI arg filters to the server and into the export URL', async () => {
     mockGet(3);
     renderTable();

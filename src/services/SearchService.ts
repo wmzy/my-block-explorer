@@ -15,7 +15,7 @@ import { detectSearchType, sanitizeInput } from '../utils/validation';
 /**
  * Search result type
  */
-export type SearchResultType = 'block' | 'transaction' | 'address' | 'unknown';
+export type SearchResultType = 'block' | 'transaction' | 'address' | 'ens' | 'unknown';
 
 export type SearchResult = {
   type: SearchResultType;
@@ -25,6 +25,16 @@ export type SearchResult = {
   data?: Block | Transaction | AddressInfo;
   suggestions?: string[];
   error?: string;
+  /**
+   * True when the result is not-found AND at least one sub-lookup errored
+   * (RPC/upstream). Clients must not present this as a definitive
+   * "no results" answer.
+   */
+  degraded?: boolean;
+  /** Machine-readable causes behind `degraded`, e.g. 'block-lookup-failed'. */
+  degradedReasons?: string[];
+  /** Human-readable note (e.g. ENS names resolve client-side). */
+  message?: string;
 };
 
 type SearchServiceDeps = {
@@ -74,7 +84,15 @@ const createSearchService = (deps: SearchServiceDeps) => {
     }
   };
 
-  let searchIdCounter = Date.now();
+  // search_history.id is a 32-bit INTEGER (drizzle/0000_init.sql), so
+  // neither crypto.randomUUID() nor epoch milliseconds fit — the previous
+  // Date.now()-seeded counter overflowed int32, so every history insert
+  // failed (swallowed into the warn below). Numeric scheme instead: epoch
+  // seconds captured once at service creation (int32-safe until 2038, and
+  // unique across restarts) offset by a monotonic in-process counter for
+  // bursts within the same second.
+  const SEARCH_ID_STARTUP_SECONDS = Math.floor(Date.now() / 1000);
+  let searchIdCounter = 0;
 
   const recordSearch = async (
     chainId: number,
@@ -82,7 +100,7 @@ const createSearchService = (deps: SearchServiceDeps) => {
     resultType?: SearchResultType,
   ): Promise<void> => {
     try {
-      const id = searchIdCounter++;
+      const id = SEARCH_ID_STARTUP_SECONDS + searchIdCounter++;
       await db.execute(
         sql`INSERT INTO search_history (id, chain_id, query, search_type, searched_at)
             VALUES (${id}, ${chainId}, ${query}, ${resultType ?? null}, CURRENT_TIMESTAMP::TIMESTAMP)`,
@@ -130,6 +148,8 @@ const createSearchService = (deps: SearchServiceDeps) => {
         chainId,
         found: false,
         error: error instanceof Error ? error.message : 'Block search failed',
+        degraded: true,
+        degradedReasons: ['block-lookup-failed'],
       };
     }
   };
@@ -176,6 +196,8 @@ const createSearchService = (deps: SearchServiceDeps) => {
         chainId,
         found: false,
         error: error instanceof Error ? error.message : 'Transaction search failed',
+        degraded: true,
+        degradedReasons: ['transaction-lookup-failed'],
       };
     }
   };
@@ -211,6 +233,8 @@ const createSearchService = (deps: SearchServiceDeps) => {
         chainId,
         found: false,
         error: error instanceof Error ? error.message : 'Address search failed',
+        degraded: true,
+        degradedReasons: ['address-lookup-failed'],
       };
     }
   };
@@ -229,6 +253,26 @@ const createSearchService = (deps: SearchServiceDeps) => {
         return result.value;
       }
     }
+
+    // A not-found aggregate is only definitive when every sub-lookup
+    // actually answered. Sub-searches never reject (they catch internally
+    // and flag `degraded`), but a defensive reason is kept for unexpected
+    // rejections so an upstream outage never renders as "no results".
+    const degradedReasons = new Set<string>();
+    const SUB_SEARCH_REASONS = [
+      'block-lookup-failed',
+      'transaction-lookup-failed',
+      'address-lookup-failed',
+    ] as const;
+    results.forEach((result, index) => {
+      if (result.status === 'rejected') {
+        degradedReasons.add(SUB_SEARCH_REASONS[index] ?? 'search-failed');
+        return;
+      }
+      for (const reason of result.value.degradedReasons ?? []) {
+        degradedReasons.add(reason);
+      }
+    });
 
     // Free-text queries land here. Collect the actionable suggestions the
     // sub-searches already produced (latest block number/hash, recent tx
@@ -259,6 +303,9 @@ const createSearchService = (deps: SearchServiceDeps) => {
       chainId,
       found: false,
       suggestions,
+      ...(degradedReasons.size > 0
+        ? { degraded: true, degradedReasons: [...degradedReasons] }
+        : {}),
     };
   };
 
@@ -297,6 +344,21 @@ const createSearchService = (deps: SearchServiceDeps) => {
             return await searchTransaction(chainId, sanitizedQuery);
           case 'address':
             return await searchAddress(chainId, sanitizedQuery);
+          case 'ens':
+            // ENS names resolve against a mainnet RPC in the browser; the
+            // server has no chain-specific knowledge to add and must not
+            // burn upstream calls (or 400) on them.
+            return {
+              type: 'ens',
+              query: sanitizedQuery,
+              chainId,
+              found: false,
+              suggestions: [
+                'ENS names are resolved in the browser',
+                'Try searching an address, transaction hash, or block number',
+              ],
+              message: 'ENS names are resolved in the browser',
+            };
           default:
             return await searchAll(chainId, sanitizedQuery);
         }
@@ -309,6 +371,8 @@ const createSearchService = (deps: SearchServiceDeps) => {
           chainId,
           found: false,
           error: error instanceof Error ? error.message : 'Search failed',
+          degraded: true,
+          degradedReasons: ['search-failed'],
         };
       }
     },

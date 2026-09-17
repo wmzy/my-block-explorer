@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { css } from '@linaria/core';
 import type { Abi, AbiEvent, AbiFunction, AbiParameter } from 'viem';
 import { cardStyles } from './styles';
@@ -186,21 +186,35 @@ const activeChipStyles = css`
 // Paste-ABI unlock for contracts without a server-side ABI: the textarea
 // holds a draft, Validate checks it, Apply persists it through onApply and
 // Clear discards it through onClear. The parent owns persistence; this
-// panel only edits the raw string.
+// panel only edits the raw string. focusSignal lets the locked ABI/Interact
+// tab panels jump the user here: each increment focuses the textarea and
+// scrolls it into view.
 export function CustomAbiPanel({
   storedRaw,
   onApply,
   onClear,
+  focusSignal = 0,
 }: {
   storedRaw: string;
   onApply: (raw: string) => void;
   onClear: () => void;
+  focusSignal?: number;
 }) {
   const [draft, setDraft] = useState(storedRaw);
   const [validation, setValidation] = useState<AbiValidation | null>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const trimmed = draft.trim();
   const active = storedRaw.trim() !== '';
+
+  // Imperative focus driven by the parent's signal counter (increments
+  // only — the initial 0 never triggers).
+  useEffect(() => {
+    if (focusSignal > 0) {
+      textareaRef.current?.focus();
+      textareaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  }, [focusSignal]);
 
   // Resync the editor when the stored raw changes from the outside (the
   // tab-bar Clear action, or a chain/address switch re-reading
@@ -243,6 +257,7 @@ export function CustomAbiPanel({
         browser for this chain and address only.
       </p>
       <textarea
+        ref={textareaRef}
         className={textareaStyles}
         aria-label="Custom ABI JSON"
         placeholder='[{"type":"function","name":"transfer","inputs":[],"outputs":[]}]'

@@ -1,16 +1,19 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { css } from '@linaria/core';
 import { z } from 'zod';
-import { Input } from 'haze-ui';
+import { Alert, Input } from 'haze-ui';
 import { navigate } from '@native-router/core';
 import { useRouter, useSearch, TypedLink } from '@native-router/react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { ErrorState } from '@/components/ui/ErrorState';
-import { getChainName, POPULAR_CHAINS, searchChains } from '@/config/chains';
+import { getChainName, isChainSupported, POPULAR_CHAINS, searchChains } from '@/config/chains';
 import { fetchChainSearch, fetchSearch, type SearchResult } from '@/services/search';
-import { sanitizeInput } from '@/utils/validation';
+import { detectSearchType, sanitizeInput } from '@/utils/validation';
+import { createRpcClient } from '@/utils/realTimeData';
+import { formatAddress } from '@/utils/format';
+import { LAST_CHAIN_STORAGE_KEY } from '@/views/Home/Landing';
 import type { Block, Transaction, AddressInfo } from '@/types/blockchain';
 
 const searchSchema = z.object({
@@ -19,6 +22,19 @@ const searchSchema = z.object({
   // when searching); the global endpoint echoes what it actually searched.
   chain: z.coerce.number().int().positive().optional().catch(undefined),
 });
+
+// The chain the Landing view remembered as "last viewed" (same storage
+// key, same validity rule). Mirrors resolveLandingChainPath's parsing so
+// the search context and the landing target always agree.
+const readRememberedChainId = (): number | undefined => {
+  const raw = localStorage.getItem(LAST_CHAIN_STORAGE_KEY);
+  const remembered = raw !== null ? Number.parseInt(raw, 10) : Number.NaN;
+  return Number.isInteger(remembered) && isChainSupported(remembered) ? remembered : undefined;
+};
+
+// How long the "Resolved <name> → <address>" confirmation stays up before
+// the view navigates to the address page.
+const ENS_REDIRECT_DELAY_MS = 1200;
 
 const searchContainer = css`
   max-width: 600px;
@@ -187,41 +203,99 @@ export default function Search() {
   const [error, setError] = useState<string | null>(null);
   const [chainFilter, setChainFilter] = useState('');
   const [showAllChains, setShowAllChains] = useState(false);
+  // Successful client-side ENS resolution, shown as a brief confirmation
+  // before navigating to the address page.
+  const [ensResolution, setEnsResolution] = useState<{ name: string; address: string } | null>(
+    null,
+  );
+  const ensRedirectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const router = useRouter();
   const { q: qParam, chain } = useSearch(searchSchema);
   const deepLinkedRef = useRef(false);
+
+  // A pending ENS redirect must not fire after the view unmounted.
+  useEffect(
+    () => () => {
+      if (ensRedirectTimer.current) clearTimeout(ensRedirectTimer.current);
+    },
+    [],
+  );
+
+  // ENS names resolve in the browser against a mainnet client (that is
+  // where the ENS registry lives); the resolved address is then viewed on
+  // the current chain context. Null (unregistered name) and RPC failures
+  // both surface as the same friendly message, never a raw RPC error.
+  const resolveEnsName = async (name: string, chainContext?: number): Promise<void> => {
+    try {
+      const client = await createRpcClient(1);
+      const address = await client.getEnsAddress({ name: name.toLowerCase() });
+      if (!address) {
+        setError(`Could not resolve ENS name "${name}"`);
+        return;
+      }
+      setEnsResolution({ name, address });
+      const targetChainId = chainContext ?? 1;
+      ensRedirectTimer.current = setTimeout(() => {
+        navigate(router, `/chain/${targetChainId}/address/${address}`).catch(() => undefined);
+      }, ENS_REDIRECT_DELAY_MS);
+    } catch {
+      setError(`Could not resolve ENS name "${name}"`);
+    }
+  };
 
   const handleSearch = async (searchQuery = query) => {
     // Only truly empty input is rejected here: free text ('unknown' after
     // sanitize/detect) still goes to the global endpoint, which runs the
     // searchAll pass and answers with suggestions instead of a dead end.
-    // The ?chain= context scopes the search to the chain the user came
-    // from; without it the endpoint documents its own fallback.
     if (!searchQuery.trim()) return;
 
     const sanitized = sanitizeInput(searchQuery.trim());
 
+    // Explicit chain context, always: the ?chain= param if present, else
+    // the chain remembered by the Landing view, else undefined (the
+    // endpoint then documents its own mainnet fallback via
+    // searchedChainId).
+    const chainContext = chain ?? readRememberedChainId();
+
+    if (ensRedirectTimer.current) {
+      clearTimeout(ensRedirectTimer.current);
+      ensRedirectTimer.current = null;
+    }
+
     setIsSearching(true);
     setError(null);
     setResult(null);
+    setEnsResolution(null);
 
     try {
-      const searchResult = await fetchSearch(sanitized, chain);
+      // ENS names never hit the backend: detection is local and resolution
+      // happens in the browser (see resolveEnsName).
+      if (detectSearchType(sanitized) === 'ens') {
+        await resolveEnsName(sanitized, chainContext);
+        return;
+      }
+
+      const searchResult = await fetchSearch(sanitized, chainContext);
       if (!searchResult) return;
 
       setResult(searchResult);
 
+      // Navigate on the chain the endpoint actually searched when it says
+      // so (searchedChainId); the payload's own chainId is only a fallback.
       if (searchResult.found && searchResult.type === 'address' && searchResult.data) {
         const data = searchResult.data as AddressInfo;
-        navigate(router, `/chain/${data.chainId}/address/${data.address}`).catch(
+        const targetChain = searchResult.searchedChainId ?? data.chainId;
+        navigate(router, `/chain/${targetChain}/address/${data.address}`).catch(
           () => undefined,
         );
       } else if (searchResult.found && searchResult.type === 'transaction' && searchResult.data) {
         const data = searchResult.data as Transaction;
-        navigate(router, `/chain/${data.chainId}/tx/${data.hash}`).catch(() => undefined);
+        const targetChain = searchResult.searchedChainId ?? data.chainId;
+        navigate(router, `/chain/${targetChain}/tx/${data.hash}`).catch(() => undefined);
       } else if (searchResult.found && searchResult.type === 'block' && searchResult.data) {
         const data = searchResult.data as Block;
-        navigate(router, `/chain/${data.chainId}/block/${data.number}`).catch(() => undefined);
+        const targetChain = searchResult.searchedChainId ?? data.chainId;
+        navigate(router, `/chain/${targetChain}/block/${data.number}`).catch(() => undefined);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Search failed');
@@ -253,7 +327,13 @@ export default function Search() {
       if (!searchResult) return;
 
       if (!searchResult.found || !searchResult.data) {
-        setError(`No results found on ${getChainName(selectedChainId)}`);
+        // A data-source error is not a definitive miss — say so instead of
+        // reporting "no results".
+        setError(
+          searchResult.degraded
+            ? 'Search failed — a data source errored. Try again.'
+            : `No results found on ${getChainName(selectedChainId)}`,
+        );
         return;
       }
 
@@ -349,14 +429,38 @@ export default function Search() {
 
       {error && <ErrorState message={error} className={resultCard} />}
 
-      {result && !result.found && !result.needsChain && (
+      {ensResolution && (
         <div className={resultCard}>
-          <ErrorState message={`No results found for "${result.query ?? query}"`} />
+          <Alert variant="success">
+            Resolved {ensResolution.name} → {formatAddress(ensResolution.address)} — opening the
+            address page…
+          </Alert>
+        </div>
+      )}
+
+      {result && !result.found && !result.needsChain && result.degraded && (
+        <div className={resultCard}>
+          {/* Not-found + degraded means an upstream lookup errored: offer a
+              retry instead of a definitive "No results". */}
+          <ErrorState
+            message="Search failed — a data source errored. Try again."
+            onRetry={() => handleSearch(result.query ?? query)}
+          />
+        </div>
+      )}
+
+      {result && !result.found && !result.needsChain && !result.degraded && (
+        <div className={resultCard}>
+          <ErrorState
+            message={
+              result.message ?? `No results found for "${result.query ?? query}"`
+            }
+          />
           {result.suggestions && result.suggestions.length > 0 && (
             <div className={suggestionList}>
               {renderSuggestions(
                 result.suggestions,
-                result.searchedChainId ?? chain ?? result.chainId ?? 1,
+                result.searchedChainId ?? chain ?? readRememberedChainId() ?? 1,
               )}
             </div>
           )}

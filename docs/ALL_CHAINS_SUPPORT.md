@@ -23,7 +23,7 @@ export const SUPPORTED_CHAINS: Chain[] = [
 
 #### **升级后** ✅
 ```typescript
-// 支持viem的所有链（500+ 条链）
+// 支持viem的所有链（当前版本 700+ 条）
 export const SUPPORTED_CHAINS: Chain[] = Object.values(chains);
 
 // 常用链列表（用于UI优先显示）
@@ -145,10 +145,10 @@ export function isPopularChain(chainId: number): boolean
 # 支持任意viem定义的链
 GET /api/chains/{chainId}/search?q={query}
 
-# 示例
-curl "http://localhost:3000/api/chains/43114/search?q=test"  # Avalanche
-curl "http://localhost:3000/api/chains/250/search?q=test"   # Fantom
-curl "http://localhost:3000/api/chains/100/search?q=test"   # Gnosis
+# 示例（dev: Vite 桥接的 API 在 :3000；standalone 服务在 :8201）
+curl "http://localhost:8201/api/chains/43114/search?q=test"  # Avalanche
+curl "http://localhost:8201/api/chains/250/search?q=test"    # Fantom
+curl "http://localhost:8201/api/chains/100/search?q=test"    # Gnosis
 ```
 
 ### 错误处理优化
@@ -172,10 +172,9 @@ curl "http://localhost:3000/api/chains/100/search?q=test"   # Gnosis
 - **分类标签**: 测试网/主网标识
 - **星标系统**: 常用链快速识别
 
-### 3. 性能优化
-- **虚拟滚动**: 处理大量链列表
-- **智能排序**: 减少搜索时间
-- **缓存机制**: 提高响应速度
+### 3. Performance Optimization
+- **Smart sorting**: reduces search time
+- **Caching mechanism**: improves response speed
 
 ## 技术细节 🔧
 
@@ -198,7 +197,6 @@ export function getChainInfo(chainId: number): Chain | null
 ```
 
 ### 性能考虑
-- **懒加载**: 仅在需要时加载链列表
 - **内存优化**: 高效的查找算法
 - **缓存策略**: 减少重复计算
 
@@ -206,7 +204,7 @@ export function getChainInfo(chainId: number): Chain | null
 
 ### URL 路由
 - **保持兼容**: 原有的 `/chain/{chainId}` 路由格式不变
-- **自动重定向**: 不支持的链ID自动重定向到以太坊
+- **不支持的链ID**: 返回 400 `Unsupported chain`（不会自动重定向）
 
 ### API 接口
 - **响应格式**: API响应格式保持一致
@@ -267,5 +265,5 @@ curl "http://localhost:3000/api/chains/11155111/search?q=test"
 **升级状态**: ✅ 完成  
 **测试状态**: ✅ 通过  
 **兼容性**: ✅ 向后兼容  
-**链支持数量**: 500+ 条链  
+**链支持数量**: 700+ 条链（全部 viem 链）  
 **核心功能**: 🚀 大幅增强

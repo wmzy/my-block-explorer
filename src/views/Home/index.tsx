@@ -1,7 +1,6 @@
 import { useEffect } from 'react';
 import { css } from '@linaria/core';
 import { Alert } from 'haze-ui';
-import { navigate } from '@native-router/core';
 import { TypedLink, useMatched } from '@native-router/react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import TopNavigation from '@/components/TopNavigation';
@@ -252,8 +251,10 @@ export default function Home() {
     }
   }, [chainInfo, router]);
 
+  // Chain switches replace the current entry (shared Wave A helper) so
+  // hopping between chains never pile up history entries.
   const handleChainChange = (newChainId: number) => {
-    navigate(router, `/chain/${newChainId}`).catch(() => undefined);
+    void redirectReplace(router, `/chain/${newChainId}`).catch(() => undefined);
   };
 
   if (!chainInfo) return null;
@@ -297,7 +298,7 @@ export default function Home() {
             <div className={statValueStyle}>
               {gasUsedPercent !== null ? `${gasUsedPercent}%` : '—'}
             </div>
-            <div className={statLabelStyle}>Gas Used</div>
+            <div className={statLabelStyle}>Gas Used (latest block)</div>
           </Card>
         </div>
 

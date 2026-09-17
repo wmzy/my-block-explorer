@@ -74,16 +74,27 @@ const mocks = vi.hoisted(() => {
     },
     timestamp: '2026-01-01T00:00:00Z',
   };
+  // Reshaped per case: honesty fields (coverage/reason/method/window) are
+  // optional — the view must tolerate their absence (pre-coverage caches).
+  type AddressTxPageMock = {
+    transactions: typeof mockTransactions;
+    total: number;
+    method?: string;
+    coverage?: 'complete' | 'partial' | 'none';
+    reason?: 'no-transactions' | 'zero-balance' | 'search-failed';
+    searchWindowBlocks?: number;
+  };
+  const initialAddressTxPage: AddressTxPageMock = {
+    transactions: mockTransactions,
+    total: mockTransactions.length,
+  };
   return {
     testAddress,
     mockTransactions,
     addressInfo,
     realTime: settledRealTime,
     addressTxError: undefined as Error | undefined,
-    addressTransactions: {
-      transactions: mockTransactions,
-      total: mockTransactions.length,
-    },
+    addressTransactions: initialAddressTxPage,
     // Plain function (vi is unavailable inside vi.hoisted); tests spy on it
     // to assert the retry affordance.
     txRefetch: () => undefined,
@@ -236,12 +247,20 @@ describe('Address view', () => {
     expect(link?.getAttribute('href')).toBe(`/chain/1/contract/${mocks.testAddress}`);
   });
 
-  it('shows the empty-state alert when there are no transactions', async () => {
+  it('warns about an unknown data source instead of a trusted empty state when coverage is missing', async () => {
+    // Pre-coverage cached payload: no coverage/method tags at all.
     mocks.addressTransactions = { transactions: [], total: 0 };
 
     renderPage();
 
-    expect(await screen.findByText('No transactions found')).toBeInTheDocument();
+    expect(
+      await screen.findByText(/Transaction data source unknown/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/history may be incomplete/)).toBeInTheDocument();
+    expect(screen.getByText(/Verify on an external explorer/)).toBeInTheDocument();
+    // External escape hatch mirrors the partial banner's link row.
+    expect(screen.getAllByText('Routescan').length).toBe(2);
+    expect(screen.queryByText('No transactions found')).not.toBeInTheDocument();
   });
 
   it('shows the partial-history banner above the table for heuristic coverage', async () => {
@@ -320,6 +339,7 @@ describe('Address view', () => {
 
     expect(await screen.findByText('No transactions found')).toBeInTheDocument();
     expect(screen.queryByText(/Partial history/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Transaction data source unknown/)).not.toBeInTheDocument();
   });
 
   it('shows unsupported chain error for invalid chain', async () => {

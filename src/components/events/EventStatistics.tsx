@@ -23,6 +23,81 @@ type EventStatisticsProps = {
   onEventsUpdated?: () => void;
 };
 
+type RangeStatus = 'pending' | 'indexing' | 'paused' | 'completed' | 'error';
+type RangeDirection = 'forward' | 'backward';
+
+// Range row shape as serialized by the /events/ranges endpoint (the same one
+// IndexingRangeManager consumes): block numbers may arrive as strings
+// (bigint serialization), so both forms are accepted and coerced.
+type IndexingRangeSummary = {
+  fromBlock: number | string;
+  toBlock: number | string;
+  currentBlock: number | string | null;
+  status: RangeStatus;
+  direction: RangeDirection;
+};
+
+export type IndexingCoverage = {
+  coveredBlocks: number;
+  spanBlocks: number;
+  coverage: number;
+};
+
+/**
+ * Union-of-ranges coverage over the span [min fromBlock, max toBlock].
+ * Overlapping ranges must not double-count, so the covered intervals are
+ * sweep-merged before summing. A completed range covers its full span; an
+ * in-flight range covers the blocks already walked (direction-aware, clipped
+ * to the range bounds). Pending, paused, and errored ranges contribute
+ * nothing — matching the SegmentedProgressBar legend semantics rendered by
+ * IndexingRangeManager.
+ */
+export const computeIndexingCoverage = (
+  ranges: IndexingRangeSummary[],
+): IndexingCoverage => {
+  if (ranges.length === 0) return { coveredBlocks: 0, spanBlocks: 0, coverage: 0 };
+
+  const spanStart = Math.min(...ranges.map(r => Number(r.fromBlock)));
+  const spanEnd = Math.max(...ranges.map(r => Number(r.toBlock)));
+  const spanBlocks = spanEnd - spanStart + 1;
+  if (spanBlocks <= 0) return { coveredBlocks: 0, spanBlocks: 0, coverage: 0 };
+
+  const intervals: Array<[number, number]> = [];
+  for (const range of ranges) {
+    const from = Number(range.fromBlock);
+    const to = Number(range.toBlock);
+    if (range.status === 'completed') {
+      intervals.push([from, to]);
+    } else if (range.status === 'indexing' && range.currentBlock !== null) {
+      // Walked position clipped into the range bounds; the covered side runs
+      // from the boundary the direction started at down/up to it.
+      const current = Math.min(Math.max(Number(range.currentBlock), from), to);
+      intervals.push(range.direction === 'backward' ? [current, to] : [from, current]);
+    }
+  }
+
+  // Sweep-merge by start; an interval starting at or before the running end
+  // only extends coverage by whatever lies past that end.
+  intervals.sort((a, b) => a[0] - b[0]);
+  let coveredBlocks = 0;
+  let mergedEnd: number | null = null;
+  for (const [start, end] of intervals) {
+    if (mergedEnd === null || start > mergedEnd) {
+      coveredBlocks += end - start + 1;
+      mergedEnd = end;
+    } else if (end > mergedEnd) {
+      coveredBlocks += end - mergedEnd;
+      mergedEnd = end;
+    }
+  }
+
+  return {
+    coveredBlocks,
+    spanBlocks,
+    coverage: Math.min(100, (coveredBlocks / spanBlocks) * 100),
+  };
+};
+
 const barStyle = css`
   display: flex;
   align-items: center;
@@ -111,19 +186,30 @@ export const EventStatistics = ({
   onEventsUpdated,
 }: EventStatisticsProps) => {
   const [stats, setStats] = useState<IndexingStatus | null>(null);
+  const [ranges, setRanges] = useState<IndexingRangeSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const prevEventsRef = useRef(0);
 
+  // Indexing status drives the status/event metrics; the ranges feed the
+  // coverage metric (same endpoint IndexingRangeManager polls). Both ride
+  // one refresh and one 5s poll so the bar never disagrees with the
+  // segmented range view.
   const fetchStatus = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await get<IndexingStatus>(
-        `/api/chains/${chainId}/contracts/${contractAddress}/events/indexing-status`,
-      );
-      setStats(data);
+      const [statusData, rangesData] = await Promise.all([
+        get<IndexingStatus>(
+          `/api/chains/${chainId}/contracts/${contractAddress}/events/indexing-status`,
+        ),
+        get<{ ranges?: IndexingRangeSummary[] }>(
+          `/api/chains/${chainId}/contracts/${contractAddress}/events/ranges`,
+        ),
+      ]);
+      setStats(statusData);
+      setRanges(rangesData.ranges ?? []);
 
-      if (data.totalEventsIndexed > prevEventsRef.current) {
-        prevEventsRef.current = data.totalEventsIndexed;
+      if (statusData.totalEventsIndexed > prevEventsRef.current) {
+        prevEventsRef.current = statusData.totalEventsIndexed;
         onEventsUpdated?.();
       }
     }
@@ -153,15 +239,11 @@ export const EventStatistics = ({
 
   if (!stats) return null;
 
-  const totalBlocks
-    = stats.latestBlock && stats.creationBlock
-      ? stats.latestBlock - stats.creationBlock
-      : 0;
-  const indexedBlocks
-    = stats.lastIndexedBlock && stats.creationBlock
-      ? stats.lastIndexedBlock - stats.creationBlock
-      : 0;
-  const progress = totalBlocks > 0 ? Math.min(100, (indexedBlocks / totalBlocks) * 100) : 0;
+  // Honest progress metric: how much of the span between the lowest range
+  // start and the highest range end is covered by the union of covered
+  // range intervals. The old creation→latest linear percentage overstated
+  // progress whenever ranges did not span the full distance.
+  const coverage = computeIndexingCoverage(ranges);
 
   const statusColor
     = stats.status === 'indexing'
@@ -185,21 +267,21 @@ export const EventStatistics = ({
       <div className={separatorStyle} />
 
       <div className={metricStyle}>
-        Blocks:
+        Indexing coverage:
         <span className={metricValueStyle}>
-          {indexedBlocks.toLocaleString()}
+          {coverage.coveredBlocks.toLocaleString()}
           {' '}
           /
-          {totalBlocks.toLocaleString()}
+          {coverage.spanBlocks.toLocaleString()}
         </span>
         (
-        {progress.toFixed(1)}
+        {coverage.coverage.toFixed(1)}
         %)
       </div>
 
       <div className={progressWrapperStyle}>
         <div className={progressTrackStyle}>
-          <div className={progressFillStyle} style={{ width: `${progress}%` }} />
+          <div className={progressFillStyle} style={{ width: `${coverage.coverage}%` }} />
         </div>
       </div>
 

@@ -2934,85 +2934,49 @@ const sanitizeOutput = (data: any): any => {
 
 ## 部署架构
 
+> 详见 [DEPLOYMENT.md](./DEPLOYMENT.md)。以下为实际存在的部署形态。
+
 ### 开发环境
 
 ```mermaid
 graph TD
-    A[Frontend<br/>localhost:3000<br/>Vite Dev Server] --> B[Backend<br/>localhost:3001<br/>Hono API]
-    B --> C[DuckDB<br/>local file<br/>data/blocks.db]
-    
+    A[Frontend + Backend<br/>localhost:3000<br/>Vite Dev Server<br/>Hono API bridged at /api] --> C[DuckDB<br/>local files<br/>data/blockchain.db<br/>data/chains/...]
+    S[Standalone API<br/>localhost:8201<br/>pnpm dev:server] --> C
+
     A -.->|Direct RPC| D[Ethereum RPC<br/>Infura/Alchemy]
-    
+
+    style A fill:#e3f2fd
+    style S fill:#f3e5f5
+    style C fill:#e8f5e8
+    style D fill:#fff8e1
+```
+
+注意：DuckDB 单写者 —— Vite 桥接实例与 standalone 实例不可同时写同一数据库文件。
+
+### 生产环境（自托管单用户）
+
+```mermaid
+graph TD
+    A[Static SPA<br/>GitHub Pages / CDN<br/>或本地静态服务] -->|manual URL entry<br/>CORS| B[API Server<br/>node dist/server/cli.js<br/>localhost:8201]
+    B --> C[DuckDB<br/>data/blockchain.db<br/>data/chains/...db]
+
+    A -.->|Direct RPC| D[Ethereum RPC<br/>viem chain defaults<br/>+ user overrides]
+
     style A fill:#e3f2fd
     style B fill:#f3e5f5
     style C fill:#e8f5e8
     style D fill:#fff8e1
 ```
 
-### 生产环境
-
-```mermaid
-graph TD
-    A[CDN/Edge<br/>Cloudflare Pages<br/>Global Distribution] --> B[Load Balancer<br/>Nginx<br/>SSL Termination]
-    B --> C[Backend Cluster<br/>PM2/Docker<br/>Multiple Instances]
-    C --> D[DuckDB<br/>Persistent Storage<br/>+ Backup Strategy]
-    
-    A -.->|Direct RPC| E[Ethereum RPC<br/>Load Balanced<br/>Multiple Providers]
-    C --> E
-    
-    style A fill:#e3f2fd
-    style B fill:#f3e5f5
-    style C fill:#fff8e1
-    style D fill:#e8f5e8
-    style E fill:#fce4ec
-```
+不存在多实例集群形态：DuckDB 每个文件只允许一个写者，API 也非多租户设计。若 API 对外可达，必须置于带认证的反向代理之后（事件区间写入接口未设认证，属单用户本地信任模型）。
 
 ### 容器化部署
 
-```dockerfile
-# backend/Dockerfile
-FROM node:22-alpine
-
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci --only=production
-
-COPY dist ./dist
-COPY data ./data
-
-EXPOSE 3001
-CMD ["node", "dist/app.js"]
-```
-
-```yaml
-# docker-compose.yml
-version: '3.8'
-services:
-  backend:
-    build: ./backend
-    ports:
-      - "3001:3001"
-    volumes:
-      - ./data:/app/data
-    environment:
-      - NODE_ENV=production
-      - DATABASE_PATH=/app/data/blockchain.duckdb
-    restart: unless-stopped
-    
-  nginx:
-    image: nginx:alpine
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./nginx.conf:/etc/nginx/nginx.conf
-      - ./ssl:/etc/nginx/ssl
-    depends_on:
-      - backend
-    restart: unless-stopped
-```
+仓库中没有 Dockerfile / docker-compose（历史文档曾给出，已删除——那套配置从未存在）。
 
 ## 扩展规划
+
+> 以下为早期设计构想，未实现；与 DuckDB 单写者模型冲突的方案（读写分离/分片）不应按原文实施。
 
 ### 水平扩展
 

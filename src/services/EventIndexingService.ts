@@ -1213,6 +1213,24 @@ export const updateRangeStatus = async (
   return { success: true };
 };
 
+// Ranges left in status 'indexing' by a previous process (crash or restart)
+// can never recover on their own: the in-memory job died with the process,
+// resumeIndexingRange only accepts paused/error, and the range UI exposes no
+// action for a range that claims to be indexing. Flip them to 'error' with a
+// resume hint so the user can continue. Idempotent by construction (a second
+// run finds no 'indexing' rows), so the vite-bridge instance and a standalone
+// server can both run it against the same database.
+export const reconcileInterruptedRanges = async (): Promise<void> => {
+  await db
+    .update(indexingRanges)
+    .set({
+      status: 'error',
+      errorMessage: 'Interrupted by server restart — resume to continue',
+      updatedAt: new Date(),
+    })
+    .where(eq(indexingRanges.status, 'indexing'));
+};
+
 export type QuickCreateResult = {
   success: boolean;
   rangeId?: number;

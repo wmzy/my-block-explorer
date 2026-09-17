@@ -13,6 +13,8 @@ import {
   getChainType,
 } from '@/config/chains';
 import { detectSearchType, sanitizeInput } from '@/utils/validation';
+import { createRpcClient } from '@/utils/realTimeData';
+import { formatAddress } from '@/utils/format';
 import { api, get } from '@/util/http';
 import { fetchChainSearch } from '@/services/search';
 
@@ -69,7 +71,7 @@ const searchRow = css`
   gap: var(--haze-space-2);
 `;
 
-const searchNotice = css`
+const searchNoticeBox = css`
   margin-top: var(--haze-space-2);
   padding: var(--haze-space-2) var(--haze-space-3);
   font-size: var(--haze-text-xs);
@@ -436,8 +438,18 @@ type SearchHistoryItem = {
 type ChainSearchResponse = {
   found?: boolean;
   type?: string;
+  degraded?: boolean | null;
   data?: { number?: string | number } | null;
 };
+
+// Inline hint under the search box: 'miss' = definitive no-result on the
+// current chain, 'failed' = a data source errored (degraded response),
+// 'ens-resolved' / 'ens-failed' = outcome of a client-side ENS lookup.
+type SearchNotice =
+  | { kind: 'miss'; query: string }
+  | { kind: 'failed'; query: string }
+  | { kind: 'ens-resolved'; query: string; address: string }
+  | { kind: 'ens-failed'; query: string };
 
 export default function TopNavigation({
   currentChainId,
@@ -452,9 +464,9 @@ export default function TopNavigation({
   const [showHistory, setShowHistory] = useState(false);
   const [searchHistory, setSearchHistory] = useState<SearchHistoryItem[]>([]);
   const [historyLoaded, setHistoryLoaded] = useState(false);
-  // Query that found nothing on the current chain; rendered as an inline
-  // hint under the search box and cleared as soon as the input changes.
-  const [missedQuery, setMissedQuery] = useState<string | null>(null);
+  // Inline hint under the search box, cleared as soon as the input changes
+  // (see SearchNotice for the kinds).
+  const [searchNotice, setSearchNotice] = useState<SearchNotice | null>(null);
   const searchContainerRef = React.useRef<HTMLDivElement>(null);
 
   // Fire-and-forget in-app navigation; a superseded navigation rejects with
@@ -555,7 +567,31 @@ export default function TopNavigation({
         }
       }
 
-      setMissedQuery(query);
+      // A degraded response means a data source errored — never worded as
+      // a definitive "no results".
+      setSearchNotice(
+        payload?.degraded ? { kind: 'failed', query } : { kind: 'miss', query },
+      );
+      return;
+    }
+
+    if (searchType === 'ens') {
+      // ENS names resolve in the browser against a mainnet client (where
+      // the ENS registry lives); the resolved address is viewed on the
+      // current chain. Null (unregistered) and RPC failures both surface
+      // as the same friendly hint, never a raw RPC error.
+      try {
+        const client = await createRpcClient(1);
+        const address = await client.getEnsAddress({ name: query.toLowerCase() });
+        if (!address) {
+          setSearchNotice({ kind: 'ens-failed', query });
+          return;
+        }
+        setSearchNotice({ kind: 'ens-resolved', query, address });
+        goTo(`/chain/${currentChainId}/address/${address}`);
+      } catch {
+        setSearchNotice({ kind: 'ens-failed', query });
+      }
       return;
     }
 
@@ -575,7 +611,7 @@ export default function TopNavigation({
     if (!searchQuery.trim()) return;
 
     setLoading(true);
-    setMissedQuery(null);
+    setSearchNotice(null);
     try {
       if (onSearch) {
         await onSearch(searchQuery.trim());
@@ -606,7 +642,7 @@ export default function TopNavigation({
                 value={searchQuery}
                 onChange={e => {
                   setSearchQuery(e.target.value);
-                  setMissedQuery(null);
+                  setSearchNotice(null);
                 }}
                 onFocus={handleSearchFocus}
                 placeholder={
@@ -622,17 +658,28 @@ export default function TopNavigation({
               </Button>
             </div>
 
-            {missedQuery !== null && (
-              <div className={searchNotice}>
-                <span>No results on {chainInfo?.name ?? 'this chain'} — try full search</span>
-                <button
-                  type="button"
-                  className={searchNoticeLink}
-                  onClick={() =>
-                    goTo(`/search?q=${encodeURIComponent(missedQuery)}&chain=${currentChainId}`)}
-                >
-                  Search all networks
-                </button>
+            {searchNotice !== null && (
+              <div className={searchNoticeBox}>
+                <span>
+                  {searchNotice.kind === 'miss' &&
+                    `No results on ${chainInfo?.name ?? 'this chain'} — try full search`}
+                  {searchNotice.kind === 'failed' &&
+                    `Search failed on ${chainInfo?.name ?? 'this chain'} — a data source errored`}
+                  {searchNotice.kind === 'ens-resolved' &&
+                    `Resolved ${searchNotice.query} → ${formatAddress(searchNotice.address)}`}
+                  {searchNotice.kind === 'ens-failed' &&
+                    `Could not resolve ENS name "${searchNotice.query}"`}
+                </span>
+                {(searchNotice.kind === 'miss' || searchNotice.kind === 'failed') && (
+                  <button
+                    type="button"
+                    className={searchNoticeLink}
+                    onClick={() =>
+                      goTo(`/search?q=${encodeURIComponent(searchNotice.query)}&chain=${currentChainId}`)}
+                  >
+                    Search all networks
+                  </button>
+                )}
               </div>
             )}
 

@@ -117,3 +117,27 @@ describe('AddressService - getAddressTransactions coverage mapping', () => {
     expect(result.searchWindowBlocks).toBe(2_500_000);
   });
 });
+
+describe('AddressService - getAddressInfo payload contract', () => {
+  it('carries persistent fields only — no fake balance/transactionCount', async () => {
+    // EOA path: getCode '0x' -> isContract false, so the stub never
+    // reaches contractSourceService. The db stub keeps both the cache
+    // read and the cache write on their swallowed-error paths.
+    const service = makeServiceWithClient({
+      getCode: vi.fn().mockResolvedValue('0x'),
+    });
+
+    const result = await service.getAddressInfo(1, TEST_ADDRESS);
+
+    expect(result).toMatchObject({
+      chainId: 1,
+      address: TEST_ADDRESS,
+      isContract: false,
+    });
+    // Balance/transactionCount used to be hard-coded '0'/0 here — always
+    // wrong and never trustworthy. They now belong to the realtime RPC
+    // channel alone.
+    expect('balance' in result).toBe(false);
+    expect('transactionCount' in result).toBe(false);
+  });
+});
