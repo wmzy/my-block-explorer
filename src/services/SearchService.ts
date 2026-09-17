@@ -77,15 +77,15 @@ const createSearchService = (deps: SearchServiceDeps) => {
   let searchIdCounter = Date.now();
 
   const recordSearch = async (
-    _chainId: number,
+    chainId: number,
     query: string,
     resultType?: SearchResultType,
   ): Promise<void> => {
     try {
       const id = searchIdCounter++;
       await db.execute(
-        sql`INSERT INTO search_history (id, query, search_type, searched_at)
-            VALUES (${id}, ${query}, ${resultType ?? null}, CURRENT_TIMESTAMP::TIMESTAMP)`,
+        sql`INSERT INTO search_history (id, chain_id, query, search_type, searched_at)
+            VALUES (${id}, ${chainId}, ${query}, ${resultType ?? null}, CURRENT_TIMESTAMP::TIMESTAMP)`,
       );
     }
     catch (error) {
@@ -230,18 +230,35 @@ const createSearchService = (deps: SearchServiceDeps) => {
       }
     }
 
+    // Free-text queries land here. Collect the actionable suggestions the
+    // sub-searches already produced (latest block number/hash, recent tx
+    // hashes) ahead of the generic format help, so clients can link them
+    // to the searched chain's pages. Per-type 'Enter a valid ...' hints are
+    // skipped: the summary below covers them.
+    const suggestions: string[] = [];
+    const seen = new Set<string>();
+    for (const result of results) {
+      if (result.status !== 'fulfilled' || result.value.found) continue;
+      for (const suggestion of result.value.suggestions ?? []) {
+        if (suggestion.startsWith('Enter a valid') || seen.has(suggestion)) continue;
+        seen.add(suggestion);
+        suggestions.push(suggestion);
+      }
+    }
+    suggestions.push(
+      'Enter a valid block number, transaction hash, or address',
+      'Block number: plain digits (e.g. 18000000)',
+      'Transaction hash: 0x-prefixed 64-character hex string',
+      'Address: 0x-prefixed 40-character hex string',
+      'Block hash: 0x-prefixed 64-character hex string',
+    );
+
     return {
       type: 'unknown',
       query,
       chainId,
       found: false,
-      suggestions: [
-        'Enter a valid block number, transaction hash, or address',
-        'Block number: plain digits (e.g. 18000000)',
-        'Transaction hash: 0x-prefixed 64-character hex string',
-        'Address: 0x-prefixed 40-character hex string',
-        'Block hash: 0x-prefixed 64-character hex string',
-      ],
+      suggestions,
     };
   };
 
@@ -297,7 +314,7 @@ const createSearchService = (deps: SearchServiceDeps) => {
     },
 
     getSearchHistory: async (
-      _chainId: number,
+      chainId?: number,
       limit: number = 50,
     ): Promise<
       {
@@ -307,9 +324,17 @@ const createSearchService = (deps: SearchServiceDeps) => {
       }[]
     > => {
       try {
+        // Optional chain scope: unscoped returns everything; scoped keeps
+        // legacy rows (NULL chain_id, recorded before chain tracking)
+        // visible alongside the requested chain's rows.
+        const chainFilter = chainId !== undefined
+          ? sql`WHERE (chain_id IS NULL OR chain_id = ${chainId})`
+          : sql``;
+
         const result = await db.execute(
           sql`SELECT query, search_type, MAX(searched_at) as searched_at
               FROM search_history
+              ${chainFilter}
               GROUP BY query, search_type
               ORDER BY searched_at DESC
               LIMIT ${limit}`,

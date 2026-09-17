@@ -1,10 +1,12 @@
+import { useEffect, useState } from 'react';
+import { css } from '@linaria/core';
 import { navigate } from '@native-router/core';
 import { TypedLink, useMatched } from '@native-router/react';
 import { formatGwei } from 'viem';
 
 import TopNavigation from '@/components/TopNavigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
-import { ErrorState } from '@/components/ui/ErrorState';
+import { ErrorState, EmptyState } from '@/components/ui/ErrorState';
 import { InfoGrid, InfoItem } from '@/components/ui/InfoGrid';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { PageContainer, PageHeader, BackButton } from '@/components/ui/PageLayout';
@@ -12,6 +14,7 @@ import { linkStyle } from '@/components/ui/DataTable';
 import { getChainInfo, getChainName } from '@/config/chains';
 import { useBlockByNumber } from '@/services/chainRpc';
 import { formatRelativeTime } from '@/utils/format';
+import { createRpcClient } from '@/utils/realTimeData';
 
 // Gas quantities are on-chain integers serialized as strings: format them
 // BigInt-safe (parseInt would silently lose precision past 2^53).
@@ -28,6 +31,35 @@ const formatBytes = (bytes?: number): string => {
   return `${bytes.toLocaleString()} bytes`;
 };
 
+// Head lookup backing the "does not exist yet" hint below: reuses the RPC
+// service layer's cached client, and only the error path ever pays for the
+// single eth_blockNumber call. A failed lookup collapses to undefined so
+// the genuine error UI survives.
+async function fetchLatestBlockNumber(chainId: number): Promise<bigint | undefined> {
+  try {
+    const client = await createRpcClient(chainId);
+    return await client.getBlockNumber();
+  } catch {
+    return undefined;
+  }
+};
+
+// Decimal route param → bigint, BigInt-safe far past 2^53; undefined when
+// the string is not a plain integer (the fetch has already failed there).
+const parseBlockNumber = (value: string): bigint | undefined => {
+  try {
+    return BigInt(value);
+  } catch {
+    return undefined;
+  }
+};
+
+const futureBlockLinks = css`
+  display: flex;
+  gap: var(--haze-space-4);
+  margin-top: var(--haze-space-3);
+`;
+
 export default function BlockDetail() {
   const { params, router } = useMatched();
 
@@ -43,6 +75,40 @@ export default function BlockDetail() {
     currentChainId,
     blockNumberStr,
   );
+
+  // Future-block hint: when the block fetch fails, one extra head lookup
+  // decides between "does not exist yet" guidance and a genuine RPC
+  // failure. Happy paths never trigger the call.
+  const [latestBlock, setLatestBlock] = useState<bigint | undefined>(undefined);
+  const [headChecked, setHeadChecked] = useState(false);
+
+  // Reset on route change so a head read for a previous chain is never
+  // compared against the current block number.
+  useEffect(() => {
+    setLatestBlock(undefined);
+    setHeadChecked(false);
+  }, [currentChainId, blockNumberStr]);
+
+  useEffect(() => {
+    if (!error || invalidNumber || headChecked) return;
+    let cancelled = false;
+    void fetchLatestBlockNumber(currentChainId).then(latest => {
+      if (cancelled) return;
+      setLatestBlock(latest);
+      setHeadChecked(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [error, invalidNumber, headChecked, currentChainId]);
+
+  // Only a resolved head AND a beyond-head request produce the friendly
+  // state; anything else keeps the genuine error UI.
+  const requestedBlock = parseBlockNumber(blockNumberStr);
+  const futureBlock =
+    requestedBlock !== undefined && latestBlock !== undefined && requestedBlock > latestBlock
+      ? { requested: requestedBlock, latest: latestBlock }
+      : undefined;
 
   // Same-params refresh: the chain switch keeps the block number so the
   // detail view reloads for the new chain instead of landing on the home
@@ -81,7 +147,29 @@ export default function BlockDetail() {
 
         {!invalidNumber && loading && <LoadingState message="Loading block information..." />}
 
-        {!invalidNumber && error && (
+        {!invalidNumber && error && !headChecked && (
+          <LoadingState message="Checking whether this block exists yet..." />
+        )}
+
+        {!invalidNumber && error && headChecked && futureBlock && (
+          <EmptyState
+            message={`Block ${futureBlock.requested.toLocaleString()} does not exist yet. The chain is currently at block ${futureBlock.latest.toLocaleString()}.`}
+          >
+            <div className={futureBlockLinks}>
+              <TypedLink
+                to={`/chain/${currentChainId}/block/${futureBlock.latest.toString()}`}
+                className={linkStyle}
+              >
+                View latest block
+              </TypedLink>
+              <TypedLink to={`/chain/${currentChainId}/blocks`} className={linkStyle}>
+                View blocks list
+              </TypedLink>
+            </div>
+          </EmptyState>
+        )}
+
+        {!invalidNumber && error && headChecked && !futureBlock && (
           <ErrorState
             message={error instanceof Error ? error.message : 'Failed to fetch block information'}
           />

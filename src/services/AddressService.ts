@@ -46,6 +46,22 @@ type DiscoveredTransaction = {
   timestamp: string;
 };
 
+// Coverage semantics for getAddressTransactions: discovery is a heuristic
+// (binary search over native-balance changes within a capped window), so
+// callers need to know how complete any result is.
+// - 'complete': the RPC nonce is authoritative (address has no transactions)
+// - 'partial': the heuristic ran; only native-token transfers inside the
+//   searched window are visible
+// - 'none': nothing could be discovered (zero balance or search failure)
+export type AddressTransactionsResult = {
+  transactions: DiscoveredTransaction[];
+  total: number;
+  method: string;
+  coverage: 'complete' | 'partial' | 'none';
+  reason?: 'no-transactions' | 'zero-balance' | 'search-failed';
+  searchWindowBlocks?: number;
+};
+
 const SCAN_THRESHOLD = 64n;
 const MAX_RPC_CALLS = 200;
 const BATCH_CONCURRENCY = 8;
@@ -357,12 +373,8 @@ const createAddressService = (deps: AddressServiceDeps) => {
       address: Address,
       limit = 20,
       offset = 0,
-    ): Promise<{ transactions: DiscoveredTransaction[]; total: number; method: string }> => {
-      const doSearch = async (): Promise<{
-        transactions: DiscoveredTransaction[];
-        total: number;
-        method: string;
-      }> => {
+    ): Promise<AddressTransactionsResult> => {
+      const doSearch = async (): Promise<AddressTransactionsResult> => {
         const client = await rpcManager.getClient(chainId);
         const [txCount, latestBlock, currentBalance] = await Promise.all([
           client.getTransactionCount({ address }),
@@ -371,7 +383,13 @@ const createAddressService = (deps: AddressServiceDeps) => {
         ]);
 
         if (txCount === 0) {
-          return { transactions: [], total: 0, method: 'binary-search' };
+          return {
+            transactions: [],
+            total: 0,
+            method: 'binary-search',
+            coverage: 'complete',
+            reason: 'no-transactions',
+          };
         }
 
         if (currentBalance === 0n) {
@@ -383,6 +401,8 @@ const createAddressService = (deps: AddressServiceDeps) => {
             transactions: [],
             total: Number(txCount),
             method: 'binary-search-skipped',
+            coverage: 'none',
+            reason: 'zero-balance',
           };
         }
 
@@ -425,6 +445,10 @@ const createAddressService = (deps: AddressServiceDeps) => {
           transactions: paged,
           total: Number(txCount),
           method: 'binary-search',
+          // A successful search is still partial: the algorithm only sees
+          // native-token balance changes within the capped window.
+          coverage: 'partial',
+          searchWindowBlocks: Number(searchRange),
         };
       };
 
@@ -436,6 +460,8 @@ const createAddressService = (deps: AddressServiceDeps) => {
           transactions: [],
           total: 0,
           method: 'fallback',
+          coverage: 'none',
+          reason: 'search-failed',
         };
       }
     },

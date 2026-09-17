@@ -9,6 +9,32 @@ import { addressEquals, formatAddress } from '../utils/address';
 import type { Address } from 'viem';
 import { analyzeRpcError, shouldRetryRpcError } from '../utils/rpcErrorHandler';
 
+// ABI for the implementation() view function exposed by beacon contracts
+const IMPLEMENTATION_ABI = [
+  {
+    inputs: [],
+    name: 'implementation',
+    outputs: [{ internalType: 'address', name: '', type: 'address' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+] as const;
+
+// ABI for the masterCopy() view function exposed by Gnosis Safe proxies
+const MASTER_COPY_ABI = [
+  {
+    inputs: [],
+    name: 'masterCopy',
+    outputs: [{ internalType: 'address', name: '', type: 'address' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+] as const;
+
+// Guard for readContract() results: must be a non-zero 0x-prefixed 20-byte address
+const isValidResultAddress = (value: unknown): value is `0x${string}` =>
+  typeof value === 'string' && /^0x[0-9a-fA-F]{40}$/.test(value) && !/^0x0{40}$/i.test(value);
+
 type CallTracerCall = {
   type: string;
   to?: string;
@@ -63,7 +89,7 @@ export type ContractSource = {
   abi: string;
   constructorArguments?: string;
   verificationStatus: 'verified' | 'unverified' | 'partial';
-  verificationSource: 'sourcify' | 'blockscan' | 'manual' | 'unknown';
+  verificationSource: 'sourcify' | 'blockscan' | 'manual' | 'unknown' | 'none';
   verifiedAt?: Date;
   lastChecked: Date;
   isProxy?: boolean;
@@ -906,14 +932,14 @@ export class ContractSourceService {
         if (solFiles.length > 0) {
           sourceCode = solFiles
             .map(
-              ([name, src]) => `// File: ${name}\n${(src as { content?: string }).content ?? ''}`,
+              ([name, src]) => `// File: ${name}\n${(src).content ?? ''}`,
             )
             .join('\n\n');
         }
         if (solFiles.length > 1) {
           sourceFiles = solFiles.map(([name, src]) => ({
             filename: name,
-            content: (src as { content?: string }).content ?? '',
+            content: (src).content ?? '',
           }));
         }
       }
@@ -924,7 +950,7 @@ export class ContractSourceService {
       if (!compilerVersion) {
         if (sourceData.sources) {
           for (const [, src] of Object.entries(sourceData.sources)) {
-            const content = (src as { content?: string }).content ?? '';
+            const content = (src).content ?? '';
             const pragmaMatch = content.match(/pragma\s+solidity\s+\^?(\d+\.\d+\.\d+)/);
             if (pragmaMatch) {
               compilerVersion = pragmaMatch[1];
@@ -1001,7 +1027,7 @@ export class ContractSourceService {
     }
   }
 
-  // 专门处理代理合约
+  // Handle proxy contracts specifically
   private async handleProxyContract(
     chainId: number,
     address: Address,
@@ -1012,10 +1038,10 @@ export class ContractSourceService {
     },
   ): Promise<ContractSource | null> {
     try {
-      // 获取代理合约本身的源码
+      // Fetch the proxy contract's own source code
       let proxyContract: ContractSource | null = null;
 
-      // 尝试从 Sourcify 获取代理合约源码
+      // Try to fetch the proxy contract source from Sourcify
       proxyContract = await this.fetchFromSourcify(chainId, address);
 
       if (!proxyContract) {
@@ -1026,7 +1052,8 @@ export class ContractSourceService {
         }
       }
 
-      // 如果还是没有，创建基本的代理合约信息
+      // If still nothing, synthesize minimal proxy info — this is NOT a verified
+      // source, so mark it unverified with no verification source
       proxyContract ??= {
         chainId,
         address,
@@ -1042,12 +1069,12 @@ export class ContractSourceService {
             type: 'function',
           },
         ]),
-        verificationStatus: 'verified' as const,
-        verificationSource: 'manual' as const,
+        verificationStatus: 'unverified' as const,
+        verificationSource: 'none' as const,
         lastChecked: new Date(),
       };
 
-      // 获取实现合约的源码
+      // Fetch the implementation contract's source code
       let implementationContract: ContractSource | null = null;
       if (proxyInfo.implementationAddress) {
         implementationContract = await this.getContractSource(
@@ -1056,7 +1083,7 @@ export class ContractSourceService {
         );
       }
 
-      // 返回增强的代理合约信息
+      // Return the enriched proxy contract info
       return {
         ...proxyContract,
         isProxy: true,
@@ -1138,7 +1165,7 @@ export class ContractSourceService {
     }
   }
 
-  // 检测代理合约类型和实现地址
+  // Detect proxy contract type and implementation address
   private async detectProxy(
     chainId: number,
     address: Address,
@@ -1164,13 +1191,13 @@ export class ContractSourceService {
     try {
       const client = await rpcManager.getClient(chainId);
 
-      // 首先验证地址是否为合约
+      // First verify the address is actually a contract
       const isContract = await this.isContractAddress(chainId, address);
       if (!isContract) {
         return { isProxy: false };
       }
 
-      // 检查常见的代理存储槽
+      // Check well-known proxy storage slots
       // EIP-1967: 0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc
       const implementationSlot =
         '0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc';
@@ -1178,16 +1205,16 @@ export class ContractSourceService {
       try {
         const implementationData = await client.getStorageAt({
           address,
-          slot: implementationSlot as `0x${string}`,
+          slot: implementationSlot,
         });
 
         if (
           implementationData && implementationData !== '0x0000000000000000000000000000000000000000000000000000000000000000'
         ) {
-          // 提取地址（后20字节）
+          // Extract the address (last 20 bytes)
           const implementationAddress = `0x${implementationData.slice(-40)}`;
 
-          // 验证实现地址是否为有效合约
+          // Validate the implementation address is a real contract
           const isValidImplementation = await this.isContractAddress(
             chainId,
             implementationAddress as Address,
@@ -1205,17 +1232,17 @@ export class ContractSourceService {
         logger.warn({ err: error }, 'Failed to check EIP-1967 implementation slot');
       }
 
-      // 检查 UUPS 代理（EIP-1822）
-      // 实现合约可能在相同的槽位
+      // Check UUPS proxy (EIP-1822)
+      // The implementation contract may live in the same slot
 
-      // 检查 Beacon 代理
+      // Check beacon proxy
       // EIP-1967 Beacon: 0xa3f0ad74e5423aebfd80d3ef4346578335a9a72aeaee59ff6cb3582b35133d50
       const beaconSlot = '0xa3f0ad74e5423aebfd80d3ef4346578335a9a72aeaee59ff6cb3582b35133d50';
 
       try {
         const beaconData = await client.getStorageAt({
           address,
-          slot: beaconSlot as `0x${string}`,
+          slot: beaconSlot,
         });
 
         if (
@@ -1224,9 +1251,35 @@ export class ContractSourceService {
         ) {
           const beaconAddress = `0x${beaconData.slice(-40)}`;
 
-          // 从 Beacon 获取实现地址
-          // Beacon 通常有一个 implementation() 函数
-          // 这里简化处理，标记为 beacon 类型
+          // Resolve the implementation from the beacon contract itself via
+          // its implementation() view function
+          try {
+            const beaconImpl = await client.readContract({
+              address: beaconAddress as Address,
+              abi: IMPLEMENTATION_ABI,
+              functionName: 'implementation',
+            });
+
+            if (isValidResultAddress(beaconImpl)) {
+              return {
+                isProxy: true,
+                proxyType: 'beacon',
+                implementationAddress: formatAddress(beaconImpl),
+              };
+            }
+            logger.warn(
+              { beaconAddress, beaconImpl },
+              'Beacon implementation() returned an invalid address',
+            );
+          } catch (error) {
+            logger.warn(
+              { err: error, beaconAddress },
+              'Failed to read implementation() from beacon contract',
+            );
+          }
+
+          // Fallback: no readable implementation() from the beacon, so surface
+          // the beacon contract address itself as the pointer
           return {
             isProxy: true,
             proxyType: 'beacon',
@@ -1243,7 +1296,7 @@ export class ContractSourceService {
       try {
         const zeppelinData = await client.getStorageAt({
           address,
-          slot: zeppelinSlot as `0x${string}`,
+          slot: zeppelinSlot,
         });
 
         if (
@@ -1282,6 +1335,30 @@ export class ContractSourceService {
         }
       } catch (error) {
         logger.warn({ err: error }, 'Failed to check EIP-1167 bytecode');
+      }
+
+      // ABI fallback for proxies without well-known storage slots (e.g. Gnosis Safe):
+      // try implementation() then masterCopy() on the contract itself
+      for (const [abi, fnName] of [
+        [IMPLEMENTATION_ABI, 'implementation'],
+        [MASTER_COPY_ABI, 'masterCopy'],
+      ] as const) {
+        try {
+          const result = await client.readContract({ address, abi, functionName: fnName });
+          if (isValidResultAddress(result)) {
+            const implAddress = formatAddress(result);
+            const isValid = await this.isContractAddress(chainId, implAddress);
+            if (isValid) {
+              return {
+                isProxy: true,
+                proxyType: 'unknown',
+                implementationAddress: implAddress,
+              };
+            }
+          }
+        } catch (error) {
+          logger.debug({ err: error, address, fnName }, 'ABI fallback probe failed');
+        }
       }
 
       return { isProxy: false };

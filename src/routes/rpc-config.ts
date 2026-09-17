@@ -6,6 +6,7 @@ import { db, userRpcConfigs } from '../database/init';
 const logger = createLogger('rpc-config-routes');
 import { rpcManager } from '../services/RpcManager';
 import { getValidatedChainId } from '../server/validation';
+import { requireAdminToken } from '../middleware/admin-token';
 
 const app = new Hono();
 
@@ -31,7 +32,7 @@ app.get('/rpc-configs', async (c) => {
   }
 });
 
-app.post('/rpc-configs', async (c) => {
+app.post('/rpc-configs', requireAdminToken, async (c) => {
   try {
     const body = await c.req.json();
     const { chainId, name, url, supportsHistory, maxEventRange } = body;
@@ -82,7 +83,7 @@ app.post('/rpc-configs', async (c) => {
   }
 });
 
-app.delete('/rpc-configs/:chainId', async (c) => {
+app.delete('/rpc-configs/:chainId', requireAdminToken, async (c) => {
   try {
     const chainId = getValidatedChainId(c.req.param('chainId'));
 

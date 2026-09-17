@@ -6,7 +6,7 @@
 // tab, the ?tab= write path, and the chain-switch navigation. Router view
 // commits resolve asynchronously, so first paint assertions use findBy*.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, View, createRoutes, useSearchParams } from '@native-router/react';
 
@@ -64,7 +64,29 @@ vi.mock('@/components/events/EventStatistics', async () => {
 
 vi.mock('@/components/events/EventTable', async () => {
   const React = await import('react');
-  return { default: () => React.createElement('div', { 'data-testid': 'event-table' }) };
+  return {
+    // Echoes the decoded event names so tests can assert which abiEvents
+    // reached the table.
+    default: (props: { abiEvents?: Array<{ name?: string }> }) =>
+      React.createElement(
+        'div',
+        { 'data-testid': 'event-table' },
+        (props.abiEvents ?? []).map(event => event.name).join(','),
+      ),
+  };
+});
+
+vi.mock('@/views/Contract/ContractInteract', async () => {
+  const React = await import('react');
+  return {
+    // Echoes the abiOverride prop so tests can assert the paste-ABI handoff
+    // without depending on ContractInteract's own data loading.
+    ContractInteract: (props: { abiOverride?: string }) =>
+      React.createElement('div', {
+        'data-testid': 'contract-interact',
+        'data-abi-override': props.abiOverride ?? '',
+      }),
+  };
 });
 
 vi.mock('@/util/http', () => ({
@@ -89,6 +111,45 @@ const verifiedSourceResponse = {
     lastChecked: '2026-01-01T00:00:00Z',
   },
 };
+
+// Unverified contract: verification services know nothing, so the server
+// answers without an ABI and the paste-ABI unlock takes over.
+const unverifiedSourceResponse = {
+  contractSource: {
+    chainId: 1,
+    address: ADDRESS,
+    sourceCode: '',
+    abi: '',
+    verificationStatus: 'unverified',
+    verificationSource: 'none',
+    lastChecked: '2026-01-01T00:00:00Z',
+  },
+};
+
+// Pasted-ABI fixture: an event (gates the Events tab), a function (for
+// Interact) and a name-less constructor entry — name is optional per the
+// ABI spec, so validation must accept it.
+const CUSTOM_ABI = JSON.stringify([
+  {
+    type: 'event',
+    name: 'Transfer',
+    inputs: [
+      { name: 'from', type: 'address', indexed: true },
+      { name: 'to', type: 'address', indexed: true },
+      { name: 'value', type: 'uint256', indexed: false },
+    ],
+  },
+  {
+    type: 'function',
+    name: 'name',
+    inputs: [],
+    outputs: [{ name: '', type: 'string' }],
+    stateMutability: 'view',
+  },
+  { type: 'constructor', inputs: [] },
+]);
+
+const CUSTOM_ABI_STORAGE_KEY = `custom-abi:1:${ADDRESS}`;
 
 // The three query hooks share one result shape; cast through unknown+never
 // so a single helper serves every mockReturnValue (each hook's exact
@@ -117,6 +178,7 @@ function renderAt(path: string) {
 }
 
 beforeEach(() => {
+  sessionStorage.clear();
   vi.mocked(useContractSource).mockReturnValue(mockHookResult(verifiedSourceResponse));
   vi.mocked(useContractCreation).mockReturnValue(mockHookResult({ found: false }));
   vi.mocked(useStorageLayout).mockReturnValue(mockHookResult(undefined));
@@ -179,5 +241,80 @@ describe('Contract view', () => {
     // presence, not uniqueness).
     expect(screen.getAllByText(/Polygon/).length).toBeGreaterThan(0);
     expect(screen.getByTestId('top-navigation')).toHaveAttribute('data-chain-id', '137');
+  });
+});
+
+describe('Contract view custom ABI unlock', () => {
+  it('offers the Use custom ABI affordance when the server has no ABI', async () => {
+    vi.mocked(useContractSource).mockReturnValue(mockHookResult(unverifiedSourceResponse));
+    renderAt(`/chain/1/contract/${ADDRESS}`);
+
+    expect(await screen.findByRole('heading', { name: 'Use custom ABI' })).toBeInTheDocument();
+    // No Events tab without any ABI to decode logs with, and Apply stays
+    // disabled until something is pasted.
+    expect(screen.queryByRole('button', { name: /^Events/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Apply' })).toBeDisabled();
+  });
+
+  it('rejects a malformed pasted ABI inline without applying it', async () => {
+    vi.mocked(useContractSource).mockReturnValue(mockHookResult(unverifiedSourceResponse));
+    renderAt(`/chain/1/contract/${ADDRESS}`);
+
+    // A JSON object instead of the required array of entries.
+    fireEvent.change(await screen.findByLabelText('Custom ABI JSON'), {
+      target: { value: '{"type":"function"}' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'ABI must be a JSON array of entries with a string "type" field',
+    );
+    expect(screen.queryByRole('button', { name: /^Events/ })).not.toBeInTheDocument();
+    expect(sessionStorage.getItem(CUSTOM_ABI_STORAGE_KEY)).toBeNull();
+  });
+
+  it('unlocks Events and hands the raw ABI to Interact after Apply', async () => {
+    const user = userEvent.setup();
+    vi.mocked(useContractSource).mockReturnValue(mockHookResult(unverifiedSourceResponse));
+    renderAt(`/chain/1/contract/${ADDRESS}`);
+
+    fireEvent.change(await screen.findByLabelText('Custom ABI JSON'), {
+      target: { value: CUSTOM_ABI },
+    });
+    await user.click(screen.getByRole('button', { name: 'Apply' }));
+
+    // Badge appears in the tab bar and the raw string is persisted.
+    expect(await screen.findByText('Custom ABI')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Events (1)' })).toBeInTheDocument();
+    expect(sessionStorage.getItem(CUSTOM_ABI_STORAGE_KEY)).toBe(CUSTOM_ABI);
+
+    // The custom events reach the event table.
+    await user.click(screen.getByRole('button', { name: 'Events (1)' }));
+    expect(await screen.findByTestId('event-table')).toHaveTextContent('Transfer');
+
+    // Interact receives the pasted ABI while no server ABI exists.
+    await user.click(screen.getByRole('button', { name: 'Interact' }));
+    expect(await screen.findByTestId('contract-interact')).toHaveAttribute(
+      'data-abi-override',
+      CUSTOM_ABI,
+    );
+  });
+
+  it('restores a persisted ABI on load and Clear removes it', async () => {
+    const user = userEvent.setup();
+    sessionStorage.setItem(CUSTOM_ABI_STORAGE_KEY, CUSTOM_ABI);
+    vi.mocked(useContractSource).mockReturnValue(mockHookResult(unverifiedSourceResponse));
+    renderAt(`/chain/1/contract/${ADDRESS}`);
+
+    // Lazy-initialised from sessionStorage without any typing.
+    expect(await screen.findByRole('button', { name: 'Events (1)' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Custom ABI JSON')).toHaveValue(CUSTOM_ABI);
+
+    await user.click(screen.getByRole('button', { name: 'Clear custom ABI' }));
+
+    expect(screen.queryByRole('button', { name: /^Events/ })).not.toBeInTheDocument();
+    expect(screen.queryByText('Custom ABI')).not.toBeInTheDocument();
+    expect(sessionStorage.getItem(CUSTOM_ABI_STORAGE_KEY)).toBeNull();
+    expect(screen.getByLabelText('Custom ABI JSON')).toHaveValue('');
   });
 });

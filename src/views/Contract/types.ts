@@ -29,7 +29,13 @@ export type ContractSource = {
   abi: string;
   constructorArguments?: string;
   verificationStatus: 'verified' | 'unverified' | 'partial';
-  verificationSource: 'sourcify' | 'etherscan' | 'mantle-explorer' | 'manual' | 'unknown';
+  verificationSource:
+    | 'sourcify'
+    | 'etherscan'
+    | 'mantle-explorer'
+    | 'manual'
+    | 'unknown'
+    | 'none';
   verifiedAt?: string;
   lastChecked: string;
   isProxy?: boolean;

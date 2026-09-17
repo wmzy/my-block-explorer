@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter, View, createRoutes } from '@native-router/react';
 import '@testing-library/jest-dom/vitest';
 import AddressView from '@/views/Address';
@@ -37,6 +37,30 @@ const mocks = vi.hoisted(() => {
     verificationStatus?: 'verified' | 'unverified' | 'partial';
     sourceCodeAvailable?: boolean;
   };
+  // Hook results reshaped per case (the checksum-error tests swap in
+  // error-bearing shapes); typed so Error assignments stay legal.
+  type RealTimeResult = {
+    data?: {
+      balance: string;
+      balanceWei: string;
+      transactionCount: number;
+      latestBlock: number;
+    };
+    loading: boolean;
+    fetching: boolean;
+    error?: Error;
+  };
+  const settledRealTime: RealTimeResult = {
+    data: {
+      balance: '1.5',
+      balanceWei: '1500000000000000000',
+      transactionCount: 42,
+      latestBlock: 18000000,
+    },
+    loading: false,
+    fetching: false,
+    error: undefined,
+  };
   const addressInfo: {
     chainId: number;
     chainName: string;
@@ -54,10 +78,15 @@ const mocks = vi.hoisted(() => {
     testAddress,
     mockTransactions,
     addressInfo,
+    realTime: settledRealTime,
+    addressTxError: undefined as Error | undefined,
     addressTransactions: {
       transactions: mockTransactions,
       total: mockTransactions.length,
     },
+    // Plain function (vi is unavailable inside vi.hoisted); tests spy on it
+    // to assert the retry affordance.
+    txRefetch: () => undefined,
   };
 });
 
@@ -90,22 +119,13 @@ vi.mock('@/services/addresses', () => ({
     data: mocks.addressTransactions,
     loading: false,
     fetching: false,
-    error: undefined,
+    error: mocks.addressTxError,
+    refetch: mocks.txRefetch,
   }),
 }));
 
 vi.mock('@/services/addressRealTime', () => ({
-  useRealTimeAddressData: () => ({
-    data: {
-      balance: '1.5',
-      balanceWei: '1500000000000000000',
-      transactionCount: 42,
-      latestBlock: 18000000,
-    },
-    loading: false,
-    fetching: false,
-    error: undefined,
-  }),
+  useRealTimeAddressData: () => mocks.realTime,
   useContractCode: () => ({
     data: undefined,
     loading: false,
@@ -145,6 +165,18 @@ describe('Address view', () => {
       transactions: mocks.mockTransactions,
       total: mocks.mockTransactions.length,
     };
+    mocks.realTime = {
+      data: {
+        balance: '1.5',
+        balanceWei: '1500000000000000000',
+        transactionCount: 42,
+        latestBlock: 18000000,
+      },
+      loading: false,
+      fetching: false,
+      error: undefined,
+    };
+    mocks.addressTxError = undefined;
   });
 
   it('renders TopNavigation', async () => {
@@ -212,9 +244,131 @@ describe('Address view', () => {
     expect(await screen.findByText('No transactions found')).toBeInTheDocument();
   });
 
+  it('shows the partial-history banner above the table for heuristic coverage', async () => {
+    mocks.addressTransactions = {
+      transactions: mocks.mockTransactions,
+      total: 42,
+      method: 'binary-search',
+      coverage: 'partial',
+      searchWindowBlocks: 600_000,
+    };
+
+    renderPage();
+
+    expect(
+      await screen.findByText(/Partial history - transactions are discovered heuristically/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/within the last 600,000 blocks/)).toBeInTheDocument();
+    // External escape hatch: the banner adds a link row beyond the Overview
+    // card's (Routescan appears in both).
+    const routescanLinks = screen.getAllByText('Routescan');
+    expect(routescanLinks.length).toBe(2);
+  });
+
+  it('shows the honest zero-balance banner instead of a bare empty list', async () => {
+    mocks.addressTransactions = {
+      transactions: [],
+      total: 42,
+      method: 'binary-search-skipped',
+      coverage: 'none',
+      reason: 'zero-balance',
+    };
+
+    renderPage();
+
+    expect(
+      await screen.findByText(
+        /This address has 42 transactions but holds no native-token balance/,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText('Routescan').length).toBe(2);
+    expect(screen.queryByText('No transactions found')).not.toBeInTheDocument();
+  });
+
+  it('shows the search-failed banner with a retry affordance, never an empty result', async () => {
+    mocks.addressTransactions = {
+      transactions: [],
+      total: 0,
+      method: 'fallback',
+      coverage: 'none',
+      reason: 'search-failed',
+    };
+    const refetchSpy = vi.spyOn(mocks, 'txRefetch');
+
+    renderPage();
+
+    expect(
+      await screen.findByText(/Transaction search failed \(timeout\)/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/this is NOT an empty result/)).toBeInTheDocument();
+    expect(screen.queryByText('No transactions found')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry search' }));
+    expect(refetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps the plain empty state for complete coverage', async () => {
+    mocks.addressTransactions = {
+      transactions: [],
+      total: 0,
+      method: 'binary-search',
+      coverage: 'complete',
+      reason: 'no-transactions',
+    };
+
+    renderPage();
+
+    expect(await screen.findByText('No transactions found')).toBeInTheDocument();
+    expect(screen.queryByText(/Partial history/)).not.toBeInTheDocument();
+  });
+
   it('shows unsupported chain error for invalid chain', async () => {
     renderPage(`/chain/999/address/${mocks.testAddress}`);
 
     expect(await screen.findByText(/Unsupported chain ID/)).toBeInTheDocument();
+  });
+
+  it('shows checksum guidance instead of the raw 400 for a bad-checksum address', async () => {
+    // Mixed-case bad checksum: the server validation (getValidatedAddress)
+    // rejects with HTTP 400 'Invalid address'.
+    mocks.realTime = {
+      data: undefined,
+      loading: false,
+      fetching: false,
+      error: new Error('Invalid address'),
+    };
+
+    renderPage();
+
+    expect(
+      await screen.findByText(/This address has an invalid checksum/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Try the all-lowercase form/)).toBeInTheDocument();
+    expect(screen.getByText('Original error: Invalid address')).toBeInTheDocument();
+    expect(screen.queryByText('Error: Invalid address')).not.toBeInTheDocument();
+  });
+
+  it('shows checksum guidance in the transactions card when the tx search rejects the address', async () => {
+    mocks.addressTxError = new Error('Invalid address');
+
+    renderPage();
+
+    expect(await screen.findByText(/This address has an invalid checksum/)).toBeInTheDocument();
+    expect(screen.getByText('Original error: Invalid address')).toBeInTheDocument();
+    expect(screen.queryByText('No transactions found')).not.toBeInTheDocument();
+  });
+
+  it('keeps the plain error banner for unrelated failures', async () => {
+    mocks.realTime = {
+      data: undefined,
+      loading: false,
+      fetching: false,
+      error: new Error('RPC timeout'),
+    };
+
+    renderPage();
+
+    expect(await screen.findByText('Error: RPC timeout')).toBeInTheDocument();
+    expect(screen.queryByText(/invalid checksum/i)).not.toBeInTheDocument();
   });
 });

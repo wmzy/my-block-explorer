@@ -71,7 +71,10 @@ app.route('/api', eventsRoutes);
 app.route('/api', performanceRoutes);
 app.route('/api', rpcConfigRoutes);
 app.route('/api', storageRoutes);
-app.route('/debug', debugRoutes);
+// Debug routes expose raw SQL execution; mount only when explicitly opted in via ENABLE_DEBUG_API=1.
+if (process.env.ENABLE_DEBUG_API === '1') {
+  app.route('/debug', debugRoutes);
+}
 
 app.notFound(c => {
   return c.json(

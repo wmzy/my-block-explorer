@@ -6,9 +6,9 @@ vi.mock('@/services/EventIndexingService', () => ({
   getIndexingRanges: vi.fn(),
   updateIndexingRange: vi.fn(),
   deleteIndexingRange: vi.fn(),
-  startIndexingRange: vi.fn(),
+  startIndexingRange: vi.fn().mockResolvedValue({ success: true }),
   pauseIndexingRange: vi.fn(),
-  resumeIndexingRange: vi.fn(),
+  resumeIndexingRange: vi.fn().mockResolvedValue({ success: true }),
   getActiveRangeJob: vi.fn(),
   getContractEvents: vi
     .fn()
@@ -66,15 +66,34 @@ import {
   getIndexingRanges,
   deleteIndexingRange,
   startIndexingRange,
+  resumeIndexingRange,
   pauseIndexingRange,
   getActiveRangeJob,
 } from '@/services/EventIndexingService';
+import { contractSourceService } from '@/services/ContractSourceService';
 
 type MockFunction = ReturnType<typeof vi.fn>;
 
 const chainId = 1;
 const contractAddress = '0x1234567890123456789012345678901234567890';
 const baseUrl = `/api/chains/${chainId}/contracts/${contractAddress}/events`;
+
+// Base persisted range row returned by getIndexingRanges mocks.
+const rangeFixture = (overrides: Record<string, unknown> = {}) => ({
+  chainId: 1,
+  address: contractAddress,
+  rangeId: 1,
+  fromBlock: '18000000',
+  toBlock: '18001000',
+  direction: 'forward',
+  currentBlock: null,
+  status: 'pending',
+  totalEventsIndexed: 0,
+  priority: 0,
+  createdAt: new Date(),
+  updatedAt: new Date(),
+  ...overrides,
+});
 
 describe('Manual Range Indexing E2E', () => {
   beforeEach(() => {
@@ -223,10 +242,8 @@ describe('Manual Range Indexing E2E', () => {
   });
 
   describe('POST /ranges/:rangeId/start - Start indexing', () => {
-    it('should start indexing a range successfully', async () => {
-      (startIndexingRange as MockFunction).mockResolvedValueOnce({
-        success: true,
-      });
+    it('should start indexing a range in the background', async () => {
+      (getIndexingRanges as MockFunction).mockResolvedValueOnce([rangeFixture()]);
 
       const response = await app.request(`${baseUrl}/ranges/1/start`, {
         method: 'POST',
@@ -246,16 +263,21 @@ describe('Manual Range Indexing E2E', () => {
         }),
       });
 
-      expect(response.status).toBe(200);
+      expect(response.status).toBe(202);
       const data = await response.json();
       expect(data.status).toBe('indexing');
+      expect(data.started).toBe(true);
       expect(data.rangeId).toBe(1);
+      expect(startIndexingRange).toHaveBeenCalledWith(
+        chainId,
+        contractAddress.toLowerCase(),
+        1,
+        expect.any(Array),
+      );
     });
 
     it('should fetch ABI from ContractSourceService if not provided', async () => {
-      (startIndexingRange as MockFunction).mockResolvedValueOnce({
-        success: true,
-      });
+      (getIndexingRanges as MockFunction).mockResolvedValueOnce([rangeFixture()]);
 
       const response = await app.request(`${baseUrl}/ranges/1/start`, {
         method: 'POST',
@@ -263,16 +285,14 @@ describe('Manual Range Indexing E2E', () => {
         body: JSON.stringify({}),
       });
 
-      expect(response.status).toBe(200);
+      expect(response.status).toBe(202);
       const data = await response.json();
       expect(data.status).toBe('indexing');
+      expect(contractSourceService.getContractSource).toHaveBeenCalled();
     });
 
-    it('should reject start when startIndexingRange fails with no ABI', async () => {
-      (startIndexingRange as MockFunction).mockResolvedValueOnce({
-        success: false,
-        error: 'No ABI available',
-      });
+    it('should reject start when no ABI is available anywhere', async () => {
+      (contractSourceService.getContractSource as MockFunction).mockResolvedValueOnce(null);
 
       const response = await app.request(`${baseUrl}/ranges/1/start`, {
         method: 'POST',
@@ -282,15 +302,12 @@ describe('Manual Range Indexing E2E', () => {
 
       expect(response.status).toBe(400);
       const data = await response.json();
-      expect(data.error).toBe('Failed to start indexing range');
-      expect(data.message).toBe('No ABI available');
+      expect(data.error).toBe('No ABI available');
+      expect(startIndexingRange).not.toHaveBeenCalled();
     });
 
     it('should reject start for already indexing range', async () => {
-      (startIndexingRange as MockFunction).mockResolvedValueOnce({
-        success: false,
-        error: 'Range is already being indexed',
-      });
+      (getActiveRangeJob as MockFunction).mockReturnValueOnce(true);
 
       const response = await app.request(`${baseUrl}/ranges/1/start`, {
         method: 'POST',
@@ -304,13 +321,13 @@ describe('Manual Range Indexing E2E', () => {
       const data = await response.json();
       expect(data.error).toBe('Failed to start indexing range');
       expect(data.message).toBe('Range is already being indexed');
+      expect(startIndexingRange).not.toHaveBeenCalled();
     });
 
     it('should reject start for completed range', async () => {
-      (startIndexingRange as MockFunction).mockResolvedValueOnce({
-        success: false,
-        error: 'Range is already completed',
-      });
+      (getIndexingRanges as MockFunction).mockResolvedValueOnce([
+        rangeFixture({ status: 'completed', currentBlock: '18001000' }),
+      ]);
 
       const response = await app.request(`${baseUrl}/ranges/1/start`, {
         method: 'POST',
@@ -323,6 +340,23 @@ describe('Manual Range Indexing E2E', () => {
       expect(response.status).toBe(400);
       const data = await response.json();
       expect(data.message).toBe('Range is already completed');
+      expect(startIndexingRange).not.toHaveBeenCalled();
+    });
+
+    it('should reject start for non-existent range', async () => {
+      (getIndexingRanges as MockFunction).mockResolvedValueOnce([]);
+
+      const response = await app.request(`${baseUrl}/ranges/1/start`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          abi: [{ type: 'event', name: 'Transfer', inputs: [] }],
+        }),
+      });
+
+      expect(response.status).toBe(400);
+      const data = await response.json();
+      expect(data.message).toBe('Range not found');
     });
 
     it('should reject invalid rangeId format', async () => {
@@ -335,6 +369,67 @@ describe('Manual Range Indexing E2E', () => {
       expect(response.status).toBe(400);
       const data = await response.json();
       expect(data.error).toBe('Invalid rangeId');
+    });
+  });
+
+  describe('POST /ranges/:rangeId/resume - Resume indexing', () => {
+    it('should resume a paused range in the background', async () => {
+      (getIndexingRanges as MockFunction).mockResolvedValueOnce([
+        rangeFixture({ status: 'paused', currentBlock: '18000500' }),
+      ]);
+
+      const response = await app.request(`${baseUrl}/ranges/1/resume`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          abi: [{ type: 'event', name: 'Transfer', inputs: [] }],
+        }),
+      });
+
+      expect(response.status).toBe(202);
+      const data = await response.json();
+      expect(data.status).toBe('indexing');
+      expect(data.started).toBe(true);
+      expect(resumeIndexingRange).toHaveBeenCalledWith(
+        chainId,
+        contractAddress.toLowerCase(),
+        1,
+        expect.any(Array),
+      );
+    });
+
+    it('should reject resume for a range that is not paused or errored', async () => {
+      (getIndexingRanges as MockFunction).mockResolvedValueOnce([rangeFixture()]);
+
+      const response = await app.request(`${baseUrl}/ranges/1/resume`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          abi: [{ type: 'event', name: 'Transfer', inputs: [] }],
+        }),
+      });
+
+      expect(response.status).toBe(400);
+      const data = await response.json();
+      expect(data.error).toBe('Failed to resume indexing range');
+      expect(data.message).toBe('Can only resume paused or errored ranges');
+      expect(resumeIndexingRange).not.toHaveBeenCalled();
+    });
+
+    it('should reject resume for already indexing range', async () => {
+      (getActiveRangeJob as MockFunction).mockReturnValueOnce(true);
+
+      const response = await app.request(`${baseUrl}/ranges/1/resume`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          abi: [{ type: 'event', name: 'Transfer', inputs: [] }],
+        }),
+      });
+
+      expect(response.status).toBe(400);
+      const data = await response.json();
+      expect(data.message).toBe('Range is already being indexed');
     });
   });
 
@@ -555,22 +650,9 @@ describe('Manual Range Indexing E2E', () => {
       const addData = await addResponse.json();
       expect(addData.rangeId).toBe(1);
 
-      (getIndexingRanges as MockFunction).mockResolvedValueOnce([
-        {
-          chainId: 1,
-          address: contractAddress,
-          rangeId: 1,
-          fromBlock: '18000000',
-          toBlock: '18001000',
-          direction: 'forward',
-          currentBlock: null,
-          status: 'pending',
-          totalEventsIndexed: 0,
-          priority: 0,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
-      ]);
+      // Persistent mock: consumed by both the GET /ranges call and the
+      // start endpoint's pre-start validation lookup.
+      (getIndexingRanges as MockFunction).mockResolvedValue([rangeFixture()]);
 
       const getResponse = await app.request(`${baseUrl}/ranges`, {
         method: 'GET',
@@ -582,10 +664,6 @@ describe('Manual Range Indexing E2E', () => {
       expect(getData.ranges).toHaveLength(1);
       expect(getData.ranges[0].status).toBe('pending');
 
-      (startIndexingRange as MockFunction).mockResolvedValueOnce({
-        success: true,
-      });
-
       const startResponse = await app.request(`${baseUrl}/ranges/1/start`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -594,9 +672,10 @@ describe('Manual Range Indexing E2E', () => {
         }),
       });
 
-      expect(startResponse.status).toBe(200);
+      expect(startResponse.status).toBe(202);
       const startData = await startResponse.json();
       expect(startData.status).toBe('indexing');
+      expect(startData.started).toBe(true);
 
       (getActiveRangeJob as MockFunction).mockReturnValueOnce(true);
 
@@ -629,9 +708,8 @@ describe('Manual Range Indexing E2E', () => {
 
       expect(addResponse.status).toBe(201);
 
-      (startIndexingRange as MockFunction).mockResolvedValueOnce({
-        success: true,
-      });
+      // Consumed by the start endpoint's pre-start validation lookup.
+      (getIndexingRanges as MockFunction).mockResolvedValue([rangeFixture()]);
 
       const startResponse = await app.request(`${baseUrl}/ranges/1/start`, {
         method: 'POST',
@@ -641,7 +719,7 @@ describe('Manual Range Indexing E2E', () => {
         }),
       });
 
-      expect(startResponse.status).toBe(200);
+      expect(startResponse.status).toBe(202);
 
       (deleteIndexingRange as MockFunction).mockResolvedValueOnce({
         success: true,

@@ -35,8 +35,10 @@ export async function saveRpcConfig(config: {
   supportsHistory?: boolean;
   maxEventRange?: number;
 }): Promise<void> {
-  // Error text note: the endpoint answers {error} not {message}, so failures
-  // surface as ApiError('HTTP <status>'); consumers show their own toast.
+  // Error text note: handler failures answer {error} not {message} and
+  // surface as ApiError('HTTP <status>'), but a 403 from the admin-token
+  // gate carries {message} explaining how to enable admin operations —
+  // consumers surface that message on 403.
   await post('/api/rpc-configs', config);
 
   invalidateRpcClients();

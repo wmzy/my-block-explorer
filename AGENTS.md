@@ -201,3 +201,17 @@ pnpm typecheck           # tsc --noEmit
 - **Barrel exports incomplete** — `src/utils/index.ts` only exports 2 of 19
   utils
 - **Proxy port 7890** — Set `HTTP_PROXY`/`HTTPS_PROXY` if network issues
+- **Admin env vars** — `ENABLE_DEBUG_API=1` mounts `/debug/*` (default off);
+  `ADMIN_TOKEN` gates rpc-config mutations + all `/api/performance/*`
+  (fail closed when unset; header `x-admin-token`)
+- **Event indexing start is async** — `POST .../events/ranges/:id/start|resume`
+  returns `202` immediately; progress via `GET .../events/ranges` polling
+  (frontend polls 3s). `argFilters`/`topicN` push decoded-arg filtering into
+  DuckDB; `GET .../events/export` streams CSV (100k-row cap → 400)
+- **Address tx history is heuristic** — balance-change binary search; the
+  transactions endpoint reports `coverage`/`reason`/`searchWindowBlocks`
+  and the UI renders honest partial-data banners. Never present it as
+  complete history
+- **Custom ABI** — unverified contracts accept a pasted ABI
+  (sessionStorage `custom-abi:{chainId}:{address}`) that unlocks
+  Events/Interact tabs locally

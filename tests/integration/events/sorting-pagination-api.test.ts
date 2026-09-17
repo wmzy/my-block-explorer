@@ -4,6 +4,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import app from '@/api-app';
+import { getContractEvents } from '@/services/EventIndexingService';
 
 // Mock the EventIndexingService to avoid database access
 vi.mock('@/services/EventIndexingService', () => ({
@@ -53,7 +54,6 @@ describe('Sorting and Pagination API Integration', () => {
     it('should return paginated events with default settings', async () => {
       const res = await app.request(`/api/chains/${chainId}/contracts/${contractAddress}/events`);
       expect(res.status).toBe(200);
-
       const data = await res.json();
       expect(data).toMatchObject({
         chainId,
@@ -87,6 +87,44 @@ describe('Sorting and Pagination API Integration', () => {
         `/api/chains/${chainId}/contracts/${contractAddress}/events?fromBlock=18000000&toBlock=18000100`,
       );
       expect(res.status).toBe(200);
+    });
+
+    it('should forward argFilters and topic filters to the service', async () => {
+      const argFilters = encodeURIComponent('{"owner":"0xabc","value":1000,"active":true}');
+      const res = await app.request(
+        `/api/chains/${chainId}/contracts/${contractAddress}/events?argFilters=${argFilters}&topic0=0xAAA&topic2=0xbbb`,
+      );
+      expect(res.status).toBe(200);
+      expect(vi.mocked(getContractEvents)).toHaveBeenCalledWith(
+        chainId,
+        contractAddress.toLowerCase(),
+        expect.objectContaining({
+          argFilters: { owner: '0xabc', value: 1000, active: true },
+          topics: { topic0: '0xaaa', topic2: '0xbbb' },
+        }),
+      );
+    });
+
+    it('should drop non-scalar argFilters values instead of failing', async () => {
+      const argFilters = encodeURIComponent('{"owner":"0xabc","weird":null,"list":[1]}');
+      const res = await app.request(
+        `/api/chains/${chainId}/contracts/${contractAddress}/events?argFilters=${argFilters}`,
+      );
+      expect(res.status).toBe(200);
+      expect(vi.mocked(getContractEvents)).toHaveBeenCalledWith(
+        chainId,
+        contractAddress.toLowerCase(),
+        expect.objectContaining({ argFilters: { owner: '0xabc' } }),
+      );
+    });
+
+    it('should reject malformed argFilters with 400', async () => {
+      const res = await app.request(
+        `/api/chains/${chainId}/contracts/${contractAddress}/events?argFilters=${encodeURIComponent('{"owner":')}`,
+      );
+      expect(res.status).toBe(400);
+      const data = await res.json();
+      expect(data.error).toBe('Invalid argFilters');
     });
 
     it('should handle unsupported chain IDs', async () => {

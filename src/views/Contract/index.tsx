@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { css } from '@linaria/core';
 import { useControl } from 'react-use-control';
 import { z } from 'zod';
-import type { Abi, AbiEvent, AbiFunction, AbiParameter } from 'viem';
 import { navigate } from '@native-router/core';
 import { TypedLink, useMatched, useSearch, useSetSearch } from '@native-router/react';
 import { getChainName, isChainSupported } from '@/config/chains';
@@ -16,6 +15,7 @@ import { post } from '@/util/http';
 import { useContractCreation, useContractSource } from '@/services/contracts';
 import { EventsPanel } from './EventsPanel';
 import { ContractInteract } from './ContractInteract';
+import { CustomAbiPanel, parseAbiString } from './CustomAbiPanel';
 import { StoragePanel } from './StoragePanel';
 import { OpenInIdeButton } from './OpenInIdeButton';
 import { cardStyles, errorStyles, loadingStyles } from './styles';
@@ -123,6 +123,36 @@ const proxyToggleStyles = css`
   }
 `;
 
+const customAbiBadgeStyles = css`
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 12px;
+  align-self: center;
+  padding: 2px 10px;
+  border-radius: 12px;
+  background: #f0a500;
+  border: 1px solid #d69200;
+  color: white;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+`;
+
+const customAbiBadgeClearStyles = css`
+  border: none;
+  background: none;
+  padding: 0;
+  color: white;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+
+  &:hover {
+    color: #fff3cd;
+  }
+`;
+
 const infoGridStyles = css`
   display: grid;
   gap: 16px;
@@ -214,6 +244,21 @@ const PROXY_TYPE_LABELS: Record<string, string> = {
   'unknown': 'Unknown',
 };
 
+// sessionStorage persistence for the pasted custom ABI (the raw string),
+// scoped per chain + address so an ABI never leaks across contracts.
+// Access is guarded — browsers can throw on sessionStorage in private
+// modes or after storage policy changes.
+const customAbiStorageKey = (chainId: number, address: string) =>
+  `custom-abi:${chainId}:${address.toLowerCase()}`;
+
+const readStoredCustomAbi = (chainId: number, address: string): string | null => {
+  try {
+    return sessionStorage.getItem(customAbiStorageKey(chainId, address));
+  } catch {
+    return null;
+  }
+};
+
 // Renders under both /chain/:chainId/contract/:address and its /events
 // subpath (same view per the route table); the subpath only changes the
 // default tab when ?tab= is absent.
@@ -238,6 +283,12 @@ export default function Contract() {
   };
 
   const currentChainId = Number(chainId ?? 1);
+
+  // Raw pasted ABI (exactly the string that was applied), lazily restored
+  // from sessionStorage so a reload keeps the unlock.
+  const [customAbiRaw, setCustomAbiRaw] = useState<string | null>(() =>
+    readStoredCustomAbi(currentChainId, address ?? ''),
+  );
 
   const {
     data: sourceResponse,
@@ -267,54 +318,29 @@ export default function Contract() {
 
   const isProxy = contractSource?.isProxy && !!contractSource?.implementationContract;
 
-  const parseABI = (contract: ContractSource | null): ContractABI | null => {
-    if (!contract?.abi) return null;
-    try {
-      const abi = JSON.parse(contract.abi) as Abi;
-      const functions = abi.filter((item): item is AbiFunction => item.type === 'function');
-      const events = abi.filter((item): item is AbiEvent => item.type === 'event');
-      const errors = abi.filter(
-        (item): item is { type: 'error'; name: string; inputs: AbiParameter[] } =>
-          item.type === 'error',
-      );
-      return {
-        abi: contract.abi,
-        functions: functions.map(f => ({
-          name: f.name,
-          type: f.type,
-          inputs: (f.inputs ?? []).map(input => ({
-            name: input.name ?? '',
-            type: input.type,
-            internalType: input.internalType,
-          })),
-          outputs: (f.outputs ?? []).map(output => ({
-            name: output.name ?? '',
-            type: output.type,
-            internalType: output.internalType,
-          })),
-          stateMutability: f.stateMutability ?? 'nonpayable',
-          signature: `${f.name}(${(f.inputs ?? []).map(input => input.type).join(', ')})`,
-        })),
-        events: events.map(e => ({
-          name: e.name,
-          inputs: (e.inputs ?? []).map(input => ({
-            name: input.name ?? '',
-            type: input.type,
-            internalType: input.internalType,
-          })),
-          signature: `${e.name}(${(e.inputs ?? []).map(input => input.type).join(', ')})`,
-        })),
-        errors,
-        verificationStatus: contract.verificationStatus,
-      };
-    } catch {
-      return null;
-    }
-  };
+  // Thin adapter: server ABI strings live on the contract source payload
+  // (implementation or proxy side) and inherit its verification status.
+  const parseABI = (contract: ContractSource | null): ContractABI | null =>
+    contract?.abi ? parseAbiString(contract.abi, contract.verificationStatus) : null;
 
   const proxyABI = parseABI(contractSource ?? null);
   const implABI = parseABI(contractSource?.implementationContract ?? null);
-  const effectiveABI = isProxy ? (contractTarget === 'impl' ? implABI : proxyABI) : proxyABI;
+  // The server-side ABI counts as available only when it carries at least
+  // one usable entry — unverified contracts answer with an empty ABI.
+  const serverAbi = isProxy ? (contractTarget === 'impl' ? implABI : proxyABI) : proxyABI;
+  const serverAbiUnavailable =
+    !serverAbi ||
+    (serverAbi.functions.length === 0 &&
+      serverAbi.events.length === 0 &&
+      serverAbi.errors.length === 0);
+  // Without a server ABI the locally pasted one takes over, keeping the
+  // ABI, Events and Interact views usable for unverified contracts.
+  const effectiveABI = serverAbiUnavailable
+    ? customAbiRaw
+      ? parseAbiString(customAbiRaw, contractSource?.verificationStatus ?? 'unverified')
+      : null
+    : serverAbi;
+  const customAbiActive = serverAbiUnavailable && !!effectiveABI;
 
   useEffect(() => {
     if (contractSource?.isProxy && contractSource?.implementationContract && !tabFromUrl) {
@@ -322,6 +348,30 @@ export default function Contract() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- proxies default to the interact tab once their layout is known
   }, [contractSource]);
+
+  // The route reuses this component across chains/addresses (params change
+  // without a remount): re-read the per-contract key whenever they change.
+  useEffect(() => {
+    setCustomAbiRaw(readStoredCustomAbi(currentChainId, address ?? ''));
+  }, [currentChainId, address]);
+
+  const handleApplyCustomAbi = (raw: string) => {
+    setCustomAbiRaw(raw);
+    try {
+      sessionStorage.setItem(customAbiStorageKey(currentChainId, address ?? ''), raw);
+    } catch {
+      // Storage unavailable: the in-memory ABI still applies for this mount.
+    }
+  };
+
+  const handleClearCustomAbi = () => {
+    setCustomAbiRaw(null);
+    try {
+      sessionStorage.removeItem(customAbiStorageKey(currentChainId, address ?? ''));
+    } catch {
+      // Nothing to remove when storage is unavailable.
+    }
+  };
 
   const handleClearCache = async () => {
     if (!chainId || !address) return;
@@ -627,6 +677,22 @@ export default function Contract() {
                 >
                   Interact
                 </button>
+                {customAbiActive && (
+                  <span
+                    className={customAbiBadgeStyles}
+                    title="ABI views are using your pasted custom ABI"
+                  >
+                    <span>Custom ABI</span>
+                    <button
+                      type="button"
+                      className={customAbiBadgeClearStyles}
+                      aria-label="Clear custom ABI"
+                      onClick={handleClearCustomAbi}
+                    >
+                      ×
+                    </button>
+                  </span>
+                )}
               </div>
               {isProxy && (
                 <div className={proxyToggleStyles}>
@@ -648,6 +714,15 @@ export default function Contract() {
                 </div>
               )}
             </div>
+
+            {/* Paste-ABI unlock: shown whenever the server has no usable ABI */}
+            {serverAbiUnavailable && (
+              <CustomAbiPanel
+                storedRaw={customAbiRaw ?? ''}
+                onApply={handleApplyCustomAbi}
+                onClear={handleClearCustomAbi}
+              />
+            )}
 
             {/* Source Code */}
             {activeTab === 'source' && (
@@ -736,6 +811,7 @@ export default function Contract() {
                 contractAddress={address}
                 contractSource={contractSource}
                 contractTarget={isProxy ? contractTarget : undefined}
+                abiOverride={serverAbiUnavailable && customAbiRaw ? customAbiRaw : undefined}
               />
             )}
           </>

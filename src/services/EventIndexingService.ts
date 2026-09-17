@@ -1,4 +1,4 @@
-import { eq, and, sql, gte, lte, desc, ne } from 'drizzle-orm';
+import { eq, and, sql, gte, lte, desc, ne, type SQL } from 'drizzle-orm';
 import { db } from '../database/drizzle';
 import {
   indexingProgress,
@@ -148,7 +148,7 @@ const decodeLogs = (logs: Log[], abi: Abi, blockTimestamps: Map<bigint, number |
       decoded.push({
         blockNumber: log.blockNumber ?? 0n,
         blockTimestamp: blockTimestamps.get(log.blockNumber ?? 0n) ?? null,
-        transactionHash: log.transactionHash ?? ('0x' as `0x${string}`),
+        transactionHash: log.transactionHash ?? ('0x'),
         transactionIndex: log.transactionIndex ?? 0,
         logIndex: log.logIndex ?? 0,
         eventName: result.eventName ?? 'Unknown',
@@ -164,7 +164,7 @@ const decodeLogs = (logs: Log[], abi: Abi, blockTimestamps: Map<bigint, number |
       decoded.push({
         blockNumber: log.blockNumber ?? 0n,
         blockTimestamp: blockTimestamps.get(log.blockNumber ?? 0n) ?? null,
-        transactionHash: log.transactionHash ?? ('0x' as `0x${string}`),
+        transactionHash: log.transactionHash ?? ('0x'),
         transactionIndex: log.transactionIndex ?? 0,
         logIndex: log.logIndex ?? 0,
         eventName: 'Unknown',
@@ -504,6 +504,112 @@ export const getIndexingStatus = async (
   };
 };
 
+// ============================================
+// Event query filtering (shared by list, count, and CSV export)
+// ============================================
+
+/** Decoded-arg filter values: JSON scalars only. */
+export type EventArgFilters = Record<string, string | number | boolean>;
+
+/** Exact-match raw topic filters; hex values compare case-insensitively. */
+export type EventTopicFilters = {
+  topic0?: string;
+  topic1?: string;
+  topic2?: string;
+  topic3?: string;
+};
+
+export type EventQueryFilters = {
+  eventName?: string;
+  fromBlock?: number;
+  toBlock?: number;
+  argFilters?: EventArgFilters;
+  topics?: EventTopicFilters;
+};
+
+// Arg names addressable as a DuckDB JSON path: Solidity identifiers plus the
+// positional digit keys viem produces for unnamed indexed params. Anything
+// else could alter path semantics, so such names are skipped.
+const JSON_PATH_SAFE_ARG_NAME = /^[A-Za-z0-9_$]+$/;
+
+const NUMERIC_STRING = /^-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/;
+
+/**
+ * decoded_args is a JSON text column whose values the indexer stores as JSON
+ * strings (see decodeLogs: bigint -> decimal string, everything else ->
+ * String(v)). Per-entry semantics (entries AND-combine):
+ * - string/boolean value: exact, case-insensitive comparison of the extracted
+ *   JSON string ("true"/"false" covers booleans);
+ * - numeric value (or numeric string): the exact string form OR the numeric
+ *   cast (try_cast(extracted as double) = value), so {"value": 1000} (JSON
+ *   number) and {"value": "1000"} (string) both match filter 1000 and "1000".
+ *   The numeric arm is double precision; beyond 2^53 only the string arm
+ *   matches exactly.
+ * try_cast(decoded_args as json) keeps NULL/invalid-JSON rows non-matching
+ * instead of erroring. The JSON path is a bound parameter, never interpolated.
+ */
+const argFilterCondition = (name: string, value: string | number | boolean): SQL => {
+  const extracted = sql`json_extract_string(try_cast(${contractEvents.decodedArgs} as json), ${`$.${name}`})`;
+
+  if (typeof value === 'boolean') {
+    return sql`lower(${extracted}) = ${value ? 'true' : 'false'}`;
+  }
+
+  const arms: SQL[] = [sql`lower(${extracted}) = ${String(value).toLowerCase()}`];
+  const numeric =
+    typeof value === 'number' ? value : NUMERIC_STRING.test(value) ? Number(value) : undefined;
+  if (numeric !== undefined && Number.isFinite(numeric)) {
+    arms.push(sql`try_cast(${extracted} as double) = ${numeric}`);
+  }
+  return sql`(${sql.join(arms, sql` or `)})`;
+};
+
+/**
+ * Build the WHERE conditions shared by the events list, count, and CSV export
+ * queries so all three agree on what a filter matches.
+ */
+export const buildEventFilterConditions = (
+  chainId: number,
+  address: `0x${string}`,
+  filters: EventQueryFilters,
+): SQL[] => {
+  const conditions: SQL[] = [
+    eq(contractEvents.chainId, chainId),
+    eq(contractEvents.contractAddress, address),
+  ];
+
+  if (filters.eventName) {
+    conditions.push(eq(contractEvents.eventName, filters.eventName));
+  }
+  if (filters.fromBlock !== undefined) {
+    conditions.push(gte(contractEvents.blockNumber, BigInt(filters.fromBlock)));
+  }
+  if (filters.toBlock !== undefined) {
+    conditions.push(lte(contractEvents.blockNumber, BigInt(filters.toBlock)));
+  }
+
+  for (const [name, value] of Object.entries(filters.argFilters ?? {})) {
+    if (JSON_PATH_SAFE_ARG_NAME.test(name)) {
+      conditions.push(argFilterCondition(name, value));
+    }
+  }
+
+  const topicColumns = [
+    ['topic0', contractEvents.topic0],
+    ['topic1', contractEvents.topic1],
+    ['topic2', contractEvents.topic2],
+    ['topic3', contractEvents.topic3],
+  ] as const;
+  for (const [key, column] of topicColumns) {
+    const topic = filters.topics?.[key];
+    if (topic) {
+      conditions.push(eq(column, topic.toLowerCase()));
+    }
+  }
+
+  return conditions;
+};
+
 export const getContractEvents = async (
   chainId: number,
   address: `0x${string}`,
@@ -513,25 +619,14 @@ export const getContractEvents = async (
     eventName?: string;
     fromBlock?: number;
     toBlock?: number;
+    argFilters?: EventArgFilters;
+    topics?: EventTopicFilters;
   } = {},
 ) => {
-  const { page = 1, pageSize = 50, eventName, fromBlock, toBlock } = options;
+  const { page = 1, pageSize = 50, ...filters } = options;
   const offset = (page - 1) * pageSize;
 
-  const conditions = [
-    eq(contractEvents.chainId, chainId),
-    eq(contractEvents.contractAddress, address),
-  ];
-
-  if (eventName) {
-    conditions.push(eq(contractEvents.eventName, eventName));
-  }
-  if (fromBlock !== undefined) {
-    conditions.push(gte(contractEvents.blockNumber, BigInt(fromBlock)));
-  }
-  if (toBlock !== undefined) {
-    conditions.push(lte(contractEvents.blockNumber, BigInt(toBlock)));
-  }
+  const conditions = buildEventFilterConditions(chainId, address, filters);
 
   const [events, countResult] = await Promise.all([
     db
@@ -547,12 +642,16 @@ export const getContractEvents = async (
       .where(and(...conditions)),
   ]);
 
+  // The adapter surfaces DuckDB count(*) as a string; normalize so callers
+  // get a real number (string totals break numeric comparisons downstream).
+  const total = Number(countResult[0]?.count ?? 0);
+
   return {
     events,
-    total: countResult[0]?.count ?? 0,
+    total,
     page,
     pageSize,
-    totalPages: Math.ceil((countResult[0]?.count ?? 0) / pageSize),
+    totalPages: Math.ceil(total / pageSize),
   };
 };
 
@@ -887,6 +986,13 @@ export const startIndexingRange = async (
     return { success: false, error: 'Range is already being indexed' };
   }
 
+  // Reserve the job key synchronously, before the first await below: two
+  // concurrent start calls must not both pass the has() check and run the
+  // indexing loop twice for the same range. Early-error returns release the
+  // reservation so the range stays startable.
+  const job = { abort: false };
+  activeJobs.set(key, job);
+
   const existing = await db
     .select()
     .from(indexingRanges)
@@ -900,17 +1006,16 @@ export const startIndexingRange = async (
     .limit(1);
 
   if (existing.length === 0) {
+    activeJobs.delete(key);
     return { success: false, error: 'Range not found' };
   }
 
   const range = existing[0];
 
   if (range.status === 'completed') {
+    activeJobs.delete(key);
     return { success: false, error: 'Range is already completed' };
   }
-
-  const job = { abort: false };
-  activeJobs.set(key, job);
 
   const updateRange = async (
     updates: Partial<{
@@ -1032,6 +1137,10 @@ export const pauseIndexingRange = (chainId: number, address: string, rangeId: nu
   if (job) job.abort = true;
 };
 
+// resumeIndexingRange re-validates the persisted range status (which requires
+// an await) and then delegates to startIndexingRange. The synchronous
+// activeJobs reservation at the top of startIndexingRange is the gate that
+// keeps two racing resumes from double-starting the same range.
 export const resumeIndexingRange = async (
   chainId: number,
   address: `0x${string}`,

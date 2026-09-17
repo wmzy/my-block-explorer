@@ -16,6 +16,7 @@ vi.mock('@/database/init', () => ({
 }));
 
 import { ContractSourceService } from '@/services/ContractSourceService';
+import { formatAddress } from '@/utils/address';
 
 describe('ContractSourceService - Proxy Detection', () => {
   let contractSourceService: ContractSourceService;
@@ -28,6 +29,7 @@ describe('ContractSourceService - Proxy Detection', () => {
       getStorageAt: vi.fn(),
       getBytecode: vi.fn(),
       getCode: vi.fn(),
+      readContract: vi.fn(),
     };
 
     mockGetClient.mockResolvedValue(mockClient);
@@ -96,7 +98,8 @@ describe('ContractSourceService - Proxy Detection', () => {
 
     it('should detect beacon proxy correctly', async () => {
       const proxyAddress = '0x1234567890123456789012345678901234567890';
-      const _beaconAddress = '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd';
+      const beaconAddress = '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd';
+      const beaconImplAddress = '0xef6958d7067013251100ce96a1181f7398ad52b5';
       const chainId = 1;
 
       // Mock isContractAddress to return true
@@ -109,12 +112,48 @@ describe('ContractSourceService - Proxy Detection', () => {
           '0x000000000000000000000000abcdefabcdefabcdefabcdefabcdefabcdefabcd',
         ); // beacon slot
 
+      // The beacon contract's implementation() resolves to the real implementation
+      mockClient.readContract.mockResolvedValue(beaconImplAddress);
+
       const result = await (contractSourceService as any).detectProxy(chainId, proxyAddress);
 
       expect(result).toEqual({
         isProxy: true,
         proxyType: 'beacon',
-        implementationAddress: '0xABcdEFABcdEFabcdEfAbCdefabcdeFABcDEFabCD', // EIP-55 checksum format
+        implementationAddress: formatAddress(beaconImplAddress), // the implementation() result, not the beacon address
+      });
+
+      // implementation() must be called on the beacon contract itself
+      expect(mockClient.readContract).toHaveBeenCalledWith(
+        expect.objectContaining({
+          address: beaconAddress,
+          functionName: 'implementation',
+        }),
+      );
+    });
+
+    it('should fall back to the beacon address when implementation() fails', async () => {
+      const proxyAddress = '0x1234567890123456789012345678901234567890';
+      const beaconAddress = '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd';
+      const chainId = 1;
+
+      vi.spyOn(contractSourceService as any, 'isContractAddress').mockResolvedValue(true);
+
+      mockClient.getStorageAt
+        .mockResolvedValueOnce('0x0000000000000000000000000000000000000000000000000000000000000000') // implementation slot
+        .mockResolvedValueOnce(
+          '0x000000000000000000000000abcdefabcdefabcdefabcdefabcdefabcdefabcd',
+        ); // beacon slot
+
+      // Beacon's implementation() reverts — keep the legacy behavior
+      mockClient.readContract.mockRejectedValue(new Error('execution reverted'));
+
+      const result = await (contractSourceService as any).detectProxy(chainId, proxyAddress);
+
+      expect(result).toEqual({
+        isProxy: true,
+        proxyType: 'beacon',
+        implementationAddress: formatAddress(beaconAddress), // EIP-55 checksum format
       });
     });
 
@@ -147,6 +186,86 @@ describe('ContractSourceService - Proxy Detection', () => {
 
       // Mock RPC error
       mockClient.getStorageAt.mockRejectedValue(new Error('RPC Error'));
+
+      const result = await (contractSourceService as any).detectProxy(chainId, proxyAddress);
+
+      expect(result).toEqual({
+        isProxy: false,
+      });
+    });
+
+    it('should detect slotless proxies via implementation() ABI fallback', async () => {
+      const proxyAddress = '0x1234567890123456789012345678901234567890';
+      const implementationAddress = '0xef6958d7067013251100ce96a1181f7398ad52b5';
+      const chainId = 1;
+
+      // All well-known storage slots are empty (not EIP-1967/ZeppelinOS)
+      mockClient.getStorageAt.mockResolvedValue(
+        '0x0000000000000000000000000000000000000000000000000000000000000000',
+      );
+      // Regular bytecode — not an EIP-1167 minimal proxy
+      mockClient.getCode.mockResolvedValue('0x608060405234801561001057600080fd5b50');
+
+      // Gnosis-Safe-style proxy exposing implementation() with no known slot
+      mockClient.readContract.mockResolvedValue(implementationAddress);
+
+      const isContractSpy = vi
+        .spyOn(contractSourceService as any, 'isContractAddress')
+        .mockResolvedValue(true);
+
+      const result = await (contractSourceService as any).detectProxy(chainId, proxyAddress);
+
+      expect(result).toEqual({
+        isProxy: true,
+        proxyType: 'unknown',
+        implementationAddress: formatAddress(implementationAddress),
+      });
+      // The resolved address is validated as a real contract
+      expect(isContractSpy).toHaveBeenCalledWith(chainId, formatAddress(implementationAddress));
+    });
+
+    it('should detect Gnosis Safe proxies via masterCopy() ABI fallback', async () => {
+      const proxyAddress = '0x1234567890123456789012345678901234567890';
+      const masterCopyAddress = '0xd9db270c1b5e3bd161e8c8503c55ceabee709552';
+      const chainId = 1;
+
+      mockClient.getStorageAt.mockResolvedValue(
+        '0x0000000000000000000000000000000000000000000000000000000000000000',
+      );
+      mockClient.getCode.mockResolvedValue('0x608060405234801561001057600080fd5b50');
+
+      // implementation() reverts, masterCopy() resolves the singleton address
+      mockClient.readContract
+        .mockRejectedValueOnce(new Error('execution reverted'))
+        .mockResolvedValueOnce(masterCopyAddress);
+
+      vi.spyOn(contractSourceService as any, 'isContractAddress').mockResolvedValue(true);
+
+      const result = await (contractSourceService as any).detectProxy(chainId, proxyAddress);
+
+      expect(result).toEqual({
+        isProxy: true,
+        proxyType: 'unknown',
+        implementationAddress: formatAddress(masterCopyAddress),
+      });
+      expect(mockClient.readContract).toHaveBeenCalledWith(
+        expect.objectContaining({ address: proxyAddress, functionName: 'masterCopy' }),
+      );
+    });
+
+    it('should return false when ABI fallback yields no valid address', async () => {
+      const proxyAddress = '0x1234567890123456789012345678901234567890';
+      const chainId = 1;
+
+      mockClient.getStorageAt.mockResolvedValue(
+        '0x0000000000000000000000000000000000000000000000000000000000000000',
+      );
+      mockClient.getCode.mockResolvedValue('0x608060405234801561001057600080fd5b50');
+
+      // implementation() returns garbage, masterCopy() returns nothing
+      mockClient.readContract.mockResolvedValueOnce('0xdeadbeef').mockResolvedValueOnce(undefined);
+
+      vi.spyOn(contractSourceService as any, 'isContractAddress').mockResolvedValue(true);
 
       const result = await (contractSourceService as any).detectProxy(chainId, proxyAddress);
 

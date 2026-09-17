@@ -467,11 +467,13 @@ export default function TopNavigation({
 
   const fetchSearchHistory = React.useCallback(async () => {
     try {
-      // Same reasoning as the hash-search call: go through the discovered
-      // api base instead of a raw same-origin fetch.
+      // Chain-scoped history (legacy rows without a chain stay visible
+      // server-side). Same discovered-api-base rule as the hash-search
+      // call: go through the shared http layer, not a raw same-origin
+      // fetch.
       const data = await get<{ history?: SearchHistoryItem[] }>(
         '/api/search/history',
-        { limit: 50 },
+        { limit: 50, chainId: currentChainId },
         api,
       );
       setSearchHistory(data.history ?? []);
@@ -479,7 +481,13 @@ export default function TopNavigation({
     } catch {
       // silently fail
     }
-  }, []);
+  }, [currentChainId]);
+
+  // A chain switch invalidates the loaded history; the next focus
+  // refetches with the new scope.
+  useEffect(() => {
+    setHistoryLoaded(false);
+  }, [currentChainId]);
 
   const handleSearchFocus = () => {
     setShowHistory(true);
@@ -551,7 +559,10 @@ export default function TopNavigation({
       return;
     }
 
-    goTo(`/search?q=${encodeURIComponent(query)}`);
+    // Free text goes to the full Search view, carrying the current chain
+    // as context (?chain=) so the global endpoint searches it and its
+    // suggestions link back to this chain's pages.
+    goTo(`/search?q=${encodeURIComponent(query)}&chain=${currentChainId}`);
   };
 
   const selectHistoryItem = (query: string) => {
@@ -617,7 +628,8 @@ export default function TopNavigation({
                 <button
                   type="button"
                   className={searchNoticeLink}
-                  onClick={() => goTo(`/search?q=${encodeURIComponent(missedQuery)}`)}
+                  onClick={() =>
+                    goTo(`/search?q=${encodeURIComponent(missedQuery)}&chain=${currentChainId}`)}
                 >
                   Search all networks
                 </button>

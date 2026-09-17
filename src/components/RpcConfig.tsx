@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { css } from '@linaria/core';
-import { Dialog, type DialogProps } from 'haze-ui';
+import { Dialog } from 'haze-ui';
 import { useControl, type Control } from 'react-use-control';
 import { toast } from 'sonner';
+import { ApiError } from '../util/apiError';
 import { getChainName } from '../config/chains';
 import { getRpcPresets, type RpcPreset } from '../config/rpcPresets';
 import {
@@ -363,7 +364,13 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
     }
     catch (error) {
       console.error('Failed to save config:', error);
-      toast.error('Failed to save configuration. Please check your network connection.');
+      // A 403 from the admin-token gate carries a server message that
+      // explains how to enable admin operations; show it verbatim.
+      toast.error(
+        error instanceof ApiError && error.status === 403 && error.message
+          ? error.message
+          : 'Failed to save configuration. Please check your network connection.',
+      );
     }
     finally {
       setLoading(false);
@@ -388,7 +395,11 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
     }
     catch (error) {
       console.error('Failed to remove config:', error);
-      toast.error('Failed to remove configuration.');
+      toast.error(
+        error instanceof ApiError && error.status === 403 && error.message
+          ? error.message
+          : 'Failed to remove configuration.',
+      );
     }
   };
 
@@ -405,7 +416,7 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
   if (!isOpen) return null;
 
   return (
-    <Dialog open={open as DialogProps['open']} onClose={handleClose} className={dialogContent}>
+    <Dialog open={open} onClose={handleClose} className={dialogContent}>
       <div className={headerStyles}>
         <h2>
           {chainName}

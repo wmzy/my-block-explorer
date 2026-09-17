@@ -1,20 +1,23 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { css } from '@linaria/core';
 import { z } from 'zod';
 import { Input } from 'haze-ui';
 import { navigate } from '@native-router/core';
-import { useRouter, useSearch } from '@native-router/react';
+import { useRouter, useSearch, TypedLink } from '@native-router/react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { ErrorState } from '@/components/ui/ErrorState';
-import { getChainName } from '@/config/chains';
+import { getChainName, POPULAR_CHAINS, searchChains } from '@/config/chains';
 import { fetchChainSearch, fetchSearch, type SearchResult } from '@/services/search';
-import { detectSearchType, sanitizeInput } from '@/utils/validation';
+import { sanitizeInput } from '@/utils/validation';
 import type { Block, Transaction, AddressInfo } from '@/types/blockchain';
 
 const searchSchema = z.object({
   q: z.string().optional().catch(undefined),
+  // Chain context the header search forwards (the chain the user was on
+  // when searching); the global endpoint echoes what it actually searched.
+  chain: z.coerce.number().int().positive().optional().catch(undefined),
 });
 
 const searchContainer = css`
@@ -82,6 +85,30 @@ const suggestionList = css`
   font-size: var(--haze-text-xs);
   color: var(--haze-color-text-secondary);
   line-height: 1.6;
+  display: flex;
+  flex-direction: column;
+  gap: var(--haze-space-1);
+`;
+
+const suggestionLink = css`
+  color: var(--haze-color-primary);
+  text-decoration: none;
+  font-family: var(--haze-font-mono);
+  overflow-wrap: anywhere;
+  width: fit-content;
+
+  &:hover {
+    text-decoration: underline;
+  }
+`;
+
+const chainFilterInput = css`
+  margin-bottom: var(--haze-space-3);
+`;
+
+const chainToggle = css`
+  margin-top: var(--haze-space-4);
+  width: 100%;
 `;
 
 const exampleQueries = [
@@ -98,34 +125,88 @@ const exampleQueries = [
   { label: 'Block Number', value: '18000000', type: 'block' },
 ];
 
+// Renders backend suggestion lines, turning the actionable ones into
+// TypedLinks on the searched chain's pages: 'Latest block number: N' links
+// to block N, bare 0x-hex lines after 'Recent transactions:' link to the
+// transaction page, and 'Latest block hash: …' reuses the block number from
+// its sibling line (the block detail route only accepts numbers). Every
+// other line stays plain text.
+const renderSuggestions = (suggestions: string[], chainId: number): ReactNode[] => {
+  let inTxSection = false;
+  let latestBlockNumber: string | null = null;
+
+  return suggestions.map((line) => {
+    const blockNumberMatch = line.match(/^Latest block number:\s*(\d+)$/);
+    if (blockNumberMatch) {
+      latestBlockNumber = blockNumberMatch[1];
+      return (
+        <TypedLink
+          key={line}
+          to={`/chain/${chainId}/block/${blockNumberMatch[1]}`}
+          className={suggestionLink}
+        >
+          {line}
+        </TypedLink>
+      );
+    }
+
+    if (/^Latest block hash:\s*0x[a-fA-F0-9]{64}$/.test(line) && latestBlockNumber !== null) {
+      return (
+        <TypedLink
+          key={line}
+          to={`/chain/${chainId}/block/${latestBlockNumber}`}
+          className={suggestionLink}
+        >
+          {line}
+        </TypedLink>
+      );
+    }
+
+    if (line === 'Recent transactions:') {
+      inTxSection = true;
+      return <div key={line}>{line}</div>;
+    }
+
+    if (inTxSection && /^0x[a-fA-F0-9]{64}$/.test(line)) {
+      return (
+        <TypedLink key={line} to={`/chain/${chainId}/tx/${line}`} className={suggestionLink}>
+          {line}
+        </TypedLink>
+      );
+    }
+
+    inTxSection = false;
+    return <div key={line}>{line}</div>;
+  });
+};
+
 export default function Search() {
   const [query, setQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [result, setResult] = useState<SearchResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [chainFilter, setChainFilter] = useState('');
+  const [showAllChains, setShowAllChains] = useState(false);
   const router = useRouter();
-  const { q: qParam } = useSearch(searchSchema);
+  const { q: qParam, chain } = useSearch(searchSchema);
   const deepLinkedRef = useRef(false);
 
   const handleSearch = async (searchQuery = query) => {
+    // Only truly empty input is rejected here: free text ('unknown' after
+    // sanitize/detect) still goes to the global endpoint, which runs the
+    // searchAll pass and answers with suggestions instead of a dead end.
+    // The ?chain= context scopes the search to the chain the user came
+    // from; without it the endpoint documents its own fallback.
     if (!searchQuery.trim()) return;
 
     const sanitized = sanitizeInput(searchQuery.trim());
-    const searchType = detectSearchType(sanitized);
-
-    if (searchType === 'unknown') {
-      setError(
-        'Invalid search format. Please enter a valid address, transaction hash, or block number.',
-      );
-      return;
-    }
 
     setIsSearching(true);
     setError(null);
     setResult(null);
 
     try {
-      const searchResult = await fetchSearch(sanitized);
+      const searchResult = await fetchSearch(sanitized, chain);
       if (!searchResult) return;
 
       setResult(searchResult);
@@ -201,6 +282,30 @@ export default function Search() {
     handleSearch(example);
   };
 
+  // Picker list: popular chains first (collapsed default), the full API
+  // list behind the toggle, and — when a filter is typed — searchChains
+  // over every supported network. searchChains matches on name/ID/symbol
+  // but may return id duplicates (viem export aliases); dedupe so card
+  // keys stay unique.
+  const allChains = result?.supportedChains ?? [];
+  const popularChainRefs = useMemo(
+    () => POPULAR_CHAINS.map(c => ({ chainId: c.id, name: c.name })),
+    [],
+  );
+  const filteredChainRefs = useMemo(() => {
+    const filter = chainFilter.trim();
+    if (!filter) return null;
+    const seen = new Set<number>();
+    return searchChains(filter)
+      .filter((c) => {
+        if (seen.has(c.id)) return false;
+        seen.add(c.id);
+        return true;
+      })
+      .map(c => ({ chainId: c.id, name: c.name }));
+  }, [chainFilter]);
+  const visibleChains = filteredChainRefs ?? (showAllChains ? allChains : popularChainRefs);
+
   return (
     <div className={searchContainer}>
       <Card>
@@ -249,9 +354,10 @@ export default function Search() {
           <ErrorState message={`No results found for "${result.query ?? query}"`} />
           {result.suggestions && result.suggestions.length > 0 && (
             <div className={suggestionList}>
-              {result.suggestions.map(suggestion => (
-                <div key={suggestion}>{suggestion}</div>
-              ))}
+              {renderSuggestions(
+                result.suggestions,
+                result.searchedChainId ?? chain ?? result.chainId ?? 1,
+              )}
             </div>
           )}
         </div>
@@ -272,8 +378,16 @@ export default function Search() {
               Please select a blockchain network to search:
             </p>
 
+            <div className={chainFilterInput}>
+              <Input
+                placeholder="Filter networks by name, ID, or symbol..."
+                value={chainFilter}
+                onChange={e => setChainFilter(e.target.value)}
+              />
+            </div>
+
             <div className={chainSelector}>
-              {result.supportedChains.map(chain => (
+              {visibleChains.map(chain => (
                 <div
                   key={chain.chainId}
                   className={chainOption}
@@ -287,6 +401,18 @@ export default function Search() {
                 </div>
               ))}
             </div>
+
+            {/* A typed filter searches every supported network directly, so
+                the popular/full toggle only applies to the unfiltered view. */}
+            {!chainFilter.trim() && (
+              <Button
+                variant="outline"
+                className={chainToggle}
+                onClick={() => setShowAllChains(!showAllChains)}
+              >
+                {showAllChains ? 'Show less' : `Show all ${allChains.length} networks`}
+              </Button>
+            )}
           </CardContent>
         </Card>
       )}

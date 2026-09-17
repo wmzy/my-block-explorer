@@ -20,7 +20,15 @@ import {
   createRangeRecent,
   createRangeFirst,
   createRangeContinue,
+  type EventArgFilters,
+  type EventTopicFilters,
 } from '../services/EventIndexingService';
+import {
+  buildEventsCsv,
+  EXPORT_MAX_ROWS,
+  fetchFilteredEventsForExport,
+  getFilteredEventCount,
+} from '../services/EventExportService';
 import { safeJsonResponse } from '../utils/serialization';
 import { contractSourceService } from '../services/ContractSourceService';
 
@@ -53,6 +61,73 @@ const validateChainAndAddress = (chainIdStr: string, addressStr: string) => {
   }
 
   return { chainId, address: address.toLowerCase() as `0x${string}` };
+};
+
+// Query params shared by the events list and export endpoints. Malformed
+// argFilters fail loudly with 400 instead of being ignored: silently dropping
+// them would present unfiltered results as if they were filtered.
+type ParsedEventFilters =
+  | (EventArgFiltersOwner & { topics?: EventTopicFilters })
+  | { error: { error: string; message: string }; status: 400 };
+
+type EventArgFiltersOwner = {
+  eventName?: string;
+  fromBlock?: number;
+  toBlock?: number;
+  argFilters?: EventArgFilters;
+};
+
+const parseEventFilters = (searchParams: URLSearchParams): ParsedEventFilters => {
+  const parseBlock = (key: string): number | undefined => {
+    const raw = searchParams.get(key);
+    if (raw === null || raw === '') return undefined;
+    const parsed = parseInt(raw, 10);
+    // Unparseable block numbers are treated as absent rather than 500-ing.
+    return Number.isNaN(parsed) ? undefined : parsed;
+  };
+
+  let argFilters: EventArgFilters | undefined;
+  const argFiltersRaw = searchParams.get('argFilters');
+  if (argFiltersRaw !== null && argFiltersRaw !== '') {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(argFiltersRaw);
+    } catch {
+      parsed = undefined;
+    }
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+      return {
+        error: {
+          error: 'Invalid argFilters',
+          message: 'argFilters must be a JSON object of {argName: string | number | boolean}',
+        },
+        status: 400 as const,
+      };
+    }
+    const scalarEntries = Object.entries(parsed as Record<string, unknown>).filter(
+      ([, v]) => typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean',
+    );
+    argFilters = Object.fromEntries(scalarEntries) as EventArgFilters;
+  }
+
+  const topics: EventTopicFilters = {};
+  for (const key of ['topic0', 'topic1', 'topic2', 'topic3'] as const) {
+    const raw = searchParams.get(key);
+    if (raw !== null && raw !== '') {
+      topics[key] = raw.toLowerCase();
+    }
+  }
+
+  const eventName = searchParams.get('eventName');
+
+  return {
+    eventName: eventName !== null && eventName !== '' ? eventName : undefined,
+    fromBlock: parseBlock('fromBlock'),
+    toBlock: parseBlock('toBlock'),
+    argFilters,
+    topics:
+      topics.topic0 ?? topics.topic1 ?? topics.topic2 ?? topics.topic3 ? topics : undefined,
+  };
 };
 
 // GET /chains/:chainId/contracts/:address/events/statistics
@@ -130,17 +205,18 @@ app.get('/chains/:chainId/contracts/:address/events', async c => {
 
   const page = Math.max(1, parseInt(c.req.query('page') ?? '1'));
   const pageSize = Math.min(Math.max(1, parseInt(c.req.query('pageSize') ?? '50')), 1000);
-  const eventName = c.req.query('eventName') ?? undefined;
-  const fromBlock = c.req.query('fromBlock') ? parseInt(c.req.query('fromBlock')!) : undefined;
-  const toBlock = c.req.query('toBlock') ? parseInt(c.req.query('toBlock')!) : undefined;
+  const parsedFilters = parseEventFilters(new URL(c.req.url).searchParams);
+  if ('error' in parsedFilters) return c.json(parsedFilters.error, parsedFilters.status);
 
   try {
     const data = await getContractEvents(chainId, address, {
       page,
       pageSize,
-      eventName,
-      fromBlock,
-      toBlock,
+      eventName: parsedFilters.eventName,
+      fromBlock: parsedFilters.fromBlock,
+      toBlock: parsedFilters.toBlock,
+      argFilters: parsedFilters.argFilters,
+      topics: parsedFilters.topics,
     });
 
     c.header('X-Data-Source', 'database');
@@ -169,6 +245,53 @@ app.get('/chains/:chainId/contracts/:address/events', async c => {
         pageSize,
         totalPages: 0,
         timestamp: new Date().toISOString(),
+      },
+      500,
+    );
+  }
+});
+
+// GET /chains/:chainId/contracts/:address/events/export — CSV of the filtered set
+app.get('/chains/:chainId/contracts/:address/events/export', async c => {
+  const result = validateChainAndAddress(c.req.param('chainId'), c.req.param('address'));
+  if ('error' in result) return c.json(result.error, result.status);
+
+  const { chainId, address } = result;
+
+  const parsedFilters = parseEventFilters(new URL(c.req.url).searchParams);
+  if ('error' in parsedFilters) return c.json(parsedFilters.error, parsedFilters.status);
+
+  try {
+    // Refuse instead of truncating: a silently capped CSV would look complete.
+    const count = await getFilteredEventCount(chainId, address, parsedFilters);
+    if (count > EXPORT_MAX_ROWS) {
+      return c.json(
+        {
+          error: 'Export limit exceeded',
+          message: 'Export limited to 100,000 rows; narrow your filters',
+        },
+        400,
+      );
+    }
+
+    const rows = await fetchFilteredEventsForExport(chainId, address, parsedFilters);
+    const csv = buildEventsCsv(rows);
+
+    // ISO timestamp with filesystem-hostile characters stripped.
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    c.header('Content-Type', 'text/csv; charset=utf-8');
+    c.header(
+      'Content-Disposition',
+      `attachment; filename="events-${chainId}-${address}-${timestamp}.csv"`,
+    );
+    c.header('Cache-Control', 'no-store');
+    return c.body(csv);
+  } catch (error) {
+    logger.error({ err: error }, 'Event export API error');
+    return c.json(
+      {
+        error: 'Failed to export events',
+        message: error instanceof Error ? error.message : 'Unknown error',
       },
       500,
     );
@@ -543,29 +666,60 @@ app.post('/chains/:chainId/contracts/:address/events/ranges/:rangeId/start', asy
       );
     }
 
-    const response = await startIndexingRange(chainId, address, rangeId, abi as Abi);
-
-    if (!response.success) {
+    // Fail fast on invalid states so clients still get actionable 400s
+    // before the (potentially hours-long) indexing work is kicked off.
+    if (getActiveRangeJob(chainId, address, rangeId)) {
       return c.json(
         {
           error: 'Failed to start indexing range',
-          message: response.error,
+          message: 'Range is already being indexed',
         },
         400,
       );
     }
 
+    const ranges = await getIndexingRanges(chainId, address);
+    const range = ranges.find(r => r.rangeId === rangeId);
+
+    if (!range) {
+      return c.json(
+        {
+          error: 'Failed to start indexing range',
+          message: 'Range not found',
+        },
+        400,
+      );
+    }
+
+    if (range.status === 'completed') {
+      return c.json(
+        {
+          error: 'Failed to start indexing range',
+          message: 'Range is already completed',
+        },
+        400,
+      );
+    }
+
+    // Indexing a range can run for hours: acknowledge immediately and let
+    // the loop continue in the background. Progress is observable via the
+    // ranges and indexing-status endpoints.
+    void startIndexingRange(chainId, address, rangeId, abi as Abi).catch(err =>
+      logger.error({ err }, 'Background indexing failed'),
+    );
+
     c.header('X-Chain-Name', getChainName(chainId));
 
     return c.json(
-      safeJsonResponse({
+      {
         chainId,
-        chainName: getChainName(chainId),
         contractAddress: address,
         rangeId,
+        started: true,
         status: 'indexing',
-        timestamp: new Date().toISOString(),
-      }),
+        message: 'Indexing started in background; poll ranges or indexing-status for progress',
+      },
+      202,
     );
   } catch (error) {
     logger.error({ err: error }, 'Start indexing range API error');
@@ -719,29 +873,60 @@ app.post('/chains/:chainId/contracts/:address/events/ranges/:rangeId/resume', as
       );
     }
 
-    const response = await resumeIndexingRange(chainId, address, rangeId, abi as Abi);
-
-    if (!response.success) {
+    // Fail fast on invalid states so clients still get actionable 400s
+    // before the (potentially hours-long) indexing work is kicked off.
+    if (getActiveRangeJob(chainId, address, rangeId)) {
       return c.json(
         {
           error: 'Failed to resume indexing range',
-          message: response.error,
+          message: 'Range is already being indexed',
         },
         400,
       );
     }
 
+    const ranges = await getIndexingRanges(chainId, address);
+    const range = ranges.find(r => r.rangeId === rangeId);
+
+    if (!range) {
+      return c.json(
+        {
+          error: 'Failed to resume indexing range',
+          message: 'Range not found',
+        },
+        400,
+      );
+    }
+
+    if (range.status !== 'paused' && range.status !== 'error') {
+      return c.json(
+        {
+          error: 'Failed to resume indexing range',
+          message: 'Can only resume paused or errored ranges',
+        },
+        400,
+      );
+    }
+
+    // Resuming re-runs the remaining (potentially hours-long) indexing work:
+    // acknowledge immediately and let the loop continue in the background.
+    // Progress is observable via the ranges and indexing-status endpoints.
+    void resumeIndexingRange(chainId, address, rangeId, abi as Abi).catch(err =>
+      logger.error({ err }, 'Background indexing failed'),
+    );
+
     c.header('X-Chain-Name', getChainName(chainId));
 
     return c.json(
-      safeJsonResponse({
+      {
         chainId,
-        chainName: getChainName(chainId),
         contractAddress: address,
         rangeId,
+        started: true,
         status: 'indexing',
-        timestamp: new Date().toISOString(),
-      }),
+        message: 'Indexing started in background; poll ranges or indexing-status for progress',
+      },
+      202,
     );
   } catch (error) {
     logger.error({ err: error }, 'Resume indexing range API error');

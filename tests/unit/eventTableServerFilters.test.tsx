@@ -1,0 +1,111 @@
+/**
+ * Focused component tests: EventTable sends ABI arg filters to the server
+ * (argFilters query param) instead of filtering the loaded page client-side,
+ * and the Export CSV link appears only when the server reports results.
+ */
+
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import type { AbiEvent } from 'viem';
+import EventTable from '@/components/events/EventTable';
+import { get } from '@/util/http';
+
+vi.mock('@/util/http', () => ({
+  get: vi.fn(),
+}));
+
+const transferEvent = {
+  type: 'event',
+  name: 'Transfer',
+  inputs: [{ name: 'owner', type: 'address', indexed: true }],
+} as unknown as AbiEvent;
+
+const ADDRESS = '0x1234567890123456789012345678901234567890';
+
+const mockGet = (total: number) => {
+  vi.mocked(get).mockResolvedValue({
+    events: [
+      {
+        blockNumber: 1,
+        blockTimestamp: 1700000000,
+        transactionHash: '0xabc',
+        eventName: 'Transfer',
+        decodedArgs: '{"owner":"0xabc"}',
+      },
+    ],
+    total,
+    page: 1,
+    totalPages: 1,
+  });
+};
+
+const renderTable = () =>
+  render(
+    <EventTable
+      chainId={1}
+      contractAddress={ADDRESS as `0x${string}`}
+      abiEvents={[transferEvent]}
+      enableDynamicFiltering
+    />,
+  );
+
+describe('EventTable server-side filtering and export', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('shows the Export CSV link only when the server reports results', async () => {
+    mockGet(3);
+    renderTable();
+
+    const link = await screen.findByRole('link', { name: 'Export CSV' });
+    expect(link.getAttribute('href')).toBe(
+      `/api/chains/1/contracts/${ADDRESS}/events/export`,
+    );
+    expect(link).toHaveAttribute('download');
+  });
+
+  it('hides the Export CSV link when there are no results', async () => {
+    mockGet(0);
+    renderTable();
+
+    await waitFor(() => {
+      expect(screen.getByText('未找到事件')).toBeInTheDocument();
+    });
+    expect(screen.queryByRole('link', { name: 'Export CSV' })).toBeNull();
+  });
+
+  it('sends applied ABI arg filters to the server and into the export URL', async () => {
+    mockGet(3);
+    renderTable();
+    await screen.findByRole('link', { name: 'Export CSV' });
+
+    fireEvent.change(screen.getByLabelText('Event Type'), { target: { value: 'Transfer' } });
+    const ownerInput = await screen.findByLabelText(/owner/);
+    fireEvent.change(ownerInput, { target: { value: '0xabc' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Apply' }));
+
+    await waitFor(() => {
+      const url = vi.mocked(get).mock.calls.at(-1)?.[0] ?? '';
+      expect(url).toContain(
+        `argFilters=${encodeURIComponent('{"owner":"0xabc"}')}`,
+      );
+    });
+
+    // The export link carries the same filters; the browser filename comes
+    // from the backend Content-Disposition header.
+    const link = screen.getByRole('link', { name: 'Export CSV' });
+    expect(link.getAttribute('href')).toBe(
+      `/api/chains/1/contracts/${ADDRESS}/events/export?eventName=Transfer&argFilters=${encodeURIComponent('{"owner":"0xabc"}')}`,
+    );
+  });
+
+  it('hints that filtering runs on the full indexed set', async () => {
+    mockGet(1);
+    renderTable();
+
+    expect(
+      await screen.findByText('Filtering runs on the full indexed set'),
+    ).toBeInTheDocument();
+  });
+});

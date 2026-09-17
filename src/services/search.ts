@@ -16,6 +16,8 @@ export type SearchResult = {
   type: string;
   query?: string;
   chainId?: number;
+  /** Chain the global endpoint actually searched (echoed for clients). */
+  searchedChainId?: number;
   needsChain?: boolean;
   supportedChains?: SupportedChainRef[];
   suggestions?: string[];
@@ -25,12 +27,13 @@ export type SearchResult = {
 
 export function fetchSearch(
   query: string,
+  chainId?: number,
   signal?: AbortSignal,
 ): Promise<SearchResult | undefined> {
   if (query.length === 0) return Promise.resolve(undefined);
   return get<SearchResult>(
     '/api/search',
-    { q: query },
+    { q: query, chainId },
     withSignal(api, signal),
   );
 }

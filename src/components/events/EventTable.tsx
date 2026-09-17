@@ -3,10 +3,12 @@
  * Integrates with events API endpoints for real-time data display
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { styled } from '@linaria/react';
 import { Address, formatEther, AbiEvent } from 'viem';
 import { EventFilterPanel, type EventFilterState } from './EventFilterPanel';
+import { get } from '@/util/http';
+import { getApiBase } from '@/util/apiBase';
 
 // Types
 type EventData = {
@@ -222,6 +224,24 @@ const PaginationInput = styled.input`
     outline: none;
     border-color: #3b82f6;
     box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+  }
+`;
+
+const ExportCsvButton = styled.a`
+  padding: 8px 12px;
+  margin-left: 8px;
+  border: 1px solid #3b82f6;
+  background: #3b82f6;
+  color: white;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  text-decoration: none;
+  white-space: nowrap;
+
+  &:hover {
+    background: #2563eb;
+    border-color: #2563eb;
   }
 `;
 
@@ -634,32 +654,14 @@ const paginateData = (data: EventData[], page: number, limit: number): EventData
   return data.slice(startIndex, endIndex);
 };
 
-const applyAbiFilters = (events: EventData[], abiFilters?: Record<string, string>): EventData[] => {
-  if (!abiFilters || Object.keys(abiFilters).length === 0) {
-    return events;
-  }
-
-  return events.filter(event => {
-    for (const [key, filterValue] of Object.entries(abiFilters)) {
-      if (!filterValue) continue;
-
-      const eventValue = event[key];
-      if (eventValue === undefined) return false;
-
-      const eventValueStr = String(eventValue).toLowerCase();
-      const filterValueLower = filterValue.toLowerCase();
-
-      if (typeof eventValue === 'string' && eventValue.startsWith('0x')) {
-        if (!eventValueStr.includes(filterValueLower)) return false;
-      } else if (typeof eventValue === 'boolean') {
-        const boolStr = eventValue ? 'true' : 'false';
-        if (boolStr !== filterValueLower) return false;
-      } else {
-        if (eventValueStr !== filterValueLower) return false;
-      }
-    }
-    return true;
-  });
+// Serialize the active (non-empty) ABI arg filters as the `argFilters` query
+// param consumed by the events API; undefined when nothing is set.
+const argFiltersQueryParam = (abiFilters?: Record<string, string>): string | undefined => {
+  if (!abiFilters) return undefined;
+  const active = Object.fromEntries(
+    Object.entries(abiFilters).filter(([, value]) => value !== ''),
+  );
+  return Object.keys(active).length > 0 ? JSON.stringify(active) : undefined;
 };
 
 // Default sort options
@@ -825,7 +827,10 @@ export const EventTable: React.FC<EventTableProps> = ({
           }
         });
 
-        // Add dynamic filters (backend only supports eventName, fromBlock, toBlock)
+        // Dynamic filters: eventName + block range ride along as dedicated
+        // params, and ABI arg filters are serialized as `argFilters` JSON so
+        // matching runs server-side over the full indexed set instead of only
+        // the loaded page.
         if (dynamicFilters.eventName) {
           queryParams.set('eventName', dynamicFilters.eventName);
         }
@@ -835,21 +840,14 @@ export const EventTable: React.FC<EventTableProps> = ({
         if (dynamicFilters.toBlock !== undefined) {
           queryParams.set('toBlock', dynamicFilters.toBlock.toString());
         }
+        const argFilters = argFiltersQueryParam(dynamicFilters.abiFilters);
+        if (argFilters) {
+          queryParams.set('argFilters', argFilters);
+        }
 
         const url = `/api/chains/${chainId}/contracts/${contractAddress}/events?${queryParams}`;
 
-        const response = await fetch(url, {
-          method: 'GET',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-        });
-
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-
-        const data = (await response.json()) as {
+        const data = await get<{
           events: Array<{
             decodedArgs?: string | Record<string, unknown>;
             blockTimestamp?: number | string | null;
@@ -858,7 +856,7 @@ export const EventTable: React.FC<EventTableProps> = ({
           total?: number;
           page?: number;
           totalPages?: number;
-        };
+        }>(url);
 
         const normalizedEvents = (data.events ?? []).map(e => {
           const args =
@@ -1145,8 +1143,10 @@ export const EventTable: React.FC<EventTableProps> = ({
     if (shouldUseClientSideSort) {
       const startTime = performance.now();
 
-      const filteredData = applyAbiFilters(allEvents, dynamicFilters.abiFilters);
-      const sortedData = clientSideSort(filteredData, multiSort, sort);
+      // Arg filtering runs server-side (argFilters query param); this block
+      // only sorts/paginates the loaded rows for display. The server-reported
+      // pagination total stays authoritative.
+      const sortedData = clientSideSort(allEvents, multiSort, sort);
       const paginatedData = paginateData(sortedData, pagination.page, pagination.limit);
 
       const sortTime = performance.now() - startTime;
@@ -1157,18 +1157,11 @@ export const EventTable: React.FC<EventTableProps> = ({
       setEvents(paginatedData);
       setSortingMetrics({
         sortTime,
-        dataSize: filteredData.length,
+        dataSize: sortedData.length,
         algorithm: recentMetrics['optimized'] ? 'optimized' : 'standard',
         cacheHit: sortTime < 5,
         avgMetrics,
       });
-
-      setPagination(prev => ({
-        ...prev,
-        total: filteredData.length,
-        hasMore: pagination.page * pagination.limit < filteredData.length,
-        totalPages: Math.ceil(filteredData.length / pagination.limit),
-      }));
     } else {
       setEvents(allEvents);
       setSortingMetrics(null);
@@ -1180,7 +1173,6 @@ export const EventTable: React.FC<EventTableProps> = ({
     pagination.page,
     pagination.limit,
     shouldUseClientSideSort,
-    dynamicFilters,
   ]);
 
   const handleRetry = () => {
@@ -1208,6 +1200,28 @@ export const EventTable: React.FC<EventTableProps> = ({
     },
     [onFiltersChange, fetchEvents],
   );
+
+  // CSV export link carrying the same filters as the table query. The backend
+  // replies with Content-Disposition, so the browser saves it as
+  // events-{chainId}-{address}-{timestamp}.csv.
+  const exportHref = useMemo(() => {
+    const params = new URLSearchParams();
+    if (dynamicFilters.eventName) {
+      params.set('eventName', dynamicFilters.eventName);
+    }
+    if (dynamicFilters.fromBlock !== undefined) {
+      params.set('fromBlock', dynamicFilters.fromBlock.toString());
+    }
+    if (dynamicFilters.toBlock !== undefined) {
+      params.set('toBlock', dynamicFilters.toBlock.toString());
+    }
+    const argFilters = argFiltersQueryParam(dynamicFilters.abiFilters);
+    if (argFilters) {
+      params.set('argFilters', argFilters);
+    }
+    const query = params.toString();
+    return `${getApiBase()}/api/chains/${chainId}/contracts/${contractAddress}/events/export${query ? `?${query}` : ''}`;
+  }, [chainId, contractAddress, dynamicFilters]);
 
   // Render loading state
   if (loading && events.length === 0) {
@@ -1568,6 +1582,12 @@ export const EventTable: React.FC<EventTableProps> = ({
                 >
                   ⇥
                 </PaginationButton>
+              )}
+
+              {pagination.total > 0 && (
+                <ExportCsvButton href={exportHref} download>
+                  Export CSV
+                </ExportCsvButton>
               )}
             </PaginationControls>
           </PaginationContainer>

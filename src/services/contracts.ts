@@ -15,12 +15,14 @@ export type ContractFunctions = Record<string, unknown>;
 export type ContractCreation = Record<string, unknown>;
 export type ContractReadResult = Record<string, unknown>;
 
-// The endpoint answers {found, layout, ...} on 200 (a missing layout is a 404
-// mapped to ApiError by the http layer), so the fetch unwraps to the layout
-// itself — the behavior the old src/hooks/useStorageLayout.ts implemented.
+// The endpoint answers {found, layout, source, ...} on 200 (a missing layout
+// is a 404 mapped to ApiError by the http layer). The hook keeps the full
+// envelope — the Storage tab needs `source` to tell explorer-verified
+// layouts apart from evmole bytecode inference.
 export type StorageLayoutResponse = {
   found: boolean;
   layout?: StorageLayout;
+  source?: 'etherscan' | 'sourcify' | 'fetcher' | 'evmole';
 };
 
 export function fetchContractSource(
@@ -79,13 +81,13 @@ export function fetchStorageLayout(
   chainId: number,
   address: string,
   signal?: AbortSignal,
-): Promise<StorageLayout | undefined> {
+): Promise<StorageLayoutResponse | undefined> {
   if (!(chainId > 0) || address.length === 0) return Promise.resolve(undefined);
   return get<StorageLayoutResponse>(
     `/api/chains/${chainId}/contracts/${address}/storage-layout`,
     undefined,
     withSignal(api, signal),
-  ).then(data => data.layout);
+  );
 }
 
 // Write side (no hook): the ABI-driven forms call this directly.
@@ -126,7 +128,7 @@ export const contractCreationCache = createQueryCache<
 >('contracts-creation', IMMUTABLE_CACHE_TIME);
 
 export const storageLayoutCache = createQueryCache<
-  StorageLayout | undefined,
+  StorageLayoutResponse | undefined,
   [number, string]
 >('contracts-storage-layout', IMMUTABLE_CACHE_TIME);
 

@@ -16,9 +16,14 @@ const logger = createLogger('search-routes');
 
 app.get('/search/history', async (c) => {
   const limit = Math.min(parseInt(c.req.query('limit') ?? '50'), 50);
+  // Optional chain scope: absent or invalid falls back to the global
+  // history. Legacy rows (no chain recorded) stay visible either way.
+  const chainIdParam = c.req.query('chainId');
+  const parsedChainId = chainIdParam ? parseInt(chainIdParam, 10) : NaN;
+  const chainId = !isNaN(parsedChainId) && parsedChainId > 0 ? parsedChainId : undefined;
 
   try {
-    const history = await searchService.getSearchHistory(0, limit);
+    const history = await searchService.getSearchHistory(chainId, limit);
     return c.json({ history, timestamp: new Date().toISOString() });
   }
   catch (error) {
@@ -60,12 +65,23 @@ app.get('/search', async (c) => {
       });
     }
 
-    const chainIds = getSupportedChainIds();
-    const defaultChainId = chainIds[0] ?? 1;
+    // Chain scope for the remaining query types (addresses, free text):
+    // an explicit ?chainId= wins when supported; otherwise mainnet, else
+    // the head of the sorted chain list. The chosen chain is echoed as
+    // searchedChainId so clients know exactly what was searched.
+    const chainIdParam = c.req.query('chainId');
+    const requestedChainId = chainIdParam ? parseInt(chainIdParam, 10) : NaN;
+    const searchedChainId
+      = !isNaN(requestedChainId) && isChainSupported(requestedChainId)
+        ? requestedChainId
+        : isChainSupported(1)
+          ? 1
+          : (getSortedChains()[0]?.id ?? 1);
 
-    const result = await searchService.search(defaultChainId, sanitized);
+    const result = await searchService.search(searchedChainId, sanitized);
     return c.json({
       ...result,
+      searchedChainId,
       timestamp: new Date().toISOString(),
     });
   }

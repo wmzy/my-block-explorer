@@ -1,4 +1,5 @@
 import { getRpcClient, withRetry } from './rpcClient';
+import { get } from '@/util/http';
 import type { Abi, Address } from 'viem';
 
 export type ContractFunction = {
@@ -227,14 +228,15 @@ async function fetchContractSource(
   implementationContract?: { abi: string };
 } | null> {
   try {
-    const response = await fetch(`/api/chains/${chainId}/contracts/${contractAddress}/source`);
+    const data = await get<{
+      contractSource?: {
+        abi: string;
+        isProxy?: boolean;
+        implementationContract?: { abi: string };
+      };
+    }>(`/api/chains/${chainId}/contracts/${contractAddress}/source`);
 
-    if (!response.ok) {
-      return null;
-    }
-
-    const data = await response.json();
-    return data.contractSource;
+    return data.contractSource ?? null;
   } catch (error) {
     console.error('Failed to fetch contract source:', error);
     return null;

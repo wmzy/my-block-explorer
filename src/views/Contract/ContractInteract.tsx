@@ -112,12 +112,14 @@ export function ContractInteract({
   contractAddress,
   contractSource,
   contractTarget,
+  abiOverride,
   mode = 'all',
 }: {
   chainId: number;
   contractAddress: string;
   contractSource: ContractSource | null;
   contractTarget?: 'proxy' | 'impl';
+  abiOverride?: string;
   mode?: 'all' | 'read' | 'write';
 }) {
   const [allFunctions, setAllFunctions] = useState<EnhancedContractFunction[]>([]);
@@ -134,7 +136,7 @@ export function ContractInteract({
   const [debouncedNameFilter, setDebouncedNameFilter] = useState('');
 
   useEffect(() => {
-    if (contractSource?.abi) {
+    if (contractSource?.abi || abiOverride) {
       loadContractFunctions();
     } else {
       // Nothing to parse without an ABI: stop loading so the
@@ -143,7 +145,7 @@ export function ContractInteract({
       setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reload only when the contract data itself changes
-  }, [chainId, contractAddress, contractSource]);
+  }, [chainId, contractAddress, contractSource, abiOverride]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -151,6 +153,24 @@ export function ContractInteract({
     }, 300);
     return () => clearTimeout(timer);
   }, [filters.name]);
+
+  // ABI that a read/simulate call is routed against. For a real proxy pair
+  // the target selector decides: 'proxy' targets the proxy's own ABI (its
+  // admin functions), anything else targets the implementation ABI (the
+  // pre-existing default). Without a proxy pair the base ABI wins — the
+  // override standing in for a missing server-supplied ABI.
+  const resolveTargetABI = (): string | undefined => {
+    const baseABI = abiOverride ?? contractSource?.abi;
+    const implABI =
+      contractSource?.isProxy && contractSource.implementationContract?.abi
+        ? contractSource.implementationContract.abi
+        : undefined;
+
+    if (implABI) {
+      return contractTarget === 'proxy' ? baseABI : implABI;
+    }
+    return baseABI;
+  };
 
   const loadContractFunctions = async () => {
     try {
@@ -160,7 +180,7 @@ export function ContractInteract({
         return;
       }
 
-      const proxyABI = contractSource.abi;
+      const proxyABI = abiOverride ?? contractSource.abi;
       const implABI =
         contractSource.isProxy && contractSource.implementationContract
           ? contractSource.implementationContract.abi
@@ -196,10 +216,7 @@ export function ContractInteract({
         return;
       }
 
-      const targetABI =
-        contractSource.isProxy && contractSource.implementationContract
-          ? contractSource.implementationContract.abi
-          : contractSource.abi;
+      const targetABI = resolveTargetABI();
 
       const result = await readContract({
         chainId,
@@ -247,10 +264,7 @@ export function ContractInteract({
         return;
       }
 
-      const targetABI =
-        contractSource.isProxy && contractSource.implementationContract
-          ? contractSource.implementationContract.abi
-          : contractSource.abi;
+      const targetABI = resolveTargetABI();
 
       const result = await simulateContract({
         chainId,
@@ -303,10 +317,7 @@ export function ContractInteract({
     );
   }
 
-  const targetABI =
-    contractSource?.isProxy && contractSource?.implementationContract
-      ? contractSource.implementationContract.abi
-      : contractSource?.abi;
+  const targetABI = resolveTargetABI();
 
   if (!contractSource || !targetABI) {
     return (
@@ -337,7 +348,9 @@ export function ContractInteract({
             color: '#1a56db',
           }}
         >
-          Interacting with implementation contract via proxy address.
+          {contractTarget === 'proxy'
+            ? 'Interacting with the proxy contract itself (admin functions).'
+            : 'Interacting with implementation contract via proxy address.'}
           {contractSource.implementationAddress && (
             <span style={{ marginLeft: '8px', fontFamily: 'monospace', fontSize: '12px' }}>
               Implementation: {contractSource.implementationAddress}

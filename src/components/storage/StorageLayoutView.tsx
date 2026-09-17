@@ -92,6 +92,10 @@ const buttonStyle = css`
 export type StorageLayoutViewProps = {
   chainId: number;
   address: string;
+  /** Address slot values are read from; defaults to `address`. For proxies
+   * this stays the proxy address even when `address` points at the
+   * implementation (implementation storage itself is empty/irrelevant). */
+  valueAddress?: string;
   layout: StorageLayout;
 };
 
@@ -103,7 +107,7 @@ export function getSlotCode(type: 'hex' | 'bigint', slotCode?: SlotCode): string
   return `toHex(${c})`;
 }
 
-export function StorageLayoutView({ chainId, address, layout }: StorageLayoutViewProps) {
+export function StorageLayoutView({ chainId, address, valueAddress, layout }: StorageLayoutViewProps) {
   const { storage, types } = layout;
   const [showValues, setShowValues] = useState(false);
 
@@ -139,7 +143,7 @@ export function StorageLayoutView({ chainId, address, layout }: StorageLayoutVie
                   member={member}
                   types={types}
                   chainId={chainId}
-                  address={address}
+                  address={valueAddress ?? address}
                   baseSlot={slot as Hex}
                   showValues={showValues}
                 />

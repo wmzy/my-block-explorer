@@ -4,8 +4,14 @@ import { eventPerformanceOptimizerManager } from '../services/EventPerformanceOp
 
 const logger = createLogger('performance-routes');
 import { getChainName } from '../config/chains';
+import { requireAdminToken } from '../middleware/admin-token';
 
 const app = new Hono();
+
+// Performance endpoints expose internal metrics and cache controls; all of
+// them are server-operations tooling with no frontend consumer, so the
+// whole subtree requires the admin token.
+app.use('/performance/*', requireAdminToken);
 
 app.get('/performance/events', async (c) => {
   try {

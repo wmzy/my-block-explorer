@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { css, cx } from '@linaria/core';
 import type { Address } from 'viem';
+import { get } from '@/util/http';
 
 type IndexingStatus = {
   chainId: number;
@@ -116,11 +117,9 @@ export const EventStatistics = ({
   const fetchStatus = useCallback(async () => {
     try {
       setLoading(true);
-      const res = await fetch(
+      const data = await get<IndexingStatus>(
         `/api/chains/${chainId}/contracts/${contractAddress}/events/indexing-status`,
       );
-      if (!res.ok) return;
-      const data: IndexingStatus = await res.json();
       setStats(data);
 
       if (data.totalEventsIndexed > prevEventsRef.current) {

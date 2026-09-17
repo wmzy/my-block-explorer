@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { CSSProperties } from 'react';
+import { toast } from 'sonner';
 import { get, post } from '@/util/http';
 
 type DetectedIde = {
@@ -8,8 +9,10 @@ type DetectedIde = {
 };
 
 // "Open in IDE" action: detected IDEs come from the backend, opening fires
-// the write-side POST. Zero IDEs renders a disabled button, one renders a
-// direct action, several a dropdown.
+// the write-side POST. Zero IDEs (or a failed detection) renders nothing —
+// the action is impossible without a local IDE, and honest absence beats a
+// permanently disabled button; one renders a direct action, several a
+// dropdown.
 export function OpenInIdeButton({ chainId, address }: { chainId: number; address: string }) {
   const [detectedIdes, setDetectedIdes] = useState<DetectedIde[]>([]);
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -44,8 +47,14 @@ export function OpenInIdeButton({ chainId, address }: { chainId: number; address
         await post(`/api/chains/${chainId}/contracts/${address}/open-in-ide`, { ide: ideId });
         setOpened(true);
         setTimeout(() => setOpened(false), 2000);
-      } catch {
-        // Error silently
+      } catch (error) {
+        // Remote users hit this when no local IDE bridge answers: surface
+        // the failure instead of swallowing it.
+        toast.error(
+          error instanceof Error && error.message
+            ? `Failed to open in IDE: ${error.message}`
+            : 'Failed to open in IDE. Please check that your IDE is running.',
+        );
       } finally {
         setOpening(false);
       }
@@ -70,11 +79,7 @@ export function OpenInIdeButton({ chainId, address }: { chainId: number; address
   };
 
   if (detectedIdes.length === 0) {
-    return (
-      <button {...{ style: { ...baseBtnStyle, opacity: 0.5, cursor: 'not-allowed' } }} disabled>
-        Open in IDE
-      </button>
-    );
+    return null;
   }
 
   if (detectedIdes.length === 1) {

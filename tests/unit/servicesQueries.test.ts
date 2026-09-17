@@ -60,11 +60,15 @@ describe('service fetch functions', () => {
     expect(mockedGet).not.toHaveBeenCalled();
   });
 
-  it('fetchStorageLayout unwraps the {found, layout} envelope', async () => {
+  it('fetchStorageLayout keeps the {found, layout, source} envelope (source drives the evmole badge)', async () => {
     const layout = { storage: [], types: {} };
-    mockedGet.mockResolvedValue({ found: true, layout });
+    mockedGet.mockResolvedValue({ found: true, layout, source: 'evmole' });
 
-    await expect(fetchStorageLayout(1, '0xabc')).resolves.toEqual(layout);
+    await expect(fetchStorageLayout(1, '0xabc')).resolves.toEqual({
+      found: true,
+      layout,
+      source: 'evmole',
+    });
     expect(mockedGet).toHaveBeenCalledWith(
       '/api/chains/1/contracts/0xabc/storage-layout',
       undefined,

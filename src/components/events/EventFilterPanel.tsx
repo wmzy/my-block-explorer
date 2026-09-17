@@ -115,6 +115,11 @@ const indexedDot = css`
   vertical-align: middle;
 `;
 
+const fullSetHintStyle = css`
+  font-size: var(--haze-text-xs);
+  color: var(--haze-color-text-secondary);
+`;
+
 export function EventFilterPanel({
   abiEvents,
   initialFilters = {},
@@ -383,6 +388,8 @@ export function EventFilterPanel({
             {selectedEvent.inputs.filter(input => !input.type.endsWith('[]')).map(renderAbiField)}
           </div>
         )}
+
+        <span className={fullSetHintStyle}>Filtering runs on the full indexed set</span>
       </div>
     </Collapsible>
   );

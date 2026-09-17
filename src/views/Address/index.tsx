@@ -31,14 +31,8 @@ const headerRow = css`
   margin-bottom: var(--haze-space-4);
 `;
 
-const infoNote = css`
-  font-size: var(--haze-text-xs);
-  color: var(--haze-color-text-muted);
-  margin-bottom: var(--haze-space-3);
-  padding: var(--haze-space-2) var(--haze-space-3);
-  background: color-mix(in srgb, var(--haze-color-success) 10%, transparent);
-  border-radius: var(--haze-radius-md);
-  border: 1px solid color-mix(in srgb, var(--haze-color-success) 25%, transparent);
+const bannerLinks = css`
+  margin: var(--haze-space-2) 0 var(--haze-space-3);
 `;
 
 const transactionsCard = css`
@@ -47,6 +41,12 @@ const transactionsCard = css`
 
 const valueCell = css`
   font-family: var(--haze-font-mono);
+  font-size: var(--haze-text-xs);
+`;
+
+const errorSecondary = css`
+  margin: 0 0 var(--haze-space-5);
+  color: var(--haze-color-text-muted);
   font-size: var(--haze-text-xs);
 `;
 
@@ -84,7 +84,29 @@ type AddressTxPage = {
   transactions: TxRecord[];
   total: number;
   method?: string;
+  coverage?: 'complete' | 'partial' | 'none';
+  reason?: 'no-transactions' | 'zero-balance' | 'search-failed';
+  searchWindowBlocks?: number;
 };
+
+// A mixed-case address with a bad EIP-55 checksum is rejected server-side
+// by getValidatedAddress (HTTP 400 'Invalid address'); surface actionable
+// guidance instead of the raw message, keeping the original as a
+// secondary line.
+const invalidChecksumHelp =
+  'This address has an invalid checksum. Try the all-lowercase form or copy the address from a trusted source.';
+
+const isInvalidAddressMessage = (message: string | undefined): boolean =>
+  message?.includes('Invalid address') ?? false;
+
+function InvalidChecksumError({ original }: { original: string }) {
+  return (
+    <>
+      <ErrorState message={invalidChecksumHelp} />
+      <p className={errorSecondary}>Original error: {original}</p>
+    </>
+  );
+}
 
 export default function Address() {
   const { params, router } = useMatched();
@@ -215,6 +237,29 @@ export default function Address() {
   const txMethod = txData?.method ?? '';
   const txTotalPages = Math.max(1, Math.ceil(txTotal / txLimit));
 
+  // Coverage drives the honest banners below. Pre-coverage cached
+  // responses (method tag only) are mapped to the same semantics so stale
+  // payloads still label their gaps.
+  const txCoverage = txData?.coverage ?? (txTotal > 0
+    ? txMethod === 'binary-search'
+      ? 'partial'
+      : txMethod === 'binary-search-skipped' || txMethod === 'fallback'
+        ? 'none'
+        : undefined
+    : undefined);
+  const txReason = txData?.reason ?? (txTotal > 0
+    ? txMethod === 'binary-search-skipped'
+      ? 'zero-balance'
+      : txMethod === 'fallback'
+        ? 'search-failed'
+        : undefined
+    : undefined);
+  const txSearchWindowBlocks = txData?.searchWindowBlocks;
+  const searchWindowLabel = txSearchWindowBlocks !== undefined
+    ? `within the last ${txSearchWindowBlocks.toLocaleString()} blocks`
+    : 'within a capped block window';
+  const externalToolLinks = getExternalToolLinks(currentChainId, address);
+
   return (
     <>
       <TopNavigation currentChainId={currentChainId} onChainChange={handleChainChange} />
@@ -232,7 +277,12 @@ export default function Address() {
 
         {isInitialLoading && <LoadingState message="Loading address information..." />}
 
-        {hasError && !isInitialLoading && <ErrorState message={`Error: ${errorMessage}`} />}
+        {hasError && !isInitialLoading &&
+          (isInvalidAddressMessage(errorMessage) ? (
+            <InvalidChecksumError original={errorMessage ?? ''} />
+          ) : (
+            <ErrorState message={`Error: ${errorMessage}`} />
+          ))}
 
         {!isInitialLoading && (
           <>
@@ -340,7 +390,7 @@ export default function Address() {
                   )}
 
                   <InfoItem label="External Tools">
-                    <ExternalLinks links={getExternalToolLinks(currentChainId, address)} />
+                    <ExternalLinks links={externalToolLinks} />
                   </InfoItem>
                 </InfoGrid>
               </CardContent>
@@ -367,42 +417,64 @@ export default function Address() {
                   <LoadingState message="Searching for transactions via binary search..." />
                 )}
 
-                {txQuery.error && (
-                  <ErrorState message={txQuery.error.message} />
+                {txQuery.error &&
+                  (isInvalidAddressMessage(txQuery.error.message) ? (
+                    <InvalidChecksumError original={txQuery.error.message} />
+                  ) : (
+                    <ErrorState message={txQuery.error.message} />
+                  ))}
+
+                {!txQuery.loading && !txQuery.error && txCoverage === 'none' && txReason === 'search-failed' && (
+                  <>
+                    <Alert variant="danger">
+                      Transaction search failed (timeout). History is temporarily
+                      unavailable - this is NOT an empty result.
+                    </Alert>
+                    <div className={bannerLinks}>
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        loading={txQuery.fetching}
+                        onClick={() => {
+                          void txQuery.refetch();
+                        }}
+                      >
+                        Retry search
+                      </Button>
+                    </div>
+                  </>
                 )}
 
-                {!txQuery.loading &&
-                  !txQuery.error &&
-                  transactions.length === 0 &&
-                  txTotal > 0 &&
-                  txMethod === 'binary-search-skipped' && (
-                  <Alert variant="info">
-                    This address has {txTotal} transactions but no native token balance.
-                    Transaction history is discovered by scanning balance changes; contract
-                    interactions and token transfers may not appear.
-                  </Alert>
+                {!txQuery.loading && !txQuery.error && txCoverage === 'none' && txReason === 'zero-balance' && (
+                  <>
+                    <Alert variant="warning">
+                      This address has {txTotal} transactions but holds no
+                      native-token balance, so heuristic discovery cannot find
+                      them. Use an external explorer for full history.
+                    </Alert>
+                    <div className={bannerLinks}>
+                      <ExternalLinks links={externalToolLinks} />
+                    </div>
+                  </>
                 )}
 
-                {!txQuery.loading &&
-                  !txQuery.error &&
-                  transactions.length === 0 &&
-                  txTotal > 0 &&
-                  txMethod !== 'binary-search-skipped' && (
-                  <Alert variant="warning">
-                    No transactions found in recent blocks. This address has {txTotal}{' '}
-                    transactions, but they may be outside the search range.
-                  </Alert>
+                {!txQuery.loading && !txQuery.error && txCoverage === 'partial' && (
+                  <>
+                    <Alert variant="warning">
+                      Partial history - transactions are discovered heuristically
+                      (native-token transfers {searchWindowLabel}). Token
+                      transfers and contract interactions may be missing.
+                    </Alert>
+                    <div className={bannerLinks}>
+                      <ExternalLinks links={externalToolLinks} />
+                    </div>
+                  </>
                 )}
 
-                {!txQuery.loading && !txQuery.error && transactions.length === 0 && txTotal === 0 && (
+                {!txQuery.loading && !txQuery.error
+                  && transactions.length === 0 && txTotal === 0
+                  && (txCoverage === 'complete' || txCoverage === undefined) && (
                   <Alert variant="info">No transactions found</Alert>
-                )}
-
-                {!txQuery.loading && transactions.length > 0 && txMethod === 'binary-search' && (
-                  <div className={infoNote}>
-                    Found {transactions.length} of ~{txTotal} transactions via balance-change binary
-                    search.
-                  </div>
                 )}
 
                 {transactions.length > 0 && (

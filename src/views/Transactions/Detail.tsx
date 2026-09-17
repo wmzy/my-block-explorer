@@ -1,15 +1,32 @@
+import { css } from '@linaria/core';
+import { useMemo, useState, useEffect } from 'react';
+
 import { navigate } from '@native-router/core';
-import { useMatched } from '@native-router/react';
+import { TypedLink, useMatched } from '@native-router/react';
+import { decodeEventLog, type Abi, type Hex } from 'viem';
 
 import TopNavigation from '@/components/TopNavigation';
+import { RawDataBlock } from '@/components/transactions/RawDataBlock';
 import { Badge } from '@/components/ui/Badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
+import { CopyableHash } from '@/components/ui/CopyableHash';
+import { linkStyle, monoStyle } from '@/components/ui/DataTable';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { InfoGrid, InfoItem } from '@/components/ui/InfoGrid';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { PageContainer, PageHeader, BackButton } from '@/components/ui/PageLayout';
 import { getChainInfo, getChainName, getChainSymbol } from '@/config/chains';
+import { useContractSource } from '@/services/contracts';
 import { useTransactionByHash } from '@/services/chainRpc';
+import type { RpcLogEntry } from '@/utils/blockRpcData';
+import { createRpcClient } from '@/utils/realTimeData';
+import {
+  decodeFunctionCall,
+  decodeRevertReason,
+  extractRevertData,
+  formatCallArgs,
+  selectorOf,
+} from '@/utils/txDecode';
 import { formatEth, formatGasPrice, formatNumber } from '@/utils/format';
 
 const getTxTypeText = (type: number): string => {
@@ -63,6 +80,253 @@ function TxStatusBadge({ status }: { status: number }) {
   );
 }
 
+// Wrong-chain lookups: viem raises TransactionNotFoundError, and some
+// providers answer with an RPC error whose message embeds "not found".
+const isTxNotFound = (error: unknown): boolean => {
+  if (typeof error !== 'object' || error === null) return false;
+  const name = 'name' in error ? String((error).name) : '';
+  const message = 'message' in error ? String((error).message) : '';
+  return name === 'TransactionNotFoundError' || /not found|could not be found/i.test(message);
+};
+
+const logRawStyle = css`
+  font-family: var(--haze-font-mono);
+  font-size: var(--haze-text-xs);
+  word-break: break-all;
+  white-space: pre-wrap;
+  margin: var(--haze-space-2) 0 0;
+`;
+
+// The detail page stacks its main info card and the optional function-call /
+// revert-reason / event-logs cards with uniform vertical rhythm.
+const stackStyle = css`
+  display: flex;
+  flex-direction: column;
+  gap: var(--haze-space-5);
+`;
+
+const logEntryStyle = css`
+  padding-bottom: var(--haze-space-4);
+  border-bottom: 1px solid var(--haze-color-border);
+
+  &:last-child {
+    padding-bottom: 0;
+    border-bottom: none;
+  }
+`;
+
+const logHeaderStyle = css`
+  display: flex;
+  align-items: center;
+  gap: var(--haze-space-3);
+  flex-wrap: wrap;
+  font-size: var(--haze-text-xs);
+`;
+
+// One receipt log: numbered entry, emitter address link, and either the
+// ABI-decoded event signature (when the emitter is the called contract and
+// its ABI is known) or the raw topics + data fallback.
+function EventLogEntry({
+  log,
+  index,
+  chainId,
+  toAddress,
+  abi,
+}: {
+  log: RpcLogEntry;
+  index: number;
+  chainId: number;
+  toAddress: string;
+  abi: Abi | null;
+}) {
+  const canDecode =
+    abi !== null &&
+    toAddress.length > 0 &&
+    log.address.toLowerCase() === toAddress.toLowerCase();
+
+  let decoded: string | null = null;
+  if (canDecode) {
+    try {
+      const event = decodeEventLog({
+        abi,
+        data: log.data as Hex,
+        topics: log.topics as [Hex, ...Hex[]],
+      });
+      const rawArgs: unknown = event.args;
+      const args = Array.isArray(rawArgs)
+        ? rawArgs
+        : Object.values((rawArgs as Record<string, unknown>) ?? {});
+      // viem types eventName as possibly-undefined for generic ABIs; skip
+      // the signature when the name is missing and fall back to raw.
+      decoded =
+        event.eventName !== undefined
+          ? args.length > 0
+            ? `${event.eventName}(${formatCallArgs(args)})`
+            : event.eventName
+          : null;
+    } catch {
+      // Selector/shape mismatch against the ABI — fall back to raw.
+      decoded = null;
+    }
+  }
+
+  return (
+    <div className={logEntryStyle}>
+      <div className={logHeaderStyle}>
+        <span>
+          Log #{index + 1}
+          {log.logIndex !== undefined ? ` (index ${log.logIndex})` : ''}
+        </span>
+        <CopyableHash
+          value={log.address}
+          href={`/chain/${chainId}/address/${log.address}`}
+        />
+      </div>
+      {decoded !== null ? (
+        <div className={logRawStyle}>{decoded}</div>
+      ) : (
+        <div className={logRawStyle}>{`${log.topics.join('\n')}\n${log.data}`}</div>
+      )}
+    </div>
+  );
+}
+
+type RevertState =
+  | { kind: 'idle' }
+  | { kind: 'loading' }
+  | { kind: 'decoded'; reason: string }
+  | { kind: 'unavailable' };
+
+// Best-effort revert reason: replays the exact call against the node at the
+// tx's block. Any failure (including nodes without archive state) degrades
+// to an honest "unavailable" note — never a page error.
+function RevertReasonCard({
+  chainId,
+  txHash,
+  toAddress,
+  fromAddress,
+  inputData,
+  blockNumber,
+  gasLimit,
+  abi,
+}: {
+  chainId: number;
+  txHash: string;
+  toAddress: string;
+  fromAddress: string;
+  inputData: string | undefined;
+  blockNumber: string;
+  gasLimit: string;
+  abi: Abi | null;
+}) {
+  const [state, setState] = useState<RevertState>({ kind: 'idle' });
+
+  useEffect(() => {
+    // Nothing to replay against (plain transfers / contract creation).
+    if (!toAddress || !inputData || inputData === '0x') {
+      setState({ kind: 'idle' });
+      return;
+    }
+
+    let cancelled = false;
+    setState({ kind: 'loading' });
+
+    const replay = async () => {
+      try {
+        const client = await createRpcClient(chainId);
+        await client.call({
+          to: toAddress as Hex,
+          data: inputData as Hex,
+          account: fromAddress as Hex,
+          blockNumber: BigInt(blockNumber),
+          gas: BigInt(gasLimit),
+        });
+        // Resolved without reverting — nothing to report.
+        if (!cancelled) setState({ kind: 'unavailable' });
+      } catch (err) {
+        if (cancelled) return;
+        const data = extractRevertData(err);
+        if (data !== null) {
+          // Unknown payloads still shown raw; decodeRevertReason handles
+          // Error(string), Panic(uint256) and ABI custom errors.
+          const reason = decodeRevertReason(data, abi ?? undefined);
+          setState({ kind: 'decoded', reason: reason ?? data });
+        } else {
+          setState({ kind: 'unavailable' });
+        }
+      }
+    };
+
+    void replay();
+    return () => {
+      cancelled = true;
+    };
+  }, [chainId, txHash, toAddress, fromAddress, inputData, blockNumber, gasLimit, abi]);
+
+  if (state.kind === 'idle') return null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Revert Reason (best effort)</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {state.kind === 'loading' && <p>Checking revert reason…</p>}
+        {state.kind === 'decoded' && <span className={monoStyle}>{state.reason}</span>}
+        {state.kind === 'unavailable' && (
+          <p>
+            Reason unavailable — replaying the call did not return a revert
+            string. Replays of older transactions can fail on nodes without
+            archive state.
+          </p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// Selector + ABI-decoded signature + always-visible raw input hex. Rendered
+// only for contract calls (non-empty input, known target); missing/failed
+// ABI decode degrades to the selector + raw hex — never an error state.
+function FunctionCallCard({
+  inputData,
+  toAddress,
+  abi,
+}: {
+  inputData: string | undefined;
+  toAddress: string | undefined;
+  abi: Abi | null;
+}) {
+  const hasInput = inputData !== undefined && inputData !== '' && inputData !== '0x';
+  if (!hasInput || !toAddress) return null;
+
+  const selector = selectorOf(inputData);
+  const decoded = abi !== null ? decodeFunctionCall(inputData, abi) : null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Function Call</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <InfoGrid>
+          <InfoItem label="Method">
+            <span className={monoStyle}>{selector ?? 'Unknown'}</span>
+          </InfoItem>
+          {decoded !== null && (
+            <InfoItem label="Function">
+              <span className={monoStyle}>
+                {`${decoded.functionName}(${formatCallArgs(decoded.args)})`}
+              </span>
+            </InfoItem>
+          )}
+        </InfoGrid>
+        <RawDataBlock title="Raw Input" data={inputData} />
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function TransactionDetail() {
   const { params, router } = useMatched();
 
@@ -73,6 +337,22 @@ export default function TransactionDetail() {
   // The service fetch guards an empty hash itself (no network), so the hook
   // runs unconditionally and the view reports the bad param.
   const { data: txInfo, loading, error } = useTransactionByHash(currentChainId, txHash);
+
+  // ABI of the called contract, when the backend has a verified source for
+  // it. Unverified contracts answer 404 (error set) or no data — both mean
+  // "raw only" and are deliberately NOT treated as page failures. The
+  // service guards an empty address itself, so the call is unconditional.
+  const { data: sourceResponse } = useContractSource(currentChainId, txInfo?.toAddress ?? '');
+
+  const contractAbi = useMemo<Abi | null>(() => {
+    const contractSource = sourceResponse?.contractSource as { abi?: string } | undefined;
+    if (!contractSource?.abi) return null;
+    try {
+      return JSON.parse(contractSource.abi) as Abi;
+    } catch {
+      return null;
+    }
+  }, [sourceResponse]);
 
   const handleChainChange = (newChainId: number) => {
     // Same-params refresh: the hash is chain-agnostic, so switching chains
@@ -109,7 +389,27 @@ export default function TransactionDetail() {
 
         {txHash && loading && <LoadingState message="Loading transaction information..." />}
 
-        {txHash && error && (
+        {txHash && error && isTxNotFound(error) && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Transaction Not Found</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p>
+                {`Transaction not found on ${getChainName(currentChainId)}. It may exist on another network or be pending.`}
+              </p>
+              <p>
+                Try the chain selector above, or{' '}
+                <TypedLink to="/search" className={linkStyle}>
+                  search across chains
+                </TypedLink>
+                .
+              </p>
+            </CardContent>
+          </Card>
+        )}
+
+        {txHash && error && !isTxNotFound(error) && (
           <ErrorState
             message={
               error instanceof Error ? error.message : 'Failed to fetch transaction information'
@@ -118,79 +418,130 @@ export default function TransactionDetail() {
         )}
 
         {txHash && !loading && !error && txInfo && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Transaction Details</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <InfoGrid>
-                <InfoItem label="Transaction Hash">{txInfo.hash}</InfoItem>
-                <InfoItem label="Status">
-                  <TxStatusBadge status={txInfo.status} />
-                </InfoItem>
-                <InfoItem label="Block Number">
-                  {formatNumber(BigInt(txInfo.blockNumber))}
-                </InfoItem>
-                <InfoItem label="Transaction Index">{txInfo.transactionIndex}</InfoItem>
-                <InfoItem label="From">{txInfo.fromAddress}</InfoItem>
-                <InfoItem label="To">{txInfo.toAddress}</InfoItem>
-                <InfoItem label="Value">
-                  {formatValue(txInfo.value, getChainSymbol(currentChainId))}
-                </InfoItem>
-                <InfoItem label="Gas Limit">{formatGas(txInfo.gasLimit)}</InfoItem>
-                {txInfo.gasUsed && (
-                  <InfoItem label="Gas Used">{formatGas(txInfo.gasUsed)}</InfoItem>
-                )}
-                {txInfo.gasPrice && (
-                  <InfoItem label="Gas Price">
-                    {formatGasPrice(txInfo.gasPrice)}
-                    {' '}
-                    gwei
+          <div className={stackStyle}>
+            <Card>
+              <CardHeader>
+                <CardTitle>Transaction Details</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <InfoGrid>
+                  <InfoItem label="Transaction Hash">{txInfo.hash}</InfoItem>
+                  <InfoItem label="Status">
+                    <TxStatusBadge status={txInfo.status} />
                   </InfoItem>
-                )}
-                {txInfo.maxFeePerGas && (
-                  <InfoItem label="Max Fee Per Gas">
-                    {formatGasPrice(txInfo.maxFeePerGas)}
-                    {' '}
-                    gwei
+                  <InfoItem label="Block Number">
+                    {formatNumber(BigInt(txInfo.blockNumber))}
                   </InfoItem>
-                )}
-                {txInfo.maxPriorityFeePerGas && (
-                  <InfoItem label="Max Priority Fee Per Gas">
-                    {formatGasPrice(txInfo.maxPriorityFeePerGas)}
-                    {' '}
-                    gwei
+                  <InfoItem label="Transaction Index">{txInfo.transactionIndex}</InfoItem>
+                  <InfoItem label="From">{txInfo.fromAddress}</InfoItem>
+                  <InfoItem label="To">{txInfo.toAddress}</InfoItem>
+                  <InfoItem label="Value">
+                    {formatValue(txInfo.value, getChainSymbol(currentChainId))}
                   </InfoItem>
-                )}
-                {txInfo.maxFeePerBlobGas && (
-                  <InfoItem label="Max Fee Per Blob Gas">
-                    {formatGasPrice(txInfo.maxFeePerBlobGas)}
-                    {' '}
-                    gwei
-                  </InfoItem>
-                )}
-                {txInfo.blobVersionedHashes && txInfo.blobVersionedHashes.length > 0 && (
-                  <InfoItem label="Blob Versioned Hashes">
-                    {txInfo.blobVersionedHashes.join(', ')}
-                  </InfoItem>
-                )}
-                {txInfo.effectiveGasPrice && (
-                  <InfoItem label="Effective Gas Price">
-                    {formatGasPrice(txInfo.effectiveGasPrice)}
-                    {' '}
-                    gwei
-                  </InfoItem>
-                )}
-                <InfoItem label="Nonce">{txInfo.nonce}</InfoItem>
-                <InfoItem label="Transaction Type">{getTxTypeText(txInfo.type)}</InfoItem>
-                {txInfo.timestamp && (
-                  <InfoItem label="Timestamp">
-                    {new Date(txInfo.timestamp).toLocaleString()}
-                  </InfoItem>
-                )}
-              </InfoGrid>
-            </CardContent>
-          </Card>
+                  <InfoItem label="Gas Limit">{formatGas(txInfo.gasLimit)}</InfoItem>
+                  {txInfo.gasUsed && (
+                    <InfoItem label="Gas Used">{formatGas(txInfo.gasUsed)}</InfoItem>
+                  )}
+                  {txInfo.gasPrice && (
+                    <InfoItem label="Gas Price">
+                      {formatGasPrice(txInfo.gasPrice)}
+                      {' '}
+                      gwei
+                    </InfoItem>
+                  )}
+                  {txInfo.maxFeePerGas && (
+                    <InfoItem label="Max Fee Per Gas">
+                      {formatGasPrice(txInfo.maxFeePerGas)}
+                      {' '}
+                      gwei
+                    </InfoItem>
+                  )}
+                  {txInfo.maxPriorityFeePerGas && (
+                    <InfoItem label="Max Priority Fee Per Gas">
+                      {formatGasPrice(txInfo.maxPriorityFeePerGas)}
+                      {' '}
+                      gwei
+                    </InfoItem>
+                  )}
+                  {txInfo.maxFeePerBlobGas && (
+                    <InfoItem label="Max Fee Per Blob Gas">
+                      {formatGasPrice(txInfo.maxFeePerBlobGas)}
+                      {' '}
+                      gwei
+                    </InfoItem>
+                  )}
+                  {txInfo.blobVersionedHashes && txInfo.blobVersionedHashes.length > 0 && (
+                    <InfoItem label="Blob Versioned Hashes">
+                      {txInfo.blobVersionedHashes.join(', ')}
+                    </InfoItem>
+                  )}
+                  {txInfo.effectiveGasPrice && (
+                    <InfoItem label="Effective Gas Price">
+                      {formatGasPrice(txInfo.effectiveGasPrice)}
+                      {' '}
+                      gwei
+                    </InfoItem>
+                  )}
+                  <InfoItem label="Nonce">{txInfo.nonce}</InfoItem>
+                  <InfoItem label="Transaction Type">{getTxTypeText(txInfo.type)}</InfoItem>
+                  {txInfo.timestamp && (
+                    <InfoItem label="Timestamp">
+                      {new Date(txInfo.timestamp).toLocaleString()}
+                    </InfoItem>
+                  )}
+                  {txInfo.contractAddress && (
+                    <InfoItem label="Created Contract">
+                      <TypedLink
+                        to={`/chain/${currentChainId}/contract/${txInfo.contractAddress}`}
+                        className={linkStyle}
+                      >
+                        {txInfo.contractAddress}
+                      </TypedLink>
+                    </InfoItem>
+                  )}
+                </InfoGrid>
+              </CardContent>
+            </Card>
+
+            <FunctionCallCard
+              inputData={txInfo.inputData}
+              toAddress={txInfo.toAddress}
+              abi={contractAbi}
+            />
+
+            {txInfo.status === 0 && (
+              <RevertReasonCard
+                chainId={currentChainId}
+                txHash={txInfo.hash}
+                toAddress={txInfo.toAddress}
+                fromAddress={txInfo.fromAddress}
+                inputData={txInfo.inputData}
+                blockNumber={txInfo.blockNumber}
+                gasLimit={txInfo.gasLimit}
+                abi={contractAbi}
+              />
+            )}
+
+            {txInfo.logs.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>Event Logs</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {txInfo.logs.map((log, index) => (
+                    <EventLogEntry
+                      key={`${log.address}-${log.logIndex ?? index}`}
+                      log={log}
+                      index={index}
+                      chainId={currentChainId}
+                      toAddress={txInfo.toAddress}
+                      abi={contractAbi}
+                    />
+                  ))}
+                </CardContent>
+              </Card>
+            )}
+          </div>
         )}
       </PageContainer>
     </>

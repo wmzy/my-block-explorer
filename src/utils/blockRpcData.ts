@@ -21,6 +21,14 @@ export type RpcBlock = {
   receiptsRoot?: string;
 };
 
+// Receipt log entry carried through the RPC layer for decoded-events views.
+export type RpcLogEntry = {
+  address: string;
+  topics: string[];
+  data: string;
+  logIndex?: string;
+};
+
 export type RpcTransaction = {
   hash: string;
   blockNumber: string;
@@ -42,6 +50,7 @@ export type RpcTransaction = {
   timestamp?: string;
   inputData?: string;
   contractAddress?: string;
+  logs: RpcLogEntry[];
 };
 
 const formatBlock = (block: Block, includeTimestamp = true): RpcBlock => ({
@@ -104,6 +113,16 @@ const formatTransaction = (
   timestamp: blockTimestamp ? new Date(Number(blockTimestamp) * 1000).toISOString() : undefined,
   inputData: tx.input as string,
   contractAddress: receipt?.contractAddress ?? undefined,
+  // viem's Log.topics is a readonly tuple — copy to a mutable array the
+  // view layer can treat as plain string[]. Pending txs (null receipt)
+  // have no logs yet, hence the empty-array fallback.
+  logs:
+    receipt?.logs.map(log => ({
+      address: log.address,
+      topics: [...log.topics],
+      data: log.data,
+      logIndex: log.logIndex?.toString(),
+    })) ?? [],
 });
 
 /**
@@ -313,5 +332,5 @@ export const getTransactionByHash = async (
     blockTimestamp = block?.timestamp;
   }
 
-  return formatTransaction(tx as unknown as Record<string, unknown>, receipt, blockTimestamp);
+  return formatTransaction(tx, receipt, blockTimestamp);
 };

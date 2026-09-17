@@ -95,6 +95,9 @@ app.get('/chains/:chainId/addresses/:address/transactions', async (c) => {
         total: result.total,
       },
       method: result.method,
+      coverage: result.coverage,
+      reason: result.reason,
+      searchWindowBlocks: result.searchWindowBlocks,
       timestamp: new Date().toISOString(),
     });
 

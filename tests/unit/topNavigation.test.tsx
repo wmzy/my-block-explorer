@@ -25,6 +25,20 @@ vi.mock('../../src/components/RpcConfig', () => ({
   ),
 }));
 
+// Mock the shared http layer so the history fetch (and only that — the
+// component goes through `get` on the discovered api base) is observable
+// without a network. withSignal is a pass-through: the hash-search path
+// composes it around the mocked api client.
+const { mockGet, mockApi } = vi.hoisted(() => ({
+  mockGet: vi.fn(),
+  mockApi: { mockApiBase: true },
+}));
+vi.mock('../../src/util/http', () => ({
+  api: mockApi,
+  get: mockGet,
+  withSignal: (o: unknown) => o,
+}));
+
 // Mock chains config
 vi.mock('../../src/config/chains', () => ({
   getChainInfo: (chainId: number) => {
@@ -220,6 +234,76 @@ describe('TopNavigation', () => {
 
     await waitFor(() => {
       expect(onSearch).toHaveBeenCalledWith('0x123');
+    });
+  });
+
+  it('scopes the recent-searches history request to the current chain', async () => {
+    mockGet.mockResolvedValue({
+      history: [{ query: '0xabc', searchType: 'address', searchedAt: '2026-01-01T00:00:00Z' }],
+    });
+    renderTopNavigation({ currentChainId: 137 });
+
+    fireEvent.focus(
+      screen.getByPlaceholderText('Search address, tx hash, or block number...'),
+    );
+
+    await waitFor(() => {
+      expect(mockGet).toHaveBeenCalledWith(
+        '/api/search/history',
+        { limit: 50, chainId: 137 },
+        mockApi,
+      );
+    });
+    // The fetched rows actually render in the dropdown.
+    expect(await screen.findByText('0xabc')).toBeInTheDocument();
+  });
+
+  it('refetches history with the new scope after a chain switch', async () => {
+    mockGet.mockResolvedValue({ history: [] });
+    const { rerender } = renderTopNavigation({ currentChainId: 137 });
+
+    const input = screen.getByPlaceholderText('Search address, tx hash, or block number...');
+    fireEvent.focus(input);
+    await waitFor(() => {
+      expect(mockGet).toHaveBeenCalledWith(
+        '/api/search/history',
+        { limit: 50, chainId: 137 },
+        mockApi,
+      );
+    });
+
+    rerender(
+      <TopNavigation
+        currentChainId={5000}
+        onChainChange={vi.fn()}
+        onSearch={vi.fn()}
+        searchPlaceholder="Search address, tx hash, or block number..."
+      />,
+    );
+    fireEvent.focus(input);
+    await waitFor(() => {
+      expect(mockGet).toHaveBeenCalledWith(
+        '/api/search/history',
+        { limit: 50, chainId: 5000 },
+        mockApi,
+      );
+    });
+  });
+
+  it('sends free-text searches to the Search view with chain context', async () => {
+    // No onSearch prop: the component dispatches through its own router
+    // navigation, which the @native-router mock records.
+    renderTopNavigation({ currentChainId: 137, onSearch: undefined });
+
+    const searchInput = screen.getByPlaceholderText('Search address, tx hash, or block number...');
+    fireEvent.change(searchInput, { target: { value: 'vitalik.eth' } });
+    fireEvent.click(screen.getByText('Search'));
+
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith(
+        mockRouter,
+        `/search?q=${encodeURIComponent('vitalik.eth')}&chain=137`,
+      );
     });
   });
 });

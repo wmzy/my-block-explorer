@@ -2,6 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { css } from '@linaria/core';
 import { SegmentedProgressBar } from '../ui/SegmentedProgressBar';
 import { toast } from 'sonner';
+import { get, post, del } from '@/util/http';
+import { ApiError } from '@/util/apiError';
 
 const containerStyles = css`
   background: white;
@@ -118,6 +120,27 @@ const directionBadgeStyles = css`
     width: 12px;
     height: 12px;
   }
+`;
+
+const stalenessBannerStyles = css`
+  display: flex;
+  align-items: center;
+  gap: var(--haze-space-2, 8px);
+  margin-bottom: 12px;
+  padding: var(--haze-space-2, 8px) var(--haze-space-3, 12px);
+  font-size: var(--haze-text-sm, 13px);
+  color: var(--haze-color-text-secondary, #6b7280);
+  background: var(--haze-color-bg-subtle, #f9fafb);
+  border: 1px solid var(--haze-color-border, #e5e7eb);
+  border-radius: var(--haze-radius-md, 6px);
+`;
+
+const stalenessDotStyles = css`
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--haze-color-warning, #f59e0b);
 `;
 
 const actionButtonStyles = css`
@@ -325,17 +348,29 @@ export const IndexingRangeManager: React.FC<Props> = ({
   const [quickFormState, setQuickFormState] = useState<QuickCreateForm>(defaultQuickFormState);
   const [overlaps, setOverlaps] = useState<Overlap[]>([]);
   const [actionLoading, setActionLoading] = useState<number | null>(null);
+  const [headBlock, setHeadBlock] = useState(0);
 
   const latestBlock = ranges.length > 0 ? Math.max(...ranges.map(r => Number(r.toBlock))) : 0;
   const fetchRanges = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await fetch(
+      const data = await get<{ ranges?: IndexingRange[] }>(
         `/api/chains/${chainId}/contracts/${contractAddress}/events/ranges`,
       );
-      if (response.ok) {
-        const data = await response.json();
-        setRanges(data.ranges ?? []);
+      const nextRanges = data.ranges ?? [];
+      setRanges(nextRanges);
+      if (nextRanges.length > 0) {
+        // Refresh the chain head alongside the ranges so the staleness
+        // banner tracks both sides of the gap. When the head is unknown
+        // (RPC unavailable) the banner simply stays hidden.
+        try {
+          const status = await get<{ latestBlock?: number }>(
+            `/api/chains/${chainId}/contracts/${contractAddress}/events/indexing-status`,
+          );
+          setHeadBlock(status.latestBlock ?? 0);
+        } catch {
+          // keep the last known head
+        }
       }
     } catch (error) {
       console.error('Failed to fetch ranges:', error);
@@ -353,6 +388,12 @@ export const IndexingRangeManager: React.FC<Props> = ({
       return () => clearInterval(interval);
     }
   }, [ranges, fetchRanges]);
+  // Data-staleness banner: how far the furthest-indexed range trails the
+  // chain head. Hidden when the head is unknown (RPC unavailable).
+  const maxCurrentBlock =
+    ranges.length > 0 ? Math.max(...ranges.map(r => Number(r.currentBlock ?? 0))) : 0;
+  const stalenessGap =
+    headBlock > 0 && ranges.length > 0 ? Math.max(0, headBlock - maxCurrentBlock) : null;
   const handleAddRange = useCallback(async () => {
     const validBlockTags = ['latest', 'finalized', 'safe', 'earliest'];
     const fromBlockValue = formState.fromBlock.toLowerCase();
@@ -382,33 +423,25 @@ export const IndexingRangeManager: React.FC<Props> = ({
     }
     setActionLoading(-1);
     try {
-      const response = await fetch(
-        `/api/chains/${chainId}/contracts/${contractAddress}/events/ranges`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            fromBlock: isFromTag ? fromBlockValue : fromBlock,
-            toBlock: isToTag ? toBlockValue : toBlock,
-            direction: formState.direction,
-          }),
-        },
-      );
-      const data = await response.json();
-      if (response.ok) {
-        setFormState(defaultFormState);
-        setShowAddForm(false);
-        await fetchRanges();
-        if (data.overlaps && data.overlaps.length > 0) {
-          setOverlaps(data.overlaps);
-        }
-        onRefresh?.();
-      } else {
-        toast.error(data.message ?? data.error ?? 'Failed to add range');
+      const data = await post<{
+        overlaps?: Overlap[];
+        message?: string;
+        error?: string;
+      }>(`/api/chains/${chainId}/contracts/${contractAddress}/events/ranges`, {
+        fromBlock: isFromTag ? fromBlockValue : fromBlock,
+        toBlock: isToTag ? toBlockValue : toBlock,
+        direction: formState.direction,
+      });
+      setFormState(defaultFormState);
+      setShowAddForm(false);
+      await fetchRanges();
+      if (data.overlaps && data.overlaps.length > 0) {
+        setOverlaps(data.overlaps);
       }
+      onRefresh?.();
     } catch (error) {
       console.error('Failed to add range:', error);
-      toast.error('Failed to add range');
+      toast.error(error instanceof ApiError ? error.message : 'Failed to add range');
     } finally {
       setActionLoading(null);
     }
@@ -425,31 +458,22 @@ export const IndexingRangeManager: React.FC<Props> = ({
 
     setActionLoading(-2);
     try {
-      const response = await fetch(
-        `/api/chains/${chainId}/contracts/${contractAddress}/events/ranges/quick`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            mode,
-            blockCount: needsBlockCount ? blockCountNum : undefined,
-          }),
-        },
+      const data = await post<{
+        fromBlock?: number | string;
+        toBlock?: number | string;
+      }>(`/api/chains/${chainId}/contracts/${contractAddress}/events/ranges/quick`, {
+        mode,
+        blockCount: needsBlockCount ? blockCountNum : undefined,
+      });
+      setQuickFormState(defaultQuickFormState);
+      await fetchRanges();
+      toast.success(
+        `Range created: blocks ${data.fromBlock?.toLocaleString() ?? '?'} - ${data.toBlock?.toLocaleString() ?? '?'}`,
       );
-      const data = await response.json();
-      if (response.ok) {
-        setQuickFormState(defaultQuickFormState);
-        await fetchRanges();
-        toast.success(
-          `Range created: blocks ${data.fromBlock?.toLocaleString() ?? '?'} - ${data.toBlock?.toLocaleString() ?? '?'}`,
-        );
-        onRefresh?.();
-      } else {
-        toast.error(data.message ?? data.error ?? 'Failed to create range');
-      }
+      onRefresh?.();
     } catch (error) {
       console.error('Failed to create range:', error);
-      toast.error('Failed to create range');
+      toast.error(error instanceof ApiError ? error.message : 'Failed to create range');
     } finally {
       setActionLoading(null);
     }
@@ -458,23 +482,17 @@ export const IndexingRangeManager: React.FC<Props> = ({
     async (rangeId: number) => {
       setActionLoading(rangeId);
       try {
-        const response = await fetch(
+        // The backend acknowledges with 202 and indexes in the background;
+        // the 3s polling below picks up progress.
+        await post(
           `/api/chains/${chainId}/contracts/${contractAddress}/events/ranges/${rangeId}/start`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ abi }),
-          },
+          { abi },
         );
-        if (response.ok) {
-          await fetchRanges();
-        } else {
-          const data = await response.json();
-          toast.error(data.error ?? 'Failed to start indexing');
-        }
+        toast.success('Indexing started');
+        await fetchRanges();
       } catch (error) {
         console.error('Failed to start indexing:', error);
-        toast.error('Failed to start indexing');
+        toast.error(error instanceof ApiError ? error.message : 'Failed to start indexing');
       } finally {
         setActionLoading(null);
       }
@@ -485,19 +503,14 @@ export const IndexingRangeManager: React.FC<Props> = ({
     async (rangeId: number) => {
       setActionLoading(rangeId);
       try {
-        const response = await fetch(
+        await post(
           `/api/chains/${chainId}/contracts/${contractAddress}/events/ranges/${rangeId}/pause`,
-          { method: 'POST' },
+          {},
         );
-        if (response.ok) {
-          await fetchRanges();
-        } else {
-          const data = await response.json();
-          toast.error(data.error ?? 'Failed to pause indexing');
-        }
+        await fetchRanges();
       } catch (error) {
         console.error('Failed to pause indexing:', error);
-        toast.error('Failed to pause indexing');
+        toast.error(error instanceof ApiError ? error.message : 'Failed to pause indexing');
       } finally {
         setActionLoading(null);
       }
@@ -508,23 +521,17 @@ export const IndexingRangeManager: React.FC<Props> = ({
     async (rangeId: number) => {
       setActionLoading(rangeId);
       try {
-        const response = await fetch(
+        // The backend acknowledges with 202 and indexes in the background;
+        // the 3s polling below picks up progress.
+        await post(
           `/api/chains/${chainId}/contracts/${contractAddress}/events/ranges/${rangeId}/resume`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ abi }),
-          },
+          { abi },
         );
-        if (response.ok) {
-          await fetchRanges();
-        } else {
-          const data = await response.json();
-          toast.error(data.error ?? 'Failed to resume indexing');
-        }
+        toast.success('Indexing resumed');
+        await fetchRanges();
       } catch (error) {
         console.error('Failed to resume indexing:', error);
-        toast.error('Failed to resume indexing');
+        toast.error(error instanceof ApiError ? error.message : 'Failed to resume indexing');
       } finally {
         setActionLoading(null);
       }
@@ -537,20 +544,12 @@ export const IndexingRangeManager: React.FC<Props> = ({
       if (!window.confirm('Are you sure you want to delete this range?')) return;
       setActionLoading(rangeId);
       try {
-        const response = await fetch(
-          `/api/chains/${chainId}/contracts/${contractAddress}/events/ranges/${rangeId}`,
-          { method: 'DELETE' },
-        );
-        if (response.ok) {
-          await fetchRanges();
-          onRefresh?.();
-        } else {
-          const data = await response.json();
-          toast.error(data.error ?? 'Failed to delete range');
-        }
+        await del(`/api/chains/${chainId}/contracts/${contractAddress}/events/ranges/${rangeId}`);
+        await fetchRanges();
+        onRefresh?.();
       } catch (error) {
         console.error('Failed to delete range:', error);
-        toast.error('Failed to delete range');
+        toast.error(error instanceof ApiError ? error.message : 'Failed to delete range');
       } finally {
         setActionLoading(null);
       }
@@ -652,6 +651,14 @@ export const IndexingRangeManager: React.FC<Props> = ({
           {showAddForm ? 'Cancel' : '+ Add Range'}
         </button>
       </div>
+      {stalenessGap !== null && (
+        <div className={stalenessBannerStyles}>
+          <span className={stalenessDotStyles} />
+          {stalenessGap === 0
+            ? 'Up to date'
+            : `Indexed through block ${formatBlock(maxCurrentBlock)} - ${formatBlock(stalenessGap)} blocks behind head`}
+        </div>
+      )}
       {ranges.length > 0 && (
         <SegmentedProgressBar
           segments={ranges.map(r => ({
