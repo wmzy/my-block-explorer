@@ -21,6 +21,7 @@ block-explorer/
 │   │   └── index.tsx       # createRoutes table, AppPaths, HistoryRouter App
 │   ├── services/           # Backend services (*Service.ts) + FRONTEND data services
 │   │   ├── blocks.ts etc.  # fetch fns + createQueryCache hooks (frontend)
+│   │   ├── ens.ts          # ENS reverse-resolution hook (mainnet-pinned, frontend)
 │   │   └── dataloaders.ts  # createDataLoader triplets (immutable routes)
 │   ├── database/           # DuckDB + custom adapter + schema
 │   ├── utils/              # RPC data layer + formatting (backend+shared)
@@ -29,6 +30,9 @@ block-explorer/
 │   ├── components/         # React components (ui/, events/, forms/)
 │   ├── hooks/              # Service discovery, useStorageAt (query hooks live in services/)
 │   ├── routes/             # Hono route handlers
+│   ├── middleware/         # Hono middleware: admin-token.ts (requireAdminToken strict /
+│   │                       # requireAdminTokenIfConfigured opt-in), cors.ts +
+│   │                       # cors-origins.ts (origin allowlist shared with vite.config.ts)
 │   ├── config/             # Multi-chain configuration (viem chains)
 │   └── types/              # TypeScript definitions
 ├── data/                   # DuckDB files (main + per-chain)
@@ -50,6 +54,8 @@ block-explorer/
 | UI components        | `src/components/ui/`                                                            | Haze UI wrappers + Linaria                          |
 | Frontend data hooks  | `src/services/{blocks,transactions,addresses,contracts,search,stats}.ts`         | react-toolroom query layer (`src/util/useQuery.ts`) |
 | Address realtime     | `src/services/addressRealTime.ts` + `services/addresses.ts`                     | RPC channel + persistent channel composed in view   |
+| Admin gating / CORS  | `src/middleware/admin-token.ts`, `src/middleware/cors-origins.ts`               | Two-tier ADMIN_TOKEN gate; shared origin allowlist  |
+| ENS reverse lookup   | `src/services/ens.ts`                                                           | `useEnsName()` — mainnet-pinned, browser-side       |
 | HTTP layer           | `src/util/http.ts` (fetch-fun) + `src/util/apiBase.ts`                          | Runtime-discovered API base URL                     |
 
 ## CODE MAP
@@ -198,16 +204,27 @@ pnpm typecheck           # tsc --noEmit
 - **Barrel exports incomplete** — `src/utils/index.ts` only exports 2 of 19
   utils
 - **Proxy port 7890** — Set `HTTP_PROXY`/`HTTPS_PROXY` if network issues
-- **Admin auth** — `ADMIN_TOKEN` (env) gates admin endpoints via
-  `src/middleware/admin-token.ts` + `x-admin-token` header (timing-safe
-  compare, **fail closed** when unset). Gated surface: rpc-config
-  GET/POST/DELETE (`/api/rpc-configs`), contract source cache clear
+- **Admin auth is two-tier** (`src/middleware/admin-token.ts`, `x-admin-token`
+  header, timing-safe compare). Strict tier (`requireAdminToken`, **fail
+  closed** when `ADMIN_TOKEN` unset): contract source cache clear
   (`POST .../contracts/:address/clear-cache`), storage-layout cache clear
   (`DELETE .../contracts/:address/storage-layout/cache`), and all
-  `/api/performance/*`. Browser side: token stored in localStorage by
-  `src/util/adminAuth.ts`, injected by `util/http.ts`; ⚙️ RPC modal has the
-  "Admin token (stored in this browser)" field. `ENABLE_DEBUG_API=1` mounts
-  `/debug/db/query` (raw SQL; default off, never enable in production)
+  `/api/performance/*`. Opt-in tier (`requireAdminTokenIfConfigured`): passes
+  when `ADMIN_TOKEN` is unset (zero-config local works), enforces identically
+  to the strict tier when it is set — covers the 7 mutating event-range
+  routes (`POST/PATCH/DELETE .../events/ranges*`, `quick`, `start`/`pause`/
+  `resume`) and rpc-config writes (`POST`/`DELETE /api/rpc-configs`);
+  `GET /api/rpc-configs` is open (endpoint URLs, no secrets). Browser side:
+  token stored in localStorage by `src/util/adminAuth.ts`, injected by
+  `util/http.ts`; ⚙️ RPC modal has the "Admin token (stored in this browser)"
+  field. `ENABLE_DEBUG_API=1` mounts `/debug/db/query` (raw SQL; default
+  off, never enable in production)
+- **CORS is an origin allowlist, not `*`** — `src/middleware/cors-origins.ts`
+  (dependency-free by design): loopback origins (any port) always allowed,
+  extras from `CORS_ALLOWED_ORIGINS` (comma-separated) + `FRONTEND_URL`;
+  no-Origin requests get no CORS headers. The Vite dev server's `server.cors`
+  consumes the same module (imported RELATIVELY in vite.config.ts — keep it
+  import-free or esbuild's config bundling breaks the dev server)
 - **Cache TTLs (persistent fetch caches)** — verified contract source 30d;
   proxy 24h; unverified source 3d; creation-lookup failure 24h;
   storage-layout `NOT_FOUND` 24h (`ContractSourceService`,
@@ -217,7 +234,19 @@ pnpm typecheck           # tsc --noEmit
   (frontend polls 3s). One serial job per range — there is no global queue
   (the former queue service was removed). On startup `reconcileInterruptedRanges()`
   flips ranges stuck in `indexing` to `error` with
-  "Interrupted by server restart — resume to continue". `argFilters`/`topicN`
+  "Interrupted by server restart — resume to continue". Range bounds may be
+  submitted as block tags (`latest`/`finalized`/`safe`/`earliest`) but are
+  resolved to concrete numbers once, at range creation — stored rows never
+  carry tag sentinels (legacy sentinel rows are resolved defensively when
+  indexing starts). Creation-block lookups return unknown rather than
+  fabricating a boundary: quick mode `all` starts at the creation block when
+  known (genesis when unknown), `first` errors with "Contract creation block
+  unknown — enter a start block manually". Quick modes
+  (`POST .../events/ranges/quick`): `all`/`recent`/`first`/`continue`/
+  `catchup` — `catchup` extends from the furthest `toBlock` of existing
+  ranges to head (`400 "No previous range found. Cannot catch up."` with no
+  prior ranges). The 7 mutating event routes are opt-in gated
+  (`requireAdminTokenIfConfigured`). `argFilters`/`topicN`
   push decoded-arg filtering into DuckDB; `GET .../events/export` streams CSV
   (100k-row cap → 400; the UI disables the export button preflight when the
   filtered total exceeds the cap). Event statistics render "Indexing

@@ -98,6 +98,10 @@ const mocks = vi.hoisted(() => {
     // Plain function (vi is unavailable inside vi.hoisted); tests spy on it
     // to assert the retry affordance.
     txRefetch: () => undefined,
+    // Same for the realtime channel's refetch (Refresh honesty test).
+    realTimeRefetch: () => undefined,
+    // Reshaped per case by the ENS header tests.
+    ens: { data: null as string | null, loading: false },
   };
 });
 
@@ -136,13 +140,19 @@ vi.mock('@/services/addresses', () => ({
 }));
 
 vi.mock('@/services/addressRealTime', () => ({
-  useRealTimeAddressData: () => mocks.realTime,
+  // refetch is spread in here so per-test reshapes of mocks.realTime keep
+  // the Refresh affordance wired without repeating it in every case.
+  useRealTimeAddressData: () => ({ ...mocks.realTime, refetch: mocks.realTimeRefetch }),
   useContractCode: () => ({
     data: undefined,
     loading: false,
     fetching: false,
     error: undefined,
   }),
+}));
+
+vi.mock('@/services/ens', () => ({
+  useEnsName: () => mocks.ens,
 }));
 
 vi.mock('@/utils/format', () => ({
@@ -188,6 +198,7 @@ describe('Address view', () => {
       error: undefined,
     };
     mocks.addressTxError = undefined;
+    mocks.ens = { data: null, loading: false };
   });
 
   it('renders TopNavigation', async () => {
@@ -199,6 +210,45 @@ describe('Address view', () => {
     renderPage();
     expect(await screen.findByText('Address Details')).toBeInTheDocument();
     expect(screen.getByText(/Ethereum/)).toBeInTheDocument();
+  });
+
+  it('shows the resolved ENS name as the header label with the hex address still beneath', async () => {
+    mocks.ens = { data: 'vitalik.eth', loading: false };
+
+    renderPage();
+
+    // The name takes the primary label slot...
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'vitalik.eth' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('ENS')).toBeInTheDocument();
+    // ...while the full hex address stays visible in the header row (and in
+    // the Overview card).
+    expect(screen.getAllByText(mocks.testAddress).length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByRole('heading', { name: 'Address Details' })).not.toBeInTheDocument();
+  });
+
+  it('keeps the header layout unchanged when no ENS name resolves', async () => {
+    renderPage();
+
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Address Details' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('ENS')).not.toBeInTheDocument();
+  });
+
+  it('Refresh refetches both the transaction history and the realtime balance read', async () => {
+    // P1-7: 'Last updated' belongs to the realtime channel, so Refresh must
+    // drive both queries, not just the tx history.
+    const txRefetchSpy = vi.spyOn(mocks, 'txRefetch');
+    const realTimeRefetchSpy = vi.spyOn(mocks, 'realTimeRefetch');
+
+    renderPage();
+
+    expect(await screen.findByText('Recent Transactions')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    expect(txRefetchSpy).toHaveBeenCalledTimes(1);
+    expect(realTimeRefetchSpy).toHaveBeenCalledTimes(1);
   });
 
   it('shows address overview with balance', async () => {

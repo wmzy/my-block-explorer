@@ -12,6 +12,19 @@
 // strictly older positions and explicitly reports hasMore/nextCursor, so
 // dense chains keep every transaction and sparse chains page past empty
 // blocks (see getLatestTransactions in utils/blockRpcData).
+import {
+  hashArgs,
+  useArgsStatus,
+  useCache,
+  useInjectable,
+  useLoading,
+  usePolling,
+  useRefresh,
+  useResultSelect,
+  useRun,
+  type CacheProvider,
+} from 'react-toolroom/async';
+
 import type { RpcBlock, RpcTransaction } from '@/utils/blockRpcData';
 import {
   getBlockByNumber,
@@ -19,7 +32,9 @@ import {
   getLatestTransactions,
   getTransactionByHash,
 } from '@/utils/blockRpcData';
+import { DEFAULT_STALE_TIME } from '@/util/loaderCache';
 import { bindQueryFn, createQueryCache, createQueryHook } from '@/util/useQuery';
+import type { PolledQueryResult } from './polledQuery';
 
 export type LatestBlocksPage = {
   blocks: RpcBlock[];
@@ -111,9 +126,21 @@ const useBlockQuery = createQueryHook({
   queryFn: bindQueryFn(fetchBlockByNumber, blockCache),
 });
 
-const useTransactionQuery = createQueryHook({
-  queryFn: bindQueryFn(fetchTransactionByHash, transactionCache),
-});
+const queryTransactionByHash = bindQueryFn(fetchTransactionByHash, transactionCache);
+
+// useResultSelect always applies select when a result exists; a module-level
+// identity keeps the reference stable (same rationale as polledQuery).
+const identity = <T>(r: T) => r;
+
+// Poll cadence for a pending transaction (no receipt yet): catches a
+// confirmation within ~one block of 12s chains.
+const PENDING_TX_POLL_INTERVAL = 6_000;
+
+// usePolling has no disabled state; the stopped cadence is expressed as the
+// largest setInterval delay environments accept without clamping the timer
+// down to 1 ms (~24.8 days). The timer exists but its tick effectively never
+// fires, and swapping the interval re-arms it the moment status flips.
+const POLL_DISABLED_INTERVAL = 2_147_483_000;
 
 /** Latest blocks page; omit the cursor for the head page. */
 export function useLatestBlocks(chainId: number, limit: number, beforeBlock?: bigint) {
@@ -137,6 +164,56 @@ export function useBlockByNumber(chainId: number, blockNumberStr: string) {
   return useBlockQuery([chainId, blockNumberStr]);
 }
 
-export function useTransactionByHash(chainId: number, txHash: string) {
-  return useTransactionQuery([chainId, txHash]);
+// Transaction detail query with pending-only polling. One
+// getTransactionByHash call already fetches the transaction AND its receipt
+// (see utils/blockRpcData), so every tick re-checks both. The composition
+// mirrors createPolledQueryHook rather than createQueryHook because a
+// usePolling tick only reaches the stores this hook reads when the poller
+// shares the same useInjectable instance as the useRun below (see the
+// polledQuery.ts header). usePolling's react-toolroom default additionally
+// skips ticks while the document is hidden, so a background tab stops
+// hitting the RPC.
+export function useTransactionByHash(
+  chainId: number,
+  txHash: string,
+): PolledQueryResult<RpcTransaction | undefined> {
+  // Same widening createQueryHook/polledQuery perform: the runtime call
+  // signature is [...K, signal?] and the cache slot widens with it.
+  const runArgs = [chainId, txHash] as unknown as [number, string, signal?: AbortSignal];
+  const provider = transactionCache as unknown as CacheProvider<
+    RpcTransaction | undefined,
+    [number, string, signal?: AbortSignal]
+  >;
+
+  const injectable = useInjectable(queryTransactionByHash, {
+    name: queryTransactionByHash.name || 'query',
+  });
+  const stale = useCache(injectable, provider, DEFAULT_STALE_TIME);
+  const data = useResultSelect(injectable, identity);
+  const fetching = useLoading(injectable);
+  const status = useArgsStatus(injectable, runArgs);
+  const loading = status.loading && status.data === undefined;
+
+  useRun(injectable, runArgs, { signal: true, hash: hashArgs });
+
+  // Poll ONLY while the transaction is pending (status -1 — no receipt
+  // yet). A settled receipt (success or failed) swaps to the disabled
+  // interval, which re-arms the timer to a never-firing tick.
+  const pending = data?.status === -1;
+  usePolling(injectable, pending ? PENDING_TX_POLL_INTERVAL : POLL_DISABLED_INTERVAL, {
+    args: [chainId, txHash] as unknown as [number, string, signal?: AbortSignal],
+  });
+
+  const refetch = useRefresh(injectable, runArgs, provider);
+
+  return {
+    data,
+    loading,
+    fetching,
+    error: status.error,
+    failureCount: status.failureCount,
+    stale,
+    dataUpdatedAt: status.dataUpdatedAt,
+    refetch,
+  };
 }

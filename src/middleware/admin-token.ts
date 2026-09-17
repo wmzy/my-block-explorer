@@ -29,3 +29,16 @@ export const requireAdminToken: MiddlewareHandler = async (c, next) => {
 
   await next();
 };
+
+// Opt-in admin gate for core-workflow writes that must keep working in a
+// zero-config local session: with no ADMIN_TOKEN configured the request
+// passes straight through; with one configured, enforcement is identical
+// to requireAdminToken (delegated above, so the 403 bodies match exactly).
+export const requireAdminTokenIfConfigured: MiddlewareHandler = (c, next) => {
+  if (!process.env.ADMIN_TOKEN) {
+    return next();
+  }
+  // The returned promise must propagate: it carries the 403 Response on
+  // rejection paths, and dropping it leaves the context unfinalized.
+  return requireAdminToken(c, next);
+};

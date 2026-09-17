@@ -176,13 +176,23 @@ describe('TransactionDetail page', () => {
     expect(screen.getByText(`transfer(${RECIPIENT}, 1000000)`)).toBeInTheDocument();
     expect(screen.getByText(inputData)).toBeInTheDocument();
 
-    // Event logs card: decoded Transfer entry + emitter address link.
+    // Event logs card: decoded Transfer entry + emitter address link (a log
+    // emitter is by definition a contract, so it targets the contract view).
     expect(await screen.findByRole('heading', { name: 'Event Logs' })).toBeInTheDocument();
     expect(
       screen.getByText(`Transfer(${SENDER}, ${RECIPIENT}, ${AMOUNT.toString()})`),
     ).toBeInTheDocument();
-    const emitterLink = screen.getByRole('link', { name: TOKEN });
-    expect(emitterLink).toHaveAttribute('href', `/chain/1/address/${TOKEN}`);
+    // From/To rows are copyable links into the address view.
+    expect(screen.getByRole('link', { name: SENDER })).toHaveAttribute(
+      'href',
+      `/chain/1/address/${SENDER}`,
+    );
+    // To and the log emitter are the same address here: the To row points
+    // at the address view, the emitter at the contract view.
+    const tokenLinks = screen.getAllByRole('link', { name: TOKEN });
+    expect(tokenLinks.map(link => link.getAttribute('href'))).toEqual(
+      expect.arrayContaining([`/chain/1/address/${TOKEN}`, `/chain/1/contract/${TOKEN}`]),
+    );
   });
 
   it('degrades to raw-only for an unverified to-contract without error UI', async () => {
@@ -201,9 +211,17 @@ describe('TransactionDetail page', () => {
     expect(screen.queryByText('Function')).not.toBeInTheDocument();
     expect(screen.queryByText(/Failed to fetch/)).not.toBeInTheDocument();
 
-    // Event log falls back to raw topics + data.
+    // Event log falls back to raw topics + data; topic0 becomes an external
+    // openchain signature lookup for the unknown selector.
     expect(await screen.findByRole('heading', { name: 'Event Logs' })).toBeInTheDocument();
     expect(screen.getByText(new RegExp(transferTopic0.slice(2)))).toBeInTheDocument();
+    const topic0Link = screen.getByRole('link', { name: new RegExp(transferTopic0.slice(2)) });
+    expect(topic0Link).toHaveAttribute(
+      'href',
+      `https://openchain.xyz/signatures?query=${transferTopic0}`,
+    );
+    expect(topic0Link).toHaveAttribute('target', '_blank');
+    expect(topic0Link).toHaveAttribute('rel', 'noopener noreferrer');
   });
 
   it('decodes the revert reason of a failed transaction from a replayed call', async () => {
@@ -243,6 +261,8 @@ describe('TransactionDetail page', () => {
     renderDetail();
 
     expect(await screen.findByText('Created Contract')).toBeInTheDocument();
+    // An empty To renders the creation label instead of a broken link.
+    expect(screen.getByText('Contract Creation')).toBeInTheDocument();
     const link = screen.getByRole('link', { name: CREATED });
     expect(link).toHaveAttribute('href', `/chain/1/contract/${CREATED}`);
     // Creation carries no call data: no function-call or event-log cards.

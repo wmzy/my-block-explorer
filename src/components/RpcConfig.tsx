@@ -278,15 +278,17 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
   const [loading, setLoading] = useState(false);
   const [testResult, setTestResult] = useState<RpcTestResult | null>(null);
 
-  // Admin token entry: rpc-config reads are gated server-side, so the
-  // modal always offers the field and flags a 403 from the config fetch.
+  // Admin token entry: rpc-config writes are gated server-side by
+  // ADMIN_TOKEN (reads are open), so the modal always offers the field
+  // and flags a 403 from a save/delete with a notice.
   const [adminTokenInput, setAdminTokenInput] = useState('');
   const [adminTokenStored, setAdminTokenStored] = useState(() => hasAdminToken());
-  const [configLoadForbidden, setConfigLoadForbidden] = useState(false);
+  const [saveForbidden, setSaveForbidden] = useState(false);
 
   const chainName = getChainName(chainId);
   const presets = getRpcPresets(chainId);
   const adminTokenInputId = useId();
+  const customFormId = useId();
 
   useEffect(() => {
     if (isOpen) {
@@ -299,19 +301,12 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
       const configs = await getRpcConfigs();
       const chainConfig = configs.find(c => c.chainId === chainId);
       setCurrentConfig(chainConfig ?? null);
-      setConfigLoadForbidden(false);
     }
     catch (error) {
+      // Reads are open server-side, so a failure here is a transport or
+      // server problem, not the admin gate.
       console.error('Failed to load current config:', error);
-      // 403 means the admin gate rejected us; show the token notice
-      // instead of silently swallowing the failure.
-      if (error instanceof ApiError && error.status === 403) {
-        setConfigLoadForbidden(true);
-        setCurrentConfig(null);
-      }
-      else {
-        setConfigLoadForbidden(false);
-      }
+      setCurrentConfig(null);
     }
   };
 
@@ -323,8 +318,9 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
     setAdminTokenStored(true);
     setAdminTokenInput('');
     toast.success('Admin token saved.');
-    // The http layer picks the token up on the next request; refetch so
-    // the gated config list (and the 403 notice) updates immediately.
+    // The http layer picks the token up on the next request; drop any
+    // stale save-403 notice and refetch so the config list updates.
+    setSaveForbidden(false);
     await loadCurrentConfig();
   };
 
@@ -332,6 +328,7 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
     clearAdminToken();
     setAdminTokenStored(false);
     setAdminTokenInput('');
+    setSaveForbidden(false);
     toast.success('Admin token cleared.');
     await loadCurrentConfig();
   };
@@ -402,6 +399,7 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
         url,
         maxEventRange: finalMaxEventRange,
       });
+      setSaveForbidden(false);
 
       await loadCurrentConfig();
       onConfigSaved?.();
@@ -414,8 +412,13 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
     }
     catch (error) {
       console.error('Failed to save config:', error);
-      // A 403 from the admin-token gate carries a server message that
-      // explains how to enable admin operations; show it verbatim.
+      // A 403 means the server has ADMIN_TOKEN configured but this
+      // browser's token is missing or wrong; flag it with the notice.
+      if (error instanceof ApiError && error.status === 403) {
+        setSaveForbidden(true);
+      }
+      // The 403 body carries a server message explaining the gate; show
+      // it verbatim.
       toast.error(
         error instanceof ApiError && error.status === 403 && error.message
           ? error.message
@@ -439,12 +442,16 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
 
     try {
       await deleteRpcConfig(chainId);
+      setSaveForbidden(false);
       await loadCurrentConfig();
       onConfigSaved?.();
       toast.success('Reverted to default RPC node.');
     }
     catch (error) {
       console.error('Failed to remove config:', error);
+      if (error instanceof ApiError && error.status === 403) {
+        setSaveForbidden(true);
+      }
       toast.error(
         error instanceof ApiError && error.status === 403 && error.message
           ? error.message
@@ -563,8 +570,9 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
           <h3>添加自定义RPC节点</h3>
           <form onSubmit={handleCustomSubmit} className={customFormStyles}>
             <div className="form-group">
-              <label>节点名称</label>
+              <label htmlFor={`${customFormId}-name`}>节点名称</label>
               <input
+                id={`${customFormId}-name`}
                 type="text"
                 value={customName}
                 onChange={e => setCustomName(e.target.value)}
@@ -573,8 +581,9 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
               />
             </div>
             <div className="form-group">
-              <label>RPC URL</label>
+              <label htmlFor={`${customFormId}-url`}>RPC URL</label>
               <input
+                id={`${customFormId}-url`}
                 type="url"
                 value={customUrl}
                 onChange={e => setCustomUrl(e.target.value)}
@@ -583,8 +592,9 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
               />
             </div>
             <div className="form-group">
-              <label>最大事件查询范围（可选）</label>
+              <label htmlFor={`${customFormId}-max-range`}>最大事件查询范围（可选）</label>
               <input
+                id={`${customFormId}-max-range`}
                 type="number"
                 value={customMaxEventRange}
                 onChange={e => setCustomMaxEventRange(e.target.value)}
@@ -706,12 +716,14 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
           </form>
         </div>
       )}
-      {/* Admin token: rpc-config reads/writes are gated server-side by ADMIN_TOKEN */}
+      {/* Admin token: rpc-config writes are gated server-side by ADMIN_TOKEN; reads are open */}
       <div className={sectionStyles}>
         <h3>Admin token</h3>
-        {configLoadForbidden && (
+        {saveForbidden && (
           <div className={adminNoticeStyles}>
-            Admin token required — set it below. Server must have ADMIN_TOKEN configured.
+            Saving requires an admin token — the server has ADMIN_TOKEN
+            configured but this browser's token is missing or wrong. Enter it
+            below, then retry the save.
           </div>
         )}
         <div className={customFormStyles}>

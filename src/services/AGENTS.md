@@ -15,11 +15,11 @@ services/
 ├ ContractSourceService.ts     # Contract verification (Sourcify/Etherscan)
 ├── ContractInteractionService.ts # Contract read/simulate
 ├── AbiParsingService.ts       # ABI parsing, signature extraction
-├── DynamicTableManager.ts     # Dynamic event table creation
 ├── BlockService.ts            # Block data (RPC + DB hybrid)
 ├── TransactionService.ts      # Transaction data
 ├── AddressService.ts          # Address data, binary search tx discovery
 ├── SearchService.ts           # Unified search
+├── ens.ts                     # ENS reverse resolution hook (mainnet-pinned, frontend)
 └── PerformanceMonitor.ts      # Global performance tracking
 ```
 
@@ -27,7 +27,7 @@ services/
 
 | Task                        | Service                    | Key Function             |
 | --------------------------- | -------------------------- | ------------------------ |
-| Index contract events       | EventIndexingService       | `startIndexing()`        |
+| Index contract events       | EventIndexingService       | `addIndexingRange()`, `createRange{All,Recent,First,Continue,Catchup}()` |
 | Get contract source/ABI     | ContractSourceService      | `getContractSource()`    |
 | Validate event filters      | EventValidationService     | `validateEventFilters()` |
 | Query indexed events        | EventQueryService          | `getContractEvents()`    |

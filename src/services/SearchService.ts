@@ -418,33 +418,6 @@ const createSearchService = (deps: SearchServiceDeps) => {
       }
     },
 
-    getPopularSearches: async (
-      _chainId: number,
-      limit: number = 10,
-    ): Promise<
-      {
-        query: string;
-        count: number;
-      }[]
-    > => {
-      try {
-        const result = await db.execute(
-          sql`SELECT query, COUNT(*) as count
-              FROM search_history
-              WHERE searched_at > now() - INTERVAL '7 days'
-              GROUP BY query
-              ORDER BY count DESC
-              LIMIT ${limit}`,
-        );
-
-        return result as unknown as Array<{ query: string; count: number }>;
-      }
-      catch (error) {
-        logger.error({ err: error }, 'Failed to get popular searches');
-        return [];
-      }
-    },
-
     cleanupSearchHistory: async (olderThanDays: number = 30): Promise<void> => {
       try {
         await db.execute(

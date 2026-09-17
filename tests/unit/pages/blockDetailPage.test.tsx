@@ -19,6 +19,20 @@ vi.mock('@/components/TopNavigation', () => ({
   ),
 }));
 
+// CopyableHash still takes plain href strings; stubbed here to keep the
+// view test isolated from the shared component internals.
+vi.mock('@/components/ui/CopyableHash', () => ({
+  CopyableHash: ({
+    value,
+    truncated,
+    href,
+  }: {
+    value: string;
+    truncated?: string;
+    href?: string;
+  }) => (href ? <a href={href}>{truncated ?? value}</a> : <span>{truncated ?? value}</span>),
+}));
+
 vi.mock('@/config/chains', () => ({
   getChainInfo: (chainId: number) => {
     if (chainId === 1) return { id: 1, name: 'Ethereum', nativeCurrency: { symbol: 'ETH' } };
@@ -75,6 +89,8 @@ const makeBlock = (number: number) => ({
   sizeBytes: 45_678,
 });
 
+const ZERO_PARENT_HASH = '0x0000000000000000000000000000000000000000000000000000000000000000';
+
 const renderBlockDetail = (path: string) =>
   render(
     <MemoryRouter
@@ -108,7 +124,41 @@ describe('BlockDetail view', () => {
     expect(await screen.findByText('Block Details')).toBeInTheDocument();
     expect(screen.getByText('18,000,001')).toBeInTheDocument();
     expect(screen.getByText(/View 150 Transactions/)).toBeInTheDocument();
+    // Hash rows are copyable/navigable instead of plain text: the block
+    // hash is copy-only (the route is by number), the parent hash links to
+    // block N-1, and the miner links to its address page.
+    expect(screen.getByText('0xhash18000001').closest('a')).toBeNull();
+    expect(screen.getByText('0xparent18000001').closest('a')?.getAttribute('href')).toBe(
+      '/chain/1/block/18000000',
+    );
+    expect(
+      screen
+        .getByText('0x1234567890abcdef1234567890abcdef12345678')
+        .closest('a')
+        ?.getAttribute('href'),
+    ).toBe('/chain/1/address/0x1234567890abcdef1234567890abcdef12345678');
     // Happy path: the error-only head lookup never fires.
+    expect(mockGetBlockNumber).not.toHaveBeenCalled();
+  });
+
+  it('renders the genesis parent hash copy-only with no parent link', async () => {
+    mockUseBlockByNumber.mockReturnValue({
+      data: { ...makeBlock(0), parentHash: ZERO_PARENT_HASH },
+      loading: false,
+      error: undefined,
+    });
+    renderBlockDetail('/chain/1/block/0');
+
+    expect(await screen.findByText('Block Details')).toBeInTheDocument();
+    // Genesis has no parent block to visit: the zero parent hash stays
+    // copyable-only while the miner keeps its address link.
+    expect(screen.getByText(ZERO_PARENT_HASH).closest('a')).toBeNull();
+    expect(
+      screen
+        .getByText('0x1234567890abcdef1234567890abcdef12345678')
+        .closest('a')
+        ?.getAttribute('href'),
+    ).toBe('/chain/1/address/0x1234567890abcdef1234567890abcdef12345678');
     expect(mockGetBlockNumber).not.toHaveBeenCalled();
   });
 

@@ -6,6 +6,7 @@ import { formatGwei } from 'viem';
 
 import TopNavigation from '@/components/TopNavigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
+import { CopyableHash } from '@/components/ui/CopyableHash';
 import { ErrorState, EmptyState } from '@/components/ui/ErrorState';
 import { InfoGrid, InfoItem } from '@/components/ui/InfoGrid';
 import { LoadingState } from '@/components/ui/LoadingState';
@@ -120,6 +121,13 @@ export default function BlockDetail() {
     );
   };
 
+  // Parent-hash link target: block N's parent is N-1. The genesis block
+  // has no parent to visit (its parent hash is the zero placeholder), so
+  // its row stays copy-only.
+  const fetchedNumber = blockInfo ? parseBlockNumber(blockInfo.number) : undefined;
+  const parentNumber =
+    fetchedNumber !== undefined && fetchedNumber > 0n ? fetchedNumber - 1n : undefined;
+
   if (!chainInfo) {
     return (
       <>
@@ -186,12 +194,28 @@ export default function BlockDetail() {
                 <InfoItem label="Block Number">
                   {Number(BigInt(blockInfo.number)).toLocaleString()}
                 </InfoItem>
-                <InfoItem label="Block Hash">{blockInfo.hash}</InfoItem>
-                <InfoItem label="Parent Hash">{blockInfo.parentHash}</InfoItem>
+                <InfoItem label="Block Hash">
+                  <CopyableHash value={blockInfo.hash} />
+                </InfoItem>
+                <InfoItem label="Parent Hash">
+                  <CopyableHash
+                    value={blockInfo.parentHash}
+                    href={
+                      parentNumber !== undefined
+                        ? `/chain/${currentChainId}/block/${parentNumber}`
+                        : undefined
+                    }
+                  />
+                </InfoItem>
                 <InfoItem label="Timestamp">
                   {`${new Date(blockInfo.timestamp).toLocaleString()} (${formatRelativeTime(blockInfo.timestamp)})`}
                 </InfoItem>
-                <InfoItem label="Miner">{blockInfo.miner}</InfoItem>
+                <InfoItem label="Miner">
+                  <CopyableHash
+                    value={blockInfo.miner}
+                    href={`/chain/${currentChainId}/address/${blockInfo.miner}`}
+                  />
+                </InfoItem>
                 <InfoItem label="Gas Limit">{formatGas(blockInfo.gasLimit)}</InfoItem>
                 <InfoItem label="Gas Used">{formatGas(blockInfo.gasUsed)}</InfoItem>
                 {blockInfo.baseFeePerGas && (

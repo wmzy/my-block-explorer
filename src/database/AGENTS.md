@@ -14,7 +14,6 @@ database/
 ├── chain-database-manager.ts   # Per-chain DB file management
 ├── chain-schema-manager.ts     # Dynamic event table schemas via drizzle-kit/api
 ├── chain-event-table-manager.ts # Dynamic event table creation (923 lines)
-├── multi-chain-setup.ts        # Environment presets
 ├── performance-monitor.ts      # Query performance tracking
 ├── migrate.ts                  # Migration script
 └── init.ts                     # Re-exports

@@ -2,7 +2,7 @@
 
 A self-hosted, **single-user** block explorer for EVM developers. Browse any viem-supported chain, index contract events into local DuckDB files, inspect verified sources, storage layouts, and read/simulate contracts — all on your own machine.
 
-> **This is not a multi-tenant service.** DuckDB allows a single writer per database file, and the event-indexing API is unauthenticated by design (see [Security](#security--admin)). Run it for yourself locally; if you ever expose the API on a shared network, put it behind a reverse proxy with authentication first.
+> **This is not a multi-tenant service.** DuckDB allows a single writer per database file, and by default (no `ADMIN_TOKEN` set) every write endpoint is open (see [Security](#security--admin)). Run it for yourself locally; if you ever expose the API on a shared network, set `ADMIN_TOKEN` and the CORS allowlist, or put it behind a reverse proxy with authentication.
 
 Live frontend-only demo (no local backend — the API-dependent features need your own server): https://wmzy.github.io/my-block-explorer/
 
@@ -78,7 +78,7 @@ pnpm lint            # ESLint
 - **Dev (default):** `pnpm dev` runs everything on port **3000**; requests to `/api/*` are handled by the Hono app inside the Vite dev process (`honoApiPlugin` in `vite.config.ts`).
 - **Standalone:** `pnpm dev:server` / `pnpm start` listen on **8201** (`PORT` env override; the CLI also accepts `--port`).
 - **Discovery:** on load the frontend scans `localhost:8201-8205`, probing `GET /api/health` on each (`src/hooks/useAutoDiscovery.ts`). If none respond it shows a setup screen where you can enter a backend URL manually; the choice persists in localStorage.
-- **A hosted frontend cannot auto-discover a remote backend.** The scan is localhost-only. When using the GitHub Pages build (or any static hosting) you must type your backend URL into the setup screen, and the backend must allow the frontend's origin (the standalone server enables CORS for that reason).
+- **A hosted frontend cannot auto-discover a remote backend.** The scan is localhost-only. When using the GitHub Pages build (or any static hosting) you must type your backend URL into the setup screen, and the backend must allow the frontend's origin — add it to `CORS_ALLOWED_ORIGINS` (or point `FRONTEND_URL` at it); see [CORS](#cors).
 
 ## Data layout
 
@@ -93,32 +93,46 @@ Environment variables actually read by the code (no example env file ships with 
 | --- | --- | --- |
 | `PORT` | server / vite | Standalone API port (default 8201); Vite dev server port (default 3000) |
 | `DATABASE_URL` | `src/database/drizzle.ts` | Main DuckDB file (default `duckdb://data/blockchain.db`) |
-| `ADMIN_TOKEN` | `src/middleware/admin-token.ts` | Enables admin-gated endpoints (see below) |
+| `ADMIN_TOKEN` | `src/middleware/admin-token.ts` | When set, gates core-workflow writes (event ranges, rpc-config writes) and the admin/diagnostic surface (see above) |
+| `CORS_ALLOWED_ORIGINS` | `src/middleware/cors-origins.ts` | Extra allowed CORS origins (comma-separated), in addition to loopback and `FRONTEND_URL` |
 | `ENABLE_DEBUG_API` | `src/api-app.ts` | `1` mounts `/debug/db/query` (raw SQL) — dev only |
 | `LOG_LEVEL` | logger | pino level (default `info`) |
 | `HTTP_PROXY` / `HTTPS_PROXY` | server | Proxy for outbound RPC calls |
-| `FRONTEND_URL` | CLI | URL opened by the CLI's `--open` flag |
+| `FRONTEND_URL` | CLI + CORS | URL opened by the CLI's `--open` flag; also added to the CORS origin allowlist |
 | `VITE_BASE` | build time | Base path for the Pages build (`pnpm build:pages` sets it) |
 
 ## Security & admin
 
-The trust model is **one local user**. Read endpoints are open; a small set of mutating/admin endpoints is gated by a shared secret, and everything else that writes (event-indexing ranges) is intentionally unauthenticated.
+The trust model is **one local user**. Read endpoints are open; writes and admin endpoints are gated in two tiers, both keyed on the `x-admin-token` header (compared with `timingSafeEqual` in `src/middleware/admin-token.ts`):
 
-- **`ADMIN_TOKEN`** (server env) gates admin endpoints via the `x-admin-token` header, compared with `timingSafeEqual`. **Fail-closed:** if `ADMIN_TOKEN` is unset, every gated request is rejected with 403 — there is no default token.
-- Gated endpoints:
-  - `GET` / `POST` / `DELETE /api/rpc-configs` (custom RPC endpoint management — reads included)
+- **Opt-in gated writes** (`requireAdminTokenIfConfigured`): enforced **only when `ADMIN_TOKEN` is set** on the server — with the variable unset the request passes straight through, so a zero-config local session works out of the box. This tier covers the core-workflow writes:
+  - event-range mutations: `POST/PATCH/DELETE …/events/ranges*`, `POST …/events/ranges/quick`, and `start`/`pause`/`resume`
+  - RPC-config writes: `POST` / `DELETE /api/rpc-configs` (`GET /api/rpc-configs` is open — it exposes endpoint URLs, no secrets)
+- **Fail-closed admin/diagnostic surface** (`requireAdminToken`): rejected with 403 whenever `ADMIN_TOKEN` is unset or the header doesn't match — there is no default token. This tier covers:
   - `POST /api/chains/:chainId/contracts/:address/clear-cache` (drop cached contract source)
   - `DELETE /api/chains/:chainId/contracts/:address/storage-layout/cache` (drop cached storage layout)
   - everything under `/api/performance/*`
 - In the UI, open the ⚙️ RPC settings modal and fill the **"Admin token (stored in this browser)"** field; it is kept in localStorage and attached to requests automatically (`src/util/adminAuth.ts`).
 - **`ENABLE_DEBUG_API=1`** mounts `POST /debug/db/query`, which executes arbitrary SQL against your databases. Never enable it on anything reachable by others.
-- **Event-indexing range writes are unauthenticated by design** (`POST/PATCH/DELETE …/events/ranges*`, `start`/`pause`/`resume`). Combined with DuckDB's single-writer model, this is fine for a local single-user deployment but **must not** be exposed on a shared or public network — put the API behind an authenticated reverse proxy (e.g. nginx with basic auth / mTLS) if more than your own browser can reach it.
+- With `ADMIN_TOKEN` unset, the opt-in-gated writes above are open to anyone who can reach the API. Combined with DuckDB's single-writer model, this is fine for a local single-user deployment but **must not** be exposed on a shared or public network — set `ADMIN_TOKEN` (and restrict CORS origins) or put the API behind an authenticated reverse proxy (e.g. nginx with basic auth / mTLS) if more than your own browser can reach it.
+
+### CORS
+
+Cross-origin access uses an allowlist (`src/middleware/cors-origins.ts`), not `*`:
+
+- Requests without an `Origin` header (same-origin fetches, curl) get no CORS headers at all.
+- Loopback origins — `localhost`, `127.0.0.1`, `[::1]`, any port — are always allowed (the Vite dev server on `localhost:3000` reaching the API on `localhost:8201`).
+- Additional origins come from `CORS_ALLOWED_ORIGINS` (comma-separated) and `FRONTEND_URL`.
+- The Vite dev server applies the same shared allowlist to its own CORS config (imported relatively into `vite.config.ts`), so dev-server responses and the bridged `/api` agree with the API's policy.
 
 ## How the backend behaves
 
 Details a developer will run into:
 
-- **Event indexing is manual and range-based.** You add a block range for a contract; `EventIndexingService` walks it in batches (one serial job per range — no global queue). `start`/`resume` return `202` immediately; the UI polls range status. On server start, ranges left in `indexing` by a previous process are reconciled to `error` with *"Interrupted by server restart — resume to continue"*.
+- **Event indexing is manual and range-based.** You add a block range for a contract; `EventIndexingService` walks it in batches (one serial job per range — no global queue). `start`/`resume` return `202` immediately; the UI polls range status. On server start, ranges left in `indexing` by a previous process are reconciled to `error` with *"Interrupted by server restart — resume to continue"*. Range mutations are opt-in gated (see [Security](#security--admin)).
+- **Range bounds are concrete numbers.** A bound may be submitted as a number or a block tag (`latest`, `finalized`, `safe`, `earliest`), but tags are resolved to concrete block numbers once, at range creation — stored rows never carry tag sentinels, and legacy rows that still do are resolved defensively when indexing starts.
+- **Creation-block honesty.** Contract-creation lookups return "unknown" rather than fabricating a boundary. Quick mode `all` starts at the creation block when known, from genesis when unknown; quick mode `first` fails with *"Contract creation block unknown — enter a start block manually"* instead of guessing.
+- **Quick-create modes** (`POST …/events/ranges/quick`): `all`, `recent`, `first`, `continue`, and `catchup` — the last creates a range from the furthest block any existing range reached up to the current head (`400 "No previous range found. Cannot catch up."` when no ranges exist).
 - **Cache TTLs** for persisted fetches: verified contract source 30 days; proxy contracts 24 h; unverified source 3 days; contract-creation lookup failure 24 h; storage-layout `NOT_FOUND` 24 h.
 - **Address API returns persistent data only** — no balance or transaction count (the UI reads those live from RPC). Transaction history is heuristic (balance-change binary search) and the response reports `coverage` (`complete`/`partial`/`none`); unknown coverage renders a "source unknown" banner instead of pretending the history is complete.
 - **Search** responses may carry `degraded: true` + `degradedReasons` when an upstream lookup failed — the UI offers a retry rather than "no results". ENS names are **not** resolved server-side; the browser resolves them against a mainnet RPC. `search_history` ids are int32-safe (epoch-seconds based).

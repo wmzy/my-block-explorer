@@ -65,10 +65,12 @@ describe('API routes', () => {
   });
 
   describe('admin gating (no env vars)', () => {
-    // Fail-closed wiring: the rpc-config endpoints (reads included —
-    // custom RPC URLs can embed API keys) and the whole performance
-    // subtree reject without ADMIN_TOKEN, and the debug routes stay
-    // unmounted when ENABLE_DEBUG_API is not opted in.
+    // Gating model: rpc-config READS are open (endpoint URLs, no secrets).
+    // rpc-config WRITES use the opt-in gate (requireAdminTokenIfConfigured):
+    // without ADMIN_TOKEN a local zero-config session can save; with one
+    // configured they reject. The performance subtree stays strictly
+    // fail-closed, and the debug routes stay unmounted when
+    // ENABLE_DEBUG_API is not opted in.
     beforeEach(() => {
       vi.stubEnv('ADMIN_TOKEN', '');
     });
@@ -77,16 +79,13 @@ describe('API routes', () => {
       vi.unstubAllEnvs();
     });
 
-    it('rejects GET /api/rpc-configs (custom URLs may embed API keys)', async () => {
+    it('serves GET /api/rpc-configs without a token (open read)', async () => {
       const response = await app.request('/api/rpc-configs', { method: 'GET' });
 
-      expect(response.status).toBe(403);
+      expect(response.status).toBe(200);
 
       const data = await response.json();
-      expect(data.error).toBe('Forbidden');
-      expect(data.message).toBe(
-        'Admin operations are disabled. Set ADMIN_TOKEN on the server to enable them.',
-      );
+      expect(Array.isArray(data.configs)).toBe(true);
     });
 
     it('lets GET /api/rpc-configs through with a matching x-admin-token', async () => {
@@ -103,25 +102,44 @@ describe('API routes', () => {
       expect(Array.isArray(data.configs)).toBe(true);
     });
 
-    it('rejects POST /api/rpc-configs with the disabled message', async () => {
-      const response = await app.request('/api/rpc-configs', { method: 'POST' });
+    it('passes POST /api/rpc-configs through the open gate to validation (zero-config saves work)', async () => {
+      const response = await app.request('/api/rpc-configs', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({}),
+      });
 
-      expect(response.status).toBe(403);
-
-      const data = await response.json();
-      expect(data.error).toBe('Forbidden');
-      expect(data.message).toBe(
-        'Admin operations are disabled. Set ADMIN_TOKEN on the server to enable them.',
-      );
+      expect(response.status).toBe(400);
+      expect((await response.json()).error).toBe('Missing required fields');
     });
 
-    it('rejects DELETE /api/rpc-configs/:chainId', async () => {
-      const response = await app.request('/api/rpc-configs/1', {
-        method: 'DELETE',
+    it('rejects POST /api/rpc-configs without the token once ADMIN_TOKEN is set', async () => {
+      vi.stubEnv('ADMIN_TOKEN', 'test-admin-token');
+
+      const response = await app.request('/api/rpc-configs', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ chainId: 1, name: 'n', url: 'https://rpc' }),
       });
 
       expect(response.status).toBe(403);
-      expect((await response.json()).error).toBe('Forbidden');
+      const body = await response.json();
+      expect(body.error).toBe('Forbidden');
+      expect(body.message).toBe('Invalid admin token.');
+    });
+
+    it('rejects DELETE /api/rpc-configs/:chainId with a wrong token once ADMIN_TOKEN is set', async () => {
+      vi.stubEnv('ADMIN_TOKEN', 'test-admin-token');
+
+      const response = await app.request('/api/rpc-configs/1', {
+        method: 'DELETE',
+        headers: { 'x-admin-token': 'not-the-token' },
+      });
+
+      expect(response.status).toBe(403);
+      const body = await response.json();
+      expect(body.error).toBe('Forbidden');
+      expect(body.message).toBe('Invalid admin token.');
     });
 
     it('rejects GET /api/performance/events (whole subtree gated)', async () => {

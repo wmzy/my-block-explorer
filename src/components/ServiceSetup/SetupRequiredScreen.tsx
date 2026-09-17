@@ -1,5 +1,6 @@
 import { css, cx } from '@linaria/core';
 import { useState, useCallback } from 'react';
+import { Alert } from 'haze-ui';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { ErrorState } from '@/components/ui/ErrorState';
@@ -9,6 +10,12 @@ type SetupRequiredScreenProps = {
   isConnecting: boolean;
   onSetApiUrl: (url: string) => Promise<boolean>;
   onDiscover: () => void;
+  /**
+   * Whether the page itself is served over HTTPS. On HTTPS pages the browser
+   * may block the automatic localhost port scan (mixed content; notably
+   * Safari), so an explainer is shown. Defaults to document.location.
+   */
+  isHttpsPage?: boolean;
 };
 
 type PackageManager = 'npx' | 'pnpm' | 'bunx';
@@ -334,11 +341,22 @@ const errorWrapperStyle = css`
   margin-top: var(--haze-space-3);
 `;
 
+const httpsNoticeStyle = css`
+  margin-bottom: var(--haze-space-4);
+  font-size: var(--haze-text-sm);
+  line-height: var(--haze-leading-relaxed);
+
+  code {
+    font-family: var(--haze-font-mono);
+  }
+`;
+
 export function SetupRequiredScreen({
   error,
   isConnecting,
   onSetApiUrl,
   onDiscover,
+  isHttpsPage = document.location.protocol === 'https:',
 }: SetupRequiredScreenProps) {
   const [packageManager, setPackageManager] = useState<PackageManager>('npx');
   const [url, setUrl] = useState('');
@@ -379,6 +397,15 @@ export function SetupRequiredScreen({
             No local API service detected. Start a local service or connect to a remote endpoint.
           </p>
         </header>
+
+        {isHttpsPage && (
+          <Alert variant="warning" className={httpsNoticeStyle}>
+            This page is served over HTTPS, so the automatic scan of local ports may be
+            blocked by the browser (this varies by browser; Safari blocks it). Entering{' '}
+            <code>http://localhost:8201</code> in the API URL field usually works in Chrome
+            and Firefox. On Safari, run the frontend locally instead (<code>pnpm dev</code>).
+          </Alert>
+        )}
 
         <Card className={cardStyle}>
           <CardContent className={cardContentStyle}>

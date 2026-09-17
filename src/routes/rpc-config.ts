@@ -6,13 +6,13 @@ import { db, userRpcConfigs } from '../database/init';
 const logger = createLogger('rpc-config-routes');
 import { rpcManager } from '../services/RpcManager';
 import { getValidatedChainId } from '../server/validation';
-import { requireAdminToken } from '../middleware/admin-token';
+import { requireAdminTokenIfConfigured } from '../middleware/admin-token';
 
 const app = new Hono();
 
-// Custom RPC URLs can embed API keys, so reads are admin-gated too —
-// not just the mutations.
-app.get('/rpc-configs', requireAdminToken, async (c) => {
+// Reads are open: the response contains endpoint URLs, no secrets, and
+// the RPC config modal needs them without an admin token.
+app.get('/rpc-configs', async (c) => {
   try {
     const configs = await db.select().from(userRpcConfigs);
 
@@ -34,7 +34,9 @@ app.get('/rpc-configs', requireAdminToken, async (c) => {
   }
 });
 
-app.post('/rpc-configs', requireAdminToken, async (c) => {
+// Writes use the opt-in gate: without ADMIN_TOKEN a local session can
+// still save its RPC config; with one configured, writes require it.
+app.post('/rpc-configs', requireAdminTokenIfConfigured, async (c) => {
   try {
     const body = await c.req.json();
     const { chainId, name, url, supportsHistory, maxEventRange } = body;
@@ -85,7 +87,7 @@ app.post('/rpc-configs', requireAdminToken, async (c) => {
   }
 });
 
-app.delete('/rpc-configs/:chainId', requireAdminToken, async (c) => {
+app.delete('/rpc-configs/:chainId', requireAdminTokenIfConfigured, async (c) => {
   try {
     const chainId = getValidatedChainId(c.req.param('chainId'));
 

@@ -52,6 +52,7 @@ type TransactionsHookResult = {
     nextCursor?: bigint;
   };
   loading: boolean;
+  fetching?: boolean;
   error?: Error;
   refetch?: () => void;
 };
@@ -232,5 +233,59 @@ describe('TransactionsList view', () => {
     expect(await screen.findByText('No transactions found')).toBeInTheDocument();
     // cursor = (18000000 + 1) * 1_000_000: start AT block 18000000, walk down
     expect(mockUseLatestTransactions).toHaveBeenCalledWith(1, 20, 18_000_001_000_000n);
+  });
+
+  it('Refresh re-anchors at the live head: back to page 1, head refetched, cursors reset', async () => {
+    const refetch = vi.fn();
+    const nextCursor = 17_999_980_000_000n;
+    mockUseLatestTransactions.mockReturnValue({
+      data: {
+        transactions: [makeTx(18000001, 1)],
+        latestBlockNumber: 18000001n,
+        hasMore: true,
+        nextCursor,
+      },
+      loading: false,
+      fetching: false,
+      error: undefined,
+      refetch,
+    });
+    renderTransactionsList('/chain/1/transactions');
+
+    expect(await screen.findByText(/Page 1/)).toBeInTheDocument();
+
+    // Walk one page older, then come back to the live head via Refresh.
+    fireEvent.click(screen.getByText('Older'));
+    expect(mockUseLatestTransactions).toHaveBeenLastCalledWith(1, 20, nextCursor);
+
+    fireEvent.click(screen.getByRole('button', { name: '↻ Refresh' }));
+    // Page 1 is the head again (no cursor) and the head entry was refetched
+    // through the cache-bypassing path instead of riding its cached answer.
+    expect(mockUseLatestTransactions).toHaveBeenLastCalledWith(1, 20, undefined);
+    expect(refetch).toHaveBeenCalled();
+    expect(screen.getByText(/Page 1/)).toBeInTheDocument();
+  });
+
+  it('Refresh drops the ?block= deep-link seed and returns to the live head', async () => {
+    mockUseLatestTransactions.mockReturnValue({
+      data: {
+        transactions: [makeTx(18000001, 1)],
+        latestBlockNumber: 18000001n,
+        hasMore: false,
+      },
+      loading: false,
+      fetching: false,
+      error: undefined,
+      refetch: vi.fn(),
+    });
+    renderTransactionsList('/chain/1/transactions?block=18000000');
+
+    expect(await screen.findByText('Success')).toBeInTheDocument();
+    // Seeded page 1 carries the deep-link cursor.
+    expect(mockUseLatestTransactions).toHaveBeenCalledWith(1, 20, 18_000_001_000_000n);
+
+    fireEvent.click(screen.getByRole('button', { name: '↻ Refresh' }));
+    // The seed is dropped: page 1 queries the live head (no cursor).
+    expect(mockUseLatestTransactions).toHaveBeenLastCalledWith(1, 20, undefined);
   });
 });

@@ -1,21 +1,21 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { Hono } from 'hono';
 
-import { requireAdminToken } from '@/middleware/admin-token';
+import { requireAdminToken, requireAdminTokenIfConfigured } from '@/middleware/admin-token';
 
 // Minimal app wrapping the middleware with a probe route, mirroring how
 // routes/rpc-config.ts (per-route) and routes/performance.ts (subtree)
 // apply it. The middleware reads ADMIN_TOKEN per request, so vi.stubEnv
 // controls it per test.
-function testApp() {
+function testApp(middleware = requireAdminToken) {
   const app = new Hono();
-  app.use('/admin/*', requireAdminToken);
+  app.use('/admin/*', middleware);
   app.post('/admin/action', c => c.json({ success: true }));
   return app;
 }
 
-function post(action = '/admin/action', token?: string) {
-  return testApp().request(action, {
+function post(action = '/admin/action', token?: string, middleware = requireAdminToken) {
+  return testApp(middleware).request(action, {
     method: 'POST',
     headers: token === undefined ? {} : { 'x-admin-token': token },
   });
@@ -74,6 +74,58 @@ describe('requireAdminToken middleware', () => {
     vi.stubEnv('ADMIN_TOKEN', 'secret');
 
     const response = await post(undefined, 'secret');
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ success: true });
+  });
+});
+
+describe('requireAdminTokenIfConfigured middleware', () => {
+  it('passes through when ADMIN_TOKEN is unset', async () => {
+    // stubEnv with undefined deletes the key entirely.
+    vi.stubEnv('ADMIN_TOKEN', undefined);
+
+    const response = await post(undefined, undefined, requireAdminTokenIfConfigured);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ success: true });
+  });
+
+  it('passes through when ADMIN_TOKEN is set but empty', async () => {
+    vi.stubEnv('ADMIN_TOKEN', '');
+
+    const response = await post(undefined, undefined, requireAdminTokenIfConfigured);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ success: true });
+  });
+
+  it('enforces the token when ADMIN_TOKEN is set: missing header 403', async () => {
+    vi.stubEnv('ADMIN_TOKEN', 'secret');
+
+    const response = await post(undefined, undefined, requireAdminTokenIfConfigured);
+
+    expect(response.status).toBe(403);
+    expect((await response.json()).message).toBe('Invalid admin token.');
+  });
+
+  it('enforces the token when ADMIN_TOKEN is set: wrong token 403', async () => {
+    vi.stubEnv('ADMIN_TOKEN', 'secret');
+
+    const response = await post(undefined, 'secreX', requireAdminTokenIfConfigured);
+
+    expect(response.status).toBe(403);
+    const body = await response.json();
+    // Same body semantics as requireAdminToken.
+    expect(body.error).toBe('Forbidden');
+    expect(body.message).toBe('Invalid admin token.');
+    expect(body.statusCode).toBe(403);
+  });
+
+  it('lets the request through when ADMIN_TOKEN is set and the token matches', async () => {
+    vi.stubEnv('ADMIN_TOKEN', 'secret');
+
+    const response = await post(undefined, 'secret', requireAdminTokenIfConfigured);
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ success: true });

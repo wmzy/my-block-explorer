@@ -20,7 +20,17 @@ const loadRpcConfigs = (): Promise<void> => {
       });
       rpcConfigsLoaded = true;
     })
-    .catch(() => {
+    .catch((reason: unknown) => {
+      // Keep the default-RPC fallback, but surface why: otherwise a
+      // server-side rejection (e.g. 403) silently forks this frontend's
+      // RPC set from the server's and looks like random slowness.
+      const message = reason instanceof Error ? reason.message : String(reason);
+      const status = typeof (reason as { status?: unknown } | null)?.status === 'number'
+        ? (reason as { status: number }).status
+        : undefined;
+      console.warn(
+        `Custom RPC configs unavailable${status ? ` (HTTP ${status})` : ''}: ${message}. Falling back to default RPC endpoints.`,
+      );
       rpcConfigsLoaded = true;
     })
     .finally(() => {

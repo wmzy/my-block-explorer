@@ -313,4 +313,45 @@ describe('realTimeData', () => {
       expect(result).toBeDefined();
     });
   });
+
+  describe('custom RPC config loading fallback', () => {
+    it('warns with the HTTP status when /api/rpc-configs fails, then falls back to default RPC', async () => {
+      const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+      const defaultFetch = globalThis.fetch;
+      // Same stand-in shape as tests/unit/http.test.ts: fetch-fun's JSON
+      // reader reads the body via res.text(); HTTPError reads
+      // status/statusText/url.
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(() =>
+          Promise.resolve({
+            ok: false,
+            status: 403,
+            statusText: 'Forbidden',
+            url: '/api/rpc-configs',
+            headers: new Headers(),
+            text: () => Promise.resolve(JSON.stringify({ message: 'Forbidden' })),
+          }),
+        ),
+      );
+
+      try {
+        invalidateRpcClients();
+
+        // The fallback keeps client creation working instead of rejecting.
+        await expect(createRpcClient(1)).resolves.toBeDefined();
+
+        expect(warnSpy).toHaveBeenCalledTimes(1);
+        const warning = warnSpy.mock.calls[0]?.[0];
+        expect(typeof warning).toBe('string');
+        expect(warning).toContain('HTTP 403');
+        expect(warning).toContain('Forbidden');
+      }
+      finally {
+        warnSpy.mockRestore();
+        vi.stubGlobal('fetch', defaultFetch);
+        invalidateRpcClients();
+      }
+    });
+  });
 });

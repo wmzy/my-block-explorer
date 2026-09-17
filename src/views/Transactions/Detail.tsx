@@ -124,9 +124,20 @@ const logHeaderStyle = css`
   font-size: var(--haze-text-xs);
 `;
 
+// External signature-lookup affordance for an undecoded topic0: the same ↗
+// marker ExternalLinks uses, scaled to sit inside the raw hex block.
+const topicLinkArrowStyle = css`
+  font-size: 10px;
+  opacity: 0.5;
+  margin-left: var(--haze-space-1);
+`;
+
 // One receipt log: numbered entry, emitter address link, and either the
 // ABI-decoded event signature (when the emitter is the called contract and
-// its ABI is known) or the raw topics + data fallback.
+// its ABI is known) or the raw topics + data fallback. A log emitter is by
+// definition a contract, so the address targets the contract view; the raw
+// fallback links topic0 to the openchain signature database — the standard
+// lookup for an unknown event selector.
 function EventLogEntry({
   log,
   index,
@@ -180,13 +191,27 @@ function EventLogEntry({
         </span>
         <CopyableHash
           value={log.address}
-          href={`/chain/${chainId}/address/${log.address}`}
+          href={`/chain/${chainId}/contract/${log.address}`}
         />
       </div>
       {decoded !== null ? (
         <div className={logRawStyle}>{decoded}</div>
       ) : (
-        <div className={logRawStyle}>{`${log.topics.join('\n')}\n${log.data}`}</div>
+        <div className={logRawStyle}>
+          {log.topics.length > 0 && (
+            <a
+              className={linkStyle}
+              href={`https://openchain.xyz/signatures?query=${log.topics[0]}`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {log.topics[0]}
+              <span className={topicLinkArrowStyle}>↗</span>
+            </a>
+          )}
+          {log.topics.length > 1 ? `\n${log.topics.slice(1).join('\n')}` : ''}
+          {`\n${log.data}`}
+        </div>
       )}
     </div>
   );
@@ -435,8 +460,22 @@ export default function TransactionDetail() {
                     {formatNumber(BigInt(txInfo.blockNumber))}
                   </InfoItem>
                   <InfoItem label="Transaction Index">{txInfo.transactionIndex}</InfoItem>
-                  <InfoItem label="From">{txInfo.fromAddress}</InfoItem>
-                  <InfoItem label="To">{txInfo.toAddress}</InfoItem>
+                  <InfoItem label="From">
+                    <CopyableHash
+                      value={txInfo.fromAddress}
+                      href={`/chain/${currentChainId}/address/${txInfo.fromAddress}`}
+                    />
+                  </InfoItem>
+                  <InfoItem label="To">
+                    {txInfo.toAddress ? (
+                      <CopyableHash
+                        value={txInfo.toAddress}
+                        href={`/chain/${currentChainId}/address/${txInfo.toAddress}`}
+                      />
+                    ) : (
+                      'Contract Creation'
+                    )}
+                  </InfoItem>
                   <InfoItem label="Value">
                     {formatValue(txInfo.value, getChainSymbol(currentChainId))}
                   </InfoItem>

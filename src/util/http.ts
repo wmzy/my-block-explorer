@@ -4,18 +4,20 @@ import { getAdminToken } from '@/util/adminAuth';
 import { getApiBase } from '@/util/apiBase';
 import { ApiError } from '@/util/apiError';
 
-// Backend error bodies are {message, code?, details?}. Anything else
-// (e.g. an HTML error page) degrades to undefined by fetch-fun's JSON
-// reader, so extract fields defensively instead of trusting the shape.
+// Backend error bodies are {message, code?, details?} with some routes
+// using {error} instead (e.g. quick-range 400s). Anything else (e.g. an
+// HTML error page) degrades to undefined by fetch-fun's JSON reader, so
+// extract fields defensively instead of trusting the shape.
 function toApiError(e: ff.HTTPError): ApiError {
   const body: Record<string, unknown> =
     typeof e.data === 'object' && e.data !== null
       ? (e.data as Record<string, unknown>)
       : {};
   const message = typeof body.message === 'string' ? body.message : undefined;
+  const errorText = typeof body.error === 'string' ? body.error : undefined;
   const code = typeof body.code === 'string' ? body.code : undefined;
   const details = 'details' in body ? body.details : undefined;
-  return new ApiError(message ?? `HTTP ${e.status}`, e.status, code, details);
+  return new ApiError(message ?? errorText ?? `HTTP ${e.status}`, e.status, code, details);
 }
 
 // Base chain: JSON headers, a per-attempt 10s timeout budget, and error

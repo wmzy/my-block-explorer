@@ -89,7 +89,7 @@ src/
 │   └── forms/         # Dynamic form components
 ├── pages/            # Page components for routing
 ├── hooks/            # Custom React hooks
-├── middleware/       # Server middleware (CORS, logging)
+├── middleware/       # Server middleware (admin-token gate, CORS allowlist, logging)
 ├── tests/            # Test files organized by type
 ├── api/              # API client with service discovery
 └── api-app.ts        # Main API application with all endpoints
@@ -174,24 +174,24 @@ The application supports all Viem chains out-of-the-box:
 
 ### Event Indexing Architecture
 
-Contract events are indexed into DuckDB for fast querying. The system indexes from the contract creation block to the latest block, with finalization tracking and reorg safety.
+Contract events are indexed into DuckDB via manually added block ranges. `EventIndexingService` runs one serial job per range (no global queue); `start`/`resume` return `202` immediately and the UI polls range status.
 
-**Key Tables:**
-- `indexing_progress` — per-contract indexing state (PK: chainId + address). Tracks `creationBlock`, `lastIndexedBlock`, `lastFinalizedBlock`, `totalEventsIndexed`, `status` (idle/indexing/error).
+**Key Tables (`src/database/schema.ts`):**
+- `indexing_ranges` — user-defined block ranges (PK: chainId + address + rangeId). Stores `fromBlock`, `toBlock`, `direction` (forward/backward), `currentBlock`, `status` (pending/indexing/paused/completed/error), `priority`.
 - `contract_events` — decoded events for all contracts (PK: chainId + transactionHash + logIndex). Stores `eventName`, `eventSignature`, `decodedArgs` (JSON), topics, `isFinalized` flag.
+- `indexing_progress` — per-contract state (PK: chainId + address): `creationBlock`, `lastIndexedBlock`, `totalEventsIndexed`, `status`.
 
-**Indexing Flow:**
-1. Frontend opens Events tab → auto-triggers `POST /events/index`
-2. Service reads `indexing_progress` to resume from `lastIndexedBlock + 1`
-3. Gets finalized block via `client.getBlock({ blockTag: 'finalized' })`
-4. Batch loop (2000 blocks/batch): `getLogs` → `decodeEventLog` with ABI → insert with `onConflictDoNothing`
-5. Events up to finalized block marked `isFinalized = true`
-6. On next run, non-finalized events are checked for reorgs (tx hash verified against block)
+**Indexing behavior:**
+- Range bounds may be submitted as block tags (`latest`, `finalized`, `safe`, `earliest`) but are resolved to concrete block numbers once, at range creation; stored rows never carry tag sentinels (legacy sentinel rows are resolved defensively when indexing starts).
+- Creation-block lookups return unknown rather than fabricating a boundary: quick mode `all` starts at the creation block when known (from genesis when unknown); quick mode `first` fails with "Contract creation block unknown — enter a start block manually".
+- Quick modes (`POST .../events/ranges/quick`): `all` / `recent` / `first` / `continue` / `catchup` — `catchup` extends from the furthest `toBlock` of existing ranges to head (`400 "No previous range found. Cannot catch up."` with no prior ranges).
+- On startup, `reconcileInterruptedRanges()` flips ranges stuck in `indexing` to `error` ("Interrupted by server restart — resume to continue").
+- The 7 mutating event-range routes are opt-in gated via `requireAdminTokenIfConfigured` (enforced only when `ADMIN_TOKEN` is set).
 
 **Key Files:**
-- `src/services/EventIndexingService.ts` — `startIndexing()`, `getIndexingStatus()`, `getContractEvents()`, `getEventStatistics()`
+- `src/services/EventIndexingService.ts` — `addIndexingRange()`, `startIndexingRange()`, `createRange{All,Recent,First,Continue,Catchup}()`, `getContractEvents()`, `getEventStatistics()`
 - `src/routes/events.ts` — API endpoints for events
-- `src/database/schema.ts` — `indexingProgress` and `contractEvents` table definitions
+- `src/database/schema.ts` — `indexingRanges`, `contractEvents`, `indexingProgress` table definitions
 
 ### API Design Patterns
 
@@ -204,10 +204,12 @@ DB-backed (persistent data):
 - `/api/chains/{chainId}/addresses/{address}/persistent` - Address persistent metadata
 - `/api/chains/{chainId}/contracts/{address}/source` - Contract source code
 - `/api/chains/{chainId}/contracts/{address}/abi` - Contract ABI
-- `/api/chains/{chainId}/contracts/{address}/events` - Query indexed contract events (page, pageSize, eventName, fromBlock, toBlock)
-- `/api/chains/{chainId}/contracts/{address}/events/index` - POST to trigger indexing, DELETE to stop
-- `/api/chains/{chainId}/contracts/{address}/events/indexing-status` - Indexing progress (blocks indexed, status)
-- `/api/chains/{chainId}/contracts/{address}/events/statistics` - Event statistics (counts by type)
+- `/api/chains/{chainId}/contracts/{address}/events` - Query indexed contract events (page, pageSize, eventName, fromBlock, toBlock, argFilters)
+- `/api/chains/{chainId}/contracts/{address}/events/indexing-status` - Indexing status
+- `/api/chains/{chainId}/contracts/{address}/events/statistics` - Event statistics (incl. "Indexing coverage")
+- `/api/chains/{chainId}/contracts/{address}/events/ranges` - GET list / POST add block range; `PATCH`/`DELETE .../ranges/{rangeId}`; `POST .../ranges/quick` (modes: all, recent, first, continue, catchup); `POST .../ranges/{rangeId}/start|pause|resume` — `202` async. The 7 mutating routes are opt-in gated (`x-admin-token` when `ADMIN_TOKEN` is set)
+- `/api/chains/{chainId}/contracts/{address}/events/export` - CSV export of the filtered set (100,000-row cap)
+- `/api/rpc-configs` - Custom RPC endpoints: `GET` open; `POST`/`DELETE` opt-in gated (same rule)
 - `/api/search?q=` - Global search across indexed data
 
 RPC-backed (via backend RpcManager):
@@ -225,8 +227,8 @@ On-demand indexing (DB miss → RPC fetch → write DB):
 - Transaction detail — `blockRpcData.getTransactionByHash()`
 - Address balance/nonce — `realTimeData.getRealTimeAddressData()`
 
-**Frontend Routes:**
-- `/` - Redirects to `/chain/1`
+**Frontend Routes (`@native-router/react`, flat table in `src/views/index.tsx`):**
+- `/` - Landing: redirects to the remembered chain (localStorage `be:lastChainId`), else the preferred chain
 - `/chain/:chainId` - Chain home page with overview
 - `/chain/:chainId/blocks` - Block list
 - `/chain/:chainId/transactions` - Transaction list
@@ -244,6 +246,11 @@ On-demand indexing (DB miss → RPC fetch → write DB):
 - Response headers indicate data source and chain name
 
 ### Development Notes
+
+**Admin auth (two tiers, `src/middleware/admin-token.ts`, `x-admin-token` header, timing-safe compare):**
+- Strict (`requireAdminToken`) — fail-closed 403 when `ADMIN_TOKEN` is unset or wrong: contract source `clear-cache`, storage-layout cache `DELETE`, all `/api/performance/*`.
+- Opt-in (`requireAdminTokenIfConfigured`) — enforced only when `ADMIN_TOKEN` is set, otherwise passes (zero-config local): event-range mutations and `POST`/`DELETE /api/rpc-configs`. `GET /api/rpc-configs` is open (endpoint URLs, no secrets).
+- CORS is an origin allowlist (`src/middleware/cors-origins.ts`), not `*`: loopback origins (any port) always allowed, extras via `CORS_ALLOWED_ORIGINS` (comma-separated) and `FRONTEND_URL`; the Vite dev server's `server.cors` uses the same shared list.
 
 **Environment Setup:**
 - Node.js 22+ required

@@ -4,6 +4,9 @@ import wyw from '@wyw-in-js/vite';
 import hazeCss from 'vite-plugin-haze-ui';
 import path from 'path';
 import type { Plugin } from 'vite';
+// Relative import of a dependency-free module — safe for esbuild's config
+// bundling (no @/ alias resolution needed; see cors-origins.ts header).
+import { allowedCorsOriginList } from './src/middleware/cors-origins';
 
 // Custom plugin to integrate Hono API app
 function honoApiPlugin(): Plugin {
@@ -11,20 +14,10 @@ function honoApiPlugin(): Plugin {
     name: 'hono-api',
     configureServer(server) {
       server.middlewares.use('/api', async (req, res, next) => {
-        // Handle CORS preflight in dev mode
-        if (req.method === 'OPTIONS') {
-          res.setHeader('Access-Control-Allow-Origin', req.headers.origin ?? '*');
-          res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-          res.setHeader(
-            'Access-Control-Allow-Headers',
-            'Content-Type, Authorization, X-Requested-With',
-          );
-          res.setHeader('Access-Control-Max-Age', '86400');
-          res.statusCode = 204;
-          res.end();
-          return;
-        }
-
+        // CORS (including OPTIONS preflights) is NOT handled here: every
+        // request, preflight included, goes through the Hono app, whose
+        // corsMiddleware answers with the shared allowlist policy
+        // (cors-origins.ts) — the same one governing server.cors below.
         try {
           // Dynamically import the API app to support HMR
           const { default: apiApp } = await import('./src/api-app');
@@ -58,11 +51,9 @@ function honoApiPlugin(): Plugin {
           // Get response from Hono app
           const response = await apiApp.fetch(request);
 
-          // Convert Hono response to Node.js response
+          // Convert Hono response to Node.js response. Headers come from the
+          // Hono app only — its corsMiddleware decides Access-Control-*.
           res.statusCode = response.status;
-
-          // Set CORS header for dev
-          res.setHeader('Access-Control-Allow-Origin', req.headers.origin ?? '*');
 
           // Set headers
           response.headers.forEach((value, key) => {
@@ -76,7 +67,6 @@ function honoApiPlugin(): Plugin {
           console.error('API Error:', error);
           res.statusCode = 500;
           res.setHeader('Content-Type', 'application/json');
-          res.setHeader('Access-Control-Allow-Origin', req.headers.origin ?? '*');
           res.end(JSON.stringify({ error: 'Internal Server Error' }));
         }
       });
@@ -128,10 +118,17 @@ export default defineConfig({
   server: {
     port: parseInt(process.env.PORT || '3000'),
     host: true,
+    // Dev-server CORS uses the SAME allowlist as the Hono API middleware
+    // (single source of truth: src/middleware/cors-origins.ts — imported
+    // relatively, dependency-free, so esbuild can inline it into this
+    // config without @/ alias resolution). The previous `origin: true`
+    // echoed ANY origin with credentials, which both exposed dev assets
+    // cross-origin and approved preflights for cross-origin /api writes
+    // ahead of the API's own gate.
     cors: {
-      origin: true,
+      origin: allowedCorsOriginList(),
       methods: ['GET', 'HEAD', 'PUT', 'PATCH', 'POST', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Admin-Token'],
       credentials: true,
     },
   },

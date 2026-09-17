@@ -258,6 +258,45 @@ describe('http utilities', () => {
       expect(error.details).toBeUndefined();
     });
 
+    it('falls back to the body.error field when no message is present', async () => {
+      // Quick-range 400s (e.g. catchup without history) carry the reason in
+      // `error` only; it must surface verbatim instead of a bare 'HTTP 400'.
+      fetchMock.mockResolvedValue(
+        mockResponse({ error: 'No previous range found. Cannot catch up.' }, false, 400),
+      );
+
+      const error = (await get('/api/health').catch((e: unknown) => e)) as ApiError;
+
+      expect(error).toBeInstanceOf(ApiError);
+      expect(error.message).toBe('No previous range found. Cannot catch up.');
+      expect(error.status).toBe(400);
+      expect(error.code).toBeUndefined();
+      expect(error.details).toBeUndefined();
+    });
+
+    it('prefers body.message over body.error when both are present', async () => {
+      // Route wrappers pair a generic `error` with a specific `message`; the
+      // specific one wins (e.g. First Blocks under unknown creation).
+      fetchMock.mockResolvedValue(
+        mockResponse(
+          {
+            error: 'Failed to create range with mode: first',
+            message: 'Contract creation block unknown — enter a start block manually',
+          },
+          false,
+          400,
+        ),
+      );
+
+      const error = (await get('/api/health').catch((e: unknown) => e)) as ApiError;
+
+      expect(error).toBeInstanceOf(ApiError);
+      expect(error.message).toBe(
+        'Contract creation block unknown — enter a start block manually',
+      );
+      expect(error.status).toBe(400);
+    });
+
     it('falls back to HTTP <status> for an unparseable error body', async () => {
       // e.g. an HTML error page from a proxy: the JSON reader degrades to
       // undefined instead of masking the status error.

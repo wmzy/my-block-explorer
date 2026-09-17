@@ -20,6 +20,7 @@ import {
   createRangeRecent,
   createRangeFirst,
   createRangeContinue,
+  createRangeCatchup,
   type EventArgFilters,
   type EventTopicFilters,
 } from '../services/EventIndexingService';
@@ -31,9 +32,18 @@ import {
 } from '../services/EventExportService';
 import { safeJsonResponse } from '../utils/serialization';
 import { contractSourceService } from '../services/ContractSourceService';
+import { requireAdminTokenIfConfigured } from '../middleware/admin-token';
+import type { BlockTagInput } from '@/types/events';
 
 const logger = createLogger('events-routes');
 const app = new Hono();
+
+const VALID_BLOCK_TAGS = ['latest', 'finalized', 'safe', 'earliest'];
+
+// Range bounds arrive as concrete block numbers or one of the supported
+// block tags; the service resolves tags to concrete numbers before storing.
+const isValidBlockBound = (value: unknown): value is BlockTagInput =>
+  typeof value === 'number' || (typeof value === 'string' && VALID_BLOCK_TAGS.includes(value));
 
 const validateChainAndAddress = (chainIdStr: string, addressStr: string) => {
   const chainId = getValidatedChainId(chainIdStr);
@@ -333,7 +343,7 @@ app.get('/chains/:chainId/contracts/:address/events/ranges', async c => {
 });
 
 // POST /chains/:chainId/contracts/:address/events/ranges — add new range
-app.post('/chains/:chainId/contracts/:address/events/ranges', async c => {
+app.post('/chains/:chainId/contracts/:address/events/ranges', requireAdminTokenIfConfigured, async c => {
   const result = validateChainAndAddress(c.req.param('chainId'), c.req.param('address'));
   if ('error' in result) return c.json(result.error, result.status);
 
@@ -343,15 +353,7 @@ app.post('/chains/:chainId/contracts/:address/events/ranges', async c => {
     const body = await c.req.json();
     const { fromBlock, toBlock, direction, priority } = body;
 
-    const validBlockTags = ['latest', 'finalized', 'safe', 'earliest'];
-    const isValidFromBlock =
-      typeof fromBlock === 'number' ||
-      (typeof fromBlock === 'string' && validBlockTags.includes(fromBlock));
-    const isValidToBlock =
-      typeof toBlock === 'number' ||
-      (typeof toBlock === 'string' && validBlockTags.includes(toBlock));
-
-    if (!isValidFromBlock || !isValidToBlock) {
+    if (!isValidBlockBound(fromBlock) || !isValidBlockBound(toBlock)) {
       return c.json(
         {
           error: 'Invalid request body',
@@ -363,8 +365,8 @@ app.post('/chains/:chainId/contracts/:address/events/ranges', async c => {
     }
 
     const response = await addIndexingRange(chainId, address, {
-      fromBlock: fromBlock as import('@/types/events').BlockTagInput,
-      toBlock: toBlock as import('@/types/events').BlockTagInput,
+      fromBlock,
+      toBlock,
       direction,
       priority,
     });
@@ -406,7 +408,7 @@ app.post('/chains/:chainId/contracts/:address/events/ranges', async c => {
 });
 
 // POST /chains/:chainId/contracts/:address/events/ranges/quick — quick creation modes
-app.post('/chains/:chainId/contracts/:address/events/ranges/quick', async c => {
+app.post('/chains/:chainId/contracts/:address/events/ranges/quick', requireAdminTokenIfConfigured, async c => {
   const result = validateChainAndAddress(c.req.param('chainId'), c.req.param('address'));
   if ('error' in result) return c.json(result.error, result.status);
 
@@ -416,12 +418,12 @@ app.post('/chains/:chainId/contracts/:address/events/ranges/quick', async c => {
     const body = await c.req.json();
     const { mode, blockCount, direction, priority } = body;
 
-    const validModes = ['all', 'recent', 'first', 'continue'];
+    const validModes = ['all', 'recent', 'first', 'continue', 'catchup'];
     if (!mode || typeof mode !== 'string' || !validModes.includes(mode)) {
       return c.json(
         {
           error: 'Invalid request body',
-          message: 'mode is required and must be one of: all, recent, first, continue',
+          message: 'mode is required and must be one of: all, recent, first, continue, catchup',
         },
         400,
       );
@@ -455,9 +457,16 @@ app.post('/chains/:chainId/contracts/:address/events/ranges/quick', async c => {
       case 'continue':
         response = await createRangeContinue(chainId, address, blockCount, { direction, priority });
         break;
+      case 'catchup':
+        response = await createRangeCatchup(chainId, address, { direction, priority });
+        break;
     }
 
     if (!response?.success) {
+      // Catchup without history has its own contract error body.
+      if (response?.error === 'No previous range found. Cannot catch up.') {
+        return c.json({ error: response.error }, 400);
+      }
       return c.json(
         {
           error: `Failed to create range with mode: ${mode}`,
@@ -495,7 +504,7 @@ app.post('/chains/:chainId/contracts/:address/events/ranges/quick', async c => {
 });
 
 // PATCH /chains/:chainId/contracts/:address/events/ranges/:rangeId — update range
-app.patch('/chains/:chainId/contracts/:address/events/ranges/:rangeId', async c => {
+app.patch('/chains/:chainId/contracts/:address/events/ranges/:rangeId', requireAdminTokenIfConfigured, async c => {
   const result = validateChainAndAddress(c.req.param('chainId'), c.req.param('address'));
   if ('error' in result) return c.json(result.error, result.status);
 
@@ -515,6 +524,20 @@ app.patch('/chains/:chainId/contracts/:address/events/ranges/:rangeId', async c 
   try {
     const body = await c.req.json();
     const { fromBlock, toBlock, direction, priority } = body;
+
+    if (
+      (fromBlock !== undefined && !isValidBlockBound(fromBlock)) ||
+      (toBlock !== undefined && !isValidBlockBound(toBlock))
+    ) {
+      return c.json(
+        {
+          error: 'Invalid request body',
+          message:
+            'fromBlock and toBlock must be numbers or valid block tags (latest, finalized, safe, earliest)',
+        },
+        400,
+      );
+    }
 
     const response = await updateIndexingRange(chainId, address, rangeId, {
       fromBlock,
@@ -559,7 +582,7 @@ app.patch('/chains/:chainId/contracts/:address/events/ranges/:rangeId', async c 
 });
 
 // DELETE /chains/:chainId/contracts/:address/events/ranges/:rangeId — delete range
-app.delete('/chains/:chainId/contracts/:address/events/ranges/:rangeId', async c => {
+app.delete('/chains/:chainId/contracts/:address/events/ranges/:rangeId', requireAdminTokenIfConfigured, async c => {
   const result = validateChainAndAddress(c.req.param('chainId'), c.req.param('address'));
   if ('error' in result) return c.json(result.error, result.status);
 
@@ -614,7 +637,7 @@ app.delete('/chains/:chainId/contracts/:address/events/ranges/:rangeId', async c
 });
 
 // POST /chains/:chainId/contracts/:address/events/ranges/:rangeId/start — start indexing
-app.post('/chains/:chainId/contracts/:address/events/ranges/:rangeId/start', async c => {
+app.post('/chains/:chainId/contracts/:address/events/ranges/:rangeId/start', requireAdminTokenIfConfigured, async c => {
   const result = validateChainAndAddress(c.req.param('chainId'), c.req.param('address'));
   if ('error' in result) return c.json(result.error, result.status);
 
@@ -734,7 +757,7 @@ app.post('/chains/:chainId/contracts/:address/events/ranges/:rangeId/start', asy
 });
 
 // POST /chains/:chainId/contracts/:address/events/ranges/:rangeId/pause — pause indexing
-app.post('/chains/:chainId/contracts/:address/events/ranges/:rangeId/pause', async c => {
+app.post('/chains/:chainId/contracts/:address/events/ranges/:rangeId/pause', requireAdminTokenIfConfigured, async c => {
   const result = validateChainAndAddress(c.req.param('chainId'), c.req.param('address'));
   if ('error' in result) return c.json(result.error, result.status);
 
@@ -821,7 +844,7 @@ app.post('/chains/:chainId/contracts/:address/events/ranges/:rangeId/pause', asy
 });
 
 // POST /chains/:chainId/contracts/:address/events/ranges/:rangeId/resume — resume indexing
-app.post('/chains/:chainId/contracts/:address/events/ranges/:rangeId/resume', async c => {
+app.post('/chains/:chainId/contracts/:address/events/ranges/:rangeId/resume', requireAdminTokenIfConfigured, async c => {
   const result = validateChainAndAddress(c.req.param('chainId'), c.req.param('address'));
   if ('error' in result) return c.json(result.error, result.status);
 

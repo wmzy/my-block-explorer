@@ -305,7 +305,7 @@ type Overlap = {
 type Props = {
   chainId: number;
   contractAddress: `0x${string}`;
-  creationBlock?: number;
+  creationBlock?: number | null;
   abi?: unknown[];
   onRefresh?: () => void;
 };
@@ -334,10 +334,14 @@ const defaultQuickFormState: QuickCreateForm = {
   blockCount: '1000',
 };
 
+// actionLoading sentinels for the form-level actions: -1 manual add, -2
+// quick create, -3 catch-up-to-head. Range rows use their rangeId.
+const CATCHUP_ACTION_LOADING = -3;
+
 export const IndexingRangeManager: React.FC<Props> = ({
   chainId,
   contractAddress,
-  creationBlock = 0,
+  creationBlock,
   abi,
   onRefresh,
 }) => {
@@ -349,8 +353,15 @@ export const IndexingRangeManager: React.FC<Props> = ({
   const [overlaps, setOverlaps] = useState<Overlap[]>([]);
   const [actionLoading, setActionLoading] = useState<number | null>(null);
   const [headBlock, setHeadBlock] = useState(0);
+  // Ranges whose pause was requested but whose polled status has not
+  // flipped away from 'indexing' yet (the backend pauses between batches).
+  const [pausingRangeIds, setPausingRangeIds] = useState<ReadonlySet<number>>(() => new Set());
 
-  const latestBlock = ranges.length > 0 ? Math.max(...ranges.map(r => Number(r.toBlock))) : 0;
+  // creationBlock may be null/undefined/0 when the backend could not
+  // determine it — that must render as "unknown", never as block #0.
+  const creationBlockNumber = creationBlock ?? 0;
+  const hasKnownCreationBlock = creationBlockNumber > 0;
+  const maxRangeToBlock = ranges.length > 0 ? Math.max(...ranges.map(r => Number(r.toBlock))) : 0;
   const fetchRanges = useCallback(async () => {
     setLoading(true);
     try {
@@ -359,6 +370,17 @@ export const IndexingRangeManager: React.FC<Props> = ({
       );
       const nextRanges = data.ranges ?? [];
       setRanges(nextRanges);
+      // Drop the transient 'Pausing…' state once the polled status is no
+      // longer 'indexing' (paused, errored, or the range is gone).
+      setPausingRangeIds(prev => {
+        if (prev.size === 0) return prev;
+        const next = new Set<number>();
+        for (const id of prev) {
+          const range = nextRanges.find(r => r.rangeId === id);
+          if (range?.status === 'indexing') next.add(id);
+        }
+        return next;
+      });
       if (nextRanges.length > 0) {
         // Refresh the chain head alongside the ranges so the staleness
         // banner tracks both sides of the gap. When the head is unknown
@@ -417,8 +439,10 @@ export const IndexingRangeManager: React.FC<Props> = ({
       toast.error('From block must be less than to block');
       return;
     }
-    if (!isFromTag && creationBlock > 0 && (fromBlock as number) < creationBlock) {
-      toast.error(`From block cannot be before contract creation block (${creationBlock})`);
+    if (!isFromTag && hasKnownCreationBlock && (fromBlock as number) < creationBlockNumber) {
+      toast.error(
+        `From block cannot be before contract creation block (${creationBlockNumber})`,
+      );
       return;
     }
     setActionLoading(-1);
@@ -445,7 +469,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
     } finally {
       setActionLoading(null);
     }
-  }, [chainId, contractAddress, formState, creationBlock, fetchRanges, onRefresh]);
+  }, [chainId, contractAddress, formState, creationBlockNumber, hasKnownCreationBlock, fetchRanges, onRefresh]);
   const handleQuickCreate = useCallback(async () => {
     const { mode, blockCount } = quickFormState;
     const needsBlockCount = ['recent', 'first', 'continue'].includes(mode);
@@ -478,6 +502,40 @@ export const IndexingRangeManager: React.FC<Props> = ({
       setActionLoading(null);
     }
   }, [chainId, contractAddress, quickFormState, fetchRanges, onRefresh]);
+  // One-click catch-up: the backend quick mode 'catchup' creates a range
+  // from the furthest existing toBlock (inclusive) to the current head.
+  // The range is created pending, so start it immediately — the 3s polling
+  // below then shows live indexing progress without another click.
+  const handleCatchupToHead = useCallback(async () => {
+    setActionLoading(CATCHUP_ACTION_LOADING);
+    try {
+      const data = await post<{
+        rangeId?: number;
+        fromBlock?: number | string;
+        toBlock?: number | string;
+      }>(`/api/chains/${chainId}/contracts/${contractAddress}/events/ranges/quick`, {
+        mode: 'catchup',
+      });
+      if (typeof data.rangeId === 'number') {
+        await post(
+          `/api/chains/${chainId}/contracts/${contractAddress}/events/ranges/${data.rangeId}/start`,
+          { abi },
+        );
+      }
+      await fetchRanges();
+      toast.success(
+        `Range created: blocks ${data.fromBlock?.toLocaleString() ?? '?'} - ${data.toBlock?.toLocaleString() ?? '?'}`,
+      );
+      onRefresh?.();
+    } catch (error) {
+      // 403 admin-token errors and the 400 'No previous range found.
+      // Cannot catch up.' contract body surface verbatim via ApiError.
+      console.error('Failed to catch up to head:', error);
+      toast.error(error instanceof ApiError ? error.message : 'Failed to catch up to head');
+    } finally {
+      setActionLoading(null);
+    }
+  }, [chainId, contractAddress, abi, fetchRanges, onRefresh]);
   const handleStartIndexing = useCallback(
     async (rangeId: number) => {
       setActionLoading(rangeId);
@@ -501,6 +559,10 @@ export const IndexingRangeManager: React.FC<Props> = ({
   );
   const handlePauseIndexing = useCallback(
     async (rangeId: number) => {
+      // The pause route returns immediately; the job finishes its current
+      // batch first. Keep a transient 'Pausing…' state until the polled
+      // range status actually flips away from 'indexing'.
+      setPausingRangeIds(prev => new Set(prev).add(rangeId));
       setActionLoading(rangeId);
       try {
         await post(
@@ -509,6 +571,14 @@ export const IndexingRangeManager: React.FC<Props> = ({
         );
         await fetchRanges();
       } catch (error) {
+        // Pause did not take effect — clear the transient state so the
+        // button does not stay stuck on 'Pausing…'.
+        setPausingRangeIds(prev => {
+          if (!prev.has(rangeId)) return prev;
+          const next = new Set(prev);
+          next.delete(rangeId);
+          return next;
+        });
         console.error('Failed to pause indexing:', error);
         toast.error(error instanceof ApiError ? error.message : 'Failed to pause indexing');
       } finally {
@@ -581,6 +651,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
   };
   const renderRangeActions = (range: IndexingRange) => {
     const isLoading = actionLoading === range.rangeId;
+    const isPausing = pausingRangeIds.has(range.rangeId);
     const canStart = range.status === 'pending' || range.status === 'error';
     const canPause = range.status === 'indexing';
     const canResume = range.status === 'paused' || range.status === 'error';
@@ -600,9 +671,9 @@ export const IndexingRangeManager: React.FC<Props> = ({
           <button
             className={actionButtonStyles}
             onClick={() => handlePauseIndexing(range.rangeId)}
-            disabled={isLoading}
+            disabled={isLoading || isPausing}
           >
-            {isLoading ? 'Pausing...' : 'Pause'}
+            {isLoading || isPausing ? 'Pausing...' : 'Pause'}
           </button>
         )}
         {canResume && (
@@ -641,15 +712,25 @@ export const IndexingRangeManager: React.FC<Props> = ({
       <div className={headerStyles}>
         <h3>Event Indexing Ranges</h3>
         <span className="creation-info">
-          Contract created at block #{creationBlock.toLocaleString()}
+          {hasKnownCreationBlock
+            ? `Contract created at block #${creationBlockNumber.toLocaleString()}`
+            : 'Contract creation block: unknown'}
         </span>
-        <button
-          className={actionButtonStyles}
-          onClick={() => setShowAddForm(!showAddForm)}
-          style={{ marginLeft: 'auto' }}
-        >
-          {showAddForm ? 'Cancel' : '+ Add Range'}
-        </button>
+        <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto' }}>
+          {ranges.length > 0 && headBlock > maxRangeToBlock && (
+            <button
+              className={`${actionButtonStyles} primary`}
+              onClick={handleCatchupToHead}
+              disabled={actionLoading !== null}
+              title={`Catch up from block ${formatBlock(maxRangeToBlock)} to the head (${formatBlock(headBlock)})`}
+            >
+              {actionLoading === CATCHUP_ACTION_LOADING ? 'Catching up...' : 'Catch up to head'}
+            </button>
+          )}
+          <button className={actionButtonStyles} onClick={() => setShowAddForm(!showAddForm)}>
+            {showAddForm ? 'Cancel' : '+ Add Range'}
+          </button>
+        </div>
       </div>
       {stalenessGap !== null && (
         <div className={stalenessBannerStyles}>
@@ -816,7 +897,9 @@ export const IndexingRangeManager: React.FC<Props> = ({
               <label>From Block</label>
               <input
                 type="text"
-                placeholder={creationBlock > 0 ? creationBlock.toString() : '0 (or earliest)'}
+                placeholder={
+                  hasKnownCreationBlock ? creationBlockNumber.toString() : 'start block (or earliest)'
+                }
                 value={formState.fromBlock}
                 onChange={e => setFormState({ ...formState, fromBlock: e.target.value })}
               />
@@ -825,7 +908,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
               <label>To Block</label>
               <input
                 type="text"
-                placeholder={latestBlock > 0 ? latestBlock.toString() : 'latest, finalized, safe'}
+                placeholder={headBlock > 0 ? headBlock.toString() : 'latest, finalized, safe'}
                 value={formState.toBlock}
                 onChange={e => setFormState({ ...formState, toBlock: e.target.value })}
               />

@@ -9,7 +9,7 @@ import {
 import { rpcManager } from './RpcManager';
 import { decodeEventLog, type Abi, type Log } from 'viem';
 import { getContractCreationBlock } from '../utils/events';
-import { inputToStoredValue, isBlockTagSentinel, resolveToBlock } from '../utils/blockTagUtils';
+import { inputToStoredValue, resolveToBlock } from '../utils/blockTagUtils';
 import type { BlockTagInput } from '@/types/events';
 
 const BATCH_SIZE = 2000;
@@ -729,10 +729,12 @@ const checkRangeOverlaps = async (
   }));
 };
 
+// Creation block when known, null when unknown. Null is the honest answer:
+// callers must never receive a fabricated boundary (e.g. latest - 100k).
 const getContractCreationBlockCached = async (
   chainId: number,
   address: `0x${string}`,
-): Promise<bigint> => {
+): Promise<bigint | null> => {
   const rows = await db
     .select()
     .from(contractCreationInfo)
@@ -741,18 +743,16 @@ const getContractCreationBlockCached = async (
     )
     .limit(1);
 
-  if (rows.length > 0 && rows[0].creationBlockNumber) {
+  // != null rather than truthiness: a genesis-created contract (0n) is known.
+  if (rows.length > 0 && rows[0].creationBlockNumber != null) {
     return rows[0].creationBlockNumber;
   }
 
   try {
     const client = await rpcManager.getClient(chainId);
-    const block = await getContractCreationBlock(client, address);
-    return block;
+    return await getContractCreationBlock(client, address);
   } catch {
-    const client = await rpcManager.getClient(chainId);
-    const latest = await client.getBlockNumber();
-    return latest > 100_000n ? latest - 100_000n : 0n;
+    return null;
   }
 };
 
@@ -775,16 +775,11 @@ export const addIndexingRange = async (
 
   const client = await rpcManager.getClient(chainId);
 
-  const storedFromBlock = inputToStoredValue(fromBlock);
-  const storedToBlock = inputToStoredValue(toBlock);
-
-  const resolvedFromBlock = isBlockTagSentinel(storedFromBlock)
-    ? Number(await resolveToBlock(client, storedFromBlock))
-    : storedFromBlock;
-
-  const resolvedToBlock = isBlockTagSentinel(storedToBlock)
-    ? Number(await resolveToBlock(client, storedToBlock))
-    : storedToBlock;
+  // Resolve block tags to concrete numbers once, at the boundary: rows stored
+  // from now on only ever contain concrete >= 0 block numbers, so overlap
+  // checks and progress math never see sentinel values.
+  const resolvedFromBlock = await resolveToBlock(client, inputToStoredValue(fromBlock));
+  const resolvedToBlock = await resolveToBlock(client, inputToStoredValue(toBlock));
 
   if (resolvedFromBlock >= resolvedToBlock) {
     return { success: false, error: 'fromBlock must be less than toBlock' };
@@ -792,7 +787,8 @@ export const addIndexingRange = async (
 
   const creationBlock = await getContractCreationBlockCached(chainId, address);
 
-  if (resolvedFromBlock < Number(creationBlock)) {
+  // Unknown creation block: skip the clamp rather than invent a boundary.
+  if (creationBlock !== null && resolvedFromBlock < creationBlock) {
     return {
       success: false,
       error: `fromBlock cannot be before contract creation block (${creationBlock})`,
@@ -802,8 +798,8 @@ export const addIndexingRange = async (
   const overlaps = await checkRangeOverlaps(
     chainId,
     address,
-    BigInt(storedFromBlock),
-    BigInt(storedToBlock),
+    resolvedFromBlock,
+    resolvedToBlock,
   );
 
   const rangeId = await getNextRangeId(chainId, address);
@@ -812,8 +808,8 @@ export const addIndexingRange = async (
     chainId,
     address,
     rangeId,
-    fromBlock: BigInt(storedFromBlock),
-    toBlock: BigInt(storedToBlock),
+    fromBlock: resolvedFromBlock,
+    toBlock: resolvedToBlock,
     direction,
     currentBlock: null,
     status: 'pending',
@@ -863,8 +859,8 @@ export const updateIndexingRange = async (
   address: `0x${string}`,
   rangeId: number,
   updates: {
-    fromBlock?: number;
-    toBlock?: number;
+    fromBlock?: BlockTagInput;
+    toBlock?: BlockTagInput;
     direction?: RangeDirection;
     priority?: number;
   },
@@ -895,9 +891,16 @@ export const updateIndexingRange = async (
     return { success: false, error: 'Cannot update range while indexing' };
   }
 
-  const newFromBlock =
-    updates.fromBlock !== undefined ? BigInt(updates.fromBlock) : range.fromBlock;
-  const newToBlock = updates.toBlock !== undefined ? BigInt(updates.toBlock) : range.toBlock;
+  const client = await rpcManager.getClient(chainId);
+
+  // An updated bound may be a block tag; an untouched bound may be a legacy
+  // sentinel left by an older row. Resolve both so the stored row always
+  // comes out with concrete numbers.
+  const resolveBound = (update: BlockTagInput | undefined, current: bigint): Promise<bigint> =>
+    resolveToBlock(client, update !== undefined ? inputToStoredValue(update) : Number(current));
+
+  const newFromBlock = await resolveBound(updates.fromBlock, range.fromBlock);
+  const newToBlock = await resolveBound(updates.toBlock, range.toBlock);
 
   if (newFromBlock >= newToBlock) {
     return { success: false, error: 'fromBlock must be less than toBlock' };
@@ -905,7 +908,8 @@ export const updateIndexingRange = async (
 
   const creationBlock = await getContractCreationBlockCached(chainId, address);
 
-  if (newFromBlock < creationBlock) {
+  // Unknown creation block: skip the clamp rather than invent a boundary.
+  if (creationBlock !== null && newFromBlock < creationBlock) {
     return {
       success: false,
       error: `fromBlock cannot be before contract creation block (${creationBlock})`,
@@ -918,8 +922,8 @@ export const updateIndexingRange = async (
     .update(indexingRanges)
     .set({
       ...updates,
-      fromBlock: updates.fromBlock !== undefined ? BigInt(updates.fromBlock) : undefined,
-      toBlock: updates.toBlock !== undefined ? BigInt(updates.toBlock) : undefined,
+      fromBlock: newFromBlock,
+      toBlock: newToBlock,
       updatedAt: new Date(),
     })
     .where(
@@ -1043,12 +1047,10 @@ export const startIndexingRange = async (
     const client = await rpcManager.getClient(chainId);
     const direction = range.direction as RangeDirection;
 
-    const resolvedFromBlock = isBlockTagSentinel(Number(range.fromBlock))
-      ? Number(range.fromBlock)
-      : range.fromBlock;
-    const resolvedToBlock = isBlockTagSentinel(Number(range.toBlock))
-      ? Number(range.toBlock)
-      : range.toBlock;
+    // Legacy rows may still carry negative block-tag sentinels; resolve them
+    // defensively so the loop never calls getLogs with negative bounds.
+    const resolvedFromBlock = await resolveToBlock(client, Number(range.fromBlock));
+    const resolvedToBlock = await resolveToBlock(client, Number(range.toBlock));
 
     let currentBlock: bigint;
     let endBlock: bigint;
@@ -1244,9 +1246,13 @@ export const createRangeAll = async (
   address: `0x${string}`,
   options?: { direction?: RangeDirection; priority?: number },
 ): Promise<QuickCreateResult> => {
+  const creationBlock = await getContractCreationBlockCached(chainId, address);
+
   return addIndexingRange(chainId, address, {
-    fromBlock: -4,
-    toBlock: -1,
+    // Known creation: start exactly there. Unknown: index from genesis
+    // rather than refusing or guessing a boundary.
+    fromBlock: creationBlock !== null ? Number(creationBlock) : 0,
+    toBlock: 'latest',
     direction: options?.direction,
     priority: options?.priority,
   });
@@ -1279,6 +1285,13 @@ export const createRangeFirst = async (
 ): Promise<QuickCreateResult> => {
   const creationBlock = await getContractCreationBlockCached(chainId, address);
 
+  if (creationBlock === null) {
+    return {
+      success: false,
+      error: 'Contract creation block unknown — enter a start block manually',
+    };
+  }
+
   return addIndexingRange(chainId, address, {
     fromBlock: Number(creationBlock),
     toBlock: Number(creationBlock) + blockCount,
@@ -1307,6 +1320,35 @@ export const createRangeContinue = async (
     fromBlock: continueFromBlock,
     toBlock: continueToBlock,
     direction: options?.direction ?? lastRange.direction,
+    priority: options?.priority,
+  });
+};
+
+// Catch up: from the furthest block any existing range reached (inclusive
+// start, like Continue) up to the current chain tip, resolved to a number.
+export const createRangeCatchup = async (
+  chainId: number,
+  address: `0x${string}`,
+  options?: { direction?: RangeDirection; priority?: number },
+): Promise<QuickCreateResult> => {
+  const ranges = await getIndexingRanges(chainId, address);
+
+  if (ranges.length === 0) {
+    return { success: false, error: 'No previous range found. Cannot catch up.' };
+  }
+
+  const maxToBlock = ranges.reduce(
+    (max, r) => (r.toBlock > max ? r.toBlock : max),
+    ranges[0].toBlock,
+  );
+
+  const client = await rpcManager.getClient(chainId);
+  const latestBlock = await client.getBlockNumber();
+
+  return addIndexingRange(chainId, address, {
+    fromBlock: Number(maxToBlock),
+    toBlock: Number(latestBlock),
+    direction: options?.direction ?? 'forward',
     priority: options?.priority,
   });
 };

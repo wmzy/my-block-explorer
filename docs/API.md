@@ -4,7 +4,7 @@ The backend is a Hono app (`src/api-app.ts`) that mounts the route modules in `s
 
 - **Base URL**: `http://localhost:8201/api` (standalone server, `PORT`/`--port` override). In dev, the Vite server on `:3000` bridges the same app under `/api`.
 - **Format**: JSON (CSV for the event export).
-- **Auth**: read endpoints are open. Admin-gated endpoints require the `x-admin-token` header matching the server's `ADMIN_TOKEN` env (fail-closed: no token configured → 403). Event-indexing range writes are unauthenticated by design — single-user local trust model.
+- **Auth**: read endpoints are open. Writes/admin endpoints are gated in two tiers, both via the `x-admin-token` header matching the server's `ADMIN_TOKEN` env. Core-workflow writes (event-range mutations, `POST`/`DELETE /api/rpc-configs`) use `requireAdminTokenIfConfigured` — enforced only when `ADMIN_TOKEN` is set; without it they pass through (zero-config local trust model). The admin/diagnostic surface (contract `clear-cache`, storage-layout cache delete, `/api/performance/*`) is strictly fail-closed: no token configured → 403.
 - **Common response headers**: `X-Data-Source` (e.g. `database`, `rpc`, method tag), `X-Chain-Name`.
 - **Chain IDs**: any chain defined in `viem/chains`. Unknown IDs → `400 { "error": "Unsupported chain" }` (chain-scoped search additionally returns `supportedChains`).
 
@@ -68,7 +68,7 @@ The backend is a Hono app (`src/api-app.ts`) that mounts the route modules in `s
 
 ## Events (per contract)
 
-Range-based manual indexing. `EventIndexingService` runs one serial job per range; on server start, ranges stuck in `indexing` are reconciled to `error` ("Interrupted by server restart — resume to continue"). Range writes are **unauthenticated by design**.
+Range-based manual indexing. `EventIndexingService` runs one serial job per range; on server start, ranges stuck in `indexing` are reconciled to `error` ("Interrupted by server restart — resume to continue"). Range bounds accept a block number or a tag (`latest`, `finalized`, `safe`, `earliest`); tags are resolved to concrete numbers once, at range creation, so stored ranges always carry concrete block numbers. The seven mutating routes below are opt-in gated — `x-admin-token` is required only when the server has `ADMIN_TOKEN` set.
 
 | Method & path | Notes |
 | --- | --- |
@@ -77,21 +77,25 @@ Range-based manual indexing. `EventIndexingService` runs one serial job per rang
 | `GET …/events/indexing-status` | Current indexing job status |
 | `GET …/events/export` | CSV stream of the filtered set; hard cap 100,000 rows → `400` (the UI disables the button above the cap preflight) |
 | `GET …/events/ranges` | All ranges (UI polls every 3 s while indexing) |
-| `POST …/events/ranges` | Add a range |
-| `POST …/events/ranges/quick` | Quick-create modes |
-| `PATCH …/events/ranges/:rangeId` | Update a range |
-| `DELETE …/events/ranges/:rangeId` | Delete a range |
-| `POST …/events/ranges/:rangeId/start` / `pause` / `resume` | Control indexing; `start`/`resume` return `202` immediately |
+| `POST …/events/ranges` | 🔐 Add a range |
+| `POST …/events/ranges/quick` | 🔐 Quick-create; `mode`: `all` \| `recent` \| `first` \| `continue` \| `catchup` (`recent`/`first`/`continue` also need `blockCount`). `catchup` extends from the furthest block any existing range reached to head → `400 { "error": "No previous range found. Cannot catch up." }` with no prior ranges; `first` fails with "Contract creation block unknown — enter a start block manually" when the creation block can't be determined |
+| `PATCH …/events/ranges/:rangeId` | 🔐 Update a range |
+| `DELETE …/events/ranges/:rangeId` | 🔐 Delete a range |
+| `POST …/events/ranges/:rangeId/start` / `pause` / `resume` | 🔐 Control indexing; `start`/`resume` return `202` immediately |
 
-## RPC configuration 🔒
+🔐 = `requireAdminTokenIfConfigured`: enforced only when `ADMIN_TOKEN` is set on the server.
 
-All three verbs are admin-gated (reads included). Managed in the ⚙️ RPC settings modal, which also holds the browser-side admin token.
+## RPC configuration
+
+`GET` is open (endpoint URLs only, no secrets — the RPC settings modal reads without a token). `POST`/`DELETE` use the opt-in gate: enforced only when `ADMIN_TOKEN` is set on the server. Managed in the ⚙️ RPC settings modal, which also holds the browser-side admin token.
 
 | Method & path | Notes |
 | --- | --- |
 | `GET /api/rpc-configs` | List overrides |
-| `POST /api/rpc-configs` | Upsert `{ chainId, name, url, supportsHistory, maxEventRange }` |
-| `DELETE /api/rpc-configs/:chainId` | Remove override |
+| `POST /api/rpc-configs` | 🔐 Upsert `{ chainId, name, url, supportsHistory, maxEventRange }` |
+| `DELETE /api/rpc-configs/:chainId` | 🔐 Remove override |
+
+🔐 = `requireAdminTokenIfConfigured` (enforced only when `ADMIN_TOKEN` is set); 🔒 = `requireAdminToken` (fail-closed). See the Auth bullet at the top.
 
 ## Performance & debug
 
@@ -104,4 +108,4 @@ All three verbs are admin-gated (reads included). Managed in the ⚙️ RPC sett
 
 ## Errors
 
-Failures return `{ "error": string }` (often with `message`) and conventional status codes (`400` validation, `403` admin gate, `404` not found, `500` internal). The admin gate's 403 body explains how to enable admin operations and is surfaced verbatim by the UI.
+Failures return `{ "error": string }` — the human-readable reason — often alongside an optional `message` with more detail, and conventional status codes (`400` validation, `403` admin gate, `404` not found, `500` internal). The admin gate's 403 body explains how to enable admin operations. On the frontend, `toApiError` (`src/util/http.ts`) surfaces `message` when present and falls back to `error` verbatim, so the text in `error` reaches the user as-is.

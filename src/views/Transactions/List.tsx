@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
+import { css } from '@linaria/core';
 import { TypedLink, useMatched, useSearch } from '@native-router/react';
 import { z } from 'zod';
 
 import TopNavigation from '@/components/TopNavigation';
 import { Badge } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
 import { CopyableHash } from '@/components/ui/CopyableHash';
 import { DataTable, Pagination, linkStyle, monoStyle } from '@/components/ui/DataTable';
 import { ErrorState } from '@/components/ui/ErrorState';
@@ -16,6 +18,15 @@ import { txCursorFromBlock } from '@/utils/blockRpcData';
 import { formatEth, formatNumber, formatRelativeTime } from '@/utils/format';
 
 const LIMIT = 20;
+
+// Header row: the page title on the left, the Refresh control on the right
+// (re-anchors the walk at the live chain head).
+const listToolbar = css`
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: var(--haze-space-3);
+`;
 
 // Optional ?block=N deep link: the list starts at block N and pages down.
 const searchSchema = z.object({
@@ -92,7 +103,16 @@ export default function TransactionsList() {
     setPage(prev => (prev === 1 ? prev : 1));
   }, [initialCursor]);
 
-  const query = useLatestTransactions(currentChainId, LIMIT, cursorStack[page - 1]);
+  // Head entry (no cursor): the Refresh vehicle. Its key never changes, so
+  // headQuery.refetch() always targets the live head, and page 1 at the
+  // head rides this instance so the refetched answer is displayed
+  // immediately (a second hook instance on the same key would settle on its
+  // own stores — see the polledQuery.ts header).
+  const headQuery = useLatestTransactions(currentChainId, LIMIT);
+
+  const pageCursor = cursorStack[page - 1];
+  const pageQuery = useLatestTransactions(currentChainId, LIMIT, pageCursor);
+  const query = page === 1 && pageCursor === undefined ? headQuery : pageQuery;
   const { data, loading, error, refetch } = query;
   const transactions = data?.transactions ?? [];
 
@@ -101,6 +121,17 @@ export default function TransactionsList() {
     if (next === undefined) return;
     setCursorStack(prev => (prev.length > page ? prev : [...prev, next]));
     setPage(prev => prev + 1);
+  };
+
+  // Refresh re-anchors the walk at the live head (Blocks/List semantics):
+  // truncate the cursor stack — page 1 becomes the live head again,
+  // dropping any ?block= seed and every stale continuation cursor — and
+  // refetch the head entry bypassing its cache slot. Older then resumes
+  // from the refreshed head's own nextCursor.
+  const handleRefresh = () => {
+    setCursorStack([undefined]);
+    setPage(1);
+    void headQuery.refetch();
   };
 
   // Chain switches replace the current entry via the shared Wave A helper;
@@ -125,10 +156,20 @@ export default function TransactionsList() {
     <>
       <TopNavigation currentChainId={currentChainId} onChainChange={handleChainChange} />
       <PageContainer>
-        <PageHeader
-          title="Transactions"
-          chainInfo={`${getChainName(currentChainId)} • Chain ID: ${currentChainId}`}
-        />
+        <div className={listToolbar}>
+          <PageHeader
+            title="Transactions"
+            chainInfo={`${getChainName(currentChainId)} • Chain ID: ${currentChainId}`}
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRefresh}
+            disabled={headQuery.fetching}
+          >
+            {headQuery.fetching ? 'Refreshing…' : '↻ Refresh'}
+          </Button>
+        </div>
 
         {loading && <TableSkeleton rows={10} cols={7} />}
 

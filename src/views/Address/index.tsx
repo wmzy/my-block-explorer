@@ -15,6 +15,7 @@ import {
   useContractCode,
   useRealTimeAddressData,
 } from '@/services/addressRealTime';
+import { useEnsName } from '@/services/ens';
 import { formatRelativeTime } from '@/utils/format';
 import { getExternalToolLinks } from '@/config/externalTools';
 import { redirectReplace } from '@/views/Home/Landing';
@@ -38,6 +39,17 @@ const headerRow = css`
 
 const bannerLinks = css`
   margin: var(--haze-space-2) 0 var(--haze-space-3);
+`;
+
+// ENS row under the page header: name badge + the full hex address, still
+// visible and copyable (CopyableHash without truncation).
+const ensHeaderRow = css`
+  display: flex;
+  align-items: center;
+  gap: var(--haze-space-2);
+  flex-wrap: wrap;
+  word-break: break-all;
+  margin: calc(-1 * var(--haze-space-4)) 0 var(--haze-space-5);
 `;
 
 const transactionsCard = css`
@@ -116,6 +128,11 @@ export default function Address() {
   // read still decides Contract vs EOA (the old hook's fallback path).
   // Costs one extra eth_getCode per address view; cached 24h.
   const codeQuery = useContractCode(currentChainId, address);
+
+  // Reverse ENS resolution is mainnet-pinned (see services/ens.ts); the
+  // resolved name, when any, becomes the header's primary label.
+  const ensQuery = useEnsName(address, currentChainId);
+  const ensName = ensQuery.data;
 
   const [txPage, setTxPage] = useState(1);
   const txLimit = 10;
@@ -265,9 +282,18 @@ export default function Address() {
         />
 
         <PageHeader
-          title="Address Details"
+          title={ensName ?? 'Address Details'}
           chainInfo={`${getChainName(currentChainId)} • Chain ID: ${currentChainId}`}
         />
+
+        {ensName && (
+          <div className={ensHeaderRow}>
+            <Badge variant="info" size="sm">
+              ENS
+            </Badge>
+            <CopyableHash value={address} />
+          </div>
+        )}
 
         {isInitialLoading && <LoadingState message="Loading address information..." />}
 
@@ -394,13 +420,17 @@ export default function Address() {
               <CardHeader>
                 <div className={headerRow}>
                   <CardTitle as="h2">Recent Transactions</CardTitle>
+                  {/* Refresh honesty: the button refetches both channels the
+                      page stamps — the tx history AND the realtime
+                      balance/nonce read that owns 'Last updated'. */}
                   <Button
                     variant="secondary"
                     size="sm"
                     onClick={() => {
                       void txQuery.refetch();
+                      void realTimeQuery.refetch();
                     }}
-                    loading={txQuery.fetching}
+                    loading={txQuery.fetching || realTimeQuery.fetching}
                   >
                     Refresh
                   </Button>
