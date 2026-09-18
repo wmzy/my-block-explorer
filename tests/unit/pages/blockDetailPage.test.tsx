@@ -1,9 +1,11 @@
 // Block detail view tests: the error-path fork added for future block
-// numbers. The service hook and the RPC client factory are mocked, so the
-// cases pin which presentation the view picks when the block fetch fails:
-// "does not exist yet" guidance (with escape links) only when the requested
-// number is beyond the chain head, the genuine error UI otherwise, and no
-// extra RPC call on the happy path.
+// numbers, plus the header finality badge. The service hook and the RPC
+// client factory are mocked, so the error cases pin which presentation the
+// view picks when the block fetch fails: "does not exist yet" guidance
+// (with escape links) only when the requested number is beyond the chain
+// head, the genuine error UI otherwise, and no extra RPC call on the happy
+// path. The finality cases pin that the badge compares the viewed number
+// against the polled heads and renders nothing while those are unknown.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter, View, createRoutes } from '@native-router/react';
@@ -79,6 +81,24 @@ vi.mock('@/services/chainRpc', () => ({
   useBlockByNumber: (...args: unknown[]) => mockUseBlockByNumber(...args),
 }));
 
+// The header Safe/Finalized badge's heads come from the finality service's
+// polled hook, stubbed here (its RPC tag lookups would otherwise go through
+// the mocked createRpcClient). The pure finalityLabelFor stays real so the
+// cases pin the genuine boundary semantics.
+type FinalityHookResult = { data?: { safe?: number; finalized?: number } };
+
+const { mockUseFinalityHeads } = vi.hoisted(() => ({
+  mockUseFinalityHeads: vi.fn<(...args: unknown[]) => FinalityHookResult>(),
+}));
+
+vi.mock('@/services/blocks', async importOriginal => {
+  const actual = await importOriginal<typeof import('@/services/blocks')>();
+  return {
+    ...actual,
+    useFinalityHeads: (...args: unknown[]) => mockUseFinalityHeads(...args),
+  };
+});
+
 // The view's head lookup goes through the shared RPC client factory; the
 // mock keeps the one eth_blockNumber call observable without a network.
 vi.mock('@/utils/realTimeData', () => ({
@@ -119,6 +139,8 @@ describe('BlockDetail view', () => {
       loading: false,
       error: undefined,
     });
+    // Heads unknown by default: no finality badge unless a case sets heads.
+    mockUseFinalityHeads.mockReturnValue({ data: undefined });
   });
 
   it('renders block details and pays nothing for the head lookup', async () => {
@@ -217,6 +239,76 @@ describe('BlockDetail view', () => {
 
     expect(await screen.findByText(/Header not found/)).toBeInTheDocument();
     expect(screen.queryByText(/does not exist yet/)).not.toBeInTheDocument();
+  });
+
+  it('shows a Finalized badge in the header for a block at or past the finalized head', async () => {
+    // Block == finalized (boundary): 'Finalized' wins over 'Safe' even
+    // though the safe head covers it too.
+    mockUseBlockByNumber.mockReturnValue({
+      data: makeBlock(17_999_998),
+      loading: false,
+      error: undefined,
+    });
+    mockUseFinalityHeads.mockReturnValue({
+      data: { safe: 17_999_999, finalized: 17_999_998 },
+    });
+    renderBlockDetail('/chain/1/block/17999998');
+
+    expect(await screen.findByText('Finalized')).toBeInTheDocument();
+    expect(screen.queryByText('Safe')).not.toBeInTheDocument();
+  });
+
+  it('shows a Safe badge in the header for a block past finalized but within safe', async () => {
+    // finalized < block <= safe (block == safe here, the boundary): 'Safe'
+    // only — it is beyond the finalized head.
+    mockUseBlockByNumber.mockReturnValue({
+      data: makeBlock(17_999_999),
+      loading: false,
+      error: undefined,
+    });
+    mockUseFinalityHeads.mockReturnValue({
+      data: { safe: 17_999_999, finalized: 17_999_998 },
+    });
+    renderBlockDetail('/chain/1/block/17999999');
+
+    expect(await screen.findByText('Safe')).toBeInTheDocument();
+    expect(screen.queryByText('Finalized')).not.toBeInTheDocument();
+  });
+
+  it('renders no finality badge while the heads are unknown or beyond safe', async () => {
+    const beyondSafe = {
+      data: makeBlock(18_000_000),
+      loading: false,
+      error: undefined,
+    };
+
+    // Hook still loading: no badge — absence of head data is not "pending".
+    mockUseBlockByNumber.mockReturnValue(beyondSafe);
+    mockUseFinalityHeads.mockReturnValue({ data: undefined });
+    const stillLoading = renderBlockDetail('/chain/1/block/18000000');
+    expect(await stillLoading.findByText('Block Details')).toBeInTheDocument();
+    expect(stillLoading.queryByText('Safe')).not.toBeInTheDocument();
+    expect(stillLoading.queryByText('Finalized')).not.toBeInTheDocument();
+    stillLoading.unmount();
+
+    // Fetch answered but neither tag supported: heads = {} still earns
+    // nothing.
+    mockUseFinalityHeads.mockReturnValue({ data: {} });
+    const noTags = renderBlockDetail('/chain/1/block/18000000');
+    expect(await noTags.findByText('Block Details')).toBeInTheDocument();
+    expect(noTags.queryByText('Safe')).not.toBeInTheDocument();
+    expect(noTags.queryByText('Finalized')).not.toBeInTheDocument();
+    noTags.unmount();
+
+    // Heads known but the block is beyond safe: known-unknown — the block
+    // is genuinely not safe yet, so no badge rather than a misleading one.
+    mockUseFinalityHeads.mockReturnValue({
+      data: { safe: 17_999_999, finalized: 17_999_998 },
+    });
+    const recent = renderBlockDetail('/chain/1/block/18000000');
+    expect(await recent.findByText('Block Details')).toBeInTheDocument();
+    expect(recent.queryByText('Safe')).not.toBeInTheDocument();
+    expect(recent.queryByText('Finalized')).not.toBeInTheDocument();
   });
 
   it('shows a Testnet badge in the header for a testnet chain', async () => {

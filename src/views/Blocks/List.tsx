@@ -15,6 +15,7 @@ import { redirectReplace } from '@/views/Home/Landing';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
 import { useLatestBlocks } from '@/services/chainRpc';
 import { useLatestBlocksFeed } from '@/services/homeFeed';
+import { finalityLabelFor, useFinalityHeads } from '@/services/blocks';
 import { formatNumber, formatRelativeTime } from '@/utils/format';
 
 const LIMIT = 20;
@@ -48,6 +49,13 @@ const newBlocksHint = css`
   background: var(--haze-color-primary-subtle);
   font-size: var(--haze-text-sm);
   color: var(--haze-color-text);
+`;
+
+// Block-number cell: the number link with the finality badge beside it.
+const blockNumberCell = css`
+  display: flex;
+  align-items: center;
+  gap: var(--haze-space-2);
 `;
 
 // Gas quantities are on-chain integers serialized as strings; parse them
@@ -143,6 +151,13 @@ export default function BlocksList() {
   // chain branch below passes 0 and stays offline.
   const liveHeadFeed = useLatestBlocksFeed(chainInfo ? currentChainId : 0);
   const liveHead = liveHeadFeed.data?.latestBlockNumber ?? null;
+
+  // Finality heads behind the per-row badges: the polled safe/finalized
+  // heads. Unknown heads (unsupported tags, failed fetch, still loading)
+  // render no badge at all — absence of data is not "pending". Guarded to 0
+  // on the unsupported-chain branch like the feed above.
+  const finalityHeads = useFinalityHeads(chainInfo ? currentChainId : 0).data;
+
   // Blocks mined beyond the frozen anchor since the walk started (or since
   // the last Refresh). Strictly greater: a head at or below the anchor is
   // not stale news and renders nothing.
@@ -237,28 +252,43 @@ export default function BlocksList() {
               </tr>
             </thead>
             <tbody>
-              {blocks.map(block => (
-                <tr key={block.number}>
-                  <td>
-                    <TypedLink
-                      to={`/chain/${currentChainId}/block/${block.number}`}
-                      className={linkStyle}
-                    >
-                      {formatNumber(BigInt(block.number))}
-                    </TypedLink>
-                  </td>
-                  <td>{block.timestamp ? formatRelativeTime(block.timestamp) : 'N/A'}</td>
-                  <td>{block.transactionCount}</td>
-                  <td className={monoStyle}>{formatGasUsage(block.gasUsed, block.gasLimit)}</td>
-                  <td>
-                    <CopyableHash
-                      value={block.miner}
-                      truncated={formatMiner(block.miner)}
-                      href={`/chain/${currentChainId}/address/${block.miner}`}
-                    />
-                  </td>
-                </tr>
-              ))}
+              {blocks.map(block => {
+                const finality = finalityLabelFor(finalityHeads, Number(block.number));
+                return (
+                  <tr key={block.number}>
+                    <td>
+                      <div className={blockNumberCell}>
+                        <TypedLink
+                          to={`/chain/${currentChainId}/block/${block.number}`}
+                          className={linkStyle}
+                        >
+                          {formatNumber(BigInt(block.number))}
+                        </TypedLink>
+                        {finality && (
+                          // Finalized outranks Safe; muted variant for the
+                          // settled state, info tone for merely safe.
+                          <Badge
+                            variant={finality === 'finalized' ? 'default' : 'info'}
+                            size="sm"
+                          >
+                            {finality === 'finalized' ? 'Finalized' : 'Safe'}
+                          </Badge>
+                        )}
+                      </div>
+                    </td>
+                    <td>{block.timestamp ? formatRelativeTime(block.timestamp) : 'N/A'}</td>
+                    <td>{block.transactionCount}</td>
+                    <td className={monoStyle}>{formatGasUsage(block.gasUsed, block.gasLimit)}</td>
+                    <td>
+                      <CopyableHash
+                        value={block.miner}
+                        truncated={formatMiner(block.miner)}
+                        href={`/chain/${currentChainId}/address/${block.miner}`}
+                      />
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </DataTable>
         )}

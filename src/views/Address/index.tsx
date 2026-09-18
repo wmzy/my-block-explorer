@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { css } from '@linaria/core';
-import { TypedLink, useMatched } from '@native-router/react';
+import { TypedLink, useMatched, useSearch, useSetSearch } from '@native-router/react';
 import { navigate } from '@native-router/core';
+import { z } from 'zod';
 import { formatUnits } from 'viem';
 import { Alert } from 'haze-ui';
 import { getChainInfo, getChainName, getChainSymbol } from '@/config/chains';
 import TopNavigation from '@/components/TopNavigation';
+import TokenTransfers from '@/views/Address/TokenTransfers';
 import {
   useAddressInfo,
   useAddressTransactions,
@@ -54,6 +56,39 @@ const ensHeaderRow = css`
 
 const transactionsCard = css`
   margin-top: var(--haze-space-5);
+`;
+
+// Segmented control replacing the card title: Transactions vs Token
+// Transfers. The active state rides on aria-pressed so the control stays
+// accessible and styled from one source of truth.
+const segmentedTabs = css`
+  display: inline-flex;
+  gap: var(--haze-space-1);
+  padding: var(--haze-space-1);
+  border: 1px solid var(--haze-color-border);
+  border-radius: var(--haze-radius-lg);
+  background: var(--haze-color-bg-subtle);
+`;
+
+const tabButton = css`
+  border: none;
+  background: transparent;
+  padding: var(--haze-space-1) var(--haze-space-3);
+  border-radius: var(--haze-radius-md);
+  font-size: var(--haze-text-sm);
+  font-weight: var(--haze-weight-semibold);
+  color: var(--haze-color-text-muted);
+  cursor: pointer;
+
+  &:hover {
+    color: var(--haze-color-text);
+  }
+
+  &[aria-pressed='true'] {
+    background: var(--haze-color-bg);
+    color: var(--haze-color-text);
+    box-shadow: inset 0 0 0 1px var(--haze-color-border);
+  }
 `;
 
 const valueCell = css`
@@ -128,6 +163,22 @@ const isInvalidAddressMessage = (message: string | undefined): boolean =>
 // backend clamp. "Search deeper" disables at this budget.
 const MAX_SEARCH_WINDOW_BLOCKS = 50_000_000;
 
+// The tx list's page number lives in the URL (?page=) so filtered views
+// are shareable and back/forward works. Invalid/absent values coerce to 1;
+// the view clamps to >= 1 (the schema deliberately accepts 0/negatives so
+// a malformed deep link degrades instead of throwing during render).
+const addressSearchSchema = z.object({
+  page: z.coerce.number().catch(1),
+});
+
+// Recent-activity card tabs. The transfers tab renders its own component
+// (and owns its query there), so the unmounted tab fetches nothing.
+type ActivityTab = 'transactions' | 'transfers';
+const activityTabs: ReadonlyArray<{ id: ActivityTab; label: string }> = [
+  { id: 'transactions', label: 'Transactions' },
+  { id: 'transfers', label: 'Token Transfers' },
+];
+
 // status: 1 → success, 0 → failed, -1 → pending (no receipt yet, NOT
 // failed), null/undefined → unknown (the heuristic discovers txs from
 // block data without receipts — never read that as "pending").
@@ -191,7 +242,29 @@ export default function Address() {
   const ensQuery = useEnsName(address, currentChainId);
   const ensName = ensQuery.data;
 
-  const [txPage, setTxPage] = useState(1);
+  // Tx-list pagination is URL-driven (?page=): shareable deep links and
+  // working back/forward. useSetSearch validates/writes through the same
+  // schema (values as strings on the wire).
+  const setSearch = useSetSearch(addressSearchSchema);
+  const { page: txPageParam } = useSearch(addressSearchSchema);
+  const txPage = Math.max(1, Math.floor(txPageParam));
+  const setTxPage = (next: number) => {
+    void setSearch({ page: String(Math.max(1, Math.floor(next))) });
+  };
+
+  // Recent-activity tab (segmented control in the card header). The
+  // transfers query lives inside the TokenTransfers component; Refresh on
+  // that tab reaches it through a signal bump and settles via callback.
+  const [activityTab, setActivityTab] = useState<ActivityTab>('transactions');
+  const [transfersRefreshSignal, setTransfersRefreshSignal] = useState(0);
+  const [transfersRefreshing, setTransfersRefreshing] = useState(false);
+  const selectActivityTab = (tab: ActivityTab) => {
+    setActivityTab(tab);
+    // A pending transfers refresh can no longer report back once the tab
+    // unmounts — drop its spinner instead of spinning forever.
+    setTransfersRefreshing(false);
+  };
+
   // Widened search window (blocks) requested via ?window= — undefined is
   // the backend default. "Search deeper" escalates it; it rides in the
   // query args so a wider window is a fresh cache key/fetch.
@@ -480,245 +553,282 @@ export default function Address() {
             <Card className={transactionsCard}>
               <CardHeader>
                 <div className={headerRow}>
-                  <CardTitle as="h2">Recent Transactions</CardTitle>
-                  {/* Refresh honesty: the button refetches both channels the
-                      page stamps — the tx history AND the realtime
-                      balance/nonce read that owns 'Last updated'. */}
+                  <div className={segmentedTabs} role="group" aria-label="Recent activity">
+                    {activityTabs.map(tab => (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        className={tabButton}
+                        aria-pressed={activityTab === tab.id}
+                        onClick={() => selectActivityTab(tab.id)}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+                  {/* Refresh honesty: the button refetches what the ACTIVE
+                      tab shows — the tx history + the realtime balance read
+                      that owns 'Last updated', or the token-transfer scan
+                      (through the refresh signal the transfers component
+                      consumes). */}
                   <Button
                     variant="secondary"
                     size="sm"
                     onClick={() => {
-                      void txQuery.refetch();
-                      void realTimeQuery.refetch();
+                      if (activityTab === 'transactions') {
+                        void txQuery.refetch();
+                        void realTimeQuery.refetch();
+                      } else {
+                        setTransfersRefreshing(true);
+                        setTransfersRefreshSignal(signal => signal + 1);
+                      }
                     }}
-                    loading={txQuery.fetching || realTimeQuery.fetching}
+                    loading={
+                      activityTab === 'transactions'
+                        ? txQuery.fetching || realTimeQuery.fetching
+                        : transfersRefreshing
+                    }
                   >
                     Refresh
                   </Button>
                 </div>
               </CardHeader>
               <CardContent>
-                {/* Indexing-scope notice: true at EVERY coverage level —
-                    even 'complete' only covers native ETH activity. */}
-                <p className={tokenNotice}>
-                  Token transfers (ERC-20/721) and internal transactions
-                  are not indexed — native ETH activity only.
-                </p>
-
-                {txQuery.loading && (
-                  <LoadingState message="Scanning recent chain history..." />
-                )}
-
-                {txQuery.error &&
-                  (isInvalidAddressMessage(txQuery.error.message) ? (
-                    <InvalidChecksumError original={txQuery.error.message} />
-                  ) : (
-                    <ErrorState message={txQuery.error.message} />
-                  ))}
-
-                {!txQuery.loading && !txQuery.error && txCoverage === 'none' && txReason === 'search-failed' && (
+                {activityTab === 'transfers' ? (
+                  <TokenTransfers
+                    chainId={currentChainId}
+                    address={address}
+                    refreshSignal={transfersRefreshSignal}
+                    onRefreshed={() => setTransfersRefreshing(false)}
+                  />
+                ) : (
                   <>
-                    <Alert variant="danger">
-                      Transaction search failed (timeout). History is temporarily
-                      unavailable - this is NOT an empty result.
-                    </Alert>
-                    <div className={bannerLinks}>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        loading={txQuery.fetching}
-                        onClick={() => {
-                          void txQuery.refetch();
-                        }}
-                      >
-                        Retry search
-                      </Button>
-                    </div>
-                  </>
-                )}
+                    {/* Indexing-scope notice (tx tab only): internal txs stay
+                    outside the heuristic's reach at every coverage level;
+                    token transfers moved to their own tab with its own
+                    coverage banners. */}
+                    <p className={tokenNotice}>
+                      Internal transactions are not indexed — native ETH activity
+                      only. Token transfers (ERC-20/721/1155) live in the Token
+                      Transfers tab.
+                    </p>
 
-                {!txQuery.loading && !txQuery.error && txCoverage === 'none' && txReason === 'zero-balance' && (
-                  <>
-                    <Alert variant="warning">
-                      {realTimeQuery.data
-                        ? `This address has sent ${realTimeQuery.data.transactionCount.toLocaleString()} transactions (nonce).`
-                        : 'This address has sent an unknown number of transactions (nonce unavailable).'}
-                      {' '}Incoming activity cannot be scanned because the
-                      balance-history heuristic needs non-zero balance; token
-                      activity is never scanned.
-                    </Alert>
-                    <div className={bannerLinks}>
-                      <ExternalLinks links={externalToolLinks} />
-                    </div>
-                  </>
-                )}
+                    {txQuery.loading && (
+                      <LoadingState message="Scanning recent chain history..." />
+                    )}
 
-                {/* nonce=0: outgoing history is provably empty, but incoming
+                    {txQuery.error &&
+                      (isInvalidAddressMessage(txQuery.error.message) ? (
+                        <InvalidChecksumError original={txQuery.error.message} />
+                      ) : (
+                        <ErrorState message={txQuery.error.message} />
+                      ))}
+
+                    {!txQuery.loading && !txQuery.error && txCoverage === 'none' && txReason === 'search-failed' && (
+                      <>
+                        <Alert variant="danger">
+                          Transaction search failed (timeout). History is temporarily
+                          unavailable - this is NOT an empty result.
+                        </Alert>
+                        <div className={bannerLinks}>
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            loading={txQuery.fetching}
+                            onClick={() => {
+                              void txQuery.refetch();
+                            }}
+                          >
+                            Retry search
+                          </Button>
+                        </div>
+                      </>
+                    )}
+
+                    {!txQuery.loading && !txQuery.error && txCoverage === 'none' && txReason === 'zero-balance' && (
+                      <>
+                        <Alert variant="warning">
+                          {realTimeQuery.data
+                            ? `This address has sent ${realTimeQuery.data.transactionCount.toLocaleString()} transactions (nonce).`
+                            : 'This address has sent an unknown number of transactions (nonce unavailable).'}
+                          {' '}Incoming activity cannot be scanned because the
+                          balance-history heuristic needs non-zero balance; token
+                          activity is never scanned.
+                        </Alert>
+                        <div className={bannerLinks}>
+                          <ExternalLinks links={externalToolLinks} />
+                        </div>
+                      </>
+                    )}
+
+                    {/* nonce=0: outgoing history is provably empty, but incoming
                     activity stays invisible to the heuristic — never read
                     this as a trusted "no transactions at all". */}
-                {!txQuery.loading && !txQuery.error
-                  && txCoverage === 'partial'
-                  && txReason === 'no-outgoing-transactions' && (
-                  <>
-                    <Alert variant="warning">
-                      No OUTGOING transactions found. Incoming transactions
-                      are undetectable without a full indexer — check an
-                      external explorer.
-                    </Alert>
-                    <div className={bannerLinks}>
-                      <ExternalLinks links={externalToolLinks} />
-                    </div>
-                  </>
-                )}
+                    {!txQuery.loading && !txQuery.error
+                      && txCoverage === 'partial'
+                      && txReason === 'no-outgoing-transactions' && (
+                      <>
+                        <Alert variant="warning">
+                          No OUTGOING transactions found. Incoming transactions
+                          are undetectable without a full indexer — check an
+                          external explorer.
+                        </Alert>
+                        <div className={bannerLinks}>
+                          <ExternalLinks links={externalToolLinks} />
+                        </div>
+                      </>
+                    )}
 
-                {/* Generic partial banner: only for a SEARCH that ran and
+                    {/* Generic partial banner: only for a SEARCH that ran and
                     covered a window. The no-outgoing-transactions case has
                     its own banner above — the search never ran there, so
                     "search deeper" would be a no-op (backend early-returns
                     on nonce=0 regardless of window). */}
-                {!txQuery.loading && !txQuery.error && txCoverage === 'partial'
-                  && txReason !== 'no-outgoing-transactions' && (
-                  <>
-                    <Alert variant="warning">
-                      Partial history - transactions are discovered heuristically
-                      (native-token transfers {searchWindowLabel}). Token
-                      transfers and contract interactions may be missing.
-                    </Alert>
-                    <div className={bannerLinks}>
-                      <ExternalLinks links={externalToolLinks} />
-                      {/* Escalation: quadruple the searched window. Disabled
+                    {!txQuery.loading && !txQuery.error && txCoverage === 'partial'
+                      && txReason !== 'no-outgoing-transactions' && (
+                      <>
+                        <Alert variant="warning">
+                          Partial history - transactions are discovered heuristically
+                          (native-token transfers {searchWindowLabel}). Token
+                          transfers and contract interactions may be missing.
+                        </Alert>
+                        <div className={bannerLinks}>
+                          <ExternalLinks links={externalToolLinks} />
+                          {/* Escalation: quadruple the searched window. Disabled
                           with a title once the RPC budget cap is reached —
                           the button stays visible (still partial) so the
                           limitation stays explained. */}
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        disabled={searchWindowAtCap}
-                        title={
-                          searchWindowAtCap
-                            ? 'maximum RPC budget reached'
-                            : undefined
-                        }
-                        loading={txQuery.fetching}
-                        onClick={() => setTxSearchWindow(nextSearchWindow)}
-                      >
-                        Search deeper
-                      </Button>
-                    </div>
-                  </>
-                )}
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            disabled={searchWindowAtCap}
+                            title={
+                              searchWindowAtCap
+                                ? 'maximum RPC budget reached'
+                                : undefined
+                            }
+                            loading={txQuery.fetching}
+                            onClick={() => setTxSearchWindow(nextSearchWindow)}
+                          >
+                            Search deeper
+                          </Button>
+                        </div>
+                      </>
+                    )}
 
-                {/* Trusted empty ONLY for authoritative coverage ('complete'):
+                    {/* Trusted empty ONLY for authoritative coverage ('complete'):
                     the backend asserts the full history is known. Anything
                     else that looks empty must not read as "no history". */}
-                {!txQuery.loading && !txQuery.error
-                  && transactions.length === 0 && txTotal === 0
-                  && txCoverage === 'complete' && (
-                  <Alert variant="info">No transactions found</Alert>
-                )}
+                    {!txQuery.loading && !txQuery.error
+                      && transactions.length === 0 && txTotal === 0
+                      && txCoverage === 'complete' && (
+                      <Alert variant="info">No transactions found</Alert>
+                    )}
 
-                {/* Pre-coverage cached payload (no coverage/method tags):
+                    {/* Pre-coverage cached payload (no coverage/method tags):
                     the empty list is unverified, so say so instead of
                     implying a trusted empty result. */}
-                {!txQuery.loading && !txQuery.error
-                  && transactions.length === 0 && txTotal === 0
-                  && txCoverage === undefined && (
-                  <>
-                    <Alert variant="warning">
-                      Transaction data source unknown — history may be
-                      incomplete. Verify on an external explorer.
-                    </Alert>
-                    <div className={bannerLinks}>
-                      <ExternalLinks links={externalToolLinks} />
-                    </div>
-                  </>
-                )}
+                    {!txQuery.loading && !txQuery.error
+                      && transactions.length === 0 && txTotal === 0
+                      && txCoverage === undefined && (
+                      <>
+                        <Alert variant="warning">
+                          Transaction data source unknown — history may be
+                          incomplete. Verify on an external explorer.
+                        </Alert>
+                        <div className={bannerLinks}>
+                          <ExternalLinks links={externalToolLinks} />
+                        </div>
+                      </>
+                    )}
 
-                {(transactions.length > 0 || txTotal > 0) && (
-                  <>
-                    <DataTable>
-                      <thead>
-                        <tr>
-                          <th>Txn Hash</th>
-                          <th>Block</th>
-                          <th>Age</th>
-                          <th>Direction</th>
-                          <th>From</th>
-                          <th>To</th>
-                          <th>Value</th>
-                          <th>Status</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {transactions.map(tx => {
-                          const dir = getDirection(tx);
-                          return (
-                            <tr key={tx.hash}>
-                              <td>
-                                <CopyableHash
-                                  value={tx.hash}
-                                  truncated={formatHash(tx.hash)}
-                                  href={`/chain/${currentChainId}/tx/${tx.hash}`}
-                                />
-                              </td>
-                              <td>
-                                <TypedLink
-                                  to={`/chain/${currentChainId}/block/${tx.blockNumber}`}
-                                  className={linkStyle}
-                                >
-                                  {formatBlockNumber(tx.blockNumber)}
-                                </TypedLink>
-                              </td>
-                              <td>{tx.timestamp ? formatRelativeTime(tx.timestamp) : 'N/A'}</td>
-                              <td>
-                                <Badge variant={directionVariant[dir]} size="sm">
-                                  {directionLabel[dir]}
-                                </Badge>
-                              </td>
-                              <td>
-                                <CopyableHash
-                                  value={tx.fromAddress}
-                                  truncated={formatAddr(tx.fromAddress)}
-                                  href={`/chain/${currentChainId}/address/${tx.fromAddress}`}
-                                />
-                              </td>
-                              <td>
-                                <CopyableHash
-                                  value={tx.toAddress}
-                                  truncated={formatAddr(tx.toAddress)}
-                                  href={`/chain/${currentChainId}/address/${tx.toAddress}`}
-                                />
-                              </td>
-                              <td className={valueCell}>{formatTxValue(tx.value)}</td>
-                              <td>
-                                <TxStatusBadge
-                                  status={tx.status}
-                                  hasBlock={tx.blockNumber !== undefined}
-                                />
-                              </td>
+                    {(transactions.length > 0 || txTotal > 0) && (
+                      <>
+                        <DataTable>
+                          <thead>
+                            <tr>
+                              <th>Txn Hash</th>
+                              <th>Block</th>
+                              <th>Age</th>
+                              <th>Direction</th>
+                              <th>From</th>
+                              <th>To</th>
+                              <th>Value</th>
+                              <th>Status</th>
                             </tr>
-                          );
-                        })}
-                        {/* Page slid past the data (total > 0 but this page
+                          </thead>
+                          <tbody>
+                            {transactions.map(tx => {
+                              const dir = getDirection(tx);
+                              return (
+                                <tr key={tx.hash}>
+                                  <td>
+                                    <CopyableHash
+                                      value={tx.hash}
+                                      truncated={formatHash(tx.hash)}
+                                      href={`/chain/${currentChainId}/tx/${tx.hash}`}
+                                    />
+                                  </td>
+                                  <td>
+                                    <TypedLink
+                                      to={`/chain/${currentChainId}/block/${tx.blockNumber}`}
+                                      className={linkStyle}
+                                    >
+                                      {formatBlockNumber(tx.blockNumber)}
+                                    </TypedLink>
+                                  </td>
+                                  <td>{tx.timestamp ? formatRelativeTime(tx.timestamp) : 'N/A'}</td>
+                                  <td>
+                                    <Badge variant={directionVariant[dir]} size="sm">
+                                      {directionLabel[dir]}
+                                    </Badge>
+                                  </td>
+                                  <td>
+                                    <CopyableHash
+                                      value={tx.fromAddress}
+                                      truncated={formatAddr(tx.fromAddress)}
+                                      href={`/chain/${currentChainId}/address/${tx.fromAddress}`}
+                                    />
+                                  </td>
+                                  <td>
+                                    <CopyableHash
+                                      value={tx.toAddress}
+                                      truncated={formatAddr(tx.toAddress)}
+                                      href={`/chain/${currentChainId}/address/${tx.toAddress}`}
+                                    />
+                                  </td>
+                                  <td className={valueCell}>{formatTxValue(tx.value)}</td>
+                                  <td>
+                                    <TxStatusBadge
+                                      status={tx.status}
+                                      hasBlock={tx.blockNumber !== undefined}
+                                    />
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                            {/* Page slid past the data (total > 0 but this page
                             is empty — e.g. a widened search shrank the
                             discovered set): never read as "no history". */}
-                        {transactions.length === 0 && (
-                          <tr>
-                            <td className={emptyPageCell} colSpan={8}>
-                              No transactions on this page
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </DataTable>
-                    <Pagination
-                      page={txPage}
-                      pageInfo={`Page ${txPage} of ${txTotalPages}`}
-                      hasPrev={txPage > 1}
-                      hasNext={txPage < txTotalPages}
-                      onPrev={() => setTxPage(p => Math.max(1, p - 1))}
-                      onNext={() => setTxPage(p => p + 1)}
-                    />
+                            {transactions.length === 0 && (
+                              <tr>
+                                <td className={emptyPageCell} colSpan={8}>
+                                  No transactions on this page
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </DataTable>
+                        <Pagination
+                          page={txPage}
+                          pageInfo={`Page ${txPage} of ${txTotalPages}`}
+                          hasPrev={txPage > 1}
+                          hasNext={txPage < txTotalPages}
+                          onPrev={() => setTxPage(txPage - 1)}
+                          onNext={() => setTxPage(txPage + 1)}
+                        />
+                      </>
+                    )}
                   </>
                 )}
               </CardContent>

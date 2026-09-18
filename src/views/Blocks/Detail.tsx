@@ -17,6 +17,7 @@ import { getChainInfo, getChainName, getChainType } from '@/config/chains';
 import { redirectReplace } from '@/views/Home/Landing';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
 import { useBlockByNumber } from '@/services/chainRpc';
+import { finalityLabelFor, useFinalityHeads } from '@/services/blocks';
 import { formatRelativeTime } from '@/utils/format';
 import { createRpcClient } from '@/utils/realTimeData';
 
@@ -131,6 +132,14 @@ export default function BlockDetail() {
     );
   };
 
+  // Finality label for the viewed block (same semantics as the list rows):
+  // unknown heads render no badge — absence of data is not "pending" — and
+  // a non-finite parsed number fails both comparisons, so an invalid param
+  // never earns one either. Guarded to 0 on the unsupported-chain branch
+  // like the list's feed hook.
+  const finalityHeads = useFinalityHeads(chainInfo ? currentChainId : 0).data;
+  const finalityLabel = finalityLabelFor(finalityHeads, parsedNumber);
+
   // Parent-hash link target: block N's parent is N-1. The genesis block
   // has no parent to visit (its parent hash is the zero placeholder), so
   // its row stays copy-only.
@@ -162,6 +171,13 @@ export default function BlockDetail() {
             title={`Block #${blockNumberStr}`}
             chainInfo={`${getChainName(currentChainId)} • Chain ID: ${currentChainId}`}
           />
+          {finalityLabel && (
+            // Finalized outranks Safe; muted variant for the settled
+            // state, info tone for merely safe.
+            <Badge variant={finalityLabel === 'finalized' ? 'default' : 'info'} size="sm">
+              {finalityLabel === 'finalized' ? 'Finalized' : 'Safe'}
+            </Badge>
+          )}
           {getChainType(currentChainId) === 'testnet' && (
             <Badge variant="warning" size="sm">
               Testnet

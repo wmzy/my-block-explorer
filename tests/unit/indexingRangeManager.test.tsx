@@ -6,7 +6,10 @@
 // the furthest already-indexed block, and the transient Pausing… state that
 // outlives the pause POST until the polled status flips away from
 // 'indexing'. The HTTP layer and sonner are mocked so backend calls and
-// surfaced errors are observable.
+// surfaced errors are observable. The client-side overlap precheck
+// describe block pins the two-click gate (warning + 'Create anyway') for
+// the manual form and the gated quick modes, the catchup exemption, and
+// the reset-on-input-change semantics.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
@@ -479,5 +482,205 @@ describe('cold-start empty state quick actions', () => {
         abi: undefined,
       }),
     );
+  });
+});
+
+describe('client-side overlap precheck', () => {
+  it('gates an overlapping manual create behind a Create anyway second click', async () => {
+    rangesFixture = [range(7, 30000, 40000, 'completed', 40000)];
+    headFixture = 50000;
+
+    render(<IndexingRangeManager chainId={CHAIN_ID} contractAddress={ADDRESS} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: '+ Add Range' }));
+    const [fromInput, toInput] = screen.getAllByRole('textbox');
+    fireEvent.change(fromInput, { target: { value: '35000' } });
+    fireEvent.change(toInput, { target: { value: '45000' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add Range' }));
+
+    // The first click only reveals the warning — nothing POSTed yet.
+    expect(mockPost).not.toHaveBeenCalled();
+    expect(
+      screen.getByText(
+        'Overlaps existing range #7 (30,000–40,000) — events in the overlap will be indexed twice',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create anyway' })).toBeEnabled();
+
+    // The explicit second click performs the original submit unchanged.
+    fireEvent.click(screen.getByRole('button', { name: 'Create anyway' }));
+    await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1));
+    expect(mockPost).toHaveBeenCalledWith(rangesUrl, {
+      fromBlock: 35000,
+      toBlock: 45000,
+      direction: 'forward',
+    });
+  });
+
+  it('creates a non-overlapping manual range in one click with no warning', async () => {
+    rangesFixture = [range(7, 30000, 40000, 'completed', 40000)];
+    headFixture = 50000;
+
+    render(<IndexingRangeManager chainId={CHAIN_ID} contractAddress={ADDRESS} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: '+ Add Range' }));
+    const [fromInput, toInput] = screen.getAllByRole('textbox');
+    fireEvent.change(fromInput, { target: { value: '45000' } });
+    fireEvent.change(toInput, { target: { value: '48000' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add Range' }));
+
+    await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText(/Overlaps existing range/)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Create anyway' })).toBeNull();
+  });
+
+  it('gates the continue quick mode, which re-touches the previous range boundary', async () => {
+    rangesFixture = [range(7, 30000, 40000, 'completed', 40000)];
+    headFixture = 50000;
+
+    render(<IndexingRangeManager chainId={CHAIN_ID} contractAddress={ADDRESS} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: '+ Add Range' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+
+    // The backend continues from ranges[0].toBlock (40000) INCLUSIVE, so
+    // the would-be range [40000, 41000] overlaps range #7 itself.
+    expect(mockPost).not.toHaveBeenCalled();
+    expect(
+      screen.getByText(
+        'Overlaps existing range #7 (30,000–40,000) — events in the overlap will be indexed twice',
+      ),
+    ).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create anyway' }));
+    await waitFor(() =>
+      expect(mockPost).toHaveBeenCalledWith(quickUrl, {
+        mode: 'continue',
+        blockCount: 1000,
+        abi: undefined,
+      }),
+    );
+  });
+
+  it('gates the all quick mode against any existing range', async () => {
+    rangesFixture = [range(7, 30000, 40000, 'completed', 40000)];
+    headFixture = 50000;
+
+    render(
+      <IndexingRangeManager
+        chainId={CHAIN_ID}
+        contractAddress={ADDRESS}
+        creationBlock={1000}
+      />,
+    );
+
+    fireEvent.click(await screen.findByRole('button', { name: '+ Add Range' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Index All' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+
+    // 'all' spans [creation, head] = [1000, 50000], which covers range #7.
+    expect(mockPost).not.toHaveBeenCalled();
+    expect(screen.getByText(/Overlaps existing range #7/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Create anyway' })).toBeEnabled();
+  });
+
+  it('gates the recent quick mode — its head-anchored window is not overlap-free', async () => {
+    rangesFixture = [range(8, 49000, 50000, 'completed', 50000)];
+    headFixture = 50000;
+
+    render(<IndexingRangeManager chainId={CHAIN_ID} contractAddress={ADDRESS} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: '+ Add Range' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Recent Blocks' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+
+    // The recent window [head - 1000, head] = [49000, 50000] exactly
+    // re-covers range #8, so the gate must fire.
+    expect(mockPost).not.toHaveBeenCalled();
+    expect(screen.getByText(/Overlaps existing range #8/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create anyway' }));
+    await waitFor(() =>
+      expect(mockPost).toHaveBeenCalledWith(quickUrl, {
+        mode: 'recent',
+        blockCount: 1000,
+        abi: undefined,
+      }),
+    );
+  });
+
+  it('never gates catchup even when ranges exist', async () => {
+    rangesFixture = [range(7, 30000, 40000, 'completed', 40000)];
+    headFixture = 50000;
+    mockPost.mockResolvedValue({ rangeId: 9, fromBlock: 40000, toBlock: 50000, started: true });
+
+    render(<IndexingRangeManager chainId={CHAIN_ID} contractAddress={ADDRESS} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Catch up to head' }));
+
+    // Catchup extends the furthest existing toBlock to the head — it is
+    // overlap-free by construction, so it POSTs in a single click.
+    await waitFor(() =>
+      expect(mockPost).toHaveBeenCalledWith(quickUrl, {
+        mode: 'catchup',
+        blockCount: undefined,
+        abi: undefined,
+      }),
+    );
+    expect(mockPost).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/Overlaps existing range/)).toBeNull();
+  });
+
+  it('resets the armed manual confirmation when the gated inputs change', async () => {
+    rangesFixture = [range(7, 30000, 40000, 'completed', 40000)];
+    headFixture = 50000;
+
+    render(<IndexingRangeManager chainId={CHAIN_ID} contractAddress={ADDRESS} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: '+ Add Range' }));
+    const [fromInput, toInput] = screen.getAllByRole('textbox');
+    fireEvent.change(fromInput, { target: { value: '35000' } });
+    fireEvent.change(toInput, { target: { value: '45000' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add Range' }));
+    expect(screen.getByRole('button', { name: 'Create anyway' })).toBeEnabled();
+
+    // Editing From Block drops the gate: warning gone, label back — and
+    // the next submit re-runs the precheck (still overlapping → re-gated,
+    // still no POST).
+    fireEvent.change(fromInput, { target: { value: '36000' } });
+    expect(screen.queryByText(/Overlaps existing range/)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Add Range' })).toBeEnabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Add Range' }));
+    expect(mockPost).not.toHaveBeenCalled();
+    expect(screen.getByText(/Overlaps existing range #7/)).toBeInTheDocument();
+  });
+
+  it('resets the quick gate when the selected quick mode changes', async () => {
+    rangesFixture = [range(7, 30000, 40000, 'completed', 40000)];
+    headFixture = 50000;
+
+    render(<IndexingRangeManager chainId={CHAIN_ID} contractAddress={ADDRESS} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: '+ Add Range' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+    expect(screen.getByText(/Overlaps existing range #7/)).toBeInTheDocument();
+
+    // Switching to Recent Blocks drops the gate; its [49000, 50000]
+    // window does not overlap #7 (30000–40000), so Create POSTs directly.
+    fireEvent.click(screen.getByRole('button', { name: 'Recent Blocks' }));
+    expect(screen.queryByText(/Overlaps existing range/)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Create' })).toBeEnabled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+    await waitFor(() =>
+      expect(mockPost).toHaveBeenCalledWith(quickUrl, {
+        mode: 'recent',
+        blockCount: 1000,
+        abi: undefined,
+      }),
+    );
+    expect(mockPost).toHaveBeenCalledTimes(1);
   });
 });

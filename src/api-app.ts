@@ -8,6 +8,7 @@ import { createApiError } from './utils/api-error';
 import blocksRoutes from './routes/blocks';
 import transactionsRoutes from './routes/transactions';
 import addressesRoutes from './routes/addresses';
+import transfersRoutes from './routes/transfers';
 import searchRoutes from './routes/search';
 import statsRoutes from './routes/stats';
 import contractsRoutes from './routes/contracts';
@@ -65,6 +66,7 @@ app.get('/api/health', c => {
 app.route('/api', blocksRoutes);
 app.route('/api', transactionsRoutes);
 app.route('/api', addressesRoutes);
+app.route('/api', transfersRoutes);
 app.route('/api', searchRoutes);
 app.route('/api', statsRoutes);
 app.route('/api', contractsRoutes);

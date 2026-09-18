@@ -350,7 +350,7 @@ export class DuckDBPostgresAdapter {
             )
           : await conn.runAndReadAll(queryText);
 
-      return this.adaptResult(result.getRowObjects() as Record<string, unknown>[]);
+      return this.adaptResult(result.getRowObjects());
     } finally {
       if (shouldDisconnect) {
         conn.disconnectSync();

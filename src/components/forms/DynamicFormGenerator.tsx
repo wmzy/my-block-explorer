@@ -100,8 +100,8 @@ export const DynamicFormGenerator: React.FC<DynamicFormGeneratorProps> = ({
       case 'bool':
         baseField.type = 'checkbox';
         baseField.options = [
-          { value: 'true' as unknown as string, label: 'True' },
-          { value: 'false' as unknown as string, label: 'False' },
+          { value: 'true', label: 'True' },
+          { value: 'false', label: 'False' },
         ];
         break;
 

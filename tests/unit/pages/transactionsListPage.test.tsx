@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
-import { MemoryRouter, View, createRoutes } from '@native-router/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter, View, createRoutes, useSearchParams } from '@native-router/react';
 import '@testing-library/jest-dom';
 import TransactionsList from '@/views/Transactions/List';
 
@@ -73,6 +73,13 @@ const makeTx = (blockNumber: number, status: number) => ({
   timestamp: '2024-01-01T00:00:00Z',
 });
 
+// Exposes the current search string so ?page= writes are observable
+// (same probe pattern as the contract page tests).
+function SearchProbe() {
+  const [searchParams] = useSearchParams();
+  return <div data-testid="search-probe">{searchParams.toString()}</div>;
+}
+
 const renderTransactionsList = (path: string) =>
   render(
     <MemoryRouter
@@ -81,6 +88,7 @@ const renderTransactionsList = (path: string) =>
       ])}
       initialEntries={[path]}
     >
+      <SearchProbe />
       <View />
     </MemoryRouter>,
   );
@@ -200,7 +208,10 @@ describe('TransactionsList view', () => {
     expect(screen.getByText('Older')).not.toBeDisabled();
 
     fireEvent.click(screen.getByText('Older'));
-    // page 2 resumes exactly at the cursor page 1 returned — no fixed stride
+    // The page index now round-trips through the URL, so the page-2 render
+    // lands asynchronously; once it does, page 2 resumes exactly at the
+    // cursor page 1 returned — no fixed stride.
+    expect(await screen.findByText(/Page 2/)).toBeInTheDocument();
     expect(mockUseLatestTransactions).toHaveBeenLastCalledWith(1, 20, nextCursor);
   });
 
@@ -254,16 +265,20 @@ describe('TransactionsList view', () => {
 
     expect(await screen.findByText(/Page 1/)).toBeInTheDocument();
 
-    // Walk one page older, then come back to the live head via Refresh.
+    // Walk one page older (the ?page=2 URL write settles asynchronously),
+    // then come back to the live head via Refresh.
     fireEvent.click(screen.getByText('Older'));
+    expect(await screen.findByText(/Page 2/)).toBeInTheDocument();
     expect(mockUseLatestTransactions).toHaveBeenLastCalledWith(1, 20, nextCursor);
 
     fireEvent.click(screen.getByRole('button', { name: '↻ Refresh' }));
     // Page 1 is the head again (no cursor) and the head entry was refetched
     // through the cache-bypassing path instead of riding its cached answer.
-    expect(mockUseLatestTransactions).toHaveBeenLastCalledWith(1, 20, undefined);
+    await waitFor(() =>
+      expect(mockUseLatestTransactions).toHaveBeenLastCalledWith(1, 20, undefined),
+    );
     expect(refetch).toHaveBeenCalled();
-    expect(screen.getByText(/Page 1/)).toBeInTheDocument();
+    expect(await screen.findByText(/Page 1/)).toBeInTheDocument();
   });
 
   it('Refresh drops the ?block= deep-link seed and returns to the live head', async () => {
@@ -287,5 +302,148 @@ describe('TransactionsList view', () => {
     fireEvent.click(screen.getByRole('button', { name: '↻ Refresh' }));
     // The seed is dropped: page 1 queries the live head (no cursor).
     expect(mockUseLatestTransactions).toHaveBeenLastCalledWith(1, 20, undefined);
+  });
+
+  it('walks a ?page=2 deep link: page 1 chains its cursor into the page-2 query', async () => {
+    const pageOneCursor = 17_999_980_000_000n;
+    // Page 1 (no cursor) reports the continuation; page 2 (any cursor) is
+    // the end of the chain.
+    mockUseLatestTransactions.mockImplementation((_chainId, _limit, cursor) =>
+      cursor === undefined
+        ? {
+            data: {
+              transactions: [makeTx(18000001, 1)],
+              latestBlockNumber: 18000001n,
+              hasMore: true,
+              nextCursor: pageOneCursor,
+            },
+            loading: false,
+            error: undefined,
+          }
+        : {
+            data: {
+              transactions: [makeTx(17999980, 1)],
+              latestBlockNumber: 18000001n,
+              hasMore: false,
+            },
+            loading: false,
+            error: undefined,
+          },
+    );
+    renderTransactionsList('/chain/1/transactions?page=2');
+
+    // The walk runs page 1, extends the cursor stack with its nextCursor,
+    // then lands on page 2 driven purely by the URL.
+    expect(await screen.findByText(/Page 2/)).toBeInTheDocument();
+    expect(mockUseLatestTransactions).toHaveBeenLastCalledWith(1, 20, pageOneCursor);
+  });
+
+  it('writes ?page= into the URL on Older and Newer clicks', async () => {
+    mockUseLatestTransactions.mockReturnValue({
+      data: {
+        transactions: [makeTx(18000001, 1)],
+        latestBlockNumber: 18000001n,
+        hasMore: true,
+        nextCursor: 17_999_980_000_000n,
+      },
+      loading: false,
+      error: undefined,
+    });
+    renderTransactionsList('/chain/1/transactions');
+
+    expect(await screen.findByText(/Page 1/)).toBeInTheDocument();
+    expect(screen.getByTestId('search-probe').textContent).toBe('');
+
+    fireEvent.click(screen.getByText('Older'));
+    expect(await screen.findByText(/Page 2/)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByTestId('search-probe').textContent).toBe('page=2'),
+    );
+
+    fireEvent.click(screen.getByText('Newer'));
+    expect(await screen.findByText(/Page 1/)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByTestId('search-probe').textContent).toBe('page=1'),
+    );
+  });
+
+  it('keeps the ?block= anchor when paging writes ?page=', async () => {
+    const nextCursor = 17_999_980_000_000n;
+    mockUseLatestTransactions.mockReturnValue({
+      data: {
+        transactions: [makeTx(18000000, 1)],
+        latestBlockNumber: 18000001n,
+        hasMore: true,
+        nextCursor,
+      },
+      loading: false,
+      error: undefined,
+    });
+    renderTransactionsList('/chain/1/transactions?block=18000000');
+
+    expect(await screen.findByText(/Page 1/)).toBeInTheDocument();
+    // Seeded page 1 carries the deep-link cursor.
+    expect(mockUseLatestTransactions).toHaveBeenCalledWith(1, 20, 18_000_001_000_000n);
+
+    fireEvent.click(screen.getByText('Older'));
+    expect(await screen.findByText(/Page 2/)).toBeInTheDocument();
+    // The page write merges into the search: the anchor param survives.
+    await waitFor(() =>
+      expect(screen.getByTestId('search-probe').textContent).toBe('block=18000000&page=2'),
+    );
+    // Page 2 resumes from page 1's cursor, still anchored at the seed block.
+    expect(mockUseLatestTransactions).toHaveBeenLastCalledWith(1, 20, nextCursor);
+  });
+
+  it('pins the URL to the deepest reachable page when a deep link overshoots', async () => {
+    const pageOneCursor = 17_999_980_000_000n;
+    mockUseLatestTransactions.mockImplementation((_chainId, _limit, cursor) =>
+      cursor === undefined
+        ? {
+            data: {
+              transactions: [makeTx(18000001, 1)],
+              latestBlockNumber: 18000001n,
+              hasMore: true,
+              nextCursor: pageOneCursor,
+            },
+            loading: false,
+            error: undefined,
+          }
+        : {
+            data: {
+              transactions: [makeTx(17999980, 1)],
+              latestBlockNumber: 18000001n,
+              hasMore: false,
+            },
+            loading: false,
+            error: undefined,
+          },
+    );
+    renderTransactionsList('/chain/1/transactions?page=5');
+
+    // The walk stops where the chain does (page 2); the URL is replaced to
+    // report the page actually shown instead of the unreachable page 5.
+    expect(await screen.findByText(/Page 2/)).toBeInTheDocument();
+    await waitFor(() =>
+      expect(screen.getByTestId('search-probe').textContent).toBe('page=2'),
+    );
+  });
+
+  it('falls back to page 1 when ?page= is garbage', async () => {
+    mockUseLatestTransactions.mockReturnValue({
+      data: {
+        transactions: [makeTx(18000001, 1)],
+        latestBlockNumber: 18000001n,
+        hasMore: true,
+        nextCursor: 17_999_980_000_000n,
+      },
+      loading: false,
+      error: undefined,
+    });
+    renderTransactionsList('/chain/1/transactions?page=abc');
+
+    // zod's .catch(1) degrades ?page=abc: the head page renders, no walk.
+    expect(await screen.findByText(/Page 1/)).toBeInTheDocument();
+    expect(mockUseLatestTransactions).toHaveBeenCalledWith(1, 20, undefined);
   });
 });

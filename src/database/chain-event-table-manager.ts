@@ -62,7 +62,7 @@ export class ChainEventTableManager {
       const eventAbi: AbiEvent = {
         name: eventName,
         type: 'event',
-        inputs: eventParams as unknown as AbiEvent['inputs'],
+        inputs: eventParams,
       };
 
       // 创建事件表

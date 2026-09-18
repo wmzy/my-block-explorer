@@ -337,12 +337,12 @@ describe('createQueryHook (scenario hook)', () => {
 
     // Never invoked: the body exists only for the compiler.
 
-    // negative case: hook called from a non-hook context must fail types.
-    const wrongArgs = () => {
+    // negative case: hook invoked with mismatched args must fail types.
+    const useWrongArgs = () => {
       // @ts-expect-error args must match the fetch's parameter tuple
       void useQ([1]);
     };
-    void wrongArgs;
+    void useWrongArgs;
   });
 });
 

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, View, createRoutes } from '@native-router/react';
 import '@testing-library/jest-dom';
 import BlocksList from '@/views/Blocks/List';
@@ -74,6 +74,21 @@ vi.mock('@/services/homeFeed', () => ({
   useLatestBlocksFeed: (...args: unknown[]) => mockUseLatestBlocksFeed(...args),
 }));
 
+// Finality heads behind the per-row Safe/Finalized badges. Only the polled
+// hook is stubbed; the real finalityLabelFor stays in play so the view
+// tests pin the genuine boundary semantics, not a mock copy.
+type FinalityHookResult = { data?: { safe?: number; finalized?: number } };
+
+const mockUseFinalityHeads = vi.fn<(...args: unknown[]) => FinalityHookResult>();
+
+vi.mock('@/services/blocks', async importOriginal => {
+  const actual = await importOriginal<typeof import('@/services/blocks')>();
+  return {
+    ...actual,
+    useFinalityHeads: (...args: unknown[]) => mockUseFinalityHeads(...args),
+  };
+});
+
 const makeBlock = (number: number) => ({
   number: String(number),
   hash: `0xhash${number}`,
@@ -100,6 +115,8 @@ describe('BlocksList view', () => {
     mockUseLatestBlocks.mockReturnValue({ data: undefined, loading: false, error: undefined });
     // No live head beyond the anchor by default: no staleness hint.
     mockUseLatestBlocksFeed.mockReturnValue({ data: undefined });
+    // Heads unknown by default: no finality badges unless a case sets them.
+    mockUseFinalityHeads.mockReturnValue({ data: undefined });
   });
 
   it('renders TopNavigation and page header, querying the head page', async () => {
@@ -361,5 +378,78 @@ describe('BlocksList view', () => {
     await waitFor(() => expect(screen.getByText(/Reached genesis/)).toBeInTheDocument());
     expect(screen.getByText('Older')).toBeDisabled();
     expect(mockUseLatestBlocks).toHaveBeenLastCalledWith(1, 20, 6n);
+  });
+
+  // Finality badges: each row compares its block number against the polled
+  // safe/finalized heads. The pinned contract: unknown heads (hook still
+  // loading, fetch failed, or neither tag supported) render NO badge —
+  // absence of data is never presented as "pending" — and once heads are
+  // known, Finalized (block <= finalized) wins over Safe (block <= safe).
+  it('renders no finality badges while the heads are unknown', async () => {
+    const blocksData = {
+      data: {
+        blocks: [makeBlock(18000001), makeBlock(18000000)],
+        latestBlockNumber: 18000001n,
+      },
+      loading: false,
+      fetching: false,
+      error: undefined,
+      dataUpdatedAt: 1,
+    };
+
+    // Hook still loading: data undefined.
+    mockUseLatestBlocks.mockReturnValue(blocksData);
+    mockUseFinalityHeads.mockReturnValue({ data: undefined });
+    const stillLoading = renderBlocksList('/chain/1/blocks');
+    expect(await stillLoading.findByText('18,000,001')).toBeInTheDocument();
+    expect(stillLoading.queryByText('Safe')).not.toBeInTheDocument();
+    expect(stillLoading.queryByText('Finalized')).not.toBeInTheDocument();
+    stillLoading.unmount();
+
+    // Fetch answered but the node supports neither tag: heads = {}.
+    mockUseFinalityHeads.mockReturnValue({ data: {} });
+    const noTags = renderBlocksList('/chain/1/blocks');
+    expect(await noTags.findByText('18,000,001')).toBeInTheDocument();
+    expect(noTags.queryByText('Safe')).not.toBeInTheDocument();
+    expect(noTags.queryByText('Finalized')).not.toBeInTheDocument();
+  });
+
+  it('labels rows Finalized/Safe from the known heads with both boundaries pinned', async () => {
+    // finalized = M = 17,999,998 and safe = N = 17,999,999:
+    // blocks <= M are 'Finalized', blocks in (M, N] are 'Safe', blocks > N
+    // show neither. The row set pins every boundary: == M is 'Finalized'
+    // (not 'Safe'), == N is 'Safe', and > N gets no badge.
+    mockUseFinalityHeads.mockReturnValue({ data: { safe: 17_999_999, finalized: 17_999_998 } });
+    mockUseLatestBlocks.mockReturnValue({
+      data: {
+        blocks: [
+          makeBlock(18_000_000), // > N
+          makeBlock(17_999_999), // == N
+          makeBlock(17_999_998), // == M
+          makeBlock(17_999_997), // < M
+        ],
+        latestBlockNumber: 18_000_000n,
+      },
+      loading: false,
+      fetching: false,
+      error: undefined,
+      dataUpdatedAt: 1,
+    });
+    renderBlocksList('/chain/1/blocks');
+
+    expect(await screen.findByText('17,999,997')).toBeInTheDocument();
+    // The badge rides the block-number cell, so scoping to the row pins
+    // which number earned which label.
+    const rowOf = (label: string) => screen.getByText(label).closest('tr');
+    expect(within(rowOf('18,000,000') as HTMLElement).queryByText('Safe')).not.toBeInTheDocument();
+    expect(
+      within(rowOf('18,000,000') as HTMLElement).queryByText('Finalized'),
+    ).not.toBeInTheDocument();
+    expect(within(rowOf('17,999,999') as HTMLElement).getByText('Safe')).toBeInTheDocument();
+    expect(
+      within(rowOf('17,999,999') as HTMLElement).queryByText('Finalized'),
+    ).not.toBeInTheDocument();
+    expect(within(rowOf('17,999,998') as HTMLElement).getByText('Finalized')).toBeInTheDocument();
+    expect(within(rowOf('17,999,997') as HTMLElement).getByText('Finalized')).toBeInTheDocument();
   });
 });

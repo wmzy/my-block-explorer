@@ -91,7 +91,7 @@ export function safeJsonResponse(data: unknown): JsonLike {
     if (result === undefined) {
       return null;
     }
-    return result as JsonLike;
+    return result;
   }
   catch (error) {
     logger.error({ err: error }, 'JSON serialization error');

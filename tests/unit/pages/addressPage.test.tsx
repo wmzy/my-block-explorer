@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import { MemoryRouter, View, createRoutes } from '@native-router/react';
+import { MemoryRouter, View, createRoutes, useSearchParams } from '@native-router/react';
 import '@testing-library/jest-dom/vitest';
 import AddressView from '@/views/Address';
 
@@ -92,6 +92,28 @@ const mocks = vi.hoisted(() => {
     transactions: mockTransactions,
     total: mockTransactions.length,
   };
+  // Token-transfers tab fixture: ERC-1155-only rows deliberately — the
+  // real TokenTransfers component then renders without touching the RPC
+  // enrichment path (the focused tokenTransfers test covers that).
+  const tokenTransfersRow = {
+    txHash: '0xfeed0000feed0000feed0000feed0000feed0000feed0000feed0000feed0000',
+    blockNumber: 18_000_002,
+    logIndex: 3,
+    token: '0x9999999999999999999999999999999999999999',
+    standard: 'erc1155-single' as const,
+    from: testAddress,
+    to: '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd',
+    value: '3',
+    tokenIds: ['5'],
+    amounts: ['3'],
+    direction: 'out' as const,
+  };
+  const initialTokenTransfersPage = {
+    transfers: [tokenTransfersRow],
+    nextCursor: null,
+    coverage: 'complete' as const,
+    windowBlocks: 100_000,
+  };
   return {
     testAddress,
     mockTransactions,
@@ -99,6 +121,9 @@ const mocks = vi.hoisted(() => {
     realTime: settledRealTime,
     addressTxError: undefined as Error | undefined,
     addressTransactions: initialAddressTxPage,
+    tokenTransfers: initialTokenTransfersPage,
+    tokenTransfersLoading: false,
+    tokenRefetch: () => undefined,
     // Loading is per-case (the scanning-copy test flips it).
     txLoading: false,
     // Every useAddressTransactions call's positional args, captured by the
@@ -169,6 +194,18 @@ vi.mock('@/services/ens', () => ({
   useEnsName: () => mocks.ens,
 }));
 
+// The transfers tab renders the REAL TokenTransfers component against this
+// settled page (ERC-1155 rows → no RPC enrichment, see the fixture above).
+vi.mock('@/services/tokenTransfers', () => ({
+  useTokenTransfers: () => ({
+    data: mocks.tokenTransfers,
+    loading: mocks.tokenTransfersLoading,
+    fetching: false,
+    error: undefined,
+    refetch: mocks.tokenRefetch,
+  }),
+}));
+
 vi.mock('@/utils/format', () => ({
   formatRelativeTime: () => '3 min ago',
 }));
@@ -180,9 +217,17 @@ const routes = createRoutes([
   },
 ]);
 
+// Exposes the live search string so cases can pin ?page= round-trips
+// through the URL (memory history is not window.location).
+function SearchProbe() {
+  const [params] = useSearchParams();
+  return <div data-testid="search-probe">{params.toString()}</div>;
+}
+
 const renderPage = (path = `/chain/1/address/${mocks.testAddress}`) =>
   render(
     <MemoryRouter routes={routes} initialEntries={[path]}>
+      <SearchProbe />
       <View />
     </MemoryRouter>,
   );
@@ -214,6 +259,27 @@ describe('Address view', () => {
     mocks.addressTxError = undefined;
     mocks.txLoading = false;
     mocks.txQueryArgs = [];
+    mocks.tokenTransfers = {
+      transfers: [
+        {
+          txHash: '0xfeed0000feed0000feed0000feed0000feed0000feed0000feed0000feed0000',
+          blockNumber: 18_000_002,
+          logIndex: 3,
+          token: '0x9999999999999999999999999999999999999999',
+          standard: 'erc1155-single',
+          from: mocks.testAddress,
+          to: '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd',
+          value: '3',
+          tokenIds: ['5'],
+          amounts: ['3'],
+          direction: 'out',
+        },
+      ],
+      nextCursor: null,
+      coverage: 'complete',
+      windowBlocks: 100_000,
+    };
+    mocks.tokenTransfersLoading = false;
     mocks.ens = { data: null, loading: false };
   });
 
@@ -261,7 +327,7 @@ describe('Address view', () => {
 
     renderPage();
 
-    expect(await screen.findByText('Recent Transactions')).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Transactions' })).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
     expect(txRefetchSpy).toHaveBeenCalledTimes(1);
     expect(realTimeRefetchSpy).toHaveBeenCalledTimes(1);
@@ -286,16 +352,22 @@ describe('Address view', () => {
     expect(screen.queryByText('Transaction Count')).not.toBeInTheDocument();
   });
 
-  it('renders Recent Transactions section', async () => {
+  it('renders the activity card with the Transactions tab active by default', async () => {
     renderPage();
 
-    expect(await screen.findByText('Recent Transactions')).toBeInTheDocument();
+    // Segmented control replaces the old card title; the tx table (Value
+    // column) is the default tab.
+    expect(
+      await screen.findByRole('group', { name: 'Recent activity' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: 'Value' })).toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: 'Amount' })).not.toBeInTheDocument();
   });
 
   it('displays transaction direction badges', async () => {
     renderPage();
 
-    await screen.findByText('Recent Transactions');
+    await screen.findByRole('group', { name: 'Recent activity' });
     const outBadges = screen.getAllByText('OUT');
     const inBadges = screen.getAllByText('IN');
     expect(outBadges.length).toBeGreaterThan(0);
@@ -313,24 +385,25 @@ describe('Address view', () => {
 
     renderPage();
 
-    await screen.findByText('Recent Transactions');
+    await screen.findByRole('group', { name: 'Recent activity' });
     expect(screen.getByRole('columnheader', { name: 'Status' })).toBeInTheDocument();
     expect(screen.getByText('Success')).toBeInTheDocument();
     expect(screen.getByText('Failed')).toBeInTheDocument();
   });
 
-  it('shows the token/internal-tx indexing notice at every coverage level', async () => {
-    // Default (no coverage tags) case first.
+  it('shows the indexing-scope notice at every coverage level', async () => {
+    // Default (no coverage tags) case first. The notice still discloses
+    // internal txs as uncovered while pointing token transfers at their
+    // own tab.
     renderPage();
     expect(
-      await screen.findByText(
-        /Token transfers \(ERC-20\/721\) and internal transactions are not indexed/,
-      ),
+      await screen.findByText(/Internal transactions are not indexed/),
     ).toBeInTheDocument();
     expect(screen.getByText(/native ETH activity only/)).toBeInTheDocument();
+    expect(screen.getByText(/Token Transfers tab/)).toBeInTheDocument();
   });
 
-  it('keeps the token-activity notice under complete coverage too', async () => {
+  it('keeps the indexing-scope notice under complete coverage too', async () => {
     mocks.addressTransactions = {
       transactions: mocks.mockTransactions,
       total: 2,
@@ -340,9 +413,7 @@ describe('Address view', () => {
     renderPage();
 
     expect(
-      await screen.findByText(
-        /Token transfers \(ERC-20\/721\) and internal transactions are not indexed/,
-      ),
+      await screen.findByText(/Internal transactions are not indexed/),
     ).toBeInTheDocument();
   });
 
@@ -360,6 +431,89 @@ describe('Address view', () => {
     renderPage();
 
     expect(await screen.findByText('Page 1 of 1')).toBeInTheDocument();
+  });
+
+  it('drives the tx pagination from ?page= and writes it back on Prev/Next', async () => {
+    // total 25 with limit 10 → 3 pages; page 2's offset arg is index 3.
+    mocks.addressTransactions = {
+      transactions: [],
+      total: 25,
+      coverage: 'complete',
+    };
+
+    renderPage(`/chain/1/address/${mocks.testAddress}?page=2`);
+
+    expect(await screen.findByText('Page 2 of 3')).toBeInTheDocument();
+    expect(mocks.txQueryArgs[3]).toBe(10);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    expect(await screen.findByText('Page 3 of 3')).toBeInTheDocument();
+    expect(mocks.txQueryArgs[3]).toBe(20);
+    // The page number landed in the URL (shareable/back-forward state).
+    expect(screen.getByTestId('search-probe')).toHaveTextContent('page=3');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Prev' }));
+    expect(await screen.findByText('Page 2 of 3')).toBeInTheDocument();
+    expect(screen.getByTestId('search-probe')).toHaveTextContent('page=2');
+  });
+
+  it('degrades a malformed ?page= deep link to page 1 instead of throwing', async () => {
+    renderPage(`/chain/1/address/${mocks.testAddress}?page=abc`);
+
+    expect(await screen.findByText('Page 1 of 1')).toBeInTheDocument();
+  });
+
+  it('switches the activity card between Transactions and Token Transfers tabs', async () => {
+    renderPage();
+
+    // Transactions is the default tab: tx table (Value column), no
+    // transfers table.
+    expect(await screen.findByRole('columnheader', { name: 'Value' })).toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: 'Amount' })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Token Transfers' }));
+
+    // The real TokenTransfers component renders the mocked service data
+    // (ERC-1155 row → no RPC enrichment path).
+    expect(await screen.findByRole('columnheader', { name: 'Amount' })).toBeInTheDocument();
+    expect(screen.getByText('ID 5 × 3')).toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: 'Value' })).not.toBeInTheDocument();
+    // The tx-only indexing notice is scoped to the Transactions tab.
+    expect(
+      screen.queryByText(/Internal transactions are not indexed/),
+    ).not.toBeInTheDocument();
+    // Coverage honesty travels with the transfers tab: complete + window.
+    expect(screen.getByText(/Scanned within the last 100,000 blocks/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Transactions' }));
+
+    expect(await screen.findByRole('columnheader', { name: 'Value' })).toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: 'Amount' })).not.toBeInTheDocument();
+  });
+
+  it('marks the active tab button with aria-pressed', async () => {
+    renderPage();
+
+    const txTab = await screen.findByRole('button', { name: 'Transactions' });
+    const tokenTab = screen.getByRole('button', { name: 'Token Transfers' });
+    expect(txTab).toHaveAttribute('aria-pressed', 'true');
+    expect(tokenTab).toHaveAttribute('aria-pressed', 'false');
+
+    fireEvent.click(tokenTab);
+    expect(tokenTab).toHaveAttribute('aria-pressed', 'true');
+    expect(txTab).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('Refresh drives the transfers scan only on the Token Transfers tab', async () => {
+    const txRefetchSpy = vi.spyOn(mocks, 'txRefetch');
+    const tokenRefetchSpy = vi.spyOn(mocks, 'tokenRefetch');
+
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: 'Token Transfers' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+
+    expect(tokenRefetchSpy).toHaveBeenCalledTimes(1);
+    expect(txRefetchSpy).not.toHaveBeenCalled();
   });
 
   it('links to the contract view for contract addresses', async () => {

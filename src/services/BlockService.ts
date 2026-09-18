@@ -78,7 +78,7 @@ const createBlockService = (deps: BlockServiceDeps) => {
       indexedAt: get('indexedAt', 'indexed_at')
         ? new Date(get('indexedAt', 'indexed_at') as string | number)
         : undefined,
-    } as Block;
+    };
   };
 
   const indexBlock = async (
@@ -138,7 +138,7 @@ const createBlockService = (deps: BlockServiceDeps) => {
 
     const row = inserted[0];
     if (!row) throw new Error('Failed to insert block');
-    return formatBlock(row as Record<string, unknown>);
+    return formatBlock(row);
   };
 
   const service = {
@@ -169,7 +169,7 @@ const createBlockService = (deps: BlockServiceDeps) => {
             ? Date.now() - new Date(indexedAt as string | number).getTime()
             : Infinity;
           if (cacheAge < 30000) {
-            const block = formatBlock(dbResult[0] as Record<string, unknown>);
+            const block = formatBlock(dbResult[0]);
             blockCache.set(cacheKey, block, 15000);
             return block;
           }
@@ -181,7 +181,7 @@ const createBlockService = (deps: BlockServiceDeps) => {
         }, chainId);
 
         const latestBlock = await fetchLatestBlock();
-        const block: Block = await indexBlock(chainId, latestBlock as Record<string, unknown>);
+        const block: Block = await indexBlock(chainId, latestBlock);
 
         blockCache.set(cacheKey, block, 15000);
         return block;
@@ -200,7 +200,7 @@ const createBlockService = (deps: BlockServiceDeps) => {
           .limit(1);
 
         if (cached.length > 0) {
-          return formatBlock(cached[0] as Record<string, unknown>);
+          return formatBlock(cached[0]);
         }
 
         const client = await rpcManager.getClient(chainId);
@@ -209,7 +209,7 @@ const createBlockService = (deps: BlockServiceDeps) => {
           includeTransactions: false,
         });
 
-        const block = await indexBlock(chainId, chainBlock as Record<string, unknown>);
+        const block = await indexBlock(chainId, chainBlock);
         return block;
       } catch (error) {
         logErr(error, 'BlockService.getBlockByNumber', {
@@ -229,7 +229,7 @@ const createBlockService = (deps: BlockServiceDeps) => {
           .limit(1);
 
         if (cached.length > 0) {
-          return formatBlock(cached[0] as Record<string, unknown>);
+          return formatBlock(cached[0]);
         }
 
         const client = await rpcManager.getClient(chainId);
@@ -238,7 +238,7 @@ const createBlockService = (deps: BlockServiceDeps) => {
           includeTransactions: false,
         });
 
-        const block = await indexBlock(chainId, chainBlock as Record<string, unknown>);
+        const block = await indexBlock(chainId, chainBlock);
         return block;
       } catch (error) {
         logErr(error, 'BlockService.getBlockByHash', { chainId, blockHash });

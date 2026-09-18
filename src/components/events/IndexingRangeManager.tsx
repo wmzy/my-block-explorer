@@ -334,6 +334,92 @@ const defaultQuickFormState: QuickCreateForm = {
   blockCount: '1000',
 };
 
+// Client-side overlap precheck -------------------------------------------
+//
+// Integer interval intersection against the already-loaded ranges: the
+// classic `from <= existing.to && to >= existing.from` test. IndexingRange
+// bounds are always concrete bigints (the persisted model has no null or
+// open-ended bounds — block tags only exist pre-submit), so Number() is
+// safe here. Returns the FIRST overlapping range in list order; listing
+// one in the warning is enough.
+const findFirstOverlap = (
+  ranges: readonly IndexingRange[],
+  from: number,
+  to: number,
+): IndexingRange | null => {
+  for (const existing of ranges) {
+    if (from <= Number(existing.toBlock) && to >= Number(existing.fromBlock)) {
+      return existing;
+    }
+  }
+  return null;
+};
+
+// Pre-submit warning copy shown while the overlap gate is armed (bounds
+// formatted like every other block number in the view).
+const overlapWarningText = (range: IndexingRange): string =>
+  `Overlaps existing range #${range.rangeId} (${Number(range.fromBlock).toLocaleString()}–${Number(range.toBlock).toLocaleString()}) — events in the overlap will be indexed twice`;
+
+// A would-be range that overlaps an already-loaded one, pending an explicit
+// second click. `source` picks which form's submit button relabels to
+// 'Create anyway' and which input changes reset the gate.
+type OverlapGate = {
+  source: 'manual' | 'quick';
+  range: IndexingRange;
+};
+
+// Client-side mirror of the backend quick-mode bounds (EventIndexingService
+// createRangeAll/Recent/First/Continue), used ONLY for the overlap
+// precheck — the POST payloads stay exactly as before. Returns null when a
+// mode is exempt from the gate or its bounds cannot be approximated
+// client-side (those submits rely on the server-side post-hoc overlap
+// warning):
+// - 'catchup' is never gated: it extends the furthest existing toBlock to
+//   the current head, at most re-covering that single boundary block — a
+//   gate would fire on every legitimate catch-up.
+// - 'recent' IS gated: the backend window is [head - count, head], which
+//   routinely overlaps catchup ranges or any range reaching near the head
+//   — it is not overlap-free by design.
+// - 'first' with unknown creation 400s server-side; nothing to gate.
+// - 'recent' with unknown head cannot be approximated client-side.
+const quickModeBounds = (
+  mode: QuickMode,
+  blockCount: number | undefined,
+  creationBlockNumber: number,
+  headBlock: number,
+  ranges: readonly IndexingRange[],
+): { from: number; to: number } | null => {
+  if (mode === 'catchup') return null;
+  if (mode === 'all') {
+    // Unknown creation indexes from genesis; an unknown head leaves the
+    // upper bound open-ended ('latest' is at or beyond every existing
+    // toBlock), so any existing range still intersects.
+    return {
+      from: creationBlockNumber,
+      to: headBlock > 0 ? headBlock : Number.MAX_SAFE_INTEGER,
+    };
+  }
+  if (mode === 'recent') {
+    if (headBlock <= 0 || blockCount === undefined) return null;
+    return {
+      from: headBlock >= blockCount ? headBlock - blockCount : 0,
+      to: headBlock,
+    };
+  }
+  if (mode === 'first') {
+    if (creationBlockNumber <= 0 || blockCount === undefined) return null;
+    return { from: creationBlockNumber, to: creationBlockNumber + blockCount };
+  }
+  // 'continue': with no previous range the backend 400s ('No previous
+  // range found. Cannot continue.') — let that POST fire. Otherwise the
+  // backend continues from ranges[0].toBlock INCLUSIVE (the same
+  // priority/createdAt-desc ordering this component's list mirrors), so
+  // the would-be range always re-touches that boundary block.
+  if (ranges.length === 0 || blockCount === undefined) return null;
+  const from = Number(ranges[0].toBlock);
+  return { from, to: from + blockCount };
+};
+
 // actionLoading sentinels for the form-level actions: -1 manual add, -2
 // quick create, -3 catch-up-to-head. Range rows use their rangeId.
 const CATCHUP_ACTION_LOADING = -3;
@@ -393,6 +479,9 @@ export const IndexingRangeManager: React.FC<Props> = ({
   // Ranges whose pause was requested but whose polled status has not
   // flipped away from 'indexing' yet (the backend pauses between batches).
   const [pausingRangeIds, setPausingRangeIds] = useState<ReadonlySet<number>>(() => new Set());
+  // Client-side overlap precheck: while set, the matching form's submit is
+  // gated behind an explicit 'Create anyway' second click.
+  const [overlapGate, setOverlapGate] = useState<OverlapGate | null>(null);
 
   // creationBlock may be null/undefined/0 when the backend could not
   // determine it — that must render as "unknown", never as block #0.
@@ -454,7 +543,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
     ranges.length > 0 ? Math.max(...ranges.map(r => Number(r.currentBlock ?? 0))) : 0;
   const stalenessGap =
     headBlock > 0 && ranges.length > 0 ? Math.max(0, headBlock - maxCurrentBlock) : null;
-  const handleAddRange = useCallback(async () => {
+  const handleAddRange = useCallback(async (confirmOverlap = false) => {
     const validBlockTags = ['latest', 'finalized', 'safe', 'earliest'];
     const fromBlockValue = formState.fromBlock.toLowerCase();
     const toBlockValue = formState.toBlock.toLowerCase();
@@ -483,6 +572,19 @@ export const IndexingRangeManager: React.FC<Props> = ({
       );
       return;
     }
+    // Client-side overlap precheck against the already-loaded list: the
+    // first submit only reveals the warning and relabels the submit button
+    // to 'Create anyway'; the second click (confirmOverlap) runs the POST.
+    // Tagged bounds ('latest', …) cannot be resolved to a stable integer
+    // client-side, so they skip the gate and rely on the server-side
+    // post-hoc overlap warning.
+    if (!isFromTag && !isToTag && !confirmOverlap) {
+      const overlapping = findFirstOverlap(ranges, fromBlock as number, toBlock as number);
+      if (overlapping) {
+        setOverlapGate({ source: 'manual', range: overlapping });
+        return;
+      }
+    }
     setActionLoading(-1);
     try {
       const data = await post<{
@@ -506,8 +608,11 @@ export const IndexingRangeManager: React.FC<Props> = ({
       toast.error(describeMutationError(error, 'Failed to add range'));
     } finally {
       setActionLoading(null);
+      // The submit resolved — drop any armed confirmation so the form
+      // returns to its one-click baseline.
+      setOverlapGate(null);
     }
-  }, [chainId, contractAddress, formState, creationBlockNumber, hasKnownCreationBlock, fetchRanges, onRefresh]);
+  }, [chainId, contractAddress, formState, ranges, creationBlockNumber, hasKnownCreationBlock, fetchRanges, onRefresh]);
   // Shared runner for every quick-create entry point (the quick form's
   // Create button, Catch up to head, and the empty-state one-clicks): POST
   // /ranges/quick — the backend creates the range AND auto-starts it in
@@ -539,7 +644,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
     },
     [chainId, contractAddress, abi, fetchRanges, onRefresh],
   );
-  const handleQuickCreate = useCallback(async () => {
+  const handleQuickCreate = useCallback(async (confirmOverlap = false) => {
     const { mode, blockCount } = quickFormState;
     const needsBlockCount = ['recent', 'first', 'continue'].includes(mode);
     const blockCountNum = needsBlockCount ? parseInt(blockCount) : 0;
@@ -549,15 +654,36 @@ export const IndexingRangeManager: React.FC<Props> = ({
       return;
     }
 
+    // Same client-side overlap precheck as the manual form, mirroring the
+    // backend's quick-mode bounds (see quickModeBounds). Exempt or
+    // non-computable modes return null and POST directly.
+    if (!confirmOverlap) {
+      const bounds = quickModeBounds(
+        mode,
+        needsBlockCount ? blockCountNum : undefined,
+        creationBlockNumber,
+        headBlock,
+        ranges,
+      );
+      const overlapping = bounds ? findFirstOverlap(ranges, bounds.from, bounds.to) : null;
+      if (overlapping) {
+        setOverlapGate({ source: 'quick', range: overlapping });
+        return;
+      }
+    }
+
     const created = await runQuickCreate(
       mode,
       needsBlockCount ? blockCountNum : undefined,
       -2,
     );
+    // runQuickCreate never throws (it catches internally), so the gate
+    // always clears once the submit resolves.
+    setOverlapGate(null);
     if (created) {
       setQuickFormState(defaultQuickFormState);
     }
-  }, [quickFormState, runQuickCreate]);
+  }, [quickFormState, ranges, creationBlockNumber, headBlock, runQuickCreate]);
   // One-click catch-up: the backend quick mode 'catchup' creates a range
   // from the furthest existing toBlock (inclusive) to the current head and
   // auto-starts it like every quick mode.
@@ -656,6 +782,24 @@ export const IndexingRangeManager: React.FC<Props> = ({
   );
   const formatBlock = (block: bigint | number): string => {
     return Number(block).toLocaleString();
+  };
+  // Editing the gated form (or switching quick mode) invalidates the armed
+  // confirmation: the next submit re-runs the precheck.
+  const resetOverlapGate = useCallback((source: OverlapGate['source']) => {
+    setOverlapGate(prev => (prev?.source === source ? null : prev));
+  }, []);
+  // Submit-button labels: while the overlap gate is armed for a form, its
+  // submit button relabels to 'Create anyway' (the second click runs the
+  // original submit).
+  const manualSubmitLabel = (): string => {
+    if (actionLoading === -1) return 'Adding...';
+    if (overlapGate?.source === 'manual') return 'Create anyway';
+    return 'Add Range';
+  };
+  const quickSubmitLabel = (): string => {
+    if (actionLoading === -2) return 'Creating...';
+    if (overlapGate?.source === 'quick') return 'Create anyway';
+    return 'Create';
   };
   const calculateProgress = (range: IndexingRange): number => {
     if (!range.currentBlock) return 0;
@@ -762,7 +906,15 @@ export const IndexingRangeManager: React.FC<Props> = ({
               {actionLoading === CATCHUP_ACTION_LOADING ? 'Catching up...' : 'Catch up to head'}
             </button>
           )}
-          <button className={actionButtonStyles} onClick={() => setShowAddForm(!showAddForm)}>
+          <button
+            className={actionButtonStyles}
+            onClick={() => {
+              setShowAddForm(!showAddForm);
+              // Closing (or reopening) the form drops any armed
+              // confirmation — the reopened form starts from its baseline.
+              setOverlapGate(null);
+            }}
+          >
             {showAddForm ? 'Cancel' : '+ Add Range'}
           </button>
         </div>
@@ -896,28 +1048,40 @@ export const IndexingRangeManager: React.FC<Props> = ({
             </span>
             <button
               className={quickButtonStyles}
-              onClick={() => setQuickFormState({ mode: 'all', blockCount: '' })}
+              onClick={() => {
+                setQuickFormState({ mode: 'all', blockCount: '' });
+                resetOverlapGate('quick');
+              }}
               disabled={actionLoading !== null}
             >
               Index All
             </button>
             <button
               className={quickButtonStyles}
-              onClick={() => setQuickFormState({ mode: 'recent', blockCount: '1000' })}
+              onClick={() => {
+                setQuickFormState({ mode: 'recent', blockCount: '1000' });
+                resetOverlapGate('quick');
+              }}
               disabled={actionLoading !== null}
             >
               Recent Blocks
             </button>
             <button
               className={quickButtonStyles}
-              onClick={() => setQuickFormState({ mode: 'first', blockCount: '1000' })}
+              onClick={() => {
+                setQuickFormState({ mode: 'first', blockCount: '1000' });
+                resetOverlapGate('quick');
+              }}
               disabled={actionLoading !== null}
             >
               First Blocks
             </button>
             <button
               className={quickButtonStyles}
-              onClick={() => setQuickFormState({ mode: 'continue', blockCount: '1000' })}
+              onClick={() => {
+                setQuickFormState({ mode: 'continue', blockCount: '1000' });
+                resetOverlapGate('quick');
+              }}
               disabled={actionLoading !== null}
             >
               Continue
@@ -928,8 +1092,10 @@ export const IndexingRangeManager: React.FC<Props> = ({
                   type="number"
                   placeholder="Count"
                   value={quickFormState.blockCount}
-                  onChange={e =>
-                    setQuickFormState({ ...quickFormState, blockCount: e.target.value })}
+                  onChange={e => {
+                    setQuickFormState({ ...quickFormState, blockCount: e.target.value });
+                    resetOverlapGate('quick');
+                  }}
                   style={{ width: '80px' }}
                   min={1}
                 />
@@ -937,16 +1103,21 @@ export const IndexingRangeManager: React.FC<Props> = ({
             )}
             <button
               className={`${actionButtonStyles} primary`}
-              onClick={handleQuickCreate}
+              onClick={() => void handleQuickCreate(overlapGate?.source === 'quick')}
               disabled={
                 actionLoading !== null ||
                 (quickFormState.mode !== 'all' && !quickFormState.blockCount)
               }
               style={{ marginLeft: 'auto' }}
             >
-              {actionLoading === -2 ? 'Creating...' : 'Create'}
+              {quickSubmitLabel()}
             </button>
           </div>
+          {overlapGate?.source === 'quick' && (
+            <div className={warningStyles} role="alert">
+              {overlapWarningText(overlapGate.range)}
+            </div>
+          )}
           <div className={addFormStyles}>
             <div className={inputGroupStyles}>
               <label>From Block</label>
@@ -956,7 +1127,10 @@ export const IndexingRangeManager: React.FC<Props> = ({
                   hasKnownCreationBlock ? creationBlockNumber.toString() : 'start block (or earliest)'
                 }
                 value={formState.fromBlock}
-                onChange={e => setFormState({ ...formState, fromBlock: e.target.value })}
+                onChange={e => {
+                  setFormState({ ...formState, fromBlock: e.target.value });
+                  resetOverlapGate('manual');
+                }}
               />
             </div>
             <div className={inputGroupStyles}>
@@ -965,15 +1139,20 @@ export const IndexingRangeManager: React.FC<Props> = ({
                 type="text"
                 placeholder={headBlock > 0 ? headBlock.toString() : 'latest, finalized, safe'}
                 value={formState.toBlock}
-                onChange={e => setFormState({ ...formState, toBlock: e.target.value })}
+                onChange={e => {
+                  setFormState({ ...formState, toBlock: e.target.value });
+                  resetOverlapGate('manual');
+                }}
               />
             </div>
             <div className={inputGroupStyles}>
               <label>Direction</label>
               <select
                 value={formState.direction}
-                onChange={e =>
-                  setFormState({ ...formState, direction: e.target.value as RangeDirection })}
+                onChange={e => {
+                  setFormState({ ...formState, direction: e.target.value as RangeDirection });
+                  resetOverlapGate('manual');
+                }}
               >
                 <option value="forward">Forward (old to new)</option>
                 <option value="backward">Backward (new to old)</option>
@@ -981,12 +1160,17 @@ export const IndexingRangeManager: React.FC<Props> = ({
             </div>
             <button
               className={`${actionButtonStyles} primary`}
-              onClick={handleAddRange}
+              onClick={() => void handleAddRange(overlapGate?.source === 'manual')}
               disabled={actionLoading !== null || !formState.fromBlock || !formState.toBlock}
             >
-              {actionLoading === -1 ? 'Adding...' : 'Add Range'}
+              {manualSubmitLabel()}
             </button>
           </div>
+          {overlapGate?.source === 'manual' && (
+            <div className={warningStyles} role="alert">
+              {overlapWarningText(overlapGate.range)}
+            </div>
+          )}
         </>
       )}
     </div>

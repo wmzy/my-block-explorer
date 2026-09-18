@@ -1,0 +1,402 @@
+// Token Transfers tab of the address page: rows come from the on-demand
+// eth_getLogs scan (see services/tokenTransfers.ts) — there is no indexer
+// behind it, so coverage honesty is part of the surface. Token symbol and
+// decimals enrichment is frontend RPC territory by design: the backend
+// deliberately never reads token metadata.
+import { useEffect, useRef, useState } from 'react';
+import { css } from '@linaria/core';
+import { TypedLink } from '@native-router/react';
+import { erc20Abi, formatUnits } from 'viem';
+import { Alert } from 'haze-ui';
+import { useTokenTransfers, type TokenTransfer } from '@/services/tokenTransfers';
+import { createRpcClient } from '@/utils/realTimeData';
+import { DataTable, Pagination, linkStyle } from '@/components/ui/DataTable';
+import { LoadingState } from '@/components/ui/LoadingState';
+import { ErrorState } from '@/components/ui/ErrorState';
+import { Badge } from '@/components/ui/Badge';
+import { Button } from '@/components/ui/Button';
+import { CopyableHash } from '@/components/ui/CopyableHash';
+
+const TRANSFER_LIMIT = 25;
+
+const valueCell = css`
+  font-family: var(--haze-font-mono);
+  font-size: var(--haze-text-xs);
+`;
+
+const mutedValue = css`
+  color: var(--haze-color-text-muted);
+  font-size: var(--haze-text-xs);
+`;
+
+const bannerLinks = css`
+  margin: var(--haze-space-2) 0 var(--haze-space-3);
+`;
+
+// Window disclosure for complete coverage (the partial case carries the
+// same number inside its warning banner).
+const windowNote = css`
+  margin: 0 0 var(--haze-space-3);
+  color: var(--haze-color-text-muted);
+  font-size: var(--haze-text-xs);
+`;
+
+// Beyond-data page row (nextCursor already null but the local page slid
+// past the data) — never read as "no transfers".
+const emptyPageCell = css`
+  color: var(--haze-color-text-muted);
+  text-align: center;
+`;
+
+const formatAddr = (a: string) => (a ? `${a.slice(0, 8)}...${a.slice(-6)}` : 'N/A');
+const formatHash = (h: string) => (h ? `${h.slice(0, 10)}...${h.slice(-8)}` : '');
+
+// Resolved token metadata. `decimals` present classifies the token as
+// ERC-20; decimals rejected while symbol resolves reads as ERC-721;
+// both rejected leaves the token unknown (raw-value fallback).
+type TokenMeta = {
+  symbol?: string;
+  decimals?: number;
+};
+
+// Module-level cache keyed `${chainId}:${token}`: resolved entries
+// (including the both-calls-rejected unknown marker) are shared across
+// rows and remounts, so each token costs at most one symbol() + one
+// decimals() read per session.
+const tokenMetaCache = new Map<string, TokenMeta>();
+const tokenMetaPending = new Map<string, Promise<TokenMeta>>();
+
+async function loadTokenMeta(chainId: number, token: string): Promise<TokenMeta> {
+  try {
+    const client = await createRpcClient(chainId);
+    const address = token as `0x${string}`;
+    // Independent calls with individual fallbacks: a reverting decimals()
+    // is the ERC-721 signal, not a failure of the whole lookup.
+    const symbol = await client
+      .readContract({ address, abi: erc20Abi, functionName: 'symbol' })
+      .then(s => String(s), () => undefined);
+    const decimals = await client
+      .readContract({ address, abi: erc20Abi, functionName: 'decimals' })
+      .then(d => Number(d), () => undefined);
+    return { symbol, decimals };
+  } catch {
+    return {};
+  }
+}
+
+function startTokenMetaLoad(chainId: number, token: string, key: string): Promise<TokenMeta> {
+  const pending = loadTokenMeta(chainId, token).then(
+    meta => {
+      tokenMetaCache.set(key, meta);
+      tokenMetaPending.delete(key);
+      return meta;
+    },
+    // Unreachable in practice (loadTokenMeta never rejects) — degrade to
+    // the unknown marker rather than leaving a dangling shared promise.
+    () => {
+      const meta: TokenMeta = {};
+      tokenMetaCache.set(key, meta);
+      tokenMetaPending.delete(key);
+      return meta;
+    },
+  );
+  tokenMetaPending.set(key, pending);
+  return pending;
+}
+
+// undefined while the metadata is still loading; {} once resolved as
+// unreadable (the row then keeps the raw-value fallback).
+function useTokenMeta(chainId: number, token: string): TokenMeta | undefined {
+  const key = token ? `${chainId}:${token.toLowerCase()}` : '';
+  const [meta, setMeta] = useState<TokenMeta | undefined>(() =>
+    key ? tokenMetaCache.get(key) : undefined,
+  );
+  useEffect(() => {
+    if (!key) return;
+    const cached = tokenMetaCache.get(key);
+    if (cached) {
+      setMeta(cached);
+      return;
+    }
+    let cancelled = false;
+    // Deduped across rows mounting in the same tick for one token.
+    const pending =
+      tokenMetaPending.get(key) ?? startTokenMetaLoad(chainId, token, key);
+    pending.then(resolved => {
+      if (!cancelled) setMeta(resolved);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [key, chainId, token]);
+  return meta;
+}
+
+function StandardPill({ transfer, meta }: { transfer: TokenTransfer; meta: TokenMeta | undefined }) {
+  let label: string;
+  if (transfer.standard === 'erc1155-single') label = 'ERC-1155';
+  else if (transfer.standard === 'erc1155-batch') label = 'ERC-1155 Batch';
+  else if (meta?.decimals !== undefined) label = 'ERC-20';
+  else if (meta?.symbol !== undefined) label = 'ERC-721';
+  else label = 'ERC-20/721';
+  return (
+    <Badge variant="default" size="sm">
+      {label}
+    </Badge>
+  );
+}
+
+function AmountCell({ transfer, meta }: { transfer: TokenTransfer; meta: TokenMeta | undefined }) {
+  // ERC-1155 rows never need metadata: ids and amounts ride on the log.
+  if (transfer.standard === 'erc1155-single') {
+    const id = transfer.tokenIds?.[0];
+    const amount = transfer.amounts?.[0] ?? transfer.value;
+    return (
+      <td className={valueCell}>
+        {id !== undefined ? `ID ${id}` : 'ID ?'} × {amount}
+      </td>
+    );
+  }
+  if (transfer.standard === 'erc1155-batch') {
+    const ids = transfer.tokenIds;
+    return (
+      <td className={valueCell}>
+        {!ids || ids.length === 0
+          ? `${transfer.value} IDs`
+          : ids.length === 1
+            ? `ID ${ids[0]}`
+            : `ID ${ids[0]} +${ids.length - 1} more`}
+      </td>
+    );
+  }
+  // erc20-or-erc721: decimals() resolved → ERC-20 amount.
+  if (meta?.decimals !== undefined) {
+    try {
+      return (
+        <td className={valueCell}>
+          {formatUnits(BigInt(transfer.value), meta.decimals)}
+          {meta.symbol !== undefined ? ` ${meta.symbol}` : ''}
+        </td>
+      );
+    } catch {
+      // Non-numeric value: fall through to the raw fallback below.
+    }
+  }
+  // decimals() rejected while symbol() resolved → ERC-721 token id.
+  if (meta !== undefined && meta.decimals === undefined && meta.symbol !== undefined) {
+    return (
+      <td className={valueCell}>
+        Token ID {transfer.value} {meta.symbol}
+      </td>
+    );
+  }
+  // Metadata unknown (still loading or unreadable): the raw value plus
+  // the shortened token address — never a guessed decimals amount.
+  return (
+    <td className={valueCell}>
+      <span>{transfer.value}</span>{' '}
+      <span className={mutedValue}>{formatAddr(transfer.token)}</span>
+    </td>
+  );
+}
+
+function TransferRow({ chainId, transfer }: { chainId: number; transfer: TokenTransfer }) {
+  // Only the shared-signature standard needs metadata; passing '' for the
+  // ERC-1155 rows keeps the hook unconditional (rules of hooks) while
+  // skipping their enrichment entirely.
+  const meta = useTokenMeta(
+    chainId,
+    transfer.standard === 'erc20-or-erc721' ? transfer.token : '',
+  );
+  return (
+    <tr>
+      <td>
+        <CopyableHash
+          value={transfer.txHash}
+          truncated={formatHash(transfer.txHash)}
+          href={`/chain/${chainId}/tx/${transfer.txHash}`}
+        />
+      </td>
+      <td>
+        <TypedLink
+          to={`/chain/${chainId}/block/${transfer.blockNumber}`}
+          className={linkStyle}
+        >
+          {transfer.blockNumber.toLocaleString()}
+        </TypedLink>
+      </td>
+      {/* The scan contract carries no timestamps — an em dash, never a
+          fabricated age. */}
+      <td>—</td>
+      <td>
+        <Badge
+          variant={transfer.direction === 'in' ? 'success' : 'error'}
+          size="sm"
+        >
+          {transfer.direction === 'in' ? 'IN' : 'OUT'}
+        </Badge>
+      </td>
+      <td>
+        <CopyableHash
+          value={transfer.token}
+          truncated={meta?.symbol ?? formatAddr(transfer.token)}
+          href={`/chain/${chainId}/address/${transfer.token}`}
+        />
+      </td>
+      <td>
+        <StandardPill transfer={transfer} meta={meta} />
+      </td>
+      <td>
+        <CopyableHash
+          value={transfer.from}
+          truncated={formatAddr(transfer.from)}
+          href={`/chain/${chainId}/address/${transfer.from}`}
+        />
+      </td>
+      <td>
+        <CopyableHash
+          value={transfer.to}
+          truncated={formatAddr(transfer.to)}
+          href={`/chain/${chainId}/address/${transfer.to}`}
+        />
+      </td>
+      <AmountCell transfer={transfer} meta={meta} />
+    </tr>
+  );
+}
+
+type TokenTransfersProps = {
+  chainId: number;
+  address: string;
+  /** Bumped by the parent's Refresh button; each bump refetches here. */
+  refreshSignal?: number;
+  /** Reports a refreshSignal-triggered refetch settling (spinner control). */
+  onRefreshed?: () => void;
+};
+
+export default function TokenTransfers({
+  chainId,
+  address,
+  refreshSignal = 0,
+  onRefreshed,
+}: TokenTransfersProps) {
+  const [page, setPage] = useState(1);
+  // New address/chain context: local pagination restarts at page 1.
+  useEffect(() => {
+    setPage(1);
+  }, [chainId, address]);
+
+  // Cursor = decimal offset into the cached list ('0' = first page).
+  const cursor = String((page - 1) * TRANSFER_LIMIT);
+  const query = useTokenTransfers(chainId, address, cursor, TRANSFER_LIMIT);
+
+  const transfers = query.data?.transfers ?? [];
+  const coverage = query.data?.coverage;
+  const windowBlocks = query.data?.windowBlocks;
+  const windowLabel = windowBlocks !== undefined ? windowBlocks.toLocaleString() : undefined;
+  // nextCursor drives Next (null = end of the discovered list); no total
+  // is claimed — the scan never asserts one.
+  const hasNext = query.data ? query.data.nextCursor !== null : false;
+
+  // The tab's fetch lives here (not in the parent), so the unmounted tab
+  // fetches nothing. A parent Refresh arrives as a signal bump.
+  const appliedSignal = useRef(refreshSignal);
+  useEffect(() => {
+    if (refreshSignal === appliedSignal.current) return;
+    appliedSignal.current = refreshSignal;
+    void Promise.resolve(query.refetch()).finally(() => onRefreshed?.());
+  }, [refreshSignal, query, onRefreshed]);
+
+  if (query.loading && !query.data) {
+    return <LoadingState message="Scanning token transfers..." />;
+  }
+
+  return (
+    <>
+      {query.loading && query.data && <LoadingState message="Loading page..." />}
+
+      {query.error && (
+        <ErrorState
+          message={query.error.message}
+          onRetry={() => {
+            void query.refetch();
+          }}
+        />
+      )}
+
+      {/* Partial coverage: the scan budget ran out — Retry re-runs it. */}
+      {!query.loading && !query.error && coverage === 'partial' && (
+        <>
+          <Alert variant="warning">
+            {transfers.length === 0
+              ? `Scan budget exhausted after the last ${windowLabel ?? 'capped'} blocks — no token transfers found within that range. This is not proof that none exist.`
+              : `Partial coverage — the scan budget ran out after the last ${windowLabel ?? 'capped'} blocks; older token transfers may be missing.`}
+          </Alert>
+          <div className={bannerLinks}>
+            <Button
+              variant="secondary"
+              size="sm"
+              loading={query.fetching}
+              onClick={() => {
+                void query.refetch();
+              }}
+            >
+              Retry
+            </Button>
+          </div>
+        </>
+      )}
+
+      {/* Complete coverage: the window disclosure stays visible (the
+          partial banner above already carries it). */}
+      {!query.loading && !query.error && coverage === 'complete' && windowLabel && (
+        <p className={windowNote}>Scanned within the last {windowLabel} blocks.</p>
+      )}
+
+      {/* Trusted empty ONLY for authoritative coverage on the first page. */}
+      {!query.loading && !query.error && transfers.length === 0 && coverage === 'complete' && page === 1 && (
+        <Alert variant="info">No token transfers found</Alert>
+      )}
+
+      {(transfers.length > 0 || page > 1) && (
+        <>
+          <DataTable>
+            <thead>
+              <tr>
+                <th>Tx Hash</th>
+                <th>Block</th>
+                <th>Age</th>
+                <th>Direction</th>
+                <th>Token</th>
+                <th>Standard</th>
+                <th>From</th>
+                <th>To</th>
+                <th>Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {transfers.map(transfer => (
+                <TransferRow key={`${transfer.txHash}-${transfer.logIndex}`} chainId={chainId} transfer={transfer} />
+              ))}
+              {transfers.length === 0 && (
+                <tr>
+                  <td className={emptyPageCell} colSpan={9}>
+                    No transfers on this page
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </DataTable>
+          <Pagination
+            page={page}
+            pageInfo={`Page ${page}`}
+            hasPrev={page > 1}
+            hasNext={hasNext}
+            onPrev={() => setPage(p => Math.max(1, p - 1))}
+            onNext={() => setPage(p => p + 1)}
+          />
+        </>
+      )}
+    </>
+  );
+}

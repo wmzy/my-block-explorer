@@ -53,7 +53,7 @@ describe('RPC Integration Tests', () => {
     it('应该能查询地址余额', async () => {
       const client = await rpcManager.getClient(ETHEREUM_CHAIN_ID);
       const balance = await client.getBalance({
-        address: VITALIK_ADDRESS as `0x${string}`,
+        address: VITALIK_ADDRESS,
       });
 
       expect(typeof balance).toBe('bigint');
@@ -63,7 +63,7 @@ describe('RPC Integration Tests', () => {
     it('应该能查询地址交易数量', async () => {
       const client = await rpcManager.getClient(ETHEREUM_CHAIN_ID);
       const txCount = await client.getTransactionCount({
-        address: VITALIK_ADDRESS as `0x${string}`,
+        address: VITALIK_ADDRESS,
       });
 
       expect(typeof txCount).toBe('number');
@@ -75,14 +75,14 @@ describe('RPC Integration Tests', () => {
 
       // 查询EOA地址，应该返回0x或undefined
       const eoaCode = await client.getCode({
-        address: VITALIK_ADDRESS as `0x${string}`,
+        address: VITALIK_ADDRESS,
       });
       expect(eoaCode === '0x' || eoaCode === undefined).toBe(true);
 
       // 查询一个已知的合约地址 (USDC)
       const usdcAddress = '0xA0b86991c431e603c329b6c1c4e2c7a1b6b9e9a2e';
       const contractCode = await client.getCode({
-        address: usdcAddress as `0x${string}`,
+        address: usdcAddress,
       });
       expect(typeof contractCode).toBe('string');
       expect(contractCode?.startsWith('0x')).toBe(true);

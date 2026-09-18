@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { css } from '@linaria/core';
-import { TypedLink, useMatched, useSearch } from '@native-router/react';
+import { TypedLink, useMatched, useSearch, useSetSearch } from '@native-router/react';
 import { z } from 'zod';
 
 import TopNavigation from '@/components/TopNavigation';
@@ -28,9 +28,11 @@ const listToolbar = css`
   gap: var(--haze-space-3);
 `;
 
-// Optional ?block=N deep link: the list starts at block N and pages down.
+// Search params: an optional ?block=N deep link starts the walk at block N;
+// ?page=K is the pagination index (1 when absent or garbage).
 const searchSchema = z.object({
   block: z.coerce.number().int().min(0).optional().catch(undefined),
+  page: z.coerce.number().int().min(1).catch(1),
 });
 
 const formatHash = (hash: string): string => {
@@ -80,8 +82,8 @@ function TxStatusBadge({ status }: { status: number }) {
 
 export default function TransactionsList() {
   const { params, router } = useMatched();
-  const { block: blockParam } = useSearch(searchSchema);
-  const [page, setPage] = useState(1);
+  const setSearch = useSetSearch(searchSchema);
+  const { block: blockParam, page: pageParam } = useSearch(searchSchema);
 
   const currentChainId = Number.parseInt(params.chainId ?? '1', 10);
   const chainInfo = getChainInfo(currentChainId);
@@ -91,17 +93,30 @@ export default function TransactionsList() {
   // (cursor = (N+1, 0): start at block N and walk down); every older page
   // resumes from the nextCursor its predecessor returned, so pages tile the
   // (blockNumber, transactionIndex) sequence with no duplicate and no gap.
+  // The page INDEX lives in the URL (?page= — back/forward and deep links
+  // work); the discovered continuation cursors are component state that
+  // only grows as pages are actually visited.
   const initialCursor = blockParam !== undefined ? txCursorFromBlock(blockParam) : undefined;
   const [cursorStack, setCursorStack] = useState<readonly (bigint | undefined)[]>([
     initialCursor,
   ]);
 
+  // The rendered page is the URL page clamped to the walked depth; a URL
+  // page beyond the stack advances below once cursors are discovered.
+  const page = Math.min(pageParam, cursorStack.length);
+
   // The deep link seeds page 1 only; a changed ?block param re-seeds the
-  // walk. Functional updates keep the mount pass a no-op.
+  // walk at page 1. A ref distinguishes a genuine seed change from the
+  // mount pass so an initial ?page=K deep link is left intact.
+  const seededCursorRef = useRef(initialCursor);
   useEffect(() => {
-    setCursorStack(prev => (prev[0] === initialCursor ? prev : [initialCursor]));
-    setPage(prev => (prev === 1 ? prev : 1));
-  }, [initialCursor]);
+    if (seededCursorRef.current === initialCursor) return;
+    seededCursorRef.current = initialCursor;
+    setCursorStack([initialCursor]);
+    if (pageParam !== 1) {
+      void setSearch(prev => ({ ...prev, page: '1' }), { replace: true });
+    }
+  }, [initialCursor, pageParam, setSearch]);
 
   // Head entry (no cursor): the Refresh vehicle. Its key never changes, so
   // headQuery.refetch() always targets the live head, and page 1 at the
@@ -116,21 +131,57 @@ export default function TransactionsList() {
   const { data, loading, error, refetch } = query;
   const transactions = data?.transactions ?? [];
 
+  // A URL page beyond the walked depth (deep link or reload mid-walk) is
+  // reached by walking: each loaded page's nextCursor extends the stack
+  // until it covers the requested page. When the chain runs out first, the
+  // URL is pinned (replaced) to the deepest reachable page so the address
+  // bar never reports a page the chain cannot produce. Gated while a
+  // Refresh re-anchor is in flight: the stale ?page= the replace is about
+  // to drop must not kick off a walk (and a wasted fetch) in the gap.
+  const reanchorInFlightRef = useRef(false);
+  const walkNextCursor = data?.nextCursor;
+  useEffect(() => {
+    if (reanchorInFlightRef.current) return;
+    if (cursorStack.length >= pageParam) return;
+    if (walkNextCursor !== undefined) {
+      setCursorStack(prev => (prev.length >= pageParam ? prev : [...prev, walkNextCursor]));
+    } else if (data !== undefined && error === undefined) {
+      void setSearch(prev => ({ ...prev, page: String(cursorStack.length) }), { replace: true });
+    }
+  }, [cursorStack.length, pageParam, walkNextCursor, data, error, setSearch]);
+
   const goOlder = () => {
     const next = data?.nextCursor;
     if (next === undefined) return;
     setCursorStack(prev => (prev.length > page ? prev : [...prev, next]));
-    setPage(prev => prev + 1);
+    // Push, not replace: every page becomes a history entry, so browser
+    // back/forward steps between pages.
+    void setSearch(prevSearch => ({ ...prevSearch, page: String(page + 1) }));
+  };
+
+  const goNewer = () => {
+    if (page <= 1) return;
+    void setSearch(prevSearch => ({ ...prevSearch, page: String(page - 1) }));
   };
 
   // Refresh re-anchors the walk at the live head (Blocks/List semantics):
   // truncate the cursor stack — page 1 becomes the live head again,
   // dropping any ?block= seed and every stale continuation cursor — and
   // refetch the head entry bypassing its cache slot. Older then resumes
-  // from the refreshed head's own nextCursor.
+  // from the refreshed head's own nextCursor. The canonical head URL
+  // (?page=1, seed dropped) replaces the current entry — Refresh is a
+  // re-anchor, not a navigation.
   const handleRefresh = () => {
+    // Suppress the walk until the head URL lands (see walk effect).
+    reanchorInFlightRef.current = true;
     setCursorStack([undefined]);
-    setPage(1);
+    // setSearch's object form types as void | Promise<void>; normalize so
+    // the catch/finally chain typechecks.
+    Promise.resolve(setSearch({ page: '1' }, { replace: true }))
+      .catch(() => undefined)
+      .finally(() => {
+        reanchorInFlightRef.current = false;
+      });
     void headQuery.refetch();
   };
 
@@ -256,7 +307,7 @@ export default function TransactionsList() {
             }`}
             hasPrev={page > 1}
             hasNext={data?.hasMore === true}
-            onPrev={() => setPage(prev => Math.max(1, prev - 1))}
+            onPrev={goNewer}
             onNext={goOlder}
             prevLabel="Newer"
             nextLabel="Older"

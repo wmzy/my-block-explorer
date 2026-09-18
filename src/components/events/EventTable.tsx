@@ -677,52 +677,52 @@ const argFiltersQueryParam = (abiFilters?: Record<string, string>): string | und
 const defaultSortOptions: SortOption[] = [
   {
     key: 'block_timestamp',
-    label: '时间',
+    label: 'Time',
     type: 'timestamp',
     defaultDirection: 'desc',
-    description: '按区块时间排序',
+    description: 'Sort by block time',
   },
   {
     key: 'block_number',
-    label: '区块号',
+    label: 'Block',
     type: 'numeric',
     defaultDirection: 'desc',
-    description: '按区块号排序',
+    description: 'Sort by block number',
   },
   {
     key: 'event_name',
-    label: '事件名称',
+    label: 'Event Name',
     type: 'text',
     defaultDirection: 'asc',
-    description: '按事件名称排序',
+    description: 'Sort by event name',
   },
   {
     key: 'from',
-    label: '发送方',
+    label: 'From',
     type: 'address',
     defaultDirection: 'asc',
-    description: '按发送方地址排序',
+    description: 'Sort by sender address',
   },
   {
     key: 'to',
-    label: '接收方',
+    label: 'To',
     type: 'address',
     defaultDirection: 'asc',
-    description: '按接收方地址排序',
+    description: 'Sort by recipient address',
   },
   {
     key: 'value',
-    label: '金额',
+    label: 'Value',
     type: 'numeric',
     defaultDirection: 'desc',
-    description: '按交易金额排序',
+    description: 'Sort by transaction value',
   },
   {
     key: 'transaction_hash',
-    label: '交易哈希',
+    label: 'Tx Hash',
     type: 'text',
     defaultDirection: 'asc',
-    description: '按交易哈希排序',
+    description: 'Sort by transaction hash',
   },
 ];
 
@@ -1264,7 +1264,7 @@ export const EventTable: React.FC<EventTableProps> = ({
       <TableContainer className={className}>
         <LoadingContainer>
           <LoadingSpinner />
-          <span style={{ marginLeft: 12 }}>正在加载事件...</span>
+          <span style={{ marginLeft: 12 }}>Loading events...</span>
         </LoadingContainer>
       </TableContainer>
     );
@@ -1275,9 +1275,9 @@ export const EventTable: React.FC<EventTableProps> = ({
     return (
       <TableContainer className={className}>
         <ErrorContainer>
-          <ErrorMessage>加载事件失败</ErrorMessage>
+          <ErrorMessage>Failed to load events</ErrorMessage>
           <div style={{ color: '#9ca3af', marginBottom: 16 }}>{error}</div>
-          <RetryButton onClick={handleRetry}>重试</RetryButton>
+          <RetryButton onClick={handleRetry}>Retry</RetryButton>
         </ErrorContainer>
       </TableContainer>
     );
@@ -1310,7 +1310,7 @@ export const EventTable: React.FC<EventTableProps> = ({
           {/* Enhanced Sorting Controls */}
           <SortControlsContainer>
             <SortOptionsContainer>
-              <SortLabel>排序:</SortLabel>
+              <SortLabel>Sort:</SortLabel>
               <SortSelect
                 value={currentSortField}
                 onChange={e => handleSortFieldChange(e.target.value)}
@@ -1325,15 +1325,14 @@ export const EventTable: React.FC<EventTableProps> = ({
                 $active={sort.direction === 'desc'}
                 onClick={() => handleSortDirectionChange(sort.direction === 'asc' ? 'desc' : 'asc')}
               >
-                {sort.direction === 'asc' ? '↑ 升序' : '↓ 降序'}
+                {sort.direction === 'asc' ? '↑ Ascending' : '↓ Descending'}
               </SortDirectionButton>
 
               {enableMultiSort && (
                 <>
-                  <AddSortButton onClick={addToMultiSort}>+ 添加到多列排序</AddSortButton>
+                  <AddSortButton onClick={addToMultiSort}>+ Add to multi-sort</AddSortButton>
                   <AddSortButton onClick={() => setShowAdvancedSort(!showAdvancedSort)}>
-                    {showAdvancedSort ? '隐藏' : '显示'}
-                    高级排序
+                    {showAdvancedSort ? 'Hide' : 'Show'} advanced sort
                   </AddSortButton>
                 </>
               )}
@@ -1341,14 +1340,14 @@ export const EventTable: React.FC<EventTableProps> = ({
 
             {enableCustomPageSize && (
               <PageSizeControl>
-                <PageSizeLabel>每页显示:</PageSizeLabel>
+                <PageSizeLabel>Rows per page:</PageSizeLabel>
                 <PageSizeSelect
                   value={pagination.limit}
                   onChange={e => handlePageSizeChange(Number(e.target.value))}
                 >
                   {pageSizeOptions.map(size => (
                     <option key={size} value={size}>
-                      {size} 条
+                      {size}
                     </option>
                   ))}
                 </PageSizeSelect>
@@ -1362,56 +1361,56 @@ export const EventTable: React.FC<EventTableProps> = ({
                   $active={showPerformanceInfo}
                   onClick={() => setShowPerformanceInfo(!showPerformanceInfo)}
                 >
-                  性能: {sortingMetrics.sortTime.toFixed(1)}
+                  Perf: {sortingMetrics.sortTime.toFixed(1)}
                   ms
                 </PerformanceToggleButton>
 
                 {showPerformanceInfo && (
                   <PerformanceInfoContainer>
                     <PerformanceHeader>
-                      排序性能指标
+                      Sorting performance
                       <PerformanceCloseButton onClick={() => setShowPerformanceInfo(false)}>
                         ×
                       </PerformanceCloseButton>
                     </PerformanceHeader>
 
                     <PerformanceMetric>
-                      <PerformanceMetricLabel>数据量:</PerformanceMetricLabel>
+                      <PerformanceMetricLabel>Rows:</PerformanceMetricLabel>
                       <PerformanceMetricValue>
-                        {Number(sortingMetrics.dataSize ?? 0).toLocaleString()} 条
+                        {Number(sortingMetrics.dataSize ?? 0).toLocaleString()}
                       </PerformanceMetricValue>
                     </PerformanceMetric>
 
                     <PerformanceMetric>
-                      <PerformanceMetricLabel>排序算法:</PerformanceMetricLabel>
+                      <PerformanceMetricLabel>Algorithm:</PerformanceMetricLabel>
                       <PerformanceMetricValue>{sortingMetrics.algorithm}</PerformanceMetricValue>
                     </PerformanceMetric>
 
                     <PerformanceMetric>
-                      <PerformanceMetricLabel>排序时间:</PerformanceMetricLabel>
+                      <PerformanceMetricLabel>Sort time:</PerformanceMetricLabel>
                       <PerformanceMetricValue highlight={sortingMetrics.sortTime < 10}>
                         {sortingMetrics.sortTime.toFixed(2)} ms
                       </PerformanceMetricValue>
                     </PerformanceMetric>
 
                     <PerformanceMetric>
-                      <PerformanceMetricLabel>缓存命中:</PerformanceMetricLabel>
+                      <PerformanceMetricLabel>Cache hit:</PerformanceMetricLabel>
                       <PerformanceMetricValue highlight={sortingMetrics.cacheHit}>
-                        {sortingMetrics.cacheHit ? '是' : '否'}
+                        {sortingMetrics.cacheHit ? 'Yes' : 'No'}
                       </PerformanceMetricValue>
                     </PerformanceMetric>
 
                     {sortingMetrics.avgMetrics && (
                       <>
                         <PerformanceMetric>
-                          <PerformanceMetricLabel>平均时间:</PerformanceMetricLabel>
+                          <PerformanceMetricLabel>Avg time:</PerformanceMetricLabel>
                           <PerformanceMetricValue>
                             {sortingMetrics.avgMetrics.avgExecutionTime.toFixed(2)} ms
                           </PerformanceMetricValue>
                         </PerformanceMetric>
 
                         <PerformanceMetric>
-                          <PerformanceMetricLabel>缓存命中率:</PerformanceMetricLabel>
+                          <PerformanceMetricLabel>Cache hit rate:</PerformanceMetricLabel>
                           <PerformanceMetricValue>
                             {(sortingMetrics.avgMetrics.cacheHitRate * 100).toFixed(1)}%
                           </PerformanceMetricValue>
@@ -1420,8 +1419,8 @@ export const EventTable: React.FC<EventTableProps> = ({
                     )}
 
                     <PerformanceMetric>
-                      <PerformanceMetricLabel>排序模式:</PerformanceMetricLabel>
-                      <PerformanceMetricValue highlight>客户端</PerformanceMetricValue>
+                      <PerformanceMetricLabel>Sort mode:</PerformanceMetricLabel>
+                      <PerformanceMetricValue highlight>Client-side</PerformanceMetricValue>
                     </PerformanceMetric>
                   </PerformanceInfoContainer>
                 )}
@@ -1435,7 +1434,7 @@ export const EventTable: React.FC<EventTableProps> = ({
               style={{ background: '#f1f5f9', paddingTop: '8px', paddingBottom: '8px' }}
             >
               <div>
-                <SortLabel>多列排序:</SortLabel>
+                <SortLabel>Multi-sort:</SortLabel>
                 <MultiSortContainer>
                   {multiSort.map(sortConfig => {
                     const option = availableSortOptions.find(opt => opt.key === sortConfig.key);
@@ -1449,8 +1448,8 @@ export const EventTable: React.FC<EventTableProps> = ({
                       </MultiSortTag>
                     );
                   })}
-                  <AddSortButton onClick={clearMultiSort}>清除全部</AddSortButton>
-                  <AddSortButton onClick={applyMultiSort}>应用多列排序</AddSortButton>
+                  <AddSortButton onClick={clearMultiSort}>Clear all</AddSortButton>
+                  <AddSortButton onClick={applyMultiSort}>Apply multi-sort</AddSortButton>
                 </MultiSortContainer>
               </div>
             </SortControlsContainer>
@@ -1460,13 +1459,13 @@ export const EventTable: React.FC<EventTableProps> = ({
             <TableHeader>
               <tr>
                 <TableHeaderCell sortable onClick={() => handleSort('block_number')}>
-                  区块号
+                  Block
                   <SortIndicator>
                     {sort.field === 'block_number' ? (sort.direction === 'asc' ? '↑' : '↓') : '↕'}
                   </SortIndicator>
                 </TableHeaderCell>
                 <TableHeaderCell sortable onClick={() => handleSort('block_timestamp')}>
-                  时间
+                  Time
                   <SortIndicator>
                     {sort.field === 'block_timestamp'
                       ? sort.direction === 'asc'
@@ -1476,15 +1475,15 @@ export const EventTable: React.FC<EventTableProps> = ({
                   </SortIndicator>
                 </TableHeaderCell>
                 <TableHeaderCell sortable onClick={() => handleSort('event_name')}>
-                  事件
+                  Event
                   <SortIndicator>
                     {sort.field === 'event_name' ? (sort.direction === 'asc' ? '↑' : '↓') : '↕'}
                   </SortIndicator>
                 </TableHeaderCell>
-                <TableHeaderCell>发送方</TableHeaderCell>
-                <TableHeaderCell>接收方</TableHeaderCell>
-                <TableHeaderCell>金额</TableHeaderCell>
-                <TableHeaderCell>交易哈希</TableHeaderCell>
+                <TableHeaderCell>From</TableHeaderCell>
+                <TableHeaderCell>To</TableHeaderCell>
+                <TableHeaderCell>Value</TableHeaderCell>
+                <TableHeaderCell>Tx Hash</TableHeaderCell>
               </tr>
             </TableHeader>
             <TableBody>
@@ -1543,7 +1542,7 @@ export const EventTable: React.FC<EventTableProps> = ({
           {error && events.length > 0 && (
             <ErrorContainer>
               <ErrorMessage>Error loading more events</ErrorMessage>
-              <RetryButton onClick={handleRetry}>重试</RetryButton>
+              <RetryButton onClick={handleRetry}>Retry</RetryButton>
             </ErrorContainer>
           )}
 
@@ -1551,13 +1550,13 @@ export const EventTable: React.FC<EventTableProps> = ({
           <PaginationContainer>
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
               <PaginationInfo>
-                显示第 {pagination.startIndex ?? 1} - {pagination.endIndex ?? events.length} 条， 共{' '}
-                {pagination.total} 条事件
+                Showing {pagination.startIndex ?? 1}-{pagination.endIndex ?? events.length} of{' '}
+                {pagination.total} events
               </PaginationInfo>
 
               {totalPages > 1 && (
                 <PageInfo>
-                  第 {pagination.page} / {totalPages} 页
+                  Page {pagination.page} / {totalPages}
                 </PageInfo>
               )}
             </div>
@@ -1566,7 +1565,7 @@ export const EventTable: React.FC<EventTableProps> = ({
               <PaginationButton
                 onClick={handleFirstPage}
                 disabled={pagination.page <= 1 || loading}
-                title="第一页"
+                title="First page"
               >
                 ⇤
               </PaginationButton>
@@ -1574,7 +1573,7 @@ export const EventTable: React.FC<EventTableProps> = ({
               <PaginationButton
                 onClick={handlePrevPage}
                 disabled={pagination.page <= 1 || loading}
-                title="上一页"
+                title="Previous page"
               >
                 ←
               </PaginationButton>
@@ -1584,7 +1583,7 @@ export const EventTable: React.FC<EventTableProps> = ({
                   <PaginationSeparator />
 
                   <GoToPageContainer>
-                    <GoToPageLabel>跳转到:</GoToPageLabel>
+                    <GoToPageLabel>Go to:</GoToPageLabel>
                     <PaginationInput
                       type="number"
                       value={pageInput}
@@ -1595,7 +1594,7 @@ export const EventTable: React.FC<EventTableProps> = ({
                       max={totalPages}
                     />
                     <PaginationButton onClick={handleGoToPage} disabled={!pageInput || loading}>
-                      确定
+                      Go
                     </PaginationButton>
                   </GoToPageContainer>
 
@@ -1606,7 +1605,7 @@ export const EventTable: React.FC<EventTableProps> = ({
               <PaginationButton
                 onClick={handleNextPage}
                 disabled={(!pagination.hasMore && pagination.page >= totalPages) || loading}
-                title="下一页"
+                title="Next page"
               >
                 →
               </PaginationButton>
@@ -1615,7 +1614,7 @@ export const EventTable: React.FC<EventTableProps> = ({
                 <PaginationButton
                   onClick={handleLastPage}
                   disabled={pagination.page >= totalPages || loading}
-                  title="最后一页"
+                  title="Last page"
                 >
                   ⇥
                 </PaginationButton>
