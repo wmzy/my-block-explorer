@@ -198,6 +198,13 @@ pnpm typecheck           # tsc --noEmit
 ## NOTES
 
 - **Node.js 22+ required** — Uses latest features
+- **Service discovery degrades, never blocks** — `useAutoDiscovery` probes
+  8201–8205 in parallel (~1.5s budget); on total failure the app still
+  renders (RPC-only data works) behind a dismissible "Backend not found"
+  banner with the setup panel (npx instructions + manual URL). While no
+  base is set, `util/http.ts` helpers reject fast with a clear ApiError
+  instead of issuing same-origin requests (which would hit the vite dev
+  bridge = a second DuckDB-writer instance)
 - **No CI/CD** — `.github/workflows` missing (known gap)
 - **Test layout** — `tests/` (unit + integration + e2e) is the live suite;
   historical `src/tests/` / `test/` dirs no longer exist
@@ -241,9 +248,11 @@ pnpm typecheck           # tsc --noEmit
   indexing starts). Creation-block lookups return unknown rather than
   fabricating a boundary: quick mode `all` starts at the creation block when
   known (genesis when unknown), `first` errors with "Contract creation block
-  unknown — enter a start block manually". Quick modes
+  unknown — enter a start block manually"). Quick modes
   (`POST .../events/ranges/quick`): `all`/`recent`/`first`/`continue`/
-  `catchup` — `catchup` extends from the furthest `toBlock` of existing
+  `catchup` — quick-created ranges **auto-start** server-side (response
+  carries `started`/`startError`; no ABI resolvable → stays `pending`);
+  `catchup` extends from the furthest `toBlock` of existing
   ranges to head (`400 "No previous range found. Cannot catch up."` with no
   prior ranges). The 7 mutating event routes are opt-in gated
   (`requireAdminTokenIfConfigured`). `argFilters`/`topicN`
@@ -254,14 +263,26 @@ pnpm typecheck           # tsc --noEmit
 - **Address tx history is heuristic** — balance-change binary search; the
   transactions endpoint reports `coverage`/`reason`/`searchWindowBlocks`
   and the UI renders honest partial-data banners ("source unknown" when
-  coverage is unknown). Never present it as complete history. The address
-  API no longer returns balance/transactionCount — the UI reads those live
-  from RPC (`services/addressRealTime.ts`)
+  coverage is unknown). Never present it as complete history. Honesty
+  contract: `total` = count of **discovered** transactions (never the
+  nonce — nonce counts outgoing only); the heuristic never emits
+  `coverage:'complete'` (nonce=0 → `partial`/`no-outgoing-transactions`);
+  optional `?window=<blocks>` (clamped 1–50M) widens the search and the
+  UI offers "Search deeper" escalation; discovered lists are cached
+  per address+window (~60s LRU in `AddressService`) so consecutive pages
+  agree. The address API no longer returns balance/transactionCount —
+  the UI reads those live from RPC (`services/addressRealTime.ts`) and
+  labels the nonce "Outgoing Transactions (Nonce)"
 - **Search degradation is explicit** — responses can carry
   `degraded`/`degradedReasons`; the UI offers retry instead of "no results".
   ENS names resolve client-side against a mainnet RPC (server returns
-  suggestions only). `search_history` ids are int32-safe (epoch-seconds
-  scheme, `SearchService`)
+  suggestions only; UI labels results "resolved on Ethereum" and
+  distinguishes name-not-found from resolution-failed). Search history is
+  **per-browser localStorage** (`be:searchHistory`, max 10) — the
+  server-side `search_history` recording + `GET /api/search/history` were
+  removed (the shared table leaked every visitor's queries to everyone);
+  the table itself is vestigial and unused
 - **Custom ABI** — unverified contracts accept a pasted ABI
-  (sessionStorage `custom-abi:{chainId}:{address}`) that unlocks
-  Events/Interact tabs locally
+  (localStorage `custom-abi:{chainId}:{address}`, migrated from the old
+  sessionStorage) that unlocks ABI/Events/Interact tabs locally; Interact
+  works from the custom ABI alone (no contract source needed)

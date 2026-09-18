@@ -275,21 +275,33 @@ const abiUnlockButtonStyles = css`
   }
 `;
 
-// Shown by the ABI and Interact tab panels when the contract is unverified
-// without a pasted ABI: the panel below the tab bar is the only way to
-// unlock the tab, so the pointer jumps focus straight to its textarea.
-function AbiUnlockHint({ onFocusPanel }: { onFocusPanel: () => void }) {
+// Shown by the ABI/Interact/Events tab panels when the contract has no
+// usable ABI (or none with event definitions): the panel below the tab bar
+// is the only way to unlock the surface, so the pointer jumps focus
+// straight to its textarea. onFocusPanel is omitted when no custom ABI
+// panel is rendered (a server ABI without event definitions has nothing to
+// focus).
+function AbiUnlockHint({
+  title,
+  message,
+  focusLabel,
+  onFocusPanel,
+}: {
+  title: string;
+  message: string;
+  focusLabel?: string;
+  onFocusPanel?: () => void;
+}) {
   return (
     <div className={cardStyles}>
-      <h2>Paste an ABI to unlock this tab</h2>
+      <h2>{title}</h2>
       <div className={abiUnlockStyles}>
-        <span>
-          No ABI is available for this contract. Use the custom ABI panel below the tab bar
-          to paste one.
-        </span>
-        <button type="button" className={abiUnlockButtonStyles} onClick={onFocusPanel}>
-          Open custom ABI panel
-        </button>
+        <span>{message}</span>
+        {onFocusPanel && (
+          <button type="button" className={abiUnlockButtonStyles} onClick={onFocusPanel}>
+            {focusLabel ?? 'Open custom ABI panel'}
+          </button>
+        )}
       </div>
     </div>
   );
@@ -317,16 +329,29 @@ const PROXY_TYPE_LABELS: Record<string, string> = {
   'unknown': 'Unknown',
 };
 
-// sessionStorage persistence for the pasted custom ABI (the raw string),
+// localStorage persistence for the pasted custom ABI (the raw string),
 // scoped per chain + address so an ABI never leaks across contracts.
-// Access is guarded — browsers can throw on sessionStorage in private
+// localStorage (not sessionStorage) keeps the unlock across browser
+// sessions. Access is guarded — browsers can throw on storage in private
 // modes or after storage policy changes.
 const customAbiStorageKey = (chainId: number, address: string) =>
   `custom-abi:${chainId}:${address.toLowerCase()}`;
 
 const readStoredCustomAbi = (chainId: number, address: string): string | null => {
+  const key = customAbiStorageKey(chainId, address);
   try {
-    return sessionStorage.getItem(customAbiStorageKey(chainId, address));
+    const stored = localStorage.getItem(key);
+    if (stored !== null) return stored;
+    // One-time migration from the legacy sessionStorage entry: adopt it
+    // into localStorage and drop the legacy copy so it cannot resurrect
+    // after a Clear.
+    const legacy = sessionStorage.getItem(key);
+    if (legacy !== null) {
+      localStorage.setItem(key, legacy);
+      sessionStorage.removeItem(key);
+      return legacy;
+    }
+    return null;
   } catch {
     return null;
   }
@@ -366,7 +391,7 @@ export default function Contract() {
   const currentChainId = Number(chainId ?? 1);
 
   // Raw pasted ABI (exactly the string that was applied), lazily restored
-  // from sessionStorage so a reload keeps the unlock.
+  // from localStorage so a reload keeps the unlock.
   const [customAbiRaw, setCustomAbiRaw] = useState<string | null>(() =>
     readStoredCustomAbi(currentChainId, address ?? ''),
   );
@@ -429,6 +454,9 @@ export default function Contract() {
   // ABI applied. The tab shell keeps the tabs clickable; the panels below
   // render the unlock pointer instead of their bare empty states.
   const abiLocked = serverAbiUnavailable && !effectiveABI;
+  // The Events tab is always rendered (indexed ranges are queryable
+  // without an ABI); the count badge and decoded table need ABI events.
+  const abiHasEvents = !!effectiveABI && effectiveABI.events.length > 0;
 
   useEffect(() => {
     if (contractSource?.isProxy && contractSource?.implementationContract && !tabFromUrl) {
@@ -448,7 +476,11 @@ export default function Contract() {
   const handleApplyCustomAbi = (raw: string) => {
     setCustomAbiRaw(raw);
     try {
-      sessionStorage.setItem(customAbiStorageKey(currentChainId, address ?? ''), raw);
+      const key = customAbiStorageKey(currentChainId, address ?? '');
+      localStorage.setItem(key, raw);
+      // Drop any legacy sessionStorage copy so it cannot resurrect a
+      // cleared ABI on the next load.
+      sessionStorage.removeItem(key);
     } catch {
       // Storage unavailable: the in-memory ABI still applies for this mount.
     }
@@ -457,7 +489,9 @@ export default function Contract() {
   const handleClearCustomAbi = () => {
     setCustomAbiRaw(null);
     try {
-      sessionStorage.removeItem(customAbiStorageKey(currentChainId, address ?? ''));
+      const key = customAbiStorageKey(currentChainId, address ?? '');
+      localStorage.removeItem(key);
+      sessionStorage.removeItem(key);
     } catch {
       // Nothing to remove when storage is unavailable.
     }
@@ -761,14 +795,12 @@ export default function Contract() {
                 >
                   ABI
                 </button>
-                {effectiveABI && effectiveABI.events.length > 0 && (
-                  <button
-                    className={`tab ${activeTab === 'events' ? 'active' : ''}`}
-                    onClick={() => setActiveTab('events')}
-                  >
-                    Events ({effectiveABI.events.length})
-                  </button>
-                )}
+                <button
+                  className={`tab ${activeTab === 'events' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('events')}
+                >
+                  Events{abiHasEvents ? ` (${effectiveABI.events.length})` : ''}
+                </button>
                 <button
                   className={`tab ${activeTab === 'storage' ? 'active' : ''}`}
                   onClick={() => setActiveTab('storage')}
@@ -868,7 +900,11 @@ export default function Contract() {
             {/* ABI */}
             {activeTab === 'abi' &&
               (abiLocked ? (
-                <AbiUnlockHint onFocusPanel={() => setAbiFocusSignal(n => n + 1)} />
+                <AbiUnlockHint
+                  title="Paste an ABI to unlock this tab"
+                  message="No ABI is available for this contract. Use the custom ABI panel below the tab bar to paste one."
+                  onFocusPanel={() => setAbiFocusSignal(n => n + 1)}
+                />
               ) : (
                 <div className={cardStyles}>
                   <h2>
@@ -895,13 +931,32 @@ export default function Contract() {
               ))}
 
             {activeTab === 'events' && (
-              <EventsPanel
-                chainId={currentChainId}
-                contractAddress={address as `0x${string}`}
-                abiEvents={effectiveABI?.events ?? []}
-                creationBlock={creationInfo?.blockNumber}
-                abi={effectiveABI?.abi ? JSON.parse(effectiveABI.abi) : undefined}
-              />
+              <>
+                {/* Without ABI event definitions the table below shows raw
+                    (undecoded) rows; the pointer explains what unlocks
+                    decoding + filtering. Indexed ranges and statistics stay
+                    reachable either way. */}
+                {!abiHasEvents && (
+                  <AbiUnlockHint
+                    title="Paste an ABI with event definitions"
+                    message={
+                      abiLocked
+                        ? 'No ABI is available for this contract. Use the custom ABI panel below the tab bar to paste an ABI with event definitions to decode and filter events.'
+                        : 'The current ABI has no event definitions. Paste an ABI with event definitions to decode and filter events.'
+                    }
+                    onFocusPanel={
+                      serverAbiUnavailable ? () => setAbiFocusSignal(n => n + 1) : undefined
+                    }
+                  />
+                )}
+                <EventsPanel
+                  chainId={currentChainId}
+                  contractAddress={address as `0x${string}`}
+                  abiEvents={effectiveABI?.events ?? []}
+                  creationBlock={creationInfo?.blockNumber}
+                  abi={effectiveABI?.abi ? JSON.parse(effectiveABI.abi) : undefined}
+                />
+              </>
             )}
 
             {activeTab === 'storage' && (
@@ -915,7 +970,11 @@ export default function Contract() {
 
             {activeTab === 'interact' &&
               (abiLocked ? (
-                <AbiUnlockHint onFocusPanel={() => setAbiFocusSignal(n => n + 1)} />
+                <AbiUnlockHint
+                  title="Paste an ABI to unlock this tab"
+                  message="No ABI is available for this contract. Use the custom ABI panel below the tab bar to paste one."
+                  onFocusPanel={() => setAbiFocusSignal(n => n + 1)}
+                />
               ) : (
                 <ContractInteract
                   chainId={currentChainId}

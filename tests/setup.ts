@@ -2,6 +2,7 @@ import { expect, afterEach, beforeAll, afterAll, beforeEach, vi } from 'vitest';
 import { cleanup } from '@testing-library/react';
 import * as matchers from '@testing-library/jest-dom/matchers';
 import { simpleTestDb } from './testDatabase';
+import { setApiBase } from '@/util/apiBase';
 import React from 'react';
 
 expect.extend(matchers);
@@ -196,6 +197,14 @@ global.IntersectionObserver = vi.fn().mockImplementation(() => ({
 
 // Mock scrollTo
 window.scrollTo = vi.fn();
+
+// The http layer fail-fasts while no API base is set (degraded RPC-only
+// mode); unit tests exercise the request chain, so give every file a
+// connected base. Tests that verify degraded behavior manage the base
+// themselves (see tests/unit/http.test.ts).
+beforeAll(() => {
+  setApiBase('http://localhost:8201');
+});
 
 // Mock fetch for API tests
 global.fetch = vi.fn();

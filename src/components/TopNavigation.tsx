@@ -7,16 +7,23 @@ import { useControl } from 'react-use-control';
 import RpcConfig from './RpcConfig';
 import {
   getChainInfo,
+  getChainName,
   getSortedChains,
   searchChains,
   isPopularChain,
   getChainType,
 } from '@/config/chains';
 import { detectSearchType, sanitizeInput } from '@/utils/validation';
-import { createRpcClient } from '@/utils/realTimeData';
 import { formatAddress } from '@/utils/format';
-import { api, get } from '@/util/http';
 import { fetchChainSearch } from '@/services/search';
+import { resolveEnsAddress } from '@/services/ensForward';
+import {
+  clearSearchHistory,
+  readSearchHistory,
+  recordSearchHistoryEntry,
+  removeSearchHistoryEntry,
+  type SearchHistoryEntry,
+} from '@/services/searchHistory';
 
 type TopNavigationProps = {
   currentChainId: number;
@@ -142,6 +149,9 @@ const selectorContent = css`
 const selectorName = css`
   font-weight: var(--haze-weight-medium);
   font-size: var(--haze-text-xs);
+  display: flex;
+  align-items: center;
+  gap: var(--haze-space-1);
 `;
 
 const selectorMeta = css`
@@ -270,13 +280,47 @@ const historyHeader = css`
   text-transform: uppercase;
   letter-spacing: 0.5px;
   border-bottom: 1px solid var(--haze-color-bg-muted);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--haze-space-2);
+`;
+
+const historyClearButton = css`
+  border: none;
+  background: transparent;
+  color: var(--haze-color-primary);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: var(--haze-weight-medium);
+  padding: 0;
+  text-decoration: underline;
+  font-family: var(--haze-font-sans);
+  text-transform: none;
+  letter-spacing: normal;
+  flex-shrink: 0;
+
+  &:hover {
+    text-decoration: none;
+  }
 `;
 
 const historyItem = css`
   display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid var(--haze-color-bg-subtle);
+
+  &:last-child {
+    border-bottom: none;
+  }
+`;
+
+const historyEntryButton = css`
+  display: flex;
   align-items: center;
   gap: var(--haze-space-2);
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   padding: var(--haze-space-2) var(--haze-space-3);
   border: none;
   background: transparent;
@@ -284,11 +328,24 @@ const historyItem = css`
   font-size: var(--haze-text-xs);
   color: var(--haze-color-text);
   text-align: left;
-  border-bottom: 1px solid var(--haze-color-bg-subtle);
   font-family: var(--haze-font-sans);
 
   &:hover {
     background: var(--haze-color-bg-muted);
+  }
+`;
+
+const historyRemoveButton = css`
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: var(--haze-color-text-muted);
+  padding: 0 var(--haze-space-3);
+  font-size: var(--haze-text-sm);
+  flex-shrink: 0;
+
+  &:hover {
+    color: var(--haze-color-text);
   }
 `;
 
@@ -349,7 +406,12 @@ function ChainSelector({
     <div className={selectorWrapper} data-chain-selector>
       <button onClick={() => setIsOpen(!isOpen)} className={selectorButton}>
         <div className={selectorContent}>
-          <div className={selectorName}>{currentChain?.name ?? `Chain ${currentChainId}`}</div>
+          <div className={selectorName}>
+            {currentChain?.name ?? `Chain ${currentChainId}`}
+            {getChainType(currentChainId) === 'testnet' && (
+              <span className={testnetBadge}>Testnet</span>
+            )}
+          </div>
           <div className={selectorMeta}>
             ID: {currentChainId} • {currentChain?.nativeCurrency.symbol}
             {isPopularChain(currentChainId) && ' ⭐'}
@@ -427,12 +489,6 @@ function ChainSelector({
   );
 }
 
-type SearchHistoryItem = {
-  query: string;
-  searchType?: string;
-  searchedAt: string;
-};
-
 // Subset of the /api/chains/:id/search response this component acts on. The
 // block payload's number arrives as a string (BigInt-safe serialization).
 type ChainSearchResponse = {
@@ -444,11 +500,14 @@ type ChainSearchResponse = {
 
 // Inline hint under the search box: 'miss' = definitive no-result on the
 // current chain, 'failed' = a data source errored (degraded response),
-// 'ens-resolved' / 'ens-failed' = outcome of a client-side ENS lookup.
+// 'ens-resolved' / 'ens-not-found' / 'ens-failed' = outcome of a
+// client-side ENS lookup (resolved on Ethereum; not-found is definitive,
+// failed means the RPC never answered and is retryable).
 type SearchNotice =
   | { kind: 'miss'; query: string }
   | { kind: 'failed'; query: string }
   | { kind: 'ens-resolved'; query: string; address: string }
+  | { kind: 'ens-not-found'; query: string }
   | { kind: 'ens-failed'; query: string };
 
 export default function TopNavigation({
@@ -462,8 +521,10 @@ export default function TopNavigation({
   const [, setShowRpcConfig, rpcConfigControl] = useControl<boolean>(null, false);
   const [loading, setLoading] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
-  const [searchHistory, setSearchHistory] = useState<SearchHistoryItem[]>([]);
-  const [historyLoaded, setHistoryLoaded] = useState(false);
+  // Recent searches live in this browser only (localStorage), never on the
+  // server — the old global history endpoint leaked every visitor's
+  // queries to everyone.
+  const [history, setHistory] = useState<SearchHistoryEntry[]>(() => readSearchHistory());
   // Inline hint under the search box, cleared as soon as the input changes
   // (see SearchNotice for the kinds).
   const [searchNotice, setSearchNotice] = useState<SearchNotice | null>(null);
@@ -477,33 +538,9 @@ export default function TopNavigation({
 
   const chainInfo = getChainInfo(currentChainId);
 
-  const fetchSearchHistory = React.useCallback(async () => {
-    try {
-      // Chain-scoped history (legacy rows without a chain stay visible
-      // server-side). Same discovered-api-base rule as the hash-search
-      // call: go through the shared http layer, not a raw same-origin
-      // fetch.
-      const data = await get<{ history?: SearchHistoryItem[] }>(
-        '/api/search/history',
-        { limit: 50, chainId: currentChainId },
-        api,
-      );
-      setSearchHistory(data.history ?? []);
-      setHistoryLoaded(true);
-    } catch {
-      // silently fail
-    }
-  }, [currentChainId]);
-
-  // A chain switch invalidates the loaded history; the next focus
-  // refetches with the new scope.
-  useEffect(() => {
-    setHistoryLoaded(false);
-  }, [currentChainId]);
-
   const handleSearchFocus = () => {
     setShowHistory(true);
-    if (!historyLoaded) fetchSearchHistory();
+    setHistory(readSearchHistory());
   };
 
   useEffect(() => {
@@ -523,27 +560,40 @@ export default function TopNavigation({
 
   const filteredHistory = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return searchHistory;
-    return searchHistory.filter(item => item.query.toLowerCase().includes(q));
-  }, [searchQuery, searchHistory]);
+    if (!q) return history;
+    return history.filter(item => item.query.toLowerCase().includes(q));
+  }, [searchQuery, history]);
+
+  const handleClearHistory = () => {
+    setHistory(clearSearchHistory());
+  };
+
+  const handleRemoveHistoryEntry = (entry: SearchHistoryEntry) => {
+    setHistory(removeSearchHistoryEntry(entry.query, entry.chainId));
+  };
 
   // Shared query dispatcher for the search box and history items. It uses
   // the same sanitize/detect pair as every other surface (utils/validation
   // is the single source of truth): addresses and block numbers deep-link
-  // straight to the current chain's pages; hashes need the per-chain search
+  // straight to the target chain's pages; hashes need the per-chain search
   // API (transaction lookup first, block-hash fallback) to know which page
-  // they belong to; anything else goes to the full Search view.
-  const navigateForQuery = async (rawQuery: string) => {
+  // they belong to; anything else goes to the full Search view. Every
+  // dispatch is recorded in the local (browser-only) search history —
+  // history entries carry the chain they were run on, so re-running one
+  // from the dropdown searches that chain again, not whichever chain is
+  // currently selected.
+  const navigateForQuery = async (rawQuery: string, chainId: number = currentChainId) => {
     const query = sanitizeInput(rawQuery.trim());
+    setHistory(recordSearchHistoryEntry(query, chainId));
     const searchType = detectSearchType(query);
 
     if (searchType === 'address') {
-      goTo(`/chain/${currentChainId}/address/${query}`);
+      goTo(`/chain/${chainId}/address/${query}`);
       return;
     }
 
     if (searchType === 'block') {
-      goTo(`/chain/${currentChainId}/block/${query}`);
+      goTo(`/chain/${chainId}/block/${query}`);
       return;
     }
 
@@ -552,17 +602,17 @@ export default function TopNavigation({
       // raw same-origin fetch: in dev the same-origin /api is the Vite
       // bridge's own backend instance, which competes with the discovered
       // service for the single-writer DuckDB and serves different data.
-      const data = await fetchChainSearch(currentChainId, query);
+      const data = await fetchChainSearch(chainId, query);
       const payload = data as ChainSearchResponse | undefined;
 
       if (payload?.found) {
         if (payload.type === 'transaction') {
-          goTo(`/chain/${currentChainId}/tx/${query}`);
+          goTo(`/chain/${chainId}/tx/${query}`);
           return;
         }
         if (payload.type === 'block' && payload.data?.number !== undefined) {
           // The block detail route only accepts numbers, not hashes.
-          goTo(`/chain/${currentChainId}/block/${String(payload.data.number)}`);
+          goTo(`/chain/${chainId}/block/${String(payload.data.number)}`);
           return;
         }
       }
@@ -578,33 +628,32 @@ export default function TopNavigation({
     if (searchType === 'ens') {
       // ENS names resolve in the browser against a mainnet client (where
       // the ENS registry lives); the resolved address is viewed on the
-      // current chain. Null (unregistered) and RPC failures both surface
-      // as the same friendly hint, never a raw RPC error.
-      try {
-        const client = await createRpcClient(1);
-        const address = await client.getEnsAddress({ name: query.toLowerCase() });
-        if (!address) {
-          setSearchNotice({ kind: 'ens-failed', query });
-          return;
-        }
-        setSearchNotice({ kind: 'ens-resolved', query, address });
-        goTo(`/chain/${currentChainId}/address/${address}`);
-      } catch {
-        setSearchNotice({ kind: 'ens-failed', query });
+      // target chain. A definitive not-found is reported as such, an RPC
+      // failure as a retryable failure — never one blurred copy for both.
+      const outcome = await resolveEnsAddress(query);
+      if (outcome.status === 'resolved') {
+        setSearchNotice({ kind: 'ens-resolved', query, address: outcome.address });
+        goTo(`/chain/${chainId}/address/${outcome.address}`);
+        return;
       }
+      setSearchNotice(
+        outcome.status === 'not-found'
+          ? { kind: 'ens-not-found', query }
+          : { kind: 'ens-failed', query },
+      );
       return;
     }
 
-    // Free text goes to the full Search view, carrying the current chain
+    // Free text goes to the full Search view, carrying the target chain
     // as context (?chain=) so the global endpoint searches it and its
-    // suggestions link back to this chain's pages.
-    goTo(`/search?q=${encodeURIComponent(query)}&chain=${currentChainId}`);
+    // suggestions link back to that chain's pages.
+    goTo(`/search?q=${encodeURIComponent(query)}&chain=${chainId}`);
   };
 
-  const selectHistoryItem = (query: string) => {
-    setSearchQuery(query);
+  const selectHistoryItem = (entry: SearchHistoryEntry) => {
+    setSearchQuery(entry.query);
     setShowHistory(false);
-    void navigateForQuery(query);
+    void navigateForQuery(entry.query, entry.chainId);
   };
 
   const handleSearch = async () => {
@@ -614,6 +663,7 @@ export default function TopNavigation({
     setSearchNotice(null);
     try {
       if (onSearch) {
+        setHistory(recordSearchHistoryEntry(sanitizeInput(searchQuery.trim()), currentChainId));
         await onSearch(searchQuery.trim());
       } else {
         await navigateForQuery(searchQuery);
@@ -623,7 +673,6 @@ export default function TopNavigation({
     } finally {
       setLoading(false);
       setShowHistory(false);
-      setHistoryLoaded(false);
     }
   };
 
@@ -666,9 +715,11 @@ export default function TopNavigation({
                   {searchNotice.kind === 'failed' &&
                     `Search failed on ${chainInfo?.name ?? 'this chain'} — a data source errored`}
                   {searchNotice.kind === 'ens-resolved' &&
-                    `Resolved ${searchNotice.query} → ${formatAddress(searchNotice.address)}`}
+                    `Resolved ${searchNotice.query} → ${formatAddress(searchNotice.address)} on Ethereum`}
+                  {searchNotice.kind === 'ens-not-found' &&
+                    `ENS name "${searchNotice.query}" not found (checked on Ethereum)`}
                   {searchNotice.kind === 'ens-failed' &&
-                    `Could not resolve ENS name "${searchNotice.query}"`}
+                    `ENS resolution failed for "${searchNotice.query}" — Ethereum RPC did not answer`}
                 </span>
                 {(searchNotice.kind === 'miss' || searchNotice.kind === 'failed') && (
                   <button
@@ -680,29 +731,56 @@ export default function TopNavigation({
                     Search all networks
                   </button>
                 )}
+                {searchNotice.kind === 'ens-failed' && (
+                  <button
+                    type="button"
+                    className={searchNoticeLink}
+                    onClick={() => void navigateForQuery(searchNotice.query)}
+                  >
+                    Retry
+                  </button>
+                )}
               </div>
             )}
 
             {showHistory && filteredHistory.length > 0 && (
               <div className={historyDropdown}>
-                <div className={historyHeader}>Recent Searches</div>
-                {filteredHistory.map((item, idx) => (
-                  <button
-                    key={`${item.query}-${idx}`}
-                    onClick={() => selectHistoryItem(item.query)}
+                <div className={historyHeader}>
+                  <span>Recent Searches</span>
+                  <button type="button" className={historyClearButton} onClick={handleClearHistory}>
+                    Clear
+                  </button>
+                </div>
+                {filteredHistory.map(entry => (
+                  <div
+                    key={`${entry.chainId}-${entry.query}`}
                     className={historyItem}
                   >
-                    <span style={{ color: 'var(--haze-color-text-muted)' }}>🔍</span>
-                    <span
-                      className={cx(
-                        historyQuery,
-                        /^0x/.test(item.query) ? historyQueryMono : undefined,
-                      )}
+                    <button
+                      type="button"
+                      className={historyEntryButton}
+                      onClick={() => selectHistoryItem(entry)}
                     >
-                      {item.query}
-                    </span>
-                    {item.searchType && <span className={historyType}>{item.searchType}</span>}
-                  </button>
+                      <span style={{ color: 'var(--haze-color-text-muted)' }}>🔍</span>
+                      <span
+                        className={cx(
+                          historyQuery,
+                          /^0x/.test(entry.query) ? historyQueryMono : undefined,
+                        )}
+                      >
+                        {entry.query}
+                      </span>
+                      <span className={historyType}>{getChainName(entry.chainId)}</span>
+                    </button>
+                    <button
+                      type="button"
+                      className={historyRemoveButton}
+                      aria-label={`Remove ${entry.query} from history`}
+                      onClick={() => handleRemoveHistoryEntry(entry)}
+                    >
+                      ×
+                    </button>
+                  </div>
                 ))}
               </div>
             )}

@@ -140,6 +140,58 @@ const parseEventFilters = (searchParams: URLSearchParams): ParsedEventFilters =>
   };
 };
 
+// ABI resolution shared by the start/resume/quick routes: an explicit
+// request-body ABI wins, then the server-side contract source
+// (implementation side first). Empty when neither has one.
+const resolveIndexingAbi = async (
+  bodyAbi: unknown,
+  chainId: number,
+  address: `0x${string}`,
+): Promise<unknown[]> => {
+  if (Array.isArray(bodyAbi) && bodyAbi.length > 0) return bodyAbi;
+  try {
+    const contractSource = await contractSourceService.getContractSource(chainId, address);
+    const abiStr = contractSource?.implementationContract?.abi ?? contractSource?.abi;
+    if (abiStr) return JSON.parse(abiStr) as unknown[];
+  } catch {
+    // ABI not available
+  }
+  return [];
+};
+
+// Quick-create auto-start: a freshly created 'pending' range reads as
+// "indexing started" in the UI, so mirror the /start route's semantics and
+// kick the background job off immediately. The returned outcome rides
+// along on the quick response instead of failing the create: a missing
+// ABI keeps the range pending and startable later.
+const autoStartQuickRange = async (
+  chainId: number,
+  address: `0x${string}`,
+  rangeId: number,
+  bodyAbi: unknown,
+): Promise<{ started: boolean; startError?: string }> => {
+  const abi = await resolveIndexingAbi(bodyAbi, chainId, address);
+
+  if (abi.length === 0) {
+    return {
+      started: false,
+      startError:
+        'No ABI available — the range stays pending. Verify the contract or send an abi in the request body, then start it.',
+    };
+  }
+
+  if (getActiveRangeJob(chainId, address, rangeId)) {
+    return { started: false, startError: 'Range is already being indexed' };
+  }
+
+  // Indexing a range can run for hours: acknowledge immediately and let
+  // the loop continue in the background, exactly like the /start route.
+  void startIndexingRange(chainId, address, rangeId, abi as Abi).catch(err =>
+    logger.error({ err }, 'Background indexing failed'),
+  );
+  return { started: true };
+};
+
 // GET /chains/:chainId/contracts/:address/events/statistics
 app.get('/chains/:chainId/contracts/:address/events/statistics', async c => {
   const result = validateChainAndAddress(c.req.param('chainId'), c.req.param('address'));
@@ -416,7 +468,7 @@ app.post('/chains/:chainId/contracts/:address/events/ranges/quick', requireAdmin
 
   try {
     const body = await c.req.json();
-    const { mode, blockCount, direction, priority } = body;
+    const { mode, blockCount, direction, priority, abi } = body;
 
     const validModes = ['all', 'recent', 'first', 'continue', 'catchup'];
     if (!mode || typeof mode !== 'string' || !validModes.includes(mode)) {
@@ -478,6 +530,14 @@ app.post('/chains/:chainId/contracts/:address/events/ranges/quick', requireAdmin
 
     c.header('X-Chain-Name', getChainName(chainId));
 
+    // Auto-start the created range right away — same semantics the /start
+    // route applies (body ABI → contract-source ABI, background job). A
+    // start failure keeps the range pending and is reported, not thrown.
+    const autoStart =
+      typeof response.rangeId === 'number'
+        ? await autoStartQuickRange(chainId, address, response.rangeId, abi)
+        : { started: false as const };
+
     return c.json(
       safeJsonResponse({
         chainId,
@@ -487,6 +547,8 @@ app.post('/chains/:chainId/contracts/:address/events/ranges/quick', requireAdmin
         fromBlock: response.fromBlock,
         toBlock: response.toBlock,
         mode,
+        started: autoStart.started,
+        startError: autoStart.startError,
         timestamp: new Date().toISOString(),
       }),
       201,
@@ -655,28 +717,15 @@ app.post('/chains/:chainId/contracts/:address/events/ranges/:rangeId/start', req
   }
 
   try {
-    let abi: unknown[] = [];
-
+    let bodyAbi: unknown;
     try {
       const body = await c.req.json();
-      if (body.abi && Array.isArray(body.abi)) {
-        abi = body.abi;
-      }
+      bodyAbi = body.abi;
     } catch {
       // no body or invalid JSON
     }
 
-    if (abi.length === 0) {
-      try {
-        const contractSource = await contractSourceService.getContractSource(chainId, address);
-        const abiStr = contractSource?.implementationContract?.abi ?? contractSource?.abi;
-        if (abiStr) {
-          abi = JSON.parse(abiStr);
-        }
-      } catch {
-        // ABI not available
-      }
-    }
+    const abi = await resolveIndexingAbi(bodyAbi, chainId, address);
 
     if (abi.length === 0) {
       return c.json(
@@ -862,28 +911,15 @@ app.post('/chains/:chainId/contracts/:address/events/ranges/:rangeId/resume', re
   }
 
   try {
-    let abi: unknown[] = [];
-
+    let bodyAbi: unknown;
     try {
       const body = await c.req.json();
-      if (body.abi && Array.isArray(body.abi)) {
-        abi = body.abi;
-      }
+      bodyAbi = body.abi;
     } catch {
       // no body or invalid JSON
     }
 
-    if (abi.length === 0) {
-      try {
-        const contractSource = await contractSourceService.getContractSource(chainId, address);
-        const abiStr = contractSource?.implementationContract?.abi ?? contractSource?.abi;
-        if (abiStr) {
-          abi = JSON.parse(abiStr);
-        }
-      } catch {
-        // ABI not available
-      }
-    }
+    const abi = await resolveIndexingAbi(bodyAbi, chainId, address);
 
     if (abi.length === 0) {
       return c.json(

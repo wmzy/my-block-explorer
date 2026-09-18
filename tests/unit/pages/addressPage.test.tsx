@@ -74,14 +74,18 @@ const mocks = vi.hoisted(() => {
     },
     timestamp: '2026-01-01T00:00:00Z',
   };
-  // Reshaped per case: honesty fields (coverage/reason/method/window) are
+  // Reshaped per case: honesty fields (coverage/reason/window) are
   // optional — the view must tolerate their absence (pre-coverage caches).
+  // `method` is intentionally absent: the view never branches UI on it.
   type AddressTxPageMock = {
     transactions: typeof mockTransactions;
     total: number;
-    method?: string;
     coverage?: 'complete' | 'partial' | 'none';
-    reason?: 'no-transactions' | 'zero-balance' | 'search-failed';
+    reason?:
+      | 'no-transactions'
+      | 'no-outgoing-transactions'
+      | 'zero-balance'
+      | 'search-failed';
     searchWindowBlocks?: number;
   };
   const initialAddressTxPage: AddressTxPageMock = {
@@ -95,6 +99,11 @@ const mocks = vi.hoisted(() => {
     realTime: settledRealTime,
     addressTxError: undefined as Error | undefined,
     addressTransactions: initialAddressTxPage,
+    // Loading is per-case (the scanning-copy test flips it).
+    txLoading: false,
+    // Every useAddressTransactions call's positional args, captured by the
+    // service mock — the Search-deeper tests assert the window arg (index 4).
+    txQueryArgs: [] as unknown[],
     // Plain function (vi is unavailable inside vi.hoisted); tests spy on it
     // to assert the retry affordance.
     txRefetch: () => undefined,
@@ -130,13 +139,18 @@ vi.mock('@/services/addresses', () => ({
     fetching: false,
     error: undefined,
   }),
-  useAddressTransactions: () => ({
-    data: mocks.addressTransactions,
-    loading: false,
-    fetching: false,
-    error: mocks.addressTxError,
-    refetch: mocks.txRefetch,
-  }),
+  // Args captured on every render so tests can assert what the view asked
+  // for — the Search-deeper escalation asserts the window arg (index 4).
+  useAddressTransactions: (...args: unknown[]) => {
+    mocks.txQueryArgs = args;
+    return {
+      data: mocks.addressTransactions,
+      loading: mocks.txLoading,
+      fetching: false,
+      error: mocks.addressTxError,
+      refetch: mocks.txRefetch,
+    };
+  },
 }));
 
 vi.mock('@/services/addressRealTime', () => ({
@@ -198,6 +212,8 @@ describe('Address view', () => {
       error: undefined,
     };
     mocks.addressTxError = undefined;
+    mocks.txLoading = false;
+    mocks.txQueryArgs = [];
     mocks.ens = { data: null, loading: false };
   });
 
@@ -259,11 +275,15 @@ describe('Address view', () => {
     expect(screen.getByText(/1\.5 ETH/)).toBeInTheDocument();
   });
 
-  it('shows transaction count from real-time data', async () => {
+  it('labels the nonce honestly as Outgoing Transactions (Nonce), never a total count', async () => {
     renderPage();
 
     await screen.findByText('Overview');
+    // The RPC nonce counts outgoing transactions only — the label must say
+    // so instead of the old lying 'Transaction Count'.
+    expect(screen.getByText('Outgoing Transactions (Nonce)')).toBeInTheDocument();
     expect(screen.getByText('42')).toBeInTheDocument();
+    expect(screen.queryByText('Transaction Count')).not.toBeInTheDocument();
   });
 
   it('renders Recent Transactions section', async () => {
@@ -280,6 +300,60 @@ describe('Address view', () => {
     const inBadges = screen.getAllByText('IN');
     expect(outBadges.length).toBeGreaterThan(0);
     expect(inBadges.length).toBeGreaterThan(0);
+  });
+
+  it('renders a Success/Failed status badge per row', async () => {
+    mocks.addressTransactions = {
+      transactions: [
+        { ...mocks.mockTransactions[0], status: 1 },
+        { ...mocks.mockTransactions[1], status: 0 },
+      ],
+      total: 2,
+    };
+
+    renderPage();
+
+    await screen.findByText('Recent Transactions');
+    expect(screen.getByRole('columnheader', { name: 'Status' })).toBeInTheDocument();
+    expect(screen.getByText('Success')).toBeInTheDocument();
+    expect(screen.getByText('Failed')).toBeInTheDocument();
+  });
+
+  it('shows the token/internal-tx indexing notice at every coverage level', async () => {
+    // Default (no coverage tags) case first.
+    renderPage();
+    expect(
+      await screen.findByText(
+        /Token transfers \(ERC-20\/721\) and internal transactions are not indexed/,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/native ETH activity only/)).toBeInTheDocument();
+  });
+
+  it('keeps the token-activity notice under complete coverage too', async () => {
+    mocks.addressTransactions = {
+      transactions: mocks.mockTransactions,
+      total: 2,
+      coverage: 'complete',
+    };
+
+    renderPage();
+
+    expect(
+      await screen.findByText(
+        /Token transfers \(ERC-20\/721\) and internal transactions are not indexed/,
+      ),
+    ).toBeInTheDocument();
+  });
+
+  it('uses plain scanning copy while the history search runs', async () => {
+    mocks.txLoading = true;
+
+    renderPage();
+
+    expect(await screen.findByText('Scanning recent chain history...')).toBeInTheDocument();
+    // The old copy leaked the binary-search implementation jargon.
+    expect(screen.queryByText(/binary search/i)).not.toBeInTheDocument();
   });
 
   it('paginates the transaction table', async () => {
@@ -317,7 +391,6 @@ describe('Address view', () => {
     mocks.addressTransactions = {
       transactions: mocks.mockTransactions,
       total: 42,
-      method: 'binary-search',
       coverage: 'partial',
       searchWindowBlocks: 600_000,
     };
@@ -334,11 +407,70 @@ describe('Address view', () => {
     expect(routescanLinks.length).toBe(2);
   });
 
-  it('shows the honest zero-balance banner instead of a bare empty list', async () => {
+  it('Search deeper escalates the window: 4x the effective one, passed to the tx query', async () => {
+    mocks.addressTransactions = {
+      transactions: mocks.mockTransactions,
+      total: 42,
+      coverage: 'partial',
+      searchWindowBlocks: 600_000,
+    };
+
+    renderPage();
+
+    const deeper = await screen.findByRole('button', { name: 'Search deeper' });
+    expect(deeper).toBeEnabled();
+    // Pre-click: no window override requested (backend default).
+    expect(mocks.txQueryArgs[4]).toBeUndefined();
+
+    fireEvent.click(deeper);
+
+    // 600,000 * 4 = 2,400,000 blocks — the view must refetch with it.
+    expect(mocks.txQueryArgs[4]).toBe(2_400_000);
+  });
+
+  it('Search deeper disables at the RPC budget cap and explains why via title', async () => {
+    mocks.addressTransactions = {
+      transactions: mocks.mockTransactions,
+      total: 42,
+      coverage: 'partial',
+      searchWindowBlocks: 50_000_000,
+    };
+
+    renderPage();
+
+    const deeper = await screen.findByRole('button', { name: 'Search deeper' });
+    expect(deeper).toBeDisabled();
+    expect(deeper).toHaveAttribute('title', 'maximum RPC budget reached');
+  });
+
+  it('shows "No transactions on this page" — never the empty-state banners — when the page slid past the data', async () => {
+    // total > 0 but this page is empty (e.g. a widened search shrank the
+    // discovered set while the user sat on a later page).
     mocks.addressTransactions = {
       transactions: [],
-      total: 42,
-      method: 'binary-search-skipped',
+      total: 25,
+      coverage: 'partial',
+      searchWindowBlocks: 600_000,
+    };
+
+    renderPage();
+
+    expect(await screen.findByText('No transactions on this page')).toBeInTheDocument();
+    // Coverage banner still explains the gap...
+    expect(screen.getByText(/Partial history/)).toBeInTheDocument();
+    // ...but none of the empty-state banners may fire.
+    expect(screen.queryByText('No transactions found')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Transaction data source unknown/)).not.toBeInTheDocument();
+    // Pagination stays (the way back to real data).
+    expect(screen.getByText(/Page 1 of 3/)).toBeInTheDocument();
+  });
+
+  it('shows the honest zero-balance banner: sent count from the nonce, never a discovered-count claim', async () => {
+    // New contract: total is the DISCOVERED count (0 here — nothing could
+    // be scanned); the honest sent-count comes from the realtime nonce.
+    mocks.addressTransactions = {
+      transactions: [],
+      total: 0,
       coverage: 'none',
       reason: 'zero-balance',
     };
@@ -346,19 +478,49 @@ describe('Address view', () => {
     renderPage();
 
     expect(
-      await screen.findByText(
-        /This address has 42 transactions but holds no native-token balance/,
+      await screen.findByText(/This address has sent 42 transactions \(nonce\)\./),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /Incoming activity cannot be scanned because the balance-history heuristic needs non-zero balance/,
       ),
     ).toBeInTheDocument();
+    expect(screen.getByText(/token activity is never scanned/)).toBeInTheDocument();
     expect(screen.getAllByText('Routescan').length).toBe(2);
     expect(screen.queryByText('No transactions found')).not.toBeInTheDocument();
+  });
+
+  it('explains that nonce=0 only rules out OUTGOING transactions, never claims no history', async () => {
+    mocks.addressTransactions = {
+      transactions: [],
+      total: 0,
+      coverage: 'partial',
+      reason: 'no-outgoing-transactions',
+    };
+
+    renderPage();
+
+    expect(
+      await screen.findByText(/No OUTGOING transactions found\./),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        /Incoming transactions are undetectable without a full indexer/,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/check an external explorer/)).toBeInTheDocument();
+    // The trusted empty state must NOT fire for a partial-coverage nonce=0.
+    expect(screen.queryByText('No transactions found')).not.toBeInTheDocument();
+    // Escape hatch: overview card + the single no-outgoing notice (the
+    // generic partial banner no longer duplicates this case, so no
+    // "Search deeper" dead button for a search that never ran).
+    expect(screen.getAllByText('Routescan').length).toBe(2);
   });
 
   it('shows the search-failed banner with a retry affordance, never an empty result', async () => {
     mocks.addressTransactions = {
       transactions: [],
       total: 0,
-      method: 'fallback',
       coverage: 'none',
       reason: 'search-failed',
     };
@@ -380,7 +542,6 @@ describe('Address view', () => {
     mocks.addressTransactions = {
       transactions: [],
       total: 0,
-      method: 'binary-search',
       coverage: 'complete',
       reason: 'no-transactions',
     };

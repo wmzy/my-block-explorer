@@ -2,6 +2,7 @@ import { css } from '@linaria/core';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { StatusBadge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
+import { getStoredManualBase } from '@/util/apiBase';
 import { useServiceDiscovery } from '@/hooks/ServiceDiscoveryContext';
 
 const containerStyle = css`
@@ -141,7 +142,7 @@ export function ConnectionStatus({ className: _className }: ConnectionStatusProp
       if (cancelled || reconnectingRef.current) return;
 
       try {
-        const savedUrl = localStorage.getItem('my-block-explorer-api-url');
+        const savedUrl = getStoredManualBase();
         if (!savedUrl) return;
 
         const response = await fetch(`${savedUrl}/api/health`, {

@@ -52,8 +52,6 @@ describe('Services - Basic Structure Tests', () => {
   describe('SearchService', () => {
     it('should create SearchService instance via factory', () => {
       const service = createSearchService({
-        db: {} as any,
-        searchHistory: {} as any,
         blockService: {} as any,
         transactionService: {} as any,
         addressService: {} as any,
@@ -87,13 +85,7 @@ describe('Services - Basic Structure Tests', () => {
       const mockAddressService = {
         getAddressInfo: async () => ({}),
       };
-      const mockDb = {
-        execute: async () => {},
-        select: () => ({ from: () => ({ where: () => [] }) }),
-      };
       const service = createSearchService({
-        db: mockDb as any,
-        searchHistory: {} as any,
         blockService: mockBlockService as any,
         transactionService: mockTransactionService as any,
         addressService: mockAddressService as any,

@@ -6,14 +6,16 @@ import { formatGwei } from 'viem';
 
 import TopNavigation from '@/components/TopNavigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
+import { Badge } from '@/components/ui/Badge';
 import { CopyableHash } from '@/components/ui/CopyableHash';
 import { ErrorState, EmptyState } from '@/components/ui/ErrorState';
 import { InfoGrid, InfoItem } from '@/components/ui/InfoGrid';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { PageContainer, PageHeader, BackButton } from '@/components/ui/PageLayout';
 import { linkStyle } from '@/components/ui/DataTable';
-import { getChainInfo, getChainName } from '@/config/chains';
+import { getChainInfo, getChainName, getChainType } from '@/config/chains';
 import { redirectReplace } from '@/views/Home/Landing';
+import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
 import { useBlockByNumber } from '@/services/chainRpc';
 import { formatRelativeTime } from '@/utils/format';
 import { createRpcClient } from '@/utils/realTimeData';
@@ -60,6 +62,14 @@ const futureBlockLinks = css`
   display: flex;
   gap: var(--haze-space-4);
   margin-top: var(--haze-space-3);
+`;
+
+// PageHeader block + the testnet pill on one row (same scale as the Blocks
+// list header).
+const headerRow = css`
+  display: flex;
+  align-items: center;
+  gap: var(--haze-space-2);
 `;
 
 export default function BlockDetail() {
@@ -133,7 +143,7 @@ export default function BlockDetail() {
       <>
         <TopNavigation currentChainId={currentChainId} onChainChange={handleChainChange} />
         <PageContainer>
-          <ErrorState message={`Unsupported chain ID: ${params.chainId ?? ''}`} />
+          <UnsupportedChainState chainId={currentChainId} />
         </PageContainer>
       </>
     );
@@ -147,10 +157,17 @@ export default function BlockDetail() {
           onClick={() => void navigate(router, `/chain/${currentChainId}`).catch(() => undefined)}
         />
 
-        <PageHeader
-          title={`Block #${blockNumberStr}`}
-          chainInfo={`${getChainName(currentChainId)} • Chain ID: ${currentChainId}`}
-        />
+        <div className={headerRow}>
+          <PageHeader
+            title={`Block #${blockNumberStr}`}
+            chainInfo={`${getChainName(currentChainId)} • Chain ID: ${currentChainId}`}
+          />
+          {getChainType(currentChainId) === 'testnet' && (
+            <Badge variant="warning" size="sm">
+              Testnet
+            </Badge>
+          )}
+        </div>
 
         {invalidNumber && <ErrorState message="Invalid block number or chain ID" />}
 

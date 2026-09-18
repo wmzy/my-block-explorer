@@ -52,9 +52,15 @@ describe('http utilities', () => {
   // undefined; instantiate explicitly with the fetch signature.
   let fetchMock: ReturnType<typeof vi.fn<typeof fetch>>;
 
+  // Default connected base: with no base set the helpers fail fast
+  // (degraded mode — see the dedicated test below), so every ordinary
+  // chain test runs against this base.
+  const DEFAULT_BASE = 'http://unit.test:1';
+
   beforeEach(() => {
     fetchMock = vi.fn<typeof fetch>();
     vi.stubGlobal('fetch', fetchMock);
+    setApiBase(DEFAULT_BASE);
   });
 
   afterEach(() => {
@@ -72,9 +78,9 @@ describe('http utilities', () => {
 
       const result = await get('/api/health');
 
-      expect(fetchMock).toHaveBeenCalledWith('/api/health', expect.anything());
+      expect(fetchMock).toHaveBeenCalledWith(`${DEFAULT_BASE}/api/health`, expect.anything());
       expect(fetchMock).toHaveBeenCalledWith(
-        '/api/health',
+        `${DEFAULT_BASE}/api/health`,
         expect.objectContaining({ method: 'get' }),
       );
       expect(sentHeaders(fetchMock).get('content-type')).toBe('application/json');
@@ -92,7 +98,7 @@ describe('http utilities', () => {
       });
 
       expect(fetchMock).toHaveBeenCalledWith(
-        '/api/chains/1/blocks?limit=10&offset=5',
+        `${DEFAULT_BASE}/api/chains/1/blocks?limit=10&offset=5`,
         expect.objectContaining({ method: 'get' }),
       );
     });
@@ -130,7 +136,7 @@ describe('http utilities', () => {
       await post('/api/chains/1/contracts/0xabc/read', data);
 
       expect(fetchMock).toHaveBeenCalledWith(
-        '/api/chains/1/contracts/0xabc/read',
+        `${DEFAULT_BASE}/api/chains/1/contracts/0xabc/read`,
         expect.objectContaining({ method: 'post', body: JSON.stringify(data) }),
       );
     });
@@ -142,7 +148,7 @@ describe('http utilities', () => {
       await put('/api/rpc-configs', data);
 
       expect(fetchMock).toHaveBeenCalledWith(
-        '/api/rpc-configs',
+        `${DEFAULT_BASE}/api/rpc-configs`,
         expect.objectContaining({ method: 'put', body: JSON.stringify(data) }),
       );
     });
@@ -159,12 +165,24 @@ describe('http utilities', () => {
   });
 
   describe('api base', () => {
-    it('keeps URLs relative while the base is empty (same-origin)', async () => {
+    it('rejects fast with a clear ApiError while no backend is discovered (degraded mode)', async () => {
+      setApiBase('');
       fetchMock.mockResolvedValue(mockResponse({}));
 
-      await get('/api/health');
+      const outcome = get('/api/health').catch((e: unknown) => e);
+      const syncCatch = get('/api/health').catch((e: unknown) => e);
+      const error = (await outcome) as ApiError;
 
-      expect(fetchMock).toHaveBeenCalledWith('/api/health', expect.anything());
+      expect(error).toBeInstanceOf(ApiError);
+      expect(error.message).toBe('Backend not connected — indexed data unavailable');
+      expect(error.status).toBe(0);
+      // No request left the page: a relative same-origin call would hit an
+      // unintended target (the vite dev bridge in dev, SPA HTML in prod).
+      expect(fetchMock).not.toHaveBeenCalled();
+      // Rejected-promise form: a .catch() chained directly on the helper's
+      // return value observes the failure (recovers the ApiError, proving
+      // the rejection happened on the promise, not as a sync throw).
+      await expect(syncCatch).resolves.toBeInstanceOf(ApiError);
     });
 
     it('prefixes requests with the current base', async () => {
@@ -192,7 +210,7 @@ describe('http utilities', () => {
       setApiBase('http://x:1');
       await get('/api/health');
 
-      expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/health', expect.anything());
+      expect(fetchMock).toHaveBeenNthCalledWith(1, `${DEFAULT_BASE}/api/health`, expect.anything());
       expect(fetchMock).toHaveBeenNthCalledWith(2, 'http://x:1/api/health', expect.anything());
     });
   });

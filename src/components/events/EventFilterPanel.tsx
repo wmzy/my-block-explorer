@@ -271,7 +271,9 @@ export function EventFilterPanel({
     const isAddress = input.type === 'address';
     const isBytes = /^bytes\d*$/.test(input.type);
 
-    const placeholder = isAddress || isBytes ? '0x...' : '';
+    // Placeholder hints the value format the server expects; the arg's ABI
+    // type is already rendered beside its name in the label above.
+    const placeholder = isAddress || isBytes ? '0x...' : isNumeric ? 'e.g. 42' : 'text value';
 
     return (
       <div key={name} className={fieldGroupStyle}>

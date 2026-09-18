@@ -21,7 +21,6 @@ The backend is a Hono app (`src/api-app.ts`) that mounts the route modules in `s
 | --- | --- |
 | `GET /api/search?q={query}` | Detects address / tx hash / block number. Response may carry `degraded: true` + `degradedReasons: string[]` when an upstream lookup failed, and `message` (e.g. ENS names are resolved client-side, not by the server) |
 | `GET /api/chains/:chainId/search?q={query}` | Chain-scoped variant |
-| `GET /api/search/history?limit=&chainId=` | Recent searches, optional chain scope, limit ≤ 50 |
 
 ## Stats & blocks & transactions
 
@@ -40,7 +39,7 @@ The backend is a Hono app (`src/api-app.ts`) that mounts the route modules in `s
 | --- | --- |
 | `GET /api/chains/:chainId/addresses/:address` | Persistent data only — **no balance, no transaction count**; the UI reads those live from RPC |
 | `GET /api/chains/:chainId/addresses/:address/persistent` | Same data, explicit |
-| `GET /api/chains/:chainId/addresses/:address/transactions?limit=&page=` | Heuristic history (balance-change binary search). Reports `method`, `coverage` (`complete`/`partial`/`none`), `reason`, `searchWindowBlocks`; unknown coverage renders a "source unknown" banner in the UI |
+| `GET /api/chains/:chainId/addresses/:address/transactions?limit=&page=&window=` | Heuristic history (balance-change binary search). Reports `method`, `coverage` (`complete`/`partial`/`none`), `reason`, `searchWindowBlocks`; unknown coverage renders a "source unknown" banner in the UI. `total` is the count of **discovered** transactions (never the nonce); the heuristic never reports `complete` (nonce=0 → `partial`/`no-outgoing-transactions` — incoming activity is undetectable). Optional `window` (blocks, clamped 1–50,000,000) widens the search range; results are cached per address+window (~60s) so consecutive pages agree |
 
 ## Contracts
 

@@ -67,6 +67,22 @@ const errorSecondary = css`
   font-size: var(--haze-text-xs);
 `;
 
+// Persistent indexing-scope notice under the tx card header: token
+// transfers and internal txs are outside the heuristic's reach at every
+// coverage level, so it renders unconditionally.
+const tokenNotice = css`
+  margin: 0 0 var(--haze-space-3);
+  color: var(--haze-color-text-muted);
+  font-size: var(--haze-text-xs);
+`;
+
+// Beyond-data page row (total > 0 but this page slid past the data —
+// e.g. a widened search shrank the discovered set).
+const emptyPageCell = css`
+  color: var(--haze-color-text-muted);
+  text-align: center;
+`;
+
 // Serialized transaction row as the API returns it (formatTransactionForApi):
 // numeric fields arrive as strings over JSON.
 type TxRecord = {
@@ -75,7 +91,7 @@ type TxRecord = {
   fromAddress: string;
   toAddress: string;
   value: string;
-  status: number;
+  status: number | null;
   timestamp?: string;
 };
 
@@ -87,10 +103,14 @@ type TxRecord = {
 
 type AddressTxPage = {
   transactions: TxRecord[];
+  /** Discovered (deduped) count — never the nonce (new API contract). */
   total: number;
-  method?: string;
   coverage?: 'complete' | 'partial' | 'none';
-  reason?: 'no-transactions' | 'zero-balance' | 'search-failed';
+  reason?:
+    | 'no-transactions'
+    | 'no-outgoing-transactions'
+    | 'zero-balance'
+    | 'search-failed';
   searchWindowBlocks?: number;
 };
 
@@ -103,6 +123,43 @@ const invalidChecksumHelp =
 
 const isInvalidAddressMessage = (message: string | undefined): boolean =>
   message?.includes('Invalid address') ?? false;
+
+// Hard ceiling of the address-tx search window (blocks) — matches the
+// backend clamp. "Search deeper" disables at this budget.
+const MAX_SEARCH_WINDOW_BLOCKS = 50_000_000;
+
+// status: 1 → success, 0 → failed, -1 → pending (no receipt yet, NOT
+// failed), null/undefined → unknown (the heuristic discovers txs from
+// block data without receipts — never read that as "pending").
+function TxStatusBadge({
+  status,
+  hasBlock,
+}: {
+  status: number | null | undefined;
+  hasBlock: boolean;
+}) {
+  if (status === 1) {
+    return (
+      <Badge variant="success" size="sm">
+        Success
+      </Badge>
+    );
+  }
+  if (status === 0) {
+    return (
+      <Badge variant="error" size="sm">
+        Failed
+      </Badge>
+    );
+  }
+  // Without a receipt status, only a block-less tx can honestly read as
+  // pending (mempool); a mined tx with unknown status says "Unknown".
+  return (
+    <Badge variant="default" size="sm">
+      {hasBlock ? 'Unknown' : 'Pending'}
+    </Badge>
+  );
+}
 
 function InvalidChecksumError({ original }: { original: string }) {
   return (
@@ -135,12 +192,17 @@ export default function Address() {
   const ensName = ensQuery.data;
 
   const [txPage, setTxPage] = useState(1);
+  // Widened search window (blocks) requested via ?window= — undefined is
+  // the backend default. "Search deeper" escalates it; it rides in the
+  // query args so a wider window is a fresh cache key/fetch.
+  const [txSearchWindow, setTxSearchWindow] = useState<number | undefined>();
   const txLimit = 10;
   const txQuery = useAddressTransactions(
     currentChainId,
     address,
     txLimit,
     (txPage - 1) * txLimit,
+    txSearchWindow,
   );
 
   const persistent: AddressInfoResponse['address'] | undefined =
@@ -245,31 +307,28 @@ export default function Address() {
   const txData = txQuery.data as AddressTxPage | undefined;
   const transactions = txData?.transactions ?? [];
   const txTotal = txData?.total ?? 0;
-  const txMethod = txData?.method ?? '';
   const txTotalPages = Math.max(1, Math.ceil(txTotal / txLimit));
 
-  // Coverage drives the honest banners below. Pre-coverage cached
-  // responses (method tag only) are mapped to the same semantics so stale
-  // payloads still label their gaps.
-  const txCoverage = txData?.coverage ?? (txTotal > 0
-    ? txMethod === 'binary-search'
-      ? 'partial'
-      : txMethod === 'binary-search-skipped' || txMethod === 'fallback'
-        ? 'none'
-        : undefined
-    : undefined);
-  const txReason = txData?.reason ?? (txTotal > 0
-    ? txMethod === 'binary-search-skipped'
-      ? 'zero-balance'
-      : txMethod === 'fallback'
-        ? 'search-failed'
-        : undefined
-    : undefined);
+  // Coverage banners are driven by the contract fields only (coverage /
+  // reason); the backend's `method` tag is diagnostics, never UI state.
+  const txCoverage = txData?.coverage;
+  const txReason = txData?.reason;
   const txSearchWindowBlocks = txData?.searchWindowBlocks;
   const searchWindowLabel = txSearchWindowBlocks !== undefined
     ? `within the last ${txSearchWindowBlocks.toLocaleString()} blocks`
     : 'within a capped block window';
   const externalToolLinks = getExternalToolLinks(currentChainId, address);
+
+  // "Search deeper" escalation: quadruple the effective window, capped at
+  // the RPC budget ceiling. An unknown window (legacy payload without
+  // searchWindowBlocks) jumps straight to the cap — the only step that
+  // guarantees progress when the current range cannot be read.
+  const searchWindowAtCap =
+    txSearchWindowBlocks !== undefined &&
+    txSearchWindowBlocks >= MAX_SEARCH_WINDOW_BLOCKS;
+  const nextSearchWindow = txSearchWindowBlocks !== undefined
+    ? Math.min(txSearchWindowBlocks * 4, MAX_SEARCH_WINDOW_BLOCKS)
+    : MAX_SEARCH_WINDOW_BLOCKS;
 
   return (
     <>
@@ -324,7 +383,9 @@ export default function Address() {
                           : 'N/A'}
                   </InfoItem>
 
-                  <InfoItem label="Transaction Count">
+                  {/* The RPC nonce counts OUTGOING transactions only —
+                      never label it a total transaction count. */}
+                  <InfoItem label="Outgoing Transactions (Nonce)">
                     {realTimeQuery.data
                       ? realTimeQuery.data.transactionCount.toLocaleString()
                       : realTimeQuery.loading
@@ -437,8 +498,15 @@ export default function Address() {
                 </div>
               </CardHeader>
               <CardContent>
+                {/* Indexing-scope notice: true at EVERY coverage level —
+                    even 'complete' only covers native ETH activity. */}
+                <p className={tokenNotice}>
+                  Token transfers (ERC-20/721) and internal transactions
+                  are not indexed — native ETH activity only.
+                </p>
+
                 {txQuery.loading && (
-                  <LoadingState message="Searching for transactions via binary search..." />
+                  <LoadingState message="Scanning recent chain history..." />
                 )}
 
                 {txQuery.error &&
@@ -472,9 +540,12 @@ export default function Address() {
                 {!txQuery.loading && !txQuery.error && txCoverage === 'none' && txReason === 'zero-balance' && (
                   <>
                     <Alert variant="warning">
-                      This address has {txTotal} transactions but holds no
-                      native-token balance, so heuristic discovery cannot find
-                      them. Use an external explorer for full history.
+                      {realTimeQuery.data
+                        ? `This address has sent ${realTimeQuery.data.transactionCount.toLocaleString()} transactions (nonce).`
+                        : 'This address has sent an unknown number of transactions (nonce unavailable).'}
+                      {' '}Incoming activity cannot be scanned because the
+                      balance-history heuristic needs non-zero balance; token
+                      activity is never scanned.
                     </Alert>
                     <div className={bannerLinks}>
                       <ExternalLinks links={externalToolLinks} />
@@ -482,7 +553,31 @@ export default function Address() {
                   </>
                 )}
 
-                {!txQuery.loading && !txQuery.error && txCoverage === 'partial' && (
+                {/* nonce=0: outgoing history is provably empty, but incoming
+                    activity stays invisible to the heuristic — never read
+                    this as a trusted "no transactions at all". */}
+                {!txQuery.loading && !txQuery.error
+                  && txCoverage === 'partial'
+                  && txReason === 'no-outgoing-transactions' && (
+                  <>
+                    <Alert variant="warning">
+                      No OUTGOING transactions found. Incoming transactions
+                      are undetectable without a full indexer — check an
+                      external explorer.
+                    </Alert>
+                    <div className={bannerLinks}>
+                      <ExternalLinks links={externalToolLinks} />
+                    </div>
+                  </>
+                )}
+
+                {/* Generic partial banner: only for a SEARCH that ran and
+                    covered a window. The no-outgoing-transactions case has
+                    its own banner above — the search never ran there, so
+                    "search deeper" would be a no-op (backend early-returns
+                    on nonce=0 regardless of window). */}
+                {!txQuery.loading && !txQuery.error && txCoverage === 'partial'
+                  && txReason !== 'no-outgoing-transactions' && (
                   <>
                     <Alert variant="warning">
                       Partial history - transactions are discovered heuristically
@@ -491,12 +586,30 @@ export default function Address() {
                     </Alert>
                     <div className={bannerLinks}>
                       <ExternalLinks links={externalToolLinks} />
+                      {/* Escalation: quadruple the searched window. Disabled
+                          with a title once the RPC budget cap is reached —
+                          the button stays visible (still partial) so the
+                          limitation stays explained. */}
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        disabled={searchWindowAtCap}
+                        title={
+                          searchWindowAtCap
+                            ? 'maximum RPC budget reached'
+                            : undefined
+                        }
+                        loading={txQuery.fetching}
+                        onClick={() => setTxSearchWindow(nextSearchWindow)}
+                      >
+                        Search deeper
+                      </Button>
                     </div>
                   </>
                 )}
 
-                {/* Trusted empty ONLY for authoritative coverage: the RPC
-                    nonce proved the address has no transactions. Anything
+                {/* Trusted empty ONLY for authoritative coverage ('complete'):
+                    the backend asserts the full history is known. Anything
                     else that looks empty must not read as "no history". */}
                 {!txQuery.loading && !txQuery.error
                   && transactions.length === 0 && txTotal === 0
@@ -521,7 +634,7 @@ export default function Address() {
                   </>
                 )}
 
-                {transactions.length > 0 && (
+                {(transactions.length > 0 || txTotal > 0) && (
                   <>
                     <DataTable>
                       <thead>
@@ -533,6 +646,7 @@ export default function Address() {
                           <th>From</th>
                           <th>To</th>
                           <th>Value</th>
+                          <th>Status</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -576,9 +690,25 @@ export default function Address() {
                                 />
                               </td>
                               <td className={valueCell}>{formatTxValue(tx.value)}</td>
+                              <td>
+                                <TxStatusBadge
+                                  status={tx.status}
+                                  hasBlock={tx.blockNumber !== undefined}
+                                />
+                              </td>
                             </tr>
                           );
                         })}
+                        {/* Page slid past the data (total > 0 but this page
+                            is empty — e.g. a widened search shrank the
+                            discovered set): never read as "no history". */}
+                        {transactions.length === 0 && (
+                          <tr>
+                            <td className={emptyPageCell} colSpan={8}>
+                              No transactions on this page
+                            </td>
+                          </tr>
+                        )}
                       </tbody>
                     </DataTable>
                     <Pagination

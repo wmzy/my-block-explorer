@@ -13,7 +13,7 @@ import '@/theme.css';
 import { ToastContainer } from 'haze-ui';
 import App from '@/views';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
-import { ServiceSetup } from '@/components/ServiceSetup';
+import { DiscoveryGate } from '@/components/ServiceSetup';
 import { ServiceDiscoveryProvider } from '@/hooks/ServiceDiscoveryContext';
 import { useServiceDiscovery } from '@/hooks/ServiceDiscoveryContext';
 
@@ -35,30 +35,27 @@ import { useServiceDiscovery } from '@/hooks/ServiceDiscoveryContext';
 })();
 
 function Root() {
-  const { status, serviceInfo, error, isScanning, currentPort, setApiUrl, discover, reset } =
-    useServiceDiscovery();
+  const { status, error, isScanning, setApiUrl, discover } = useServiceDiscovery();
 
   return (
     <div className={cx(lightTheme, spacing, typography)}>
       {/* Toast host above the router (painless pattern): every view — and
-          the setup gate — gets useToast coverage. */}
+          the setup overlay — gets useToast coverage. */}
       <ToastContainer>
-        {status !== 'found' ? (
-          <ServiceSetup
-            status={status}
-            serviceInfo={serviceInfo}
-            error={error}
-            isScanning={isScanning}
-            currentPort={currentPort}
-            setApiUrl={setApiUrl}
-            discover={discover}
-            reset={reset}
-          />
-        ) : (
+        {/* Degraded mode: when every discovery probe fails the app still
+            renders (RPC-backed pages need no backend) with a dismissible
+            banner + setup overlay. Only the first-run scan gates rendering. */}
+        <DiscoveryGate
+          status={status}
+          error={error}
+          isScanning={isScanning}
+          setApiUrl={setApiUrl}
+          discover={discover}
+        >
           <ErrorBoundary>
             <App />
           </ErrorBoundary>
-        )}
+        </DiscoveryGate>
       </ToastContainer>
     </div>
   );

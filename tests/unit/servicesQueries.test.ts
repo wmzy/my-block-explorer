@@ -31,7 +31,8 @@ vi.mock('@/util/http', () => {
     signal,
   });
   const api = {};
-  return { api, get, post, put, del, withSignal };
+  const longRunningApi = {};
+  return { api, longRunningApi, get, post, put, del, withSignal };
 });
 
 const mockedGet = vi.mocked(http.get);

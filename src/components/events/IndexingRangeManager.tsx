@@ -316,7 +316,7 @@ type AddRangeForm = {
   direction: RangeDirection;
 };
 
-type QuickMode = 'all' | 'recent' | 'first' | 'continue';
+type QuickMode = 'all' | 'recent' | 'first' | 'continue' | 'catchup';
 
 type QuickCreateForm = {
   mode: QuickMode;
@@ -337,6 +337,43 @@ const defaultQuickFormState: QuickCreateForm = {
 // actionLoading sentinels for the form-level actions: -1 manual add, -2
 // quick create, -3 catch-up-to-head. Range rows use their rangeId.
 const CATCHUP_ACTION_LOADING = -3;
+
+// Mutating indexing actions answer a missing browser token with a raw 403
+// body ('Invalid admin token.') that offers no path forward. This suffix
+// points at where the token lives, mirroring the clear-cache notice in the
+// Contract view.
+export const ADMIN_TOKEN_GUIDANCE = 'Set it via ⚙️ RPC → Admin token (stored in this browser)';
+
+// Toast copy for a failed mutating action: 403s carry the admin-token
+// guidance, other API errors surface verbatim, non-API errors fall back to
+// the action-specific message.
+export const describeMutationError = (error: unknown, fallback: string): string => {
+  if (error instanceof ApiError) {
+    return error.status === 403 ? `${error.message} — ${ADMIN_TOKEN_GUIDANCE}` : error.message;
+  }
+  return fallback;
+};
+
+// Response of POST /ranges/quick: the created range's bounds plus whether
+// the backend's auto-start actually kicked indexing off (and why not).
+type QuickCreateResponse = {
+  rangeId?: number;
+  fromBlock?: number | string;
+  toBlock?: number | string;
+  started?: boolean;
+  startError?: string;
+};
+
+// Success copy for the quick modes: they create AND auto-start, so the
+// toast says "indexing started" only when the backend actually did.
+const quickCreateToast = (data: QuickCreateResponse): void => {
+  const blocks = `blocks ${data.fromBlock?.toLocaleString() ?? '?'} - ${data.toBlock?.toLocaleString() ?? '?'}`;
+  if (data.started) {
+    toast.success(`Indexing started: ${blocks}`);
+    return;
+  }
+  toast.success(`Range created: ${blocks}${data.startError ? ` — not started: ${data.startError}` : ''}`);
+};
 
 export const IndexingRangeManager: React.FC<Props> = ({
   chainId,
@@ -362,6 +399,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
   const creationBlockNumber = creationBlock ?? 0;
   const hasKnownCreationBlock = creationBlockNumber > 0;
   const maxRangeToBlock = ranges.length > 0 ? Math.max(...ranges.map(r => Number(r.toBlock))) : 0;
+  const quickUrl = `/api/chains/${chainId}/contracts/${contractAddress}/events/ranges/quick`;
   const fetchRanges = useCallback(async () => {
     setLoading(true);
     try {
@@ -465,11 +503,42 @@ export const IndexingRangeManager: React.FC<Props> = ({
       onRefresh?.();
     } catch (error) {
       console.error('Failed to add range:', error);
-      toast.error(error instanceof ApiError ? error.message : 'Failed to add range');
+      toast.error(describeMutationError(error, 'Failed to add range'));
     } finally {
       setActionLoading(null);
     }
   }, [chainId, contractAddress, formState, creationBlockNumber, hasKnownCreationBlock, fetchRanges, onRefresh]);
+  // Shared runner for every quick-create entry point (the quick form's
+  // Create button, Catch up to head, and the empty-state one-clicks): POST
+  // /ranges/quick — the backend creates the range AND auto-starts it in
+  // the background, so the 3s polling shows live progress with no second
+  // click. Returns whether the request succeeded so callers can reset
+  // their form state selectively.
+  const runQuickCreate = useCallback(
+    async (mode: QuickMode, blockCount: number | undefined, loadingSentinel: number) => {
+      setActionLoading(loadingSentinel);
+      try {
+        const data = await post<QuickCreateResponse>(quickUrl, {
+          mode,
+          blockCount,
+          abi,
+        });
+        await fetchRanges();
+        quickCreateToast(data);
+        onRefresh?.();
+        return true;
+      } catch (error) {
+        // 403 admin-token errors and contract 400s like 'No previous range
+        // found. Cannot catch up.' surface verbatim via ApiError.
+        console.error('Failed to create range:', error);
+        toast.error(describeMutationError(error, 'Failed to create range'));
+        return false;
+      } finally {
+        setActionLoading(null);
+      }
+    },
+    [chainId, contractAddress, abi, fetchRanges, onRefresh],
+  );
   const handleQuickCreate = useCallback(async () => {
     const { mode, blockCount } = quickFormState;
     const needsBlockCount = ['recent', 'first', 'continue'].includes(mode);
@@ -480,62 +549,21 @@ export const IndexingRangeManager: React.FC<Props> = ({
       return;
     }
 
-    setActionLoading(-2);
-    try {
-      const data = await post<{
-        fromBlock?: number | string;
-        toBlock?: number | string;
-      }>(`/api/chains/${chainId}/contracts/${contractAddress}/events/ranges/quick`, {
-        mode,
-        blockCount: needsBlockCount ? blockCountNum : undefined,
-      });
+    const created = await runQuickCreate(
+      mode,
+      needsBlockCount ? blockCountNum : undefined,
+      -2,
+    );
+    if (created) {
       setQuickFormState(defaultQuickFormState);
-      await fetchRanges();
-      toast.success(
-        `Range created: blocks ${data.fromBlock?.toLocaleString() ?? '?'} - ${data.toBlock?.toLocaleString() ?? '?'}`,
-      );
-      onRefresh?.();
-    } catch (error) {
-      console.error('Failed to create range:', error);
-      toast.error(error instanceof ApiError ? error.message : 'Failed to create range');
-    } finally {
-      setActionLoading(null);
     }
-  }, [chainId, contractAddress, quickFormState, fetchRanges, onRefresh]);
+  }, [quickFormState, runQuickCreate]);
   // One-click catch-up: the backend quick mode 'catchup' creates a range
-  // from the furthest existing toBlock (inclusive) to the current head.
-  // The range is created pending, so start it immediately — the 3s polling
-  // below then shows live indexing progress without another click.
+  // from the furthest existing toBlock (inclusive) to the current head and
+  // auto-starts it like every quick mode.
   const handleCatchupToHead = useCallback(async () => {
-    setActionLoading(CATCHUP_ACTION_LOADING);
-    try {
-      const data = await post<{
-        rangeId?: number;
-        fromBlock?: number | string;
-        toBlock?: number | string;
-      }>(`/api/chains/${chainId}/contracts/${contractAddress}/events/ranges/quick`, {
-        mode: 'catchup',
-      });
-      if (typeof data.rangeId === 'number') {
-        await post(
-          `/api/chains/${chainId}/contracts/${contractAddress}/events/ranges/${data.rangeId}/start`,
-          { abi },
-        );
-      }
-      await fetchRanges();
-      toast.success(
-        `Range created: blocks ${data.fromBlock?.toLocaleString() ?? '?'} - ${data.toBlock?.toLocaleString() ?? '?'}`,
-      );
-      onRefresh?.();
-    } catch (error) {
-      // 403 admin-token errors and the 400 'No previous range found.
-      // Cannot catch up.' contract body surface verbatim via ApiError.
-      console.error('Failed to catch up to head:', error);
-      toast.error(error instanceof ApiError ? error.message : 'Failed to catch up to head');
-    } finally {
-      setActionLoading(null);
-    }
-  }, [chainId, contractAddress, abi, fetchRanges, onRefresh]);
+    await runQuickCreate('catchup', undefined, CATCHUP_ACTION_LOADING);
+  }, [runQuickCreate]);
   const handleStartIndexing = useCallback(
     async (rangeId: number) => {
       setActionLoading(rangeId);
@@ -550,7 +578,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
         await fetchRanges();
       } catch (error) {
         console.error('Failed to start indexing:', error);
-        toast.error(error instanceof ApiError ? error.message : 'Failed to start indexing');
+        toast.error(describeMutationError(error, 'Failed to start indexing'));
       } finally {
         setActionLoading(null);
       }
@@ -580,7 +608,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
           return next;
         });
         console.error('Failed to pause indexing:', error);
-        toast.error(error instanceof ApiError ? error.message : 'Failed to pause indexing');
+        toast.error(describeMutationError(error, 'Failed to pause indexing'));
       } finally {
         setActionLoading(null);
       }
@@ -601,7 +629,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
         await fetchRanges();
       } catch (error) {
         console.error('Failed to resume indexing:', error);
-        toast.error(error instanceof ApiError ? error.message : 'Failed to resume indexing');
+        toast.error(describeMutationError(error, 'Failed to resume indexing'));
       } finally {
         setActionLoading(null);
       }
@@ -619,7 +647,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
         onRefresh?.();
       } catch (error) {
         console.error('Failed to delete range:', error);
-        toast.error(error instanceof ApiError ? error.message : 'Failed to delete range');
+        toast.error(describeMutationError(error, 'Failed to delete range'));
       } finally {
         setActionLoading(null);
       }
@@ -652,10 +680,17 @@ export const IndexingRangeManager: React.FC<Props> = ({
   const renderRangeActions = (range: IndexingRange) => {
     const isLoading = actionLoading === range.rangeId;
     const isPausing = pausingRangeIds.has(range.rangeId);
-    const canStart = range.status === 'pending' || range.status === 'error';
+    // One primary action per state. Error ranges keep their checkpoint —
+    // both the start and resume endpoints continue from currentBlock — so
+    // a single Resume (with an explicit continuation label) replaces the
+    // old ambiguous Start + Resume pair. There is no restart-from-scratch
+    // backend endpoint, so none is offered.
+    const canStart = range.status === 'pending';
     const canPause = range.status === 'indexing';
     const canResume = range.status === 'paused' || range.status === 'error';
     const canDelete = range.status !== 'indexing';
+    const resumeLabel =
+      range.status === 'error' ? 'Resume (continues from checkpoint)' : 'Resume';
     return (
       <div style={{ display: 'flex', gap: '8px' }}>
         {canStart && (
@@ -682,7 +717,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
             onClick={() => handleResumeIndexing(range.rangeId)}
             disabled={isLoading}
           >
-            {isLoading ? 'Resuming...' : 'Resume'}
+            {isLoading ? 'Resuming...' : resumeLabel}
           </button>
         )}
         {canDelete && (
@@ -781,7 +816,27 @@ export const IndexingRangeManager: React.FC<Props> = ({
       )}
       {ranges.length === 0 ? (
         <div className={emptyStateStyles}>
-          No indexing ranges configured. Add a range to start indexing events.
+          <p>No indexing ranges configured. Add a range to start indexing events.</p>
+          {/* Cold-start one-clicks: the quick form below '+ Add Range' is
+              the manual path; these run the backend's quick modes (which
+              create AND auto-start) without opening it. */}
+          <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', marginTop: '12px' }}>
+            <button
+              className={`${actionButtonStyles} primary`}
+              onClick={() => void runQuickCreate('all', undefined, -2)}
+              disabled={actionLoading !== null}
+            >
+              {actionLoading === -2 ? 'Starting...' : 'Index everything'}
+            </button>
+            <button
+              className={quickButtonStyles}
+              onClick={() => void runQuickCreate('recent', 1000, -2)}
+              disabled={actionLoading !== null}
+              title="Create and start a range covering the most recent 1,000 blocks"
+            >
+              Index recent
+            </button>
+          </div>
         </div>
       ) : (
         <div className={rangeListStyles}>

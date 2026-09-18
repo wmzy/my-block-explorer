@@ -117,6 +117,19 @@ const resultTitleStyles = css`
   margin-bottom: 8px;
 `;
 
+// Compact marker repeated on every write result card: a scrolled-down user
+// must never mistake a simulation for a broadcast transaction.
+const simulatedTagStyles = css`
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 500;
+  background: #fff3cd;
+  color: #856404;
+`;
+
 const resultContentStyles = css`
   font-family: monospace;
   font-size: 12px;
@@ -246,7 +259,9 @@ export function FunctionCallForm({
 
   const getResultKey = () => {
     if (func.interactionType === 'read') {
-      return `${func.name}-${argsKey(args)}-${blockNumber || 'latest'}`;
+      // Mirrors the parent's key derivation (trimmed override, 'latest'
+      // when empty) so a result written by the parent is found here.
+      return `${func.name}-${argsKey(args)}-${blockNumber.trim() || 'latest'}`;
     } else {
       return `${func.name}-${argsKey(args)}-${valueWei}-${from.trim()}`;
     }
@@ -355,7 +370,12 @@ export function FunctionCallForm({
         {/* Results */}
         {result !== undefined && (
           <div className={resultSuccessStyles}>
-            <div className={resultTitleStyles}>Result:</div>
+            <div className={resultTitleStyles}>
+              Result:
+              {func.interactionType === 'write' && (
+                <span className={simulatedTagStyles}>simulated — not sent</span>
+              )}
+            </div>
             <div className={resultContentStyles}>
               {typeof result === 'object'
                 ? formatResultWithLinks(result, {

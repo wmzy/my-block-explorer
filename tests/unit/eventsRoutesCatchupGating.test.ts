@@ -74,6 +74,7 @@ vi.mock('@/services/ContractSourceService', () => ({
 }));
 
 import app from '@/routes/events';
+import { contractSourceService } from '@/services/ContractSourceService';
 
 const CHAIN_ID = 1;
 const ADDRESS = '0x1234567890123456789012345678901234567890';
@@ -141,6 +142,11 @@ describe('quick range mode: catchup', () => {
     expect(body.fromBlock).toBe(900);
     expect(body.toBlock).toBe(20_000_000);
     expect(typeof body.timestamp).toBe('string');
+    // No ABI resolves (the mocked contract source has none), so the range
+    // stays pending and the response says so instead of failing the create.
+    expect(body.started).toBe(false);
+    expect(body.startError).toContain('No ABI available');
+    expect(mocks.startIndexingRange).not.toHaveBeenCalled();
   });
 
   it('returns the contract 400 body when no previous range exists', async () => {
@@ -155,6 +161,8 @@ describe('quick range mode: catchup', () => {
     await expect(res.json()).resolves.toEqual({
       error: 'No previous range found. Cannot catch up.',
     });
+    // A failed create never auto-starts anything.
+    expect(mocks.startIndexingRange).not.toHaveBeenCalled();
   });
 
   it('maps other catchup failures to the generic quick error envelope', async () => {
@@ -166,6 +174,69 @@ describe('quick range mode: catchup', () => {
     const body = await res.json();
     expect(body.error).toBe('Failed to create range with mode: catchup');
     expect(body.message).toBe('boom');
+    expect(mocks.startIndexingRange).not.toHaveBeenCalled();
+  });
+});
+
+describe('quick range auto-start', () => {
+  beforeEach(() => {
+    mocks.startIndexingRange.mockResolvedValue({ success: true });
+  });
+
+  it('auto-starts the created range with the contract-source ABI', async () => {
+    const serverAbi = [{ type: 'event', name: 'Transfer', inputs: [] }];
+    vi.mocked(contractSourceService.getContractSource).mockResolvedValueOnce({
+      abi: JSON.stringify(serverAbi),
+    } as never);
+    mocks.createRangeRecent.mockResolvedValue({
+      success: true,
+      rangeId: 12,
+      fromBlock: 900,
+      toBlock: 1_900,
+    });
+
+    const res = await post(`${BASE}/ranges/quick`, { mode: 'recent', blockCount: 1000 });
+
+    expect(res.status).toBe(201);
+    expect(mocks.getActiveRangeJob).toHaveBeenCalledWith(CHAIN_ID, ADDRESS, 12);
+    expect(mocks.startIndexingRange).toHaveBeenCalledWith(CHAIN_ID, ADDRESS, 12, serverAbi);
+    const body = await res.json();
+    expect(body.started).toBe(true);
+    expect(body.startError).toBeUndefined();
+  });
+
+  it('prefers the request-body ABI over the contract source', async () => {
+    const bodyAbi = [{ type: 'event', name: 'Custom', inputs: [] }];
+    mocks.createRangeAll.mockResolvedValue({
+      success: true,
+      rangeId: 13,
+      fromBlock: 0,
+      toBlock: 5_000,
+    });
+
+    const res = await post(`${BASE}/ranges/quick`, { mode: 'all', abi: bodyAbi });
+
+    expect(res.status).toBe(201);
+    expect(contractSourceService.getContractSource).not.toHaveBeenCalled();
+    expect(mocks.startIndexingRange).toHaveBeenCalledWith(CHAIN_ID, ADDRESS, 13, bodyAbi);
+    expect(await res.json()).toMatchObject({ started: true });
+  });
+
+  it('keeps the range pending (reported, not thrown) when no ABI resolves', async () => {
+    mocks.createRangeFirst.mockResolvedValue({
+      success: true,
+      rangeId: 14,
+      fromBlock: 10,
+      toBlock: 1_010,
+    });
+
+    const res = await post(`${BASE}/ranges/quick`, { mode: 'first', blockCount: 1000 });
+
+    expect(res.status).toBe(201);
+    expect(mocks.startIndexingRange).not.toHaveBeenCalled();
+    const body = await res.json();
+    expect(body.started).toBe(false);
+    expect(body.startError).toContain('No ABI available');
   });
 });
 

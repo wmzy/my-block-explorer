@@ -14,24 +14,6 @@ import { createLogger } from '../server/logger';
 const app = new Hono();
 const logger = createLogger('search-routes');
 
-app.get('/search/history', async (c) => {
-  const limit = Math.min(parseInt(c.req.query('limit') ?? '50'), 50);
-  // Optional chain scope: absent or invalid falls back to the global
-  // history. Legacy rows (no chain recorded) stay visible either way.
-  const chainIdParam = c.req.query('chainId');
-  const parsedChainId = chainIdParam ? parseInt(chainIdParam, 10) : NaN;
-  const chainId = !isNaN(parsedChainId) && parsedChainId > 0 ? parsedChainId : undefined;
-
-  try {
-    const history = await searchService.getSearchHistory(chainId, limit);
-    return c.json({ history, timestamp: new Date().toISOString() });
-  }
-  catch (error) {
-    logger.error({ err: error }, 'Search history API error');
-    return c.json({ error: 'Failed to get search history' }, 500);
-  }
-});
-
 app.get('/search', async (c) => {
   const query = c.req.query('q');
 

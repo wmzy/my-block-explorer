@@ -11,6 +11,12 @@ type SetupRequiredScreenProps = {
   onSetApiUrl: (url: string) => Promise<boolean>;
   onDiscover: () => void;
   /**
+   * When set, the screen is shown as an overlay on top of the running
+   * (degraded-mode) app and this closes it again. Without it the screen is
+   * the full-page gate (nothing to go back to).
+   */
+  onClose?: () => void;
+  /**
    * Whether the page itself is served over HTTPS. On HTTPS pages the browser
    * may block the automatic localhost port scan (mixed content; notably
    * Safari), so an explainer is shown. Defaults to document.location.
@@ -56,6 +62,10 @@ const contentWrapperStyle = css`
 const headerSectionStyle = css`
   text-align: center;
   margin-bottom: var(--haze-space-8);
+`;
+
+const backToAppStyle = css`
+  margin-bottom: var(--haze-space-4);
 `;
 
 const titleStyle = css`
@@ -356,6 +366,7 @@ export function SetupRequiredScreen({
   isConnecting,
   onSetApiUrl,
   onDiscover,
+  onClose,
   isHttpsPage = document.location.protocol === 'https:',
 }: SetupRequiredScreenProps) {
   const [packageManager, setPackageManager] = useState<PackageManager>('npx');
@@ -392,6 +403,16 @@ export function SetupRequiredScreen({
     <div className={containerStyle}>
       <div className={contentWrapperStyle}>
         <header className={headerSectionStyle}>
+          {onClose && (
+            <Button
+              variant="secondary"
+              size="sm"
+              className={backToAppStyle}
+              onClick={onClose}
+            >
+              ← Back to explorer
+            </Button>
+          )}
           <h1 className={titleStyle}>Block Explorer Setup</h1>
           <p className={descriptionStyle}>
             No local API service detected. Start a local service or connect to a remote endpoint.

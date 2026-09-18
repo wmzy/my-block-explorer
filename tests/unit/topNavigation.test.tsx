@@ -2,6 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import TopNavigation from '@/components/TopNavigation';
+import {
+  recordSearchHistoryEntry,
+  SEARCH_HISTORY_STORAGE_KEY,
+} from '@/services/searchHistory';
 
 // Mock @native-router: TopNavigation reads the router via useRouter and
 // navigates through the core navigate(router, to) free function. Stubbing
@@ -25,10 +29,10 @@ vi.mock('../../src/components/RpcConfig', () => ({
   ),
 }));
 
-// Mock the shared http layer so the history fetch (and only that — the
-// component goes through `get` on the discovered api base) is observable
-// without a network. withSignal is a pass-through: the hash-search path
-// composes it around the mocked api client.
+// Mock the shared http layer so the hash-search call (the only network
+// path left in the component — history is localStorage-only now) is
+// observable without a network. withSignal is a pass-through: the
+// hash-search path composes it around the mocked api client.
 const { mockGet, mockApi } = vi.hoisted(() => ({
   mockGet: vi.fn(),
   mockApi: { mockApiBase: true },
@@ -102,6 +106,7 @@ const renderTopNavigation = (props = {}) => {
 describe('TopNavigation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    localStorage.removeItem(SEARCH_HISTORY_STORAGE_KEY);
   });
 
   it('renders the logo and navigation elements', () => {
@@ -121,6 +126,16 @@ describe('TopNavigation', () => {
     expect(screen.getByText('Ethereum')).toBeInTheDocument();
     expect(screen.getByText(/ID: 1/)).toBeInTheDocument();
     expect(screen.getByText(/ETH/)).toBeInTheDocument();
+    // Mainnet never shows the Testnet pill next to the chain name.
+    expect(screen.queryByText('Testnet')).not.toBeInTheDocument();
+  });
+
+  it('shows a Testnet pill next to the current chain name for testnets', () => {
+    renderTopNavigation({ currentChainId: 5 });
+
+    // getChainInfo(5) is null in the chains mock → generic label.
+    expect(screen.getByText('Chain 5')).toBeInTheDocument();
+    expect(screen.getByText('Testnet')).toBeInTheDocument();
   });
 
   it('handles search input and submission', async () => {
@@ -253,56 +268,114 @@ describe('TopNavigation', () => {
     });
   });
 
-  it('scopes the recent-searches history request to the current chain', async () => {
-    mockGet.mockResolvedValue({
-      history: [{ query: '0xabc', searchType: 'address', searchedAt: '2026-01-01T00:00:00Z' }],
-    });
-    renderTopNavigation({ currentChainId: 137 });
+  it('renders recent searches from localStorage, never from the server', async () => {
+    localStorage.setItem(
+      SEARCH_HISTORY_STORAGE_KEY,
+      JSON.stringify([{ query: '0xabc', chainId: 137 }]),
+    );
+    renderTopNavigation({ currentChainId: 1 });
 
     fireEvent.focus(
       screen.getByPlaceholderText('Search address, tx hash, or block number...'),
     );
 
-    await waitFor(() => {
-      expect(mockGet).toHaveBeenCalledWith(
-        '/api/search/history',
-        { limit: 50, chainId: 137 },
-        mockApi,
-      );
-    });
-    // The fetched rows actually render in the dropdown.
+    // The entry renders with the chain it was recorded on; no history
+    // endpoint is consulted (that endpoint leaked every visitor's
+    // queries).
     expect(await screen.findByText('0xabc')).toBeInTheDocument();
+    expect(screen.getByText('Polygon')).toBeInTheDocument();
+    expect(mockGet).not.toHaveBeenCalled();
   });
 
-  it('refetches history with the new scope after a chain switch', async () => {
-    mockGet.mockResolvedValue({ history: [] });
-    const { rerender } = renderTopNavigation({ currentChainId: 137 });
+  it('records every executed search into localStorage', async () => {
+    renderTopNavigation({ currentChainId: 137, onSearch: undefined });
 
-    const input = screen.getByPlaceholderText('Search address, tx hash, or block number...');
-    fireEvent.focus(input);
+    const searchInput = screen.getByPlaceholderText('Search address, tx hash, or block number...');
+    fireEvent.change(searchInput, { target: { value: 'uniswap' } });
+    fireEvent.click(screen.getByText('Search'));
+
     await waitFor(() => {
-      expect(mockGet).toHaveBeenCalledWith(
-        '/api/search/history',
-        { limit: 50, chainId: 137 },
-        mockApi,
+      expect(mockNavigate).toHaveBeenCalledWith(
+        mockRouter,
+        `/search?q=${encodeURIComponent('uniswap')}&chain=137`,
       );
     });
+    expect(JSON.parse(localStorage.getItem(SEARCH_HISTORY_STORAGE_KEY) ?? '[]')).toEqual([
+      { query: 'uniswap', chainId: 137 },
+    ]);
+  });
 
-    rerender(
-      <TopNavigation
-        currentChainId={5000}
-        onChainChange={vi.fn()}
-        onSearch={vi.fn()}
-        searchPlaceholder="Search address, tx hash, or block number..."
-      />,
+  it('dedupes and caps local history at 10 entries, newest first', () => {
+    // Sanity for the storage contract the dropdown depends on (unit-level,
+    // through the same module the component records with).
+    for (let i = 0; i < 12; i++) {
+      recordSearchHistoryEntry(`query-${i}`, 1);
+    }
+    recordSearchHistoryEntry('query-5', 1);
+
+    const stored = JSON.parse(localStorage.getItem(SEARCH_HISTORY_STORAGE_KEY) ?? '[]');
+    expect(stored).toHaveLength(10);
+    expect(stored[0]).toEqual({ query: 'query-5', chainId: 1 });
+    expect(stored.filter((e: { query: string }) => e.query === 'query-5')).toHaveLength(1);
+  });
+
+  it('clears the whole local history from the dropdown', async () => {
+    localStorage.setItem(
+      SEARCH_HISTORY_STORAGE_KEY,
+      JSON.stringify([{ query: '0xabc', chainId: 1 }]),
     );
-    fireEvent.focus(input);
+    renderTopNavigation();
+
+    fireEvent.focus(
+      screen.getByPlaceholderText('Search address, tx hash, or block number...'),
+    );
+    expect(await screen.findByText('0xabc')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText('Clear'));
+
+    expect(JSON.parse(localStorage.getItem(SEARCH_HISTORY_STORAGE_KEY) ?? '[]')).toEqual([]);
+    expect(screen.queryByText('0xabc')).not.toBeInTheDocument();
+  });
+
+  it('removes a single history entry in place', async () => {
+    localStorage.setItem(
+      SEARCH_HISTORY_STORAGE_KEY,
+      JSON.stringify([
+        { query: '0xabc', chainId: 1 },
+        { query: 'zzz', chainId: 137 },
+      ]),
+    );
+    renderTopNavigation();
+
+    fireEvent.focus(
+      screen.getByPlaceholderText('Search address, tx hash, or block number...'),
+    );
+    expect(await screen.findByText('0xabc')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Remove 0xabc from history' }));
+
+    expect(JSON.parse(localStorage.getItem(SEARCH_HISTORY_STORAGE_KEY) ?? '[]')).toEqual([
+      { query: 'zzz', chainId: 137 },
+    ]);
+    expect(screen.queryByText('0xabc')).not.toBeInTheDocument();
+  });
+
+  it('re-runs a history entry on the chain it was recorded on', async () => {
+    const address = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045';
+    localStorage.setItem(
+      SEARCH_HISTORY_STORAGE_KEY,
+      JSON.stringify([{ query: address, chainId: 5000 }]),
+    );
+    renderTopNavigation({ currentChainId: 1 });
+
+    fireEvent.focus(
+      screen.getByPlaceholderText('Search address, tx hash, or block number...'),
+    );
+    fireEvent.click(await screen.findByText(address));
+
+    // Not the currently selected chain (1) — the entry's own chain (5000).
     await waitFor(() => {
-      expect(mockGet).toHaveBeenCalledWith(
-        '/api/search/history',
-        { limit: 50, chainId: 5000 },
-        mockApi,
-      );
+      expect(mockNavigate).toHaveBeenCalledWith(mockRouter, `/chain/5000/address/${address}`);
     });
   });
 
@@ -323,7 +396,7 @@ describe('TopNavigation', () => {
     });
   });
 
-  it('resolves ENS names client-side and navigates on the current chain', async () => {
+  it('resolves ENS names client-side on Ethereum and navigates on the current chain', async () => {
     renderTopNavigation({ currentChainId: 137, onSearch: undefined });
 
     const searchInput = screen.getByPlaceholderText('Search address, tx hash, or block number...');
@@ -331,7 +404,8 @@ describe('TopNavigation', () => {
     fireEvent.click(screen.getByText('Search'));
 
     // Resolution goes through a mainnet client (ENS registry lives there);
-    // the resolved address opens on the chain the user is on.
+    // the resolved address opens on the chain the user is on. The success
+    // notice labels where resolution happened.
     await waitFor(() => {
       expect(mockCreateRpcClient).toHaveBeenCalledWith(1);
       expect(mockNavigate).toHaveBeenCalledWith(
@@ -339,11 +413,10 @@ describe('TopNavigation', () => {
         '/chain/137/address/0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045',
       );
     });
-    // Brief confirmation stays visible under the search box.
-    expect(await screen.findByText(/Resolved vitalik\.eth → /)).toBeInTheDocument();
+    expect(await screen.findByText(/Resolved vitalik\.eth → .* on Ethereum/)).toBeInTheDocument();
   });
 
-  it('shows a friendly hint when an ENS name does not resolve', async () => {
+  it('reports an unregistered ENS name as not found, without a Retry', async () => {
     mockGetEnsAddress.mockResolvedValueOnce(null);
     renderTopNavigation({ currentChainId: 1, onSearch: undefined });
 
@@ -351,8 +424,34 @@ describe('TopNavigation', () => {
     fireEvent.change(searchInput, { target: { value: 'nosuchname.eth' } });
     fireEvent.click(screen.getByText('Search'));
 
-    expect(await screen.findByText('Could not resolve ENS name "nosuchname.eth"')).toBeInTheDocument();
+    expect(
+      await screen.findByText('ENS name "nosuchname.eth" not found (checked on Ethereum)'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Retry')).not.toBeInTheDocument();
     expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('offers a Retry when the ENS RPC itself fails', async () => {
+    mockGetEnsAddress.mockRejectedValueOnce(new Error('resolver down'));
+    renderTopNavigation({ currentChainId: 1, onSearch: undefined });
+
+    const searchInput = screen.getByPlaceholderText('Search address, tx hash, or block number...');
+    fireEvent.change(searchInput, { target: { value: 'vitalik.eth' } });
+    fireEvent.click(screen.getByText('Search'));
+
+    expect(
+      await screen.findByText(/ENS resolution failed for "vitalik\.eth"/),
+    ).toBeInTheDocument();
+    expect(mockNavigate).not.toHaveBeenCalled();
+
+    // Retrying re-runs the resolution; this time it resolves.
+    fireEvent.click(screen.getByText('Retry'));
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith(
+        mockRouter,
+        '/chain/1/address/0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045',
+      );
+    });
   });
 
   it('still hints when a hash search finds nothing on the current chain', async () => {

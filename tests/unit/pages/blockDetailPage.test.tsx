@@ -36,9 +36,17 @@ vi.mock('@/components/ui/CopyableHash', () => ({
 vi.mock('@/config/chains', () => ({
   getChainInfo: (chainId: number) => {
     if (chainId === 1) return { id: 1, name: 'Ethereum', nativeCurrency: { symbol: 'ETH' } };
+    if (chainId === 11155111)
+      return { id: 11155111, name: 'Sepolia', nativeCurrency: { symbol: 'ETH' } };
     return null;
   },
-  getChainName: (chainId: number) => (chainId === 1 ? 'Ethereum' : 'Unknown'),
+  getChainName: (chainId: number) =>
+    chainId === 1 ? 'Ethereum' : chainId === 11155111 ? 'Sepolia' : 'Unknown',
+  // Only Sepolia is a testnet in this fixture.
+  getChainType: (chainId: number) => (chainId === 11155111 ? 'testnet' : 'mainnet'),
+  // Consumed by the Landing helpers behind UnsupportedChainState.
+  isChainSupported: (chainId: number) => chainId === 1 || chainId === 11155111,
+  getSortedChains: () => [{ id: 1, name: 'Ethereum' }],
 }));
 
 vi.mock('@/utils/format', () => ({
@@ -209,5 +217,29 @@ describe('BlockDetail view', () => {
 
     expect(await screen.findByText(/Header not found/)).toBeInTheDocument();
     expect(screen.queryByText(/does not exist yet/)).not.toBeInTheDocument();
+  });
+
+  it('shows a Testnet badge in the header for a testnet chain', async () => {
+    mockUseBlockByNumber.mockReturnValue({
+      data: makeBlock(18000001),
+      loading: false,
+      error: undefined,
+    });
+    renderBlockDetail('/chain/11155111/block/18000001');
+
+    expect(await screen.findByText('Testnet')).toBeInTheDocument();
+    expect(screen.getByText(/Sepolia/)).toBeInTheDocument();
+  });
+
+  it('renders the unsupported-chain state with recovery CTAs for an invalid chain', async () => {
+    renderBlockDetail('/chain/999/block/123');
+
+    expect(await screen.findByText(/Chain not supported/)).toBeInTheDocument();
+    expect(screen.getByText(/chain ID 999/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Go to Mainnet' })).toHaveAttribute(
+      'href',
+      '/chain/1',
+    );
+    expect(screen.getByRole('link', { name: 'Open chain list' })).toHaveAttribute('href', '/');
   });
 });

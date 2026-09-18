@@ -134,6 +134,18 @@ const unverifiedSourceResponse = {
   },
 };
 
+// Verified contract whose ABI carries functions but no events: the Events
+// tab must stay rendered (indexed ranges remain queryable) while the table
+// loses decoding/filtering.
+const noEventsSourceResponse = {
+  contractSource: {
+    ...verifiedSourceResponse.contractSource,
+    abi: JSON.stringify([
+      { type: 'function', name: 'name', inputs: [], outputs: [], stateMutability: 'view' },
+    ]),
+  },
+};
+
 // Pasted-ABI fixture: an event (gates the Events tab), a function (for
 // Interact) and a name-less constructor entry — name is optional per the
 // ABI spec, so validation must accept it.
@@ -187,6 +199,7 @@ function renderAt(path: string) {
 
 beforeEach(() => {
   sessionStorage.clear();
+  localStorage.clear();
   vi.mocked(post).mockReset();
   vi.mocked(post).mockResolvedValue({});
   vi.mocked(useContractSource).mockReturnValue(mockHookResult(verifiedSourceResponse));
@@ -260,9 +273,10 @@ describe('Contract view custom ABI unlock', () => {
     renderAt(`/chain/1/contract/${ADDRESS}`);
 
     expect(await screen.findByRole('heading', { name: 'Use custom ABI' })).toBeInTheDocument();
-    // No Events tab without any ABI to decode logs with, and Apply stays
-    // disabled until something is pasted.
-    expect(screen.queryByRole('button', { name: /^Events/ })).not.toBeInTheDocument();
+    // The Events tab stays rendered without any ABI (indexed ranges are
+    // queryable regardless — no count badge until events can be decoded),
+    // and Apply stays disabled until something is pasted.
+    expect(screen.getByRole('button', { name: 'Events' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Apply' })).toBeDisabled();
   });
 
@@ -279,8 +293,9 @@ describe('Contract view custom ABI unlock', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'ABI must be a JSON array of entries with a string "type" field',
     );
-    expect(screen.queryByRole('button', { name: /^Events/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Events' })).toBeInTheDocument();
     expect(sessionStorage.getItem(CUSTOM_ABI_STORAGE_KEY)).toBeNull();
+    expect(localStorage.getItem(CUSTOM_ABI_STORAGE_KEY)).toBeNull();
   });
 
   it('unlocks Events and hands the raw ABI to Interact after Apply', async () => {
@@ -293,10 +308,12 @@ describe('Contract view custom ABI unlock', () => {
     });
     await user.click(screen.getByRole('button', { name: 'Apply' }));
 
-    // Badge appears in the tab bar and the raw string is persisted.
+    // Badge appears in the tab bar and the raw string is persisted in
+    // localStorage (and any legacy sessionStorage copy is dropped).
     expect(await screen.findByText('Custom ABI')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Events (1)' })).toBeInTheDocument();
-    expect(sessionStorage.getItem(CUSTOM_ABI_STORAGE_KEY)).toBe(CUSTOM_ABI);
+    expect(localStorage.getItem(CUSTOM_ABI_STORAGE_KEY)).toBe(CUSTOM_ABI);
+    expect(sessionStorage.getItem(CUSTOM_ABI_STORAGE_KEY)).toBeNull();
 
     // The custom events reach the event table.
     await user.click(screen.getByRole('button', { name: 'Events (1)' }));
@@ -312,20 +329,35 @@ describe('Contract view custom ABI unlock', () => {
 
   it('restores a persisted ABI on load and Clear removes it', async () => {
     const user = userEvent.setup();
-    sessionStorage.setItem(CUSTOM_ABI_STORAGE_KEY, CUSTOM_ABI);
+    localStorage.setItem(CUSTOM_ABI_STORAGE_KEY, CUSTOM_ABI);
     vi.mocked(useContractSource).mockReturnValue(mockHookResult(unverifiedSourceResponse));
     renderAt(`/chain/1/contract/${ADDRESS}`);
 
-    // Lazy-initialised from sessionStorage without any typing.
+    // Lazy-initialised from localStorage without any typing.
     expect(await screen.findByRole('button', { name: 'Events (1)' })).toBeInTheDocument();
     expect(screen.getByLabelText('Custom ABI JSON')).toHaveValue(CUSTOM_ABI);
 
     await user.click(await screen.findByRole('button', { name: 'Clear custom ABI' }));
 
-    expect(screen.queryByRole('button', { name: /^Events/ })).not.toBeInTheDocument();
+    // The tab itself stays (ranges remain queryable) but loses its count.
+    expect(screen.getByRole('button', { name: 'Events' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Events (1)' })).not.toBeInTheDocument();
     expect(screen.queryByText('Custom ABI')).not.toBeInTheDocument();
+    expect(localStorage.getItem(CUSTOM_ABI_STORAGE_KEY)).toBeNull();
     expect(sessionStorage.getItem(CUSTOM_ABI_STORAGE_KEY)).toBeNull();
     expect(screen.getByLabelText('Custom ABI JSON')).toHaveValue('');
+  });
+
+  it('adopts a legacy sessionStorage entry into localStorage on load', async () => {
+    // Pre-persistence browsers only had sessionStorage: the first load
+    // after the upgrade migrates the entry instead of losing the unlock.
+    sessionStorage.setItem(CUSTOM_ABI_STORAGE_KEY, CUSTOM_ABI);
+    vi.mocked(useContractSource).mockReturnValue(mockHookResult(unverifiedSourceResponse));
+    renderAt(`/chain/1/contract/${ADDRESS}`);
+
+    expect(await screen.findByRole('button', { name: 'Events (1)' })).toBeInTheDocument();
+    expect(localStorage.getItem(CUSTOM_ABI_STORAGE_KEY)).toBe(CUSTOM_ABI);
+    expect(sessionStorage.getItem(CUSTOM_ABI_STORAGE_KEY)).toBeNull();
   });
 });
 
@@ -389,5 +421,53 @@ describe('Contract view locked tabs and force refresh', () => {
     await user.click(await screen.findByRole('button', { name: '↻ Force Refresh' }));
 
     expect(await screen.findByRole('status')).toHaveTextContent(/Failed to clear cache/);
+  });
+});
+
+describe('Contract view Events tab visibility', () => {
+  it('keeps the Events tab and surfaces the unlock hint when a verified ABI has no events', async () => {
+    const user = userEvent.setup();
+    vi.mocked(useContractSource).mockReturnValue(mockHookResult(noEventsSourceResponse));
+    renderAt(`/chain/1/contract/${ADDRESS}`);
+
+    // Tab present without a count badge; the panel below keeps the full
+    // indexing surface reachable.
+    const eventsTab = await screen.findByRole('button', { name: 'Events' });
+    expect(screen.queryByRole('button', { name: 'Events (1)' })).not.toBeInTheDocument();
+
+    await user.click(eventsTab);
+
+    expect(
+      await screen.findByRole('heading', { name: 'Paste an ABI with event definitions' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/current ABI has no event definitions/)).toBeInTheDocument();
+    // A usable server ABI means no custom ABI panel is rendered, so the
+    // hint has no focus-jump button to offer.
+    expect(
+      screen.queryByRole('button', { name: 'Open custom ABI panel' }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByTestId('indexing-range-manager')).toBeInTheDocument();
+    expect(screen.getByTestId('event-statistics')).toBeInTheDocument();
+    expect(screen.getByTestId('event-table')).toBeInTheDocument();
+  });
+
+  it('offers the focus jump from the events hint when no ABI exists at all', async () => {
+    const user = userEvent.setup();
+    vi.mocked(useContractSource).mockReturnValue(mockHookResult(unverifiedSourceResponse));
+    renderAt(`/chain/1/contract/${ADDRESS}`);
+
+    await user.click(await screen.findByRole('button', { name: 'Events' }));
+
+    expect(
+      await screen.findByRole('heading', { name: 'Paste an ABI with event definitions' }),
+    ).toBeInTheDocument();
+    // The custom ABI panel's own copy also says "No ABI is available…", so
+    // match the event-specific part of the hint message.
+    expect(
+      screen.getByText(/paste an ABI with event definitions to decode and filter events/),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Open custom ABI panel' }));
+    expect(screen.getByLabelText('Custom ABI JSON')).toHaveFocus();
   });
 });

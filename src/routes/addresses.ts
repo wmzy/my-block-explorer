@@ -70,12 +70,21 @@ app.get('/chains/:chainId/addresses/:address/transactions', async (c) => {
   const page = Math.max(parseInt(c.req.query('page') ?? '1'), 1);
   const offset = (page - 1) * limit;
 
+  // Optional search-window override in blocks. Only fully-numeric values
+  // count — anything else ('abc', partial digits) falls back to the
+  // txCount-tiered default. The service clamps to 1..50_000_000 and
+  // echoes the effective window in `searchWindowBlocks`.
+  const rawWindow = c.req.query('window');
+  const windowBlocks =
+    rawWindow !== undefined && /^\d+$/.test(rawWindow) ? Number(rawWindow) : undefined;
+
   try {
     const result = await addressService.getAddressTransactions(
       chainId,
       address,
       limit,
       offset,
+      windowBlocks,
     );
     c.header('X-Data-Source', result.method);
     c.header('X-Chain-Name', getChainName(chainId));

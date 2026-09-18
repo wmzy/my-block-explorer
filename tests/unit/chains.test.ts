@@ -124,6 +124,38 @@ describe('Chains Configuration', () => {
     it('应该正确识别主网', () => {
       expect(getChainType(1)).toBe('mainnet'); // Ethereum
       expect(getChainType(137)).toBe('mainnet'); // Polygon
+      expect(getChainType(8453)).toBe('mainnet'); // Base
+    });
+
+    it('classifies viem-flagged testnets by id: Holesky and Sepolia', () => {
+      // The flag must be preferred over the hardcoded ID/name lists: these
+      // two were previously misclassified as mainnets (no list entry, and
+      // "holesky" was missing from the name heuristic).
+      expect(getChainType(17000)).toBe('testnet'); // Holesky
+      expect(getChainType(11155111)).toBe('testnet'); // Sepolia
+      expect(getChainType(11155420)).toBe('testnet'); // OP Sepolia
+    });
+
+    it('derives Holesky from the testnet flag, not the name heuristic', () => {
+      // Holesky's name matches none of the legacy keywords; only trusting
+      // viem's flag classifies it.
+      const holesky = getChainInfo(17000);
+      expect(holesky?.name.toLowerCase()).not.toContain('test');
+      expect(holesky?.name.toLowerCase()).not.toContain('sepolia');
+      expect(getChainType(17000)).toBe('testnet');
+    });
+
+    it('treats chain 42 as LUKSO mainnet (dead Kovan id must not misclassify it)', () => {
+      // The legacy hardcoded list used to call 42 a testnet (Kovan); viem
+      // has since re-assigned the id to LUKSO mainnet.
+      expect(getChainType(42)).toBe('mainnet');
+    });
+
+    it('returns unknown for chains absent from viem (dead testnet ids)', () => {
+      // Ropsten (3) and Rinkeby (4) were removed from viem entirely.
+      expect(getChainType(3)).toBe('unknown');
+      expect(getChainType(4)).toBe('unknown');
+      expect(getChainType(999999)).toBe('unknown');
     });
 
     it('应该正确识别测试网', () => {

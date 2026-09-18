@@ -78,15 +78,21 @@ surface uses):
 - **ENS name** → resolved **client-side against a mainnet client**
   (`createRpcClient(1)` — the ENS registry only exists on mainnet, so the
   lookup target never changes with the viewed chain); the resolved address is
-  then viewed on the *current* chain. Unregistered names and RPC failures
-  surface as the same inline hint.
+  then viewed on the *current* chain, and every ENS surface labels the result
+  "resolved on Ethereum". "Name not found" (definitive) and "resolution
+  failed" (RPC did not answer — offers Retry) are distinct outcomes.
 - **Anything else** → `/search?q=…&chain=…` so the global search endpoint
   searches the current chain and its suggestions link back to that chain.
+  After a search resolves, `/search` writes the resolved chain back into the
+  URL and renders a "Searched on {chain}" line, so deep links are
+  shareable and unambiguous.
 
 Inline notices under the box distinguish a definitive miss, a degraded
 (data-source errored) response, and ENS resolved/failed outcomes. Focusing
-the box shows a chain-scoped history dropdown (`GET /api/search/history`,
-limit 50).
+the box shows the **per-browser history dropdown** — entries live in
+localStorage (`be:searchHistory`, max 10, never sent to or read from the
+server) with a Clear button and per-item removal; a history entry re-runs
+on the chain it was recorded on.
 
 ## RPC settings modal (`src/components/RpcConfig.tsx`)
 

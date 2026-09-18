@@ -1,13 +1,26 @@
 // ContractInteract unit tests: rendered directly (no router — the tab panel
-// has no routing deps) with real parseContractFunctionsUnified from
-// '@/utils/contractInteraction' (nothing in that module is mocked). Covers
-// the proxy/impl target selector on the function list + banner, and the
-// abiOverride path that lights up Interact for unverified contracts.
-import { describe, it, expect } from 'vitest';
-import { render, screen } from '@testing-library/react';
+// has no routing deps) with real parsing/filtering from
+// '@/utils/contractInteraction' (only the readContract/simulateContract
+// network boundary is mocked). Covers the proxy/impl target selector on the
+// function list + banner, the abiOverride path that lights up Interact for
+// unverified contracts (including contractSource=null), block-override
+// validation (inline error, zero network calls), and the simulated-only tag
+// on write result cards.
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 
 import { ContractInteract } from '@/views/Contract/ContractInteract';
+import { readContract, simulateContract } from '@/utils/contractInteraction';
 import type { ContractSource } from '@/views/Contract/types';
+
+vi.mock('@/utils/contractInteraction', async importOriginal => {
+  const actual = await importOriginal<typeof import('@/utils/contractInteraction')>();
+  return {
+    ...actual,
+    readContract: vi.fn(),
+    simulateContract: vi.fn(),
+  };
+});
 
 const PROXY_ADDRESS = '0xabc0000000000000000000000000000000000001';
 const IMPL_ADDRESS = '0xabc0000000000000000000000000000000000002';
@@ -37,6 +50,29 @@ const IMPL_ABI = JSON.stringify([
   },
 ]);
 
+// Standalone read surface: a no-arg view function submits without any
+// argument inputs, so tests exercise exactly the block-override path.
+const READ_ABI = JSON.stringify([
+  {
+    type: 'function',
+    name: 'owner',
+    inputs: [],
+    outputs: [{ name: '', type: 'address' }],
+    stateMutability: 'view',
+  },
+]);
+
+// Standalone write surface: a no-arg nonpayable function.
+const WRITE_ABI = JSON.stringify([
+  {
+    type: 'function',
+    name: 'pause',
+    inputs: [],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+]);
+
 const proxyContractSource: ContractSource = {
   chainId: 1,
   address: PROXY_ADDRESS,
@@ -61,6 +97,17 @@ const proxyContractSource: ContractSource = {
   },
 };
 
+const simpleSource = (abi: string): ContractSource => ({
+  chainId: 1,
+  address: PROXY_ADDRESS,
+  name: 'Simple',
+  sourceCode: '',
+  abi,
+  verificationStatus: 'verified',
+  verificationSource: 'sourcify',
+  lastChecked: '2026-01-01T00:00:00Z',
+});
+
 function renderInteract(props: Partial<Parameters<typeof ContractInteract>[0]> = {}) {
   return render(
     <ContractInteract
@@ -71,6 +118,21 @@ function renderInteract(props: Partial<Parameters<typeof ContractInteract>[0]> =
     />,
   );
 }
+
+beforeEach(() => {
+  vi.mocked(readContract).mockReset();
+  vi.mocked(simulateContract).mockReset();
+  // tests/setup.ts installs global.fetch as a shared vi.fn(); clear it so
+  // per-test call counts stay meaningful for the zero-network assertions.
+  vi.mocked(global.fetch).mockClear();
+});
+
+// Function forms render inside a Collapsible that starts collapsed (its
+// content is aria-hidden, so the submit button is inaccessible to role
+// queries). Expand the header first, like a real user would.
+const expandFunction = (name: string | RegExp) => {
+  fireEvent.click(screen.getByRole('button', { name }));
+};
 
 describe('ContractInteract proxy target', () => {
   it('lists the proxy ABI\'s admin functions for target \'proxy\'', async () => {
@@ -161,5 +223,171 @@ describe('ContractInteract abiOverride', () => {
     );
 
     expect(await screen.findByText('Contract ABI not available')).toBeInTheDocument();
+  });
+
+  it('queries reads with contractSource null — the override alone is the ABI', async () => {
+    vi.mocked(readContract).mockResolvedValue({ success: true, result: '0x1' });
+
+    render(
+      <ContractInteract
+        chainId={1}
+        contractAddress={PROXY_ADDRESS}
+        contractSource={null}
+        abiOverride={READ_ABI}
+      />,
+    );
+
+    expect(await screen.findByText('owner')).toBeInTheDocument();
+    expect(screen.queryByText('Contract source not available')).not.toBeInTheDocument();
+    expect(screen.queryByText('Contract ABI not available')).not.toBeInTheDocument();
+
+    expandFunction(/owner/);
+    fireEvent.click(screen.getByRole('button', { name: 'Query' }));
+
+    await waitFor(() => expect(readContract).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(readContract).mock.calls[0][0]).toMatchObject({
+      abi: READ_ABI,
+      blockNumber: undefined,
+    });
+    expect(await screen.findByText('Result:')).toBeInTheDocument();
+  });
+
+  it('simulates writes with contractSource null and tags the result as simulated', async () => {
+    vi.mocked(simulateContract).mockResolvedValue({
+      success: true,
+      result: true,
+      gasUsed: 50_000n,
+    });
+
+    render(
+      <ContractInteract
+        chainId={1}
+        contractAddress={PROXY_ADDRESS}
+        contractSource={null}
+        abiOverride={WRITE_ABI}
+      />,
+    );
+
+    expect(await screen.findByText('pause')).toBeInTheDocument();
+
+    expandFunction(/pause/);
+    fireEvent.click(screen.getByRole('button', { name: 'Simulate' }));
+
+    await waitFor(() => expect(simulateContract).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(simulateContract).mock.calls[0][0]).toMatchObject({
+      abi: WRITE_ABI,
+    });
+    expect(await screen.findByText('simulated — not sent')).toBeInTheDocument();
+  });
+});
+
+describe('ContractInteract block override validation', () => {
+  it('flags a non-numeric override inline and makes no network call', async () => {
+    renderInteract({ contractSource: simpleSource(READ_ABI) });
+    expect(await screen.findByText('owner')).toBeInTheDocument();
+
+    const blockInput = screen.getByLabelText('Block number override');
+    fireEvent.change(blockInput, { target: { value: '12ab' } });
+
+    // Live field-level error the moment the input goes invalid.
+    expect(await screen.findByRole('alert')).toHaveTextContent('Enter a block number');
+
+    expandFunction(/owner/);
+    fireEvent.click(screen.getByRole('button', { name: 'Query' }));
+
+    // No read, no raw fetch, and no misleading per-function 'Network error'.
+    expect(readContract).not.toHaveBeenCalled();
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(screen.queryByText('Network error')).not.toBeInTheDocument();
+  });
+
+  it('rejects named tags — the call path only understands decimal heights', async () => {
+    renderInteract({ contractSource: simpleSource(READ_ABI) });
+    expect(await screen.findByText('owner')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Block number override'), {
+      target: { value: 'latest' },
+    });
+    expandFunction(/owner/);
+    fireEvent.click(screen.getByRole('button', { name: 'Query' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Enter a block number');
+    expect(readContract).not.toHaveBeenCalled();
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
+  it('routes a digits-only override as a bigint blockNumber', async () => {
+    vi.mocked(readContract).mockResolvedValue({ success: true, result: '0x1' });
+
+    renderInteract({ contractSource: simpleSource(READ_ABI) });
+    expect(await screen.findByText('owner')).toBeInTheDocument();
+
+    // Surrounding whitespace is tolerated: the trimmed value is validated.
+    fireEvent.change(screen.getByLabelText('Block number override'), {
+      target: { value: ' 19000000 ' },
+    });
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+
+    expandFunction(/owner/);
+    fireEvent.click(screen.getByRole('button', { name: 'Query' }));
+
+    await waitFor(() => expect(readContract).toHaveBeenCalledTimes(1));
+    expect(vi.mocked(readContract).mock.calls[0][0]).toMatchObject({
+      blockNumber: 19_000_000n,
+      abi: READ_ABI,
+    });
+    // The result card renders: the form's key derivation still matches the
+    // parent's when the override carries surrounding whitespace.
+    expect(await screen.findByText('Result:')).toBeInTheDocument();
+  });
+
+  it('clears the inline error when the override is reset', async () => {
+    renderInteract({ contractSource: simpleSource(READ_ABI) });
+    expect(await screen.findByText('owner')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Block number override'), {
+      target: { value: '0x12' },
+    });
+    expect(await screen.findByRole('alert')).toHaveTextContent('Enter a block number');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Reset' }));
+
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Block number override')).toHaveValue('');
+  });
+});
+
+describe('ContractInteract write simulation framing', () => {
+  it('tags every write result card as simulated — not sent', async () => {
+    vi.mocked(simulateContract).mockResolvedValue({
+      success: true,
+      result: true,
+      gasUsed: 50_000n,
+    });
+
+    renderInteract({ contractSource: simpleSource(WRITE_ABI) });
+    expect(await screen.findByText('pause')).toBeInTheDocument();
+
+    expandFunction(/pause/);
+    fireEvent.click(screen.getByRole('button', { name: 'Simulate' }));
+
+    expect(await screen.findByText('simulated — not sent')).toBeInTheDocument();
+    // The global disclaimer stays too.
+    expect(
+      screen.getByText(/Write functions are simulations only\./),
+    ).toBeInTheDocument();
+  });
+
+  it('keeps read result cards untagged', async () => {
+    vi.mocked(readContract).mockResolvedValue({ success: true, result: '0x1' });
+
+    renderInteract({ contractSource: simpleSource(READ_ABI) });
+    expect(await screen.findByText('owner')).toBeInTheDocument();
+
+    expandFunction(/owner/);
+    fireEvent.click(screen.getByRole('button', { name: 'Query' }));
+
+    expect(await screen.findByText('Result:')).toBeInTheDocument();
+    expect(screen.queryByText('simulated — not sent')).not.toBeInTheDocument();
   });
 });

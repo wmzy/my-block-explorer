@@ -3,8 +3,9 @@ import { css } from '@linaria/core';
 import { Alert } from 'haze-ui';
 import { TypedLink, useMatched } from '@native-router/react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
+import { Badge } from '@/components/ui/Badge';
 import TopNavigation from '@/components/TopNavigation';
-import { getChainInfo, getChainSymbol } from '@/config/chains';
+import { getChainInfo, getChainSymbol, getChainType } from '@/config/chains';
 import {
   formatNumber,
   formatAddress,
@@ -17,7 +18,8 @@ import { LoadingState } from '@/components/ui/LoadingState';
 import { Button } from '@/components/ui/Button';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { useLatestBlocksFeed, useLatestTransactionsFeed } from '@/services/homeFeed';
-import { redirectReplace, rememberChainId, resolveLandingChainPath } from './Landing';
+import { redirectReplace, rememberChainId } from './Landing';
+import { UnsupportedChainState } from './UnsupportedChainState';
 
 // --- styles ---
 
@@ -44,6 +46,12 @@ const subtitleStyle = css`
   font-size: var(--haze-text-base);
   color: var(--haze-color-text-muted);
   margin: 0;
+`;
+
+// Testnet pill sits inline with the hero subtitle's chain meta.
+const heroBadge = css`
+  margin-left: var(--haze-space-2);
+  vertical-align: middle;
 `;
 
 const statsBar = css`
@@ -204,8 +212,12 @@ export default function Home() {
   const chainInfo = getChainInfo(currentChainId);
   const symbol = getChainSymbol(currentChainId);
 
-  const blocksFeed = useLatestBlocksFeed(currentChainId);
-  const transactionsFeed = useLatestTransactionsFeed(currentChainId);
+  // Feeds take 0 on unsupported chains: their fetch guards non-positive ids
+  // without an RPC call, so the unsupported state below stays offline
+  // instead of polling a chain that cannot render.
+  const feedChainId = chainInfo ? currentChainId : 0;
+  const blocksFeed = useLatestBlocksFeed(feedChainId);
+  const transactionsFeed = useLatestTransactionsFeed(feedChainId);
 
   const blocks = blocksFeed.data?.blocks ?? [];
   const latestBlockNumber = blocksFeed.data?.latestBlockNumber ?? null;
@@ -242,22 +254,27 @@ export default function Home() {
     }
   }, [chainInfo]);
 
-  // Unknown chain: replace the bad entry with the landing target
-  // (remembered valid chain, else preferred chain) instead of pushing on
-  // top of it, so the back button never resurfaces the unknown chain.
-  useEffect(() => {
-    if (!chainInfo) {
-      redirectReplace(router, resolveLandingChainPath()).catch(() => undefined);
-    }
-  }, [chainInfo, router]);
-
   // Chain switches replace the current entry (shared Wave A helper) so
   // hopping between chains never pile up history entries.
   const handleChainChange = (newChainId: number) => {
     void redirectReplace(router, `/chain/${newChainId}`).catch(() => undefined);
   };
 
-  if (!chainInfo) return null;
+  // Unknown chain deep link (an id the config cannot resolve, e.g.
+  // /chain/999999): an explicit, honest state instead of the old silent
+  // redirect to the viewer's remembered chain — a shared link must not
+  // quietly open a different chain on someone else's browser. The state
+  // names the requested id and offers recovery CTAs.
+  if (!chainInfo) {
+    return (
+      <>
+        <TopNavigation currentChainId={currentChainId} onChainChange={handleChainChange} />
+        <PageContainer>
+          <UnsupportedChainState chainId={currentChainId} />
+        </PageContainer>
+      </>
+    );
+  }
 
   const gasUsedPercent = blocks[0]
     ? ((Number(blocks[0].gasUsed) / Number(blocks[0].gasLimit)) * 100).toFixed(1)
@@ -271,6 +288,11 @@ export default function Home() {
           <h1 className={titleStyle}>{chainInfo.name} Explorer</h1>
           <p className={subtitleStyle}>
             Chain ID: {chainInfo.id} · {symbol}
+            {getChainType(currentChainId) === 'testnet' && (
+              <Badge variant="warning" size="sm" className={heroBadge}>
+                Testnet
+              </Badge>
+            )}
           </p>
         </div>
 

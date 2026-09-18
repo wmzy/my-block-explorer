@@ -1,9 +1,8 @@
 import { css, cx } from '@linaria/core';
 
 type ScanningScreenProps = {
-  currentPort: number | null;
-  portIndex: number;
-  totalPorts: number;
+  /** Candidate ports, all probed concurrently. */
+  ports: readonly number[];
 };
 
 const containerStyle = css`
@@ -143,6 +142,9 @@ const progressContainerStyle = css`
   margin: 0 0 var(--haze-space-3) 0;
 `;
 
+// Indeterminate bar: the probes run concurrently, so there is no N-of-M
+// progress to show — the shimmer communicates activity, the per-probe
+// timeout bounds the wait.
 const progressBarBgStyle = css`
   width: 100%;
   height: 6px;
@@ -153,9 +155,9 @@ const progressBarBgStyle = css`
 
 const progressBarFillStyle = css`
   height: 100%;
-  background: var(--haze-color-primary);
+  width: 100%;
+  background-color: var(--haze-color-primary);
   border-radius: var(--haze-radius-sm);
-  transition: width 0.3s ease;
   position: relative;
 
   &::after {
@@ -199,23 +201,35 @@ const portDotStyle = css`
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background-color: var(--haze-color-text-muted);
   transition: all 0.3s ease;
 `;
 
+// Every port is being probed at once, so every dot is live for the whole
+// (sub-2s) scan.
 const portDotActiveStyle = css`
   background-color: var(--haze-color-primary);
   box-shadow: 0 0 8px var(--haze-color-primary);
   transform: scale(1.3);
+  animation: dot-pulse 1.4s ease-in-out infinite;
+
+  @keyframes dot-pulse {
+    0%,
+    100% {
+      transform: scale(1.1);
+    }
+    50% {
+      transform: scale(1.4);
+    }
+  }
 `;
 
-const portDotCheckedStyle = css`
-  background-color: var(--haze-color-success);
-  box-shadow: 0 0 6px var(--haze-color-success);
-`;
-
-export function ScanningScreen({ currentPort, portIndex, totalPorts }: ScanningScreenProps) {
-  const progress = totalPorts > 0 ? (portIndex / totalPorts) * 100 : 0;
+export function ScanningScreen({ ports }: ScanningScreenProps) {
+  const first = ports[0] ?? 0;
+  const last = ports[ports.length - 1] ?? 0;
+  const statusText =
+    ports.length > 1
+      ? `Checking ports ${first}–${last} in parallel`
+      : `Checking port ${first}`;
 
   return (
     <div className={containerStyle}>
@@ -226,33 +240,21 @@ export function ScanningScreen({ currentPort, portIndex, totalPorts }: ScanningS
           <div className={pulseIconStyle} />
         </div>
         <h2 className={titleStyle}>Scanning for local services...</h2>
-        <p className={portStatusStyle}>
-          {currentPort !== null ? `Checking port ${currentPort}` : 'Initializing...'}
-        </p>
+        <p className={portStatusStyle}>{statusText}</p>
         <div className={progressContainerStyle}>
           <div className={progressBarBgStyle}>
-            <div className={progressBarFillStyle} style={{ width: `${progress}%` }} />
+            <div className={progressBarFillStyle} />
           </div>
           <p className={progressTextStyle}>
-            Port {portIndex} of {totalPorts}
+            {ports.length > 1
+              ? `${ports.length} ports probed at once`
+              : 'This takes at most a couple of seconds'}
           </p>
         </div>
         <div className={portListStyle}>
-          {Array.from({ length: totalPorts }, (_, i) => {
-            const dotIndex = i + 1;
-            const isActive = dotIndex === portIndex;
-            const isChecked = dotIndex < portIndex;
-            return (
-              <div
-                key={i}
-                className={cx(
-                  portDotStyle,
-                  isActive ? portDotActiveStyle : '',
-                  isChecked ? portDotCheckedStyle : '',
-                )}
-              />
-            );
-          })}
+          {ports.map(port => (
+            <div key={port} className={cx(portDotStyle, portDotActiveStyle)} />
+          ))}
         </div>
       </div>
     </div>

@@ -53,16 +53,20 @@ type DiscoveredTransaction = {
 // Coverage semantics for getAddressTransactions: discovery is a heuristic
 // (binary search over native-balance changes within a capped window), so
 // callers need to know how complete any result is.
-// - 'complete': the RPC nonce is authoritative (address has no transactions)
-// - 'partial': the heuristic ran; only native-token transfers inside the
-//   searched window are visible
+// - 'complete': reserved for an authoritative indexer channel — the
+//   heuristic never emits it
+// - 'partial': the heuristic ran, or the nonce shows no outgoing txs while
+//   incoming activity stays undetectable; only native-token transfers
+//   inside the searched window are visible
 // - 'none': nothing could be discovered (zero balance or search failure)
 export type AddressTransactionsResult = {
   transactions: DiscoveredTransaction[];
+  // Count of DISCOVERED (deduped) transactions — never the RPC nonce,
+  // which counts outgoing transactions only.
   total: number;
   method: string;
   coverage: 'complete' | 'partial' | 'none';
-  reason?: 'no-transactions' | 'zero-balance' | 'search-failed';
+  reason?: 'no-outgoing-transactions' | 'zero-balance' | 'search-failed';
   searchWindowBlocks?: number;
 };
 
@@ -70,6 +74,29 @@ const SCAN_THRESHOLD = 64n;
 const MAX_RPC_CALLS = 200;
 const BATCH_CONCURRENCY = 8;
 const TX_SEARCH_TIMEOUT_MS = 30_000;
+
+// Discovery budget. Pages are sliced from one canonical result list per
+// (chain, address, window), so the discovered list must not depend on
+// which page happened to be requested first — the old offset+limit budget
+// made consecutive pages disagree.
+const DISCOVERY_LIMIT = 200;
+// Per-request discovery budget: the slice being served plus a lookahead
+// (so hasNext stays honest without an immediate re-search), bounded by the
+// hard limit. A flat-200 first page regularly blew the 30s search timeout
+// on slow public RPCs for active addresses; paging deeper escalates the
+// budget monotonically and replaces the cached list with the wider one.
+const DISCOVERY_LOOKAHEAD = 15;
+const discoveryBudgetFor = (offset: number, limit: number): number =>
+  Math.min(offset + limit + DISCOVERY_LOOKAHEAD, DISCOVERY_LIMIT);
+// Hard clamp for an explicit search-window override (?window=). The
+// txCount-tiered defaults in getSearchRange stay far below it.
+const MAX_SEARCH_WINDOW_BLOCKS = 50_000_000;
+// Deterministic pagination: each request used to re-run the capped search
+// (per-block failures silently swallowed), so consecutive pages could
+// disagree. A short-lived canonical result per (chain, address, window)
+// makes paging stable; the TTL bounds staleness, the LRU bound memory.
+const TX_RESULT_TTL_MS = 60_000;
+const TX_RESULT_MAX_ENTRIES = 20;
 
 const withTimeout = <T>(promise: Promise<T>, ms: number, label: string): Promise<T> =>
   Promise.race([
@@ -83,6 +110,14 @@ const getSearchRange = (txCount: number): bigint => {
   if (txCount > 100) return 200_000n;
   if (txCount > 10) return 600_000n;
   return 2_500_000n;
+};
+
+// Effective search window: the txCount-tiered default unless the caller
+// widens it explicitly (?window=). Explicit values clamp to 1..MAX.
+const resolveSearchWindow = (txCount: number, requested?: number): bigint => {
+  if (requested === undefined) return getSearchRange(txCount);
+  const clamped = Math.min(Math.max(Math.trunc(requested), 1), MAX_SEARCH_WINDOW_BLOCKS);
+  return BigInt(clamped);
 };
 
 const getBalanceAt = async (
@@ -206,6 +241,16 @@ const binarySearchBalanceChanges = async (
   return results;
 };
 
+// Cached canonical search result. `transactions` holds the FULL deduped
+// discovery list (not a page); request-time pagination slices into it.
+// `budget` is the discovery limit the list was produced under — a deeper
+// page may need a wider search than the cached entry covers.
+type TxSearchCacheEntry = {
+  expiresAt: number;
+  result: AddressTransactionsResult;
+  budget: number;
+};
+
 type AddressServiceDeps = {
   db: typeof import('../database/init').db;
   indexedAddresses: typeof import('../database/init').indexedAddresses;
@@ -215,6 +260,48 @@ type AddressServiceDeps = {
 
 const createAddressService = (deps: AddressServiceDeps) => {
   const { db, indexedAddresses, rpcManager, contractSourceService } = deps;
+
+  // Bounded LRU: Map preserves insertion order, so reads re-insert to
+  // refresh recency and oversize inserts evict the oldest key first.
+  const txSearchCache = new Map<string, TxSearchCacheEntry>();
+
+  const readTxSearchCache = (
+    key: string,
+    neededItems: number,
+  ): AddressTransactionsResult | null => {
+    const entry = txSearchCache.get(key);
+    if (!entry) return null;
+    if (Date.now() > entry.expiresAt) {
+      txSearchCache.delete(key);
+      return null;
+    }
+    txSearchCache.delete(key);
+    txSearchCache.set(key, entry);
+    // A list shorter than its discovery budget means the search exhausted
+    // the window — nothing more to find, any page is servable. Otherwise
+    // the budget must cover the requested slice.
+    if (
+      entry.result.transactions.length < entry.budget ||
+      entry.budget >= neededItems
+    ) {
+      return entry.result;
+    }
+    return null;
+  };
+
+  const writeTxSearchCache = (
+    key: string,
+    result: AddressTransactionsResult,
+    budget: number,
+  ): void => {
+    txSearchCache.delete(key);
+    txSearchCache.set(key, { expiresAt: Date.now() + TX_RESULT_TTL_MS, result, budget });
+    while (txSearchCache.size > TX_RESULT_MAX_ENTRIES) {
+      const oldest = txSearchCache.keys().next().value;
+      if (oldest === undefined) break;
+      txSearchCache.delete(oldest);
+    }
+  };
 
   const getPersistentDataFromDB = async (
     chainId: number,
@@ -377,8 +464,33 @@ const createAddressService = (deps: AddressServiceDeps) => {
       address: Address,
       limit = 20,
       offset = 0,
+      windowBlocks?: number,
     ): Promise<AddressTransactionsResult> => {
-      const doSearch = async (): Promise<AddressTransactionsResult> => {
+      // An explicit window is clamped into [1, MAX]; undefined stays
+      // undefined so the txCount-tiered default range applies.
+      let requestedWindow: number | undefined;
+      if (windowBlocks !== undefined) {
+        requestedWindow = Math.min(
+          Math.max(Math.trunc(windowBlocks), 1),
+          MAX_SEARCH_WINDOW_BLOCKS,
+        );
+      }
+      // Distinct windows are distinct searches; the txCount-tiered default
+      // gets its own key so an explicit window never aliases it.
+      const cacheKey = `${chainId}:${address.toLowerCase()}:${requestedWindow ?? 'default'}`;
+
+      const cached = readTxSearchCache(cacheKey, offset + limit);
+      if (cached) {
+        logger.info(
+          `Serving cached tx search for ${address} on chain ${chainId}`,
+        );
+        return {
+          ...cached,
+          transactions: cached.transactions.slice(offset, offset + limit),
+        };
+      }
+
+      const doSearch = async (budget: number): Promise<AddressTransactionsResult> => {
         const client = await rpcManager.getClient(chainId);
         const [txCount, latestBlock, currentBalance] = await Promise.all([
           client.getTransactionCount({ address }),
@@ -387,12 +499,15 @@ const createAddressService = (deps: AddressServiceDeps) => {
         ]);
 
         if (txCount === 0) {
+          // The nonce counts OUTGOING transactions only. An address that
+          // never sent anything may still have received transfers, which
+          // this heuristic cannot detect — so never claim complete here.
           return {
             transactions: [],
             total: 0,
             method: 'binary-search',
-            coverage: 'complete',
-            reason: 'no-transactions',
+            coverage: 'partial',
+            reason: 'no-outgoing-transactions',
           };
         }
 
@@ -403,22 +518,21 @@ const createAddressService = (deps: AddressServiceDeps) => {
           );
           return {
             transactions: [],
-            total: Number(txCount),
+            total: 0,
             method: 'binary-search-skipped',
             coverage: 'none',
             reason: 'zero-balance',
           };
         }
 
-        const searchRange = getSearchRange(txCount);
+        const searchRange = resolveSearchWindow(txCount, requestedWindow);
         const lo = latestBlock > searchRange ? latestBlock - searchRange : 0n;
         const rpcCallCount = { value: 3 };
 
-        const fetchLimit = offset + limit;
-
         logger.info(
           `Binary search for ${address} on chain ${chainId}: ` +
-          `txCount=${txCount}, range=[${lo}..${latestBlock}], fetchLimit=${fetchLimit}`,
+          `txCount=${txCount}, range=[${lo}..${latestBlock}], ` +
+          `window=${searchRange}, discoveryLimit=${budget}`,
         );
 
         const allTxs = await binarySearchBalanceChanges(
@@ -426,7 +540,7 @@ const createAddressService = (deps: AddressServiceDeps) => {
           address,
           lo,
           latestBlock,
-          fetchLimit,
+          budget,
           rpcCallCount,
         );
 
@@ -438,26 +552,38 @@ const createAddressService = (deps: AddressServiceDeps) => {
 
         const deduped = allTxs.filter((tx, i, arr) => i === 0 || tx.hash !== arr[i - 1].hash);
 
-        const paged = deduped.slice(offset, offset + limit);
-
         logger.info(
           `Binary search complete: found ${deduped.length} txs, ` +
-          `returning ${paged.length} (offset=${offset}), rpcCalls=${rpcCallCount.value}`,
+          `rpcCalls=${rpcCallCount.value}`,
         );
 
+        // total reports what discovery actually found. The nonce counts
+        // outgoing txs only and must never masquerade as the list length.
         return {
-          transactions: paged,
-          total: Number(txCount),
+          transactions: deduped,
+          total: deduped.length,
           method: 'binary-search',
           // A successful search is still partial: the algorithm only sees
-          // native-token balance changes within the capped window.
+          // native-token balance changes within the searched window.
           coverage: 'partial',
           searchWindowBlocks: Number(searchRange),
         };
       };
 
       try {
-        return await withTimeout(doSearch(), TX_SEARCH_TIMEOUT_MS, 'Address transaction search');
+        const budget = discoveryBudgetFor(offset, limit);
+        const result = await withTimeout(
+          doSearch(budget),
+          TX_SEARCH_TIMEOUT_MS,
+          'Address transaction search',
+        );
+        // Cache the canonical full-list result; failures stay uncached so
+        // the next request retries instead of memorizing the error.
+        writeTxSearchCache(cacheKey, result, budget);
+        return {
+          ...result,
+          transactions: result.transactions.slice(offset, offset + limit),
+        };
       } catch (error) {
         logger.error({ err: error }, `Binary search failed for ${address}`);
         return {
@@ -468,6 +594,10 @@ const createAddressService = (deps: AddressServiceDeps) => {
           reason: 'search-failed',
         };
       }
+    },
+
+    clearTransactionsCache: (): void => {
+      txSearchCache.clear();
     },
 
     getAddressInfo: async (chainId: number, address: Address): Promise<AddressInfo> => {

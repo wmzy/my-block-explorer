@@ -29,8 +29,11 @@ export function readRememberedChainId(): number | undefined {
 // an Ethereum-family explorer), else the head of the sorted chain list.
 // getSupportedChainIds()[0] would instead land on whatever chain viem's
 // alphabetical export order puts first — an arbitrary chain, not a product
-// default.
-function getPreferredChainId(): number {
+// default. Exported for the unsupported-chain recovery CTAs: unlike
+// resolveLandingChainPath they must NOT fall back to the viewer's
+// remembered chain (a shared /chain/999 link must offer a deterministic
+// destination, not the link opener's last-browsed chain).
+export function getPreferredChainId(): number {
   if (isChainSupported(1)) return 1;
   return getSortedChains()[0]?.id ?? 1;
 }

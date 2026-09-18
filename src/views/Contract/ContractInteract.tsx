@@ -104,6 +104,26 @@ const resetButtonStyles = css`
   }
 `;
 
+// Wraps the block override row so the inline error can claim its own line.
+const blockGroupStyles = css`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+`;
+
+const blockErrorStyles = css`
+  flex-basis: 100%;
+  font-size: 12px;
+  color: #c62828;
+`;
+
+// The block override feeds viem's bigint `blockNumber` parameter directly —
+// this call path supports no named tags ('latest', 'safe', ...) — so only
+// plain decimal digits are acceptable. Empty input means 'latest'.
+const BLOCK_NUMBER_PATTERN = /^\d+$/;
+const BLOCK_NUMBER_ERROR = 'Enter a block number';
+
 // Interact tab: parses the (possibly proxy + implementation) ABI into the
 // unified function list, exposes read/write/name filters and a global block
 // override, and routes each submit to a read or a write simulation.
@@ -128,6 +148,7 @@ export function ContractInteract({
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loadingStates, setLoadingStates] = useState<Record<string, boolean>>({});
   const [globalBlockNumber, setGlobalBlockNumber] = useState('');
+  const [blockError, setBlockError] = useState('');
   const [filters, setFilters] = useState<FilterState>({
     readWrite: 'all',
     source: 'all',
@@ -172,17 +193,39 @@ export function ContractInteract({
     return baseABI;
   };
 
+  // Live field-level feedback: digits only (decimal block height); empty
+  // input clears the override back to 'latest'.
+  const handleGlobalBlockChange = (value: string) => {
+    setGlobalBlockNumber(value);
+    const trimmed = value.trim();
+    setBlockError(
+      trimmed === '' || BLOCK_NUMBER_PATTERN.test(trimmed) ? '' : BLOCK_NUMBER_ERROR,
+    );
+  };
+
+  // Guard for the submit paths: undefined = no override (query 'latest'),
+  // null = invalid input (the caller must skip the network call — an
+  // unguarded BigInt() here used to throw and surface as a misleading
+  // generic 'Network error'), bigint = validated override.
+  const parseGlobalBlock = (): bigint | null | undefined => {
+    const trimmed = globalBlockNumber.trim();
+    if (trimmed === '') return undefined;
+    if (!BLOCK_NUMBER_PATTERN.test(trimmed)) {
+      setBlockError(BLOCK_NUMBER_ERROR);
+      return null;
+    }
+    return BigInt(trimmed);
+  };
+
   const loadContractFunctions = async () => {
     try {
       setLoading(true);
 
-      if (!contractSource) {
-        return;
-      }
-
-      const proxyABI = abiOverride ?? contractSource.abi;
+      // A pasted custom ABI stands in for a missing server source: parse it
+      // on its own, and only layer proxy/impl ABIs when a source exists.
+      const proxyABI = abiOverride ?? contractSource?.abi;
       const implABI =
-        contractSource.isProxy && contractSource.implementationContract
+        contractSource?.isProxy && contractSource.implementationContract
           ? contractSource.implementationContract.abi
           : undefined;
 
@@ -202,21 +245,26 @@ export function ContractInteract({
     _value?: string,
     _from?: string,
   ) => {
-    const key = `${functionName}-${argsKey(rawArgs)}-${globalBlockNumber || 'latest'}`;
+    const key = `${functionName}-${argsKey(rawArgs)}-${globalBlockNumber.trim() || 'latest'}`;
+
+    // Invalid block override: field-level error, no network call.
+    const blockOverride = parseGlobalBlock();
+    if (blockOverride === null) {
+      return;
+    }
 
     try {
       setLoadingStates(prev => ({ ...prev, [key]: true }));
       setErrors(prev => ({ ...prev, [key]: '' }));
 
-      if (!contractSource) {
+      const targetABI = resolveTargetABI();
+      if (!targetABI) {
         setErrors(prev => ({
           ...prev,
-          [key]: 'Contract source not available',
+          [key]: 'Contract ABI not available',
         }));
         return;
       }
-
-      const targetABI = resolveTargetABI();
 
       const result = await readContract({
         chainId,
@@ -224,7 +272,7 @@ export function ContractInteract({
         functionName,
         args,
         abi: targetABI,
-        blockNumber: globalBlockNumber ? BigInt(globalBlockNumber) : undefined,
+        blockNumber: blockOverride,
       });
 
       if (result.success) {
@@ -252,19 +300,24 @@ export function ContractInteract({
   ) => {
     const key = `${functionName}-${argsKey(rawArgs)}-${value ?? ''}-${from ?? ''}`;
 
+    // The simulate path ignores the block override, but an invalid entry is
+    // still flagged at the field so the user sees why the screen disagrees.
+    if (parseGlobalBlock() === null) {
+      return;
+    }
+
     try {
       setLoadingStates(prev => ({ ...prev, [key]: true }));
       setErrors(prev => ({ ...prev, [key]: '' }));
 
-      if (!contractSource) {
+      const targetABI = resolveTargetABI();
+      if (!targetABI) {
         setErrors(prev => ({
           ...prev,
-          [key]: 'Contract source not available',
+          [key]: 'Contract ABI not available',
         }));
         return;
       }
-
-      const targetABI = resolveTargetABI();
 
       const result = await simulateContract({
         chainId,
@@ -319,7 +372,9 @@ export function ContractInteract({
 
   const targetABI = resolveTargetABI();
 
-  if (!contractSource || !targetABI) {
+  // An abiOverride alone is a fully usable ABI: only the total absence of a
+  // target ABI (no server source, no paste) locks the panel.
+  if (!targetABI) {
     return (
       <div className={cardStyles}>
         <h2>{title}</h2>
@@ -385,22 +440,31 @@ export function ContractInteract({
           />
         </div>
 
-        <div className={filterGroupStyles}>
+        <div className={blockGroupStyles}>
           <label className={filterLabelStyles}>Block:</label>
           <input
             type="text"
             value={globalBlockNumber}
-            onChange={e => setGlobalBlockNumber(e.target.value)}
+            onChange={e => handleGlobalBlockChange(e.target.value)}
             placeholder="Latest"
+            aria-label="Block number override"
             className={filterInputStyles}
           />
           <button
             type="button"
-            onClick={() => setGlobalBlockNumber('')}
+            onClick={() => {
+              setGlobalBlockNumber('');
+              setBlockError('');
+            }}
             className={resetButtonStyles}
           >
             Reset
           </button>
+          {blockError && (
+            <div role="alert" className={blockErrorStyles}>
+              {blockError}
+            </div>
+          )}
         </div>
       </div>
 

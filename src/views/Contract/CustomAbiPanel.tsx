@@ -55,9 +55,15 @@ export function parseAbiString(
   }
 }
 
-type AbiValidation = { ok: true; entries: number } | { ok: false; message: string };
+type AbiValidation =
+  | { ok: true; entries: number; ignored: number }
+  | { ok: false; message: string };
 
 const ABI_SHAPE_ERROR = 'ABI must be a JSON array of entries with a string "type" field';
+
+// Entry types that pass structural validation but are not callable through
+// the explorer: they are dropped when the ABI is parsed for the tabs.
+const NON_CALLABLE_TYPES = new Set(['constructor', 'fallback', 'receive']);
 
 // Structural guard for one pasted ABI entry: a non-null object carrying a
 // string `type` field. `name` is intentionally not required — constructor,
@@ -71,7 +77,9 @@ function isAbiEntry(value: unknown): value is Record<string, unknown> {
 }
 
 // Validates a pasted ABI before it is applied: it must JSON-parse, be an
-// array, and every entry must be shaped like an ABI member.
+// array, and every entry must be shaped like an ABI member. The ok result
+// also reports how many entries are non-callable (constructor/fallback/
+// receive) so the feedback can disclose what will be silently dropped.
 export function validateAbiJson(raw: string): AbiValidation {
   let parsed: unknown;
   try {
@@ -85,7 +93,13 @@ export function validateAbiJson(raw: string): AbiValidation {
   if (!Array.isArray(parsed) || !parsed.every(isAbiEntry)) {
     return { ok: false, message: ABI_SHAPE_ERROR };
   }
-  return { ok: true, entries: parsed.length };
+  return {
+    ok: true,
+    entries: parsed.length,
+    ignored: parsed.filter(
+      entry => typeof entry.type === 'string' && NON_CALLABLE_TYPES.has(entry.type),
+    ).length,
+  };
 }
 
 const panelStyles = css`
@@ -253,8 +267,8 @@ export function CustomAbiPanel({
       </div>
       <p className={panelNoteStyles}>
         No ABI is available for this contract from verification services. Paste a contract ABI
-        (a JSON array) to unlock the ABI, Events and Interact views. It is stored in this
-        browser for this chain and address only.
+        (a JSON array) to unlock the ABI, Events and Interact views. It is saved in this
+        browser for this chain and address and persists across sessions.
       </p>
       <textarea
         ref={textareaRef}
@@ -297,7 +311,13 @@ export function CustomAbiPanel({
         </div>
       )}
       {validation?.ok && (
-        <div className={`${feedbackStyles} ok`}>Valid ABI: {validation.entries} entries</div>
+        <div className={`${feedbackStyles} ok`}>
+          Valid ABI: {validation.entries} {validation.entries === 1 ? 'entry' : 'entries'}
+          {validation.ignored > 0 &&
+            ` (${validation.ignored} constructor/fallback/receive ${
+              validation.ignored === 1 ? 'entry' : 'entries'
+            } ignored)`}
+        </div>
       )}
     </div>
   );

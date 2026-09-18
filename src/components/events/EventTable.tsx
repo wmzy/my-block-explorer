@@ -1245,6 +1245,19 @@ export const EventTable: React.FC<EventTableProps> = ({
   // remains the backstop, per design.
   const exportExceedsLimit = pagination.total > EXPORT_MAX_ROWS;
 
+  // Degraded mode: with no discovered backend the export href would be a
+  // broken same-origin relative link — disable the button instead.
+  const backendConnected = getApiBase() !== '';
+
+  // Empty-state honesty: with filters applied, an empty page means nothing
+  // matched them; without any, it means nothing is indexed (yet). Different
+  // problems, different guidance.
+  const hasActiveFilters =
+    dynamicFilters.eventName !== undefined ||
+    dynamicFilters.fromBlock !== undefined ||
+    dynamicFilters.toBlock !== undefined ||
+    argFiltersQueryParam(dynamicFilters.abiFilters) !== undefined;
+
   // Render loading state
   if (loading && events.length === 0) {
     return (
@@ -1285,9 +1298,11 @@ export const EventTable: React.FC<EventTableProps> = ({
       {events.length === 0 && !loading ? (
         <EmptyStateContainer>
           <EmptyStateIcon>📋</EmptyStateIcon>
-          <EmptyStateTitle>未找到事件</EmptyStateTitle>
+          <EmptyStateTitle>No events found</EmptyStateTitle>
           <EmptyStateDescription>
-            此合约尚未发出任何事件，或没有事件匹配当前的过滤器。
+            {hasActiveFilters
+              ? 'No events match the current filters.'
+              : 'No events indexed in this range yet.'}
           </EmptyStateDescription>
         </EmptyStateContainer>
       ) : (
@@ -1613,14 +1628,21 @@ export const EventTable: React.FC<EventTableProps> = ({
                       click hit the backend 400. */}
                   {exportExceedsLimit && (
                     <ExportLimitNotice>
-                      Too many rows ({pagination.total.toLocaleString()}) — export limit is
-                      100,000. Narrow your filters.
+                      Too many rows ({pagination.total.toLocaleString()}) — narrow the block
+                      range or filters and export in chunks (limit 100,000 rows).
+                    </ExportLimitNotice>
+                  )}
+                  {!backendConnected && (
+                    <ExportLimitNotice>
+                      Backend not connected — export unavailable.
                     </ExportLimitNotice>
                   )}
                   <ExportCsvButton
-                    {...(exportExceedsLimit ? {} : { href: exportHref, download: true })}
-                    $disabled={exportExceedsLimit}
-                    aria-disabled={exportExceedsLimit ? true : undefined}
+                    {...(exportExceedsLimit || !backendConnected
+                      ? {}
+                      : { href: exportHref, download: true })}
+                    $disabled={exportExceedsLimit || !backendConnected}
+                    aria-disabled={exportExceedsLimit || !backendConnected ? true : undefined}
                   >
                     Export CSV
                   </ExportCsvButton>

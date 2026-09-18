@@ -3,15 +3,18 @@ import { css } from '@linaria/core';
 import { TypedLink, useMatched } from '@native-router/react';
 
 import TopNavigation from '@/components/TopNavigation';
+import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { CopyableHash } from '@/components/ui/CopyableHash';
 import { DataTable, Pagination, linkStyle, monoStyle } from '@/components/ui/DataTable';
 import { EmptyState, ErrorState } from '@/components/ui/ErrorState';
 import { TableSkeleton } from '@/components/ui/LoadingState';
 import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
-import { getChainInfo, getChainName } from '@/config/chains';
+import { getChainInfo, getChainName, getChainType } from '@/config/chains';
 import { redirectReplace } from '@/views/Home/Landing';
+import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
 import { useLatestBlocks } from '@/services/chainRpc';
+import { useLatestBlocksFeed } from '@/services/homeFeed';
 import { formatNumber, formatRelativeTime } from '@/utils/format';
 
 const LIMIT = 20;
@@ -23,6 +26,28 @@ const listToolbar = css`
   justify-content: space-between;
   align-items: flex-start;
   gap: var(--haze-space-3);
+`;
+
+// PageHeader block + the testnet pill on one row.
+const headerRow = css`
+  display: flex;
+  align-items: center;
+  gap: var(--haze-space-2);
+`;
+
+// Staleness hint row rendered next to the pagination footer: the walk is
+// anchored, but the live head moved on — offer the one-click re-anchor.
+const newBlocksHint = css`
+  display: flex;
+  align-items: center;
+  gap: var(--haze-space-2);
+  padding: var(--haze-space-2) var(--haze-space-3);
+  margin-bottom: var(--haze-space-3);
+  border: 1px solid var(--haze-color-border);
+  border-radius: var(--haze-radius-lg);
+  background: var(--haze-color-primary-subtle);
+  font-size: var(--haze-text-sm);
+  color: var(--haze-color-text);
 `;
 
 // Gas quantities are on-chain integers serialized as strings; parse them
@@ -97,18 +122,45 @@ export default function BlocksList() {
   // anchoredHead - (N-1)*LIMIT. Page 1 therefore uses cursor
   // anchoredHead + 1 — the same blocks the head entry returned, but under
   // a frozen key that background revalidation of the head cannot shift.
-  // Pre-anchor (first load) page 1 rides the head entry itself.
-  const beforeBlock =
+  // Pre-anchor (first load) page 1 rides the head entry itself. The cursor
+  // is clamped at 1 so a walk whose arithmetic would push it to 0 or below
+  // can never request a dead-end page below genesis; the deepest reachable
+  // page just re-reads block 0.
+  const rawCursor =
     anchored !== null ? anchored.head - BigInt((page - 1) * LIMIT) + 1n : undefined;
+  const beforeBlock = rawCursor === undefined ? undefined : rawCursor > 1n ? rawCursor : 1n;
+
   const pageQuery = useLatestBlocks(currentChainId, LIMIT, beforeBlock);
 
   const query = page === 1 && anchored === null ? headQuery : pageQuery;
   const { data, loading, error, refetch } = query;
   const blocks = data?.blocks ?? [];
 
+  // Live head for the staleness hint: the same polled feed the Home view
+  // uses (12s cadence plus a catch-up fetch on visibility regain) keeps
+  // reporting the chain head while the walk above stays anchored. The feed
+  // guards non-positive chain ids without an RPC call, so the unsupported-
+  // chain branch below passes 0 and stays offline.
+  const liveHeadFeed = useLatestBlocksFeed(chainInfo ? currentChainId : 0);
+  const liveHead = liveHeadFeed.data?.latestBlockNumber ?? null;
+  // Blocks mined beyond the frozen anchor since the walk started (or since
+  // the last Refresh). Strictly greater: a head at or below the anchor is
+  // not stale news and renders nothing.
+  const newBlockCount =
+    anchored !== null && liveHead !== null && liveHead > anchored.head
+      ? liveHead - anchored.head
+      : null;
+
   // The frame's head for the pagination label: the frozen anchor once set
   // (it bounds the walk), else the live head.
   const frameHead = anchored?.head ?? latestBlockNumber;
+
+  // Genesis detection: the walk is descending, so the oldest fetched block
+  // is the last row. Once it reaches block 0 there is nothing older —
+  // `blocks.length >= LIMIT` alone would still claim a next page (a full
+  // LIMIT-row page ending at genesis) and walk into an always-empty page.
+  const oldestBlockNumber = blocks.length > 0 ? BigInt(blocks[blocks.length - 1].number) : null;
+  const reachedGenesis = oldestBlockNumber !== null && oldestBlockNumber <= 0n;
 
   // Refresh re-anchors the walk at the live head: refetch the head entry
   // (bypassing its cache slot) and adopt the first newer answer; the page
@@ -130,7 +182,7 @@ export default function BlocksList() {
       <>
         <TopNavigation currentChainId={currentChainId} onChainChange={handleChainChange} />
         <PageContainer>
-          <ErrorState message={`Unsupported chain ID: ${params.chainId ?? ''}`} />
+          <UnsupportedChainState chainId={currentChainId} />
         </PageContainer>
       </>
     );
@@ -141,10 +193,17 @@ export default function BlocksList() {
       <TopNavigation currentChainId={currentChainId} onChainChange={handleChainChange} />
       <PageContainer>
         <div className={listToolbar}>
-          <PageHeader
-            title="Blocks"
-            chainInfo={`${getChainName(currentChainId)} • Chain ID: ${currentChainId}`}
-          />
+          <div className={headerRow}>
+            <PageHeader
+              title="Blocks"
+              chainInfo={`${getChainName(currentChainId)} • Chain ID: ${currentChainId}`}
+            />
+            {getChainType(currentChainId) === 'testnet' && (
+              <Badge variant="warning" size="sm">
+                Testnet
+              </Badge>
+            )}
+          </div>
           <Button
             variant="outline"
             size="sm"
@@ -204,14 +263,35 @@ export default function BlocksList() {
           </DataTable>
         )}
 
+        {/* Staleness hint: the footer's "Latest block" reports the frozen
+            anchor by design, so once the polled live head moves past it the
+            page says so instead of letting Age cells silently creep. One
+            click on Refresh re-anchors the walk (same control as above). */}
+        {blocks.length > 0 && newBlockCount !== null && (
+          <div className={newBlocksHint}>
+            <span>
+              {formatNumber(Number(newBlockCount))} new{' '}
+              {newBlockCount === 1n ? 'block' : 'blocks'} —
+            </span>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleRefresh}
+              disabled={headQuery.fetching}
+            >
+              Refresh
+            </Button>
+          </div>
+        )}
+
         {blocks.length > 0 && (
           <Pagination
             page={page}
             pageInfo={`Page ${page}${
               frameHead !== null ? ` • Latest block: ${formatNumber(Number(frameHead))}` : ''
-            }`}
+            }${reachedGenesis ? ' • Reached genesis' : ''}`}
             hasPrev={page > 1}
-            hasNext={blocks.length >= LIMIT}
+            hasNext={blocks.length >= LIMIT && !reachedGenesis}
             onPrev={() => setPage(p => Math.max(1, p - 1))}
             onNext={() => setPage(p => p + 1)}
             prevLabel="Newer"

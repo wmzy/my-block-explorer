@@ -1,5 +1,3 @@
-import { db, searchHistory } from '../database/init';
-import { sql } from 'drizzle-orm';
 import { createLogger } from '../server/logger';
 import { blockService, type Block } from './BlockService';
 
@@ -38,15 +36,13 @@ export type SearchResult = {
 };
 
 type SearchServiceDeps = {
-  db: typeof import('../database/init').db;
-  searchHistory: typeof import('../database/init').searchHistory;
   blockService: typeof import('./BlockService').blockService;
   transactionService: typeof import('./TransactionService').transactionService;
   addressService: typeof import('./AddressService').addressService;
 };
 
 const createSearchService = (deps: SearchServiceDeps) => {
-  const { db, blockService, transactionService, addressService } = deps;
+  const { blockService, transactionService, addressService } = deps;
 
   const getBlockSuggestions = async (chainId: number): Promise<string[]> => {
     try {
@@ -81,33 +77,6 @@ const createSearchService = (deps: SearchServiceDeps) => {
     }
     catch {
       return ['Enter a valid transaction hash (0x-prefixed, 64 hex chars)'];
-    }
-  };
-
-  // search_history.id is a 32-bit INTEGER (drizzle/0000_init.sql), so
-  // neither crypto.randomUUID() nor epoch milliseconds fit — the previous
-  // Date.now()-seeded counter overflowed int32, so every history insert
-  // failed (swallowed into the warn below). Numeric scheme instead: epoch
-  // seconds captured once at service creation (int32-safe until 2038, and
-  // unique across restarts) offset by a monotonic in-process counter for
-  // bursts within the same second.
-  const SEARCH_ID_STARTUP_SECONDS = Math.floor(Date.now() / 1000);
-  let searchIdCounter = 0;
-
-  const recordSearch = async (
-    chainId: number,
-    query: string,
-    resultType?: SearchResultType,
-  ): Promise<void> => {
-    try {
-      const id = SEARCH_ID_STARTUP_SECONDS + searchIdCounter++;
-      await db.execute(
-        sql`INSERT INTO search_history (id, chain_id, query, search_type, searched_at)
-            VALUES (${id}, ${chainId}, ${query}, ${resultType ?? null}, CURRENT_TIMESTAMP::TIMESTAMP)`,
-      );
-    }
-    catch (error) {
-      logger.warn({ err: error }, 'Failed to record search history');
     }
   };
 
@@ -325,17 +294,9 @@ const createSearchService = (deps: SearchServiceDeps) => {
 
       try {
         // Same normalization + detection as the frontend: the shared helpers
-        // in utils/validation are the single source of truth. The shared
-        // detector reports 'hash' for tx/block hashes; searchTransaction
-        // resolves those (tx lookup first, block-hash fallback), so 'hash'
-        // is recorded as 'transaction' in search history.
+        // in utils/validation are the single source of truth.
         const sanitizedQuery = sanitizeInput(trimmedQuery);
         const searchType = detectSearchType(sanitizedQuery);
-        await recordSearch(
-          chainId,
-          sanitizedQuery,
-          searchType === 'hash' ? 'transaction' : searchType,
-        );
 
         switch (searchType) {
           case 'block':
@@ -376,59 +337,6 @@ const createSearchService = (deps: SearchServiceDeps) => {
         };
       }
     },
-
-    getSearchHistory: async (
-      chainId?: number,
-      limit: number = 50,
-    ): Promise<
-      {
-        query: string;
-        searchType?: string;
-        searchedAt: Date;
-      }[]
-    > => {
-      try {
-        // Optional chain scope: unscoped returns everything; scoped keeps
-        // legacy rows (NULL chain_id, recorded before chain tracking)
-        // visible alongside the requested chain's rows.
-        const chainFilter = chainId !== undefined
-          ? sql`WHERE (chain_id IS NULL OR chain_id = ${chainId})`
-          : sql``;
-
-        const result = await db.execute(
-          sql`SELECT query, search_type, MAX(searched_at) as searched_at
-              FROM search_history
-              ${chainFilter}
-              GROUP BY query, search_type
-              ORDER BY searched_at DESC
-              LIMIT ${limit}`,
-        );
-
-        return (
-          result as unknown as Array<{ query: string; search_type?: string; searched_at: string }>
-        ).map(row => ({
-          query: row.query ?? '',
-          searchType: row.search_type ?? undefined,
-          searchedAt: row.searched_at ? new Date(row.searched_at) : new Date(),
-        }));
-      }
-      catch (error) {
-        logger.error({ err: error }, 'Failed to get search history');
-        return [];
-      }
-    },
-
-    cleanupSearchHistory: async (olderThanDays: number = 30): Promise<void> => {
-      try {
-        await db.execute(
-          sql`DELETE FROM search_history
-              WHERE searched_at < now() - INTERVAL '${sql.raw(String(olderThanDays))} days'`,
-        );
-      }
-      catch (error) {
-        logger.error({ err: error }, 'Failed to cleanup search history');
-      }
-    },
   };
 };
 
@@ -436,8 +344,6 @@ export type SearchService = ReturnType<typeof createSearchService>;
 export { createSearchService };
 
 export const searchService = createSearchService({
-  db,
-  searchHistory,
   blockService,
   transactionService,
   addressService,

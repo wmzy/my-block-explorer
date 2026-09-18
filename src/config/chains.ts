@@ -84,15 +84,26 @@ export function isPopularChain(chainId: number): boolean {
 
 // 获取链的类型（主网/测试网）
 export function getChainType(chainId: number): 'mainnet' | 'testnet' | 'unknown' {
-  const chain = getChainInfo(chainId);
-  if (!chain) return 'unknown';
+  // All viem exports sharing this id (aliases and testnet twins — see the
+  // dedupe note in getSortedChains): any of them flagged testnet classifies
+  // the id as a testnet.
+  const candidates = SUPPORTED_CHAINS.filter(chain => chain.id === chainId);
+  if (candidates.length === 0) return 'unknown';
 
-  // 常见的测试网链ID
+  // viem marks testnets explicitly (chain.testnet === true). Trust the flag
+  // before the legacy heuristics below: it already covers every current
+  // testnet (Holesky 17000, Sepolia 11155111, ...) without this function's
+  // ID/name lists drifting out of date.
+  if (candidates.some(chain => chain.testnet === true)) {
+    return 'testnet';
+  }
+
+  // Legacy heuristic fallback for chains viem does not flag. The dead
+  // pre-merge Ethereum testnet ids (3/4/5/42) are deliberately NOT listed:
+  // newer viem builds either removed them (3/4 → 'unknown' above) or, for
+  // 42, re-assigned the id to LUKSO mainnet — the stale Kovan entry
+  // misclassified a live mainnet as a testnet.
   const testnetIds = [
-    3,
-    4,
-    5,
-    42, // Ethereum testnets
     80001, // Polygon Mumbai
     97, // BSC Testnet
     421611,
@@ -114,11 +125,12 @@ export function getChainType(chainId: number): 'mainnet' | 'testnet' | 'unknown'
   }
 
   // 检查链名称中是否包含测试网标识
-  const name = chain.name.toLowerCase();
+  const name = candidates[0].name.toLowerCase();
   if (
     name.includes('test')
     || name.includes('sepolia')
     || name.includes('goerli')
+    || name.includes('holesky')
     || name.includes('mumbai')
     || name.includes('fuji')
     || name.includes('chiado')
@@ -268,7 +280,7 @@ export function getChainDatabaseConfig(
     rateLimitRpm: 120,
     ...DEFAULT_DATABASE_CONFIG,
     ...overrides,
-  } as ChainDatabaseConfig;
+  };
 }
 
 // 获取多个链的数据库配置
