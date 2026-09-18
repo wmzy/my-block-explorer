@@ -123,13 +123,13 @@ export default function BlockDetail() {
       ? { requested: requestedBlock, latest: latestBlock }
       : undefined;
 
-  // Same-params refresh: the chain switch keeps the block number so the
-  // detail view reloads for the new chain instead of landing on the home
-  // page.
+  // Chain switch: a block NUMBER is not a chain-agnostic identity — the
+  // same number on another chain is a completely different block with
+  // different data. Keeping the number would silently show that unrelated
+  // block as if it were the one being read. Land on the new chain's home
+  // instead: deterministic and honest (the user re-picks a block there).
   const handleChainChange = (newChainId: number) => {
-    void redirectReplace(router, `/chain/${newChainId}/block/${blockNumberStr}`).catch(
-      () => undefined,
-    );
+    void redirectReplace(router, `/chain/${newChainId}`).catch(() => undefined);
   };
 
   // Finality label for the viewed block (same semantics as the list rows):

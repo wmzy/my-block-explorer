@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter, View, createRoutes, useSearchParams } from '@native-router/react';
 import '@testing-library/jest-dom/vitest';
 import AddressView from '@/views/Address';
@@ -126,6 +126,9 @@ const mocks = vi.hoisted(() => {
     tokenRefetch: () => undefined,
     // Loading is per-case (the scanning-copy test flips it).
     txLoading: false,
+    // Per-case RPC eth_getCode result (the classification fallback
+    // channel): undefined = not read yet, '0x' = EOA, bytecode = contract.
+    contractCode: undefined as string | undefined,
     // Every useAddressTransactions call's positional args, captured by the
     // service mock — the Search-deeper tests assert the window arg (index 4).
     txQueryArgs: [] as unknown[],
@@ -155,6 +158,10 @@ vi.mock('../../../src/config/chains', () => ({
   },
   getChainName: (chainId: number) => (chainId === 1 ? 'Ethereum' : 'Unknown'),
   getChainSymbol: (chainId: number) => (chainId === 1 ? 'ETH' : 'UNKNOWN'),
+  // Consumed by the Landing helpers behind UnsupportedChainState
+  // (getPreferredChainId must not fall back to the remembered chain).
+  isChainSupported: (chainId: number) => chainId === 1,
+  getSortedChains: () => [{ id: 1, name: 'Ethereum' }],
 }));
 
 vi.mock('@/services/addresses', () => ({
@@ -182,8 +189,10 @@ vi.mock('@/services/addressRealTime', () => ({
   // refetch is spread in here so per-test reshapes of mocks.realTime keep
   // the Refresh affordance wired without repeating it in every case.
   useRealTimeAddressData: () => ({ ...mocks.realTime, refetch: mocks.realTimeRefetch }),
+  // The RPC code read (contract-classification fallback channel): data is
+  // per-case so the contract-link tests can pin the RPC-only path.
   useContractCode: () => ({
-    data: undefined,
+    data: mocks.contractCode,
     loading: false,
     fetching: false,
     error: undefined,
@@ -196,6 +205,8 @@ vi.mock('@/services/ens', () => ({
 
 // The transfers tab renders the REAL TokenTransfers component against this
 // settled page (ERC-1155 rows → no RPC enrichment, see the fixture above).
+// requestTokenTransfersRefresh is a runtime import of that component
+// (cache-bypass latch for Retry/Refresh) — the factory mock must provide it.
 vi.mock('@/services/tokenTransfers', () => ({
   useTokenTransfers: () => ({
     data: mocks.tokenTransfers,
@@ -204,6 +215,7 @@ vi.mock('@/services/tokenTransfers', () => ({
     error: undefined,
     refetch: mocks.tokenRefetch,
   }),
+  requestTokenTransfersRefresh: () => undefined,
 }));
 
 vi.mock('@/utils/format', () => ({
@@ -258,6 +270,7 @@ describe('Address view', () => {
     };
     mocks.addressTxError = undefined;
     mocks.txLoading = false;
+    mocks.contractCode = undefined;
     mocks.txQueryArgs = [];
     mocks.tokenTransfers = {
       transfers: [
@@ -430,7 +443,11 @@ describe('Address view', () => {
   it('paginates the transaction table', async () => {
     renderPage();
 
-    expect(await screen.findByText('Page 1 of 1')).toBeInTheDocument();
+    // Default payload carries no coverage tags → the discovered total
+    // renders as a floor, not an exact count.
+    expect(
+      await screen.findByText('Page 1 of 1 • At least 2 transactions discovered'),
+    ).toBeInTheDocument();
   });
 
   it('drives the tx pagination from ?page= and writes it back on Prev/Next', async () => {
@@ -443,24 +460,27 @@ describe('Address view', () => {
 
     renderPage(`/chain/1/address/${mocks.testAddress}?page=2`);
 
-    expect(await screen.findByText('Page 2 of 3')).toBeInTheDocument();
+    // Complete coverage may read as an exact total.
+    expect(await screen.findByText('Page 2 of 3 • 25 transactions')).toBeInTheDocument();
     expect(mocks.txQueryArgs[3]).toBe(10);
 
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
-    expect(await screen.findByText('Page 3 of 3')).toBeInTheDocument();
+    expect(await screen.findByText('Page 3 of 3 • 25 transactions')).toBeInTheDocument();
     expect(mocks.txQueryArgs[3]).toBe(20);
     // The page number landed in the URL (shareable/back-forward state).
     expect(screen.getByTestId('search-probe')).toHaveTextContent('page=3');
 
     fireEvent.click(screen.getByRole('button', { name: 'Prev' }));
-    expect(await screen.findByText('Page 2 of 3')).toBeInTheDocument();
+    expect(await screen.findByText('Page 2 of 3 • 25 transactions')).toBeInTheDocument();
     expect(screen.getByTestId('search-probe')).toHaveTextContent('page=2');
   });
 
   it('degrades a malformed ?page= deep link to page 1 instead of throwing', async () => {
     renderPage(`/chain/1/address/${mocks.testAddress}?page=abc`);
 
-    expect(await screen.findByText('Page 1 of 1')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Page 1 of 1 • At least 2 transactions discovered'),
+    ).toBeInTheDocument();
   });
 
   it('switches the activity card between Transactions and Token Transfers tabs', async () => {
@@ -525,6 +545,31 @@ describe('Address view', () => {
     expect(link?.getAttribute('href')).toBe(`/chain/1/contract/${mocks.testAddress}`);
   });
 
+  it('renders the contract link from the RPC classification alone when the persistent record says EOA', async () => {
+    // Stale/failed persistent channel: the code read still found bytecode,
+    // and the link is a navigation affordance — either channel suffices.
+    mocks.addressInfo.address = { isContract: false };
+    mocks.contractCode = '0x608060405234801561000f57600080fd5b50';
+
+    renderPage();
+
+    const link = (await screen.findByText('View Contract Details →')).closest('a');
+    expect(link?.getAttribute('href')).toBe(`/chain/1/contract/${mocks.testAddress}`);
+    // Backend-data rows stay gated on the persistent channel: an RPC-only
+    // classification must not fabricate contract name/verification rows.
+    expect(screen.queryByText('Contract Name')).not.toBeInTheDocument();
+    expect(screen.queryByText('Verification Status')).not.toBeInTheDocument();
+  });
+
+  it('keeps the contract link hidden when the code read says EOA', async () => {
+    mocks.contractCode = '0x';
+
+    renderPage();
+
+    await screen.findByText('Overview');
+    expect(screen.queryByText('View Contract Details →')).not.toBeInTheDocument();
+  });
+
   it('warns about an unknown data source instead of a trusted empty state when coverage is missing', async () => {
     // Pre-coverage cached payload: no coverage/method tags at all.
     mocks.addressTransactions = { transactions: [], total: 0 };
@@ -578,8 +623,9 @@ describe('Address view', () => {
 
     fireEvent.click(deeper);
 
-    // 600,000 * 4 = 2,400,000 blocks — the view must refetch with it.
-    expect(mocks.txQueryArgs[4]).toBe(2_400_000);
+    // 600,000 * 4 = 2,400,000 blocks — the URL write settles
+    // asynchronously (navigate), so await the refetch with it.
+    await waitFor(() => expect(mocks.txQueryArgs[4]).toBe(2_400_000));
   });
 
   it('Search deeper disables at the RPC budget cap and explains why via title', async () => {
@@ -595,6 +641,70 @@ describe('Address view', () => {
     const deeper = await screen.findByRole('button', { name: 'Search deeper' });
     expect(deeper).toBeDisabled();
     expect(deeper).toHaveAttribute('title', 'maximum RPC budget reached');
+  });
+
+  it('writes the deepened window into ?window= where it survives pagination', async () => {
+    mocks.addressTransactions = {
+      transactions: mocks.mockTransactions,
+      total: 25,
+      coverage: 'partial',
+      searchWindowBlocks: 600_000,
+    };
+
+    renderPage(`/chain/1/address/${mocks.testAddress}?page=2`);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Search deeper' }));
+
+    // 600,000 * 4 = 2,400,000 — lands in the URL next to ?page= (merge,
+    // not clobber). The write is a pushed history entry like ?page=, so
+    // back/forward steps between the shallow and deepened windows.
+    await waitFor(() =>
+      expect(screen.getByTestId('search-probe')).toHaveTextContent('window=2400000'),
+    );
+    expect(screen.getByTestId('search-probe')).toHaveTextContent('page=2');
+    // The window reaches the tx query from the URL.
+    expect(mocks.txQueryArgs[4]).toBe(2_400_000);
+
+    // Pagination must keep the widened window: the page write merges too.
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+    await waitFor(() =>
+      expect(screen.getByTestId('search-probe')).toHaveTextContent('page=3'),
+    );
+    expect(screen.getByTestId('search-probe')).toHaveTextContent('window=2400000');
+    expect(mocks.txQueryArgs[4]).toBe(2_400_000);
+  });
+
+  it('seeds the search window from a shared ?window= deep link', async () => {
+    renderPage(`/chain/1/address/${mocks.testAddress}?window=2400000`);
+
+    await screen.findByRole('group', { name: 'Recent activity' });
+    // The window arg rides the tx query from the URL alone (absent value
+    // would be undefined — the backend default window).
+    expect(mocks.txQueryArgs[4]).toBe(2_400_000);
+  });
+
+  it('degrades a malformed ?window= deep link to the default window', async () => {
+    renderPage(`/chain/1/address/${mocks.testAddress}?window=abc`);
+
+    await screen.findByRole('group', { name: 'Recent activity' });
+    expect(mocks.txQueryArgs[4]).toBeUndefined();
+  });
+
+  it('renders the discovered total as a floor ("at least N") for partial coverage', async () => {
+    // `total` counts heuristic discovery only: without authoritative
+    // 'complete' coverage it must never read as an exact count.
+    mocks.addressTransactions = {
+      transactions: mocks.mockTransactions,
+      total: 42,
+      coverage: 'partial',
+      searchWindowBlocks: 600_000,
+    };
+
+    renderPage();
+
+    expect(
+      await screen.findByText('Page 1 of 5 • At least 42 transactions discovered'),
+    ).toBeInTheDocument();
   });
 
   it('shows "No transactions on this page" — never the empty-state banners — when the page slid past the data', async () => {
@@ -707,10 +817,21 @@ describe('Address view', () => {
     expect(screen.queryByText(/Transaction data source unknown/)).not.toBeInTheDocument();
   });
 
-  it('shows unsupported chain error for invalid chain', async () => {
+  it('shows the unsupported-chain recovery state with CTAs for an invalid chain', async () => {
     renderPage(`/chain/999/address/${mocks.testAddress}`);
 
-    expect(await screen.findByText(/Unsupported chain ID/)).toBeInTheDocument();
+    // Same recovery pattern as Home/Blocks: name the requested id and offer
+    // deterministic CTAs instead of a bare dead-end error.
+    expect(await screen.findByText(/Chain not supported/)).toBeInTheDocument();
+    expect(screen.getByText(/chain ID 999/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Go to Mainnet' })).toHaveAttribute(
+      'href',
+      '/chain/1',
+    );
+    expect(screen.getByRole('link', { name: 'Open chain list' })).toHaveAttribute(
+      'href',
+      '/',
+    );
   });
 
   it('shows checksum guidance instead of the raw 400 for a bad-checksum address', async () => {

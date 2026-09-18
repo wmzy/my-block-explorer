@@ -13,6 +13,7 @@ import { TableSkeleton } from '@/components/ui/LoadingState';
 import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
 import { getChainInfo, getChainName, getChainSymbol } from '@/config/chains';
 import { redirectReplace } from '@/views/Home/Landing';
+import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
 import { useLatestTransactions } from '@/services/chainRpc';
 import { txCursorFromBlock } from '@/utils/blockRpcData';
 import { formatEth, formatNumber, formatRelativeTime } from '@/utils/format';
@@ -197,7 +198,9 @@ export default function TransactionsList() {
       <>
         <TopNavigation currentChainId={currentChainId} onChainChange={handleChainChange} />
         <PageContainer>
-          <ErrorState message={`Unsupported chain ID: ${params.chainId ?? ''}`} />
+          {/* Unsupported-chain deep link: recovery CTAs instead of a bare
+              error (Home/Blocks pattern). */}
+          <UnsupportedChainState chainId={currentChainId} />
         </PageContainer>
       </>
     );

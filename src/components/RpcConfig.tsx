@@ -4,6 +4,7 @@ import { Dialog } from 'haze-ui';
 import { useControl, type Control } from 'react-use-control';
 import { toast } from 'sonner';
 import { ApiError } from '../util/apiError';
+import { get } from '../util/http';
 import { clearAdminToken, hasAdminToken, setAdminToken } from '../util/adminAuth';
 import { getChainName } from '../config/chains';
 import { getRpcPresets, type RpcPreset } from '../config/rpcPresets';
@@ -255,6 +256,20 @@ const adminNoticeStyles = css`
   margin-bottom: 12px;
 `;
 
+// Saving an RPC config hot-reloads the server-wide RpcManager, so the
+// custom-endpoint form carries a persistent heads-up that this affects
+// every user of the backend, not just this browser.
+const globalEffectHintStyles = css`
+  background: #fff3cd;
+  border: 1px solid #ffe69c;
+  color: #664d03;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  margin-top: 8px;
+`;
+
 type Props = {
   open?: Control<boolean>;
   onClose?: () => void;
@@ -317,10 +332,38 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
     setAdminToken(token);
     setAdminTokenStored(true);
     setAdminTokenInput('');
-    toast.success('Admin token saved.');
     // The http layer picks the token up on the next request; drop any
     // stale save-403 notice and refetch so the config list updates.
     setSaveForbidden(false);
+
+    // Verify instead of toasting success blindly: hit a requireAdminToken
+    // endpoint (the http layer attaches the just-stored token) and report
+    // what the server actually said.
+    try {
+      await get('/api/performance/events');
+      toast.success('Admin token saved & verified.');
+    }
+    catch (error) {
+      if (error instanceof ApiError && error.status === 403) {
+        // requireAdminToken fails closed, so a 403 covers both a wrong
+        // token and a server with no ADMIN_TOKEN configured at all — the
+        // status alone cannot tell them apart, so say exactly that.
+        toast.error(
+          'Token saved, but the server rejected it — wrong token, or the server has no ADMIN_TOKEN configured.',
+        );
+      }
+      else {
+        // Transport failure (e.g. the degraded-mode fast reject 'Backend
+        // not connected — indexed data unavailable') or an unexpected
+        // server error: surface the real message verbatim.
+        toast.error(
+          error instanceof ApiError
+            ? error.message
+            : 'Admin token saved, but verification failed.',
+        );
+      }
+    }
+
     await loadCurrentConfig();
   };
 
@@ -335,7 +378,7 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
 
   const handlePresetSelect = async (preset: RpcPreset) => {
     if (preset.url.includes('YOUR_')) {
-      // 需要用户输入API密钥
+      // Preset URL is a template: the user must supply their own API key.
       setCustomName(preset.name);
       setCustomUrl(preset.url);
       setShowCustomForm(true);
@@ -350,7 +393,7 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
     setTestResult(null);
 
     try {
-      // 测试连接
+      // Test the connection first; a failed probe never reaches the save.
       const result = await testRpcConnection(url, chainId);
       setTestResult(result);
 
@@ -361,7 +404,7 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
         return;
       }
 
-      // 验证链ID是否匹配
+      // Verify the chain ID matches the explorer's target chain.
       if (result.detectedChainId && result.detectedChainId !== chainId) {
         toast.error(
           `Chain ID mismatch!\nExpected: ${chainId}\nActual: ${result.detectedChainId}\n\nPlease confirm the RPC URL corresponds to the correct chain.`,
@@ -369,7 +412,7 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
         return;
       }
 
-      // 验证历史数据支持
+      // Verify historical data support.
       if (!result.supportsHistory) {
         // eslint-disable-next-line no-alert
         const confirmContinue = window.confirm(
@@ -380,7 +423,7 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
         }
       }
 
-      // 验证maxEventRange
+      // Validate maxEventRange.
       const finalMaxEventRange = maxEventRange ?? result.maxEventRange;
       if (finalMaxEventRange && finalMaxEventRange > 10000) {
         // eslint-disable-next-line no-alert
@@ -392,7 +435,7 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
         }
       }
 
-      // 保存配置
+      // Save the config.
       await saveRpcConfig({
         chainId,
         name,
@@ -417,13 +460,23 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
       if (error instanceof ApiError && error.status === 403) {
         setSaveForbidden(true);
       }
-      // The 403 body carries a server message explaining the gate; show
-      // it verbatim.
-      toast.error(
-        error instanceof ApiError && error.status === 403 && error.message
-          ? error.message
-          : 'Failed to save configuration. Please check your network connection.',
-      );
+      if (error instanceof ApiError && error.status === 0) {
+        // Transport-level failure: the ApiError message is the real
+        // cause — most notably the degraded-mode fast reject ('Backend
+        // not connected — indexed data unavailable'), which is a
+        // diagnosis, not a network hiccup. Surface it instead of the
+        // generic network advice.
+        toast.error(error.message);
+      }
+      else {
+        // The 403 body carries a server message explaining the gate;
+        // show it verbatim. Anything else degrades to generic advice.
+        toast.error(
+          error instanceof ApiError && error.status === 403 && error.message
+            ? error.message
+            : 'Failed to save configuration. Please check your network connection.',
+        );
+      }
     }
     finally {
       setLoading(false);
@@ -483,14 +536,14 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
         <button onClick={handleClose}>×</button>
       </div>
 
-      {/* 当前配置状态 */}
+      {/* Current configuration status */}
       <div className={sectionStyles}>
-        <h3>当前状态</h3>
+        <h3>Current status</h3>
         <div className={currentConfigStyles}>
           {currentConfig
             ? (
                 <>
-                  <div className="status custom">✅ 使用自定义RPC节点</div>
+                  <div className="status custom">✅ Using a custom RPC node</div>
                   <div style={{ marginBottom: '8px' }}>
                     <div style={{ fontWeight: '500', marginBottom: '4px' }}>{currentConfig.name}</div>
                     <div className="url">{currentConfig.url}</div>
@@ -502,34 +555,34 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
                           marginTop: '4px',
                         }}
                       >
-                        📊 事件查询范围:
+                        📊 Event query range:
                         {' '}
                         {currentConfig.maxEventRange}
                         {' '}
-                        个区块
+                        blocks
                       </div>
                     )}
                   </div>
                   <div className="actions">
                     <button className="btn danger small" onClick={handleRemoveConfig}>
-                      恢复默认
+                      Revert to default
                     </button>
                   </div>
                 </>
               )
             : (
-                <div className="status default">🔄 使用默认RPC节点</div>
+                <div className="status default">🔄 Using the default RPC node</div>
               )}
         </div>
       </div>
 
       {!showCustomForm && (
         <>
-          {/* 预设选项 */}
+          {/* Preset options */}
           {presets.length > 0 && (
             <div className={sectionStyles}>
-              <h3>推荐节点</h3>
-              <p>选择一个可信的RPC提供商来提升访问速度和稳定性</p>
+              <h3>Recommended nodes</h3>
+              <p>Pick a trusted RPC provider for better speed and stability</p>
               <div className={presetStyles}>
                 {presets.map((preset, index) => (
                   <div
@@ -551,32 +604,38 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
             </div>
           )}
 
-          {/* 自定义选项 */}
+          {/* Custom option */}
           <div className={sectionStyles}>
-            <h3>自定义节点</h3>
-            <p>如果您有私有RPC节点或其他提供商的节点</p>
+            <h3>Custom node</h3>
+            <p>If you have a private RPC node or one from another provider</p>
             <div className={buttonStyles}>
               <button className="btn secondary" onClick={() => setShowCustomForm(true)}>
-                添加自定义RPC
+                Add custom RPC
               </button>
+            </div>
+            <div className={globalEffectHintStyles}>
+              Saved RPC configs apply to this backend for ALL users, not just this browser.
             </div>
           </div>
         </>
       )}
 
-      {/* 自定义表单 */}
+      {/* Custom endpoint form */}
       {showCustomForm && (
         <div className={sectionStyles}>
-          <h3>添加自定义RPC节点</h3>
+          <h3>Add a custom RPC node</h3>
+          <div className={globalEffectHintStyles}>
+            Saved RPC configs apply to this backend for ALL users, not just this browser.
+          </div>
           <form onSubmit={handleCustomSubmit} className={customFormStyles}>
             <div className="form-group">
-              <label htmlFor={`${customFormId}-name`}>节点名称</label>
+              <label htmlFor={`${customFormId}-name`}>Node name</label>
               <input
                 id={`${customFormId}-name`}
                 type="text"
                 value={customName}
                 onChange={e => setCustomName(e.target.value)}
-                placeholder="例如：我的私有节点"
+                placeholder="e.g. My private node"
                 required
               />
             </div>
@@ -592,13 +651,13 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
               />
             </div>
             <div className="form-group">
-              <label htmlFor={`${customFormId}-max-range`}>最大事件查询范围（可选）</label>
+              <label htmlFor={`${customFormId}-max-range`}>Max event query range (optional)</label>
               <input
                 id={`${customFormId}-max-range`}
                 type="number"
                 value={customMaxEventRange}
                 onChange={e => setCustomMaxEventRange(e.target.value)}
-                placeholder="例如：5000（留空将自动检测）"
+                placeholder="e.g. 5000 (leave empty to auto-detect)"
                 min="100"
                 max="50000"
               />
@@ -609,7 +668,8 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
                   marginTop: '4px',
                 }}
               >
-                设置单次查询事件的最大区块范围。较小的值更稳定，较大的值查询更快但可能超时。
+                Maximum block range per event query. Smaller values are more
+                stable; larger values are faster but may time out.
               </div>
             </div>
 
@@ -630,9 +690,9 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
                         <div style={{ marginBottom: '8px' }}>
                           ✅
                           {' '}
-                          <strong>连接成功</strong>
+                          <strong>Connection successful</strong>
                           {' '}
-                          (延迟:
+                          (latency:
                           {' '}
                           {testResult.latency}
                           ms)
@@ -640,7 +700,7 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
                         <div style={{ fontSize: '12px', lineHeight: '1.4' }}>
                           {testResult.detectedChainId && (
                             <div>
-                              🔗 链ID:
+                              🔗 Chain ID:
                               {' '}
                               {testResult.detectedChainId}
                               {' '}
@@ -648,15 +708,15 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
                             </div>
                           )}
                           <div>
-                            📚 历史数据:
-                            {testResult.supportsHistory ? '✅ 支持' : '❌ 不支持'}
+                            📚 Historical data:
+                            {testResult.supportsHistory ? '✅ supported' : '❌ not supported'}
                           </div>
                           {testResult.maxEventRange && (
                             <div>
-                              📊 推荐事件范围:
+                              📊 Recommended event range:
                               {testResult.maxEventRange}
                               {' '}
-                              个区块
+                              blocks
                             </div>
                           )}
                         </div>
@@ -667,7 +727,7 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
                         <div style={{ marginBottom: '8px' }}>
                           ❌
                           {' '}
-                          <strong>连接失败</strong>
+                          <strong>Connection failed</strong>
                         </div>
                         <div style={{ fontSize: '12px', color: '#721c24' }}>{testResult.error}</div>
                         <div
@@ -680,7 +740,7 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
                             borderRadius: '3px',
                           }}
                         >
-                          验证命令:
+                          Verification commands:
                           <br />
                           cast chain-id --rpc-url
                           {' '}
@@ -697,7 +757,7 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
 
             <div className={`${buttonStyles} btn-group`}>
               <button type="submit" className="btn primary" disabled={loading}>
-                {loading ? '测试并保存中...' : '测试并保存'}
+                {loading ? 'Testing & saving...' : 'Test & save'}
               </button>
               <button
                 type="button"
@@ -710,7 +770,7 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
                   setTestResult(null);
                 }}
               >
-                取消
+                Cancel
               </button>
             </div>
           </form>

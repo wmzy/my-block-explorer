@@ -1,5 +1,5 @@
 import { css, cx } from '@linaria/core';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { Alert } from 'haze-ui';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
@@ -31,6 +31,11 @@ const PACKAGE_MANAGERS: { key: PackageManager; label: string; command: string }[
   { key: 'pnpm', label: 'pnpm dlx', command: 'pnpm dlx my-block-explorer --port 8201' },
   { key: 'bunx', label: 'bunx', command: 'bunx my-block-explorer --port 8201' },
 ];
+
+// While the setup screen is open, keep re-probing so the "automatically
+// detect" promise is literal: the user starts the backend and the screen
+// flips without a manual Refresh click.
+const REPROBE_INTERVAL_MS = 4000;
 
 const containerStyle = css`
   position: fixed;
@@ -374,6 +379,34 @@ export function SetupRequiredScreen({
   const [copied, setCopied] = useState(false);
 
   const currentCommand = PACKAGE_MANAGERS.find(p => p.key === packageManager)?.command ?? '';
+
+  // Interval re-probe. The latest callbacks are read through refs so the
+  // timer itself is created once per mount and always fires against
+  // fresh props (a parent re-render must not restart the countdown).
+  const onDiscoverRef = useRef(onDiscover);
+  useEffect(() => {
+    onDiscoverRef.current = onDiscover;
+  }, [onDiscover]);
+  const isConnectingRef = useRef(isConnecting);
+  useEffect(() => {
+    isConnectingRef.current = isConnecting;
+  }, [isConnecting]);
+
+  useEffect(() => {
+    let reprobeInFlight = false;
+    const timer = setInterval(() => {
+      // Skip while a discovery round or a manual connect is already in
+      // progress (the gate wires isConnecting to the hook's isScanning).
+      if (isConnectingRef.current || reprobeInFlight) return;
+      reprobeInFlight = true;
+      void Promise.resolve(onDiscoverRef.current())
+        .catch(() => {})
+        .finally(() => {
+          reprobeInFlight = false;
+        });
+    }, REPROBE_INTERVAL_MS);
+    return () => clearInterval(timer);
+  }, []);
 
   const handleCopy = useCallback(async () => {
     try {

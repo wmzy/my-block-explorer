@@ -117,6 +117,7 @@ describe('Events CSV export API', () => {
             eventName: 'Transfer',
             decodedArgs,
             address: contractAddress,
+            isFinalized: false,
           },
         ] as unknown as Awaited<ReturnType<typeof exportService.fetchFilteredEventsForExport>>,
       );
@@ -139,6 +140,7 @@ describe('Events CSV export API', () => {
       'event_name',
       'decoded_args',
       'address',
+      'is_finalized',
     ]);
     expect(rows[1]).toEqual([
       '18000001',
@@ -148,6 +150,8 @@ describe('Events CSV export API', () => {
       'Transfer',
       decodedArgs,
       contractAddress,
+      // Unfinalized rows still export (no behavior break); the flag is a column.
+      'false',
     ]);
     // The export filter must reach the count/fetch queries.
     expect(countSpy).toHaveBeenCalledWith(

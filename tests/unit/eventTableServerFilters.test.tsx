@@ -164,4 +164,35 @@ describe('EventTable server-side filtering and export', () => {
       await screen.findByText('Filtering runs on the full indexed set'),
     ).toBeInTheDocument();
   });
+
+  it('shows an unfinalized badge only on rows the chain has not finalized', async () => {
+    vi.mocked(get).mockResolvedValue({
+      events: [
+        {
+          blockNumber: 1,
+          blockTimestamp: 1700000000,
+          transactionHash: '0xabc',
+          eventName: 'Transfer',
+          decodedArgs: '{"owner":"0xabc"}',
+          isFinalized: false,
+        },
+        {
+          blockNumber: 2,
+          blockTimestamp: 1700000001,
+          transactionHash: '0xabd',
+          eventName: 'Transfer',
+          decodedArgs: '{"owner":"0xabc"}',
+          isFinalized: true,
+        },
+      ],
+      total: 2,
+      page: 1,
+      totalPages: 1,
+    });
+    renderTable();
+
+    // Exactly one badge: on the unfinalized row, not the finalized one.
+    const badges = await screen.findAllByText('unfinalized');
+    expect(badges).toHaveLength(1);
+  });
 });

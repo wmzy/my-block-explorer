@@ -34,6 +34,9 @@ vi.mock('@/config/chains', () => ({
   },
   getChainName: (chainId: number) => (chainId === 1 ? 'Ethereum' : 'Unknown'),
   getChainSymbol: (chainId: number) => (chainId === 1 ? 'ETH' : 'UNKNOWN'),
+  // Consumed by the Landing helpers behind UnsupportedChainState.
+  isChainSupported: (chainId: number) => chainId === 1,
+  getSortedChains: () => [{ id: 1, name: 'Ethereum' }],
 }));
 
 // Real formatters are pure functions; keep them (formatEth included) instead
@@ -170,9 +173,21 @@ describe('TransactionsList view', () => {
     expect(await screen.findByText('No transactions found')).toBeInTheDocument();
   });
 
-  it('shows unsupported chain error for invalid chain', async () => {
+  it('shows the unsupported-chain recovery state with CTAs for an invalid chain', async () => {
     renderTransactionsList('/chain/999/transactions');
-    expect(await screen.findByText(/Unsupported chain ID/)).toBeInTheDocument();
+
+    // Same recovery pattern as Home/Blocks: name the requested id and offer
+    // deterministic CTAs instead of a bare dead-end error.
+    expect(await screen.findByText(/Chain not supported/)).toBeInTheDocument();
+    expect(screen.getByText(/chain ID 999/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Go to Mainnet' })).toHaveAttribute(
+      'href',
+      '/chain/1',
+    );
+    expect(screen.getByRole('link', { name: 'Open chain list' })).toHaveAttribute(
+      'href',
+      '/',
+    );
   });
 
   it('renders Pending for transactions without a receipt (status -1)', async () => {

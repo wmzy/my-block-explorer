@@ -7,21 +7,45 @@ const logger = createLogger('rpc-config-routes');
 import { rpcManager } from '../services/RpcManager';
 import { getValidatedChainId } from '../server/validation';
 import { requireAdminTokenIfConfigured } from '../middleware/admin-token';
+import { isAllowedCorsOrigin } from '../middleware/cors-origins';
 
 const app = new Hono();
 
-// Reads are open: the response contains endpoint URLs, no secrets, and
-// the RPC config modal needs them without an admin token.
+// Custom endpoint URLs routinely embed provider API keys in the path or
+// query (the RPC config modal invites exactly that), so they are secrets
+// despite sitting in a "URL" field. Redact to scheme + host; a URL that
+// does not parse degrades to an opaque marker rather than leaking.
+function redactUrl(url: string): string {
+  try {
+    const { protocol, host } = new URL(url);
+    return `${protocol}//${host}/…`;
+  }
+  catch {
+    return '…';
+  }
+}
+
+// Reads are open (the RPC config modal needs them without an admin
+// token), but the full URL only goes to readers the CORS policy already
+// trusts: requests with no Origin header (same-origin UI, curl) and
+// allowlisted origins (loopback + operator-configured extras, decided by
+// the shared cors-origins policy). Any other Origin — which could only
+// read the response through a CORS misconfiguration — gets scheme +
+// host, so a leak cannot disclose the key. The isCustom flag and the
+// rest of the shape are identical for both readers.
 app.get('/rpc-configs', async (c) => {
   try {
     const configs = await db.select().from(userRpcConfigs);
+
+    const origin = c.req.header('origin');
+    const seesFullUrl = !origin || isAllowedCorsOrigin(origin);
 
     return c.json({
       configs: configs.map(config => ({
         id: config.chainId.toString(),
         chainId: config.chainId,
         name: config.name,
-        url: config.url,
+        url: config.url ? (seesFullUrl ? config.url : redactUrl(config.url)) : null,
         isCustom: true,
         supportsHistory: config.supportsHistory,
         maxEventRange: config.maxEventRange,

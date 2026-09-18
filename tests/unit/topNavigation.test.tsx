@@ -405,7 +405,8 @@ describe('TopNavigation', () => {
 
     // Resolution goes through a mainnet client (ENS registry lives there);
     // the resolved address opens on the chain the user is on. The success
-    // notice labels where resolution happened.
+    // notice names BOTH chains: resolution provenance (Ethereum) and the
+    // destination (Polygon).
     await waitFor(() => {
       expect(mockCreateRpcClient).toHaveBeenCalledWith(1);
       expect(mockNavigate).toHaveBeenCalledWith(
@@ -413,7 +414,42 @@ describe('TopNavigation', () => {
         '/chain/137/address/0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045',
       );
     });
-    expect(await screen.findByText(/Resolved vitalik\.eth → .* on Ethereum/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/Resolved vitalik\.eth → .* on Ethereum — opening on Polygon/),
+    ).toBeInTheDocument();
+  });
+
+  it('records an ENS search into history only once it resolves', async () => {
+    renderTopNavigation({ currentChainId: 137, onSearch: undefined });
+
+    const searchInput = screen.getByPlaceholderText('Search address, tx hash, or block number...');
+    fireEvent.change(searchInput, { target: { value: 'vitalik.eth' } });
+    fireEvent.click(screen.getByText('Search'));
+
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith(
+        mockRouter,
+        '/chain/137/address/0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045',
+      );
+    });
+    // The entry appears with the chain the address page opened on.
+    expect(JSON.parse(localStorage.getItem(SEARCH_HISTORY_STORAGE_KEY) ?? '[]')).toEqual([
+      { query: 'vitalik.eth', chainId: 137 },
+    ]);
+  });
+
+  it('never records an unregistered ENS name into history', async () => {
+    mockGetEnsAddress.mockResolvedValueOnce(null);
+    renderTopNavigation({ currentChainId: 1, onSearch: undefined });
+
+    const searchInput = screen.getByPlaceholderText('Search address, tx hash, or block number...');
+    fireEvent.change(searchInput, { target: { value: 'nosuchname.eth' } });
+    fireEvent.click(screen.getByText('Search'));
+
+    expect(
+      await screen.findByText('ENS name "nosuchname.eth" not found (checked on Ethereum)'),
+    ).toBeInTheDocument();
+    expect(JSON.parse(localStorage.getItem(SEARCH_HISTORY_STORAGE_KEY) ?? '[]')).toEqual([]);
   });
 
   it('reports an unregistered ENS name as not found, without a Retry', async () => {
@@ -454,7 +490,7 @@ describe('TopNavigation', () => {
     });
   });
 
-  it('still hints when a hash search finds nothing on the current chain', async () => {
+  it('hints that the hash was not found on the current chain, with a picker link', async () => {
     mockGet.mockResolvedValueOnce({ found: false, degraded: false, type: 'transaction' });
     renderTopNavigation({ currentChainId: 1, onSearch: undefined });
 
@@ -463,9 +499,19 @@ describe('TopNavigation', () => {
     fireEvent.click(screen.getByText('Search'));
 
     expect(
-      await screen.findByText(/No results on Ethereum — try full search/),
+      await screen.findByText(/Hash not found on Ethereum — it may exist on another network/),
     ).toBeInTheDocument();
-    expect(screen.getByText('Search all networks')).toBeInTheDocument();
+    // The escape hatch opens the network picker, not a phantom cross-chain
+    // scan: it goes to the Search view without a chain hint so the hash is
+    // re-run only after a network is explicitly chosen.
+    const pickerLink = screen.getByText('Choose a network →');
+    fireEvent.click(pickerLink);
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith(
+        mockRouter,
+        `/search?q=${encodeURIComponent(`0x${'ab'.repeat(32)}`)}`,
+      );
+    });
   });
 
   it('reports a degraded hash search as a failure, not "no results"', async () => {
@@ -482,9 +528,9 @@ describe('TopNavigation', () => {
     fireEvent.click(screen.getByText('Search'));
 
     expect(await screen.findByText(/Search failed on Ethereum/)).toBeInTheDocument();
-    expect(screen.queryByText(/No results on Ethereum/)).not.toBeInTheDocument();
-    // The full-search escape hatch stays available on failure too.
-    expect(screen.getByText('Search all networks')).toBeInTheDocument();
+    expect(screen.queryByText(/Hash not found on Ethereum/)).not.toBeInTheDocument();
+    // The network picker escape hatch stays available on failure too.
+    expect(screen.getByText('Choose a network →')).toBeInTheDocument();
   });
 });
 

@@ -17,6 +17,9 @@ type EventData = {
   blockTimestamp: string | null;
   transactionHash: `0x${string}`;
   eventName: string;
+  // false until the event's block finalizes and reorg reconciliation
+  // verifies the log; undefined when the API omits the field
+  isFinalized?: boolean | null;
   from?: string;
   to?: string;
   value?: string;
@@ -153,6 +156,20 @@ const EventNameCell = styled(TableCell)`
   font-family: 'Monaco', 'Menlo', monospace;
   font-weight: 600;
   color: #4f46e5;
+`;
+
+// Muted marker for rows whose block is not finalized yet: the event may still
+// be reorged out until then.
+const UnfinalizedBadge = styled.span`
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 500;
+  font-family: inherit;
+  color: #92400e;
+  background: #fef3c7;
+  vertical-align: middle;
 `;
 
 const AddressCell = styled(TableCell)`
@@ -866,6 +883,7 @@ export const EventTable: React.FC<EventTableProps> = ({
           events: Array<{
             decodedArgs?: string | Record<string, unknown>;
             blockTimestamp?: number | string | null;
+            isFinalized?: boolean | null;
             [key: string]: unknown;
           }>;
           total?: number;
@@ -1491,7 +1509,12 @@ export const EventTable: React.FC<EventTableProps> = ({
                 <tr key={`${event.transactionHash}-${index}`}>
                   <TableCell>{event.blockNumber}</TableCell>
                   <TimestampCell>{formatTimestamp(event.blockTimestamp)}</TimestampCell>
-                  <EventNameCell>{event.eventName}</EventNameCell>
+                  <EventNameCell>
+                    {event.eventName}
+                    {event.isFinalized === false && (
+                      <UnfinalizedBadge>unfinalized</UnfinalizedBadge>
+                    )}
+                  </EventNameCell>
                   <AddressCell>
                     {event.from ? (
                       <a

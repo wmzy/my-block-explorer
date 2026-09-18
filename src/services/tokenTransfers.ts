@@ -41,6 +41,22 @@ export type TokenTransferPage = {
   windowBlocks: number;
 };
 
+// One-shot cache-bypass latch for the tab's explicit Retry/Refresh and
+// "Search deeper": the NEXT fetch sends ?refresh=1 so the backend skips
+// its 60s scan cache (even a not-yet-expired 'partial' entry) and
+// overwrites it with the re-scan. Refresh is per-REQUEST semantics and
+// deliberately NOT a hook argument: hook args are the cache identity
+// below, so a refresh boolean riding them would either stick (re-scanning
+// on every page turn) or reset (flashing the stale pre-refresh entry back
+// in). refetch() already drops the frontend cache entry; the latch only
+// needs to reach the wire.
+let refreshNextFetch = false;
+
+/** Arm ?refresh=1 for the next token-transfers fetch (consumed once). */
+export function requestTokenTransfersRefresh(): void {
+  refreshNextFetch = true;
+}
+
 export function fetchTokenTransfers(
   chainId: number,
   address: string,
@@ -53,10 +69,12 @@ export function fetchTokenTransfers(
   // Deliberately long-running: the server scans eth_getLogs under its own
   // ~30s budget — the default 10s per-attempt timeout would abort
   // healthy scans. `window` widens the scanned block range; omitted →
-  // backend default.
+  // backend default. `refresh` is the consumed one-shot latch above.
+  const refresh = refreshNextFetch;
+  refreshNextFetch = false;
   return get<TokenTransferPage>(
     `/api/chains/${chainId}/addresses/${address}/transfers`,
-    { cursor, limit, window },
+    { cursor, limit, window, refresh: refresh ? '1' : undefined },
     withSignal(longRunningApi, signal),
   );
 }

@@ -2,6 +2,7 @@
 // indexed), decoded function list, and the write-side contract read.
 import type { StorageLayout } from '@/types/storage';
 
+import { isChainSupported } from '@/config/chains';
 import { api, get, post, withSignal } from '@/util/http';
 import { bindQueryFn, createQueryCache, createQueryHook } from '@/util/useQuery';
 
@@ -30,7 +31,13 @@ export function fetchContractSource(
   address: string,
   signal?: AbortSignal,
 ): Promise<ContractSource | undefined> {
-  if (!(chainId > 0) || address.length === 0) return Promise.resolve(undefined);
+  // Unsupported numeric chainIds resolve undefined (like malformed args) so
+  // the route loader settles without throwing and the Contract view renders
+  // its UnsupportedChainState recovery UI instead of the router error page —
+  // the backend would only 500 with "No RPC client available" anyway.
+  if (!(chainId > 0) || !isChainSupported(chainId) || address.length === 0) {
+    return Promise.resolve(undefined);
+  }
   return get<ContractSource>(
     `/api/chains/${chainId}/contracts/${address}/source`,
     undefined,

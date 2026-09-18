@@ -197,6 +197,37 @@ const activeChipStyles = css`
   font-weight: 600;
 `;
 
+// Clipboard copy with a fallback for contexts without the async clipboard
+// API (non-secure origins, embedded webviews): a hidden selected textarea
+// plus the legacy execCommand('copy'). Returns whether the copy verifiably
+// happened so the button can report failure honestly.
+async function copyText(text: string): Promise<boolean> {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // Permission denied or the promise rejected: fall through to the
+      // legacy path before giving up.
+    }
+  }
+  const helper = document.createElement('textarea');
+  helper.value = text;
+  helper.setAttribute('readonly', '');
+  helper.style.position = 'fixed';
+  helper.style.opacity = '0';
+  document.body.appendChild(helper);
+  helper.select();
+  let copied: boolean;
+  try {
+    copied = document.execCommand('copy');
+  } catch {
+    copied = false;
+  }
+  helper.remove();
+  return copied;
+}
+
 // Paste-ABI unlock for contracts without a server-side ABI: the textarea
 // holds a draft, Validate checks it, Apply persists it through onApply and
 // Clear discards it through onClear. The parent owns persistence; this
@@ -216,7 +247,18 @@ export function CustomAbiPanel({
 }) {
   const [draft, setDraft] = useState(storedRaw);
   const [validation, setValidation] = useState<AbiValidation | null>(null);
+  // Transient Copy ABI outcome: the label swaps to Copied!/Copy failed and
+  // back after the reset timeout (cleared on unmount).
+  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(
+    () => () => {
+      if (copyTimerRef.current !== null) clearTimeout(copyTimerRef.current);
+    },
+    [],
+  );
 
   const trimmed = draft.trim();
   const active = storedRaw.trim() !== '';
@@ -252,6 +294,17 @@ export function CustomAbiPanel({
     setValidation(null);
   };
 
+  // Copies what the panel currently holds: the applied raw when one is
+  // stored, otherwise the pasted draft.
+  const copySource = active ? storedRaw : trimmed;
+
+  const handleCopy = async () => {
+    const copied = await copyText(copySource);
+    setCopyState(copied ? 'copied' : 'failed');
+    if (copyTimerRef.current !== null) clearTimeout(copyTimerRef.current);
+    copyTimerRef.current = setTimeout(() => setCopyState('idle'), 2000);
+  };
+
   return (
     <div className={`${cardStyles} ${panelStyles}${active ? ' active' : ''}`}>
       <div
@@ -268,7 +321,8 @@ export function CustomAbiPanel({
       <p className={panelNoteStyles}>
         No ABI is available for this contract from verification services. Paste a contract ABI
         (a JSON array) to unlock the ABI, Events and Interact views. It is saved in this
-        browser for this chain and address and persists across sessions.
+        browser for this chain and address and persists across sessions. Pasting an ABI does
+        not verify the contract and is not shared with other users.
       </p>
       <textarea
         ref={textareaRef}
@@ -303,6 +357,14 @@ export function CustomAbiPanel({
           disabled={!storedRaw && !trimmed}
         >
           Clear
+        </button>
+        <button
+          type="button"
+          className={actionButtonStyles}
+          onClick={handleCopy}
+          disabled={!copySource}
+        >
+          {copyState === 'copied' ? 'Copied!' : copyState === 'failed' ? 'Copy failed' : 'Copy ABI'}
         </button>
       </div>
       {validation && !validation.ok && (

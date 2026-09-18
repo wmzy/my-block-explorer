@@ -1,4 +1,4 @@
-// 预设的RPC节点配置
+// Curated RPC endpoint presets shown in the RPC settings modal
 export type RpcPreset = {
   name: string;
   url: string;
@@ -12,19 +12,19 @@ export const RPC_PRESETS: Record<number, RpcPreset[]> = {
     {
       name: 'Infura',
       url: 'https://mainnet.infura.io/v3/YOUR_PROJECT_ID',
-      description: '需要替换YOUR_PROJECT_ID',
+      description: 'Replace YOUR_PROJECT_ID',
       provider: 'Infura',
     },
     {
       name: 'Alchemy',
       url: 'https://eth-mainnet.g.alchemy.com/v2/YOUR_API_KEY',
-      description: '需要替换YOUR_API_KEY',
+      description: 'Replace YOUR_API_KEY',
       provider: 'Alchemy',
     },
     {
       name: 'QuickNode',
       url: 'https://YOUR_ENDPOINT.quiknode.pro/YOUR_API_KEY/',
-      description: '需要替换端点信息',
+      description: 'Replace the endpoint placeholder',
       provider: 'QuickNode',
     },
   ],
@@ -34,19 +34,19 @@ export const RPC_PRESETS: Record<number, RpcPreset[]> = {
     {
       name: 'Polygon RPC',
       url: 'https://polygon-rpc.com',
-      description: '官方公共节点',
+      description: 'Official public endpoint',
       provider: 'Polygon',
     },
     {
       name: 'Alchemy Polygon',
       url: 'https://polygon-mainnet.g.alchemy.com/v2/YOUR_API_KEY',
-      description: '需要替换YOUR_API_KEY',
+      description: 'Replace YOUR_API_KEY',
       provider: 'Alchemy',
     },
     {
       name: 'Infura Polygon',
       url: 'https://polygon-mainnet.infura.io/v3/YOUR_PROJECT_ID',
-      description: '需要替换YOUR_PROJECT_ID',
+      description: 'Replace YOUR_PROJECT_ID',
       provider: 'Infura',
     },
   ],
@@ -56,19 +56,19 @@ export const RPC_PRESETS: Record<number, RpcPreset[]> = {
     {
       name: 'BSC RPC',
       url: 'https://bsc-dataseed1.binance.org',
-      description: '官方公共节点',
+      description: 'Official public endpoint',
       provider: 'Binance',
     },
     {
       name: 'BSC RPC 2',
       url: 'https://bsc-dataseed2.binance.org',
-      description: '官方公共节点备用',
+      description: 'Official public endpoint (backup)',
       provider: 'Binance',
     },
     {
       name: 'NodeReal',
       url: 'https://bsc-mainnet.nodereal.io/v1/YOUR_API_KEY',
-      description: '需要替换YOUR_API_KEY',
+      description: 'Replace YOUR_API_KEY',
       provider: 'NodeReal',
     },
   ],
@@ -78,13 +78,13 @@ export const RPC_PRESETS: Record<number, RpcPreset[]> = {
     {
       name: 'Arbitrum RPC',
       url: 'https://arb1.arbitrum.io/rpc',
-      description: '官方公共节点',
+      description: 'Official public endpoint',
       provider: 'Arbitrum',
     },
     {
       name: 'Alchemy Arbitrum',
       url: 'https://arb-mainnet.g.alchemy.com/v2/YOUR_API_KEY',
-      description: '需要替换YOUR_API_KEY',
+      description: 'Replace YOUR_API_KEY',
       provider: 'Alchemy',
     },
   ],
@@ -94,13 +94,13 @@ export const RPC_PRESETS: Record<number, RpcPreset[]> = {
     {
       name: 'Optimism RPC',
       url: 'https://mainnet.optimism.io',
-      description: '官方公共节点',
+      description: 'Official public endpoint',
       provider: 'Optimism',
     },
     {
       name: 'Alchemy Optimism',
       url: 'https://opt-mainnet.g.alchemy.com/v2/YOUR_API_KEY',
-      description: '需要替换YOUR_API_KEY',
+      description: 'Replace YOUR_API_KEY',
       provider: 'Alchemy',
     },
   ],
@@ -110,13 +110,13 @@ export const RPC_PRESETS: Record<number, RpcPreset[]> = {
     {
       name: 'Mantle RPC',
       url: 'https://rpc.mantle.xyz',
-      description: '官方公共节点（默认）',
+      description: 'Official public endpoint (default)',
       provider: 'Mantle',
     },
     {
-      name: 'Mantle RPC 备用',
+      name: 'Mantle RPC (backup)',
       url: 'https://mantle.publicnode.com',
-      description: '公共节点备用',
+      description: 'Public endpoint (backup)',
       provider: 'PublicNode',
     },
   ],

@@ -21,6 +21,7 @@ import { useEnsName } from '@/services/ens';
 import { formatRelativeTime } from '@/utils/format';
 import { getExternalToolLinks } from '@/config/externalTools';
 import { redirectReplace } from '@/views/Home/Landing';
+import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
 import { PageContainer, PageHeader, BackButton } from '@/components/ui/PageLayout';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { InfoGrid, InfoItem } from '@/components/ui/InfoGrid';
@@ -167,8 +168,13 @@ const MAX_SEARCH_WINDOW_BLOCKS = 50_000_000;
 // are shareable and back/forward works. Invalid/absent values coerce to 1;
 // the view clamps to >= 1 (the schema deliberately accepts 0/negatives so
 // a malformed deep link degrades instead of throwing during render).
+// ?window=N carries the deepened tx-history search window (blocks): absent
+// (or malformed/out-of-range) means the backend default window, exactly
+// like an unset override — the same survival guarantees as ?page= apply
+// (pagination, sharing, back/forward).
 const addressSearchSchema = z.object({
   page: z.coerce.number().catch(1),
+  window: z.coerce.number().int().min(1).optional().catch(undefined),
 });
 
 // Recent-activity card tabs. The transfers tab renders its own component
@@ -242,14 +248,19 @@ export default function Address() {
   const ensQuery = useEnsName(address, currentChainId);
   const ensName = ensQuery.data;
 
-  // Tx-list pagination is URL-driven (?page=): shareable deep links and
-  // working back/forward. useSetSearch validates/writes through the same
-  // schema (values as strings on the wire).
+  // Tx-list pagination and the deepened search window are URL-driven
+  // (?page= / ?window=): shareable deep links and working back/forward.
+  // useSetSearch validates/writes through the same schema (values as
+  // strings on the wire). Writes merge into the current search so a page
+  // change never drops the window and vice versa.
   const setSearch = useSetSearch(addressSearchSchema);
-  const { page: txPageParam } = useSearch(addressSearchSchema);
+  const { page: txPageParam, window: txWindowParam } = useSearch(addressSearchSchema);
   const txPage = Math.max(1, Math.floor(txPageParam));
   const setTxPage = (next: number) => {
-    void setSearch({ page: String(Math.max(1, Math.floor(next))) });
+    void setSearch(prev => ({
+      ...prev,
+      page: String(Math.max(1, Math.floor(next))),
+    }));
   };
 
   // Recent-activity tab (segmented control in the card header). The
@@ -265,10 +276,11 @@ export default function Address() {
     setTransfersRefreshing(false);
   };
 
-  // Widened search window (blocks) requested via ?window= — undefined is
-  // the backend default. "Search deeper" escalates it; it rides in the
-  // query args so a wider window is a fresh cache key/fetch.
-  const [txSearchWindow, setTxSearchWindow] = useState<number | undefined>();
+  // Widened search window (blocks) from ?window= — undefined is the
+  // backend default. "Search deeper" escalates it by writing the URL (a
+  // fresh history entry, like ?page=); it rides in the query args so a
+  // wider window is a fresh cache key/fetch.
+  const txSearchWindow = txWindowParam;
   const txLimit = 10;
   const txQuery = useAddressTransactions(
     currentChainId,
@@ -288,6 +300,14 @@ export default function Address() {
     : code !== undefined
       ? Boolean(code && code !== '0x' && code.length > 2)
       : undefined;
+  // Independent RPC verdict for the contract-view link below: the link is
+  // a navigation affordance, so EITHER channel saying "contract" is enough
+  // — a stale persistent row (or a failed persistent channel) must not
+  // hide the contract page when the code read itself found contract code.
+  const rpcClassifiesContract = code !== undefined && code !== '0x' && code.length > 2;
+  // Explicit `=== true` keeps this a plain-boolean || (not nullish), so the
+  // either-channel-suffices semantics survives the nullish-coalescing rule.
+  const showsContractLink = persistent?.isContract === true || rpcClassifiesContract;
 
   // Old error semantics: the persistent error only surfaces when the code
   // fallback failed too; the realtime error surfaces on its own.
@@ -360,7 +380,7 @@ export default function Address() {
       <>
         <TopNavigation currentChainId={currentChainId} onChainChange={handleChainChange} />
         <PageContainer>
-          <ErrorState message={`Unsupported chain ID: ${params.chainId}`} />
+          <UnsupportedChainState chainId={currentChainId} />
         </PageContainer>
       </>
     );
@@ -402,6 +422,15 @@ export default function Address() {
   const nextSearchWindow = txSearchWindowBlocks !== undefined
     ? Math.min(txSearchWindowBlocks * 4, MAX_SEARCH_WINDOW_BLOCKS)
     : MAX_SEARCH_WINDOW_BLOCKS;
+
+  // Totals honesty: `total` is what heuristic discovery actually found —
+  // a floor, not a full-indexer count. Only authoritative 'complete'
+  // coverage may read as an exact total; anything else (partial/none, or
+  // a legacy cached payload without coverage tags) renders "at least N".
+  // Pagination math itself stays on `total` unchanged.
+  const txCountPhrase = txCoverage === 'complete'
+    ? `${txTotal.toLocaleString()} transactions`
+    : `At least ${txTotal.toLocaleString()} transactions discovered`;
 
   return (
     <>
@@ -490,7 +519,7 @@ export default function Address() {
                     </InfoItem>
                   )}
 
-                  {persistent?.isContract && (
+                  {showsContractLink && (
                     <InfoItem label="Contract">
                       <TypedLink
                         to={`/chain/${currentChainId}/contract/${address}`}
@@ -598,6 +627,7 @@ export default function Address() {
                   <TokenTransfers
                     chainId={currentChainId}
                     address={address}
+                    isContract={isContract}
                     refreshSignal={transfersRefreshSignal}
                     onRefreshed={() => setTransfersRefreshing(false)}
                   />
@@ -708,7 +738,15 @@ export default function Address() {
                                 : undefined
                             }
                             loading={txQuery.fetching}
-                            onClick={() => setTxSearchWindow(nextSearchWindow)}
+                            onClick={() => {
+                              // The widened window rides in the URL (pushed
+                              // history entry like ?page=): it survives
+                              // pagination, sharing and back/forward.
+                              void setSearch(prev => ({
+                                ...prev,
+                                window: String(nextSearchWindow),
+                              }));
+                            }}
                           >
                             Search deeper
                           </Button>
@@ -821,7 +859,7 @@ export default function Address() {
                         </DataTable>
                         <Pagination
                           page={txPage}
-                          pageInfo={`Page ${txPage} of ${txTotalPages}`}
+                          pageInfo={`Page ${txPage} of ${txTotalPages} • ${txCountPhrase}`}
                           hasPrev={txPage > 1}
                           hasNext={txPage < txTotalPages}
                           onPrev={() => setTxPage(txPage - 1)}

@@ -2,7 +2,7 @@ import { css } from '@linaria/core';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { StatusBadge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
-import { getStoredManualBase } from '@/util/apiBase';
+import { getApiBase } from '@/util/apiBase';
 import { useServiceDiscovery } from '@/hooks/ServiceDiscoveryContext';
 
 const containerStyle = css`
@@ -142,10 +142,13 @@ export function ConnectionStatus({ className: _className }: ConnectionStatusProp
       if (cancelled || reconnectingRef.current) return;
 
       try {
-        const savedUrl = getStoredManualBase();
-        if (!savedUrl) return;
+        // Poll the base actually in use — a saved manual base OR an
+        // auto-scanned one — so every connection mode loses its
+        // 'Connected' badge when the backend dies.
+        const base = getApiBase();
+        if (!base) return;
 
-        const response = await fetch(`${savedUrl}/api/health`, {
+        const response = await fetch(`${base}/api/health`, {
           signal: AbortSignal.timeout(5000),
         });
         if (!response.ok) throw new Error('unhealthy');

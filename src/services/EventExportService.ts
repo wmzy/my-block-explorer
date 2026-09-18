@@ -41,6 +41,9 @@ export const fetchFilteredEventsForExport = async (
       eventName: contractEvents.eventName,
       decodedArgs: contractEvents.decodedArgs,
       address: contractEvents.contractAddress,
+      // NULL (adapter maps omitted defaults to NULL) means not-yet-finalized,
+      // the same rule reorg reconciliation applies.
+      isFinalized: sql<boolean>`coalesce(${contractEvents.isFinalized}, false)`,
     })
     .from(contractEvents)
     .where(and(...buildEventFilterConditions(chainId, address, filters)))
@@ -56,6 +59,8 @@ export type CsvEventRow = {
   eventName: string | null;
   decodedArgs: string | null;
   address: string;
+  // null only for hand-built rows that predate the column
+  isFinalized: boolean | null;
 };
 
 // RFC 4180: quote a field containing a comma, quote, CR or LF, and double any
@@ -78,7 +83,9 @@ const csvTimestamp = (value: CsvEventRow['blockTimestamp']): string => {
 
 /** Render filtered event rows as CSV with a fixed column order. */
 export const buildEventsCsv = (rows: readonly CsvEventRow[]): string => {
-  const lines = ['block_number,block_timestamp,tx_hash,log_index,event_name,decoded_args,address'];
+  const lines = [
+    'block_number,block_timestamp,tx_hash,log_index,event_name,decoded_args,address,is_finalized',
+  ];
   for (const row of rows) {
     lines.push(
       [
@@ -89,6 +96,7 @@ export const buildEventsCsv = (rows: readonly CsvEventRow[]): string => {
         row.eventName ?? '',
         row.decodedArgs ?? '',
         row.address,
+        row.isFinalized === null ? '' : row.isFinalized ? 'true' : 'false',
       ]
         .map(escapeCsvField)
         .join(','),

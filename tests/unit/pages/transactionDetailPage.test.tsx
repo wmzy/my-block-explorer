@@ -51,6 +51,9 @@ vi.mock('@/config/chains', () => ({
   },
   getChainName: (chainId: number) => (chainId === 1 ? 'Ethereum' : `Chain ${chainId}`),
   getChainSymbol: () => 'ETH',
+  // Consumed by the Landing helpers behind UnsupportedChainState.
+  isChainSupported: (chainId: number) => chainId === 1,
+  getSortedChains: () => [{ id: 1, name: 'Ethereum' }],
 }));
 
 const TOKEN = '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd';
@@ -147,12 +150,12 @@ const mockRpcClient = (call: ReturnType<typeof vi.fn>) => {
   vi.mocked(createRpcClient).mockResolvedValue({ call } as never);
 };
 
-function renderDetail() {
+function renderDetail(path = `/chain/1/tx/${TX_HASH}`) {
   const routes = createRoutes([
     { path: '/chain/:chainId/tx/:txHash', component: () => TransactionDetail },
   ]);
   return render(
-    <MemoryRouter routes={routes} initialEntries={[`/chain/1/tx/${TX_HASH}`]}>
+    <MemoryRouter routes={routes} initialEntries={[path]}>
       <View />
     </MemoryRouter>,
   );
@@ -302,5 +305,23 @@ describe('TransactionDetail page', () => {
 
     expect(await screen.findByText('RPC connection refused')).toBeInTheDocument();
     expect(screen.queryByText(/Transaction not found on/)).not.toBeInTheDocument();
+  });
+
+  it('renders the unsupported-chain recovery state with CTAs instead of a bare error', async () => {
+    // Bad chainId deep link: recovery CTAs (Home/Blocks pattern). The
+    // wrong-chain "Transaction Not Found" card is a different, legit case
+    // and keeps its own copy.
+    renderDetail(`/chain/999/tx/${TX_HASH}`);
+
+    expect(await screen.findByText(/Chain not supported/)).toBeInTheDocument();
+    expect(screen.getByText(/chain ID 999/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Go to Mainnet' })).toHaveAttribute(
+      'href',
+      '/chain/1',
+    );
+    expect(screen.getByRole('link', { name: 'Open chain list' })).toHaveAttribute(
+      'href',
+      '/',
+    );
   });
 });

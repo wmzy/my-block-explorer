@@ -6,8 +6,8 @@
 // raw fallback), the coverage-honesty banners, and nextCursor-driven
 // pagination.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { ReactNode } from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { useState, type ReactNode } from 'react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter, View, createRoutes } from '@native-router/react';
 import '@testing-library/jest-dom/vitest';
 import TokenTransfers from '@/views/Address/TokenTransfers';
@@ -90,6 +90,15 @@ const mocks = vi.hoisted(() => {
     coverage: 'partial',
     windowBlocks: 50_000,
   };
+  // "Search deeper" fixture: served when the hook is called with the
+  // widened window so the banner-update behavior is observable.
+  const deepWindow = 200_000;
+  const deepPage: TokenTransferPage = {
+    transfers,
+    nextCursor: String(transfers.length),
+    coverage: 'partial',
+    windowBlocks: deepWindow,
+  };
   return {
     chainId,
     holder,
@@ -99,28 +108,41 @@ const mocks = vi.hoisted(() => {
     tokenUnknown,
     transfers,
     page,
+    deepWindow,
+    deepPage,
     // Mock switch for the first-load case (data: undefined) without
     // re-assigning the typed page fixture.
     emptyData: false,
     loading: false,
     error: undefined as Error | undefined,
     refetch: () => undefined,
+    // Cache-bypass latch stand-in: the view must call this before every
+    // explicit Retry/Refresh-triggered refetch.
+    requestRefresh: () => undefined,
+    // Contract classification prop for the events-indexing CTA.
+    isContract: false,
     queryArgs: [] as unknown[],
   };
 });
 
 vi.mock('@/services/tokenTransfers', () => ({
-  // Args captured so pagination cases can assert the cursor (index 2).
+  // Args captured so pagination cases can assert the cursor (index 2) and
+  // the widened window (index 4); the page fixture is selected by the
+  // requested window so "Search deeper" can pin the banner update.
   useTokenTransfers: (...args: unknown[]) => {
     mocks.queryArgs = args;
+    const page = args[4] === mocks.deepWindow ? mocks.deepPage : mocks.page;
     return {
-      data: mocks.emptyData ? undefined : mocks.page,
+      data: mocks.emptyData ? undefined : page,
       loading: mocks.loading,
       fetching: false,
       error: mocks.error,
       refetch: mocks.refetch,
     };
   },
+  // Wrapper (not the bare reference) so vi.spyOn(mocks, 'requestRefresh')
+  // is honored: the factory runs once at import time, before any spy.
+  requestTokenTransfersRefresh: () => mocks.requestRefresh(),
 }));
 
 vi.mock('@/utils/realTimeData', () => ({
@@ -150,16 +172,52 @@ vi.mock('@/components/ui/Badge', () => ({
 }));
 
 function TokenTransfersHost() {
-  return <TokenTransfers chainId={mocks.chainId} address={mocks.holder} />;
+  return (
+    <TokenTransfers
+      chainId={mocks.chainId}
+      address={mocks.holder}
+      isContract={mocks.isContract}
+    />
+  );
+}
+
+// Parent-refresh wiring: a button bumps the refreshSignal prop exactly the
+// way the address page's Refresh button does on the transfers tab.
+function RefreshSignalHost() {
+  const [signal, setSignal] = useState(0);
+  return (
+    <>
+      <button type="button" onClick={() => setSignal(s => s + 1)}>
+        bump refresh signal
+      </button>
+      <TokenTransfers
+        chainId={mocks.chainId}
+        address={mocks.holder}
+        isContract={mocks.isContract}
+        refreshSignal={signal}
+      />
+    </>
+  );
 }
 
 const routes = createRoutes([
   { path: '/', component: () => Promise.resolve(TokenTransfersHost) },
 ]);
 
+const signalRoutes = createRoutes([
+  { path: '/', component: () => Promise.resolve(RefreshSignalHost) },
+]);
+
 const renderTab = () =>
   render(
     <MemoryRouter routes={routes} initialEntries={['/']}>
+      <View />
+    </MemoryRouter>,
+  );
+
+const renderSignalHost = () =>
+  render(
+    <MemoryRouter routes={signalRoutes} initialEntries={['/']}>
       <View />
     </MemoryRouter>,
   );
@@ -173,9 +231,17 @@ describe('TokenTransfers tab', () => {
       coverage: 'partial',
       windowBlocks: 50_000,
     };
+    mocks.deepWindow = 200_000;
+    mocks.deepPage = {
+      transfers: mocks.transfers,
+      nextCursor: String(mocks.transfers.length),
+      coverage: 'partial',
+      windowBlocks: mocks.deepWindow,
+    };
     mocks.loading = false;
     mocks.emptyData = false;
     mocks.error = undefined;
+    mocks.isContract = false;
     mocks.queryArgs = [];
   });
 
@@ -253,13 +319,112 @@ describe('TokenTransfers tab', () => {
 
   it('warns on partial coverage with the covered window and a Retry affordance', async () => {
     const refetchSpy = vi.spyOn(mocks, 'refetch');
+    const refreshSpy = vi.spyOn(mocks, 'requestRefresh');
     renderTab();
 
     expect(await screen.findByText(/Partial coverage/)).toBeInTheDocument();
     expect(screen.getByText(/after the last 50,000 blocks/)).toBeInTheDocument();
 
+    // Retry is a cache-bypassing refresh: the latch arms BEFORE the
+    // refetch re-issues the request (backend then re-scans instead of
+    // re-serving its 60s 'partial' cache entry).
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(refreshSpy).toHaveBeenCalledTimes(1);
     expect(refetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('arms the cache bypass when the parent refresh signal bumps', async () => {
+    const refetchSpy = vi.spyOn(mocks, 'refetch');
+    const refreshSpy = vi.spyOn(mocks, 'requestRefresh');
+    renderSignalHost();
+
+    expect(await screen.findByText(/Partial coverage/)).toBeInTheDocument();
+    expect(refetchSpy).not.toHaveBeenCalled();
+    expect(refreshSpy).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'bump refresh signal' }));
+    await waitFor(() => expect(refetchSpy).toHaveBeenCalledTimes(1));
+    expect(refreshSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('widens the scan window via Search deeper and reflects it in the banner', async () => {
+    const refreshSpy = vi.spyOn(mocks, 'requestRefresh');
+    renderTab();
+
+    expect(await screen.findByText(/after the last 50,000 blocks/)).toBeInTheDocument();
+    const deepen = screen.getByRole('button', { name: 'Search deeper' });
+    expect(deepen).toBeEnabled();
+    // Default request uses the backend's default window (undefined arg).
+    expect(mocks.queryArgs[4]).toBeUndefined();
+
+    fireEvent.click(deepen);
+    // 50,000 x 4; the widened request bypasses the shallower cache.
+    await waitFor(() => expect(mocks.queryArgs[4]).toBe(200_000));
+    expect(refreshSpy).toHaveBeenCalledTimes(1);
+    // The widened response drives the coverage banner numbers.
+    expect(await screen.findByText(/after the last 200,000 blocks/)).toBeInTheDocument();
+  });
+
+  it('disables Search deeper at the RPC budget cap', async () => {
+    mocks.page = {
+      transfers: mocks.transfers,
+      nextCursor: null,
+      coverage: 'partial',
+      windowBlocks: 50_000_000,
+    };
+
+    renderTab();
+
+    const deepen = await screen.findByRole('button', { name: 'Search deeper' });
+    expect(deepen).toBeDisabled();
+    expect(deepen).toHaveAttribute('title', 'maximum RPC budget reached');
+  });
+
+  it('links an empty contract scan to the events-indexing channel', async () => {
+    mocks.isContract = true;
+    mocks.page = { transfers: [], nextCursor: null, coverage: 'complete', windowBlocks: 10_000 };
+
+    renderTab();
+
+    const cta = await screen.findByText('Index this contract\'s events for full history →');
+    expect(cta.closest('a')?.getAttribute('href')).toBe(
+      `/chain/1/contract/${mocks.holder}/events`,
+    );
+  });
+
+  it('offers the events-indexing CTA on a budget-limited empty scan too', async () => {
+    mocks.isContract = true;
+    mocks.page = { transfers: [], nextCursor: null, coverage: 'partial', windowBlocks: 10_000 };
+
+    renderTab();
+
+    expect(await screen.findByText(/Scan budget exhausted/)).toBeInTheDocument();
+    expect(
+      screen.getByText('Index this contract\'s events for full history →'),
+    ).toBeInTheDocument();
+  });
+
+  it('shows no events-indexing CTA for non-contract addresses', async () => {
+    mocks.isContract = false;
+    mocks.page = { transfers: [], nextCursor: null, coverage: 'complete', windowBlocks: 10_000 };
+
+    renderTab();
+
+    expect(await screen.findByText('No token transfers found')).toBeInTheDocument();
+    expect(
+      screen.queryByText('Index this contract\'s events for full history →'),
+    ).not.toBeInTheDocument();
+  });
+
+  it('hides the events-indexing CTA while transfers are present', async () => {
+    mocks.isContract = true;
+
+    renderTab();
+
+    expect(await screen.findByRole('columnheader', { name: 'Amount' })).toBeInTheDocument();
+    expect(
+      screen.queryByText('Index this contract\'s events for full history →'),
+    ).not.toBeInTheDocument();
   });
 
   it('shows the plain empty state only for complete coverage', async () => {

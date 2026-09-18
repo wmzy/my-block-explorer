@@ -5,7 +5,9 @@
 // manual form's To-Block placeholder pointing at the chain head instead of
 // the furthest already-indexed block, and the transient Pausing… state that
 // outlives the pause POST until the polled status flips away from
-// 'indexing'. The HTTP layer and sonner are mocked so backend calls and
+// 'indexing'. Quick-button pre-disable pins First Blocks (unknown creation)
+// and Continue (empty range list) disabling before their backing POST can
+// 400. The HTTP layer and sonner are mocked so backend calls and
 // surfaced errors are observable. The client-side overlap precheck
 // describe block pins the two-click gate (warning + 'Create anyway') for
 // the manual form and the gated quick modes, the catchup exemption, and
@@ -256,33 +258,50 @@ describe('Catch up to head', () => {
 });
 
 describe('First Blocks with unknown creation', () => {
-  it('surfaces the backend 400 asking for a manual start block verbatim', async () => {
+  it('is pre-disabled with an explanatory title instead of offering the 400-ing POST', async () => {
     render(
       <IndexingRangeManager chainId={CHAIN_ID} contractAddress={ADDRESS} creationBlock={null} />,
     );
 
     fireEvent.click(await screen.findByRole('button', { name: '+ Add Range' }));
-    fireEvent.click(await screen.findByRole('button', { name: 'First Blocks' }));
-    mockPost.mockImplementation((url: string) => {
-      if (url === quickUrl) {
-        return Promise.reject(
-          new ApiError('Contract creation block unknown — enter a start block manually', 400),
-        );
-      }
-      return Promise.resolve({});
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+    const firstBlocks = screen.getByRole('button', { name: 'First Blocks' });
+    expect(firstBlocks).toBeDisabled();
+    expect(firstBlocks).toHaveAttribute('title', 'Contract creation block unknown');
 
-    await waitFor(() =>
-      expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
-        'Contract creation block unknown — enter a start block manually',
-      ),
+    // A disabled button cannot select the mode, so nothing is ever posted.
+    fireEvent.click(firstBlocks);
+    expect(mockPost).not.toHaveBeenCalled();
+  });
+
+  it('is enabled once the creation block is known', async () => {
+    render(
+      <IndexingRangeManager chainId={CHAIN_ID} contractAddress={ADDRESS} creationBlock={1234} />,
     );
-    expect(mockPost).toHaveBeenCalledWith(quickUrl, {
-      mode: 'first',
-      blockCount: 1000,
-      abi: undefined,
-    });
+
+    fireEvent.click(await screen.findByRole('button', { name: '+ Add Range' }));
+    expect(screen.getByRole('button', { name: 'First Blocks' })).toBeEnabled();
+  });
+});
+
+describe('Continue with no previous range', () => {
+  it('is pre-disabled with an explanatory title when the range list is empty', async () => {
+    render(<IndexingRangeManager chainId={CHAIN_ID} contractAddress={ADDRESS} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: '+ Add Range' }));
+    const continueBtn = screen.getByRole('button', { name: 'Continue' });
+    expect(continueBtn).toBeDisabled();
+    expect(continueBtn).toHaveAttribute('title', 'No previous range yet');
+
+    fireEvent.click(continueBtn);
+    expect(mockPost).not.toHaveBeenCalled();
+  });
+
+  it('is enabled once at least one range exists', async () => {
+    rangesFixture = [range(1, 300, 400, 'completed', 400)];
+    render(<IndexingRangeManager chainId={CHAIN_ID} contractAddress={ADDRESS} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: '+ Add Range' }));
+    expect(screen.getByRole('button', { name: 'Continue' })).toBeEnabled();
   });
 });
 

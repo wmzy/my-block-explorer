@@ -8,7 +8,7 @@ import { css } from '@linaria/core';
 import { TypedLink } from '@native-router/react';
 import { erc20Abi, formatUnits } from 'viem';
 import { Alert } from 'haze-ui';
-import { useTokenTransfers, type TokenTransfer } from '@/services/tokenTransfers';
+import { useTokenTransfers, requestTokenTransfersRefresh, type TokenTransfer } from '@/services/tokenTransfers';
 import { createRpcClient } from '@/utils/realTimeData';
 import { DataTable, Pagination, linkStyle } from '@/components/ui/DataTable';
 import { LoadingState } from '@/components/ui/LoadingState';
@@ -18,6 +18,11 @@ import { Button } from '@/components/ui/Button';
 import { CopyableHash } from '@/components/ui/CopyableHash';
 
 const TRANSFER_LIMIT = 25;
+
+// Hard ceiling of the scan window (blocks) — matches the backend clamp
+// (route schema + service MAX_WINDOW_BLOCKS). "Search deeper" disables at
+// this budget.
+const MAX_WINDOW_BLOCKS = 50_000_000;
 
 const valueCell = css`
   font-family: var(--haze-font-mono);
@@ -268,6 +273,12 @@ function TransferRow({ chainId, transfer }: { chainId: number; transfer: TokenTr
 type TokenTransfersProps = {
   chainId: number;
   address: string;
+  /**
+   * Contract classification from the parent (persistent channel wins, RPC
+   * code read as fallback). Only a known `true` renders the
+   * events-indexing CTA on an empty list; undefined stays honest (no CTA).
+   */
+  isContract?: boolean;
   /** Bumped by the parent's Refresh button; each bump refetches here. */
   refreshSignal?: number;
   /** Reports a refreshSignal-triggered refetch settling (spinner control). */
@@ -277,18 +288,26 @@ type TokenTransfersProps = {
 export default function TokenTransfers({
   chainId,
   address,
+  isContract,
   refreshSignal = 0,
   onRefreshed,
 }: TokenTransfersProps) {
   const [page, setPage] = useState(1);
-  // New address/chain context: local pagination restarts at page 1.
+  // Widened scan window (blocks) requested via ?window= — undefined is
+  // the backend default. "Search deeper" escalates it; it rides in the
+  // query args so a wider window is a fresh cache key/fetch, never the
+  // shallower scan's entry.
+  const [searchWindow, setSearchWindow] = useState<number | undefined>(undefined);
+  // New address/chain context: local pagination and the widened window
+  // restart from scratch.
   useEffect(() => {
     setPage(1);
+    setSearchWindow(undefined);
   }, [chainId, address]);
 
   // Cursor = decimal offset into the cached list ('0' = first page).
   const cursor = String((page - 1) * TRANSFER_LIMIT);
-  const query = useTokenTransfers(chainId, address, cursor, TRANSFER_LIMIT);
+  const query = useTokenTransfers(chainId, address, cursor, TRANSFER_LIMIT, searchWindow);
 
   const transfers = query.data?.transfers ?? [];
   const coverage = query.data?.coverage;
@@ -298,12 +317,31 @@ export default function TokenTransfers({
   // is claimed — the scan never asserts one.
   const hasNext = query.data ? query.data.nextCursor !== null : false;
 
+  // "Search deeper" escalation (mirrors the tx tab): quadruple the
+  // effective window the RESPONSE reported (post-clamp truth, not the
+  // requested value), capped at the RPC budget ceiling.
+  const searchWindowAtCap =
+    windowBlocks !== undefined && windowBlocks >= MAX_WINDOW_BLOCKS;
+  const nextSearchWindow = windowBlocks !== undefined
+    ? Math.min(windowBlocks * 4, MAX_WINDOW_BLOCKS)
+    : MAX_WINDOW_BLOCKS;
+
+  // Explicit Retry: bypass BOTH caches — refetch() drops the frontend
+  // entry, the latch sends ?refresh=1 so the backend re-scans instead of
+  // re-serving its (possibly 'partial') 60s cache entry.
+  const retryFresh = () => {
+    requestTokenTransfersRefresh();
+    void query.refetch();
+  };
+
   // The tab's fetch lives here (not in the parent), so the unmounted tab
-  // fetches nothing. A parent Refresh arrives as a signal bump.
+  // fetches nothing. A parent Refresh arrives as a signal bump and is an
+  // explicit refresh too — same cache-bypass semantics as Retry.
   const appliedSignal = useRef(refreshSignal);
   useEffect(() => {
     if (refreshSignal === appliedSignal.current) return;
     appliedSignal.current = refreshSignal;
+    requestTokenTransfersRefresh();
     void Promise.resolve(query.refetch()).finally(() => onRefreshed?.());
   }, [refreshSignal, query, onRefreshed]);
 
@@ -324,7 +362,8 @@ export default function TokenTransfers({
         />
       )}
 
-      {/* Partial coverage: the scan budget ran out — Retry re-runs it. */}
+      {/* Partial coverage: the scan budget ran out — Retry re-scans it
+          (cache-bypassing); Search deeper widens the window. */}
       {!query.loading && !query.error && coverage === 'partial' && (
         <>
           <Alert variant="warning">
@@ -337,11 +376,31 @@ export default function TokenTransfers({
               variant="secondary"
               size="sm"
               loading={query.fetching}
-              onClick={() => {
-                void query.refetch();
-              }}
+              onClick={retryFresh}
             >
               Retry
+            </Button>
+            {/* Escalation: quadruple the scanned window. Disabled with a
+            title once the RPC budget cap is reached — the button stays
+            visible (still partial) so the limitation stays explained. */}
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={searchWindowAtCap}
+              title={
+                searchWindowAtCap
+                  ? 'maximum RPC budget reached'
+                  : undefined
+              }
+              loading={query.fetching}
+              onClick={() => {
+                // refresh=1 so the widened request never re-serves the
+                // shallower window's backend cache entry.
+                requestTokenTransfersRefresh();
+                setSearchWindow(nextSearchWindow);
+              }}
+            >
+              Search deeper
             </Button>
           </div>
         </>
@@ -356,6 +415,21 @@ export default function TokenTransfers({
       {/* Trusted empty ONLY for authoritative coverage on the first page. */}
       {!query.loading && !query.error && transfers.length === 0 && coverage === 'complete' && page === 1 && (
         <Alert variant="info">No token transfers found</Alert>
+      )}
+
+      {/* Dual-channel CTA: the eth_getLogs scan is budget-capped, but a
+          contract's full history is reachable through the persistent
+          events-indexing channel — offer it exactly when the list came
+          back empty and the address is a known contract. */}
+      {!query.loading && !query.error && transfers.length === 0 && isContract === true && (
+        <div className={bannerLinks}>
+          <TypedLink
+            to={`/chain/${chainId}/contract/${address}/events`}
+            className={linkStyle}
+          >
+            Index this contract's events for full history →
+          </TypedLink>
+        </div>
       )}
 
       {(transfers.length > 0 || page > 1) && (

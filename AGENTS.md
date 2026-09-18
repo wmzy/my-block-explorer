@@ -221,7 +221,9 @@ pnpm typecheck           # tsc --noEmit
   to the strict tier when it is set — covers the 7 mutating event-range
   routes (`POST/PATCH/DELETE .../events/ranges*`, `quick`, `start`/`pause`/
   `resume`) and rpc-config writes (`POST`/`DELETE /api/rpc-configs`);
-  `GET /api/rpc-configs` is open (endpoint URLs, no secrets). Browser side:
+  `GET /api/rpc-configs` is open but redacts endpoint URLs to scheme+host
+  for any origin the CORS policy doesn't trust (custom endpoints may embed
+  API keys; loopback/allowlisted/no-Origin readers get full URLs). Browser side:
   token stored in localStorage by `src/util/adminAuth.ts`, injected by
   `util/http.ts`; ⚙️ RPC modal has the "Admin token (stored in this browser)"
   field. `ENABLE_DEBUG_API=1` mounts `/debug/db/query` (raw SQL; default
@@ -258,8 +260,15 @@ pnpm typecheck           # tsc --noEmit
   (`requireAdminTokenIfConfigured`). `argFilters`/`topicN`
   push decoded-arg filtering into DuckDB; `GET .../events/export` streams CSV
   (100k-row cap → 400; the UI disables the export button preflight when the
-  filtered total exceeds the cap). Event statistics render "Indexing
-  coverage" — union of ranges, overlap-safe sweep-merge
+  filtered total exceeds the cap; CSV carries an `is_finalized` column).
+  Event statistics render "Indexing coverage" — union of walked blocks,
+  overlap-safe sweep-merge (paused/errored ranges count their checkpointed
+  blocks; the scope is "your configured ranges", not contract lifetime).
+  Reorg reconciliation: unfinalized rows below the finalized head are
+  receipt-verified at startup + after each range job (reorged-out rows
+  deleted, survivors promoted to `isFinalized = true`; oldest-first, 500
+  rows/pass); `totalEventsIndexed` is recomputed as distinct `COUNT(*)`
+  over the range span on job completion
 - **Address tx history is heuristic** — balance-change binary search; the
   transactions endpoint reports `coverage`/`reason`/`searchWindowBlocks`
   and the UI renders honest partial-data banners ("source unknown" when
@@ -267,22 +276,37 @@ pnpm typecheck           # tsc --noEmit
   contract: `total` = count of **discovered** transactions (never the
   nonce — nonce counts outgoing only); the heuristic never emits
   `coverage:'complete'` (nonce=0 → `partial`/`no-outgoing-transactions`);
-  optional `?window=<blocks>` (clamped 1–50M) widens the search and the
-  UI offers "Search deeper" escalation; discovered lists are cached
-  per address+window (~60s LRU in `AddressService`) so consecutive pages
-  agree. The address API no longer returns balance/transactionCount —
-  the UI reads those live from RPC (`services/addressRealTime.ts`) and
-  labels the nonce "Outgoing Transactions (Nonce)"
+  partial coverage renders "At least N transactions discovered". The tx
+  search window rides the URL (`?page=` and `?window=` both shareable).
+  Token Transfers tab: separate on-demand getLogs scan — `?refresh=1`
+  bypasses the ~60s scan cache (Retry genuinely re-scans), "Search deeper"
+  widens `?window=` (route clamps 1–50M), and an empty contract scan
+  offers a CTA to the contract Events indexing flow. Discovered tx lists
+  are cached per address+window (~60s LRU in `AddressService`) so
+  consecutive pages agree. The address API no longer returns
+  balance/transactionCount — the UI reads those live from RPC
+  (`services/addressRealTime.ts`) and
+  labels the nonce "Outgoing Transactions (Nonce)". Address Type uses the
+  persistent channel first, RPC `eth_getCode` fallback — EIP-7702
+  delegated EOAs return a `0xef0100…` designator, so they honestly
+  classify as contract-like (the UI does not yet distinguish them from
+  deployed contracts)
 - **Search degradation is explicit** — responses can carry
   `degraded`/`degradedReasons`; the UI offers retry instead of "no results".
   ENS names resolve client-side against a mainnet RPC (server returns
   suggestions only; UI labels results "resolved on Ethereum" and
-  distinguishes name-not-found from resolution-failed). Search history is
-  **per-browser localStorage** (`be:searchHistory`, max 10) — the
+  distinguishes name-not-found from resolution-failed). The global
+  `GET /api/search` resolves hash/block queries on the chain given by
+  `?chainId=`; `needsChain` (network picker) only without a chain hint.
+  ENS searches record history only after a successful resolution. Search
+  history is **per-browser localStorage** (`be:searchHistory`, max 10) — the
   server-side `search_history` recording + `GET /api/search/history` were
   removed (the shared table leaked every visitor's queries to everyone);
   the table itself is vestigial and unused
 - **Custom ABI** — unverified contracts accept a pasted ABI
   (localStorage `custom-abi:{chainId}:{address}`, migrated from the old
   sessionStorage) that unlocks ABI/Events/Interact tabs locally; Interact
-  works from the custom ABI alone (no contract source needed)
+  works from the custom ABI alone (no contract source needed). The panel
+  states pasting ≠ verification and offers Copy ABI; when the contract
+  later gets verified server-side, a dismissible banner announces the
+  pasted ABI is no longer used (server ABI always wins)

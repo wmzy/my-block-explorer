@@ -30,13 +30,20 @@ app.get('/search', async (c) => {
   try {
     // Same detection as every other entry point (utils/validation is the
     // single source of truth). Transaction/block hashes and block numbers
-    // are chain-relative: without a chain in scope the global endpoint
-    // cannot resolve them, so it reports the ambiguity plus the chains to
-    // retry on instead of silently searching one default chain.
+    // are chain-relative, but an explicit ?chainId= declares the chain:
+    // with a supported one in scope the global endpoint resolves them on
+    // that chain exactly like the per-chain endpoint. Only without a
+    // usable hint do they stay ambiguous — the endpoint then reports the
+    // ambiguity plus the chains to retry on instead of silently searching
+    // a default chain.
     const sanitized = sanitizeInput(query.trim());
     const searchType = detectSearchType(sanitized);
 
-    if (searchType === 'hash' || searchType === 'block') {
+    const chainIdParam = c.req.query('chainId');
+    const requestedChainId = chainIdParam ? parseInt(chainIdParam, 10) : NaN;
+    const hasChainHint = !isNaN(requestedChainId) && isChainSupported(requestedChainId);
+
+    if ((searchType === 'hash' || searchType === 'block') && !hasChainHint) {
       return c.json({
         found: false,
         needsChain: true,
@@ -47,25 +54,31 @@ app.get('/search', async (c) => {
       });
     }
 
-    // Chain scope for the remaining query types (addresses, free text):
-    // an explicit ?chainId= wins when supported; otherwise mainnet, else
-    // the head of the sorted chain list. The chosen chain is echoed as
-    // searchedChainId so clients know exactly what was searched.
-    const chainIdParam = c.req.query('chainId');
-    const requestedChainId = chainIdParam ? parseInt(chainIdParam, 10) : NaN;
-    const searchedChainId
-      = !isNaN(requestedChainId) && isChainSupported(requestedChainId)
-        ? requestedChainId
-        : isChainSupported(1)
-          ? 1
-          : (getSortedChains()[0]?.id ?? 1);
+    // Chain scope for the remaining queries (addresses, free text) and
+    // the now hint-resolvable hash/block ones: a valid ?chainId= wins;
+    // otherwise mainnet, else the head of the sorted chain list. The
+    // chosen chain is echoed as searchedChainId so clients know exactly
+    // what was searched.
+    const searchedChainId = hasChainHint
+      ? requestedChainId
+      : isChainSupported(1)
+        ? 1
+        : (getSortedChains()[0]?.id ?? 1);
 
     const result = await searchService.search(searchedChainId, sanitized);
-    return c.json({
-      ...result,
-      searchedChainId,
-      timestamp: new Date().toISOString(),
-    });
+    // Hash/block hits now flow through this endpoint too, and their Block/
+    // Transaction payloads carry BigInt fields (number, timestamp, gasUsed)
+    // that raw JSON.stringify would throw on — the same reason the
+    // per-chain endpoint serializes through safeJsonResponse. The shape is
+    // unchanged for every existing consumer (BigInt-free payloads
+    // serialize identically).
+    return c.json(
+      safeJsonResponse({
+        ...result,
+        searchedChainId,
+        timestamp: new Date().toISOString(),
+      }),
+    );
   }
   catch (error) {
     logger.error({ err: error, query }, 'Global search failed');

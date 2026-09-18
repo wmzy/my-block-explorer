@@ -413,7 +413,9 @@ const createTokenTransferService = (deps: TokenTransferServiceDeps) => {
     /**
      * On-demand token transfer list for an address, newest first. No
      * DuckDB writes and no token metadata reads — symbol/decimals are the
-     * frontend's job.
+     * frontend's job. `refresh` bypasses the cache read (a fresh scan even
+     * while a not-yet-expired entry exists) and overwrites the entry with
+     * the re-scan — the semantic behind the tab's Retry/Refresh.
      */
     getTokenTransfers: async (
       chainId: number,
@@ -421,6 +423,7 @@ const createTokenTransferService = (deps: TokenTransferServiceDeps) => {
       cursor = 0,
       limit = 25,
       windowBlocks?: number,
+      refresh = false,
     ): Promise<TokenTransfersResult> => {
       // Explicit windows clamp into [1, MAX]; undefined uses the default.
       const effectiveWindow = windowBlocks === undefined
@@ -428,7 +431,9 @@ const createTokenTransferService = (deps: TokenTransferServiceDeps) => {
         : Math.min(Math.max(Math.trunc(windowBlocks), MIN_WINDOW_BLOCKS), MAX_WINDOW_BLOCKS);
       const cacheKey = `${chainId}:${address.toLowerCase()}:${effectiveWindow}`;
 
-      const cached = readTransfersCache(cacheKey);
+      // Cache-bypass refresh: skip the read entirely (even a fresh
+      // 'partial' entry) so an explicit Retry always re-scans.
+      const cached = refresh ? null : readTransfersCache(cacheKey);
       if (cached) {
         logger.info(`Serving cached transfer scan for ${address} on chain ${chainId}`);
         return sliceResult(cached.transfers, cached.coverage, effectiveWindow, cursor, limit);

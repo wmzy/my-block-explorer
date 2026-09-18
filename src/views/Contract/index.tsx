@@ -14,6 +14,7 @@ import { SourceCodeViewer } from '@/components/SourceCodeViewer';
 import { post } from '@/util/http';
 import { ApiError } from '@/util/apiError';
 import { redirectReplace } from '@/views/Home/Landing';
+import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
 import { useContractCreation, useContractSource } from '@/services/contracts';
 import { EventsPanel } from './EventsPanel';
 import { ContractInteract } from './ContractInteract';
@@ -152,6 +153,58 @@ const customAbiBadgeClearStyles = css`
 
   &:hover {
     color: #fff3cd;
+  }
+`;
+
+// One-time notice for a stored custom ABI silently shadowed by a server
+// ABI that appeared after the paste (the contract got verified): the paste
+// stays in localStorage but is no longer used. Amber palette matches the
+// other custom-ABI affordances on this page.
+const shadowNoticeStyles = css`
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+  padding: 12px 16px;
+  background: #fff8e6;
+  border: 1px solid #f0a500;
+  border-radius: 6px;
+  font-size: 14px;
+  color: #8a6d3b;
+`;
+
+const shadowNoticeActionsStyles = css`
+  display: flex;
+  gap: 8px;
+`;
+
+const shadowNoticeButtonStyles = css`
+  padding: 6px 14px;
+  font-size: 13px;
+  border-radius: 4px;
+  cursor: pointer;
+
+  &.primary {
+    background: #f0a500;
+    border: 1px solid #d69200;
+    color: white;
+    font-weight: 500;
+
+    &:hover {
+      background: #d69200;
+    }
+  }
+
+  &.secondary {
+    background: transparent;
+    border: 1px solid #e1e5e9;
+    color: #8a6d3b;
+
+    &:hover {
+      background: #fdf3dd;
+    }
   }
 `;
 
@@ -374,6 +427,10 @@ export default function Contract() {
   // Increments to focus + scroll the custom ABI panel's textarea (the
   // unlock pointers rendered by the locked ABI/Interact tabs).
   const [abiFocusSignal, setAbiFocusSignal] = useState(0);
+  // Session-only dismissal of the shadowed-custom-ABI notice: Keep hides
+  // the banner without touching the stored paste (view state is enough —
+  // a fresh mount or contract switch may legitimately re-show it).
+  const [shadowNoticeDismissed, setShadowNoticeDismissed] = useState(false);
   const [, setShowRpcConfig, rpcConfigControl] = useControl<boolean>(null, false);
   const [contractTarget, setContractTarget] = useState<'proxy' | 'impl'>('impl');
 
@@ -450,6 +507,11 @@ export default function Contract() {
       : null
     : serverAbi;
   const customAbiActive = serverAbiUnavailable && !!effectiveABI;
+  // A stored custom ABI that a server ABI now shadows (verification
+  // succeeded after the paste): the paste is silently unused and would
+  // linger in localStorage forever — the notice below makes that state
+  // explicit instead of the badge quietly disappearing.
+  const customAbiShadowed = !!customAbiRaw?.trim() && !serverAbiUnavailable;
   // ABI-dependent tabs with nothing to show: no server ABI and no pasted
   // ABI applied. The tab shell keeps the tabs clickable; the panels below
   // render the unlock pointer instead of their bare empty states.
@@ -471,6 +533,9 @@ export default function Contract() {
     setCustomAbiRaw(readStoredCustomAbi(currentChainId, address ?? ''));
     // A notice from the previous contract never carries over.
     setCacheNotice(null);
+    // A fresh contract deserves a fresh shadow notice if its paste is
+    // shadowed too.
+    setShadowNoticeDismissed(false);
   }, [currentChainId, address]);
 
   const handleApplyCustomAbi = (raw: string) => {
@@ -538,10 +603,10 @@ export default function Contract() {
       <>
         <TopNavigation currentChainId={currentChainId} onChainChange={handleChainChange} />
         <div className={pageStyles}>
-          <div className={errorStyles}>
-            Unsupported chain ID:
-            {chainId}
-          </div>
+          {/* Same recovery state as Home/Blocks: the deep link names a
+              chain this explorer has no configuration for, so offer the
+              deterministic CTAs instead of a bare error dead end. */}
+          <UnsupportedChainState chainId={currentChainId} />
         </div>
       </>
     );
@@ -781,6 +846,35 @@ export default function Contract() {
               </div>
             </div>
 
+            {/* A server ABI that appeared after the paste silently shadows
+                it; the one-time notice names the state and offers the
+                explicit choice (Clear frees the stale localStorage entry,
+                Keep only hides the banner for this session). */}
+            {customAbiShadowed && !shadowNoticeDismissed && (
+              <div role="status" className={shadowNoticeStyles}>
+                <span>
+                  This contract is now verified server-side — your pasted custom ABI is no
+                  longer used.
+                </span>
+                <div className={shadowNoticeActionsStyles}>
+                  <button
+                    type="button"
+                    className={`${shadowNoticeButtonStyles} primary`}
+                    onClick={handleClearCustomAbi}
+                  >
+                    Clear custom ABI
+                  </button>
+                  <button
+                    type="button"
+                    className={`${shadowNoticeButtonStyles} secondary`}
+                    onClick={() => setShadowNoticeDismissed(true)}
+                  >
+                    Keep
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className={tabsStyles}>
               <div className="tabs-left">
                 <button
@@ -813,10 +907,14 @@ export default function Contract() {
                 >
                   Interact
                 </button>
-                {customAbiActive && (
+                {(customAbiActive || customAbiShadowed) && (
                   <span
                     className={customAbiBadgeStyles}
-                    title="ABI views are using your pasted custom ABI"
+                    title={
+                      customAbiActive
+                        ? 'ABI views are using your pasted custom ABI'
+                        : 'Your pasted custom ABI is stored but not used while a verified source is available'
+                    }
                   >
                     <span>Custom ABI</span>
                     <button

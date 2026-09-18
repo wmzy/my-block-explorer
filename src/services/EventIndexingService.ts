@@ -1,4 +1,4 @@
-import { eq, and, sql, gte, lte, desc, ne, type SQL } from 'drizzle-orm';
+import { eq, and, or, sql, gte, lte, desc, ne, type SQL } from 'drizzle-orm';
 import { db } from '../database/drizzle';
 import {
   indexingProgress,
@@ -7,10 +7,15 @@ import {
   indexingRanges,
 } from '../database/schema';
 import { rpcManager } from './RpcManager';
-import { decodeEventLog, type Abi, type Log } from 'viem';
+import { decodeEventLog, TransactionReceiptNotFoundError, type Abi, type Log } from 'viem';
 import { getContractCreationBlock } from '../utils/events';
 import { inputToStoredValue, resolveToBlock } from '../utils/blockTagUtils';
+// Relative path on purpose: vite.config.ts bundles the api-app backend graph
+// with esbuild, which does not resolve the '@/' alias for runtime imports.
+import { createLogger } from '../server/logger';
 import type { BlockTagInput } from '@/types/events';
+
+const logger = createLogger('event-indexing-service');
 
 const BATCH_SIZE = 2000;
 const MAX_RETRY = 3;
@@ -207,8 +212,8 @@ const insertEvents = async (
   contractAddress: `0x${string}`,
   events: ReturnType<typeof decodeLogs>,
   isFinalized: boolean,
-) => {
-  if (events.length === 0) return 0;
+): Promise<void> => {
+  if (events.length === 0) return;
 
   const rows = events.map(e => ({
     chainId,
@@ -244,73 +249,201 @@ const insertEvents = async (
       }
     }
   }
-
-  return rows.length;
 };
 
-const _handleReorgs = async (
+// ============================================
+// Reorg reconciliation
+// ============================================
+
+// Cap on rows verified per pass: a large unfinalized backlog must not stall
+// the indexing job loop (or startup) behind unbounded receipt fetches. Later
+// passes drain the remainder oldest-first.
+export const REORG_RECONCILE_ROW_CAP = 500;
+
+export type ReorgReconciliationResult = {
+  // Rows picked up this pass (bounded by REORG_RECONCILE_ROW_CAP)
+  inspected: number;
+  // Rows whose log no longer exists on chain (reorged out) and was deleted
+  deleted: number;
+  // Rows whose log was receipt-verified and promoted to isFinalized = true
+  promoted: number;
+};
+
+// Current finalized head. Falls back to latest - 64 (two finality epochs)
+// when a node does not serve the 'finalized' tag — the same estimate the
+// indexing loop uses. Receipt verification, not the head estimate, is
+// authoritative for promotion, so an approximate head only changes which
+// rows get checked.
+const fetchFinalizedBlockNumber = async (chainId: number): Promise<bigint> => {
+  const client = await rpcManager.getClient(chainId);
+  try {
+    const block = await client.getBlock({ blockTag: 'finalized' });
+    return block.number;
+  } catch {
+    const latestBlock = await client.getBlockNumber();
+    return latestBlock - 64n;
+  }
+};
+
+// Unfinalized predicate shared by the reconciliation queries: the adapter
+// rewrites drizzle's column DEFAULT to NULL on insert, so rows written
+// without an explicit value carry NULL — treat them as not-yet-finalized.
+const unfinalizedPredicate = sql`coalesce(${contractEvents.isFinalized}, false) = false`;
+
+/**
+ * Reconcile a contract's unfinalized rows that sit at or below the current
+ * finalized head. Rows indexed before their blocks finalized can be orphaned
+ * by a reorg: for each row, verify the transaction receipt still exists and
+ * still carries that log (txHash + logIndex). Vanished rows are deleted and
+ * logged with their tx hashes; verified rows are promoted to
+ * isFinalized = true. A receipt fetch that fails without a definitive
+ * not-found answer (e.g. transport error) leaves its rows untouched for a
+ * later pass — transient RPC noise must never delete good rows.
+ */
+export const reconcileReorgedEvents = async (
   chainId: number,
   contractAddress: `0x${string}`,
-  lastFinalizedBlock: bigint,
-) => {
-  const nonFinalized = await db
+): Promise<ReorgReconciliationResult> => {
+  const finalizedBlockNumber = await fetchFinalizedBlockNumber(chainId);
+
+  // Oldest first so a backlog drains in order and the cap bounds RPC work.
+  const pending = await db
     .select()
     .from(contractEvents)
     .where(
       and(
         eq(contractEvents.chainId, chainId),
         eq(contractEvents.contractAddress, contractAddress),
-        eq(contractEvents.isFinalized, false),
-        lte(contractEvents.blockNumber, lastFinalizedBlock),
+        unfinalizedPredicate,
+        lte(contractEvents.blockNumber, finalizedBlockNumber),
       ),
-    );
+    )
+    .orderBy(contractEvents.blockNumber)
+    .limit(REORG_RECONCILE_ROW_CAP);
 
-  if (nonFinalized.length === 0) return;
+  if (pending.length === 0) return { inspected: 0, deleted: 0, promoted: 0 };
 
   const client = await rpcManager.getClient(chainId);
-  const blockNumbers = [...new Set(nonFinalized.map(e => e.blockNumber))];
 
-  for (const bn of blockNumbers) {
+  // One receipt covers every row of a transaction; group before fetching.
+  const rowsByTxHash = new Map<`0x${string}`, typeof pending>();
+  for (const row of pending) {
+    const rows = rowsByTxHash.get(row.transactionHash);
+    if (rows) rows.push(row);
+    else rowsByTxHash.set(row.transactionHash, [row]);
+  }
+
+  const vanished: Array<{ transactionHash: `0x${string}`; logIndex: number }> = [];
+  const survived: Array<{ transactionHash: `0x${string}`; logIndex: number }> = [];
+
+  for (const [txHash, rows] of rowsByTxHash) {
+    let logIndexes: Set<number>;
     try {
-      const block = await client.getBlock({ blockNumber: bn });
-      const eventsInBlock = nonFinalized.filter(e => e.blockNumber === bn);
-
-      const blockTxHashes = new Set(block.transactions as string[]);
-
-      const reorgedEvents = eventsInBlock.filter(e => !blockTxHashes.has(e.transactionHash));
-
-      if (reorgedEvents.length > 0) {
-        console.warn(
-          `[EventIndexing] Reorg detected at block ${bn}, removing ${reorgedEvents.length} events`,
+      const receipt = await client.getTransactionReceipt({ hash: txHash });
+      logIndexes = new Set(receipt.logs.map(log => log.logIndex));
+    } catch (err) {
+      if (err instanceof TransactionReceiptNotFoundError) {
+        // The node answered: the transaction no longer exists. Every row of
+        // it was reorged out.
+        vanished.push(
+          ...rows.map(r => ({ transactionHash: r.transactionHash, logIndex: r.logIndex })),
         );
-        for (const e of reorgedEvents) {
-          await db
-            .delete(contractEvents)
-            .where(
-              and(
-                eq(contractEvents.chainId, chainId),
-                eq(contractEvents.transactionHash, e.transactionHash),
-                eq(contractEvents.logIndex, e.logIndex),
-              ),
-            );
-        }
+      } else {
+        // Inconclusive: leave the rows unfinalized for a later pass.
+        logger.warn(
+          { chainId, contractAddress, txHash, err },
+          'Receipt fetch failed during reorg reconciliation; rows left unfinalized',
+        );
       }
-    } catch {
-      // skip block verification on error
+      continue;
+    }
+    for (const row of rows) {
+      if (logIndexes.has(row.logIndex)) {
+        survived.push({ transactionHash: row.transactionHash, logIndex: row.logIndex });
+      } else {
+        vanished.push({ transactionHash: row.transactionHash, logIndex: row.logIndex });
+      }
     }
   }
 
-  await db
-    .update(contractEvents)
-    .set({ isFinalized: true })
+  const rowKey = (r: { transactionHash: `0x${string}`; logIndex: number }) =>
+    and(
+      eq(contractEvents.transactionHash, r.transactionHash),
+      eq(contractEvents.logIndex, r.logIndex),
+    );
+
+  if (vanished.length > 0) {
+    await db
+      .delete(contractEvents)
+      .where(and(eq(contractEvents.chainId, chainId), or(...vanished.map(rowKey))));
+    logger.warn(
+      {
+        chainId,
+        contractAddress,
+        deleted: vanished.length,
+        transactionHashes: vanished.map(r => r.transactionHash),
+      },
+      'Reorg reconciliation deleted events whose logs vanished from finalized blocks',
+    );
+  }
+
+  if (survived.length > 0) {
+    await db
+      .update(contractEvents)
+      .set({ isFinalized: true })
+      .where(and(eq(contractEvents.chainId, chainId), or(...survived.map(rowKey))));
+  }
+
+  return { inspected: pending.length, deleted: vanished.length, promoted: survived.length };
+};
+
+/**
+ * Sweep every contract that has unfinalized rows through
+ * reconcileReorgedEvents. Per-contract failures are logged and skipped so one
+ * unreachable chain cannot block the rest.
+ */
+export const reconcileAllReorgedEvents = async (): Promise<void> => {
+  const pairs = await db
+    .select({
+      chainId: contractEvents.chainId,
+      contractAddress: contractEvents.contractAddress,
+    })
+    .from(contractEvents)
+    .where(unfinalizedPredicate)
+    .groupBy(contractEvents.chainId, contractEvents.contractAddress);
+
+  for (const { chainId, contractAddress } of pairs) {
+    try {
+      await reconcileReorgedEvents(chainId, contractAddress);
+    } catch (err) {
+      logger.warn({ err, chainId, contractAddress }, 'Reorg reconciliation pass failed');
+    }
+  }
+};
+
+// Distinct event count for a block range (chainId, contract, from..to
+// inclusive) — the honest basis for a range's totalEventsIndexed.
+// insertEvents reports attempted rows even when the upsert conflicted, so an
+// accumulated counter would double-count events that overlap/catchup re-walks
+// re-inserted; a COUNT over the stored table cannot.
+const countRangeEvents = async (
+  chainId: number,
+  address: `0x${string}`,
+  fromBlock: bigint,
+  toBlock: bigint,
+): Promise<number> => {
+  const rows = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(contractEvents)
     .where(
       and(
         eq(contractEvents.chainId, chainId),
-        eq(contractEvents.contractAddress, contractAddress),
-        eq(contractEvents.isFinalized, false),
-        lte(contractEvents.blockNumber, lastFinalizedBlock),
+        eq(contractEvents.contractAddress, address),
+        gte(contractEvents.blockNumber, fromBlock <= toBlock ? fromBlock : toBlock),
+        lte(contractEvents.blockNumber, fromBlock <= toBlock ? toBlock : fromBlock),
       ),
     );
+  return Number(rows[0]?.count ?? 0);
 };
 
 type RangeSummary = {
@@ -1071,14 +1204,7 @@ export const startIndexingRange = async (
 
     let totalInserted = range.totalEventsIndexed ?? 0;
 
-    let finalizedBlockNumber: bigint;
-    try {
-      const finalizedBlock = await client.getBlock({ blockTag: 'finalized' });
-      finalizedBlockNumber = finalizedBlock.number;
-    } catch {
-      const latestBlock = await client.getBlockNumber();
-      finalizedBlockNumber = latestBlock - 64n;
-    }
+    const finalizedBlockNumber = await fetchFinalizedBlockNumber(chainId);
 
     while (!isComplete(currentBlock, endBlock) && !job.abort) {
       let batchFrom: bigint;
@@ -1101,8 +1227,8 @@ export const startIndexingRange = async (
         const timestamps = await fetchBlockTimestamps(chainId, blockNumbers);
         const decoded = decodeLogs(logs, abi, timestamps);
         const isFinalized = batchTo <= finalizedBlockNumber;
-        const inserted = await insertEvents(chainId, address, decoded, isFinalized);
-        totalInserted += inserted;
+        await insertEvents(chainId, address, decoded, isFinalized);
+        totalInserted += decoded.length;
       }
 
       await updateRange({
@@ -1114,18 +1240,41 @@ export const startIndexingRange = async (
       currentBlock = step(currentBlock);
     }
 
+    // Reorg reconciliation: the finalized-head snapshot above was taken at
+    // job start, so rows indexed near the tip may have finalized since (or
+    // been reorged out). Verify unfinalized rows below the current finalized
+    // head before closing out the range; a failure here must not lose the
+    // completed indexing work.
+    try {
+      await reconcileReorgedEvents(chainId, address);
+    } catch (err) {
+      logger.warn(
+        { err, chainId, address, rangeId },
+        'Post-range reorg reconciliation failed',
+      );
+    }
+
     const finalBlock =
       direction === 'forward' ? BigInt(resolvedToBlock) : BigInt(resolvedFromBlock);
+    // insertEvents counts attempted rows even when the upsert conflicted, so
+    // overlap/catchup re-walks inflate totalInserted. Close out with the
+    // distinct stored count over the range instead.
+    const totalEventsIndexed = await countRangeEvents(
+      chainId,
+      address,
+      resolvedFromBlock,
+      resolvedToBlock,
+    );
     await updateRange({
       currentBlock: finalBlock,
       status: job.abort ? 'paused' : 'completed',
-      totalEventsIndexed: totalInserted,
+      totalEventsIndexed,
     });
 
     return { success: true };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[EventIndexing] Error indexing range ${key}:`, msg);
+    logger.error({ err, key, msg }, 'Error indexing range');
     await updateRange({ status: 'error', errorMessage: msg });
     return { success: false, error: msg };
   } finally {
@@ -1222,6 +1371,10 @@ export const updateRangeStatus = async (
 // resume hint so the user can continue. Idempotent by construction (a second
 // run finds no 'indexing' rows), so the vite-bridge instance and a standalone
 // server can both run it against the same database.
+//
+// The same startup hook also runs the reorg reconciliation sweep: unfinalized
+// rows below the finalized head get receipt-verified, promoted, or deleted
+// without waiting for the next range job on that contract.
 export const reconcileInterruptedRanges = async (): Promise<void> => {
   await db
     .update(indexingRanges)
@@ -1231,6 +1384,8 @@ export const reconcileInterruptedRanges = async (): Promise<void> => {
       updatedAt: new Date(),
     })
     .where(eq(indexingRanges.status, 'indexing'));
+
+  await reconcileAllReorgedEvents();
 };
 
 export type QuickCreateResult = {

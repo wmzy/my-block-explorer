@@ -294,6 +294,16 @@ type IndexingRange = {
   updatedAt: Date | null;
 };
 
+// Statuses that keep a walked-block checkpoint (currentBlock persists; both
+// start and resume continue from it). Their walked blocks are indexed and
+// queryable, so both the per-range progress line and the coverage metric in
+// EventStatistics count them — same set, same semantics.
+const CHECKPOINTED_RANGE_STATUSES: ReadonlySet<RangeStatus> = new Set([
+  'indexing',
+  'paused',
+  'error',
+]);
+
 type Overlap = {
   rangeId: number;
   fromBlock: bigint;
@@ -380,7 +390,8 @@ type OverlapGate = {
 // - 'recent' IS gated: the backend window is [head - count, head], which
 //   routinely overlaps catchup ranges or any range reaching near the head
 //   — it is not overlap-free by design.
-// - 'first' with unknown creation 400s server-side; nothing to gate.
+// 'first' with unknown creation 400s server-side; the First Blocks button
+// is pre-disabled for that case and nothing needs gating client-side.
 // - 'recent' with unknown head cannot be approximated client-side.
 const quickModeBounds = (
   mode: QuickMode,
@@ -411,8 +422,10 @@ const quickModeBounds = (
     return { from: creationBlockNumber, to: creationBlockNumber + blockCount };
   }
   // 'continue': with no previous range the backend 400s ('No previous
-  // range found. Cannot continue.') — let that POST fire. Otherwise the
-  // backend continues from ranges[0].toBlock INCLUSIVE (the same
+  // range found. Cannot continue.') — the Continue button is pre-disabled
+  // for that case, and the 400 stays as the backstop (e.g. the last range
+  // was deleted after the mode was selected). Otherwise the backend
+  // continues from ranges[0].toBlock INCLUSIVE (the same
   // priority/createdAt-desc ordering this component's list mirrors), so
   // the would-be range always re-touches that boundary block.
   if (ranges.length === 0 || blockCount === undefined) return null;
@@ -1016,10 +1029,14 @@ export const IndexingRangeManager: React.FC<Props> = ({
                   </span>
                 </div>
                 <div className="range-progress">
-                  {range.status === 'indexing' && range.currentBlock && (
+                  {/* Walked progress shows for every checkpointed status —
+                      indexing, paused, and errored ranges all keep their
+                      currentBlock, those blocks are indexed and queryable,
+                      and EventStatistics counts them as covered. */}
+                  {CHECKPOINTED_RANGE_STATUSES.has(range.status) && range.currentBlock && (
                     <>
                       Progress: {calculateProgress(range)}
-                      %%
+                      %
                       {range.direction === 'forward'
                         ? `(${formatBlock(range.currentBlock)} / ${formatBlock(range.toBlock)})`
                         : `(${formatBlock(range.fromBlock)} / ${formatBlock(range.currentBlock)})`}
@@ -1072,7 +1089,10 @@ export const IndexingRangeManager: React.FC<Props> = ({
                 setQuickFormState({ mode: 'first', blockCount: '1000' });
                 resetOverlapGate('quick');
               }}
-              disabled={actionLoading !== null}
+              disabled={actionLoading !== null || !hasKnownCreationBlock}
+              title={
+                hasKnownCreationBlock ? undefined : 'Contract creation block unknown'
+              }
             >
               First Blocks
             </button>
@@ -1082,7 +1102,8 @@ export const IndexingRangeManager: React.FC<Props> = ({
                 setQuickFormState({ mode: 'continue', blockCount: '1000' });
                 resetOverlapGate('quick');
               }}
-              disabled={actionLoading !== null}
+              disabled={actionLoading !== null || ranges.length === 0}
+              title={ranges.length === 0 ? 'No previous range yet' : undefined}
             >
               Continue
             </button>

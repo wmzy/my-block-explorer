@@ -77,7 +77,7 @@ pnpm lint            # ESLint
 
 - **Dev (default):** `pnpm dev` runs everything on port **3000**; requests to `/api/*` are handled by the Hono app inside the Vite dev process (`honoApiPlugin` in `vite.config.ts`).
 - **Standalone:** `pnpm dev:server` / `pnpm start` listen on **8201** (`PORT` env override; the CLI also accepts `--port`).
-- **Discovery:** on load the frontend scans `localhost:8201-8205`, probing `GET /api/health` on each (`src/hooks/useAutoDiscovery.ts`). If none respond it shows a setup screen where you can enter a backend URL manually; the choice persists in localStorage.
+- **Discovery:** on load the frontend scans `localhost:8201-8205`, probing `GET /api/health` on each (`src/hooks/useAutoDiscovery.ts`). If none respond it shows a setup screen (which keeps re-probing automatically every ~4 s) where you can enter a backend URL manually; the choice persists in localStorage and is **never auto-cleared** — a temporarily unreachable saved URL only degrades to the localhost scan for that session.
 - **A hosted frontend cannot auto-discover a remote backend.** The scan is localhost-only. When using the GitHub Pages build (or any static hosting) you must type your backend URL into the setup screen, and the backend must allow the frontend's origin — add it to `CORS_ALLOWED_ORIGINS` (or point `FRONTEND_URL` at it); see [CORS](#cors).
 
 ## Data layout
@@ -107,7 +107,7 @@ The trust model is **one local user**. Read endpoints are open; writes and admin
 
 - **Opt-in gated writes** (`requireAdminTokenIfConfigured`): enforced **only when `ADMIN_TOKEN` is set** on the server — with the variable unset the request passes straight through, so a zero-config local session works out of the box. This tier covers the core-workflow writes:
   - event-range mutations: `POST/PATCH/DELETE …/events/ranges*`, `POST …/events/ranges/quick`, and `start`/`pause`/`resume`
-  - RPC-config writes: `POST` / `DELETE /api/rpc-configs` (`GET /api/rpc-configs` is open — it exposes endpoint URLs, no secrets)
+  - RPC-config writes: `POST` / `DELETE /api/rpc-configs` (`GET /api/rpc-configs` is open but returns endpoint URLs **redacted to scheme + host** for any origin the CORS policy doesn't already trust — custom endpoints often embed API keys; loopback/allowlisted origins get full URLs)
 - **Fail-closed admin/diagnostic surface** (`requireAdminToken`): rejected with 403 whenever `ADMIN_TOKEN` is unset or the header doesn't match — there is no default token. This tier covers:
   - `POST /api/chains/:chainId/contracts/:address/clear-cache` (drop cached contract source)
   - `DELETE /api/chains/:chainId/contracts/:address/storage-layout/cache` (drop cached storage layout)
@@ -130,13 +130,14 @@ Cross-origin access uses an allowlist (`src/middleware/cors-origins.ts`), not `*
 Details a developer will run into:
 
 - **Event indexing is manual and range-based.** You add a block range for a contract; `EventIndexingService` walks it in batches (one serial job per range — no global queue). `start`/`resume` return `202` immediately; the UI polls range status. On server start, ranges left in `indexing` by a previous process are reconciled to `error` with *"Interrupted by server restart — resume to continue"*. Range mutations are opt-in gated (see [Security](#security--admin)).
+- **Reorg reconciliation.** Rows indexed below the finalized head stay `isFinalized = false`; at server start and after each range job, they are re-verified against their receipts — reorged-out rows are deleted, survivors promoted. The events table badges unfinalized rows and the CSV export carries an `is_finalized` column. A range's `totalEventsIndexed` is recomputed as a distinct `COUNT(*)` over its block span on completion, so overlap/catchup re-walks can't inflate it.
 - **Range bounds are concrete numbers.** A bound may be submitted as a number or a block tag (`latest`, `finalized`, `safe`, `earliest`), but tags are resolved to concrete block numbers once, at range creation — stored rows never carry tag sentinels, and legacy rows that still do are resolved defensively when indexing starts.
 - **Creation-block honesty.** Contract-creation lookups return "unknown" rather than fabricating a boundary. Quick mode `all` starts at the creation block when known, from genesis when unknown; quick mode `first` fails with *"Contract creation block unknown — enter a start block manually"* instead of guessing.
 - **Quick-create modes** (`POST …/events/ranges/quick`): `all`, `recent`, `first`, `continue`, and `catchup` — the last creates a range from the furthest block any existing range reached up to the current head (`400 "No previous range found. Cannot catch up."` when no ranges exist).
 - **Cache TTLs** for persisted fetches: verified contract source 30 days; proxy contracts 24 h; unverified source 3 days; contract-creation lookup failure 24 h; storage-layout `NOT_FOUND` 24 h.
 - **Address API returns persistent data only** — no balance or transaction count (the UI reads those live from RPC). Transaction history is heuristic (balance-change binary search) and the response reports `coverage` (`complete`/`partial`/`none`); unknown coverage renders a "source unknown" banner instead of pretending the history is complete.
-- **Search** responses may carry `degraded: true` + `degradedReasons` when an upstream lookup failed — the UI offers a retry rather than "no results". ENS names are **not** resolved server-side; the browser resolves them against a mainnet RPC. `search_history` ids are int32-safe (epoch-seconds based).
-- **Event statistics** show an "Indexing coverage" metric: the union of all ranges (overlaps merge, in-flight ranges count walked blocks). CSV export has a hard 100,000-row cap (`400` above it) and the UI disables the export button preflight when the filtered total exceeds it.
+- **Search** responses may carry `degraded: true` + `degradedReasons` when an upstream lookup failed — the UI offers a retry rather than "no results". The global `GET /api/search` resolves tx-hash/block-number queries **on the chain given by `?chainId=`**; only a search without any chain hint returns `needsChain` + the network picker. ENS names are **not** resolved server-side; the browser resolves them against a mainnet RPC (history entries are recorded only after a successful resolution). `search_history` ids are int32-safe (epoch-seconds based).
+- **Event statistics** show an "Indexing coverage" metric — the union of walked blocks across ranges (overlaps merge; paused/errored ranges count the blocks their checkpoint reached, since those events stay queryable), explicitly scoped to "your configured block ranges", not the contract's lifetime. CSV export has a hard 100,000-row cap (`400` above it), the UI disables the export button preflight when the filtered total exceeds it, and the CSV carries an `is_finalized` column.
 
 ## Docs
 

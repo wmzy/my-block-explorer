@@ -220,10 +220,14 @@ export default function Search() {
   const [chainFilter, setChainFilter] = useState('');
   const [showAllChains, setShowAllChains] = useState(false);
   // Successful client-side ENS resolution, shown as a brief confirmation
-  // before navigating to the address page.
-  const [ensResolution, setEnsResolution] = useState<{ name: string; address: string } | null>(
-    null,
-  );
+  // before navigating to the address page. chainId is the destination
+  // chain the address page will open on (resolution itself always happens
+  // on Ethereum).
+  const [ensResolution, setEnsResolution] = useState<{
+    name: string;
+    address: string;
+    chainId: number;
+  } | null>(null);
   // Failed ENS lookup. 'not-found' is a definitive answer (the name is not
   // registered on Ethereum); 'failed' means the Ethereum RPC never
   // answered and is offered as a retry. chainContext is kept so Retry
@@ -267,8 +271,12 @@ export default function Search() {
       return;
     }
 
-    setEnsResolution({ name, address: outcome.address });
     const targetChainId = chainContext ?? 1;
+    setEnsResolution({ name, address: outcome.address, chainId: targetChainId });
+    // History records searches that actually went somewhere: the ENS name
+    // is recorded here, once resolution succeeded and navigation is
+    // scheduled. A not-found or failed lookup never enters history.
+    recordSearchHistoryEntry(name, targetChainId);
     ensRedirectTimer.current = setTimeout(() => {
       navigate(router, `/chain/${targetChainId}/address/${outcome.address}`).catch(
         () => undefined,
@@ -283,13 +291,23 @@ export default function Search() {
     if (!searchQuery.trim()) return;
 
     const sanitized = sanitizeInput(searchQuery.trim());
+    const searchType = detectSearchType(sanitized);
 
     // Explicit chain context, always: an explicitly pinned chain (example
-    // searches, a chain switch from the header), else the ?chain= param,
-    // else the chain remembered by the Landing view, else undefined (the
-    // endpoint then documents its own mainnet fallback via
-    // searchedChainId).
-    const chainContext = pinnedChainId ?? chain ?? readRememberedChainId();
+    // searches, a chain switch from the header), else the ?chain= param
+    // the header search forwards. Chain-relative queries (transaction/
+    // block hashes, block numbers) stop there: they are facts of exactly
+    // one chain, and guessing the remembered one would turn a wrong guess
+    // into a false "no results" — with no explicit context they go to the
+    // global endpoint unscoped and come back as needsChain (network
+    // picker). Everything else (addresses, ENS, free text) additionally
+    // falls back to the chain remembered by the Landing view — there the
+    // chain is only a viewing choice, and the header shows it.
+    const explicitChain = pinnedChainId ?? chain;
+    const chainRelative = searchType === 'hash' || searchType === 'block';
+    const chainContext = chainRelative
+      ? explicitChain
+      : explicitChain ?? readRememberedChainId();
 
     if (ensRedirectTimer.current) {
       clearTimeout(ensRedirectTimer.current);
@@ -308,18 +326,20 @@ export default function Search() {
 
     try {
       // ENS names never hit the backend: detection is local and resolution
-      // happens in the browser (see resolveEnsName).
-      if (detectSearchType(sanitized) === 'ens') {
-        recordSearchHistoryEntry(sanitized, chainContext ?? 1);
+      // happens in the browser (see resolveEnsName, which also records the
+      // history entry only once resolution succeeds).
+      if (searchType === 'ens') {
         await resolveEnsName(sanitized, chainContext);
         return;
       }
 
-      // A pinned chain resolves directly on the per-chain endpoint — the
-      // global one answers hash/block queries with needsChain regardless
-      // of the chain hint, which would be a dead end for a search whose
-      // chain is already known. Everything else goes through the global
-      // endpoint and reads back the chain it actually searched.
+      // A pinned chain resolves directly on the per-chain endpoint; every
+      // other search goes through the global endpoint with the chain
+      // context as ?chainId= — for hash/block queries that hint makes the
+      // endpoint resolve on exactly that chain, so a search from a page
+      // with chain context goes straight to the entity. Without a hint
+      // the endpoint answers hash/block queries with needsChain and the
+      // network picker below takes over.
       const searchResult = pinnedChainId !== undefined
         ? await fetchChainSearch(pinnedChainId, sanitized)
         : await fetchSearch(sanitized, chainContext);
@@ -512,7 +532,14 @@ export default function Search() {
                 value={query}
                 onChange={e => setQuery(e.target.value)}
               />
-              <Button loading={isSearching} disabled={!query.trim() || isSearching}>
+              <Button
+                loading={isSearching}
+                disabled={!query.trim() || isSearching}
+                // haze-ui buttons are hard-wired to type="button", so a
+                // click never submits the enclosing form — it needs its own
+                // handler (Enter in the input still goes through onSubmit).
+                onClick={() => void handleSearch()}
+              >
                 Search
               </Button>
             </form>
@@ -546,7 +573,7 @@ export default function Search() {
           <div className={resultCard}>
             <Alert variant="success">
               Resolved {ensResolution.name} → {formatAddress(ensResolution.address)} on Ethereum —
-              opening the address page…
+              opening on {getChainName(ensResolution.chainId)}…
             </Alert>
           </div>
         )}

@@ -43,13 +43,24 @@ export type IndexingCoverage = {
   coverage: number;
 };
 
+// Statuses that keep a walked-block checkpoint. Paused and errored ranges
+// persist currentBlock (both resume from it instead of restarting), so the
+// blocks they already walked are indexed and queryable — the backend's own
+// range aggregation counts them the same way.
+const CHECKPOINTED_STATUSES: ReadonlySet<RangeStatus> = new Set([
+  'indexing',
+  'paused',
+  'error',
+]);
+
 /**
  * Union-of-ranges coverage over the span [min fromBlock, max toBlock].
  * Overlapping ranges must not double-count, so the covered intervals are
- * sweep-merged before summing. A completed range covers its full span; an
- * in-flight range covers the blocks already walked (direction-aware, clipped
- * to the range bounds). Pending, paused, and errored ranges contribute
- * nothing — matching the SegmentedProgressBar legend semantics rendered by
+ * sweep-merged before summing. A completed range covers its full span; a
+ * checkpointed range (indexing, paused, or errored) covers the blocks
+ * already walked (direction-aware, clipped to the range bounds). Only
+ * pending ranges contribute nothing — matching the walked-progress fill the
+ * SegmentedProgressBar renders for checkpointed segments in
  * IndexingRangeManager.
  */
 export const computeIndexingCoverage = (
@@ -68,7 +79,7 @@ export const computeIndexingCoverage = (
     const to = Number(range.toBlock);
     if (range.status === 'completed') {
       intervals.push([from, to]);
-    } else if (range.status === 'indexing' && range.currentBlock !== null) {
+    } else if (CHECKPOINTED_STATUSES.has(range.status) && range.currentBlock !== null) {
       // Walked position clipped into the range bounds; the covered side runs
       // from the boundary the direction started at down/up to it.
       const current = Math.min(Math.max(Number(range.currentBlock), from), to);
@@ -122,6 +133,13 @@ const metricStyle = css`
 const metricValueStyle = css`
   font-weight: 600;
   color: var(--haze-text, #111827);
+`;
+
+// Denominator hint for the coverage metric: 100% means "all of the
+// configured ranges", never "complete contract history".
+const coverageScopeStyle = css`
+  font-size: 11px;
+  color: var(--haze-text-secondary, #6b7280);
 `;
 
 const separatorStyle = css`
@@ -192,7 +210,7 @@ export const EventStatistics = ({
 
   // Indexing status drives the status/event metrics; the ranges feed the
   // coverage metric (same endpoint IndexingRangeManager polls). Both ride
-  // one refresh and one 5s poll so the bar never disagrees with the
+  // one refresh and one 3s poll so the bar never disagrees with the
   // segmented range view.
   const fetchStatus = useCallback(async () => {
     try {
@@ -225,12 +243,18 @@ export const EventStatistics = ({
     fetchStatus();
   }, [fetchStatus]);
 
-  useEffect(() => {
-    if (stats?.status !== 'indexing') return;
+  // Poll at IndexingRangeManager's 3s cadence while anything is indexing
+  // (the aggregate status OR any individual range — the legacy status row
+  // can lag a freshly started range job), so the coverage bar advances in
+  // step with the segmented range view. Idle stays unpolled as before.
+  const anyRangeIndexing = ranges.some(r => r.status === 'indexing');
 
-    const id = setInterval(fetchStatus, 5000);
+  useEffect(() => {
+    if (stats?.status !== 'indexing' && !anyRangeIndexing) return;
+
+    const id = setInterval(fetchStatus, 3000);
     return () => clearInterval(id);
-  }, [stats?.status, fetchStatus]);
+  }, [stats?.status, anyRangeIndexing, fetchStatus]);
 
   const handleRefresh = useCallback(() => {
     fetchStatus();
@@ -277,6 +301,7 @@ export const EventStatistics = ({
         (
         {coverage.coverage.toFixed(1)}
         %)
+        <span className={coverageScopeStyle}>of your configured block ranges</span>
       </div>
 
       <div className={progressWrapperStyle}>

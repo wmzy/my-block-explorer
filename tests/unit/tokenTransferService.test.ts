@@ -334,6 +334,49 @@ describe('TokenTransferService - cursor pagination over the cached list', () => 
   });
 });
 
+describe('TokenTransferService - cache-bypass refresh', () => {
+  it('re-scans on refresh, overwriting a cached partial entry (Retry is not a placebo)', async () => {
+    // Mutable log set: a matching log appears INSIDE the first chunk's
+    // range only after the initial scan ran and cached its (partial,
+    // empty) result.
+    const logs: ScanLog[] = [];
+    const { service, calls } = makeHarness({ logs, latest: 500_000n, maxScanCalls: 6 });
+
+    // Budget-limited first scan: one 6-call chunk of the 100k window →
+    // partial, empty, cached.
+    const first = await service.getTokenTransfers(1, OWNER, 0, 25);
+    expect(first.coverage).toBe('partial');
+    expect(first.windowBlocks).toBe(100_000);
+    expect(first.transfers).toEqual([]);
+    expect(calls).toHaveLength(6);
+
+    // Placebo proof: a plain re-read re-serves the cached partial entry
+    // (zero new getLogs) even though a matching log now exists in the
+    // already-scanned range.
+    logs.push(erc20Log(OWNER, OTHER, 5n, 498_000, 0));
+    const placebo = await service.getTokenTransfers(1, OWNER, 0, 25);
+    expect(placebo.transfers).toEqual([]);
+    expect(placebo.coverage).toBe('partial');
+    expect(calls).toHaveLength(6);
+
+    // refresh: the cache read is skipped, the scan re-runs, and the new
+    // outcome overwrites the cached entry.
+    const refreshed = await service.getTokenTransfers(1, OWNER, 0, 25, undefined, true);
+    expect(refreshed.coverage).toBe('partial');
+    expect(refreshed.transfers).toHaveLength(1);
+    expect(refreshed.transfers[0].blockNumber).toBe(498_000);
+    expect(refreshed.transfers[0].value).toBe('5');
+    expect(calls).toHaveLength(12);
+
+    // Subsequent plain reads serve the overwritten entry — the re-scan
+    // became the cache, not a one-off side channel.
+    const after = await service.getTokenTransfers(1, OWNER, 0, 25);
+    expect(after.transfers).toHaveLength(1);
+    expect(after.transfers[0].blockNumber).toBe(498_000);
+    expect(calls).toHaveLength(12);
+  });
+});
+
 describe('TokenTransferService - window clamping', () => {
   it('clamps an explicit window into 1..50_000_000 and echoes the effective value', async () => {
     const { service } = makeHarness({ latest: 1_000n });

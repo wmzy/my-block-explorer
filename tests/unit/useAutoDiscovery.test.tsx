@@ -6,7 +6,9 @@
 //  - the lowest healthy port wins even when a higher port answers first
 //    (same preference as the old serial scan);
 //  - an explicitly stored manual base is probed first and wins while
-//    alive; a dead one falls through to the parallel scan and is cleared;
+//    alive; a dead one degrades to the parallel scan for that session
+//    only — the stored choice is kept (erasing it stays an explicit user
+//    action), so a temporarily slow remote backend survives a reload;
 //  - setApiUrl connects mid-session and persists the manual base.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
@@ -136,18 +138,24 @@ describe('useAutoDiscovery', () => {
     expect(getApiBase()).toBe(MANUAL_BASE);
   });
 
-  it('falls back to the parallel scan after a stored manual base dies', async () => {
+  it('keeps a dead stored manual base stored while degrading to the scan', async () => {
     localStorage.setItem('my-block-explorer-api-url', MANUAL_BASE);
     const { result } = renderHook(() => useAutoDiscovery());
     await act(async () => {});
 
-    // The manual base keeps its more patient 3s budget…
+    // The saved base keeps its patient 5s budget…
     await act(async () => {
-      vi.advanceTimersByTime(3000);
+      vi.advanceTimersByTime(4999);
     });
+    expect(inFlightUrls()).toEqual([MANUAL_URL]);
+    await act(async () => {
+      vi.advanceTimersByTime(1);
+    });
+    // …then the session degrades to the localhost scan…
     expect(inFlightUrls()).toEqual(PORT_URLS);
-    // …and a dead manual base is forgotten so the next reload scans directly.
-    expect(getStoredManualBase()).toBeNull();
+    // …but the stored choice survives: removal stays an explicit user
+    // action, so one slow link does not erase a remote backend forever.
+    expect(getStoredManualBase()).toBe(MANUAL_BASE);
 
     respond(PORT_URLS[3]); // 8204
     await act(async () => {
@@ -156,6 +164,34 @@ describe('useAutoDiscovery', () => {
 
     expect(result.current.status).toBe('found');
     expect(result.current.serviceInfo?.port).toBe(8204);
+    expect(getApiBase()).toBe('http://localhost:8204');
+    // Still stored after a successful fallback: the scan wins this
+    // session's runtime slot without overwriting the saved choice.
+    expect(getStoredManualBase()).toBe(MANUAL_BASE);
+  });
+
+  it('degrades to the scan immediately when the stored base errors (not times out)', async () => {
+    localStorage.setItem('my-block-explorer-api-url', MANUAL_BASE);
+    const { result } = renderHook(() => useAutoDiscovery());
+    await act(async () => {});
+
+    // A network-level rejection (e.g. unreachable host) fails fast —
+    // no 5s budget is burned before the fallback scan.
+    const probe = inFlight.get(MANUAL_URL);
+    inFlight.delete(MANUAL_URL);
+    probe?.reject(new TypeError('Failed to fetch'));
+    await act(async () => {});
+
+    expect(inFlightUrls()).toEqual(PORT_URLS);
+    // The stored choice is kept on this failure path too.
+    expect(getStoredManualBase()).toBe(MANUAL_BASE);
+
+    respond(PORT_URLS[0]);
+    await act(async () => {
+      vi.advanceTimersByTime(1500);
+    });
+    expect(result.current.status).toBe('found');
+    expect(getApiBase()).toBe('http://localhost:8201');
   });
 
   it('setApiUrl connects mid-session and persists the manual base', async () => {

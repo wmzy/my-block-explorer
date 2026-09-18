@@ -502,11 +502,12 @@ type ChainSearchResponse = {
 // current chain, 'failed' = a data source errored (degraded response),
 // 'ens-resolved' / 'ens-not-found' / 'ens-failed' = outcome of a
 // client-side ENS lookup (resolved on Ethereum; not-found is definitive,
-// failed means the RPC never answered and is retryable).
+// failed means the RPC never answered and is retryable). ens-resolved also
+// carries the destination chain the address page opens on.
 type SearchNotice =
   | { kind: 'miss'; query: string }
   | { kind: 'failed'; query: string }
-  | { kind: 'ens-resolved'; query: string; address: string }
+  | { kind: 'ens-resolved'; query: string; address: string; chainId: number }
   | { kind: 'ens-not-found'; query: string }
   | { kind: 'ens-failed'; query: string };
 
@@ -584,8 +585,14 @@ export default function TopNavigation({
   // currently selected.
   const navigateForQuery = async (rawQuery: string, chainId: number = currentChainId) => {
     const query = sanitizeInput(rawQuery.trim());
-    setHistory(recordSearchHistoryEntry(query, chainId));
     const searchType = detectSearchType(query);
+
+    // Every executed search is recorded — except ENS, whose outcome is not
+    // known yet: a name that fails to resolve never went anywhere, so its
+    // entry is recorded after a successful resolution instead (below).
+    if (searchType !== 'ens') {
+      setHistory(recordSearchHistoryEntry(query, chainId));
+    }
 
     if (searchType === 'address') {
       goTo(`/chain/${chainId}/address/${query}`);
@@ -632,7 +639,15 @@ export default function TopNavigation({
       // failure as a retryable failure — never one blurred copy for both.
       const outcome = await resolveEnsAddress(query);
       if (outcome.status === 'resolved') {
-        setSearchNotice({ kind: 'ens-resolved', query, address: outcome.address });
+        // History only records the search now that it actually resolved
+        // (see the upfront-record skip above).
+        setHistory(recordSearchHistoryEntry(query, chainId));
+        setSearchNotice({
+          kind: 'ens-resolved',
+          query,
+          address: outcome.address,
+          chainId,
+        });
         goTo(`/chain/${chainId}/address/${outcome.address}`);
         return;
       }
@@ -711,11 +726,11 @@ export default function TopNavigation({
               <div className={searchNoticeBox}>
                 <span>
                   {searchNotice.kind === 'miss' &&
-                    `No results on ${chainInfo?.name ?? 'this chain'} — try full search`}
+                    `Hash not found on ${chainInfo?.name ?? 'this chain'} — it may exist on another network`}
                   {searchNotice.kind === 'failed' &&
                     `Search failed on ${chainInfo?.name ?? 'this chain'} — a data source errored`}
                   {searchNotice.kind === 'ens-resolved' &&
-                    `Resolved ${searchNotice.query} → ${formatAddress(searchNotice.address)} on Ethereum`}
+                    `Resolved ${searchNotice.query} → ${formatAddress(searchNotice.address)} on Ethereum — opening on ${getChainName(searchNotice.chainId)}`}
                   {searchNotice.kind === 'ens-not-found' &&
                     `ENS name "${searchNotice.query}" not found (checked on Ethereum)`}
                   {searchNotice.kind === 'ens-failed' &&
@@ -726,9 +741,13 @@ export default function TopNavigation({
                     type="button"
                     className={searchNoticeLink}
                     onClick={() =>
-                      goTo(`/search?q=${encodeURIComponent(searchNotice.query)}&chain=${currentChainId}`)}
+                      // No ?chain= on purpose: the hash's chain is unknown
+                      // (it just missed here), so the Search view must ask
+                      // which network to search next instead of re-running
+                      // it on this one — the link opens the network picker.
+                      goTo(`/search?q=${encodeURIComponent(searchNotice.query)}`)}
                   >
-                    Search all networks
+                    Choose a network →
                   </button>
                 )}
                 {searchNotice.kind === 'ens-failed' && (

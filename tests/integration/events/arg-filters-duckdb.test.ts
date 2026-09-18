@@ -249,14 +249,15 @@ describe('CSV export queries (DuckDB)', () => {
     const csv = buildEventsCsv(rows);
     const lines = csv.split('\r\n');
     expect(lines[0]).toBe(
-      'block_number,block_timestamp,tx_hash,log_index,event_name,decoded_args,address',
+      'block_number,block_timestamp,tx_hash,log_index,event_name,decoded_args,address,is_finalized',
     );
     // The nasty decoded_args field is fully quoted with doubled quotes and the
     // embedded newline kept inside the quoted field.
     expect(csv).toContain(`"${nasty.replace(/"/g, '""')}"`);
     expect(csv.endsWith('\r\n')).toBe(true);
 
-    // Plain hex cells (address) stay unquoted.
-    expect(csv).toContain(`${ADDRESS}\r\n`);
+    // Plain hex cells (address) stay unquoted; the seeded rows are unfinalized
+    // so is_finalized lands as the trailing false cell.
+    expect(csv).toContain(`${ADDRESS},false\r\n`);
   });
 });

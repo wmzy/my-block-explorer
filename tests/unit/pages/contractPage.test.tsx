@@ -6,7 +6,7 @@
 // tab, the ?tab= write path, and the chain-switch navigation. Router view
 // commits resolve asynchronously, so first paint assertions use findBy*.
 import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, View, createRoutes, useSearchParams } from '@native-router/react';
 
@@ -223,10 +223,17 @@ describe('Contract view', () => {
     }
   });
 
-  it('renders the unsupported-chain error branch', async () => {
+  it('renders the unsupported-chain recovery state instead of a dead end', async () => {
     renderAt('/chain/1234567/contract/0xdead');
 
-    expect(await screen.findByText(/Unsupported chain ID/)).toBeInTheDocument();
+    // Same UnsupportedChainState as Home/Blocks: names the requested id and
+    // offers the deterministic recovery CTAs.
+    expect(
+      await screen.findByText(/Chain not supported: this explorer has no configuration/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/chain ID 1234567/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Go to Mainnet' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Open chain list' })).toBeInTheDocument();
     expect(screen.queryByText('Contract Source Code')).not.toBeInTheDocument();
   });
 
@@ -336,6 +343,8 @@ describe('Contract view custom ABI unlock', () => {
     // Lazy-initialised from localStorage without any typing.
     expect(await screen.findByRole('button', { name: 'Events (1)' })).toBeInTheDocument();
     expect(screen.getByLabelText('Custom ABI JSON')).toHaveValue(CUSTOM_ABI);
+    // No server ABI exists here, so the paste is in use — no shadow notice.
+    expect(screen.queryByText(/no longer used/)).not.toBeInTheDocument();
 
     await user.click(await screen.findByRole('button', { name: 'Clear custom ABI' }));
 
@@ -358,6 +367,68 @@ describe('Contract view custom ABI unlock', () => {
     expect(await screen.findByRole('button', { name: 'Events (1)' })).toBeInTheDocument();
     expect(localStorage.getItem(CUSTOM_ABI_STORAGE_KEY)).toBe(CUSTOM_ABI);
     expect(sessionStorage.getItem(CUSTOM_ABI_STORAGE_KEY)).toBeNull();
+  });
+});
+
+describe('Contract view custom ABI shadowed by a server ABI', () => {
+  it('warns when verification supersedes a stored paste; Keep hides it for the session', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(CUSTOM_ABI_STORAGE_KEY, CUSTOM_ABI);
+    // verifiedSourceResponse is the beforeEach default: the server ABI is
+    // back, so the stored paste is silently unused.
+    renderAt(`/chain/1/contract/${ADDRESS}`);
+
+    const banner = await screen.findByRole('status');
+    expect(banner).toHaveTextContent(
+      'This contract is now verified server-side — your pasted custom ABI is no longer used.',
+    );
+
+    // The tab-bar badge stays visible and names the unused state.
+    expect(screen.getByTitle(/not used while a verified source is available/)).toHaveTextContent(
+      'Custom ABI',
+    );
+
+    // The server ABI drives the tabs (the paste does not shadow it back),
+    // and the paste-ABI panel is not offered while a server ABI exists.
+    expect(screen.getByRole('button', { name: 'Events (1)' })).toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: 'Use custom ABI' }),
+    ).not.toBeInTheDocument();
+
+    // Keep only dismisses for this session: the banner stays hidden across
+    // tab switches while the stored paste remains untouched.
+    await user.click(within(banner).getByRole('button', { name: 'Keep' }));
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Events (1)' }));
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(localStorage.getItem(CUSTOM_ABI_STORAGE_KEY)).toBe(CUSTOM_ABI);
+    expect(screen.getByTitle(/not used while a verified source is available/)).toBeInTheDocument();
+  });
+
+  it('Clear from the banner removes the stored paste and the banner', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(CUSTOM_ABI_STORAGE_KEY, CUSTOM_ABI);
+    renderAt(`/chain/1/contract/${ADDRESS}`);
+
+    const banner = await screen.findByRole('status');
+    await user.click(within(banner).getByRole('button', { name: 'Clear custom ABI' }));
+
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(localStorage.getItem(CUSTOM_ABI_STORAGE_KEY)).toBeNull();
+    expect(sessionStorage.getItem(CUSTOM_ABI_STORAGE_KEY)).toBeNull();
+    expect(screen.queryByText('Custom ABI')).not.toBeInTheDocument();
+    // The server ABI keeps driving the tabs after the paste is gone.
+    expect(screen.getByRole('button', { name: 'Events (1)' })).toBeInTheDocument();
+  });
+
+  it('shows no banner when only the server ABI exists', async () => {
+    renderAt(`/chain/1/contract/${ADDRESS}`);
+
+    expect(
+      await screen.findByRole('heading', { name: 'Contract Source Code' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+    expect(screen.queryByText(/no longer used/)).not.toBeInTheDocument();
   });
 });
 

@@ -33,14 +33,6 @@ export function storeManualBase(url: string): void {
   localStorage.setItem(MANUAL_BASE_STORAGE_KEY, url);
 }
 
-/**
- * Forget the explicit manual base. Called when the stored base is proven
- * dead at startup, so the next reload does not burn another probe on it.
- */
-export function clearStoredManualBase(): void {
-  localStorage.removeItem(MANUAL_BASE_STORAGE_KEY);
-}
-
 export function getApiBase(): string {
   return apiBase;
 }

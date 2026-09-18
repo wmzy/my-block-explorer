@@ -8,8 +8,8 @@
 //    renders with a dismissible banner; "Open setup" reveals the setup
 //    screen as an overlay; connecting mid-session (manual URL) removes
 //    banner + overlay without remounting the app.
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import type { ComponentProps, ReactNode } from 'react';
 import { SetupRequiredScreen } from '@/components/ServiceSetup/SetupRequiredScreen';
@@ -110,6 +110,79 @@ describe('SetupRequiredScreen', () => {
     it('has no back escape in full-page gate mode', () => {
       renderScreen();
       expect(screen.queryByRole('button', { name: /Back to explorer/ })).toBeNull();
+    });
+  });
+
+  describe('automatic re-probe while open', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('re-probes discovery on an interval and stops on unmount', async () => {
+      const onDiscover = vi.fn();
+      const { unmount } = renderScreen({ onDiscover });
+
+      // The first re-probe waits for a full interval, not mount.
+      await act(async () => {
+        vi.advanceTimersByTime(3999);
+      });
+      expect(onDiscover).not.toHaveBeenCalled();
+
+      await act(async () => {
+        vi.advanceTimersByTime(1);
+      });
+      expect(onDiscover).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        vi.advanceTimersByTime(4000);
+      });
+      expect(onDiscover).toHaveBeenCalledTimes(2);
+
+      unmount();
+      await act(async () => {
+        vi.advanceTimersByTime(20000);
+      });
+      expect(onDiscover).toHaveBeenCalledTimes(2);
+    });
+
+    it('skips the interval re-probe while a discovery round is in flight', async () => {
+      const onDiscover = vi.fn();
+      const baseProps = {
+        error: null,
+        isConnecting: true,
+        onSetApiUrl: vi.fn().mockResolvedValue(true),
+        onDiscover,
+      } satisfies ScreenProps;
+      const { rerender } = render(<SetupRequiredScreen {...baseProps} />);
+
+      await act(async () => {
+        vi.advanceTimersByTime(12000);
+      });
+      expect(onDiscover).not.toHaveBeenCalled();
+
+      // The guard reads the CURRENT prop, so a later round fires again.
+      rerender(<SetupRequiredScreen {...baseProps} isConnecting={false} />);
+      await act(async () => {
+        vi.advanceTimersByTime(4000);
+      });
+      expect(onDiscover).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps the manual Refresh button working alongside the interval', async () => {
+      const onDiscover = vi.fn();
+      renderScreen({ onDiscover });
+
+      fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+      expect(onDiscover).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        vi.advanceTimersByTime(4000);
+      });
+      expect(onDiscover).toHaveBeenCalledTimes(2);
     });
   });
 });

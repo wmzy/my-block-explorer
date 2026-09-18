@@ -19,7 +19,7 @@ The backend is a Hono app (`src/api-app.ts`) that mounts the route modules in `s
 
 | Method & path | Notes |
 | --- | --- |
-| `GET /api/search?q={query}` | Detects address / tx hash / block number. Response may carry `degraded: true` + `degradedReasons: string[]` when an upstream lookup failed, and `message` (e.g. ENS names are resolved client-side, not by the server) |
+| `GET /api/search?q={query}&chainId={id}` | Detects address / tx hash / block number. With a valid `chainId`, hash and block-number queries resolve **on that chain** directly; without one they return `needsChain` + `supportedChains` for the client-side network picker (addresses/free text fall back to mainnet and echo `searchedChainId`). Response may carry `degraded: true` + `degradedReasons: string[]` when an upstream lookup failed, and `message` (e.g. ENS names are resolved client-side, not by the server) |
 | `GET /api/chains/:chainId/search?q={query}` | Chain-scoped variant |
 
 ## Stats & blocks & transactions
@@ -40,6 +40,7 @@ The backend is a Hono app (`src/api-app.ts`) that mounts the route modules in `s
 | `GET /api/chains/:chainId/addresses/:address` | Persistent data only — **no balance, no transaction count**; the UI reads those live from RPC |
 | `GET /api/chains/:chainId/addresses/:address/persistent` | Same data, explicit |
 | `GET /api/chains/:chainId/addresses/:address/transactions?limit=&page=&window=` | Heuristic history (balance-change binary search). Reports `method`, `coverage` (`complete`/`partial`/`none`), `reason`, `searchWindowBlocks`; unknown coverage renders a "source unknown" banner in the UI. `total` is the count of **discovered** transactions (never the nonce); the heuristic never reports `complete` (nonce=0 → `partial`/`no-outgoing-transactions` — incoming activity is undetectable). Optional `window` (blocks, clamped 1–50,000,000) widens the search range; results are cached per address+window (~60s) so consecutive pages agree |
+| `GET /api/chains/:chainId/addresses/:address/transfers?cursor=&limit=&window=&refresh=1` | On-demand token-transfer scan (ERC-20/721/1155 via `eth_getLogs`, no DuckDB writes). Reports `coverage` (`complete`/`partial` — the scan budget or window bounded it) and `windowBlocks`. `window` widens the scanned range (the UI's "Search deeper" quadruples it); `refresh=1` (literal `1` only) skips the ~60s scan cache so the Retry button genuinely re-scans instead of re-serving a cached partial page |
 
 ## Contracts
 
@@ -69,6 +70,8 @@ The backend is a Hono app (`src/api-app.ts`) that mounts the route modules in `s
 
 Range-based manual indexing. `EventIndexingService` runs one serial job per range; on server start, ranges stuck in `indexing` are reconciled to `error` ("Interrupted by server restart — resume to continue"). Range bounds accept a block number or a tag (`latest`, `finalized`, `safe`, `earliest`); tags are resolved to concrete numbers once, at range creation, so stored ranges always carry concrete block numbers. The seven mutating routes below are opt-in gated — `x-admin-token` is required only when the server has `ADMIN_TOKEN` set.
 
+**Reorg reconciliation**: rows indexed below the finalized head are kept as `isFinalized = false`. At server start and after each range job finishes, unfinalized rows at/below the current finalized head are re-verified against their transaction receipts (oldest-first, capped at 500 rows per pass): rows whose receipt vanished or no longer contains the log are deleted (reorged out), survivors are promoted to finalized. Rows above the finalized head keep the `unfinalized` badge in the UI, and the CSV export carries an `is_finalized` column.
+
 | Method & path | Notes |
 | --- | --- |
 | `GET …/events?…` | Query indexed events; supports `argFilters`/`topicN` decoded-argument filtering pushed into DuckDB |
@@ -86,7 +89,7 @@ Range-based manual indexing. `EventIndexingService` runs one serial job per rang
 
 ## RPC configuration
 
-`GET` is open (endpoint URLs only, no secrets — the RPC settings modal reads without a token). `POST`/`DELETE` use the opt-in gate: enforced only when `ADMIN_TOKEN` is set on the server. Managed in the ⚙️ RPC settings modal, which also holds the browser-side admin token.
+`GET` returns endpoint URLs **redacted to scheme + host for any origin the CORS policy does not already trust** (custom endpoints often embed API keys in the path/query); loopback and allowlisted origins — including the no-Origin same-origin UI — still get full URLs. `POST`/`DELETE` use the opt-in gate: enforced only when `ADMIN_TOKEN` is set on the server. Managed in the ⚙️ RPC settings modal (saved configs apply to the backend for **all** users — the server-wide RPC hot-reloads), which also holds the browser-side admin token (verified against the server on save).
 
 | Method & path | Notes |
 | --- | --- |

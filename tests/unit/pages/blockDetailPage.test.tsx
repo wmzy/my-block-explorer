@@ -7,14 +7,26 @@
 // path. The finality cases pin that the badge compares the viewed number
 // against the polled heads and renders nothing while those are unknown.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter, View, createRoutes } from '@native-router/react';
 import '@testing-library/jest-dom';
 import BlockDetail from '@/views/Blocks/Detail';
 
 vi.mock('@/components/TopNavigation', () => ({
-  default: ({ currentChainId }: { currentChainId: number }) => (
-    <div data-testid="top-navigation">
+  // Clicking the nav invokes onChainChange — the vehicle for the
+  // chain-switch test (Sepolia is the configured second chain).
+  default: ({
+    currentChainId,
+    onChainChange,
+  }: {
+    currentChainId: number;
+    onChainChange?: (chainId: number) => void;
+  }) => (
+    <div
+      data-testid="top-navigation"
+      data-chain-id={currentChainId}
+      onClick={() => onChainChange?.(11155111)}
+    >
       chain:
       {currentChainId}
     </div>
@@ -119,11 +131,15 @@ const makeBlock = (number: number) => ({
 
 const ZERO_PARENT_HASH = '0x0000000000000000000000000000000000000000000000000000000000000000';
 
+// Landing marker for the chain-switch test: the new chain's home route.
+const ChainHomeStub = () => <div data-testid="chain-home" />;
+
 const renderBlockDetail = (path: string) =>
   render(
     <MemoryRouter
       routes={createRoutes([
         { path: '/chain/:chainId/block/:blockNumber', component: () => BlockDetail },
+        { path: '/chain/:chainId', component: () => ChainHomeStub },
       ])}
       initialEntries={[path]}
     >
@@ -333,5 +349,24 @@ describe('BlockDetail view', () => {
       '/chain/1',
     );
     expect(screen.getByRole('link', { name: 'Open chain list' })).toHaveAttribute('href', '/');
+  });
+
+  it('redirects to the new chain home when switching chains while viewing a block', async () => {
+    mockUseBlockByNumber.mockReturnValue({
+      data: makeBlock(18000001),
+      loading: false,
+      error: undefined,
+    });
+    renderBlockDetail('/chain/1/block/18000001');
+
+    expect(await screen.findByText('Block Details')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('top-navigation'));
+
+    // Different chain = different block data: the switch must never show
+    // the new chain's same-numbered block as if it were the one being
+    // read — it lands on the new chain's home instead.
+    expect(await screen.findByTestId('chain-home')).toBeInTheDocument();
+    expect(screen.queryByText('Block Details')).not.toBeInTheDocument();
   });
 });

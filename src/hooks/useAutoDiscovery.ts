@@ -3,7 +3,6 @@ import {
   setApiBase,
   getStoredManualBase,
   storeManualBase,
-  clearStoredManualBase,
 } from '@/util/apiBase';
 
 export const DEFAULT_PORTS = [8201, 8202, 8203, 8204, 8205] as const;
@@ -12,9 +11,8 @@ const DEFAULT_HOST = 'localhost';
 // parallel, so this is also the whole-scan worst case (~1.5s instead of
 // the old serial ports × 3s ≈ 15s).
 const PROBE_TIMEOUT_MS = 1500;
-// The saved manual base is an explicit user choice, not a guess: give it
-// more patience than a scan probe before declaring it dead.
-const SAVED_URL_TIMEOUT_MS = 3000;
+// Probing an explicit user choice (a saved or freshly entered manual
+// base) gets more patience than a scan probe before declaring it dead.
 const MANUAL_URL_TIMEOUT_MS = 5000;
 
 // Probe a candidate base URL for a live backend. The probes never go
@@ -54,33 +52,35 @@ async function probeHealth(
   }
 }
 
-// Probe one port. Never rejects: an unreachable port maps to null so the
-// parallel scan can use Promise.all directly.
+// Probe one port. Expected probe failures (refused connection, timeout,
+// non-JSON or unhealthy response) map to null so the parallel scan can
+// use Promise.all directly; only a genuinely unexpected error rejects,
+// which surfaces as a discovery error instead of reading as "port
+// closed".
 async function probePort(
   port: number,
   host = DEFAULT_HOST,
   timeoutMs = PROBE_TIMEOUT_MS,
 ): Promise<ServiceInfo | null> {
   const url = `http://${host}:${port}`;
+  const startTime = Date.now();
+  let health: Record<string, unknown>;
   try {
-    const startTime = Date.now();
-    const health = await probeHealth(url, timeoutMs);
-    const latency = Date.now() - startTime;
-
-    if (health?.status) {
-      return {
-        host,
-        port,
-        url,
-        version: health.version as string | undefined,
-        latency,
-      };
-    }
+    health = await probeHealth(url, timeoutMs);
   } catch {
     // Port unavailable or service not responding
+    return null;
   }
 
-  return null;
+  if (!health?.status) return null;
+
+  return {
+    host,
+    port,
+    url,
+    version: health.version as string | undefined,
+    latency: Date.now() - startTime,
+  };
 }
 
 function serviceInfoFromUrl(
@@ -121,10 +121,10 @@ export function useAutoDiscovery() {
   const isConnected = useMemo(() => status === 'found', [status]);
 
   // Scan port range. Every candidate is probed concurrently: the worst
-  // case is one probe timeout instead of ports × timeout, and probePort
-  // never rejects, so Promise.all is allSettled-equivalent while keeping
-  // the port order — the first (lowest) healthy port wins, matching the
-  // old serial scan's preference.
+  // case is one probe timeout instead of ports × timeout, and expected
+  // probe failures are mapped to null inside probePort, so Promise.all
+  // keeps the port order — the first (lowest) healthy port wins, matching
+  // the old serial scan's preference.
   const discover = useCallback(
     async (
       ports: readonly number[] = DEFAULT_PORTS,
@@ -163,12 +163,15 @@ export function useAutoDiscovery() {
 
   // Auto-discover on page load. The stored manual base is an explicit
   // choice, so it is probed first and wins while alive (see apiBase.ts
-  // precedence contract); only a dead one falls through to the scan.
+  // precedence contract). A dead one degrades to the scan for THIS
+  // session only — the stored choice is kept so a temporarily slow
+  // remote backend is not permanently erased; removing an entry stays an
+  // explicit user action.
   const autoDiscover = useCallback(async (): Promise<ServiceInfo | null> => {
     const savedUrl = getStoredManualBase();
     if (savedUrl) {
       try {
-        const health = await probeHealth(savedUrl, SAVED_URL_TIMEOUT_MS);
+        const health = await probeHealth(savedUrl, MANUAL_URL_TIMEOUT_MS);
 
         if (health?.status) {
           const info = serviceInfoFromUrl(savedUrl, health);
@@ -178,8 +181,8 @@ export function useAutoDiscovery() {
           return info;
         }
       } catch {
-        // Saved URL invalid, clear and continue scanning
-        clearStoredManualBase();
+        // Saved URL unreachable right now: fall through to the scan
+        // without erasing the stored choice.
       }
     }
 
@@ -230,7 +233,7 @@ export function useAutoDiscovery() {
       setError(null);
 
       try {
-        const health = await probeHealth(savedUrl, SAVED_URL_TIMEOUT_MS);
+        const health = await probeHealth(savedUrl, MANUAL_URL_TIMEOUT_MS);
 
         if (health?.status) {
           const info = serviceInfoFromUrl(savedUrl, health);
