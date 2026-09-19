@@ -55,7 +55,7 @@ block-explorer/
 | Frontend data hooks  | `src/services/{blocks,transactions,addresses,contracts,search,stats}.ts`         | react-toolroom query layer (`src/util/useQuery.ts`) |
 | Address realtime     | `src/services/addressRealTime.ts` + `services/addresses.ts`                     | RPC channel + persistent channel composed in view   |
 | Admin gating / CORS  | `src/middleware/admin-token.ts`, `src/middleware/cors-origins.ts`               | Two-tier ADMIN_TOKEN gate; shared origin allowlist  |
-| ENS reverse lookup   | `src/services/ens.ts`                                                           | `useEnsName()` — mainnet-pinned, browser-side       |
+| ENS reverse lookup   | `src/services/ens.ts`                                                           | `useEnsName()` — mainnet-pinned, browser-side, reverse+forward roundtrip verified (spoofed reverse records render as no name) |
 | HTTP layer           | `src/util/http.ts` (fetch-fun) + `src/util/apiBase.ts`                          | Runtime-discovered API base URL                     |
 
 ## CODE MAP
