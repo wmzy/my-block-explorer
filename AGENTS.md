@@ -1,6 +1,6 @@
 # Block Explorer - Project Knowledge Base
 
-**Generated:** 2026-09-17 **Commit:** bd8270f **Branch:** 001-abi
+**Generated:** 2026-09-19 (updated after the product-review fix wave) **Branch:** 001-abi
 
 ## OVERVIEW
 
@@ -213,14 +213,16 @@ pnpm typecheck           # tsc --noEmit
 - **Proxy port 7890** — Set `HTTP_PROXY`/`HTTPS_PROXY` if network issues
 - **Admin auth is two-tier** (`src/middleware/admin-token.ts`, `x-admin-token`
   header, timing-safe compare). Strict tier (`requireAdminToken`, **fail
-  closed** when `ADMIN_TOKEN` unset): contract source cache clear
-  (`POST .../contracts/:address/clear-cache`), storage-layout cache clear
-  (`DELETE .../contracts/:address/storage-layout/cache`), and all
-  `/api/performance/*`. Opt-in tier (`requireAdminTokenIfConfigured`): passes
+  closed** when `ADMIN_TOKEN` unset): all of `/api/performance/*` (and the
+  debug API below carries no gate at all). Opt-in tier
+  (`requireAdminTokenIfConfigured`): passes
   when `ADMIN_TOKEN` is unset (zero-config local works), enforces identically
   to the strict tier when it is set — covers the 7 mutating event-range
   routes (`POST/PATCH/DELETE .../events/ranges*`, `quick`, `start`/`pause`/
-  `resume`) and rpc-config writes (`POST`/`DELETE /api/rpc-configs`);
+  `resume`), rpc-config writes (`POST`/`DELETE /api/rpc-configs`), and the
+  two cache clears (`POST .../contracts/:address/clear-cache`,
+  `DELETE .../contracts/:address/storage-layout/cache` — clearing DuckDB
+  caches is non-destructive, immutable rows refetch on demand).
   `GET /api/rpc-configs` is open but redacts endpoint URLs to scheme+host
   for any origin the CORS policy doesn't trust (custom endpoints may embed
   API keys; loopback/allowlisted/no-Origin readers get full URLs). Browser side:
@@ -235,7 +237,8 @@ pnpm typecheck           # tsc --noEmit
   consumes the same module (imported RELATIVELY in vite.config.ts — keep it
   import-free or esbuild's config bundling breaks the dev server)
 - **Cache TTLs (persistent fetch caches)** — verified contract source 30d;
-  proxy 24h; unverified source 3d; creation-lookup failure 24h;
+  verified-proxy 24h; unverified/partial source 1h (incl. unverified proxies
+  — unverified beats the proxy tier); creation-lookup failure 24h;
   storage-layout `NOT_FOUND` 24h (`ContractSourceService`,
   `StorageLayoutService`)
 - **Event indexing start is async** — `POST .../events/ranges/:id/start|resume`
@@ -268,7 +271,11 @@ pnpm typecheck           # tsc --noEmit
   receipt-verified at startup + after each range job (reorged-out rows
   deleted, survivors promoted to `isFinalized = true`; oldest-first, 500
   rows/pass); `totalEventsIndexed` is recomputed as distinct `COUNT(*)`
-  over the range span on job completion
+  over the range span on job completion. The range manager derives an ETA
+  from its own 3s-poll samples (`recordEtaSample`/`estimateRangeEta`, pure,
+  ≥2 samples spanning ≥6s, 30-day ceiling, window voided on pause/error or
+  walk regression) and renders "~Xh Ym remaining (est.)" — never a promise,
+  nothing shown without an honest slope
 - **Address tx history is heuristic** — balance-change binary search; the
   transactions endpoint reports `coverage`/`reason`/`searchWindowBlocks`
   and the UI renders honest partial-data banners ("source unknown" when
@@ -277,28 +284,41 @@ pnpm typecheck           # tsc --noEmit
   nonce — nonce counts outgoing only); the heuristic never emits
   `coverage:'complete'` (nonce=0 → `partial`/`no-outgoing-transactions`);
   partial coverage renders "At least N transactions discovered". The tx
-  search window rides the URL (`?page=` and `?window=` both shareable).
+  search window rides the URL (`?page=` and `?window=` both shareable;
+  out-of-range `?page=` converges via history replace to the deepest valid
+  page — no shareable empty pages).
   Token Transfers tab: separate on-demand getLogs scan — `?refresh=1`
   bypasses the ~60s scan cache (Retry genuinely re-scans), "Search deeper"
-  widens `?window=` (route clamps 1–50M), and an empty contract scan
-  offers a CTA to the contract Events indexing flow. Discovered tx lists
+  widens `?window=` (route clamps 1–50M), its page rides the URL as
+  `?ttPage=` (shared schema in `views/Address/search.ts`), and an empty
+  contract scan offers a CTA to the contract Events indexing flow;
+  empty + unknown coverage renders the same "source unknown" banner as the
+  tx tab (an empty list is never proof of absence there). Discovered tx lists
   are cached per address+window (~60s LRU in `AddressService`) so
   consecutive pages agree. The address API no longer returns
   balance/transactionCount — the UI reads those live from RPC
   (`services/addressRealTime.ts`) and
-  labels the nonce "Outgoing Transactions (Nonce)". Address Type uses the
+  labels the nonce "Outgoing Transactions (Nonce)" with an ⓘ hint pointing
+  at the tx tab's partial-discovery semantics. Address Type uses the
   persistent channel first, RPC `eth_getCode` fallback — EIP-7702
-  delegated EOAs return a `0xef0100…` designator, so they honestly
-  classify as contract-like (the UI does not yet distinguish them from
-  deployed contracts)
+  delegated EOAs return a `0xef0100…` designator and the UI labels them
+  "Delegated EOA (EIP-7702)" (tooltip names the checksummed delegate,
+  `views/Address/addressType.ts`; no contract link, no contract CTA —
+  they outrank the persistent isContract record)
 - **Search degradation is explicit** — responses can carry
-  `degraded`/`degradedReasons`; the UI offers retry instead of "no results".
-  ENS names resolve client-side against a mainnet RPC (server returns
-  suggestions only; UI labels results "resolved on Ethereum" and
-  distinguishes name-not-found from resolution-failed). The global
+  `degraded`/`degradedReasons`; the UI renders the reasons in plain words
+  and offers retry instead of "no results". Hash-miss with a `?chain=` hint
+  shows "Try another network" (clears the pin, reopens the picker) instead
+  of a dead end. ENS names resolve client-side against a mainnet RPC
+  (server returns suggestions only) and the choice is explicit BEFORE
+  navigation: primary action opens the address on Ethereum (the resolution
+  chain), a secondary "on {current chain}" action when viewing another
+  chain; both entries label the result "resolved on Ethereum" and the UI
+  distinguishes name-not-found from resolution-failed. The global
   `GET /api/search` resolves hash/block queries on the chain given by
   `?chainId=`; `needsChain` (network picker) only without a chain hint.
-  ENS searches record history only after a successful resolution. Search
+  Search history records an entry at click time with the **landing**
+  chainId (legacy entries without one degrade to the current chain). Search
   history is **per-browser localStorage** (`be:searchHistory`, max 10) — the
   server-side `search_history` recording + `GET /api/search/history` were
   removed (the shared table leaked every visitor's queries to everyone);
@@ -310,3 +330,17 @@ pnpm typecheck           # tsc --noEmit
   states pasting ≠ verification and offers Copy ABI; when the contract
   later gets verified server-side, a dismissible banner announces the
   pasted ABI is no longer used (server ABI always wins)
+- **Contract page journey & Interact form** — unverified contracts show a
+  "Verify this contract" deep link to
+  `verify.sourcify.dev/widget?chainId=&address=` (plus the Force Refresh
+  hint that closes the verify→return→refresh loop). Interact parses
+  composite args (arrays/tuples; JSON or bare comma lists) with field-level
+  inline errors (`addrs[1]: invalid address`), lets the trailing run of
+  params be left empty (omitted from the encoded call), and classifies
+  failures honestly (`views/Contract/paramParsing.ts`: API vs network vs
+  encoding). Backend-unreachable errors (ApiError status 0,
+  `isBackendUnreachable` in `util/http.ts`) render `BackendOfflineState`:
+  cause attribution + `npx my-block-explorer --port 8201` + retry via the
+  discovery `reconnect` (no plain Retry that cannot succeed). Tx not-found
+  pages list the three causes (pending / other network with same-hash
+  quick links / reorged out) instead of one merged hint

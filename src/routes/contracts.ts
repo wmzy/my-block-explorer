@@ -7,7 +7,7 @@ import { contractInteractionService } from '../services/ContractInteractionServi
 import { getChainName, isChainSupported } from '../config/chains';
 import { getValidatedChainId, getValidatedAddress } from '../server/validation';
 import { safeJsonResponse } from '../utils/serialization';
-import { requireAdminToken } from '../middleware/admin-token';
+import { requireAdminTokenIfConfigured } from '../middleware/admin-token';
 import {
   detectInstalledIdes,
   getDetectedIdesInfo,
@@ -69,9 +69,11 @@ app.get('/chains/:chainId/contracts/:address/source', async c => {
   }
 });
 
-// Admin-gated: cache invalidation is an operator action (the frontend's
-// Force Refresh sends the x-admin-token header).
-app.post('/chains/:chainId/contracts/:address/clear-cache', requireAdminToken, async c => {
+// Opt-in admin gate: clearing the source cache is non-destructive (the
+// immutable data is simply re-fetched on the next read), so a zero-config
+// self-hosted session keeps Force Refresh working. With ADMIN_TOKEN set,
+// the x-admin-token header is enforced as usual.
+app.post('/chains/:chainId/contracts/:address/clear-cache', requireAdminTokenIfConfigured, async c => {
   const chainId = getValidatedChainId(c.req.param('chainId'));
   const address = getValidatedAddress(c.req.param('address'));
 

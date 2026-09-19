@@ -1,6 +1,6 @@
 import { getRpcClient, withRetry } from './rpcClient';
 import { get } from '@/util/http';
-import type { Abi, Address } from 'viem';
+import type { Abi, AbiParameter, Address } from 'viem';
 
 export type ContractFunction = {
   name: string;
@@ -14,6 +14,9 @@ export type ContractFunctionInput = {
   name: string;
   type: string;
   internalType?: string;
+  // Struct components of tuple inputs ('tuple', 'tuple[]'): preserved from
+  // the ABI so the Interact form can validate tuple arguments recursively.
+  components?: AbiParameter[];
 };
 
 export type ContractFunctionOutput = {
@@ -412,6 +415,7 @@ export function parseContractFunctionsUnified(
             name: input.name ?? '',
             type: input.type,
             internalType: input.internalType,
+            components: input.components,
           })),
           outputs: (func.outputs ?? []).map(output => ({
             name: output.name ?? '',
@@ -450,6 +454,7 @@ export function parseContractFunctionsUnified(
             name: input.name ?? '',
             type: input.type,
             internalType: input.internalType,
+            components: input.components,
           })),
           outputs: (func.outputs ?? []).map(output => ({
             name: output.name ?? '',

@@ -93,6 +93,15 @@ function backendUnconnected<T>(): Promise<T> {
   );
 }
 
+// Backend-unreachable class: both the degraded-mode fast reject above and
+// mapped NetworkErrors carry status 0 — no HTTP response was ever received
+// from the API base. Surfaces use this to attribute a failure to the
+// missing backend (with its self-help path) instead of a chain/data
+// problem. Timeouts (408) and real HTTP errors do not qualify.
+export function isBackendUnreachable(e: unknown): e is ApiError {
+  return e instanceof ApiError && e.status === 0;
+}
+
 export function get<T = unknown>(
   url: string,
   params?: Record<string, string | number | undefined>,

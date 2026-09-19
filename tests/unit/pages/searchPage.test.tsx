@@ -8,7 +8,7 @@
 // resolution provenance (Ethereum) and the destination chain.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { MemoryRouter, View, createRoutes } from '@native-router/react';
+import { MemoryRouter, View, createRoutes, useMatched } from '@native-router/react';
 import '@testing-library/jest-dom';
 import Search from '@/views/Search';
 
@@ -32,9 +32,12 @@ vi.mock('@/services/search', () => ({
   fetchChainSearch: mockFetchChainSearch,
 }));
 
-vi.mock('@/services/ensForward', () => ({
-  resolveEnsAddress: mockResolveEnsAddress,
-}));
+vi.mock('@/services/ensForward', async (importOriginal) => {
+  // Only the RPC-backed resolution is stubbed; the pure destination
+  // decision stays the real one.
+  const actual = await importOriginal<typeof import('@/services/ensForward')>();
+  return { ...actual, resolveEnsAddress: mockResolveEnsAddress };
+});
 
 vi.mock('@/services/searchHistory', () => ({
   recordSearchHistoryEntry: mockRecordHistory,
@@ -58,8 +61,16 @@ const needsChainResponse = {
   ],
 };
 
-const AddressPage = () => <div data-testid="address-page">address-page</div>;
-const TxPage = () => <div data-testid="tx-page">tx-page</div>;
+// Page stubs expose the chain they were opened on, so tests can assert
+// not just "navigated to the address page" but WHICH chain's page.
+const AddressPage = () => {
+  const { params } = useMatched();
+  return <div data-testid={`address-chain-${params.chainId}`}>address-page</div>;
+};
+const TxPage = () => {
+  const { params } = useMatched();
+  return <div data-testid={`tx-chain-${params.chainId}`}>tx-page</div>;
+};
 const BlockPage = () => <div data-testid="block-page">block-page</div>;
 
 const renderSearch = (initial: string) =>
@@ -98,7 +109,7 @@ describe('Search view', () => {
     await waitFor(() => {
       expect(mockFetchSearch).toHaveBeenCalledWith(TX_HASH, 137);
     });
-    expect(await screen.findByTestId('tx-page')).toBeInTheDocument();
+    expect(await screen.findByTestId('tx-chain-137')).toBeInTheDocument();
     expect(screen.queryByText('Select Network')).not.toBeInTheDocument();
     expect(mockFetchChainSearch).not.toHaveBeenCalled();
   });
@@ -139,22 +150,49 @@ describe('Search view', () => {
     expect(mockRecordHistory).not.toHaveBeenCalled();
   });
 
-  it('records ENS history only after a successful resolution and names the destination chain', async () => {
+  it('offers ENS destinations and records history only for the one opened', async () => {
     mockResolveEnsAddress.mockResolvedValue({ status: 'resolved', address: VITALIK });
 
     renderSearch('/search?q=vitalik.eth&chain=137');
 
+    // The banner names the resolution provenance (Ethereum) and offers
+    // the destination choice: Ethereum primary, the chain the search ran
+    // on (Polygon) as the secondary. Nothing has opened yet — no history.
     expect(
-      await screen.findByText(/Resolved vitalik\.eth → .* on Ethereum — opening on Polygon/),
+      await screen.findByText(/Resolved vitalik\.eth → .* on Ethereum/),
     ).toBeInTheDocument();
+    expect(screen.getByText('Open on Ethereum')).toBeInTheDocument();
+    expect(screen.getByText('on Polygon')).toBeInTheDocument();
+    expect(mockRecordHistory).not.toHaveBeenCalled();
+    expect(screen.queryByTestId(/address-chain-/)).not.toBeInTheDocument();
 
-    // Recorded with the destination chain, at resolution time — and the
-    // address page opens on that chain after the confirmation delay.
+    // Opening the alternate records the chain actually opened — not a
+    // default, not the resolution chain.
+    fireEvent.click(screen.getByText('on Polygon'));
     expect(mockRecordHistory).toHaveBeenCalledWith('vitalik.eth', 137);
-    await waitFor(
-      () => expect(screen.getByTestId('address-page')).toBeInTheDocument(),
-      { timeout: 3000 },
-    );
+    expect(await screen.findByTestId('address-chain-137')).toBeInTheDocument();
+  });
+
+  it('opens the primary ENS destination on Ethereum (the resolution chain)', async () => {
+    mockResolveEnsAddress.mockResolvedValue({ status: 'resolved', address: VITALIK });
+
+    renderSearch('/search?q=vitalik.eth&chain=137');
+
+    fireEvent.click(await screen.findByText('Open on Ethereum'));
+
+    expect(mockRecordHistory).toHaveBeenCalledWith('vitalik.eth', 1);
+    // The address page opened on chain 1 — the chain the name resolved
+    // on — not the chain the search ran on (137).
+    expect(await screen.findByTestId('address-chain-1')).toBeInTheDocument();
+  });
+
+  it('offers no alternate ENS destination when the search ran on mainnet', async () => {
+    mockResolveEnsAddress.mockResolvedValue({ status: 'resolved', address: VITALIK });
+
+    renderSearch('/search?q=vitalik.eth&chain=1');
+
+    expect(await screen.findByText('Open on Ethereum')).toBeInTheDocument();
+    expect(screen.queryByText('on Ethereum')).not.toBeInTheDocument();
   });
 
   it('never records an unregistered ENS name', async () => {
@@ -167,6 +205,59 @@ describe('Search view', () => {
     ).toBeInTheDocument();
     // No redirect was ever scheduled, and no history was recorded.
     expect(mockRecordHistory).not.toHaveBeenCalled();
-    expect(screen.queryByTestId('address-page')).not.toBeInTheDocument();
+    expect(screen.queryByTestId(/address-chain-/)).not.toBeInTheDocument();
+  });
+
+  it('offers Try another network after a hash miss on a ?chain= context', async () => {
+    // The hash was searched on the declared chain (137) and definitively
+    // missed there — that is a fact of one chain, not a dead end.
+    mockFetchSearch.mockResolvedValueOnce({
+      found: false,
+      type: 'transaction',
+      query: TX_HASH,
+      searchedChainId: 137,
+    });
+
+    renderSearch(`/search?q=${TX_HASH}&chain=137`);
+
+    expect(await screen.findByText(/No results found/)).toBeInTheDocument();
+    const tryAnother = await screen.findByText('Try another network');
+    expect(tryAnother).toBeInTheDocument();
+
+    // Choosing another network drops the chain constraint and re-runs the
+    // query unscoped: the global endpoint answers with needsChain and the
+    // network picker takes over.
+    mockFetchSearch.mockResolvedValueOnce(needsChainResponse);
+    fireEvent.click(tryAnother);
+
+    await waitFor(() => {
+      expect(mockFetchSearch).toHaveBeenLastCalledWith(TX_HASH, undefined);
+    });
+    expect(await screen.findByText('Select Network')).toBeInTheDocument();
+    // The page no longer claims the chain the miss ran on.
+    expect(screen.queryByText('Searched on Polygon')).not.toBeInTheDocument();
+  });
+
+  it('names the failed lookups when the response is degraded', async () => {
+    mockFetchSearch.mockResolvedValueOnce({
+      found: false,
+      type: 'transaction',
+      query: TX_HASH,
+      searchedChainId: 137,
+      degraded: true,
+      degradedReasons: ['transaction-lookup-failed', 'block-lookup-failed'],
+    });
+
+    renderSearch(`/search?q=${TX_HASH}&chain=137`);
+
+    // The miss is not definitive: the banner humanizes the response's own
+    // reasons and keeps the retry affordance.
+    expect(
+      await screen.findByText(/a data source errored \(transaction lookup, block lookup\)/),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Retry')).toBeInTheDocument();
+    expect(screen.queryByText(/No results found/)).not.toBeInTheDocument();
+    // A degraded miss is not a chain-relative dead end either.
+    expect(screen.getByText('Try another network')).toBeInTheDocument();
   });
 });

@@ -9,16 +9,35 @@ import '@testing-library/jest-dom';
 
 import RouterError from '@/views/RouterError';
 import { LAST_CHAIN_STORAGE_KEY } from '@/views/Home/Landing';
+import { ApiError } from '@/util/apiError';
 
-// The global setup's haze-ui mock has no Title; provide the one member the
-// error view renders.
+// The global setup's haze-ui mock has no Title/Alert/Button; provide the
+// members the error view (and its offline state) renders.
 vi.mock('haze-ui', async () => {
   const React = await import('react');
   return {
     Title: (props: { level?: number; children?: React.ReactNode }) =>
       React.createElement(`h${props.level ?? 3}`, {}, props.children),
+    Alert: ({ children }: { children?: React.ReactNode }) =>
+      React.createElement('div', { role: 'alert' }, children),
+    Button: ({
+      children,
+      onClick,
+      disabled,
+    }: {
+      children?: React.ReactNode;
+      onClick?: () => void;
+      disabled?: boolean;
+    }) => React.createElement('button', { onClick, disabled }, children),
   };
 });
+
+// The offline branch reaches for the discovery layer's reconnect; the
+// harness has no provider, so the context hook is mocked at module level.
+const mockReconnect = vi.fn(async (): Promise<{ url: string } | null> => null);
+vi.mock('@/hooks/ServiceDiscoveryContext', () => ({
+  useServiceDiscovery: () => ({ reconnect: mockReconnect }),
+}));
 
 const NullView = () => null;
 
@@ -117,5 +136,36 @@ describe('RouterError view', () => {
       'href',
       '/chain/1',
     );
+  });
+
+  it('attributes backend-unreachable loader failures to the missing backend', () => {
+    // A contract-source loader rejects with ApiError status 0 when the
+    // indexed backend is down; the error slot is where the user actually
+    // lands (the crashed view never renders its own error state).
+    render(
+      <MemoryRouter
+        routes={createRoutes([{ path: '/', component: () => NullView }])}
+        initialEntries={['/']}
+      >
+        <RouterError
+          error={new ApiError('Backend not connected — indexed data unavailable', 0)}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText(/Backend offline/i)).toBeInTheDocument();
+    expect(screen.getByText(/npx my-block-explorer/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Retry connection/i })).toBeInTheDocument();
+    // Not the generic card, not the raw message.
+    expect(screen.queryByText(/Something went wrong/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Backend not connected/)).not.toBeInTheDocument();
+  });
+
+  it('keeps ordinary loader failures on the generic card', () => {
+    renderError();
+
+    expect(screen.getByText('Something went wrong')).toBeInTheDocument();
+    expect(screen.getByText('resolver exploded')).toBeInTheDocument();
+    expect(screen.queryByText(/Backend offline/i)).not.toBeInTheDocument();
   });
 });

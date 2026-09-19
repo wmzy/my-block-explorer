@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { css } from '@linaria/core';
 import { SegmentedProgressBar } from '../ui/SegmentedProgressBar';
 import { toast } from 'sonner';
@@ -474,6 +474,119 @@ const quickCreateToast = (data: QuickCreateResponse): void => {
   toast.success(`Range created: ${blocks}${data.startError ? ` — not started: ${data.startError}` : ''}`);
 };
 
+// Indexing-rate ETA sampling ---------------------------------------------
+//
+// The 3s range poll doubles as a speedometer: each poll records one
+// {t, block} observation per actively indexing range, and the slope across
+// the sample window extrapolates the remaining walk time. Both steps are
+// pure functions so the sampling rules (status-flip reset, walk-regression
+// reset, plausibility ceilings) stay unit-testable without React.
+
+export type EtaSample = { readonly t: number; readonly block: number };
+
+export type EtaTracker = { readonly status: RangeStatus; readonly samples: readonly EtaSample[] };
+
+export type EtaRangeShape = {
+  fromBlock: bigint;
+  toBlock: bigint;
+  direction: RangeDirection;
+  currentBlock: bigint | null;
+};
+
+// Rolling sample window: ~1 minute of history at the 3s poll — long enough
+// to smooth batch-shaped bursts, short enough to react to rate changes.
+const MAX_ETA_SAMPLES = 20;
+// Under this observation span the slope is burst noise, not a rate.
+const ETA_MIN_SPAN_MS = 6_000;
+// Beyond this the honest answer is "too slow to promise a date", not a date.
+const ETA_MAX_REMAINING_MS = 30 * 24 * 60 * 60 * 1_000;
+// Sustained walk speeds above this are checkpoint jumps misread as rate
+// (no RPC-backed indexer walks thousands of blocks per second).
+const ETA_MAX_BLOCKS_PER_SEC = 5_000;
+
+// Fold one polled observation into the tracker. Pure: returns the next
+// tracker instead of mutating, so the rules are directly testable.
+export const recordEtaSample = (
+  tracker: EtaTracker | undefined,
+  range: { status: RangeStatus; direction: RangeDirection; currentBlock: bigint | null },
+  now: number,
+): EtaTracker => {
+  if (range.status !== 'indexing' || range.currentBlock === null) {
+    // Paused/errored/completed: keep no samples but remember the status so
+    // the resume is detected as a flip on the way back in.
+    return { status: range.status, samples: [] };
+  }
+  const block = Number(range.currentBlock);
+  if (tracker?.status !== 'indexing') {
+    // First observation ever, or a flip back to indexing (e.g. resume after
+    // pause): the earlier rate window is void, restart from this point.
+    return { status: 'indexing', samples: [{ t: now, block }] };
+  }
+  const last = tracker.samples[tracker.samples.length - 1];
+  if (
+    last !== undefined &&
+    (range.direction === 'forward' ? block < last.block : block > last.block)
+  ) {
+    // The walk moved against the range direction: the checkpoint was reset
+    // (range re-created from scratch). The old samples would poison the
+    // slope, so the window restarts here too.
+    return { status: 'indexing', samples: [{ t: now, block }] };
+  }
+  if (last?.block === block) {
+    // No news this tick: keep the window as is (duplicate observations
+    // would stretch the span without adding walked blocks).
+    return tracker;
+  }
+  const next = [...tracker.samples, { t: now, block }];
+  return { status: 'indexing', samples: next.slice(-MAX_ETA_SAMPLES) };
+};
+
+// Extrapolate the remaining walk time from the sampled rate. Null means
+// "no honest estimate" — every early exit is a reason not to promise a
+// date: too few samples, too short a window, no forward progress, an
+// implausible burst rate, a finished/overshot walk, or a wait beyond the
+// 30-day ceiling.
+export const estimateRangeEta = (
+  samples: readonly EtaSample[],
+  range: EtaRangeShape,
+): { blocksPerSec: number; remainingMs: number } | null => {
+  if (range.currentBlock === null || samples.length < 2) return null;
+  const first = samples[0];
+  const last = samples[samples.length - 1];
+  const spanMs = last.t - first.t;
+  if (spanMs < ETA_MIN_SPAN_MS) return null;
+  const walked =
+    range.direction === 'forward' ? last.block - first.block : first.block - last.block;
+  if (walked <= 0) return null;
+  const blocksPerSec = walked / (spanMs / 1_000);
+  if (!Number.isFinite(blocksPerSec) || blocksPerSec > ETA_MAX_BLOCKS_PER_SEC) return null;
+  const current = Number(range.currentBlock);
+  const remainingBlocks =
+    range.direction === 'forward'
+      ? Number(range.toBlock) - current
+      : current - Number(range.fromBlock);
+  if (remainingBlocks <= 0) return null;
+  const remainingMs = (remainingBlocks / blocksPerSec) * 1_000;
+  if (!Number.isFinite(remainingMs) || remainingMs > ETA_MAX_REMAINING_MS) return null;
+  return { blocksPerSec, remainingMs };
+};
+
+// Compact duration for the ETA suffix. Coarse buckets keep the promise
+// honest ("~2h 15m", never "~2h 15m 4s"); the leading "~" is composed by
+// the caller next to the explicit "(est.)" marker.
+export const formatEtaDuration = (ms: number): string => {
+  const totalSeconds = Math.round(ms / 1_000);
+  if (totalSeconds < 90) return `${Math.max(totalSeconds, 1)}s`;
+  const totalMinutes = Math.round(totalSeconds / 60);
+  if (totalMinutes < 90) return `${totalMinutes}m`;
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours < 36) return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+  const days = Math.floor(hours / 24);
+  const restHours = hours % 24;
+  return restHours > 0 ? `${days}d ${restHours}h` : `${days}d`;
+};
+
 export const IndexingRangeManager: React.FC<Props> = ({
   chainId,
   contractAddress,
@@ -550,6 +663,39 @@ export const IndexingRangeManager: React.FC<Props> = ({
       return () => clearInterval(interval);
     }
   }, [ranges, fetchRanges]);
+  // ETA speedometer state: per-rangeId sample windows harvested from the
+  // poll above. A ref, not state — the samples are derived input for the
+  // next render, and re-rendering on every observation would buy nothing.
+  const etaTrackersRef = useRef<Map<number, EtaTracker>>(new Map());
+  // One observation per range per poll commit. The ETA rendered by this
+  // commit uses the window as of the PREVIOUS tick (the ref updates after
+  // render); a one-tick lag on the rate is immaterial next to its 3s poll
+  // granularity.
+  useEffect(() => {
+    const now = Date.now();
+    for (const range of ranges) {
+      etaTrackersRef.current.set(
+        range.rangeId,
+        recordEtaSample(etaTrackersRef.current.get(range.rangeId), range, now),
+      );
+    }
+    // Trackers of deleted ranges must not leak into a later range that
+    // happens to reuse the id.
+    for (const id of [...etaTrackersRef.current.keys()]) {
+      if (!ranges.some(range => range.rangeId === id)) etaTrackersRef.current.delete(id);
+    }
+  }, [ranges]);
+  // ETA suffix for a range's progress line. Only actively indexing ranges
+  // get one — a paused range keeps its Progress line but has no live rate,
+  // and a stale pre-pause rate would be a lie.
+  const rangeEtaText = (range: IndexingRange): string | null => {
+    if (range.status !== 'indexing') return null;
+    const eta = estimateRangeEta(
+      etaTrackersRef.current.get(range.rangeId)?.samples ?? [],
+      range,
+    );
+    return eta === null ? null : `~${formatEtaDuration(eta.remainingMs)} remaining (est.)`;
+  };
   // Data-staleness banner: how far the furthest-indexed range trails the
   // chain head. Hidden when the head is unknown (RPC unavailable).
   const maxCurrentBlock =
@@ -1005,54 +1151,61 @@ export const IndexingRangeManager: React.FC<Props> = ({
         </div>
       ) : (
         <div className={rangeListStyles}>
-          {ranges.map(range => (
-            <div key={range.rangeId} className={rangeItemStyles}>
-              <div className={rangeInfoStyles}>
-                <div className="range-blocks">
-                  <span className={statusBadgeStyles} data-status={range.status}>
-                    {getStatusLabel(range.status)}
-                  </span>
-                  <span className={directionBadgeStyles}>
-                    {range.direction === 'forward' ? (
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                        <path d="M5 12l12M19 12" />
-                      </svg>
-                    ) : (
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                        <path d="M19 12l5 12" />
-                      </svg>
+          {ranges.map(range => {
+            const etaText = rangeEtaText(range);
+            return (
+              <div key={range.rangeId} className={rangeItemStyles}>
+                <div className={rangeInfoStyles}>
+                  <div className="range-blocks">
+                    <span className={statusBadgeStyles} data-status={range.status}>
+                      {getStatusLabel(range.status)}
+                    </span>
+                    <span className={directionBadgeStyles}>
+                      {range.direction === 'forward' ? (
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                          <path d="M5 12l12M19 12" />
+                        </svg>
+                      ) : (
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                          <path d="M19 12l5 12" />
+                        </svg>
+                      )}
+                      <span>{range.direction === 'forward' ? 'Forward' : 'Backward'}</span>
+                    </span>
+                    <span style={{ marginLeft: '8px' }}>
+                      #{formatBlock(range.fromBlock)} - {formatBlock(range.toBlock)}
+                    </span>
+                  </div>
+                  <div className="range-progress">
+                    {/* Walked progress shows for every checkpointed status —
+                        indexing, paused, and errored ranges all keep their
+                        currentBlock, those blocks are indexed and queryable,
+                        and EventStatistics counts them as covered. The ETA
+                        suffix is indexing-only (live rate) and only once the
+                        sampled window supports one; nothing renders while
+                        the estimate is still forming. */}
+                    {CHECKPOINTED_RANGE_STATUSES.has(range.status) && range.currentBlock && (
+                      <>
+                        Progress: {calculateProgress(range)}
+                        %
+                        {range.direction === 'forward'
+                          ? `(${formatBlock(range.currentBlock)} / ${formatBlock(range.toBlock)})`
+                          : `(${formatBlock(range.fromBlock)} / ${formatBlock(range.currentBlock)})`}
+                        {etaText !== null && ` — ${etaText}`}
+                      </>
                     )}
-                    <span>{range.direction === 'forward' ? 'Forward' : 'Backward'}</span>
-                  </span>
-                  <span style={{ marginLeft: '8px' }}>
-                    #{formatBlock(range.fromBlock)} - {formatBlock(range.toBlock)}
-                  </span>
+                    {range.totalEventsIndexed > 0 && (
+                      <span>{range.totalEventsIndexed.toLocaleString()} events indexed</span>
+                    )}
+                    {range.errorMessage && (
+                      <span style={{ color: '#dc2626' }}>{range.errorMessage}</span>
+                    )}
+                  </div>
                 </div>
-                <div className="range-progress">
-                  {/* Walked progress shows for every checkpointed status —
-                      indexing, paused, and errored ranges all keep their
-                      currentBlock, those blocks are indexed and queryable,
-                      and EventStatistics counts them as covered. */}
-                  {CHECKPOINTED_RANGE_STATUSES.has(range.status) && range.currentBlock && (
-                    <>
-                      Progress: {calculateProgress(range)}
-                      %
-                      {range.direction === 'forward'
-                        ? `(${formatBlock(range.currentBlock)} / ${formatBlock(range.toBlock)})`
-                        : `(${formatBlock(range.fromBlock)} / ${formatBlock(range.currentBlock)})`}
-                    </>
-                  )}
-                  {range.totalEventsIndexed > 0 && (
-                    <span>{range.totalEventsIndexed.toLocaleString()} events indexed</span>
-                  )}
-                  {range.errorMessage && (
-                    <span style={{ color: '#dc2626' }}>{range.errorMessage}</span>
-                  )}
-                </div>
+                {renderRangeActions(range)}
               </div>
-              {renderRangeActions(range)}
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
       {showAddForm && (

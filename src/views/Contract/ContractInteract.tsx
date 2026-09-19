@@ -13,6 +13,7 @@ import { FunctionCallForm } from './FunctionCallForm';
 import { cardStyles } from './styles';
 import { argsKey } from './types';
 import type { ContractSource } from './types';
+import { describeCallError } from './paramParsing';
 
 const functionListStyles = css`
   .function-item {
@@ -198,9 +199,7 @@ export function ContractInteract({
   const handleGlobalBlockChange = (value: string) => {
     setGlobalBlockNumber(value);
     const trimmed = value.trim();
-    setBlockError(
-      trimmed === '' || BLOCK_NUMBER_PATTERN.test(trimmed) ? '' : BLOCK_NUMBER_ERROR,
-    );
+    setBlockError(trimmed === '' || BLOCK_NUMBER_PATTERN.test(trimmed) ? '' : BLOCK_NUMBER_ERROR);
   };
 
   // Guard for the submit paths: undefined = no override (query 'latest'),
@@ -285,7 +284,9 @@ export function ContractInteract({
       }
     } catch (error) {
       console.error('Read function call failed:', error);
-      setErrors(prev => ({ ...prev, [key]: 'Network error' }));
+      // Faithful message: API/encode errors keep their text; only actual
+      // transport failures read as network errors.
+      setErrors(prev => ({ ...prev, [key]: describeCallError(error) }));
     } finally {
       setLoadingStates(prev => ({ ...prev, [key]: false }));
     }
@@ -345,7 +346,8 @@ export function ContractInteract({
       }
     } catch (error) {
       console.error('Simulate function call failed:', error);
-      setErrors(prev => ({ ...prev, [key]: 'Network error' }));
+      // Same faithful classification as the read path.
+      setErrors(prev => ({ ...prev, [key]: describeCallError(error) }));
     } finally {
       setLoadingStates(prev => ({ ...prev, [key]: false }));
     }

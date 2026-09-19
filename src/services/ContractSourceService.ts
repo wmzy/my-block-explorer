@@ -44,8 +44,11 @@ export const VERIFIED_CACHE_TTL_HOURS = 24 * 30;
 // "immutable" does not hold for proxy entries — keep them short-lived
 // even when the proxy itself is verified.
 export const PROXY_CACHE_TTL_HOURS = 24;
-// Unverified contracts may get verified later; re-check sooner.
-export const UNVERIFIED_CACHE_TTL_HOURS = 24 * 3;
+// Unverified contracts may get verified later; re-check soon. The lookup
+// is one cheap Sourcify/Blockscan round trip, and a verification done in
+// another tab should surface here within the hour — the contract page's
+// Force Refresh covers the in-between window.
+export const UNVERIFIED_CACHE_TTL_HOURS = 1;
 // Failed contract-creation searches must not stick forever: a contract
 // queried seconds before its deployment would otherwise stay "not found"
 // until the row is manually cleared.
@@ -1553,16 +1556,16 @@ export class ContractSourceService {
 
     // Cache TTL policy (see the *_CACHE_TTL_HOURS constants above):
     // - Verified non-proxy contracts: 30 days (source code cannot change)
-    // - Proxy contracts: 24 hours — the implementation address can change
+    // - Verified proxies: 24 hours — the implementation address can change
     //   at any time via an upgrade, so "immutable" does not hold even for
     //   a verified proxy
-    // - Unverified contracts: 3 days (may get verified later)
+    // - Unverified/partial contracts: 1 hour — they may get verified at
+    //   Sourcify at any moment, and that motive dominates the proxy flag
+    //   (an unverified proxy has no cached source an upgrade could stale)
     let maxHours: number;
 
-    if (contractSource.isProxy) {
-      maxHours = PROXY_CACHE_TTL_HOURS;
-    } else if (contractSource.verificationStatus === 'verified') {
-      maxHours = VERIFIED_CACHE_TTL_HOURS;
+    if (contractSource.verificationStatus === 'verified') {
+      maxHours = contractSource.isProxy ? PROXY_CACHE_TTL_HOURS : VERIFIED_CACHE_TTL_HOURS;
     } else {
       maxHours = UNVERIFIED_CACHE_TTL_HOURS;
     }

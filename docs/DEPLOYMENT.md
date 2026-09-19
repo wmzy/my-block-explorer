@@ -39,9 +39,16 @@ A hosted frontend **cannot auto-discover a remote backend**: discovery is a loca
 ## Warnings you must not skip
 
 1. **DuckDB is single-writer per file.** The main DB (`data/blockchain.db`) and every per-chain event DB (`data/chains/{type}/{name}-{id}.db`) accept exactly one writing process. Never point two server instances at the same data directory, and don't run the Vite-bridged API and a standalone server simultaneously against the same files.
-2. **Event-indexing range writes are unauthenticated by design** (`POST/PATCH/DELETE …/events/ranges*`, `start`/`pause`/`resume`). On the single-user local trust model this is fine. If your API is reachable by anything other than your own browser, **put it behind a reverse proxy with authentication** (nginx basic auth, mTLS, an OAuth proxy, …). This is the required mitigation, not an option.
-3. **Admin-gated ≠ public.** Read endpoints are open; `rpc-configs`, cache-clear, and `/api/performance/*` require `x-admin-token` matching `ADMIN_TOKEN` (fail-closed — unset means all gated requests get 403). See README → *Security & admin*.
-4. **`ENABLE_DEBUG_API=1` mounts raw SQL execution** (`POST /debug/db/query`). Development aid only — never set it on a reachable deployment.
+2. **Write endpoints are gated in two tiers** (middleware in `src/middleware/admin-token.ts`; both check the `x-admin-token` header against `ADMIN_TOKEN` with `timingSafeEqual`):
+   - **Opt-in workflow writes** (`requireAdminTokenIfConfigured`): enforced **only when `ADMIN_TOKEN` is set** — with the variable unset the request passes straight through, so a zero-config local session works out of the box. This tier covers, verbatim from `src/routes/*.ts`:
+     - the seven event-range mutations: `POST /api/chains/:chainId/contracts/:address/events/ranges`, `POST …/events/ranges/quick`, `PATCH …/events/ranges/:rangeId`, `DELETE …/events/ranges/:rangeId`, and `POST …/events/ranges/:rangeId/start`, `/pause`, `/resume` (`src/routes/events.ts`)
+     - `POST /api/rpc-configs` and `DELETE /api/rpc-configs/:chainId` (`src/routes/rpc-config.ts`)
+     - `POST /api/chains/:chainId/contracts/:address/clear-cache` (`src/routes/contracts.ts`)
+     - `DELETE /api/chains/:chainId/contracts/:address/storage-layout/cache` (`src/routes/storage.ts`)
+   - **Fail-closed admin surface** (`requireAdminToken`): rejected with 403 whenever `ADMIN_TOKEN` is unset **or** the header doesn't match — there is no default token. Covers the entire `/api/performance/*` subtree (`app.use('/performance/*', …)` in `src/routes/performance.ts`).
+   - **Dev-only debug surface**: `ENABLE_DEBUG_API=1` mounts `POST /debug/db/query` — arbitrary SQL against your databases (`src/routes/debug.ts`). It is not mounted at all by default and carries no token check, so the only safe setting for a reachable host is *unset*. Never enable it there.
+
+   With `ADMIN_TOKEN` unset, the opt-in writes above are open to anyone who can reach the API. On the single-user local trust model this is fine; if anything other than your own browser can reach the API, set `ADMIN_TOKEN` (and restrict CORS origins) or **put it behind a reverse proxy with authentication** (nginx basic auth, mTLS, an OAuth proxy, …). This is the required mitigation, not an option.
 
 ### Reverse proxy sketch (only if you must expose the API)
 
@@ -50,8 +57,8 @@ server {
     listen 443 ssl;
     server_name explorer-api.example.com;
 
-    # Auth in front of EVERYTHING, including the unauthenticated-by-design
-    # event-range writes:
+    # Auth in front of EVERYTHING, including the opt-in-gated writes that
+    # stay open while ADMIN_TOKEN is unset:
     auth_basic "explorer";
     auth_basic_user_file /etc/nginx/.htpasswd;
 

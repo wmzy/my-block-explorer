@@ -6,7 +6,7 @@
 // tab, the ?tab= write path, and the chain-switch navigation. Router view
 // commits resolve asynchronously, so first paint assertions use findBy*.
 import { describe, it, expect, vi, beforeEach, beforeAll } from 'vitest';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, View, createRoutes, useSearchParams } from '@native-router/react';
 
@@ -97,9 +97,25 @@ vi.mock('@/views/Contract/ContractInteract', async () => {
   };
 });
 
-vi.mock('@/util/http', () => ({
-  get: vi.fn(async () => ({ ides: [] })),
-  post: vi.fn(async () => ({})),
+vi.mock('@/util/http', async importOriginal => {
+  // Keep the real isBackendUnreachable: a pure predicate over the error
+  // class, needed by the view's backend-offline attribution branch.
+  const actual = await importOriginal<typeof import('@/util/http')>();
+  return {
+    ...actual,
+    get: vi.fn(async () => ({ ides: [] })),
+    post: vi.fn(async () => ({})),
+  };
+});
+
+// The view reaches the discovery layer for backend-offline recovery (the
+// same reconnect the connection badge uses); the harness has no provider,
+// so the context hook is mocked at module level. Typed structurally to the
+// real reconnect(): Promise<ServiceInfo | null> — the view only checks
+// whether a service came back.
+const mockReconnect = vi.fn(async (): Promise<{ url: string } | null> => null);
+vi.mock('@/hooks/ServiceDiscoveryContext', () => ({
+  useServiceDiscovery: () => ({ reconnect: mockReconnect }),
 }));
 
 const ADDRESS = '0xabc0000000000000000000000000000000000001';
@@ -177,6 +193,13 @@ const CUSTOM_ABI_STORAGE_KEY = `custom-abi:1:${ADDRESS}`;
 const mockHookResult = (data: unknown) =>
   ({ data, loading: false, error: undefined, refetch: vi.fn() }) as unknown as never;
 
+// Failure shape for the error-path tests; exposes the refetch spy so the
+// reconnect flow can assert the post-recovery reload.
+const mockHookError = (error: unknown) => {
+  const refetch = vi.fn();
+  return { result: { data: undefined, loading: false, error, refetch } as never, refetch };
+};
+
 // Exposes the current search string so URL writes are observable.
 function SearchProbe() {
   const [searchParams] = useSearchParams();
@@ -202,6 +225,8 @@ beforeEach(() => {
   localStorage.clear();
   vi.mocked(post).mockReset();
   vi.mocked(post).mockResolvedValue({});
+  mockReconnect.mockReset();
+  mockReconnect.mockResolvedValue(null);
   vi.mocked(useContractSource).mockReturnValue(mockHookResult(verifiedSourceResponse));
   vi.mocked(useContractCreation).mockReturnValue(mockHookResult({ found: false }));
   vi.mocked(useStorageLayout).mockReturnValue(mockHookResult(undefined));
@@ -540,5 +565,87 @@ describe('Contract view Events tab visibility', () => {
 
     await user.click(screen.getByRole('button', { name: 'Open custom ABI panel' }));
     expect(screen.getByLabelText('Custom ABI JSON')).toHaveFocus();
+  });
+});
+
+describe('Contract view unverified guidance', () => {
+  it('deep-links unverified contracts to Sourcify with chain and address prefilled', async () => {
+    vi.mocked(useContractSource).mockReturnValue(mockHookResult(unverifiedSourceResponse));
+    renderAt(`/chain/1/contract/${ADDRESS}`);
+
+    const link = await screen.findByRole('link', { name: /Verify at Sourcify ↗/ });
+    expect(link).toHaveAttribute(
+      'href',
+      `https://verify.sourcify.dev/widget?chainId=1&address=${ADDRESS}`,
+    );
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+    // The loop closer: the hint points at the Force Refresh that bypasses
+    // the backend's unverified cache immediately.
+    expect(screen.getByText(/Force Refresh above pulls it in immediately/)).toBeInTheDocument();
+  });
+
+  it('offers no Sourcify guidance once the contract is verified', async () => {
+    renderAt(`/chain/1/contract/${ADDRESS}`);
+
+    await screen.findByText('TestToken');
+    expect(
+      screen.queryByRole('link', { name: /Verify at Sourcify ↗/ }),
+    ).not.toBeInTheDocument();
+  });
+});
+
+describe('Contract view backend-offline attribution', () => {
+  it('attributes status-0 failures to the missing backend with a self-help path', async () => {
+    vi.mocked(useContractSource).mockReturnValue(
+      mockHookError(new ApiError('Backend not connected — indexed data unavailable', 0)).result,
+    );
+    renderAt(`/chain/1/contract/${ADDRESS}`);
+
+    // Not the raw message: the offline state names the cause, the start
+    // command, and the setup entry points.
+    expect(await screen.findByText(/Backend offline — indexed data unavailable/)).toBeInTheDocument();
+    expect(screen.getByText(/npx my-block-explorer --port 8201/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Retry connection/ })).toBeInTheDocument();
+    expect(screen.queryByText(/Error:/)).not.toBeInTheDocument();
+  });
+
+  it('keeps ordinary API errors on the plain error rendering', async () => {
+    vi.mocked(useContractSource).mockReturnValue(mockHookError(new ApiError('boom', 500)).result);
+    renderAt(`/chain/1/contract/${ADDRESS}`);
+
+    expect(await screen.findByText(/Error:/)).toBeInTheDocument();
+    expect(screen.getByText(/boom/)).toBeInTheDocument();
+    expect(screen.queryByText(/Backend offline/)).not.toBeInTheDocument();
+  });
+
+  it('retries the connection and refetches the source once a backend answers', async () => {
+    const { result, refetch } = mockHookError(
+      new ApiError('Backend not connected — indexed data unavailable', 0),
+    );
+    vi.mocked(useContractSource).mockReturnValue(result);
+    mockReconnect.mockResolvedValueOnce({ url: 'http://localhost:8201' });
+    const user = userEvent.setup();
+    renderAt(`/chain/1/contract/${ADDRESS}`);
+
+    await user.click(await screen.findByRole('button', { name: /Retry connection/ }));
+
+    await waitFor(() => expect(refetch).toHaveBeenCalled());
+    expect(mockReconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not refetch when the reconnect still finds no backend', async () => {
+    const { result, refetch } = mockHookError(
+      new ApiError('Backend not connected — indexed data unavailable', 0),
+    );
+    vi.mocked(useContractSource).mockReturnValue(result);
+    mockReconnect.mockResolvedValueOnce(null);
+    const user = userEvent.setup();
+    renderAt(`/chain/1/contract/${ADDRESS}`);
+
+    await user.click(await screen.findByRole('button', { name: /Retry connection/ }));
+
+    await waitFor(() => expect(mockReconnect).toHaveBeenCalledTimes(1));
+    expect(refetch).not.toHaveBeenCalled();
   });
 });

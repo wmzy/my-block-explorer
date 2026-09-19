@@ -391,7 +391,7 @@ describe('ContractSourceService - cache TTL policy', () => {
       ).toBe(false);
     });
 
-    it('expires an unverified source after 3 days', () => {
+    it('expires an unverified source after 1 hour', () => {
       const { isCacheValid } = internals(service);
 
       expect(
@@ -412,20 +412,32 @@ describe('ContractSourceService - cache TTL policy', () => {
       ).toBe(false);
     });
 
-    it('prefers the proxy tier over the unverified tier', () => {
+    it('keeps unverified proxies on the 1-hour unverified tier', () => {
       const { isCacheValid } = internals(service);
 
-      // 71h old: still inside the 3-day unverified window, but well past
-      // the proxy window.
+      // 2h old: well inside the 24h proxy window a verified proxy enjoys,
+      // but the unverified re-check motive dominates — an unverified
+      // proxy has no cached source an upgrade could stale.
       expect(
         isCacheValid(
           makeSource({
             isProxy: true,
             verificationStatus: 'unverified',
-            lastChecked: hoursAgo(UNVERIFIED_CACHE_TTL_HOURS - 1),
+            lastChecked: hoursAgo(2),
           }),
         ),
       ).toBe(false);
+
+      // The verified proxy tier is untouched: same age, verified source.
+      expect(
+        isCacheValid(
+          makeSource({
+            isProxy: true,
+            verificationStatus: 'verified',
+            lastChecked: hoursAgo(2),
+          }),
+        ),
+      ).toBe(true);
     });
   });
 

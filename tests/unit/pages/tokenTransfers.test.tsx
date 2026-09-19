@@ -8,7 +8,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useState, type ReactNode } from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { MemoryRouter, View, createRoutes } from '@native-router/react';
+import { MemoryRouter, View, createRoutes, useSearchParams } from '@native-router/react';
 import '@testing-library/jest-dom/vitest';
 import TokenTransfers from '@/views/Address/TokenTransfers';
 // Type-only import: erased at runtime, so the vi.mock below is unaffected.
@@ -208,9 +208,25 @@ const signalRoutes = createRoutes([
   { path: '/', component: () => Promise.resolve(RefreshSignalHost) },
 ]);
 
-const renderTab = () =>
+// Exposes the live search string so cases can pin ?ttPage= round-trips
+// through the URL (memory history is not window.location).
+function SearchProbe() {
+  const [params] = useSearchParams();
+  return <div data-testid="search-probe">{params.toString()}</div>;
+}
+
+// Legacy pre-coverage cached payload: the runtime can serve entries whose
+// coverage/windowBlocks tags never existed (the service type models only
+// the fresh shape) — this helper models the missing tags honestly so the
+// view's unknown-coverage branch is testable.
+type LegacyPageInput = Omit<TokenTransferPage, 'coverage' | 'windowBlocks'>;
+const legacyPage = (page: LegacyPageInput): TokenTransferPage =>
+  page as TokenTransferPage;
+
+const renderTab = (path = '/') =>
   render(
-    <MemoryRouter routes={routes} initialEntries={['/']}>
+    <MemoryRouter routes={routes} initialEntries={[path]}>
+      <SearchProbe />
       <View />
     </MemoryRouter>,
   );
@@ -468,6 +484,56 @@ describe('TokenTransfers tab', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Prev' }));
     expect(await screen.findByText('Page 1')).toBeInTheDocument();
     expect(mocks.queryArgs[2]).toBe('0');
+  });
+
+  it('seeds the page from a shared ?ttPage= deep link', async () => {
+    renderTab('/?ttPage=2');
+
+    // The deep link is the pagination state: page 2's cursor rides the
+    // query from the URL alone (shareable, refresh-stable).
+    expect(await screen.findByText('Page 2')).toBeInTheDocument();
+    expect(mocks.queryArgs[2]).toBe('25');
+    expect(screen.getByRole('button', { name: 'Prev' })).toBeEnabled();
+  });
+
+  it('writes pagination into ?ttPage= so deep pages are shareable', async () => {
+    renderTab();
+
+    expect(await screen.findByText('Page 1')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }));
+
+    expect(await screen.findByText('Page 2')).toBeInTheDocument();
+    expect(screen.getByTestId('search-probe')).toHaveTextContent('ttPage=2');
+    expect(mocks.queryArgs[2]).toBe('25');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Prev' }));
+    expect(await screen.findByText('Page 1')).toBeInTheDocument();
+    expect(screen.getByTestId('search-probe')).toHaveTextContent('ttPage=1');
+  });
+
+  it('degrades a malformed ?ttPage= deep link to page 1', async () => {
+    renderTab('/?ttPage=abc');
+
+    expect(await screen.findByText('Page 1')).toBeInTheDocument();
+    expect(mocks.queryArgs[2]).toBe('0');
+  });
+
+  it('warns about unknown coverage on an empty pre-coverage payload instead of a trusted empty', async () => {
+    // Legacy cached payload without coverage/windowBlocks tags: coverage
+    // UNKNOWN must read differently from a complete scan that found
+    // nothing (and from a budget-capped partial scan).
+    mocks.page = legacyPage({ transfers: [], nextCursor: null });
+
+    renderTab();
+
+    expect(
+      await screen.findByText(/Token transfer data source unknown/),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/not proof that none exist/)).toBeInTheDocument();
+    expect(screen.queryByText('No token transfers found')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Partial coverage/)).not.toBeInTheDocument();
+    // External escape hatch, same semantics as the tx tab's banner.
+    expect(screen.getByText('Routescan')).toBeInTheDocument();
   });
 
   it('disables Next once nextCursor is null', async () => {

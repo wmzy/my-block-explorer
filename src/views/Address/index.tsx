@@ -1,13 +1,17 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { css } from '@linaria/core';
 import { TypedLink, useMatched, useSearch, useSetSearch } from '@native-router/react';
 import { navigate } from '@native-router/core';
-import { z } from 'zod';
 import { formatUnits } from 'viem';
 import { Alert } from 'haze-ui';
 import { getChainInfo, getChainName, getChainSymbol } from '@/config/chains';
 import TopNavigation from '@/components/TopNavigation';
 import TokenTransfers from '@/views/Address/TokenTransfers';
+import {
+  classifyAddressType,
+  delegationTarget,
+} from '@/views/Address/addressType';
+import { addressSearchSchema } from '@/views/Address/search';
 import {
   useAddressInfo,
   useAddressTransactions,
@@ -119,6 +123,25 @@ const emptyPageCell = css`
   text-align: center;
 `;
 
+// Low-key inline marker beside the nonce value: the RPC count is exact
+// for outgoing transactions, but the discovered history below is
+// heuristic — one click routes to the Transactions tab where the
+// coverage banners live (the hint itself never restates them).
+const nonceHint = css`
+  margin-left: var(--haze-space-1);
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--haze-color-text-muted);
+  font-size: var(--haze-text-xs);
+  line-height: 1;
+  cursor: pointer;
+
+  &:hover {
+    color: var(--haze-color-text);
+  }
+`;
+
 // Serialized transaction row as the API returns it (formatTransactionForApi):
 // numeric fields arrive as strings over JSON.
 type TxRecord = {
@@ -164,18 +187,9 @@ const isInvalidAddressMessage = (message: string | undefined): boolean =>
 // backend clamp. "Search deeper" disables at this budget.
 const MAX_SEARCH_WINDOW_BLOCKS = 50_000_000;
 
-// The tx list's page number lives in the URL (?page=) so filtered views
-// are shareable and back/forward works. Invalid/absent values coerce to 1;
-// the view clamps to >= 1 (the schema deliberately accepts 0/negatives so
-// a malformed deep link degrades instead of throwing during render).
-// ?window=N carries the deepened tx-history search window (blocks): absent
-// (or malformed/out-of-range) means the backend default window, exactly
-// like an unset override — the same survival guarantees as ?page= apply
-// (pagination, sharing, back/forward).
-const addressSearchSchema = z.object({
-  page: z.coerce.number().catch(1),
-  window: z.coerce.number().int().min(1).optional().catch(undefined),
-});
+// The page's URL-driven state (?page= / ?window= / ?ttPage=) lives in the
+// shared schema module (./search) so the transfers tab writes through the
+// SAME schema — a narrower one would strip the other keys on every write.
 
 // Recent-activity card tabs. The transfers tab renders its own component
 // (and owns its query there), so the unmounted tab fetches nothing.
@@ -290,24 +304,54 @@ export default function Address() {
     txSearchWindow,
   );
 
+  // Settled tx payload + the deepest page the discovered total can fill.
+  // Computed before the early guards below so the convergence effect runs
+  // unconditionally (rules of hooks).
+  const txData = txQuery.data as AddressTxPage | undefined;
+  const txTotal = txData?.total ?? 0;
+  const txTotalPages = Math.max(1, Math.ceil(txTotal / txLimit));
+
+  // Beyond-data convergence (Transactions/List semantics): once a payload
+  // settles and ?page= exceeds the deepest valid page, the URL is pinned
+  // (replaced) to that page — an empty page is never shareable or
+  // refreshable, and Prev-walking back becomes unnecessary. Mid-flight
+  // (or failed) fetches converge nothing: the transient empty-page row
+  // further below stays the fallback for those races.
+  const txPageBeyondData =
+    txData !== undefined &&
+    !txQuery.loading &&
+    txQuery.error === undefined &&
+    txPage > txTotalPages;
+  useEffect(() => {
+    if (!txPageBeyondData) return;
+    void setSearch(prev => ({ ...prev, page: String(txTotalPages) }), {
+      replace: true,
+    });
+  }, [txPageBeyondData, txTotalPages, setSearch]);
+
   const persistent: AddressInfoResponse['address'] | undefined =
     infoQuery.data?.address;
   const code = codeQuery.data;
-  // Persistent record wins; the RPC code read only decides when the
-  // persistent channel settled without data.
-  const isContract = persistent
-    ? persistent.isContract
-    : code !== undefined
-      ? Boolean(code && code !== '0x' && code.length > 2)
-      : undefined;
+  // Presentation-layer type verdict (./addressType): the persistent record
+  // wins over the RPC code read — except an EIP-7702 delegation
+  // designator, which outranks both channels (a delegated EOA carries
+  // code yet remains an account, so "has code → contract" misfiles it).
+  const addressType = classifyAddressType({
+    persistentType: persistent?.isContract,
+    rpcCode: code,
+  });
   // Independent RPC verdict for the contract-view link below: the link is
   // a navigation affordance, so EITHER channel saying "contract" is enough
   // — a stale persistent row (or a failed persistent channel) must not
   // hide the contract page when the code read itself found contract code.
+  // A delegated EOA is the one exception: its designator is bytecode-like
+  // but deploys nothing at this address, so no contract page is offered.
   const rpcClassifiesContract = code !== undefined && code !== '0x' && code.length > 2;
   // Explicit `=== true` keeps this a plain-boolean || (not nullish), so the
   // either-channel-suffices semantics survives the nullish-coalescing rule.
-  const showsContractLink = persistent?.isContract === true || rpcClassifiesContract;
+  const showsContractLink =
+    addressType !== 'delegated-eoa' &&
+    (persistent?.isContract === true || rpcClassifiesContract);
 
   // Old error semantics: the persistent error only surfaces when the code
   // fallback failed too; the realtime error surfaces on its own.
@@ -397,10 +441,7 @@ export default function Address() {
     );
   }
 
-  const txData = txQuery.data as AddressTxPage | undefined;
   const transactions = txData?.transactions ?? [];
-  const txTotal = txData?.total ?? 0;
-  const txTotalPages = Math.max(1, Math.ceil(txTotal / txLimit));
 
   // Coverage banners are driven by the contract fields only (coverage /
   // reason); the backend's `method` tag is diagnostics, never UI state.
@@ -486,25 +527,48 @@ export default function Address() {
                   </InfoItem>
 
                   {/* The RPC nonce counts OUTGOING transactions only —
-                      never label it a total transaction count. */}
+                      never label it a total transaction count. The inline
+                      marker points at the partial-discovery semantics the
+                      Transactions tab's banners explain. */}
                   <InfoItem label="Outgoing Transactions (Nonce)">
-                    {realTimeQuery.data
-                      ? realTimeQuery.data.transactionCount.toLocaleString()
-                      : realTimeQuery.loading
-                        ? 'Loading...'
-                        : realTimeQuery.error
-                          ? 'Error loading count'
-                          : 'N/A'}
+                    {realTimeQuery.data ? (
+                      <>
+                        {realTimeQuery.data.transactionCount.toLocaleString()}
+                        <button
+                          type="button"
+                          className={nonceHint}
+                          title="Transaction history is partially discovered — see the Transactions tab"
+                          aria-label="About transaction history coverage"
+                          onClick={() => selectActivityTab('transactions')}
+                        >
+                          ⓘ
+                        </button>
+                      </>
+                    ) : realTimeQuery.loading
+                      ? 'Loading...'
+                      : realTimeQuery.error
+                        ? 'Error loading count'
+                        : 'N/A'}
                   </InfoItem>
 
                   <InfoItem label="Type">
-                    {isContract !== undefined
-                      ? isContract
-                        ? 'Contract'
-                        : 'Externally Owned Account (EOA)'
-                      : infoQuery.loading || codeQuery.loading
-                        ? 'Loading...'
-                        : 'Unknown'}
+                    {addressType === 'delegated-eoa' ? (
+                      <span
+                        title={`EIP-7702 delegation — code is executed by ${
+                          delegationTarget(code) ?? 'its delegate contract'
+                        }`}
+                      >
+                        Delegated EOA (EIP-7702)
+                      </span>
+                    ) : addressType === 'contract' ? (
+                      'Contract'
+                    ) : addressType === 'eoa' ? (
+                      'Externally Owned Account (EOA)'
+                    ) : infoQuery.loading || codeQuery.loading ? (
+                      'Loading...'
+                    ) : (
+                      'Unknown'
+                    )}
                   </InfoItem>
 
                   {persistent?.isContract && persistent.contractName && (
@@ -627,7 +691,10 @@ export default function Address() {
                   <TokenTransfers
                     chainId={currentChainId}
                     address={address}
-                    isContract={isContract}
+                    /* The events-indexing CTA is a contract-only
+                       affordance: a delegated EOA (or an unsettled
+                       classification) renders no contract CTA. */
+                    isContract={addressType === 'contract'}
                     refreshSignal={transfersRefreshSignal}
                     onRefreshed={() => setTransfersRefreshing(false)}
                   />

@@ -6,6 +6,7 @@ import { Collapsible } from '@/components/ui/Collapsible';
 import { getFunctionSelector, formatSelectorForDisplay } from '@/utils/functionSelector';
 import { formatResultWithLinks } from '@/utils/addressTypeDetection';
 import type { EnhancedContractFunction } from '@/utils/contractInteraction';
+import { parseFunctionArgs } from './paramParsing';
 import { argsKey } from './types';
 
 const functionNameReadStyles = css`
@@ -181,13 +182,7 @@ export function FunctionCallForm({
   blockNumber,
 }: {
   func: EnhancedContractFunction;
-  onCall: (
-    name: string,
-    args: unknown[],
-    rawArgs: string[],
-    value?: string,
-    from?: string,
-  ) => void;
+  onCall: (name: string, args: unknown[], rawArgs: string[], value?: string, from?: string) => void;
   results: Record<string, unknown>;
   errors: Record<string, string>;
   loadingStates: Record<string, boolean>;
@@ -221,9 +216,12 @@ export function FunctionCallForm({
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
 
-    // Every ABI input is required: block the submit and flag empty fields.
-    const newArgErrors = args.map(arg => (arg.trim() === '' ? 'Required' : ''));
-    setArgErrors(newArgErrors);
+    // Parse each raw input against its ABI type: composite inputs (arrays,
+    // tuples) become real JS values, scalars are validated, and every
+    // failure lands on its own field instead of surfacing after submit as
+    // a generic encoding error.
+    const { values, fieldErrors, isValid } = parseFunctionArgs(func.inputs, args);
+    setArgErrors(fieldErrors);
 
     // Payable value is entered in ETH and converted to wei via parseEther.
     // Validate here so an invalid amount gets a field-level error instead
@@ -239,22 +237,11 @@ export function FunctionCallForm({
     }
     setValueError(newValueError);
 
-    if (newArgErrors.some(err => err !== '') || newValueError !== '') {
+    if (!isValid || newValueError !== '') {
       return;
     }
 
-    // Convert argument types where the string input needs it
-    const processedArgs = args.map((arg, index) => {
-      const trimmed = arg.trim();
-
-      if (func.inputs[index].type === 'bool') {
-        return trimmed.toLowerCase() === 'true';
-      }
-
-      return trimmed;
-    });
-
-    onCall(func.name, processedArgs, args, wei, from.trim() || undefined);
+    onCall(func.name, values, args, wei, from.trim() || undefined);
   };
 
   const getResultKey = () => {
@@ -296,31 +283,40 @@ export function FunctionCallForm({
     </span>
   );
 
+  // An input may be left empty only when every following input is empty
+  // too — that trailing run is omitted from the encoded call — so the
+  // placeholder advertises the option exactly where it applies.
+  const isOmittable = (index: number) => args.slice(index + 1).every(arg => arg.trim() === '');
+
   return (
     <Collapsible title={headerTitle} defaultExpanded={false} badge={badge}>
       <form onSubmit={handleSubmit}>
         {/* Function Arguments */}
         {func.inputs.map((input, index) => (
           <div key={index} className={inputGroupStyles}>
+            {/* The input lives inside its label so screen readers (and
+                tests) can associate the typed field with its name. */}
             <label className={labelStyles}>
               {input.name} ({input.type})
-            </label>
-            <input
-              type="text"
-              value={args[index]}
-              onChange={e => {
-                const newArgs = [...args];
-                newArgs[index] = e.target.value;
-                setArgs(newArgs);
-                if (argErrors[index]) {
-                  const newErrors = [...argErrors];
-                  newErrors[index] = '';
-                  setArgErrors(newErrors);
+              <input
+                type="text"
+                value={args[index]}
+                onChange={e => {
+                  const newArgs = [...args];
+                  newArgs[index] = e.target.value;
+                  setArgs(newArgs);
+                  if (argErrors[index]) {
+                    const newErrors = [...argErrors];
+                    newErrors[index] = '';
+                    setArgErrors(newErrors);
+                  }
+                }}
+                placeholder={
+                  isOmittable(index) ? 'optional — leave empty to omit' : `Enter ${input.type}`
                 }
-              }}
-              placeholder={`Enter ${input.type}`}
-              className={inputStyles}
-            />
+                className={inputStyles}
+              />
+            </label>
             {argErrors[index] && <div className={fieldErrorStyles}>{argErrors[index]}</div>}
           </div>
         ))}

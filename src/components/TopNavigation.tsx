@@ -16,7 +16,11 @@ import {
 import { detectSearchType, sanitizeInput } from '@/utils/validation';
 import { formatAddress } from '@/utils/format';
 import { fetchChainSearch } from '@/services/search';
-import { resolveEnsAddress } from '@/services/ensForward';
+import {
+  resolveEnsAddress,
+  ensDestinations,
+  type EnsDestinations,
+} from '@/services/ensForward';
 import {
   clearSearchHistory,
   readSearchHistory,
@@ -107,6 +111,15 @@ const searchNoticeLink = css`
   &:hover {
     text-decoration: none;
   }
+`;
+
+// Right-hand action group of the notice box: primary action first,
+// alternates (ENS destination on the viewing chain) to its right.
+const searchNoticeActions = css`
+  display: flex;
+  align-items: center;
+  gap: var(--haze-space-3);
+  flex-shrink: 0;
 `;
 
 const rightControls = css`
@@ -503,13 +516,48 @@ type ChainSearchResponse = {
 // 'ens-resolved' / 'ens-not-found' / 'ens-failed' = outcome of a
 // client-side ENS lookup (resolved on Ethereum; not-found is definitive,
 // failed means the RPC never answered and is retryable). ens-resolved also
-// carries the destination chain the address page opens on.
+// carries the destination choice: Ethereum (where the name resolved) as
+// the primary, the chain the search ran on as the alternate.
 type SearchNotice =
   | { kind: 'miss'; query: string }
   | { kind: 'failed'; query: string }
-  | { kind: 'ens-resolved'; query: string; address: string; chainId: number }
+  | { kind: 'ens-resolved'; query: string; address: string; destinations: EnsDestinations }
   | { kind: 'ens-not-found'; query: string }
   | { kind: 'ens-failed'; query: string };
+
+// Destination actions for a resolved ENS name in the inline notice:
+// Ethereum (where the name resolved) is the primary; the chain the search
+// ran on is the secondary, shown only when it differs. The click is what
+// history records — the chain actually opened, never a default.
+function EnsDestinationActions({
+  destinations,
+  onOpen,
+}: {
+  destinations: EnsDestinations;
+  onOpen: (chainId: number) => void;
+}) {
+  const { primaryChainId, alternateChainId } = destinations;
+  return (
+    <>
+      <button
+        type="button"
+        className={searchNoticeLink}
+        onClick={() => onOpen(primaryChainId)}
+      >
+        Open on {getChainName(primaryChainId)} →
+      </button>
+      {alternateChainId !== null && (
+        <button
+          type="button"
+          className={searchNoticeLink}
+          onClick={() => onOpen(alternateChainId)}
+        >
+          on {getChainName(alternateChainId)} →
+        </button>
+      )}
+    </>
+  );
+}
 
 export default function TopNavigation({
   currentChainId,
@@ -634,21 +682,21 @@ export default function TopNavigation({
 
     if (searchType === 'ens') {
       // ENS names resolve in the browser against a mainnet client (where
-      // the ENS registry lives); the resolved address is viewed on the
-      // target chain. A definitive not-found is reported as such, an RPC
-      // failure as a retryable failure — never one blurred copy for both.
+      // the ENS registry lives). A resolved address is a fact of
+      // Ethereum, so nothing navigates and no history is recorded yet:
+      // the notice offers Ethereum (primary) and the chain the search
+      // ran on (alternate), and history records whichever destination is
+      // actually opened. A definitive not-found is reported as such, an
+      // RPC failure as a retryable failure — never one blurred copy for
+      // both.
       const outcome = await resolveEnsAddress(query);
       if (outcome.status === 'resolved') {
-        // History only records the search now that it actually resolved
-        // (see the upfront-record skip above).
-        setHistory(recordSearchHistoryEntry(query, chainId));
         setSearchNotice({
           kind: 'ens-resolved',
           query,
           address: outcome.address,
-          chainId,
+          destinations: ensDestinations(chainId),
         });
-        goTo(`/chain/${chainId}/address/${outcome.address}`);
         return;
       }
       setSearchNotice(
@@ -668,7 +716,18 @@ export default function TopNavigation({
   const selectHistoryItem = (entry: SearchHistoryEntry) => {
     setSearchQuery(entry.query);
     setShowHistory(false);
-    void navigateForQuery(entry.query, entry.chainId);
+    // Legacy entries predate per-chain recording: they re-run on the
+    // currently selected chain instead of one they never carried.
+    void navigateForQuery(entry.query, entry.chainId ?? currentChainId);
+  };
+
+  // Opens a resolved ENS address on the chain the user chose — the moment
+  // history records the entry, with the destination actually opened (not
+  // the chain the search happened to run on).
+  const openEnsAddress = (query: string, address: string, targetChainId: number) => {
+    setHistory(recordSearchHistoryEntry(query, targetChainId));
+    setSearchNotice(null);
+    goTo(`/chain/${targetChainId}/address/${address}`);
   };
 
   const handleSearch = async () => {
@@ -678,7 +737,14 @@ export default function TopNavigation({
     setSearchNotice(null);
     try {
       if (onSearch) {
-        setHistory(recordSearchHistoryEntry(sanitizeInput(searchQuery.trim()), currentChainId));
+        // The parent handles dispatch; history is recorded here for every
+        // query whose destination is known up front. ENS is skipped like
+        // in navigateForQuery — its destination only exists after
+        // resolution, so the recording surface is wherever the choice is
+        // made.
+        if (detectSearchType(sanitizeInput(searchQuery.trim())) !== 'ens') {
+          setHistory(recordSearchHistoryEntry(sanitizeInput(searchQuery.trim()), currentChainId));
+        }
         await onSearch(searchQuery.trim());
       } else {
         await navigateForQuery(searchQuery);
@@ -730,35 +796,45 @@ export default function TopNavigation({
                   {searchNotice.kind === 'failed' &&
                     `Search failed on ${chainInfo?.name ?? 'this chain'} — a data source errored`}
                   {searchNotice.kind === 'ens-resolved' &&
-                    `Resolved ${searchNotice.query} → ${formatAddress(searchNotice.address)} on Ethereum — opening on ${getChainName(searchNotice.chainId)}`}
+                    `Resolved ${searchNotice.query} → ${formatAddress(searchNotice.address)} on Ethereum`}
                   {searchNotice.kind === 'ens-not-found' &&
                     `ENS name "${searchNotice.query}" not found (checked on Ethereum)`}
                   {searchNotice.kind === 'ens-failed' &&
                     `ENS resolution failed for "${searchNotice.query}" — Ethereum RPC did not answer`}
                 </span>
-                {(searchNotice.kind === 'miss' || searchNotice.kind === 'failed') && (
-                  <button
-                    type="button"
-                    className={searchNoticeLink}
-                    onClick={() =>
-                      // No ?chain= on purpose: the hash's chain is unknown
-                      // (it just missed here), so the Search view must ask
-                      // which network to search next instead of re-running
-                      // it on this one — the link opens the network picker.
-                      goTo(`/search?q=${encodeURIComponent(searchNotice.query)}`)}
-                  >
-                    Choose a network →
-                  </button>
-                )}
-                {searchNotice.kind === 'ens-failed' && (
-                  <button
-                    type="button"
-                    className={searchNoticeLink}
-                    onClick={() => void navigateForQuery(searchNotice.query)}
-                  >
-                    Retry
-                  </button>
-                )}
+                <span className={searchNoticeActions}>
+                  {(searchNotice.kind === 'miss' || searchNotice.kind === 'failed') && (
+                    <button
+                      type="button"
+                      className={searchNoticeLink}
+                      onClick={() =>
+                        // No ?chain= on purpose: the hash's chain is unknown
+                        // (it just missed here), so the Search view must ask
+                        // which network to search next instead of re-running
+                        // it on this one — the link opens the network picker.
+                        goTo(`/search?q=${encodeURIComponent(searchNotice.query)}`)}
+                    >
+                      Choose a network →
+                    </button>
+                  )}
+                  {searchNotice.kind === 'ens-resolved' && (
+                    <EnsDestinationActions
+                      destinations={searchNotice.destinations}
+                      onOpen={targetChainId => {
+                        openEnsAddress(searchNotice.query, searchNotice.address, targetChainId);
+                      }}
+                    />
+                  )}
+                  {searchNotice.kind === 'ens-failed' && (
+                    <button
+                      type="button"
+                      className={searchNoticeLink}
+                      onClick={() => void navigateForQuery(searchNotice.query)}
+                    >
+                      Retry
+                    </button>
+                  )}
+                </span>
               </div>
             )}
 
@@ -772,7 +848,7 @@ export default function TopNavigation({
                 </div>
                 {filteredHistory.map(entry => (
                   <div
-                    key={`${entry.chainId}-${entry.query}`}
+                    key={`${entry.chainId ?? 'unscoped'}-${entry.query}`}
                     className={historyItem}
                   >
                     <button
@@ -789,7 +865,12 @@ export default function TopNavigation({
                       >
                         {entry.query}
                       </span>
-                      <span className={historyType}>{getChainName(entry.chainId)}</span>
+                      {/* Legacy entries carry no chain: the badge shows
+                          where a click would run them now (the currently
+                          selected chain), which is exactly what happens. */}
+                      <span className={historyType}>
+                        {getChainName(entry.chainId ?? currentChainId)}
+                      </span>
                     </button>
                     <button
                       type="button"

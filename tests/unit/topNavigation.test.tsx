@@ -379,6 +379,30 @@ describe('TopNavigation', () => {
     });
   });
 
+  it('re-runs a legacy chain-less history entry on the currently selected chain', async () => {
+    const address = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045';
+    localStorage.setItem(
+      SEARCH_HISTORY_STORAGE_KEY,
+      JSON.stringify([{ query: address }]),
+    );
+    renderTopNavigation({ currentChainId: 5000 });
+
+    fireEvent.focus(
+      screen.getByPlaceholderText('Search address, tx hash, or block number...'),
+    );
+    // The badge names where a click runs the entry now (the selected
+    // chain) — for a legacy entry that is the honest label. The selector
+    // shows the same chain name, so the badge is matched as the history
+    // row's own label.
+    const historyRow = (await screen.findByText(address)).closest('div');
+    expect(historyRow?.textContent).toContain('Mantle');
+    fireEvent.click(screen.getByText(address));
+
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith(mockRouter, `/chain/5000/address/${address}`);
+    });
+  });
+
   it('sends free-text searches to the Search view with chain context', async () => {
     // No onSearch prop: the component dispatches through its own router
     // navigation, which the @native-router mock records.
@@ -396,46 +420,93 @@ describe('TopNavigation', () => {
     });
   });
 
-  it('resolves ENS names client-side on Ethereum and navigates on the current chain', async () => {
+  it('resolves ENS names on Ethereum and offers destinations instead of jumping chains', async () => {
     renderTopNavigation({ currentChainId: 137, onSearch: undefined });
 
     const searchInput = screen.getByPlaceholderText('Search address, tx hash, or block number...');
     fireEvent.change(searchInput, { target: { value: 'vitalik.eth' } });
     fireEvent.click(screen.getByText('Search'));
 
-    // Resolution goes through a mainnet client (ENS registry lives there);
-    // the resolved address opens on the chain the user is on. The success
-    // notice names BOTH chains: resolution provenance (Ethereum) and the
-    // destination (Polygon).
+    // Resolution goes through a mainnet client (ENS registry lives there)
+    // and the notice names the provenance; nothing navigates yet — the
+    // address is a fact of Ethereum, and where to view it is a choice.
     await waitFor(() => {
       expect(mockCreateRpcClient).toHaveBeenCalledWith(1);
-      expect(mockNavigate).toHaveBeenCalledWith(
-        mockRouter,
-        '/chain/137/address/0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045',
-      );
     });
     expect(
-      await screen.findByText(/Resolved vitalik\.eth → .* on Ethereum — opening on Polygon/),
+      await screen.findByText(/Resolved vitalik\.eth → .* on Ethereum/),
     ).toBeInTheDocument();
-  });
+    expect(mockNavigate).not.toHaveBeenCalled();
 
-  it('records an ENS search into history only once it resolves', async () => {
-    renderTopNavigation({ currentChainId: 137, onSearch: undefined });
-
-    const searchInput = screen.getByPlaceholderText('Search address, tx hash, or block number...');
-    fireEvent.change(searchInput, { target: { value: 'vitalik.eth' } });
-    fireEvent.click(screen.getByText('Search'));
-
+    // Primary action opens the resolution chain (Ethereum), never the
+    // chain the user happened to be on; the secondary offers exactly
+    // that. Choosing the alternate navigates there explicitly.
+    fireEvent.click(screen.getByText('on Polygon →'));
     await waitFor(() => {
       expect(mockNavigate).toHaveBeenCalledWith(
         mockRouter,
         '/chain/137/address/0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045',
       );
     });
-    // The entry appears with the chain the address page opened on.
+  });
+
+  it('offers no alternate destination when already browsing mainnet', async () => {
+    renderTopNavigation({ currentChainId: 1, onSearch: undefined });
+
+    const searchInput = screen.getByPlaceholderText('Search address, tx hash, or block number...');
+    fireEvent.change(searchInput, { target: { value: 'vitalik.eth' } });
+    fireEvent.click(screen.getByText('Search'));
+
+    expect(await screen.findByText('Open on Ethereum →')).toBeInTheDocument();
+    // On mainnet the primary already is the viewing chain — a second,
+    // duplicate destination action must not render (exact match: the
+    // primary's own text contains these words too).
+    expect(screen.queryByText('on Ethereum →')).not.toBeInTheDocument();
+  });
+
+  it('records an ENS search into history only when a destination is opened', async () => {
+    renderTopNavigation({ currentChainId: 137, onSearch: undefined });
+
+    const searchInput = screen.getByPlaceholderText('Search address, tx hash, or block number...');
+    fireEvent.change(searchInput, { target: { value: 'vitalik.eth' } });
+    fireEvent.click(screen.getByText('Search'));
+
+    // Resolved but unopened: the entry does not exist yet.
+    await screen.findByText(/Resolved vitalik\.eth/);
+    expect(JSON.parse(localStorage.getItem(SEARCH_HISTORY_STORAGE_KEY) ?? '[]')).toEqual([]);
+
+    // Opening the primary records the chain actually opened (Ethereum),
+    // not the chain the search ran on.
+    fireEvent.click(screen.getByText('Open on Ethereum →'));
+    expect(JSON.parse(localStorage.getItem(SEARCH_HISTORY_STORAGE_KEY) ?? '[]')).toEqual([
+      { query: 'vitalik.eth', chainId: 1 },
+    ]);
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith(
+        mockRouter,
+        '/chain/1/address/0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045',
+      );
+    });
+  });
+
+  it('records the alternate destination when that is what the user opens', async () => {
+    renderTopNavigation({ currentChainId: 137, onSearch: undefined });
+
+    const searchInput = screen.getByPlaceholderText('Search address, tx hash, or block number...');
+    fireEvent.change(searchInput, { target: { value: 'vitalik.eth' } });
+    fireEvent.click(screen.getByText('Search'));
+
+    fireEvent.click(await screen.findByText('on Polygon →'));
+
     expect(JSON.parse(localStorage.getItem(SEARCH_HISTORY_STORAGE_KEY) ?? '[]')).toEqual([
       { query: 'vitalik.eth', chainId: 137 },
     ]);
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith(
+        mockRouter,
+        '/chain/137/address/0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045',
+      );
+    });
   });
 
   it('never records an unregistered ENS name into history', async () => {
@@ -480,8 +551,10 @@ describe('TopNavigation', () => {
     ).toBeInTheDocument();
     expect(mockNavigate).not.toHaveBeenCalled();
 
-    // Retrying re-runs the resolution; this time it resolves.
+    // Retrying re-runs the resolution; this time it resolves into the
+    // destination choice, and opening the primary navigates.
     fireEvent.click(screen.getByText('Retry'));
+    fireEvent.click(await screen.findByText('Open on Ethereum →'));
     await waitFor(() => {
       expect(mockNavigate).toHaveBeenCalledWith(
         mockRouter,

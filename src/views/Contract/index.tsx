@@ -10,9 +10,11 @@ import TopNavigation from '@/components/TopNavigation';
 import RpcFunctionError from '@/components/RpcFunctionError';
 import RpcConfig from '@/components/RpcConfig';
 import { ExternalLinks } from '@/components/ui/ExternalLinks';
+import { BackendOfflineState } from '@/components/ui/ErrorState';
 import { SourceCodeViewer } from '@/components/SourceCodeViewer';
-import { post } from '@/util/http';
+import { post, isBackendUnreachable } from '@/util/http';
 import { ApiError } from '@/util/apiError';
+import { useServiceDiscovery } from '@/hooks/ServiceDiscoveryContext';
 import { redirectReplace } from '@/views/Home/Landing';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
 import { useContractCreation, useContractSource } from '@/services/contracts';
@@ -277,6 +279,32 @@ const statusBadgeStyles = css`
   }
 `;
 
+// Unverified guidance cell in the info grid: the Sourcify deep link plus
+// the pointer that closes the verify-and-return loop (the backend caches
+// unverified lookups for an hour; Force Refresh bypasses it immediately).
+const verifyCellStyles = css`
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
+  text-align: right;
+`;
+
+const verifyLinkStyles = css`
+  color: #007bff;
+  text-decoration: none;
+
+  &:hover {
+    text-decoration: underline;
+  }
+`;
+
+const verifyHintStyles = css`
+  font-size: 12px;
+  color: #666;
+  word-break: normal;
+`;
+
 // Force Refresh outcome banner inside the contract information card; the
 // palette matches the verification status badges above it.
 const cacheNoticeStyles = css`
@@ -382,6 +410,13 @@ const PROXY_TYPE_LABELS: Record<string, string> = {
   'unknown': 'Unknown',
 };
 
+// Deep link into Sourcify's verification UI with chain and address
+// prefilled (its /widget route reads ?chainId= and ?address=; a chain
+// Sourcify does not list degrades to a chain picker there). Mirrors the
+// backend's Sourcify server v2 integration in ContractSourceService.
+const sourcifyVerifyUrl = (chainId: number, address: string) =>
+  `https://verify.sourcify.dev/widget?chainId=${chainId}&address=${address}`;
+
 // localStorage persistence for the pasted custom ABI (the raw string),
 // scoped per chain + address so an ABI never leaks across contracts.
 // localStorage (not sessionStorage) keeps the unlock across browser
@@ -472,6 +507,23 @@ export default function Contract() {
     : null;
   const loading = sourceLoading;
   const error = sourceError?.message ?? null;
+
+  // Backend-offline recovery: reuse the discovery layer's reconnect (the
+  // same mechanism the connection badge uses) and refetch once a backend
+  // answers — a plain Retry would just fast-fail again while the API base
+  // is unset.
+  const { reconnect } = useServiceDiscovery();
+  const [retryingConnection, setRetryingConnection] = useState(false);
+  const handleRetryConnection = async () => {
+    if (retryingConnection) return;
+    setRetryingConnection(true);
+    try {
+      const service = await reconnect();
+      if (service) void refetchSource();
+    } finally {
+      setRetryingConnection(false);
+    }
+  };
 
   // Chain switches replace the current entry via the shared Wave A helper,
   // keeping the address param so the same contract reloads on the target
@@ -635,11 +687,18 @@ export default function Contract() {
 
         {loading && <div className={loadingStyles}>Loading contract information...</div>}
 
-        {error && (
-          <div className={errorStyles}>
-            Error:
-            {error}
-          </div>
+        {sourceError && isBackendUnreachable(sourceError) ? (
+          <BackendOfflineState
+            onRetryConnection={() => void handleRetryConnection()}
+            retryConnectionPending={retryingConnection}
+          />
+        ) : (
+          error && (
+            <div className={errorStyles}>
+              Error:
+              {error}
+            </div>
+          )
         )}
 
         {contractSource && (
@@ -691,6 +750,26 @@ export default function Contract() {
                     {contractSource.verificationStatus}
                   </span>
                 </div>
+                {contractSource.verificationStatus === 'unverified' && (
+                  <div className="info-item">
+                    <span className="label">Verify this contract</span>
+                    <span className="value">
+                      <span className={verifyCellStyles}>
+                        <a
+                          className={verifyLinkStyles}
+                          href={sourcifyVerifyUrl(currentChainId, address ?? '')}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          Verify at Sourcify ↗
+                        </a>
+                        <span className={verifyHintStyles}>
+                          Verified there? ↻ Force Refresh above pulls it in immediately
+                        </span>
+                      </span>
+                    </span>
+                  </div>
+                )}
                 <div className="info-item">
                   <span className="label">Verification Source</span>
                   <span className="value">{contractSource.verificationSource}</span>

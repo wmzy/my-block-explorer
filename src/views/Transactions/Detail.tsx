@@ -1,5 +1,5 @@
 import { css } from '@linaria/core';
-import { useMemo, useState, useEffect } from 'react';
+import { Fragment, useMemo, useState, useEffect } from 'react';
 
 import { navigate } from '@native-router/core';
 import { TypedLink, useMatched } from '@native-router/react';
@@ -15,7 +15,7 @@ import { ErrorState } from '@/components/ui/ErrorState';
 import { InfoGrid, InfoItem } from '@/components/ui/InfoGrid';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { PageContainer, PageHeader, BackButton } from '@/components/ui/PageLayout';
-import { getChainInfo, getChainName, getChainSymbol } from '@/config/chains';
+import { POPULAR_CHAINS, getChainInfo, getChainName, getChainSymbol } from '@/config/chains';
 import { redirectReplace } from '@/views/Home/Landing';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
 import { useContractSource } from '@/services/contracts';
@@ -354,6 +354,119 @@ function FunctionCallCard({
   );
 }
 
+// The not-found card's cause list: relaxed spacing, one cause per line.
+const notFoundListStyle = css`
+  margin: 12px 0 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 8px;
+  color: var(--haze-color-text, #374151);
+`;
+
+// Inline link-look button for the not-found card's recovery paths: real
+// <button> semantics (focus, Enter activation) without native button chrome
+// inside running prose.
+const notFoundActionButtonStyle = css`
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-family: var(--haze-font-mono);
+  color: var(--haze-color-primary);
+  cursor: pointer;
+
+  &:hover {
+    text-decoration: underline;
+  }
+`;
+
+// The tx-not-found card. A valid-looking hash with no match has exactly
+// three realistic causes, each with its own recovery path. The previous
+// single "may exist on another network or be pending" sentence folded the
+// reorg case in and sent orphaned-transaction owners hunting through
+// chains that never had the hash. The hash itself stays visible and
+// copyable — without a found transaction this card is the only place it
+// appears on the page.
+function TxNotFoundCard({
+  txHash,
+  chainId,
+  onChainChange,
+  onRetry,
+}: {
+  txHash: string;
+  chainId: number;
+  onChainChange: (newChainId: number) => void;
+  onRetry: () => void;
+}) {
+  // Same-hash quick jumps for the wrong-network cause: the tx hash is
+  // chain-agnostic, so switching re-resolves this exact hash on the target
+  // chain instead of kicking the user to the chain home page.
+  const otherPopularChains = POPULAR_CHAINS.filter(chain => chain.id !== chainId).slice(0, 4);
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Transaction Not Found</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <p>
+          <CopyableHash
+            value={txHash}
+            truncated={`${txHash.slice(0, 10)}…${txHash.slice(-8)}`}
+            className={monoStyle}
+          />
+        </p>
+        <p>
+          {`No transaction with this hash is known to ${getChainName(chainId)}. This usually means one of three things:`}
+        </p>
+        <ul className={notFoundListStyle}>
+          <li>
+            <strong>Still pending.</strong> The transaction was broadcast but not mined yet, or
+            this explorer&apos;s indexer has not reached its block. Give it a minute, then{' '}
+            <button type="button" className={notFoundActionButtonStyle} onClick={onRetry}>
+              try again
+            </button>
+            .
+          </li>
+          <li>
+            <strong>Different network.</strong> A transaction hash only exists on the chain it was
+            signed for. Use the chain selector above
+            {otherPopularChains.length > 0 && (
+              <>
+                , re-check this hash on{' '}
+                {otherPopularChains.map((chain, index) => (
+                  <Fragment key={chain.id}>
+                    {index > 0 && ', '}
+                    <button
+                      type="button"
+                      className={notFoundActionButtonStyle}
+                      onClick={() => onChainChange(chain.id)}
+                    >
+                      {chain.name}
+                    </button>
+                  </Fragment>
+                ))}
+              </>
+            )}
+            , or{' '}
+            <TypedLink to="/search" className={linkStyle}>
+              search across chains
+            </TypedLink>
+            .
+          </li>
+          <li>
+            <strong>Reorged out.</strong> The transaction was once confirmed but its block was
+            orphaned in a chain reorganization. If you know its block number, open{' '}
+            <TypedLink to={`/chain/${chainId}/blocks`} className={linkStyle}>
+              the block list
+            </TypedLink>{' '}
+            and check whether that block still contains it.
+          </li>
+        </ul>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function TransactionDetail() {
   const { params, router } = useMatched();
 
@@ -363,7 +476,7 @@ export default function TransactionDetail() {
 
   // The service fetch guards an empty hash itself (no network), so the hook
   // runs unconditionally and the view reports the bad param.
-  const { data: txInfo, loading, error } = useTransactionByHash(currentChainId, txHash);
+  const { data: txInfo, loading, error, refetch } = useTransactionByHash(currentChainId, txHash);
 
   // ABI of the called contract, when the backend has a verified source for
   // it. Unverified contracts answer 404 (error set) or no data — both mean
@@ -421,23 +534,12 @@ export default function TransactionDetail() {
         {txHash && loading && <LoadingState message="Loading transaction information..." />}
 
         {txHash && error && isTxNotFound(error) && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Transaction Not Found</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p>
-                {`Transaction not found on ${getChainName(currentChainId)}. It may exist on another network or be pending.`}
-              </p>
-              <p>
-                Try the chain selector above, or{' '}
-                <TypedLink to="/search" className={linkStyle}>
-                  search across chains
-                </TypedLink>
-                .
-              </p>
-            </CardContent>
-          </Card>
+          <TxNotFoundCard
+            txHash={txHash}
+            chainId={currentChainId}
+            onChainChange={handleChainChange}
+            onRetry={() => void refetch()}
+          />
         )}
 
         {txHash && error && !isTxNotFound(error) && (

@@ -5,7 +5,7 @@ import { storageLayoutService } from '../services/StorageLayoutService';
 import { getChainName } from '../config/chains';
 import { getValidatedChainId, getValidatedAddress } from '../server/validation';
 import { safeJsonResponse } from '../utils/serialization';
-import { requireAdminToken } from '../middleware/admin-token';
+import { requireAdminTokenIfConfigured } from '../middleware/admin-token';
 
 const logger = createLogger('storage-routes');
 
@@ -48,10 +48,11 @@ app.get('/chains/:chainId/contracts/:address/storage-layout', async c => {
   }
 });
 
-// Admin-gated cache invalidation. clearCache deletes unconditionally and
-// treats a missing entry as a no-op, so a 200 is returned even when
-// nothing was cached for the pair.
-app.delete('/chains/:chainId/contracts/:address/storage-layout/cache', requireAdminToken, async c => {
+// Opt-in admin gate: clearCache deletes unconditionally and treats a
+// missing entry as a no-op, so a 200 is returned even when nothing was
+// cached for the pair. The cleared layout is immutable upstream, so the
+// delete is non-destructive and a zero-config session stays functional.
+app.delete('/chains/:chainId/contracts/:address/storage-layout/cache', requireAdminTokenIfConfigured, async c => {
   const chainId = getValidatedChainId(c.req.param('chainId'));
   const address = getValidatedAddress(c.req.param('address'));
 

@@ -5,17 +5,20 @@
 // deliberately never reads token metadata.
 import { useEffect, useRef, useState } from 'react';
 import { css } from '@linaria/core';
-import { TypedLink } from '@native-router/react';
+import { TypedLink, useSearch, useSetSearch } from '@native-router/react';
 import { erc20Abi, formatUnits } from 'viem';
 import { Alert } from 'haze-ui';
 import { useTokenTransfers, requestTokenTransfersRefresh, type TokenTransfer } from '@/services/tokenTransfers';
 import { createRpcClient } from '@/utils/realTimeData';
+import { addressSearchSchema } from '@/views/Address/search';
+import { getExternalToolLinks } from '@/config/externalTools';
 import { DataTable, Pagination, linkStyle } from '@/components/ui/DataTable';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { CopyableHash } from '@/components/ui/CopyableHash';
+import { ExternalLinks } from '@/components/ui/ExternalLinks';
 
 const TRANSFER_LIMIT = 25;
 
@@ -292,16 +295,29 @@ export default function TokenTransfers({
   refreshSignal = 0,
   onRefreshed,
 }: TokenTransfersProps) {
-  const [page, setPage] = useState(1);
+  // The tab's pagination lives in the URL (?ttPage=) through the shared
+  // address-page schema: deep pages are shareable, refresh-stable and
+  // back/forward works. Writes go through the functional form so the tx
+  // tab's ?page=/?window= merge in instead of being clobbered; invalid or
+  // absent values coerce to 1, and the view clamps to >= 1.
+  const setSearch = useSetSearch(addressSearchSchema);
+  const { ttPage: ttPageParam } = useSearch(addressSearchSchema);
+  const page = Math.max(1, Math.floor(ttPageParam));
+  const setPage = (next: number) => {
+    void setSearch(prev => ({
+      ...prev,
+      ttPage: String(Math.max(1, Math.floor(next))),
+    }));
+  };
   // Widened scan window (blocks) requested via ?window= — undefined is
   // the backend default. "Search deeper" escalates it; it rides in the
   // query args so a wider window is a fresh cache key/fetch, never the
   // shallower scan's entry.
   const [searchWindow, setSearchWindow] = useState<number | undefined>(undefined);
-  // New address/chain context: local pagination and the widened window
-  // restart from scratch.
+  // New address/chain context: the widened window restarts from scratch.
+  // ?ttPage= needs no reset — navigating to another address is a fresh
+  // URL that never carries this tab's page.
   useEffect(() => {
-    setPage(1);
     setSearchWindow(undefined);
   }, [chainId, address]);
 
@@ -316,6 +332,7 @@ export default function TokenTransfers({
   // nextCursor drives Next (null = end of the discovered list); no total
   // is claimed — the scan never asserts one.
   const hasNext = query.data ? query.data.nextCursor !== null : false;
+  const externalToolLinks = getExternalToolLinks(chainId, address);
 
   // "Search deeper" escalation (mirrors the tx tab): quadruple the
   // effective window the RESPONSE reported (post-clamp truth, not the
@@ -417,6 +434,24 @@ export default function TokenTransfers({
         <Alert variant="info">No token transfers found</Alert>
       )}
 
+      {/* Pre-coverage cached payload (no coverage tag): an empty list is
+          unverified, so "coverage unknown" reads differently from a
+          complete scan that found nothing — never a trusted empty. */}
+      {!query.loading && !query.error
+        && query.data !== undefined && transfers.length === 0
+        && coverage === undefined && (
+        <>
+          <Alert variant="warning">
+            Token transfer data source unknown — scan coverage for this
+            address is unknown, so this is not proof that none exist.
+            Verify on an external explorer.
+          </Alert>
+          <div className={bannerLinks}>
+            <ExternalLinks links={externalToolLinks} />
+          </div>
+        </>
+      )}
+
       {/* Dual-channel CTA: the eth_getLogs scan is budget-capped, but a
           contract's full history is reachable through the persistent
           events-indexing channel — offer it exactly when the list came
@@ -466,8 +501,8 @@ export default function TokenTransfers({
             pageInfo={`Page ${page}`}
             hasPrev={page > 1}
             hasNext={hasNext}
-            onPrev={() => setPage(p => Math.max(1, p - 1))}
-            onNext={() => setPage(p => p + 1)}
+            onPrev={() => setPage(page - 1)}
+            onNext={() => setPage(page + 1)}
           />
         </>
       )}

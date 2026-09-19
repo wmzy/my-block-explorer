@@ -1,6 +1,18 @@
 # Local backend installation
 
-The explorer is split into a static frontend and a local API server. The frontend works without any install (RPC-only features), but search, contract caches, and event indexing need the backend. Everything installs from source — there is no published npm package, no install script, and no prebuilt binaries in this repo.
+The explorer is split into a static frontend and a local API server. The frontend works without any install (RPC-only features), but search, contract caches, and event indexing need the backend.
+
+## Run without cloning: the npm package
+
+The backend CLI is published on npm as [`my-block-explorer`](https://www.npmjs.com/package/my-block-explorer) (latest `1.1.0` as of 2026-09 — check the npm page for the current version), so the fastest start is:
+
+```bash
+npx my-block-explorer --port 8201     # or: pnpm dlx my-block-explorer --port 8201
+```
+
+This is also what the frontend's setup screen suggests when it can't find a backend. The package ships only the prebuilt server CLI (`dist/server/cli.js`, plus this README and the license) — everything else in this repo builds from source.
+
+> **Version alignment warning.** The hosted demo frontend (GitHub Pages) is built from this repository's latest code, while `npx` pulls whatever version was last published to npm — the two release lines are independent (the repo's `package.json` stays at a `0.0.0` dev placeholder). The frontend↔backend API contract can therefore be out of sync: endpoints may 404 or misbehave in ways that don't reproduce locally. If a hosted frontend disagrees with your `npx`-started backend, **build both from the same source** (clone this repo, `pnpm build`, `pnpm start`) instead of debugging the mismatch.
 
 ## Requirements
 
@@ -8,7 +20,7 @@ The explorer is split into a static frontend and a local API server. The fronten
 - **pnpm** — the repo's node_modules layout breaks npm's arborist; use pnpm for every command below
 - Free disk for DuckDB files if you index events
 
-## Install and run
+## Install and run from source
 
 ```bash
 git clone https://github.com/wmzy/my-block-explorer.git
@@ -37,7 +49,7 @@ No configuration is required to start. The environment variables actually read b
 | --- | --- | --- |
 | `PORT` | `8201` (server) / `3000` (vite dev) | Listen port |
 | `DATABASE_URL` | `duckdb://data/blockchain.db` | Main DuckDB file |
-| `ADMIN_TOKEN` | unset | Enables the admin-gated endpoints (`x-admin-token` header). **Fail-closed: unset = every gated request 403s.** |
+| `ADMIN_TOKEN` | unset | When set, enforces the `x-admin-token` header on the core-workflow writes (event ranges, RPC configs, contract/storage-layout cache clears) and the performance endpoints. Unset: those writes pass through, while `/api/performance/*` still 403s (fail-closed). Two-tier details in [DEPLOYMENT.md](./DEPLOYMENT.md). |
 | `ENABLE_DEBUG_API` | unset | `1` mounts `POST /debug/db/query` (raw SQL) — never enable on a reachable host |
 | `LOG_LEVEL` | `info` | pino log level |
 | `HTTP_PROXY` / `HTTPS_PROXY` | unset | Proxy for outbound RPC calls |
@@ -87,5 +99,5 @@ PM2 works the same way (`pm2 start dist/server/cli.js --name explorer-api`). If 
 - **Port already in use** — `lsof -i :8201`; start on another port (`--port 8202` — it stays within the discovery scan range).
 - **DuckDB lock / "Could not set lock on file"** — another process still holds the database: a still-running server, a leftover dev process, or Drizzle Studio. DuckDB allows a single writer per file; kill the other process.
 - **Frontend shows the setup screen** — no backend answered on `localhost:8201-8205`; start one or enter its URL manually.
-- **403 on RPC settings / cache clear** — `ADMIN_TOKEN` is unset or the browser token doesn't match; the ⚙️ RPC modal has the token field.
+- **403 on RPC settings / cache clear** — the server has `ADMIN_TOKEN` set and the browser token doesn't match; fill it in the ⚙️ RPC modal. (With `ADMIN_TOKEN` unset these writes pass through — only `/api/performance/*` 403s.)
 - **RPC calls fail behind a firewall** — set `HTTP_PROXY`/`HTTPS_PROXY`.

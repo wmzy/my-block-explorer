@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter, View, createRoutes, useSearchParams } from '@native-router/react';
+import { getAddress } from 'viem';
 import '@testing-library/jest-dom/vitest';
 import AddressView from '@/views/Address';
 
@@ -365,6 +366,32 @@ describe('Address view', () => {
     expect(screen.queryByText('Transaction Count')).not.toBeInTheDocument();
   });
 
+  it('marks the nonce with an inline partial-history hint routing to the Transactions tab', async () => {
+    renderPage();
+
+    // The hint sits beside the count and explains the partial-discovery
+    // semantics instead of restating the tx-tab banners in the Overview.
+    const hint = await screen.findByRole('button', {
+      name: 'About transaction history coverage',
+    });
+    expect(hint).toHaveAttribute(
+      'title',
+      'Transaction history is partially discovered — see the Transactions tab',
+    );
+
+    // One click routes to the tx tab from wherever the user sits.
+    fireEvent.click(screen.getByRole('button', { name: 'Token Transfers' }));
+    expect(
+      await screen.findByRole('columnheader', { name: 'Amount' }),
+    ).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole('button', { name: 'About transaction history coverage' }),
+    );
+    expect(
+      await screen.findByRole('columnheader', { name: 'Value' }),
+    ).toBeInTheDocument();
+  });
+
   it('renders the activity card with the Transactions tab active by default', async () => {
     renderPage();
 
@@ -483,6 +510,46 @@ describe('Address view', () => {
     ).toBeInTheDocument();
   });
 
+  it('converges a beyond-data ?page= deep link to the deepest valid page', async () => {
+    // 25 discovered txs at 10 per page → page 3 is the deepest valid page;
+    // a shared ?page=5 link must not land on (or keep) an empty page.
+    mocks.addressTransactions = {
+      transactions: [],
+      total: 25,
+      coverage: 'complete',
+    };
+
+    renderPage(`/chain/1/address/${mocks.testAddress}?page=5`);
+
+    // The URL is pinned via replace to the page actually shown — no
+    // shareable/refreshable empty page, no Prev-walking back.
+    await waitFor(() =>
+      expect(screen.getByTestId('search-probe')).toHaveTextContent('page=3'),
+    );
+    expect(
+      await screen.findByText('Page 3 of 3 • 25 transactions'),
+    ).toBeInTheDocument();
+  });
+
+  it('keeps a mid-flight empty page as the fallback instead of converging', async () => {
+    // While a (re)fetch is in flight the URL must not move — the race-born
+    // transient empty page stays covered by the empty-page row, never by
+    // a replace that could fight the pending response.
+    mocks.addressTransactions = {
+      transactions: [],
+      total: 25,
+      coverage: 'complete',
+    };
+    mocks.txLoading = true;
+
+    renderPage(`/chain/1/address/${mocks.testAddress}?page=5`);
+
+    expect(
+      await screen.findByText('Scanning recent chain history...'),
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('search-probe')).toHaveTextContent('page=5');
+  });
+
   it('switches the activity card between Transactions and Token Transfers tabs', async () => {
     renderPage();
 
@@ -568,6 +635,41 @@ describe('Address view', () => {
 
     await screen.findByText('Overview');
     expect(screen.queryByText('View Contract Details →')).not.toBeInTheDocument();
+  });
+
+  it('shows Delegated EOA (EIP-7702) with the delegate in a tooltip and no contract link', async () => {
+    // The persistent channel files "has code" under isContract=true, but
+    // the RPC designator read is the authoritative 7702 signal.
+    mocks.addressInfo.address = { isContract: true };
+    const delegate = `0x${'ab'.repeat(20)}`;
+    mocks.contractCode = `0xef0100${delegate.slice(2)}`;
+
+    renderPage();
+
+    const type = await screen.findByText('Delegated EOA (EIP-7702)');
+    // The tooltip carries the checksummed delegation target.
+    expect(type.closest('span')).toHaveAttribute(
+      'title',
+      `EIP-7702 delegation — code is executed by ${getAddress(delegate)}`,
+    );
+    // A delegated EOA deploys nothing at this address: no contract page.
+    expect(screen.queryByText('View Contract Details →')).not.toBeInTheDocument();
+  });
+
+  it('classifies a delegated EOA from the RPC designator alone', async () => {
+    // Persistent record still says EOA (delegated after sync): the live
+    // designator read wins, and the contract link stays hidden even though
+    // the old either-channel rule would have shown it for non-empty code.
+    mocks.addressInfo.address = { isContract: false };
+    mocks.contractCode = `0xef0100${'cd'.repeat(20)}`;
+
+    renderPage();
+
+    expect(await screen.findByText('Delegated EOA (EIP-7702)')).toBeInTheDocument();
+    expect(screen.queryByText('View Contract Details →')).not.toBeInTheDocument();
+    expect(
+      screen.queryByText('Externally Owned Account (EOA)'),
+    ).not.toBeInTheDocument();
   });
 
   it('warns about an unknown data source instead of a trusted empty state when coverage is missing', async () => {

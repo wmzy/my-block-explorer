@@ -17,10 +17,15 @@ import {
   type SupportedChainRef,
 } from '@/services/search';
 import { detectSearchType, sanitizeInput } from '@/utils/validation';
-import { resolveEnsAddress } from '@/services/ensForward';
+import {
+  resolveEnsAddress,
+  ensDestinations,
+  type EnsDestinations,
+} from '@/services/ensForward';
 import { recordSearchHistoryEntry } from '@/services/searchHistory';
 import { formatAddress } from '@/utils/format';
 import { readRememberedChainId } from '@/views/Home/Landing';
+import { degradedSearchMessage } from './degradedReasons';
 import type { Block, Transaction, AddressInfo } from '@/types/blockchain';
 
 const searchSchema = z.object({
@@ -29,10 +34,6 @@ const searchSchema = z.object({
   // when searching); the global endpoint echoes what it actually searched.
   chain: z.coerce.number().int().positive().optional().catch(undefined),
 });
-
-// How long the "Resolved <name> → <address>" confirmation stays up before
-// the view navigates to the address page.
-const ENS_REDIRECT_DELAY_MS = 1200;
 
 // Example searches are mainnet entities (a well-known address, an early
 // mainnet transaction, a mainnet block), so they always run on mainnet —
@@ -66,6 +67,16 @@ const exampleBadges = css`
 
 const resultCard = css`
   margin-top: var(--haze-space-6);
+`;
+
+// Action row under a result notice (ENS destination choice, cross-chain
+// retry): primary action first, alternates to its right.
+const resultActions = css`
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--haze-space-2);
+  margin-top: var(--haze-space-3);
 `;
 
 // Prominent context line above results/suggestions: which chain the
@@ -212,6 +223,32 @@ const renderSuggestions = (suggestions: string[], chainId: number): ReactNode[] 
   });
 };
 
+// Destination choice for a resolved ENS name: Ethereum (where the name
+// resolved) is the primary action; the chain the search ran on is the
+// secondary, shown only when it differs. The click is what history
+// records — the chain actually opened, never a default.
+function EnsDestinationButtons({
+  destinations,
+  onOpen,
+}: {
+  destinations: EnsDestinations;
+  onOpen: (chainId: number) => void;
+}) {
+  const { primaryChainId, alternateChainId } = destinations;
+  return (
+    <div className={resultActions}>
+      <Button variant="primary" onClick={() => onOpen(primaryChainId)}>
+        Open on {getChainName(primaryChainId)}
+      </Button>
+      {alternateChainId !== null && (
+        <Button variant="outline" onClick={() => onOpen(alternateChainId)}>
+          on {getChainName(alternateChainId)}
+        </Button>
+      )}
+    </div>
+  );
+}
+
 export default function Search() {
   const [query, setQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
@@ -219,14 +256,15 @@ export default function Search() {
   const [error, setError] = useState<string | null>(null);
   const [chainFilter, setChainFilter] = useState('');
   const [showAllChains, setShowAllChains] = useState(false);
-  // Successful client-side ENS resolution, shown as a brief confirmation
-  // before navigating to the address page. chainId is the destination
-  // chain the address page will open on (resolution itself always happens
-  // on Ethereum).
+  // Successful client-side ENS resolution, presented as a destination
+  // choice: the address is a fact of Ethereum (resolution happens there),
+  // and the user picks where to view it — Ethereum by default, the chain
+  // the search ran on as the alternate. No navigation happens until that
+  // choice, and history records the destination actually opened.
   const [ensResolution, setEnsResolution] = useState<{
     name: string;
     address: string;
-    chainId: number;
+    destinations: EnsDestinations;
   } | null>(null);
   // Failed ENS lookup. 'not-found' is a definitive answer (the name is not
   // registered on Ethereum); 'failed' means the Ethereum RPC never
@@ -235,31 +273,23 @@ export default function Search() {
   const [ensError, setEnsError] = useState<{
     name: string;
     retryable: boolean;
-    chainContext?: number;
+    chainContext?: number | null;
   } | null>(null);
   // Chain the current result actually ran on (echoed by the global
   // endpoint, inherent to the per-chain one). Drives the 'Searched on'
   // line, the URL chain param and the TopNavigation context.
   const [resolvedChainId, setResolvedChainId] = useState<number | null>(null);
-  const ensRedirectTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const router = useRouter();
   const setSearch = useSetSearch(searchSchema);
   const { q: qParam, chain } = useSearch(searchSchema);
   const deepLinkedRef = useRef(false);
 
-  // A pending ENS redirect must not fire after the view unmounted.
-  useEffect(
-    () => () => {
-      if (ensRedirectTimer.current) clearTimeout(ensRedirectTimer.current);
-    },
-    [],
-  );
-
   // ENS names resolve in the browser against a mainnet client (that is
-  // where the ENS registry lives); the resolved address is then viewed on
-  // the current chain context. Not-found and RPC failure are distinct
-  // outcomes with distinct copy — only the latter is retryable.
-  const resolveEnsName = async (name: string, chainContext?: number): Promise<void> => {
+  // where the ENS registry lives). Not-found and RPC failure are distinct
+  // outcomes with distinct copy — only the latter is retryable. A success
+  // is held as a destination choice (see ensResolution), never navigated
+  // or recorded on its own.
+  const resolveEnsName = async (name: string, chainContext?: number | null): Promise<void> => {
     const outcome = await resolveEnsAddress(name);
 
     if (outcome.status === 'not-found') {
@@ -271,20 +301,29 @@ export default function Search() {
       return;
     }
 
-    const targetChainId = chainContext ?? 1;
-    setEnsResolution({ name, address: outcome.address, chainId: targetChainId });
-    // History records searches that actually went somewhere: the ENS name
-    // is recorded here, once resolution succeeded and navigation is
-    // scheduled. A not-found or failed lookup never enters history.
-    recordSearchHistoryEntry(name, targetChainId);
-    ensRedirectTimer.current = setTimeout(() => {
-      navigate(router, `/chain/${targetChainId}/address/${outcome.address}`).catch(
-        () => undefined,
-      );
-    }, ENS_REDIRECT_DELAY_MS);
+    setEnsResolution({
+      name,
+      address: outcome.address,
+      destinations: ensDestinations(chainContext ?? undefined),
+    });
   };
 
-  const handleSearch = async (searchQuery = query, pinnedChainId?: number) => {
+  // Opens a resolved ENS address on the chain the user chose — the moment
+  // history records the entry, with the destination actually opened (not
+  // the chain the search happened to run on).
+  const openEnsResolution = (destinationChainId: number) => {
+    if (!ensResolution) return;
+    const { name, address } = ensResolution;
+    recordSearchHistoryEntry(name, destinationChainId);
+    setEnsResolution(null);
+    navigate(router, `/chain/${destinationChainId}/address/${address}`).catch(() => undefined);
+  };
+
+  // pinnedChainId: an explicitly pinned chain (example searches, a chain
+  // switch from the header) — or null to force "no chain context" (the
+  // cross-chain retry), which must not fall back to the ?chain= param the
+  // URL still carries.
+  const handleSearch = async (searchQuery = query, pinnedChainId?: number | null) => {
     // Only truly empty input is rejected here: free text ('unknown' after
     // sanitize/detect) still goes to the global endpoint, which runs the
     // searchAll pass and answers with suggestions instead of a dead end.
@@ -294,25 +333,21 @@ export default function Search() {
     const searchType = detectSearchType(sanitized);
 
     // Explicit chain context, always: an explicitly pinned chain (example
-    // searches, a chain switch from the header), else the ?chain= param
-    // the header search forwards. Chain-relative queries (transaction/
-    // block hashes, block numbers) stop there: they are facts of exactly
-    // one chain, and guessing the remembered one would turn a wrong guess
-    // into a false "no results" — with no explicit context they go to the
-    // global endpoint unscoped and come back as needsChain (network
-    // picker). Everything else (addresses, ENS, free text) additionally
-    // falls back to the chain remembered by the Landing view — there the
-    // chain is only a viewing choice, and the header shows it.
-    const explicitChain = pinnedChainId ?? chain;
+    // searches, a chain switch from the header, null from the cross-chain
+    // retry), else the ?chain= param the header search forwards.
+    // Chain-relative queries (transaction/block hashes, block numbers)
+    // stop there: they are facts of exactly one chain, and guessing the
+    // remembered one would turn a wrong guess into a false "no results" —
+    // with no explicit context they go to the global endpoint unscoped and
+    // come back as needsChain (network picker). Everything else
+    // (addresses, ENS, free text) additionally falls back to the chain
+    // remembered by the Landing view — there the chain is only a viewing
+    // choice, and the header shows it.
+    const explicitChain = pinnedChainId === undefined ? chain : pinnedChainId;
     const chainRelative = searchType === 'hash' || searchType === 'block';
     const chainContext = chainRelative
       ? explicitChain
       : explicitChain ?? readRememberedChainId();
-
-    if (ensRedirectTimer.current) {
-      clearTimeout(ensRedirectTimer.current);
-      ensRedirectTimer.current = null;
-    }
 
     setIsSearching(true);
     setError(null);
@@ -326,23 +361,24 @@ export default function Search() {
 
     try {
       // ENS names never hit the backend: detection is local and resolution
-      // happens in the browser (see resolveEnsName, which also records the
-      // history entry only once resolution succeeds).
+      // happens in the browser (see resolveEnsName); history is recorded
+      // by openEnsResolution, once the user opens a destination.
       if (searchType === 'ens') {
         await resolveEnsName(sanitized, chainContext);
         return;
       }
 
       // A pinned chain resolves directly on the per-chain endpoint; every
-      // other search goes through the global endpoint with the chain
-      // context as ?chainId= — for hash/block queries that hint makes the
-      // endpoint resolve on exactly that chain, so a search from a page
-      // with chain context goes straight to the entity. Without a hint
-      // the endpoint answers hash/block queries with needsChain and the
-      // network picker below takes over.
-      const searchResult = pinnedChainId !== undefined
+      // other search (including the deliberately unpinned cross-chain
+      // retry, pinnedChainId === null) goes through the global endpoint
+      // with the chain context as ?chainId= — for hash/block queries that
+      // hint makes the endpoint resolve on exactly that chain, so a search
+      // from a page with chain context goes straight to the entity.
+      // Without a hint the endpoint answers hash/block queries with
+      // needsChain and the network picker below takes over.
+      const searchResult = typeof pinnedChainId === 'number'
         ? await fetchChainSearch(pinnedChainId, sanitized)
-        : await fetchSearch(sanitized, chainContext);
+        : await fetchSearch(sanitized, chainContext ?? undefined);
       if (!searchResult) return;
 
       setResult(searchResult);
@@ -435,7 +471,7 @@ export default function Search() {
         void setSearch({ q: sanitized, chain: String(selectedChainId) }, { replace: true });
         setError(
           searchResult.degraded
-            ? 'Search failed — a data source errored. Try again.'
+            ? degradedSearchMessage(searchResult.degradedReasons)
             : `No results found on ${getChainName(selectedChainId)}`,
         );
         return;
@@ -464,6 +500,19 @@ export default function Search() {
   const handleExampleClick = (example: string) => {
     setQuery(example);
     void handleSearch(example, EXAMPLE_CHAIN_ID);
+  };
+
+  // A chain-relative miss is only a fact of the chain it ran on — the
+  // same hash may well live on another network. This drops the chain
+  // constraint (URL param and resolved context) and re-runs the query
+  // unscoped, which the global endpoint answers with needsChain: the
+  // network picker takes over instead of a dead end.
+  const handleTryAnotherNetwork = async () => {
+    if (!query.trim()) return;
+    const sanitized = sanitizeInput(query.trim());
+    setResolvedChainId(null);
+    void setSearch({ q: sanitized }, { replace: true });
+    await handleSearch(sanitized, null);
   };
 
   // The header reflects the page's chain context: the chain the current
@@ -571,10 +620,16 @@ export default function Search() {
 
         {ensResolution && (
           <div className={resultCard}>
+            {/* Resolution provenance is stated ("on Ethereum") — the
+                address is a fact there, everything else is a viewing
+                choice made explicit below. */}
             <Alert variant="success">
-              Resolved {ensResolution.name} → {formatAddress(ensResolution.address)} on Ethereum —
-              opening on {getChainName(ensResolution.chainId)}…
+              Resolved {ensResolution.name} → {formatAddress(ensResolution.address)} on Ethereum
             </Alert>
+            <EnsDestinationButtons
+              destinations={ensResolution.destinations}
+              onOpen={openEnsResolution}
+            />
           </div>
         )}
 
@@ -597,12 +652,23 @@ export default function Search() {
 
         {result && !result.found && !result.needsChain && result.degraded && (
           <div className={resultCard}>
-            {/* Not-found + degraded means an upstream lookup errored: offer a
-                retry instead of a definitive "No results". */}
+            {/* Not-found + degraded means an upstream lookup errored: say
+                which lookups did not answer (the response's own reasons,
+                humanized) and offer a retry instead of a definitive
+                "No results". */}
             <ErrorState
-              message="Search failed — a data source errored. Try again."
+              message={degradedSearchMessage(result.degradedReasons)}
               onRetry={() => handleSearch(result.query ?? query)}
             />
+            {(result.type === 'transaction' || result.type === 'block') && (
+              <Button
+                variant="outline"
+                className={resultActions}
+                onClick={() => void handleTryAnotherNetwork()}
+              >
+                Try another network
+              </Button>
+            )}
           </div>
         )}
 
@@ -617,6 +683,18 @@ export default function Search() {
               <div className={suggestionList}>
                 {renderSuggestions(result.suggestions, resolvedChainId ?? 1)}
               </div>
+            )}
+            {/* A chain-relative miss (tx/block hash, block number) is only
+                a fact of the chain it ran on — offer the network picker
+                again instead of a dead end. */}
+            {(result.type === 'transaction' || result.type === 'block') && (
+              <Button
+                variant="outline"
+                className={resultActions}
+                onClick={() => void handleTryAnotherNetwork()}
+              >
+                Try another network
+              </Button>
             )}
           </div>
         )}

@@ -2,9 +2,11 @@
 
 A self-hosted, **single-user** block explorer for EVM developers. Browse any viem-supported chain, index contract events into local DuckDB files, inspect verified sources, storage layouts, and read/simulate contracts — all on your own machine.
 
-> **This is not a multi-tenant service.** DuckDB allows a single writer per database file, and by default (no `ADMIN_TOKEN` set) every write endpoint is open (see [Security](#security--admin)). Run it for yourself locally; if you ever expose the API on a shared network, set `ADMIN_TOKEN` and the CORS allowlist, or put it behind a reverse proxy with authentication.
+> **This is not a multi-tenant service.** DuckDB allows a single writer per database file, and by default (no `ADMIN_TOKEN` set) the core-workflow write endpoints are open (see [Security](#security--admin)). Run it for yourself locally; if you ever expose the API on a shared network, set `ADMIN_TOKEN` and the CORS allowlist, or put it behind a reverse proxy with authentication.
 
 Live frontend-only demo (no local backend — the API-dependent features need your own server): https://wmzy.github.io/my-block-explorer/
+
+> **Desktop-first.** The UI is built for desktop widths. Mobile/small-screen layouts are not adapted and the small-screen experience is not guaranteed; on a phone expect broken or cramped layouts rather than a responsive fallback.
 
 ## Features
 
@@ -93,7 +95,7 @@ Environment variables actually read by the code (no example env file ships with 
 | --- | --- | --- |
 | `PORT` | server / vite | Standalone API port (default 8201); Vite dev server port (default 3000) |
 | `DATABASE_URL` | `src/database/drizzle.ts` | Main DuckDB file (default `duckdb://data/blockchain.db`) |
-| `ADMIN_TOKEN` | `src/middleware/admin-token.ts` | When set, gates core-workflow writes (event ranges, rpc-config writes) and the admin/diagnostic surface (see above) |
+| `ADMIN_TOKEN` | `src/middleware/admin-token.ts` | When set, gates core-workflow writes (event ranges, rpc-config writes, contract/storage-layout cache clears) and the fail-closed performance/diagnostic surface (see above) |
 | `CORS_ALLOWED_ORIGINS` | `src/middleware/cors-origins.ts` | Extra allowed CORS origins (comma-separated), in addition to loopback and `FRONTEND_URL` |
 | `ENABLE_DEBUG_API` | `src/api-app.ts` | `1` mounts `/debug/db/query` (raw SQL) — dev only |
 | `LOG_LEVEL` | logger | pino level (default `info`) |
@@ -108,9 +110,8 @@ The trust model is **one local user**. Read endpoints are open; writes and admin
 - **Opt-in gated writes** (`requireAdminTokenIfConfigured`): enforced **only when `ADMIN_TOKEN` is set** on the server — with the variable unset the request passes straight through, so a zero-config local session works out of the box. This tier covers the core-workflow writes:
   - event-range mutations: `POST/PATCH/DELETE …/events/ranges*`, `POST …/events/ranges/quick`, and `start`/`pause`/`resume`
   - RPC-config writes: `POST` / `DELETE /api/rpc-configs` (`GET /api/rpc-configs` is open but returns endpoint URLs **redacted to scheme + host** for any origin the CORS policy doesn't already trust — custom endpoints often embed API keys; loopback/allowlisted origins get full URLs)
+  - cache clears: `POST /api/chains/:chainId/contracts/:address/clear-cache` (drop cached contract source) and `DELETE /api/chains/:chainId/contracts/:address/storage-layout/cache` (drop cached storage layout)
 - **Fail-closed admin/diagnostic surface** (`requireAdminToken`): rejected with 403 whenever `ADMIN_TOKEN` is unset or the header doesn't match — there is no default token. This tier covers:
-  - `POST /api/chains/:chainId/contracts/:address/clear-cache` (drop cached contract source)
-  - `DELETE /api/chains/:chainId/contracts/:address/storage-layout/cache` (drop cached storage layout)
   - everything under `/api/performance/*`
 - In the UI, open the ⚙️ RPC settings modal and fill the **"Admin token (stored in this browser)"** field; it is kept in localStorage and attached to requests automatically (`src/util/adminAuth.ts`).
 - **`ENABLE_DEBUG_API=1`** mounts `POST /debug/db/query`, which executes arbitrary SQL against your databases. Never enable it on anything reachable by others.

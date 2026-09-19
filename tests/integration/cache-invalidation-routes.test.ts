@@ -19,7 +19,12 @@ vi.mock('@/database/init', async importOriginal => {
 const chainId = 1;
 const contractAddress = '0x1234567890123456789012345678901234567890';
 
-describe('Cache invalidation routes (admin-gated)', () => {
+// Cache invalidation uses the opt-in gate (requireAdminTokenIfConfigured):
+// clearing DuckDB caches is non-destructive (immutable data is re-fetched
+// on the next read), so a zero-config session must keep Force Refresh
+// working. With ADMIN_TOKEN configured, the x-admin-token header is
+// enforced exactly like the strict gate.
+describe('Cache invalidation routes (opt-in admin gate)', () => {
   describe('POST /api/chains/:chainId/contracts/:address/clear-cache', () => {
     beforeEach(() => {
       vi.stubEnv('ADMIN_TOKEN', '');
@@ -29,7 +34,21 @@ describe('Cache invalidation routes (admin-gated)', () => {
       vi.unstubAllEnvs();
     });
 
-    it('rejects without a token (fail-closed)', async () => {
+    it('succeeds without ADMIN_TOKEN configured (zero-config session)', async () => {
+      const response = await app.request(
+        `/api/chains/${chainId}/contracts/${contractAddress}/clear-cache`,
+        { method: 'POST' },
+      );
+
+      expect(response.status).toBe(200);
+      const data = await response.json();
+      expect(data.success).toBe(true);
+      expect(data.message).toBe('Cache cleared');
+    });
+
+    it('rejects with a missing token header once ADMIN_TOKEN is configured', async () => {
+      vi.stubEnv('ADMIN_TOKEN', 'test-admin-token');
+
       const response = await app.request(
         `/api/chains/${chainId}/contracts/${contractAddress}/clear-cache`,
         { method: 'POST' },
@@ -38,9 +57,7 @@ describe('Cache invalidation routes (admin-gated)', () => {
       expect(response.status).toBe(403);
       const data = await response.json();
       expect(data.error).toBe('Forbidden');
-      expect(data.message).toBe(
-        'Admin operations are disabled. Set ADMIN_TOKEN on the server to enable them.',
-      );
+      expect(data.message).toBe('Invalid admin token.');
     });
 
     it('rejects a wrong token', async () => {
@@ -78,7 +95,20 @@ describe('Cache invalidation routes (admin-gated)', () => {
       vi.unstubAllEnvs();
     });
 
-    it('rejects without a token (fail-closed)', async () => {
+    it('succeeds without ADMIN_TOKEN configured (zero-config session)', async () => {
+      const response = await app.request(
+        `/api/chains/${chainId}/contracts/${contractAddress}/storage-layout/cache`,
+        { method: 'DELETE' },
+      );
+
+      expect(response.status).toBe(200);
+      const data = await response.json();
+      expect(data).toEqual({ success: true, message: 'Storage layout cache cleared' });
+    });
+
+    it('rejects with a missing token header once ADMIN_TOKEN is configured', async () => {
+      vi.stubEnv('ADMIN_TOKEN', 'test-admin-token');
+
       const response = await app.request(
         `/api/chains/${chainId}/contracts/${contractAddress}/storage-layout/cache`,
         { method: 'DELETE' },

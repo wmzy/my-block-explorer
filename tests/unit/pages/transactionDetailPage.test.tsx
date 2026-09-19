@@ -1,10 +1,11 @@
 // Transaction detail page tests: the view under a minimal native-router
 // harness with services and network-adjacent children mocked. Covers the
 // four enrichment surfaces (function call, event logs, revert reason,
-// created contract) plus the wrong-chain friendly error — real txDecode
-// and viem codecs are exercised against realistic ABI-encoded fixtures.
+// created contract) plus the not-found card's three-cause breakdown — real
+// txDecode and viem codecs are exercised against realistic ABI-encoded
+// fixtures.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter, View, createRoutes } from '@native-router/react';
 import { encodeFunctionData, toEventSelector, type Abi, type Hex } from 'viem';
 import '@testing-library/jest-dom';
@@ -54,6 +55,14 @@ vi.mock('@/config/chains', () => ({
   // Consumed by the Landing helpers behind UnsupportedChainState.
   isChainSupported: (chainId: number) => chainId === 1,
   getSortedChains: () => [{ id: 1, name: 'Ethereum' }],
+  // Quick re-check links in the not-found card (current chain filtered out).
+  POPULAR_CHAINS: [
+    { id: 1, name: 'Ethereum' },
+    { id: 137, name: 'Polygon' },
+    { id: 8453, name: 'Base' },
+    { id: 42161, name: 'Arbitrum One' },
+    { id: 10, name: 'Optimism' },
+  ],
 }));
 
 const TOKEN = '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd';
@@ -273,26 +282,63 @@ describe('TransactionDetail page', () => {
     expect(screen.queryByRole('heading', { name: 'Event Logs' })).not.toBeInTheDocument();
   });
 
-  it('shows a friendly cross-chain hint for a wrong-chain not-found transaction', async () => {
+  it('splits the not-found card into the three real causes, each with its own recovery path', async () => {
+    const refetch = vi.fn();
     vi.mocked(useTransactionByHash).mockReturnValue(
-      hookResult(
-        undefined,
-        {
+      {
+        data: undefined,
+        loading: false,
+        error: {
           name: 'TransactionNotFoundError',
           message: `Transaction with hash "${TX_HASH}" could not be found.`,
         },
-      ),
+        refetch,
+      } as unknown as never,
     );
 
     renderDetail();
 
+    // Card + honest intro sentence naming the chain that was searched.
+    expect(await screen.findByRole('heading', { name: 'Transaction Not Found' })).toBeInTheDocument();
     expect(
-      await screen.findByText(
-        'Transaction not found on Ethereum. It may exist on another network or be pending.',
+      screen.getByText(
+        'No transaction with this hash is known to Ethereum. This usually means one of three things:',
       ),
     ).toBeInTheDocument();
+
+    // The hash itself stays visible (copyable) — without a found
+    // transaction this card is the only place it appears on the page.
+    const truncatedHash = `${TX_HASH.slice(0, 10)}…${TX_HASH.slice(-8)}`;
+    expect(screen.getByText(truncatedHash)).toBeInTheDocument();
+
+    // Three causes, one line each.
+    expect(screen.getByText('Still pending.')).toBeInTheDocument();
+    expect(screen.getByText('Different network.')).toBeInTheDocument();
+    expect(screen.getByText('Reorged out.')).toBeInTheDocument();
+
+    // Pending path: an explicit retry that re-runs the query.
+    fireEvent.click(screen.getByRole('button', { name: 'try again' }));
+    expect(refetch).toHaveBeenCalled();
+
+    // Wrong-network path: cross-chain search link + same-hash quick links
+    // to the popular chains other than the current one.
     const searchLink = screen.getByRole('link', { name: 'search across chains' });
     expect(searchLink).toHaveAttribute('href', '/search');
+    expect(screen.queryByRole('button', { name: 'Ethereum' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Polygon' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Base' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Arbitrum One' })).toBeInTheDocument();
+    // Reorg path: pointed at the block list to check for an orphaned block.
+    const blockListLink = screen.getByRole('link', { name: 'the block list' });
+    expect(blockListLink).toHaveAttribute('href', '/chain/1/blocks');
+
+    // A quick link re-resolves this exact hash on the target chain (the
+    // mock chain table knows only chain 1, so 137 lands on the
+    // unsupported-chain recovery state — proof the navigation ran).
+    fireEvent.click(screen.getByRole('button', { name: 'Polygon' }));
+    expect(await screen.findByText(/Chain not supported/)).toBeInTheDocument();
+
+    // The raw provider error never leaks into the friendly card.
     expect(screen.queryByText(/could not be found/)).not.toBeInTheDocument();
   });
 

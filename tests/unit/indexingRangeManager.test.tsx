@@ -15,7 +15,11 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
-import IndexingRangeManager, { describeMutationError } from '@/components/events/IndexingRangeManager';
+import IndexingRangeManager, {
+  describeMutationError,
+  estimateRangeEta,
+  recordEtaSample,
+} from '@/components/events/IndexingRangeManager';
 import { toast } from 'sonner';
 import { ApiError } from '@/util/apiError';
 
@@ -701,5 +705,197 @@ describe('client-side overlap precheck', () => {
       }),
     );
     expect(mockPost).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Indexing-rate ETA: the 3s poll doubles as a speedometer. recordEtaSample
+// folds one polled observation into a per-range window (pure, so the reset
+// rules are directly testable); estimateRangeEta extrapolates the remaining
+// walk time from that window and refuses to promise a date it cannot
+// support. Range bounds are bigints exactly as the polled model delivers
+// them — the Number() conversions live inside the estimators.
+describe('indexing-rate ETA sampling', () => {
+  const forward = { fromBlock: 0n, toBlock: 200_000n, direction: 'forward' as const };
+  const backward = { fromBlock: 100_000n, toBlock: 900_000n, direction: 'backward' as const };
+
+  const indexing = (currentBlock: bigint, direction: 'forward' | 'backward' = 'forward') => ({
+    status: 'indexing' as const,
+    direction,
+    currentBlock,
+  });
+
+  it('returns null with fewer than two samples', () => {
+    expect(estimateRangeEta([], { ...forward, currentBlock: 160_000n })).toBeNull();
+    expect(
+      estimateRangeEta([{ t: 0, block: 150_000 }], { ...forward, currentBlock: 160_000n }),
+    ).toBeNull();
+  });
+
+  it('returns null while the observation span is under six seconds', () => {
+    const samples = [
+      { t: 0, block: 150_000 },
+      { t: 5_999, block: 160_000 },
+    ];
+    expect(estimateRangeEta(samples, { ...forward, currentBlock: 160_000n })).toBeNull();
+    // One more millisecond of span tips it over the threshold.
+    expect(estimateRangeEta(
+      [
+        { t: 0, block: 150_000 },
+        { t: 6_000, block: 160_000 },
+      ],
+      { ...forward, currentBlock: 160_000n },
+    )).not.toBeNull();
+  });
+
+  it('extrapolates a forward walk from the sampled rate', () => {
+    // 10,000 blocks walked in 10s → 1,000 blocks/s; 40,000 remaining → 40s.
+    const eta = estimateRangeEta(
+      [
+        { t: 0, block: 150_000 },
+        { t: 10_000, block: 160_000 },
+      ],
+      { ...forward, currentBlock: 160_000n },
+    );
+    expect(eta).not.toBeNull();
+    expect(eta?.blocksPerSec).toBeCloseTo(1_000, 6);
+    expect(eta?.remainingMs).toBeCloseTo(40_000, 6);
+  });
+
+  it('extrapolates a backward walk toward fromBlock', () => {
+    // Walking down from 720,000 to 700,000 in 15s → ~1,333 blocks/s;
+    // 600,000 blocks above fromBlock remain → 450s.
+    const eta = estimateRangeEta(
+      [
+        { t: 0, block: 720_000 },
+        { t: 15_000, block: 700_000 },
+      ],
+      { ...backward, currentBlock: 700_000n },
+    );
+    expect(eta).not.toBeNull();
+    expect(eta?.blocksPerSec).toBeCloseTo(20_000 / 15, 6);
+    expect(eta?.remainingMs).toBeCloseTo(450_000, 6);
+  });
+
+  it('returns null when the walk has reached (or passed) its target', () => {
+    const samples = [
+      { t: 0, block: 195_000 },
+      { t: 10_000, block: 199_900 },
+    ];
+    expect(estimateRangeEta(samples, { ...forward, currentBlock: 200_000n })).toBeNull();
+    expect(estimateRangeEta(samples, { ...forward, currentBlock: 201_000n })).toBeNull();
+  });
+
+  it('returns null for an implausible burst rate (checkpoint jump misread as speed)', () => {
+    // 100,000 blocks in 6s is 16,666 blocks/s — past the plausibility
+    // ceiling, so no date is promised off it.
+    expect(
+      estimateRangeEta(
+        [
+          { t: 0, block: 0 },
+          { t: 6_000, block: 100_000 },
+        ],
+        { ...forward, currentBlock: 100_000n },
+      ),
+    ).toBeNull();
+  });
+
+  it('returns null when the extrapolated wait exceeds 30 days', () => {
+    // 5 blocks in 10s → 0.5 blocks/s; ~10M blocks left → ~231 days.
+    expect(
+      estimateRangeEta(
+        [
+          { t: 0, block: 0 },
+          { t: 10_000, block: 5 },
+        ],
+        { ...forward, currentBlock: 5n, toBlock: 10_000_000n },
+      ),
+    ).toBeNull();
+  });
+
+  it('voids the rate window across a pause/resume cycle', () => {
+    let tracker = recordEtaSample(undefined, indexing(100n), 0);
+    tracker = recordEtaSample(tracker, indexing(200n), 4_000);
+    tracker = recordEtaSample(tracker, indexing(300n), 8_000);
+    // Pre-pause the window is long enough to promise a date…
+    expect(estimateRangeEta(tracker.samples, { ...forward, currentBlock: 300n })).not.toBeNull();
+
+    // …the pause drops every sample…
+    tracker = recordEtaSample(tracker, { ...indexing(300n), status: 'paused' }, 9_000);
+    expect(tracker).toEqual({ status: 'paused', samples: [] });
+
+    // …and the resume starts from one fresh observation, so the stale
+    // pre-pause rate cannot leak into the new run's estimate.
+    tracker = recordEtaSample(tracker, indexing(310n), 10_000);
+    expect(tracker.samples).toEqual([{ t: 10_000, block: 310 }]);
+    expect(estimateRangeEta(tracker.samples, { ...forward, currentBlock: 310n })).toBeNull();
+  });
+
+  it('restarts the window when the walk regresses (checkpoint reset)', () => {
+    let tracker = recordEtaSample(undefined, indexing(100n), 0);
+    tracker = recordEtaSample(tracker, indexing(200n), 6_000);
+    expect(tracker.samples).toHaveLength(2);
+
+    // A drop against the walk direction means the range was re-created
+    // from scratch: the old samples would poison the slope.
+    tracker = recordEtaSample(tracker, indexing(50n), 9_000);
+    expect(tracker.samples).toEqual([{ t: 9_000, block: 50 }]);
+    expect(estimateRangeEta(tracker.samples, { ...forward, currentBlock: 50n })).toBeNull();
+  });
+
+  it('keeps the window unchanged on a no-news tick', () => {
+    let tracker = recordEtaSample(undefined, indexing(100n), 0);
+    tracker = recordEtaSample(tracker, indexing(200n), 3_000);
+    const stalled = recordEtaSample(tracker, indexing(200n), 6_000);
+    expect(stalled).toBe(tracker);
+    expect(stalled.samples).toHaveLength(2);
+  });
+});
+
+describe('indexing-rate ETA rendering', () => {
+  it('appends the ETA suffix to the progress line once a rate window forms', async () => {
+    vi.useFakeTimers();
+    rangesFixture = [range(7, 0, 1_000_000, 'indexing', 100_000)];
+    headFixture = 100_000;
+
+    render(<IndexingRangeManager chainId={CHAIN_ID} contractAddress={ADDRESS} />);
+    // Settle the initial fetch (findBy* is unreliable under fake timers).
+    await act(async () => {});
+
+    // One observation so far: progress renders, no ETA promised.
+    expect(screen.getByText(/Progress: 10%/)).toBeInTheDocument();
+    expect(screen.queryByText(/remaining \(est\.\)/)).toBeNull();
+
+    // t+3s poll: one more observation, but a single 3s interval is under
+    // the 6s minimum span — still no estimate.
+    rangesFixture = [range(7, 0, 1_000_000, 'indexing', 103_000)];
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3_000);
+    });
+    expect(screen.queryByText(/remaining \(est\.\)/)).toBeNull();
+
+    // t+6s poll: the window now holds two 3s-spaced observations (first →
+    // last = 3s) — still under the span threshold.
+    rangesFixture = [range(7, 0, 1_000_000, 'indexing', 106_000)];
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3_000);
+    });
+    expect(screen.queryByText(/remaining \(est\.\)/)).toBeNull();
+
+    // t+9s poll: the window spans 6s at a steady 1,000 blocks/s;
+    // ~891,000 blocks remain ≈ 15 minutes.
+    rangesFixture = [range(7, 0, 1_000_000, 'indexing', 109_000)];
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3_000);
+    });
+    expect(screen.getByText(/— ~15m remaining \(est\.\)/)).toBeInTheDocument();
+
+    // Pause flips the status: the walked progress line stays, the ETA goes
+    // — a paused range has no live rate and must not keep the old promise.
+    rangesFixture = [range(7, 0, 1_000_000, 'paused', 109_000)];
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(3_000);
+    });
+    expect(screen.getByText(/Progress: 11%/)).toBeInTheDocument();
+    expect(screen.queryByText(/remaining \(est\.\)/)).toBeNull();
   });
 });

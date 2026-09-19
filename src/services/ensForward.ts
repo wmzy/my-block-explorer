@@ -25,3 +25,27 @@ export async function resolveEnsAddress(name: string): Promise<EnsAddressResolut
     return { status: 'failed' };
   }
 }
+
+/**
+ * Destination chains a resolved ENS name can be viewed on. The primary is
+ * always the chain the name resolved on (Ethereum mainnet — the registry
+ * only lives there, so that is where the address is a known fact); the
+ * alternate is the chain the user was browsing when they searched, offered
+ * as a secondary action only when it differs (browsing mainnet itself
+ * leaves nothing to choose between). History records whichever destination
+ * the user actually opens — never the viewing chain by default.
+ */
+export type EnsDestinations = {
+  primaryChainId: number;
+  alternateChainId: number | null;
+};
+
+export function ensDestinations(viewingChainId: number | undefined): EnsDestinations {
+  return {
+    primaryChainId: ENS_RESOLUTION_CHAIN_ID,
+    alternateChainId:
+      viewingChainId !== undefined && viewingChainId !== ENS_RESOLUTION_CHAIN_ID
+        ? viewingChainId
+        : null,
+  };
+}

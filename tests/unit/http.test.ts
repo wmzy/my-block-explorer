@@ -3,7 +3,7 @@ import * as ff from 'fetch-fun';
 
 import { getApiBase, onApiBaseChange, setApiBase } from '@/util/apiBase';
 import { ApiError } from '@/util/apiError';
-import { api, del, get, post, put, withSignal } from '@/util/http';
+import { api, del, get, isBackendUnreachable, post, put, withSignal } from '@/util/http';
 
 // fetch-fun's JSON reader reads the body via res.text(); HTTPError reads
 // status/statusText/url and fetchData checks res.type. The stand-in only
@@ -380,6 +380,37 @@ describe('http utilities', () => {
 
       expect(error.name).toBe('AbortError');
       expect(error).not.toBeInstanceOf(ApiError);
+    });
+  });
+
+  describe('isBackendUnreachable', () => {
+    it('classifies the degraded-mode fast reject as backend-unreachable', async () => {
+      setApiBase('');
+
+      const error = await get('/api/health').catch((e: unknown) => e);
+
+      expect(isBackendUnreachable(error)).toBe(true);
+    });
+
+    it('classifies network failures against the API base as backend-unreachable', async () => {
+      fetchMock.mockRejectedValue(new TypeError('fetch failed'));
+
+      const error = await get('/api/health').catch((e: unknown) => e);
+
+      expect(isBackendUnreachable(error)).toBe(true);
+    });
+
+    it('does not classify HTTP errors, timeouts, aborts or foreign errors', async () => {
+      fetchMock.mockResolvedValue(mockResponse({ message: 'contract not found' }, false, 404));
+      const httpError = await get('/api/health').catch((e: unknown) => e);
+      expect(isBackendUnreachable(httpError)).toBe(false);
+
+      expect(isBackendUnreachable(new ApiError('Request timeout', 408))).toBe(false);
+      expect(isBackendUnreachable(new DOMException('The user aborted a request.', 'AbortError'))).toBe(
+        false,
+      );
+      expect(isBackendUnreachable(new Error('fetch failed'))).toBe(false);
+      expect(isBackendUnreachable(undefined)).toBe(false);
     });
   });
 });
