@@ -4,7 +4,11 @@
  *   when no previous range exists, generic envelope for other failures),
  * - PATCH bound validation (numbers or block tags only),
  * - mutating routes are wrapped in requireAdminTokenIfConfigured while the
- *   GET endpoints stay open.
+ *   GET endpoints stay open,
+ * - contract-address validation tiers (all-lower/all-upper pass, mixed case
+ *   must be EIP-55 correct) with lowercase storage keys preserved,
+ * - a missing range is a 404 resource state on start/resume/delete while
+ *   state conflicts stay 400.
  *
  * The service and middleware modules are mocked: these tests pin the route
  * wiring, not the service semantics (covered by eventIndexingRanges.test.ts)
@@ -75,6 +79,7 @@ vi.mock('@/services/ContractSourceService', () => ({
 
 import app from '@/routes/events';
 import { contractSourceService } from '@/services/ContractSourceService';
+import { getAddress } from 'viem';
 
 const CHAIN_ID = 1;
 const ADDRESS = '0x1234567890123456789012345678901234567890';
@@ -375,5 +380,113 @@ describe('admin gating of mutating event routes', () => {
     const open = await request(`${BASE}/ranges`);
     expect(open.status).toBe(200);
     expect(mocks.gate).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('contract address validation (EIP-55 tiers)', () => {
+  // Contains hex letters so case actually matters for the checksum.
+  const LOWER = '0x1234567890abcdef1234567890abcdef12345678';
+  const CHECKSUMMED = getAddress(LOWER);
+  // Wrong checksum: flip the first hex letter's case — still mixed-case,
+  // so it carries checksum information that no longer matches EIP-55.
+  const BAD_CHECKSUM = CHECKSUMMED.replace(/[a-f]/, ch => ch.toUpperCase());
+  const UPPER = `0x${LOWER.slice(2).toUpperCase()}`;
+
+  it('rejects a mixed-case address with a wrong EIP-55 checksum', async () => {
+    const res = await request(`/chains/${CHAIN_ID}/contracts/${BAD_CHECKSUM}/events`);
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe('Invalid contract address');
+    expect(body.message).toContain('checksum');
+    expect(mocks.getContractEvents).not.toHaveBeenCalled();
+  });
+
+  it('accepts an all-lowercase address (checksum-less convention)', async () => {
+    const res = await request(`/chains/${CHAIN_ID}/contracts/${LOWER}/events`);
+
+    expect(res.status).toBe(200);
+    expect(mocks.getContractEvents.mock.calls[0]?.[1]).toBe(LOWER);
+  });
+
+  it('accepts an all-uppercase address (checksum-less convention)', async () => {
+    const res = await request(`/chains/${CHAIN_ID}/contracts/${UPPER}/events`);
+
+    expect(res.status).toBe(200);
+    expect(mocks.getContractEvents.mock.calls[0]?.[1]).toBe(LOWER);
+  });
+
+  it('keeps the storage key lowercase when given a correct checksum address', async () => {
+    const res = await request(`/chains/${CHAIN_ID}/contracts/${CHECKSUMMED}/events`);
+
+    expect(res.status).toBe(200);
+    // Rows written with lowercase keys before checksum-tight validation
+    // must stay reachable from a checksummed URL.
+    expect(mocks.getContractEvents.mock.calls[0]?.[1]).toBe(LOWER);
+  });
+
+  it('rejects a malformed address shape', async () => {
+    const res = await request(`/chains/${CHAIN_ID}/contracts/0xzz/events`);
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe('Invalid contract address');
+    expect(mocks.getContractEvents).not.toHaveBeenCalled();
+  });
+});
+
+describe('missing range: 404 resource state', () => {
+  const ABI = [{ type: 'event', name: 'Transfer', inputs: [] }];
+
+  it('start answers 404 (not 400) when the range does not exist', async () => {
+    const res = await post(`${BASE}/ranges/9/start`, { abi: ABI });
+
+    expect(res.status).toBe(404);
+    await expect(res.json()).resolves.toEqual({ error: 'Range not found' });
+    expect(mocks.startIndexingRange).not.toHaveBeenCalled();
+  });
+
+  it('resume answers 404 (not 400) when the range does not exist', async () => {
+    const res = await post(`${BASE}/ranges/9/resume`, { abi: ABI });
+
+    expect(res.status).toBe(404);
+    await expect(res.json()).resolves.toEqual({ error: 'Range not found' });
+    expect(mocks.resumeIndexingRange).not.toHaveBeenCalled();
+  });
+
+  it('delete answers 404 when the service reports Range not found', async () => {
+    mocks.deleteIndexingRange.mockResolvedValue({ success: false, error: 'Range not found' });
+
+    const res = await request(`${BASE}/ranges/9`, { method: 'DELETE' });
+
+    expect(res.status).toBe(404);
+    await expect(res.json()).resolves.toEqual({ error: 'Range not found' });
+  });
+
+  it('delete keeps non-missing-range service failures as 400', async () => {
+    mocks.deleteIndexingRange.mockResolvedValue({
+      success: false,
+      error: 'Cannot delete range while indexing',
+    });
+
+    const res = await request(`${BASE}/ranges/9`, { method: 'DELETE' });
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe('Failed to delete indexing range');
+    expect(body.message).toBe('Cannot delete range while indexing');
+  });
+
+  it('start keeps state conflicts (already completed) as 400', async () => {
+    mocks.getIndexingRanges.mockResolvedValue([
+      { rangeId: 9, status: 'completed' },
+    ]);
+
+    const res = await post(`${BASE}/ranges/9/start`, { abi: ABI });
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.message).toBe('Range is already completed');
+    expect(mocks.startIndexingRange).not.toHaveBeenCalled();
   });
 });

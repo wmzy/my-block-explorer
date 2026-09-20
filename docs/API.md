@@ -4,7 +4,7 @@ The backend is a Hono app (`src/api-app.ts`) that mounts the route modules in `s
 
 - **Base URL**: `http://localhost:8201/api` (standalone server, `PORT`/`--port` override). In dev, the Vite server on `:3000` bridges the same app under `/api`.
 - **Format**: JSON (CSV for the event export).
-- **Auth**: read endpoints are open. Writes/admin endpoints are gated in two tiers, both via the `x-admin-token` header matching the server's `ADMIN_TOKEN` env. Core-workflow writes (event-range mutations, `POST`/`DELETE /api/rpc-configs`) use `requireAdminTokenIfConfigured` — enforced only when `ADMIN_TOKEN` is set; without it they pass through (zero-config local trust model). The admin/diagnostic surface (contract `clear-cache`, storage-layout cache delete, `/api/performance/*`) is strictly fail-closed: no token configured → 403.
+- **Auth**: read endpoints are open. Writes/admin endpoints are gated in two tiers, both via the `x-admin-token` header matching the server's `ADMIN_TOKEN` env. 🔐 **Opt-in tier** (`requireAdminTokenIfConfigured` — enforced only when `ADMIN_TOKEN` is set; without it requests pass through, keeping the zero-config local trust model): event-range mutations, `POST`/`DELETE /api/rpc-configs`, contract `clear-cache`, storage-layout cache delete, and `open-in-ide` — all non-destructive or regenerative operations (dropped caches re-fetch from upstream; the IDE endpoint only builds a URL), so a token-less local session stays fully functional. 🔒 **Fail-closed tier** (`requireAdminToken` — no token configured → `403`): `/api/performance/*`, the admin/diagnostic surface.
 - **Common response headers**: `X-Data-Source` (e.g. `database`, `rpc`, method tag), `X-Chain-Name`.
 - **Chain IDs**: any chain defined in `viem/chains`. Unknown IDs → `400 { "error": "Unsupported chain" }` (chain-scoped search additionally returns `supportedChains`).
 
@@ -55,8 +55,8 @@ The backend is a Hono app (`src/api-app.ts`) that mounts the route modules in `s
 | `POST /api/chains/:chainId/contracts/:address/read` | State-changing-free call |
 | `POST /api/chains/:chainId/contracts/:address/simulate` | eth_call simulation |
 | `POST /api/chains/:chainId/contracts/:address/estimate-gas` | Gas estimate |
-| `POST /api/chains/:chainId/contracts/:address/open-in-ide` | Build a remote-IDE URL |
-| `POST /api/chains/:chainId/contracts/:address/clear-cache` | 🔒 **admin** — drop cached contract source |
+| `POST /api/chains/:chainId/contracts/:address/open-in-ide` | 🔐 **admin (opt-in)** — build a remote-IDE URL |
+| `POST /api/chains/:chainId/contracts/:address/clear-cache` | 🔐 **admin (opt-in)** — drop cached contract source (regenerates on next fetch) |
 
 ## Storage
 
@@ -64,7 +64,7 @@ The backend is a Hono app (`src/api-app.ts`) that mounts the route modules in `s
 | --- | --- |
 | `GET /api/chains/:chainId/contracts/:address/storage-layout` | Fetched layout or `NOT_FOUND` cache marker |
 | `GET /api/chains/:chainId/contracts/:address/storage/:slot` | Live slot read |
-| `DELETE /api/chains/:chainId/contracts/:address/storage-layout/cache` | 🔒 **admin** — drop cached storage layout |
+| `DELETE /api/chains/:chainId/contracts/:address/storage-layout/cache` | 🔐 **admin (opt-in)** — drop cached storage layout (regenerates on next fetch) |
 
 ## Events (per contract)
 
@@ -83,7 +83,7 @@ Range-based manual indexing. `EventIndexingService` runs one serial job per rang
 | `POST …/events/ranges/quick` | 🔐 Quick-create; `mode`: `all` \| `recent` \| `first` \| `continue` \| `catchup` (`recent`/`first`/`continue` also need `blockCount`). `catchup` extends from the furthest block any existing range reached to head → `400 { "error": "No previous range found. Cannot catch up." }` with no prior ranges; `first` fails with "Contract creation block unknown — enter a start block manually" when the creation block can't be determined |
 | `PATCH …/events/ranges/:rangeId` | 🔐 Update a range |
 | `DELETE …/events/ranges/:rangeId` | 🔐 Delete a range |
-| `POST …/events/ranges/:rangeId/start` / `pause` / `resume` | 🔐 Control indexing; `start`/`resume` return `202` immediately |
+| `POST …/events/ranges/:rangeId/start` / `pause` / `resume` | 🔐 Control indexing; `start`/`resume` return `202` immediately. An unknown `rangeId` on `start`/`pause`/`resume`/`DELETE` → `404 { "error": "Range not found" }`; invalid states (already indexing/completed, resuming a non-paused range, deleting while indexing) → `400` |
 
 🔐 = `requireAdminTokenIfConfigured`: enforced only when `ADMIN_TOKEN` is set on the server.
 
@@ -94,7 +94,7 @@ Range-based manual indexing. `EventIndexingService` runs one serial job per rang
 | Method & path | Notes |
 | --- | --- |
 | `GET /api/rpc-configs` | List overrides |
-| `POST /api/rpc-configs` | 🔐 Upsert `{ chainId, name, url, supportsHistory, maxEventRange }` |
+| `POST /api/rpc-configs` | 🔐 Upsert `{ chainId, name, url, supportsHistory, maxEventRange }`. Validation: `chainId` a positive integer naming a supported chain, `url` an absolute http(s) URL, `name` a string, `supportsHistory`/`maxEventRange` (when present) a boolean / positive integer — violations → `400` with a machine-readable `code` (`invalid_chain_id` / `invalid_url` / `invalid_name` / `invalid_fields` / `missing_fields` / `invalid_json`). Response: `{ success: true, action: "created" \| "replaced" }` |
 | `DELETE /api/rpc-configs/:chainId` | 🔐 Remove override |
 
 🔐 = `requireAdminTokenIfConfigured` (enforced only when `ADMIN_TOKEN` is set); 🔒 = `requireAdminToken` (fail-closed). See the Auth bullet at the top.

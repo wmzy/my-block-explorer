@@ -15,7 +15,7 @@ const { okBlock, failingBlock, okTx, failingAddress } = vi.hoisted(() => {
     },
     okTx: {
       getTransactionByHash: vi.fn(() => Promise.resolve(null)),
-      getLatestTransactions: vi.fn(() => Promise.resolve([])),
+      getLatestTransactions: vi.fn(() => Promise.resolve({ transactions: [], total: 0 })),
     },
     failingAddress: { getAddressInfo: vi.fn(() => Promise.reject(new Error('rpc down'))) },
   };
@@ -66,7 +66,7 @@ describe('SearchService smoke', () => {
       blockService: okBlock as never,
       transactionService: {
         getTransactionByHash: vi.fn(() => Promise.reject(new Error('rpc down'))),
-        getLatestTransactions: vi.fn(() => Promise.resolve([])),
+        getLatestTransactions: vi.fn(() => Promise.resolve({ transactions: [], total: 0 })),
       } as never,
       addressService: failingAddress as never,
     });

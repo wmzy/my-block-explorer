@@ -233,17 +233,22 @@ async function copyText(text: string): Promise<boolean> {
 // Clear discards it through onClear. The parent owns persistence; this
 // panel only edits the raw string. focusSignal lets the locked ABI/Interact
 // tab panels jump the user here: each increment focuses the textarea and
-// scrolls it into view.
+// scrolls it into view. unlockReason selects the explanatory note's tier:
+// 'impl-unverified' (a proxy whose implementation is unverified while the
+// proxy itself still has a server ABI) must not claim the whole contract
+// has no ABI anywhere.
 export function CustomAbiPanel({
   storedRaw,
   onApply,
   onClear,
   focusSignal = 0,
+  unlockReason = 'no-server-abi',
 }: {
   storedRaw: string;
   onApply: (raw: string) => void;
   onClear: () => void;
   focusSignal?: number;
+  unlockReason?: 'no-server-abi' | 'impl-unverified';
 }) {
   const [draft, setDraft] = useState(storedRaw);
   const [validation, setValidation] = useState<AbiValidation | null>(null);
@@ -318,12 +323,21 @@ export function CustomAbiPanel({
         <h2 style={{ margin: 0 }}>Use custom ABI</h2>
         {active && <span className={activeChipStyles}>Active</span>}
       </div>
-      <p className={panelNoteStyles}>
-        No ABI is available for this contract from verification services. Paste a contract ABI
-        (a JSON array) to unlock the ABI, Events and Interact views. It is saved in this
-        browser for this chain and address and persists across sessions. Pasting an ABI does
-        not verify the contract and is not shared with other users.
-      </p>
+      {unlockReason === 'impl-unverified' ? (
+        <p className={panelNoteStyles}>
+          The implementation contract is not verified, so its ABI is not available from verification
+          services. Paste the implementation's ABI here to unlock the ABI, Events and Interact
+          views, or switch to the Proxy view to use the proxy's own ABI. Pasting an ABI does not
+          verify the contract and is not shared with other users.
+        </p>
+      ) : (
+        <p className={panelNoteStyles}>
+          No ABI is available for this contract from verification services. Paste a contract ABI
+          (a JSON array) to unlock the ABI, Events and Interact views. It is saved in this
+          browser for this chain and address and persists across sessions. Pasting an ABI does
+          not verify the contract and is not shared with other users.
+        </p>
+      )}
       <textarea
         ref={textareaRef}
         className={textareaStyles}

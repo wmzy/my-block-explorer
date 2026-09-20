@@ -213,6 +213,7 @@ export const contractSources = duckdbTable(
     licenseType: varchar({ length: 50 }),
     proxy: varchar({ length: 50 }),
     implementation: address(),
+    implementationAddresses: text(), // JSON array of facet addresses (EIP-2535 diamonds)
     swarmSource: varchar({ length: 100 }),
     isVerified: boolean().default(false),
     verificationSource: varchar({ length: 50 }),

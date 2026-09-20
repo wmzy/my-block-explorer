@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter, View, createRoutes, useSearchParams } from '@native-router/react';
 import { getAddress } from 'viem';
+import { ApiError } from '@/util/apiError';
 import '@testing-library/jest-dom/vitest';
 import AddressView from '@/views/Address';
 
@@ -127,6 +128,11 @@ const mocks = vi.hoisted(() => {
     tokenRefetch: () => undefined,
     // Loading is per-case (the scanning-copy test flips it).
     txLoading: false,
+    // Per-case persistent-channel (address-info) error — the offline
+    // attribution and type-fallback tests swap in ApiError status 0.
+    infoError: undefined as Error | undefined,
+    // Per-case RPC code-read error (classification fallback channel).
+    contractCodeError: undefined as Error | undefined,
     // Per-case RPC eth_getCode result (the classification fallback
     // channel): undefined = not read yet, '0x' = EOA, bytecode = contract.
     contractCode: undefined as string | undefined,
@@ -170,7 +176,7 @@ vi.mock('@/services/addresses', () => ({
     data: mocks.addressInfo,
     loading: false,
     fetching: false,
-    error: undefined,
+    error: mocks.infoError,
   }),
   // Args captured on every render so tests can assert what the view asked
   // for — the Search-deeper escalation asserts the window arg (index 4).
@@ -196,7 +202,7 @@ vi.mock('@/services/addressRealTime', () => ({
     data: mocks.contractCode,
     loading: false,
     fetching: false,
-    error: undefined,
+    error: mocks.contractCodeError,
   }),
 }));
 
@@ -271,6 +277,8 @@ describe('Address view', () => {
     };
     mocks.addressTxError = undefined;
     mocks.txLoading = false;
+    mocks.infoError = undefined;
+    mocks.contractCodeError = undefined;
     mocks.contractCode = undefined;
     mocks.txQueryArgs = [];
     mocks.tokenTransfers = {
@@ -982,9 +990,54 @@ describe('Address view', () => {
     );
   });
 
-  it('shows checksum guidance instead of the raw 400 for a bad-checksum address', async () => {
-    // Mixed-case bad checksum: the server validation (getValidatedAddress)
-    // rejects with HTTP 400 'Invalid address'.
+  // Mixed-case disagreement with EIP-55: uppercase one body position the
+  // checksummed form holds lowercase (a guaranteed checksum mismatch that
+  // stays mixed-case — the tier the page-level card must explain).
+  const withBrokenChecksum = (address: string): string => {
+    const checksummed = getAddress(address);
+    for (let i = 2; i < checksummed.length; i++) {
+      if (/[a-f]/.test(checksummed[i])) {
+        return address.slice(0, i) + address[i].toUpperCase() + address.slice(i + 1);
+      }
+    }
+    return address;
+  };
+
+  it('renders the page-level checksum guidance card for a bad-checksum address, with the lowercase recovery link', async () => {
+    // A1: the verdict comes from the address string itself (no query
+    // error needed) and replaces the whole data area — ONE verdict on the
+    // screen, not the old mix of a normal-looking card, tab guidance and
+    // raw 400s.
+    renderPage(`/chain/1/address/${withBrokenChecksum(mocks.testAddress)}`);
+
+    expect(await screen.findByText(/This address has an invalid checksum/)).toBeInTheDocument();
+    expect(screen.getByText(/Copy the address from a trusted source/)).toBeInTheDocument();
+    // Recovery is one click: the all-lowercase form is valid everywhere.
+    const link = screen.getByRole('link', { name: /all-lowercase form/i });
+    expect(link.getAttribute('href')).toBe(`/chain/1/address/${mocks.testAddress}`);
+    // The Overview data card does NOT render for an invalid address.
+    expect(screen.queryByText('Overview')).not.toBeInTheDocument();
+    expect(screen.queryByRole('group', { name: 'Recent activity' })).not.toBeInTheDocument();
+  });
+
+  it('renders the format-tier guidance for a malformed address, never checksum advice', async () => {
+    // Shape failure ('0xGG…', 40 chars): the address has no checksum to
+    // retry in lowercase, so the checksum tier (and its link) must not
+    // render.
+    renderPage(`/chain/1/address/0xGG${'11'.repeat(19)}`);
+
+    expect(await screen.findByText(/Not a valid address format/)).toBeInTheDocument();
+    expect(screen.queryByText(/invalid checksum/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /all-lowercase form/i })).not.toBeInTheDocument();
+    expect(screen.queryByText('Overview')).not.toBeInTheDocument();
+  });
+
+  it('passes query errors through verbatim for a valid address — the invalid-address guidance is address-driven, never message-driven', async () => {
+    // A valid all-lowercase address whose (mocked) query fails with an
+    // 'Invalid address' message: the raw error renders as-is. Sniffing
+    // the message for guidance wording produced three conflicting
+    // verdicts for one bad address; the address string is the only
+    // ground truth now.
     mocks.realTime = {
       data: undefined,
       loading: false,
@@ -994,40 +1047,95 @@ describe('Address view', () => {
 
     renderPage();
 
-    expect(
-      await screen.findByText(/This address has an invalid checksum/),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/Try the all-lowercase form/)).toBeInTheDocument();
-    expect(screen.getByText('Original error: Invalid address')).toBeInTheDocument();
-    expect(screen.queryByText('Error: Invalid address')).not.toBeInTheDocument();
+    expect(await screen.findByText('Error: Invalid address')).toBeInTheDocument();
+    expect(screen.queryByText(/This address has an invalid checksum/)).not.toBeInTheDocument();
   });
 
-  it('shows checksum guidance in the transactions card when the tx search rejects the address', async () => {
+  it('renders the raw tx error verbatim for a valid address (no message sniffing)', async () => {
     mocks.addressTxError = new Error('Invalid address');
 
     renderPage();
 
-    expect(await screen.findByText(/This address has an invalid checksum/)).toBeInTheDocument();
-    expect(screen.getByText('Original error: Invalid address')).toBeInTheDocument();
+    expect(await screen.findByText('Invalid address')).toBeInTheDocument();
+    expect(screen.queryByText(/This address has an invalid checksum/)).not.toBeInTheDocument();
     expect(screen.queryByText('No transactions found')).not.toBeInTheDocument();
   });
 
-  it('shows a format error for a malformed address instead of checksum advice', async () => {
-    // Shape failure ('0xGG…', 40 chars): the view classifies it LOCALLY by
-    // the address shape — the all-lowercase checksum advice would be
-    // misleading for an address that has no checksum at all.
-    mocks.realTime = {
-      data: undefined,
-      loading: false,
-      fetching: false,
-      error: new Error('Invalid address format'),
+  it('attributes missing indexed fields when the backend is unreachable, and classifies Type from the RPC read', async () => {
+    // A3: offline backend + working RPC. The Overview card must say WHY
+    // verification/creator rows are absent, and the EOA/contract verdict
+    // must come from the RPC code read — an errored persistent channel
+    // contributes no type verdict, so 'Unknown' is wrong here.
+    mocks.infoError = new ApiError('Backend not connected — indexed data unavailable', 0);
+    mocks.contractCode = '0x';
+
+    renderPage();
+
+    expect(await screen.findByText(/Indexed address details are unavailable/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/still come from the live chain RPC/),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Externally Owned Account (EOA)')).toBeInTheDocument();
+    // The RPC fallback covers the page, so no raw page-level error card.
+    expect(screen.queryByText(/Error: Backend not connected/)).not.toBeInTheDocument();
+  });
+
+  it('keeps Unknown honest when both channels fail, with the page error card and the offline attribution', async () => {
+    // Both the persistent channel and the RPC code read failed: Type is
+    // honestly Unknown (no data to classify from) while the page-level
+    // error card carries the failure and the attribution explains the
+    // missing indexed fields.
+    mocks.infoError = new ApiError('Backend not connected — indexed data unavailable', 0);
+    mocks.contractCodeError = new Error('RPC read failed');
+
+    renderPage();
+
+    expect(
+      await screen.findByText('Error: Backend not connected — indexed data unavailable'),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Indexed address details are unavailable/)).toBeInTheDocument();
+    expect(screen.getByText('Unknown')).toBeInTheDocument();
+    expect(
+      screen.queryByText('Externally Owned Account (EOA)'),
+    ).not.toBeInTheDocument();
+  });
+
+  it('does not run the tx history scan for a transfers-only deep link', async () => {
+    // C2: the expensive heuristic scan belongs to the transactions tab —
+    // a transfers deep link gates it off (chainId <= 0 is the services'
+    // disabled-key shape: resolves undefined, zero network).
+    renderPage(`/chain/1/address/${mocks.testAddress}?tab=transfers`);
+
+    expect(await screen.findByRole('columnheader', { name: 'Amount' })).toBeInTheDocument();
+    expect(mocks.txQueryArgs[0]).toBe(0);
+  });
+
+  it('re-enables the tx scan when switching back to the transactions tab', async () => {
+    renderPage(`/chain/1/address/${mocks.testAddress}?tab=transfers`);
+
+    await screen.findByRole('columnheader', { name: 'Amount' });
+    expect(mocks.txQueryArgs[0]).toBe(0);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Transactions' }));
+
+    expect(await screen.findByRole('columnheader', { name: 'Value' })).toBeInTheDocument();
+    expect(mocks.txQueryArgs[0]).toBe(1);
+  });
+
+  it('never converges ?page= while sitting on the transfers tab', async () => {
+    // C2: the beyond-data URL convergence rides the tx tab's own fetch —
+    // a transfers-tab visit must not silently rewrite ?page= behind a
+    // scan it is not running.
+    mocks.addressTransactions = {
+      transactions: [],
+      total: 25,
+      coverage: 'complete',
     };
 
-    renderPage(`/chain/1/address/0xGG${'11'.repeat(19)}`);
+    renderPage(`/chain/1/address/${mocks.testAddress}?tab=transfers&page=5`);
 
-    expect(await screen.findByText('Not a valid address format')).toBeInTheDocument();
-    expect(screen.getByText('Original error: Invalid address format')).toBeInTheDocument();
-    expect(screen.queryByText(/This address has an invalid checksum/)).not.toBeInTheDocument();
+    expect(await screen.findByRole('columnheader', { name: 'Amount' })).toBeInTheDocument();
+    expect(screen.getByTestId('search-probe')).toHaveTextContent('page=5');
   });
 
   it('keeps the plain error banner for unrelated failures', async () => {

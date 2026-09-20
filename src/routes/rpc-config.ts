@@ -5,6 +5,7 @@ import { db, userRpcConfigs } from '../database/init';
 
 const logger = createLogger('rpc-config-routes');
 import { rpcManager } from '../services/RpcManager';
+import { getChainInfo } from '../config/chains';
 import { getValidatedChainId } from '../server/validation';
 import { requireAdminTokenIfConfigured } from '../middleware/admin-token';
 import { isAllowedCorsOrigin } from '../middleware/cors-origins';
@@ -61,18 +62,129 @@ app.get('/rpc-configs', async (c) => {
 // Writes use the opt-in gate: without ADMIN_TOKEN a local session can
 // still save its RPC config; with one configured, writes require it.
 app.post('/rpc-configs', requireAdminTokenIfConfigured, async (c) => {
+  let body: Record<string, unknown>;
   try {
-    const body = await c.req.json();
-    const { chainId, name, url, supportsHistory, maxEventRange } = body;
+    body = await c.req.json();
+  }
+  catch {
+    return c.json(
+      {
+        error: 'Invalid JSON body',
+        code: 'invalid_json',
+        message: 'Request body must be valid JSON',
+      },
+      400,
+    );
+  }
+  // Destructured from Record<string, unknown>: every field is unknown and
+  // must earn its type through the guards below.
+  const { chainId, name, url, supportsHistory, maxEventRange } = body;
 
-    if (!chainId || !name || !url) {
-      return c.json({ error: 'Missing required fields' }, 400);
-    }
+  if (!chainId || !name || !url) {
+    return c.json(
+      {
+        error: 'Missing required fields',
+        code: 'missing_fields',
+        message: 'chainId, name and url are required',
+      },
+      400,
+    );
+  }
 
+  if (typeof chainId !== 'number' || !Number.isInteger(chainId) || chainId <= 0) {
+    return c.json(
+      {
+        error: 'Invalid chain ID',
+        code: 'invalid_chain_id',
+        message: 'chainId must be a positive integer',
+      },
+      400,
+    );
+  }
+
+  if (typeof name !== 'string') {
+    return c.json(
+      {
+        error: 'Invalid name',
+        code: 'invalid_name',
+        message: 'name must be a string',
+      },
+      400,
+    );
+  }
+
+  // The saved config feeds an RPC client for the chain, so the chain must
+  // actually be resolvable in the chain registry.
+  if (!getChainInfo(chainId)) {
+    return c.json(
+      {
+        error: 'Invalid chain ID',
+        code: 'invalid_chain_id',
+        message: `chainId ${chainId} is not a supported chain`,
+      },
+      400,
+    );
+  }
+
+  if (typeof url !== 'string') {
+    return c.json(
+      {
+        error: 'Invalid URL',
+        code: 'invalid_url',
+        message: 'url must be a string',
+      },
+      400,
+    );
+  }
+
+  let parsedUrl: URL;
+  try {
+    parsedUrl = new URL(url);
+  }
+  catch {
+    return c.json(
+      {
+        error: 'Invalid URL',
+        code: 'invalid_url',
+        message: 'url must be a valid absolute URL',
+      },
+      400,
+    );
+  }
+
+  if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+    return c.json(
+      {
+        error: 'Invalid URL',
+        code: 'invalid_url',
+        message: 'url must use the http or https protocol',
+      },
+      400,
+    );
+  }
+
+  if (
+    (supportsHistory !== undefined && typeof supportsHistory !== 'boolean')
+    || (maxEventRange !== undefined
+      && (typeof maxEventRange !== 'number' || !Number.isInteger(maxEventRange) || maxEventRange <= 0))
+  ) {
+    return c.json(
+      {
+        error: 'Invalid optional fields',
+        code: 'invalid_fields',
+        message: 'supportsHistory must be a boolean and maxEventRange a positive integer when present',
+      },
+      400,
+    );
+  }
+
+  try {
     const existing = await db
       .select({ chainId: userRpcConfigs.chainId })
       .from(userRpcConfigs)
       .where(eq(userRpcConfigs.chainId, chainId));
+
+    const action = existing.length > 0 ? 'replaced' : 'created';
 
     if (existing.length > 0) {
       await db
@@ -100,7 +212,7 @@ app.post('/rpc-configs', requireAdminTokenIfConfigured, async (c) => {
 
     await rpcManager.reloadConfigs();
 
-    return c.json({ success: true });
+    return c.json({ success: true, action });
   }
   catch (error) {
     logger.error(

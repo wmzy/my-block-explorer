@@ -14,6 +14,7 @@ import {
   getChainType,
 } from '@/config/chains';
 import { detectSearchType, sanitizeInput } from '@/utils/validation';
+import { isBackendUnreachable } from '@/util/http';
 import { formatAddress } from '@/utils/format';
 import { fetchChainSearch } from '@/services/search';
 import {
@@ -530,16 +531,21 @@ type ChainSearchResponse = {
 // Inline hint under the search box: 'miss' = definitive no-result on the
 // current chain, 'block-miss' = the same for a block number (verified
 // against the chain before navigating — chains differ in height),
-// 'failed' = a data source errored (degraded response), 'ens-resolved' /
-// 'ens-not-found' / 'ens-failed' = outcome of a client-side ENS lookup
-// (resolved on Ethereum; not-found is definitive, failed means the RPC
-// never answered and is retryable). ens-resolved also carries the
-// destination choice: Ethereum (where the name resolved) as the primary,
-// the chain the search ran on as the alternate.
+// 'failed' = a data source errored (degraded response, or a request that
+// failed outright), 'unreachable' = the backend could not be reached at
+// all (no HTTP response: offline / not connected — a different failure
+// from a data source erroring, with a retry instead of a network
+// escape), 'ens-resolved' / 'ens-not-found' / 'ens-failed' = outcome of
+// a client-side ENS lookup (resolved on Ethereum; not-found is
+// definitive, failed means the RPC never answered and is retryable).
+// ens-resolved also carries the destination choice: Ethereum (where the
+// name resolved) as the primary, the chain the search ran on as the
+// alternate.
 type SearchNotice =
   | { kind: 'miss'; query: string }
   | { kind: 'block-miss'; query: string }
   | { kind: 'failed'; query: string }
+  | { kind: 'unreachable'; query: string }
   | { kind: 'ens-resolved'; query: string; address: string; destinations: EnsDestinations }
   | { kind: 'ens-not-found'; query: string }
   | { kind: 'ens-failed'; query: string };
@@ -792,6 +798,16 @@ export default function TopNavigation({
         await navigateForQuery(searchQuery);
       }
     } catch (error) {
+      // A failed dispatch must be visible, not just logged: name what
+      // broke. No HTTP response at all (backend offline / not connected)
+      // is 'unreachable' with a retry; any other request failure is the
+      // data-source wording — neither is ever worded as "no results".
+      const query = sanitizeInput(searchQuery.trim());
+      setSearchNotice(
+        isBackendUnreachable(error)
+          ? { kind: 'unreachable', query }
+          : { kind: 'failed', query },
+      );
       console.error('Search failed:', error);
     } finally {
       setLoading(false);
@@ -839,6 +855,8 @@ export default function TopNavigation({
                     `Block not found on ${chainInfo?.name ?? 'this chain'} — it may exist on another network`}
                   {searchNotice.kind === 'failed' &&
                     `Search failed on ${chainInfo?.name ?? 'this chain'} — a data source errored`}
+                  {searchNotice.kind === 'unreachable' &&
+                    'Search unavailable — cannot reach the explorer backend'}
                   {searchNotice.kind === 'ens-resolved' &&
                     `Resolved ${searchNotice.query} → ${formatAddress(searchNotice.address)} on Ethereum`}
                   {searchNotice.kind === 'ens-not-found' &&
@@ -862,6 +880,15 @@ export default function TopNavigation({
                         goTo(`/search?q=${encodeURIComponent(searchNotice.query)}`)}
                     >
                       Choose a network →
+                    </button>
+                  )}
+                  {searchNotice.kind === 'unreachable' && (
+                    <button
+                      type="button"
+                      className={searchNoticeLink}
+                      onClick={() => void handleSearch()}
+                    >
+                      Retry
                     </button>
                   )}
                   {searchNotice.kind === 'ens-resolved' && (

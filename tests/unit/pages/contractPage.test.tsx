@@ -728,3 +728,176 @@ describe('Contract view backend-offline attribution', () => {
     expect(refetch).not.toHaveBeenCalled();
   });
 });
+
+describe('Contract view not-a-contract 404 (P1-2 / C-1)', () => {
+  it('renders the dedicated state with the View-as-address link instead of the generic error card', async () => {
+    vi.mocked(useContractSource).mockReturnValue(
+      mockHookError(
+        new ApiError(`${ADDRESS} is not a contract on this chain`, 404, 'not_a_contract'),
+      ).result,
+    );
+    renderAt(`/chain/1/contract/${ADDRESS}`);
+
+    // Dedicated state, not the raw error strip.
+    expect(
+      await screen.findByRole('heading', { name: 'This address is not a contract on this chain' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Error:/)).not.toBeInTheDocument();
+
+    // The escape hatch: the address page where balances and transactions
+    // live, plus the one-sentence explanation of both possible causes.
+    const link = screen.getByRole('link', { name: /View as address/ });
+    expect(link).toHaveAttribute('href', `/chain/1/address/${ADDRESS}`);
+    expect(screen.getByText(/externally owned account \(EOA\)/)).toBeInTheDocument();
+    expect(screen.getByText(/no on-chain code/)).toBeInTheDocument();
+
+    // The contract surfaces stay hidden: there is no contract to show.
+    expect(screen.queryByRole('button', { name: 'ABI' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Interact' })).not.toBeInTheDocument();
+  });
+
+  it('keeps a plain 404 (no not_a_contract code) on the generic error rendering', async () => {
+    vi.mocked(useContractSource).mockReturnValue(
+      mockHookError(new ApiError('not found', 404)).result,
+    );
+    renderAt(`/chain/1/contract/${ADDRESS}`);
+
+    expect(await screen.findByText(/Error:/)).toBeInTheDocument();
+    expect(
+      screen.queryByText('This address is not a contract on this chain'),
+    ).not.toBeInTheDocument();
+  });
+});
+
+describe('Contract view proxy with unverified implementation (B2)', () => {
+  const IMPL = '0x1110000000000000000000000000000000001111';
+
+  // Proxy verified (its own ABI carries the Transfer event from the shared
+  // verified fixture) while the implementation answers the way the backend
+  // reports unverified contracts: empty source, abi '[]'.
+  const proxyVerifiedImplUnverified = {
+    contractSource: {
+      ...verifiedSourceResponse.contractSource,
+      name: 'TransparentProxy',
+      isProxy: true,
+      proxyType: 'transparent' as const,
+      implementationAddress: IMPL,
+      implementationContract: {
+        chainId: 1,
+        address: IMPL,
+        sourceCode: '',
+        abi: '[]',
+        verificationStatus: 'unverified',
+        verificationSource: 'none',
+        lastChecked: '2026-01-01T00:00:00Z',
+      },
+    },
+  };
+
+  it('lands on the Events tab, not the locked Interact view', async () => {
+    vi.mocked(useContractSource).mockReturnValue(mockHookResult(proxyVerifiedImplUnverified));
+    renderAt(`/chain/1/contract/${ADDRESS}`);
+
+    // Events is the default landing (always queryable), written to the URL
+    // like any explicit tab choice; Interact is not auto-selected into its
+    // locked state.
+    expect(await screen.findByTestId('event-table')).toBeInTheDocument();
+    expect(await screen.findByTestId('search-probe')).toHaveTextContent('tab=events');
+    expect(screen.queryByTestId('contract-interact')).not.toBeInTheDocument();
+
+    // The landing surface carries the implementation-tier copy (hint and
+    // custom ABI panel note alike) — never the blanket "no ABI anywhere"
+    // claim — and offers the way out.
+    expect(screen.getAllByText(/Implementation not verified/).length).toBeGreaterThan(0);
+    expect(screen.getByRole('button', { name: 'Switch to Proxy view' })).toBeInTheDocument();
+    expect(screen.queryByText(/No ABI is available for this contract/)).not.toBeInTheDocument();
+  });
+
+  it('distinguishes the implementation tier on the locked ABI tab and switches to the Proxy view', async () => {
+    const user = userEvent.setup();
+    vi.mocked(useContractSource).mockReturnValue(mockHookResult(proxyVerifiedImplUnverified));
+    renderAt(`/chain/1/contract/${ADDRESS}?tab=abi`);
+
+    expect(
+      await screen.findByText(
+        "Implementation not verified — paste its ABI, or switch to the Proxy view to use the proxy's own ABI.",
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/No ABI is available for this contract/)).not.toBeInTheDocument();
+
+    // One click on the hint reuses the proxy/impl toggle: the proxy's own
+    // server ABI unlocks the tab without any pasting.
+    await user.click(screen.getByRole('button', { name: 'Switch to Proxy view' }));
+    expect(await screen.findByRole('heading', { name: 'Proxy Contract ABI' })).toBeInTheDocument();
+    expect(screen.getByText(/"type": "event"/)).toBeInTheDocument();
+    expect(screen.queryByText(/Implementation not verified/)).not.toBeInTheDocument();
+  });
+
+  it('unlocks Interact the same way from its tier copy', async () => {
+    const user = userEvent.setup();
+    vi.mocked(useContractSource).mockReturnValue(mockHookResult(proxyVerifiedImplUnverified));
+    renderAt(`/chain/1/contract/${ADDRESS}?tab=interact`);
+
+    expect(
+      await screen.findByText(
+        "Implementation not verified — paste its ABI, or switch to the Proxy view to use the proxy's own ABI.",
+      ),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Switch to Proxy view' }));
+    expect(await screen.findByTestId('contract-interact')).toBeInTheDocument();
+  });
+
+  it('keeps the blanket no-ABI copy for a contract with no ABI anywhere', async () => {
+    const user = userEvent.setup();
+    // Plain unverified contract: no proxy, so no second tier exists — the
+    // original message must survive verbatim, without a switch button.
+    vi.mocked(useContractSource).mockReturnValue(mockHookResult(unverifiedSourceResponse));
+    renderAt(`/chain/1/contract/${ADDRESS}?tab=abi`);
+
+    expect(
+      await screen.findByText(
+        'No ABI is available for this contract. Use the custom ABI panel below the tab bar to paste one.',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Switch to Proxy view' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Implementation not verified/)).not.toBeInTheDocument();
+  });
+});
+
+describe('Contract view custom ABI on the ABI tab (B3)', () => {
+  it('renders the pasted ABI with its provenance annotation instead of the server []', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem(CUSTOM_ABI_STORAGE_KEY, CUSTOM_ABI);
+    // The real unverified payload answers abi '[]' — the exact shape that
+    // used to render as a bare [] while the paste did all the work.
+    vi.mocked(useContractSource).mockReturnValue(
+      mockHookResult({
+        contractSource: { ...unverifiedSourceResponse.contractSource, abi: '[]' },
+      }),
+    );
+    renderAt(`/chain/1/contract/${ADDRESS}`);
+
+    await user.click(await screen.findByRole('button', { name: 'ABI' }));
+
+    // The paste itself (exactly as stored) renders, with the annotation
+    // naming where it comes from.
+    expect(await screen.findByText('Custom ABI (this browser)')).toBeInTheDocument();
+    const viewer = screen.getByTestId('source-viewer');
+    expect(viewer).toHaveTextContent('"type":"event"');
+    expect(viewer).toHaveTextContent('"name":"Transfer"');
+    expect(viewer.textContent).toBe(CUSTOM_ABI);
+    // The server's empty placeholder never reaches the viewer.
+    expect(viewer.textContent).not.toBe('[]');
+  });
+
+  it('renders the server ABI without the annotation when no paste is in effect', async () => {
+    const user = userEvent.setup();
+    renderAt(`/chain/1/contract/${ADDRESS}`);
+
+    await user.click(await screen.findByRole('button', { name: 'ABI' }));
+
+    expect(screen.queryByText('Custom ABI (this browser)')).not.toBeInTheDocument();
+    expect(screen.getByTestId('source-viewer')).toHaveTextContent('"type": "event"');
+  });
+});

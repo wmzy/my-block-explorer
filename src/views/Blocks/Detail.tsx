@@ -19,6 +19,7 @@ import { redirectReplace, navigateBack } from '@/views/Home/Landing';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
 import { useBlockByNumber } from '@/services/chainRpc';
 import { finalityLabelFor, useFinalityHeads } from '@/services/blocks';
+import { describeBlockProducer } from '@/utils/blockRpcData';
 import { formatRelativeTime } from '@/utils/format';
 import { parseBlockNumberParam } from '@/utils/chainParam';
 import { createRpcClient } from '@/utils/realTimeData';
@@ -55,6 +56,14 @@ const futureBlockLinks = css`
   display: flex;
   gap: var(--haze-space-4);
   margin-top: var(--haze-space-3);
+`;
+
+// Bor-style PoS chains report the zero address as the miner; this honest
+// note replaces a link to the meaningless zero-address page. Sans + muted
+// to read as secondary info against the mono value style.
+const minerNotExposedNote = css`
+  font-family: var(--haze-font-sans);
+  color: var(--haze-color-text-muted);
 `;
 
 // PageHeader block, the testnet pill, and the cross-verification links on
@@ -140,6 +149,10 @@ export default function BlockDetail() {
   const fetchedNumber = blockInfo ? BigInt(blockInfo.number) : undefined;
   const parentNumber =
     fetchedNumber !== undefined && fetchedNumber > 0n ? fetchedNumber - 1n : undefined;
+
+  // Bor-style PoS chains report the zero address as miner — classify so
+  // the Miner row only links to a real producer address.
+  const producer = blockInfo ? describeBlockProducer(blockInfo.miner) : undefined;
 
   if (!chainInfo) {
     return (
@@ -245,10 +258,16 @@ export default function BlockDetail() {
                   {`${new Date(blockInfo.timestamp).toLocaleString()} (${formatRelativeTime(blockInfo.timestamp)})`}
                 </InfoItem>
                 <InfoItem label="Miner">
-                  <CopyableHash
-                    value={blockInfo.miner}
-                    href={`/chain/${currentChainId}/address/${blockInfo.miner}`}
-                  />
+                  {producer?.kind === 'validator' ? (
+                    <CopyableHash
+                      value={producer.address}
+                      href={`/chain/${currentChainId}/address/${producer.address}`}
+                    />
+                  ) : (
+                    <span className={minerNotExposedNote}>
+                      Validator not exposed by this chain’s RPC
+                    </span>
+                  )}
                 </InfoItem>
                 <InfoItem label="Gas Limit">{formatGas(blockInfo.gasLimit)}</InfoItem>
                 <InfoItem label="Gas Used">{formatGas(blockInfo.gasUsed)}</InfoItem>

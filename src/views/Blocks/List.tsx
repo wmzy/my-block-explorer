@@ -17,6 +17,7 @@ import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
 import { useLatestBlocks } from '@/services/chainRpc';
 import { useLatestBlocksFeed } from '@/services/homeFeed';
 import { finalityLabelFor, useFinalityHeads } from '@/services/blocks';
+import { describeBlockProducer } from '@/utils/blockRpcData';
 import { formatNumber, formatRelativeTime } from '@/utils/format';
 
 const LIMIT = 20;
@@ -64,6 +65,13 @@ const blockNumberCell = css`
   display: flex;
   align-items: center;
   gap: var(--haze-space-2);
+`;
+
+// Bor-style PoS chains report the zero address as the miner; this honest
+// note replaces a link to the meaningless zero-address page (the cell's
+// td already sets the text-sm size).
+const minerNotExposedNote = css`
+  color: var(--haze-color-text-muted);
 `;
 
 // Gas quantities are on-chain integers serialized as strings; parse them
@@ -254,6 +262,7 @@ export default function BlocksList() {
             <tbody>
               {blocks.map(block => {
                 const finality = finalityLabelFor(finalityHeads, Number(block.number));
+                const producer = describeBlockProducer(block.miner);
                 return (
                   <tr key={block.number}>
                     <td>
@@ -277,11 +286,17 @@ export default function BlocksList() {
                     <td>{block.transactionCount}</td>
                     <td className={monoStyle}>{formatGasUsage(block.gasUsed, block.gasLimit)}</td>
                     <td>
-                      <CopyableHash
-                        value={block.miner}
-                        truncated={formatMiner(block.miner)}
-                        href={`/chain/${currentChainId}/address/${block.miner}`}
-                      />
+                      {producer.kind === 'validator' ? (
+                        <CopyableHash
+                          value={producer.address}
+                          truncated={formatMiner(producer.address)}
+                          href={`/chain/${currentChainId}/address/${producer.address}`}
+                        />
+                      ) : (
+                        <span className={minerNotExposedNote}>
+                          Validator not exposed by this chain’s RPC
+                        </span>
+                      )}
                     </td>
                   </tr>
                 );

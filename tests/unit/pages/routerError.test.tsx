@@ -138,6 +138,59 @@ describe('RouterError view', () => {
     );
   });
 
+  it('attributes not-a-contract 404s to the address, with the address page as the way out', () => {
+    // A contract-source deep link on an EOA rejects in the loader with
+    // ApiError 404 + code 'not_a_contract'; the error slot is where the
+    // user lands (the crashed view's own not-a-contract state never runs).
+    window.history.pushState(
+      {},
+      '',
+      '/chain/137/contract/0x4bcc950dba937772a68cdbe7847c0de5c2fdeec5',
+    );
+    render(
+      <MemoryRouter
+        routes={createRoutes([{ path: '/', component: () => NullView }])}
+        initialEntries={['/']}
+      >
+        <RouterError
+          error={new ApiError(
+            'Address 0x4bcc… is not a contract on chain 137',
+            404,
+            'not_a_contract',
+          )}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('heading', { name: /This address is not a contract/i }));
+    expect(
+      screen.getByRole('link', { name: /View as address/i }),
+    ).toHaveAttribute(
+      'href',
+      '/chain/137/address/0x4bcc950dba937772a68cdbe7847c0de5c2fdeec5',
+    );
+    // Not the generic card, not the unverified-contract journey.
+    expect(screen.queryByText(/Something went wrong/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/unverified/i)).not.toBeInTheDocument();
+  });
+
+  it('renders the not-a-contract card without a view-as-address link when the crashed path carries no address', () => {
+    window.history.pushState({}, '', '/chain/137/blocks');
+    render(
+      <MemoryRouter
+        routes={createRoutes([{ path: '/', component: () => NullView }])}
+        initialEntries={['/']}
+      >
+        <RouterError
+          error={new ApiError('Address is not a contract', 404, 'not_a_contract')}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByRole('heading', { name: /This address is not a contract/i }));
+    expect(screen.queryByRole('link', { name: /View as address/i })).not.toBeInTheDocument();
+  });
+
   it('attributes backend-unreachable loader failures to the missing backend', () => {
     // A contract-source loader rejects with ApiError status 0 when the
     // indexed backend is down; the error slot is where the user actually

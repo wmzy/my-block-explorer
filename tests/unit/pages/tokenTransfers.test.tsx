@@ -10,6 +10,7 @@ import { useState, type ReactNode } from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter, View, createRoutes, useMatched, useSearchParams } from '@native-router/react';
 import { navigate } from '@native-router/core';
+import { getAddress } from 'viem';
 import '@testing-library/jest-dom/vitest';
 import TokenTransfers from '@/views/Address/TokenTransfers';
 // Type-only import: erased at runtime, so the vi.mock below is unaffected.
@@ -705,5 +706,32 @@ describe('TokenTransfers tab', () => {
     expect(await screen.findByText('scan failed')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(refetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows a neutral note instead of the raw 400 when the address itself is invalid', async () => {
+    // A1: a bad-checksum address makes the scan 400, but the page-level
+    // guidance card already carries that verdict (same pure check, same
+    // address) — the tab must not repeat the guidance or surface the
+    // server message as if it were a scan/data problem.
+    mocks.error = new Error('Invalid address checksum');
+    // Uppercase one body position the checksummed form holds lowercase:
+    // mixed case, guaranteed EIP-55 mismatch.
+    const checksummed = getAddress(mocks.holder);
+    let bad = checksummed;
+    for (let i = 2; i < checksummed.length; i++) {
+      if (/[a-f]/.test(checksummed[i])) {
+        bad = mocks.holder.slice(0, i) + mocks.holder[i].toUpperCase() + mocks.holder.slice(i + 1);
+        break;
+      }
+    }
+    expect(bad).not.toBe(checksummed);
+
+    renderAddressRoute(`/${bad}`);
+
+    expect(
+      await screen.findByText(/Token transfers cannot be scanned for this address/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('Invalid address checksum')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
   });
 });

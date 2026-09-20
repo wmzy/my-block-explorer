@@ -11,11 +11,13 @@ import {
   classifyAddressType,
   delegationTarget,
 } from '@/views/Address/addressType';
+import { checkAddressValidity } from '@/views/Address/addressValidity';
 import {
   addressSearchSchema,
   effectiveActivityTab,
   type ActivityTabId,
 } from '@/views/Address/search';
+import { isBackendUnreachable } from '@/util/http';
 import {
   useAddressInfo,
   useAddressTransactions,
@@ -111,6 +113,14 @@ const errorSecondary = css`
   font-size: var(--haze-text-xs);
 `;
 
+// Inline backend-offline attribution above the Overview card: scoped to
+// the indexed fields the card would otherwise silently omit. Deliberately
+// not another BackendOfflineState — the global connection banner already
+// owns the recovery path; this only explains the missing data.
+const offlineNotice = css`
+  margin: 0 0 var(--haze-space-4);
+`;
+
 // Persistent indexing-scope notice under the tx card header: token
 // transfers and internal txs are outside the heuristic's reach at every
 // coverage level, so it renders unconditionally.
@@ -177,22 +187,11 @@ type AddressTxPage = {
   searchWindowBlocks?: number;
 };
 
-// A server-side 400 from getValidatedAddress carries a two-tier message
-// ('Invalid address format' for shape failures, 'Invalid address
-// checksum' for a mixed-case address that disagrees with its EIP-55
-// checksum). Both tiers keep the 'Invalid address' prefix so this match
-// stays stable; the FORMAT tier is additionally decided locally below —
-// the address string itself is the ground truth, not the server message.
-const invalidChecksumHelp =
-  'This address has an invalid checksum. Try the all-lowercase form or copy the address from a trusted source.';
-
-const isInvalidAddressMessage = (message: string | undefined): boolean =>
-  message?.includes('Invalid address') ?? false;
-
-// 0x-prefixed, 40 hex characters — the shape getValidatedAddress accepts
-// before checksum evaluation. Anything else is a format error, never a
-// checksum one.
-const isHexAddressShape = (address: string): boolean => /^0x[0-9a-fA-F]{40}$/.test(address);
+// The address-page two-tier validity verdict lives in ./addressValidity
+// (shape error vs checksum error — the frontend twin of the server's
+// getValidatedAddress). The ADDRESS STRING is the ground truth: the page
+// branches on it directly, never on a server error message, so an invalid
+// address shows one guidance card no matter which queries reject first.
 
 // Hard ceiling of the address-tx search window (blocks) — matches the
 // backend clamp. "Search deeper" disables at this budget.
@@ -242,23 +241,40 @@ function TxStatusBadge({
   );
 }
 
-function InvalidAddressError({ address, original }: { address: string; original: string }) {
-  // Local ground truth first: a non-hex-shaped address is a format error
-  // and the checksum guidance would be misleading ('0xGG…' has no
-  // checksum to retry in lowercase). Only a well-formed address whose
-  // server rejection can be a checksum mismatch gets the lowercase help.
-  if (!isHexAddressShape(address)) {
+// The two-tier invalid-address guidance card, rendered page-level for any
+// address the local validity check rejects (see ./addressValidity). The
+// tier comes from the address string itself, so the card is query-error
+// agnostic — the queries' 400s are a symptom of the same verdict, not
+// additional information worth surfacing.
+export function InvalidAddressError({
+  address,
+  chainId,
+}: {
+  address: string;
+  chainId: number;
+}) {
+  const validity = checkAddressValidity(address);
+  // Shape tier: no checksum exists to retry in lowercase, so checksum
+  // advice (and a lowercase link) would be misleading.
+  if (!validity.valid && validity.tier === 'format') {
     return (
-      <>
-        <ErrorState message="Not a valid address format" />
-        <p className={errorSecondary}>Original error: {original}</p>
-      </>
+      <ErrorState message="Not a valid address format — expected 0x followed by 40 hexadecimal characters." />
     );
   }
+  // Checksum tier: the mixed-case form disagrees with its EIP-55
+  // checksum. The all-lowercase form is valid everywhere (the
+  // checksum-less convention), so recovery is one click away.
   return (
     <>
-      <ErrorState message={invalidChecksumHelp} />
-      <p className={errorSecondary}>Original error: {original}</p>
+      <ErrorState message="This address has an invalid checksum — its mixed-case form disagrees with the EIP-55 checksum. Copy the address from a trusted source, or use the all-lowercase form below." />
+      <div className={errorSecondary}>
+        <TypedLink
+          to={`/chain/${chainId}/address/${address.toLowerCase()}`}
+          className={linkStyle}
+        >
+          Open the all-lowercase form →
+        </TypedLink>
+      </div>
     </>
   );
 }
@@ -269,6 +285,11 @@ export default function Address() {
   const currentChainId = Number.parseInt(params.chainId ?? '1', 10);
   const chainInfo = getChainInfo(currentChainId);
   const address = params.address ?? '';
+  // Page-level two-tier verdict (./addressValidity): an invalid address
+  // renders the guidance card instead of the data cards below — the
+  // queries may even succeed against a forgiving RPC, but their results
+  // are meaningless for an address the explorer cannot accept.
+  const addressValidity = checkAddressValidity(address);
 
   // All hooks run before the guard returns below (rules of hooks); invalid
   // args are gated inside the service fetches (zero network).
@@ -320,8 +341,16 @@ export default function Address() {
   // wider window is a fresh cache key/fetch.
   const txSearchWindow = txWindowParam;
   const txLimit = 10;
+  // Tx-scan gating, symmetric with the transfers tab's lazy fetch: the
+  // heuristic history scan is expensive (tens of seconds on deep windows)
+  // and only the transactions tab renders it, so a transfers-only deep
+  // link (?tab=transfers / ?ttPage=2+) must not pay for it. Args-level
+  // gate — chainId <= 0 is the services' own disabled-key shape (resolves
+  // undefined without touching the network); switching back to the tab
+  // restores the real key and the fetch runs then.
+  const txTabActive = activityTab === 'transactions';
   const txQuery = useAddressTransactions(
-    currentChainId,
+    txTabActive ? currentChainId : 0,
     address,
     txLimit,
     (txPage - 1) * txLimit,
@@ -340,8 +369,11 @@ export default function Address() {
   // (replaced) to that page — an empty page is never shareable or
   // refreshable, and Prev-walking back becomes unnecessary. Mid-flight
   // (or failed) fetches converge nothing: the transient empty-page row
-  // further below stays the fallback for those races.
+  // further below stays the fallback for those races. Gated on the tx tab
+  // like the fetch itself — a transfers-tab visit never rewrites the URL
+  // behind a scan it is not running.
   const txPageBeyondData =
+    txTabActive &&
     txData !== undefined &&
     !txQuery.loading &&
     txQuery.error === undefined &&
@@ -356,12 +388,21 @@ export default function Address() {
   const persistent: AddressInfoResponse['address'] | undefined =
     infoQuery.data?.address;
   const code = codeQuery.data;
-  // Presentation-layer type verdict (./addressType): the persistent record
-  // wins over the RPC code read — except an EIP-7702 delegation
-  // designator, which outranks both channels (a delegated EOA carries
+  // Backend-unreachable verdict for the attribution banner below: the
+  // indexed fields (verification, contract name, creator) silently
+  // disappear when the persistent channel dies, so the Overview card
+  // must say why instead of just omitting rows.
+  const persistentOffline = isBackendUnreachable(infoQuery.error);
+  // Presentation-layer type verdict (./addressType): the persistent
+  // record wins over the RPC code read — EXCEPT when the persistent
+  // channel has ERRORED (offline backend): then it contributes no
+  // verdict at all (not even stale cached data), and the live RPC code
+  // read decides EOA vs Contract on its own. An EIP-7702 delegation
+  // designator still outranks both channels (a delegated EOA carries
   // code yet remains an account, so "has code → contract" misfiles it).
   const addressType = classifyAddressType({
-    persistentType: persistent?.isContract,
+    persistentType:
+      infoQuery.error === undefined ? persistent?.isContract : undefined,
     rpcCode: code,
   });
   // Independent RPC verdict for the contract-view link below: the link is
@@ -465,6 +506,31 @@ export default function Address() {
     );
   }
 
+  // Invalid address (either tier): the guidance card replaces the whole
+  // data area — Overview, tabs, ENS row — so the screen carries ONE
+  // verdict instead of the old mix of a normal-looking card, tab-level
+  // guidance and raw 400s. Not gated on any query state: the address
+  // string itself is the ground truth.
+  if (!addressValidity.valid) {
+    return (
+      <>
+        <TopNavigation currentChainId={currentChainId} onChainChange={handleChainChange} />
+        <PageContainer>
+          <BackButton
+            onClick={() => {
+              void navigate(router, `/chain/${currentChainId}`).catch(() => undefined);
+            }}
+          />
+          <PageHeader
+            title="Address Details"
+            chainInfo={`${getChainName(currentChainId)} • Chain ID: ${currentChainId}`}
+          />
+          <InvalidAddressError address={address} chainId={currentChainId} />
+        </PageContainer>
+      </>
+    );
+  }
+
   const transactions = txData?.transactions ?? [];
 
   // Coverage banners are driven by the contract fields only (coverage /
@@ -523,15 +589,30 @@ export default function Address() {
 
         {isInitialLoading && <LoadingState message="Loading address information..." />}
 
-        {hasError && !isInitialLoading &&
-          (isInvalidAddressMessage(errorMessage) ? (
-            <InvalidAddressError address={address} original={errorMessage ?? ''} />
-          ) : (
-            <ErrorState message={`Error: ${errorMessage}`} />
-          ))}
+        {/* Real failures only: an invalid address never reaches this
+            branch (the page-level validity guard above owns that
+            verdict), so the raw message needs no message-sniffing. */}
+        {hasError && !isInitialLoading && (
+          <ErrorState message={`Error: ${errorMessage}`} />
+        )}
 
         {!isInitialLoading && (
           <>
+            {/* Offline attribution for the indexed fields: the persistent
+                channel is down, so verification/contract-name/creator rows
+                are absent BY CAUSE — say so, while the RPC-derived rows
+                (balance, nonce, EOA/contract type) keep working. */}
+            {persistentOffline && (
+              <div className={offlineNotice} role="status">
+                <Alert variant="warning">
+                  Indexed address details are unavailable — the explorer&apos;s
+                  indexing backend is not connected. Verification status,
+                  contract name and creation info need it; balance, nonce and
+                  the type classification below still come from the live
+                  chain RPC.
+                </Alert>
+              </div>
+            )}
             <Card>
               <CardHeader>
                 <CardTitle>Overview</CardTitle>
@@ -738,15 +819,7 @@ export default function Address() {
                       <LoadingState message="Scanning recent chain history..." />
                     )}
 
-                    {txQuery.error &&
-                      (isInvalidAddressMessage(txQuery.error.message) ? (
-                        <InvalidAddressError
-                          address={address}
-                          original={txQuery.error.message}
-                        />
-                      ) : (
-                        <ErrorState message={txQuery.error.message} />
-                      ))}
+                    {txQuery.error && <ErrorState message={txQuery.error.message} />}
 
                     {!txQuery.loading && !txQuery.error && txCoverage === 'none' && txReason === 'search-failed' && (
                       <>

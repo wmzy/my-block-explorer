@@ -13,7 +13,8 @@
 // chain.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { MemoryRouter, View, createRoutes, useMatched } from '@native-router/react';
+import { MemoryRouter, View, createRoutes, useMatched, useRouter } from '@native-router/react';
+import { navigate } from '@native-router/core';
 import '@testing-library/jest-dom';
 import Search from '@/views/Search';
 
@@ -79,7 +80,19 @@ const TxPage = () => {
 };
 const BlockPage = () => <div data-testid="block-page">block-page</div>;
 
-const renderSearch = (initial: string) =>
+// Stand-in for the header's dispatch: navigates exactly like
+// TopNavigation's goTo (push, full URL), so tests can drive the
+// mounted-view URL changes the deep-link guard must react to.
+const NavButton = ({ to }: { to: string }) => {
+  const router = useRouter();
+  return (
+    <button type="button" onClick={() => { void navigate(router, to); }}>
+      {`go:${to}`}
+    </button>
+  );
+};
+
+const renderSearch = (initial: string, navTargets: string[] = []) =>
   render(
     <MemoryRouter
       routes={createRoutes([
@@ -91,6 +104,9 @@ const renderSearch = (initial: string) =>
       initialEntries={[initial]}
     >
       <View />
+      {navTargets.map(to => (
+        <NavButton key={to} to={to} />
+      ))}
     </MemoryRouter>,
   );
 
@@ -318,5 +334,58 @@ describe('Search view', () => {
     // points at the direct route for unlisted networks.
     fireEvent.change(filter, { target: { value: 'zzz' } });
     expect(await screen.findByText(/open them directly at \/chain\//)).toBeInTheDocument();
+  });
+
+  it('re-runs the search when ?q= changes while the view is mounted', async () => {
+    // Regression (P1-1): a header search issued from /search itself
+    // navigates to /search?q=new — the mounted view used to ignore every
+    // later ?q= change after its first deep-link search.
+    mockFetchSearch.mockImplementation(async (q: string, chainId?: number) => ({
+      found: false,
+      type: 'text',
+      query: q,
+      searchedChainId: chainId,
+    }));
+
+    renderSearch('/search?q=uniswap', ['/search?q=chainlink&chain=1']);
+
+    expect(await screen.findByText('No results found for "uniswap"')).toBeInTheDocument();
+    expect(mockFetchSearch).toHaveBeenCalledTimes(1);
+
+    // The header navigation to a new query re-runs the search, with the
+    // forwarded chain as context.
+    fireEvent.click(screen.getByText('go:/search?q=chainlink&chain=1'));
+
+    expect(await screen.findByText('No results found for "chainlink"')).toBeInTheDocument();
+    await waitFor(() => {
+      expect(mockFetchSearch).toHaveBeenLastCalledWith('chainlink', 1);
+    });
+    // The second search resolved on chain 1 and said so...
+    expect(await screen.findByText('Searched on Ethereum')).toBeInTheDocument();
+    // ...and syncing that resolved chain into the URL must not count as
+    // a fresh deep link: exactly two searches, no same-q duplicate.
+    expect(mockFetchSearch).toHaveBeenCalledTimes(2);
+  });
+
+  it('re-runs the same query unscoped when ?chain= is dropped (Choose a network)', async () => {
+    // The header miss notice's 'Choose a network →' escape navigates to
+    // /search?q=<hash> WITHOUT ?chain= — the same q as the scoped miss
+    // already on screen. Dropping the chain must re-run the search
+    // unscoped so the global endpoint answers with the network picker.
+    mockFetchSearch.mockImplementation(async (q: string, chainId?: number) =>
+      chainId === 137
+        ? { found: false, type: 'transaction', query: q, searchedChainId: 137 }
+        : needsChainResponse);
+
+    renderSearch(`/search?q=${TX_HASH}&chain=137`, [`/search?q=${TX_HASH}`]);
+
+    expect(await screen.findByText(/No results found/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText(`go:/search?q=${TX_HASH}`));
+
+    await waitFor(() => {
+      expect(mockFetchSearch).toHaveBeenLastCalledWith(TX_HASH, undefined);
+    });
+    expect(await screen.findByText('Popular networks')).toBeInTheDocument();
   });
 });

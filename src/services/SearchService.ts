@@ -63,7 +63,7 @@ const createSearchService = (deps: SearchServiceDeps) => {
 
   const getTransactionSuggestions = async (chainId: number): Promise<string[]> => {
     try {
-      const recentTxs = await transactionService.getLatestTransactions(chainId, 3);
+      const { transactions: recentTxs } = await transactionService.getLatestTransactions(chainId, 3);
       const suggestions = ['Enter a valid transaction hash (0x-prefixed, 64 hex chars)'];
 
       if (recentTxs.length > 0) {

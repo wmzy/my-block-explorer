@@ -333,6 +333,44 @@ const CHECKPOINTED_RANGE_STATUSES: ReadonlySet<RangeStatus> = new Set([
   'error',
 ]);
 
+// Furthest block any range has actually indexed, for the staleness banner.
+// A range counts only when it holds real walked data, mirroring the
+// coverage intervals EventStatistics unions: a completed range covers its
+// full span; a checkpointed range (indexing/paused/error) covers the side
+// its direction has walked, up to currentBlock clipped into the bounds (a
+// backward walk covers [current, to], so its furthest block is toBlock).
+// Pending ranges have walked nothing (currentBlock null) and contribute
+// nothing — folding them in as 0 is the old lie that rendered
+// 'Indexed through block 0' for an all-pending list. Null = nothing
+// indexed yet. The parameter is the structural minimum the fold reads, so
+// tests can pass trimmed fixtures.
+export const furthestIndexedBlock = (
+  ranges: readonly {
+    fromBlock: bigint;
+    toBlock: bigint;
+    direction: RangeDirection;
+    currentBlock: bigint | null;
+    status: RangeStatus;
+  }[],
+): number | null => {
+  let furthest: number | null = null;
+  for (const range of ranges) {
+    const from = Number(range.fromBlock);
+    const to = Number(range.toBlock);
+    let coveredThrough: number | null = null;
+    if (range.status === 'completed') {
+      coveredThrough = to;
+    } else if (CHECKPOINTED_RANGE_STATUSES.has(range.status) && range.currentBlock !== null) {
+      const current = Math.min(Math.max(Number(range.currentBlock), from), to);
+      coveredThrough = range.direction === 'backward' ? to : current;
+    }
+    if (coveredThrough !== null && (furthest === null || coveredThrough > furthest)) {
+      furthest = coveredThrough;
+    }
+  }
+  return furthest;
+};
+
 type Overlap = {
   rangeId: number;
   fromBlock: bigint;
@@ -413,9 +451,13 @@ type OverlapGate = {
 // mode is exempt from the gate or its bounds cannot be approximated
 // client-side (those submits rely on the server-side post-hoc overlap
 // warning):
-// - 'catchup' is never gated: it extends the furthest existing toBlock to
-//   the current head, at most re-covering that single boundary block — a
-//   gate would fire on every legitimate catch-up.
+// - 'catchup' and 'continue' are never gated: both start at the FURTHEST
+//   existing toBlock INCLUSIVE (same semantics, see createRangeContinue/
+//   createRangeCatchup), so the would-be range can only ever re-touch that
+//   single boundary block — any overlap the gate could find is exactly one
+//   block wide by construction (max(toBlock) bounds every existing range),
+//   and warning 'events will be indexed twice' about it would be false
+//   alarm on every legitimate continue/catch-up.
 // - 'recent' IS gated: the backend window is [head - count, head], which
 //   routinely overlaps catchup ranges or any range reaching near the head
 //   — it is not overlap-free by design.
@@ -427,9 +469,8 @@ const quickModeBounds = (
   blockCount: number | undefined,
   creationBlockNumber: number,
   headBlock: number,
-  ranges: readonly IndexingRange[],
 ): { from: number; to: number } | null => {
-  if (mode === 'catchup') return null;
+  if (mode === 'catchup' || mode === 'continue') return null;
   if (mode === 'all') {
     // Unknown creation indexes from genesis; an unknown head leaves the
     // upper bound open-ended ('latest' is at or beyond every existing
@@ -450,16 +491,7 @@ const quickModeBounds = (
     if (creationBlockNumber <= 0 || blockCount === undefined) return null;
     return { from: creationBlockNumber, to: creationBlockNumber + blockCount };
   }
-  // 'continue': with no previous range the backend 400s ('No previous
-  // range found. Cannot continue.') — the Continue button is pre-disabled
-  // for that case, and the 400 stays as the backstop (e.g. the last range
-  // was deleted after the mode was selected). Otherwise the backend
-  // continues from the FURTHEST existing toBlock INCLUSIVE (max across
-  // every range, mirroring createRangeContinue), so the would-be range
-  // always re-touches that boundary block.
-  if (ranges.length === 0 || blockCount === undefined) return null;
-  const from = Math.max(...ranges.map(r => Number(r.toBlock)));
-  return { from, to: from + blockCount };
+  return null;
 };
 
 // actionLoading sentinels for the form-level actions: -1 manual add, -2
@@ -744,12 +776,16 @@ export const IndexingRangeManager: React.FC<Props> = ({
     );
     return eta === null ? null : `~${formatEtaDuration(eta.remainingMs)} remaining (est.)`;
   };
-  // Data-staleness banner: how far the furthest-indexed range trails the
-  // chain head. Hidden when the head is unknown (RPC unavailable).
-  const maxCurrentBlock =
-    ranges.length > 0 ? Math.max(...ranges.map(r => Number(r.currentBlock ?? 0))) : 0;
+  // Data-staleness banner: how far the furthest indexed block trails the
+  // chain head. The gap line is hidden when the head is unknown (RPC
+  // unavailable); an all-pending list (ranges exist, nothing indexed yet)
+  // renders its own honest banner below instead of a fabricated
+  // 'Indexed through block 0'.
+  const maxCurrentBlock = furthestIndexedBlock(ranges);
   const stalenessGap =
-    headBlock > 0 && ranges.length > 0 ? Math.max(0, headBlock - maxCurrentBlock) : null;
+    headBlock > 0 && maxCurrentBlock !== null
+      ? Math.max(0, headBlock - maxCurrentBlock)
+      : null;
   const handleAddRange = useCallback(async (confirmOverlap = false) => {
     const validBlockTags = ['latest', 'finalized', 'safe', 'earliest'];
     const fromBlockValue = formState.fromBlock.toLowerCase();
@@ -921,7 +957,6 @@ export const IndexingRangeManager: React.FC<Props> = ({
         needsBlockCount ? blockCountNum : undefined,
         creationBlockNumber,
         headBlock,
-        ranges,
       );
       const overlapping = bounds ? findFirstOverlap(ranges, bounds.from, bounds.to) : null;
       if (overlapping) {
@@ -1183,13 +1218,22 @@ export const IndexingRangeManager: React.FC<Props> = ({
           </button>
         </div>
       </div>
-      {stalenessGap !== null && (
-        <div className={stalenessBannerStyles}>
-          <span className={stalenessDotStyles} />
-          {stalenessGap === 0
-            ? 'Up to date'
-            : `Indexed through block ${formatBlock(maxCurrentBlock)} - ${formatBlock(stalenessGap)} blocks behind head`}
-        </div>
+      {maxCurrentBlock === null ? (
+        ranges.length > 0 ? (
+          <div className={stalenessBannerStyles}>
+            <span className={stalenessDotStyles} />
+            Nothing indexed yet — start a range
+          </div>
+        ) : null
+      ) : (
+        stalenessGap !== null && (
+          <div className={stalenessBannerStyles}>
+            <span className={stalenessDotStyles} />
+            {stalenessGap === 0
+              ? 'Up to date'
+              : `Indexed through block ${formatBlock(maxCurrentBlock)} - ${formatBlock(stalenessGap)} blocks behind head`}
+          </div>
+        )
       )}
       {ranges.length > 0 && (
         <SegmentedProgressBar

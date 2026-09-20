@@ -80,7 +80,7 @@ describe('Services - Basic Structure Tests', () => {
       };
       const mockTransactionService = {
         getTransactionByHash: async () => null,
-        getLatestTransactions: async () => [],
+        getLatestTransactions: async () => ({ transactions: [], total: 0 }),
       };
       const mockAddressService = {
         getAddressInfo: async () => ({}),

@@ -364,6 +364,34 @@ const cacheNoticeStyles = css`
   }
 `;
 
+// Dedicated not-a-contract state (P1-2): the address-page link mirrors the
+// Sourcify deep link's affordance in the info grid (blue, underline on
+// hover).
+const notAContractLinkStyles = css`
+  color: #007bff;
+  text-decoration: none;
+
+  &:hover {
+    text-decoration: underline;
+  }
+`;
+
+// Names the ABI source inside the ABI card while the pasted custom ABI
+// drives the tabs — the server answer for unverified contracts is '[]',
+// which alone would read as a broken surface. Amber palette matches the
+// tab-bar custom-ABI badge.
+const customAbiSourceStyles = css`
+  display: inline-block;
+  margin-bottom: 12px;
+  padding: 2px 10px;
+  border-radius: 12px;
+  background: #f0a500;
+  border: 1px solid #d69200;
+  color: white;
+  font-size: 12px;
+  font-weight: 600;
+`;
+
 // Inline unlock pointer rendered by the ABI/Interact tabs when the contract
 // has no server ABI and nothing pasted yet.
 const abiUnlockStyles = css`
@@ -396,34 +424,94 @@ const abiUnlockButtonStyles = css`
   }
 `;
 
+// Wraps the unlock hint's action buttons when both exist (paste-ABI jump +
+// switch-to-Proxy): keeps them on one row on wide screens.
+const abiUnlockActionsStyles = css`
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+`;
+
 // Shown by the ABI/Interact/Events tab panels when the contract has no
 // usable ABI (or none with event definitions): the panel below the tab bar
 // is the only way to unlock the surface, so the pointer jumps focus
 // straight to its textarea. onFocusPanel is omitted when no custom ABI
 // panel is rendered (a server ABI without event definitions has nothing to
-// focus).
+// focus). onSwitchView is offered only in the proxy tier of the locked
+// state (unverified implementation): it flips the existing proxy/impl
+// toggle to the Proxy view, whose own server ABI unlocks the surface
+// without any pasting.
 function AbiUnlockHint({
   title,
   message,
   focusLabel,
   onFocusPanel,
+  switchLabel,
+  onSwitchView,
 }: {
   title: string;
   message: string;
   focusLabel?: string;
   onFocusPanel?: () => void;
+  switchLabel?: string;
+  onSwitchView?: () => void;
 }) {
   return (
     <div className={cardStyles}>
       <h2>{title}</h2>
       <div className={abiUnlockStyles}>
         <span>{message}</span>
-        {onFocusPanel && (
-          <button type="button" className={abiUnlockButtonStyles} onClick={onFocusPanel}>
-            {focusLabel ?? 'Open custom ABI panel'}
-          </button>
-        )}
+        <div className={abiUnlockActionsStyles}>
+          {onSwitchView && (
+            <button type="button" className={abiUnlockButtonStyles} onClick={onSwitchView}>
+              {switchLabel ?? 'Switch to Proxy view'}
+            </button>
+          )}
+          {onFocusPanel && (
+            <button type="button" className={abiUnlockButtonStyles} onClick={onFocusPanel}>
+              {focusLabel ?? 'Open custom ABI panel'}
+            </button>
+          )}
+        </div>
       </div>
+    </div>
+  );
+}
+
+// Dedicated state for the not_a_contract 404 (C-1 contract): a plain EOA
+// (or an address with no on-chain code) deep-linked onto the contract
+// route. Reads like the info card — not a raw error strip — explains both
+// possible causes in one sentence, and hands the user the address page
+// where balances and transactions actually live.
+function NotAContractState({ chainId, address }: { chainId: number; address: string }) {
+  return (
+    <div className={cardStyles}>
+      <h2>This address is not a contract on this chain</h2>
+      <div className={infoGridStyles}>
+        <div className="info-item">
+          <span className="label">Address</span>
+          <span className="value">{address}</span>
+        </div>
+        <div className="info-item">
+          <span className="label">Address type</span>
+          <span className="value">Not a contract</span>
+        </div>
+        <div className="info-item">
+          <span className="label">Next step</span>
+          <span className="value">
+            <TypedLink
+              className={notAContractLinkStyles}
+              to={`/chain/${chainId}/address/${address}`}
+            >
+              View as address →
+            </TypedLink>
+          </span>
+        </div>
+      </div>
+      <p>
+        This address holds no on-chain code — it is an externally owned account (EOA), or no
+        contract is deployed at it on this chain.
+      </p>
     </div>
   );
 }
@@ -594,12 +682,19 @@ export default function Contract() {
   const implABI = parseABI(contractSource?.implementationContract ?? null);
   // The server-side ABI counts as available only when it carries at least
   // one usable entry — unverified contracts answer with an empty ABI.
+  const abiHasNoEntries = (abi: ContractABI | null): boolean =>
+    !abi || (abi.functions.length === 0 && abi.events.length === 0 && abi.errors.length === 0);
   const serverAbi = isProxy ? (contractTarget === 'impl' ? implABI : proxyABI) : proxyABI;
-  const serverAbiUnavailable =
-    !serverAbi ||
-    (serverAbi.functions.length === 0 &&
-      serverAbi.events.length === 0 &&
-      serverAbi.errors.length === 0);
+  const serverAbiUnavailable = abiHasNoEntries(serverAbi);
+  // B2 proxy unlock tier: an unverified implementation locks the
+  // Implementation view while the proxy itself still carries a usable
+  // server ABI (verified, or the backend's synthesized implementation()
+  // stub). That state must not read as "no ABI anywhere" — the unlock
+  // hints name the implementation and offer the Proxy view instead.
+  // The mirror tier (locked proxy view with a usable impl ABI) cannot
+  // occur: every detected proxy answers with at least its own stub ABI.
+  const implNotVerifiedTier =
+    isProxy && contractTarget === 'impl' && abiHasNoEntries(implABI) && !abiHasNoEntries(proxyABI);
   // Without a server ABI the locally pasted one takes over, keeping the
   // ABI, Events and Interact views usable for unverified contracts.
   const effectiveABI = serverAbiUnavailable
@@ -623,7 +718,13 @@ export default function Contract() {
 
   useEffect(() => {
     if (contractSource?.isProxy && contractSource?.implementationContract && !tabFromUrl) {
-      setActiveTab('interact');
+      // Proxies default to the Interact tab once their layout is known —
+      // unless the Implementation view would land locked (unverified
+      // implementation, nothing pasted): Interact would greet the user
+      // with a dead unlock pointer, so Events (always queryable) keeps
+      // real content on screen.
+      const implViewLocked = abiHasNoEntries(implABI) && !customAbiRaw;
+      setActiveTab(implViewLocked ? 'events' : 'interact');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- proxies default to the interact tab once their layout is known
   }, [contractSource]);
@@ -742,7 +843,14 @@ export default function Contract() {
 
         {loading && <div className={loadingStyles}>Loading contract information...</div>}
 
-        {sourceError && isBackendUnreachable(sourceError) ? (
+        {sourceError instanceof ApiError &&
+        sourceError.status === 404 &&
+        sourceError.code === 'not_a_contract' ? (
+          // P1-2: the backend reports this address carries no code (C-1
+          // contract) — a dedicated state with the address-page link beats
+          // the generic error strip for a navigable dead end.
+          <NotAContractState chainId={currentChainId} address={address} />
+        ) : sourceError && isBackendUnreachable(sourceError) ? (
           <BackendOfflineState
             onRetryConnection={() => void handleRetryConnection()}
             retryConnectionPending={retryingConnection}
@@ -1110,13 +1218,17 @@ export default function Contract() {
               )}
             </div>
 
-            {/* Paste-ABI unlock: shown whenever the server has no usable ABI */}
+            {/* Paste-ABI unlock: shown whenever the server has no usable ABI.
+                The note's tier matches the unlock hints — an unverified
+                implementation is not "no ABI anywhere" while the proxy's
+                own ABI is on the server. */}
             {serverAbiUnavailable && (
               <CustomAbiPanel
                 storedRaw={customAbiRaw ?? ''}
                 onApply={handleApplyCustomAbi}
                 onClear={handleClearCustomAbi}
                 focusSignal={abiFocusSignal}
+                unlockReason={implNotVerifiedTier ? 'impl-unverified' : 'no-server-abi'}
               />
             )}
 
@@ -1161,8 +1273,13 @@ export default function Contract() {
               (abiLocked ? (
                 <AbiUnlockHint
                   title="Paste an ABI to unlock this tab"
-                  message="No ABI is available for this contract. Use the custom ABI panel below the tab bar to paste one."
+                  message={
+                    implNotVerifiedTier
+                      ? "Implementation not verified — paste its ABI, or switch to the Proxy view to use the proxy's own ABI."
+                      : 'No ABI is available for this contract. Use the custom ABI panel below the tab bar to paste one.'
+                  }
                   onFocusPanel={() => setAbiFocusSignal(n => n + 1)}
+                  onSwitchView={implNotVerifiedTier ? () => setContractTarget('proxy') : undefined}
                 />
               ) : (
                 <div className={cardStyles}>
@@ -1173,19 +1290,30 @@ export default function Contract() {
                         : 'Proxy Contract ABI'
                       : 'Contract ABI'}
                   </h2>
-                  <SourceCodeViewer
-                    sourceCode={
-                      contractTarget === 'impl' && contractSource.implementationContract?.abi
-                        ? JSON.stringify(
-                            JSON.parse(contractSource.implementationContract.abi),
-                            null,
-                            2,
-                          )
-                        : contractSource.abi
-                          ? JSON.stringify(JSON.parse(contractSource.abi), null, 2)
-                          : 'No ABI available'
-                    }
-                  />
+                  {customAbiActive ? (
+                    // B3: while the pasted ABI drives the tabs, the server
+                    // answer is '[]' for unverified contracts — render the
+                    // paste itself with its provenance annotation instead
+                    // of an empty array that reads as a broken surface.
+                    <>
+                      <span className={customAbiSourceStyles}>Custom ABI (this browser)</span>
+                      <SourceCodeViewer sourceCode={customAbiRaw ?? ''} />
+                    </>
+                  ) : (
+                    <SourceCodeViewer
+                      sourceCode={
+                        contractTarget === 'impl' && contractSource.implementationContract?.abi
+                          ? JSON.stringify(
+                              JSON.parse(contractSource.implementationContract.abi),
+                              null,
+                              2,
+                            )
+                          : contractSource.abi
+                            ? JSON.stringify(JSON.parse(contractSource.abi), null, 2)
+                            : 'No ABI available'
+                      }
+                    />
+                  )}
                 </div>
               ))}
 
@@ -1200,11 +1328,18 @@ export default function Contract() {
                     title="Paste an ABI with event definitions"
                     message={
                       abiLocked
-                        ? 'No ABI is available for this contract. Use the custom ABI panel below the tab bar to paste an ABI with event definitions to decode and filter events.'
+                        ? implNotVerifiedTier
+                          ? "Implementation not verified — paste its ABI with event definitions, or switch to the Proxy view to use the proxy's own ABI."
+                          : 'No ABI is available for this contract. Use the custom ABI panel below the tab bar to paste an ABI with event definitions to decode and filter events.'
                         : 'The current ABI has no event definitions. Paste an ABI with event definitions to decode and filter events.'
                     }
                     onFocusPanel={
                       serverAbiUnavailable ? () => setAbiFocusSignal(n => n + 1) : undefined
+                    }
+                    onSwitchView={
+                      abiLocked && implNotVerifiedTier
+                        ? () => setContractTarget('proxy')
+                        : undefined
                     }
                   />
                 )}
@@ -1231,8 +1366,13 @@ export default function Contract() {
               (abiLocked ? (
                 <AbiUnlockHint
                   title="Paste an ABI to unlock this tab"
-                  message="No ABI is available for this contract. Use the custom ABI panel below the tab bar to paste one."
+                  message={
+                    implNotVerifiedTier
+                      ? "Implementation not verified — paste its ABI, or switch to the Proxy view to use the proxy's own ABI."
+                      : 'No ABI is available for this contract. Use the custom ABI panel below the tab bar to paste one.'
+                  }
                   onFocusPanel={() => setAbiFocusSignal(n => n + 1)}
+                  onSwitchView={implNotVerifiedTier ? () => setContractTarget('proxy') : undefined}
                 />
               ) : (
                 <ContractInteract

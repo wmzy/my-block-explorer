@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { createPublicClient, formatEther } from 'viem';
+import { createPublicClient, formatUnits } from 'viem';
 import {
   createRpcClient,
   getRealTimeAddressData,
@@ -14,7 +14,7 @@ import {
 vi.mock('viem', () => ({
   createPublicClient: vi.fn(),
   http: vi.fn(),
-  formatEther: vi.fn(),
+  formatUnits: vi.fn(),
   mainnet: { id: 1, name: 'Ethereum' },
   polygon: { id: 137, name: 'Polygon' },
   arbitrum: { id: 42161, name: 'Arbitrum' },
@@ -44,7 +44,9 @@ describe('realTimeData', () => {
     };
 
     vi.mocked(createPublicClient).mockReturnValue(mockClient);
-    vi.mocked(formatEther).mockImplementation(wei => (Number(wei) / 1e18).toString());
+    vi.mocked(formatUnits).mockImplementation(
+      (wei, decimals = 18) => (Number(wei) / 10 ** decimals).toString(),
+    );
     invalidateRpcClients();
   });
 
@@ -102,10 +104,11 @@ describe('realTimeData', () => {
       mockClient.getBalance.mockResolvedValue(BigInt('1000000000000000000')); // 1 ETH in wei
       mockClient.getTransactionCount.mockResolvedValue(42);
       mockClient.getBlockNumber.mockResolvedValue(BigInt('18000000'));
-      vi.mocked(formatEther).mockReturnValue('1.0');
     });
 
     it('should fetch real-time address data successfully', async () => {
+      vi.mocked(formatUnits).mockReturnValue('1.0');
+
       const result = await getRealTimeAddressData(testChainId, testAddress);
 
       expect(result).toEqual({
@@ -115,14 +118,32 @@ describe('realTimeData', () => {
         latestBlock: 18000000,
       });
 
+      // P1-4: the balance is formatted with the chain's native-currency
+      // decimals, never a hardcoded 1e18.
+      expect(formatUnits).toHaveBeenCalledWith(BigInt('1000000000000000000'), 18);
       expect(mockClient.getBalance).toHaveBeenCalledWith({ address: testAddress });
       expect(mockClient.getTransactionCount).toHaveBeenCalledWith({ address: testAddress });
       expect(mockClient.getBlockNumber).toHaveBeenCalled();
     });
 
+    it('formats the balance with the chain native-currency decimals, not hardcoded 18', async () => {
+      // Nautilus (chain 22222) runs a 9-decimal native currency (ZBC):
+      // 1e9 base units must be divided by 1e9, not 1e18.
+      mockClient.getBalance.mockResolvedValue(BigInt(1_000_000_000));
+      mockClient.getTransactionCount.mockResolvedValue(1);
+      mockClient.getBlockNumber.mockResolvedValue(BigInt(1));
+      vi.mocked(formatUnits).mockReturnValue('1');
+
+      const result = await getRealTimeAddressData(22222, testAddress);
+
+      expect(result.balance).toBe('1');
+      expect(result.balanceWei).toBe('1000000000');
+      expect(formatUnits).toHaveBeenCalledWith(BigInt(1_000_000_000), 9);
+    });
+
     it('should handle zero balance', async () => {
       mockClient.getBalance.mockResolvedValue(BigInt('0'));
-      vi.mocked(formatEther).mockReturnValue('0.0');
+      vi.mocked(formatUnits).mockReturnValue('0.0');
 
       const result = await getRealTimeAddressData(testChainId, testAddress);
 
@@ -133,7 +154,7 @@ describe('realTimeData', () => {
     it('should handle large balances', async () => {
       const largeBalance = BigInt('1000000000000000000000'); // 1000 ETH
       mockClient.getBalance.mockResolvedValue(largeBalance);
-      vi.mocked(formatEther).mockReturnValue('1000.0');
+      vi.mocked(formatUnits).mockReturnValue('1000.0');
 
       const result = await getRealTimeAddressData(testChainId, testAddress);
 
@@ -207,7 +228,7 @@ describe('realTimeData', () => {
         .mockResolvedValueOnce(BigInt('2000000000000000000')) // 2 ETH
         .mockResolvedValueOnce(BigInt('0')); // 0 ETH
 
-      vi.mocked(formatEther)
+      vi.mocked(formatUnits)
         .mockReturnValueOnce('1.0')
         .mockReturnValueOnce('2.0')
         .mockReturnValueOnce('0.0');
@@ -222,6 +243,8 @@ describe('realTimeData', () => {
         { address: testAddresses[2], balance: '0.0', balanceWei: '0' },
       ]);
 
+      // Batch path honors the chain decimals too (mainnet 18 here).
+      expect(formatUnits).toHaveBeenNthCalledWith(1, BigInt('1000000000000000000'), 18);
       expect(mockClient.getBalance).toHaveBeenCalledTimes(3);
     });
 
@@ -305,7 +328,7 @@ describe('realTimeData', () => {
       mockClient.getBalance.mockResolvedValue('invalid');
       mockClient.getTransactionCount.mockResolvedValue(undefined);
       mockClient.getBlockNumber.mockResolvedValue(undefined);
-      vi.mocked(formatEther).mockReturnValue('0');
+      vi.mocked(formatUnits).mockReturnValue('0');
 
       const result = await getRealTimeAddressData(1, '0x1234567890123456789012345678901234567890');
 

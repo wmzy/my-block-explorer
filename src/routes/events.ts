@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { HTTPException } from 'hono/http-exception';
 import type { Abi } from 'viem';
 import { createLogger } from '../server/logger';
 import { getChainName, isChainSupported, getSupportedChainIds } from '../config/chains';
@@ -47,7 +48,28 @@ const isValidBlockBound = (value: unknown): value is BlockTagInput =>
 
 const validateChainAndAddress = (chainIdStr: string, addressStr: string) => {
   const chainId = getValidatedChainId(chainIdStr);
-  const address = getValidatedAddress(addressStr);
+
+  // Address validation is delegated to getValidatedAddress: all-lowercase
+  // (or all-uppercase) passes — the checksum-less convention — while a
+  // mixed-case address must carry a correct EIP-55 checksum. Its
+  // HTTPException is converted to the JSON error shape used across this
+  // file instead of escaping as Hono's plain-text exception response.
+  let address: string;
+  try {
+    address = getValidatedAddress(addressStr);
+  }
+  catch (error) {
+    return {
+      error: {
+        error: 'Invalid contract address',
+        message:
+          error instanceof HTTPException
+            ? error.message
+            : 'Address must be a valid 42-character hexadecimal string starting with 0x',
+      },
+      status: 400 as const,
+    };
+  }
 
   if (isNaN(chainId) || !isChainSupported(chainId)) {
     return {
@@ -60,16 +82,8 @@ const validateChainAndAddress = (chainIdStr: string, addressStr: string) => {
     };
   }
 
-  if (!address || !/^0x[a-fA-F0-9]{40}$/.test(address)) {
-    return {
-      error: {
-        error: 'Invalid contract address',
-        message: 'Address must be a valid 42-character hexadecimal string starting with 0x',
-      },
-      status: 400 as const,
-    };
-  }
-
+  // Storage keys stay lowercase (C-3): rows written before checksum-tight
+  // validation remain reachable.
   return { chainId, address: address.toLowerCase() as `0x${string}` };
 };
 
@@ -707,6 +721,12 @@ app.delete('/chains/:chainId/contracts/:address/events/ranges/:rangeId', require
     const response = await deleteIndexingRange(chainId, address, rangeId);
 
     if (!response.success) {
+      // A missing range is the same 404 resource state the pause/start/
+      // resume routes return; other failures (e.g. deleting while
+      // indexing) are state conflicts and stay 400.
+      if (response.error === 'Range not found') {
+        return c.json({ error: 'Range not found' }, 404);
+      }
       return c.json(
         {
           error: 'Failed to delete indexing range',
@@ -796,13 +816,9 @@ app.post('/chains/:chainId/contracts/:address/events/ranges/:rangeId/start', req
     const range = ranges.find(r => r.rangeId === rangeId);
 
     if (!range) {
-      return c.json(
-        {
-          error: 'Failed to start indexing range',
-          message: 'Range not found',
-        },
-        400,
-      );
+      // Mirrors the pause route: a missing range is a 404 resource state,
+      // while state conflicts (already indexing/completed) stay 400.
+      return c.json({ error: 'Range not found' }, 404);
     }
 
     if (range.status === 'completed') {
@@ -990,13 +1006,9 @@ app.post('/chains/:chainId/contracts/:address/events/ranges/:rangeId/resume', re
     const range = ranges.find(r => r.rangeId === rangeId);
 
     if (!range) {
-      return c.json(
-        {
-          error: 'Failed to resume indexing range',
-          message: 'Range not found',
-        },
-        400,
-      );
+      // Mirrors the pause route: a missing range is a 404 resource state,
+      // while state conflicts (already indexing / not paused) stay 400.
+      return c.json({ error: 'Range not found' }, 404);
     }
 
     if (range.status !== 'paused' && range.status !== 'error') {

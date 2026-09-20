@@ -5,7 +5,7 @@ import { createRetryableRpcCall } from '../utils/errorHandler';
 import { createLogger } from '../server/logger';
 
 const logger = createLogger('contract-source-service');
-import { addressEquals, formatAddress } from '../utils/address';
+import { addressEquals, formatAddress, isValidAddress } from '../utils/address';
 import type { Address } from 'viem';
 import { analyzeRpcError, shouldRetryRpcError } from '../utils/rpcErrorHandler';
 
@@ -115,10 +115,10 @@ export type ContractSource = {
   proxyType?: ProxyType;
   implementationAddress?: Address;
   // Full facet list for multi-implementation proxies (EIP-2535 diamonds).
-  // Ephemeral: only populated by a fresh Sourcify fetch — the DB has no
-  // column for it, so the list lives solely on the in-memory result of the
-  // fresh-fetch path (Force Refresh or a proxy-TTL expiry refetches and
-  // repopulates it); plain cache hits read it back as undefined.
+  // Persisted as a JSON array in contract_sources.implementation_addresses,
+  // so cache hits read the facet list back instead of degrading a diamond
+  // to its facet[0]; rows written before the column existed read as
+  // undefined until the next refetch repopulates them.
   implementationAddresses?: Address[];
   implementationContract?: ContractSource;
   creationTxHash?: string;
@@ -814,6 +814,31 @@ export class ContractSourceService {
         return this.enhanceWithProxyInfo(blockscanResult);
       }
 
+      // Both verifiers missed. Before caching an "unverified" record, make
+      // sure the address even has deployed code (same check as
+      // getContractCreationInfo): an EOA must surface as null — the routes
+      // translate that into 404 not_a_contract — and must not poison the
+      // source cache. Drop any stale row a pre-fix lookup may have written.
+      // An RPC failure is NOT "not a contract" though: it keeps the legacy
+      // unverified fallback so a flaky node never hard-404s real contracts.
+      try {
+        const client = await rpcManager.getClient(chainId);
+        const code = await client.getCode({ address });
+        if (!code || code === '0x' || code.length <= 2) {
+          logger.info(
+            { chainId, address },
+            'Address has no deployed code; not caching as unverified',
+          );
+          await this.clearCache(chainId, address);
+          return null;
+        }
+      } catch (error) {
+        logger.warn(
+          { err: error, chainId, address },
+          'On-chain code check failed; falling back to unverified',
+        );
+      }
+
       const unverifiedContract: ContractSource = {
         chainId,
         address,
@@ -1455,6 +1480,25 @@ export class ContractSourceService {
           // ignore malformed JSON
         }
       }
+      // Restore the persisted facet list (EIP-2535 diamonds). Rows written
+      // before the column existed have NULL here — read that back as
+      // undefined rather than failing the whole cache hit.
+      let implementationAddresses: Address[] | undefined;
+      if (row.implementationAddresses) {
+        try {
+          const parsed: unknown = JSON.parse(row.implementationAddresses);
+          if (Array.isArray(parsed)) {
+            const addresses = parsed.filter(
+              (value): value is Address => typeof value === 'string' && isValidAddress(value),
+            );
+            if (addresses.length > 0) {
+              implementationAddresses = addresses;
+            }
+          }
+        } catch {
+          // ignore malformed JSON
+        }
+      }
       return {
         chainId: row.chainId,
         address: row.address,
@@ -1474,6 +1518,7 @@ export class ContractSourceService {
         isProxy: row.proxy ? true : false,
         proxyType: (row.proxy as ProxyType) ?? undefined,
         implementationAddress: row.implementation ?? undefined,
+        implementationAddresses,
       };
     } catch (error) {
       logger.error({ err: error }, 'Database query error');
@@ -1498,6 +1543,12 @@ export class ContractSourceService {
         ? JSON.stringify(contractSource.sourceFiles)
         : null;
 
+      // Facet list (EIP-2535 diamonds): persisted so a cache hit keeps the
+      // multi-implementation view instead of degrading to facet[0].
+      const implementationAddressesJson = contractSource.implementationAddresses?.length
+        ? JSON.stringify(contractSource.implementationAddresses)
+        : null;
+
       await db
         .insert(contractSources)
         .values({
@@ -1515,6 +1566,7 @@ export class ContractSourceService {
           verificationSource: contractSource.verificationSource ?? null,
           proxy: contractSource.proxyType ?? null,
           implementation: implAddress,
+          implementationAddresses: implementationAddressesJson,
           verificationDate: contractSource.verifiedAt ?? new Date(),
           lastUpdated: contractSource.lastChecked ?? new Date(),
         })
@@ -1533,6 +1585,7 @@ export class ContractSourceService {
             verificationSource: contractSource.verificationSource ?? null,
             proxy: contractSource.proxyType ?? null,
             implementation: implAddress,
+            implementationAddresses: implementationAddressesJson,
             verificationDate: contractSource.verifiedAt ?? new Date(),
             lastUpdated: contractSource.lastChecked,
           },

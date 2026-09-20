@@ -10,14 +10,18 @@
 // 400. The HTTP layer and sonner are mocked so backend calls and
 // surfaced errors are observable. The client-side overlap precheck
 // describe block pins the two-click gate (warning + 'Create anyway') for
-// the manual form and the gated quick modes, the catchup exemption, and
-// the reset-on-input-change semantics.
+// the manual form and the gated quick modes, the catchup/continue
+// exemptions (both re-touch only the inclusive furthest-toBlock boundary),
+// and the reset-on-input-change semantics. The staleness describes pin
+// the honest banner: only walked data counts, an all-pending list says
+// 'Nothing indexed yet' instead of a fabricated block 0.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import IndexingRangeManager, {
   describeMutationError,
   estimateRangeEta,
+  furthestIndexedBlock,
   recordEtaSample,
 } from '@/components/events/IndexingRangeManager';
 import { toast } from 'sonner';
@@ -706,9 +710,10 @@ describe('client-side overlap precheck', () => {
     expect(screen.queryByRole('button', { name: 'Create anyway' })).toBeNull();
   });
 
-  it('gates the continue quick mode, which re-touches the previous range boundary', async () => {
+  it('never gates the continue quick mode — its inclusive boundary re-touch is by design', async () => {
     rangesFixture = [range(7, 30000, 40000, 'completed', 40000)];
     headFixture = 50000;
+    mockPost.mockResolvedValue({ rangeId: 9, fromBlock: 40000, toBlock: 41000, started: true });
 
     render(<IndexingRangeManager chainId={CHAIN_ID} contractAddress={ADDRESS} />);
 
@@ -716,16 +721,12 @@ describe('client-side overlap precheck', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
     fireEvent.click(screen.getByRole('button', { name: 'Create' }));
 
-    // The backend continues from ranges[0].toBlock (40000) INCLUSIVE, so
-    // the would-be range [40000, 41000] overlaps range #7 itself.
-    expect(mockPost).not.toHaveBeenCalled();
-    expect(
-      screen.getByText(
-        'Overlaps existing range #7 (30,000–40,000) — events in the overlap will be indexed twice',
-      ),
-    ).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole('button', { name: 'Create anyway' }));
+    // The backend continues from the furthest toBlock (40000) INCLUSIVE —
+    // the same semantics catchup uses — so the would-be range
+    // [40000, 41000] re-touches exactly one boundary block by
+    // construction. Gating it made every Continue demand a 'Create
+    // anyway' click for a warning ('indexed twice') that was not true;
+    // it must POST in a single click, like catchup.
     await waitFor(() =>
       expect(mockPost).toHaveBeenCalledWith(quickUrl, {
         mode: 'continue',
@@ -733,6 +734,9 @@ describe('client-side overlap precheck', () => {
         abi: undefined,
       }),
     );
+    expect(mockPost).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/Overlaps existing range/)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Create anyway' })).toBeNull();
   });
 
   it('gates the all quick mode against any existing range', async () => {
@@ -829,31 +833,108 @@ describe('client-side overlap precheck', () => {
   });
 
   it('resets the quick gate when the selected quick mode changes', async () => {
-    rangesFixture = [range(7, 30000, 40000, 'completed', 40000)];
+    rangesFixture = [range(7, 49000, 50000, 'completed', 50000)];
     headFixture = 50000;
 
-    render(<IndexingRangeManager chainId={CHAIN_ID} contractAddress={ADDRESS} />);
+    render(
+      <IndexingRangeManager
+        chainId={CHAIN_ID}
+        contractAddress={ADDRESS}
+        creationBlock={1000}
+      />,
+    );
 
     fireEvent.click(await screen.findByRole('button', { name: '+ Add Range' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Recent Blocks' }));
     fireEvent.click(screen.getByRole('button', { name: 'Create' }));
     expect(screen.getByText(/Overlaps existing range #7/)).toBeInTheDocument();
 
-    // Switching to Recent Blocks drops the gate; its [49000, 50000]
-    // window does not overlap #7 (30000–40000), so Create POSTs directly.
-    fireEvent.click(screen.getByRole('button', { name: 'Recent Blocks' }));
+    // Switching to First Blocks drops the gate; its [1000, 2000] window
+    // is far below #7 (49000–50000), so Create POSTs directly.
+    fireEvent.click(screen.getByRole('button', { name: 'First Blocks' }));
     expect(screen.queryByText(/Overlaps existing range/)).toBeNull();
     expect(screen.getByRole('button', { name: 'Create' })).toBeEnabled();
 
     fireEvent.click(screen.getByRole('button', { name: 'Create' }));
     await waitFor(() =>
       expect(mockPost).toHaveBeenCalledWith(quickUrl, {
-        mode: 'recent',
+        mode: 'first',
         blockCount: 1000,
         abi: undefined,
       }),
     );
     expect(mockPost).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Staleness banner honesty (B5): furthestIndexedBlock folds only ranges
+// with real walked data — pending ranges contribute nothing (the old fold
+// treated their null currentBlock as block 0 and rendered 'Indexed through
+// block 0' for an all-pending list), completed ranges count through their
+// far bound, and checkpointed ranges count direction-aware, mirroring the
+// coverage intervals EventStatistics unions.
+describe('staleness furthest-indexed-block', () => {
+  it('returns null when nothing has been indexed (all pending, or no ranges)', () => {
+    expect(furthestIndexedBlock([])).toBeNull();
+    expect(
+      furthestIndexedBlock([range(1, 0, 1000, 'pending'), range(2, 2000, 5000, 'pending')]),
+    ).toBeNull();
+  });
+
+  it('ignores pending ranges even when one spans past the walked checkpoint', () => {
+    expect(
+      furthestIndexedBlock([
+        range(1, 0, 50000, 'pending'),
+        range(2, 30000, 40000, 'paused', 35123),
+      ]),
+    ).toBe(35123);
+  });
+
+  it('counts every checkpointed status through its walked block', () => {
+    expect(furthestIndexedBlock([range(1, 100, 200, 'indexing', 150)])).toBe(150);
+    expect(furthestIndexedBlock([range(1, 100, 200, 'error', 150)])).toBe(150);
+  });
+
+  it('counts a completed range through its full span', () => {
+    expect(furthestIndexedBlock([range(1, 30000, 40000, 'completed', 40000)])).toBe(40000);
+  });
+
+  it('counts a backward walk through its covered high side (toBlock)', () => {
+    // A backward range [30000, 40000] walked down to 35000 has covered
+    // [35000, 40000] — the furthest indexed block is 40000, not the
+    // current checkpoint.
+    expect(
+      furthestIndexedBlock([
+        { ...range(1, 30000, 40000, 'paused', 35000), direction: 'backward' },
+      ]),
+    ).toBe(40000);
+  });
+
+  it('clips a runaway checkpoint into the range bounds', () => {
+    expect(furthestIndexedBlock([range(1, 100, 200, 'error', 999)])).toBe(200);
+  });
+});
+
+describe('staleness banner honesty', () => {
+  it('says Nothing indexed yet instead of the fabricated block 0 for an all-pending list', async () => {
+    rangesFixture = [range(1, 0, 1000, 'pending'), range(2, 2000, 5000, 'pending')];
+    headFixture = 25_000_000;
+
+    render(<IndexingRangeManager chainId={CHAIN_ID} contractAddress={ADDRESS} />);
+
+    expect(await screen.findByText('Nothing indexed yet — start a range')).toBeInTheDocument();
+    expect(screen.queryByText(/Indexed through block/)).toBeNull();
+  });
+
+  it('still anchors at the walked checkpoint when pending ranges sit alongside', async () => {
+    rangesFixture = [range(1, 0, 50000, 'pending'), range(2, 30000, 40000, 'paused', 35123)];
+    headFixture = 50000;
+
+    render(<IndexingRangeManager chainId={CHAIN_ID} contractAddress={ADDRESS} />);
+
+    expect(
+      await screen.findByText('Indexed through block 35,123 - 14,877 blocks behind head'),
+    ).toBeInTheDocument();
   });
 });
 

@@ -41,14 +41,39 @@ app.get('/chains/:chainId/transactions/:hash', async (c) => {
   }
 });
 
+// Pagination sanity bounds: offset is clamped non-negative and capped so a
+// runaway client cannot make DuckDB scan arbitrarily deep into the table.
+const MAX_TRANSACTION_OFFSET = 100_000;
+
+const parseOffsetParam = (raw: string | undefined): number | null => {
+  if (raw === undefined || raw === '') return 0;
+  const parsed = parseInt(raw, 10);
+  // Malformed pagination params fail loudly with 400 instead of being
+  // silently treated as 0 — a wrong page is worse than an error.
+  if (Number.isNaN(parsed)) return null;
+  return Math.min(Math.max(parsed, 0), MAX_TRANSACTION_OFFSET);
+};
+
 app.get('/chains/:chainId/transactions', async (c) => {
   const chainId = getValidatedChainId(c.req.param('chainId'));
   const limit = parseInt(c.req.query('limit') ?? '20');
+  const offset = parseOffsetParam(c.req.query('offset'));
+
+  if (offset === null) {
+    return c.json(
+      {
+        error: 'Invalid offset',
+        message: 'offset must be a non-negative integer',
+      },
+      400,
+    );
+  }
 
   try {
-    const transactions = await transactionService.getLatestTransactions(
+    const { transactions, total } = await transactionService.getLatestTransactions(
       chainId,
       limit,
+      offset,
     );
     c.header('X-Data-Source', 'database');
     c.header('X-Chain-Name', getChainName(chainId));
@@ -57,6 +82,7 @@ app.get('/chains/:chainId/transactions', async (c) => {
       chainId,
       chainName: getChainName(chainId),
       transactions: transactions.map(formatTransactionForApi),
+      total,
       timestamp: new Date().toISOString(),
     });
 

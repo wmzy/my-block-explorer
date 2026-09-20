@@ -21,6 +21,24 @@ export type RpcBlock = {
   receiptsRoot?: string;
 };
 
+/**
+ * Block producer classification for display. Bor-style PoS chains do not
+ * carry the validator in the EVM header, so public RPCs return the zero
+ * address as the block miner. Linking to it presents a meaningless
+ * zero-address page, so views render an honest "not exposed" note instead.
+ */
+export type BlockProducer = { kind: 'validator'; address: string } | { kind: 'unknown' };
+
+// Exactly 40 zero nibbles after 0x. Case-insensitive because the header
+// value is whatever the RPC chose to serialize.
+const ZERO_ADDRESS = /^0x0{40}$/i;
+
+export const describeBlockProducer = (miner: string): BlockProducer => {
+  const value = miner.trim();
+  if (!value || ZERO_ADDRESS.test(value)) return { kind: 'unknown' };
+  return { kind: 'validator', address: value };
+};
+
 // Receipt log entry carried through the RPC layer for decoded-events views.
 export type RpcLogEntry = {
   address: string;

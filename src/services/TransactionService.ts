@@ -1,5 +1,5 @@
 import { db, transactions, blocks } from '../database/init';
-import { eq, and, sql } from 'drizzle-orm';
+import { eq, and, sql, count } from 'drizzle-orm';
 import { rpcManager } from './RpcManager';
 import type { Address, Transaction as ViemTransaction, TransactionReceipt } from 'viem';
 
@@ -321,7 +321,11 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
       }
     },
 
-    getLatestTransactions: async (chainId: number, limit: number = 20): Promise<Transaction[]> => {
+    getLatestTransactions: async (
+      chainId: number,
+      limit: number = 20,
+      offset: number = 0,
+    ): Promise<{ transactions: Transaction[]; total: number }> => {
       try {
         const txResults = await db
           .select()
@@ -330,12 +334,24 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
           .orderBy(
             sql`${transactions.timestamp} DESC, ${transactions.blockNumber} DESC, ${transactions.transactionIndex} DESC`,
           )
-          .limit(limit);
+          .limit(limit)
+          .offset(offset);
 
-        return txResults.map(tx => formatTransaction(tx));
+        const countResult = await db
+          .select({ value: count() })
+          .from(transactions)
+          .where(eq(transactions.chainId, chainId));
+
+        return {
+          transactions: txResults.map(tx => formatTransaction(tx)),
+          // drizzle's count() casts DuckDB's BIGINT to a JS number — the
+          // raw sql`count(*)` came out as a string, diverging from the
+          // blocks list response this endpoint mirrors.
+          total: countResult[0]?.value || 0,
+        };
       } catch (error) {
         console.error('Failed to get latest transactions:', error);
-        return [];
+        return { transactions: [], total: 0 };
       }
     },
 

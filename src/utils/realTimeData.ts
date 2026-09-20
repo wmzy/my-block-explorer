@@ -1,6 +1,12 @@
-import { createPublicClient, http, formatEther, type PublicClient } from 'viem';
+import { createPublicClient, http, formatUnits, type PublicClient } from 'viem';
 import { getChainInfo } from '@/config/chains';
 import { get } from '@/util/http';
+
+// Native-currency display decimals of a chain. formatEther would hardcode
+// 18 and silently misrender balances on chains whose native unit uses
+// other decimals (e.g. Nautilus ZBC's 9).
+const nativeDecimals = (chainId: number): number =>
+  getChainInfo(chainId)?.nativeCurrency.decimals ?? 18;
 
 const clientCache = new Map<number, PublicClient>();
 const customRpcUrls = new Map<number, string>();
@@ -90,7 +96,7 @@ export const getRealTimeAddressData = async (chainId: number, address: string) =
   ]);
 
   return {
-    balance: formatEther(balance),
+    balance: formatUnits(balance, nativeDecimals(chainId)),
     balanceWei: balance.toString(),
     transactionCount: txCount,
     latestBlock: Number(latestBlock),
@@ -117,7 +123,7 @@ export const getBatchBalances = async (chainId: number, addresses: string[]) => 
 
   return addresses.map((address, index) => ({
     address,
-    balance: formatEther(balances[index]),
+    balance: formatUnits(balances[index], nativeDecimals(chainId)),
     balanceWei: balances[index].toString(),
   }));
 };

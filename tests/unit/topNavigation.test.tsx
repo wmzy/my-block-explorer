@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import TopNavigation from '@/components/TopNavigation';
+import { ApiError } from '@/util/apiError';
 import {
   recordSearchHistoryEntry,
   SEARCH_HISTORY_STORAGE_KEY,
@@ -33,14 +34,19 @@ vi.mock('../../src/components/RpcConfig', () => ({
 // path left in the component — history is localStorage-only now) is
 // observable without a network. withSignal is a pass-through: the
 // hash-search path composes it around the mocked api client.
-const { mockGet, mockApi } = vi.hoisted(() => ({
+// isBackendUnreachable mirrors the real predicate and is wired to the
+// real ApiError class in beforeEach (hoisting rules keep it out of the
+// factory) so failure attribution is exercised with real error objects.
+const { mockGet, mockApi, mockIsBackendUnreachable } = vi.hoisted(() => ({
   mockGet: vi.fn(),
   mockApi: { mockApiBase: true },
+  mockIsBackendUnreachable: vi.fn(),
 }));
 vi.mock('../../src/util/http', () => ({
   api: mockApi,
   get: mockGet,
   withSignal: (o: unknown) => o,
+  isBackendUnreachable: mockIsBackendUnreachable,
 }));
 
 // Client-side ENS resolution runs over a mainnet RPC client; the mock keeps
@@ -107,6 +113,11 @@ describe('TopNavigation', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.removeItem(SEARCH_HISTORY_STORAGE_KEY);
+    // Same semantics as the real util/http predicate: only ApiErrors
+    // with status 0 (no HTTP response ever received) count as offline.
+    mockIsBackendUnreachable.mockImplementation(
+      (e: unknown) => e instanceof ApiError && e.status === 0,
+    );
   });
 
   it('renders the logo and navigation elements', () => {
@@ -604,6 +615,45 @@ describe('TopNavigation', () => {
     expect(screen.queryByText(/Hash not found on Ethereum/)).not.toBeInTheDocument();
     // The network picker escape hatch stays available on failure too.
     expect(screen.getByText('Choose a network →')).toBeInTheDocument();
+  });
+
+  it('surfaces an offline notice instead of silence when the backend is unreachable', async () => {
+    // Regression (C1): a hash search whose request never reached the
+    // backend used to fail silently — no navigation, no inline notice.
+    mockGet.mockRejectedValueOnce(new ApiError('Network error', 0));
+    renderTopNavigation({ currentChainId: 1, onSearch: undefined });
+
+    const searchInput = screen.getByPlaceholderText('Search address, tx hash, or block number...');
+    fireEvent.change(searchInput, { target: { value: `0x${'ab'.repeat(32)}` } });
+    fireEvent.click(screen.getByText('Search'));
+
+    expect(
+      await screen.findByText(/Search unavailable — cannot reach the explorer backend/),
+    ).toBeInTheDocument();
+    // The failure is attributed to the missing backend — never worded as
+    // a data-source error or a miss — and a failed dispatch navigates
+    // nowhere.
+    expect(screen.queryByText(/Search failed on/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Hash not found/)).not.toBeInTheDocument();
+    expect(mockNavigate).not.toHaveBeenCalled();
+    // Offline is retryable once the backend is back.
+    expect(screen.getByText('Retry')).toBeInTheDocument();
+  });
+
+  it('reports a failed request (backend answered with an error) as a data-source failure', async () => {
+    mockGet.mockRejectedValueOnce(new ApiError('HTTP 500', 500));
+    renderTopNavigation({ currentChainId: 1, onSearch: undefined });
+
+    const searchInput = screen.getByPlaceholderText('Search address, tx hash, or block number...');
+    fireEvent.change(searchInput, { target: { value: `0x${'ab'.repeat(32)}` } });
+    fireEvent.click(screen.getByText('Search'));
+
+    expect(
+      await screen.findByText(/Search failed on Ethereum — a data source errored/),
+    ).toBeInTheDocument();
+    // A 5xx answered the request — that is not "backend unreachable".
+    expect(screen.queryByText(/Search unavailable/)).not.toBeInTheDocument();
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 
   it('verifies a block number before navigating, and records the landing', async () => {

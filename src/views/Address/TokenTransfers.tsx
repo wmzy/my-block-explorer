@@ -10,6 +10,7 @@ import { erc20Abi, formatUnits } from 'viem';
 import { Alert } from 'haze-ui';
 import { useTokenTransfers, requestTokenTransfersRefresh, type TokenTransfer } from '@/services/tokenTransfers';
 import { createRpcClient } from '@/utils/realTimeData';
+import { checkAddressValidity } from '@/views/Address/addressValidity';
 import { addressSearchSchema, shouldPinTransfersPage } from '@/views/Address/search';
 import { getExternalToolLinks } from '@/config/externalTools';
 import { formatRelativeTime } from '@/utils/format';
@@ -52,6 +53,15 @@ const windowNote = css`
 
 // Freshness disclosure at the head of the tab (first-scan time).
 const scanNote = css`
+  margin: 0 0 var(--haze-space-3);
+  color: var(--haze-color-text-muted);
+  font-size: var(--haze-text-xs);
+`;
+
+// Neutral stand-in for the raw scan error when the page-level card
+// already explains the cause (invalid address): muted, no retry — the
+// address itself, not the scan, is the problem.
+const invalidAddressNote = css`
   margin: 0 0 var(--haze-space-3);
   color: var(--haze-color-text-muted);
   font-size: var(--haze-text-xs);
@@ -419,14 +429,24 @@ export default function TokenTransfers({
         <p className={scanNote}>Scanned {formatRelativeTime(scannedAt)}</p>
       )}
 
-      {query.error && (
-        <ErrorState
-          message={query.error.message}
-          onRetry={() => {
-            void query.refetch();
-          }}
-        />
-      )}
+      {query.error &&
+        (!checkAddressValidity(address).valid ? (
+          // The address itself is invalid — the page-level guidance card
+          // (same verdict, from the same pure check) already explains it,
+          // so the tab shows a neutral note instead of repeating the
+          // guidance or surfacing the scan's 400 as a data problem.
+          <p className={invalidAddressNote}>
+            Token transfers cannot be scanned for this address — see the
+            address notice on this page.
+          </p>
+        ) : (
+          <ErrorState
+            message={query.error.message}
+            onRetry={() => {
+              void query.refetch();
+            }}
+          />
+        ))}
 
       {/* Partial coverage: the scan budget ran out — Retry re-scans it
           (cache-bypassing); Search deeper widens the window. */}

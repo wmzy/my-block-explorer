@@ -54,7 +54,7 @@ describe('GET /search (global)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockGetLatestBlock.mockResolvedValue(null);
-    mockGetLatestTransactions.mockResolvedValue([]);
+    mockGetLatestTransactions.mockResolvedValue({ transactions: [], total: 0 });
   });
 
   it('resolves a hash on the chain named by ?chainId= instead of needsChain', async () => {

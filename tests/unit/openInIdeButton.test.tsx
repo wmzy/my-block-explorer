@@ -6,6 +6,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { OpenInIdeButton } from '@/views/Contract/OpenInIdeButton';
+import { ApiError } from '@/util/apiError';
 
 const { mockGet, mockPost, mockToastError } = vi.hoisted(() => ({
   mockGet: vi.fn(),
@@ -75,6 +76,23 @@ describe('OpenInIdeButton', () => {
 
     await waitFor(() =>
       expect(mockToastError).toHaveBeenCalledWith('Failed to open in IDE: bridge unreachable'),
+    );
+  });
+
+  it('points a 403 at the admin-token gate with the established guidance', async () => {
+    mockGet.mockResolvedValue({ ides: [{ id: 'vscode', displayName: 'VS Code' }] });
+    // The write endpoint requires ADMIN_TOKEN on the server (C-4): the
+    // browser has no token set.
+    mockPost.mockRejectedValue(new ApiError('admin token required', 403));
+
+    render(<OpenInIdeButton chainId={1} address={ADDRESS} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Open in VS Code' }));
+
+    await waitFor(() =>
+      expect(mockToastError).toHaveBeenCalledWith(
+        'Failed to open in IDE: requires admin token — set it via ⚙️ RPC → Admin token. The server must have ADMIN_TOKEN configured.',
+      ),
     );
   });
 });

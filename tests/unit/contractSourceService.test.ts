@@ -612,3 +612,213 @@ describe('ContractSourceService - cache TTL policy', () => {
     });
   });
 });
+
+describe('ContractSourceService - not-a-contract gate & facet persistence', () => {
+  const chainId = 1;
+  const eoaAddress = '0x00000000000000000000000000000000000dead' as Address;
+  const D0 = '0xfac0000000000000000000000000000000000000' as Address;
+  const D1 = '0xfac1111111111111111111111111111111111111' as Address;
+  const D2 = '0xfac2222222222222222222222222222222222222' as Address;
+  const diamondAddress = '0xabc1111111111111111111111111111111111111' as Address;
+
+  let service: ContractSourceService;
+  let mockClient: { getCode: ReturnType<typeof vi.fn> };
+  let selectQueue: Array<Array<unknown>>;
+  let insertValues: Array<Record<string, unknown>>;
+
+  const notFoundFetch = () =>
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: false, status: 404 })),
+    );
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+
+    mockClient = { getCode: vi.fn() };
+    mockGetClient.mockResolvedValue(mockClient);
+
+    selectQueue = [];
+    insertValues = [];
+
+    mockDb.select.mockImplementation(() => ({
+      from: () => ({
+        where: () => ({
+          limit: async () => (selectQueue.length > 0 ? selectQueue.shift() : []),
+        }),
+      }),
+    }));
+    mockDb.insert.mockImplementation(() => ({
+      values: (v: Record<string, unknown>) => {
+        insertValues.push(v);
+        return { onConflictDoUpdate: async () => undefined };
+      },
+    }));
+    mockDb.delete.mockImplementation(() => ({ where: async () => undefined }));
+    // saveProxyInfo runs on every proxy cache hit.
+    (mockDb as Record<string, unknown>).update = vi.fn(() => ({
+      set: () => ({ where: async () => undefined }),
+    }));
+
+    service = new ContractSourceService();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  describe('getContractSource not-a-contract gate (P1-2)', () => {
+    it('returns null without caching when the address has no deployed code', async () => {
+      selectQueue.push([]); // source cache miss
+      notFoundFetch(); // Sourcify + Blockscan both miss
+      mockClient.getCode.mockResolvedValue('0x');
+
+      const result = await service.getContractSource(chainId, eoaAddress);
+
+      expect(result).toBeNull();
+      expect(mockClient.getCode).toHaveBeenCalledWith({ address: eoaAddress });
+      // No unverified row may be written for an EOA…
+      expect(mockDb.insert).not.toHaveBeenCalled();
+      // …and a stale pre-fix row gets purged instead of served.
+      expect(mockDb.delete).toHaveBeenCalledTimes(1);
+    });
+
+    it('self-heals a stale unverified row written before the fix', async () => {
+      selectQueue.push([
+        {
+          chainId,
+          address: eoaAddress,
+          sourceCode: '',
+          sourceFiles: null,
+          abi: '[]',
+          contractName: null,
+          compilerVersion: null,
+          optimizationUsed: null,
+          runs: null,
+          constructorArguments: null,
+          evmVersion: null,
+          library: null,
+          licenseType: null,
+          proxy: null,
+          implementation: null,
+          implementationAddresses: null,
+          swarmSource: null,
+          isVerified: false,
+          verificationSource: 'unknown',
+          verificationDate: null,
+          lastUpdated: new Date(),
+        },
+      ]);
+      notFoundFetch();
+      mockClient.getCode.mockResolvedValue('0x');
+
+      const result = await service.getContractSource(chainId, eoaAddress);
+
+      expect(result).toBeNull();
+      expect(mockDb.delete).toHaveBeenCalledTimes(1);
+      expect(mockDb.insert).not.toHaveBeenCalled();
+    });
+
+    it('keeps the unverified fallback when the code check itself fails', async () => {
+      selectQueue.push([]);
+      notFoundFetch();
+      // RPC error must not be conflated with "not a contract".
+      mockClient.getCode.mockRejectedValue(new Error('node unreachable'));
+
+      const result = await service.getContractSource(chainId, eoaAddress);
+
+      expect(result).not.toBeNull();
+      expect(result?.verificationStatus).toBe('unverified');
+      expect(mockDb.delete).not.toHaveBeenCalled();
+      expect(insertValues).toHaveLength(1);
+      expect(insertValues[0]?.isVerified).toBe(false);
+    });
+  });
+
+  describe('diamond facet persistence (B4)', () => {
+    const diamondRow = {
+      chainId,
+      address: diamondAddress,
+      sourceCode: '// diamond proxy',
+      sourceFiles: null,
+      abi: '[]',
+      contractName: 'Diamond',
+      compilerVersion: 'v0.8.0',
+      optimizationUsed: null,
+      runs: null,
+      constructorArguments: null,
+      evmVersion: null,
+      library: null,
+      licenseType: null,
+      proxy: 'diamond',
+      implementation: D0,
+      implementationAddresses: JSON.stringify([D0, D1, D2]),
+      swarmSource: null,
+      isVerified: true,
+      verificationSource: 'sourcify',
+      verificationDate: new Date(),
+      lastUpdated: new Date(),
+    };
+
+    it('serves the full facet list from a cache hit', async () => {
+      selectQueue.push([diamondRow], []); // diamond hit, then facet[0] lookup misses
+      notFoundFetch(); // facet[0] is not on the verifiers either
+      mockClient.getCode.mockResolvedValue('0x'); // facet[0] has no code → null impl
+
+      const result = await service.getContractSource(chainId, diamondAddress);
+
+      // Regression: pre-fix cache hits read implementationAddresses back as
+      // undefined, degrading the diamond to a single implementation.
+      expect(result?.isProxy).toBe(true);
+      expect(result?.proxyType).toBe('diamond');
+      expect(result?.implementationAddresses).toEqual([D0, D1, D2]);
+    });
+
+    it('persists the facet list into the cache row', async () => {
+      await (service as unknown as {
+        saveToDatabase: (s: ContractSource) => Promise<void>;
+      }).saveToDatabase({
+        chainId,
+        address: diamondAddress,
+        sourceCode: '// diamond proxy',
+        abi: '[]',
+        verificationStatus: 'verified',
+        verificationSource: 'sourcify',
+        lastChecked: new Date(),
+        isProxy: true,
+        proxyType: 'diamond',
+        implementationAddress: D0,
+        implementationAddresses: [D0, D1, D2],
+      });
+
+      expect(insertValues).toHaveLength(1);
+      expect(insertValues[0]?.implementationAddresses).toBe(
+        JSON.stringify([D0, D1, D2]),
+      );
+      expect(insertValues[0]?.proxy).toBe('diamond');
+    });
+
+    it('reads pre-column rows (NULL facets) back as undefined, not an error', async () => {
+      const legacyRow = { ...diamondRow, implementationAddresses: null };
+      selectQueue.push([legacyRow], []);
+      notFoundFetch();
+      mockClient.getCode.mockResolvedValue('0x');
+
+      const result = await service.getContractSource(chainId, diamondAddress);
+
+      expect(result?.implementationAddresses).toBeUndefined();
+    });
+
+    it('ignores malformed facet JSON instead of failing the cache hit', async () => {
+      const brokenRow = { ...diamondRow, implementationAddresses: '{not json' };
+      selectQueue.push([brokenRow], []);
+      notFoundFetch();
+      mockClient.getCode.mockResolvedValue('0x');
+
+      const result = await service.getContractSource(chainId, diamondAddress);
+
+      expect(result).not.toBeNull();
+      expect(result?.implementationAddresses).toBeUndefined();
+    });
+  });
+});

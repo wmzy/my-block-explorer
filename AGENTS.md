@@ -348,3 +348,41 @@ pnpm typecheck           # tsc --noEmit
   discovery `reconnect` (no plain Retry that cannot succeed). Tx not-found
   pages list the three causes (pending / other network with same-hash
   quick links / reorged out) instead of one merged hint
+- **2026-09-20 fix wave (P1/P2 round 2)** — cross-cutting consistency fixes:
+  EOAs on the contract route are a **fact, not a failure** —
+  `ContractSourceService.getContractSource` checks on-chain code before
+  caching `unverified` (returns null for EOAs; lazily deletes pre-fix dirty
+  rows), source/abi routes answer `404 + code:'not_a_contract'`, and
+  **RouterError** (not the view — deep links reject in the loader) renders
+  a dedicated "This address is not a contract" card with a View-as-address
+  link. Address pages run a **page-level two-tier checksum guard**
+  (`views/Address/addressValidity.ts`: shape vs EIP-55, matching
+  `server/validation.ts` semantics — all-lower/all-upper skip checksum) —
+  an invalid address shows one guidance card with an all-lowercase
+  recovery link instead of per-tab contradictory verdicts; the tx-heuristic
+  scan only runs while the transactions tab is active (transfers deep links
+  no longer burn the 30s backend scan or rewrite `?page=`); balances format
+  via `formatUnits` with `nativeCurrency.decimals` (was hardcoded
+  `formatEther`, 10¹²× off on 6-decimal chains). `/search` re-searches
+  whenever `?q=`/`?chain=` differ from the last consumed pair (the one-shot
+  boolean deep-link guard dead-ended in-page re-searches); header
+  hash/block searches surface request failures as an inline notice
+  (`unreachable` kind for backend-down, never worded as "no results").
+  Zero-address miners (Bor/PoS chains whose validator isn't in the EVM
+  header) render "Validator not exposed by this chain's RPC" — never a
+  clickable dead entity (`describeBlockProducer` in `utils/blockRpcData`).
+  Events staleness banner counts only checkpointed/completed ranges
+  (all-pending shows "Nothing indexed yet"); `continue` quick mode is
+  exempt from the overlap confirmation (its 1-block overlap is the
+  intentional inclusive head, same as catchup). Diamond facets survive
+  cache round-trips (`implementation_addresses` JSON column, migration
+  0006). Backend: transactions list implements documented `?offset=` +
+  returns `total`; address validation unified on `getValidatedAddress`
+  across events/interact routes (lowercase storage keys unchanged);
+  range start/resume/delete answer **404** for missing ranges (400 =
+  state-invalid); rpc-config POST validates chainId/URL (`invalid_*`
+  codes, response carries `action: created|replaced`); open-in-ide is
+  opt-in admin-gated; docs/API.md auth section now matches the actual
+  two-tier gates. Known residual: with the backend offline the address
+  Type row can stay "Unknown" even though the RPC `eth_getCode` read
+  succeeded (SWR-layer run/abort semantics — honest, offline-only)

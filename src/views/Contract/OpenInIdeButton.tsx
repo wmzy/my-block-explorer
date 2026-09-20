@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import type { CSSProperties } from 'react';
 import { toast } from 'sonner';
 import { get, post } from '@/util/http';
+import { ApiError } from '@/util/apiError';
 
 type DetectedIde = {
   id: string;
@@ -49,12 +50,21 @@ export function OpenInIdeButton({ chainId, address }: { chainId: number; address
         setTimeout(() => setOpened(false), 2000);
       } catch (error) {
         // Remote users hit this when no local IDE bridge answers: surface
-        // the failure instead of swallowing it.
-        toast.error(
-          error instanceof Error && error.message
-            ? `Failed to open in IDE: ${error.message}`
-            : 'Failed to open in IDE. Please check that your IDE is running.',
-        );
+        // the failure instead of swallowing it. A 403 is the admin-token
+        // gate on the write endpoint: same guidance as the clear-cache
+        // 403 — the browser has no token set while the server requires
+        // ADMIN_TOKEN.
+        if (error instanceof ApiError && error.status === 403) {
+          toast.error(
+            'Failed to open in IDE: requires admin token — set it via ⚙️ RPC → Admin token. The server must have ADMIN_TOKEN configured.',
+          );
+        } else {
+          toast.error(
+            error instanceof Error && error.message
+              ? `Failed to open in IDE: ${error.message}`
+              : 'Failed to open in IDE. Please check that your IDE is running.',
+          );
+        }
       } finally {
         setOpening(false);
       }

@@ -295,7 +295,13 @@ export default function Search() {
   const router = useRouter();
   const setSearch = useSetSearch(searchSchema);
   const { q: qParam, chain } = useSearch(searchSchema);
-  const deepLinkedRef = useRef(false);
+  // The (query, chain) pair the result on screen was produced by. The
+  // deep-link effect consumes a URL state exactly once by comparing
+  // against it: a later ?q=/?chain= change (header search on this page,
+  // the header miss notice's 'Choose a network' escape) re-runs the
+  // search, while the view's own URL writes record their pair first and
+  // never re-trigger.
+  const lastConsumedRef = useRef<{ q: string; chain: number | null } | null>(null);
 
   // ENS names resolve in the browser against a mainnet client (that is
   // where the ENS registry lives). Not-found and RPC failure are distinct
@@ -368,9 +374,14 @@ export default function Search() {
     setEnsResolution(null);
     setEnsError(null);
     setResolvedChainId(null);
-    // The URL is about to be synced to this exact query — mark it as
-    // already-run so the qParam deep-link effect never re-fires for it.
-    deepLinkedRef.current = true;
+    // Record the (query, chain) pair this search consumes before any
+    // await: once the URL syncs to it below, the deep-link effect must
+    // treat it as already-run, and a re-render mid-flight must not
+    // double-fire the same pair.
+    lastConsumedRef.current = {
+      q: sanitized,
+      chain: pinnedChainId === undefined ? (chain ?? null) : pinnedChainId,
+    };
 
     try {
       // ENS names never hit the backend: detection is local and resolution
@@ -418,6 +429,10 @@ export default function Search() {
         setResolvedChainId(searchedChain);
         recordSearchHistoryEntry(sanitized, searchedChain);
         if (!navigatingToResult) {
+          // The URL pair changes here (the resolved chain may differ from
+          // ?chain=) — record the synced pair so the effect does not
+          // mistake the view's own write for a fresh deep link.
+          lastConsumedRef.current = { q: sanitized, chain: searchedChain };
           // Reflect the resolved chain into the URL (replacing the current
           // entry): the page now has a concrete chain context even when it
           // was opened without ?chain=. Search params are strings on the
@@ -450,23 +465,37 @@ export default function Search() {
     }
   };
 
-  // Deep link: ?q=<query> prefills the input and runs the search once on
-  // mount. handleSearch is intentionally left out of the deps — it is
-  // recreated every render and re-running the search would loop. It also
-  // sets deepLinkedRef itself once a search runs, so the URL sync of a
-  // manually typed query never re-triggers this effect.
+  // Deep link: ?q=<query> prefills the input and runs the search — on
+  // mount AND on every later URL change while the view stays mounted: a
+  // header search from this page (TopNavigation navigates to
+  // /search?q=new) or the header miss notice's 'Choose a network' escape
+  // (drops ?chain= so the global endpoint answers with the picker). The
+  // guard is the last-consumed (q, chain) pair, not a one-shot flag: a
+  // pair equal to what produced the current result is a no-op (no
+  // duplicate search), anything else re-runs. handleSearch is
+  // intentionally left out of the deps — it is recreated every render and
+  // re-running the search would loop. It records its own consumed pair,
+  // so the URL sync of a manually typed query never re-triggers this
+  // effect either.
   useEffect(() => {
-    if (deepLinkedRef.current || !qParam) return;
-    deepLinkedRef.current = true;
+    if (!qParam) return;
+    const consumed = lastConsumedRef.current;
+    const urlPair = { q: qParam, chain: chain ?? null };
+    if (consumed !== null && consumed.q === urlPair.q && consumed.chain === urlPair.chain) return;
+    lastConsumedRef.current = urlPair;
     setQuery(qParam);
     void handleSearch(qParam);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [qParam]);
+  }, [qParam, chain]);
 
   const handleChainSelect = async (selectedChainId: number) => {
     if (!query.trim()) return;
 
     const sanitized = sanitizeInput(query.trim());
+    // This search consumes exactly the (query, picked chain) pair — record
+    // it up front so the miss-path URL sync below (and the effect run it
+    // causes) is not mistaken for a fresh deep link.
+    lastConsumedRef.current = { q: sanitized, chain: selectedChainId };
     setIsSearching(true);
     setError(null);
 
@@ -544,6 +573,9 @@ export default function Search() {
     if (query.trim()) {
       void handleSearch(query, newChainId);
     } else {
+      // No query to re-run, but the URL write below must not be mistaken
+      // for a deep link either: record the pair it will produce.
+      lastConsumedRef.current = { q: qParam ?? '', chain: newChainId };
       void setSearch(
         { ...(qParam ? { q: qParam } : {}), chain: String(newChainId) },
         { replace: true },

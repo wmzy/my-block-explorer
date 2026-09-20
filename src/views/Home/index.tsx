@@ -19,6 +19,7 @@ import { LoadingState } from '@/components/ui/LoadingState';
 import { Button } from '@/components/ui/Button';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { useLatestBlocksFeed, useLatestTransactionsFeed } from '@/services/homeFeed';
+import { describeBlockProducer } from '@/utils/blockRpcData';
 import { redirectReplace, rememberChainId } from './Landing';
 import { UnsupportedChainState } from './UnsupportedChainState';
 
@@ -366,41 +367,56 @@ export default function Home() {
                 </div>
               </CardHeader>
               <CardContent>
-                {blocks.map(block => (
-                  <div key={block.number} className={listItem}>
-                    <div className={listIcon}>Bk</div>
-                    <div className={listBody}>
-                      <div className={listRow}>
-                        <TypedLink
-                          to={`/chain/${currentChainId}/block/${block.number}`}
-                          className={listPrimary}
-                        >
-                          {formatNumber(block.number)}
-                        </TypedLink>
-                        <span className={listMeta}>{formatRelativeTime(block.timestamp)}</span>
-                      </div>
-                      <div className={listRow}>
-                        <span className={listSecondary}>
-                          Miner{' '}
+                {blocks.map(block => {
+                  // Bor-style PoS chains report the zero address as miner;
+                  // classify once so only a real producer gets a link.
+                  const producer = describeBlockProducer(block.miner);
+                  return (
+                    <div key={block.number} className={listItem}>
+                      <div className={listIcon}>Bk</div>
+                      <div className={listBody}>
+                        <div className={listRow}>
                           <TypedLink
-                            to={`/chain/${currentChainId}/address/${block.miner}`}
+                            to={`/chain/${currentChainId}/block/${block.number}`}
                             className={listPrimary}
-                            style={{ fontWeight: 'normal' }}
                           >
-                            {formatAddress(block.miner, 4)}
+                            {formatNumber(block.number)}
                           </TypedLink>
-                        </span>
-                        <span className={listValue}>{block.transactionCount} txns</span>
-                      </div>
-                      {block.baseFeePerGas && (
-                        <div className={listSecondary}>
-                          Base fee: {formatFixed(BigInt(block.baseFeePerGas), 9, 4)} Gwei · Size:{' '}
-                          {formatNumber(block.sizeBytes ?? 0)} B
+                          <span className={listMeta}>
+                            {formatRelativeTime(block.timestamp)}
+                          </span>
                         </div>
-                      )}
+                        <div className={listRow}>
+                          <span className={listSecondary}>
+                            {producer.kind === 'validator' ? (
+                              <>
+                                Miner{' '}
+                                <TypedLink
+                                  to={`/chain/${currentChainId}/address/${producer.address}`}
+                                  className={listPrimary}
+                                  style={{ fontWeight: 'normal' }}
+                                >
+                                  {formatAddress(producer.address, 4)}
+                                </TypedLink>
+                              </>
+                            ) : (
+                              // Honest placeholder instead of a link to the
+                              // meaningless zero-address page.
+                              'Validator not exposed by this chain’s RPC'
+                            )}
+                          </span>
+                          <span className={listValue}>{block.transactionCount} txns</span>
+                        </div>
+                        {block.baseFeePerGas && (
+                          <div className={listSecondary}>
+                            Base fee: {formatFixed(BigInt(block.baseFeePerGas), 9, 4)} Gwei · Size:{' '}
+                            {formatNumber(block.sizeBytes ?? 0)} B
+                          </div>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
                 <TypedLink to={`/chain/${currentChainId}/blocks`} className={viewAllLink}>
                   View all blocks →
                 </TypedLink>

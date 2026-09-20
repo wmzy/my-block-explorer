@@ -4,7 +4,7 @@ import { contractSourceService } from '../services/ContractSourceService';
 
 const logger = createLogger('contracts-routes');
 import { contractInteractionService } from '../services/ContractInteractionService';
-import { getChainName, isChainSupported } from '../config/chains';
+import { getChainName } from '../config/chains';
 import { getValidatedChainId, getValidatedAddress } from '../server/validation';
 import { safeJsonResponse } from '../utils/serialization';
 import { requireAdminTokenIfConfigured } from '../middleware/admin-token';
@@ -48,7 +48,15 @@ app.get('/chains/:chainId/contracts/:address/source', async c => {
     const contractSource = await contractSourceService.getContractSource(chainId, address);
 
     if (!contractSource) {
-      return c.json({ error: 'Contract not found or not a contract address' }, 404);
+      // null means the address has no deployed code (C-1: the frontend
+      // detects err.code === 'not_a_contract' to show an EOA state).
+      return c.json(
+        {
+          message: `Address ${address} is not a contract on chain ${chainId}`,
+          code: 'not_a_contract',
+        },
+        404,
+      );
     }
 
     c.header('X-Data-Source', 'contract-verification');
@@ -98,7 +106,14 @@ app.get('/chains/:chainId/contracts/:address/abi', async c => {
     ]);
 
     if (!contractSource) {
-      return c.json({ error: 'Contract not found or not a contract address' }, 404);
+      // Same C-1 contract as the source endpoint: null === no deployed code.
+      return c.json(
+        {
+          message: `Address ${address} is not a contract on chain ${chainId}`,
+          code: 'not_a_contract',
+        },
+        404,
+      );
     }
 
     c.header('X-Data-Source', 'contract-verification');
@@ -165,14 +180,6 @@ app.post('/chains/:chainId/contracts/:address/read', async c => {
   const chainId = getValidatedChainId(c.req.param('chainId'));
   const address = getValidatedAddress(c.req.param('address'));
 
-  if (isNaN(chainId) || !isChainSupported(chainId)) {
-    return c.json({ error: 'Unsupported chain' }, 400);
-  }
-
-  if (!address || !/^0x[a-fA-F0-9]{40}$/.test(address)) {
-    return c.json({ error: 'Invalid contract address' }, 400);
-  }
-
   try {
     const body = await c.req.json();
     const { functionName, args = [] } = body;
@@ -229,14 +236,6 @@ app.post('/chains/:chainId/contracts/:address/read', async c => {
 app.post('/chains/:chainId/contracts/:address/simulate', async c => {
   const chainId = getValidatedChainId(c.req.param('chainId'));
   const address = getValidatedAddress(c.req.param('address'));
-
-  if (isNaN(chainId) || !isChainSupported(chainId)) {
-    return c.json({ error: 'Unsupported chain' }, 400);
-  }
-
-  if (!address || !/^0x[a-fA-F0-9]{40}$/.test(address)) {
-    return c.json({ error: 'Invalid contract address' }, 400);
-  }
 
   try {
     const body = await c.req.json();
@@ -299,14 +298,6 @@ app.post('/chains/:chainId/contracts/:address/simulate', async c => {
 app.post('/chains/:chainId/contracts/:address/estimate-gas', async c => {
   const chainId = getValidatedChainId(c.req.param('chainId'));
   const address = getValidatedAddress(c.req.param('address'));
-
-  if (isNaN(chainId) || !isChainSupported(chainId)) {
-    return c.json({ error: 'Unsupported chain' }, 400);
-  }
-
-  if (!address || !/^0x[a-fA-F0-9]{40}$/.test(address)) {
-    return c.json({ error: 'Invalid contract address' }, 400);
-  }
 
   try {
     const body = await c.req.json();
@@ -374,14 +365,6 @@ app.get('/chains/:chainId/contracts/:address/creation', async c => {
   const chainId = getValidatedChainId(c.req.param('chainId'));
   const address = getValidatedAddress(c.req.param('address'));
 
-  if (isNaN(chainId) || !isChainSupported(chainId)) {
-    return c.json({ error: 'Unsupported chain' }, 400);
-  }
-
-  if (!address || !/^0x[a-fA-F0-9]{40}$/.test(address)) {
-    return c.json({ error: 'Invalid contract address' }, 400);
-  }
-
   try {
     const creationInfo = await contractSourceService.getContractCreationInfo(chainId, address);
 
@@ -431,7 +414,10 @@ app.get('/chains/:chainId/contracts/:address/ides', async c => {
   });
 });
 
-app.post('/chains/:chainId/contracts/:address/open-in-ide', async c => {
+// Writes contract sources to disk and spawns a local IDE process, so this
+// is strictly admin-gated when ADMIN_TOKEN is configured (the frontend http
+// layer injects the x-admin-token header automatically).
+app.post('/chains/:chainId/contracts/:address/open-in-ide', requireAdminTokenIfConfigured, async c => {
   const chainId = getValidatedChainId(c.req.param('chainId'));
   const address = getValidatedAddress(c.req.param('address'));
 
