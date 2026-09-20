@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { css } from '@linaria/core';
-import { TypedLink, useMatched } from '@native-router/react';
+import { TypedLink, useMatched, useSearch, useSetSearch } from '@native-router/react';
+import { z } from 'zod';
 
 import TopNavigation from '@/components/TopNavigation';
 import { Badge } from '@/components/ui/Badge';
@@ -51,6 +52,13 @@ const newBlocksHint = css`
   color: var(--haze-color-text);
 `;
 
+// Search params: ?page=K is the pagination index (1 when absent or
+// garbage) — it lives in the URL (same contract as the transactions list)
+// so refresh, browser back/forward and shared links keep the page.
+const searchSchema = z.object({
+  page: z.coerce.number().int().min(1).catch(1),
+});
+
 // Block-number cell: the number link with the finality badge beside it.
 const blockNumberCell = css`
   display: flex;
@@ -78,7 +86,8 @@ const formatMiner = (miner: string): string => {
 
 export default function BlocksList() {
   const { params, router } = useMatched();
-  const [page, setPage] = useState(1);
+  const setSearch = useSetSearch(searchSchema);
+  const { page } = useSearch(searchSchema);
 
   const currentChainId = Number.parseInt(params.chainId ?? '1', 10);
   const chainInfo = getChainInfo(currentChainId);
@@ -91,9 +100,7 @@ export default function BlocksList() {
   // `at` records the dataUpdatedAt of the head answer the anchor was taken
   // from — it distinguishes "the answer Refresh is waiting for" from the
   // one already frozen.
-  const [anchor, setAnchor] = useState<{ chainId: number; head: bigint; at: number } | null>(
-    null,
-  );
+  const [anchor, setAnchor] = useState<{ chainId: number; head: bigint; at: number } | null>(null);
   const [reanchorPending, setReanchorPending] = useState(false);
 
   // Head entry (no cursor): the anchor source. Its cached per-cursor entry
@@ -108,15 +115,14 @@ export default function BlocksList() {
   // Anchor adoption: the first head answer for the current chain, or —
   // while a Refresh is pending — the first strictly newer head answer.
   // Plain background revalidation never re-anchors; only Refresh (below)
-  // sets the pending flag.
+  // sets the pending flag. The page itself is NOT reset here: it lives in
+  // the URL (?page=), and a chain switch lands on a URL without the param
+  // (page 1) while a fresh ?page=K deep link must keep its page.
   useEffect(() => {
     if (latestBlockNumber === null || headUpdatedAt === undefined) return;
-    // A fresh frame starts at page 1 (covers a chain switch from deep in
-    // the old chain's list).
     const adopt = () => {
       setAnchor({ chainId: currentChainId, head: latestBlockNumber, at: headUpdatedAt });
       setReanchorPending(false);
-      setPage(1);
     };
     if (anchored === null) {
       adopt();
@@ -134,8 +140,7 @@ export default function BlocksList() {
   // is clamped at 1 so a walk whose arithmetic would push it to 0 or below
   // can never request a dead-end page below genesis; the deepest reachable
   // page just re-reads block 0.
-  const rawCursor =
-    anchored !== null ? anchored.head - BigInt((page - 1) * LIMIT) + 1n : undefined;
+  const rawCursor = anchored !== null ? anchored.head - BigInt((page - 1) * LIMIT) + 1n : undefined;
   const beforeBlock = rawCursor === undefined ? undefined : rawCursor > 1n ? rawCursor : 1n;
 
   const pageQuery = useLatestBlocks(currentChainId, LIMIT, beforeBlock);
@@ -179,9 +184,9 @@ export default function BlocksList() {
 
   // Refresh re-anchors the walk at the live head: refetch the head entry
   // (bypassing its cache slot) and adopt the first newer answer; the page
-  // restarts immediately while the refetch is in flight.
+  // restarts immediately (URL ?page=1) while the refetch is in flight.
   const handleRefresh = () => {
-    setPage(1);
+    void setSearch(prev => ({ ...prev, page: '1' }), { replace: true });
     setReanchorPending(true);
     void headQuery.refetch();
   };
@@ -219,12 +224,7 @@ export default function BlocksList() {
               </Badge>
             )}
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleRefresh}
-            disabled={headQuery.fetching}
-          >
+          <Button variant="outline" size="sm" onClick={handleRefresh} disabled={headQuery.fetching}>
             {headQuery.fetching ? 'Refreshing…' : '↻ Refresh'}
           </Button>
         </div>
@@ -267,10 +267,7 @@ export default function BlocksList() {
                         {finality && (
                           // Finalized outranks Safe; muted variant for the
                           // settled state, info tone for merely safe.
-                          <Badge
-                            variant={finality === 'finalized' ? 'default' : 'info'}
-                            size="sm"
-                          >
+                          <Badge variant={finality === 'finalized' ? 'default' : 'info'} size="sm">
                             {finality === 'finalized' ? 'Finalized' : 'Safe'}
                           </Badge>
                         )}
@@ -300,8 +297,8 @@ export default function BlocksList() {
         {blocks.length > 0 && newBlockCount !== null && (
           <div className={newBlocksHint}>
             <span>
-              {formatNumber(Number(newBlockCount))} new{' '}
-              {newBlockCount === 1n ? 'block' : 'blocks'} —
+              {formatNumber(Number(newBlockCount))} new {newBlockCount === 1n ? 'block' : 'blocks'}{' '}
+              —
             </span>
             <Button
               variant="secondary"
@@ -322,8 +319,9 @@ export default function BlocksList() {
             }${reachedGenesis ? ' • Reached genesis' : ''}`}
             hasPrev={page > 1}
             hasNext={blocks.length >= LIMIT && !reachedGenesis}
-            onPrev={() => setPage(p => Math.max(1, p - 1))}
-            onNext={() => setPage(p => p + 1)}
+            onPrev={() =>
+              void setSearch(prev => ({ ...prev, page: String(Math.max(1, page - 1)) }))}
+            onNext={() => void setSearch(prev => ({ ...prev, page: String(page + 1) }))}
             prevLabel="Newer"
             nextLabel="Older"
           />

@@ -11,7 +11,11 @@ import {
   classifyAddressType,
   delegationTarget,
 } from '@/views/Address/addressType';
-import { addressSearchSchema } from '@/views/Address/search';
+import {
+  addressSearchSchema,
+  effectiveActivityTab,
+  type ActivityTabId,
+} from '@/views/Address/search';
 import {
   useAddressInfo,
   useAddressTransactions,
@@ -173,15 +177,22 @@ type AddressTxPage = {
   searchWindowBlocks?: number;
 };
 
-// A mixed-case address with a bad EIP-55 checksum is rejected server-side
-// by getValidatedAddress (HTTP 400 'Invalid address'); surface actionable
-// guidance instead of the raw message, keeping the original as a
-// secondary line.
+// A server-side 400 from getValidatedAddress carries a two-tier message
+// ('Invalid address format' for shape failures, 'Invalid address
+// checksum' for a mixed-case address that disagrees with its EIP-55
+// checksum). Both tiers keep the 'Invalid address' prefix so this match
+// stays stable; the FORMAT tier is additionally decided locally below —
+// the address string itself is the ground truth, not the server message.
 const invalidChecksumHelp =
   'This address has an invalid checksum. Try the all-lowercase form or copy the address from a trusted source.';
 
 const isInvalidAddressMessage = (message: string | undefined): boolean =>
   message?.includes('Invalid address') ?? false;
+
+// 0x-prefixed, 40 hex characters — the shape getValidatedAddress accepts
+// before checksum evaluation. Anything else is a format error, never a
+// checksum one.
+const isHexAddressShape = (address: string): boolean => /^0x[0-9a-fA-F]{40}$/.test(address);
 
 // Hard ceiling of the address-tx search window (blocks) — matches the
 // backend clamp. "Search deeper" disables at this budget.
@@ -193,8 +204,7 @@ const MAX_SEARCH_WINDOW_BLOCKS = 50_000_000;
 
 // Recent-activity card tabs. The transfers tab renders its own component
 // (and owns its query there), so the unmounted tab fetches nothing.
-type ActivityTab = 'transactions' | 'transfers';
-const activityTabs: ReadonlyArray<{ id: ActivityTab; label: string }> = [
+const activityTabs: ReadonlyArray<{ id: ActivityTabId; label: string }> = [
   { id: 'transactions', label: 'Transactions' },
   { id: 'transfers', label: 'Token Transfers' },
 ];
@@ -232,7 +242,19 @@ function TxStatusBadge({
   );
 }
 
-function InvalidChecksumError({ original }: { original: string }) {
+function InvalidAddressError({ address, original }: { address: string; original: string }) {
+  // Local ground truth first: a non-hex-shaped address is a format error
+  // and the checksum guidance would be misleading ('0xGG…' has no
+  // checksum to retry in lowercase). Only a well-formed address whose
+  // server rejection can be a checksum mismatch gets the lowercase help.
+  if (!isHexAddressShape(address)) {
+    return (
+      <>
+        <ErrorState message="Not a valid address format" />
+        <p className={errorSecondary}>Original error: {original}</p>
+      </>
+    );
+  }
   return (
     <>
       <ErrorState message={invalidChecksumHelp} />
@@ -268,7 +290,8 @@ export default function Address() {
   // strings on the wire). Writes merge into the current search so a page
   // change never drops the window and vice versa.
   const setSearch = useSetSearch(addressSearchSchema);
-  const { page: txPageParam, window: txWindowParam } = useSearch(addressSearchSchema);
+  const { page: txPageParam, window: txWindowParam, tab: tabParam, ttPage: ttPageParam } =
+    useSearch(addressSearchSchema);
   const txPage = Math.max(1, Math.floor(txPageParam));
   const setTxPage = (next: number) => {
     void setSearch(prev => ({
@@ -277,14 +300,15 @@ export default function Address() {
     }));
   };
 
-  // Recent-activity tab (segmented control in the card header). The
-  // transfers query lives inside the TokenTransfers component; Refresh on
-  // that tab reaches it through a signal bump and settles via callback.
-  const [activityTab, setActivityTab] = useState<ActivityTab>('transactions');
+  // Recent-activity tab (segmented control in the card header) rides the
+  // URL as ?tab= — a tab choice survives refresh/share and back/forward.
+  // A deep-linked transfers page (?ttPage=2+) without ?tab= selects the
+  // transfers tab (see effectiveActivityTab); explicit ?tab= always wins.
+  const activityTab = effectiveActivityTab(tabParam, ttPageParam);
   const [transfersRefreshSignal, setTransfersRefreshSignal] = useState(0);
   const [transfersRefreshing, setTransfersRefreshing] = useState(false);
-  const selectActivityTab = (tab: ActivityTab) => {
-    setActivityTab(tab);
+  const selectActivityTab = (tab: ActivityTabId) => {
+    void setSearch(prev => ({ ...prev, tab }));
     // A pending transfers refresh can no longer report back once the tab
     // unmounts — drop its spinner instead of spinning forever.
     setTransfersRefreshing(false);
@@ -501,7 +525,7 @@ export default function Address() {
 
         {hasError && !isInitialLoading &&
           (isInvalidAddressMessage(errorMessage) ? (
-            <InvalidChecksumError original={errorMessage ?? ''} />
+            <InvalidAddressError address={address} original={errorMessage ?? ''} />
           ) : (
             <ErrorState message={`Error: ${errorMessage}`} />
           ))}
@@ -716,7 +740,10 @@ export default function Address() {
 
                     {txQuery.error &&
                       (isInvalidAddressMessage(txQuery.error.message) ? (
-                        <InvalidChecksumError original={txQuery.error.message} />
+                        <InvalidAddressError
+                          address={address}
+                          original={txQuery.error.message}
+                        />
                       ) : (
                         <ErrorState message={txQuery.error.message} />
                       ))}

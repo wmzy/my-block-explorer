@@ -5,8 +5,8 @@ import { parseEther } from 'viem';
 import { Collapsible } from '@/components/ui/Collapsible';
 import { getFunctionSelector, formatSelectorForDisplay } from '@/utils/functionSelector';
 import { formatResultWithLinks } from '@/utils/addressTypeDetection';
-import type { EnhancedContractFunction } from '@/utils/contractInteraction';
-import { parseFunctionArgs } from './paramParsing';
+import { functionSignature, type EnhancedContractFunction } from '@/utils/contractInteraction';
+import { parseFunctionArgs, ADDRESS_PATTERN } from './paramParsing';
 import { argsKey } from './types';
 
 const functionNameReadStyles = css`
@@ -182,7 +182,13 @@ export function FunctionCallForm({
   blockNumber,
 }: {
   func: EnhancedContractFunction;
-  onCall: (name: string, args: unknown[], rawArgs: string[], value?: string, from?: string) => void;
+  onCall: (
+    func: EnhancedContractFunction,
+    args: unknown[],
+    rawArgs: string[],
+    value?: string,
+    from?: string,
+  ) => void;
   results: Record<string, unknown>;
   errors: Record<string, string>;
   loadingStates: Record<string, boolean>;
@@ -194,6 +200,7 @@ export function FunctionCallForm({
   const [value, setValue] = useState('');
   const [valueError, setValueError] = useState('');
   const [from, setFrom] = useState('');
+  const [fromError, setFromError] = useState('');
 
   const selector = getFunctionSelector(func);
   const selectorDisplay = formatSelectorForDisplay(selector);
@@ -237,20 +244,30 @@ export function FunctionCallForm({
     }
     setValueError(newValueError);
 
-    if (!isValid || newValueError !== '') {
+    // From is optional, but a non-empty entry must be a 0x address: block
+    // the submit at the field instead of failing the simulated call later.
+    const fromTrimmed = from.trim();
+    let newFromError = '';
+    if (fromTrimmed !== '' && !ADDRESS_PATTERN.test(fromTrimmed)) {
+      newFromError = 'invalid address';
+    }
+    setFromError(newFromError);
+
+    if (!isValid || newValueError !== '' || newFromError !== '') {
       return;
     }
 
-    onCall(func.name, values, args, wei, from.trim() || undefined);
+    onCall(func, values, args, wei, fromTrimmed || undefined);
   };
 
   const getResultKey = () => {
+    // Mirrors the parent's key derivation (canonical signature, trimmed
+    // override, 'latest' when empty) so a result written by the parent for
+    // THIS overload — not a same-name sibling — is found here.
     if (func.interactionType === 'read') {
-      // Mirrors the parent's key derivation (trimmed override, 'latest'
-      // when empty) so a result written by the parent is found here.
-      return `${func.name}-${argsKey(args)}-${blockNumber.trim() || 'latest'}`;
+      return `${functionSignature(func)}-${argsKey(args)}-${blockNumber.trim() || 'latest'}`;
     } else {
-      return `${func.name}-${argsKey(args)}-${valueWei}-${from.trim()}`;
+      return `${functionSignature(func)}-${argsKey(args)}-${valueWei}-${from.trim()}`;
     }
   };
 
@@ -347,10 +364,14 @@ export function FunctionCallForm({
               <input
                 type="text"
                 value={from}
-                onChange={e => setFrom(e.target.value)}
+                onChange={e => {
+                  setFrom(e.target.value);
+                  setFromError('');
+                }}
                 placeholder="0x..."
                 className={inputStyles}
               />
+              {fromError && <div className={fieldErrorStyles}>{fromError}</div>}
             </div>
           </>
         )}

@@ -443,6 +443,9 @@ app.post('/chains/:chainId/contracts/:address/events/ranges', requireAdminTokenI
         contractAddress: address,
         rangeId: response.rangeId,
         overlaps: response.overlaps,
+        // Present when the service clamped a numeric toBlock to the chain
+        // head — the UI turns it into an inline notice.
+        truncatedToBlock: response.truncatedToBlock,
         timestamp: new Date().toISOString(),
       }),
       201,
@@ -468,7 +471,7 @@ app.post('/chains/:chainId/contracts/:address/events/ranges/quick', requireAdmin
 
   try {
     const body = await c.req.json();
-    const { mode, blockCount, direction, priority, abi } = body;
+    const { mode, blockCount, direction, priority, abi, confirmFullHistory } = body;
 
     const validModes = ['all', 'recent', 'first', 'continue', 'catchup'];
     if (!mode || typeof mode !== 'string' || !validModes.includes(mode)) {
@@ -494,11 +497,26 @@ app.post('/chains/:chainId/contracts/:address/events/ranges/quick', requireAdmin
     }
 
     let response:
-      | { success: boolean; rangeId?: number; fromBlock?: number; toBlock?: number; error?: string }
+      | {
+        success: boolean;
+        rangeId?: number;
+        fromBlock?: number;
+        toBlock?: number;
+        truncatedToBlock?: number;
+        reason?: 'full-history-unconfirmed';
+        spanBlocks?: number;
+        head?: number;
+        error?: string;
+      }
       | undefined;
     switch (mode) {
       case 'all':
-        response = await createRangeAll(chainId, address, { direction, priority });
+        response = await createRangeAll(chainId, address, {
+          direction,
+          priority,
+          // Strict true: only an explicit confirmation unlocks full history.
+          confirmFullHistory: confirmFullHistory === true,
+        });
         break;
       case 'recent':
         response = await createRangeRecent(chainId, address, blockCount, { direction, priority });
@@ -518,6 +536,29 @@ app.post('/chains/:chainId/contracts/:address/events/ranges/quick', requireAdmin
       // Catchup without history has its own contract error body.
       if (response?.error === 'No previous range found. Cannot catch up.') {
         return c.json({ error: response.error }, 400);
+      }
+      // The full-history gate is a confirmation prompt, not a failure:
+      // mirror the span facts and duplicate them into `details` — the
+      // frontend HTTP layer (toApiError) only surfaces message/code/
+      // details, so that is the channel the UI reads the reason from.
+      if (response?.reason === 'full-history-unconfirmed') {
+        return c.json(
+          {
+            error: 'Full history confirmation required',
+            message: response.error,
+            reason: response.reason,
+            spanBlocks: response.spanBlocks,
+            fromBlock: response.fromBlock,
+            head: response.head,
+            details: {
+              reason: response.reason,
+              spanBlocks: response.spanBlocks,
+              fromBlock: response.fromBlock,
+              head: response.head,
+            },
+          },
+          400,
+        );
       }
       return c.json(
         {
@@ -546,6 +587,7 @@ app.post('/chains/:chainId/contracts/:address/events/ranges/quick', requireAdmin
         rangeId: response.rangeId,
         fromBlock: response.fromBlock,
         toBlock: response.toBlock,
+        truncatedToBlock: response.truncatedToBlock,
         mode,
         started: autoStart.started,
         startError: autoStart.startError,

@@ -1,12 +1,15 @@
+import { useEffect } from 'react';
 import { css } from '@linaria/core';
 import {
   View,
   HistoryRouter as Router,
   createRoutes,
+  useRouter,
   type RoutePaths,
 } from '@native-router/react';
 import { ConnectionStatus } from '@/components/ServiceSetup';
 import { contractSourceLoader } from '@/services/dataloaders';
+import { getChainName } from '@/config/chains';
 
 import RouterError from './RouterError';
 import NotFound from './NotFound';
@@ -102,6 +105,81 @@ const routerBaseUrl = import.meta.env.BASE_URL.startsWith('/')
   ? import.meta.env.BASE_URL.slice(0, -1)
   : '';
 
+const FALLBACK_TITLE = 'My Block Explorer';
+
+// 10 chars = the 0x prefix + 8 nibbles: enough to identify a hash in a tab
+// title while staying narrow.
+const shortHash = (value: string): string => `${value.slice(0, 10)}…`;
+
+// Tab title per route, derived from the bare location (no router context
+// needed — one pure function per URL shape, unit-testable without a
+// harness). Unknown shapes keep the static index.html title.
+export function deriveDocumentTitle(pathname: string, search: string): string {
+  const segments = pathname.split('/').filter(Boolean);
+
+  if (segments[0] === 'search') {
+    // The /search route carries its viewing chain in ?chain= (the context
+    // the header search forwards); without it the generic suffix stands.
+    const chainParam = new URLSearchParams(search).get('chain');
+    const chainId = chainParam !== null ? Number.parseInt(chainParam, 10) : Number.NaN;
+    return Number.isFinite(chainId)
+      ? `Search · ${getChainName(chainId)}`
+      : 'Search · Explorer';
+  }
+
+  if (segments[0] !== 'chain' || segments.length < 2) return FALLBACK_TITLE;
+
+  const chainId = Number.parseInt(segments[1], 10);
+  if (!Number.isFinite(chainId)) return FALLBACK_TITLE;
+  const chainName = getChainName(chainId);
+
+  switch (segments[2]) {
+    case undefined:
+      return `${chainName} Explorer`;
+    case 'blocks':
+      return `${chainName} Blocks`;
+    case 'transactions':
+      return `${chainName} Transactions`;
+    case 'block':
+      return segments[3] ? `Block #${segments[3]} · ${chainName}` : FALLBACK_TITLE;
+    case 'tx':
+      return segments[3] ? `Tx ${shortHash(segments[3])} · ${chainName}` : FALLBACK_TITLE;
+    case 'address':
+      return segments[3] ? `Address ${shortHash(segments[3])} · ${chainName}` : FALLBACK_TITLE;
+    case 'contract':
+      // The /events subpath shares the plain contract title.
+      return segments[3] ? `Contract ${shortHash(segments[3])} · ${chainName}` : FALLBACK_TITLE;
+    default:
+      return FALLBACK_TITLE;
+  }
+}
+
+// Sets document.title per route. `useMatched` is NOT usable at this level:
+// the router provides the matched-route context only inside the resolved
+// view tree, so this follows ScrollRestoration's sanctioned pattern instead
+// — observe the router's own history (initial location + every
+// push/replace/pop) and derive the title from the bare location.
+// Exported for the harness test (mounted at the same Router-children
+// position as in App below).
+export function DocumentTitle() {
+  const router = useRouter();
+
+  useEffect(() => {
+    const sync = () => {
+      const { pathname, search } = router.history.location;
+      const localPath =
+        router.baseUrl !== '' && pathname.startsWith(router.baseUrl)
+          ? pathname.slice(router.baseUrl.length)
+          : pathname;
+      document.title = deriveDocumentTitle(localPath, search);
+    };
+    sync();
+    return router.history.listen(sync);
+  }, [router]);
+
+  return null;
+}
+
 export default function App() {
   return (
     <Router
@@ -110,6 +188,7 @@ export default function App() {
       errorHandler={(error) => <RouterError error={error} />}
       notFound={NotFound}
     >
+      <DocumentTitle />
       <View />
       <ConnectionStatus />
     </Router>

@@ -33,12 +33,15 @@ export type TokenTransfer = {
 // `nextCursor` are base-10 decimal offsets into the server-cached full
 // list ('0' = first page; nextCursor null at the end); coverage 'partial'
 // means the scan budget ran out before covering windowBlocks — never read
-// it as a trusted empty.
+// it as a trusted empty. `scannedAt` is the FIRST scan's time of the
+// server-side ~60s cache entry (a cache hit does not reset it); optional
+// because pre-scannedAt payloads stay renderable.
 export type TokenTransferPage = {
   transfers: TokenTransfer[];
   nextCursor: string | null;
   coverage: 'complete' | 'partial';
   windowBlocks: number;
+  scannedAt?: string;
 };
 
 // One-shot cache-bypass latch for the tab's explicit Retry/Refresh and

@@ -34,13 +34,13 @@ vi.mock('@/config/chains', () => ({
   getSortedChains: () => [{ id: 1, name: 'Ethereum' }],
 }));
 
-vi.mock('@/utils/format', () => ({
-  formatNumber: (n: number) => n.toLocaleString(),
-  formatAddress: (a: string) => a,
-  formatHash: (h: string) => h,
-  formatRelativeTime: () => '2 min ago',
-  formatEth: (v: bigint) => v.toString(),
-}));
+// Real formatters are pure functions; keep them (spread the actual module
+// instead of a hand-listed factory that silently breaks when the view
+// imports more). Only relative time is pinned for determinism.
+vi.mock('@/utils/format', async importOriginal => {
+  const actual = await importOriginal<typeof import('@/utils/format')>();
+  return { ...actual, formatRelativeTime: () => '2 min ago' };
+});
 
 type FeedResult = {
   data?: unknown;
@@ -102,10 +102,7 @@ describe('Home view', () => {
 
     // Recovery CTAs: the deterministic preferred chain (mainnet) and the
     // landing route that leads to the chain list entry.
-    expect(screen.getByRole('link', { name: 'Go to Mainnet' })).toHaveAttribute(
-      'href',
-      '/chain/1',
-    );
+    expect(screen.getByRole('link', { name: 'Go to Mainnet' })).toHaveAttribute('href', '/chain/1');
     expect(screen.getByRole('link', { name: 'Open chain list' })).toHaveAttribute('href', '/');
 
     // The unsupported state stays put: no hero of another chain ever
@@ -116,5 +113,46 @@ describe('Home view', () => {
     // that cannot render).
     expect(mockUseLatestBlocksFeed).toHaveBeenCalledWith(0);
     expect(mockUseLatestTransactionsFeed).toHaveBeenCalledWith(0);
+  });
+
+  it('distinguishes an unparseable chain param from an unsupported chain id', async () => {
+    renderHome('/chain/abc');
+
+    // "abc" is a broken link, not an unknown chain: the message names the
+    // raw param and never renders a bare NaN.
+    expect(await screen.findByText(/Invalid chain ID/)).toBeInTheDocument();
+    expect(screen.getByText(/"abc" is not a valid chain ID/)).toBeInTheDocument();
+    expect(screen.queryByText(/NaN/)).not.toBeInTheDocument();
+    // The same recovery CTAs apply.
+    expect(screen.getByRole('link', { name: 'Go to Mainnet' })).toHaveAttribute('href', '/chain/1');
+    // Feeds stay parked on the guarded id 0.
+    expect(mockUseLatestBlocksFeed).toHaveBeenCalledWith(0);
+  });
+
+  it('labels a pending feed transaction Pending and floors dust values at <0.0001', async () => {
+    mockUseLatestTransactionsFeed.mockReturnValue({
+      data: [
+        // Pending: no block position, no timestamp — the meta line must
+        // not render "Block 0" (the old null-unaware fallback).
+        {
+          hash: '0xpending00000000000000000000000000000000000000000000000000000',
+          blockNumber: null,
+          transactionIndex: null,
+          fromAddress: '0x1111111111111111111111111111111111111111',
+          toAddress: '0x2222222222222222222222222222222222222222',
+          value: '1',
+          timestamp: undefined,
+        },
+      ],
+      loading: false,
+    });
+    renderHome('/chain/1');
+
+    expect(await screen.findByText('Pending')).toBeInTheDocument();
+    expect(screen.queryByText(/Block 0/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Block NaN/)).not.toBeInTheDocument();
+    // 1 wei uses the shared dust floor, not a misleading 0.0000.
+    expect(screen.getByText('<0.0001 ETH')).toBeInTheDocument();
+    expect(screen.queryByText('0.0000 ETH')).not.toBeInTheDocument();
   });
 });

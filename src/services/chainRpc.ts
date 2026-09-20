@@ -33,6 +33,7 @@ import {
   getTransactionByHash,
 } from '@/utils/blockRpcData';
 import { DEFAULT_STALE_TIME } from '@/util/loaderCache';
+import { parseBlockNumberParam } from '@/utils/chainParam';
 import { bindQueryFn, createQueryCache, createQueryHook } from '@/util/useQuery';
 import type { PolledQueryResult } from './polledQuery';
 
@@ -82,8 +83,10 @@ async function fetchBlockByNumber(
   signal?: AbortSignal,
 ): Promise<RpcBlock | undefined> {
   void signal;
-  const parsed = Number(blockNumberStr);
-  if (!(chainId > 0) || !Number.isFinite(parsed) || parsed < 0) return undefined;
+  // Decimal-only guard: Number() would accept "0x1a" (hex!) and silently
+  // load block 26 — an invalid param resolves undefined without an RPC call.
+  const parsed = parseBlockNumberParam(blockNumberStr);
+  if (!(chainId > 0) || parsed === null) return undefined;
   return getBlockByNumber(chainId, BigInt(blockNumberStr));
 }
 
@@ -97,11 +100,10 @@ async function fetchTransactionByHash(
   return getTransactionByHash(chainId, txHash);
 }
 
-const latestBlocksCache = createQueryCache<LatestBlocksPage | undefined, [
-  number,
-  number,
-  string | undefined,
-]>('rpc-latest-blocks');
+const latestBlocksCache = createQueryCache<
+  LatestBlocksPage | undefined,
+  [number, number, string | undefined]
+>('rpc-latest-blocks');
 
 const latestTransactionsCache = createQueryCache<
   LatestTransactionsPage | undefined,

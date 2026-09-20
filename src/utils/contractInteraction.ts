@@ -387,6 +387,17 @@ export type FilterState = {
   name: string;
 };
 
+// Canonical name(inputs) signature: disambiguates same-name overloads for
+// dedupe and per-call result keys. `inputs` is optional because raw
+// JSON.parse'd ABI entries may omit the key (the parser loop guards the
+// same way).
+export function functionSignature(func: {
+  name: string;
+  inputs?: readonly { type: string; name?: string }[];
+}): string {
+  return `${func.name}(${(func.inputs ?? []).map(i => i.type).join(',')})`;
+}
+
 /**
  * Parse both proxy and implementation ABIs, tagging functions by source
  * For non-proxy contracts, all functions are tagged as 'impl'
@@ -432,6 +443,12 @@ export function parseContractFunctionsUnified(
     }
   }
 
+  // Signatures already provided by the implementation ABI: the proxy loop
+  // dedupes on the full signature, not the bare name — a same-name overload
+  // with different parameters is a distinct entry, only an exact signature
+  // match is a duplicate.
+  const implSignatures = new Set(functions.map(functionSignature));
+
   // If this is a proxy contract AND we have a separate proxy ABI, also add proxy functions
   // Note: Most proxy admin functions are NOT in the proxy ABI, but some custom proxies may have them
   if (proxyABI && implABI && proxyABI !== implABI) {
@@ -442,9 +459,8 @@ export function parseContractFunctionsUnified(
       );
 
       for (const func of funcs) {
-        // Skip functions that exist in impl (avoid duplicates)
-        const existsInImpl = functions.some(f => f.name === func.name);
-        if (existsInImpl) continue;
+        // Skip signatures that exist in impl (avoid duplicates)
+        if (implSignatures.has(functionSignature(func))) continue;
 
         const isRead = func.stateMutability === 'view' || func.stateMutability === 'pure';
         functions.push({

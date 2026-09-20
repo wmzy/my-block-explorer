@@ -11,8 +11,9 @@ import {
   formatAddress,
   formatHash,
   formatRelativeTime,
-  formatEth,
+  formatValue,
 } from '@/utils/format';
+import { parseChainIdParam } from '@/utils/chainParam';
 import { PageContainer } from '@/components/ui/PageLayout';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { Button } from '@/components/ui/Button';
@@ -208,7 +209,14 @@ function formatFixed(value: bigint, decimals: number, fractionDigits: number): s
 export default function Home() {
   const { params, router } = useMatched();
 
-  const currentChainId = params.chainId ? parseInt(params.chainId, 10) : 1;
+  // An unparseable :chainId param ("abc", "0x1", "1e5") is a broken link,
+  // not an unsupported chain: parseChainIdParam returns null and the raw
+  // param travels on to the unsupported state so it can say which of the
+  // two problems this is. The guarded id 0 parks the feeds (no RPC traffic
+  // for a chain that cannot render).
+  const rawChainId = params.chainId;
+  const parsedChainId = rawChainId === undefined ? 1 : parseChainIdParam(rawChainId);
+  const currentChainId = parsedChainId ?? 0;
   const chainInfo = getChainInfo(currentChainId);
   const symbol = getChainSymbol(currentChainId);
 
@@ -270,7 +278,7 @@ export default function Home() {
       <>
         <TopNavigation currentChainId={currentChainId} onChainChange={handleChainChange} />
         <PageContainer>
-          <UnsupportedChainState chainId={currentChainId} />
+          <UnsupportedChainState chainId={currentChainId} rawChainId={rawChainId} />
         </PageContainer>
       </>
     );
@@ -329,8 +337,7 @@ export default function Home() {
           <Alert variant="warning">
             <div className={staleBannerRow}>
               <span>
-                Live data unavailable — showing data from{' '}
-                {formatRelativeTime(lastUpdatedAt)}
+                Live data unavailable — showing data from {formatRelativeTime(lastUpdatedAt)}
               </span>
               <Button variant="outline" size="sm" onClick={handleRetry}>
                 Retry
@@ -387,8 +394,8 @@ export default function Home() {
                       </div>
                       {block.baseFeePerGas && (
                         <div className={listSecondary}>
-                          Base fee: {formatFixed(BigInt(block.baseFeePerGas), 9, 4)} Gwei ·
-                          Size: {formatNumber(block.sizeBytes ?? 0)} B
+                          Base fee: {formatFixed(BigInt(block.baseFeePerGas), 9, 4)} Gwei · Size:{' '}
+                          {formatNumber(block.sizeBytes ?? 0)} B
                         </div>
                       )}
                     </div>
@@ -422,7 +429,9 @@ export default function Home() {
                         <span className={listMeta}>
                           {tx.timestamp
                             ? formatRelativeTime(tx.timestamp)
-                            : `Block ${formatNumber(tx.blockNumber)}`}
+                            : tx.blockNumber === null
+                              ? 'Pending'
+                              : `Block ${formatNumber(tx.blockNumber)}`}
                         </span>
                       </div>
                       <div className={listRow}>
@@ -450,17 +459,11 @@ export default function Home() {
                         </span>
                       </div>
                       <div className={listRow}>
-                        <span className={listValue}>
-                          {formatEth(tx.value)} {symbol}
-                        </span>
+                        <span className={listValue}>{formatValue(BigInt(tx.value), symbol)}</span>
                         {tx.gasUsed && tx.effectiveGasPrice && (
                           <span className={listSecondary}>
                             Fee:{' '}
-                            {formatFixed(
-                              BigInt(tx.gasUsed) * BigInt(tx.effectiveGasPrice),
-                              18,
-                              6,
-                            )}{' '}
+                            {formatFixed(BigInt(tx.gasUsed) * BigInt(tx.effectiveGasPrice), 18, 6)}{' '}
                             {symbol}
                           </span>
                         )}

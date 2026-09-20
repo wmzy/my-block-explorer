@@ -56,10 +56,12 @@ export function readSearchHistory(): SearchHistoryEntry[] {
 
 /**
  * Record an executed search on the chain it actually landed on (for ENS,
- * the destination actually opened). Deduplicates by query+chainId and
- * moves the entry to the front (newest-first), capping the list. A legacy
- * same-query entry with no chain is superseded: the new record carries
- * strictly more information.
+ * the destination actually opened). Deduplicates by query: a re-run
+ * search replaces its previous entry and moves to the front
+ * (newest-first) with the new chain — so hunting the same hash across
+ * network after network leaves exactly one entry, pointing at the chain
+ * last searched. A legacy same-query entry without a chain is superseded
+ * the same way. The list stays capped.
  */
 export function recordSearchHistoryEntry(
   query: string,
@@ -68,12 +70,7 @@ export function recordSearchHistoryEntry(
   const trimmed = query.trim();
   if (!trimmed) return readSearchHistory();
 
-  const rest = readSearchHistory().filter(
-    entry => !(
-      entry.query === trimmed
-      && (entry.chainId === chainId || entry.chainId === undefined)
-    ),
-  );
+  const rest = readSearchHistory().filter(entry => entry.query !== trimmed);
   return persist([{ query: trimmed, chainId }, ...rest].slice(0, SEARCH_HISTORY_MAX_ENTRIES));
 }
 

@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 const mockGetClient = vi.hoisted(() => vi.fn());
 
@@ -318,6 +318,107 @@ describe('ContractSourceService - Proxy Detection', () => {
       expect(result.isProxy).toBe(true);
       expect(result.proxyType).toBe('transparent');
       expect(result.implementationAddress).toBe(implementationAddress.toLowerCase());
+    });
+  });
+
+  describe('fetchFromSourcify proxy facets', () => {
+    const chainId = 1;
+    const diamondAddress = '0xabc1111111111111111111111111111111111111';
+    const F0 = '0xfac0000000000000000000000000000000000000';
+    const F1 = '0xfac1111111111111111111111111111111111111';
+    const F2 = '0xfac2222222222222222222222222222222222222';
+
+    const jsonResponse = (payload: unknown) => ({
+      ok: true,
+      status: 200,
+      json: async () => payload,
+    });
+
+    // Plain verified payload for the facet lookups (fetchFromSourcify
+    // recurses into getContractSource on facet[0]): without it the proxy
+    // branch would recurse forever.
+    const verifiedFacetPayload = {
+      match: 'match',
+      abi: [],
+      compilation: { name: 'DiamondLoupeFacet', compilerVersion: 'v0.8.20' },
+      sources: {},
+    };
+
+    const stubSourcifyFetch = (diamondPayload: unknown) =>
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async (url: unknown) =>
+          String(url).includes(diamondAddress)
+            ? jsonResponse(diamondPayload)
+            : jsonResponse(verifiedFacetPayload),
+        ),
+      );
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it('keeps every facet of a diamond proxy, facet[0] as implementationAddress', async () => {
+      // Facet[0] recursion goes through detectProxy (fresh, non-proxy
+      // payload): all storage slots empty and no ABI fallback keeps it a
+      // plain contract.
+      mockClient.getStorageAt.mockResolvedValue(
+        '0x0000000000000000000000000000000000000000000000000000000000000000',
+      );
+      mockClient.getCode.mockResolvedValue('0x608060405234801561001057600080fd5b50');
+      mockClient.readContract.mockRejectedValue(new Error('execution reverted'));
+
+      stubSourcifyFetch({
+        match: 'match',
+        abi: [],
+        compilation: { name: 'Diamond', compilerVersion: 'v0.8.0' },
+        sources: {},
+        proxyResolution: {
+          isProxy: true,
+          proxyType: 'DiamondProxy',
+          implementations: [{ address: F0 }, { address: F1 }, { address: F2 }],
+        },
+      });
+
+      const result = await (contractSourceService as any).fetchFromSourcify(
+        chainId,
+        diamondAddress,
+      );
+
+      expect(result.isProxy).toBe(true);
+      expect(result.proxyType).toBe('diamond');
+      // facet[0] stays the compatibility implementationAddress…
+      expect(result.implementationAddress).toBe(F0);
+      // …but the full facet list is preserved instead of collapsing to [0].
+      expect(result.implementationAddresses).toEqual([F0, F1, F2]);
+    });
+
+    it('exposes a single implementation as a one-entry facet list', async () => {
+      mockClient.getStorageAt.mockResolvedValue(
+        '0x0000000000000000000000000000000000000000000000000000000000000000',
+      );
+      mockClient.getCode.mockResolvedValue('0x608060405234801561001057600080fd5b50');
+      mockClient.readContract.mockRejectedValue(new Error('execution reverted'));
+
+      stubSourcifyFetch({
+        match: 'match',
+        abi: [],
+        compilation: { name: 'Proxy', compilerVersion: 'v0.8.0' },
+        sources: {},
+        proxyResolution: {
+          isProxy: true,
+          proxyType: 'EIP1967Proxy',
+          implementations: [{ address: F0 }],
+        },
+      });
+
+      const result = await (contractSourceService as any).fetchFromSourcify(
+        chainId,
+        diamondAddress,
+      );
+
+      expect(result.implementationAddress).toBe(F0);
+      expect(result.implementationAddresses).toEqual([F0]);
     });
   });
 });

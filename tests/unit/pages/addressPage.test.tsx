@@ -578,6 +578,45 @@ describe('Address view', () => {
     expect(screen.queryByRole('columnheader', { name: 'Amount' })).not.toBeInTheDocument();
   });
 
+  it('writes the tab choice into ?tab= so it survives refresh and sharing', async () => {
+    renderPage();
+
+    expect(screen.getByTestId('search-probe')).toHaveTextContent(/^$/);
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Token Transfers' }));
+
+    await screen.findByRole('columnheader', { name: 'Amount' });
+    expect(screen.getByTestId('search-probe')).toHaveTextContent('tab=transfers');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Transactions' }));
+
+    await screen.findByRole('columnheader', { name: 'Value' });
+    expect(screen.getByTestId('search-probe')).toHaveTextContent('tab=transactions');
+  });
+
+  it('renders the transfers tab from a ?tab=transfers deep link', async () => {
+    renderPage(`/chain/1/address/${mocks.testAddress}?tab=transfers`);
+
+    expect(await screen.findByRole('columnheader', { name: 'Amount' })).toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: 'Value' })).not.toBeInTheDocument();
+  });
+
+  it('lands a ?ttPage= deep link on the transfers tab', async () => {
+    renderPage(`/chain/1/address/${mocks.testAddress}?ttPage=2`);
+
+    // The page number only exists on the transfers tab, so the deep link
+    // selects it even without an explicit ?tab=.
+    expect(await screen.findByRole('columnheader', { name: 'Amount' })).toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: 'Value' })).not.toBeInTheDocument();
+  });
+
+  it('lets an explicit ?tab=transactions win over a deep-linked ?ttPage=', async () => {
+    renderPage(`/chain/1/address/${mocks.testAddress}?tab=transactions&ttPage=2`);
+
+    expect(await screen.findByRole('columnheader', { name: 'Value' })).toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: 'Amount' })).not.toBeInTheDocument();
+  });
+
   it('marks the active tab button with aria-pressed', async () => {
     renderPage();
 
@@ -586,8 +625,12 @@ describe('Address view', () => {
     expect(txTab).toHaveAttribute('aria-pressed', 'true');
     expect(tokenTab).toHaveAttribute('aria-pressed', 'false');
 
+    // The tab rides the URL, so the pressed state flips once the write
+    // lands — await it instead of asserting synchronously.
     fireEvent.click(tokenTab);
-    expect(tokenTab).toHaveAttribute('aria-pressed', 'true');
+    expect(
+      await screen.findByRole('button', { name: 'Token Transfers', pressed: true }),
+    ).toBeInTheDocument();
     expect(txTab).toHaveAttribute('aria-pressed', 'false');
   });
 
@@ -597,6 +640,9 @@ describe('Address view', () => {
 
     renderPage();
     fireEvent.click(await screen.findByRole('button', { name: 'Token Transfers' }));
+    // The tab switch is a URL write (async): wait for the transfers table
+    // before Refresh so the button acts on the transfers tab.
+    await screen.findByRole('columnheader', { name: 'Amount' });
     fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
 
     expect(tokenRefetchSpy).toHaveBeenCalledTimes(1);
@@ -964,6 +1010,24 @@ describe('Address view', () => {
     expect(await screen.findByText(/This address has an invalid checksum/)).toBeInTheDocument();
     expect(screen.getByText('Original error: Invalid address')).toBeInTheDocument();
     expect(screen.queryByText('No transactions found')).not.toBeInTheDocument();
+  });
+
+  it('shows a format error for a malformed address instead of checksum advice', async () => {
+    // Shape failure ('0xGG…', 40 chars): the view classifies it LOCALLY by
+    // the address shape — the all-lowercase checksum advice would be
+    // misleading for an address that has no checksum at all.
+    mocks.realTime = {
+      data: undefined,
+      loading: false,
+      fetching: false,
+      error: new Error('Invalid address format'),
+    };
+
+    renderPage(`/chain/1/address/0xGG${'11'.repeat(19)}`);
+
+    expect(await screen.findByText('Not a valid address format')).toBeInTheDocument();
+    expect(screen.getByText('Original error: Invalid address format')).toBeInTheDocument();
+    expect(screen.queryByText(/This address has an invalid checksum/)).not.toBeInTheDocument();
   });
 
   it('keeps the plain error banner for unrelated failures', async () => {

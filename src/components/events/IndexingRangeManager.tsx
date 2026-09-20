@@ -19,6 +19,13 @@ const headerStyles = css`
   align-items: center;
   margin-bottom: 16px;
 
+  /* Narrow screens: heading, creation note, and action buttons stack
+     instead of squeezing into one ~340px row. */
+  @media (max-width: 768px) {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
   h3 {
     margin: 0;
     font-size: 18px;
@@ -49,6 +56,15 @@ const rangeItemStyles = css`
 
   &:hover {
     background: #f1f3f5;
+  }
+
+  /* Narrow screens: range facts and their action buttons cannot share one
+     ~340px row — facts stack above the buttons (which then get the full
+     row width for their long labels). */
+  @media (max-width: 768px) {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
   }
 `;
 
@@ -193,6 +209,19 @@ const addFormStyles = css`
   border: 1px solid #e1e5e9;
   border-radius: 6px;
   margin-top: 16px;
+
+  /* Narrow screens: from/to/direction fields wrap onto their own rows,
+     each field taking the full row width (the 120px desktop slivers are
+     unusable for 8-digit block numbers on a phone). */
+  @media (max-width: 768px) {
+    flex-wrap: wrap;
+
+    input,
+    select,
+    button {
+      width: 100%;
+    }
+  }
 `;
 
 const quickActionsStyles = css`
@@ -425,11 +454,11 @@ const quickModeBounds = (
   // range found. Cannot continue.') — the Continue button is pre-disabled
   // for that case, and the 400 stays as the backstop (e.g. the last range
   // was deleted after the mode was selected). Otherwise the backend
-  // continues from ranges[0].toBlock INCLUSIVE (the same
-  // priority/createdAt-desc ordering this component's list mirrors), so
-  // the would-be range always re-touches that boundary block.
+  // continues from the FURTHEST existing toBlock INCLUSIVE (max across
+  // every range, mirroring createRangeContinue), so the would-be range
+  // always re-touches that boundary block.
   if (ranges.length === 0 || blockCount === undefined) return null;
-  const from = Number(ranges[0].toBlock);
+  const from = Math.max(...ranges.map(r => Number(r.toBlock)));
   return { from, to: from + blockCount };
 };
 
@@ -455,23 +484,33 @@ export const describeMutationError = (error: unknown, fallback: string): string 
 
 // Response of POST /ranges/quick: the created range's bounds plus whether
 // the backend's auto-start actually kicked indexing off (and why not).
+// truncatedToBlock is present when the backend clamped the toBlock to the
+// chain head.
 type QuickCreateResponse = {
   rangeId?: number;
   fromBlock?: number | string;
   toBlock?: number | string;
+  truncatedToBlock?: number;
   started?: boolean;
   startError?: string;
 };
 
 // Success copy for the quick modes: they create AND auto-start, so the
-// toast says "indexing started" only when the backend actually did.
+// toast says "indexing started" only when the backend actually did. A
+// clamped toBlock is appended so the created bounds are never a surprise.
 const quickCreateToast = (data: QuickCreateResponse): void => {
   const blocks = `blocks ${data.fromBlock?.toLocaleString() ?? '?'} - ${data.toBlock?.toLocaleString() ?? '?'}`;
+  const truncated =
+    data.truncatedToBlock !== undefined
+      ? ` — toBlock exceeds chain head ${data.truncatedToBlock.toLocaleString()} — truncated`
+      : '';
   if (data.started) {
-    toast.success(`Indexing started: ${blocks}`);
+    toast.success(`Indexing started: ${blocks}${truncated}`);
     return;
   }
-  toast.success(`Range created: ${blocks}${data.startError ? ` — not started: ${data.startError}` : ''}`);
+  toast.success(
+    `Range created: ${blocks}${data.startError ? ` — not started: ${data.startError}` : ''}${truncated}`,
+  );
 };
 
 // Indexing-rate ETA sampling ---------------------------------------------
@@ -608,6 +647,15 @@ export const IndexingRangeManager: React.FC<Props> = ({
   // Client-side overlap precheck: while set, the matching form's submit is
   // gated behind an explicit 'Create anyway' second click.
   const [overlapGate, setOverlapGate] = useState<OverlapGate | null>(null);
+  // Full-history gate (quick mode 'all' only): armed when the would-be
+  // span exceeds ~1M blocks — either computed locally from the known head,
+  // or mirrored from the backend's 'full-history-unconfirmed' 400 when the
+  // local head is unknown (cold start with no ranges never fetches
+  // indexing-status). While armed and unchecked, 'all' submits are blocked.
+  const [fullHistoryGate, setFullHistoryGate] = useState<{ spanBlocks: number } | null>(null);
+  const [fullHistoryConfirmed, setFullHistoryConfirmed] = useState(false);
+  // Head of the last manual add whose numeric toBlock the backend clamped.
+  const [truncatedNotice, setTruncatedNotice] = useState<number | null>(null);
 
   // creationBlock may be null/undefined/0 when the backend could not
   // determine it — that must render as "unknown", never as block #0.
@@ -750,6 +798,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
         overlaps?: Overlap[];
         message?: string;
         error?: string;
+        truncatedToBlock?: number;
       }>(`/api/chains/${chainId}/contracts/${contractAddress}/events/ranges`, {
         fromBlock: isFromTag ? fromBlockValue : fromBlock,
         toBlock: isToTag ? toBlockValue : toBlock,
@@ -757,6 +806,11 @@ export const IndexingRangeManager: React.FC<Props> = ({
       });
       setFormState(defaultFormState);
       setShowAddForm(false);
+      // Surface a clamped toBlock as an inline notice (cleared when the
+      // next add resolves — with null when that one was not truncated).
+      setTruncatedNotice(
+        typeof data.truncatedToBlock === 'number' ? data.truncatedToBlock : null,
+      );
       await fetchRanges();
       if (data.overlaps && data.overlaps.length > 0) {
         setOverlaps(data.overlaps);
@@ -780,18 +834,53 @@ export const IndexingRangeManager: React.FC<Props> = ({
   // their form state selectively.
   const runQuickCreate = useCallback(
     async (mode: QuickMode, blockCount: number | undefined, loadingSentinel: number) => {
+      // Full-history gate (mode 'all' only): indexing from genesis (or an
+      // early creation block) to a distant head is an hours-to-days
+      // commitment. Block the submit until the warning's checkbox is
+      // ticked — armed either locally (known head, span > 1M blocks) or by
+      // the backend's 'full-history-unconfirmed' 400 (unknown local head:
+      // a cold start with no ranges never fetches indexing-status, so the
+      // first POST doubles as the probe).
+      if (mode === 'all' && !fullHistoryConfirmed) {
+        if (fullHistoryGate !== null) {
+          return false;
+        }
+        const fromAll = creationBlockNumber > 0 ? creationBlockNumber : 0;
+        if (headBlock > 0 && headBlock - fromAll > 1_000_000) {
+          setFullHistoryGate({ spanBlocks: headBlock - fromAll });
+          return false;
+        }
+      }
       setActionLoading(loadingSentinel);
       try {
         const data = await post<QuickCreateResponse>(quickUrl, {
           mode,
           blockCount,
           abi,
+          ...(mode === 'all' && fullHistoryConfirmed ? { confirmFullHistory: true } : {}),
         });
         await fetchRanges();
         quickCreateToast(data);
+        // A successful create disarms the gate — the next 'all' submit
+        // starts from a clean baseline.
+        setFullHistoryGate(null);
+        setFullHistoryConfirmed(false);
         onRefresh?.();
         return true;
       } catch (error) {
+        // Backend-armed full-history gate: mirror the span facts from the
+        // error's details channel and block without a toast — the inline
+        // warning IS the message.
+        if (
+          mode === 'all' &&
+          error instanceof ApiError &&
+          (error.details as { reason?: string } | undefined)?.reason ===
+          'full-history-unconfirmed'
+        ) {
+          const details = error.details as { spanBlocks?: number } | undefined;
+          setFullHistoryGate({ spanBlocks: details?.spanBlocks ?? 0 });
+          return false;
+        }
         // 403 admin-token errors and contract 400s like 'No previous range
         // found. Cannot catch up.' surface verbatim via ApiError.
         console.error('Failed to create range:', error);
@@ -801,7 +890,17 @@ export const IndexingRangeManager: React.FC<Props> = ({
         setActionLoading(null);
       }
     },
-    [chainId, contractAddress, abi, fetchRanges, onRefresh],
+    [
+      chainId,
+      contractAddress,
+      abi,
+      fetchRanges,
+      onRefresh,
+      creationBlockNumber,
+      headBlock,
+      fullHistoryGate,
+      fullHistoryConfirmed,
+    ],
   );
   const handleQuickCreate = useCallback(async (confirmOverlap = false) => {
     const { mode, blockCount } = quickFormState;
@@ -946,6 +1045,12 @@ export const IndexingRangeManager: React.FC<Props> = ({
   // confirmation: the next submit re-runs the precheck.
   const resetOverlapGate = useCallback((source: OverlapGate['source']) => {
     setOverlapGate(prev => (prev?.source === source ? null : prev));
+  }, []);
+  // Switching quick modes (or a successful create) drops the full-history
+  // gate: the span facts belong to the 'all' submit that armed them.
+  const resetFullHistoryGate = useCallback(() => {
+    setFullHistoryGate(null);
+    setFullHistoryConfirmed(false);
   }, []);
   // Submit-button labels: while the overlap gate is armed for a form, its
   // submit button relabels to 'Create anyway' (the second click runs the
@@ -1125,6 +1230,36 @@ export const IndexingRangeManager: React.FC<Props> = ({
           </ul>
         </div>
       )}
+      {truncatedNotice !== null && (
+        <div className={warningStyles} role="alert">
+          toBlock exceeds chain head {truncatedNotice.toLocaleString()} — truncated
+        </div>
+      )}
+      {fullHistoryGate !== null && (
+        // Shared by both 'all' entry points (the empty-state Index
+        // everything button and the quick form's Index All mode): while
+        // armed and unchecked, runQuickCreate blocks the submit.
+        <div className={warningStyles} role="alert">
+          Full history spans about {Math.round(fullHistoryGate.spanBlocks / 1_000_000)}M blocks (
+          {fullHistoryGate.spanBlocks.toLocaleString()}) — indexing may take hours to days.
+          <label
+            style={{
+              display: 'flex',
+              gap: '8px',
+              alignItems: 'center',
+              marginTop: '8px',
+              cursor: 'pointer',
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={fullHistoryConfirmed}
+              onChange={e => setFullHistoryConfirmed(e.target.checked)}
+            />
+            I understand — index full history
+          </label>
+        </div>
+      )}
       {ranges.length === 0 ? (
         <div className={emptyStateStyles}>
           <p>No indexing ranges configured. Add a range to start indexing events.</p>
@@ -1221,6 +1356,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
               onClick={() => {
                 setQuickFormState({ mode: 'all', blockCount: '' });
                 resetOverlapGate('quick');
+                resetFullHistoryGate();
               }}
               disabled={actionLoading !== null}
             >
@@ -1231,6 +1367,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
               onClick={() => {
                 setQuickFormState({ mode: 'recent', blockCount: '1000' });
                 resetOverlapGate('quick');
+                resetFullHistoryGate();
               }}
               disabled={actionLoading !== null}
             >
@@ -1241,6 +1378,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
               onClick={() => {
                 setQuickFormState({ mode: 'first', blockCount: '1000' });
                 resetOverlapGate('quick');
+                resetFullHistoryGate();
               }}
               disabled={actionLoading !== null || !hasKnownCreationBlock}
               title={
@@ -1254,6 +1392,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
               onClick={() => {
                 setQuickFormState({ mode: 'continue', blockCount: '1000' });
                 resetOverlapGate('quick');
+                resetFullHistoryGate();
               }}
               disabled={actionLoading !== null || ranges.length === 0}
               title={ranges.length === 0 ? 'No previous range yet' : undefined}

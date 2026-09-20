@@ -35,7 +35,10 @@ describe('searchHistory', () => {
     expect(unchanged).toEqual([{ query: 'uniswap', chainId: 5000 }]);
   });
 
-  it('dedupes by query+chainId but keeps the same query on other chains', () => {
+  it('dedupes by query: a re-run replaces its entry with the chain last searched', () => {
+    // Cross-chain hunting (the same hash offered to network after network)
+    // must not flood the history: one entry per query, carrying the chain
+    // the search last actually ran on.
     recordSearchHistoryEntry('0xabc', 137);
     recordSearchHistoryEntry('0xdef', 1);
     recordSearchHistoryEntry('0xabc', 137);
@@ -43,7 +46,6 @@ describe('searchHistory', () => {
 
     expect(readSearchHistory()).toEqual([
       { query: '0xabc', chainId: 5000 },
-      { query: '0xabc', chainId: 137 },
       { query: '0xdef', chainId: 1 },
     ]);
   });

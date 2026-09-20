@@ -41,6 +41,7 @@ export type ContractSource = {
   isProxy?: boolean;
   proxyType?: ProxyType;
   implementationAddress?: string;
+  implementationAddresses?: string[];
   implementationContract?: ContractSource;
 };
 

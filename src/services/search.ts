@@ -5,8 +5,9 @@ import { api, get, withSignal } from '@/util/http';
 
 // Chain entry returned by the global endpoint when a query is ambiguous
 // (transaction/block hash or block number) and a specific chain must be
-// chosen before it can be resolved.
-export type SupportedChainRef = { chainId: number; name: string };
+// chosen before it can be resolved. The list is scoped (see `scope` on
+// SearchResult); symbol is the chain's native currency for filtering.
+export type SupportedChainRef = { chainId: number; name: string; symbol: string };
 
 // Shape shared by both endpoints (/api/search and /api/chains/:id/search).
 // `data` stays loose here: the concrete payload (Block/Transaction/
@@ -19,6 +20,11 @@ export type SearchResult = {
   /** Chain the global endpoint actually searched (echoed for clients). */
   searchedChainId?: number;
   needsChain?: boolean;
+  /**
+   * Curation scope of the needsChain chain list ('popular' = the curated
+   * popular set; anything else is the full supported universe).
+   */
+  scope?: string;
   supportedChains?: SupportedChainRef[];
   suggestions?: string[];
   error?: string | null;

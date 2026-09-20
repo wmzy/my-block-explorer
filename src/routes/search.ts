@@ -6,6 +6,7 @@ import {
   getSupportedChainIds,
   isChainSupported,
   getChainSymbol,
+  POPULAR_CHAINS,
 } from '../config/chains';
 import { detectSearchType, sanitizeInput } from '../utils/validation';
 import { safeJsonResponse } from '../utils/serialization';
@@ -49,7 +50,17 @@ app.get('/search', async (c) => {
         needsChain: true,
         type: searchType === 'hash' ? 'transaction' : 'block',
         query: sanitized,
-        supportedChains: getSortedChains().map(chain => ({ chainId: chain.id, name: chain.name })),
+        // The picker list is the curated popular set, not the full viem
+        // chain universe (thousands of entries, many dead): scope says
+        // so, and each entry carries its native symbol for filtering.
+        // Every other chain stays reachable directly via its /chain/:id
+        // pages and the per-chain search endpoint.
+        scope: 'popular',
+        supportedChains: POPULAR_CHAINS.map(chain => ({
+          chainId: chain.id,
+          name: chain.name,
+          symbol: chain.nativeCurrency.symbol,
+        })),
         timestamp: new Date().toISOString(),
       });
     }

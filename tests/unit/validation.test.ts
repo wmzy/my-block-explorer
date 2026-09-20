@@ -45,11 +45,32 @@ describe('Server Validation', () => {
     });
 
     it('should normalize address case', () => {
-      const mixedCaseAddress = '0xAbCdEf1234567890123456789012345678901234';
-      const result = getValidatedAddress(mixedCaseAddress);
+      // All-lowercase carries no checksum information: normalized.
+      const lowercaseAddress = '0xabcdef1234567890123456789012345678901234';
+      const result = getValidatedAddress(lowercaseAddress);
       // getAddress returns checksum format, not lowercase
       expect(result).toMatch(/^0x[a-fA-F0-9]{40}$/);
       expect(result.length).toBe(42);
+
+      // A VALID mixed-case checksum address passes through unchanged.
+      const validChecksummed = '0x5a5A5a5a5A5a5a5a5a5A5a5A5A5a5a5A5A5A5A5A';
+      expect(getValidatedAddress(validChecksummed)).toBe(validChecksummed);
+    });
+
+    it('should reject a mixed-case address that fails the EIP-55 checksum', () => {
+      // Same body as the valid checksummed fixture above with one flipped
+      // letter case: mixed-case input carries checksum information, so a
+      // mismatch is rejected instead of silently corrected.
+      const badChecksum = '0x5A5A5a5a5A5a5a5a5a5A5a5A5A5a5a5A5A5A5A5A';
+      let message = '';
+      try {
+        getValidatedAddress(badChecksum);
+      } catch (error) {
+        expect(error).toBeInstanceOf(HTTPException);
+        expect((error as HTTPException).status).toBe(400);
+        message = (error as HTTPException).message;
+      }
+      expect(message).toContain('Invalid address checksum');
     });
   });
 
@@ -159,7 +180,9 @@ describe('Server Validation', () => {
       } catch (error) {
         expect(error).toBeInstanceOf(HTTPException);
         expect((error as HTTPException).status).toBe(400);
-        expect((error as HTTPException).message).toContain('Invalid address');
+        // Shape failures read as format errors (the frontend branches its
+        // guidance on this tier via the shared 'Invalid address' prefix).
+        expect((error as HTTPException).message).toContain('Invalid address format');
       }
     });
 

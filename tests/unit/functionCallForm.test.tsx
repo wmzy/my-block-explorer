@@ -27,6 +27,17 @@ const makeFunc = (inputs: ContractFunctionInput[], name = 'f'): TestFunction => 
   source: 'impl',
 });
 
+// Payable write surface: renders the Value (ETH) and From fields.
+const makeWriteFunc = (inputs: ContractFunctionInput[], name = 'f'): TestFunction => ({
+  name,
+  type: 'function',
+  inputs,
+  outputs: [],
+  stateMutability: 'payable',
+  interactionType: 'write',
+  source: 'impl',
+});
+
 function renderForm(func: TestFunction) {
   const onCall = vi.fn();
   render(
@@ -47,14 +58,15 @@ function renderForm(func: TestFunction) {
 
 describe('FunctionCallForm composite arguments', () => {
   it('submits address[] input as a real array in both input syntaxes', () => {
-    const onCall = renderForm(makeFunc([{ name: 'addrs', type: 'address[]' }], 'batchSend'));
+    const func = makeFunc([{ name: 'addrs', type: 'address[]' }], 'batchSend');
+    const onCall = renderForm(func);
 
     const field = screen.getByLabelText('addrs (address[])');
     fireEvent.change(field, { target: { value: `["${ADDR_A}","${ADDR_B}"]` } });
     fireEvent.click(screen.getByRole('button', { name: 'Query' }));
 
     expect(onCall).toHaveBeenCalledWith(
-      'batchSend',
+      func,
       [[ADDR_A, ADDR_B]],
       [`["${ADDR_A}","${ADDR_B}"]`],
       undefined,
@@ -65,7 +77,7 @@ describe('FunctionCallForm composite arguments', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Query' }));
 
     expect(onCall).toHaveBeenLastCalledWith(
-      'batchSend',
+      func,
       [[ADDR_A, ADDR_B]],
       [`${ADDR_A},${ADDR_B}`],
       undefined,
@@ -74,21 +86,20 @@ describe('FunctionCallForm composite arguments', () => {
   });
 
   it('submits tuple input as a positional array', () => {
-    const onCall = renderForm(
-      makeFunc(
-        [
-          {
-            name: 'p',
-            type: 'tuple',
-            components: [
-              { name: 'x', type: 'uint256' },
-              { name: 'y', type: 'address' },
-            ],
-          },
-        ],
-        'move',
-      ),
+    const func = makeFunc(
+      [
+        {
+          name: 'p',
+          type: 'tuple',
+          components: [
+            { name: 'x', type: 'uint256' },
+            { name: 'y', type: 'address' },
+          ],
+        },
+      ],
+      'move',
     );
+    const onCall = renderForm(func);
 
     fireEvent.change(screen.getByLabelText('p (tuple)'), {
       target: { value: `5,${ADDR_A}` },
@@ -96,7 +107,7 @@ describe('FunctionCallForm composite arguments', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Query' }));
 
     expect(onCall).toHaveBeenCalledWith(
-      'move',
+      func,
       [['5', ADDR_A]],
       [`5,${ADDR_A}`],
       undefined,
@@ -172,7 +183,7 @@ describe('FunctionCallForm trailing-optional rule', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Query' }));
 
-    expect(onCall).toHaveBeenCalledWith('setOwner', [ADDR_A], [ADDR_A, ''], undefined, undefined);
+    expect(onCall).toHaveBeenCalledWith(func, [ADDR_A], [ADDR_A, ''], undefined, undefined);
   });
 
   it('hints the omission on inputs that may be left empty', () => {
@@ -214,5 +225,42 @@ describe('FunctionCallForm trailing-optional rule', () => {
 
     expect(await screen.findByText('owner: required')).toBeInTheDocument();
     expect(onCall).not.toHaveBeenCalled();
+  });
+});
+
+describe('FunctionCallForm from-address validation', () => {
+  const func = makeWriteFunc([], 'deposit');
+
+  const fromField = () => screen.getByPlaceholderText('0x...');
+
+  it('flags a malformed From inline and blocks the simulate', async () => {
+    const onCall = renderForm(func);
+
+    fireEvent.change(fromField(), { target: { value: '0x123' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Simulate' }));
+
+    expect(await screen.findByText('invalid address')).toBeInTheDocument();
+    expect(onCall).not.toHaveBeenCalled();
+
+    // Correcting the field clears the error.
+    fireEvent.change(fromField(), { target: { value: ADDR_A } });
+    expect(screen.queryByText('invalid address')).not.toBeInTheDocument();
+  });
+
+  it('submits a valid From trimmed', () => {
+    const onCall = renderForm(func);
+
+    fireEvent.change(fromField(), { target: { value: `  ${ADDR_A}  ` } });
+    fireEvent.click(screen.getByRole('button', { name: 'Simulate' }));
+
+    expect(onCall).toHaveBeenCalledWith(func, [], [], undefined, ADDR_A);
+  });
+
+  it('keeps From optional — empty submits as undefined', () => {
+    const onCall = renderForm(func);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Simulate' }));
+
+    expect(onCall).toHaveBeenCalledWith(func, [], [], undefined, undefined);
   });
 });

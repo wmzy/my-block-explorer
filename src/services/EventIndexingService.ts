@@ -903,6 +903,12 @@ export const addIndexingRange = async (
   rangeId?: number;
   overlaps?: RangeOverlap[];
   error?: string;
+  // Resolved concrete bounds of the stored row (success only), so quick
+  // creators can report what was actually created.
+  fromBlock?: number;
+  toBlock?: number;
+  // Set when a numeric toBlock overshot the chain head and was clamped.
+  truncatedToBlock?: number;
 }> => {
   const { fromBlock, toBlock, direction = 'forward', priority = 0 } = range;
 
@@ -916,6 +922,27 @@ export const addIndexingRange = async (
 
   if (resolvedFromBlock >= resolvedToBlock) {
     return { success: false, error: 'fromBlock must be less than toBlock' };
+  }
+
+  // A numeric toBlock may overshoot the chain head (typo, a stale head in
+  // the caller's UI): clamp the stored bound to the head instead of
+  // walking (and polling for) blocks that cannot exist, and say so in the
+  // response. Tag inputs are exempt — resolveToBlock resolves them against
+  // live chain state, which is at or below the head by construction.
+  let storedToBlock = resolvedToBlock;
+  let truncatedToBlock: number | undefined;
+  if (typeof toBlock === 'number') {
+    const head = await client.getBlockNumber();
+    if (resolvedToBlock > head) {
+      if (resolvedFromBlock >= head) {
+        return {
+          success: false,
+          error: `fromBlock must be below the chain head (${head})`,
+        };
+      }
+      storedToBlock = head;
+      truncatedToBlock = Number(head);
+    }
   }
 
   const creationBlock = await getContractCreationBlockCached(chainId, address);
@@ -932,7 +959,7 @@ export const addIndexingRange = async (
     chainId,
     address,
     resolvedFromBlock,
-    resolvedToBlock,
+    storedToBlock,
   );
 
   const rangeId = await getNextRangeId(chainId, address);
@@ -942,7 +969,7 @@ export const addIndexingRange = async (
     address,
     rangeId,
     fromBlock: resolvedFromBlock,
-    toBlock: resolvedToBlock,
+    toBlock: storedToBlock,
     direction,
     currentBlock: null,
     status: 'pending',
@@ -957,6 +984,9 @@ export const addIndexingRange = async (
     success: true,
     rangeId,
     overlaps: overlaps.length > 0 ? overlaps : undefined,
+    fromBlock: Number(resolvedFromBlock),
+    toBlock: Number(storedToBlock),
+    truncatedToBlock,
   };
 };
 
@@ -1394,19 +1424,52 @@ export type QuickCreateResult = {
   fromBlock?: number;
   toBlock?: number;
   error?: string;
+  // Full-history gate (createRangeAll): the create was refused because the
+  // span exceeds FULL_HISTORY_GATE_BLOCKS without an explicit confirmation.
+  reason?: 'full-history-unconfirmed';
+  spanBlocks?: number;
+  head?: number;
+  // Set by addIndexingRange when the stored toBlock was clamped to the head.
+  truncatedToBlock?: number;
 };
+
+// Spans beyond this many blocks (creation → head) are treated as "full
+// history": indexing them is a hours-to-days commitment that quick mode
+// must not start silently.
+export const FULL_HISTORY_GATE_BLOCKS = 1_000_000;
 
 export const createRangeAll = async (
   chainId: number,
   address: `0x${string}`,
-  options?: { direction?: RangeDirection; priority?: number },
+  options?: {
+    direction?: RangeDirection;
+    priority?: number;
+    confirmFullHistory?: boolean;
+  },
 ): Promise<QuickCreateResult> => {
   const creationBlock = await getContractCreationBlockCached(chainId, address);
 
+  // Known creation: start exactly there. Unknown: index from genesis
+  // rather than refusing or guessing a boundary.
+  const fromBlock = creationBlock !== null ? Number(creationBlock) : 0;
+
+  const client = await rpcManager.getClient(chainId);
+  const head = await client.getBlockNumber();
+  const spanBlocks = Number(head) - fromBlock;
+
+  if (spanBlocks > FULL_HISTORY_GATE_BLOCKS && options?.confirmFullHistory !== true) {
+    return {
+      success: false,
+      error: `Indexing the full history spans about ${spanBlocks.toLocaleString()} blocks — confirm with confirmFullHistory: true`,
+      reason: 'full-history-unconfirmed',
+      spanBlocks,
+      fromBlock,
+      head: Number(head),
+    };
+  }
+
   return addIndexingRange(chainId, address, {
-    // Known creation: start exactly there. Unknown: index from genesis
-    // rather than refusing or guessing a boundary.
-    fromBlock: creationBlock !== null ? Number(creationBlock) : 0,
+    fromBlock,
     toBlock: 'latest',
     direction: options?.direction,
     priority: options?.priority,
@@ -1467,14 +1530,19 @@ export const createRangeContinue = async (
     return { success: false, error: 'No previous range found. Cannot continue.' };
   }
 
-  const lastRange = ranges[0];
-  const continueFromBlock = Number(lastRange.toBlock);
+  // Continue from the FURTHEST block any existing range reached, not from
+  // the first listed range: the list is priority/createdAt-desc, so
+  // ranges[0] is just the newest row and may end far below an older,
+  // longer range — continuing there would silently skip the gap between
+  // them. Inclusive start, same semantics catchup uses.
+  const furthest = ranges.reduce((max, r) => (r.toBlock > max.toBlock ? r : max), ranges[0]);
+  const continueFromBlock = Number(furthest.toBlock);
   const continueToBlock = continueFromBlock + blockCount;
 
   return addIndexingRange(chainId, address, {
     fromBlock: continueFromBlock,
     toBlock: continueToBlock,
-    direction: options?.direction ?? lastRange.direction,
+    direction: options?.direction ?? furthest.direction,
     priority: options?.priority,
   });
 };

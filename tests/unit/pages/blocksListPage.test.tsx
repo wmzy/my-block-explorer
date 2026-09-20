@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import { MemoryRouter, View, createRoutes } from '@native-router/react';
+import { MemoryRouter, View, createRoutes, useSearchParams } from '@native-router/react';
 import '@testing-library/jest-dom';
 import BlocksList from '@/views/Blocks/List';
 
@@ -99,12 +99,20 @@ const makeBlock = (number: number) => ({
   transactionCount: 150,
 });
 
+// Exposes the current search string so ?page= writes are observable (same
+// probe pattern as the transactions list tests).
+function SearchProbe() {
+  const [searchParams] = useSearchParams();
+  return <div data-testid="search-probe">{searchParams.toString()}</div>;
+}
+
 const renderBlocksList = (path: string) =>
   render(
     <MemoryRouter
       routes={createRoutes([{ path: '/chain/:chainId/blocks', component: () => BlocksList }])}
       initialEntries={[path]}
     >
+      <SearchProbe />
       <View />
     </MemoryRouter>,
   );
@@ -196,14 +204,11 @@ describe('BlocksList view', () => {
     expect(screen.queryByText(/Unsupported chain ID/)).not.toBeInTheDocument();
     // Recovery: a deterministic preferred-chain destination plus the
     // landing route (chain list entry).
-    expect(screen.getByRole('link', { name: 'Go to Mainnet' })).toHaveAttribute(
-      'href',
-      '/chain/1',
-    );
+    expect(screen.getByRole('link', { name: 'Go to Mainnet' })).toHaveAttribute('href', '/chain/1');
     expect(screen.getByRole('link', { name: 'Open chain list' })).toHaveAttribute('href', '/');
   });
 
-  it('paginates via the beforeBlock cursor computed from the head page', async () => {
+  it('paginates via the beforeBlock cursor computed from the head page, with ?page= in the URL', async () => {
     const twenty = Array.from({ length: 20 }, (_, i) => makeBlock(18000001 - i));
     mockUseLatestBlocks.mockReturnValue({
       data: { blocks: twenty, latestBlockNumber: 18000001n },
@@ -217,10 +222,39 @@ describe('BlocksList view', () => {
     expect(await screen.findByText(/Page 1/)).toBeInTheDocument();
     expect(screen.getByText('Newer')).toBeDisabled();
     expect(screen.getByText('Older')).not.toBeDisabled();
+    expect(screen.getByTestId('search-probe').textContent).toBe('');
 
     fireEvent.click(screen.getByText('Older'));
-    // page 2 cursor: 18000001 - 20 + 1
-    expect(mockUseLatestBlocks).toHaveBeenLastCalledWith(1, 20, 17999982n);
+    // page 2 cursor: 18000001 - 20 + 1 — and the page index now round-trips
+    // through the URL, so the page-2 render lands asynchronously.
+    await waitFor(() => expect(mockUseLatestBlocks).toHaveBeenLastCalledWith(1, 20, 17999982n));
+    await waitFor(() => expect(screen.getByTestId('search-probe').textContent).toBe('page=2'));
+    expect(await screen.findByText(/Page 2/)).toBeInTheDocument();
+
+    // Back navigation mirrors forward: the URL steps back to page 1.
+    fireEvent.click(screen.getByText('Newer'));
+    await waitFor(() => expect(screen.getByTestId('search-probe').textContent).toBe('page=1'));
+  });
+
+  it('renders a ?page=2 deep link at page 2 without walking there first', async () => {
+    mockUseLatestBlocks.mockReturnValue({
+      data: {
+        blocks: Array.from({ length: 20 }, (_, i) => makeBlock(17999981 - i)),
+        latestBlockNumber: 18000001n,
+      },
+      loading: false,
+      fetching: false,
+      error: undefined,
+      dataUpdatedAt: 1,
+    });
+    renderBlocksList('/chain/1/blocks?page=2');
+
+    // The URL page governs from the first paint (shareable/refreshable):
+    // the anchor adopts from the head answer and page 2's cursor is
+    // derived directly from it.
+    expect(await screen.findByText(/Page 2/)).toBeInTheDocument();
+    await waitFor(() => expect(mockUseLatestBlocks).toHaveBeenLastCalledWith(1, 20, 17999982n));
+    expect(screen.getByTestId('search-probe').textContent).toBe('page=2');
   });
 
   it('freezes the pagination anchor while the head advances; Refresh re-anchors', async () => {
@@ -250,17 +284,13 @@ describe('BlocksList view', () => {
     head = 18000011n;
     tick = 2;
     fireEvent.click(screen.getByText('Older'));
-    await waitFor(() =>
-      expect(mockUseLatestBlocks).toHaveBeenLastCalledWith(1, 20, 17999982n),
-    );
+    await waitFor(() => expect(mockUseLatestBlocks).toHaveBeenLastCalledWith(1, 20, 17999982n));
 
     // Refresh re-anchors at the live head: page 1 cursor becomes
     // 18000011 + 1.
     tick = 3;
     fireEvent.click(screen.getByRole('button', { name: '↻ Refresh' }));
-    await waitFor(() =>
-      expect(mockUseLatestBlocks).toHaveBeenLastCalledWith(1, 20, 18000012n),
-    );
+    await waitFor(() => expect(mockUseLatestBlocks).toHaveBeenLastCalledWith(1, 20, 18000012n));
     expect(refetch).toHaveBeenCalled();
     expect(await screen.findByText(/Page 1/)).toBeInTheDocument();
   });
@@ -309,12 +339,8 @@ describe('BlocksList view', () => {
     tick = 2;
     fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
     expect(refetch).toHaveBeenCalled();
-    await waitFor(() =>
-      expect(screen.getByText(/Latest block: 18,000,011/)).toBeInTheDocument(),
-    );
-    await waitFor(() =>
-      expect(screen.queryByText(/new blocks/)).not.toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByText(/Latest block: 18,000,011/)).toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText(/new blocks/)).not.toBeInTheDocument());
   });
 
   it('renders no staleness hint while the live head matches the anchor', async () => {

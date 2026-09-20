@@ -6,13 +6,27 @@ import {
 } from '../utils/validation';
 import { isChainSupported } from '../config/chains';
 
+// 0x-prefixed, 40 hex characters — the address shape everything below
+// this line assumes.
+const HEX_ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
+
 export function getValidatedAddress(address: string) {
-  try {
-    return getAddress(address);
+  // Tier 1 — shape: wrong length or non-hex characters.
+  if (!HEX_ADDRESS_RE.test(address)) {
+    throw new HTTPException(400, { message: 'Invalid address format' });
   }
-  catch {
-    throw new HTTPException(400, { message: 'Invalid address' });
+  // viem's getAddress silently checksum-corrects ANY hex-shaped input, so
+  // the EIP-55 check is explicit: only a MIXED-case address carries
+  // checksum information (all-lower/all-upper are the checksum-less
+  // convention and pass through normalized), and it must match its
+  // checksum exactly. Tier 2 — checksum mismatch.
+  const checksummed = getAddress(address);
+  const body = address.slice(2);
+  const isMixedCase = /[a-f]/.test(body) && /[A-F]/.test(body);
+  if (isMixedCase && address !== checksummed) {
+    throw new HTTPException(400, { message: 'Invalid address checksum' });
   }
+  return checksummed;
 }
 
 export function getValidatedChainId(chainId: string | number): number {

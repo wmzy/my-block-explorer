@@ -605,6 +605,65 @@ describe('TopNavigation', () => {
     // The network picker escape hatch stays available on failure too.
     expect(screen.getByText('Choose a network →')).toBeInTheDocument();
   });
+
+  it('verifies a block number before navigating, and records the landing', async () => {
+    // Blind-jumping to /block/N lands on an error page for any number
+    // above the chain's head — the block branch must verify like hashes.
+    mockGet.mockResolvedValueOnce({ found: true, type: 'block', data: { number: 42 } });
+    renderTopNavigation({ currentChainId: 1, onSearch: undefined });
+
+    const searchInput = screen.getByPlaceholderText('Search address, tx hash, or block number...');
+    fireEvent.change(searchInput, { target: { value: '42' } });
+    fireEvent.click(screen.getByText('Search'));
+
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith(mockRouter, '/chain/1/block/42');
+    });
+    expect(JSON.parse(localStorage.getItem(SEARCH_HISTORY_STORAGE_KEY) ?? '[]')).toEqual([
+      { query: '42', chainId: 1 },
+    ]);
+  });
+
+  it('hints that the block was not found on the current chain, with a picker link', async () => {
+    mockGet.mockResolvedValueOnce({ found: false, degraded: false, type: 'block' });
+    renderTopNavigation({ currentChainId: 1, onSearch: undefined });
+
+    const searchInput = screen.getByPlaceholderText('Search address, tx hash, or block number...');
+    fireEvent.change(searchInput, { target: { value: '999999999' } });
+    fireEvent.click(screen.getByText('Search'));
+
+    expect(
+      await screen.findByText(
+        /Block not found on Ethereum — it may exist on another network/,
+      ),
+    ).toBeInTheDocument();
+    expect(mockNavigate).not.toHaveBeenCalled();
+    // A number that missed here is chain-relative like a hash: the escape
+    // hatch opens the network picker (no chain hint).
+    const pickerLink = screen.getByText('Choose a network →');
+    fireEvent.click(pickerLink);
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith(
+        mockRouter,
+        `/search?q=${encodeURIComponent('999999999')}`,
+      );
+    });
+  });
+
+  it('never records a search that landed nowhere', async () => {
+    // Hash and block numbers are verified before anything navigates — a
+    // query that missed (or whose fetch failed) never enters history, so
+    // cross-chain hunting cannot flood it.
+    mockGet.mockResolvedValueOnce({ found: false, degraded: false, type: 'transaction' });
+    renderTopNavigation({ currentChainId: 1, onSearch: undefined });
+
+    const searchInput = screen.getByPlaceholderText('Search address, tx hash, or block number...');
+    fireEvent.change(searchInput, { target: { value: `0x${'ab'.repeat(32)}` } });
+    fireEvent.click(screen.getByText('Search'));
+
+    expect(await screen.findByText(/Hash not found on Ethereum/)).toBeInTheDocument();
+    expect(JSON.parse(localStorage.getItem(SEARCH_HISTORY_STORAGE_KEY) ?? '[]')).toEqual([]);
+  });
 });
 
 describe('ChainSelector', () => {

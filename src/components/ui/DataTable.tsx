@@ -6,11 +6,18 @@ const tableContainer = css`
   background: var(--haze-color-bg);
   border-radius: var(--haze-radius-lg);
   border: 1px solid var(--haze-color-border);
-  overflow: hidden;
+  /* Wide tables scroll inside the card instead of being clipped (the old
+     overflow:hidden cropped the right-hand columns on phones) or squeezing
+     the page into horizontal body scroll. */
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 `;
 
 const tableStyle = css`
   width: 100%;
+  /* Content defines the floor: below it the table keeps its natural width
+     and scrolls in the container above, rather than compressing columns. */
+  min-width: max-content;
   border-collapse: collapse;
   font-family: var(--haze-font-sans);
   font-size: var(--haze-text-sm);

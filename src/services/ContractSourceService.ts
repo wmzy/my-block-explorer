@@ -114,6 +114,12 @@ export type ContractSource = {
   isProxy?: boolean;
   proxyType?: ProxyType;
   implementationAddress?: Address;
+  // Full facet list for multi-implementation proxies (EIP-2535 diamonds).
+  // Ephemeral: only populated by a fresh Sourcify fetch — the DB has no
+  // column for it, so the list lives solely on the in-memory result of the
+  // fresh-fetch path (Force Refresh or a proxy-TTL expiry refetches and
+  // repopulates it); plain cache hits read it back as undefined.
+  implementationAddresses?: Address[];
   implementationContract?: ContractSource;
   creationTxHash?: string;
   creationBlockNumber?: number;
@@ -914,9 +920,21 @@ export class ContractSourceService {
         result.isProxy = true;
         result.proxyType = this.mapSourcifyProxyType(proxy.proxyType);
         result.implementationAddress = implAddress;
+        // Diamonds (EIP-2535) resolve to multiple implementations; keep the
+        // full facet list so the UI is not forced to present facet[0] as
+        // the single implementation. implementationAddress stays facet[0]
+        // for compatibility with single-implementation consumers.
+        result.implementationAddresses = proxy.implementations.map(
+          (impl: { address: Address }) => impl.address,
+        );
 
         logger.info(
-          { proxyType: proxy.proxyType, mapped: result.proxyType, implementation: implAddress },
+          {
+            proxyType: proxy.proxyType,
+            mapped: result.proxyType,
+            implementation: implAddress,
+            facetCount: proxy.implementations.length,
+          },
           'Sourcify detected proxy contract',
         );
 

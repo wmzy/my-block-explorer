@@ -568,6 +568,85 @@ describe('Contract view Events tab visibility', () => {
   });
 });
 
+describe('Contract view proxy implementation rendering', () => {
+  const FACET_0 = '0xfac0000000000000000000000000000000000001';
+  const FACET_1 = '0xfac1111111111111111111111111111111111111';
+  const IMPL = '0x1110000000000000000000000000000000001111';
+
+  const implementationContract = (address: string, name: string) => ({
+    chainId: 1,
+    address,
+    name,
+    sourceCode: 'pragma solidity ^0.8.20;',
+    abi: '[]',
+    verificationStatus: 'verified',
+    verificationSource: 'sourcify',
+    lastChecked: '2026-01-01T00:00:00Z',
+  });
+
+  // Fresh-fetch diamond payload: Sourcify resolves the proxy to multiple
+  // facets and the backend forwards the whole list.
+  const diamondSourceResponse = {
+    contractSource: {
+      ...verifiedSourceResponse.contractSource,
+      isProxy: true,
+      proxyType: 'diamond' as const,
+      implementationAddress: FACET_0,
+      implementationAddresses: [FACET_0, FACET_1],
+      implementationContract: implementationContract(FACET_0, 'DiamondCutFacet'),
+    },
+  };
+
+  // Ordinary single-implementation proxy (no facet list from the cache).
+  const singleProxySourceResponse = {
+    contractSource: {
+      ...verifiedSourceResponse.contractSource,
+      isProxy: true,
+      proxyType: 'transparent' as const,
+      implementationAddress: IMPL,
+      implementationContract: implementationContract(IMPL, 'ImplementationV1'),
+    },
+  };
+
+  it('lists every diamond facet and warns the source/ABI show facet[0] only', async () => {
+    vi.mocked(useContractSource).mockReturnValue(mockHookResult(diamondSourceResponse));
+    renderAt(`/chain/1/contract/${ADDRESS}`);
+
+    // Amber banner above the tab bar names the diamond limitation.
+    expect(
+      await screen.findByText('Diamond proxy — 2 facets. Source/ABI below show facet[0] only.'),
+    ).toBeInTheDocument();
+
+    // The Facets row links every facet to its own contract page; facet[0]
+    // keeps the implementation-name prefix it had as a plain link.
+    expect(screen.getByText(`DiamondCutFacet (${FACET_0})`)).toBeInTheDocument();
+    const facet1 = screen.getByRole('link', { name: new RegExp(FACET_1) });
+    expect(facet1).toHaveAttribute('href', `/chain/1/contract/${FACET_1}`);
+
+    // No single-Implementation row masquerading as the whole diamond (the
+    // Implementation *toggle* in the tab bar still renders — scoped here
+    // to the info card's label).
+    expect(
+      screen.queryByText('Implementation', { selector: 'span.label' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('keeps the single Implementation row and no banner for ordinary proxies', async () => {
+    vi.mocked(useContractSource).mockReturnValue(mockHookResult(singleProxySourceResponse));
+    renderAt(`/chain/1/contract/${ADDRESS}`);
+
+    expect(
+      await screen.findByText('Implementation', { selector: 'span.label' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: new RegExp(IMPL) })).toHaveAttribute(
+      'href',
+      `/chain/1/contract/${IMPL}`,
+    );
+    expect(screen.queryByText(/Diamond proxy/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Facets')).not.toBeInTheDocument();
+  });
+});
+
 describe('Contract view unverified guidance', () => {
   it('deep-links unverified contracts to Sourcify with chain and address prefilled', async () => {
     vi.mocked(useContractSource).mockReturnValue(mockHookResult(unverifiedSourceResponse));

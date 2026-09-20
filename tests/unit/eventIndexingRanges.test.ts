@@ -116,6 +116,7 @@ import {
   startIndexingRange,
   createRangeAll,
   createRangeFirst,
+  createRangeContinue,
   createRangeCatchup,
 } from '@/services/EventIndexingService';
 import { indexingRanges } from '@/database/schema';
@@ -202,6 +203,41 @@ describe('addIndexingRange stores only concrete numbers', () => {
     expect(result.success).toBe(true);
     expect(lastInsert()?.values.fromBlock).toBe(0n);
   });
+
+  it('clamps a numeric toBlock beyond the chain head and reports the truncation', async () => {
+    // Tip is 20,000,000: a numeric 25M toBlock cannot exist on this chain.
+    const result = await addIndexingRange(CHAIN_ID, ADDRESS, {
+      fromBlock: 100,
+      toBlock: 25_000_000,
+    });
+
+    expect(result.success).toBe(true);
+    expect(lastInsert()?.values.fromBlock).toBe(100n);
+    expect(lastInsert()?.values.toBlock).toBe(20_000_000n);
+    expect(result.truncatedToBlock).toBe(20_000_000);
+    // The resolved bounds ride along so quick creators report real bounds.
+    expect(result.fromBlock).toBe(100);
+    expect(result.toBlock).toBe(20_000_000);
+  });
+
+  it('rejects a numeric range entirely at or beyond the head, without storing a row', async () => {
+    const result = await addIndexingRange(CHAIN_ID, ADDRESS, {
+      fromBlock: 20_000_000,
+      toBlock: 25_000_000,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('fromBlock must be below the chain head');
+    expect(dbState.inserts).toHaveLength(0);
+  });
+
+  it('never truncates a tag-resolved toBlock (tags resolve at or below the head)', async () => {
+    const result = await addIndexingRange(CHAIN_ID, ADDRESS, { fromBlock: 0, toBlock: 'latest' });
+
+    expect(result.success).toBe(true);
+    expect(result.truncatedToBlock).toBeUndefined();
+    expect(lastInsert()?.values.toBlock).toBe(20_000_000n);
+  });
 });
 
 describe('updateIndexingRange materializes bounds', () => {
@@ -265,7 +301,9 @@ describe('createRangeAll (Index All)', () => {
   it('starts exactly at a known creation block', async () => {
     dbState.creationInfoRows.push({ creationBlockNumber: 5_000_000n });
 
-    const result = await createRangeAll(CHAIN_ID, ADDRESS);
+    // 5M -> 20M is a 15M-block span: past the full-history gate, so the
+    // confirmation rides along to preserve the test's intent.
+    const result = await createRangeAll(CHAIN_ID, ADDRESS, { confirmFullHistory: true });
 
     expect(result.success).toBe(true);
     expect(lastInsert()?.values.fromBlock).toBe(5_000_000n);
@@ -273,11 +311,46 @@ describe('createRangeAll (Index All)', () => {
   });
 
   it('starts from genesis when the creation block is unknown', async () => {
-    const result = await createRangeAll(CHAIN_ID, ADDRESS);
+    // 20M blocks of span — confirmed, so the genesis start is exercised
+    // rather than the gate.
+    const result = await createRangeAll(CHAIN_ID, ADDRESS, { confirmFullHistory: true });
 
     expect(result.success).toBe(true);
     expect(lastInsert()?.values.fromBlock).toBe(0n);
     expect(lastInsert()?.values.toBlock).toBe(20_000_000n);
+  });
+});
+
+describe('createRangeAll full-history gate', () => {
+  it('refuses an unconfirmed full-history span without storing a row', async () => {
+    // Tip 20M, creation unknown -> a 20M-block span from genesis.
+    const result = await createRangeAll(CHAIN_ID, ADDRESS);
+
+    expect(result.success).toBe(false);
+    expect(result.reason).toBe('full-history-unconfirmed');
+    expect(result.spanBlocks).toBe(20_000_000);
+    expect(result.fromBlock).toBe(0);
+    expect(result.head).toBe(20_000_000);
+    expect(result.error).toContain('20,000,000');
+    expect(dbState.inserts).toHaveLength(0);
+  });
+
+  it('indexes the full history once explicitly confirmed', async () => {
+    const result = await createRangeAll(CHAIN_ID, ADDRESS, { confirmFullHistory: true });
+
+    expect(result.success).toBe(true);
+    expect(lastInsert()?.values.fromBlock).toBe(0n);
+    expect(lastInsert()?.values.toBlock).toBe(20_000_000n);
+  });
+
+  it('skips the gate when the span is at most a million blocks', async () => {
+    // Creation at 19,999,500 -> a 500-block span: no confirmation needed.
+    dbState.creationInfoRows.push({ creationBlockNumber: 19_999_500n });
+
+    const result = await createRangeAll(CHAIN_ID, ADDRESS);
+
+    expect(result.success).toBe(true);
+    expect(lastInsert()?.values.fromBlock).toBe(19_999_500n);
   });
 });
 
@@ -300,6 +373,33 @@ describe('createRangeFirst (First N blocks)', () => {
     expect(result.success).toBe(true);
     expect(lastInsert()?.values.fromBlock).toBe(5000n);
     expect(lastInsert()?.values.toBlock).toBe(5100n);
+  });
+});
+
+describe('createRangeContinue (Continue N blocks)', () => {
+  it('continues from the furthest existing toBlock, not the first listed range', async () => {
+    // First row by ordering ends at 200; the furthest range ends at 900 —
+    // continuing from ranges[0] would silently skip 200..900.
+    dbState.orderedRangeRows.push(
+      rangeRow({ rangeId: 1, fromBlock: 10n, toBlock: 200n }),
+      rangeRow({ rangeId: 2, fromBlock: 500n, toBlock: 900n }),
+    );
+
+    const result = await createRangeContinue(CHAIN_ID, ADDRESS, 100);
+
+    expect(result.success).toBe(true);
+    expect(lastInsert()?.values.fromBlock).toBe(900n);
+    expect(lastInsert()?.values.toBlock).toBe(1000n);
+  });
+
+  it('fails with the contract error when no previous range exists', async () => {
+    const result = await createRangeContinue(CHAIN_ID, ADDRESS, 100);
+
+    expect(result).toEqual({
+      success: false,
+      error: 'No previous range found. Cannot continue.',
+    });
+    expect(dbState.inserts).toHaveLength(0);
   });
 });
 

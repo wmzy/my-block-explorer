@@ -55,6 +55,15 @@ const navInner = css`
   align-items: center;
   justify-content: space-between;
   height: 60px;
+
+  /* Narrow screens: logo + search + chain selector cannot share one
+     60px row — let the bar wrap and give each row breathing room. */
+  @media (max-width: 768px) {
+    flex-wrap: wrap;
+    height: auto;
+    padding: var(--haze-space-2) var(--haze-space-4);
+    row-gap: var(--haze-space-2);
+  }
 `;
 
 const logoStyle = css`
@@ -75,6 +84,13 @@ const searchArea = css`
   max-width: 400px;
   margin: 0 var(--haze-space-5);
   position: relative;
+
+  /* Owns a full row when the nav wraps below 768px. */
+  @media (max-width: 768px) {
+    flex: 1 1 100%;
+    max-width: none;
+    margin: 0;
+  }
 `;
 
 const searchRow = css`
@@ -512,14 +528,17 @@ type ChainSearchResponse = {
 };
 
 // Inline hint under the search box: 'miss' = definitive no-result on the
-// current chain, 'failed' = a data source errored (degraded response),
-// 'ens-resolved' / 'ens-not-found' / 'ens-failed' = outcome of a
-// client-side ENS lookup (resolved on Ethereum; not-found is definitive,
-// failed means the RPC never answered and is retryable). ens-resolved also
-// carries the destination choice: Ethereum (where the name resolved) as
-// the primary, the chain the search ran on as the alternate.
+// current chain, 'block-miss' = the same for a block number (verified
+// against the chain before navigating — chains differ in height),
+// 'failed' = a data source errored (degraded response), 'ens-resolved' /
+// 'ens-not-found' / 'ens-failed' = outcome of a client-side ENS lookup
+// (resolved on Ethereum; not-found is definitive, failed means the RPC
+// never answered and is retryable). ens-resolved also carries the
+// destination choice: Ethereum (where the name resolved) as the primary,
+// the chain the search ran on as the alternate.
 type SearchNotice =
   | { kind: 'miss'; query: string }
+  | { kind: 'block-miss'; query: string }
   | { kind: 'failed'; query: string }
   | { kind: 'ens-resolved'; query: string; address: string; destinations: EnsDestinations }
   | { kind: 'ens-not-found'; query: string }
@@ -623,32 +642,52 @@ export default function TopNavigation({
 
   // Shared query dispatcher for the search box and history items. It uses
   // the same sanitize/detect pair as every other surface (utils/validation
-  // is the single source of truth): addresses and block numbers deep-link
-  // straight to the target chain's pages; hashes need the per-chain search
-  // API (transaction lookup first, block-hash fallback) to know which page
-  // they belong to; anything else goes to the full Search view. Every
-  // dispatch is recorded in the local (browser-only) search history —
-  // history entries carry the chain they were run on, so re-running one
-  // from the dropdown searches that chain again, not whichever chain is
-  // currently selected.
+  // is the single source of truth): addresses deep-link straight to the
+  // target chain's page; block numbers and hashes are facts of exactly one
+  // chain (and chains differ in height / tx sets), so they are verified
+  // through the per-chain search API before anything navigates — a number
+  // or hash that is not on this chain surfaces as an inline miss with a
+  // network-picker escape hatch, never as a blind jump onto an error
+  // page; anything else goes to the full Search view. History records at
+  // landing time — the entry carries the chain the search actually
+  // reached (or, for a verified block/hash, the chain it was found on) —
+  // so re-running one from the dropdown searches that chain again, not
+  // whichever chain is currently selected.
   const navigateForQuery = async (rawQuery: string, chainId: number = currentChainId) => {
     const query = sanitizeInput(rawQuery.trim());
     const searchType = detectSearchType(query);
 
-    // Every executed search is recorded — except ENS, whose outcome is not
-    // known yet: a name that fails to resolve never went anywhere, so its
-    // entry is recorded after a successful resolution instead (below).
-    if (searchType !== 'ens') {
-      setHistory(recordSearchHistoryEntry(query, chainId));
-    }
-
     if (searchType === 'address') {
+      setHistory(recordSearchHistoryEntry(query, chainId));
       goTo(`/chain/${chainId}/address/${query}`);
       return;
     }
 
     if (searchType === 'block') {
-      goTo(`/chain/${chainId}/block/${query}`);
+      // A block number only exists below a chain's head, and heads differ
+      // wildly between chains: verify before navigating (same shape as
+      // the hash branch below).
+      // Through the shared http layer (runtime-discovered api base), NOT a
+      // raw same-origin fetch: in dev the same-origin /api is the Vite
+      // bridge's own backend instance, which competes with the discovered
+      // service for the single-writer DuckDB and serves different data.
+      const payload = (await fetchChainSearch(chainId, query)) as
+        | ChainSearchResponse
+        | undefined;
+
+      if (payload?.found && payload.type === 'block' && payload.data?.number !== undefined) {
+        setHistory(recordSearchHistoryEntry(query, chainId));
+        // The block detail route only accepts numbers, and the verified
+        // payload carries the canonical one.
+        goTo(`/chain/${chainId}/block/${String(payload.data.number)}`);
+        return;
+      }
+
+      // A degraded response means a data source errored — never worded as
+      // a definitive "no results".
+      setSearchNotice(
+        payload?.degraded ? { kind: 'failed', query } : { kind: 'block-miss', query },
+      );
       return;
     }
 
@@ -662,11 +701,13 @@ export default function TopNavigation({
 
       if (payload?.found) {
         if (payload.type === 'transaction') {
+          setHistory(recordSearchHistoryEntry(query, chainId));
           goTo(`/chain/${chainId}/tx/${query}`);
           return;
         }
         if (payload.type === 'block' && payload.data?.number !== undefined) {
           // The block detail route only accepts numbers, not hashes.
+          setHistory(recordSearchHistoryEntry(query, chainId));
           goTo(`/chain/${chainId}/block/${String(payload.data.number)}`);
           return;
         }
@@ -710,6 +751,7 @@ export default function TopNavigation({
     // Free text goes to the full Search view, carrying the target chain
     // as context (?chain=) so the global endpoint searches it and its
     // suggestions link back to that chain's pages.
+    setHistory(recordSearchHistoryEntry(query, chainId));
     goTo(`/search?q=${encodeURIComponent(query)}&chain=${chainId}`);
   };
 
@@ -793,6 +835,8 @@ export default function TopNavigation({
                 <span>
                   {searchNotice.kind === 'miss' &&
                     `Hash not found on ${chainInfo?.name ?? 'this chain'} — it may exist on another network`}
+                  {searchNotice.kind === 'block-miss' &&
+                    `Block not found on ${chainInfo?.name ?? 'this chain'} — it may exist on another network`}
                   {searchNotice.kind === 'failed' &&
                     `Search failed on ${chainInfo?.name ?? 'this chain'} — a data source errored`}
                   {searchNotice.kind === 'ens-resolved' &&
@@ -803,15 +847,18 @@ export default function TopNavigation({
                     `ENS resolution failed for "${searchNotice.query}" — Ethereum RPC did not answer`}
                 </span>
                 <span className={searchNoticeActions}>
-                  {(searchNotice.kind === 'miss' || searchNotice.kind === 'failed') && (
+                  {(searchNotice.kind === 'miss'
+                    || searchNotice.kind === 'block-miss'
+                    || searchNotice.kind === 'failed') && (
                     <button
                       type="button"
                       className={searchNoticeLink}
                       onClick={() =>
-                        // No ?chain= on purpose: the hash's chain is unknown
-                        // (it just missed here), so the Search view must ask
-                        // which network to search next instead of re-running
-                        // it on this one — the link opens the network picker.
+                        // No ?chain= on purpose: the query's chain is
+                        // unknown (it just missed here), so the Search view
+                        // must ask which network to search next instead of
+                        // re-running it on this one — the link opens the
+                        // network picker.
                         goTo(`/search?q=${encodeURIComponent(searchNotice.query)}`)}
                     >
                       Choose a network →

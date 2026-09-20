@@ -27,7 +27,11 @@ const headerContentStyle = css`
   display: flex;
   align-items: center;
   gap: var(--haze-space-3);
+  /* Function name + selector/mutability chips overflow a phone row — wrap
+     instead of clipping (the container hides overflow for the radius). */
+  flex-wrap: wrap;
   flex: 1;
+  min-width: 0;
 `;
 
 const titleStyle = css`

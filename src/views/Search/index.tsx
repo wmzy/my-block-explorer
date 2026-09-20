@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { ErrorState } from '@/components/ui/ErrorState';
 import TopNavigation from '@/components/TopNavigation';
-import { getChainName, POPULAR_CHAINS } from '@/config/chains';
+import { getChainName } from '@/config/chains';
 import {
   fetchChainSearch,
   fetchSearch,
@@ -50,6 +50,16 @@ const searchForm = css`
   display: flex;
   gap: var(--haze-space-3);
   margin-bottom: var(--haze-space-6);
+
+  /* Narrow screens: the input's intrinsic width + the Search button no
+     longer fit one ~300px row — the button wraps to its own line. */
+  @media (max-width: 768px) {
+    flex-wrap: wrap;
+
+    button {
+      flex: 1 1 100%;
+    }
+  }
 `;
 
 const examples = css`
@@ -149,9 +159,13 @@ const chainFilterInput = css`
   margin-bottom: var(--haze-space-3);
 `;
 
-const chainToggle = css`
-  margin-top: var(--haze-space-4);
-  width: 100%;
+// Filter matched nothing within the (scoped) picker list: not a dead end —
+// the copy explains how to reach the unlisted networks.
+const chainEmpty = css`
+  padding: var(--haze-space-4);
+  text-align: center;
+  font-size: var(--haze-text-sm);
+  color: var(--haze-color-text-secondary);
 `;
 
 const exampleQueries = [
@@ -255,7 +269,6 @@ export default function Search() {
   const [result, setResult] = useState<SearchResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [chainFilter, setChainFilter] = useState('');
-  const [showAllChains, setShowAllChains] = useState(false);
   // Successful client-side ENS resolution, presented as a destination
   // choice: the address is a fact of Ethereum (resolution happens there),
   // and the user picks where to view it — Ethereum by default, the chain
@@ -458,11 +471,15 @@ export default function Search() {
     setError(null);
 
     try {
-      setResolvedChainId(selectedChainId);
-      recordSearchHistoryEntry(sanitized, selectedChainId);
-
       const searchResult = await fetchChainSearch(selectedChainId, sanitized);
       if (!searchResult) return;
+
+      // The search ran on the picked chain — claim it (resolved context,
+      // history entry) only now that the fetch came back: a failed
+      // request (the catch below) never claims a chain, records history
+      // or touches the URL.
+      setResolvedChainId(selectedChainId);
+      recordSearchHistoryEntry(sanitized, selectedChainId);
 
       if (!searchResult.found || !searchResult.data) {
         // A data-source error is not a definitive miss — say so instead of
@@ -537,28 +554,21 @@ export default function Search() {
   // Picker options come from the backend's own supported-chain list (the
   // needsChain response) — the exact set its route validation accepts — so
   // the picker can never offer a chain the backend would reject with a raw
-  // 400. The typed filter searches within that list; the collapsed popular
-  // row is the config's popular set intersected with it.
+  // 400. The list arrives pre-scoped (scope: 'popular' — the curated
+  // popular set, not the full viem universe) and each entry carries its
+  // native symbol, which the typed filter matches alongside name/ID.
   const allChains: SupportedChainRef[] = result?.supportedChains ?? [];
-  const popularChainRefs = useMemo(() => {
-    const supportedIds = new Set(allChains.map(c => c.chainId));
-    return POPULAR_CHAINS.filter(c => supportedIds.has(c.id)).map(c => ({
-      chainId: c.id,
-      name: c.name,
-    }));
-    // allChains is a fresh [] each render when absent; the memo only
-    // guards the popular-set intersection cost.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [result]);
   const filteredChainRefs = useMemo(() => {
     const filter = chainFilter.trim().toLowerCase();
     if (!filter) return null;
     return allChains.filter(
-      c => c.name.toLowerCase().includes(filter) || String(c.chainId).includes(filter),
+      c => c.name.toLowerCase().includes(filter)
+        || String(c.chainId).includes(filter)
+        || c.symbol.toLowerCase().includes(filter),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chainFilter, result]);
-  const visibleChains = filteredChainRefs ?? (showAllChains ? allChains : popularChainRefs);
+  const visibleChains = filteredChainRefs ?? allChains;
 
   return (
     <>
@@ -702,7 +712,10 @@ export default function Search() {
         {result?.needsChain && result.supportedChains && (
           <Card className={resultCard}>
             <CardHeader>
-              <CardTitle>Select Network</CardTitle>
+              {/* The heading names the response's own curation scope. */}
+              <CardTitle>
+                {result.scope === 'popular' ? 'Popular networks' : 'Select Network'}
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <p
@@ -722,33 +735,32 @@ export default function Search() {
                 />
               </div>
 
-              <div className={chainSelector}>
-                {visibleChains.map(chain => (
-                  <div
-                    key={chain.chainId}
-                    className={chainOption}
-                    onClick={() => handleChainSelect(chain.chainId)}
-                  >
-                    <div className={chainName}>{chain.name}</div>
-                    <div className={chainId}>
-                      Chain ID:
-                      {chain.chainId}
+              {visibleChains.length === 0 ? (
+                // The (scoped) list has no match for the filter — not a
+                // dead end: unlisted networks are reachable directly via
+                // their own chain URL.
+                <div className={chainEmpty}>
+                  No network here matches &quot;{chainFilter.trim()}&quot;. Other networks
+                  are not listed in this picker — open them directly at
+                  /chain/&lt;chain-id&gt;.
+                </div>
+              ) : (
+                <div className={chainSelector}>
+                  {visibleChains.map(chain => (
+                    <div
+                      key={chain.chainId}
+                      className={chainOption}
+                      onClick={() => handleChainSelect(chain.chainId)}
+                    >
+                      <div className={chainName}>{chain.name}</div>
+                      <div className={chainId}>
+                        Chain ID:
+                        {chain.chainId}
+                        {' '}• {chain.symbol}
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* A typed filter searches within the backend-supported list
-                  directly, so the popular/full toggle only applies to the
-                  unfiltered view. */}
-              {!chainFilter.trim() && (
-                <Button
-                  variant="outline"
-                  className={chainToggle}
-                  onClick={() => setShowAllChains(!showAllChains)}
-                >
-                  {showAllChains ? 'Show less' : `Show all ${allChains.length} networks`}
-                </Button>
+                  ))}
+                </div>
               )}
             </CardContent>
           </Card>

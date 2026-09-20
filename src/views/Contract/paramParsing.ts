@@ -49,7 +49,9 @@ export type ParsedArgs = {
 
 type ParseResult = { value?: unknown; error?: string };
 
-const ADDRESS_PATTERN = /^0x[0-9a-fA-F]{40}$/;
+// Exported for the Interact form's From-address inline validation (same
+// 0x-prefixed 40-hex shape the parser accepts for address parameters).
+export const ADDRESS_PATTERN = /^0x[0-9a-fA-F]{40}$/;
 const BOOL_PATTERN = /^(true|false)$/i;
 const HEX_PATTERN = /^0x[0-9a-fA-F]*$/;
 const INT_PATTERN = /^(u?)int(\d+)?$/;

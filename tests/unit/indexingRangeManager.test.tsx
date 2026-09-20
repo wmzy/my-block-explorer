@@ -410,6 +410,25 @@ describe('quick create auto-start toasts', () => {
       ),
     );
   });
+
+  it('appends the truncation note when the backend clamped toBlock to the head', async () => {
+    mockPost.mockResolvedValue({
+      rangeId: 3,
+      fromBlock: 100,
+      toBlock: 20_000_000,
+      truncatedToBlock: 20_000_000,
+      started: true,
+    });
+
+    render(<IndexingRangeManager chainId={CHAIN_ID} contractAddress={ADDRESS} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Index recent' }));
+
+    await waitFor(() =>
+      expect(vi.mocked(toast.success)).toHaveBeenCalledWith(
+        'Indexing started: blocks 100 - 20,000,000 — toBlock exceeds chain head 20,000,000 — truncated',
+      ),
+    );
+  });
 });
 
 describe('admin-token 403 guidance', () => {
@@ -505,6 +524,136 @@ describe('cold-start empty state quick actions', () => {
         abi: undefined,
       }),
     );
+  });
+});
+
+describe('full-history gate (Index everything)', () => {
+  it('arms the gate before any POST when the known head makes the span huge', async () => {
+    // Ranges load the chain head (20M); deleting the last range keeps that
+    // head in state, so the empty-state Index everything button can weigh
+    // its span locally. The creation block is unknown -> span = 20M blocks.
+    rangesFixture = [range(1, 300, 400, 'completed', 400)];
+    headFixture = 20_000_000;
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    mockDel.mockImplementation(async () => {
+      rangesFixture = [];
+      return {};
+    });
+
+    render(<IndexingRangeManager chainId={CHAIN_ID} contractAddress={ADDRESS} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete' }));
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Index everything' }));
+
+    // The first click only reveals the warning — nothing POSTed yet.
+    expect(mockPost).not.toHaveBeenCalled();
+    expect(screen.getByRole('alert')).toHaveTextContent(
+      'Full history spans about 20M blocks (20,000,000) — indexing may take hours to days.',
+    );
+    const checkbox = screen.getByRole('checkbox');
+    expect(checkbox).not.toBeChecked();
+
+    // Unchecked, the submit stays blocked…
+    fireEvent.click(screen.getByRole('button', { name: 'Index everything' }));
+    expect(mockPost).not.toHaveBeenCalled();
+
+    // …ticking the box is the explicit confirmation the POST carries.
+    fireEvent.click(checkbox);
+    mockPost.mockResolvedValue({ rangeId: 5, fromBlock: 0, toBlock: 20_000_000, started: true });
+    fireEvent.click(screen.getByRole('button', { name: 'Index everything' }));
+    await waitFor(() =>
+      expect(mockPost).toHaveBeenCalledWith(quickUrl, {
+        mode: 'all',
+        blockCount: undefined,
+        abi: undefined,
+        confirmFullHistory: true,
+      }),
+    );
+    expect(mockPost).toHaveBeenCalledTimes(1);
+    confirmSpy.mockRestore();
+  });
+
+  it('arms the gate from the backend refusal when the local head is unknown (cold start)', async () => {
+    // No ranges -> the head is never fetched -> the first POST doubles as
+    // the probe and the backend answers with the gate 400 (its facts ride
+    // on ApiError.details via the route's details channel).
+    mockPost.mockImplementation((url: string) => {
+      if (url === quickUrl) {
+        return Promise.reject(
+          new ApiError(
+            'Indexing the full history spans about 20,000,000 blocks — confirm with confirmFullHistory: true',
+            400,
+            undefined,
+            {
+              reason: 'full-history-unconfirmed',
+              spanBlocks: 20_000_000,
+              fromBlock: 0,
+              head: 20_000_000,
+            },
+          ),
+        );
+      }
+      return Promise.resolve({});
+    });
+
+    render(<IndexingRangeManager chainId={CHAIN_ID} contractAddress={ADDRESS} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Index everything' }));
+
+    // The probe POST went out without the confirmation bit…
+    await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1));
+    expect(mockPost).toHaveBeenCalledWith(quickUrl, {
+      mode: 'all',
+      blockCount: undefined,
+      abi: undefined,
+    });
+    // …and the refusal armed the same gate instead of surfacing an error.
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      /Full history spans about 20M blocks/,
+    );
+    expect(vi.mocked(toast.error)).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole('checkbox'));
+    mockPost.mockResolvedValue({ rangeId: 5, fromBlock: 0, toBlock: 20_000_000, started: true });
+    fireEvent.click(screen.getByRole('button', { name: 'Index everything' }));
+    await waitFor(() =>
+      expect(mockPost).toHaveBeenLastCalledWith(quickUrl, {
+        mode: 'all',
+        blockCount: undefined,
+        abi: undefined,
+        confirmFullHistory: true,
+      }),
+    );
+  });
+});
+
+describe('manual add truncation notice', () => {
+  it('shows an inline notice when the backend clamped toBlock to the chain head', async () => {
+    mockPost.mockResolvedValue({ truncatedToBlock: 123 });
+
+    render(<IndexingRangeManager chainId={CHAIN_ID} contractAddress={ADDRESS} />);
+    fireEvent.click(await screen.findByRole('button', { name: '+ Add Range' }));
+    const [fromInput, toInput] = screen.getAllByRole('textbox');
+    fireEvent.change(fromInput, { target: { value: '100' } });
+    fireEvent.change(toInput, { target: { value: '200' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add Range' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'toBlock exceeds chain head 123 — truncated',
+    );
+  });
+
+  it('shows no notice when the range was stored unchanged', async () => {
+    mockPost.mockResolvedValue({});
+
+    render(<IndexingRangeManager chainId={CHAIN_ID} contractAddress={ADDRESS} />);
+    fireEvent.click(await screen.findByRole('button', { name: '+ Add Range' }));
+    const [fromInput, toInput] = screen.getAllByRole('textbox');
+    fireEvent.change(fromInput, { target: { value: '100' } });
+    fireEvent.change(toInput, { target: { value: '200' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add Range' }));
+
+    await waitFor(() => expect(mockPost).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 });
 

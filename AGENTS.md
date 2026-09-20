@@ -288,9 +288,13 @@ pnpm typecheck           # tsc --noEmit
   out-of-range `?page=` converges via history replace to the deepest valid
   page — no shareable empty pages).
   Token Transfers tab: separate on-demand getLogs scan — `?refresh=1`
-  bypasses the ~60s scan cache (Retry genuinely re-scans), "Search deeper"
-  widens `?window=` (route clamps 1–50M), its page rides the URL as
-  `?ttPage=` (shared schema in `views/Address/search.ts`), and an empty
+  bypasses the ~60s scan cache (Retry genuinely re-scans; a cache hit
+  reports the FIRST scan's `scannedAt`, rendered as "Scanned X ago"),
+  "Search deeper" widens `?ttWindow=` (route clamps 1–50M), its page rides
+  the URL as `?ttPage=` (shared schema in `views/Address/search.ts`;
+  out-of-range pages replace-converge to page 1), and the active tab rides
+  `?tab=` (a `?ttPage=2+` deep link without `?tab=` lands on the transfers
+  tab; explicit `?tab=` always wins). An empty
   contract scan offers a CTA to the contract Events indexing flow;
   empty + unknown coverage renders the same "source unknown" banner as the
   tx tab (an empty list is never proof of absence there). Discovered tx lists

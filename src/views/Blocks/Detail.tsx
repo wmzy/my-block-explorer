@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import { css } from '@linaria/core';
-import { navigate } from '@native-router/core';
 import { TypedLink, useMatched } from '@native-router/react';
 import { formatGwei } from 'viem';
 
@@ -13,12 +12,15 @@ import { InfoGrid, InfoItem } from '@/components/ui/InfoGrid';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { PageContainer, PageHeader, BackButton } from '@/components/ui/PageLayout';
 import { linkStyle } from '@/components/ui/DataTable';
+import { ExternalLinks } from '@/components/ui/ExternalLinks';
 import { getChainInfo, getChainName, getChainType } from '@/config/chains';
-import { redirectReplace } from '@/views/Home/Landing';
+import { getExternalBlockLinks } from '@/config/externalTools';
+import { redirectReplace, navigateBack } from '@/views/Home/Landing';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
 import { useBlockByNumber } from '@/services/chainRpc';
 import { finalityLabelFor, useFinalityHeads } from '@/services/blocks';
 import { formatRelativeTime } from '@/utils/format';
+import { parseBlockNumberParam } from '@/utils/chainParam';
 import { createRpcClient } from '@/utils/realTimeData';
 
 // Gas quantities are on-chain integers serialized as strings: format them
@@ -47,17 +49,7 @@ async function fetchLatestBlockNumber(chainId: number): Promise<bigint | undefin
   } catch {
     return undefined;
   }
-};
-
-// Decimal route param → bigint, BigInt-safe far past 2^53; undefined when
-// the string is not a plain integer (the fetch has already failed there).
-const parseBlockNumber = (value: string): bigint | undefined => {
-  try {
-    return BigInt(value);
-  } catch {
-    return undefined;
-  }
-};
+}
 
 const futureBlockLinks = css`
   display: flex;
@@ -65,12 +57,13 @@ const futureBlockLinks = css`
   margin-top: var(--haze-space-3);
 `;
 
-// PageHeader block + the testnet pill on one row (same scale as the Blocks
-// list header).
+// PageHeader block, the testnet pill, and the cross-verification links on
+// one row (same scale as the Blocks list header); wraps on narrow screens.
 const headerRow = css`
   display: flex;
   align-items: center;
   gap: var(--haze-space-2);
+  flex-wrap: wrap;
 `;
 
 export default function BlockDetail() {
@@ -79,15 +72,15 @@ export default function BlockDetail() {
   const currentChainId = Number.parseInt(params.chainId ?? '1', 10);
   const chainInfo = getChainInfo(currentChainId);
   const blockNumberStr = params.blockNumber ?? '';
-  const parsedNumber = Number(blockNumberStr);
-  const invalidNumber = !Number.isFinite(parsedNumber) || parsedNumber < 0;
+  // Decimal-only validation: Number("0x1a") === 26 (hex!), so a hex-ish
+  // param used to silently load the wrong block — now it is an explicit
+  // invalid state. Block 0 (genesis) stays valid.
+  const parsedBlockNumber = parseBlockNumberParam(blockNumberStr);
+  const invalidNumber = parsedBlockNumber === null;
 
   // The service fetch guards invalid numbers itself (no network), so the
   // hook runs unconditionally and the view reports the bad param.
-  const { data: blockInfo, loading, error } = useBlockByNumber(
-    currentChainId,
-    blockNumberStr,
-  );
+  const { data: blockInfo, loading, error } = useBlockByNumber(currentChainId, blockNumberStr);
 
   // Future-block hint: when the block fetch fails, one extra head lookup
   // decides between "does not exist yet" guidance and a genuine RPC
@@ -116,8 +109,9 @@ export default function BlockDetail() {
   }, [error, invalidNumber, headChecked, currentChainId]);
 
   // Only a resolved head AND a beyond-head request produce the friendly
-  // state; anything else keeps the genuine error UI.
-  const requestedBlock = parseBlockNumber(blockNumberStr);
+  // state; anything else keeps the genuine error UI. (parsedBlockNumber is
+  // already a safe integer, so the BigInt step is exact.)
+  const requestedBlock = parsedBlockNumber !== null ? BigInt(parsedBlockNumber) : undefined;
   const futureBlock =
     requestedBlock !== undefined && latestBlock !== undefined && requestedBlock > latestBlock
       ? { requested: requestedBlock, latest: latestBlock }
@@ -134,16 +128,16 @@ export default function BlockDetail() {
 
   // Finality label for the viewed block (same semantics as the list rows):
   // unknown heads render no badge — absence of data is not "pending" — and
-  // a non-finite parsed number fails both comparisons, so an invalid param
-  // never earns one either. Guarded to 0 on the unsupported-chain branch
-  // like the list's feed hook.
+  // an invalid param earns none either (no number to compare). Guarded to
+  // 0 on the unsupported-chain branch like the list's feed hook.
   const finalityHeads = useFinalityHeads(chainInfo ? currentChainId : 0).data;
-  const finalityLabel = finalityLabelFor(finalityHeads, parsedNumber);
+  const finalityLabel =
+    parsedBlockNumber === null ? undefined : finalityLabelFor(finalityHeads, parsedBlockNumber);
 
   // Parent-hash link target: block N's parent is N-1. The genesis block
   // has no parent to visit (its parent hash is the zero placeholder), so
   // its row stays copy-only.
-  const fetchedNumber = blockInfo ? parseBlockNumber(blockInfo.number) : undefined;
+  const fetchedNumber = blockInfo ? BigInt(blockInfo.number) : undefined;
   const parentNumber =
     fetchedNumber !== undefined && fetchedNumber > 0n ? fetchedNumber - 1n : undefined;
 
@@ -162,9 +156,7 @@ export default function BlockDetail() {
     <>
       <TopNavigation currentChainId={currentChainId} onChainChange={handleChainChange} />
       <PageContainer>
-        <BackButton
-          onClick={() => void navigate(router, `/chain/${currentChainId}`).catch(() => undefined)}
-        />
+        <BackButton onClick={() => navigateBack(router, `/chain/${currentChainId}/blocks`)} />
 
         <div className={headerRow}>
           <PageHeader
@@ -183,9 +175,18 @@ export default function BlockDetail() {
               Testnet
             </Badge>
           )}
+          {/* Cross-verification in an external explorer from the page head —
+              only a decimal block number makes a valid external URL. */}
+          {!invalidNumber && (
+            <ExternalLinks links={getExternalBlockLinks(currentChainId, blockNumberStr)} />
+          )}
         </div>
 
-        {invalidNumber && <ErrorState message="Invalid block number or chain ID" />}
+        {invalidNumber && (
+          <ErrorState
+            message={`Invalid block number: "${blockNumberStr}" is not a decimal block number (expected a number like 18000001).`}
+          />
+        )}
 
         {!invalidNumber && loading && <LoadingState message="Loading block information..." />}
 

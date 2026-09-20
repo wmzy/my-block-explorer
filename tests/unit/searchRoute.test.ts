@@ -38,6 +38,7 @@ vi.mock('../../src/services/AddressService', () => ({
 }));
 
 import searchRoutes from '../../src/routes/search';
+import { POPULAR_CHAINS } from '../../src/config/chains';
 
 const makeBlock = (chainId: number) => ({
   chainId,
@@ -94,7 +95,7 @@ describe('GET /search (global)', () => {
     expect(mockGetBlockByNumber).toHaveBeenCalledWith(137, 18_000_000n);
   });
 
-  it('keeps needsChain (with the supported-chain list) when no chainId is given', async () => {
+  it('answers needsChain with the popular-chain scope when no chainId is given', async () => {
     const res = await searchRoutes.request(`/search?q=${TX_HASH}`);
     expect(res.status).toBe(200);
 
@@ -103,8 +104,15 @@ describe('GET /search (global)', () => {
     expect(body.needsChain).toBe(true);
     expect(body.type).toBe('transaction');
     expect(body.query).toBe(TX_HASH);
-    expect(Array.isArray(body.supportedChains)).toBe(true);
-    expect(body.supportedChains.length).toBeGreaterThan(0);
+    // The picker list is the curated popular set — not the full viem
+    // universe — each entry carrying its native symbol for filtering.
+    expect(body.scope).toBe('popular');
+    expect(body.supportedChains).toHaveLength(POPULAR_CHAINS.length);
+    expect(body.supportedChains[0]).toEqual({
+      chainId: POPULAR_CHAINS[0].id,
+      name: POPULAR_CHAINS[0].name,
+      symbol: POPULAR_CHAINS[0].nativeCurrency.symbol,
+    });
     // Ambiguity is answered without burning any upstream lookup.
     expect(mockGetTransactionByHash).not.toHaveBeenCalled();
     expect(mockGetBlockByHash).not.toHaveBeenCalled();

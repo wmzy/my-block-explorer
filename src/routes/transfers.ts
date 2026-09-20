@@ -49,6 +49,9 @@ app.get('/chains/:chainId/addresses/:address/transfers', async (c) => {
       nextCursor: result.nextCursor,
       coverage: result.coverage,
       windowBlocks: result.windowBlocks,
+      // First-scan time of the cache entry (freshness for the client's
+      // 'Scanned X ago'); additive field — older clients ignore it.
+      scannedAt: result.scannedAt,
     });
 
     return c.json(responseData);

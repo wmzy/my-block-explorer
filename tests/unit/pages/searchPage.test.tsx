@@ -3,9 +3,14 @@
 // an in-view pinned chain) and navigates straight to the entity; with no
 // explicit context — even when a chain is merely remembered — it comes
 // back as needsChain and the network picker appears, claiming no 'Searched
-// on' line and recording no history. ENS searches record history only
-// after a successful resolution and the confirmation banner names BOTH the
-// resolution provenance (Ethereum) and the destination chain.
+// on' line and recording no history. A chain picked in the picker is
+// claimed (context line, history entry) only after that chain's search
+// actually returns. The picker renders the response's own curation scope
+// ('popular'), filters by name/ID/symbol, and its empty state points at
+// the direct /chain/:id route for unlisted networks. ENS searches record
+// history only after a successful resolution and the confirmation banner
+// names BOTH the resolution provenance (Ethereum) and the destination
+// chain.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter, View, createRoutes, useMatched } from '@native-router/react';
@@ -55,9 +60,10 @@ const needsChainResponse = {
   needsChain: true,
   type: 'transaction',
   query: TX_HASH,
+  scope: 'popular',
   supportedChains: [
-    { chainId: 1, name: 'Ethereum' },
-    { chainId: 137, name: 'Polygon' },
+    { chainId: 1, name: 'Ethereum', symbol: 'ETH' },
+    { chainId: 137, name: 'Polygon', symbol: 'MATIC' },
   ],
 };
 
@@ -110,7 +116,7 @@ describe('Search view', () => {
       expect(mockFetchSearch).toHaveBeenCalledWith(TX_HASH, 137);
     });
     expect(await screen.findByTestId('tx-chain-137')).toBeInTheDocument();
-    expect(screen.queryByText('Select Network')).not.toBeInTheDocument();
+    expect(screen.queryByText('Popular networks')).not.toBeInTheDocument();
     expect(mockFetchChainSearch).not.toHaveBeenCalled();
   });
 
@@ -123,7 +129,7 @@ describe('Search view', () => {
       expect(mockFetchSearch).toHaveBeenCalledWith(TX_HASH, undefined);
     });
 
-    expect(await screen.findByText('Select Network')).toBeInTheDocument();
+    expect(await screen.findByText('Popular networks')).toBeInTheDocument();
     // Picker suppressions: no 'Searched on' claim, no history entry.
     expect(screen.queryByText(/Searched on/)).not.toBeInTheDocument();
     expect(mockRecordHistory).not.toHaveBeenCalled();
@@ -146,7 +152,7 @@ describe('Search view', () => {
     await waitFor(() => {
       expect(mockFetchSearch).toHaveBeenCalledWith(TX_HASH, undefined);
     });
-    expect(await screen.findByText('Select Network')).toBeInTheDocument();
+    expect(await screen.findByText('Popular networks')).toBeInTheDocument();
     expect(mockRecordHistory).not.toHaveBeenCalled();
   });
 
@@ -233,7 +239,7 @@ describe('Search view', () => {
     await waitFor(() => {
       expect(mockFetchSearch).toHaveBeenLastCalledWith(TX_HASH, undefined);
     });
-    expect(await screen.findByText('Select Network')).toBeInTheDocument();
+    expect(await screen.findByText('Popular networks')).toBeInTheDocument();
     // The page no longer claims the chain the miss ran on.
     expect(screen.queryByText('Searched on Polygon')).not.toBeInTheDocument();
   });
@@ -259,5 +265,58 @@ describe('Search view', () => {
     expect(screen.queryByText(/No results found/)).not.toBeInTheDocument();
     // A degraded miss is not a chain-relative dead end either.
     expect(screen.getByText('Try another network')).toBeInTheDocument();
+  });
+
+  it('claims the picked chain and records history only after the picker search returns', async () => {
+    // Backend unreachable: the picker's chain fetch rejects — the page
+    // must show the failure without claiming any 'Searched on' chain,
+    // recording history or otherwise acting on a search that never ran.
+    mockFetchSearch.mockResolvedValue(needsChainResponse);
+    mockFetchChainSearch.mockRejectedValueOnce(new Error('backend unreachable'));
+
+    renderSearch(`/search?q=${TX_HASH}`);
+    fireEvent.click(await screen.findByText('Polygon'));
+
+    expect(await screen.findByText(/backend unreachable/)).toBeInTheDocument();
+    expect(screen.queryByText(/Searched on/)).not.toBeInTheDocument();
+    expect(mockRecordHistory).not.toHaveBeenCalled();
+  });
+
+  it('records the picked chain once its search lands and navigates to the entity', async () => {
+    mockFetchSearch.mockResolvedValue(needsChainResponse);
+    mockFetchChainSearch.mockResolvedValueOnce({
+      found: true,
+      type: 'transaction',
+      chainId: 137,
+      data: { hash: TX_HASH, chainId: 137 },
+    });
+
+    renderSearch(`/search?q=${TX_HASH}`);
+    fireEvent.click(await screen.findByText('Polygon'));
+
+    // History carries the chain the search actually landed on, recorded
+    // after the fetch — not when the option was clicked.
+    expect(await screen.findByTestId('tx-chain-137')).toBeInTheDocument();
+    expect(mockRecordHistory).toHaveBeenCalledWith(TX_HASH, 137);
+  });
+
+  it('filters the picker by native symbol and explains unmatched networks', async () => {
+    mockFetchSearch.mockResolvedValue(needsChainResponse);
+
+    renderSearch(`/search?q=${TX_HASH}`);
+    await screen.findByText('Popular networks');
+
+    // The placeholder promises symbol filtering — typing a symbol (not a
+    // name or ID substring) must surface its chain.
+    const filter = screen.getByPlaceholderText('Filter networks by name, ID, or symbol...');
+    fireEvent.change(filter, { target: { value: 'matic' } });
+
+    expect(screen.getByText('Polygon')).toBeInTheDocument();
+    expect(screen.queryByText('Ethereum')).not.toBeInTheDocument();
+
+    // No match within the scoped list is not a dead end: the empty state
+    // points at the direct route for unlisted networks.
+    fireEvent.change(filter, { target: { value: 'zzz' } });
+    expect(await screen.findByText(/open them directly at \/chain\//)).toBeInTheDocument();
   });
 });

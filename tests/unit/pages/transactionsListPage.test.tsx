@@ -66,6 +66,16 @@ vi.mock('@/services/chainRpc', () => ({
   useLatestTransactions: (...args: unknown[]) => mockUseLatestTransactions(...args),
 }));
 
+// Live-head feed backing the staleness hint (same polled service as the
+// Blocks list and Home views).
+type FeedHookResult = { data?: { latestBlockNumber?: bigint }; loading?: boolean };
+
+const mockUseLatestBlocksFeed = vi.fn<(...args: unknown[]) => FeedHookResult>();
+
+vi.mock('@/services/homeFeed', () => ({
+  useLatestBlocksFeed: (...args: unknown[]) => mockUseLatestBlocksFeed(...args),
+}));
+
 const makeTx = (blockNumber: number, status: number) => ({
   hash: `0xtx${blockNumber}`,
   blockNumber: String(blockNumber),
@@ -104,6 +114,8 @@ describe('TransactionsList view', () => {
       loading: false,
       error: undefined,
     });
+    // No live head beyond the page snapshot by default: no staleness hint.
+    mockUseLatestBlocksFeed.mockReturnValue({ data: undefined });
   });
 
   it('renders TopNavigation and page header, querying the head page', async () => {
@@ -180,14 +192,8 @@ describe('TransactionsList view', () => {
     // deterministic CTAs instead of a bare dead-end error.
     expect(await screen.findByText(/Chain not supported/)).toBeInTheDocument();
     expect(screen.getByText(/chain ID 999/)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Go to Mainnet' })).toHaveAttribute(
-      'href',
-      '/chain/1',
-    );
-    expect(screen.getByRole('link', { name: 'Open chain list' })).toHaveAttribute(
-      'href',
-      '/',
-    );
+    expect(screen.getByRole('link', { name: 'Go to Mainnet' })).toHaveAttribute('href', '/chain/1');
+    expect(screen.getByRole('link', { name: 'Open chain list' })).toHaveAttribute('href', '/');
   });
 
   it('renders Pending for transactions without a receipt (status -1)', async () => {
@@ -296,27 +302,48 @@ describe('TransactionsList view', () => {
     expect(await screen.findByText(/Page 1/)).toBeInTheDocument();
   });
 
-  it('Refresh drops the ?block= deep-link seed and returns to the live head', async () => {
+  it('Refresh keeps the ?block= anchor and re-pulls the seeded page; Show latest clears it', async () => {
+    const refetch = vi.fn();
     mockUseLatestTransactions.mockReturnValue({
       data: {
-        transactions: [makeTx(18000001, 1)],
+        transactions: [makeTx(18000000, 1)],
         latestBlockNumber: 18000001n,
         hasMore: false,
       },
       loading: false,
       fetching: false,
       error: undefined,
-      refetch: vi.fn(),
+      refetch,
     });
     renderTransactionsList('/chain/1/transactions?block=18000000');
 
     expect(await screen.findByText('Success')).toBeInTheDocument();
+    // The anchored view says so in the title instead of looking like the
+    // live head page.
+    expect(screen.getByText('Transactions · anchored at Block #18,000,000')).toBeInTheDocument();
     // Seeded page 1 carries the deep-link cursor.
     expect(mockUseLatestTransactions).toHaveBeenCalledWith(1, 20, 18_000_001_000_000n);
 
+    // Refresh re-pulls page 1 OF THE ANCHOR: the seed cursor stays (the
+    // deep link is the point of the page) and the URL keeps the param —
+    // the rendered page never switches to the live-head cursor.
     fireEvent.click(screen.getByRole('button', { name: '↻ Refresh' }));
-    // The seed is dropped: page 1 queries the live head (no cursor).
-    expect(mockUseLatestTransactions).toHaveBeenLastCalledWith(1, 20, undefined);
+    expect(refetch).toHaveBeenCalled();
+    await waitFor(() =>
+      expect(screen.getByTestId('search-probe').textContent).toBe('block=18000000&page=1'),
+    );
+    expect(mockUseLatestTransactions).toHaveBeenLastCalledWith(1, 20, 18_000_001_000_000n);
+
+    // "Show latest" is the explicit way out: it drops the anchor, the walk
+    // re-seeds at the live head and the URL loses the param.
+    fireEvent.click(screen.getByRole('button', { name: 'Show latest' }));
+    await waitFor(() =>
+      expect(mockUseLatestTransactions).toHaveBeenLastCalledWith(1, 20, undefined),
+    );
+    await waitFor(() => expect(screen.getByTestId('search-probe').textContent).toBe('page=1'));
+    expect(
+      screen.queryByText('Transactions · anchored at Block #18,000,000'),
+    ).not.toBeInTheDocument();
   });
 
   it('walks a ?page=2 deep link: page 1 chains its cursor into the page-2 query', async () => {
@@ -371,15 +398,11 @@ describe('TransactionsList view', () => {
 
     fireEvent.click(screen.getByText('Older'));
     expect(await screen.findByText(/Page 2/)).toBeInTheDocument();
-    await waitFor(() =>
-      expect(screen.getByTestId('search-probe').textContent).toBe('page=2'),
-    );
+    await waitFor(() => expect(screen.getByTestId('search-probe').textContent).toBe('page=2'));
 
     fireEvent.click(screen.getByText('Newer'));
     expect(await screen.findByText(/Page 1/)).toBeInTheDocument();
-    await waitFor(() =>
-      expect(screen.getByTestId('search-probe').textContent).toBe('page=1'),
-    );
+    await waitFor(() => expect(screen.getByTestId('search-probe').textContent).toBe('page=1'));
   });
 
   it('keeps the ?block= anchor when paging writes ?page=', async () => {
@@ -439,9 +462,7 @@ describe('TransactionsList view', () => {
     // The walk stops where the chain does (page 2); the URL is replaced to
     // report the page actually shown instead of the unreachable page 5.
     expect(await screen.findByText(/Page 2/)).toBeInTheDocument();
-    await waitFor(() =>
-      expect(screen.getByTestId('search-probe').textContent).toBe('page=2'),
-    );
+    await waitFor(() => expect(screen.getByTestId('search-probe').textContent).toBe('page=2'));
   });
 
   it('falls back to page 1 when ?page= is garbage', async () => {
@@ -460,5 +481,90 @@ describe('TransactionsList view', () => {
     // zod's .catch(1) degrades ?page=abc: the head page renders, no walk.
     expect(await screen.findByText(/Page 1/)).toBeInTheDocument();
     expect(mockUseLatestTransactions).toHaveBeenCalledWith(1, 20, undefined);
+  });
+
+  it('renders a pending row with Pending text and no block link', async () => {
+    mockUseLatestTransactions.mockReturnValue({
+      data: {
+        transactions: [{ ...makeTx(18000001, -1), blockNumber: null }],
+        latestBlockNumber: 18000001n,
+        hasMore: false,
+      },
+      loading: false,
+      error: undefined,
+    });
+    renderTransactionsList('/chain/1/transactions');
+
+    // The Block cell degrades to honest Pending text: no "0" number, and
+    // neither Pending occurrence (status badge, block cell) is a link —
+    // a transaction with no block position never points at /block/0.
+    const pendings = await screen.findAllByText('Pending');
+    expect(pendings.length).toBe(2);
+    for (const el of pendings) {
+      expect(el.closest('a')).toBeNull();
+    }
+    expect(screen.queryByText('0')).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: '0' })).not.toBeInTheDocument();
+  });
+
+  it('flags stale data when the polled live head passes the page snapshot', async () => {
+    mockUseLatestTransactions.mockReturnValue({
+      data: {
+        transactions: [makeTx(18000001, 1)],
+        latestBlockNumber: 18000001n,
+        hasMore: false,
+      },
+      loading: false,
+      fetching: false,
+      error: undefined,
+      refetch: vi.fn(),
+    });
+    // The polled feed reports a head 10 blocks beyond the page snapshot.
+    mockUseLatestBlocksFeed.mockReturnValue({ data: { latestBlockNumber: 18000011n } });
+    renderTransactionsList('/chain/1/transactions');
+
+    // The hint names the drift (Blocks/List pattern) and offers the same
+    // refresh control the toolbar carries.
+    expect(await screen.findByText(/10 new blocks/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Refresh' })).toBeInTheDocument();
+  });
+
+  it('renders no staleness hint while the live head matches the page snapshot', async () => {
+    mockUseLatestTransactions.mockReturnValue({
+      data: {
+        transactions: [makeTx(18000001, 1)],
+        latestBlockNumber: 18000001n,
+        hasMore: false,
+      },
+      loading: false,
+      error: undefined,
+    });
+    mockUseLatestBlocksFeed.mockReturnValue({ data: { latestBlockNumber: 18000001n } });
+    renderTransactionsList('/chain/1/transactions');
+
+    expect(await screen.findByText('Success')).toBeInTheDocument();
+    expect(screen.queryByText(/new blocks/)).not.toBeInTheDocument();
+  });
+
+  it('displays dust values with the shared <0.0001 floor', async () => {
+    mockUseLatestTransactions.mockReturnValue({
+      data: {
+        transactions: [
+          { ...makeTx(18000001, 1), value: '1' }, // 1 wei — far below 0.0001
+          { ...makeTx(18000000, 1), value: '0' },
+        ],
+        latestBlockNumber: 18000001n,
+        hasMore: false,
+      },
+      loading: false,
+      error: undefined,
+    });
+    renderTransactionsList('/chain/1/transactions');
+
+    // Shared formatValue contract: dust floors at <0.0001 instead of a
+    // misleading 0.0000; zero renders exactly.
+    expect(await screen.findByText('<0.0001 ETH')).toBeInTheDocument();
+    expect(screen.getByText('0 ETH')).toBeInTheDocument();
+    expect(screen.queryByText('0.0000 ETH')).not.toBeInTheDocument();
   });
 });

@@ -240,6 +240,67 @@ describe('quick range auto-start', () => {
   });
 });
 
+describe('quick range mode: all (full-history gate)', () => {
+  it('maps the unconfirmed full-history refusal to a 400 carrying the span facts in details', async () => {
+    mocks.createRangeAll.mockResolvedValue({
+      success: false,
+      error:
+        'Indexing the full history spans about 20,000,000 blocks — confirm with confirmFullHistory: true',
+      reason: 'full-history-unconfirmed',
+      spanBlocks: 20_000_000,
+      fromBlock: 0,
+      head: 20_000_000,
+    });
+
+    const res = await post(`${BASE}/ranges/quick`, { mode: 'all' });
+
+    expect(res.status).toBe(400);
+    // Only an explicit true confirms — anything else keeps the gate.
+    expect(mocks.createRangeAll).toHaveBeenCalledWith(CHAIN_ID, ADDRESS, {
+      direction: undefined,
+      priority: undefined,
+      confirmFullHistory: false,
+    });
+    const body = await res.json();
+    expect(body.error).toBe('Full history confirmation required');
+    expect(body.message).toContain('20,000,000');
+    expect(body.reason).toBe('full-history-unconfirmed');
+    // `details` is the channel the frontend HTTP layer surfaces on
+    // ApiError — the UI arms its confirmation gate from these facts.
+    expect(body.details).toEqual({
+      reason: 'full-history-unconfirmed',
+      spanBlocks: 20_000_000,
+      fromBlock: 0,
+      head: 20_000_000,
+    });
+    // A refused create never auto-starts anything.
+    expect(mocks.startIndexingRange).not.toHaveBeenCalled();
+  });
+
+  it('forwards confirmFullHistory === true and mirrors truncatedToBlock on success', async () => {
+    mocks.createRangeAll.mockResolvedValue({
+      success: true,
+      rangeId: 3,
+      fromBlock: 0,
+      toBlock: 20_000_000,
+      truncatedToBlock: 20_000_000,
+    });
+
+    const res = await post(`${BASE}/ranges/quick`, { mode: 'all', confirmFullHistory: true });
+
+    expect(res.status).toBe(201);
+    expect(mocks.createRangeAll).toHaveBeenCalledWith(CHAIN_ID, ADDRESS, {
+      direction: undefined,
+      priority: undefined,
+      confirmFullHistory: true,
+    });
+    const body = await res.json();
+    expect(body.truncatedToBlock).toBe(20_000_000);
+    expect(body.fromBlock).toBe(0);
+    expect(body.toBlock).toBe(20_000_000);
+  });
+});
+
 describe('PATCH range bound validation', () => {
   it('rejects a non-numeric, non-tag bound with 400 before reaching the service', async () => {
     const res = await request(`${BASE}/ranges/1`, {

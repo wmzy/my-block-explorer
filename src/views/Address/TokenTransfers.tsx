@@ -10,8 +10,9 @@ import { erc20Abi, formatUnits } from 'viem';
 import { Alert } from 'haze-ui';
 import { useTokenTransfers, requestTokenTransfersRefresh, type TokenTransfer } from '@/services/tokenTransfers';
 import { createRpcClient } from '@/utils/realTimeData';
-import { addressSearchSchema } from '@/views/Address/search';
+import { addressSearchSchema, shouldPinTransfersPage } from '@/views/Address/search';
 import { getExternalToolLinks } from '@/config/externalTools';
+import { formatRelativeTime } from '@/utils/format';
 import { DataTable, Pagination, linkStyle } from '@/components/ui/DataTable';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { ErrorState } from '@/components/ui/ErrorState';
@@ -45,6 +46,21 @@ const bannerLinks = css`
 // same number inside its warning banner).
 const windowNote = css`
   margin: 0 0 var(--haze-space-3);
+  color: var(--haze-color-text-muted);
+  font-size: var(--haze-text-xs);
+`;
+
+// Freshness disclosure at the head of the tab (first-scan time).
+const scanNote = css`
+  margin: 0 0 var(--haze-space-3);
+  color: var(--haze-color-text-muted);
+  font-size: var(--haze-text-xs);
+`;
+
+// Legend under the table: the scan contract carries no timestamps, so the
+// Age column's placeholder stays explained instead of looking broken.
+const timestampLegend = css`
+  margin: var(--haze-space-2) 0 0;
   color: var(--haze-color-text-muted);
   font-size: var(--haze-text-xs);
 `;
@@ -234,8 +250,8 @@ function TransferRow({ chainId, transfer }: { chainId: number; transfer: TokenTr
         </TypedLink>
       </td>
       {/* The scan contract carries no timestamps — an em dash, never a
-          fabricated age. */}
-      <td>—</td>
+          fabricated age; the title explains the placeholder. */}
+      <td title="Timestamps are not available for scan results">—</td>
       <td>
         <Badge
           variant={transfer.direction === 'in' ? 'success' : 'error'}
@@ -299,27 +315,26 @@ export default function TokenTransfers({
   // address-page schema: deep pages are shareable, refresh-stable and
   // back/forward works. Writes go through the functional form so the tx
   // tab's ?page=/?window= merge in instead of being clobbered; invalid or
-  // absent values coerce to 1, and the view clamps to >= 1.
+  // absent values coerce to 1, and the view clamps to >= 1. Every write
+  // also pins ?tab=transfers — this component only renders on that tab,
+  // so its URL writes must keep the deep link landing there.
   const setSearch = useSetSearch(addressSearchSchema);
-  const { ttPage: ttPageParam } = useSearch(addressSearchSchema);
+  const { ttPage: ttPageParam, ttWindow: ttWindowParam } = useSearch(addressSearchSchema);
   const page = Math.max(1, Math.floor(ttPageParam));
   const setPage = (next: number) => {
     void setSearch(prev => ({
       ...prev,
+      tab: 'transfers',
       ttPage: String(Math.max(1, Math.floor(next))),
     }));
   };
-  // Widened scan window (blocks) requested via ?window= — undefined is
-  // the backend default. "Search deeper" escalates it; it rides in the
-  // query args so a wider window is a fresh cache key/fetch, never the
-  // shallower scan's entry.
-  const [searchWindow, setSearchWindow] = useState<number | undefined>(undefined);
-  // New address/chain context: the widened window restarts from scratch.
-  // ?ttPage= needs no reset — navigating to another address is a fresh
-  // URL that never carries this tab's page.
-  useEffect(() => {
-    setSearchWindow(undefined);
-  }, [chainId, address]);
+  // Widened scan window (blocks) from ?ttWindow= — undefined is the
+  // backend default. URL-driven (never local state): the window survives
+  // refresh/share, and a different address's URL cannot carry it over —
+  // navigating between addresses re-parses the search in the SAME render
+  // pass the address changes, so no frame ever scans a new address with
+  // the previous one's window (the old reset-in-effect lagged one frame).
+  const searchWindow = ttWindowParam;
 
   // Cursor = decimal offset into the cached list ('0' = first page).
   const cursor = String((page - 1) * TRANSFER_LIMIT);
@@ -328,11 +343,37 @@ export default function TokenTransfers({
   const transfers = query.data?.transfers ?? [];
   const coverage = query.data?.coverage;
   const windowBlocks = query.data?.windowBlocks;
+  // First-scan time (server cache hit) — absent on legacy payloads
+  // without the field, in which case no freshness is claimed.
+  const scannedAt = query.data?.scannedAt;
   const windowLabel = windowBlocks !== undefined ? windowBlocks.toLocaleString() : undefined;
   // nextCursor drives Next (null = end of the discovered list); no total
   // is claimed — the scan never asserts one.
   const hasNext = query.data ? query.data.nextCursor !== null : false;
   const externalToolLinks = getExternalToolLinks(chainId, address);
+
+  // Beyond-data convergence (Transactions/List semantics): once a payload
+  // settles with no rows at this offset on a page past the first, the URL
+  // is pinned (replaced) to page 1 — an empty transfers page is never
+  // shareable or refreshable. Mid-flight (or failed) fetches converge
+  // nothing; the empty-page row further below is the honest fallback for
+  // those races. The scan cannot report a deepest valid page (no total is
+  // claimed), so page 1 is the only provably valid target.
+  const pageBeyondData = shouldPinTransfersPage(
+    {
+      hasData: query.data !== undefined,
+      loading: query.loading,
+      hasError: query.error !== undefined,
+    },
+    transfers.length,
+    page,
+  );
+  useEffect(() => {
+    if (!pageBeyondData) return;
+    void setSearch(prev => ({ ...prev, tab: 'transfers', ttPage: '1' }), {
+      replace: true,
+    });
+  }, [pageBeyondData, setSearch]);
 
   // "Search deeper" escalation (mirrors the tx tab): quadruple the
   // effective window the RESPONSE reported (post-clamp truth, not the
@@ -369,6 +410,14 @@ export default function TokenTransfers({
   return (
     <>
       {query.loading && query.data && <LoadingState message="Loading page..." />}
+
+      {/* Freshness of the tab's data: the scan rides a ~60s server cache,
+          and a cache hit reports the FIRST scan's time (not the serve
+          time), so the age honestly keeps growing within the TTL. Legacy
+          payloads without the field claim no freshness at all. */}
+      {!query.loading && !query.error && scannedAt !== undefined && (
+        <p className={scanNote}>Scanned {formatRelativeTime(scannedAt)}</p>
+      )}
 
       {query.error && (
         <ErrorState
@@ -412,9 +461,16 @@ export default function TokenTransfers({
               loading={query.fetching}
               onClick={() => {
                 // refresh=1 so the widened request never re-serves the
-                // shallower window's backend cache entry.
+                // shallower window's backend cache entry; the window
+                // rides ?ttWindow= (a pushed history entry, like ?ttPage=)
+                // so the depth survives refresh, share and back/forward,
+                // and a different address's URL never inherits it.
                 requestTokenTransfersRefresh();
-                setSearchWindow(nextSearchWindow);
+                void setSearch(prev => ({
+                  ...prev,
+                  tab: 'transfers',
+                  ttWindow: String(nextSearchWindow),
+                }));
               }}
             >
               Search deeper
@@ -474,7 +530,7 @@ export default function TokenTransfers({
               <tr>
                 <th>Tx Hash</th>
                 <th>Block</th>
-                <th>Age</th>
+                <th title="Timestamps are not available for scan results">Age</th>
                 <th>Direction</th>
                 <th>Token</th>
                 <th>Standard</th>
@@ -496,6 +552,11 @@ export default function TokenTransfers({
               )}
             </tbody>
           </DataTable>
+          {/* Same explanation as the Age header tooltip, stated once in
+              full: the eth_getLogs scan contract carries no timestamps. */}
+          <p className={timestampLegend}>
+            Timestamps are not available for scan results.
+          </p>
           <Pagination
             page={page}
             pageInfo={`Page ${page}`}

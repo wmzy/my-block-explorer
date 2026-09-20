@@ -104,8 +104,7 @@ const inputData = encodeFunctionData({
 // Canonical ERC-20 Transfer receipt log: indexed from/to in topics, the
 // uint256 value as the single non-indexed data word.
 const transferTopic0 = toEventSelector('Transfer(address,address,uint256)');
-const addressTopic = (addr: string): Hex =>
-  `0x${addr.slice(2).toLowerCase().padStart(64, '0')}`;
+const addressTopic = (addr: string): Hex => `0x${addr.slice(2).toLowerCase().padStart(64, '0')}`;
 const transferLog = {
   address: TOKEN,
   topics: [transferTopic0, addressTopic(SENDER), addressTopic(RECIPIENT)],
@@ -159,9 +158,13 @@ const mockRpcClient = (call: ReturnType<typeof vi.fn>) => {
   vi.mocked(createRpcClient).mockResolvedValue({ call } as never);
 };
 
+// The back button's fallback destination.
+const TxListStub = () => <div data-testid="tx-list" />;
+
 function renderDetail(path = `/chain/1/tx/${TX_HASH}`) {
   const routes = createRoutes([
     { path: '/chain/:chainId/tx/:txHash', component: () => TransactionDetail },
+    { path: '/chain/:chainId/transactions', component: () => TxListStub },
   ]);
   return render(
     <MemoryRouter routes={routes} initialEntries={[path]}>
@@ -284,22 +287,22 @@ describe('TransactionDetail page', () => {
 
   it('splits the not-found card into the three real causes, each with its own recovery path', async () => {
     const refetch = vi.fn();
-    vi.mocked(useTransactionByHash).mockReturnValue(
-      {
-        data: undefined,
-        loading: false,
-        error: {
-          name: 'TransactionNotFoundError',
-          message: `Transaction with hash "${TX_HASH}" could not be found.`,
-        },
-        refetch,
-      } as unknown as never,
-    );
+    vi.mocked(useTransactionByHash).mockReturnValue({
+      data: undefined,
+      loading: false,
+      error: {
+        name: 'TransactionNotFoundError',
+        message: `Transaction with hash "${TX_HASH}" could not be found.`,
+      },
+      refetch,
+    } as unknown as never);
 
     renderDetail();
 
     // Card + honest intro sentence naming the chain that was searched.
-    expect(await screen.findByRole('heading', { name: 'Transaction Not Found' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: 'Transaction Not Found' }),
+    ).toBeInTheDocument();
     expect(
       screen.getByText(
         'No transaction with this hash is known to Ethereum. This usually means one of three things:',
@@ -361,13 +364,74 @@ describe('TransactionDetail page', () => {
 
     expect(await screen.findByText(/Chain not supported/)).toBeInTheDocument();
     expect(screen.getByText(/chain ID 999/)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Go to Mainnet' })).toHaveAttribute(
-      'href',
-      '/chain/1',
+    expect(screen.getByRole('link', { name: 'Go to Mainnet' })).toHaveAttribute('href', '/chain/1');
+    expect(screen.getByRole('link', { name: 'Open chain list' })).toHaveAttribute('href', '/');
+  });
+
+  it('renders a pending transaction with Pending block rows instead of 0', async () => {
+    // Pending shape: no block position, no receipt, no timestamp.
+    vi.mocked(useTransactionByHash).mockReturnValue(
+      hookResult(
+        makeTx({
+          blockNumber: null,
+          transactionIndex: null,
+          status: -1,
+          timestamp: undefined,
+          gasUsed: undefined,
+          effectiveGasPrice: undefined,
+        }),
+      ),
     );
-    expect(screen.getByRole('link', { name: 'Open chain list' })).toHaveAttribute(
-      'href',
-      '/',
+
+    renderDetail();
+
+    // Block Number / Transaction Index rows show honest Pending text:
+    // no "0" (the old fallback) and no timestamp row at all.
+    const pendings = await screen.findAllByText('Pending');
+    expect(pendings.length).toBe(3); // status badge + block number + index
+    expect(screen.queryByText('Transaction Type 0')).not.toBeInTheDocument();
+    expect(screen.queryByText(/^0$/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Timestamp')).not.toBeInTheDocument();
+    // A pending tx (status -1) never triggers the failed-tx revert card.
+    expect(
+      screen.queryByRole('heading', { name: 'Revert Reason (best effort)' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('labels type-4 transactions EIP-7702', async () => {
+    vi.mocked(useTransactionByHash).mockReturnValue(hookResult(makeTx({ type: 4 })));
+
+    renderDetail();
+
+    expect(await screen.findByText('EIP-7702')).toBeInTheDocument();
+  });
+
+  it('shows the shared dust-value floor with the exact wei on the title', async () => {
+    vi.mocked(useTransactionByHash).mockReturnValue(
+      hookResult(makeTx({ value: '1', timestamp: '2024-01-01T00:00:00Z' })),
     );
+
+    renderDetail();
+
+    // 1 wei floors at <0.0001 (shared formatValue contract, no more
+    // misleading 0.000000) while the title keeps the exact integer.
+    expect(await screen.findByText('<0.0001 ETH')).toBeInTheDocument();
+    expect(screen.getByTitle('1 wei')).toBeInTheDocument();
+    expect(screen.queryByText('0.000000 ETH')).not.toBeInTheDocument();
+  });
+
+  it('falls back to the transactions list when the back button has no history to step into', async () => {
+    // Fresh deep link (jsdom: no referrer, window.history.length === 1):
+    // the back control lands on the chain's transactions list — the same
+    // fallback rule the block detail page uses — not the old chain home.
+    renderDetail();
+
+    // Both the page header and the card share the "Transaction Details"
+    // title — the back click is what matters below.
+    expect((await screen.findAllByRole('heading', { name: 'Transaction Details' })).length).toBe(2);
+
+    fireEvent.click(screen.getByRole('button', { name: /Back to Explorer/ }));
+    expect(await screen.findByTestId('tx-list')).toBeInTheDocument();
+    expect(screen.queryByTestId('top-navigation')).not.toBeInTheDocument();
   });
 });

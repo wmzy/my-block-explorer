@@ -41,6 +41,10 @@ export type TokenTransfersResult = {
   // 'partial': the scan budget (call count / elapsed time) ran out first.
   coverage: 'complete' | 'partial';
   windowBlocks: number;
+  // FIRST scan time of the cache entry (ISO string). A cache hit within
+  // the ~60s TTL reports the original scan's time, so clients can show an
+  // honest "scanned X ago" that never resets to zero while cached.
+  scannedAt: string;
 };
 
 // Minimal structural slice of viem's PublicClient consumed by the scan.
@@ -262,6 +266,8 @@ type TransfersCacheEntry = {
   expiresAt: number;
   transfers: TokenTransfer[];
   coverage: 'complete' | 'partial';
+  // First-scan time this entry reports on every cache hit (ISO string).
+  scannedAt: string;
 };
 
 type TokenTransferServiceDeps = {
@@ -302,14 +308,18 @@ const createTokenTransferService = (deps: TokenTransferServiceDeps) => {
     key: string,
     transfers: TokenTransfer[],
     coverage: 'complete' | 'partial',
-  ): void => {
+  ): string => {
+    // The scan time is captured once per entry: later cache hits keep
+    // reporting it (freshness = scan age, not serve age).
+    const scannedAt = new Date(now()).toISOString();
     transfersCache.delete(key);
-    transfersCache.set(key, { expiresAt: now() + TRANSFERS_CACHE_TTL_MS, transfers, coverage });
+    transfersCache.set(key, { expiresAt: now() + TRANSFERS_CACHE_TTL_MS, transfers, coverage, scannedAt });
     while (transfersCache.size > TRANSFERS_CACHE_MAX_ENTRIES) {
       const oldest = transfersCache.keys().next().value;
       if (oldest === undefined) break;
       transfersCache.delete(oldest);
     }
+    return scannedAt;
   };
 
   // On-demand eth_getLogs sweep, newest chunk first, over
@@ -402,11 +412,13 @@ const createTokenTransferService = (deps: TokenTransferServiceDeps) => {
     windowBlocks: number,
     cursor: number,
     limit: number,
+    scannedAt: string,
   ): TokenTransfersResult => ({
     transfers: transfers.slice(cursor, cursor + limit),
     nextCursor: cursor + limit < transfers.length ? String(cursor + limit) : null,
     coverage,
     windowBlocks,
+    scannedAt,
   });
 
   const service = {
@@ -436,7 +448,7 @@ const createTokenTransferService = (deps: TokenTransferServiceDeps) => {
       const cached = refresh ? null : readTransfersCache(cacheKey);
       if (cached) {
         logger.info(`Serving cached transfer scan for ${address} on chain ${chainId}`);
-        return sliceResult(cached.transfers, cached.coverage, effectiveWindow, cursor, limit);
+        return sliceResult(cached.transfers, cached.coverage, effectiveWindow, cursor, limit, cached.scannedAt);
       }
 
       const client = await rpcManager.getClient(chainId);
@@ -457,8 +469,8 @@ const createTokenTransferService = (deps: TokenTransferServiceDeps) => {
         throw error;
       });
 
-      writeTransfersCache(cacheKey, outcome.transfers, outcome.coverage);
-      return sliceResult(outcome.transfers, outcome.coverage, effectiveWindow, cursor, limit);
+      const scannedAt = writeTransfersCache(cacheKey, outcome.transfers, outcome.coverage);
+      return sliceResult(outcome.transfers, outcome.coverage, effectiveWindow, cursor, limit, scannedAt);
     },
 
     /** Drop all cached scan results (test isolation). */

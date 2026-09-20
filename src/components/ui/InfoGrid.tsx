@@ -17,6 +17,15 @@ const itemStyle = css`
   &:last-child {
     border-bottom: none;
   }
+
+  /* Narrow screens: the nowrap label + right-aligned value pair cannot
+     share a ~340px row without cramping — stack label over value instead
+     (the "1fr" fallback for what is a one-column grid of rows). */
+  @media (max-width: 768px) {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--haze-space-1);
+  }
 `;
 
 const labelStyle = css`
@@ -33,6 +42,10 @@ const valueStyle = css`
   word-break: break-all;
   text-align: right;
   font-size: var(--haze-text-sm);
+
+  @media (max-width: 768px) {
+    text-align: left;
+  }
 `;
 
 type InfoGridProps = {

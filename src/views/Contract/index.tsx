@@ -55,6 +55,19 @@ const headerStyles = css`
     border-radius: 4px;
     font-size: 14px;
   }
+
+  @media (max-width: 768px) {
+    .address {
+      word-break: break-all;
+    }
+  }
+`;
+
+// Cross-verification links sit directly under the page header: always
+// reachable, including while the source is still loading or errored (the
+// previous spot lived inside the loaded contract-source card).
+const headerExternalLinks = css`
+  margin-top: 8px;
 `;
 
 const tabsStyles = css`
@@ -77,6 +90,7 @@ const tabsStyles = css`
     color: #666;
     border-bottom: 2px solid transparent;
     transition: all 0.2s;
+    white-space: nowrap;
 
     &:hover {
       color: #1a1a1a;
@@ -85,6 +99,19 @@ const tabsStyles = css`
     &.active {
       color: #007bff;
       border-bottom-color: #007bff;
+    }
+  }
+
+  /* Narrow screens: five tabs never fit a phone row — the tab strip gets
+     its own horizontal scroll (labels never squeeze or wrap mid-word) and
+     the proxy toggle stacks underneath. */
+  @media (max-width: 768px) {
+    flex-direction: column;
+    align-items: stretch;
+
+    .tabs-left {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
     }
   }
 `;
@@ -180,6 +207,19 @@ const shadowNoticeStyles = css`
 const shadowNoticeActionsStyles = css`
   display: flex;
   gap: 8px;
+`;
+
+// Amber notice for EIP-2535 diamond proxies: the page renders facet[0]'s
+// source/ABI only, so the diamond must not read as a plain proxy with a
+// single implementation. Same palette as the custom-ABI notices.
+const diamondNoticeStyles = css`
+  margin-bottom: 20px;
+  padding: 12px 16px;
+  background: #fff8e6;
+  border: 1px solid #f0a500;
+  border-radius: 6px;
+  font-size: 14px;
+  color: #8a6d3b;
 `;
 
 const shadowNoticeButtonStyles = css`
@@ -536,6 +576,15 @@ export default function Contract() {
 
   const isProxy = contractSource?.isProxy && !!contractSource?.implementationContract;
 
+  // EIP-2535 diamond facets from a fresh Sourcify fetch (the list is
+  // ephemeral — cache hits read it back undefined; see the backend type).
+  // More than one facet means the single Implementation row must not
+  // masquerade as the whole diamond.
+  const diamondFacets = (contractSource?.implementationAddresses ?? []).filter(
+    (facet): facet is string => !!facet,
+  );
+  const isDiamond = diamondFacets.length > 1;
+
   // Thin adapter: server ABI strings live on the contract source payload
   // (implementation or proxy side) and inherit its verification status.
   const parseABI = (contract: ContractSource | null): ContractABI | null =>
@@ -683,6 +732,12 @@ export default function Contract() {
           <div className="chain-info">
             {getChainName(currentChainId)} •<span className="address">{address}</span>
           </div>
+          {address && (
+            <ExternalLinks
+              links={getExternalToolLinks(currentChainId, address)}
+              className={headerExternalLinks}
+            />
+          )}
         </div>
 
         {loading && <div className={loadingStyles}>Loading contract information...</div>}
@@ -812,24 +867,48 @@ export default function Contract() {
                         </span>
                       </span>
                     </div>
-                    {contractSource.implementationAddress && (
+                    {isDiamond ? (
                       <div className="info-item">
-                        <span className="label">Implementation</span>
+                        <span className="label">Facets</span>
                         <span className="value">
-                          <TypedLink
-                            to={`/chain/${currentChainId}/contract/${contractSource.implementationAddress}`}
-                            style={{ color: '#007bff', textDecoration: 'none' }}
-                            onMouseOver={e =>
-                              ((e.target as HTMLElement).style.textDecoration = 'underline')}
-                            onMouseOut={e =>
-                              ((e.target as HTMLElement).style.textDecoration = 'none')}
-                          >
-                            {contractSource.implementationContract?.name
-                              ? `${contractSource.implementationContract.name} (${contractSource.implementationAddress})`
-                              : contractSource.implementationAddress}
-                          </TypedLink>
+                          {diamondFacets.map((facet, index) => (
+                            <div key={facet}>
+                              <TypedLink
+                                to={`/chain/${currentChainId}/contract/${facet}`}
+                                style={{ color: '#007bff', textDecoration: 'none' }}
+                                onMouseOver={e =>
+                                  ((e.target as HTMLElement).style.textDecoration = 'underline')}
+                                onMouseOut={e =>
+                                  ((e.target as HTMLElement).style.textDecoration = 'none')}
+                              >
+                                {index === 0 && contractSource.implementationContract?.name
+                                  ? `${contractSource.implementationContract.name} (${facet})`
+                                  : facet}
+                              </TypedLink>
+                            </div>
+                          ))}
                         </span>
                       </div>
+                    ) : (
+                      contractSource.implementationAddress && (
+                        <div className="info-item">
+                          <span className="label">Implementation</span>
+                          <span className="value">
+                            <TypedLink
+                              to={`/chain/${currentChainId}/contract/${contractSource.implementationAddress}`}
+                              style={{ color: '#007bff', textDecoration: 'none' }}
+                              onMouseOver={e =>
+                                ((e.target as HTMLElement).style.textDecoration = 'underline')}
+                              onMouseOut={e =>
+                                ((e.target as HTMLElement).style.textDecoration = 'none')}
+                            >
+                              {contractSource.implementationContract?.name
+                                ? `${contractSource.implementationContract.name} (${contractSource.implementationAddress})`
+                                : contractSource.implementationAddress}
+                            </TypedLink>
+                          </span>
+                        </div>
+                      )
                     )}
                   </>
                 )}
@@ -915,13 +994,6 @@ export default function Contract() {
                     onRetry={refetchCreation}
                   />
                 )}
-
-                <div className="info-item">
-                  <span className="label">External Tools</span>
-                  <span className="value">
-                    <ExternalLinks links={getExternalToolLinks(currentChainId, address)} />
-                  </span>
-                </div>
               </div>
             </div>
 
@@ -951,6 +1023,16 @@ export default function Contract() {
                     Keep
                   </button>
                 </div>
+              </div>
+            )}
+
+            {/* EIP-2535 diamonds: the source/ABI panels below render
+                facet[0] only — name the limitation instead of presenting
+                the diamond as a single-implementation proxy. */}
+            {isDiamond && (
+              <div role="status" className={diamondNoticeStyles}>
+                Diamond proxy — {diamondFacets.length} facets. Source/ABI below show facet[0]
+                only.
               </div>
             )}
 

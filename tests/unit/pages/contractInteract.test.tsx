@@ -73,6 +73,26 @@ const WRITE_ABI = JSON.stringify([
   },
 ]);
 
+// Same-name read overloads whose raw-arg text can be identical ('5' is a
+// valid uint256 and a valid string): only the signature fragment keeps
+// their result slots apart.
+const OVERLOAD_READ_ABI = JSON.stringify([
+  {
+    type: 'function',
+    name: 'get',
+    inputs: [{ name: 'slot', type: 'uint256' }],
+    outputs: [{ name: '', type: 'string' }],
+    stateMutability: 'view',
+  },
+  {
+    type: 'function',
+    name: 'get',
+    inputs: [{ name: 's', type: 'string' }],
+    outputs: [{ name: '', type: 'string' }],
+    stateMutability: 'view',
+  },
+]);
+
 const proxyContractSource: ContractSource = {
   chainId: 1,
   address: PROXY_ADDRESS,
@@ -389,5 +409,42 @@ describe('ContractInteract write simulation framing', () => {
 
     expect(await screen.findByText('Result:')).toBeInTheDocument();
     expect(screen.queryByText('simulated — not sent')).not.toBeInTheDocument();
+  });
+});
+
+describe('ContractInteract same-name overloads', () => {
+  it('keeps each overload\'s result in its own slot', async () => {
+    // Distinct results per call: the uint256 overload answers first.
+    vi.mocked(readContract)
+      .mockResolvedValueOnce({ success: true, result: 'uint-result' })
+      .mockResolvedValueOnce({ success: true, result: 'string-result' });
+
+    renderInteract({ contractSource: simpleSource(OVERLOAD_READ_ABI) });
+    expect((await screen.findAllByText('get')).length).toBe(2);
+
+    // Both headers share the name 'get'; DOM order follows the ABI, so
+    // index 0 is get(uint256) and index 1 is get(string).
+    const headers = screen.getAllByRole('button', { name: /get/ });
+    expect(headers).toHaveLength(2);
+
+    // Query get(uint256) with '5'.
+    fireEvent.click(headers[0]);
+    fireEvent.change(screen.getByLabelText('slot (uint256)'), { target: { value: '5' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Query' }));
+    expect(await screen.findByText('uint-result')).toBeInTheDocument();
+
+    // Query get(string) with the identical raw arg '5' — under a
+    // name-only key this would overwrite the sibling's slot.
+    fireEvent.click(screen.getAllByRole('button', { name: /get/ })[1]);
+    fireEvent.change(screen.getByLabelText('s (string)'), { target: { value: '5' } });
+    const queryButtons = screen.getAllByRole('button', { name: 'Query' });
+    expect(queryButtons).toHaveLength(2);
+    fireEvent.click(queryButtons[1]);
+
+    expect(await screen.findByText('string-result')).toBeInTheDocument();
+    // The uint256 overload's result survived the second query.
+    expect(screen.getByText('uint-result')).toBeInTheDocument();
+    // Two separate result cards, not one shared slot.
+    expect(screen.getAllByText('Result:')).toHaveLength(2);
   });
 });

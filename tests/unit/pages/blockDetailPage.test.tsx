@@ -131,8 +131,10 @@ const makeBlock = (number: number) => ({
 
 const ZERO_PARENT_HASH = '0x0000000000000000000000000000000000000000000000000000000000000000';
 
-// Landing marker for the chain-switch test: the new chain's home route.
+// Landing markers for the navigation tests: the new chain's home route and
+// the blocks list route (the back button's fallback).
 const ChainHomeStub = () => <div data-testid="chain-home" />;
+const BlocksListStub = () => <div data-testid="blocks-list" />;
 
 const renderBlockDetail = (path: string) =>
   render(
@@ -140,6 +142,7 @@ const renderBlockDetail = (path: string) =>
       routes={createRoutes([
         { path: '/chain/:chainId/block/:blockNumber', component: () => BlockDetail },
         { path: '/chain/:chainId', component: () => ChainHomeStub },
+        { path: '/chain/:chainId/blocks', component: () => BlocksListStub },
       ])}
       initialEntries={[path]}
     >
@@ -344,10 +347,7 @@ describe('BlockDetail view', () => {
 
     expect(await screen.findByText(/Chain not supported/)).toBeInTheDocument();
     expect(screen.getByText(/chain ID 999/)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Go to Mainnet' })).toHaveAttribute(
-      'href',
-      '/chain/1',
-    );
+    expect(screen.getByRole('link', { name: 'Go to Mainnet' })).toHaveAttribute('href', '/chain/1');
     expect(screen.getByRole('link', { name: 'Open chain list' })).toHaveAttribute('href', '/');
   });
 
@@ -367,6 +367,45 @@ describe('BlockDetail view', () => {
     // the new chain's same-numbered block as if it were the one being
     // read — it lands on the new chain's home instead.
     expect(await screen.findByTestId('chain-home')).toBeInTheDocument();
+    expect(screen.queryByText('Block Details')).not.toBeInTheDocument();
+  });
+
+  it('rejects a non-decimal block param with an explicit invalid state, not block 26 or NaN', async () => {
+    // Number("0x1A") === 26: the hex-looking param used to silently load
+    // block 26 (and worse shapes rendered NaN). The view now names the
+    // invalid param and pays for no lookups.
+    mockUseBlockByNumber.mockReturnValue({
+      data: undefined,
+      loading: false,
+      error: undefined,
+    });
+    renderBlockDetail('/chain/1/block/0x1A');
+
+    expect(await screen.findByText(/Invalid block number/)).toBeInTheDocument();
+    expect(screen.getByText(/"0x1A" is not a decimal block number/)).toBeInTheDocument();
+    // No error was raised by the fetch (it guarded the param itself), so
+    // neither the future-block head check nor any block data renders.
+    expect(mockGetBlockNumber).not.toHaveBeenCalled();
+    expect(screen.queryByText(/does not exist yet/)).not.toBeInTheDocument();
+    expect(screen.queryByText('Block Details')).not.toBeInTheDocument();
+    expect(screen.queryByText(/NaN/)).not.toBeInTheDocument();
+  });
+
+  it('falls back to the blocks list when the back button has no history to step into', async () => {
+    mockUseBlockByNumber.mockReturnValue({
+      data: makeBlock(18000001),
+      loading: false,
+      error: undefined,
+    });
+    renderBlockDetail('/chain/1/block/18000001');
+
+    expect(await screen.findByText('Block Details')).toBeInTheDocument();
+
+    // Fresh deep link (jsdom: no referrer, history.length === 1): the back
+    // control lands on the chain's blocks list — the page the detail was
+    // reached from in normal flows — instead of the old hard-coded home.
+    fireEvent.click(screen.getByRole('button', { name: /Back to Explorer/ }));
+    expect(await screen.findByTestId('blocks-list')).toBeInTheDocument();
     expect(screen.queryByText('Block Details')).not.toBeInTheDocument();
   });
 });

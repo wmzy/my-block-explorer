@@ -391,6 +391,36 @@ describe('TokenTransferService - window clamping', () => {
   });
 });
 
+describe('TokenTransferService - scan freshness (scannedAt)', () => {
+  it('reports the first scan time on every ~60s cache hit and advances it only on re-scan', async () => {
+    let clock = 1_700_000_000_000;
+    const now = () => clock;
+    const client: TransferScanClient = {
+      getBlockNumber: async () => 1_000n,
+      getLogs: async () => [],
+    };
+    const service = createTokenTransferService({
+      rpcManager: { getClient: async () => client },
+      now,
+      maxScanCalls: 1_000_000,
+    });
+
+    const first = await service.getTokenTransfers(1, OWNER, 0, 25);
+    expect(first.scannedAt).toBe(new Date(1_700_000_000_000).toISOString());
+
+    // 30s later, inside the TTL: the cache hit reports the FIRST scan's
+    // time — the age grows instead of resetting to zero.
+    clock += 30_000;
+    const cached = await service.getTokenTransfers(1, OWNER, 0, 25);
+    expect(cached.scannedAt).toBe(first.scannedAt);
+
+    // An explicit refresh re-scans, so the freshness clock restarts.
+    clock += 30_000;
+    const refreshed = await service.getTokenTransfers(1, OWNER, 0, 25, undefined, true);
+    expect(refreshed.scannedAt).toBe(new Date(1_700_000_060_000).toISOString());
+  });
+});
+
 describe('isRetryableChunkError', () => {
   it('recognizes range/cap errors by message and JSON-RPC code', () => {
     expect(isRetryableChunkError(new Error('query returned more than 10000 results'))).toBe(true);

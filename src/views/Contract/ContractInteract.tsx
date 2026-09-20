@@ -3,6 +3,7 @@ import { css } from '@linaria/core';
 import {
   parseContractFunctionsUnified,
   filterFunctions,
+  functionSignature,
   readContract,
   simulateContract,
   type EnhancedContractFunction,
@@ -238,13 +239,15 @@ export function ContractInteract({
   };
 
   const callReadFunction = async (
-    functionName: string,
+    func: EnhancedContractFunction,
     args: unknown[],
     rawArgs: string[],
     _value?: string,
     _from?: string,
   ) => {
-    const key = `${functionName}-${argsKey(rawArgs)}-${globalBlockNumber.trim() || 'latest'}`;
+    // The result key carries the canonical signature: same-name overloads
+    // with identical raw args must never share a result slot.
+    const key = `${functionSignature(func)}-${argsKey(rawArgs)}-${globalBlockNumber.trim() || 'latest'}`;
 
     // Invalid block override: field-level error, no network call.
     const blockOverride = parseGlobalBlock();
@@ -268,7 +271,7 @@ export function ContractInteract({
       const result = await readContract({
         chainId,
         contractAddress,
-        functionName,
+        functionName: func.name,
         args,
         abi: targetABI,
         blockNumber: blockOverride,
@@ -293,13 +296,15 @@ export function ContractInteract({
   };
 
   const simulateWriteFunction = async (
-    functionName: string,
+    func: EnhancedContractFunction,
     args: unknown[],
     rawArgs: string[],
     value?: string,
     from?: string,
   ) => {
-    const key = `${functionName}-${argsKey(rawArgs)}-${value ?? ''}-${from ?? ''}`;
+    // Signature-keyed like the read path: same-name write overloads with
+    // identical raw args/value/from must never share a result slot.
+    const key = `${functionSignature(func)}-${argsKey(rawArgs)}-${value ?? ''}-${from ?? ''}`;
 
     // The simulate path ignores the block override, but an invalid entry is
     // still flagged at the field so the user sees why the screen disagrees.
@@ -323,7 +328,7 @@ export function ContractInteract({
       const result = await simulateContract({
         chainId,
         contractAddress,
-        functionName,
+        functionName: func.name,
         args,
         value: value ? BigInt(value) : undefined,
         from,

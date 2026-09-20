@@ -31,8 +31,10 @@ export type RpcLogEntry = {
 
 export type RpcTransaction = {
   hash: string;
-  blockNumber: string;
-  transactionIndex: number;
+  /** null while the transaction is pending (not yet mined into a block). */
+  blockNumber: string | null;
+  /** null while the transaction is pending (no position in a block). */
+  transactionIndex: number | null;
   fromAddress: string;
   toAddress: string;
   value: string;
@@ -93,8 +95,10 @@ const formatTransaction = (
   blockTimestamp?: bigint,
 ): RpcTransaction => ({
   hash: tx.hash as string,
-  blockNumber: (tx.blockNumber as bigint)?.toString() ?? '0',
-  transactionIndex: Number(tx.transactionIndex ?? 0),
+  // A pending transaction has no block position yet: null, not a fake 0
+  // (the old '0' fallback rendered "Block Number: 0" and /block/0 links).
+  blockNumber: (tx.blockNumber as bigint | null)?.toString() ?? null,
+  transactionIndex: tx.transactionIndex == null ? null : Number(tx.transactionIndex),
   fromAddress: (tx.from as string) ?? '',
   toAddress: (tx.to as string) ?? '',
   value: (tx.value as bigint)?.toString() ?? '0',
@@ -269,11 +273,12 @@ export const getLatestTransactions = async (
     const blockTxs = await getBlockTransactions(chainId, n).catch(() => []);
     // Page order is strictly descending (blockNumber, transactionIndex) —
     // newest first — so consecutive cursor pages tile the sequence with no
-    // duplicate and no gap.
-    blockTxs.sort((a, b) => b.transactionIndex - a.transactionIndex);
+    // duplicate and no gap. (Walk transactions are always mined, but the
+    // RpcTransaction type keeps the pending null; the ?? 0 only satisfies it.)
+    blockTxs.sort((a, b) => (b.transactionIndex ?? 0) - (a.transactionIndex ?? 0));
     for (const tx of blockTxs) {
       // Cursor block: only the portion with an index below the cursor's.
-      if (n === cursorBlock && tx.transactionIndex >= cursorIndex) continue;
+      if (n === cursorBlock && (tx.transactionIndex ?? 0) >= cursorIndex) continue;
       transactions.push(tx);
       if (transactions.length >= count) break;
     }
@@ -303,11 +308,14 @@ export const getLatestTransactions = async (
   // stretches therefore keep paging instead of dead-ending.
   let nextCursor: bigint | undefined;
   if (hasMore) {
+    // The walk only collects mined transactions (non-null position); the
+    // null guard just satisfies the pending-aware RpcTransaction type.
     const oldest = transactions.length >= count ? transactions[count - 1] : undefined;
-    nextCursor =
-      oldest !== undefined
+    const oldestPosition =
+      oldest?.blockNumber != null && oldest.transactionIndex != null
         ? BigInt(oldest.blockNumber) * TX_CURSOR_SCALE + BigInt(oldest.transactionIndex)
-        : stopBlock * TX_CURSOR_SCALE;
+        : undefined;
+    nextCursor = oldestPosition ?? stopBlock * TX_CURSOR_SCALE;
   }
 
   return { transactions, latestBlockNumber, hasMore, nextCursor };

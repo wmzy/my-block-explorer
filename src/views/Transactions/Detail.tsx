@@ -1,7 +1,6 @@
 import { css } from '@linaria/core';
 import { Fragment, useMemo, useState, useEffect } from 'react';
 
-import { navigate } from '@native-router/core';
 import { TypedLink, useMatched } from '@native-router/react';
 import { decodeEventLog, type Abi, type Hex } from 'viem';
 
@@ -11,12 +10,14 @@ import { Badge } from '@/components/ui/Badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { CopyableHash } from '@/components/ui/CopyableHash';
 import { linkStyle, monoStyle } from '@/components/ui/DataTable';
+import { ExternalLinks } from '@/components/ui/ExternalLinks';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { InfoGrid, InfoItem } from '@/components/ui/InfoGrid';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { PageContainer, PageHeader, BackButton } from '@/components/ui/PageLayout';
 import { POPULAR_CHAINS, getChainInfo, getChainName, getChainSymbol } from '@/config/chains';
-import { redirectReplace } from '@/views/Home/Landing';
+import { getExternalTxLinks } from '@/config/externalTools';
+import { redirectReplace, navigateBack } from '@/views/Home/Landing';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
 import { useContractSource } from '@/services/contracts';
 import { useTransactionByHash } from '@/services/chainRpc';
@@ -29,7 +30,7 @@ import {
   formatCallArgs,
   selectorOf,
 } from '@/utils/txDecode';
-import { formatEth, formatGasPrice, formatNumber } from '@/utils/format';
+import { formatGasPrice, formatNumber, formatValue } from '@/utils/format';
 
 const getTxTypeText = (type: number): string => {
   const types: Record<number, string> = {
@@ -37,6 +38,7 @@ const getTxTypeText = (type: number): string => {
     1: 'EIP-2930',
     2: 'EIP-1559',
     3: 'EIP-4844 (Blob)',
+    4: 'EIP-7702',
   };
   return types[type] ?? `Type ${type}`;
 };
@@ -48,14 +50,6 @@ const formatGas = (gas: string): string => {
     return Number(BigInt(gas)).toLocaleString();
   } catch {
     return gas;
-  }
-};
-
-const formatValue = (value: string, symbol: string): string => {
-  try {
-    return `${formatEth(value, 6)} ${symbol}`;
-  } catch {
-    return `${value} wei`;
   }
 };
 
@@ -86,8 +80,8 @@ function TxStatusBadge({ status }: { status: number }) {
 // providers answer with an RPC error whose message embeds "not found".
 const isTxNotFound = (error: unknown): boolean => {
   if (typeof error !== 'object' || error === null) return false;
-  const name = 'name' in error ? String((error).name) : '';
-  const message = 'message' in error ? String((error).message) : '';
+  const name = 'name' in error ? String(error.name) : '';
+  const message = 'message' in error ? String(error.message) : '';
   return name === 'TransactionNotFoundError' || /not found|could not be found/i.test(message);
 };
 
@@ -153,9 +147,7 @@ function EventLogEntry({
   abi: Abi | null;
 }) {
   const canDecode =
-    abi !== null &&
-    toAddress.length > 0 &&
-    log.address.toLowerCase() === toAddress.toLowerCase();
+    abi !== null && toAddress.length > 0 && log.address.toLowerCase() === toAddress.toLowerCase();
 
   let decoded: string | null = null;
   if (canDecode) {
@@ -190,10 +182,7 @@ function EventLogEntry({
           Log #{index + 1}
           {log.logIndex !== undefined ? ` (index ${log.logIndex})` : ''}
         </span>
-        <CopyableHash
-          value={log.address}
-          href={`/chain/${chainId}/contract/${log.address}`}
-        />
+        <CopyableHash value={log.address} href={`/chain/${chainId}/contract/${log.address}`} />
       </div>
       {decoded !== null ? (
         <div className={logRawStyle}>{decoded}</div>
@@ -242,15 +231,17 @@ function RevertReasonCard({
   toAddress: string;
   fromAddress: string;
   inputData: string | undefined;
-  blockNumber: string;
+  /** null while the transaction is pending — nothing to replay against. */
+  blockNumber: string | null;
   gasLimit: string;
   abi: Abi | null;
 }) {
   const [state, setState] = useState<RevertState>({ kind: 'idle' });
 
   useEffect(() => {
-    // Nothing to replay against (plain transfers / contract creation).
-    if (!toAddress || !inputData || inputData === '0x') {
+    // Nothing to replay against (plain transfers / contract creation), and
+    // a pending transaction has no block state to replay at either.
+    if (!toAddress || !inputData || inputData === '0x' || blockNumber === null) {
       setState({ kind: 'idle' });
       return;
     }
@@ -302,9 +293,8 @@ function RevertReasonCard({
         {state.kind === 'decoded' && <span className={monoStyle}>{state.reason}</span>}
         {state.kind === 'unavailable' && (
           <p>
-            Reason unavailable — replaying the call did not return a revert
-            string. Replays of older transactions can fail on nodes without
-            archive state.
+            Reason unavailable — replaying the call did not return a revert string. Replays of older
+            transactions can fail on nodes without archive state.
           </p>
         )}
       </CardContent>
@@ -420,8 +410,8 @@ function TxNotFoundCard({
         </p>
         <ul className={notFoundListStyle}>
           <li>
-            <strong>Still pending.</strong> The transaction was broadcast but not mined yet, or
-            this explorer&apos;s indexer has not reached its block. Give it a minute, then{' '}
+            <strong>Still pending.</strong> The transaction was broadcast but not mined yet, or this
+            explorer&apos;s indexer has not reached its block. Give it a minute, then{' '}
             <button type="button" className={notFoundActionButtonStyle} onClick={onRetry}>
               try again
             </button>
@@ -466,6 +456,16 @@ function TxNotFoundCard({
     </Card>
   );
 }
+
+// Page header + cross-verification links on one row; wraps under the
+// header on narrow screens instead of overflowing.
+const headerLinksRow = css`
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: var(--haze-space-3);
+`;
 
 export default function TransactionDetail() {
   const { params, router } = useMatched();
@@ -520,14 +520,17 @@ export default function TransactionDetail() {
     <>
       <TopNavigation currentChainId={currentChainId} onChainChange={handleChainChange} />
       <PageContainer>
-        <BackButton
-          onClick={() => void navigate(router, `/chain/${currentChainId}`).catch(() => undefined)}
-        />
+        <BackButton onClick={() => navigateBack(router, `/chain/${currentChainId}/transactions`)} />
 
-        <PageHeader
-          title="Transaction Details"
-          chainInfo={`${getChainName(currentChainId)} • Chain ID: ${currentChainId}`}
-        />
+        {/* Cross-verification in an external explorer from the page head —
+            available before/without the tx resolving. */}
+        <div className={headerLinksRow}>
+          <PageHeader
+            title="Transaction Details"
+            chainInfo={`${getChainName(currentChainId)} • Chain ID: ${currentChainId}`}
+          />
+          {txHash && <ExternalLinks links={getExternalTxLinks(currentChainId, txHash)} />}
+        </div>
 
         {!txHash && <ErrorState message="Invalid transaction hash or chain ID" />}
 
@@ -563,9 +566,15 @@ export default function TransactionDetail() {
                     <TxStatusBadge status={txInfo.status} />
                   </InfoItem>
                   <InfoItem label="Block Number">
-                    {formatNumber(BigInt(txInfo.blockNumber))}
+                    {/* Pending tx (not yet mined): honest Pending text,
+                        never a "0" or a /block/0 link. */}
+                    {txInfo.blockNumber === null
+                      ? 'Pending'
+                      : formatNumber(BigInt(txInfo.blockNumber))}
                   </InfoItem>
-                  <InfoItem label="Transaction Index">{txInfo.transactionIndex}</InfoItem>
+                  <InfoItem label="Transaction Index">
+                    {txInfo.transactionIndex ?? 'Pending'}
+                  </InfoItem>
                   <InfoItem label="From">
                     <CopyableHash
                       value={txInfo.fromAddress}
@@ -583,38 +592,32 @@ export default function TransactionDetail() {
                     )}
                   </InfoItem>
                   <InfoItem label="Value">
-                    {formatValue(txInfo.value, getChainSymbol(currentChainId))}
+                    {/* Exact wei rides the title so the 4-decimal floor
+                        never looks like lost precision. */}
+                    <span title={`${txInfo.value} wei`}>
+                      {formatValue(BigInt(txInfo.value), getChainSymbol(currentChainId))}
+                    </span>
                   </InfoItem>
                   <InfoItem label="Gas Limit">{formatGas(txInfo.gasLimit)}</InfoItem>
                   {txInfo.gasUsed && (
                     <InfoItem label="Gas Used">{formatGas(txInfo.gasUsed)}</InfoItem>
                   )}
                   {txInfo.gasPrice && (
-                    <InfoItem label="Gas Price">
-                      {formatGasPrice(txInfo.gasPrice)}
-                      {' '}
-                      gwei
-                    </InfoItem>
+                    <InfoItem label="Gas Price">{formatGasPrice(txInfo.gasPrice)} gwei</InfoItem>
                   )}
                   {txInfo.maxFeePerGas && (
                     <InfoItem label="Max Fee Per Gas">
-                      {formatGasPrice(txInfo.maxFeePerGas)}
-                      {' '}
-                      gwei
+                      {formatGasPrice(txInfo.maxFeePerGas)} gwei
                     </InfoItem>
                   )}
                   {txInfo.maxPriorityFeePerGas && (
                     <InfoItem label="Max Priority Fee Per Gas">
-                      {formatGasPrice(txInfo.maxPriorityFeePerGas)}
-                      {' '}
-                      gwei
+                      {formatGasPrice(txInfo.maxPriorityFeePerGas)} gwei
                     </InfoItem>
                   )}
                   {txInfo.maxFeePerBlobGas && (
                     <InfoItem label="Max Fee Per Blob Gas">
-                      {formatGasPrice(txInfo.maxFeePerBlobGas)}
-                      {' '}
-                      gwei
+                      {formatGasPrice(txInfo.maxFeePerBlobGas)} gwei
                     </InfoItem>
                   )}
                   {txInfo.blobVersionedHashes && txInfo.blobVersionedHashes.length > 0 && (
@@ -624,9 +627,7 @@ export default function TransactionDetail() {
                   )}
                   {txInfo.effectiveGasPrice && (
                     <InfoItem label="Effective Gas Price">
-                      {formatGasPrice(txInfo.effectiveGasPrice)}
-                      {' '}
-                      gwei
+                      {formatGasPrice(txInfo.effectiveGasPrice)} gwei
                     </InfoItem>
                   )}
                   <InfoItem label="Nonce">{txInfo.nonce}</InfoItem>

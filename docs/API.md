@@ -19,7 +19,7 @@ The backend is a Hono app (`src/api-app.ts`) that mounts the route modules in `s
 
 | Method & path | Notes |
 | --- | --- |
-| `GET /api/search?q={query}&chainId={id}` | Detects address / tx hash / block number. With a valid `chainId`, hash and block-number queries resolve **on that chain** directly; without one they return `needsChain` + `supportedChains` for the client-side network picker (addresses/free text fall back to mainnet and echo `searchedChainId`). Response may carry `degraded: true` + `degradedReasons: string[]` when an upstream lookup failed, and `message` (e.g. ENS names are resolved client-side, not by the server) |
+| `GET /api/search?q={query}&chainId={id}` | Detects address / tx hash / block number. With a valid `chainId`, hash and block-number queries resolve **on that chain** directly; without one they return `needsChain` + `scope: "popular"` + `supportedChains` (the curated popular set — each entry `{ chainId, name, symbol }` — not the full chain universe; every other chain stays reachable via its per-chain pages/search endpoint) for the client-side network picker (addresses/free text fall back to mainnet and echo `searchedChainId`). Response may carry `degraded: true` + `degradedReasons: string[]` when an upstream lookup failed, and `message` (e.g. ENS names are resolved client-side, not by the server) |
 | `GET /api/chains/:chainId/search?q={query}` | Chain-scoped variant |
 
 ## Stats & blocks & transactions

@@ -10,6 +10,17 @@ export function formatEth(value: bigint | string, decimals = 4): string {
   return parseFloat(ethValue).toFixed(decimals);
 }
 
+// Shared native-token value display for the tx surfaces (Home feed, tx
+// list, tx detail): one display contract instead of three. Zero renders
+// exactly; dust below the 4-decimal floor renders the "<0.0001" floor
+// instead of a misleading "0.0000"; anything larger renders 4 decimals.
+export function formatValue(wei: bigint, symbol: string): string {
+  if (wei === 0n) return `0 ${symbol}`;
+  // 0.0001 ETH in integer wei — the display floor, compared exactly.
+  if (wei < 10n ** 14n) return `<0.0001 ${symbol}`;
+  return `${formatEth(wei, 4)} ${symbol}`;
+}
+
 /**
  * 格式化Gas价格 (Gwei)
  */

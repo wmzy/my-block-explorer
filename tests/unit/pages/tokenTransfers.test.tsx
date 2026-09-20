@@ -8,7 +8,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useState, type ReactNode } from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { MemoryRouter, View, createRoutes, useSearchParams } from '@native-router/react';
+import { MemoryRouter, View, createRoutes, useMatched, useSearchParams } from '@native-router/react';
+import { navigate } from '@native-router/core';
 import '@testing-library/jest-dom/vitest';
 import TokenTransfers from '@/views/Address/TokenTransfers';
 // Type-only import: erased at runtime, so the vi.mock below is unaffected.
@@ -208,6 +209,31 @@ const signalRoutes = createRoutes([
   { path: '/', component: () => Promise.resolve(RefreshSignalHost) },
 ]);
 
+// Param-driven host: navigating between addresses changes params WITHOUT
+// remounting the component — the same-route scenario the address page
+// actually runs (TypedLink to another address re-uses this route).
+const NEXT_ADDRESS = '0xdef8888888888888888888888888888888888888';
+function AddressParamHost() {
+  const { params, router } = useMatched();
+  return (
+    <>
+      <TokenTransfers chainId={mocks.chainId} address={params.address ?? ''} />
+      <button
+        type="button"
+        onClick={() => {
+          void navigate(router, `/${NEXT_ADDRESS}`).catch(() => undefined);
+        }}
+      >
+        go next address
+      </button>
+    </>
+  );
+}
+
+const addressRoutes = createRoutes([
+  { path: '/:address', component: () => Promise.resolve(AddressParamHost) },
+]);
+
 // Exposes the live search string so cases can pin ?ttPage= round-trips
 // through the URL (memory history is not window.location).
 function SearchProbe() {
@@ -234,6 +260,14 @@ const renderTab = (path = '/') =>
 const renderSignalHost = () =>
   render(
     <MemoryRouter routes={signalRoutes} initialEntries={['/']}>
+      <View />
+    </MemoryRouter>,
+  );
+
+const renderAddressRoute = (path: string) =>
+  render(
+    <MemoryRouter routes={addressRoutes} initialEntries={[path]}>
+      <SearchProbe />
       <View />
     </MemoryRouter>,
   );
@@ -363,7 +397,7 @@ describe('TokenTransfers tab', () => {
     expect(refreshSpy).toHaveBeenCalledTimes(1);
   });
 
-  it('widens the scan window via Search deeper and reflects it in the banner', async () => {
+  it('widens the scan window via Search deeper into ?ttWindow= and reflects it in the banner', async () => {
     const refreshSpy = vi.spyOn(mocks, 'requestRefresh');
     renderTab();
 
@@ -377,8 +411,42 @@ describe('TokenTransfers tab', () => {
     // 50,000 x 4; the widened request bypasses the shallower cache.
     await waitFor(() => expect(mocks.queryArgs[4]).toBe(200_000));
     expect(refreshSpy).toHaveBeenCalledTimes(1);
+    // The window rides the URL (shareable, refresh-stable, back/forward).
+    expect(screen.getByTestId('search-probe')).toHaveTextContent('ttWindow=200000');
     // The widened response drives the coverage banner numbers.
     expect(await screen.findByText(/after the last 200,000 blocks/)).toBeInTheDocument();
+  });
+
+  it('seeds the scan window from a shared ?ttWindow= deep link', async () => {
+    renderTab('/?ttWindow=200000');
+
+    // The deep link alone drives the request: the widened window is read
+    // from the URL, not rebuilt from local state.
+    expect(await screen.findByText(/after the last 200,000 blocks/)).toBeInTheDocument();
+    expect(mocks.queryArgs[4]).toBe(200_000);
+    expect(mocks.queryArgs[1]).toBe(mocks.holder);
+  });
+
+  it('degrades a malformed or out-of-range ?ttWindow= to the default window', async () => {
+    renderTab('/?ttWindow=50000001');
+
+    expect(await screen.findByText('Page 1')).toBeInTheDocument();
+    expect(mocks.queryArgs[4]).toBeUndefined();
+  });
+
+  it('never scans the next address with the previous address\'s window', async () => {
+    // Window deep link on address A, then an in-app hop to address B on
+    // the SAME route (param change, no remount): B's URL carries no
+    // ?ttWindow, so B's very first request already uses the default
+    // window — the old reset-in-effect lagged one frame.
+    renderAddressRoute(`/${mocks.holder}?ttWindow=200000`);
+
+    expect(await screen.findByText(/after the last 200,000 blocks/)).toBeInTheDocument();
+    expect(mocks.queryArgs[4]).toBe(200_000);
+
+    fireEvent.click(screen.getByRole('button', { name: 'go next address' }));
+    await waitFor(() => expect(mocks.queryArgs[1]).toBe(NEXT_ADDRESS));
+    expect(mocks.queryArgs[4]).toBeUndefined();
   });
 
   it('disables Search deeper at the RPC budget cap', async () => {
@@ -516,6 +584,72 @@ describe('TokenTransfers tab', () => {
 
     expect(await screen.findByText('Page 1')).toBeInTheDocument();
     expect(mocks.queryArgs[2]).toBe('0');
+  });
+
+  it('converges an out-of-range ?ttPage= deep link back to page 1 via replace', async () => {
+    // Settled payload with no rows past the list end: an empty page 3 is
+    // not a shareable state — the URL pins (replaces) to page 1.
+    mocks.page = { transfers: [], nextCursor: null, coverage: 'complete', windowBlocks: 10_000 };
+
+    renderTab('/?ttPage=3');
+
+    await waitFor(() =>
+      expect(screen.getByTestId('search-probe')).toHaveTextContent('ttPage=1'));
+    // Page 1 with no rows renders the trusted empty state — never the
+    // beyond-data row a shareable empty page would show.
+    expect(mocks.queryArgs[2]).toBe('0');
+    expect(await screen.findByText('No token transfers found')).toBeInTheDocument();
+    expect(screen.queryByText('No transfers on this page')).not.toBeInTheDocument();
+  });
+
+  it('keeps a mid-flight empty page instead of converging', async () => {
+    // First-load in flight (no settled data): nothing converges yet —
+    // the race guard must not replace-pin while the fetch is pending.
+    mocks.page = { transfers: [], nextCursor: null, coverage: 'complete', windowBlocks: 10_000 };
+    mocks.loading = true;
+    mocks.emptyData = true;
+
+    renderTab('/?ttPage=5');
+
+    expect(await screen.findByText('Scanning token transfers...')).toBeInTheDocument();
+    expect(screen.getByTestId('search-probe')).toHaveTextContent('ttPage=5');
+  });
+
+  it('shows the first-scan freshness the payload reports', async () => {
+    // 2 minutes before "now": the real formatRelativeTime renders
+    // '2 min ago'. The line is the tab's data-freshness disclosure.
+    mocks.page = {
+      transfers: mocks.transfers,
+      nextCursor: String(mocks.transfers.length),
+      coverage: 'partial',
+      windowBlocks: 50_000,
+      scannedAt: new Date(Date.now() - 2 * 60_000).toISOString(),
+    };
+
+    renderTab();
+
+    expect(await screen.findByText('Scanned 2 min ago')).toBeInTheDocument();
+  });
+
+  it('claims no freshness when the payload carries no scannedAt', async () => {
+    renderTab();
+
+    expect(await screen.findByText(/Partial coverage/)).toBeInTheDocument();
+    expect(screen.queryByText(/^Scanned /)).not.toBeInTheDocument();
+  });
+
+  it('explains the empty Age column via tooltips and a table legend', async () => {
+    renderTab();
+
+    expect(await screen.findByRole('columnheader', { name: 'Age' })).toHaveAttribute(
+      'title',
+      'Timestamps are not available for scan results',
+    );
+    // Every row's Age placeholder carries the same explanation.
+    const titled = screen.getAllByTitle('Timestamps are not available for scan results');
+    expect(titled.length).toBe(mocks.transfers.length + 1); // header + rows
+    // Stated once in full under the table.
+    expect(screen.getByText('Timestamps are not available for scan results.')).toBeInTheDocument();
   });
 
   it('warns about unknown coverage on an empty pre-coverage payload instead of a trusted empty', async () => {
