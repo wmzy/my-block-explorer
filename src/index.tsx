@@ -35,7 +35,8 @@ import { useServiceDiscovery } from '@/hooks/ServiceDiscoveryContext';
 })();
 
 function Root() {
-  const { status, error, isScanning, setApiUrl, discover } = useServiceDiscovery();
+  const { status, error, isScanning, setApiUrl, discover, switchedFromManual } =
+    useServiceDiscovery();
 
   return (
     <div className={cx(lightTheme, spacing, typography)}>
@@ -51,6 +52,7 @@ function Root() {
           isScanning={isScanning}
           setApiUrl={setApiUrl}
           discover={discover}
+          switchedFromManual={switchedFromManual}
         >
           <ErrorBoundary>
             <App />

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { css } from '@linaria/core';
 import {
   parseContractFunctionsUnified,
@@ -15,6 +15,7 @@ import { cardStyles } from './styles';
 import { argsKey } from './types';
 import type { ContractSource } from './types';
 import { describeCallError } from './paramParsing';
+import { fetchContractAbi } from '@/services/contracts';
 
 const functionListStyles = css`
   .function-item {
@@ -120,11 +121,123 @@ const blockErrorStyles = css`
   color: #c62828;
 `;
 
+// Diamond facet-merge honesty notes: amber palette matches the diamond
+// banner on the contract page — omissions are named, never silent.
+const facetNoteStyles = css`
+  margin-bottom: 16px;
+  padding: 10px 14px;
+  background: #fff8e6;
+  border: 1px solid #f0a500;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #8a6d3b;
+
+  div + div {
+    margin-top: 6px;
+  }
+`;
+
 // The block override feeds viem's bigint `blockNumber` parameter directly —
 // this call path supports no named tags ('latest', 'safe', ...) — so only
 // plain decimal digits are acceptable. Empty input means 'latest'.
 const BLOCK_NUMBER_PATTERN = /^\d+$/;
 const BLOCK_NUMBER_ERROR = 'Enter a block number';
+
+// ---- Diamond facet ABI merge ----
+// The contract source payload only ships facet[0]'s ABI (implementationContract);
+// every other EIP-2535 facet is still callable through the proxy address, so
+// Interact merges the facets' ABIs into one callable surface. Both the
+// function list and the per-call ABI routing consume the merged result.
+
+type AbiEntry = { type?: string; name?: string; inputs?: Array<{ type?: string }> };
+
+export type FacetAbi = { address: string; abi: string | null };
+
+export type FacetAbiMerge = {
+  // One JSON ABI string with facet[0] first and every other facet's unique
+  // entries appended; undefined only when no ABI at all contributed.
+  merged: string | undefined;
+  // Facets whose ABI could not be read at all (fetch failure or an
+  // unparseable answer) — their functions cannot be listed and the
+  // omission must stay visible.
+  unavailable: string[];
+  // Function signatures a later facet re-defined after an earlier facet
+  // (facet order, facet[0] first): the first definition wins and the
+  // duplicate is dropped — EIP-2535 forbids selector collisions, so this is
+  // mostly shared helper entries across facets.
+  skippedSignatures: string[];
+};
+
+// Canonical dedup key for one ABI entry. Functions/events/errors key on
+// name + input types (same signature = same selector); the singleton entry
+// types (constructor/receive/fallback) key on their type alone.
+const abiEntryKey = (entry: AbiEntry): string => {
+  const types = (entry.inputs ?? []).map(input => input.type ?? '').join(',');
+  return `${entry.type ?? ''}:${entry.name ?? ''}(${types})`;
+};
+
+// User-facing signature for the skipped annotation: name(input-types).
+const signatureDisplay = (entry: AbiEntry): string =>
+  `${entry.name ?? ''}(${(entry.inputs ?? []).map(input => input.type ?? '').join(',')})`;
+
+const parseAbiEntries = (abi: string | null): AbiEntry[] | null => {
+  if (!abi || abi.trim() === '') return null;
+  try {
+    const parsed: unknown = JSON.parse(abi);
+    if (!Array.isArray(parsed)) return null;
+    return parsed.filter(
+      (entry): entry is AbiEntry =>
+        typeof entry === 'object' && entry !== null && typeof (entry as AbiEntry).type === 'string',
+    );
+  } catch {
+    return null;
+  }
+};
+
+export const mergeFacetAbis = (
+  base: string | undefined,
+  extras: readonly FacetAbi[],
+): FacetAbiMerge => {
+  const mergedEntries: AbiEntry[] = [];
+  const seen = new Set<string>();
+  const skippedSignatures: string[] = [];
+  const unavailable: string[] = [];
+
+  // Collects every entry of a facet ABI; returns false only when the ABI
+  // itself could not be read at all (fetch failure / unparseable) — a
+  // verified-but-empty '[]' still counts as present.
+  const collect = (abi: string | null): boolean => {
+    const entries = parseAbiEntries(abi);
+    if (entries === null) return false;
+    for (const entry of entries) {
+      const key = abiEntryKey(entry);
+      if (seen.has(key)) {
+        // Only functions are selector-addressable surface worth flagging;
+        // duplicated events/constructors across facets are expected noise.
+        if (entry.type === 'function') skippedSignatures.push(signatureDisplay(entry));
+        continue;
+      }
+      seen.add(key);
+      mergedEntries.push(entry);
+    }
+    return true;
+  };
+
+  // Facet[0] keeps the exact semantics of the old single-impl path: a
+  // verified-but-empty '[]' ABI still yields '[]' so the availability gate
+  // behaves identically to a non-diamond proxy.
+  const basePresent = parseAbiEntries(base ?? null) !== null;
+  if (basePresent) collect(base ?? null);
+  for (const extra of extras) {
+    if (!collect(extra.abi)) unavailable.push(extra.address);
+  }
+
+  return {
+    merged: basePresent || mergedEntries.length > 0 ? JSON.stringify(mergedEntries) : undefined,
+    unavailable,
+    skippedSignatures,
+  };
+};
 
 // Interact tab: parses the (possibly proxy + implementation) ABI into the
 // unified function list, exposes read/write/name filters and a global block
@@ -158,6 +271,60 @@ export function ContractInteract({
   });
   const [debouncedNameFilter, setDebouncedNameFilter] = useState('');
 
+  // EIP-2535 diamonds: facet[0]'s ABI ships on implementationContract, the
+  // other facets' ABIs are fetched lazily (one /abi call per facet, backend
+  // + 24h client cached) and merged into the callable surface below.
+  const diamondFacets = (contractSource?.implementationAddresses ?? []).filter(
+    (facet): facet is string => !!facet,
+  );
+  const isDiamondProxy = !!contractSource?.isProxy && diamondFacets.length > 1;
+  const [facetAbis, setFacetAbis] = useState<FacetAbi[]>([]);
+
+  // Stable string key for the fetch effect's dependency (the facet array
+  // identity changes every render).
+  const extraFacetKey = isDiamondProxy ? diamondFacets.slice(1).join(',') : '';
+
+  // Facet[0]'s ABI as shipped on the contract source (undefined when absent).
+  const implABIString =
+    contractSource?.isProxy && contractSource.implementationContract?.abi
+      ? contractSource.implementationContract.abi
+      : undefined;
+
+  // Merged callable surface for diamonds (facet[0] + every fetched facet
+  // ABI, deduped); for everything else this degrades to the plain
+  // implementation ABI with empty annotations. Memoized: parsing every
+  // facet ABI on each render would be pure waste.
+  const facetMerge = useMemo(
+    () => mergeFacetAbis(implABIString, facetAbis),
+    [implABIString, facetAbis],
+  );
+
+  useEffect(() => {
+    if (!isDiamondProxy) {
+      // Drop any stale facet ABIs from a previous (diamond) contract —
+      // bailing out on identity when already empty avoids a wasted render.
+      setFacetAbis(prev => (prev.length === 0 ? prev : []));
+      return;
+    }
+    let cancelled = false;
+    Promise.all(
+      extraFacetKey
+        .split(',')
+        .filter(address => address !== '')
+        .map(async address => ({
+          address,
+          abi: await fetchContractAbi(chainId, address)
+            .then(response => (typeof response?.abi === 'string' ? response.abi : null))
+            .catch(() => null),
+        })),
+    ).then(abis => {
+      if (!cancelled) setFacetAbis(abis);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [chainId, isDiamondProxy, extraFacetKey]);
+
   useEffect(() => {
     if (contractSource?.abi || abiOverride) {
       loadContractFunctions();
@@ -167,8 +334,8 @@ export function ContractInteract({
       // of an endless spinner.
       setLoading(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- reload only when the contract data itself changes
-  }, [chainId, contractAddress, contractSource, abiOverride]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reload only when the contract data (or its merged facet ABIs) changes
+  }, [chainId, contractAddress, contractSource, abiOverride, facetMerge]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -180,17 +347,16 @@ export function ContractInteract({
   // ABI that a read/simulate call is routed against. For a real proxy pair
   // the target selector decides: 'proxy' targets the proxy's own ABI (its
   // admin functions), anything else targets the implementation ABI (the
-  // pre-existing default). Without a proxy pair the base ABI wins — the
+  // pre-existing default). A diamond's implementation view routes through
+  // the merged facet ABIs instead — every facet function stays callable on
+  // the proxy address. Without a proxy pair the base ABI wins — the
   // override standing in for a missing server-supplied ABI.
   const resolveTargetABI = (): string | undefined => {
     const baseABI = abiOverride ?? contractSource?.abi;
-    const implABI =
-      contractSource?.isProxy && contractSource.implementationContract?.abi
-        ? contractSource.implementationContract.abi
-        : undefined;
 
-    if (implABI) {
-      return contractTarget === 'proxy' ? baseABI : implABI;
+    if (implABIString) {
+      if (contractTarget === 'proxy') return baseABI;
+      return isDiamondProxy ? facetMerge.merged : implABIString;
     }
     return baseABI;
   };
@@ -224,12 +390,12 @@ export function ContractInteract({
       // A pasted custom ABI stands in for a missing server source: parse it
       // on its own, and only layer proxy/impl ABIs when a source exists.
       const proxyABI = abiOverride ?? contractSource?.abi;
-      const implABI =
-        contractSource?.isProxy && contractSource.implementationContract
-          ? contractSource.implementationContract.abi
-          : undefined;
 
-      const functions = parseContractFunctionsUnified(proxyABI, implABI);
+      // Diamonds: parse the merged facet ABIs as the implementation side so
+      // every facet's functions reach the list (tagged 'impl').
+      const effectiveImplABI = isDiamondProxy ? facetMerge.merged : implABIString;
+
+      const functions = parseContractFunctionsUnified(proxyABI, effectiveImplABI);
       setAllFunctions(functions);
     } catch (error) {
       console.error('Failed to load contract functions:', error);
@@ -412,11 +578,35 @@ export function ContractInteract({
         >
           {contractTarget === 'proxy'
             ? 'Interacting with the proxy contract itself (admin functions).'
-            : 'Interacting with implementation contract via proxy address.'}
-          {contractSource.implementationAddress && (
+            : isDiamondProxy
+              ? 'Interacting via the diamond proxy address — the function list merges every facet\u2019s ABI.'
+              : 'Interacting with implementation contract via proxy address.'}
+          {!isDiamondProxy && contractSource.implementationAddress && (
             <span style={{ marginLeft: '8px', fontFamily: 'monospace', fontSize: '12px' }}>
               Implementation: {contractSource.implementationAddress}
             </span>
+          )}
+        </div>
+      )}
+
+      {/* Diamond merge honesty notes: facets whose ABI never arrived (or is
+          unverified) and shared function signatures kept from the first
+          facet are named instead of silently narrowing the surface. */}
+      {isDiamondProxy &&
+        contractTarget !== 'proxy' &&
+        (facetMerge.unavailable.length > 0 || facetMerge.skippedSignatures.length > 0) && (
+        <div role="status" className={facetNoteStyles}>
+          {facetMerge.unavailable.length > 0 && (
+            <div>
+              ABI unavailable for {facetMerge.unavailable.join(', ')} — those facets'
+              functions are not offered.
+            </div>
+          )}
+          {facetMerge.skippedSignatures.length > 0 && (
+            <div>
+              Shared function signatures kept from the first facet:{' '}
+              {facetMerge.skippedSignatures.join(', ')}.
+            </div>
           )}
         </div>
       )}

@@ -202,12 +202,17 @@ describe('RPC Integration Tests', () => {
       ];
     });
 
-    it('returns the full URL when no Origin header is present (same-origin UI, curl)', async () => {
+    it('redacts the URL when no Origin header is present (no loopback socket to vouch)', async () => {
       const response = await app.request('/api/rpc-configs', { method: 'GET' });
 
       expect(response.status).toBe(200);
       const data = await response.json();
-      expect(data.configs[0].url).toBe(SECRET_URL);
+      // app.request() carries no conninfo socket: the visibility rule is
+      // loopback-socket OR allowlisted-Origin, so this must fail closed.
+      // A real curl from 127.0.0.1 still gets the full URL (see
+      // rpcConfigRoutesVisibility.test.ts for that quadrant).
+      expect(data.configs[0].url).not.toBe(SECRET_URL);
+      expect(data.configs[0].urlRedacted).toBe(true);
     });
 
     it('returns the full URL for a loopback Origin (local dev frontend)', async () => {

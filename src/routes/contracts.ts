@@ -8,6 +8,7 @@ import { getChainName } from '../config/chains';
 import { getValidatedChainId, getValidatedAddress } from '../server/validation';
 import { safeJsonResponse } from '../utils/serialization';
 import { requireAdminTokenIfConfigured } from '../middleware/admin-token';
+import { createRateLimiter } from '../middleware/rate-limit';
 import {
   detectInstalledIdes,
   getDetectedIdesInfo,
@@ -176,7 +177,11 @@ app.get('/chains/:chainId/contracts/:address/functions', async c => {
   }
 });
 
-app.post('/chains/:chainId/contracts/:address/read', async c => {
+// Contract read/simulate proxy public RPC calls per request; each endpoint
+// gets its own generous bucket (independent quotas) so read polling cannot
+// starve simulate submissions and vice versa.
+const contractReadRateLimiter = createRateLimiter({ name: 'contracts-read', requestsPerMinute: 60, burst: 20 });
+app.post('/chains/:chainId/contracts/:address/read', contractReadRateLimiter, async c => {
   const chainId = getValidatedChainId(c.req.param('chainId'));
   const address = getValidatedAddress(c.req.param('address'));
 
@@ -233,7 +238,8 @@ app.post('/chains/:chainId/contracts/:address/read', async c => {
   }
 });
 
-app.post('/chains/:chainId/contracts/:address/simulate', async c => {
+const contractSimulateRateLimiter = createRateLimiter({ name: 'contracts-simulate', requestsPerMinute: 60, burst: 20 });
+app.post('/chains/:chainId/contracts/:address/simulate', contractSimulateRateLimiter, async c => {
   const chainId = getValidatedChainId(c.req.param('chainId'));
   const address = getValidatedAddress(c.req.param('address'));
 

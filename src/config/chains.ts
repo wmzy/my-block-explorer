@@ -77,17 +77,29 @@ export function getEffectiveRpcUrl(chainId: number, userConfig?: UserRpcConfig):
   return getDefaultRpcUrl(chainId);
 }
 
-// 检查链是否为常用链
-export function isPopularChain(chainId: number): boolean {
-  return POPULAR_CHAINS.some(chain => chain.id === chainId);
+// Precomputed popular-chain id set: O(1) membership checks. isPopularChain
+// used to do a linear scan per call and sits inside sort comparators.
+const POPULAR_CHAIN_IDS: Set<number> = new Set(POPULAR_CHAINS.map(chain => chain.id));
+
+// viem's barrel export contains multiple exports sharing one chain id
+// (aliases and testnet twins); classification must consider every export
+// with that id, so group them once at module load.
+const chainsById = new Map<number, Chain[]>();
+for (const chain of SUPPORTED_CHAINS) {
+  const group = chainsById.get(chain.id);
+  if (group) {
+    group.push(chain);
+  } else {
+    chainsById.set(chain.id, [chain]);
+  }
 }
 
-// 获取链的类型（主网/测试网）
-export function getChainType(chainId: number): 'mainnet' | 'testnet' | 'unknown' {
-  // All viem exports sharing this id (aliases and testnet twins — see the
-  // dedupe note in getSortedChains): any of them flagged testnet classifies
-  // the id as a testnet.
-  const candidates = SUPPORTED_CHAINS.filter(chain => chain.id === chainId);
+// Classify one chain id from its full candidate group. Logic extracted
+// verbatim from the original per-call implementation — behavior is unchanged.
+function classifyChainType(
+  chainId: number,
+  candidates: readonly Chain[],
+): 'mainnet' | 'testnet' | 'unknown' {
   if (candidates.length === 0) return 'unknown';
 
   // viem marks testnets explicitly (chain.testnet === true). Trust the flag
@@ -141,35 +153,81 @@ export function getChainType(chainId: number): 'mainnet' | 'testnet' | 'unknown'
   return 'mainnet';
 }
 
+// Precomputed chainId → type map: getChainType is O(1) instead of re-scanning
+// all ~700 chains per call. It used to run inside sort comparators, making
+// every search keystroke O(n² log n).
+const chainIdToType = new Map<number, 'mainnet' | 'testnet' | 'unknown'>();
+for (const [chainId, candidates] of chainsById) {
+  chainIdToType.set(chainId, classifyChainType(chainId, candidates));
+}
+
+// 检查链是否为常用链
+export function isPopularChain(chainId: number): boolean {
+  return POPULAR_CHAIN_IDS.has(chainId);
+}
+
+// 获取链的类型（主网/测试网）
+export function getChainType(chainId: number): 'mainnet' | 'testnet' | 'unknown' {
+  return chainIdToType.get(chainId) ?? 'unknown';
+}
+
+// Shared relevance tail of the sort order: popular chains first, then
+// mainnets before testnets, then name. Lookups hit the precomputed
+// set/map, so each comparison is O(1).
+function compareByPopularityThenTypeThenName(a: Chain, b: Chain): number {
+  const aIsPopular = POPULAR_CHAIN_IDS.has(a.id);
+  const bIsPopular = POPULAR_CHAIN_IDS.has(b.id);
+  if (aIsPopular && !bIsPopular) return -1;
+  if (!aIsPopular && bIsPopular) return 1;
+
+  const aType = chainIdToType.get(a.id);
+  const bType = chainIdToType.get(b.id);
+  if (aType === 'mainnet' && bType !== 'mainnet') return -1;
+  if (aType !== 'mainnet' && bType === 'mainnet') return 1;
+
+  return a.name.localeCompare(b.name);
+}
+
+// Precomputed search index: one entry per exported chain (id duplicates
+// included — searchChains has always matched every export) with the
+// lowercased name variants computed once instead of per keystroke.
+type ChainIndexEntry = {
+  chain: Chain;
+  lowerName: string;
+  compactLowerName: string;
+};
+
+const CHAIN_INDEX: ChainIndexEntry[] = SUPPORTED_CHAINS.map(chain => ({
+  chain,
+  lowerName: chain.name.toLowerCase(),
+  compactLowerName: chain.name.toLowerCase().replace(/\s+/g, ''),
+}));
+
+// Base search order (popular → type → name), sorted once at module load.
+// searchChains only filters it and re-ranks the query-dependent tiers.
+const SEARCH_ORDER: ChainIndexEntry[] = CHAIN_INDEX.slice().sort((a, b) =>
+  compareByPopularityThenTypeThenName(a.chain, b.chain),
+);
+
+// Precomputed sorted chain list. Object.values(chains) contains multiple
+// exports sharing one chain id (aliases and testnet twins); dedupe by id
+// (first export wins) or selector cards repeat.
+const SORTED_CHAINS: Chain[] = (() => {
+  const seen = new Set<number>();
+  const unique: Chain[] = [];
+  for (const { chain } of CHAIN_INDEX) {
+    if (seen.has(chain.id)) continue;
+    seen.add(chain.id);
+    unique.push(chain);
+  }
+  return unique.sort(compareByPopularityThenTypeThenName);
+})();
+
 // 按类型和受欢迎程度排序链
 export function getSortedChains(): Chain[] {
-  // Object.values(chains) contains multiple exports sharing one chain id
-  // (aliases and testnet twins); dedupe by id or selector cards repeat.
-  const seen = new Set<number>();
-  const unique = SUPPORTED_CHAINS.filter(chain => {
-    if (seen.has(chain.id)) return false;
-    seen.add(chain.id);
-    return true;
-  });
-
-  return unique.sort((a, b) => {
-    // Popular chains first
-    const aIsPopular = isPopularChain(a.id);
-    const bIsPopular = isPopularChain(b.id);
-
-    if (aIsPopular && !bIsPopular) return -1;
-    if (!aIsPopular && bIsPopular) return 1;
-
-    // Then by type (mainnets first)
-    const aType = getChainType(a.id);
-    const bType = getChainType(b.id);
-
-    if (aType === 'mainnet' && bType !== 'mainnet') return -1;
-    if (aType !== 'mainnet' && bType === 'mainnet') return 1;
-
-    // Finally by name
-    return a.name.localeCompare(b.name);
-  });
+  // Copy per call: callers own the result and may mutate it without
+  // poisoning the cached order.
+  return SORTED_CHAINS.slice();
 }
 
 // 搜索链（按名称或Chain ID）
@@ -177,14 +235,18 @@ export function searchChains(query: string): Chain[] {
   if (!query.trim()) return getSortedChains();
 
   const lowerQuery = query.toLowerCase();
+  const compactQuery = lowerQuery.replace(/\s+/g, '');
   const numericQuery = parseInt(query);
+  const hasNumericQuery = !isNaN(numericQuery);
 
-  const results = SUPPORTED_CHAINS.filter((chain) => {
+  const matches = SEARCH_ORDER.filter((entry) => {
+    const { chain, lowerName, compactLowerName } = entry;
+
     // 精确匹配Chain ID
-    if (!isNaN(numericQuery) && chain.id === numericQuery) return true;
+    if (hasNumericQuery && chain.id === numericQuery) return true;
 
     // 名称匹配
-    if (chain.name.toLowerCase().includes(lowerQuery)) return true;
+    if (lowerName.includes(lowerQuery)) return true;
 
     // Chain ID部分匹配
     if (chain.id.toString().includes(query)) return true;
@@ -193,42 +255,31 @@ export function searchChains(query: string): Chain[] {
     if (chain.nativeCurrency.symbol.toLowerCase().includes(lowerQuery)) return true;
 
     // 别名匹配（如果有的话）
-    if (chain.name.toLowerCase().replace(/\s+/g, '').includes(lowerQuery.replace(/\s+/g, '')))
-      return true;
+    if (compactLowerName.includes(compactQuery)) return true;
 
     return false;
   });
 
-  return results.sort((a, b) => {
-    // 1. 精确Chain ID匹配优先
-    if (!isNaN(numericQuery)) {
-      if (a.id === numericQuery && b.id !== numericQuery) return -1;
-      if (a.id !== numericQuery && b.id === numericQuery) return 1;
-    }
+  // Only the query-dependent tiers are sorted per call (exact chain id,
+  // then name prefix); the popular → type → name order is inherited from
+  // SEARCH_ORDER because Array#sort is stable.
+  return matches
+    .sort((a, b) => {
+      // 1. 精确Chain ID匹配优先
+      if (hasNumericQuery) {
+        if (a.chain.id === numericQuery && b.chain.id !== numericQuery) return -1;
+        if (a.chain.id !== numericQuery && b.chain.id === numericQuery) return 1;
+      }
 
-    // 2. 名称开头匹配优先
-    const aStartsWith = a.name.toLowerCase().startsWith(lowerQuery);
-    const bStartsWith = b.name.toLowerCase().startsWith(lowerQuery);
-    if (aStartsWith && !bStartsWith) return -1;
-    if (!aStartsWith && bStartsWith) return 1;
+      // 2. 名称开头匹配优先
+      const aStartsWith = a.lowerName.startsWith(lowerQuery);
+      const bStartsWith = b.lowerName.startsWith(lowerQuery);
+      if (aStartsWith && !bStartsWith) return -1;
+      if (!aStartsWith && bStartsWith) return 1;
 
-    // 3. 常用链优先
-    const aIsPopular = isPopularChain(a.id);
-    const bIsPopular = isPopularChain(b.id);
-    if (aIsPopular && !bIsPopular) return -1;
-    if (!aIsPopular && bIsPopular) return 1;
-
-    // 4. 主网优先于测试网
-    const aType = getChainType(a.id);
-    const bType = getChainType(b.id);
-    if (aType === 'mainnet' && bType !== 'mainnet') return -1;
-    if (aType !== 'mainnet' && bType === 'mainnet') return 1;
-
-    // 5. 按名称排序
-    return a.name.localeCompare(b.name);
-  });
-
-  return results;
+      return 0;
+    })
+    .map(entry => entry.chain);
 }
 
 // 多链数据库配置

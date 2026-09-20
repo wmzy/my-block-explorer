@@ -32,10 +32,15 @@ vi.mock('@/config/chains', () => ({
     if (chainId === 1) return { id: 1, name: 'Ethereum', nativeCurrency: { symbol: 'ETH' } };
     return null;
   },
-  getChainName: (chainId: number) => (chainId === 1 ? 'Ethereum' : 'Unknown'),
+  getChainName: (chainId: number) => (chainId === 1 ? 'Ethereum' : chainId === 137 ? 'Polygon' : 'Unknown'),
   getChainSymbol: (chainId: number) => (chainId === 1 ? 'ETH' : 'UNKNOWN'),
   // Consumed by the Landing helpers behind UnsupportedChainState.
   isChainSupported: (chainId: number) => chainId === 1,
+  // In-card recovery links rendered by UnsupportedChainState.
+  POPULAR_CHAINS: [
+    { id: 1, name: 'Ethereum' },
+    { id: 137, name: 'Polygon' },
+  ],
   getSortedChains: () => [{ id: 1, name: 'Ethereum' }],
 }));
 
@@ -193,7 +198,9 @@ describe('TransactionsList view', () => {
     expect(await screen.findByText(/Chain not supported/)).toBeInTheDocument();
     expect(screen.getByText(/chain ID 999/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Go to Mainnet' })).toHaveAttribute('href', '/chain/1');
-    expect(screen.getByRole('link', { name: 'Open chain list' })).toHaveAttribute('href', '/');
+    // In-card chain list replaces the old '/' bounce CTA.
+    expect(screen.getByRole('heading', { name: 'Open a supported chain' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Polygon/ })).toHaveAttribute('href', '/chain/137');
   });
 
   it('renders Pending for transactions without a receipt (status -1)', async () => {

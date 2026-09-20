@@ -111,11 +111,37 @@ export type ServiceInfo = {
   latency?: number;
 };
 
+// Set when a stored manual base failed its probe and the localhost scan
+// took over for this session: the runtime base differs from the stored
+// choice, so indexed data (contracts, events) may come from a different
+// backend than the user configured. Null while the manual base is alive,
+// absent, or nothing was found at all.
+export type ManualBaseFallback = {
+  /** The stored manual base whose health probe failed. */
+  configured: string;
+  /** The scanned base actually serving this session. */
+  using: string;
+};
+
+// Origin-level comparison so cosmetic differences (trailing slash,
+// default port) do not read as "switched backends". Unparseable values
+// compare as different — the honest reading for a configured base that
+// could not even be probed.
+function sameBackendOrigin(a: string, b: string): boolean {
+  try {
+    return new URL(a).origin === new URL(b).origin;
+  } catch {
+    return false;
+  }
+}
+
 export function useAutoDiscovery() {
   const [status, setStatus] = useState<DiscoveryStatus>('idle');
   const [serviceInfo, setServiceInfo] = useState<ServiceInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isScanning, setIsScanning] = useState(false);
+  const [switchedFromManual, setSwitchedFromManual] =
+    useState<ManualBaseFallback | null>(null);
 
   // Derived: true when connected to a service
   const isConnected = useMemo(() => status === 'found', [status]);
@@ -166,7 +192,9 @@ export function useAutoDiscovery() {
   // precedence contract). A dead one degrades to the scan for THIS
   // session only — the stored choice is kept so a temporarily slow
   // remote backend is not permanently erased; removing an entry stays an
-  // explicit user action.
+  // explicit user action. When the scan then lands on a different
+  // backend, that switch is surfaced via switchedFromManual instead of
+  // passing silently.
   const autoDiscover = useCallback(async (): Promise<ServiceInfo | null> => {
     const savedUrl = getStoredManualBase();
     if (savedUrl) {
@@ -178,6 +206,7 @@ export function useAutoDiscovery() {
           setServiceInfo(info);
           setStatus('found');
           setApiBase(savedUrl);
+          setSwitchedFromManual(null);
           return info;
         }
       } catch {
@@ -186,7 +215,11 @@ export function useAutoDiscovery() {
       }
     }
 
-    return discover();
+    const service = await discover();
+    if (savedUrl && service && !sameBackendOrigin(service.url, savedUrl)) {
+      setSwitchedFromManual({ configured: savedUrl, using: service.url });
+    }
+    return service;
   }, [discover]);
 
   // Manually set API URL (setup panel). Persists the choice so it takes
@@ -199,6 +232,9 @@ export function useAutoDiscovery() {
         setServiceInfo(serviceInfoFromUrl(url, health));
         setStatus('found');
         setError(null);
+        // An explicit fresh choice supersedes any earlier silent
+        // fallback — the banner would be stale.
+        setSwitchedFromManual(null);
 
         storeManualBase(url);
         setApiBase(url);
@@ -241,6 +277,7 @@ export function useAutoDiscovery() {
           setStatus('found');
           setIsScanning(false);
           setApiBase(savedUrl);
+          setSwitchedFromManual(null);
           return info;
         }
       } catch {
@@ -248,8 +285,13 @@ export function useAutoDiscovery() {
       }
     }
 
-    // Fallback to port scanning
-    return discover();
+    // Fallback to port scanning; same silent-switch surfacing as the
+    // startup path above.
+    const service = await discover();
+    if (savedUrl && service && !sameBackendOrigin(service.url, savedUrl)) {
+      setSwitchedFromManual({ configured: savedUrl, using: service.url });
+    }
+    return service;
   }, [discover]);
 
   // Auto-discover on mount
@@ -263,6 +305,9 @@ export function useAutoDiscovery() {
     error,
     isScanning,
     isConnected,
+    // Truthy only while the session runs on a scanned base after the
+    // stored manual one failed its probe (see ManualBaseFallback).
+    switchedFromManual,
     discover,
     autoDiscover,
     setApiUrl,

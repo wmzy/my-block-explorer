@@ -7,6 +7,15 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import app from '@/api-app';
 import * as exportService from '@/services/EventExportService';
 
+// The export endpoint is rate-limited in production (5/min, burst 2) and
+// test requests share the single no-conninfo fallback bucket — this file
+// fires 6 exports in well under a second. These tests exercise validation
+// and serialization, not throttling; the limiter has dedicated coverage in
+// tests/unit/rateLimit.test.ts.
+vi.mock('@/middleware/rate-limit', () => ({
+  createRateLimiter: () => async (_c: unknown, next: () => Promise<void>) => next(),
+}));
+
 // Mock the EventIndexingService to avoid database access
 vi.mock('@/services/EventIndexingService', () => ({
   addIndexingRange: vi.fn(),

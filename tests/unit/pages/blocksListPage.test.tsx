@@ -35,12 +35,17 @@ vi.mock('@/config/chains', () => ({
     return null;
   },
   getChainName: (chainId: number) =>
-    chainId === 1 ? 'Ethereum' : chainId === 11155111 ? 'Sepolia' : 'Unknown',
+    chainId === 1 ? 'Ethereum' : chainId === 11155111 ? 'Sepolia' : chainId === 137 ? 'Polygon' : 'Unknown',
   // Only Sepolia is a testnet in this fixture: the badge case has a
   // mainnet/testnet pair to distinguish.
   getChainType: (chainId: number) => (chainId === 11155111 ? 'testnet' : 'mainnet'),
   // Consumed by the Landing helpers behind UnsupportedChainState.
   isChainSupported: (chainId: number) => chainId === 1 || chainId === 11155111,
+  // In-card recovery links rendered by UnsupportedChainState.
+  POPULAR_CHAINS: [
+    { id: 1, name: 'Ethereum' },
+    { id: 137, name: 'Polygon' },
+  ],
   getSortedChains: () => [{ id: 1, name: 'Ethereum' }],
 }));
 
@@ -203,9 +208,10 @@ describe('BlocksList view', () => {
     expect(screen.getByText(/chain ID 999/)).toBeInTheDocument();
     expect(screen.queryByText(/Unsupported chain ID/)).not.toBeInTheDocument();
     // Recovery: a deterministic preferred-chain destination plus the
-    // landing route (chain list entry).
+    // in-card chain list (no more '/' bounce).
     expect(screen.getByRole('link', { name: 'Go to Mainnet' })).toHaveAttribute('href', '/chain/1');
-    expect(screen.getByRole('link', { name: 'Open chain list' })).toHaveAttribute('href', '/');
+    expect(screen.getByRole('heading', { name: 'Open a supported chain' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Polygon/ })).toHaveAttribute('href', '/chain/137');
   });
 
   it('paginates via the beforeBlock cursor computed from the head page, with ?page= in the URL', async () => {

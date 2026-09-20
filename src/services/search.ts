@@ -27,6 +27,13 @@ export type SearchResult = {
   scope?: string;
   supportedChains?: SupportedChainRef[];
   suggestions?: string[];
+  /**
+   * Chain the backend actually resolved the actionable suggestion lines
+   * on (echoed by both search endpoints). Preferred over any client-side
+   * chain context when linking suggestion lines; null/absent means the
+   * suggestions carry no chain data to link anywhere.
+   */
+  suggestionsChainId?: number | null;
   error?: string | null;
   /**
    * True when not-found AND a data source errored — not a definitive

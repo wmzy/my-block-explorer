@@ -197,10 +197,10 @@ describe('resolveEnsAddress', () => {
     expect(await resolveEnsAddress('vitalik.eth')).toEqual({ status: 'failed' });
   });
 
-  it('client construction failure also settles as failed', async () => {
+  it('client construction failure settles as no-rpc (non-retryable)', async () => {
     mockedCreateRpcClient.mockRejectedValue(new Error('no mainnet RPC'));
 
-    expect(await resolveEnsAddress('vitalik.eth')).toEqual({ status: 'failed' });
+    expect(await resolveEnsAddress('vitalik.eth')).toEqual({ status: 'no-rpc' });
   });
 });
 

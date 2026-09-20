@@ -35,17 +35,18 @@ describe('API routes', () => {
   });
 
   describe('GET /api/health', () => {
-    it('returns healthy status', async () => {
+    it('returns healthy status with deployment posture flags', async () => {
       const response = await app.request('/api/health', { method: 'GET' });
 
       expect(response.status).toBe(200);
 
       const data = await response.json();
       expect(data).toMatchObject({
-        status: 'healthy',
-        message: 'My Block Explorer API is running',
+        status: 'ok',
         version: '1.0.0',
       });
+      expect(typeof data.adminTokenConfigured).toBe('boolean');
+      expect(typeof data.debugApiEnabled).toBe('boolean');
       expect(data).toHaveProperty('timestamp');
     });
   });

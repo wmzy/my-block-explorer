@@ -356,9 +356,9 @@ describe('Manual Range Indexing E2E', () => {
         }),
       });
 
-      expect(response.status).toBe(400);
+      expect(response.status).toBe(404);
       const data = await response.json();
-      expect(data.message).toBe('Range not found');
+      expect(data.message ?? data.error).toBe('Range not found');
     });
 
     it('should reject invalid rangeId format', async () => {
@@ -613,9 +613,9 @@ describe('Manual Range Indexing E2E', () => {
         headers: { 'Content-Type': 'application/json' },
       });
 
-      expect(response.status).toBe(400);
+      expect(response.status).toBe(404);
       const data = await response.json();
-      expect(data.message).toBe('Range not found');
+      expect(data.message ?? data.error).toBe('Range not found');
     });
 
     it('should reject invalid rangeId format', async () => {

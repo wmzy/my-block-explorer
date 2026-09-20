@@ -50,15 +50,22 @@ vi.mock('../../src/util/http', () => ({
 }));
 
 // Client-side ENS resolution runs over a mainnet RPC client; the mock keeps
-// it observable (and offline) in tests.
+// it observable (and offline) in tests. The resolved client is typed loosely
+// on purpose: per-test clients extend the surface (the offline fallback
+// probes add getBlockNumber/getTransaction/getBlock on top of the ENS
+// default).
 const { mockCreateRpcClient, mockGetEnsAddress } = vi.hoisted(() => {
   const getEnsAddress = vi.fn(
     (): Promise<string | null> =>
       Promise.resolve('0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'),
   );
+  const defaultClient: Record<string, unknown> = { getEnsAddress };
   return {
     mockGetEnsAddress: getEnsAddress,
-    mockCreateRpcClient: vi.fn((_chainId: number) => Promise.resolve({ getEnsAddress })),
+    mockCreateRpcClient: vi.fn(
+      (_chainId: number): Promise<Record<string, unknown>> =>
+        Promise.resolve(defaultClient),
+    ),
   };
 });
 vi.mock('../../src/utils/realTimeData', () => ({
@@ -91,7 +98,11 @@ vi.mock('../../src/config/chains', () => ({
     { id: 5000, name: 'Mantle', nativeCurrency: { symbol: 'MNT' } },
   ],
   searchChains: (query: string) =>
-    [{ id: 1, name: 'Ethereum', nativeCurrency: { symbol: 'ETH' } }].filter(
+    [
+      { id: 1, name: 'Ethereum', nativeCurrency: { symbol: 'ETH' } },
+      { id: 137, name: 'Polygon', nativeCurrency: { symbol: 'MATIC' } },
+      { id: 5000, name: 'Mantle', nativeCurrency: { symbol: 'MNT' } },
+    ].filter(
       chain =>
         chain.name.toLowerCase().includes(query.toLowerCase()) ||
         chain.id.toString().includes(query),
@@ -298,7 +309,10 @@ describe('TopNavigation', () => {
     expect(mockGet).not.toHaveBeenCalled();
   });
 
-  it('records every executed search into localStorage', async () => {
+  it('does not record free-text searches at the header; landing records them', async () => {
+    // Free text has no known destination at dispatch time — recording it
+    // here would flood history with queries that never landed. The Search
+    // view records the entry when it actually navigates to a result.
     renderTopNavigation({ currentChainId: 137, onSearch: undefined });
 
     const searchInput = screen.getByPlaceholderText('Search address, tx hash, or block number...');
@@ -311,9 +325,21 @@ describe('TopNavigation', () => {
         `/search?q=${encodeURIComponent('uniswap')}&chain=137`,
       );
     });
-    expect(JSON.parse(localStorage.getItem(SEARCH_HISTORY_STORAGE_KEY) ?? '[]')).toEqual([
-      { query: 'uniswap', chainId: 137 },
-    ]);
+    expect(JSON.parse(localStorage.getItem(SEARCH_HISTORY_STORAGE_KEY) ?? '[]')).toEqual([]);
+  });
+
+  it('does not record free text through the parent-dispatch path either', async () => {
+    const onSearch = vi.fn();
+    renderTopNavigation({ currentChainId: 137, onSearch });
+
+    const searchInput = screen.getByPlaceholderText('Search address, tx hash, or block number...');
+    fireEvent.change(searchInput, { target: { value: 'uniswap' } });
+    fireEvent.click(screen.getByText('Search'));
+
+    await waitFor(() => {
+      expect(onSearch).toHaveBeenCalledWith('uniswap');
+    });
+    expect(JSON.parse(localStorage.getItem(SEARCH_HISTORY_STORAGE_KEY) ?? '[]')).toEqual([]);
   });
 
   it('dedupes and caps local history at 10 entries, newest first', () => {
@@ -640,6 +666,122 @@ describe('TopNavigation', () => {
     expect(screen.getByText('Retry')).toBeInTheDocument();
   });
 
+  it('confirms a block number against the selected chain RPC when the backend is unreachable', async () => {
+    mockGet.mockRejectedValueOnce(new ApiError('Network error', 0));
+    mockCreateRpcClient.mockResolvedValueOnce({ getBlockNumber: () => Promise.resolve(100n) });
+    renderTopNavigation({ currentChainId: 1, onSearch: undefined });
+
+    const searchInput = screen.getByPlaceholderText('Search address, tx hash, or block number...');
+    fireEvent.change(searchInput, { target: { value: '42' } });
+    fireEvent.click(screen.getByText('Search'));
+
+    // The fallback asks the selected chain's own client (not the backend).
+    await waitFor(() => {
+      expect(mockCreateRpcClient).toHaveBeenCalledWith(1);
+    });
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith(mockRouter, '/chain/1/block/42');
+    });
+    // Landing on the confirmed block records history like the verified
+    // backend path does.
+    expect(JSON.parse(localStorage.getItem(SEARCH_HISTORY_STORAGE_KEY) ?? '[]')).toEqual([
+      { query: '42', chainId: 1 },
+    ]);
+    expect(screen.queryByText(/Search unavailable/)).not.toBeInTheDocument();
+  });
+
+  it('resolves a hash as a transaction through the chain RPC when the backend is unreachable', async () => {
+    const hash = `0x${'ab'.repeat(32)}`;
+    mockGet.mockRejectedValueOnce(new ApiError('Network error', 0));
+    mockCreateRpcClient.mockResolvedValueOnce({
+      getTransaction: () => Promise.resolve({ hash, blockNumber: 42n }),
+    });
+    renderTopNavigation({ currentChainId: 1, onSearch: undefined });
+
+    const searchInput = screen.getByPlaceholderText('Search address, tx hash, or block number...');
+    fireEvent.change(searchInput, { target: { value: hash } });
+    fireEvent.click(screen.getByText('Search'));
+
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith(mockRouter, `/chain/1/tx/${hash}`);
+    });
+    expect(JSON.parse(localStorage.getItem(SEARCH_HISTORY_STORAGE_KEY) ?? '[]')).toEqual([
+      { query: hash, chainId: 1 },
+    ]);
+  });
+
+  it('resolves a hash as a block through the chain RPC when it is not a transaction', async () => {
+    const hash = `0x${'ab'.repeat(32)}`;
+    mockGet.mockRejectedValueOnce(new ApiError('Network error', 0));
+    mockCreateRpcClient.mockResolvedValueOnce({
+      getTransaction: () => Promise.resolve(null),
+      getBlock: () => Promise.resolve({ number: 42n }),
+    });
+    renderTopNavigation({ currentChainId: 1, onSearch: undefined });
+
+    const searchInput = screen.getByPlaceholderText('Search address, tx hash, or block number...');
+    fireEvent.change(searchInput, { target: { value: hash } });
+    fireEvent.click(screen.getByText('Search'));
+
+    // Block page links by number, never by hash.
+    await waitFor(() => {
+      expect(mockNavigate).toHaveBeenCalledWith(mockRouter, '/chain/1/block/42');
+    });
+  });
+
+  it('keeps the offline notice and says what the RPC fallback could not do', async () => {
+    // Backend offline AND the direct RPC check cannot confirm the query:
+    // the notice stays, now with the honest scope statement.
+    mockGet.mockRejectedValueOnce(new ApiError('Network error', 0));
+    mockCreateRpcClient.mockResolvedValueOnce({ getBlockNumber: () => Promise.resolve(10n) });
+    renderTopNavigation({ currentChainId: 1, onSearch: undefined });
+
+    const searchInput = screen.getByPlaceholderText('Search address, tx hash, or block number...');
+    fireEvent.change(searchInput, { target: { value: '999' } });
+    fireEvent.click(screen.getByText('Search'));
+
+    expect(
+      await screen.findByText(
+        'Search unavailable — cannot reach the explorer backend; direct RPC check of Ethereum found no match (full cross-chain search requires the backend)',
+      ),
+    ).toBeInTheDocument();
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(JSON.parse(localStorage.getItem(SEARCH_HISTORY_STORAGE_KEY) ?? '[]')).toEqual([]);
+  });
+
+  it('skips the RPC fallback entirely when the chain has no usable client', async () => {
+    mockGet.mockRejectedValueOnce(new ApiError('Network error', 0));
+    mockCreateRpcClient.mockRejectedValueOnce(new Error('Unsupported chain ID: 1'));
+    renderTopNavigation({ currentChainId: 1, onSearch: undefined });
+
+    const searchInput = screen.getByPlaceholderText('Search address, tx hash, or block number...');
+    fireEvent.change(searchInput, { target: { value: '42' } });
+    fireEvent.click(screen.getByText('Search'));
+
+    // Plain unreachable notice — no note about a check that never ran.
+    expect(
+      await screen.findByText('Search unavailable — cannot reach the explorer backend'),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/full cross-chain search requires the backend/),
+    ).not.toBeInTheDocument();
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('does not engage the RPC fallback for a backend that answered with an error', async () => {
+    // A 5xx means the backend was reachable — the data-source wording
+    // stands and no chain RPC is consulted.
+    mockGet.mockRejectedValueOnce(new ApiError('HTTP 500', 500));
+    renderTopNavigation({ currentChainId: 1, onSearch: undefined });
+
+    const searchInput = screen.getByPlaceholderText('Search address, tx hash, or block number...');
+    fireEvent.change(searchInput, { target: { value: '42' } });
+    fireEvent.click(screen.getByText('Search'));
+
+    expect(await screen.findByText(/Search failed on Ethereum/)).toBeInTheDocument();
+    expect(mockCreateRpcClient).not.toHaveBeenCalled();
+  });
+
   it('reports a failed request (backend answered with an error) as a data-source failure', async () => {
     mockGet.mockRejectedValueOnce(new ApiError('HTTP 500', 500));
     renderTopNavigation({ currentChainId: 1, onSearch: undefined });
@@ -743,5 +885,137 @@ describe('ChainSelector', () => {
         screen.getByPlaceholderText('Search chain name, ID, or symbol...'),
       ).toBeInTheDocument();
     });
+  });
+
+  it('exposes listbox semantics and expansion state on the trigger', async () => {
+    renderTopNavigation({ currentChainId: 1 });
+
+    const trigger = screen.getByRole('button', { name: /Ethereum/ });
+    expect(trigger).toHaveAttribute('aria-haspopup', 'listbox');
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.click(trigger);
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+
+    // The current chain is announced as the selected/current option, not
+    // just drawn with a tick.
+    const currentOption = await screen.findByRole('option', { name: /Ethereum/ });
+    expect(currentOption).toHaveAttribute('aria-current', 'true');
+    expect(currentOption).toHaveAttribute('aria-selected', 'true');
+    expect(screen.getByRole('option', { name: /Polygon/ })).not.toHaveAttribute('aria-current');
+  });
+
+  it('Enter alone never switches chains — only the highlighted option is confirmed', async () => {
+    const onChainChange = vi.fn();
+    renderTopNavigation({ onChainChange });
+
+    fireEvent.click(screen.getByRole('button', { name: /Ethereum/ }));
+    const filterInput = await screen.findByPlaceholderText(
+      'Search chain name, ID, or symbol...',
+    );
+
+    // The old blind pick: Enter with a filter that matches chains used to
+    // select the first hit. With nothing highlighted it must do nothing.
+    fireEvent.change(filterInput, { target: { value: 'e' } });
+    fireEvent.keyDown(filterInput, { key: 'Enter' });
+    expect(onChainChange).not.toHaveBeenCalled();
+
+    // No filter at all: same rule.
+    fireEvent.change(filterInput, { target: { value: '' } });
+    fireEvent.keyDown(filterInput, { key: 'Enter' });
+    expect(onChainChange).not.toHaveBeenCalled();
+  });
+
+  it('ArrowDown moves the highlight and Enter confirms the highlighted chain', async () => {
+    const onChainChange = vi.fn();
+    renderTopNavigation({ currentChainId: 1, onChainChange });
+
+    fireEvent.click(screen.getByRole('button', { name: /Ethereum/ }));
+    const filterInput = await screen.findByPlaceholderText(
+      'Search chain name, ID, or symbol...',
+    );
+
+    // Full list order: Ethereum (1), Polygon (137), Mantle (5000).
+    fireEvent.keyDown(filterInput, { key: 'ArrowDown' });
+    fireEvent.keyDown(filterInput, { key: 'ArrowDown' });
+    // The combobox points at the highlighted option for screen readers.
+    expect(filterInput).toHaveAttribute('aria-activedescendant', 'chain-option-137');
+
+    fireEvent.keyDown(filterInput, { key: 'Enter' });
+    expect(onChainChange).toHaveBeenCalledTimes(1);
+    expect(onChainChange).toHaveBeenCalledWith(137);
+  });
+
+  it('ArrowUp from nothing highlights the last option and wraps around', async () => {
+    const onChainChange = vi.fn();
+    renderTopNavigation({ currentChainId: 1, onChainChange });
+
+    fireEvent.click(screen.getByRole('button', { name: /Ethereum/ }));
+    const filterInput = await screen.findByPlaceholderText(
+      'Search chain name, ID, or symbol...',
+    );
+
+    fireEvent.keyDown(filterInput, { key: 'ArrowUp' });
+    fireEvent.keyDown(filterInput, { key: 'Enter' });
+    expect(onChainChange).toHaveBeenCalledWith(5000);
+
+    // Wrapping: ArrowUp from the first lands on the last again.
+    fireEvent.click(screen.getByRole('button', { name: /Ethereum/ }));
+    const reopened = await screen.findByPlaceholderText(
+      'Search chain name, ID, or symbol...',
+    );
+    fireEvent.keyDown(reopened, { key: 'ArrowDown' });
+    expect(reopened).toHaveAttribute('aria-activedescendant', 'chain-option-1');
+    fireEvent.keyDown(reopened, { key: 'ArrowUp' });
+    expect(reopened).toHaveAttribute('aria-activedescendant', 'chain-option-5000');
+  });
+
+  it('filtering resets the highlight so Enter cannot pick a stale index', async () => {
+    const onChainChange = vi.fn();
+    renderTopNavigation({ currentChainId: 1, onChainChange });
+
+    fireEvent.click(screen.getByRole('button', { name: /Ethereum/ }));
+    const filterInput = await screen.findByPlaceholderText(
+      'Search chain name, ID, or symbol...',
+    );
+
+    // Highlight the first option, then rebuild the list with a filter:
+    // the highlight must clear instead of silently pointing elsewhere.
+    fireEvent.keyDown(filterInput, { key: 'ArrowDown' });
+    fireEvent.change(filterInput, { target: { value: 'Mantle' } });
+    expect(filterInput).not.toHaveAttribute('aria-activedescendant');
+    fireEvent.keyDown(filterInput, { key: 'Enter' });
+    expect(onChainChange).not.toHaveBeenCalled();
+
+    // Re-highlight within the filtered list and confirm.
+    fireEvent.keyDown(filterInput, { key: 'ArrowDown' });
+    expect(filterInput).toHaveAttribute('aria-activedescendant', 'chain-option-5000');
+    fireEvent.keyDown(filterInput, { key: 'Enter' });
+    expect(onChainChange).toHaveBeenCalledWith(5000);
+  });
+
+  it('Escape closes the dropdown and clears the highlight', async () => {
+    const onChainChange = vi.fn();
+    renderTopNavigation({ currentChainId: 1, onChainChange });
+
+    const trigger = screen.getByRole('button', { name: /Ethereum/ });
+    fireEvent.click(trigger);
+    const filterInput = await screen.findByPlaceholderText(
+      'Search chain name, ID, or symbol...',
+    );
+
+    fireEvent.keyDown(filterInput, { key: 'ArrowDown' });
+    fireEvent.keyDown(filterInput, { key: 'Escape' });
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
+    expect(
+      screen.queryByPlaceholderText('Search chain name, ID, or symbol...'),
+    ).not.toBeInTheDocument();
+
+    // Reopening starts fresh: no highlight survives the close.
+    fireEvent.click(trigger);
+    const reopened = await screen.findByPlaceholderText(
+      'Search chain name, ID, or symbol...',
+    );
+    expect(reopened).not.toHaveAttribute('aria-activedescendant');
   });
 });

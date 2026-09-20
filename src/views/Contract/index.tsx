@@ -209,9 +209,9 @@ const shadowNoticeActionsStyles = css`
   gap: 8px;
 `;
 
-// Amber notice for EIP-2535 diamond proxies: the page renders facet[0]'s
-// source/ABI only, so the diamond must not read as a plain proxy with a
-// single implementation. Same palette as the custom-ABI notices.
+// Amber notice for EIP-2535 diamond proxies: source/ABI/events/storage
+// render facet[0] only, so the diamond must not read as a plain proxy with
+// a single implementation. Same palette as the custom-ABI notices.
 const diamondNoticeStyles = css`
   margin-bottom: 20px;
   padding: 12px 16px;
@@ -573,6 +573,58 @@ const readStoredCustomAbi = (chainId: number, address: string): string | null =>
   }
 };
 
+// History-aware Back heuristic. The button must behave like the browser's
+// Back when this page was reached through real browsing (previous tab, the
+// facet page the user came from, the transaction that linked here) instead
+// of always pushing the address page — which, on a deep link followed by
+// in-site navigation, was never visited.
+//
+// Two signals, either counts:
+// (a) document.referrer is same-origin — this document was opened by a hard
+//     in-site link, so the entry under Back is one of ours.
+// (b) history.length > 1 — every in-app router push grows the tab's session
+//     history, while a fresh deep link (new tab, typed URL, bookmark)
+//     starts at 1 and reloads keep it there. length > 1 therefore means the
+//     tab genuinely has a previous page; the one false positive (a URL
+//     typed into a tab that already had history) still matches what the
+//     browser's own Back button would do, so following it is honest.
+const hasInSiteHistory = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  try {
+    if (document.referrer !== '' && new URL(document.referrer).origin === window.location.origin) {
+      return true;
+    }
+  } catch {
+    // Unparseable referrer — fall through to the history-length signal.
+  }
+  return window.history.length > 1;
+};
+
+// A deployment cannot consume zero gas: a 0/'' answer means the RPC/indexer
+// did not record the creation receipt — render Unknown instead of a
+// confident-looking '0 gas'.
+const formatCreationGas = (gasUsed: string): string => {
+  const gas = Number.parseInt(gasUsed, 10);
+  return Number.isFinite(gas) && gas > 0 ? `${gas.toLocaleString()} gas` : 'Unknown';
+};
+
+// Friendly provenance labels for the Verification Source row: the raw enum
+// values ('sourcify', 'blockscan') read as cryptics. Values the table does
+// not know ('manual'/'unknown'/'none' and anything the backend may grow)
+// render as-is — honesty over invention.
+const VERIFICATION_SOURCE_META: Record<string, { label: string; title: string }> = {
+  sourcify: {
+    label: 'Sourcify — independent verification',
+    title:
+      'Source matched independently by the Sourcify verification service (verify.sourcify.dev)',
+  },
+  blockscan: {
+    label: 'Blockscan — third-party source cache',
+    title:
+      'Source served from Blockscan\u2019s cross-explorer cache (vscode.blockscan.com) — not independently verified',
+  },
+};
+
 // Renders under both /chain/:chainId/contract/:address and its /events
 // subpath (same view per the route table); the subpath only changes the
 // default tab when ?tab= is absent.
@@ -605,7 +657,10 @@ export default function Contract() {
   const activeTab: TabId = tabFromUrl ?? 'source';
 
   const setActiveTab = (tab: TabId) => {
-    void setSearch({ tab }, { replace: true });
+    // Push, not replace (same as the Address page's selectActivityTab):
+    // a tab switch is user navigation, so the browser Back returns to the
+    // previous tab instead of leaving the page.
+    void setSearch({ tab });
   };
 
   const currentChainId = Number(chainId ?? 1);
@@ -722,9 +777,11 @@ export default function Contract() {
       // unless the Implementation view would land locked (unverified
       // implementation, nothing pasted): Interact would greet the user
       // with a dead unlock pointer, so Events (always queryable) keeps
-      // real content on screen.
+      // real content on screen. Written with replace: this is a
+      // programmatic default, not a user navigation — it must not push a
+      // history entry the user never made.
       const implViewLocked = abiHasNoEntries(implABI) && !customAbiRaw;
-      setActiveTab(implViewLocked ? 'events' : 'interact');
+      void setSearch({ tab: implViewLocked ? 'events' : 'interact' }, { replace: true });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- proxies default to the interact tab once their layout is known
   }, [contractSource]);
@@ -820,12 +877,21 @@ export default function Contract() {
       <div className={pageStyles}>
         <button
           className={backButtonStyles}
-          onClick={() =>
-            void navigate(router, `/chain/${currentChainId}/address/${address}`).catch(
-              () => undefined,
-            )}
+          onClick={() => {
+            if (hasInSiteHistory()) {
+              // In-app navigation: follow the browser's own history back to
+              // wherever the user actually came from.
+              window.history.back();
+            } else {
+              // Deep link with nothing under Back: the deterministic
+              // address-page fallback stays.
+              void navigate(router, `/chain/${currentChainId}/address/${address}`).catch(
+                () => undefined,
+              );
+            }
+          }}
         >
-          ← Back to Address
+          ← Back
         </button>
 
         <div className={headerStyles}>
@@ -844,25 +910,25 @@ export default function Contract() {
         {loading && <div className={loadingStyles}>Loading contract information...</div>}
 
         {sourceError instanceof ApiError &&
-        sourceError.status === 404 &&
-        sourceError.code === 'not_a_contract' ? (
-          // P1-2: the backend reports this address carries no code (C-1
-          // contract) — a dedicated state with the address-page link beats
-          // the generic error strip for a navigable dead end.
-          <NotAContractState chainId={currentChainId} address={address} />
-        ) : sourceError && isBackendUnreachable(sourceError) ? (
-          <BackendOfflineState
-            onRetryConnection={() => void handleRetryConnection()}
-            retryConnectionPending={retryingConnection}
-          />
-        ) : (
-          error && (
-            <div className={errorStyles}>
-              Error:
-              {error}
-            </div>
-          )
-        )}
+          sourceError.status === 404 &&
+          sourceError.code === 'not_a_contract' ? (
+        // P1-2: the backend reports this address carries no code (C-1
+        // contract) — a dedicated state with the address-page link beats
+        // the generic error strip for a navigable dead end.
+              <NotAContractState chainId={currentChainId} address={address} />
+            ) : sourceError && isBackendUnreachable(sourceError) ? (
+              <BackendOfflineState
+                onRetryConnection={() => void handleRetryConnection()}
+                retryConnectionPending={retryingConnection}
+              />
+            ) : (
+              error && (
+                <div className={errorStyles}>
+                  Error:
+                  {error}
+                </div>
+              )
+            )}
 
         {contractSource && (
           <>
@@ -935,7 +1001,16 @@ export default function Contract() {
                 )}
                 <div className="info-item">
                   <span className="label">Verification Source</span>
-                  <span className="value">{contractSource.verificationSource}</span>
+                  <span className="value">
+                    {(() => {
+                      const meta = VERIFICATION_SOURCE_META[contractSource.verificationSource];
+                      return meta ? (
+                        <span title={meta.title}>{meta.label}</span>
+                      ) : (
+                        contractSource.verificationSource
+                      );
+                    })()}
+                  </span>
                 </div>
                 {contractSource.compilerVersion && (
                   <div className="info-item">
@@ -1077,9 +1152,21 @@ export default function Contract() {
                     </div>
                     <div className="info-item">
                       <span className="label">Gas Used</span>
-                      <span className="value">
-                        {parseInt(creationInfo.gasUsed).toLocaleString()} gas
-                      </span>
+                      {(() => {
+                        const gasLabel = formatCreationGas(creationInfo.gasUsed);
+                        return (
+                          <span
+                            className="value"
+                            title={
+                              gasLabel === 'Unknown'
+                                ? 'Creation gas not recorded by the indexer'
+                                : undefined
+                            }
+                          >
+                            {gasLabel}
+                          </span>
+                        );
+                      })()}
                     </div>
                   </>
                 )}
@@ -1134,13 +1221,14 @@ export default function Contract() {
               </div>
             )}
 
-            {/* EIP-2535 diamonds: the source/ABI panels below render
-                facet[0] only — name the limitation instead of presenting
-                the diamond as a single-implementation proxy. */}
+            {/* EIP-2535 diamonds: the source/ABI/events/storage panels below
+                render facet[0] only — name the limitation instead of
+                presenting the diamond as a single-implementation proxy.
+                Interact is the exception: it merges every facet's ABI. */}
             {isDiamond && (
               <div role="status" className={diamondNoticeStyles}>
-                Diamond proxy — {diamondFacets.length} facets. Source/ABI below show facet[0]
-                only.
+                Diamond proxy — {diamondFacets.length} facets. Source, ABI, Events and Storage
+                below show facet[0] only; Interact merges every facet&apos;s ABI.
               </div>
             )}
 
@@ -1275,7 +1363,7 @@ export default function Contract() {
                   title="Paste an ABI to unlock this tab"
                   message={
                     implNotVerifiedTier
-                      ? "Implementation not verified — paste its ABI, or switch to the Proxy view to use the proxy's own ABI."
+                      ? 'Implementation not verified — paste its ABI, or switch to the Proxy view to use the proxy\'s own ABI.'
                       : 'No ABI is available for this contract. Use the custom ABI panel below the tab bar to paste one.'
                   }
                   onFocusPanel={() => setAbiFocusSignal(n => n + 1)}
@@ -1329,7 +1417,7 @@ export default function Contract() {
                     message={
                       abiLocked
                         ? implNotVerifiedTier
-                          ? "Implementation not verified — paste its ABI with event definitions, or switch to the Proxy view to use the proxy's own ABI."
+                          ? 'Implementation not verified — paste its ABI with event definitions, or switch to the Proxy view to use the proxy\'s own ABI.'
                           : 'No ABI is available for this contract. Use the custom ABI panel below the tab bar to paste an ABI with event definitions to decode and filter events.'
                         : 'The current ABI has no event definitions. Paste an ABI with event definitions to decode and filter events.'
                     }
@@ -1368,7 +1456,7 @@ export default function Contract() {
                   title="Paste an ABI to unlock this tab"
                   message={
                     implNotVerifiedTier
-                      ? "Implementation not verified — paste its ABI, or switch to the Proxy view to use the proxy's own ABI."
+                      ? 'Implementation not verified — paste its ABI, or switch to the Proxy view to use the proxy\'s own ABI.'
                       : 'No ABI is available for this contract. Use the custom ABI panel below the tab bar to paste one.'
                   }
                   onFocusPanel={() => setAbiFocusSignal(n => n + 1)}

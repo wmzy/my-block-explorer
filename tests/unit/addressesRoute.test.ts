@@ -10,6 +10,14 @@ vi.mock('@/services/AddressService', () => ({
   },
 }));
 
+// The route is rate-limited per client, and test requests share the single
+// no-conninfo fallback bucket (burst 3) — this file fires 8 requests in
+// well under a second. The limiter has its own dedicated coverage in
+// rateLimit.test.ts; here it is a pass-through.
+vi.mock('@/middleware/rate-limit', () => ({
+  createRateLimiter: () => async (_c: unknown, next: () => Promise<void>) => next(),
+}));
+
 import addressesRoutes from '@/routes/addresses';
 import { addressService } from '@/services/AddressService';
 import type { AddressTransactionsResult } from '@/services/AddressService';

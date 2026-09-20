@@ -10,12 +10,18 @@ import {
 } from '../config/chains';
 import { detectSearchType, sanitizeInput } from '../utils/validation';
 import { safeJsonResponse } from '../utils/serialization';
+import { createRateLimiter } from '../middleware/rate-limit';
 import { createLogger } from '../server/logger';
 
 const app = new Hono();
 const logger = createLogger('search-routes');
 
-app.get('/search', async (c) => {
+// Global search fans out to three live RPC lookups per request — a cheap
+// abuse surface when the instance is public. Generous bucket: normal
+// interactive search never trips it.
+const searchRateLimiter = createRateLimiter({ name: 'search', requestsPerMinute: 30, burst: 10 });
+
+app.get('/search', searchRateLimiter, async (c) => {
   const query = c.req.query('q');
 
   if (!query) {
@@ -82,7 +88,10 @@ app.get('/search', async (c) => {
     // that raw JSON.stringify would throw on — the same reason the
     // per-chain endpoint serializes through safeJsonResponse. The shape is
     // unchanged for every existing consumer (BigInt-free payloads
-    // serialize identically).
+    // serialize identically). The spread also carries the additive
+    // suggestionsChainId whenever the miss path produced suggestions: the
+    // chain the endpoint actually picked for them (== searchedChainId
+    // here), so clients never guess a chain to link suggestion lines to.
     return c.json(
       safeJsonResponse({
         ...result,
@@ -158,6 +167,10 @@ app.get('/chains/:chainId/search', async (c) => {
       found: searchResult.found,
       data: searchResult.data ?? null,
       suggestions: searchResult.suggestions ?? [],
+      // Additive echo of the chain the suggestion lines were resolved on
+      // (same value as the top-level chainId here) so both search
+      // endpoints expose one uniform suggestion-attribution field.
+      suggestionsChainId: searchResult.suggestionsChainId ?? null,
       error: searchResult.error ?? null,
       degraded: searchResult.degraded ?? null,
       degradedReasons: searchResult.degradedReasons ?? null,

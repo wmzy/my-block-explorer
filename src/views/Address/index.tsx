@@ -1,12 +1,23 @@
-import { useEffect, useState } from 'react';
-import { css } from '@linaria/core';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { css, cx } from '@linaria/core';
+import type { ReactNode } from 'react';
 import { TypedLink, useMatched, useSearch, useSetSearch } from '@native-router/react';
 import { navigate } from '@native-router/core';
-import { formatUnits } from 'viem';
+import { erc20Abi, formatUnits } from 'viem';
+import type { ContractFunctionParameters } from 'viem';
 import { Alert } from 'haze-ui';
 import { getChainInfo, getChainName, getChainSymbol } from '@/config/chains';
 import TopNavigation from '@/components/TopNavigation';
-import TokenTransfers from '@/views/Address/TokenTransfers';
+import TokenTransfers, {
+  TRANSFER_LIMIT,
+  useTokenMetas,
+  type TokenMeta,
+} from '@/views/Address/TokenTransfers';
+import {
+  aggregateTokenHoldings,
+  type SharedTokenClass,
+  type TokenHolding,
+} from '@/views/Address/holdings';
 import {
   classifyAddressType,
   delegationTarget,
@@ -27,6 +38,8 @@ import {
   useContractCode,
   useRealTimeAddressData,
 } from '@/services/addressRealTime';
+import { useTokenTransfers } from '@/services/tokenTransfers';
+import { createRpcClient } from '@/utils/realTimeData';
 import { useEnsName } from '@/services/ens';
 import { formatRelativeTime } from '@/utils/format';
 import { getExternalToolLinks } from '@/config/externalTools';
@@ -156,6 +169,46 @@ const nonceHint = css`
   }
 `;
 
+// Discovered-holdings section of the Overview card: each row is one
+// aggregate NET value from the scanned transfers — an approximation, and
+// the caveat under the list never lets it read as indexer truth.
+const holdingsRow = css`
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--haze-space-1) var(--haze-space-2);
+  font-family: var(--haze-font-mono);
+  font-size: var(--haze-text-xs);
+  margin-bottom: var(--haze-space-1);
+
+  @media (max-width: 768px) {
+    justify-content: flex-start;
+  }
+`;
+
+// Not-scanned hint above the scan CTA (small, muted — an affordance, not
+// a data row).
+const holdingsHint = css`
+  display: block;
+  margin-bottom: var(--haze-space-2);
+  color: var(--haze-color-text-muted);
+  font-size: var(--haze-text-xs);
+`;
+
+// Secondary on-chain-verification value (chain truth wins, but the
+// discovered net stays visible alongside).
+const holdingsMuted = css`
+  color: var(--haze-color-text-muted);
+`;
+
+// Completeness caveat: must render with every list — discovered transfers
+// are a partial scan, never a claim of full holdings.
+const holdingsCaveat = css`
+  margin: var(--haze-space-2) 0 0;
+  color: var(--haze-color-text-muted);
+  font-size: var(--haze-text-xs);
+`;
+
 // Serialized transaction row as the API returns it (formatTransactionForApi):
 // numeric fields arrive as strings over JSON.
 type TxRecord = {
@@ -279,6 +332,175 @@ export function InvalidAddressError({
   );
 }
 
+// Canonical Multicall3 deployment (same constant as
+// services/tokenMetadata.ts): the viem client built by
+// utils/realTimeData is not tied to one chain type, so the multicall
+// address cannot be inferred from chain config — pass it explicitly.
+const MULTICALL3_ADDRESS = '0xcA11bde05977b3631167028862bE2a173976CA11';
+
+// Per-kind label of one holding row. The verified branch only applies to
+// ERC-20 rows (the only standard the on-chain balanceOf batch checks);
+// erc721/erc1155/unclassified rows render the discovered aggregate.
+function holdingRowContent(
+  holding: TokenHolding,
+  meta: TokenMeta | undefined,
+  verifiedBalance: bigint | undefined,
+): { text: ReactNode; title: string | undefined } {
+  if (holding.kind === 'erc20') {
+    // classifyShared only returns 'erc20' when decimals resolved, so the
+    // formatted amount is normally available; the raw net string is the
+    // honest fallback for an incomplete metadata record (never a guessed
+    // 18-decimal formatting).
+    const formatAmount = (amount: bigint): string =>
+      meta?.decimals !== undefined
+        ? formatUnits(amount, meta.decimals)
+        : amount.toString();
+    const symbolSuffix = meta?.symbol !== undefined ? ` ${meta.symbol}` : '';
+    if (verifiedBalance === undefined) {
+      return {
+        text: `${formatAmount(holding.net)}${symbolSuffix}`,
+        title: undefined,
+      };
+    }
+    if (verifiedBalance !== holding.net) {
+      // Chain truth is primary; the discovered net stays visible next to
+      // it (muted) — the scan-derived value is never dropped.
+      return {
+        text: (
+          <>
+            On-chain {formatAmount(verifiedBalance)}
+            {symbolSuffix}{' '}
+            <span className={holdingsMuted}>
+              discovered {formatAmount(holding.net)}
+              {symbolSuffix}
+            </span>
+          </>
+        ),
+        title: undefined,
+      };
+    }
+    return {
+      text: `${formatAmount(holding.net)}${symbolSuffix} (on-chain verified)`,
+      title: undefined,
+    };
+  }
+  if (holding.kind === 'erc721') {
+    return {
+      text: `${holding.heldIds.length} id(s)`,
+      // Every counted id, comma-joined — the row itself only reports the
+      // count.
+      title: holding.heldIds.join(', '),
+    };
+  }
+  if (holding.kind === 'erc1155') {
+    return {
+      text: `ID ${holding.tokenId} × ${holding.net.toLocaleString()}`,
+      title: undefined,
+    };
+  }
+  return {
+    text: `${holding.net.toLocaleString()} (standard unresolved)`,
+    title: undefined,
+  };
+}
+
+// Discovered-holdings list for the Overview card. Renders one contract
+// link per holding and, for the top ERC-20 holdings (already sorted by
+// transfer count), verifies balances against the chain through one
+// Multicall3 batch. Only successful slots that decode to a bigint are
+// recorded; a transport-level failure records nothing — a verified
+// balance is never invented.
+function HoldingsList({
+  chainId,
+  address,
+  holdings,
+  metas,
+}: {
+  chainId: number;
+  address: string;
+  holdings: TokenHolding[];
+  metas: Record<string, TokenMeta | undefined>;
+}) {
+  // The first five ERC-20 tokens (the aggregator sorts by transfer count,
+  // so these are the most active ones). ',' never appears in an address,
+  // so the joined key round-trips through split().
+  const verifyTokens = useMemo(
+    () =>
+      holdings
+        .filter(holding => holding.kind === 'erc20')
+        .slice(0, 5)
+        .map(holding => holding.token),
+    [holdings],
+  );
+  const verifyTokensKey = verifyTokens.join(',');
+  const [verifiedBalances, setVerifiedBalances] = useState<Record<string, bigint>>({});
+  useEffect(() => {
+    if (verifyTokensKey === '') return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const client = await createRpcClient(chainId);
+        // Typed like services/tokenMetadata.ts (the same client): the
+        // untyped client cannot infer per-contract return types, so the
+        // outcomes are narrowed defensively below.
+        const contracts: ContractFunctionParameters[] = [];
+        for (const token of verifyTokens) {
+          contracts.push({
+            address: token as `0x${string}`,
+            abi: erc20Abi,
+            functionName: 'balanceOf',
+            args: [address],
+          });
+        }
+        const outcomes = await client.multicall({
+          contracts,
+          allowFailure: true,
+          multicallAddress: MULTICALL3_ADDRESS,
+        });
+        if (cancelled) return;
+        const balances: Record<string, bigint> = {};
+        verifyTokens.forEach((token, index) => {
+          const outcome = outcomes[index];
+          if (outcome?.status === 'success' && typeof outcome.result === 'bigint') {
+            balances[token.toLowerCase()] = outcome.result;
+          }
+        });
+        setVerifiedBalances(balances);
+      } catch {
+        // No verification is claimed for any token — the rows stay on
+        // the discovered values.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [verifyTokensKey, chainId, address]);
+
+  return (
+    <>
+      {holdings.map(holding => {
+        const { text, title } = holdingRowContent(
+          holding,
+          metas[holding.token.toLowerCase()],
+          holding.kind === 'erc20'
+            ? verifiedBalances[holding.token.toLowerCase()]
+            : undefined,
+        );
+        return (
+          <TypedLink
+            key={`${holding.kind}:${holding.token.toLowerCase()}:${holding.kind === 'erc1155' ? holding.tokenId : ''}`}
+            to={`/chain/${chainId}/contract/${holding.token}`}
+            className={cx(holdingsRow, linkStyle)}
+            title={title}
+          >
+            {text}
+          </TypedLink>
+        );
+      })}
+    </>
+  );
+}
+
 export default function Address() {
   const { params, router } = useMatched();
 
@@ -311,8 +533,13 @@ export default function Address() {
   // strings on the wire). Writes merge into the current search so a page
   // change never drops the window and vice versa.
   const setSearch = useSetSearch(addressSearchSchema);
-  const { page: txPageParam, window: txWindowParam, tab: tabParam, ttPage: ttPageParam } =
-    useSearch(addressSearchSchema);
+  const {
+    page: txPageParam,
+    window: txWindowParam,
+    tab: tabParam,
+    ttPage: ttPageParam,
+    ttWindow: ttWindowParam,
+  } = useSearch(addressSearchSchema);
   const txPage = Math.max(1, Math.floor(txPageParam));
   const setTxPage = (next: number) => {
     void setSearch(prev => ({
@@ -384,6 +611,59 @@ export default function Address() {
       replace: true,
     });
   }, [txPageBeyondData, txTotalPages, setSearch]);
+
+  // Token-holdings Overview section (discovered): the scan is the
+  // transfers tab's own query — the Overview piggybacks on it with the
+  // SAME cache key (first page), so a scan already triggered by the tab
+  // never re-runs here (in-flight sharing through the query cache).
+  // Sticky arming: once the user visits the transfers tab (or presses
+  // Scan in the section) the query stays armed forever; before that the
+  // section shows the not-scanned hint and holds NO scan at all —
+  // chainId 0 is the services' disabled-key shape (resolves undefined,
+  // zero network), the same gate txTabActive uses.
+  const [transfersScanned, setTransfersScanned] = useState(activityTab === 'transfers');
+  useEffect(() => {
+    if (activityTab === 'transfers') setTransfersScanned(true);
+  }, [activityTab]);
+
+  const holdingsQuery = useTokenTransfers(
+    transfersScanned ? currentChainId : 0,
+    address,
+    '0',
+    TRANSFER_LIMIT,
+    ttWindowParam,
+  );
+  const holdingsTransfers = holdingsQuery.data?.transfers ?? [];
+  // Metadata is only meaningful for the shared ERC-20/721 signature —
+  // ERC-1155 rows carry their ids/amounts on the log themselves.
+  const metaTokens = useMemo(
+    () => [
+      ...new Set(
+        holdingsTransfers
+          .filter(transfer => transfer.standard === 'erc20-or-erc721')
+          .map(transfer => transfer.token.toLowerCase()),
+      ),
+    ],
+    [holdingsTransfers],
+  );
+  const tokenMetas = useTokenMetas(currentChainId, metaTokens);
+
+  // Shared-signature classification for the aggregator: decimals resolved
+  // → ERC-20; symbol only (decimals() reverted) → ERC-721; both
+  // unreadable (or still loading) → unknown (raw-magnitude fallback).
+  const classifyShared = useCallback(
+    (token: string): SharedTokenClass => {
+      const meta = tokenMetas[token.toLowerCase()];
+      if (meta?.decimals !== undefined) return 'erc20';
+      if (meta?.symbol !== undefined) return 'erc721';
+      return 'unknown';
+    },
+    [tokenMetas],
+  );
+  const holdings = useMemo(
+    () => aggregateTokenHoldings(holdingsTransfers, classifyShared),
+    [holdingsTransfers, classifyShared],
+  );
 
   const persistent: AddressInfoResponse['address'] | undefined =
     infoQuery.data?.address;
@@ -631,6 +911,45 @@ export default function Address() {
                           : 'N/A'}
                   </InfoItem>
 
+                  {/* Discovered-holdings section: aggregated NET values from
+                      the scanned transfers — approximations, honestly
+                      labeled below the list. Before the first scan the
+                      section offers the scan as a one-click affordance. */}
+                  <InfoItem label="Token Holdings (discovered)">
+                    {!transfersScanned ? (
+                      <>
+                        <span className={holdingsHint}>
+                          Token transfers have not been scanned for this address.
+                        </span>
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => selectActivityTab('transfers')}
+                        >
+                          Scan Token Transfers
+                        </Button>
+                      </>
+                    ) : holdingsQuery.loading && !holdingsQuery.data ? (
+                      'Scanning token transfers...'
+                    ) : holdingsQuery.error ? (
+                      'Scan failed — see the Token Transfers tab.'
+                    ) : holdings.length === 0 ? (
+                      'No non-zero token holdings in the discovered transfers.'
+                    ) : (
+                      <>
+                        <HoldingsList
+                          chainId={currentChainId}
+                          address={address}
+                          holdings={holdings}
+                          metas={tokenMetas}
+                        />
+                        <p className={holdingsCaveat}>
+                          Based on discovered transfers — may be incomplete
+                        </p>
+                      </>
+                    )}
+                  </InfoItem>
+
                   {/* The RPC nonce counts OUTGOING transactions only —
                       never label it a total transaction count. The inline
                       marker points at the partial-discovery semantics the
@@ -723,7 +1042,12 @@ export default function Address() {
                       </InfoItem>
                       {persistent.implementationAddress && (
                         <InfoItem label="Implementation">
-                          {formatAddr(persistent.implementationAddress)}
+                          <TypedLink
+                            to={`/chain/${currentChainId}/contract/${persistent.implementationAddress}`}
+                            className={linkStyle}
+                          >
+                            {formatAddr(persistent.implementationAddress)}
+                          </TypedLink>
                         </InfoItem>
                       )}
                     </>

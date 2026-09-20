@@ -22,6 +22,14 @@ export type SearchResult = {
   found: boolean;
   data?: Block | Transaction | AddressInfo;
   suggestions?: string[];
+  /**
+   * Chain the actionable suggestion lines above were actually resolved on.
+   * Every suggestion in one result comes from the same search call, so one
+   * field names the chain for the whole list — clients link the lines to
+   * this chain instead of guessing one. Absent for chain-less suggestion
+   * sets (e.g. the static ENS note), which must never be linked anywhere.
+   */
+  suggestionsChainId?: number;
   error?: string;
   /**
    * True when the result is not-found AND at least one sub-lookup errored
@@ -108,6 +116,7 @@ const createSearchService = (deps: SearchServiceDeps) => {
         chainId,
         found: false,
         suggestions: await getBlockSuggestions(chainId),
+        suggestionsChainId: chainId,
       };
     }
     catch (error) {
@@ -156,6 +165,7 @@ const createSearchService = (deps: SearchServiceDeps) => {
         chainId,
         found: false,
         suggestions: await getTransactionSuggestions(chainId),
+        suggestionsChainId: chainId,
       };
     }
     catch (error) {
@@ -272,6 +282,7 @@ const createSearchService = (deps: SearchServiceDeps) => {
       chainId,
       found: false,
       suggestions,
+      suggestionsChainId: chainId,
       ...(degradedReasons.size > 0
         ? { degraded: true, degradedReasons: [...degradedReasons] }
         : {}),

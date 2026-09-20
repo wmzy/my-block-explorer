@@ -27,7 +27,8 @@ const makeFunc = (inputs: ContractFunctionInput[], name = 'f'): TestFunction => 
   source: 'impl',
 });
 
-// Payable write surface: renders the Value (ETH) and From fields.
+// Payable write surface: renders the Value (chain-native symbol) and From
+// fields.
 const makeWriteFunc = (inputs: ContractFunctionInput[], name = 'f'): TestFunction => ({
   name,
   type: 'function',
@@ -262,5 +263,30 @@ describe('FunctionCallForm from-address validation', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Simulate' }));
 
     expect(onCall).toHaveBeenCalledWith(func, [], [], undefined, undefined);
+  });
+});
+
+describe('FunctionCallForm chain-native value unit', () => {
+  const func = makeWriteFunc([], 'deposit');
+
+  it('labels the payable value field with the chain native symbol', () => {
+    const onCall = vi.fn();
+    render(
+      <FunctionCallForm
+        func={func}
+        onCall={onCall}
+        results={{}}
+        errors={{}}
+        loadingStates={{}}
+        chainId={137}
+        blockNumber=""
+      />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /deposit/ }));
+
+    // Polygon's native symbol (POL) drives the label — never a hardcoded
+    // 'ETH' on a non-Ethereum chain.
+    expect(screen.getByLabelText('Value (POL)')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Value (ETH)')).not.toBeInTheDocument();
   });
 });

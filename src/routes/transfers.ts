@@ -6,6 +6,7 @@ import {
   getValidatedAddress,
 } from '../server/validation';
 import { tokenTransferService } from '../services/TokenTransferService';
+import { createRateLimiter } from '../middleware/rate-limit';
 import { safeJsonResponse } from '../utils/serialization';
 
 const logger = createLogger('transfers-routes');
@@ -24,8 +25,10 @@ const refreshSchema = z.literal('1').optional().catch(undefined);
 
 // On-demand token transfer list (eth_getLogs sweep). Stateless and
 // read-only: no auth gate, no DuckDB writes — symbol/decimals enrichment
-// happens in the frontend.
-app.get('/chains/:chainId/addresses/:address/transfers', async (c) => {
+// happens in the frontend. Each miss triggers a chunked public-RPC scan,
+// so the endpoint is rate-limited per client.
+const transfersRateLimiter = createRateLimiter({ name: 'token-transfers', requestsPerMinute: 10, burst: 3 });
+app.get('/chains/:chainId/addresses/:address/transfers', transfersRateLimiter, async (c) => {
   const chainId = getValidatedChainId(c.req.param('chainId'));
   const address = getValidatedAddress(c.req.param('address'));
 

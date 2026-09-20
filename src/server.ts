@@ -2,6 +2,7 @@ import { serve } from '@hono/node-server';
 import { setGlobalDispatcher, ProxyAgent } from 'undici';
 import apiApp from './api-app';
 import { db } from './database/drizzle';
+import { runStartupSecurityChecks } from './startupChecks';
 
 export type ServerOptions = {
   port?: number;
@@ -9,6 +10,13 @@ export type ServerOptions = {
 
 export function createServer(options: ServerOptions = {}) {
   const port = options.port ?? parseInt(process.env.PORT ?? '8201');
+  const hostname = process.env.HOST;
+
+  // Public-binding posture, evaluated before listen: refuse to start with
+  // ENABLE_DEBUG_API on a non-loopback HOST (unless ALLOW_INSECURE_START=1)
+  // and warn when mutating endpoints run without ADMIN_TOKEN. Runs here —
+  // never at api-app import time, which the vite dev bridge also loads.
+  runStartupSecurityChecks();
 
   const PROXY_URL =
     process.env.HTTPS_PROXY ??
@@ -24,6 +32,7 @@ export function createServer(options: ServerOptions = {}) {
     {
       fetch: apiApp.fetch,
       port,
+      hostname,
     },
     info => {
       console.log(`Server is running on http://localhost:${info.port}`);

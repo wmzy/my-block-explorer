@@ -1,4 +1,3 @@
-import { HTTPException } from 'hono/http-exception';
 import type { Context } from 'hono';
 
 type ApiErrorResponse = {
@@ -36,17 +35,4 @@ export const respondError = (
     details,
   );
   return c.json(body, statusCode as 400 | 401 | 403 | 404 | 500);
-};
-
-export const handleRouteError = (
-  c: Context,
-  err: unknown,
-  fallbackMessage: string,
-) => {
-  if (err instanceof HTTPException) {
-    return err.getResponse();
-  }
-
-  const message = err instanceof Error ? err.message : fallbackMessage;
-  return respondError(c, 500, 'Internal Server Error', message);
 };

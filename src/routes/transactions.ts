@@ -44,6 +44,9 @@ app.get('/chains/:chainId/transactions/:hash', async (c) => {
 // Pagination sanity bounds: offset is clamped non-negative and capped so a
 // runaway client cannot make DuckDB scan arbitrarily deep into the table.
 const MAX_TRANSACTION_OFFSET = 100_000;
+// Same family of bounds for the page size; 100 keeps one page well under
+// the row cost of a deep offset scan.
+const MAX_TRANSACTION_LIMIT = 100;
 
 const parseOffsetParam = (raw: string | undefined): number | null => {
   if (raw === undefined || raw === '') return 0;
@@ -54,10 +57,29 @@ const parseOffsetParam = (raw: string | undefined): number | null => {
   return Math.min(Math.max(parsed, 0), MAX_TRANSACTION_OFFSET);
 };
 
+// Limit mirrors that contract: missing/empty keeps the default 20, junk or
+// non-positive values 400, oversized values clamp instead of erroring.
+const parseLimitParam = (raw: string | undefined): number | null => {
+  if (raw === undefined || raw === '') return 20;
+  const parsed = parseInt(raw, 10);
+  if (Number.isNaN(parsed) || parsed < 1) return null;
+  return Math.min(parsed, MAX_TRANSACTION_LIMIT);
+};
+
 app.get('/chains/:chainId/transactions', async (c) => {
   const chainId = getValidatedChainId(c.req.param('chainId'));
-  const limit = parseInt(c.req.query('limit') ?? '20');
+  const limit = parseLimitParam(c.req.query('limit'));
   const offset = parseOffsetParam(c.req.query('offset'));
+
+  if (limit === null) {
+    return c.json(
+      {
+        error: 'invalid_limit',
+        message: 'limit must be a positive integer',
+      },
+      400,
+    );
+  }
 
   if (offset === null) {
     return c.json(

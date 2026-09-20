@@ -386,3 +386,65 @@ pnpm typecheck           # tsc --noEmit
   two-tier gates. Known residual: with the backend offline the address
   Type row can stay "Unknown" even though the RPC `eth_getCode` read
   succeeded (SWR-layer run/abort semantics — honest, offline-only)
+- **2026-09-20/21 PM-review fix wave (4 batches, 16 agents + integration)** —
+  product-review findings fixed end-to-end (all verified: tsc/lint clean,
+  full suite 103 files green, live browser smoke on Polygon+mainnet):
+  **Honesty** — events GET failure returns `500 {error:'internal_error'}`
+  (was success-shaped empty page), indexing-status failure `503
+  {error:'indexing_status_unavailable'}` (was 200 + zeroed status;
+  EventStatistics renders "Indexing status unavailable" instead of
+  vanishing, Promise.allSettled keeps good /ranges data), revert-reason
+  card carries a permanent "replayed against end-of-block state" caveat,
+  global search suggestions carry `suggestionsChainId` (no more `?? 1`
+  mainnet guess; no-context suggestions render as plain text), manual
+  backend dying + localhost scan → dismissible SwitchedBackendBanner
+  (wired in src/index.tsx), ENS client-construction failure is
+  non-retryable `no-rpc`, dead leaky `handleRouteError` deleted.
+  **Security** — startup checks (`src/startupChecks.ts`: non-loopback
+  HOST without ADMIN_TOKEN → loud warning; +ENABLE_DEBUG_API → refuse
+  unless ALLOW_INSECURE_START=1; HOST now actually binds), 500 bodies
+  generic (details only in pino), debug SQL behind the opt-in admin
+  tier, `/api/health` = `{status:'ok', adminTokenConfigured,
+  debugApiEnabled, version, timestamp}`, rpc-configs full URL only for
+  allowlisted Origin OR loopback socket (urlRedacted flag; CORS can't
+  defend non-browser clients), zero-dep token-bucket rate limiting
+  (`src/middleware/rate-limit.ts`: export 5/min·2, addr-tx & transfers
+  10·3, search 30·10, read/simulate 60·20; 429+Retry-After;
+  RATE_LIMIT_DISABLED=1), limit/page NaN→400 with caps (tx limit≤100).
+  **Reading capability** — tx detail decodes token transfers ABI-free
+  (`src/utils/tokenTransferDecode.ts` topic0 whitelist ERC-20/721/1155
+  single+batch, `src/services/tokenMetadata.ts` multicall3 symbol/
+  decimals 1h cache; note: ERC-20 and ERC-721 share the Transfer
+  topic0, split by topic count) + EIP-7702 Authorizations card
+  (authority ecrecovered locally via `withRecoveredAuthorities` when the
+  node omits it), Confirmations row + Safe/Finalized badge on tx
+  detail, block detail gains Burnt Fees / Blob Gas (exact blob count —
+  the launch-era 786,432 percentage rendered >100% post-Prague) /
+  Excess Blob Gas / collapsible Withdrawals (RpcBlock carries the
+  fields; gwei→ETH), future-block pages poll 4s/5min + Check again.
+  Address Overview gains "Token Holdings (discovered)" — aggregated
+  from the transfers tab's first page (`src/views/Address/holdings.ts`,
+  BigInt-exact, top-5 ERC-20 verified via multicall3 balanceOf) with a
+  mandatory "may be incomplete" caveat; token rows/Implementation link
+  to /contract/. Contract page: diamond Interact merges ALL facet ABIs
+  (dedup by signature, facet[0] wins; failed facets named in-panel),
+  history-aware Back, tab push, creation gas 0→Unknown, Value label
+  uses getChainSymbol, verificationSource friendly labels
+  (types.ts union corrected: sourcify|blockscan|manual|unknown|none —
+  'etherscan'/'etherspan' never existed).
+  **Polish** — Home dual-column progressive render + stat-card
+  skeleton/value/unavailable tri-state, chain selector full keyboard
+  nav (↑↓ highlight, Enter confirms highlighted only, listbox ARIA) and
+  offline block/hash search falls back to direct RPC on the selected
+  chain, free-text search recorded at landing only, needsChain cards
+  keyboard-operable, chains.ts precomputed index (searchChains ~55×,
+  getSortedChains ~38,000×; byte-identical order incl. quirks),
+  UnsupportedChainState renders an in-card popular-chains grid (the
+  "Open chain list"→'/' bounce lied), tx list empty-range renders
+  EmptyState + `?block=` invalid/future-anchor notices, `/search`
+  unreachable errors attributed with Retry. Stale pins re-pinned: ens
+  no-rpc, health shape (api-routes + INSTALLATION), rpc no-Origin
+  redaction (fail-closed without a socket), e2e range 404s (pre-dated
+  this wave). 7702 smoke note: page verified via jsdom + a real-RPC
+  script; latest-block sampling didn't surface a type-4 tx for the
+  browser pass

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { css } from '@linaria/core';
 import { z } from 'zod';
 import { Alert, Input } from 'haze-ui';
@@ -17,6 +17,7 @@ import {
   type SupportedChainRef,
 } from '@/services/search';
 import { detectSearchType, sanitizeInput } from '@/utils/validation';
+import { isBackendUnreachable } from '@/util/http';
 import {
   resolveEnsAddress,
   ensDestinations,
@@ -75,6 +76,23 @@ const exampleBadges = css`
   gap: var(--haze-space-2);
 `;
 
+// Example badges are actions, not decoration: the wrapper span carries the
+// interactive semantics (focus + keyboard activation) around the purely
+// visual Badge, whose own props accept neither tabIndex nor key handlers.
+const exampleBadgeAction = css`
+  display: inline-flex;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+
+  &:focus-visible {
+    outline: 2px solid var(--haze-color-primary);
+    outline-offset: 2px;
+    border-radius: var(--haze-radius-sm);
+  }
+`;
+
 const resultCard = css`
   margin-top: var(--haze-space-6);
 `;
@@ -120,6 +138,15 @@ const chainOption = css`
   &:hover {
     border-color: var(--haze-color-primary);
     background-color: var(--haze-color-bg-subtle);
+  }
+
+  /* Keyboard focus must be as visible as the hover affordance — the
+     option is a div carrying button semantics, so the ring is the only
+     non-pointer activation cue. */
+  &:focus-visible {
+    border-color: var(--haze-color-primary);
+    outline: 2px solid var(--haze-color-primary);
+    outline-offset: 2px;
   }
 `;
 
@@ -182,17 +209,36 @@ const exampleQueries = [
   { label: 'Block Number', value: '18000000', type: 'block' },
 ];
 
+// Keyboard activation for non-button elements carrying button semantics
+// (role="button" spans/divs): Enter and Space must trigger exactly like a
+// click — Space would otherwise scroll the page.
+const activateOnKey =
+  (handler: () => void) =>
+    (e: KeyboardEvent<HTMLElement>): void => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        handler();
+      }
+    };
+
 // Renders backend suggestion lines, turning the actionable ones into
-// TypedLinks on the searched chain's pages: 'Latest block number: N' links
-// to block N, bare 0x-hex lines after 'Recent transactions:' link to the
-// transaction page, and 'Latest block hash: …' reuses the block number from
-// its sibling line (the block detail route only accepts numbers). Every
-// other line stays plain text.
-const renderSuggestions = (suggestions: string[], chainId: number): ReactNode[] => {
+// TypedLinks on the suggestion chain's pages: 'Latest block number: N'
+// links to block N, bare 0x-hex lines after 'Recent transactions:' link
+// to the transaction page, and 'Latest block hash: …' reuses the block
+// number from its sibling line (the block detail route only accepts
+// numbers). The chain comes from the response itself (the chain the
+// suggestions were resolved on) with the resolved search context as
+// fallback; with NO chain at all every line stays inert text — linking
+// to a guessed chain would send the user to the wrong network's pages.
+const renderSuggestions = (suggestions: string[], chainId: number | null): ReactNode[] => {
   let inTxSection = false;
   let latestBlockNumber: string | null = null;
 
   return suggestions.map((line) => {
+    // No chain context anywhere: inert text, never a link to a made-up
+    // chain (the old hardcode linked these to mainnet).
+    if (chainId === null) return <div key={line}>{line}</div>;
+
     const blockNumberMatch = line.match(/^Latest block number:\s*(\d+)$/);
     if (blockNumberMatch) {
       latestBlockNumber = blockNumberMatch[1];
@@ -267,7 +313,10 @@ export default function Search() {
   const [query, setQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [result, setResult] = useState<SearchResult | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  // Search-submit failure. The message is the user-facing copy; onRetry is
+  // set only for failures a retry can actually cure (backend-unreachable),
+  // so the Retry button never sits on a dead end.
+  const [error, setError] = useState<{ message: string; onRetry?: () => void } | null>(null);
   const [chainFilter, setChainFilter] = useState('');
   // Successful client-side ENS resolution, presented as a destination
   // choice: the address is a fact of Ethereum (resolution happens there),
@@ -279,13 +328,15 @@ export default function Search() {
     address: string;
     destinations: EnsDestinations;
   } | null>(null);
-  // Failed ENS lookup. 'not-found' is a definitive answer (the name is not
-  // registered on Ethereum); 'failed' means the Ethereum RPC never
-  // answered and is offered as a retry. chainContext is kept so Retry
+  // Failed ENS lookup, split by cause. 'not-found' is a definitive answer
+  // (the name is not registered on Ethereum); 'rpc-error' means the
+  // Ethereum RPC never answered and is offered as a retry; 'no-rpc' means
+  // this explorer has no usable Ethereum RPC endpoint — missing
+  // configuration, so no retry is offered. chainContext is kept so Retry
   // re-runs the exact same search.
   const [ensError, setEnsError] = useState<{
     name: string;
-    retryable: boolean;
+    kind: 'rpc-error' | 'no-rpc' | 'not-found';
     chainContext?: number | null;
   } | null>(null);
   // Chain the current result actually ran on (echoed by the global
@@ -304,19 +355,23 @@ export default function Search() {
   const lastConsumedRef = useRef<{ q: string; chain: number | null } | null>(null);
 
   // ENS names resolve in the browser against a mainnet client (that is
-  // where the ENS registry lives). Not-found and RPC failure are distinct
-  // outcomes with distinct copy — only the latter is retryable. A success
-  // is held as a destination choice (see ensResolution), never navigated
-  // or recorded on its own.
+  // where the ENS registry lives). Not-found, RPC failure and missing RPC
+  // configuration are distinct outcomes with distinct copy — only the RPC
+  // failure is retryable. A success is held as a destination choice (see
+  // ensResolution), never navigated or recorded on its own.
   const resolveEnsName = async (name: string, chainContext?: number | null): Promise<void> => {
     const outcome = await resolveEnsAddress(name);
 
     if (outcome.status === 'not-found') {
-      setEnsError({ name, retryable: false, chainContext });
+      setEnsError({ name, kind: 'not-found', chainContext });
       return;
     }
     if (outcome.status === 'failed') {
-      setEnsError({ name, retryable: true, chainContext });
+      setEnsError({ name, kind: 'rpc-error', chainContext });
+      return;
+    }
+    if (outcome.status === 'no-rpc') {
+      setEnsError({ name, kind: 'no-rpc', chainContext });
       return;
     }
 
@@ -459,7 +514,18 @@ export default function Search() {
         navigate(router, `/chain/${targetChain}/block/${data.number}`).catch(() => undefined);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Search failed');
+      // No HTTP response at all (backend offline / not connected) gets the
+      // attribution copy plus a Retry that re-runs this exact search; any
+      // other failure keeps its own message. Neither is ever worded as
+      // "no results".
+      setError(
+        isBackendUnreachable(err)
+          ? {
+              message: 'Search unavailable — cannot reach the explorer backend',
+              onRetry: () => void handleSearch(searchQuery, pinnedChainId),
+            }
+          : { message: err instanceof Error ? err.message : 'Search failed' },
+      );
     } finally {
       setIsSearching(false);
     }
@@ -515,11 +581,11 @@ export default function Search() {
         // reporting "no results". Staying on /search: the URL gains the
         // picked chain so the page's context is explicit.
         void setSearch({ q: sanitized, chain: String(selectedChainId) }, { replace: true });
-        setError(
-          searchResult.degraded
+        setError({
+          message: searchResult.degraded
             ? degradedSearchMessage(searchResult.degradedReasons)
             : `No results found on ${getChainName(selectedChainId)}`,
-        );
+        });
         return;
       }
 
@@ -537,7 +603,17 @@ export default function Search() {
         navigate(router, `/chain/${chainId}/block/${data.number}`).catch(() => undefined);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Search failed');
+      // Same attribution as the global search: an unreachable backend is
+      // the environment, not the picked chain — the Retry re-runs the
+      // search on the chain the user had just chosen.
+      setError(
+        isBackendUnreachable(err)
+          ? {
+              message: 'Search unavailable — cannot reach the explorer backend',
+              onRetry: () => void handleChainSelect(selectedChainId),
+            }
+          : { message: err instanceof Error ? err.message : 'Search failed' },
+      );
     } finally {
       setIsSearching(false);
     }
@@ -639,13 +715,16 @@ export default function Search() {
               <div>Example searches:</div>
               <div className={exampleBadges}>
                 {exampleQueries.map((example, index) => (
-                  <Badge
+                  <span
                     key={index}
-                    variant="default"
+                    role="button"
+                    tabIndex={0}
+                    className={exampleBadgeAction}
                     onClick={() => handleExampleClick(example.value)}
+                    onKeyDown={activateOnKey(() => handleExampleClick(example.value))}
                   >
-                    {example.label}
-                  </Badge>
+                    <Badge variant="default">{example.label}</Badge>
+                  </span>
                 ))}
               </div>
             </div>
@@ -658,7 +737,9 @@ export default function Search() {
           <div className={searchedOn}>Searched on {getChainName(resolvedChainId)}</div>
         )}
 
-        {error && <ErrorState message={error} className={resultCard} />}
+        {error && (
+          <ErrorState message={error.message} onRetry={error.onRetry} className={resultCard} />
+        )}
 
         {ensResolution && (
           <div className={resultCard}>
@@ -677,18 +758,26 @@ export default function Search() {
 
         {ensError && (
           <div className={resultCard}>
-            {ensError.retryable
+            {ensError.kind === 'rpc-error'
               ? (
                   <ErrorState
                     message={`ENS resolution failed for "${ensError.name}" — Ethereum RPC did not answer`}
                     onRetry={() => void handleSearch(ensError.name, ensError.chainContext)}
                   />
                 )
-              : (
-                  <ErrorState
-                    message={`ENS name "${ensError.name}" not found (checked on Ethereum)`}
-                  />
-                )}
+              : ensError.kind === 'no-rpc'
+                ? (
+                    // Missing configuration, not a transient outage: no
+                    // Retry — re-running cannot conjure an RPC endpoint.
+                    <ErrorState
+                      message={`ENS resolution unavailable for "${ensError.name}" — this explorer has no Ethereum RPC endpoint configured`}
+                    />
+                  )
+                : (
+                    <ErrorState
+                      message={`ENS name "${ensError.name}" not found (checked on Ethereum)`}
+                    />
+                  )}
           </div>
         )}
 
@@ -723,7 +812,15 @@ export default function Search() {
             />
             {result.suggestions && result.suggestions.length > 0 && (
               <div className={suggestionList}>
-                {renderSuggestions(result.suggestions, resolvedChainId ?? 1)}
+                {/* The chain the suggestions themselves name wins (it is
+                    the chain the backend actually resolved their data on);
+                    the resolved search context is the fallback. With
+                    neither, renderSuggestions keeps every line as inert
+                    text rather than linking to a guessed chain. */}
+                {renderSuggestions(
+                  result.suggestions,
+                  result.suggestionsChainId ?? resolvedChainId ?? null,
+                )}
               </div>
             )}
             {/* A chain-relative miss (tx/block hash, block number) is only
@@ -781,8 +878,11 @@ export default function Search() {
                   {visibleChains.map(chain => (
                     <div
                       key={chain.chainId}
+                      role="button"
+                      tabIndex={0}
                       className={chainOption}
                       onClick={() => handleChainSelect(chain.chainId)}
+                      onKeyDown={activateOnKey(() => handleChainSelect(chain.chainId))}
                     >
                       <div className={chainName}>{chain.name}</div>
                       <div className={chainId}>

@@ -7,7 +7,7 @@
 // path. The finality cases pin that the badge compares the viewed number
 // against the polled heads and renders nothing while those are unknown.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { MemoryRouter, View, createRoutes } from '@native-router/react';
 import '@testing-library/jest-dom';
 import BlockDetail from '@/views/Blocks/Detail';
@@ -55,11 +55,18 @@ vi.mock('@/config/chains', () => ({
     return null;
   },
   getChainName: (chainId: number) =>
-    chainId === 1 ? 'Ethereum' : chainId === 11155111 ? 'Sepolia' : 'Unknown',
+    chainId === 1 ? 'Ethereum' : chainId === 11155111 ? 'Sepolia' : chainId === 137 ? 'Polygon' : 'Unknown',
   // Only Sepolia is a testnet in this fixture.
   getChainType: (chainId: number) => (chainId === 11155111 ? 'testnet' : 'mainnet'),
+  // Consumed by the Burnt Fees / withdrawals rows.
+  getChainSymbol: () => 'ETH',
   // Consumed by the Landing helpers behind UnsupportedChainState.
   isChainSupported: (chainId: number) => chainId === 1 || chainId === 11155111,
+  // In-card recovery links rendered by UnsupportedChainState.
+  POPULAR_CHAINS: [
+    { id: 1, name: 'Ethereum' },
+    { id: 137, name: 'Polygon' },
+  ],
   getSortedChains: () => [{ id: 1, name: 'Ethereum' }],
 }));
 
@@ -79,14 +86,24 @@ type BlockHookResult = {
     baseFeePerGas?: string;
     transactionCount: number;
     sizeBytes?: number;
+    blobGasUsed?: string;
+    excessBlobGas?: string;
+    withdrawals?: {
+      index: string;
+      validatorIndex: string;
+      address: string;
+      amount: string;
+    }[];
   };
   loading: boolean;
   error?: Error;
+  refetch?: () => void | Promise<unknown>;
 };
 
-const { mockUseBlockByNumber, mockGetBlockNumber } = vi.hoisted(() => ({
+const { mockUseBlockByNumber, mockGetBlockNumber, mockRefetchBlock } = vi.hoisted(() => ({
   mockUseBlockByNumber: vi.fn<(...args: unknown[]) => BlockHookResult>(),
   mockGetBlockNumber: vi.fn<() => Promise<bigint>>(),
+  mockRefetchBlock: vi.fn<() => void | Promise<unknown>>(),
 }));
 
 vi.mock('@/services/chainRpc', () => ({
@@ -157,6 +174,7 @@ describe('BlockDetail view', () => {
       data: undefined,
       loading: false,
       error: undefined,
+      refetch: mockRefetchBlock,
     });
     // Heads unknown by default: no finality badge unless a case sets heads.
     mockUseFinalityHeads.mockReturnValue({ data: undefined });
@@ -216,6 +234,7 @@ describe('BlockDetail view', () => {
       data: undefined,
       loading: false,
       error: new Error('Header not found'),
+      refetch: mockRefetchBlock,
     });
     mockGetBlockNumber.mockResolvedValue(123n);
     renderBlockDetail('/chain/1/block/999999999');
@@ -237,6 +256,7 @@ describe('BlockDetail view', () => {
       data: undefined,
       loading: false,
       error: new Error('Header not found'),
+      refetch: mockRefetchBlock,
     });
     // Head far above the requested number: a missing block, not a future
     // one — the raw error stays.
@@ -252,12 +272,262 @@ describe('BlockDetail view', () => {
       data: undefined,
       loading: false,
       error: new Error('Header not found'),
+      refetch: mockRefetchBlock,
     });
     mockGetBlockNumber.mockRejectedValue(new Error('rpc down'));
     renderBlockDetail('/chain/1/block/999999999');
 
     expect(await screen.findByText(/Header not found/)).toBeInTheDocument();
     expect(screen.queryByText(/does not exist yet/)).not.toBeInTheDocument();
+  });
+
+  it('renders Burnt Fees as baseFeePerGas × gasUsed in native units', async () => {
+    mockUseBlockByNumber.mockReturnValue({
+      // 20 gwei × 15,000,000 gas = 0.3 ETH.
+      data: { ...makeBlock(19_500_002), baseFeePerGas: '20000000000' },
+      loading: false,
+      error: undefined,
+    });
+    renderBlockDetail('/chain/1/block/19500002');
+
+    expect(await screen.findByText('Block Details')).toBeInTheDocument();
+    expect(screen.getByText('Burnt Fees')).toBeInTheDocument();
+    expect(screen.getByText('0.3 ETH')).toBeInTheDocument();
+    // No blob gas on the RPC payload: neither blob row renders.
+    expect(screen.queryByText('Blob Gas Used')).not.toBeInTheDocument();
+    expect(screen.queryByText('Excess Blob Gas')).not.toBeInTheDocument();
+  });
+
+  it('renders blob gas rows with the blob count when present', async () => {
+    mockUseBlockByNumber.mockReturnValue({
+      data: {
+        ...makeBlock(19_500_002),
+        blobGasUsed: '393216', // exactly 3 blobs (131,072 gas each)
+        excessBlobGas: '720896',
+      },
+      loading: false,
+      error: undefined,
+    });
+    renderBlockDetail('/chain/1/block/19500002');
+
+    expect(await screen.findByText('Block Details')).toBeInTheDocument();
+    expect(screen.getByText('393,216 (3 blobs)')).toBeInTheDocument();
+    expect(screen.getByText('Excess Blob Gas')).toBeInTheDocument();
+    expect(screen.getByText('720,896')).toBeInTheDocument();
+    // No baseFeePerGas: the burnt-fees row stays out entirely.
+    expect(screen.queryByText('Burnt Fees')).not.toBeInTheDocument();
+  });
+
+  it('renders no fee/blob/withdrawal rows for a block without those fields', async () => {
+    mockUseBlockByNumber.mockReturnValue({
+      data: makeBlock(19_500_002),
+      loading: false,
+      error: undefined,
+    });
+    renderBlockDetail('/chain/1/block/19500002');
+
+    expect(await screen.findByText('Block Details')).toBeInTheDocument();
+    expect(screen.queryByText('Burnt Fees')).not.toBeInTheDocument();
+    expect(screen.queryByText('Blob Gas Used')).not.toBeInTheDocument();
+    expect(screen.queryByText('Excess Blob Gas')).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Withdrawals \(/)).not.toBeInTheDocument();
+  });
+
+  it('shows withdrawals collapsed by default and expands to navigable rows', async () => {
+    mockUseBlockByNumber.mockReturnValue({
+      data: {
+        ...makeBlock(19_500_002),
+        withdrawals: [
+          {
+            index: '0',
+            validatorIndex: '1234567',
+            address: '0x1111111111111111111111111111111111111111',
+            amount: '1159655', // gwei → 0.001159655 ETH
+          },
+          {
+            index: '1',
+            validatorIndex: '7654321',
+            address: '0x2222222222222222222222222222222222222222',
+            amount: '1000000000', // exactly 1 ETH
+          },
+        ],
+      },
+      loading: false,
+      error: undefined,
+    });
+    renderBlockDetail('/chain/1/block/19500002');
+
+    expect(await screen.findByText('Withdrawals (2)')).toBeInTheDocument();
+
+    // Collapsed by default: rows exist but stay hidden from assistive tech.
+    const firstRow = screen.getByText('0x1111111111111111111111111111111111111111');
+    expect(firstRow.closest('[aria-hidden="true"]')).not.toBeNull();
+
+    // Expand via the header toggle.
+    fireEvent.click(screen.getByRole('button', { name: /Withdrawals \(2\)/ }));
+    expect(firstRow.closest('[aria-hidden="false"]')).not.toBeNull();
+
+    // Each row: grouped validator index, linked address, exact ETH amount.
+    expect(screen.getByText('1,234,567')).toBeInTheDocument();
+    expect(screen.getByText('7,654,321')).toBeInTheDocument();
+    expect(
+      screen
+        .getByText('0x1111111111111111111111111111111111111111')
+        .closest('a')
+        ?.getAttribute('href'),
+    ).toBe('/chain/1/address/0x1111111111111111111111111111111111111111');
+    expect(screen.getByText('0.001159655 ETH')).toBeInTheDocument();
+    expect(screen.getByText('1 ETH')).toBeInTheDocument();
+  });
+
+  it('refreshes the future-block hint from the 4 s head poll without refetching', async () => {
+    vi.useFakeTimers();
+    try {
+      mockUseBlockByNumber.mockReturnValue({
+        data: undefined,
+        loading: false,
+        error: new Error('Header not found'),
+        refetch: mockRefetchBlock,
+      });
+      mockGetBlockNumber.mockResolvedValue(123n);
+      renderBlockDetail('/chain/1/block/999999999');
+      // Settle the one-shot head probe's promise chain (fake timers do not
+      // flush bare microtasks on their own).
+      await act(async () => {});
+
+      expect(screen.getByText(/does not exist yet/)).toBeInTheDocument();
+      expect(screen.getByText(/currently at block 123\./)).toBeInTheDocument();
+
+      // The head advances but stays below the request: the hint updates
+      // and the block fetch is NOT retried (it cannot exist yet).
+      mockGetBlockNumber.mockResolvedValue(456n);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(4_000);
+      });
+      expect(screen.getByText(/currently at block 456\./)).toBeInTheDocument();
+      expect(mockRefetchBlock).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('refetches the block once the polled head reaches it, then stops polling', async () => {
+    vi.useFakeTimers();
+    try {
+      mockUseBlockByNumber.mockReturnValue({
+        data: undefined,
+        loading: false,
+        error: new Error('Header not found'),
+        refetch: mockRefetchBlock,
+      });
+      mockGetBlockNumber.mockResolvedValue(123n);
+      renderBlockDetail('/chain/1/block/999999999');
+      await act(async () => {});
+      expect(screen.getByText(/does not exist yet/)).toBeInTheDocument();
+
+      // The chain mines up to the requested number: the tick refetches the
+      // block detail (the mocked hook keeps erroring, so the view then
+      // honestly falls back to the RPC error — the data flow is what is
+      // pinned here).
+      mockGetBlockNumber.mockResolvedValue(999_999_999n);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(4_000);
+      });
+      expect(mockRefetchBlock).toHaveBeenCalledTimes(1);
+      expect(screen.getByText(/Header not found/)).toBeInTheDocument();
+
+      // Polling ended with the future state: further ticks must not fire.
+      const callsAfterCatchUp = mockGetBlockNumber.mock.calls.length;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(12_000);
+      });
+      expect(mockGetBlockNumber.mock.calls.length).toBe(callsAfterCatchUp);
+      expect(mockRefetchBlock).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('stops the automatic head polling after the ~5 minute budget', async () => {
+    vi.useFakeTimers();
+    try {
+      mockUseBlockByNumber.mockReturnValue({
+        data: undefined,
+        loading: false,
+        error: new Error('Header not found'),
+        refetch: mockRefetchBlock,
+      });
+      mockGetBlockNumber.mockResolvedValue(123n);
+      renderBlockDetail('/chain/1/block/999999999');
+      await act(async () => {});
+      expect(screen.getByText(/does not exist yet/)).toBeInTheDocument();
+
+      // ~5 minutes of 4 s ticks: the budget latch flips and the interval
+      // is torn down.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5 * 60_000);
+      });
+      expect(screen.getByText(/Automatic checking stopped/)).toBeInTheDocument();
+
+      const callsAfterBudget = mockGetBlockNumber.mock.calls.length;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(12_000);
+      });
+      expect(mockGetBlockNumber.mock.calls.length).toBe(callsAfterBudget);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('re-probes the head and retries the block fetch on Check again', async () => {
+    vi.useFakeTimers();
+    try {
+      mockUseBlockByNumber.mockReturnValue({
+        data: undefined,
+        loading: false,
+        error: new Error('Header not found'),
+        refetch: mockRefetchBlock,
+      });
+      mockGetBlockNumber.mockResolvedValue(123n);
+      renderBlockDetail('/chain/1/block/999999999');
+      await act(async () => {});
+      expect(screen.getByText(/does not exist yet/)).toBeInTheDocument();
+
+      const headCallsBefore = mockGetBlockNumber.mock.calls.length;
+      fireEvent.click(screen.getByRole('button', { name: 'Check again' }));
+      // The click itself retries the block fetch…
+      expect(mockRefetchBlock).toHaveBeenCalledTimes(1);
+      // …and arms exactly one fresh head probe (the nonce effect).
+      await act(async () => {});
+      expect(mockGetBlockNumber.mock.calls.length).toBe(headCallsBefore + 1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('tears the head polling interval down on unmount', async () => {
+    vi.useFakeTimers();
+    try {
+      mockUseBlockByNumber.mockReturnValue({
+        data: undefined,
+        loading: false,
+        error: new Error('Header not found'),
+        refetch: mockRefetchBlock,
+      });
+      mockGetBlockNumber.mockResolvedValue(123n);
+      const view = renderBlockDetail('/chain/1/block/999999999');
+      await act(async () => {});
+      expect(screen.getByText(/does not exist yet/)).toBeInTheDocument();
+
+      view.unmount();
+      const callsAtUnmount = mockGetBlockNumber.mock.calls.length;
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(16_000);
+      });
+      expect(mockGetBlockNumber.mock.calls.length).toBe(callsAtUnmount);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('shows a Finalized badge in the header for a block at or past the finalized head', async () => {
@@ -348,7 +618,9 @@ describe('BlockDetail view', () => {
     expect(await screen.findByText(/Chain not supported/)).toBeInTheDocument();
     expect(screen.getByText(/chain ID 999/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Go to Mainnet' })).toHaveAttribute('href', '/chain/1');
-    expect(screen.getByRole('link', { name: 'Open chain list' })).toHaveAttribute('href', '/');
+    // In-card chain list replaces the old '/' bounce CTA.
+    expect(screen.getByRole('heading', { name: 'Open a supported chain' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Polygon/ })).toHaveAttribute('href', '/chain/137');
   });
 
   it('redirects to the new chain home when switching chains while viewing a block', async () => {

@@ -3,10 +3,18 @@ import { createLogger } from '../server/logger';
 import { db } from '../database/init';
 import { sql } from 'drizzle-orm';
 import { createApiError } from '../utils/api-error';
+import { requireAdminTokenIfConfigured } from '../middleware/admin-token';
 
 const logger = createLogger('debug-routes');
 
 const app = new Hono();
+
+// Opt-in gate for every endpoint in this sub-app: a zero-config local
+// session keeps the SQL tool working, but once ADMIN_TOKEN is configured
+// the x-admin-token header is enforced. Publicly reachable bindings are
+// handled earlier — the startup check refuses to boot this app on a
+// non-loopback HOST unless ALLOW_INSECURE_START=1 (see src/startupChecks.ts).
+app.use('*', requireAdminTokenIfConfigured);
 
 /**
  * POST /debug/db/query

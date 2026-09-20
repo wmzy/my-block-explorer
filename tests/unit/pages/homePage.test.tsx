@@ -26,12 +26,26 @@ vi.mock('@/config/chains', () => ({
   },
   getChainSymbol: (chainId: number) => (chainId === 11155111 ? 'ETH' : 'ETH'),
   getChainName: (chainId: number) =>
-    chainId === 1 ? 'Ethereum' : chainId === 11155111 ? 'Sepolia' : 'Unknown',
+    chainId === 1
+      ? 'Ethereum'
+      : chainId === 11155111
+        ? 'Sepolia'
+        : chainId === 137
+          ? 'Polygon'
+          : chainId === 8453
+            ? 'Base'
+            : 'Unknown',
   // Only Sepolia is a testnet in this fixture.
   getChainType: (chainId: number) => (chainId === 11155111 ? 'testnet' : 'mainnet'),
   // Consumed by the Landing helpers behind the recovery CTAs.
   isChainSupported: (chainId: number) => chainId === 1 || chainId === 11155111,
   getSortedChains: () => [{ id: 1, name: 'Ethereum' }],
+  // Rendered by the in-card popular-chain grid of the recovery state.
+  POPULAR_CHAINS: [
+    { id: 1, name: 'Ethereum' },
+    { id: 137, name: 'Polygon' },
+    { id: 8453, name: 'Base' },
+  ],
 }));
 
 // Real formatters are pure functions; keep them (spread the actual module
@@ -100,10 +114,15 @@ describe('Home view', () => {
     expect(screen.getByText(/chain ID 999999/)).toBeInTheDocument();
     expect(screen.getByTestId('top-navigation')).toBeInTheDocument();
 
-    // Recovery CTAs: the deterministic preferred chain (mainnet) and the
-    // landing route that leads to the chain list entry.
+    // Recovery CTAs: the deterministic preferred chain (mainnet) plus the
+    // in-card popular-chain grid that links concrete chains directly.
     expect(screen.getByRole('link', { name: 'Go to Mainnet' })).toHaveAttribute('href', '/chain/1');
-    expect(screen.getByRole('link', { name: 'Open chain list' })).toHaveAttribute('href', '/');
+    expect(screen.getByRole('heading', { name: 'Open a supported chain' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Polygon/ })).toHaveAttribute('href', '/chain/137');
+    expect(screen.getByRole('link', { name: /Base/ })).toHaveAttribute('href', '/chain/8453');
+    // The old "Open chain list" CTA bounced through '/' into the viewer's
+    // remembered chain — no recovery link may target '/' anymore.
+    expect(screen.getAllByRole('link').filter(l => l.getAttribute('href') === '/')).toHaveLength(0);
 
     // The unsupported state stays put: no hero of another chain ever
     // replaces it.

@@ -13,14 +13,14 @@ The backend is a Hono app (`src/api-app.ts`) that mounts the route modules in `s
 | Method & path | Notes |
 | --- | --- |
 | `GET /api` | Endpoint index |
-| `GET /api/health` | `{ status: "healthy", version, timestamp }` — used by frontend discovery |
+| `GET /api/health` | `{ status: "ok", adminTokenConfigured, debugApiEnabled, version, timestamp }` — used by frontend discovery; the two booleans let an operator verify the deployment posture from outside (see Startup security checks below) |
 
 ## Search
 
 | Method & path | Notes |
 | --- | --- |
-| `GET /api/search?q={query}&chainId={id}` | Detects address / tx hash / block number. With a valid `chainId`, hash and block-number queries resolve **on that chain** directly; without one they return `needsChain` + `scope: "popular"` + `supportedChains` (the curated popular set — each entry `{ chainId, name, symbol }` — not the full chain universe; every other chain stays reachable via its per-chain pages/search endpoint) for the client-side network picker (addresses/free text fall back to mainnet and echo `searchedChainId`). Response may carry `degraded: true` + `degradedReasons: string[]` when an upstream lookup failed, and `message` (e.g. ENS names are resolved client-side, not by the server) |
-| `GET /api/chains/:chainId/search?q={query}` | Chain-scoped variant |
+| `GET /api/search?q={query}&chainId={id}` | Detects address / tx hash / block number. With a valid `chainId`, hash and block-number queries resolve **on that chain** directly; without one they return `needsChain` + `scope: "popular"` + `supportedChains` (the curated popular set — each entry `{ chainId, name, symbol }` — not the full chain universe; every other chain stays reachable via its per-chain pages/search endpoint) for the client-side network picker (addresses/free text fall back to mainnet and echo `searchedChainId`). When suggestions are present the response also carries `suggestionsChainId` — the chain the suggestion data (latest block / recent txs) actually resolved on — so links never guess the chain. Response may carry `degraded: true` + `degradedReasons: string[]` when an upstream lookup failed, and `message` (e.g. ENS names are resolved client-side, not by the server) |
+| `GET /api/chains/:chainId/search?q={query}` | Chain-scoped variant; also echoes `suggestionsChainId` (`number \| null`, equals the path chain when suggestion data exists) |
 
 ## Stats & blocks & transactions
 
@@ -31,7 +31,7 @@ The backend is a Hono app (`src/api-app.ts`) that mounts the route modules in `s
 | `GET /api/chains/:chainId/blocks/:blockNumber` | Block by height |
 | `GET /api/chains/:chainId/blocks?limit=&offset=` | Block list |
 | `GET /api/chains/:chainId/transactions/:hash` | Transaction detail |
-| `GET /api/chains/:chainId/transactions?limit=&offset=` | Transaction list |
+| `GET /api/chains/:chainId/transactions?limit=&offset=` | Transaction list. `offset` clamped to 100,000 (beyond → `400`); `limit` must be a positive integer and is clamped to 100 — non-numeric/non-positive → `400 { "error": "invalid_limit" }` |
 
 ## Addresses
 
@@ -39,7 +39,7 @@ The backend is a Hono app (`src/api-app.ts`) that mounts the route modules in `s
 | --- | --- |
 | `GET /api/chains/:chainId/addresses/:address` | Persistent data only — **no balance, no transaction count**; the UI reads those live from RPC |
 | `GET /api/chains/:chainId/addresses/:address/persistent` | Same data, explicit |
-| `GET /api/chains/:chainId/addresses/:address/transactions?limit=&page=&window=` | Heuristic history (balance-change binary search). Reports `method`, `coverage` (`complete`/`partial`/`none`), `reason`, `searchWindowBlocks`; unknown coverage renders a "source unknown" banner in the UI. `total` is the count of **discovered** transactions (never the nonce); the heuristic never reports `complete` (nonce=0 → `partial`/`no-outgoing-transactions` — incoming activity is undetectable). Optional `window` (blocks, clamped 1–50,000,000) widens the search range; results are cached per address+window (~60s) so consecutive pages agree |
+| `GET /api/chains/:chainId/addresses/:address/transactions?limit=&page=&window=` | Heuristic history (balance-change binary search). `limit` ≤ 50, `page` ≥ 1; non-numeric values → `400` (`invalid_page` / `invalid_limit`). Reports `method`, `coverage` (`complete`/`partial`/`none`), `reason`, `searchWindowBlocks`; unknown coverage renders a "source unknown" banner in the UI. `total` is the count of **discovered** transactions (never the nonce); the heuristic never reports `complete` (nonce=0 → `partial`/`no-outgoing-transactions` — incoming activity is undetectable). Optional `window` (blocks, clamped 1–50,000,000) widens the search range; results are cached per address+window (~60s) so consecutive pages agree |
 | `GET /api/chains/:chainId/addresses/:address/transfers?cursor=&limit=&window=&refresh=1` | On-demand token-transfer scan (ERC-20/721/1155 via `eth_getLogs`, no DuckDB writes). Reports `coverage` (`complete`/`partial` — the scan budget or window bounded it) and `windowBlocks`. `window` widens the scanned range (the UI's "Search deeper" quadruples it); `refresh=1` (literal `1` only) skips the ~60s scan cache so the Retry button genuinely re-scans instead of re-serving a cached partial page |
 
 ## Contracts
@@ -74,9 +74,9 @@ Range-based manual indexing. `EventIndexingService` runs one serial job per rang
 
 | Method & path | Notes |
 | --- | --- |
-| `GET …/events?…` | Query indexed events; supports `argFilters`/`topicN` decoded-argument filtering pushed into DuckDB |
+| `GET …/events?…` | Query indexed events; supports `argFilters`/`topicN` decoded-argument filtering pushed into DuckDB. `pageSize` clamped to 1,000. Failures return `500 { "error": "internal_error", "message": "Failed to query contract events" }` — never a success-shaped empty page |
 | `GET …/events/statistics` | Stats incl. the "Indexing coverage" metric (union of ranges, overlap-safe) |
-| `GET …/events/indexing-status` | Current indexing job status |
+| `GET …/events/indexing-status` | Current indexing job status. Failures return `503 { "error": "indexing_status_unavailable", "message": <cause> }` — never a zeroed status object |
 | `GET …/events/export` | CSV stream of the filtered set; hard cap 100,000 rows → `400` (the UI disables the button above the cap preflight) |
 | `GET …/events/ranges` | All ranges (UI polls every 3 s while indexing) |
 | `POST …/events/ranges` | 🔐 Add a range |
@@ -89,7 +89,7 @@ Range-based manual indexing. `EventIndexingService` runs one serial job per rang
 
 ## RPC configuration
 
-`GET` returns endpoint URLs **redacted to scheme + host for any origin the CORS policy does not already trust** (custom endpoints often embed API keys in the path/query); loopback and allowlisted origins — including the no-Origin same-origin UI — still get full URLs. `POST`/`DELETE` use the opt-in gate: enforced only when `ADMIN_TOKEN` is set on the server. Managed in the ⚙️ RPC settings modal (saved configs apply to the backend for **all** users — the server-wide RPC hot-reloads), which also holds the browser-side admin token (verified against the server on save).
+`GET` returns endpoint URLs **redacted to scheme + host** for anything that cannot vouch for itself: the full URL (which often embeds provider API keys in the path/query) is visible only to (a) requests whose `Origin` is allowlisted by the CORS policy, or (b) `Origin`-less requests arriving over a **loopback socket** (e.g. `curl` from the same machine — CORS cannot help non-browser clients, so a loopback source address is the trust signal). Every config entry carries `urlRedacted: boolean` so clients can tell. `POST`/`DELETE` use the opt-in gate: enforced only when `ADMIN_TOKEN` is set on the server. Managed in the ⚙️ RPC settings modal (saved configs apply to the backend for **all** users — the server-wide RPC hot-reloads), which also holds the browser-side admin token (verified against the server on save).
 
 | Method & path | Notes |
 | --- | --- |
@@ -106,7 +106,13 @@ Range-based manual indexing. `EventIndexingService` runs one serial job per rang
 | `GET /api/performance/events?chainId=` | 🔒 **admin** — performance metrics |
 | `POST /api/performance/clear-cache` | 🔒 **admin** |
 | `POST /api/performance/warmup` | 🔒 **admin** — cache warmup |
-| `POST /debug/db/query` | ⚠️ **opt-in via `ENABLE_DEBUG_API=1`** — executes arbitrary SQL. Never enable on a reachable host |
+| `POST /debug/db/query` | ⚠️ **opt-in via `ENABLE_DEBUG_API=1`** — executes arbitrary SQL; gated by the opt-in admin tier (`x-admin-token` required when `ADMIN_TOKEN` is set). The server **refuses to start** with the debug API enabled on a non-loopback bind unless `ALLOW_INSECURE_START=1`; still, never enable it on a reachable host |
+
+## Rate limiting & startup security checks
+
+Compute-heavy read endpoints are throttled by an in-process token-bucket middleware (`src/middleware/rate-limit.ts`, keyed by remote IP; a shared per-endpoint bucket when the socket address is unavailable). Over-limit requests get `429 { "error": "rate_limited", "message", "retryAfterSeconds" }` plus a `Retry-After` header. Buckets (requests/minute · burst): events `export` 5·2, address `transactions` 10·3, `transfers` 10·3, global `search` 30·10, contract `read`/`simulate` 60·20. Set `RATE_LIMIT_DISABLED=1` to disable (e.g. for load tests).
+
+At startup (`src/startupChecks.ts`, before `listen`): binding a **non-loopback `HOST`** without `ADMIN_TOKEN` logs a loud multi-line security warning listing the exposed write endpoints; non-loopback + `ENABLE_DEBUG_API=1` refuses to start unless `ALLOW_INSECURE_START=1`. `HOST` now actually controls the bind address (it was previously ignored). `500` bodies are always the generic `{ "error": "internal_error", "message": "Internal Server Error" }` — internal details go to the server log only.
 
 ## Errors
 

@@ -22,7 +22,9 @@ import { Button } from '@/components/ui/Button';
 import { CopyableHash } from '@/components/ui/CopyableHash';
 import { ExternalLinks } from '@/components/ui/ExternalLinks';
 
-const TRANSFER_LIMIT = 25;
+// Shared with the address page's Overview holdings section (same scan,
+// same first-page key — the Overview piggybacks on this tab's query).
+export const TRANSFER_LIMIT = 25;
 
 // Hard ceiling of the scan window (blocks) — matches the backend clamp
 // (route schema + service MAX_WINDOW_BLOCKS). "Search deeper" disables at
@@ -85,10 +87,18 @@ const emptyPageCell = css`
 const formatAddr = (a: string) => (a ? `${a.slice(0, 8)}...${a.slice(-6)}` : 'N/A');
 const formatHash = (h: string) => (h ? `${h.slice(0, 10)}...${h.slice(-8)}` : '');
 
+// Human-readable integer amount: thousands separators when the raw value
+// is a plain decimal integer, the raw string otherwise (never a guessed
+// parse of malformed data).
+const formatIntegerAmount = (raw: string): string =>
+  /^\d+$/.test(raw) ? BigInt(raw).toLocaleString() : raw;
+
 // Resolved token metadata. `decimals` present classifies the token as
 // ERC-20; decimals rejected while symbol resolves reads as ERC-721;
 // both rejected leaves the token unknown (raw-value fallback).
-type TokenMeta = {
+// Exported for the address page's holdings aggregation, which classifies
+// shared-signature tokens against the same resolution.
+export type TokenMeta = {
   symbol?: string;
   decimals?: number;
 };
@@ -166,6 +176,69 @@ function useTokenMeta(chainId: number, token: string): TokenMeta | undefined {
   return meta;
 }
 
+// Batch twin of useTokenMeta for the address page's holdings section:
+// resolves the metadata of a whole token set through the SAME
+// module-level cache/pending maps (one symbol()+decimals() read per token
+// per session, shared with the tab's rows). Returns a record keyed by the
+// lowercase token address; entries stay undefined while loading ({} once
+// resolved as unreadable). The effect depends on the joined token list
+// only, so a fresh array literal from the parent does not refetch, and a
+// shrunken request drops its stale keys.
+export function useTokenMetas(
+  chainId: number,
+  tokens: readonly string[],
+): Record<string, TokenMeta | undefined> {
+  // ',' never appears in a token address, so the joined key round-trips
+  // through split() below without ambiguity.
+  const tokensKey = tokens.join(',');
+  const [metas, setMetas] = useState<Record<string, TokenMeta | undefined>>(
+    () => {
+      const seeded: Record<string, TokenMeta | undefined> = {};
+      for (const token of tokens) {
+        if (!token) continue;
+        const lower = token.toLowerCase();
+        seeded[lower] = tokenMetaCache.get(`${chainId}:${lower}`);
+      }
+      return seeded;
+    },
+  );
+  useEffect(() => {
+    if (tokensKey === '') {
+      // Empty request: never a network call, and a previously non-empty
+      // record must not leak its stale entries into a shrunk list.
+      setMetas({});
+      return;
+    }
+    // Const flag object: the loop's .then closures only read a property
+    // (no unsafe reference to a reassigned binding — no-loop-func).
+    const state = { cancelled: false };
+    for (const token of tokensKey.split(',')) {
+      if (!token) continue;
+      const lower = token.toLowerCase();
+      const key = `${chainId}:${lower}`;
+      const cached = tokenMetaCache.get(key);
+      if (cached) {
+        setMetas(prev =>
+          prev[lower] === cached ? prev : { ...prev, [lower]: cached },
+        );
+        continue;
+      }
+      // Same dedup as useTokenMeta: concurrent consumers of one token
+      // share the in-flight load.
+      const pending =
+        tokenMetaPending.get(key) ?? startTokenMetaLoad(chainId, token, key);
+      pending.then(resolved => {
+        if (state.cancelled) return;
+        setMetas(prev => ({ ...prev, [lower]: resolved }));
+      });
+    }
+    return () => {
+      state.cancelled = true;
+    };
+  }, [tokensKey, chainId]);
+  return metas;
+}
+
 function StandardPill({ transfer, meta }: { transfer: TokenTransfer; meta: TokenMeta | undefined }) {
   let label: string;
   if (transfer.standard === 'erc1155-single') label = 'ERC-1155';
@@ -184,10 +257,18 @@ function AmountCell({ transfer, meta }: { transfer: TokenTransfer; meta: TokenMe
   // ERC-1155 rows never need metadata: ids and amounts ride on the log.
   if (transfer.standard === 'erc1155-single') {
     const id = transfer.tokenIds?.[0];
-    const amount = transfer.amounts?.[0] ?? transfer.value;
+    const rawAmount = transfer.amounts?.[0] ?? transfer.value;
+    const amount = formatIntegerAmount(rawAmount);
     return (
       <td className={valueCell}>
-        {id !== undefined ? `ID ${id}` : 'ID ?'} × {amount}
+        {id !== undefined ? `ID ${id}` : 'ID ?'} ×{' '}
+        {/* Thousands separators shorten the display; the title keeps the
+            full raw value when they changed anything. */}
+        {amount !== rawAmount ? (
+          <span title={rawAmount}>{amount}</span>
+        ) : (
+          amount
+        )}
       </td>
     );
   }
@@ -274,7 +355,7 @@ function TransferRow({ chainId, transfer }: { chainId: number; transfer: TokenTr
         <CopyableHash
           value={transfer.token}
           truncated={meta?.symbol ?? formatAddr(transfer.token)}
-          href={`/chain/${chainId}/address/${transfer.token}`}
+          href={`/chain/${chainId}/contract/${transfer.token}`}
         />
       </td>
       <td>

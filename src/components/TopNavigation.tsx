@@ -14,6 +14,7 @@ import {
   getChainType,
 } from '@/config/chains';
 import { detectSearchType, sanitizeInput } from '@/utils/validation';
+import { createRpcClient } from '@/utils/realTimeData';
 import { isBackendUnreachable } from '@/util/http';
 import { formatAddress } from '@/utils/format';
 import { fetchChainSearch } from '@/services/search';
@@ -260,6 +261,13 @@ const chainItemActive = css`
   background: var(--haze-color-primary-subtle);
 `;
 
+// Ring on the keyboard-highlighted option — same family as the native
+// :focus outline, so hover, highlight, and focus read as one interaction.
+const chainItemHighlight = css`
+  outline: 2px solid var(--haze-color-primary);
+  outline-offset: -2px;
+`;
+
 const chainItemRow = css`
   display: flex;
   justify-content: space-between;
@@ -410,9 +418,17 @@ function ChainSelector({
 }) {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
+  // Index into filteredChains of the keyboard-highlighted option.
+  // null = nothing highlighted: Enter must do nothing until the user
+  // has actually moved the highlight (or clicked) — a bare Enter used
+  // to blind-pick the first filter hit, switching chains unasked.
+  const [highlightedIndex, setHighlightedIndex] = useState<number | null>(null);
 
   useEffect(() => {
-    if (!isOpen) setSearchTerm('');
+    if (!isOpen) {
+      setSearchTerm('');
+      setHighlightedIndex(null);
+    }
   }, [isOpen]);
 
   const filteredChains = useMemo(() => {
@@ -432,9 +448,50 @@ function ChainSelector({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isOpen]);
 
+  const selectChain = (chainId: number) => {
+    onChainChange(chainId);
+    setIsOpen(false);
+    setSearchTerm('');
+    setHighlightedIndex(null);
+  };
+
+  // Arrow keys drive the option highlight (the caret must not move);
+  // Enter confirms exactly the highlighted option and never falls back
+  // to a first-hit pick when nothing is highlighted.
+  const handleFilterKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Escape') {
+      setIsOpen(false);
+    } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      const step = e.key === 'ArrowDown' ? 1 : -1;
+      const count = filteredChains.length;
+      if (count > 0) {
+        setHighlightedIndex(prev =>
+          prev === null
+            ? step === 1
+              ? 0
+              : count - 1
+            : (prev + step + count) % count,
+        );
+      }
+    } else if (e.key === 'Enter') {
+      const highlighted =
+        highlightedIndex !== null ? filteredChains[highlightedIndex] : undefined;
+      if (highlighted) selectChain(highlighted.id);
+    }
+  };
+
+  const highlightedChain =
+    highlightedIndex !== null ? filteredChains[highlightedIndex] : undefined;
+
   return (
     <div className={selectorWrapper} data-chain-selector>
-      <button onClick={() => setIsOpen(!isOpen)} className={selectorButton}>
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className={selectorButton}
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+      >
         <div className={selectorContent}>
           <div className={selectorName}>
             {currentChain?.name ?? `Chain ${currentChainId}`}
@@ -456,14 +513,17 @@ function ChainSelector({
             <Input
               placeholder="Search chain name, ID, or symbol..."
               value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Escape') setIsOpen(false);
-                else if (e.key === 'Enter' && filteredChains.length > 0) {
-                  onChainChange(filteredChains[0].id);
-                  setIsOpen(false);
-                }
+              onChange={e => {
+                setSearchTerm(e.target.value);
+                // The filter rebuilds the list — a stale highlight index
+                // would point at the wrong chain (or past the end).
+                setHighlightedIndex(null);
               }}
+              onKeyDown={handleFilterKeyDown}
+              aria-controls="chain-selector-listbox"
+              aria-activedescendant={
+                highlightedChain ? `chain-option-${highlightedChain.id}` : undefined
+              }
               autoFocus
             />
             {searchTerm && (
@@ -472,28 +532,40 @@ function ChainSelector({
                   Found
                   {filteredChains.length} chains
                 </span>
-                {filteredChains.length > 0 && <span>Press Enter to select first</span>}
+                {filteredChains.length > 0 && <span>↑↓ to highlight · Enter to select</span>}
               </div>
             )}
           </div>
 
-          <div className={dropdownList}>
+          <div
+            className={dropdownList}
+            role="listbox"
+            id="chain-selector-listbox"
+            aria-label="Chains"
+          >
             {filteredChains.length === 0 ? (
               <div className={dropdownEmpty}>No matching chains found</div>
             ) : (
-              filteredChains.map(chain => {
+              filteredChains.map((chain, index) => {
                 const chainType = getChainType(chain.id);
                 const isActive = currentChainId === chain.id;
 
                 return (
                   <button
                     key={chain.id}
-                    onClick={() => {
-                      onChainChange(chain.id);
-                      setIsOpen(false);
-                      setSearchTerm('');
-                    }}
-                    className={cx(chainItem, isActive ? chainItemActive : undefined)}
+                    role="option"
+                    aria-selected={isActive}
+                    id={`chain-option-${chain.id}`}
+                    // The current chain is a state of the list, not just a
+                    // visual tick — screen readers announce it as current.
+                    aria-current={isActive ? 'true' : undefined}
+                    onMouseEnter={() => setHighlightedIndex(index)}
+                    onClick={() => selectChain(chain.id)}
+                    className={cx(
+                      chainItem,
+                      isActive ? chainItemActive : undefined,
+                      highlightedIndex === index ? chainItemHighlight : undefined,
+                    )}
                   >
                     <div className={chainItemRow}>
                       <div>
@@ -506,7 +578,11 @@ function ChainSelector({
                           ID: {chain.id} • {chain.nativeCurrency.symbol}
                         </div>
                       </div>
-                      {isActive && <span style={{ color: 'var(--haze-color-primary)' }}>✓</span>}
+                      {isActive && (
+                        <span aria-hidden="true" style={{ color: 'var(--haze-color-primary)' }}>
+                          ✓
+                        </span>
+                      )}
                     </div>
                   </button>
                 );
@@ -528,6 +604,18 @@ type ChainSearchResponse = {
   data?: { number?: string | number } | null;
 };
 
+// Runs one RPC probe and folds every failure mode (transport error, or a
+// method missing on a limited client) into null, so the unreachable
+// fallback below never surfaces probe noise as a user-facing error and
+// simply treats an unanswerable probe as "could not confirm".
+async function tryRpcProbe<T>(probe: () => Promise<T>): Promise<T | null> {
+  try {
+    return await probe();
+  } catch {
+    return null;
+  }
+}
+
 // Inline hint under the search box: 'miss' = definitive no-result on the
 // current chain, 'block-miss' = the same for a block number (verified
 // against the chain before navigating — chains differ in height),
@@ -535,7 +623,10 @@ type ChainSearchResponse = {
 // failed outright), 'unreachable' = the backend could not be reached at
 // all (no HTTP response: offline / not connected — a different failure
 // from a data source erroring, with a retry instead of a network
-// escape), 'ens-resolved' / 'ens-not-found' / 'ens-failed' = outcome of
+// escape; fallbackNote = the direct-RPC check of the selected chain ran
+// and could not confirm the query, so the note says what that means:
+// only this chain was checked, full cross-chain search needs the
+// backend), 'ens-resolved' / 'ens-not-found' / 'ens-failed' = outcome of
 // a client-side ENS lookup (resolved on Ethereum; not-found is
 // definitive, failed means the RPC never answered and is retryable).
 // ens-resolved also carries the destination choice: Ethereum (where the
@@ -545,7 +636,7 @@ type SearchNotice =
   | { kind: 'miss'; query: string }
   | { kind: 'block-miss'; query: string }
   | { kind: 'failed'; query: string }
-  | { kind: 'unreachable'; query: string }
+  | { kind: 'unreachable'; query: string; fallbackNote?: boolean }
   | { kind: 'ens-resolved'; query: string; address: string; destinations: EnsDestinations }
   | { kind: 'ens-not-found'; query: string }
   | { kind: 'ens-failed'; query: string };
@@ -608,6 +699,55 @@ export default function TopNavigation({
   // NavigationCancelledError, swallowed here as "stay on the old view".
   const goTo = (to: string) => {
     navigate(router, to).catch(() => undefined);
+  };
+
+  // Backend-unreachable fallback for block-number and 32-byte-hash
+  // queries: the selected chain's own public RPC can still verify them
+  // without the backend. A block number is confirmed when the chain's
+  // head has reached it; a hash is probed as a transaction first, then
+  // as a block. 'skipped' = the chain has no usable RPC client (the
+  // plain unreachable notice stands, no note); 'missed' = the probe ran
+  // and could not confirm, and the notice gains an honest note that
+  // only this one chain was checked — full cross-chain search needs the
+  // backend. A confirmed hit navigates and lands in history exactly
+  // like the verified backend path.
+  const searchViaChainRpc = async (
+    chainId: number,
+    query: string,
+    searchType: 'block' | 'hash',
+  ): Promise<'navigated' | 'missed' | 'skipped'> => {
+    let client: Awaited<ReturnType<typeof createRpcClient>>;
+    try {
+      client = await createRpcClient(chainId);
+    } catch {
+      return 'skipped';
+    }
+
+    if (searchType === 'block') {
+      const blockNumber = BigInt(query);
+      const head = await tryRpcProbe(() => client.getBlockNumber());
+      if (head !== null && head >= blockNumber) {
+        setHistory(recordSearchHistoryEntry(query, chainId));
+        goTo(`/chain/${chainId}/block/${String(blockNumber)}`);
+        return 'navigated';
+      }
+      return 'missed';
+    }
+
+    const hash = query as `0x${string}`;
+    const tx = await tryRpcProbe(() => client.getTransaction({ hash }));
+    if (tx !== null) {
+      setHistory(recordSearchHistoryEntry(query, chainId));
+      goTo(`/chain/${chainId}/tx/${query}`);
+      return 'navigated';
+    }
+    const block = await tryRpcProbe(() => client.getBlock({ blockHash: hash }));
+    if (block !== null) {
+      setHistory(recordSearchHistoryEntry(query, chainId));
+      goTo(`/chain/${chainId}/block/${String(block.number)}`);
+      return 'navigated';
+    }
+    return 'missed';
   };
 
   const chainInfo = getChainInfo(currentChainId);
@@ -677,9 +817,23 @@ export default function TopNavigation({
       // raw same-origin fetch: in dev the same-origin /api is the Vite
       // bridge's own backend instance, which competes with the discovered
       // service for the single-writer DuckDB and serves different data.
-      const payload = (await fetchChainSearch(chainId, query)) as
+      let payload: ChainSearchResponse | undefined;
+      try {
+        payload = (await fetchChainSearch(chainId, query)) as
         | ChainSearchResponse
         | undefined;
+      } catch (error) {
+        // Offline: the selected chain's own RPC can still confirm the
+        // number before the search gives up (see searchViaChainRpc).
+        if (isBackendUnreachable(error)) {
+          const outcome = await searchViaChainRpc(chainId, query, 'block');
+          if (outcome === 'navigated') return;
+          setSearchNotice({ kind: 'unreachable', query, fallbackNote: outcome === 'missed' });
+        } else {
+          setSearchNotice({ kind: 'failed', query });
+        }
+        return;
+      }
 
       if (payload?.found && payload.type === 'block' && payload.data?.number !== undefined) {
         setHistory(recordSearchHistoryEntry(query, chainId));
@@ -702,7 +856,21 @@ export default function TopNavigation({
       // raw same-origin fetch: in dev the same-origin /api is the Vite
       // bridge's own backend instance, which competes with the discovered
       // service for the single-writer DuckDB and serves different data.
-      const data = await fetchChainSearch(chainId, query);
+      let data: unknown;
+      try {
+        data = await fetchChainSearch(chainId, query);
+      } catch (error) {
+        // Offline: the selected chain's own RPC can still resolve the
+        // hash (tx first, then block) before the search gives up.
+        if (isBackendUnreachable(error)) {
+          const outcome = await searchViaChainRpc(chainId, query, 'hash');
+          if (outcome === 'navigated') return;
+          setSearchNotice({ kind: 'unreachable', query, fallbackNote: outcome === 'missed' });
+        } else {
+          setSearchNotice({ kind: 'failed', query });
+        }
+        return;
+      }
       const payload = data as ChainSearchResponse | undefined;
 
       if (payload?.found) {
@@ -756,8 +924,10 @@ export default function TopNavigation({
 
     // Free text goes to the full Search view, carrying the target chain
     // as context (?chain=) so the global endpoint searches it and its
-    // suggestions link back to that chain's pages.
-    setHistory(recordSearchHistoryEntry(query, chainId));
+    // suggestions link back to that chain's pages. History is NOT
+    // recorded here: the query's outcome is unknown until the view has
+    // actually run it, so the Search view records the entry when it
+    // navigates to a result (or the search lands on a chain).
     goTo(`/search?q=${encodeURIComponent(query)}&chain=${chainId}`);
   };
 
@@ -785,12 +955,17 @@ export default function TopNavigation({
     setSearchNotice(null);
     try {
       if (onSearch) {
-        // The parent handles dispatch; history is recorded here for every
-        // query whose destination is known up front. ENS is skipped like
-        // in navigateForQuery — its destination only exists after
-        // resolution, so the recording surface is wherever the choice is
-        // made.
-        if (detectSearchType(sanitizeInput(searchQuery.trim())) !== 'ens') {
+        // The parent handles dispatch; history is recorded here only for
+        // queries whose destination is known up front (address deep-links
+        // immediately, block/hash are facts of one chain). ENS is skipped
+        // — its destination only exists after resolution — and free text
+        // ('unknown') is skipped too: its outcome is unknown until the
+        // Search view lands somewhere, and that landing is what records.
+        const dispatchType = detectSearchType(sanitizeInput(searchQuery.trim()));
+        if (
+          dispatchType !== 'ens'
+          && dispatchType !== 'unknown'
+        ) {
           setHistory(recordSearchHistoryEntry(sanitizeInput(searchQuery.trim()), currentChainId));
         }
         await onSearch(searchQuery.trim());
@@ -856,7 +1031,11 @@ export default function TopNavigation({
                   {searchNotice.kind === 'failed' &&
                     `Search failed on ${chainInfo?.name ?? 'this chain'} — a data source errored`}
                   {searchNotice.kind === 'unreachable' &&
-                    'Search unavailable — cannot reach the explorer backend'}
+                    (searchNotice.fallbackNote
+                      ? `Search unavailable — cannot reach the explorer backend; direct RPC check of ${
+                        chainInfo?.name ?? 'this chain'
+                      } found no match (full cross-chain search requires the backend)`
+                      : 'Search unavailable — cannot reach the explorer backend')}
                   {searchNotice.kind === 'ens-resolved' &&
                     `Resolved ${searchNotice.query} → ${formatAddress(searchNotice.address)} on Ethereum`}
                   {searchNotice.kind === 'ens-not-found' &&

@@ -206,16 +206,21 @@ export const EventStatistics = ({
   const [stats, setStats] = useState<IndexingStatus | null>(null);
   const [ranges, setRanges] = useState<IndexingRangeSummary[]>([]);
   const [loading, setLoading] = useState(false);
+  // True when the status endpoint itself failed (503 from the honest
+  // error envelope) — the bar then says "Status unavailable" instead of
+  // silently disappearing, and good /ranges data still renders coverage.
+  const [statusFailed, setStatusFailed] = useState(false);
   const prevEventsRef = useRef(0);
 
   // Indexing status drives the status/event metrics; the ranges feed the
   // coverage metric (same endpoint IndexingRangeManager polls). Both ride
   // one refresh and one 3s poll so the bar never disagrees with the
-  // segmented range view.
+  // segmented range view. allSettled: one endpoint failing must not drag
+  // the other's good data down with it.
   const fetchStatus = useCallback(async () => {
     try {
       setLoading(true);
-      const [statusData, rangesData] = await Promise.all([
+      const [statusRes, rangesRes] = await Promise.allSettled([
         get<IndexingStatus>(
           `/api/chains/${chainId}/contracts/${contractAddress}/events/indexing-status`,
         ),
@@ -223,16 +228,22 @@ export const EventStatistics = ({
           `/api/chains/${chainId}/contracts/${contractAddress}/events/ranges`,
         ),
       ]);
-      setStats(statusData);
-      setRanges(rangesData.ranges ?? []);
+      if (statusRes.status === 'fulfilled') {
+        setStats(statusRes.value);
+        setStatusFailed(false);
 
-      if (statusData.totalEventsIndexed > prevEventsRef.current) {
-        prevEventsRef.current = statusData.totalEventsIndexed;
-        onEventsUpdated?.();
+        if (statusRes.value.totalEventsIndexed > prevEventsRef.current) {
+          prevEventsRef.current = statusRes.value.totalEventsIndexed;
+          onEventsUpdated?.();
+        }
       }
-    }
-    catch {
-      // silently fail
+      else {
+        // Keep the last good stats (if any); mark the outage honestly.
+        setStatusFailed(true);
+      }
+      if (rangesRes.status === 'fulfilled') {
+        setRanges(rangesRes.value.ranges ?? []);
+      }
     }
     finally {
       setLoading(false);
@@ -261,7 +272,7 @@ export const EventStatistics = ({
     onRefresh?.();
   }, [fetchStatus, onRefresh]);
 
-  if (!stats) return null;
+  if (!stats && !statusFailed) return null;
 
   // Honest progress metric: how much of the span between the lowest range
   // start and the highest range end is covered by the union of covered
@@ -270,22 +281,28 @@ export const EventStatistics = ({
   const coverage = computeIndexingCoverage(ranges);
 
   const statusColor
-    = stats.status === 'indexing'
+    = stats?.status === 'indexing'
       ? '#3b82f6'
-      : stats.status === 'error'
+      : stats?.status === 'error'
         ? '#dc2626'
         : '#10b981';
 
   return (
     <div className={cx(barStyle, className)}>
       <div className={metricStyle}>
-        <span
-          className={statusDotStyle}
-          style={{ background: statusColor }}
-        />
-        <span className={metricValueStyle}>
-          {stats.status === 'indexing' ? 'Indexing' : stats.status === 'error' ? 'Error' : 'Idle'}
-        </span>
+        {stats ? (
+          <>
+            <span
+              className={statusDotStyle}
+              style={{ background: statusColor }}
+            />
+            <span className={metricValueStyle}>
+              {stats.status === 'indexing' ? 'Indexing' : stats.status === 'error' ? 'Error' : 'Idle'}
+            </span>
+          </>
+        ) : (
+          <span className={errorTextStyle}>Indexing status unavailable</span>
+        )}
       </div>
 
       <div className={separatorStyle} />
@@ -315,7 +332,7 @@ export const EventStatistics = ({
       <div className={metricStyle}>
         Events:
         <span className={metricValueStyle}>
-          {(stats.totalEventsIndexed || 0).toLocaleString()}
+          {stats ? (stats.totalEventsIndexed || 0).toLocaleString() : '—'}
         </span>
       </div>
 
@@ -323,10 +340,10 @@ export const EventStatistics = ({
 
       <div className={metricStyle}>
         Types:
-        <span className={metricValueStyle}>{stats.eventTypes?.length || 0}</span>
+        <span className={metricValueStyle}>{stats ? stats.eventTypes?.length || 0 : '—'}</span>
       </div>
 
-      {stats.errorMessage && (
+      {stats?.errorMessage && (
         <>
           <div className={separatorStyle} />
           <span className={errorTextStyle}>{stats.errorMessage}</span>

@@ -1,4 +1,4 @@
-// Explicit unsupported-chain state shared by Home and the Blocks views.
+// Explicit unsupported-chain state shared by Home and the other chain views.
 // A deep link to an id the config cannot resolve (e.g. /chain/999999)
 // used to be silently redirected to the viewer's own remembered chain (a
 // shared link silently opening a DIFFERENT chain) or rendered a bare error
@@ -7,14 +7,16 @@
 // - "Go to Mainnet" (or the preferred chain): a fixed destination that does
 //   NOT depend on the viewer's remembered chain — a shared link must not
 //   bounce different visitors to different chains.
-// - "Open chain list": the landing route ('/'), where the landing redirect
-//   resolves the entry chain and the top navigation's chain selector offers
-//   the full list (anchoring straight to the selector is not reachable
-//   without an id contract on the navigation component).
-import { css } from '@linaria/core';
+// - "Open a supported chain": links to the popular chains from the config,
+//   rendered right in the card. The old "Open chain list" button pointed
+//   at '/', which the landing redirect resolves through the viewer's
+//   remembered chain — the exact dishonest bounce this state exists to
+//   avoid — so every recovery link targets a concrete /chain/:id.
+import { css, cx } from '@linaria/core';
 import { TypedLink } from '@native-router/react';
 import { ErrorState } from '@/components/ui/ErrorState';
-import { getChainName } from '@/config/chains';
+import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
+import { POPULAR_CHAINS, getChainName } from '@/config/chains';
 import { parseChainIdParam } from '@/utils/chainParam';
 import { getPreferredChainId } from './Landing';
 
@@ -23,10 +25,12 @@ const ctaRow = css`
   align-items: center;
   gap: var(--haze-space-3);
   flex-wrap: wrap;
+  margin-bottom: var(--haze-space-4);
 `;
 
 // Button-scale links modeled on PageLayout's BackButton so the CTAs read as
-// actions, not body-text links.
+// actions, not body-text links. Doubles as the base style of the
+// popular-chain links so the whole recovery block reads as one family.
 const ctaLink = css`
   display: inline-block;
   background: var(--haze-color-bg-subtle);
@@ -45,6 +49,29 @@ const ctaLink = css`
     color: var(--haze-color-text);
     border-color: var(--haze-color-border-hover);
   }
+`;
+
+// Popular-chain links stack the name over the id inside one button-scale
+// link (the base look comes from ctaLink via cx).
+const chainLink = css`
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--haze-space-1);
+`;
+
+const chainLinkMeta = css`
+  font-size: var(--haze-text-xs);
+  font-family: var(--haze-font-mono);
+  color: var(--haze-color-text-muted);
+`;
+
+// Responsive grid: several chains per row on wide viewports, down to one
+// per row on narrow ones, without a breakpoint dance.
+const chainGrid = css`
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: var(--haze-space-2);
 `;
 
 export function UnsupportedChainState({
@@ -82,10 +109,26 @@ export function UnsupportedChainState({
         <TypedLink to={`/chain/${preferredChainId}`} className={ctaLink}>
           {preferredChainId === 1 ? 'Go to Mainnet' : `Go to ${preferredChainName}`}
         </TypedLink>
-        <TypedLink to="/" className={ctaLink}>
-          Open chain list
-        </TypedLink>
       </div>
+      <Card>
+        <CardHeader>
+          <CardTitle>Open a supported chain</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className={chainGrid}>
+            {POPULAR_CHAINS.map(chain => (
+              <TypedLink
+                key={chain.id}
+                to={`/chain/${chain.id}`}
+                className={cx(ctaLink, chainLink)}
+              >
+                <span>{getChainName(chain.id)}</span>
+                <span className={chainLinkMeta}>Chain ID: {chain.id}</span>
+              </TypedLink>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

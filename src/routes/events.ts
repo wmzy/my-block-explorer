@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import type { Abi } from 'viem';
 import { createLogger } from '../server/logger';
+import { createRateLimiter } from '../middleware/rate-limit';
 import { getChainName, isChainSupported, getSupportedChainIds } from '../config/chains';
 import { getValidatedChainId, getValidatedAddress } from '../server/validation';
 import {
@@ -257,18 +258,15 @@ app.get('/chains/:chainId/contracts/:address/events/indexing-status', async c =>
     return c.json(status);
   } catch (error) {
     logger.error({ err: error }, 'Event indexing status API error');
-    return c.json({
-      chainId,
-      contractAddress: address,
-      status: 'error',
-      creationBlock: 0,
-      lastIndexedBlock: 0,
-      latestBlock: 0,
-      lastFinalizedBlock: 0,
-      totalEventsIndexed: 0,
-      eventTypes: [],
-      errorMessage: error instanceof Error ? error.message : 'Unknown error',
-    });
+    // 503 + error envelope: answering 200 with zeroed counters would
+    // fabricate an "indexed nothing" state the database never reported.
+    return c.json(
+      {
+        error: 'indexing_status_unavailable',
+        message: error instanceof Error ? error.message : 'Failed to load indexing status',
+      },
+      503,
+    );
   }
 });
 
@@ -310,17 +308,13 @@ app.get('/chains/:chainId/contracts/:address/events', async c => {
     );
   } catch (error) {
     logger.error({ err: error }, 'Contract events API error');
+    // Error envelope, never a success shape: a 500 body that looks like an
+    // empty result page invites clients to render backend failures as
+    // "no events found".
     return c.json(
       {
-        chainId,
-        chainName: getChainName(chainId),
-        contractAddress: address,
-        events: [],
-        total: 0,
-        page,
-        pageSize,
-        totalPages: 0,
-        timestamp: new Date().toISOString(),
+        error: 'internal_error',
+        message: 'Failed to query contract events',
       },
       500,
     );
@@ -328,7 +322,10 @@ app.get('/chains/:chainId/contracts/:address/events', async c => {
 });
 
 // GET /chains/:chainId/contracts/:address/events/export — CSV of the filtered set
-app.get('/chains/:chainId/contracts/:address/events/export', async c => {
+// CSV export re-runs the filtered query and serializes up to 100k rows, so
+// it carries the tightest limit in the API: 5/min with a burst of 2.
+const exportRateLimiter = createRateLimiter({ name: 'events-export', requestsPerMinute: 5, burst: 2 });
+app.get('/chains/:chainId/contracts/:address/events/export', exportRateLimiter, async c => {
   const result = validateChainAndAddress(c.req.param('chainId'), c.req.param('address'));
   if ('error' in result) return c.json(result.error, result.status);
 

@@ -1,5 +1,7 @@
-import { type Block, type TransactionReceipt } from 'viem';
+import { type Block, type TransactionReceipt, type Address, type Hex } from 'viem';
+import { recoverAuthorizationAddress } from 'viem/utils';
 import { createRpcClient } from './realTimeData';
+import { decodeTokenTransfersFromLogs, type DecodedTokenTransfer } from './tokenTransferDecode';
 
 export type RpcBlock = {
   number: string;
@@ -19,6 +21,21 @@ export type RpcBlock = {
   stateRoot?: string;
   transactionsRoot?: string;
   receiptsRoot?: string;
+  /** Beacon-chain withdrawals (post-Shanghai blocks); amount is in gwei. */
+  withdrawals?: RpcWithdrawal[];
+  /** Cancun blob gas actually carried by the block, when the chain supports blobs. */
+  blobGasUsed?: string;
+  /** Cancun excess blob gas (running tracker used for blob fee derivation). */
+  excessBlobGas?: string;
+};
+
+/** Normalized consensus-layer withdrawal as carried on RpcBlock. */
+export type RpcWithdrawal = {
+  index: string;
+  validatorIndex: string;
+  address: string;
+  /** Gwei as a decimal string. */
+  amount: string;
 };
 
 /**
@@ -47,6 +64,20 @@ export type RpcLogEntry = {
   logIndex?: string;
 };
 
+// One EIP-7702 authorization as carried on a type-4 transaction: the EOA
+// (authority) signing over delegating its code to `address`. authority/r/s/
+// yParity are optional because nodes differ in what they surface on the tx
+// object vs the receipt — absent fields stay undefined, never fabricated.
+export type RpcTxAuthorization = {
+  chainId: string;
+  address: string;
+  nonce: string;
+  authority?: string;
+  r?: string;
+  s?: string;
+  yParity?: number;
+};
+
 export type RpcTransaction = {
   hash: string;
   /** null while the transaction is pending (not yet mined into a block). */
@@ -71,6 +102,10 @@ export type RpcTransaction = {
   inputData?: string;
   contractAddress?: string;
   logs: RpcLogEntry[];
+  /** Token movements decoded from the receipt's Transfer logs, when any. */
+  tokenTransfers?: DecodedTokenTransfer[];
+  /** EIP-7702 (type 4) authorization list; absent on other tx types. */
+  authorizationList?: RpcTxAuthorization[];
 };
 
 const formatBlock = (block: Block, includeTimestamp = true): RpcBlock => ({
@@ -91,6 +126,14 @@ const formatBlock = (block: Block, includeTimestamp = true): RpcBlock => ({
   stateRoot: block.stateRoot ?? undefined,
   transactionsRoot: block.transactionsRoot ?? undefined,
   receiptsRoot: block.receiptsRoot ?? undefined,
+  withdrawals: block.withdrawals?.map(w => ({
+    index: w.index.toString(),
+    validatorIndex: w.validatorIndex.toString(),
+    address: w.address,
+    amount: w.amount.toString(),
+  })),
+  blobGasUsed: block.blobGasUsed?.toString(),
+  excessBlobGas: block.excessBlobGas?.toString(),
 });
 
 // viem's tx.type is a label ('eip1559', …) or a hex string, never a plain
@@ -107,45 +150,161 @@ const toRpcTxType = (txType: unknown): number => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
+// Authorization quantities arrive as bigint/number (viem-formatted) or as
+// raw 0x-quantity strings, depending on which surface they came from.
+// Normalize every well-formed shape to its decimal string; anything else
+// means the field is unusable and the entry degrades honestly.
+const toDecimalString = (value: unknown): string | undefined => {
+  if (typeof value === 'bigint') return value.toString();
+  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  if (typeof value === 'string' && /^0x[0-9a-fA-F]+$/.test(value) && value.length > 2) {
+    try {
+      return BigInt(value).toString();
+    }
+    catch {
+      return undefined;
+    }
+  }
+  return undefined;
+};
+
+// EIP-7702: the tx object carries the signed list (address/chainId/nonce/
+// r/s/yParity), while receipts — where nodes actually execute the auths —
+// additionally carry the recovered `authority`. Merge both surfaces by
+// index; entries missing core fields are dropped rather than half-rendered.
+const extractAuthorizationList = (
+  tx: Record<string, unknown>,
+  receipt: TransactionReceipt | null,
+): RpcTxAuthorization[] | undefined => {
+  const txList = Array.isArray(tx.authorizationList)
+    ? (tx.authorizationList as Record<string, unknown>[])
+    : [];
+  // viem's TransactionReceipt typing does not declare the 7702 field yet,
+  // but execution nodes include it on type-4 receipts.
+  const receiptRaw = receipt as Record<string, unknown> | null;
+  const receiptList = Array.isArray(receiptRaw?.authorizationList)
+    ? (receiptRaw.authorizationList as Record<string, unknown>[])
+    : [];
+  if (txList.length === 0 && receiptList.length === 0) return undefined;
+
+  const entries: RpcTxAuthorization[] = [];
+  const count = Math.max(txList.length, receiptList.length);
+  for (let i = 0; i < count; i++) {
+    const txEntry = txList[i];
+    const receiptEntry = receiptList[i];
+    const source = txEntry ?? receiptEntry;
+    if (source === null || typeof source !== 'object') continue;
+    const address = typeof source.address === 'string' ? source.address : undefined;
+    const chainId = toDecimalString(source.chainId);
+    const nonce = toDecimalString(source.nonce);
+    if (address === undefined || chainId === undefined || nonce === undefined) continue;
+    // The recovered signer only exists on whichever surface carries it.
+    const authorityRaw = receiptEntry?.authority ?? txEntry?.authority;
+    const yParityRaw = source.yParity;
+    entries.push({
+      chainId,
+      address,
+      nonce,
+      authority: typeof authorityRaw === 'string' ? authorityRaw : undefined,
+      r: typeof source.r === 'string' ? source.r : undefined,
+      s: typeof source.s === 'string' ? source.s : undefined,
+      yParity:
+        typeof yParityRaw === 'number'
+          ? yParityRaw
+          : typeof yParityRaw === 'string' && /^0x[0-9a-fA-F]+$/.test(yParityRaw)
+            ? Number(BigInt(yParityRaw))
+            : undefined,
+    });
+  }
+  return entries.length > 0 ? entries : undefined;
+};
+
+// Not all public nodes surface the recovered EIP-7702 authority: the spec
+// puts it on receipts, but the wire response can omit authorizationList
+// entirely (observed on the default mainnet RPC). Recover missing
+// authorities locally from r/s/yParity — the same ecrecover the protocol
+// performs, deterministic from fields we already carry. A node-reported
+// authority always wins; a signature that fails recovery stays undefined.
+const withRecoveredAuthorities = async (tx: RpcTransaction): Promise<RpcTransaction> => {
+  if (!tx.authorizationList) return tx;
+  const entries = await Promise.all(
+    tx.authorizationList.map(async authorization => {
+      if (
+        authorization.authority ||
+        authorization.r === undefined ||
+        authorization.s === undefined ||
+        authorization.yParity === undefined
+      ) {
+        return authorization;
+      }
+      try {
+        const authority = await recoverAuthorizationAddress({
+          authorization: {
+            chainId: Number(authorization.chainId),
+            nonce: Number(authorization.nonce),
+            address: authorization.address as Address,
+            r: authorization.r as Hex,
+            s: authorization.s as Hex,
+            yParity: authorization.yParity,
+          },
+        });
+        return { ...authorization, authority };
+      }
+      catch {
+        return authorization;
+      }
+    }),
+  );
+  return { ...tx, authorizationList: entries };
+};
+
 const formatTransaction = (
   tx: Record<string, unknown>,
   receipt: TransactionReceipt | null,
   blockTimestamp?: bigint,
-): RpcTransaction => ({
-  hash: tx.hash as string,
-  // A pending transaction has no block position yet: null, not a fake 0
-  // (the old '0' fallback rendered "Block Number: 0" and /block/0 links).
-  blockNumber: (tx.blockNumber as bigint | null)?.toString() ?? null,
-  transactionIndex: tx.transactionIndex == null ? null : Number(tx.transactionIndex),
-  fromAddress: (tx.from as string) ?? '',
-  toAddress: (tx.to as string) ?? '',
-  value: (tx.value as bigint)?.toString() ?? '0',
-  gasLimit: (tx.gas as bigint)?.toString() ?? '0',
-  gasPrice: (tx.gasPrice as bigint | undefined)?.toString(),
-  maxFeePerGas: (tx.maxFeePerGas as bigint | undefined)?.toString(),
-  maxPriorityFeePerGas: (tx.maxPriorityFeePerGas as bigint | undefined)?.toString(),
-  // EIP-4844 (type 3) blob-transaction fields; absent on other types.
-  maxFeePerBlobGas: (tx.maxFeePerBlobGas as bigint | undefined)?.toString(),
-  blobVersionedHashes: (tx.blobVersionedHashes as readonly string[] | undefined) ?? undefined,
-  gasUsed: receipt?.gasUsed?.toString(),
-  effectiveGasPrice: receipt?.effectiveGasPrice?.toString(),
-  nonce: (tx.nonce as number)?.toString() ?? '0',
-  status: receipt?.status === 'success' ? 1 : receipt ? 0 : -1,
-  type: toRpcTxType(tx.type),
-  timestamp: blockTimestamp ? new Date(Number(blockTimestamp) * 1000).toISOString() : undefined,
-  inputData: tx.input as string,
-  contractAddress: receipt?.contractAddress ?? undefined,
-  // viem's Log.topics is a readonly tuple — copy to a mutable array the
-  // view layer can treat as plain string[]. Pending txs (null receipt)
-  // have no logs yet, hence the empty-array fallback.
-  logs:
-    receipt?.logs.map(log => ({
-      address: log.address,
-      topics: [...log.topics],
-      data: log.data,
-      logIndex: log.logIndex?.toString(),
-    })) ?? [],
-});
+): RpcTransaction => {
+  // The decoder is total (skips malformed logs internally), so a pending
+  // tx (null receipt) simply decodes an empty list — the field stays
+  // undefined instead of carrying a misleading empty array.
+  const tokenTransfers = decodeTokenTransfersFromLogs(receipt?.logs ?? []);
+  return {
+    hash: tx.hash as string,
+    // A pending transaction has no block position yet: null, not a fake 0
+    // (the old '0' fallback rendered "Block Number: 0" and /block/0 links).
+    blockNumber: (tx.blockNumber as bigint | null)?.toString() ?? null,
+    transactionIndex: tx.transactionIndex == null ? null : Number(tx.transactionIndex),
+    fromAddress: (tx.from as string) ?? '',
+    toAddress: (tx.to as string) ?? '',
+    value: (tx.value as bigint)?.toString() ?? '0',
+    gasLimit: (tx.gas as bigint)?.toString() ?? '0',
+    gasPrice: (tx.gasPrice as bigint | undefined)?.toString(),
+    maxFeePerGas: (tx.maxFeePerGas as bigint | undefined)?.toString(),
+    maxPriorityFeePerGas: (tx.maxPriorityFeePerGas as bigint | undefined)?.toString(),
+    // EIP-4844 (type 3) blob-transaction fields; absent on other types.
+    maxFeePerBlobGas: (tx.maxFeePerBlobGas as bigint | undefined)?.toString(),
+    blobVersionedHashes: (tx.blobVersionedHashes as readonly string[] | undefined) ?? undefined,
+    gasUsed: receipt?.gasUsed?.toString(),
+    effectiveGasPrice: receipt?.effectiveGasPrice?.toString(),
+    nonce: (tx.nonce as number)?.toString() ?? '0',
+    status: receipt?.status === 'success' ? 1 : receipt ? 0 : -1,
+    type: toRpcTxType(tx.type),
+    timestamp: blockTimestamp ? new Date(Number(blockTimestamp) * 1000).toISOString() : undefined,
+    inputData: tx.input as string,
+    contractAddress: receipt?.contractAddress ?? undefined,
+    // viem's Log.topics is a readonly tuple — copy to a mutable array the
+    // view layer can treat as plain string[]. Pending txs (null receipt)
+    // have no logs yet, hence the empty-array fallback.
+    logs:
+      receipt?.logs.map(log => ({
+        address: log.address,
+        topics: [...log.topics],
+        data: log.data,
+        logIndex: log.logIndex?.toString(),
+      })) ?? [],
+    tokenTransfers: tokenTransfers.length > 0 ? tokenTransfers : undefined,
+    authorizationList: extractAuthorizationList(tx, receipt),
+  };
+};
 
 /**
  * Fetch the latest N blocks directly from RPC.
@@ -214,8 +373,12 @@ export const getBlockTransactions = async (
     txObjects.map(tx => client.getTransactionReceipt({ hash: tx.hash }).catch(() => null)),
   );
 
-  return txObjects.map((tx, i) =>
-    formatTransaction(tx as unknown as Record<string, unknown>, receipts[i], block.timestamp),
+  return Promise.all(
+    txObjects.map(async (tx, i) =>
+      withRecoveredAuthorities(
+        formatTransaction(tx as unknown as Record<string, unknown>, receipts[i], block.timestamp),
+      ),
+    ),
   );
 };
 
@@ -358,5 +521,5 @@ export const getTransactionByHash = async (
     blockTimestamp = block?.timestamp;
   }
 
-  return formatTransaction(tx, receipt, blockTimestamp);
+  return withRecoveredAuthorities(formatTransaction(tx, receipt, blockTimestamp));
 };

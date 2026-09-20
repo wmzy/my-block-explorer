@@ -3,3 +3,4 @@ export { DegradedModeBanner } from './DegradedModeBanner';
 export { DiscoveryGate } from './DiscoveryGate';
 export { ScanningScreen } from './ScanningScreen';
 export { SetupRequiredScreen } from './SetupRequiredScreen';
+export { SwitchedBackendBanner } from './SwitchedBackendBanner';

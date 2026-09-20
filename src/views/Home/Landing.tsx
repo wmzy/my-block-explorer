@@ -3,6 +3,12 @@
 // actually viewed (persisted under LAST_CHAIN_STORAGE_KEY), else the
 // preferred chain from the sorted chain config, else /chain/1 as the
 // dead-last fallback (mainnet is always in the supported set).
+//
+// The remembered-chain resolution is deliberately scoped to this '/' entry
+// point: it is the "reopen where I left off" behavior for the app root and
+// nothing else. Recovery UIs (UnsupportedChainState) link straight to
+// concrete /chain/:id destinations and must never bounce through this
+// redirect, which would reopen the link viewer's remembered chain.
 import { useEffect } from 'react';
 import {
   commitReplace,
@@ -39,8 +45,9 @@ export function getPreferredChainId(): number {
   return getSortedChains()[0]?.id ?? 1;
 }
 
-// Landing target shared by this view and Home's unknown-chain redirect:
-// remembered valid chain -> preferred chain -> /chain/1.
+// Landing target for the '/' route only: remembered valid chain ->
+// preferred chain -> /chain/1. Nothing else consumes it — the
+// unsupported-chain recovery CTAs link concrete /chain/:id paths directly.
 export function resolveLandingChainPath(): string {
   const remembered = readRememberedChainId();
   return remembered !== undefined ? `/chain/${remembered}` : `/chain/${getPreferredChainId()}`;

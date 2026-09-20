@@ -1,4 +1,6 @@
 import { Hono } from 'hono';
+import type { Context } from 'hono';
+import { getConnInfo } from '@hono/node-server/conninfo';
 import { eq } from 'drizzle-orm';
 import { createLogger } from '../server/logger';
 import { db, userRpcConfigs } from '../database/init';
@@ -26,20 +28,40 @@ function redactUrl(url: string): string {
   }
 }
 
+// Origin-less requests cannot lean on CORS — browsers always send Origin on
+// cross-origin reads, so "no Origin" mostly means scripts (curl, anything
+// HTTP-capable), not a trusted same-origin reader. The one unforgeable
+// signal left is the socket: only loopback callers (127.0.0.0/8, ::1,
+// including the ::ffff:-mapped IPv4 form Node reports on dual-stack
+// listeners) keep seeing full URLs. Runtimes without socket info (the
+// in-process Vite dev bridge) and any parse surprise fail closed.
+function isLoopbackRemote(c: Context): boolean {
+  try {
+    const address = getConnInfo(c).remote.address;
+    if (!address) return false;
+    const normalized = address.toLowerCase().replace(/^::ffff:/, '');
+    return normalized === '::1' || /^127(?:\.\d{1,3}){3}$/.test(normalized);
+  }
+  catch {
+    return false;
+  }
+}
+
 // Reads are open (the RPC config modal needs them without an admin
 // token), but the full URL only goes to readers the CORS policy already
-// trusts: requests with no Origin header (same-origin UI, curl) and
-// allowlisted origins (loopback + operator-configured extras, decided by
-// the shared cors-origins policy). Any other Origin — which could only
-// read the response through a CORS misconfiguration — gets scheme +
-// host, so a leak cannot disclose the key. The isCustom flag and the
-// rest of the shape are identical for both readers.
+// trusts: allowlisted Origins (loopback + operator-configured extras,
+// decided by the shared cors-origins policy), or Origin-less requests
+// coming from a loopback socket (local curl, same-host scripts).
+// Everything else — foreign Origins, and remote Origin-less clients for
+// which CORS never applied — gets scheme + host, so a leak cannot
+// disclose the key. `urlRedacted` tells the reader which form it got;
+// the isCustom flag and the rest of the shape are identical for both.
 app.get('/rpc-configs', async (c) => {
   try {
     const configs = await db.select().from(userRpcConfigs);
 
     const origin = c.req.header('origin');
-    const seesFullUrl = !origin || isAllowedCorsOrigin(origin);
+    const seesFullUrl = origin ? isAllowedCorsOrigin(origin) : isLoopbackRemote(c);
 
     return c.json({
       configs: configs.map(config => ({
@@ -47,6 +69,7 @@ app.get('/rpc-configs', async (c) => {
         chainId: config.chainId,
         name: config.name,
         url: config.url ? (seesFullUrl ? config.url : redactUrl(config.url)) : null,
+        urlRedacted: config.url !== null && !seesFullUrl,
         isCustom: true,
         supportsHistory: config.supportsHistory,
         maxEventRange: config.maxEventRange,

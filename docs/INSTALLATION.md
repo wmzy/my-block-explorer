@@ -61,7 +61,7 @@ Things that are **not** env-configured: RPC endpoints (viem chain defaults, plus
 
 ```bash
 curl http://localhost:8201/api/health
-# { "status": "healthy", "message": "My Block Explorer API is running", ... }
+# { "status": "ok", "adminTokenConfigured": false, "debugApiEnabled": false, "version": "...", "timestamp": "..." }
 ```
 
 Then open the frontend (`http://localhost:3000` in dev). It auto-discovers the backend by scanning `localhost:8201-8205`; a hosted frontend needs the backend URL entered manually once.

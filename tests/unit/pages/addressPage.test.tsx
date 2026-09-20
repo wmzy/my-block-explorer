@@ -163,12 +163,18 @@ vi.mock('../../../src/config/chains', () => ({
     if (chainId === 1) return { id: 1, name: 'Ethereum', nativeCurrency: { symbol: 'ETH' } };
     return null;
   },
-  getChainName: (chainId: number) => (chainId === 1 ? 'Ethereum' : 'Unknown'),
+  getChainName: (chainId: number) =>
+    chainId === 1 ? 'Ethereum' : chainId === 137 ? 'Polygon' : 'Unknown',
   getChainSymbol: (chainId: number) => (chainId === 1 ? 'ETH' : 'UNKNOWN'),
   // Consumed by the Landing helpers behind UnsupportedChainState
   // (getPreferredChainId must not fall back to the remembered chain).
   isChainSupported: (chainId: number) => chainId === 1,
   getSortedChains: () => [{ id: 1, name: 'Ethereum' }],
+  // In-card recovery links rendered by UnsupportedChainState.
+  POPULAR_CHAINS: [
+    { id: 1, name: 'Ethereum' },
+    { id: 137, name: 'Polygon' },
+  ],
 }));
 
 vi.mock('@/services/addresses', () => ({
@@ -984,10 +990,9 @@ describe('Address view', () => {
       'href',
       '/chain/1',
     );
-    expect(screen.getByRole('link', { name: 'Open chain list' })).toHaveAttribute(
-      'href',
-      '/',
-    );
+    // In-card chain list replaces the old '/' bounce CTA.
+    expect(screen.getByRole('heading', { name: 'Open a supported chain' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Polygon/ })).toHaveAttribute('href', '/chain/137');
   });
 
   // Mixed-case disagreement with EIP-55: uppercase one body position the
@@ -1150,5 +1155,69 @@ describe('Address view', () => {
 
     expect(await screen.findByText('Error: RPC timeout')).toBeInTheDocument();
     expect(screen.queryByText(/invalid checksum/i)).not.toBeInTheDocument();
+  });
+});
+
+// The Overview card's "Token Holdings (discovered)" section: aggregates
+// the mocked transfers fixture (one ERC-1155 single OUT row → net −3 for
+// token id 5). The scan is lazy — the section holds no query until the
+// transfers tab is visited (or the Scan button pressed), so the default
+// render shows the honest not-scanned hint instead of an empty list.
+describe('Token Holdings (discovered) overview section', () => {
+  beforeEach(() => {
+    mocks.tokenTransfers = {
+      transfers: [
+        {
+          txHash: '0xfeed0000feed0000feed0000feed0000feed0000feed0000feed0000feed0000',
+          blockNumber: 18_000_002,
+          logIndex: 3,
+          token: '0x9999999999999999999999999999999999999999',
+          standard: 'erc1155-single',
+          from: mocks.testAddress,
+          to: '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd',
+          value: '3',
+          tokenIds: ['5'],
+          amounts: ['3'],
+          direction: 'out',
+        },
+      ],
+      nextCursor: null,
+      coverage: 'complete',
+      windowBlocks: 100_000,
+    };
+    mocks.tokenTransfersLoading = false;
+  });
+
+  it('shows the not-scanned hint with a scan CTA and no holding rows by default', async () => {
+    renderPage();
+
+    expect(await screen.findByText('Token Holdings (discovered)')).toBeInTheDocument();
+    expect(
+      screen.getByText('Token transfers have not been scanned for this address.'),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Scan Token Transfers' }),
+    ).toBeInTheDocument();
+    // The lazy section renders no aggregate rows before the first scan.
+    expect(screen.queryByText('ID 5 × -3')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Based on discovered transfers/)).not.toBeInTheDocument();
+  });
+
+  it('aggregates the scanned fixture into a holding row linking to the contract view, with the completeness caveat', async () => {
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Scan Token Transfers' }));
+
+    // One OUT of amount 3 → net −3 for id 5 (thousands formatting leaves
+    // the small magnitude unchanged; the minus sign is shown honestly).
+    const row = await screen.findByText('ID 5 × -3');
+    expect(row.closest('a')?.getAttribute('href')).toBe(
+      '/chain/1/contract/0x9999999999999999999999999999999999999999',
+    );
+    // The honesty caveat must render with the list — discovered transfers
+    // are a partial scan, never a claim of full holdings.
+    expect(
+      screen.getByText('Based on discovered transfers — may be incomplete'),
+    ).toBeInTheDocument();
   });
 });

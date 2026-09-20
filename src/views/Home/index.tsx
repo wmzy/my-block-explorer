@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { css } from '@linaria/core';
+import { css, cx } from '@linaria/core';
 import { Alert } from 'haze-ui';
 import { TypedLink, useMatched } from '@native-router/react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
@@ -15,7 +15,6 @@ import {
 } from '@/utils/format';
 import { parseChainIdParam } from '@/utils/chainParam';
 import { PageContainer } from '@/components/ui/PageLayout';
-import { LoadingState } from '@/components/ui/LoadingState';
 import { Button } from '@/components/ui/Button';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { useLatestBlocksFeed, useLatestTransactionsFeed } from '@/services/homeFeed';
@@ -190,6 +189,53 @@ const staleBannerRow = css`
   flex-wrap: wrap;
 `;
 
+// --- first-load skeletons ---
+
+// Shared placeholder surface. The pulse animates opacity only, so it stays
+// on the compositor (no layout work) and reads as a steady shimmer instead
+// of a flicker. Keyframes are defined exactly once here; every skeleton
+// size composes onto this base via cx.
+const skeletonBase = css`
+  display: inline-block;
+  background: var(--haze-color-border);
+  border-radius: var(--haze-radius-sm, 4px);
+  animation: home-skeleton-pulse 1.4s ease-in-out infinite;
+
+  @keyframes home-skeleton-pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.4;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
+`;
+
+// Stats-bar value placeholder sized to the value line it stands in for.
+const statValueSkeleton = css`
+  width: 72px;
+  height: 22px;
+  vertical-align: middle;
+`;
+
+// Feed-row placeholders mirror the real row geometry (40px icon square +
+// three text lines) so the card does not jump when data lands.
+const skeletonIcon = css`
+  width: 40px;
+  height: 40px;
+  border-radius: var(--haze-radius-md);
+`;
+
+const skeletonLine = css`
+  height: 16px;
+  flex-shrink: 0;
+`;
+
 // --- helpers ---
 
 // BigInt-safe fixed-decimal formatting: divides and rounds (half up) in
@@ -203,6 +249,101 @@ function formatFixed(value: bigint, decimals: number, fractionDigits: number): s
   const whole = scaled / fractionScale;
   const fraction = scaled % fractionScale;
   return `${whole}.${fraction.toString().padStart(fractionDigits, '0')}`;
+}
+
+// --- stats-bar presentation ---
+
+// Feed-level facts every stats card shares.
+export type StatFeedStatus = {
+  /** True while the feed's first fetch is in flight (nothing fetched yet). */
+  loading: boolean;
+  /** True while the feed's fetches are currently failing (stale or dead). */
+  error: boolean;
+};
+
+// One card's inputs: the shared feed status plus this card's own value.
+export type StatState = StatFeedStatus & {
+  /** Formatted value from the latest successful fetch; null when none. */
+  value: string | null;
+};
+
+// The rendering states of a stats card, plus the plain dash kept for a
+// successful fetch that simply has no figure to show.
+export type StatPresentation =
+  | { kind: 'skeleton' }
+  | { kind: 'value'; text: string }
+  | { kind: 'unavailable'; title: string }
+  | { kind: 'empty' };
+
+// Pure on purpose (unit-tested without a render): a present value always
+// wins — stale-but-present numbers stay on screen under the stale banner,
+// and a background refetch never swaps a number for a skeleton — then the
+// first load pulses, an error with no value is honestly "Unavailable", and
+// a clean fetch without the figure keeps the page's long-standing dash.
+export function deriveStatPresentation(state: StatState): StatPresentation {
+  if (state.loading && state.value === null) return { kind: 'skeleton' };
+  if (state.value !== null) return { kind: 'value', text: state.value };
+  if (state.error) return { kind: 'unavailable', title: 'Unavailable' };
+  return { kind: 'empty' };
+}
+
+function StatCard({
+  label,
+  value,
+  feed,
+}: {
+  label: string;
+  value: string | null;
+  feed: StatFeedStatus;
+}) {
+  const presentation = deriveStatPresentation({ ...feed, value });
+  return (
+    <Card className={statItem}>
+      <div
+        className={statValueStyle}
+        title={presentation.kind === 'unavailable' ? presentation.title : undefined}
+      >
+        {presentation.kind === 'skeleton' ? (
+          <span className={cx(skeletonBase, statValueSkeleton)} data-testid="stat-skeleton" />
+        ) : presentation.kind === 'value' ? (
+          presentation.text
+        ) : (
+          '—'
+        )}
+      </div>
+      <div className={statLabelStyle}>{label}</div>
+    </Card>
+  );
+}
+
+// First-load placeholder for one feed column: mirrors the real row shape
+// (icon square + three lines) at a lighter row count, so the card reads as
+// loading without flickering or jumping when its data lands.
+const HOME_FEED_SKELETON_ROWS = 6;
+
+function FeedSkeletonRows({ rows }: { rows: number }) {
+  return (
+    <div aria-hidden="true" data-testid="feed-skeleton">
+      {Array.from({ length: rows }, (_, index) => (
+        <div key={index} className={listItem}>
+          <div className={cx(skeletonBase, skeletonIcon)} />
+          <div className={listBody}>
+            <div className={listRow}>
+              <span className={cx(skeletonBase, skeletonLine)} style={{ width: '38%' }} />
+              <span className={cx(skeletonBase, skeletonLine)} style={{ width: '16%' }} />
+            </div>
+            <div className={listRow} style={{ marginTop: 6 }}>
+              <span className={cx(skeletonBase, skeletonLine)} style={{ width: '55%' }} />
+              <span className={cx(skeletonBase, skeletonLine)} style={{ width: '14%' }} />
+            </div>
+            <div className={listRow} style={{ marginTop: 6 }}>
+              <span className={cx(skeletonBase, skeletonLine)} style={{ width: '48%' }} />
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 // --- component ---
@@ -232,8 +373,10 @@ export default function Home() {
   const latestBlockNumber = blocksFeed.data?.latestBlockNumber ?? null;
   const gasPrice = blocksFeed.data?.gasPrice ?? null;
   const transactions = transactionsFeed.data ?? [];
-  // Old page showed the loading banner until the initial fetch of both
-  // lists settled.
+  // True while either feed is still on its FIRST fetch (polledQuery's
+  // loading is "in flight and nothing fetched yet"). The columns no longer
+  // wait on this — each renders behind its own feed; it only holds back the
+  // dead-RPC error card below until both feeds have settled.
   const loading = blocksFeed.loading || transactionsFeed.loading;
 
   // Either feed failing means live updates stopped. dataUpdatedAt is only
@@ -249,6 +392,10 @@ export default function Home() {
   const showStaleBanner = feedError !== undefined && lastUpdatedAt !== undefined;
   // Dead: fetching fails and nothing was ever fetched (full-width error).
   const showFatalError = feedError !== undefined && lastUpdatedAt === undefined;
+  // The dead branch fires only once BOTH feeds settle: while either is
+  // still on its first fetch the page cannot know both lists are dead, and
+  // a slow sibling must not be buried by its faster sibling's error.
+  const settledFatal = showFatalError && !loading;
 
   const handleRetry = () => {
     void Promise.resolve(blocksFeed.refetch()).catch(() => undefined);
@@ -289,6 +436,15 @@ export default function Home() {
     ? ((Number(blocks[0].gasUsed) / Number(blocks[0].gasLimit)) * 100).toFixed(1)
     : null;
 
+  // Stats-bar inputs. All four cards read the blocks feed, but each value
+  // is null-checked on its own: an RPC that omits one figure (e.g. gas
+  // price) blanks only its own card instead of failing the whole bar.
+  const statsFeed = { loading: blocksFeed.loading, error: blocksFeed.error !== undefined };
+  const latestBlockText = latestBlockNumber !== null ? formatNumber(latestBlockNumber) : null;
+  const gasPriceText = gasPrice !== null ? `${formatFixed(gasPrice, 9, 2)} Gwei` : null;
+  const latestTxCountText = blocks[0] ? formatNumber(blocks[0].transactionCount) : null;
+  const gasUsedText = gasUsedPercent !== null ? `${gasUsedPercent}%` : null;
+
   return (
     <>
       <TopNavigation currentChainId={currentChainId} onChainChange={handleChainChange} />
@@ -305,32 +461,12 @@ export default function Home() {
           </p>
         </div>
 
-        {/* Stats bar */}
+        {/* Stats bar: each card independently loading / value / unavailable */}
         <div className={statsBar}>
-          <Card className={statItem}>
-            <div className={statValueStyle}>
-              {latestBlockNumber !== null ? formatNumber(latestBlockNumber) : '—'}
-            </div>
-            <div className={statLabelStyle}>Latest Block</div>
-          </Card>
-          <Card className={statItem}>
-            <div className={statValueStyle}>
-              {gasPrice !== null ? `${formatFixed(gasPrice, 9, 2)} Gwei` : '—'}
-            </div>
-            <div className={statLabelStyle}>Gas Price</div>
-          </Card>
-          <Card className={statItem}>
-            <div className={statValueStyle}>
-              {blocks[0] ? formatNumber(blocks[0].transactionCount) : '—'}
-            </div>
-            <div className={statLabelStyle}>Txns in Latest Block</div>
-          </Card>
-          <Card className={statItem}>
-            <div className={statValueStyle}>
-              {gasUsedPercent !== null ? `${gasUsedPercent}%` : '—'}
-            </div>
-            <div className={statLabelStyle}>Gas Used (latest block)</div>
-          </Card>
+          <StatCard label="Latest Block" value={latestBlockText} feed={statsFeed} />
+          <StatCard label="Gas Price" value={gasPriceText} feed={statsFeed} />
+          <StatCard label="Txns in Latest Block" value={latestTxCountText} feed={statsFeed} />
+          <StatCard label="Gas Used (latest block)" value={gasUsedText} feed={statsFeed} />
         </div>
 
         {/* Stale branch: fetch failing but old data still on screen */}
@@ -347,17 +483,19 @@ export default function Home() {
           </Alert>
         )}
 
-        {loading && <LoadingState message="Loading blockchain data..." />}
-
-        {/* Dead branch: fetch failing and nothing ever fetched */}
-        {!loading && showFatalError && (
+        {/* Dead branch: fetch failing, nothing ever fetched, and both feeds
+            settled (see settledFatal) — the columns give way to it. */}
+        {settledFatal && (
           <ErrorState
             message="Live data is unavailable and no previous data to show."
             onRetry={handleRetry}
           />
         )}
 
-        {!loading && !showFatalError && (
+        {/* Columns render independently of each other: each waits only on
+            its own feed (skeleton rows during its first load), so a slow
+            RPC holds back neither its sibling column nor the page. */}
+        {!settledFatal && (
           <div className={columnsLayout}>
             {/* Latest Blocks */}
             <Card>
@@ -367,7 +505,11 @@ export default function Home() {
                 </div>
               </CardHeader>
               <CardContent>
-                {blocks.map(block => {
+                {/* This column waits only on its own feed: blocks rows show
+                    as soon as the blocks feed lands, regardless of the
+                    transactions column's state. */}
+                {blocksFeed.loading && <FeedSkeletonRows rows={HOME_FEED_SKELETON_ROWS} />}
+                {!blocksFeed.loading && blocks.map(block => {
                   // Bor-style PoS chains report the zero address as miner;
                   // classify once so only a real producer gets a link.
                   const producer = describeBlockProducer(block.miner);
@@ -431,7 +573,10 @@ export default function Home() {
                 </div>
               </CardHeader>
               <CardContent>
-                {transactions.map(tx => (
+                {/* Independent of the blocks column: skeleton rows only
+                    while THIS feed's first fetch runs. */}
+                {transactionsFeed.loading && <FeedSkeletonRows rows={HOME_FEED_SKELETON_ROWS} />}
+                {!transactionsFeed.loading && transactions.map(tx => (
                   <div key={tx.hash} className={listItem}>
                     <div className={listIcon}>Tx</div>
                     <div className={listBody}>
@@ -487,7 +632,7 @@ export default function Home() {
                     </div>
                   </div>
                 ))}
-                {transactions.length === 0 && (
+                {!transactionsFeed.loading && transactions.length === 0 && (
                   <div className={listSecondary} style={{ padding: '20px 0', textAlign: 'center' }}>
                     No transactions in recent blocks
                   </div>

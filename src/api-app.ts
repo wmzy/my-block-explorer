@@ -34,7 +34,9 @@ app.onError((e, c) => {
 
   logger.error(e, 'Unhandled API error');
 
-  return c.json(createApiError(500, 'Internal Server Error', e.message), 500);
+  // The 500 body must not leak internals (SQL text, driver messages); the
+  // real cause lives only in the pino log line above.
+  return c.json(createApiError(500, 'internal_error', 'Internal Server Error'), 500);
 });
 
 app.get('/api', c => {
@@ -54,10 +56,14 @@ app.get('/api', c => {
   });
 });
 
+// Ungated by design: discovery probes this from the browser, and a public
+// deployment can verify its security posture from outside. `version` stays
+// for frontend ServiceInfo (useAutoDiscovery reads it opportunistically).
 app.get('/api/health', c => {
   return c.json({
-    status: 'healthy',
-    message: 'My Block Explorer API is running',
+    status: 'ok',
+    adminTokenConfigured: Boolean(process.env.ADMIN_TOKEN),
+    debugApiEnabled: process.env.ENABLE_DEBUG_API === '1',
     version: '1.0.0',
     timestamp: new Date().toISOString(),
   });
@@ -74,7 +80,11 @@ app.route('/api', eventsRoutes);
 app.route('/api', performanceRoutes);
 app.route('/api', rpcConfigRoutes);
 app.route('/api', storageRoutes);
-// Debug routes expose raw SQL execution; mount only when explicitly opted in via ENABLE_DEBUG_API=1.
+// Debug routes expose raw SQL execution: mounted only when explicitly
+// opted in via ENABLE_DEBUG_API=1, and gated by requireAdminTokenIfConfigured
+// inside the sub-app (x-admin-token once ADMIN_TOKEN is set; open in a
+// zero-config local session). A non-loopback HOST with this flag refuses
+// to boot unless ALLOW_INSECURE_START=1 — see src/startupChecks.ts.
 if (process.env.ENABLE_DEBUG_API === '1') {
   app.route('/debug', debugRoutes);
 }

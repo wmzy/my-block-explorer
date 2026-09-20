@@ -335,9 +335,10 @@ describe('TokenTransfers tab', () => {
 
     expect(await screen.findByText('1.5 TKN')).toBeInTheDocument();
     expect(screen.getByText('ERC-20')).toBeInTheDocument();
-    // Symbol-known token column shows the symbol instead of the address.
+    // Symbol-known token column shows the symbol instead of the address;
+    // the link routes to the token's contract page, not the address page.
     expect(screen.getByText('TKN').closest('a')?.getAttribute('href')).toBe(
-      `/chain/1/address/${mocks.tokenErc20}`,
+      `/chain/1/contract/${mocks.tokenErc20}`,
     );
   });
 

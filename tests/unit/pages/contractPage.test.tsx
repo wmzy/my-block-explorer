@@ -258,7 +258,8 @@ describe('Contract view', () => {
     ).toBeInTheDocument();
     expect(screen.getByText(/chain ID 1234567/)).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Go to Mainnet' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Open chain list' })).toBeInTheDocument();
+    // In-card chain list replaces the old '/' bounce CTA.
+    expect(screen.getByRole('heading', { name: 'Open a supported chain' })).toBeInTheDocument();
     expect(screen.queryByText('Contract Source Code')).not.toBeInTheDocument();
   });
 
@@ -608,13 +609,16 @@ describe('Contract view proxy implementation rendering', () => {
     },
   };
 
-  it('lists every diamond facet and warns the source/ABI show facet[0] only', async () => {
+  it('lists every diamond facet and warns which tabs show facet[0] only', async () => {
     vi.mocked(useContractSource).mockReturnValue(mockHookResult(diamondSourceResponse));
     renderAt(`/chain/1/contract/${ADDRESS}`);
 
-    // Amber banner above the tab bar names the diamond limitation.
+    // Amber banner above the tab bar names the diamond limitation and the
+    // one exception (Interact merges every facet's ABI).
     expect(
-      await screen.findByText('Diamond proxy — 2 facets. Source/ABI below show facet[0] only.'),
+      await screen.findByText(
+        'Diamond proxy — 2 facets. Source, ABI, Events and Storage below show facet[0] only; Interact merges every facet\'s ABI.',
+      ),
     ).toBeInTheDocument();
 
     // The Facets row links every facet to its own contract page; facet[0]
@@ -820,7 +824,7 @@ describe('Contract view proxy with unverified implementation (B2)', () => {
 
     expect(
       await screen.findByText(
-        "Implementation not verified — paste its ABI, or switch to the Proxy view to use the proxy's own ABI.",
+        'Implementation not verified — paste its ABI, or switch to the Proxy view to use the proxy\'s own ABI.',
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText(/No ABI is available for this contract/)).not.toBeInTheDocument();
@@ -840,7 +844,7 @@ describe('Contract view proxy with unverified implementation (B2)', () => {
 
     expect(
       await screen.findByText(
-        "Implementation not verified — paste its ABI, or switch to the Proxy view to use the proxy's own ABI.",
+        'Implementation not verified — paste its ABI, or switch to the Proxy view to use the proxy\'s own ABI.',
       ),
     ).toBeInTheDocument();
 
@@ -849,7 +853,6 @@ describe('Contract view proxy with unverified implementation (B2)', () => {
   });
 
   it('keeps the blanket no-ABI copy for a contract with no ABI anywhere', async () => {
-    const user = userEvent.setup();
     // Plain unverified contract: no proxy, so no second tier exists — the
     // original message must survive verbatim, without a switch button.
     vi.mocked(useContractSource).mockReturnValue(mockHookResult(unverifiedSourceResponse));
@@ -899,5 +902,101 @@ describe('Contract view custom ABI on the ABI tab (B3)', () => {
 
     expect(screen.queryByText('Custom ABI (this browser)')).not.toBeInTheDocument();
     expect(screen.getByTestId('source-viewer')).toHaveTextContent('"type": "event"');
+  });
+});
+
+describe('Contract view creation gas honesty', () => {
+  const creationResponse = (gasUsed: string) => ({
+    found: true,
+    creation: {
+      txHash: '0xabc0000000000000000000000000000000000000000000000000000000000002',
+      blockNumber: 42,
+      creator: '0xabc0000000000000000000000000000000000003',
+      timestamp: 1700000000,
+      gasUsed,
+      gasPrice: '1000000000',
+    },
+  });
+
+  it('renders Unknown instead of a confident zero when creation gas was not recorded', async () => {
+    vi.mocked(useContractCreation).mockReturnValue(mockHookResult(creationResponse('0')));
+    renderAt(`/chain/1/contract/${ADDRESS}`);
+
+    // A deployment cannot cost 0 gas: the zero answers as data missing.
+    const gasValue = await screen.findByText('Unknown');
+    expect(gasValue).toHaveAttribute(
+      'title',
+      'Creation gas not recorded by the indexer',
+    );
+    expect(screen.queryByText(/0 gas/)).not.toBeInTheDocument();
+  });
+
+  it('formats a recorded creation gas normally', async () => {
+    vi.mocked(useContractCreation).mockReturnValue(mockHookResult(creationResponse('21000')));
+    renderAt(`/chain/1/contract/${ADDRESS}`);
+
+    expect(await screen.findByText('21,000 gas')).toBeInTheDocument();
+    expect(screen.queryByText('Unknown')).not.toBeInTheDocument();
+  });
+});
+
+describe('Contract view verification source provenance', () => {
+  it('names the Sourcify provenance with an explanatory tooltip', async () => {
+    renderAt(`/chain/1/contract/${ADDRESS}`);
+
+    const label = await screen.findByText('Sourcify — independent verification');
+    expect(label).toHaveAttribute('title', expect.stringContaining('verify.sourcify.dev'));
+    // The raw enum value no longer reads as the whole story.
+    expect(screen.queryByText(/^sourcify$/)).not.toBeInTheDocument();
+  });
+
+  it('labels the Blockscan source cache as third-party', async () => {
+    vi.mocked(useContractSource).mockReturnValue(
+      mockHookResult({
+        contractSource: { ...verifiedSourceResponse.contractSource, verificationSource: 'blockscan' },
+      }),
+    );
+    renderAt(`/chain/1/contract/${ADDRESS}`);
+
+    const label = await screen.findByText('Blockscan — third-party source cache');
+    expect(label).toHaveAttribute('title', expect.stringContaining('vscode.blockscan.com'));
+  });
+
+  it('renders provenance values outside the friendly table as-is', async () => {
+    // 'none' (unverified answer) has no friendly label: honesty over
+    // invention — the raw value stays.
+    vi.mocked(useContractSource).mockReturnValue(mockHookResult(unverifiedSourceResponse));
+    renderAt(`/chain/1/contract/${ADDRESS}`);
+
+    expect(await screen.findByText('none')).toBeInTheDocument();
+  });
+});
+
+describe('Contract view history-aware back', () => {
+  it('falls back to the address-page navigation on a fresh deep link', async () => {
+    const backSpy = vi.spyOn(window.history, 'back').mockImplementation(() => {});
+    const user = userEvent.setup();
+    renderAt(`/chain/1/contract/${ADDRESS}`);
+
+    await user.click(await screen.findByRole('button', { name: /← Back/ }));
+
+    // No in-site history (jsdom: length 1, empty referrer): the browser
+    // back must not fire.
+    expect(backSpy).not.toHaveBeenCalled();
+    backSpy.mockRestore();
+  });
+
+  it('uses the browser back when the tab carries in-site history', async () => {
+    // Every in-app router push grows history.length; emulate one prior
+    // entry so the heuristic sees real browsing behind the page.
+    window.history.pushState({}, '', '/chain/1/blocks');
+    const backSpy = vi.spyOn(window.history, 'back').mockImplementation(() => {});
+    const user = userEvent.setup();
+    renderAt(`/chain/1/contract/${ADDRESS}`);
+
+    await user.click(await screen.findByRole('button', { name: /← Back/ }));
+
+    expect(backSpy).toHaveBeenCalledTimes(1);
+    backSpy.mockRestore();
   });
 });

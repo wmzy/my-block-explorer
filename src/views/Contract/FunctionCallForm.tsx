@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { FormEvent } from 'react';
 import { css } from '@linaria/core';
 import { parseEther } from 'viem';
+import { getChainSymbol } from '@/config/chains';
 import { Collapsible } from '@/components/ui/Collapsible';
 import { getFunctionSelector, formatSelectorForDisplay } from '@/utils/functionSelector';
 import { formatResultWithLinks } from '@/utils/addressTypeDetection';
@@ -205,11 +206,15 @@ export function FunctionCallForm({
   const selector = getFunctionSelector(func);
   const selectorDisplay = formatSelectorForDisplay(selector);
 
+  // The payable value field is denominated in the chain's native currency —
+  // 'ETH' only makes sense on Ethereum.
+  const nativeSymbol = getChainSymbol(chainId);
+
   const isPayable = func.interactionType === 'write' && func.stateMutability === 'payable';
 
-  // Wei equivalent of the current ETH input; '' when empty or not (yet)
-  // parseable. Used both as the key fragment shared with the parent and as
-  // the wei helper display under the field.
+  // Wei equivalent of the current native-currency input; '' when empty or
+  // not (yet) parseable. Used both as the key fragment shared with the
+  // parent and as the wei helper display under the field.
   const valueWei = (() => {
     const trimmed = value.trim();
     if (trimmed === '') return '';
@@ -230,16 +235,17 @@ export function FunctionCallForm({
     const { values, fieldErrors, isValid } = parseFunctionArgs(func.inputs, args);
     setArgErrors(fieldErrors);
 
-    // Payable value is entered in ETH and converted to wei via parseEther.
-    // Validate here so an invalid amount gets a field-level error instead
-    // of surfacing as a generic network error after submission.
+    // Payable value is entered in the chain's native currency and converted
+    // to wei via parseEther. Validate here so an invalid amount gets a
+    // field-level error instead of surfacing as a generic network error
+    // after submission.
     let newValueError = '';
     let wei: string | undefined;
     if (isPayable && value.trim() !== '') {
       try {
         wei = parseEther(value.trim()).toString();
       } catch {
-        newValueError = 'Invalid ETH amount';
+        newValueError = `Invalid ${nativeSymbol} amount`;
       }
     }
     setValueError(newValueError);
@@ -343,34 +349,41 @@ export function FunctionCallForm({
           <>
             {func.stateMutability === 'payable' && (
               <div className={inputGroupStyles}>
-                <label className={labelStyles}>Value (ETH)</label>
-                <input
-                  type="text"
-                  value={value}
-                  onChange={e => {
-                    setValue(e.target.value);
-                    setValueError('');
-                  }}
-                  placeholder="0"
-                  className={inputStyles}
-                />
+                {/* Same nesting as the argument inputs: the input lives
+                    inside its label so screen readers (and tests) can
+                    associate the typed field with its name. */}
+                <label className={labelStyles}>
+                  Value ({nativeSymbol})
+                  <input
+                    type="text"
+                    value={value}
+                    onChange={e => {
+                      setValue(e.target.value);
+                      setValueError('');
+                    }}
+                    placeholder="0"
+                    className={inputStyles}
+                  />
+                </label>
                 {valueWei && <div className={weiHintStyles}>= {valueWei} wei</div>}
                 {valueError && <div className={fieldErrorStyles}>{valueError}</div>}
               </div>
             )}
 
             <div className={inputGroupStyles}>
-              <label className={labelStyles}>From Address (optional)</label>
-              <input
-                type="text"
-                value={from}
-                onChange={e => {
-                  setFrom(e.target.value);
-                  setFromError('');
-                }}
-                placeholder="0x..."
-                className={inputStyles}
-              />
+              <label className={labelStyles}>
+                From Address (optional)
+                <input
+                  type="text"
+                  value={from}
+                  onChange={e => {
+                    setFrom(e.target.value);
+                    setFromError('');
+                  }}
+                  placeholder="0x..."
+                  className={inputStyles}
+                />
+              </label>
               {fromError && <div className={fieldErrorStyles}>{fromError}</div>}
             </div>
           </>

@@ -29,13 +29,11 @@ export type ContractSource = {
   abi: string;
   constructorArguments?: string;
   verificationStatus: 'verified' | 'unverified' | 'partial';
-  verificationSource:
-    | 'sourcify'
-    | 'etherscan'
-    | 'mantle-explorer'
-    | 'manual'
-    | 'unknown'
-    | 'none';
+  // Mirrors the backend ContractSourceService union: 'sourcify' and
+  // 'blockscan' are the two remote verifiers (the latter is the
+  // vscode.blockscan.com source cache); 'manual'/'unknown'/'none' mark
+  // locally-supplied or missing provenance.
+  verificationSource: 'sourcify' | 'blockscan' | 'manual' | 'unknown' | 'none';
   verifiedAt?: string;
   lastChecked: string;
   isProxy?: boolean;

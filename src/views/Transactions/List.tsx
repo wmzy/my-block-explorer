@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { css } from '@linaria/core';
-import { TypedLink, useMatched, useSearch, useSetSearch } from '@native-router/react';
+import {
+  TypedLink,
+  useMatched,
+  useSearch,
+  useSearchParams,
+  useSetSearch,
+} from '@native-router/react';
 import { z } from 'zod';
 
 import TopNavigation from '@/components/TopNavigation';
@@ -8,7 +14,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { CopyableHash } from '@/components/ui/CopyableHash';
 import { DataTable, Pagination, linkStyle, monoStyle } from '@/components/ui/DataTable';
-import { ErrorState } from '@/components/ui/ErrorState';
+import { EmptyState, ErrorState } from '@/components/ui/ErrorState';
 import { TableSkeleton } from '@/components/ui/LoadingState';
 import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
 import { getChainInfo, getChainName, getChainSymbol } from '@/config/chains';
@@ -53,12 +59,70 @@ const toolbarActions = css`
   gap: var(--haze-space-2);
 `;
 
+// Anchor notice strip (?block= dropped as malformed / anchor beyond the
+// live head): the same bordered, subtle-background note family as the
+// staleness hint row — explained business outcomes, never an error
+// palette (the red ErrorState is reserved for real fetch failures).
+const anchorNoticeBar = css`
+  display: flex;
+  align-items: center;
+  gap: var(--haze-space-2);
+  padding: var(--haze-space-2) var(--haze-space-3);
+  margin-bottom: var(--haze-space-3);
+  border: 1px solid var(--haze-color-border);
+  border-radius: var(--haze-radius-lg);
+  background: var(--haze-color-primary-subtle);
+  font-size: var(--haze-text-sm);
+  color: var(--haze-color-text);
+`;
+
 // Search params: an optional ?block=N deep link starts the walk at block N;
-// ?page=K is the pagination index (1 when absent or garbage).
-const searchSchema = z.object({
+// ?page=K is the pagination index (1 when absent or garbage). Exported for
+// unit tests of the malformed-?block= detection contract (a value the
+// schema drops must parse to undefined).
+export const searchSchema = z.object({
   block: z.coerce.number().int().min(0).optional().catch(undefined),
   page: z.coerce.number().int().min(1).catch(1),
 });
+
+// Anchor notice the list owes the user when the ?block= deep link is not
+// usable as given. Pure logic, exported for focused unit tests.
+export type TxAnchorNotice =
+  | { kind: 'invalid-block' }
+  | { kind: 'future-anchor'; block: number };
+
+// Pure: which anchor notice (if any) applies. Priority is invalid-block >
+// future-anchor > none. A malformed ?block= the schema dropped outranks
+// everything; a future anchor needs a known live head to compare against
+// (no head → no verdict, never a guess — strictly greater, an anchor AT
+// the head is the newest produced block and needs no note). The two param
+// conditions are exclusive by construction (invalid means the parse
+// dropped the value), but the ordering lives here in one place anyway.
+export function resolveAnchorNotice(input: {
+  invalidBlockDropped: boolean;
+  blockParam: number | undefined;
+  liveHead: bigint | null;
+}): TxAnchorNotice | null {
+  if (input.invalidBlockDropped) return { kind: 'invalid-block' };
+  if (
+    input.blockParam !== undefined &&
+    input.liveHead !== null &&
+    BigInt(input.blockParam) > input.liveHead
+  ) {
+    return { kind: 'future-anchor', block: input.blockParam };
+  }
+  return null;
+}
+
+// Pure: the URL still carries a ?block= key the schema dropped — the raw
+// param is the only witness that a malformed value was ever there (zod's
+// .catch(undefined) erases it from the parsed output).
+export function isDroppedBlockParam(
+  rawBlockParam: string | null,
+  blockParam: number | undefined,
+): boolean {
+  return rawBlockParam !== null && blockParam === undefined;
+}
 
 const formatHash = (hash: string): string => {
   if (!hash || hash.length < 16) return hash;
@@ -97,6 +161,10 @@ export default function TransactionsList() {
   const { params, router } = useMatched();
   const setSearch = useSetSearch(searchSchema);
   const { block: blockParam, page: pageParam } = useSearch(searchSchema);
+  // Raw search params (pre-schema): the only witness that a ?block= value
+  // the schema's .catch(undefined) dropped was ever in the URL.
+  const [rawSearchParams] = useSearchParams();
+  const rawBlockParam = rawSearchParams.get('block');
 
   const currentChainId = Number.parseInt(params.chainId ?? '1', 10);
   const chainInfo = getChainInfo(currentChainId);
@@ -128,6 +196,26 @@ export default function TransactionsList() {
       void setSearch(prev => ({ ...prev, page: '1' }), { replace: true });
     }
   }, [initialCursor, pageParam, setSearch]);
+
+  // Malformed ?block= deep link (e.g. ?block=abc): the schema already
+  // degraded it to "no anchor", so the walk serves the latest transactions.
+  // Latch a one-time notice (state below survives the URL strip) and
+  // replace the URL without the key so a refresh does not re-trigger the
+  // notice. A later VALID ?block= deep link clears the latch — the notice
+  // belongs to the URL it explained, not to the view.
+  const [invalidBlockDropped, setInvalidBlockDropped] = useState(false);
+  useEffect(() => {
+    if (blockParam !== undefined) {
+      if (invalidBlockDropped) setInvalidBlockDropped(false);
+      return;
+    }
+    if (rawBlockParam === null || invalidBlockDropped) return;
+    setInvalidBlockDropped(true);
+    void setSearch(prev => {
+      const { block: _dropped, ...rest } = prev;
+      return rest;
+    }, { replace: true });
+  }, [blockParam, rawBlockParam, invalidBlockDropped, setSearch]);
 
   // Head entry (no cursor): the Refresh vehicle at the live head. Its key
   // never changes, so headQuery.refetch() always targets the live head,
@@ -228,6 +316,14 @@ export default function TransactionsList() {
   const liveHeadFeed = useLatestBlocksFeed(chainInfo ? currentChainId : 0);
   const liveHead = liveHeadFeed.data?.latestBlockNumber ?? null;
 
+  // Anchor notice for the header area (pure resolver above): a dropped
+  // malformed ?block= outranks a future anchor, which outranks silence.
+  const anchorNotice = resolveAnchorNotice({
+    invalidBlockDropped,
+    blockParam,
+    liveHead,
+  });
+
   // Blocks mined beyond the displayed page's head snapshot since it was
   // fetched. Strictly greater: a head at or below the snapshot is not
   // stale news and renders nothing.
@@ -287,6 +383,18 @@ export default function TransactionsList() {
           </div>
         </div>
 
+        {/* Anchor notice (malformed ?block= dropped / anchor beyond the live
+            head): an explained outcome in the page's notice family, never
+            an error palette. One bar — the resolver's priority contract
+            guarantees at most one notice. */}
+        {anchorNotice !== null && (
+          <div className={anchorNoticeBar} role="status">
+            {anchorNotice.kind === 'invalid-block'
+              ? 'Invalid block parameter ignored — showing latest transactions'
+              : `Anchor block ${formatNumber(anchorNotice.block)} has not been produced yet — showing nearest earlier transactions`}
+          </div>
+        )}
+
         {loading && <TableSkeleton rows={10} cols={7} />}
 
         {error && (
@@ -296,8 +404,11 @@ export default function TransactionsList() {
           />
         )}
 
+        {/* Empty scan window is a normal business outcome, not a failure:
+            the info-toned EmptyState (Blocks/List family) — the red
+            ErrorState above stays reserved for fetch failures. */}
         {!loading && !error && transactions.length === 0 && (
-          <ErrorState
+          <EmptyState
             message={
               data?.hasMore === true
                 ? 'No transactions in the scanned range — go older to continue'

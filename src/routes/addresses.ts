@@ -9,6 +9,7 @@ import {
   getValidatedAddress,
 } from '../server/validation';
 import { formatTransactionForApi, safeJsonResponse } from '../utils/serialization';
+import { createRateLimiter } from '../middleware/rate-limit';
 
 const app = new Hono();
 
@@ -63,11 +64,44 @@ app.get('/chains/:chainId/addresses/:address/persistent', async (c) => {
   }
 });
 
-app.get('/chains/:chainId/addresses/:address/transactions', async (c) => {
+// Per-address transaction history can fall back to live RPC scans when the
+// DuckDB cache is cold, so the endpoint is rate-limited per client.
+const addressTransactionsRateLimiter = createRateLimiter({ name: 'address-transactions', requestsPerMinute: 10, burst: 3 });
+
+// Pagination params fail loudly with 400 on non-numeric input instead of
+// silently degrading to NaN arithmetic (same philosophy as the offset
+// validation in transactions.ts). Non-positive limits are rejected too;
+// pages below 1 keep the existing clamp-to-1 behavior.
+app.get('/chains/:chainId/addresses/:address/transactions', addressTransactionsRateLimiter, async (c) => {
   const chainId = getValidatedChainId(c.req.param('chainId'));
   const address = getValidatedAddress(c.req.param('address'));
-  const limit = Math.min(parseInt(c.req.query('limit') ?? '20'), 50);
-  const page = Math.max(parseInt(c.req.query('page') ?? '1'), 1);
+
+  const rawLimit = c.req.query('limit');
+  const rawPage = c.req.query('page');
+  const parsedLimit = rawLimit === undefined || rawLimit === '' ? 20 : parseInt(rawLimit, 10);
+  const parsedPage = rawPage === undefined || rawPage === '' ? 1 : parseInt(rawPage, 10);
+
+  if (Number.isNaN(parsedLimit) || parsedLimit < 1) {
+    return c.json(
+      {
+        error: 'invalid_limit',
+        message: 'limit must be a positive integer',
+      },
+      400,
+    );
+  }
+  if (Number.isNaN(parsedPage)) {
+    return c.json(
+      {
+        error: 'invalid_page',
+        message: 'page must be a positive integer',
+      },
+      400,
+    );
+  }
+
+  const limit = Math.min(parsedLimit, 50);
+  const page = Math.max(parsedPage, 1);
   const offset = (page - 1) * limit;
 
   // Optional search-window override in blocks. Only fully-numeric values
