@@ -12,8 +12,17 @@ Live frontend-only demo (no local backend — the API-dependent features need yo
 
 - **700+ chains, zero config** — every chain defined in `viem/chains` (732 in the pinned viem version) works out of the box; 10 popular chains are pinned at the top of the chain picker (`POPULAR_CHAINS` in `src/config/chains.ts`)
 - **On-demand event indexing** — index specific block ranges for a contract, query decoded events with argument filters, export CSV
-- **Contract tools** — verified source & ABI (Sourcify → Etherscan fallback), storage layout + slot reads, `read`/`simulate`/`estimate-gas`
-- **Data separation** — ephemeral data (balances, latest blocks) is fetched in the browser directly from RPC; persistent data (sources, events, search history) is cached in DuckDB behind the local API
+- **Contract tools** — verified source & ABI (Sourcify → Etherscan fallback), storage layout + slot reads, `read`/`simulate`/`estimate-gas`, in-page Sourcify verification, `cast` command export from the Interact form
+- **Token pages (lightweight)** — ERC-20 detection on contract addresses (name/symbol/decimals/totalSupply via Multicall3), token-centric transfer scan (filter by emitting contract), and discovered top holders with explicit "may be incomplete" caveats
+- **Signature decoding** — unknown function selectors and event topic0s resolve through the openchain signature database (DuckDB-cached, 24h negative TTL) on transaction details
+- **Call traces** — `debug_traceTransaction` (callTracer) renders as an indented call tree on tx details when the RPC supports it, with honest "not supported by this RPC" degradation
+- **Address annotations** — private per-chain labels (backend-persisted, admin-gated writes) and CSV export of the discovered transaction list
+- **Cached-contract directory** — `/chain/:id/contracts` lists every locally cached contract source; the global search surfaces local contract-name matches
+- **Gas tracker** — base-fee sparkline + priority-fee tiers from `eth_feeHistory` (browser RPC, 60s polling)
+- **Raw RPC JSON** — lazy collapsible raw transaction/receipt/block payloads on detail pages
+- **Light/dark/system theme** with persistence, backend version chip in the topbar
+- **Docker packaging** — multi-target `Dockerfile` (API + static web) and `compose.yaml` (see [Deployment](docs/DEPLOYMENT.md))
+- **Data separation** — ephemeral data (balances, latest blocks) is fetched in the browser directly from RPC; persistent data (sources, events, labels) is cached in DuckDB behind the local API
 - **Auto-discovery** — the frontend finds a local backend by scanning `localhost:8201-8205`, with a manual URL fallback
 
 ## Tech stack
@@ -56,6 +65,16 @@ pnpm build:pages  # frontend-only build with VITE_BASE=/my-block-explorer/ for t
 ```
 
 The standalone server does **not** serve the built frontend — the frontend is static hosting (Pages/CDN or the Vite dev server) and connects to the API by URL; see [Ports and service discovery](#ports-and-service-discovery).
+
+### Docker
+
+Prefer containers? The repo ships a multi-target `Dockerfile` plus `compose.yaml`:
+
+```bash
+docker compose up -d --build   # API on :8201 (data bind-mounted to ./data), web on :3000
+```
+
+The `api` target packages the Node 22 server (DuckDB files under `/app/data`, healthchecked); the `web` target is nginx serving the SPA — it embeds no API URL, so the browser still discovers or is told the API at runtime. Visiting from another machine? The API needs `CORS_ALLOWED_ORIGINS` set to the web origin, and each visitor types the API URL into the setup screen once. Details, security notes (`ADMIN_TOKEN`, never `ENABLE_DEBUG_API` on shared hosts): [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md#4-docker-two-images-api--static-web).
 
 ### Database migrations
 

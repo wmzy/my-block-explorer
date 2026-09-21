@@ -16,6 +16,9 @@ import eventsRoutes from './routes/events';
 import performanceRoutes from './routes/performance';
 import rpcConfigRoutes from './routes/rpc-config';
 import storageRoutes from './routes/storage';
+import signaturesRoutes from './routes/signatures';
+import labelsRoutes from './routes/labels';
+import verifyRoutes from './routes/verify';
 import debugRoutes from './routes/debug';
 import { reconcileInterruptedRanges } from './services/EventIndexingService';
 
@@ -80,6 +83,9 @@ app.route('/api', eventsRoutes);
 app.route('/api', performanceRoutes);
 app.route('/api', rpcConfigRoutes);
 app.route('/api', storageRoutes);
+app.route('/api', signaturesRoutes);
+app.route('/api', labelsRoutes);
+app.route('/api', verifyRoutes);
 // Debug routes expose raw SQL execution: mounted only when explicitly
 // opted in via ENABLE_DEBUG_API=1, and gated by requireAdminTokenIfConfigured
 // inside the sub-app (x-admin-token once ADMIN_TOKEN is set; open in a

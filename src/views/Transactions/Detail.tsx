@@ -5,6 +5,7 @@ import { TypedLink, useMatched } from '@native-router/react';
 import { decodeEventLog, type Abi, type Hex } from 'viem';
 
 import TopNavigation from '@/components/TopNavigation';
+import { CallTraceCard } from '@/views/Transactions/CallTrace';
 import { RawDataBlock } from '@/components/transactions/RawDataBlock';
 import { Badge } from '@/components/ui/Badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
@@ -15,6 +16,7 @@ import { ErrorState } from '@/components/ui/ErrorState';
 import { InfoGrid, InfoItem } from '@/components/ui/InfoGrid';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { PageContainer, PageHeader, BackButton } from '@/components/ui/PageLayout';
+import { RawJsonCard, type RawJsonFetcher } from '@/components/ui/RawJson';
 import { POPULAR_CHAINS, getChainInfo, getChainName, getChainSymbol } from '@/config/chains';
 import { getExternalTxLinks } from '@/config/externalTools';
 import { redirectReplace, navigateBack } from '@/views/Home/Landing';
@@ -24,6 +26,7 @@ import { useContractSource } from '@/services/contracts';
 import { useTransactionByHash } from '@/services/chainRpc';
 import { useTokenMetadata } from '@/services/tokenMetadata';
 import { useLatestBlocksFeed } from '@/services/homeFeed';
+import { useSignatures, type SignatureOutcome } from '@/services/signatures';
 import type { DecodedTokenTransfer } from '@/utils/tokenTransferDecode';
 import type { RpcLogEntry, RpcTxAuthorization } from '@/utils/blockRpcData';
 import { createRpcClient } from '@/utils/realTimeData';
@@ -131,53 +134,111 @@ const topicLinkArrowStyle = css`
   margin-left: var(--haze-space-1);
 `;
 
+// Muted provenance chip for a signature resolved through the openchain
+// database: names the source so a database-derived name is never mistaken
+// for ABI-decoded truth (which renders in its own row without a chip).
+const sourceChipStyle = css`
+  display: inline-block;
+  margin-left: var(--haze-space-2);
+  padding: 0 var(--haze-space-2);
+  border: 1px solid var(--haze-color-border);
+  border-radius: var(--haze-radius-sm);
+  font-size: var(--haze-text-xs);
+  line-height: 18px;
+  color: var(--haze-color-text-muted);
+  vertical-align: middle;
+  white-space: nowrap;
+`;
+
+// The "+N more" suffix for a selector with multiple openchain candidates:
+// muted so the most-popular signature stays the visual anchor.
+const moreCandidatesStyle = css`
+  color: var(--haze-color-text-muted);
+  margin-left: var(--haze-space-1);
+`;
+
+// ABI-decode attempt for one receipt log against the called contract's
+// ABI: the canonical `Name(args)` string, or null when the ABI is absent,
+// the emitter is not the called contract, or the topics/data do not match
+// any ABI event. Shared by EventLogEntry (renders the string) and the
+// page-level unknown-selector collector (needs the same "did this log
+// decode?" answer to decide which topic0s are worth an openchain lookup).
+const decodeLogSignature = (
+  log: RpcLogEntry,
+  abi: Abi | null,
+  toAddress: string,
+): string | null => {
+  const canDecode =
+    abi !== null && toAddress.length > 0 && log.address.toLowerCase() === toAddress.toLowerCase();
+  if (!canDecode) return null;
+  try {
+    const event = decodeEventLog({
+      abi,
+      data: log.data as Hex,
+      topics: log.topics as [Hex, ...Hex[]],
+    });
+    const rawArgs: unknown = event.args;
+    const args = Array.isArray(rawArgs)
+      ? rawArgs
+      : Object.values((rawArgs as Record<string, unknown>) ?? {});
+    // viem types eventName as possibly-undefined for generic ABIs; skip
+    // the signature when the name is missing and fall back to raw.
+    return event.eventName !== undefined
+      ? args.length > 0
+        ? `${event.eventName}(${formatCallArgs(args)})`
+        : event.eventName
+      : null;
+  } catch {
+    // Selector/shape mismatch against the ABI — fall back to raw.
+    return null;
+  }
+};
+
+// Human-readable name for a selector the ABI could not decode, resolved
+// through the backend's openchain cache: the most popular candidate plus
+// a muted "+N more" when several match, with the source chip marking the
+// provenance. Unknown/unavailable outcomes render nothing — the raw
+// selector display next to it is the complete fallback.
+function ResolvedSignatureName({ outcome }: { outcome: SignatureOutcome | undefined }) {
+  // Only a resolved candidate list renders; unavailable, notFound (empty
+  // list) and still-loading states all fall back to the raw display.
+  if (outcome === undefined || !('signatures' in outcome) || outcome.signatures.length === 0) {
+    return null;
+  }
+  const [first, ...rest] = outcome.signatures;
+  return (
+    <>
+      <span className={monoStyle}>{first}</span>
+      {rest.length > 0 && <span className={moreCandidatesStyle}>{`(+${rest.length} more)`}</span>}
+      <span className={sourceChipStyle}>openchain</span>
+    </>
+  );
+}
+
 // One receipt log: numbered entry, emitter address link, and either the
 // ABI-decoded event signature (when the emitter is the called contract and
 // its ABI is known) or the raw topics + data fallback. A log emitter is by
 // definition a contract, so the address targets the contract view; the raw
 // fallback links topic0 to the openchain signature database — the standard
-// lookup for an unknown event selector.
+// lookup for an unknown event selector — and may lead with the signature
+// name the backend's openchain cache resolved for that topic0.
 function EventLogEntry({
   log,
   index,
   chainId,
   toAddress,
   abi,
+  resolvedEvent,
 }: {
   log: RpcLogEntry;
   index: number;
   chainId: number;
   toAddress: string;
   abi: Abi | null;
+  /** Openchain outcome for this log's topic0; undefined while loading. */
+  resolvedEvent: SignatureOutcome | undefined;
 }) {
-  const canDecode =
-    abi !== null && toAddress.length > 0 && log.address.toLowerCase() === toAddress.toLowerCase();
-
-  let decoded: string | null = null;
-  if (canDecode) {
-    try {
-      const event = decodeEventLog({
-        abi,
-        data: log.data as Hex,
-        topics: log.topics as [Hex, ...Hex[]],
-      });
-      const rawArgs: unknown = event.args;
-      const args = Array.isArray(rawArgs)
-        ? rawArgs
-        : Object.values((rawArgs as Record<string, unknown>) ?? {});
-      // viem types eventName as possibly-undefined for generic ABIs; skip
-      // the signature when the name is missing and fall back to raw.
-      decoded =
-        event.eventName !== undefined
-          ? args.length > 0
-            ? `${event.eventName}(${formatCallArgs(args)})`
-            : event.eventName
-          : null;
-    } catch {
-      // Selector/shape mismatch against the ABI — fall back to raw.
-      decoded = null;
-    }
-  }
+  const decoded = decodeLogSignature(log, abi, toAddress);
 
   return (
     <div className={logEntryStyle}>
@@ -193,15 +254,19 @@ function EventLogEntry({
       ) : (
         <div className={logRawStyle}>
           {log.topics.length > 0 && (
-            <a
-              className={linkStyle}
-              href={`https://openchain.xyz/signatures?query=${log.topics[0]}`}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              {log.topics[0]}
-              <span className={topicLinkArrowStyle}>↗</span>
-            </a>
+            <>
+              <ResolvedSignatureName outcome={resolvedEvent} />
+              {'\n'}
+              <a
+                className={linkStyle}
+                href={`https://openchain.xyz/signatures?query=${log.topics[0]}`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {log.topics[0]}
+                <span className={topicLinkArrowStyle}>↗</span>
+              </a>
+            </>
           )}
           {log.topics.length > 1 ? `\n${log.topics.slice(1).join('\n')}` : ''}
           {`\n${log.data}`}
@@ -324,15 +389,20 @@ function RevertReasonCard({
 
 // Selector + ABI-decoded signature + always-visible raw input hex. Rendered
 // only for contract calls (non-empty input, known target); missing/failed
-// ABI decode degrades to the selector + raw hex — never an error state.
+// ABI decode degrades to the selector + raw hex — never an error state —
+// with the openchain-resolved name (when the backend cache has one) shown
+// next to the raw selector, chipped to mark its database provenance.
 function FunctionCallCard({
   inputData,
   toAddress,
   abi,
+  resolvedFunction,
 }: {
   inputData: string | undefined;
   toAddress: string | undefined;
   abi: Abi | null;
+  /** Openchain outcome for this call's selector; undefined while loading. */
+  resolvedFunction: SignatureOutcome | undefined;
 }) {
   const hasInput = inputData !== undefined && inputData !== '' && inputData !== '0x';
   if (!hasInput || !toAddress) return null;
@@ -348,7 +418,14 @@ function FunctionCallCard({
       <CardContent>
         <InfoGrid>
           <InfoItem label="Method">
-            <span className={monoStyle}>{selector ?? 'Unknown'}</span>
+            {selector !== null ? (
+              <>
+                <span className={monoStyle}>{selector}</span>
+                {decoded === null && <ResolvedSignatureName outcome={resolvedFunction} />}
+              </>
+            ) : (
+              <span className={monoStyle}>Unknown</span>
+            )}
           </InfoItem>
           {decoded !== null && (
             <InfoItem label="Function">
@@ -762,6 +839,41 @@ export default function TransactionDetail() {
     }
   }, [sourceResponse]);
 
+  // Function-call selector of this transaction's calldata, when present
+  // (plain transfers and contract creations have none).
+  const functionSelector = useMemo(() => selectorOf(txInfo?.inputData), [txInfo]);
+
+  // Selectors worth an openchain lookup: the function selector when the
+  // ABI is missing or does not match it, plus every log topic0 with no
+  // decoded event name — resolved by the backend cache in ONE batched
+  // request. One selector can repeat across a receipt's logs, so dedupe
+  // before the API's 25-selector cap; beyond the cap the extras simply
+  // stay raw. While the batch is in flight (or honestly unavailable) the
+  // page renders exactly as before — resolved names only refine the raw
+  // fallbacks in place, never block them.
+  const signatureSelectors = useMemo<string[]>(() => {
+    if (!txInfo) return [];
+    const selectors: string[] = [];
+    if (functionSelector !== null) {
+      const decoded =
+        contractAbi !== null && txInfo.inputData !== undefined
+          ? decodeFunctionCall(txInfo.inputData, contractAbi)
+          : null;
+      if (decoded === null) selectors.push(functionSelector);
+    }
+    for (const log of txInfo.logs) {
+      if (
+        log.topics.length > 0 &&
+        decodeLogSignature(log, contractAbi, txInfo.toAddress) === null
+      ) {
+        selectors.push(log.topics[0].toLowerCase());
+      }
+    }
+    return [...new Set(selectors)].slice(0, 25);
+  }, [txInfo, contractAbi, functionSelector]);
+
+  const signatureOutcomes = useSignatures(signatureSelectors);
+
   // Confirmations/finality inputs on the same polled channels the Blocks
   // views use: the finality heads behind the Safe/Finalized badge and the
   // home-feed head behind the confirmation count. Both hooks take the 0
@@ -778,6 +890,37 @@ export default function TransactionDetail() {
   const finalityLabel =
     txBlockNumber === null ? undefined : finalityLabelFor(finalityHeads, Number(txBlockNumber));
   const headBlockNumber = headFeed?.latestBlockNumber;
+
+  // Raw JSON appendix sources: the verbatim eth_getTransactionByHash /
+  // eth_getTransactionReceipt payloads, browser-fetched via the shared RPC
+  // client (ephemeral node data — data-separation rule). A pending tx
+  // still has a Transaction object, but no receipt exists yet: that
+  // section states the absence honestly instead of fetching or erroring.
+  // When the pending poll flips the tx to mined, the note clears and the
+  // section (keyed by note) remounts into a real fetch.
+  const rawJsonFetchers = useMemo<RawJsonFetcher[]>(() => {
+    const requestRaw = (method: 'eth_getTransactionByHash' | 'eth_getTransactionReceipt') => {
+      const load: RawJsonFetcher['load'] = async (signal?: AbortSignal) => {
+        const client = await createRpcClient(currentChainId);
+        return client.request(
+          { method, params: [txHash as `0x${string}`] },
+          signal !== undefined ? { signal } : undefined,
+        );
+      };
+      return load;
+    };
+    return [
+      { label: 'Transaction', load: requestRaw('eth_getTransactionByHash') },
+      {
+        label: 'Receipt',
+        load: requestRaw('eth_getTransactionReceipt'),
+        note:
+          txBlockNumber === null
+            ? 'No receipt yet — the transaction is still pending'
+            : undefined,
+      },
+    ];
+  }, [currentChainId, txHash, txBlockNumber]);
 
   const handleChainChange = (newChainId: number) => {
     // Same-params refresh via the shared replace helper: the hash is
@@ -968,6 +1111,9 @@ export default function TransactionDetail() {
               inputData={txInfo.inputData}
               toAddress={txInfo.toAddress}
               abi={contractAbi}
+              resolvedFunction={
+                functionSelector !== null ? signatureOutcomes[functionSelector] : undefined
+              }
             />
 
             {txInfo.status === 0 && (
@@ -1004,11 +1150,32 @@ export default function TransactionDetail() {
                       chainId={currentChainId}
                       toAddress={txInfo.toAddress}
                       abi={contractAbi}
+                      resolvedEvent={
+                        log.topics.length > 0
+                          ? signatureOutcomes[log.topics[0].toLowerCase()]
+                          : undefined
+                      }
                     />
                   ))}
                 </CardContent>
               </Card>
             )}
+
+            {/* Call trace: every MINED tx gets the card (the tracer itself
+                decides whether anything was recorded); pending txs have
+                nothing to trace yet. Collapsed by default; the trace is
+                fetched from the browser only on first expand. */}
+            {txInfo.status !== -1 && (
+              <CallTraceCard
+                chainId={currentChainId}
+                txHash={txInfo.hash}
+                txGasUsed={txInfo.gasUsed ?? null}
+              />
+            )}
+
+            {/* Raw JSON appendix: verbatim RPC payloads behind this page,
+                collapsed by default and fetched on first expand only. */}
+            <RawJsonCard title="Raw JSON" fetchers={rawJsonFetchers} />
           </div>
         )}
       </PageContainer>

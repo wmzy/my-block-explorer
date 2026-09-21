@@ -124,18 +124,29 @@ const mocks = vi.hoisted(() => {
     // Contract classification prop for the events-indexing CTA.
     isContract: false,
     queryArgs: [] as unknown[],
+    // Token-detection stand-in for the mocked useTokenOverview: 'token'
+    // = detected token contract (reads answered), 'plain-contract' =
+    // settled non-token contract, 'none' = disabled/unsettled (EOA or
+    // detection pending).
+    detection: 'none',
+    // Optional mode tag stamped on the mocked settle (stale-settle guard
+    // tests); undefined models a pre-mode legacy payload (trusted).
+    modeTag: undefined as 'token' | 'participant' | undefined,
   };
 });
 
 vi.mock('@/services/tokenTransfers', () => ({
-  // Args captured so pagination cases can assert the cursor (index 2) and
-  // the widened window (index 4); the page fixture is selected by the
-  // requested window so "Search deeper" can pin the banner update.
+  // Args captured so pagination cases can assert the cursor (index 2),
+  // the widened window (index 4) and the scan mode (index 5); the page
+  // fixture is selected by the requested window so "Search deeper" can
+  // pin the banner update. The settle carries the modeTag knob so the
+  // view's stale-settle guard (mode mismatch → hidden) is testable;
+  // undefined models a legacy pre-mode payload (trusted as-is).
   useTokenTransfers: (...args: unknown[]) => {
     mocks.queryArgs = args;
     const page = args[4] === mocks.deepWindow ? mocks.deepPage : mocks.page;
     return {
-      data: mocks.emptyData ? undefined : page,
+      data: mocks.emptyData ? undefined : { ...page, mode: mocks.modeTag },
       loading: mocks.loading,
       fetching: false,
       error: mocks.error,
@@ -145,6 +156,24 @@ vi.mock('@/services/tokenTransfers', () => ({
   // Wrapper (not the bare reference) so vi.spyOn(mocks, 'requestRefresh')
   // is honored: the factory runs once at import time, before any spy.
   requestTokenTransfersRefresh: () => mocks.requestRefresh(),
+}));
+
+vi.mock('@/services/tokenMetadata', () => ({
+  // The tab rides the page's module-cached detection hook (same
+  // useTokenOverview the Token Overview card uses); the stand-in resolves
+  // per the detection knob so the token / plain-contract / EOA paths are
+  // testable without RPC.
+  useTokenOverview: (
+    _chainId: number,
+    _token: string,
+    enabled: boolean,
+  ) => {
+    if (!enabled || mocks.detection === 'none') return undefined;
+    if (mocks.detection === 'token') {
+      return { name: 'Mock Token', symbol: 'MCK', decimals: 18, totalSupply: 1_000n };
+    }
+    return { name: null, symbol: null, decimals: null, totalSupply: null };
+  },
 }));
 
 vi.mock('@/utils/realTimeData', () => ({
@@ -294,6 +323,8 @@ describe('TokenTransfers tab', () => {
     mocks.error = undefined;
     mocks.isContract = false;
     mocks.queryArgs = [];
+    mocks.detection = 'none';
+    mocks.modeTag = undefined;
   });
 
   it('renders the transfer rows with hash and block links', async () => {
@@ -734,5 +765,130 @@ describe('TokenTransfers tab', () => {
     ).toBeInTheDocument();
     expect(screen.queryByText('Invalid address checksum')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+  });
+});
+
+describe('TokenTransfers tab - scan mode', () => {
+  // This describe is a top-level sibling of 'TokenTransfers tab', so it
+  // does NOT inherit that describe's beforeEach — reset the knobs the
+  // mode paths read (plus the shared page fixture) right here.
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.page = {
+      transfers: mocks.transfers,
+      nextCursor: String(mocks.transfers.length),
+      coverage: 'partial',
+      windowBlocks: 50_000,
+    };
+    mocks.loading = false;
+    mocks.emptyData = false;
+    mocks.error = undefined;
+    mocks.isContract = false;
+    mocks.queryArgs = [];
+    mocks.detection = 'none';
+    mocks.modeTag = undefined;
+  });
+
+  it('defaults to token mode with the toggle on a detected token contract', async () => {
+    mocks.isContract = true;
+    mocks.detection = 'token';
+
+    renderTab();
+
+    // Active mode is a disabled primary button; the other view stays one
+    // click away (a contract can also hold other tokens).
+    const own = await screen.findByRole('button', { name: 'Transfers of this token' });
+    expect(own).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Transfers involving this address' })).toBeEnabled();
+    // The scan request itself is token-centric (mode is the 6th hook arg).
+    expect(mocks.queryArgs[5]).toBe('token');
+    // Rows render under the default token view (legacy-untagged settle).
+    expect(await screen.findAllByRole('row')).toHaveLength(1 + mocks.transfers.length);
+  });
+
+  it('keeps EOAs on participant mode with no toggle', async () => {
+    renderTab();
+
+    expect(await screen.findByRole('columnheader', { name: 'Amount' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Transfers of this token' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Transfers involving this address' })).not.toBeInTheDocument();
+    expect(mocks.queryArgs[5]).toBe('participant');
+  });
+
+  it('keeps a settled non-token contract on participant mode', async () => {
+    mocks.isContract = true;
+    // All probes reverted: a plain contract — no token view offered.
+    mocks.detection = 'plain-contract';
+
+    renderTab();
+
+    expect(await screen.findByRole('columnheader', { name: 'Amount' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Transfers of this token' })).not.toBeInTheDocument();
+    expect(mocks.queryArgs[5]).toBe('participant');
+  });
+
+  it('switches the request mode on toggle and converges a deep page back to 1', async () => {
+    mocks.isContract = true;
+    mocks.detection = 'token';
+
+    renderTab('/?tab=transfers&ttPage=3');
+
+    await screen.findByRole('button', { name: 'Transfers involving this address' });
+    expect(mocks.queryArgs[5]).toBe('token');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Transfers involving this address' }));
+
+    await waitFor(() => expect(mocks.queryArgs[5]).toBe('participant'));
+    // The two lists have different lengths: page 3 of one is not a page
+    // of the other — the URL converged to page 1.
+    await waitFor(() =>
+      expect(screen.getByTestId('search-probe').textContent).toContain('ttPage=1'),
+    );
+  });
+
+  it('refuses the other mode settle instead of flashing it under the new label', async () => {
+    mocks.isContract = true;
+    mocks.detection = 'token';
+    // The mocked hook keeps serving the token-tagged settle even after
+    // the toggle: the view must hide it, not render it as participant
+    // rows (the query-layer store keeps the previous settle across an
+    // args switch).
+    mocks.modeTag = 'token';
+
+    renderTab();
+
+    expect(await screen.findAllByRole('row')).toHaveLength(1 + mocks.transfers.length);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Transfers involving this address' }));
+
+    await waitFor(() => expect(mocks.queryArgs[5]).toBe('participant'));
+    // Guarded: no data rows of the stale token-mode page remain.
+    expect(screen.queryAllByRole('row')).toHaveLength(0);
+  });
+
+  it('renders an explained em dash for token-mode rows without participation', async () => {
+    mocks.page = {
+      transfers: [
+        {
+          ...mocks.transfers[0],
+          direction: 'none' as const,
+        },
+      ],
+      nextCursor: '1',
+      coverage: 'partial',
+      windowBlocks: 50_000,
+      mode: 'token',
+    };
+
+    renderTab();
+
+    expect(await screen.findByRole('columnheader', { name: 'Amount' })).toBeInTheDocument();
+    expect(
+      screen.getByTitle(
+        'The viewed token contract emitted this log; it is neither sender nor recipient',
+      ),
+    ).toBeInTheDocument();
+    expect(screen.queryByText('IN')).not.toBeInTheDocument();
+    expect(screen.queryByText('OUT')).not.toBeInTheDocument();
   });
 });

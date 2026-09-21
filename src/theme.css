@@ -172,3 +172,63 @@ pre code {
     --haze-color-focus-ring: #4d94ff66;
   }
 }
+
+/* —— Explicit theme override (user choice beats OS preference) ——
+ * The topbar theme control stores Light / Dark / System under 'be:theme'
+ * (src/themePreference.ts) and src/index.tsx mirrors the stored choice onto
+ * <html data-theme> before React mounts, so it applies on the first paint
+ * and survives reloads. The blocks below reuse the doubled-scope selector
+ * pattern with a :root[data-theme] prefix, which outranks everything that
+ * could compete by specificity (0,4,0 vs the media block's 0,2,0 and
+ * single/doubled scope-class selectors in tokens.css and injected component
+ * CSS) — an explicit choice wins over the OS media query regardless of CSS
+ * injection order:
+ * - data-theme='dark' applies the SAME palette as the media block above —
+ *   keep the two value lists in sync when tuning dark colors;
+ * - data-theme='light' force-restores the light palette on a dark-OS
+ *   machine by mirror-mapping every variable the dark blocks override back
+ *   to the lightTheme token expressions from haze-ui tokens.css (the
+ *   palette vars they reference are defined by the .haze-colors__lightTheme
+ *   scope itself, so they resolve in place);
+ * - no attribute (System) leaves the OS media query alone. */
+:root[data-theme='dark'] .haze-colors__lightTheme.haze-colors__lightTheme {
+  --haze-color-primary: #4d94ff;
+  --haze-color-primary-hover: #6aa6ff;
+  --haze-color-primary-active: #80b3ff;
+  --haze-color-primary-subtle: #1a2e4a;
+  --haze-color-bg: #121212;
+  --haze-color-bg-subtle: #1e1e1e;
+  --haze-color-bg-muted: #2a2a2a;
+  --haze-color-text: #e8e8e8;
+  --haze-color-text-secondary: #b0b0b0;
+  --haze-color-text-muted: #707070;
+  --haze-color-text-inverse: #1a1a1a;
+  --haze-color-border: #333;
+  --haze-color-border-hover: #4a4a4a;
+  --haze-color-success: #22c55e;
+  --haze-color-warning: #fbbf24;
+  --haze-color-danger: #ef4444;
+  --haze-color-info: #3b82f6;
+  --haze-color-focus-ring: #4d94ff66;
+}
+
+:root[data-theme='light'] .haze-colors__lightTheme.haze-colors__lightTheme {
+  --haze-color-primary: var(--haze-blue-9);
+  --haze-color-primary-hover: oklch(from var(--haze-color-primary) calc(l - .045) c h);
+  --haze-color-primary-active: oklch(from var(--haze-color-primary) calc(l - .09) c h);
+  --haze-color-primary-subtle: oklch(from var(--haze-color-primary) .945 calc(c * .2) h);
+  --haze-color-bg: var(--haze-gray-1);
+  --haze-color-bg-subtle: var(--haze-gray-2);
+  --haze-color-bg-muted: var(--haze-gray-3);
+  --haze-color-text: var(--haze-gray-12);
+  --haze-color-text-secondary: var(--haze-gray-11);
+  --haze-color-text-muted: var(--haze-gray-9);
+  --haze-color-text-inverse: oklch(100% 0 0);
+  --haze-color-border: var(--haze-gray-4);
+  --haze-color-border-hover: oklch(from var(--haze-color-border) calc(l - .09) c h);
+  --haze-color-success: var(--haze-green-9);
+  --haze-color-warning: var(--haze-amber-9);
+  --haze-color-danger: var(--haze-red-9);
+  --haze-color-info: var(--haze-blue-10);
+  --haze-color-focus-ring: oklch(from var(--haze-color-primary) l c h / .4);
+}

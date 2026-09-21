@@ -5,7 +5,7 @@
 // txDecode and viem codecs are exercised against realistic ABI-encoded
 // fixtures.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter, View, createRoutes } from '@native-router/react';
 import { encodeFunctionData, toEventSelector, type Abi, type Hex } from 'viem';
 import '@testing-library/jest-dom';
@@ -17,6 +17,12 @@ import { createRpcClient } from '@/utils/realTimeData';
 
 vi.mock('@/services/contracts', () => ({
   useContractSource: vi.fn(),
+}));
+
+// The signature-enrichment lookup is optional chrome over the raw hex —
+// mocked to "nothing resolved" so these tests keep pinning the raw paths.
+vi.mock('@/services/signatures', () => ({
+  useSignatures: vi.fn(() => ({})),
 }));
 
 vi.mock('@/services/chainRpc', () => ({
@@ -398,6 +404,41 @@ describe('TransactionDetail page', () => {
     expect(
       screen.queryByRole('heading', { name: 'Revert Reason (best effort)' }),
     ).not.toBeInTheDocument();
+  });
+
+  it('mounts the Raw JSON appendix: pending tx fetches its tx object and states the absent receipt', async () => {
+    vi.mocked(useTransactionByHash).mockReturnValue(
+      hookResult(
+        makeTx({
+          blockNumber: null,
+          transactionIndex: null,
+          status: -1,
+          gasUsed: undefined,
+        }),
+      ),
+    );
+    vi.mocked(useContractSource).mockReturnValue(hookResult(undefined));
+    const request = vi.fn().mockResolvedValue({ hash: TX_HASH, blockNumber: null });
+    vi.mocked(createRpcClient).mockResolvedValue({ request } as never);
+
+    renderDetail();
+
+    // The appendix mounts collapsed at the page bottom: nothing fetched.
+    expect(request).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByTestId('raw-json-header'));
+
+    // The pending tx's own object fetches through the browser RPC client…
+    await waitFor(() => expect(request).toHaveBeenCalledTimes(1));
+    expect(request).toHaveBeenCalledWith(
+      { method: 'eth_getTransactionByHash', params: [TX_HASH] },
+      expect.anything(),
+    );
+    // …while the receipt section states the honest absence — no receipt
+    // request was ever issued for a pending transaction.
+    expect(
+      await screen.findByText('No receipt yet — the transaction is still pending'),
+    ).toBeInTheDocument();
+    expect(request).toHaveBeenCalledTimes(1);
   });
 
   it('labels type-4 transactions EIP-7702', async () => {

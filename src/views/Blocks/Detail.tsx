@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { css, cx } from '@linaria/core';
 import { TypedLink, useMatched } from '@native-router/react';
-import { formatGwei, formatUnits } from 'viem';
+import { formatGwei, formatUnits, numberToHex } from 'viem';
 
 import TopNavigation from '@/components/TopNavigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
@@ -13,6 +13,7 @@ import { ErrorState, EmptyState } from '@/components/ui/ErrorState';
 import { InfoGrid, InfoItem } from '@/components/ui/InfoGrid';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { PageContainer, PageHeader, BackButton } from '@/components/ui/PageLayout';
+import { RawJsonCard, type RawJsonFetcher } from '@/components/ui/RawJson';
 import { linkStyle } from '@/components/ui/DataTable';
 import { ExternalLinks } from '@/components/ui/ExternalLinks';
 import { getChainInfo, getChainName, getChainSymbol, getChainType } from '@/config/chains';
@@ -141,6 +142,14 @@ const withdrawalRowStyle = css`
   font-family: var(--haze-font-mono);
   font-size: var(--haze-text-sm);
   word-break: break-all;
+
+  /* Phone widths: the fixed validator column + nowrap amount squeeze the
+     address column to unreadability — stack one field per line instead
+     (the header row stacks the same way, labels above their values). */
+  @media (max-width: 768px) {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--haze-space-1);
+  }
 `;
 
 const withdrawalHeaderStyle = css`
@@ -188,6 +197,14 @@ const headerRow = css`
   align-items: center;
   gap: var(--haze-space-2);
   flex-wrap: wrap;
+`;
+
+// The found-block page stacks the details card and the Raw JSON appendix
+// with the same vertical rhythm as the tx detail page's card stack.
+const detailStackStyle = css`
+  display: flex;
+  flex-direction: column;
+  gap: var(--haze-space-5);
 `;
 
 export default function BlockDetail() {
@@ -349,6 +366,34 @@ export default function BlockDetail() {
     : undefined;
   const withdrawals = blockInfo?.withdrawals;
 
+  // Raw JSON appendix sources: both eth_getBlockByNumber shapes — full
+  // transaction objects and the bare header — fetched verbatim in the
+  // browser (ephemeral node data — data-separation rule) for
+  // cross-checking exactly what this node reports. Keyed on the FETCHED
+  // number (not the URL param) so the payloads always match the rendered
+  // block.
+  const blockNumberHex = blockInfo ? numberToHex(BigInt(blockInfo.number)) : undefined;
+  const rawJsonFetchers = useMemo<RawJsonFetcher[]>(() => {
+    if (blockNumberHex === undefined) return [];
+    const loadBlock = (includeTransactions: boolean): RawJsonFetcher['load'] => {
+      const load: RawJsonFetcher['load'] = async (signal?: AbortSignal) => {
+        const client = await createRpcClient(currentChainId);
+        return client.request(
+          {
+            method: 'eth_getBlockByNumber',
+            params: [blockNumberHex, includeTransactions],
+          },
+          signal !== undefined ? { signal } : undefined,
+        );
+      };
+      return load;
+    };
+    return [
+      { label: 'Block (with transactions)', load: loadBlock(true) },
+      { label: 'Block header (without transactions)', load: loadBlock(false) },
+    ];
+  }, [currentChainId, blockNumberHex]);
+
   if (!chainInfo) {
     return (
       <>
@@ -436,112 +481,119 @@ export default function BlockDetail() {
         )}
 
         {!invalidNumber && !loading && !error && blockInfo && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Block Details</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <InfoGrid>
-                <InfoItem label="Block Number">
-                  {Number(BigInt(blockInfo.number)).toLocaleString()}
-                </InfoItem>
-                <InfoItem label="Block Hash">
-                  <CopyableHash value={blockInfo.hash} />
-                </InfoItem>
-                <InfoItem label="Parent Hash">
-                  <CopyableHash
-                    value={blockInfo.parentHash}
-                    href={
-                      parentNumber !== undefined
-                        ? `/chain/${currentChainId}/block/${parentNumber}`
-                        : undefined
-                    }
-                  />
-                </InfoItem>
-                <InfoItem label="Timestamp">
-                  {`${new Date(blockInfo.timestamp).toLocaleString()} (${formatRelativeTime(blockInfo.timestamp)})`}
-                </InfoItem>
-                <InfoItem label="Miner">
-                  {producer?.kind === 'validator' ? (
+          <div className={detailStackStyle}>
+            <Card>
+              <CardHeader>
+                <CardTitle>Block Details</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <InfoGrid>
+                  <InfoItem label="Block Number">
+                    {Number(BigInt(blockInfo.number)).toLocaleString()}
+                  </InfoItem>
+                  <InfoItem label="Block Hash">
+                    <CopyableHash value={blockInfo.hash} />
+                  </InfoItem>
+                  <InfoItem label="Parent Hash">
                     <CopyableHash
-                      value={producer.address}
-                      href={`/chain/${currentChainId}/address/${producer.address}`}
+                      value={blockInfo.parentHash}
+                      href={
+                        parentNumber !== undefined
+                          ? `/chain/${currentChainId}/block/${parentNumber}`
+                          : undefined
+                      }
                     />
-                  ) : (
-                    <span className={minerNotExposedNote}>
-                      Validator not exposed by this chain’s RPC
-                    </span>
+                  </InfoItem>
+                  <InfoItem label="Timestamp">
+                    {`${new Date(blockInfo.timestamp).toLocaleString()} (${formatRelativeTime(blockInfo.timestamp)})`}
+                  </InfoItem>
+                  <InfoItem label="Miner">
+                    {producer?.kind === 'validator' ? (
+                      <CopyableHash
+                        value={producer.address}
+                        href={`/chain/${currentChainId}/address/${producer.address}`}
+                      />
+                    ) : (
+                      <span className={minerNotExposedNote}>
+                        Validator not exposed by this chain’s RPC
+                      </span>
+                    )}
+                  </InfoItem>
+                  <InfoItem label="Gas Limit">{formatGas(blockInfo.gasLimit)}</InfoItem>
+                  <InfoItem label="Gas Used">{formatGas(blockInfo.gasUsed)}</InfoItem>
+                  {blockInfo.baseFeePerGas && (
+                    <InfoItem label="Base Fee Per Gas">
+                      {`${formatGwei(BigInt(blockInfo.baseFeePerGas))} gwei`}
+                    </InfoItem>
                   )}
-                </InfoItem>
-                <InfoItem label="Gas Limit">{formatGas(blockInfo.gasLimit)}</InfoItem>
-                <InfoItem label="Gas Used">{formatGas(blockInfo.gasUsed)}</InfoItem>
-                {blockInfo.baseFeePerGas && (
-                  <InfoItem label="Base Fee Per Gas">
-                    {`${formatGwei(BigInt(blockInfo.baseFeePerGas))} gwei`}
+                  {burntFees !== undefined && (
+                    <InfoItem label="Burnt Fees">{`${formatEthValue(burntFees)} ${nativeSymbol}`}</InfoItem>
+                  )}
+                  {blockInfo.blobGasUsed && (
+                    <InfoItem label="Blob Gas Used">
+                      {`${formatGas(blockInfo.blobGasUsed)}${
+                        blobCount !== undefined ? ` (${blobCount.toLocaleString()} blobs)` : ''
+                      }`}
+                    </InfoItem>
+                  )}
+                  {blockInfo.excessBlobGas && (
+                    <InfoItem label="Excess Blob Gas">{formatGas(blockInfo.excessBlobGas)}</InfoItem>
+                  )}
+                  <InfoItem label="Transaction Count">
+                    <TypedLink
+                      to={`/chain/${currentChainId}/transactions`}
+                      search={{ block: blockInfo.number }}
+                      className={linkStyle}
+                    >
+                      View {blockInfo.transactionCount} Transactions →
+                    </TypedLink>
                   </InfoItem>
-                )}
-                {burntFees !== undefined && (
-                  <InfoItem label="Burnt Fees">{`${formatEthValue(burntFees)} ${nativeSymbol}`}</InfoItem>
-                )}
-                {blockInfo.blobGasUsed && (
-                  <InfoItem label="Blob Gas Used">
-                    {`${formatGas(blockInfo.blobGasUsed)}${
-                      blobCount !== undefined ? ` (${blobCount.toLocaleString()} blobs)` : ''
-                    }`}
-                  </InfoItem>
-                )}
-                {blockInfo.excessBlobGas && (
-                  <InfoItem label="Excess Blob Gas">{formatGas(blockInfo.excessBlobGas)}</InfoItem>
-                )}
-                <InfoItem label="Transaction Count">
-                  <TypedLink
-                    to={`/chain/${currentChainId}/transactions`}
-                    search={{ block: blockInfo.number }}
-                    className={linkStyle}
+                  <InfoItem label="Block Size">{formatBytes(blockInfo.sizeBytes)}</InfoItem>
+                  {blockInfo.difficulty && (
+                    <InfoItem label="Difficulty">{blockInfo.difficulty}</InfoItem>
+                  )}
+                  {blockInfo.extraData && (
+                    <InfoItem label="Extra Data">{blockInfo.extraData}</InfoItem>
+                  )}
+                </InfoGrid>
+                {withdrawals !== undefined && withdrawals.length > 0 && (
+                  <Collapsible
+                    title={`Withdrawals (${withdrawals.length.toLocaleString()})`}
+                    className={withdrawalsSection}
                   >
-                    View {blockInfo.transactionCount} Transactions →
-                  </TypedLink>
-                </InfoItem>
-                <InfoItem label="Block Size">{formatBytes(blockInfo.sizeBytes)}</InfoItem>
-                {blockInfo.difficulty && (
-                  <InfoItem label="Difficulty">{blockInfo.difficulty}</InfoItem>
+                    <div className={cx(withdrawalRowStyle, withdrawalHeaderStyle)}>
+                      <span>Validator</span>
+                      <span>Address</span>
+                      <span className={withdrawalAmountStyle}>Amount</span>
+                    </div>
+                    <ul className={withdrawalListStyle}>
+                      {withdrawals.map(withdrawal => (
+                        <li key={withdrawal.index} className={withdrawalRowStyle}>
+                          {/* Validator indices share the BigInt-safe integer
+                              formatting with the gas figures. */}
+                          <span>{formatGas(withdrawal.validatorIndex)}</span>
+                          <TypedLink
+                            to={`/chain/${currentChainId}/address/${withdrawal.address}`}
+                            className={linkStyle}
+                          >
+                            {withdrawal.address}
+                          </TypedLink>
+                          <span className={withdrawalAmountStyle}>
+                            {`${formatWithdrawalEth(withdrawal.amount)} ${nativeSymbol}`}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  </Collapsible>
                 )}
-                {blockInfo.extraData && (
-                  <InfoItem label="Extra Data">{blockInfo.extraData}</InfoItem>
-                )}
-              </InfoGrid>
-              {withdrawals !== undefined && withdrawals.length > 0 && (
-                <Collapsible
-                  title={`Withdrawals (${withdrawals.length.toLocaleString()})`}
-                  className={withdrawalsSection}
-                >
-                  <div className={cx(withdrawalRowStyle, withdrawalHeaderStyle)}>
-                    <span>Validator</span>
-                    <span>Address</span>
-                    <span className={withdrawalAmountStyle}>Amount</span>
-                  </div>
-                  <ul className={withdrawalListStyle}>
-                    {withdrawals.map(withdrawal => (
-                      <li key={withdrawal.index} className={withdrawalRowStyle}>
-                        {/* Validator indices share the BigInt-safe integer
-                            formatting with the gas figures. */}
-                        <span>{formatGas(withdrawal.validatorIndex)}</span>
-                        <TypedLink
-                          to={`/chain/${currentChainId}/address/${withdrawal.address}`}
-                          className={linkStyle}
-                        >
-                          {withdrawal.address}
-                        </TypedLink>
-                        <span className={withdrawalAmountStyle}>
-                          {`${formatWithdrawalEth(withdrawal.amount)} ${nativeSymbol}`}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </Collapsible>
-              )}
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
+
+            {/* Raw JSON appendix: verbatim eth_getBlockByNumber payloads
+                for this block, collapsed by default and fetched on first
+                expand only. */}
+            <RawJsonCard title="Raw JSON" fetchers={rawJsonFetchers} />
+          </div>
         )}
       </PageContainer>
     </>

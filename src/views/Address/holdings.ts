@@ -14,9 +14,10 @@ export type TokenHolding =
   | { kind: 'unclassified'; token: string; net: bigint; transferCount: number };
 
 // Strict decimal-integer parsing: rejects empty strings, signs, and 0x hex.
+// Exported for the token-overview holders computation (same strictness).
 const DECIMAL_INTEGER = /^\d+$/;
 
-function parseDecimalInteger(raw: string): bigint | null {
+export function parseDecimalInteger(raw: string): bigint | null {
   return DECIMAL_INTEGER.test(raw) ? BigInt(raw) : null;
 }
 

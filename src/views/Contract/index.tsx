@@ -23,6 +23,7 @@ import { ContractInteract } from './ContractInteract';
 import { CustomAbiPanel, parseAbiString } from './CustomAbiPanel';
 import { StoragePanel } from './StoragePanel';
 import { OpenInIdeButton } from './OpenInIdeButton';
+import { SourcifyVerifyPanel } from './SourcifyVerifyPanel';
 import { cardStyles, errorStyles, loadingStyles } from './styles';
 import type { ContractABI, ContractCreationInfo, ContractSource } from './types';
 
@@ -345,6 +346,22 @@ const verifyHintStyles = css`
   word-break: normal;
 `;
 
+// Toggle for the in-page verification panel (the Sourcify deep link's
+// sibling in the unverified cell): quiet text-button styling so it reads
+// as an alternative path, not a competing primary action.
+const verifyInlineButtonStyles = css`
+  border: none;
+  background: none;
+  padding: 0;
+  font-size: 12px;
+  color: #007bff;
+  cursor: pointer;
+
+  &:hover {
+    text-decoration: underline;
+  }
+`;
+
 // Force Refresh outcome banner inside the contract information card; the
 // palette matches the verification status badges above it.
 const cacheNoticeStyles = css`
@@ -646,6 +663,10 @@ export default function Contract() {
   // the banner without touching the stored paste (view state is enough —
   // a fresh mount or contract switch may legitimately re-show it).
   const [shadowNoticeDismissed, setShadowNoticeDismissed] = useState(false);
+  // Whether the in-page Sourcify verification panel (unverified contracts
+  // only) is expanded. Session view state: the panel is an on-demand
+  // affordance, not a URL-worthy tab.
+  const [verifyPanelOpen, setVerifyPanelOpen] = useState(false);
   const [, setShowRpcConfig, rpcConfigControl] = useControl<boolean>(null, false);
   const [contractTarget, setContractTarget] = useState<'proxy' | 'impl'>('impl');
 
@@ -795,6 +816,8 @@ export default function Contract() {
     // A fresh contract deserves a fresh shadow notice if its paste is
     // shadowed too.
     setShadowNoticeDismissed(false);
+    // Nor an open verification panel from the previous contract.
+    setVerifyPanelOpen(false);
   }, [currentChainId, address]);
 
   const handleApplyCustomAbi = (raw: string) => {
@@ -992,6 +1015,14 @@ export default function Contract() {
                         >
                           Verify at Sourcify ↗
                         </a>
+                        <button
+                          type="button"
+                          className={verifyInlineButtonStyles}
+                          aria-expanded={verifyPanelOpen}
+                          onClick={() => setVerifyPanelOpen(open => !open)}
+                        >
+                          {verifyPanelOpen ? 'Hide in-page verification' : 'Verify in this page'}
+                        </button>
                         <span className={verifyHintStyles}>
                           Verified there? ↻ Force Refresh above pulls it in immediately
                         </span>
@@ -1191,6 +1222,21 @@ export default function Contract() {
                 )}
               </div>
             </div>
+
+            {/* In-page Sourcify verification: opened from the unverified
+                cell in the info grid above. Submits the picked bundle
+                through the explorer backend; on success the source refetch
+                flips this page to its verified state (unmounting the
+                panel), while the banner inside it confirms the outcome in
+                the meantime. The external widget deep link in the info
+                grid stays as the alternative path. */}
+            {contractSource.verificationStatus === 'unverified' && verifyPanelOpen && (
+              <SourcifyVerifyPanel
+                chainId={currentChainId}
+                address={address}
+                onVerified={() => void refetchSource()}
+              />
+            )}
 
             {/* A server ABI that appeared after the paste silently shadows
                 it; the one-time notice names the state and offers the

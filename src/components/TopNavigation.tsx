@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useContext, useState, useEffect, useMemo } from 'react';
 import { navigate } from '@native-router/core';
 import { useRouter } from '@native-router/react';
 import { css, cx } from '@linaria/core';
@@ -30,6 +30,14 @@ import {
   removeSearchHistoryEntry,
   type SearchHistoryEntry,
 } from '@/services/searchHistory';
+import { ServiceDiscoveryContext } from '@/hooks/ServiceDiscoveryContext';
+import {
+  nextThemePreference,
+  readThemePreference,
+  setDocumentThemeAttribute,
+  storeThemePreference,
+  type ThemePreference,
+} from '@/themePreference';
 
 type TopNavigationProps = {
   currentChainId: number;
@@ -79,6 +87,30 @@ const logoText = css`
   font-size: var(--haze-text-lg);
   font-weight: var(--haze-weight-semibold);
   color: var(--haze-color-text);
+`;
+
+// Page links beside the logo. The explorer has exactly one top-level list
+// beyond home (the cached-contract directory); the group keeps the slot
+// if more follow.
+const navLinks = css`
+  display: flex;
+  align-items: center;
+  gap: var(--haze-space-1);
+`;
+
+const navLink = css`
+  border: none;
+  background: transparent;
+  padding: var(--haze-space-2);
+  font-size: var(--haze-text-sm);
+  color: var(--haze-color-text-secondary);
+  cursor: pointer;
+  border-radius: var(--haze-radius-md);
+
+  &:hover {
+    color: var(--haze-color-primary);
+    background: var(--haze-color-primary-subtle);
+  }
 `;
 
 const searchArea = css`
@@ -144,6 +176,46 @@ const rightControls = css`
   display: flex;
   align-items: center;
   gap: var(--haze-space-3);
+`;
+
+// Theme cycle control (Light → Dark → System). Icon-only at the RPC
+// button's height so the two read as one row of controls; the accessible
+// name carries the words the glyph cannot.
+const themeToggle = css`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  flex-shrink: 0;
+  background: var(--haze-color-bg);
+  border: 1px solid var(--haze-color-border);
+  border-radius: var(--haze-radius-md);
+  cursor: pointer;
+  color: var(--haze-color-text-secondary);
+
+  &:hover {
+    border-color: var(--haze-color-border-hover);
+    color: var(--haze-color-text);
+  }
+`;
+
+const themeToggleIcon = css`
+  width: 16px;
+  height: 16px;
+  display: block;
+`;
+
+// Backend version chip: muted, informational only — never competes with
+// the controls beside it; the title carries the base URL (and the honest
+// offline reading when nothing was discovered).
+const versionChip = css`
+  font-family: var(--haze-font-mono);
+  font-size: var(--haze-text-xs);
+  color: var(--haze-color-text-muted);
+  white-space: nowrap;
+  cursor: help;
 `;
 
 // Chain selector styles
@@ -675,6 +747,99 @@ function EnsDestinationActions({
   );
 }
 
+// Glyphs for the theme cycle control (inline SVG, not emoji, per project
+// style): sun = Light, moon = Dark, monitor = System. Decorative — the
+// button's accessible name lives on aria-label/title.
+function ThemeIcon({ mode }: { mode: ThemePreference }) {
+  const iconProps = {
+    'className': themeToggleIcon,
+    'viewBox': '0 0 24 24',
+    'fill': 'none',
+    'stroke': 'currentColor',
+    'strokeWidth': 2,
+    'strokeLinecap': 'round',
+    'strokeLinejoin': 'round',
+    'aria-hidden': true,
+    'focusable': 'false',
+  } as const;
+
+  if (mode === 'light') {
+    return (
+      <svg {...iconProps}>
+        <circle cx="12" cy="12" r="4" />
+        <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+      </svg>
+    );
+  }
+  if (mode === 'dark') {
+    return (
+      <svg {...iconProps}>
+        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+      </svg>
+    );
+  }
+  return (
+    <svg {...iconProps}>
+      <rect x="2" y="3" width="20" height="14" rx="2" />
+      <path d="M8 21h8M12 17v4" />
+    </svg>
+  );
+}
+
+// Topbar theme control: cycles Light → Dark → System, applies the choice
+// immediately (the data-theme attribute; theme.css owns the palettes) and
+// persists it under 'be:theme' so the pre-mount init in src/index.tsx
+// restores it on the next load. The label names both the current and the
+// next mode so hover and screen readers answer 'what is this' and 'what
+// happens on click' at once.
+function ThemeToggle() {
+  const [mode, setMode] = useState<ThemePreference>(readThemePreference);
+  const next = nextThemePreference(mode);
+  const label = `Theme: ${mode}. Switch to ${next}`;
+
+  const cycleTheme = () => {
+    setMode(next);
+    storeThemePreference(next);
+    setDocumentThemeAttribute(next);
+  };
+
+  return (
+    <button
+      type="button"
+      className={themeToggle}
+      aria-label={label}
+      title={label}
+      onClick={cycleTheme}
+    >
+      <ThemeIcon mode={mode} />
+    </button>
+  );
+}
+
+// Backend version chip, fed by the discovery layer's cached /api/health
+// probe (ServiceInfo.version — no extra request, never blocks rendering).
+// The context is read null-tolerantly instead of through the throwing
+// useServiceDiscovery hook on purpose: the chip is a leaf informational
+// element, and an absent provider (view tests render the topbar bare)
+// simply means 'no discovery info', which is exactly the honest 'v?'
+// state — not a crash. The title carries the base URL when a backend is
+// known and says so plainly when it is not.
+function BackendVersionChip() {
+  const discovery = useContext(ServiceDiscoveryContext);
+  const serviceInfo = discovery?.serviceInfo;
+  const version = serviceInfo?.version;
+
+  const title = serviceInfo
+    ? `Backend ${serviceInfo.url}${version ? ` (v${version})` : ' - version unknown'}`
+    : 'Backend offline - version unknown';
+
+  return (
+    <span className={versionChip} title={title}>
+      v{version ?? '?'}
+    </span>
+  );
+}
+
 export default function TopNavigation({
   currentChainId,
   onChainChange,
@@ -999,6 +1164,18 @@ export default function TopNavigation({
             <span className={logoText}>My Block Explorer</span>
           </div>
 
+          {/* Directory of cached contracts for the selected chain (same
+              in-app navigation as the logo above). */}
+          <div className={navLinks}>
+            <button
+              type="button"
+              className={navLink}
+              onClick={() => goTo(`/chain/${currentChainId}/contracts`)}
+            >
+              Contracts
+            </button>
+          </div>
+
           <div ref={searchContainerRef} className={searchArea}>
             <div className={searchRow}>
               <Input
@@ -1140,10 +1317,12 @@ export default function TopNavigation({
           </div>
 
           <div className={rightControls}>
+            <ThemeToggle />
             <Button variant="outline" size="md" onClick={() => setShowRpcConfig(true)}>
               ⚙️ RPC
             </Button>
             <ChainSelector currentChainId={currentChainId} onChainChange={onChainChange} />
+            <BackendVersionChip />
           </div>
         </div>
       </nav>

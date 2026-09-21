@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { searchService } from '../services/SearchService';
+import { searchService, searchLocalContractHits } from '../services/SearchService';
 import {
   getChainName,
   getSortedChains,
@@ -83,6 +83,19 @@ app.get('/search', searchRateLimiter, async (c) => {
         : (getSortedChains()[0]?.id ?? 1);
 
     const result = await searchService.search(searchedChainId, sanitized);
+
+    // Free-text queries ALSO surface this explorer's own contract cache:
+    // cached names / address prefixes (the directory's matching rule),
+    // at most 5, scoped to ?chainId= when present — unscoped hits each
+    // carry their own chainId so clients link to the right chain. Strictly
+    // additive: every other query shape (hash, block number, address,
+    // ENS) keeps its exact pre-existing response, no localContracts key
+    // at all. A FAILED cache read also drops the key (null from the
+    // helper): an absent section never claims "no matches" was checked.
+    const localContracts = searchType === 'unknown'
+      ? await searchLocalContractHits(sanitized, hasChainHint ? requestedChainId : undefined)
+      : undefined;
+
     // Hash/block hits now flow through this endpoint too, and their Block/
     // Transaction payloads carry BigInt fields (number, timestamp, gasUsed)
     // that raw JSON.stringify would throw on — the same reason the
@@ -95,6 +108,9 @@ app.get('/search', searchRateLimiter, async (c) => {
     return c.json(
       safeJsonResponse({
         ...result,
+        ...(localContracts !== undefined && localContracts !== null
+          ? { localContracts }
+          : {}),
         searchedChainId,
         timestamp: new Date().toISOString(),
       }),

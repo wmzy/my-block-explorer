@@ -27,6 +27,8 @@ const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 const symbolAbi = parseAbi(['function symbol() view returns (string)']);
 const decimalsAbi = parseAbi(['function decimals() view returns (uint8)']);
+const nameAbi = parseAbi(['function name() view returns (string)']);
+const totalSupplyAbi = parseAbi(['function totalSupply() view returns (uint256)']);
 
 const NULL_METADATA: TokenMetadata = { symbol: null, decimals: null };
 
@@ -48,6 +50,8 @@ const cacheKey = (chainId: number, addressLower: string): string =>
 export function resetTokenMetadataCacheForTests(): void {
   metadataCache.clear();
   inflight.clear();
+  overviewCache.clear();
+  overviewInflight.clear();
 }
 
 // Narrows one viem multicall outcome to its primitive value. With
@@ -293,4 +297,140 @@ export function useTokenMetadata(
   }, [chainId, key]);
 
   return key === '' ? EMPTY_TOKEN_METADATA_MAP : metadata;
+}
+
+// ---------------------------------------------------------------------------
+// Token Overview (address-page contract detection)
+//
+// One aggregated Multicall3 batch of name()/symbol()/decimals()/totalSupply()
+// decides whether a CONTRACT address is a token and what its supply is.
+// Same honesty contract as the metadata batch above: per-call reverts decode
+// to honest nulls (and ARE cached — the contract genuinely answered), a
+// transport-level failure resolves to undefined WITHOUT caching so the next
+// call retries the RPC. Pure classification/formatting of these reads lives
+// in views/Address/tokenOverview.ts.
+// ---------------------------------------------------------------------------
+
+/** Contract-level token reads for the address page's Token Overview card. */
+export type TokenOverviewReads = {
+  name: string | null;
+  symbol: string | null;
+  decimals: number | null;
+  totalSupply: bigint | null;
+};
+
+type OverviewCacheEntry = { reads: TokenOverviewReads; expires: number };
+
+// `${chainId}:${lowercase address}` → cache entry. Lazy TTL eviction,
+// exactly like metadataCache above.
+const overviewCache = new Map<string, OverviewCacheEntry>();
+
+// `${chainId}:${lowercase address}` → never-rejecting in-flight promise.
+// Concurrent callers for the same contract share one multicall batch.
+const overviewInflight = new Map<string, Promise<TokenOverviewReads | undefined>>();
+
+// Narrows one multicall outcome to its bigint value (uint256 returns such
+// as totalSupply). Anything unrecognized — including test doubles handing
+// back a bare null for a reverted call — decodes to null.
+const readMulticallBigint = (outcome: unknown): bigint | null => {
+  if (typeof outcome !== 'object' || outcome === null || !('status' in outcome)) {
+    return null;
+  }
+  const record: { status?: unknown; result?: unknown } = outcome;
+  return record.status === 'success' && typeof record.result === 'bigint'
+    ? record.result
+    : null;
+};
+
+/**
+ * Read name()/symbol()/decimals()/totalSupply() for one contract through a
+ * single Multicall3 batch. Never rejects: reverted calls resolve to null
+ * fields (cached for the TTL), a transport-level failure resolves to
+ * undefined (not cached — the next call retries), and a disabled/empty
+ * request (chainId <= 0 or blank address) resolves undefined with zero
+ * network access, so EOA-gated callers issue no multicall at all.
+ */
+export async function fetchTokenOverview(
+  chainId: number,
+  address: string,
+): Promise<TokenOverviewReads | undefined> {
+  const lower = address.toLowerCase();
+  if (lower === '' || !(chainId > 0)) return undefined;
+
+  const key = cacheKey(chainId, lower);
+  const cached = overviewCache.get(key);
+  if (cached !== undefined && cached.expires > Date.now()) return cached.reads;
+
+  const existing = overviewInflight.get(key);
+  if (existing !== undefined) return existing;
+
+  const contracts: ContractFunctionParameters[] = [
+    { address: lower as Address, abi: nameAbi, functionName: 'name' },
+    { address: lower as Address, abi: symbolAbi, functionName: 'symbol' },
+    { address: lower as Address, abi: decimalsAbi, functionName: 'decimals' },
+    { address: lower as Address, abi: totalSupplyAbi, functionName: 'totalSupply' },
+  ];
+
+  const promise = (async (): Promise<TokenOverviewReads | undefined> => {
+    try {
+      const client = await createRpcClient(chainId);
+      const outcomes: readonly unknown[] = await client.multicall({
+        contracts,
+        allowFailure: true,
+        multicallAddress: MULTICALL3_ADDRESS,
+      });
+      const name = readMulticallValue(outcomes[0]);
+      const symbol = readMulticallValue(outcomes[1]);
+      const decimals = readMulticallValue(outcomes[2]);
+      const reads: TokenOverviewReads = {
+        name: typeof name === 'string' ? name : null,
+        symbol: typeof symbol === 'string' ? symbol : null,
+        decimals: typeof decimals === 'number' ? decimals : null,
+        totalSupply: readMulticallBigint(outcomes[3]),
+      };
+      overviewCache.set(key, { reads, expires: Date.now() + CACHE_TTL_MS });
+      return reads;
+    } catch {
+      // Transport-level failure: unresolved and uncached — the reads stay
+      // honestly absent instead of being mistaken for "not a token".
+      return undefined;
+    } finally {
+      overviewInflight.delete(key);
+    }
+  })();
+
+  overviewInflight.set(key, promise);
+  return promise;
+}
+
+/**
+ * State/effect hook over fetchTokenOverview for the address page. While
+ * disabled (non-contract classification, blank address, chainId <= 0) it
+ * holds undefined and issues no network call at all; a transport-level
+ * failure also stays undefined so the card renders nothing rather than a
+ * wrong "not a token" verdict.
+ */
+export function useTokenOverview(
+  chainId: number,
+  token: string,
+  enabled: boolean,
+): TokenOverviewReads | undefined {
+  const active = enabled && token !== '' && chainId > 0;
+  const [reads, setReads] = useState<TokenOverviewReads | undefined>(undefined);
+
+  useEffect(() => {
+    if (!active) return;
+    // A changed target must not briefly show the previous contract's
+    // reads — drop them so consumers see the honest loading state.
+    setReads(undefined);
+    let cancelled = false;
+    void fetchTokenOverview(chainId, token).then((resolved) => {
+      if (!cancelled) setReads(resolved);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [active, chainId, token]);
+
+  return active ? reads : undefined;
 }

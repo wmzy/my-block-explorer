@@ -375,3 +375,47 @@ export type NewContractEvent = typeof contractEvents.$inferInsert;
 
 export type StorageLayoutRecord = typeof storageLayouts.$inferSelect;
 export type NewStorageLayoutRecord = typeof storageLayouts.$inferInsert;
+
+// Signature cache — openchain-resolved function selectors (4-byte) and
+// event topic0 hashes (32-byte). A selector always hashes the same
+// canonical signature, so a resolved row is immutable and serves forever;
+// the nullable signature column doubles as the negative-cache marker
+// (null = upstream had no candidate at fetchedAt; re-checked on read with
+// a bounded TTL — see SignatureService). The column stores ALL candidates
+// as one JSON array string preserving openchain's popularity order, which
+// keeps the (kind, selector) primary key exact.
+export const signatureCache = duckdbTable(
+  'signature_cache',
+  {
+    kind: varchar({ length: 10 }).notNull(), // 'function' | 'event'
+    selector: varchar({ length: 66 }).notNull(), // 0x + 8 or 64 lowercase hex
+    signature: text(),
+    source: varchar({ length: 20 }),
+    fetchedAt: datetime().default(sql`now()`),
+  },
+  table => [primaryKey({ columns: [table.kind, table.selector] })],
+);
+
+export type SignatureCacheRecord = typeof signatureCache.$inferSelect;
+export type NewSignatureCacheRecord = typeof signatureCache.$inferInsert;
+
+// Address labels — user-authored annotations pinned to one address on one
+// chain (a personal notes layer, never indexer data). One label per
+// (chain, address); re-saving replaces the row wholesale (PUT upsert
+// semantics in routes/labels.ts). Storage keys stay lowercase per the
+// project-wide convention (C-3), so checksummed lookups normalize before
+// they reach the database.
+export const addressLabels = duckdbTable(
+  'address_labels',
+  {
+    ...chainAddressColumns,
+    label: varchar({ length: 64 }).notNull(),
+    note: text(),
+    createdAt: datetime().default(sql`now()`),
+    updatedAt: datetime().default(sql`now()`),
+  },
+  table => [primaryKey({ columns: [table.chainId, table.address] })],
+);
+
+export type AddressLabelRecord = typeof addressLabels.$inferSelect;
+export type NewAddressLabelRecord = typeof addressLabels.$inferInsert;

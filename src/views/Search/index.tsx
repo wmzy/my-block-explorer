@@ -195,6 +195,55 @@ const chainEmpty = css`
   color: var(--haze-color-text-secondary);
 `;
 
+// --- Local contracts section (free-text hits in this explorer's cache) ---
+
+const localContractsNote = css`
+  font-size: var(--haze-text-sm);
+  color: var(--haze-color-text-secondary);
+  margin-bottom: var(--haze-space-3);
+`;
+
+const localContractsList = css`
+  display: flex;
+  flex-direction: column;
+  gap: var(--haze-space-2);
+`;
+
+// One cached-contract hit: a full row link onto the hit's own chain page
+// (each row carries its chain — an unscoped search may match several).
+const localContractRow = css`
+  display: flex;
+  align-items: center;
+  gap: var(--haze-space-3);
+  flex-wrap: wrap;
+  padding: var(--haze-space-2) var(--haze-space-3);
+  border: 1px solid var(--haze-color-border);
+  border-radius: var(--haze-radius-lg);
+  text-decoration: none;
+  color: var(--haze-color-text);
+
+  &:hover {
+    border-color: var(--haze-color-primary);
+    background: var(--haze-color-primary-subtle);
+  }
+`;
+
+const localContractName = css`
+  font-weight: var(--haze-weight-medium);
+`;
+
+const localContractAddress = css`
+  font-family: var(--haze-font-mono);
+  font-size: var(--haze-text-sm);
+  color: var(--haze-color-text-secondary);
+`;
+
+const localContractChain = css`
+  font-size: var(--haze-text-sm);
+  color: var(--haze-color-text-secondary);
+  margin-left: auto;
+`;
+
 const exampleQueries = [
   {
     label: 'Address',
@@ -678,6 +727,14 @@ export default function Search() {
   }, [chainFilter, result]);
   const visibleChains = filteredChainRefs ?? allChains;
 
+  // Additive free-text field of the global endpoint (LocalContractHit in
+  // services/contractDirectory): present only when the query was free
+  // text, absent from hash/block/ens/address responses. Typed through an
+  // intersection because the shared SearchResult keeps its lean shape for
+  // the entity-specific consumers.
+  const localContracts = (result)
+    ?.localContracts;
+
   return (
     <>
       <TopNavigation currentChainId={navChainId} onChainChange={handleNavChainChange} />
@@ -735,6 +792,50 @@ export default function Search() {
             searches a remembered chain without saying which one. */}
         {resolvedChainId !== null && (
           <div className={searchedOn}>Searched on {getChainName(resolvedChainId)}</div>
+        )}
+
+        {/* Local cache hits (free-text queries only): cached contract
+            names matching the query ON THIS EXPLORER. Above the
+            remote/degraded result cards — these are the explorer's own
+            verified data — and rendered not at all when the response
+            carries no hits. */}
+        {localContracts !== undefined && localContracts.length > 0 && (
+          <div className={resultCard}>
+            <Card>
+              <CardHeader>
+                <CardTitle>Local contracts</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className={localContractsNote}>
+                  Matching your locally cached sources — open a contract page to cache more.
+                </p>
+                <div className={localContractsList}>
+                  {localContracts.map(hit => (
+                    <TypedLink
+                      key={`${hit.chainId}-${hit.address}`}
+                      to={`/chain/${hit.chainId}/contract/${hit.address}`}
+                      className={localContractRow}
+                    >
+                      <span className={localContractName}>
+                        {hit.name ?? 'Unnamed contract'}
+                      </span>
+                      <span className={localContractAddress}>{hit.address}</span>
+                      {hit.isVerified ? (
+                        <Badge variant="success" size="sm">
+                          Verified
+                        </Badge>
+                      ) : (
+                        <Badge variant="default" size="sm">
+                          Unverified
+                        </Badge>
+                      )}
+                      <span className={localContractChain}>{getChainName(hit.chainId)}</span>
+                    </TypedLink>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
         )}
 
         {error && (

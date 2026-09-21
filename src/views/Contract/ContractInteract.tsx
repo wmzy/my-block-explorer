@@ -681,6 +681,7 @@ export function ContractInteract({
               loadingStates={loadingStates}
               chainId={chainId}
               blockNumber={globalBlockNumber}
+              contractAddress={contractAddress}
             />
           ))}
         </div>

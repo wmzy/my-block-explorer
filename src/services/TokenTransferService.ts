@@ -29,8 +29,20 @@ export type TokenTransfer = {
   value: string;
   tokenIds?: string[];
   amounts?: string[];
-  direction: 'in' | 'out';
+  // Relative to the VIEWED address. Participant mode emits 'in'/'out'
+  // only; token mode (the viewed address IS the emitting token) also
+  // emits 'none' for rows where the contract is neither sender nor
+  // recipient (mints, burns, plain user-to-user transfers of the token).
+  direction: 'in' | 'out' | 'none';
 };
+
+// Which eth_getLogs filter shape a scan uses. 'participant' (default):
+// topic-filtered by the viewed address as from/to. 'token': the viewed
+// address is the LOG EMITTER (the token contract itself) — filtered by
+// the log address with the standard Transfer topic0 set, no participant
+// filter, so a token contract's own transfers finally surface on its
+// address page (participant topics rarely match the token's own logs).
+export type TransferScanMode = 'participant' | 'token';
 
 export type TokenTransfersResult = {
   transfers: TokenTransfer[];
@@ -45,6 +57,9 @@ export type TokenTransfersResult = {
   // the ~60s TTL reports the original scan's time, so clients can show an
   // honest "scanned X ago" that never resets to zero while cached.
   scannedAt: string;
+  // Which filter shape produced these rows — the client embeds it to
+  // refuse a mode-switching stale settle from the query-layer store.
+  mode: TransferScanMode;
 };
 
 // Minimal structural slice of viem's PublicClient consumed by the scan.
@@ -58,9 +73,16 @@ export type GetLogsArgs = {
   fromBlock: bigint;
   toBlock: bigint;
   event: AbiEvent;
-  // Direction filter: { from } scans outgoing, { to } scans incoming —
+  // Participant filter: { from } scans outgoing, { to } scans incoming —
   // viem pads the indexed address into the right topic slot per event.
-  args: { from?: Address; to?: Address };
+  // Token-mode queries carry no participant filter (undefined): topic0
+  // alone comes from `event`, and the participant dimension is replaced
+  // by `address` below.
+  args?: { from?: Address; to?: Address };
+  // Log-emitter filter (eth_getLogs `address`): token mode filters by the
+  // viewed token contract instead of by participant topics. Absent in
+  // participant mode.
+  address?: Address;
 };
 
 export type ScanLog = {
@@ -136,10 +158,30 @@ const TRANSFER_BATCH_EVENT = parseAbi([
 // outgoing query runs before the incoming one, so a self-transfer
 // (from == to == address) is recorded once with direction 'out'.
 type ScanQueryKey = 'erc20' | 'single' | 'batch';
-type ScanQuery = { key: ScanQueryKey; direction: 'in' | 'out'; event: AbiEvent; args: GetLogsArgs['args'] };
+type ScanQuery = {
+  key: ScanQueryKey;
+  direction: 'in' | 'out';
+  event: AbiEvent;
+  // Participant-mode topic filter; undefined in token mode.
+  args?: GetLogsArgs['args'];
+  // Token-mode log-emitter filter; undefined in participant mode.
+  address?: Address;
+};
 
-const scanQueriesFor = (address: Address): ScanQuery[] => {
+const scanQueriesFor = (address: Address, mode: TransferScanMode): ScanQuery[] => {
   const lower = address.toLowerCase() as Address;
+  if (mode === 'token') {
+    // Token-centric: one query per event shape, filtered by the LOG
+    // ADDRESS (the viewed contract emits its own Transfer logs) with the
+    // standard topic0 set and NO participant filter — the exact scan the
+    // participant mode cannot serve (a token's own transfers rarely have
+    // the token itself as from/to).
+    return [
+      { key: 'erc20', direction: 'out', event: TRANSFER_EVENT, address: lower },
+      { key: 'single', direction: 'out', event: TRANSFER_SINGLE_EVENT, address: lower },
+      { key: 'batch', direction: 'out', event: TRANSFER_BATCH_EVENT, address: lower },
+    ];
+  }
   return [
     { key: 'erc20', direction: 'out', event: TRANSFER_EVENT, args: { from: lower } },
     { key: 'erc20', direction: 'in', event: TRANSFER_EVENT, args: { to: lower } },
@@ -169,7 +211,7 @@ type DecodedTransferArgs = {
 const decodeTransferLog = (
   key: ScanQueryKey,
   log: ScanLog,
-  direction: 'in' | 'out',
+  direction: 'in' | 'out' | 'none',
 ): TokenTransfer | null => {
   if (log.blockNumber === null || log.transactionHash === null || log.logIndex === null) {
     return null;
@@ -323,20 +365,24 @@ const createTokenTransferService = (deps: TokenTransferServiceDeps) => {
   };
 
   // On-demand eth_getLogs sweep, newest chunk first, over
-  // [latest - window + 1 .. latest]. Six filtered getLogs per chunk (three
-  // event shapes x two directions). Halves the chunk on provider
-  // range/cap errors, doubles it after clean chunks; stops at the call or
-  // time budget and reports coverage 'partial'.
+  // [latest - window + 1 .. latest]. Participant mode: six filtered
+  // getLogs per chunk (three event shapes x two directions); token mode:
+  // three (one per shape, filtered by the log's emitter address).
+  // Halves the chunk on provider range/cap errors, doubles it after clean
+  // chunks; stops at the call or time budget and reports coverage
+  // 'partial'.
   const scanTransfers = async (
     client: TransferScanClient,
     chainId: number,
     address: Address,
     effectiveWindow: number,
+    mode: TransferScanMode,
   ): Promise<ScanOutcome> => {
     const latest = await client.getBlockNumber();
     const window = BigInt(effectiveWindow);
     const oldest = latest >= window ? latest - window + 1n : 0n;
-    const queries = scanQueriesFor(address);
+    const addressLower = address.toLowerCase() as Address;
+    const queries = scanQueriesFor(address, mode);
     const discovered = new Map<string, TokenTransfer>();
     const startedAt = now();
     let upper = latest;
@@ -361,14 +407,34 @@ const createTokenTransferService = (deps: TokenTransferServiceDeps) => {
       calls += queries.length;
       try {
         const results = await Promise.all(
-          queries.map(({ event, args }) =>
-            client.getLogs({ fromBlock, toBlock, event, args }),
+          queries.map(({ event, args, address: emitter }) =>
+            // Participant queries keep the exact pre-token-mode call shape
+            // (args, never an address key); token queries filter by the
+            // emitter with topic0 only (args explicitly absent for viem).
+            emitter !== undefined
+              ? client.getLogs({ fromBlock, toBlock, event, address: emitter })
+              : client.getLogs({ fromBlock, toBlock, event, args }),
           ),
         );
         queries.forEach(({ key, direction }, i) => {
           for (const log of results[i]) {
-            const transfer = decodeTransferLog(key, log, direction);
+            let transfer = decodeTransferLog(key, log, direction);
             if (!transfer) continue;
+            if (mode === 'token') {
+              // Token mode: the query's 'out' was a placeholder —
+              // direction is honest per row. The viewed contract
+              // participates in some of its own transfers (self-held
+              // balance moves), and is neither sender nor recipient in
+              // most (mints, burns, user-to-user). 'out' wins ties,
+              // matching participant mode's self-transfer convention.
+              const resolved: TokenTransfer['direction']
+                = transfer.from === addressLower
+                  ? 'out'
+                  : transfer.to === addressLower
+                    ? 'in'
+                    : 'none';
+              transfer = { ...transfer, direction: resolved };
+            }
             const dedupeKey = `${transfer.txHash}:${transfer.logIndex}`;
             // Self-transfers match both direction queries; the outgoing
             // query is processed first, so keep that occurrence.
@@ -399,7 +465,7 @@ const createTokenTransferService = (deps: TokenTransferServiceDeps) => {
       (a, b) => b.blockNumber - a.blockNumber || b.logIndex - a.logIndex,
     );
     logger.info(
-      `Token transfer scan for ${address} on chain ${chainId}: ` +
+      `Token transfer scan for ${address} on chain ${chainId} (${mode} mode): ` +
       `window=${effectiveWindow}, getLogs calls=${calls}, ` +
       `found=${transfers.length}, coverage=${covered ? 'complete' : 'partial'}`,
     );
@@ -413,12 +479,14 @@ const createTokenTransferService = (deps: TokenTransferServiceDeps) => {
     cursor: number,
     limit: number,
     scannedAt: string,
+    mode: TransferScanMode,
   ): TokenTransfersResult => ({
     transfers: transfers.slice(cursor, cursor + limit),
     nextCursor: cursor + limit < transfers.length ? String(cursor + limit) : null,
     coverage,
     windowBlocks,
     scannedAt,
+    mode,
   });
 
   const service = {
@@ -427,7 +495,10 @@ const createTokenTransferService = (deps: TokenTransferServiceDeps) => {
      * DuckDB writes and no token metadata reads — symbol/decimals are the
      * frontend's job. `refresh` bypasses the cache read (a fresh scan even
      * while a not-yet-expired entry exists) and overwrites the entry with
-     * the re-scan — the semantic behind the tab's Retry/Refresh.
+     * the re-scan — the semantic behind the tab's Retry/Refresh. `mode`
+     * picks the getLogs filter shape: 'participant' (default, the viewed
+     * address as Transfer from/to) or 'token' (the viewed contract as the
+     * log emitter — its own transfers). Each mode caches separately.
      */
     getTokenTransfers: async (
       chainId: number,
@@ -436,24 +507,25 @@ const createTokenTransferService = (deps: TokenTransferServiceDeps) => {
       limit = 25,
       windowBlocks?: number,
       refresh = false,
+      mode: TransferScanMode = 'participant',
     ): Promise<TokenTransfersResult> => {
       // Explicit windows clamp into [1, MAX]; undefined uses the default.
       const effectiveWindow = windowBlocks === undefined
         ? DEFAULT_WINDOW_BLOCKS
         : Math.min(Math.max(Math.trunc(windowBlocks), MIN_WINDOW_BLOCKS), MAX_WINDOW_BLOCKS);
-      const cacheKey = `${chainId}:${address.toLowerCase()}:${effectiveWindow}`;
+      const cacheKey = `${chainId}:${address.toLowerCase()}:${effectiveWindow}:${mode}`;
 
       // Cache-bypass refresh: skip the read entirely (even a fresh
       // 'partial' entry) so an explicit Retry always re-scans.
       const cached = refresh ? null : readTransfersCache(cacheKey);
       if (cached) {
-        logger.info(`Serving cached transfer scan for ${address} on chain ${chainId}`);
-        return sliceResult(cached.transfers, cached.coverage, effectiveWindow, cursor, limit, cached.scannedAt);
+        logger.info(`Serving cached transfer scan for ${address} on chain ${chainId} (${mode} mode)`);
+        return sliceResult(cached.transfers, cached.coverage, effectiveWindow, cursor, limit, cached.scannedAt, mode);
       }
 
       const client = await rpcManager.getClient(chainId);
       const outcome = await withTimeout(
-        scanTransfers(client, chainId, address, effectiveWindow),
+        scanTransfers(client, chainId, address, effectiveWindow, mode),
         scanTimeoutMs + SCAN_TIMEOUT_GRACE_MS,
         'Token transfer scan',
       ).catch((error: unknown) => {
@@ -461,7 +533,7 @@ const createTokenTransferService = (deps: TokenTransferServiceDeps) => {
         // report an honest (empty) partial instead of failing the request.
         if (error instanceof ScanTimeoutError) {
           logger.warn(
-            `Token transfer scan for ${address} on chain ${chainId} hung; ` +
+            `Token transfer scan for ${address} on chain ${chainId} (${mode} mode) hung; ` +
             `returning empty partial result`,
           );
           return { transfers: [], coverage: 'partial' as const };
@@ -470,7 +542,7 @@ const createTokenTransferService = (deps: TokenTransferServiceDeps) => {
       });
 
       const scannedAt = writeTransfersCache(cacheKey, outcome.transfers, outcome.coverage);
-      return sliceResult(outcome.transfers, outcome.coverage, effectiveWindow, cursor, limit, scannedAt);
+      return sliceResult(outcome.transfers, outcome.coverage, effectiveWindow, cursor, limit, scannedAt, mode);
     },
 
     /** Drop all cached scan results (test isolation). */

@@ -10,6 +10,10 @@ import {
 } from '../server/validation';
 import { formatTransactionForApi, safeJsonResponse } from '../utils/serialization';
 import { createRateLimiter } from '../middleware/rate-limit';
+import {
+  ADDRESS_EXPORT_MAX_ROWS,
+  buildAddressTransactionsCsv,
+} from '../services/AddressExportService';
 
 const app = new Hono();
 
@@ -151,5 +155,87 @@ app.get('/chains/:chainId/addresses/:address/transactions', addressTransactionsR
     return c.json({ error: 'Failed to get address transactions' }, 500);
   }
 });
+
+// GET /chains/:chainId/addresses/:address/transactions/export — CSV of the
+// SAME discovered set the transactions list paginates through (identical
+// service call, params and validation), so the download always matches
+// what the list shows. Like the list, the export re-runs a potentially
+// expensive heuristic scan, so it carries its own tight limiter (mirroring
+// the events export route's 5/min with a burst of 2).
+const addressTransactionsExportRateLimiter = createRateLimiter({
+  name: 'address-transactions-export',
+  requestsPerMinute: 5,
+  burst: 2,
+});
+app.get(
+  '/chains/:chainId/addresses/:address/transactions/export',
+  addressTransactionsExportRateLimiter,
+  async (c) => {
+    const chainId = getValidatedChainId(c.req.param('chainId'));
+    const address = getValidatedAddress(c.req.param('address'));
+
+    // Same window parsing as the list endpoint: only fully-numeric values
+    // count, anything else falls back to the txCount-tiered default. The
+    // service clamps and echoes the effective window.
+    const rawWindow = c.req.query('window');
+    const windowBlocks =
+      rawWindow !== undefined && /^\d+$/.test(rawWindow) ? Number(rawWindow) : undefined;
+
+    // Chunked exports start at a non-negative integer offset; anything
+    // else fails loudly (same philosophy as the list's page validation)
+    // rather than exporting from a mystery position. The regex runs first
+    // so parseInt's lenient suffix handling ('12abc' → 12) never slips in.
+    const rawOffset = c.req.query('offset') ?? '';
+    if (rawOffset !== '' && !/^\d+$/.test(rawOffset)) {
+      return c.json(
+        { error: 'invalid_offset', message: 'offset must be a non-negative integer' },
+        400,
+      );
+    }
+    const parsedOffset = rawOffset === '' ? 0 : parseInt(rawOffset, 10);
+
+    try {
+      // One service call for the whole discovered set (the discovery
+      // budget is bounded server-side; limit here is the export cap).
+      const result = await addressService.getAddressTransactions(
+        chainId,
+        address,
+        ADDRESS_EXPORT_MAX_ROWS,
+        parsedOffset,
+        windowBlocks,
+      );
+
+      // Refuse instead of truncating: a silently capped CSV would look
+      // complete (heuristic windows stay far below the cap; backstop).
+      if (result.total > ADDRESS_EXPORT_MAX_ROWS) {
+        return c.json(
+          {
+            error: 'too_many_rows',
+            message: `Export limited to ${ADDRESS_EXPORT_MAX_ROWS.toLocaleString()} rows; ${result.total.toLocaleString()} discovered — narrow the window`,
+          },
+          400,
+        );
+      }
+
+      const csv = buildAddressTransactionsCsv(result.transactions);
+
+      // ISO timestamp with filesystem-hostile characters stripped.
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+      c.header('Content-Type', 'text/csv; charset=utf-8');
+      c.header(
+        'Content-Disposition',
+        `attachment; filename="address-transactions-${chainId}-${address.toLowerCase()}-${timestamp}.csv"`,
+      );
+      c.header('Cache-Control', 'no-store');
+      // An empty discovered set still downloads: header-only CSV, an
+      // honest "nothing found", not an error.
+      return c.body(csv);
+    }
+    catch (error) {
+      logger.error({ err: error }, 'Address transactions export API error');
+      return c.json({ error: 'Failed to export address transactions' }, 500);
+    }
+  },
+);
 
 export default app;

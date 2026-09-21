@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { css } from '@linaria/core';
 import { parseEther } from 'viem';
-import { getChainSymbol } from '@/config/chains';
+import { getChainSymbol, getDefaultRpcUrl } from '@/config/chains';
 import { Collapsible } from '@/components/ui/Collapsible';
 import { getFunctionSelector, formatSelectorForDisplay } from '@/utils/functionSelector';
+import { buildCastCommand } from '@/utils/castCommand';
 import { formatResultWithLinks } from '@/utils/addressTypeDetection';
 import { functionSignature, type EnhancedContractFunction } from '@/utils/contractInteraction';
 import { parseFunctionArgs, ADDRESS_PATTERN } from './paramParsing';
@@ -104,6 +105,38 @@ const buttonWriteStyles = css`
   }
 `;
 
+// Submit plus the two cast-copy actions share one footer row.
+const formFooterStyles = css`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+`;
+
+// Secondary outline style so the copy actions never compete with the
+// primary Query/Simulate submit.
+const copyButtonStyles = css`
+  background: white;
+  color: #0066cc;
+  border: 1px solid #0066cc;
+  padding: 7px 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+
+  &:hover:not(:disabled) {
+    background: #e8f0fe;
+  }
+
+  &:disabled {
+    color: #999;
+    border-color: #ccc;
+    background: #f5f5f5;
+    cursor: not-allowed;
+  }
+`;
+
 const resultSuccessStyles = css`
   margin-top: 12px;
   padding: 12px;
@@ -181,6 +214,7 @@ export function FunctionCallForm({
   loadingStates,
   chainId,
   blockNumber,
+  contractAddress,
 }: {
   func: EnhancedContractFunction;
   onCall: (
@@ -195,6 +229,8 @@ export function FunctionCallForm({
   loadingStates: Record<string, boolean>;
   chainId: number;
   blockNumber: string;
+  /** Target address for the cast command copy actions. */
+  contractAddress?: string;
 }) {
   const [args, setArgs] = useState<string[]>(func.inputs.map(() => ''));
   const [argErrors, setArgErrors] = useState<string[]>(func.inputs.map(() => ''));
@@ -224,6 +260,63 @@ export function FunctionCallForm({
       return '';
     }
   })();
+
+  // --- Copy-as-cast support ------------------------------------------------
+  //
+  // A paste-ready foundry `cast` command for the CURRENT form state,
+  // rebuilt every render (pure, cheap): the same validation and the same
+  // viem encoding the submit path uses decide whether a command exists at
+  // all. When it does not, the reason (first invalid field) becomes the
+  // disabled buttons' tooltip.
+  const castCommand = (() => {
+    if (contractAddress === undefined) {
+      return { ok: false as const, reason: 'contract address unavailable' };
+    }
+    const rpcUrl = getDefaultRpcUrl(chainId);
+    if (rpcUrl === '') {
+      return { ok: false as const, reason: 'no default RPC URL known for this chain' };
+    }
+    // Same rule as the submit validation: a payable amount that will not
+    // parse blocks everything, mirroring the field-level error.
+    if (isPayable && value.trim() !== '' && valueWei === '') {
+      return { ok: false as const, reason: `Invalid ${nativeSymbol} amount` };
+    }
+    return buildCastCommand({
+      func,
+      rawArgs: args,
+      contractAddress,
+      rpcUrl,
+      valueWei: isPayable && valueWei !== '' ? valueWei : undefined,
+    });
+  })();
+
+  // Label-swap feedback for the copy buttons (SourceCodeViewer/RawJson
+  // pattern): the button itself reports the honest clipboard outcome.
+  const [copyFeedback, setCopyFeedback] = useState<{
+    which: 'cast' | 'calldata';
+    ok: boolean;
+  } | null>(null);
+  const copyTimerRef = useRef<number | undefined>(undefined);
+
+  useEffect(() => {
+    return () => {
+      if (copyTimerRef.current !== undefined) window.clearTimeout(copyTimerRef.current);
+    };
+  }, []);
+
+  const handleCopy = async (which: 'cast' | 'calldata', text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopyFeedback({ which, ok: true });
+    } catch {
+      setCopyFeedback({ which, ok: false });
+    }
+    if (copyTimerRef.current !== undefined) window.clearTimeout(copyTimerRef.current);
+    copyTimerRef.current = window.setTimeout(() => setCopyFeedback(null), 2000);
+  };
+
+  const copyLabel = (which: 'cast' | 'calldata', idle: string) =>
+    copyFeedback?.which === which ? (copyFeedback.ok ? 'Copied ✓' : 'Copy failed') : idle;
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -389,13 +482,49 @@ export function FunctionCallForm({
           </>
         )}
 
-        <button
-          type="submit"
-          disabled={isLoading}
-          className={func.interactionType === 'read' ? buttonReadStyles : buttonWriteStyles}
-        >
-          {isLoading ? 'Loading...' : func.interactionType === 'read' ? 'Query' : 'Simulate'}
-        </button>
+        <div className={formFooterStyles}>
+          <button
+            type="submit"
+            disabled={isLoading}
+            className={func.interactionType === 'read' ? buttonReadStyles : buttonWriteStyles}
+          >
+            {isLoading ? 'Loading...' : func.interactionType === 'read' ? 'Query' : 'Simulate'}
+          </button>
+
+          {/* Disabled with the first offending field as tooltip until the
+              current args would encode — the copied command must never be
+              a guess. The RPC caveat stays visible while enabled so the
+              pasteable command's weakest link (a public endpoint) is
+              always disclosed. */}
+          <button
+            type="button"
+            className={copyButtonStyles}
+            disabled={!castCommand.ok}
+            onClick={() =>
+              void handleCopy('cast', castCommand.ok ? castCommand.command : '')}
+            title={
+              castCommand.ok
+                ? 'Copy a runnable foundry cast command — uses the chain\'s default public RPC; replace with your own endpoint if rate-limited'
+                : castCommand.reason
+            }
+          >
+            {copyLabel('cast', 'Copy as cast')}
+          </button>
+          <button
+            type="button"
+            className={copyButtonStyles}
+            disabled={!castCommand.ok}
+            onClick={() =>
+              void handleCopy('calldata', castCommand.ok ? castCommand.calldata : '')}
+            title={
+              castCommand.ok
+                ? 'Copy the ABI-encoded calldata (0x…) for this call'
+                : castCommand.reason
+            }
+          >
+            {copyLabel('calldata', 'Copy calldata')}
+          </button>
+        </div>
 
         {/* Results */}
         {result !== undefined && (

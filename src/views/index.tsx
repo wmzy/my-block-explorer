@@ -42,6 +42,13 @@ const routes = createRoutes({
       component: () => import('./Transactions/List'),
     },
     {
+      // Cached-contract directory (the explorer's own contract_sources
+      // rows): a plain list fetch, so no loader; the view owns ?q= and
+      // ?offset=.
+      path: '/chain/:chainId/contracts',
+      component: () => import('./Contracts/List'),
+    },
+    {
       path: '/chain/:chainId/block/:blockNumber',
       component: () => import('./Blocks/Detail'),
     },
@@ -140,6 +147,8 @@ export function deriveDocumentTitle(pathname: string, search: string): string {
       return `${chainName} Blocks`;
     case 'transactions':
       return `${chainName} Transactions`;
+    case 'contracts':
+      return `${chainName} Contracts`;
     case 'block':
       return segments[3] ? `Block #${segments[3]} · ${chainName}` : FALLBACK_TITLE;
     case 'tx':

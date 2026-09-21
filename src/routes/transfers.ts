@@ -23,6 +23,13 @@ const windowSchema = z.coerce.number().int().min(1).max(50_000_000).optional().c
 // 400ing, matching the fallback philosophy of the schemas above.
 const refreshSchema = z.literal('1').optional().catch(undefined);
 
+// Scan filter shape. Unlike the numeric params, an explicit-but-unknown
+// mode is REJECTED (400 invalid_mode) rather than degraded: silently
+// falling back would answer a different question than the client asked
+// (token-emitted vs address-participated rows), which no catch() default
+// can disambiguate downstream.
+const SCAN_MODES = ['token', 'participant'] as const;
+
 // On-demand token transfer list (eth_getLogs sweep). Stateless and
 // read-only: no auth gate, no DuckDB writes — symbol/decimals enrichment
 // happens in the frontend. Each miss triggers a chunked public-RPC scan,
@@ -36,6 +43,19 @@ app.get('/chains/:chainId/addresses/:address/transfers', transfersRateLimiter, a
   const limit = limitSchema.parse(c.req.query('limit'));
   const windowBlocks = windowSchema.parse(c.req.query('window'));
   const refresh = refreshSchema.parse(c.req.query('refresh')) === '1';
+  // Absent → participant (the pre-token-mode behavior). An explicit value
+  // must be exactly one of the known modes.
+  const rawMode = c.req.query('mode');
+  if (rawMode !== undefined && !(SCAN_MODES as readonly string[]).includes(rawMode)) {
+    return c.json(
+      {
+        error: 'invalid_mode',
+        message: `Invalid mode "${rawMode}" — expected "token" or "participant"`,
+      },
+      400,
+    );
+  }
+  const mode = rawMode === 'token' ? 'token' : 'participant';
 
   try {
     const result = await tokenTransferService.getTokenTransfers(
@@ -45,6 +65,7 @@ app.get('/chains/:chainId/addresses/:address/transfers', transfersRateLimiter, a
       limit,
       windowBlocks,
       refresh,
+      mode,
     );
 
     const responseData = safeJsonResponse({
@@ -55,6 +76,8 @@ app.get('/chains/:chainId/addresses/:address/transfers', transfersRateLimiter, a
       // First-scan time of the cache entry (freshness for the client's
       // 'Scanned X ago'); additive field — older clients ignore it.
       scannedAt: result.scannedAt,
+      // Which filter shape produced these rows; additive like scannedAt.
+      mode: result.mode,
     });
 
     return c.json(responseData);

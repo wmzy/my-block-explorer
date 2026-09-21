@@ -15,8 +15,95 @@ import {
   openInIde,
   type IdeId,
 } from '../services/IdeService';
+import {
+  CONTRACT_DIRECTORY_DEFAULT_LIMIT,
+  CONTRACT_DIRECTORY_MAX_LIMIT,
+  CONTRACT_DIRECTORY_MAX_OFFSET,
+  listCachedContracts,
+} from '../services/SearchService';
 
 const app = new Hono();
+
+// --- Cached-contract directory (GET /chains/:chainId/contracts) ---
+//
+// Pagination follows the transactions list conventions (see
+// routes/transactions.ts): a missing/empty param keeps its default, junk
+// fails loudly with 400 instead of silently paging from 0, a negative
+// offset clamps to 0 and a runaway offset clamps at the scan cap. One
+// deliberate deviation: an over-cap limit 400s instead of clamping — the
+// directory page always asks for its fixed page size, so anything above
+// the cap is a client bug worth surfacing, not silently shrinking.
+const parseContractsLimitParam = (raw: string | undefined): number | null => {
+  if (raw === undefined || raw === '') return CONTRACT_DIRECTORY_DEFAULT_LIMIT;
+  const parsed = parseInt(raw, 10);
+  if (Number.isNaN(parsed) || parsed < 1) return null;
+  if (parsed > CONTRACT_DIRECTORY_MAX_LIMIT) return null;
+  return parsed;
+};
+
+const parseContractsOffsetParam = (raw: string | undefined): number | null => {
+  if (raw === undefined || raw === '') return 0;
+  const parsed = parseInt(raw, 10);
+  if (Number.isNaN(parsed)) return null;
+  return Math.min(Math.max(parsed, 0), CONTRACT_DIRECTORY_MAX_OFFSET);
+};
+
+// Every contract_sources row this explorer has cached for the chain —
+// populated by opening (or force-refreshing) a contract page, never by
+// this endpoint. Read-only and open; X-Data-Source says 'database'
+// because this is the local cache, not an on-chain fact.
+app.get('/chains/:chainId/contracts', async c => {
+  const chainId = getValidatedChainId(c.req.param('chainId'));
+
+  const limit = parseContractsLimitParam(c.req.query('limit'));
+  if (limit === null) {
+    return c.json(
+      {
+        error: 'invalid_limit',
+        message: `limit must be a positive integer no greater than ${CONTRACT_DIRECTORY_MAX_LIMIT}`,
+      },
+      400,
+    );
+  }
+
+  const offset = parseContractsOffsetParam(c.req.query('offset'));
+  if (offset === null) {
+    return c.json(
+      {
+        error: 'Invalid offset',
+        message: 'offset must be a non-negative integer',
+      },
+      400,
+    );
+  }
+
+  try {
+    const page = await listCachedContracts({
+      chainId,
+      q: c.req.query('q'),
+      limit,
+      offset,
+    });
+
+    c.header('X-Data-Source', 'database');
+    c.header('X-Chain-Name', getChainName(chainId));
+
+    const responseData = safeJsonResponse({
+      chainId,
+      chainName: getChainName(chainId),
+      contracts: page.contracts,
+      total: page.total,
+      q: page.q,
+      offset: page.offset,
+      timestamp: new Date().toISOString(),
+    });
+
+    return c.json(responseData);
+  } catch (error) {
+    logger.error({ err: error }, 'Contract directory API error');
+    return c.json({ error: 'Failed to list cached contracts' }, 500);
+  }
+});
 
 app.get('/chains/:chainId/contracts/stats', async c => {
   const chainId = getValidatedChainId(c.req.param('chainId'));

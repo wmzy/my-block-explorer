@@ -205,7 +205,7 @@ pnpm typecheck           # tsc --noEmit
   base is set, `util/http.ts` helpers reject fast with a clear ApiError
   instead of issuing same-origin requests (which would hit the vite dev
   bridge = a second DuckDB-writer instance)
-- **No CI/CD** — `.github/workflows` missing (known gap)
+- **CI/CD exists** — `.github/workflows` has `ci.yml`, `release.yml`, `deploy-pages.yml`
 - **Test layout** — `tests/` (unit + integration + e2e) is the live suite;
   historical `src/tests/` / `test/` dirs no longer exist
 - **Barrel exports incomplete** — `src/utils/index.ts` only exports 2 of 19
@@ -448,3 +448,70 @@ pnpm typecheck           # tsc --noEmit
   this wave). 7702 smoke note: page verified via jsdom + a real-RPC
   script; latest-block sampling didn't surface a type-4 tx for the
   browser pass
+- **2026-09-21/22 PM-review feature wave (3 waves, 12 slices + integration)** —
+  gap-closing features, all live-browser-smoked on Polygon/mainnet (129
+  test files / 1651 tests green; tsc + eslint clean):
+  **Token pages (lightweight)** — contract addresses get a Token Overview
+  card (`useTokenOverview` in `services/tokenMetadata.ts`: one Multicall3
+  name/symbol/decimals/totalSupply batch, 1h TTL, fires ONLY when
+  addressType is contract; 'ERC-20' claimed only when decimals AND supply
+  respond, otherwise 'standard unknown — possibly ERC-721' badge);
+  token-centric transfer scan (`TokenTransferService` mode `token`:
+  getLogs filtered by emitting address + Transfer topic0 whitelist, NO
+  participant topics; `?mode=` rides the transfers route, cache keys
+  include mode; TokenTransfers tab defaults to token mode on detected
+  tokens with a 'Transfers of this token / involving this address'
+  toggle; row direction gains 'none' for user-to-user); Top Holders
+  (discovered) nets from/to BigInt-exactly over token-mode rows
+  (`views/Address/tokenOverview.ts`, zero-address sentinel excluded,
+  non-ERC-20 rows counted as excluded, mandatory "may be incomplete"
+  caveat; requires a same-session scan — fresh loads show the scan CTA).
+  **Signature decode** — `GET /api/signatures?function=&event=` (openchain
+  lookup, batch ≤25; `signature_cache` DuckDB table, verified rows
+  immutable, NOT_FOUND 24h TTL; upstream failure → `unavailable`, never
+  an error); tx detail renders resolved names beside raw selectors with
+  an 'openchain' chip when ABI decode fails.
+  **Call trace** — tx detail Call Trace card, browser-side
+  `debug_traceTransaction` callTracer (lazy on first expand;
+  method-not-found → honest 'not supported by this RPC'; header 'N calls
+  · depth D · M failed'); pure normalizer in `utils/traceFormat.ts`.
+  **Labels + CSV** — `address_labels` table (chain_id+address PK; PUT
+  upsert/DELETE admin-gated, GET open; `routes/labels.ts`); Address
+  overview Label chip with inline editor (403 → admin-token hint);
+  `GET .../addresses/:a/transactions/export` streams CSV (50k cap, 5/min
+  rate limit; header-only file for empty windows) + tx-tab Export CSV
+  button. **Contracts directory** — `/chain/:id/contracts` page
+  (`routes/contracts.ts` list endpoint, ?q= name/address substring,
+  ?offset pagination; view in `views/Contracts/List.tsx`, nav link
+  'Contracts'); global search free-text responses gain `localContracts`
+  hits (SearchService `searchLocalContractHits`, same filter as the
+  directory; hash/block/ens responses byte-identical).
+  **Gas tracker** — Home GasPanel (`services/gasHistory.ts`:
+  getFeeHistory 120 blocks + 25/50/75 pct rewards, 60s poll, browser RPC;
+  sparkline + Slow/Standard/Fast tiers + honest per-reason unavailable
+  copy; window label from real block numbers, speculative next-block
+  entry dropped). **Raw JSON** — `components/ui/RawJson.tsx` lazy
+  collapsible card on tx (tx+receipt) and block (with/without txs)
+  detail; per-section retry/abort; pending tx shows 'No receipt yet'.
+  **Copy as cast** — Interact forms export `cast call|send` commands
+  (`utils/castCommand.ts`: signature form, array/tuple args fall back to
+  calldata form, `--private-key <ENTER_YOUR_KEY>` placeholder, default
+  public RPC with caveat tooltip). **Theme + version** —
+  Light/Dark/System cycle (`themePreference.ts`, `be:theme` storage,
+  `data-theme` attr wins over the OS media query, applied pre-mount);
+  version chip reuses discovery's health payload. **Sourcify verify** —
+  in-page panel on unverified contracts (`routes/verify.ts` +
+  `ContractVerifyService`: APIv2 submit→ticket→poll against
+  SOURCIFY_SERVER_URL, files ≤50/≤2MB, metadata.json required, success
+  clears the source cache; admin-gated, 3/min). **Docker** — multi-target
+  Dockerfile (api/web) + compose.yaml (SELinux `:Z` on the data volume;
+  podman-built and browser-E2E'd). **Conventions added** — DuckDB
+  datetime strings are NAIVE UTC: parse as UTC (`toIsoTimestamp` in
+  SearchService is the reference; plain `new Date(str)` reads local and
+  shifts hours by the machine TZ); drizzle migrations that are hand-written
+  MUST get a meta snapshot or the next `db:generate` re-emits their diff
+  (0006 lacked one → 0007 double-added implementation_addresses; fixed in
+  0007 with an explanatory comment). Known residuals: mobile is still
+  desktop-first outside tx/block detail pages (README documents this);
+  Sourcify panel rendering verified via jsdom suite + live API probes
+  (every random chain sample turned out verified)

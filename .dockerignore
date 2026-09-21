@@ -1,0 +1,43 @@
+# Rebuilt inside the image — never ship host state
+node_modules
+dist
+data
+coverage
+
+# Version control / CI
+.git
+.github
+
+# Tests are not run inside the image
+tests
+**/tests
+
+# Markdown docs and agent notes — README.md is kept (shipped in the npm package)
+**/*.md
+!README.md
+
+# Local state, secrets, scratch
+.env
+.env.*
+*.log
+*.db
+*.wal
+.claude
+.cursor
+.sisyphus
+.specify
+specs
+examples
+
+# Container/compose metadata
+compose.yaml
+compose.yml
+docker-compose.yml
+docker-compose.yaml
+Dockerfile
+.dockerignore
+
+# Editor noise
+.vscode
+.idea
+.DS_Store

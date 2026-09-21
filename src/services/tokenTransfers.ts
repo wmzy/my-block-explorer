@@ -12,8 +12,17 @@ export type TokenTransferStandard =
   | 'erc1155-single'
   | 'erc1155-batch';
 
+// Which eth_getLogs filter shape the backend scan uses: 'participant'
+// (the viewed address as Transfer from/to) or 'token' (the viewed
+// contract as the log emitter — its own transfers). Mirrors the backend
+// enum; the string rides the query string and the cache key unchanged.
+export type TransferScanMode = 'participant' | 'token';
+
 // One decoded Transfer/TransferSingle log, deduped server-side
-// (self-transfers appear once, direction 'out').
+// (self-transfers appear once, direction 'out'). Direction is relative
+// to the viewed address; token-mode rows additionally carry 'none' (the
+// viewed token emitted the log without being sender or recipient —
+// mints, burns, user-to-user transfers of the token).
 export type TokenTransfer = {
   txHash: string;
   blockNumber: number;
@@ -25,7 +34,7 @@ export type TokenTransfer = {
   value: string;
   tokenIds?: string[];
   amounts?: string[];
-  direction: 'in' | 'out';
+  direction: 'in' | 'out' | 'none';
 };
 
 // Response envelope of GET /api/chains/:chainId/addresses/:address/transfers.
@@ -42,6 +51,13 @@ export type TokenTransferPage = {
   coverage: 'complete' | 'partial';
   windowBlocks: number;
   scannedAt?: string;
+  // Which filter shape produced these rows (token vs participant). The
+  // view refuses a settle whose mode differs from the currently selected
+  // one — the query layer's store keeps the previous settle across an
+  // args switch, and a mode switch must not flash the other list's rows.
+  // Optional: pre-mode payloads (stale caches, older backends) stay
+  // renderable and are trusted as-is.
+  mode?: TransferScanMode;
 };
 
 // One-shot cache-bypass latch for the tab's explicit Retry/Refresh and
@@ -66,27 +82,31 @@ export function fetchTokenTransfers(
   cursor: string,
   limit: number,
   window?: number,
+  mode: TransferScanMode = 'participant',
   signal?: AbortSignal,
 ): Promise<TokenTransferPage | undefined> {
   if (!(chainId > 0) || address.length === 0) return Promise.resolve(undefined);
   // Deliberately long-running: the server scans eth_getLogs under its own
   // ~30s budget — the default 10s per-attempt timeout would abort
   // healthy scans. `window` widens the scanned block range; omitted →
-  // backend default. `refresh` is the consumed one-shot latch above.
+  // backend default. `mode` picks the getLogs filter shape (token vs
+  // participant); omitted → participant. `refresh` is the consumed
+  // one-shot latch above.
   const refresh = refreshNextFetch;
   refreshNextFetch = false;
   return get<TokenTransferPage>(
     `/api/chains/${chainId}/addresses/${address}/transfers`,
-    { cursor, limit, window, refresh: refresh ? '1' : undefined },
+    { cursor, limit, window, mode: mode === 'token' ? 'token' : undefined, refresh: refresh ? '1' : undefined },
     withSignal(longRunningApi, signal),
   );
 }
 
-// The cursor/limit/window ride in the cache key: a different page or a
-// widened window must resolve to a fresh entry, never a stale one.
+// The cursor/limit/window/mode ride in the cache key: a different page, a
+// widened window or the other scan mode must resolve to a fresh entry,
+// never a stale one.
 export const tokenTransfersCache = createQueryCache<
   TokenTransferPage | undefined,
-  [number, string, string, number, number | undefined]
+  [number, string, string, number, number | undefined, TransferScanMode]
 >('token-transfers');
 
 const queryTokenTransfers = bindQueryFn(fetchTokenTransfers, tokenTransfersCache);
@@ -99,6 +119,7 @@ export function useTokenTransfers(
   cursor: string,
   limit: number,
   window?: number,
+  mode: TransferScanMode = 'participant',
 ) {
-  return useTokenTransfersQuery([chainId, address, cursor, limit, window]);
+  return useTokenTransfersQuery([chainId, address, cursor, limit, window, mode]);
 }

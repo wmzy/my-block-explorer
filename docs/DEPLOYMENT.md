@@ -36,6 +36,47 @@ This is what the live demo does: `pnpm build:pages` builds the SPA with `VITE_BA
 
 A hosted frontend **cannot auto-discover a remote backend**: discovery is a localhost port scan. Manual URL entry is the supported path, by design.
 
+### 4. Docker (two images: API + static web)
+
+The repo ships a multi-target `Dockerfile` (plus `.dockerignore` and `compose.yaml`). The two targets map exactly onto the model above — nothing about the runtime changes inside a container:
+
+- **`api`** — Node 22 (slim) with production dependencies and `dist/server`, listening on **8201**, DuckDB files under `/app/data` (declared as a `VOLUME`). The entrypoint is `node dist/server/cli.js` with `--no-open` (there is no browser in a container); pass extra CLI flags (e.g. `--port 8202`) as the container command. A `HEALTHCHECK` polls `GET /api/health` with a Node `fetch` one-liner (slim images ship no curl). Boot-time auto-migration runs from `/app/drizzle/*.sql` baked into the image.
+- **`web`** — `nginx:alpine` serving `dist/client` with an SPA fallback (`try_files … /index.html`) on port 80. The image is **chain- and API-agnostic static hosting**: the frontend discovers the API at runtime in the browser, so the web image contains no API URL and needs no rebuild when you change chains or backends.
+
+Build and run each target directly:
+
+```bash
+docker build --target api -t my-block-explorer-api .
+docker run -d --name explorer-api -p 8201:8201 -v "$PWD/data:/app/data" my-block-explorer-api
+# optional hardening: -e ADMIN_TOKEN=... -e CORS_ALLOWED_ORIGINS=http://your-host:3000
+
+docker build --target web -t my-block-explorer-web .
+docker run -d --name explorer-web -p 3000:80 my-block-explorer-web
+```
+
+Bind-mount note: on SELinux distros (Fedora/RHEL) the API cannot open its DuckDB files in a plain bind mount — the kernel denies access and every boot-time query fails — so use `-v "$PWD/data:/app/data:Z"` (the compose file already does). Without any bind mount you get an anonymous volume that works but may be pruned by Docker.
+
+Or both at once with compose (same ports, same bind mount):
+
+```bash
+docker compose up -d --build
+```
+
+**How the two containers connect: they don't.** The SPA in the `web` container talks to the API *from your browser*, never container-to-container — that is why `compose.yaml` publishes 8201 on the host and wires no service-to-service link, and why the `web` service has no API URL to configure.
+
+- **Same machine as compose:** the UI is `http://localhost:3000`, the API is `http://localhost:8201`. Loopback origins are always allowed by the CORS allowlist, so auto-discovery finds the API with zero configuration.
+- **From another machine:** the UI is `http://<your-host>:3000` — not a loopback origin. Every visitor must type `http://<your-host>:8201` into the setup screen once, **and** the API must allow the web origin: uncomment `CORS_ALLOWED_ORIGINS` in `compose.yaml` (e.g. `http://192.168.1.10:3000`) or add it via `-e`. Without that pairing the browser blocks every API call.
+
+**Data persistence:** everything durable lives in `/app/data` (main `blockchain.db` + per-chain `data/chains/...`). Mount a host directory (`-v ./data:/app/data`, or the compose volume) or you get an anonymous volume that Docker may prune. Back up that directory; it is the whole database.
+
+**Security notes (same two-tier model as everywhere else):**
+
+- With no env set, read endpoints are open and opt-in-gated writes pass through — fine when only your own browser can reach port 8201. The moment the API is reachable from anything else (published port on a shared host, LAN exposure), set `ADMIN_TOKEN` (gates core-workflow writes; also required for the fail-closed `/api/performance/*` surface) and restrict `CORS_ALLOWED_ORIGINS`, or keep the API unpublished and front it with the authenticated reverse proxy above.
+- **Never set `ENABLE_DEBUG_API=1` in a container others can reach** — it mounts an unauthenticated arbitrary-SQL endpoint (`POST /debug/db/query`).
+- Still one writer per DuckDB file: don't point two `api` containers (or a container and a host process) at the same `data/` directory.
+
+Native-module note: `@duckdb/node-bindings-linux-x64` ships prebuilt binaries; the builder stages install `python3/make/g++` only because the dependency tree contains `better-sqlite3` (node-gyp postinstall). The runtime image is plain `node:22-slim` with the installed `node_modules` copied in — no toolchain shipped.
+
 ## Warnings you must not skip
 
 1. **DuckDB is single-writer per file.** The main DB (`data/blockchain.db`) and every per-chain event DB (`data/chains/{type}/{name}-{id}.db`) accept exactly one writing process. Never point two server instances at the same data directory, and don't run the Vite-bridged API and a standalone server simultaneously against the same files.
@@ -74,4 +115,4 @@ Then have the frontend talk to `https://explorer-api.example.com` (manual URL en
 
 ## What does NOT exist (removed stale guidance)
 
-Earlier versions of this document described Cloudflare Workers proxies, `VITE_API_URL` environment wiring, a `/api` proxy through Pages Functions, Docker compose clusters, and PM2 multi-instance deployments. None of that exists in the code: there is no `VITE_API_URL` mechanism, no API proxying from the static host, and no cluster story (see single-writer warning above). Don't re-add them to docs without implementing them.
+Earlier versions of this document described Cloudflare Workers proxies, `VITE_API_URL` environment wiring, a `/api` proxy through Pages Functions, and PM2 multi-instance deployments. None of that exists in the code: there is no `VITE_API_URL` mechanism, no API proxying from the static host, and no cluster story (see single-writer warning above). Don't re-add them to docs without implementing them. Docker images *do* exist now (shape 4) — as packaging for the single-instance shapes above, not as a scaling story.

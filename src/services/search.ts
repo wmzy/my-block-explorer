@@ -41,6 +41,18 @@ export type SearchResult = {
    */
   degraded?: boolean | null;
   degradedReasons?: string[] | null;
+  /**
+   * Local cached-contract name hits (free-text queries only): contracts
+   * whose cached source name matches, from this explorer's DuckDB cache.
+   * Absent when the cache read failed or the query wasn't free text;
+   * empty array = successful read with zero matches.
+   */
+  localContracts?: Array<{
+    chainId: number;
+    address: string;
+    name: string | null;
+    isVerified: boolean;
+  }>;
   /** Human-readable note (e.g. ENS names resolve client-side). */
   message?: string | null;
   data?: unknown;

@@ -5,8 +5,11 @@
 // non-trailing empty input blocks the submit with a 'required' error.
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { encodeFunctionData } from 'viem';
+import type { AbiFunction } from 'viem';
 
 import { FunctionCallForm } from '@/views/Contract/FunctionCallForm';
+import { getDefaultRpcUrl } from '@/config/chains';
 import type {
   ContractFunctionInput,
   EnhancedContractFunction,
@@ -14,6 +17,8 @@ import type {
 
 const ADDR_A = '0x1111111111111111111111111111111111111111';
 const ADDR_B = '0x2222222222222222222222222222222222222222';
+const CONTRACT = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+const RPC_1 = getDefaultRpcUrl(1);
 
 type TestFunction = EnhancedContractFunction;
 
@@ -39,7 +44,7 @@ const makeWriteFunc = (inputs: ContractFunctionInput[], name = 'f'): TestFunctio
   source: 'impl',
 });
 
-function renderForm(func: TestFunction) {
+function renderForm(func: TestFunction, options?: { contractAddress?: string; chainId?: number }) {
   const onCall = vi.fn();
   render(
     <FunctionCallForm
@@ -48,8 +53,9 @@ function renderForm(func: TestFunction) {
       results={{}}
       errors={{}}
       loadingStates={{}}
-      chainId={1}
+      chainId={options?.chainId ?? 1}
       blockNumber=""
+      contractAddress={options?.contractAddress}
     />,
   );
   // Function forms render collapsed; expand like a real user would.
@@ -288,5 +294,145 @@ describe('FunctionCallForm chain-native value unit', () => {
     // 'ETH' on a non-Ethereum chain.
     expect(screen.getByLabelText('Value (POL)')).toBeInTheDocument();
     expect(screen.queryByLabelText('Value (ETH)')).not.toBeInTheDocument();
+  });
+});
+
+describe('FunctionCallForm cast copy actions', () => {
+  // userEvent.setup() swaps in its own clipboard stubs; stick to
+  // fireEvent and stub the platform API directly (customAbiPanel test
+  // pattern).
+  const stubClipboard = (writeText?: (text: string) => Promise<void>) => {
+    Object.defineProperty(navigator, 'clipboard', {
+      value: writeText ? { writeText } : undefined,
+      configurable: true,
+    });
+  };
+
+  const castButton = () => screen.getByRole('button', { name: 'Copy as cast' });
+  const calldataButton = () => screen.getByRole('button', { name: 'Copy calldata' });
+
+  it('copies a runnable cast call command for the filled args', async () => {
+    const writeText = vi.fn(async () => undefined);
+    stubClipboard(writeText);
+    const func = makeFunc([{ name: 'who', type: 'address' }], 'balanceOf');
+    renderForm(func, { contractAddress: CONTRACT });
+
+    fireEvent.change(screen.getByLabelText('who (address)'), { target: { value: ADDR_A } });
+    fireEvent.click(castButton());
+
+    expect(writeText).toHaveBeenCalledTimes(1);
+    expect(writeText).toHaveBeenCalledWith(
+      `cast call ${CONTRACT} "balanceOf(address)" ${ADDR_A} --rpc-url ${RPC_1}`,
+    );
+    expect(await screen.findByRole('button', { name: 'Copied ✓' })).toBeInTheDocument();
+  });
+
+  it('discloses the default-public-RPC caveat in the enabled tooltip', () => {
+    renderForm(makeFunc([{ name: 'who', type: 'address' }], 'balanceOf'), {
+      contractAddress: CONTRACT,
+    });
+
+    expect(castButton()).toHaveAttribute(
+      'title',
+      expect.stringContaining('uses the chain\'s default public RPC'),
+    );
+  });
+
+  it('copies the send variant with the key placeholder for write functions', async () => {
+    const writeText = vi.fn(async () => undefined);
+    stubClipboard(writeText);
+    const func = makeWriteFunc(
+      [
+        { name: 'to', type: 'address' },
+        { name: 'amount', type: 'uint256' },
+      ],
+      'transfer',
+    );
+    renderForm(func, { contractAddress: CONTRACT });
+
+    fireEvent.change(screen.getByLabelText('to (address)'), { target: { value: ADDR_A } });
+    fireEvent.change(screen.getByLabelText('amount (uint256)'), { target: { value: '100' } });
+    fireEvent.click(castButton());
+
+    expect(writeText).toHaveBeenCalledWith(
+      `cast send ${CONTRACT} "transfer(address,uint256)" ${ADDR_A} 100 ` +
+      `--rpc-url ${RPC_1} --private-key <ENTER_YOUR_KEY>`,
+    );
+  });
+
+  it('switches to the encoded-calldata form for array args and copies the raw bytes', async () => {
+    const writeText = vi.fn(async () => undefined);
+    stubClipboard(writeText);
+    const func = makeFunc([{ name: 'owners', type: 'address[]' }], 'getOwners');
+    renderForm(func, { contractAddress: CONTRACT });
+
+    fireEvent.change(screen.getByLabelText('owners (address[])'), {
+      target: { value: `${ADDR_A},${ADDR_B}` },
+    });
+    fireEvent.click(castButton());
+
+    const expectedAbi: AbiFunction[] = [
+      {
+        type: 'function',
+        name: 'getOwners',
+        stateMutability: 'view',
+        inputs: [{ name: 'owners', type: 'address[]' }],
+        outputs: [],
+      },
+    ];
+    const expected = encodeFunctionData({
+      abi: expectedAbi,
+      functionName: 'getOwners',
+      args: [[ADDR_A, ADDR_B]],
+    });
+    expect(writeText).toHaveBeenCalledWith(`cast call ${CONTRACT} ${expected} --rpc-url ${RPC_1}`);
+
+    fireEvent.click(calldataButton());
+    expect(writeText).toHaveBeenLastCalledWith(expected);
+  });
+
+  it('disables the copy actions with the offending field as tooltip while args are invalid', () => {
+    const func = makeFunc(
+      [
+        { name: 'owner', type: 'address' },
+        { name: 'amount', type: 'uint256' },
+      ],
+      'info',
+    );
+    renderForm(func, { contractAddress: CONTRACT });
+
+    // Live (no submit needed): an invalid value kills the command with
+    // the field-level reason.
+    fireEvent.change(screen.getByLabelText('owner (address)'), { target: { value: 'nope' } });
+    expect(castButton()).toBeDisabled();
+    expect(calldataButton()).toBeDisabled();
+    expect(castButton()).toHaveAttribute('title', 'owner: invalid address');
+
+    // A non-trailing empty required arg does the same.
+    fireEvent.change(screen.getByLabelText('owner (address)'), { target: { value: '' } });
+    fireEvent.change(screen.getByLabelText('amount (uint256)'), { target: { value: '5' } });
+    expect(castButton()).toHaveAttribute('title', 'owner: required');
+
+    // Filling it back re-enables both.
+    fireEvent.change(screen.getByLabelText('owner (address)'), { target: { value: ADDR_A } });
+    expect(castButton()).toBeEnabled();
+    expect(calldataButton()).toBeEnabled();
+  });
+
+  it('is disabled when the contract address is not provided', () => {
+    renderForm(makeFunc([{ name: 'who', type: 'address' }], 'balanceOf'));
+
+    expect(castButton()).toBeDisabled();
+    expect(castButton()).toHaveAttribute('title', 'contract address unavailable');
+  });
+
+  it('reports a failed clipboard honestly instead of claiming success', async () => {
+    stubClipboard(undefined);
+    renderForm(makeFunc([], 'decimals'), { contractAddress: CONTRACT });
+
+    fireEvent.click(castButton());
+
+    expect(await screen.findByRole('button', { name: 'Copy failed' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Copied ✓' })).not.toBeInTheDocument();
   });
 });

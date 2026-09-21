@@ -104,9 +104,13 @@ const signatureOf = (event: GetLogsArgs['event']): Hex =>
 
 const matchesFilter = (log: ScanLog, args: GetLogsArgs): boolean => {
   if (log.topics[0] !== signatureOf(args.event)) return false;
+  // Token mode: the emitter address is the filter — no participant topics.
+  if (args.address !== undefined) {
+    return log.address.toLowerCase() === args.address.toLowerCase();
+  }
   const isErc20Shape = log.topics.length === 3;
-  const wantFrom = args.args.from !== undefined ? topicAddress(args.args.from) : null;
-  const wantTo = args.args.to !== undefined ? topicAddress(args.args.to) : null;
+  const wantFrom = args.args?.from !== undefined ? topicAddress(args.args.from) : null;
+  const wantTo = args.args?.to !== undefined ? topicAddress(args.args.to) : null;
   const fromTopic = isErc20Shape ? log.topics[1] : log.topics[2];
   const toTopic = isErc20Shape ? log.topics[2] : log.topics[3];
   if (wantFrom !== null && fromTopic !== wantFrom) return false;
@@ -303,6 +307,95 @@ describe('TokenTransferService - coverage honesty', () => {
     });
 
     await expect(service.getTokenTransfers(1, OWNER, 0, 25)).rejects.toThrow('connection refused');
+  });
+});
+
+describe('TokenTransferService - token mode', () => {
+  it('filters by the log address with the topic0 set only — no participant topics', async () => {
+    // Logs emitted by TOKEN between OTHERS: participant topics can never
+    // match them — exactly the rows the token-centric scan exists for
+    // (logOf fixtures all carry address: TOKEN).
+    const logs = [
+      erc20Log(OPERATOR, OTHER, 500n, 950, 0),
+      singleLog(OPERATOR, OTHER, OWNER, 1n, 1n, 949, 1),
+      batchLog(OPERATOR, OWNER, OTHER, [7n], [2n], 948, 2),
+    ];
+    const { service, calls } = makeHarness({ logs, latest: 1_000n });
+
+    const result = await service.getTokenTransfers(1, TOKEN, 0, 25, undefined, false, 'token');
+
+    // One query per event shape (no direction split), one chunk covering
+    // [0..1000] (default window exceeds the chain tip).
+    expect(calls).toHaveLength(3);
+    for (const call of calls) {
+      expect(call.address).toBe(TOKEN.toLowerCase());
+      expect(call.args).toBeUndefined();
+      expect(call.fromBlock).toBe(0n);
+      expect(call.toBlock).toBe(1_000n);
+    }
+    // All three shapes surface with the emitting token as `token`.
+    expect(result.mode).toBe('token');
+    expect(result.coverage).toBe('complete');
+    expect(result.transfers.map((t) => t.standard)).toEqual([
+      'erc20-or-erc721',
+      'erc1155-single',
+      'erc1155-batch',
+    ]);
+    for (const transfer of result.transfers) {
+      expect(transfer.token).toBe(TOKEN.toLowerCase());
+    }
+  });
+
+  it('resolves direction per row from the viewed contract participation', async () => {
+    const logs = [
+      erc20Log(TOKEN, OTHER, 10n, 900, 0), // contract sends its own token → out
+      erc20Log(OTHER, TOKEN, 20n, 899, 1), // contract receives → in
+      erc20Log(OTHER, OPERATOR, 30n, 898, 2), // mint-style: neither → none
+      erc20Log(TOKEN, TOKEN, 40n, 897, 3), // self-transfer → out (participant convention)
+    ];
+    const { service } = makeHarness({ logs, latest: 1_000n });
+
+    const result = await service.getTokenTransfers(1, TOKEN, 0, 25, undefined, false, 'token');
+
+    expect(result.transfers.map((t) => t.direction)).toEqual(['out', 'in', 'none', 'out']);
+  });
+
+  it('participant mode keeps its six topic-filtered calls with no address filter', async () => {
+    const { service, calls } = makeHarness({ logs: [], latest: 1_000n });
+
+    await service.getTokenTransfers(1, OWNER, 0, 25);
+
+    expect(calls).toHaveLength(6);
+    for (const call of calls) {
+      expect(call.address).toBeUndefined();
+      expect(call.args).toBeDefined();
+    }
+    expect(calls.filter((call) => call.args?.from === OWNER.toLowerCase())).toHaveLength(3);
+    expect(calls.filter((call) => call.args?.to === OWNER.toLowerCase())).toHaveLength(3);
+  });
+
+  it('caches the two modes separately and reports the mode on every result', async () => {
+    // Emitted by TOKEN between two other addresses: token mode finds it,
+    // participant mode for the same (chain, address, window) cannot.
+    const logs = [erc20Log(OTHER, OPERATOR, 5n, 500, 0)];
+    const { service, calls } = makeHarness({ logs, latest: 1_000n });
+
+    const tokenResult = await service.getTokenTransfers(1, TOKEN, 0, 25, undefined, false, 'token');
+    expect(tokenResult.mode).toBe('token');
+    expect(tokenResult.transfers).toHaveLength(1);
+    const callsAfterTokenScan = calls.length;
+
+    const participantResult = await service.getTokenTransfers(1, TOKEN, 0, 25);
+    expect(participantResult.mode).toBe('participant');
+    expect(participantResult.transfers).toHaveLength(0);
+    // A genuinely new scan (six more calls), not a cache re-serve.
+    expect(calls.length).toBe(callsAfterTokenScan + 6);
+
+    // Re-requesting token mode serves ITS cache entry — no new calls.
+    const cachedToken = await service.getTokenTransfers(1, TOKEN, 0, 25, undefined, false, 'token');
+    expect(calls.length).toBe(callsAfterTokenScan + 6);
+    expect(cachedToken.transfers).toHaveLength(1);
+    expect(cachedToken.mode).toBe('token');
   });
 });
 

@@ -16,6 +16,7 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { DiscoveryGate } from '@/components/ServiceSetup';
 import { ServiceDiscoveryProvider } from '@/hooks/ServiceDiscoveryContext';
 import { useServiceDiscovery } from '@/hooks/ServiceDiscoveryContext';
+import { readThemePreference, setDocumentThemeAttribute } from '@/themePreference';
 
 // SPA route recovery for GitHub Pages 404 redirect
 // 404.html encodes the original path into the hash (e.g. #/chain/1)
@@ -33,6 +34,14 @@ import { useServiceDiscovery } from '@/hooks/ServiceDiscoveryContext';
     window.location.hash = '';
   }
 })();
+
+// Theme before first paint: mirror the stored preference (localStorage
+// 'be:theme') onto <html data-theme> so the palette overrides in theme.css
+// apply with the very first render — no flash of the wrong palette after an
+// explicit Dark/Light choice. System mode sets no attribute on purpose: the
+// prefers-color-scheme media query in theme.css already styles the first
+// paint correctly on a dark-OS machine, so there is nothing to correct.
+setDocumentThemeAttribute(readThemePreference());
 
 function Root() {
   const { status, error, isScanning, setApiUrl, discover, switchedFromManual } =

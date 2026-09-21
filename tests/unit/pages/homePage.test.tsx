@@ -66,10 +66,18 @@ type FeedResult = {
 
 const mockUseLatestBlocksFeed = vi.fn<(...args: unknown[]) => FeedResult>();
 const mockUseLatestTransactionsFeed = vi.fn<(...args: unknown[]) => FeedResult>();
+const mockUseGasHistory = vi.fn<(...args: unknown[]) => FeedResult>();
 
 vi.mock('@/services/homeFeed', () => ({
   useLatestBlocksFeed: (...args: unknown[]) => mockUseLatestBlocksFeed(...args),
   useLatestTransactionsFeed: (...args: unknown[]) => mockUseLatestTransactionsFeed(...args),
+}));
+
+// The gas panel's own feed is mocked for the same reason as the feeds
+// above: these cases pin view routing, not RPC behavior (gasHistory.test
+// and homeGasPanel.test.tsx own the panel's states).
+vi.mock('@/services/gasHistory', () => ({
+  useGasHistory: (...args: unknown[]) => mockUseGasHistory(...args),
 }));
 
 const renderHome = (path: string) =>
@@ -88,6 +96,7 @@ describe('Home view', () => {
     localStorage.clear();
     mockUseLatestBlocksFeed.mockReturnValue({ data: undefined, loading: false });
     mockUseLatestTransactionsFeed.mockReturnValue({ data: undefined, loading: false });
+    mockUseGasHistory.mockReturnValue({ data: undefined, loading: false });
   });
 
   it('renders the hero for a supported mainnet without a testnet badge', async () => {
@@ -132,6 +141,7 @@ describe('Home view', () => {
     // that cannot render).
     expect(mockUseLatestBlocksFeed).toHaveBeenCalledWith(0);
     expect(mockUseLatestTransactionsFeed).toHaveBeenCalledWith(0);
+    expect(mockUseGasHistory).toHaveBeenCalledWith(0);
   });
 
   it('distinguishes an unparseable chain param from an unsupported chain id', async () => {

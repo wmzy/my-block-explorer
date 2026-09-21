@@ -1,0 +1,50 @@
+# Two-container local deployment: api (Hono + DuckDB) + web (nginx serving the SPA).
+#
+# CORS pairing — read this before using the web UI from another machine:
+#   The SPA talks to the API directly FROM THE BROWSER; the containers never
+#   talk to each other. On the machine running compose, the web UI is
+#   http://localhost:3000 and the API is http://localhost:8201 — loopback
+#   origins are always allowed by the API's CORS allowlist
+#   (src/middleware/cors-origins.ts), so no extra configuration is needed.
+#   From ANOTHER machine the web UI is http://<your-host>:3000, which is NOT a
+#   loopback origin: the API will reject its requests unless you set
+#   CORS_ALLOWED_ORIGINS below to that origin (and every visitor must still
+#   type the API URL http://<your-host>:8201 into the setup screen once — the
+#   frontend only auto-scans localhost:8201-8205).
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: api
+    # Published so the host browser can reach the API directly (the web
+    # container does not proxy /api).
+    ports:
+      - '8201:8201'
+    volumes:
+      # :Z relabels the host dir for container access on SELinux distros
+      # (Fedora/RHEL); it is a harmless no-op elsewhere
+      - ./data:/app/data:Z
+    environment:
+      # --- optional, uncomment as needed ---
+      # Gates core-workflow writes + required for the /api/performance/* admin
+      # surface. Set this whenever anything other than your own browser can
+      # reach port 8201:
+      #   ADMIN_TOKEN: change-me-to-a-long-random-string
+      # Only needed when the web UI is visited from another machine (see the
+      # CORS pairing note above):
+      #   CORS_ALLOWED_ORIGINS: http://192.168.1.10:3000
+      # NEVER set ENABLE_DEBUG_API=1 on a shared host — it mounts an
+      # unauthenticated arbitrary-SQL endpoint (POST /debug/db/query).
+      {}
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: web
+    ports:
+      - '3000:80'
+    restart: unless-stopped

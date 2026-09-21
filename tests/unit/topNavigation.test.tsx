@@ -1,8 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import TopNavigation from '@/components/TopNavigation';
 import { ApiError } from '@/util/apiError';
+import { ServiceDiscoveryContext } from '@/hooks/ServiceDiscoveryContext';
+import type { ServiceInfo } from '@/hooks/useAutoDiscovery';
+import { THEME_STORAGE_KEY } from '@/themePreference';
 import {
   recordSearchHistoryEntry,
   SEARCH_HISTORY_STORAGE_KEY,
@@ -855,6 +858,114 @@ describe('TopNavigation', () => {
 
     expect(await screen.findByText(/Hash not found on Ethereum/)).toBeInTheDocument();
     expect(JSON.parse(localStorage.getItem(SEARCH_HISTORY_STORAGE_KEY) ?? '[]')).toEqual([]);
+  });
+});
+
+// --- Theme control + backend version chip ---
+
+// Controlled discovery context for the version chip: the real provider runs
+// useAutoDiscovery (network probes); the chip only reads serviceInfo, so a
+// hand-built context value pins that state without a network.
+function discoveryContextWith(serviceInfo: ServiceInfo | null) {
+  return {
+    status: 'found' as const,
+    serviceInfo,
+    error: null,
+    isScanning: false,
+    isConnected: serviceInfo !== null,
+    switchedFromManual: null,
+    discover: vi.fn(),
+    autoDiscover: vi.fn(),
+    setApiUrl: vi.fn(),
+    disconnect: vi.fn(),
+    reconnect: vi.fn(),
+  };
+}
+
+function renderTopNavigationWithDiscovery(serviceInfo: ServiceInfo | null) {
+  return render(
+    <ServiceDiscoveryContext.Provider value={discoveryContextWith(serviceInfo)}>
+      <TopNavigation
+        currentChainId={1}
+        onChainChange={vi.fn()}
+        onSearch={vi.fn()}
+        searchPlaceholder="Search address, tx hash, or block number..."
+      />
+    </ServiceDiscoveryContext.Provider>,
+  );
+}
+
+describe('theme control', () => {
+  beforeEach(() => {
+    localStorage.removeItem(THEME_STORAGE_KEY);
+    document.documentElement.removeAttribute('data-theme');
+  });
+
+  afterEach(() => {
+    document.documentElement.removeAttribute('data-theme');
+  });
+
+  it('starts at the stored preference and names current + next mode', () => {
+    localStorage.setItem(THEME_STORAGE_KEY, 'dark');
+    renderTopNavigation();
+
+    expect(
+      screen.getByRole('button', { name: 'Theme: dark. Switch to system' }),
+    ).toBeInTheDocument();
+  });
+
+  it('cycles Light → Dark → System, applying and persisting each step', () => {
+    renderTopNavigation();
+
+    // system → light: pinned attribute, persisted choice, advanced label
+    fireEvent.click(screen.getByRole('button', { name: 'Theme: system. Switch to light' }));
+    expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('light');
+    expect(document.documentElement.dataset.theme).toBe('light');
+    expect(
+      screen.getByRole('button', { name: 'Theme: light. Switch to dark' }),
+    ).toBeInTheDocument();
+
+    // light → dark
+    fireEvent.click(screen.getByRole('button', { name: 'Theme: light. Switch to dark' }));
+    expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('dark');
+    expect(document.documentElement.dataset.theme).toBe('dark');
+
+    // dark → system: attribute removed again, OS preference back in charge
+    fireEvent.click(screen.getByRole('button', { name: 'Theme: dark. Switch to system' }));
+    expect(localStorage.getItem(THEME_STORAGE_KEY)).toBe('system');
+    expect(document.documentElement.hasAttribute('data-theme')).toBe(false);
+  });
+});
+
+describe('backend version chip', () => {
+  it('shows the discovered backend version with its base URL in the title', () => {
+    renderTopNavigationWithDiscovery({
+      host: 'localhost',
+      port: 8201,
+      url: 'http://localhost:8201',
+      version: '1.2.3',
+    });
+
+    const chip = screen.getByText('v1.2.3');
+    expect(chip).toHaveAttribute('title', 'Backend http://localhost:8201 (v1.2.3)');
+  });
+
+  it('stays honest with \'v?\' and an offline title when no backend was discovered', () => {
+    renderTopNavigationWithDiscovery(null);
+
+    const chip = screen.getByText('v?');
+    expect(chip).toHaveAttribute('title', 'Backend offline - version unknown');
+  });
+
+  it('distinguishes a connected backend that reports no version', () => {
+    renderTopNavigationWithDiscovery({
+      host: 'localhost',
+      port: 8201,
+      url: 'http://localhost:8201',
+    });
+
+    const chip = screen.getByText('v?');
+    expect(chip).toHaveAttribute('title', 'Backend http://localhost:8201 - version unknown');
   });
 });
 

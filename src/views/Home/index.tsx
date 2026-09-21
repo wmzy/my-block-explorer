@@ -18,6 +18,14 @@ import { PageContainer } from '@/components/ui/PageLayout';
 import { Button } from '@/components/ui/Button';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { useLatestBlocksFeed, useLatestTransactionsFeed } from '@/services/homeFeed';
+import {
+  buildSparklinePath,
+  formatGwei,
+  gasWindowLabel,
+  useGasHistory,
+  type GasHistoryResult,
+  type GasUnavailableReason,
+} from '@/services/gasHistory';
 import { describeBlockProducer } from '@/utils/blockRpcData';
 import { redirectReplace, rememberChainId } from './Landing';
 import { UnsupportedChainState } from './UnsupportedChainState';
@@ -189,6 +197,115 @@ const staleBannerRow = css`
   flex-wrap: wrap;
 `;
 
+// --- gas panel ---
+
+// Trend + tiers side by side on every width down to the mobile stack; the
+// wrap point sits well below the 1024px layout width so the panel never
+// squeezes the page grid.
+const gasPanelRow = css`
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--haze-space-4) var(--haze-space-6);
+  align-items: stretch;
+`;
+
+const gasTrendColumn = css`
+  flex: 1 1 280px;
+  min-width: 0;
+`;
+
+const gasTierColumn = css`
+  flex: 0 1 220px;
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--haze-space-2);
+`;
+
+// Fixed 240x48 viewBox stretched horizontally (preserveAspectRatio="none");
+// non-scaling strokes below keep the line weight uniform at any width.
+const gasSparkline = css`
+  display: block;
+  width: 100%;
+  height: 48px;
+`;
+
+const gasSparkLine = css`
+  stroke: var(--haze-color-primary);
+  stroke-width: 1.5;
+  fill: none;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+`;
+
+const gasSparkArea = css`
+  fill: var(--haze-color-primary-subtle);
+`;
+
+const gasFeeFacts = css`
+  display: grid;
+  grid-template-columns: auto auto;
+  justify-content: start;
+  column-gap: var(--haze-space-6);
+  row-gap: 2px;
+  margin-top: var(--haze-space-2);
+`;
+
+const gasFeeValue = css`
+  font-size: var(--haze-text-sm);
+  font-weight: var(--haze-weight-bold);
+  color: var(--haze-color-text);
+  font-family: var(--haze-font-mono, monospace);
+`;
+
+const gasTierRow = css`
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--haze-space-3);
+  font-size: var(--haze-text-sm);
+`;
+
+const gasTierLabel = css`
+  color: var(--haze-color-text-muted);
+  font-size: var(--haze-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+`;
+
+const gasTierValue = css`
+  font-weight: var(--haze-weight-medium);
+  font-family: var(--haze-font-mono, monospace);
+  color: var(--haze-color-text);
+`;
+
+const gasTierNote = css`
+  font-size: var(--haze-text-xs);
+  color: var(--haze-color-text-muted);
+`;
+
+const gasWindowLabelStyle = css`
+  font-size: var(--haze-text-xs);
+  color: var(--haze-color-text-muted);
+  white-space: nowrap;
+`;
+
+const gasUnavailableStyle = css`
+  font-size: var(--haze-text-sm);
+  color: var(--haze-color-text-muted);
+  padding: var(--haze-space-2) 0;
+`;
+
+// Sparkline-shaped placeholder: full-width 48px surface mirroring the real
+// chart geometry so the card does not jump when data lands.
+const gasSparkSkeleton = css`
+  display: block;
+  width: 100%;
+  height: 48px;
+`;
+
 // --- first-load skeletons ---
 
 // Shared placeholder surface. The pulse animates opacity only, so it stays
@@ -346,6 +463,166 @@ function FeedSkeletonRows({ rows }: { rows: number }) {
   );
 }
 
+// --- gas panel ---
+
+// Rhythm with the surrounding blocks: the stats bar's bottom margin and
+// this card's own bottom margin collapse with the columns' top margin, so
+// the gaps around the panel match the page's existing spacing.
+const gasPanelCard = css`
+  margin-bottom: var(--haze-space-6);
+`;
+
+// Feed shape the panel consumes (the polled gas hook's observable fields).
+type GasFeedState = {
+  data: GasHistoryResult | undefined;
+  loading: boolean;
+  error: Error | undefined;
+};
+
+// Honest copy per unavailable reason. The fetch never throws, so the
+// view-level error fallback below reuses 'fetch-failed'; the
+// unsupported-chain case never renders (the view early-returns for unknown
+// chains and the fetch guards the parked id 0 without an RPC call).
+const GAS_UNAVAILABLE_COPY: Record<GasUnavailableReason, string> = {
+  'unsupported-chain': 'Gas history unavailable from this RPC.',
+  'method-not-supported':
+    'Gas history unavailable from this RPC — this endpoint does not implement eth_feeHistory.',
+  'no-base-fee-data':
+    'Gas history unavailable from this RPC — no EIP-1559 base-fee data was returned.',
+  'fetch-failed': 'Gas history unavailable from this RPC — the fee-history request failed.',
+};
+
+const GAS_TIER_LABELS = { slow: 'Slow', standard: 'Standard', fast: 'Fast' } as const;
+
+// EIP-1559 panel under the stats bar: base-fee sparkline over the actual
+// returned block window plus Slow/Standard/Fast priority-fee tiers. Same
+// tri-state honesty as the stat cards — first load pulses, a settled
+// unavailable state is explicit (never an error page), and present data
+// always wins over a background refetch.
+function GasPanel({ feed, chainId }: { feed: GasFeedState; chainId: number }) {
+  // Cross-chain guard: the query layer's store keeps the last settle while
+  // the new chain's fetch runs, so another chain's result is treated as
+  // absent — the panel pulses instead of flashing chain A's fees under
+  // chain B's header.
+  const own = feed.data?.chainId === chainId ? feed.data : undefined;
+  const snapshot = own?.status === 'ok' ? own.snapshot : undefined;
+
+  if (snapshot) {
+    const windowText = gasWindowLabel(snapshot.oldestBlock, snapshot.newestBlock);
+    const line = buildSparklinePath(snapshot.baseFeeGwei);
+    const area = line.length > 0 ? `${line} L240,48 L0,48 Z` : '';
+    const tiers = snapshot.tiers;
+    return (
+      <div data-testid="gas-panel" className={gasPanelCard}>
+        <Card>
+          <CardHeader>
+            <div className={cardHeaderRow}>
+              <CardTitle>Gas</CardTitle>
+              <span className={gasWindowLabelStyle}>{windowText}</span>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className={gasPanelRow}>
+              <div className={gasTrendColumn}>
+                <svg
+                  className={gasSparkline}
+                  viewBox="0 0 240 48"
+                  preserveAspectRatio="none"
+                  role="img"
+                  aria-label={`Base fee per gas, ${windowText}`}
+                >
+                  {area.length > 0 && <path className={gasSparkArea} d={area} />}
+                  <path className={gasSparkLine} d={line} />
+                </svg>
+                <div className={gasFeeFacts}>
+                  <span className={statLabelStyle}>Base fee</span>
+                  <span className={statLabelStyle}>Window avg</span>
+                  <span
+                    className={gasFeeValue}
+                    title={`${snapshot.currentBaseFeeGwei} gwei (newest block in window)`}
+                  >
+                    {formatGwei(snapshot.currentBaseFeeGwei)} gwei
+                  </span>
+                  <span
+                    className={gasFeeValue}
+                    title={`${snapshot.averageBaseFeeGwei} gwei (mean of window)`}
+                  >
+                    {formatGwei(snapshot.averageBaseFeeGwei)} gwei
+                  </span>
+                </div>
+              </div>
+              <div className={gasTierColumn}>
+                {(['slow', 'standard', 'fast'] as const).map(tier => (
+                  <div key={tier} className={gasTierRow}>
+                    <span className={gasTierLabel}>{GAS_TIER_LABELS[tier]}</span>
+                    <span className={gasTierValue}>
+                      {tiers ? `${formatGwei(tiers[tier])} gwei` : '—'}
+                    </span>
+                  </div>
+                ))}
+                <div className={gasTierNote}>
+                  {tiers
+                    ? 'Priority fees · 25/50/75th pct rewards'
+                    : 'Priority fees not returned by this RPC'}
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // First load with nothing fetched yet: a sparkline-shaped placeholder.
+  if (own === undefined && feed.loading) {
+    return (
+      <div data-testid="gas-panel" className={gasPanelCard}>
+        <Card>
+          <CardHeader>
+            <div className={cardHeaderRow}>
+              <CardTitle>Gas</CardTitle>
+              <span className={cx(skeletonBase, statValueSkeleton)} style={{ width: 120 }} />
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className={gasPanelRow}>
+              <div className={gasTrendColumn}>
+                <span className={cx(skeletonBase, gasSparkSkeleton)} data-testid="gas-skeleton" />
+              </div>
+              <div className={gasTierColumn}>
+                <span className={cx(skeletonBase, skeletonLine)} style={{ width: '70%' }} />
+                <span className={cx(skeletonBase, skeletonLine)} style={{ width: '55%' }} />
+                <span className={cx(skeletonBase, skeletonLine)} style={{ width: '62%' }} />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Settled without usable data (or the defensive never-throws escape hatch
+  // of a hook-level error): the explicit unavailable state.
+  const reason: GasUnavailableReason =
+    own?.status === 'unavailable' ? own.reason : 'fetch-failed';
+  return (
+    <div data-testid="gas-panel" className={gasPanelCard}>
+      <Card>
+        <CardHeader>
+          <div className={cardHeaderRow}>
+            <CardTitle>Gas</CardTitle>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className={gasUnavailableStyle} data-testid="gas-unavailable">
+            {GAS_UNAVAILABLE_COPY[reason]}
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 // --- component ---
 
 export default function Home() {
@@ -368,6 +645,9 @@ export default function Home() {
   const feedChainId = chainInfo ? currentChainId : 0;
   const blocksFeed = useLatestBlocksFeed(feedChainId);
   const transactionsFeed = useLatestTransactionsFeed(feedChainId);
+  // Gas history rides its own polled feed (60s cadence): a fee-history
+  // failure must degrade only this panel, never the feeds above.
+  const gasFeed = useGasHistory(feedChainId);
 
   const blocks = blocksFeed.data?.blocks ?? [];
   const latestBlockNumber = blocksFeed.data?.latestBlockNumber ?? null;
@@ -468,6 +748,11 @@ export default function Home() {
           <StatCard label="Txns in Latest Block" value={latestTxCountText} feed={statsFeed} />
           <StatCard label="Gas Used (latest block)" value={gasUsedText} feed={statsFeed} />
         </div>
+
+        {/* Gas window panel: RPC-direct fee history over the actual returned
+            block range; degrades to an explicit unavailable state per its
+            own feed and hides entirely with the unsupported-chain return. */}
+        <GasPanel feed={gasFeed} chainId={currentChainId} />
 
         {/* Stale branch: fetch failing but old data still on screen */}
         {showStaleBanner && lastUpdatedAt !== undefined && (

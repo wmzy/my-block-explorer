@@ -19,6 +19,11 @@ import {
   type TokenHolding,
 } from '@/views/Address/holdings';
 import {
+  classifyTokenOverview,
+  computeDiscoveredHolders,
+  formatTokenSupply,
+} from '@/views/Address/tokenOverview';
+import {
   classifyAddressType,
   delegationTarget,
 } from '@/views/Address/addressType';
@@ -29,6 +34,14 @@ import {
   type ActivityTabId,
 } from '@/views/Address/search';
 import { isBackendUnreachable } from '@/util/http';
+import { getApiBase } from '@/util/apiBase';
+import { ApiError } from '@/util/apiError';
+import {
+  labelMatchesTarget,
+  saveAddressLabel,
+  deleteAddressLabel,
+  useAddressLabel,
+} from '@/services/labels';
 import {
   useAddressInfo,
   useAddressTransactions,
@@ -39,6 +52,7 @@ import {
   useRealTimeAddressData,
 } from '@/services/addressRealTime';
 import { useTokenTransfers } from '@/services/tokenTransfers';
+import { useTokenOverview } from '@/services/tokenMetadata';
 import { createRpcClient } from '@/utils/realTimeData';
 import { useEnsName } from '@/services/ens';
 import { formatRelativeTime } from '@/utils/format';
@@ -207,6 +221,54 @@ const holdingsCaveat = css`
   margin: var(--haze-space-2) 0 0;
   color: var(--haze-color-text-muted);
   font-size: var(--haze-text-xs);
+`;
+
+// Token Overview card: only contracts whose token probes answered render
+// it; it sits between the Overview card and the activity card.
+const tokenOverviewCard = css`
+  margin-top: var(--haze-space-5);
+`;
+
+// Export CSV affordance in the tx tab toolbar: an ANCHOR (the backend's
+// Content-Disposition drives the file save), visually a sibling of the
+// Refresh button. Disabled keeps it visible with a title reason — the
+// export always mirrors what the list shows, never a mystery download.
+const exportCsvLink = css`
+  display: inline-flex;
+  align-items: center;
+  gap: var(--haze-space-1);
+  padding: var(--haze-space-1) var(--haze-space-3);
+  border: 1px solid var(--haze-color-border);
+  border-radius: var(--haze-radius-sm, 6px);
+  font-size: var(--haze-text-sm);
+  color: var(--haze-color-text);
+  text-decoration: none;
+  white-space: nowrap;
+
+  &:hover {
+    background: var(--haze-color-bg-muted);
+  }
+`;
+
+const exportCsvLinkDisabled = css`
+  opacity: 0.5;
+  pointer-events: none;
+`;
+
+// One discovered-holder row: participant address on the left, net balance
+// on the right — the same mono/xs treatment as the holdings rows.
+const holderRow = css`
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--haze-space-1) var(--haze-space-2);
+  font-family: var(--haze-font-mono);
+  font-size: var(--haze-text-xs);
+  margin-bottom: var(--haze-space-1);
+
+  @media (max-width: 768px) {
+    justify-content: flex-start;
+  }
 `;
 
 // Serialized transaction row as the API returns it (formatTransactionForApi):
@@ -501,6 +563,319 @@ function HoldingsList({
   );
 }
 
+// --- Address label: the user's personal annotation for this address ---
+
+// Saved label chip: distinct from data rows on purpose — a label is an
+// annotation, not chain truth, so it renders as a badge-like pill.
+const labelChip = css`
+  display: inline-flex;
+  align-items: center;
+  gap: var(--haze-space-1);
+  padding: 0 var(--haze-space-2);
+  border: 1px solid var(--haze-color-border);
+  border-radius: 999px;
+  background: var(--haze-color-bg-muted);
+  font-size: var(--haze-text-sm);
+  color: var(--haze-color-text);
+  max-width: 100%;
+  overflow-wrap: anywhere;
+`;
+
+// Subtle edit affordance beside the chip (icon button).
+const labelEditButton = css`
+  border: none;
+  background: none;
+  padding: 0 var(--haze-space-1);
+  color: var(--haze-color-text-muted);
+  cursor: pointer;
+  font-size: var(--haze-text-sm);
+
+  &:hover {
+    color: var(--haze-color-text);
+  }
+`;
+
+// The "+ add label" affordance: quiet on purpose (an invitation, not a
+// data row) but always visible — this is a single-user tool.
+const labelAddButton = css`
+  border: none;
+  background: none;
+  padding: 0;
+  color: var(--haze-color-text-muted);
+  cursor: pointer;
+  font-size: var(--haze-text-sm);
+  text-decoration: underline dotted;
+
+  &:hover {
+    color: var(--haze-color-text);
+  }
+`;
+
+// Inline editor: label input + optional note input + Save/Cancel (and
+// Remove when overwriting an existing label). Stacks vertically inside the
+// InfoItem value cell.
+const labelEditor = css`
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--haze-space-2);
+  width: 100%;
+
+  @media (max-width: 768px) {
+    align-items: stretch;
+  }
+`;
+
+const labelEditorRow = css`
+  display: flex;
+  gap: var(--haze-space-2);
+  width: 100%;
+`;
+
+const labelInput = css`
+  flex: 1;
+  min-width: 0;
+`;
+
+// Muted inline hint/error under the editor (403 guidance, network error).
+const labelHint = css`
+  font-size: var(--haze-text-sm);
+  color: var(--haze-color-text-muted);
+  margin: 0;
+  text-align: right;
+
+  @media (max-width: 768px) {
+    text-align: left;
+  }
+`;
+
+const LABEL_MAX_CHARS = 64;
+const NOTE_MAX_CHARS = 500;
+
+// The Label row's value cell. Read state: chip + note tooltip + ✎ edit
+// (or the subtle "+ add label" affordance when nothing is saved). Editor
+// state: label input + optional note + Save/Cancel (+ Remove over an
+// existing label). Honesty rules: a 403 keeps the editor open with the
+// admin-token hint (the fix is one settings panel away), a network failure
+// keeps it open with the error shown, and the saved chip only renders for
+// a result that matches THIS (chainId, address) — the query store keeps
+// the previous settle across args switches.
+function AddressLabelRow({ chainId, address }: { chainId: number; address: string }) {
+  const labelQuery = useAddressLabel(chainId, address);
+  const saved = labelMatchesTarget(labelQuery.data, chainId, address)
+    ? labelQuery.data
+    : undefined;
+
+  const [editing, setEditing] = useState(false);
+  const [labelDraft, setLabelDraft] = useState('');
+  const [noteDraft, setNoteDraft] = useState('');
+  const [saving, setSaving] = useState(false);
+  // null = no complaint; 'admin-token' = 403 guidance; otherwise the
+  // honest error message from the failed request.
+  const [editorHint, setEditorHint] = useState<string | null>(null);
+
+  const trimmedLabel = labelDraft.trim();
+  const trimmedNote = noteDraft.trim();
+  const labelValid = trimmedLabel.length >= 1 && trimmedLabel.length <= LABEL_MAX_CHARS;
+  const noteValid = trimmedNote.length <= NOTE_MAX_CHARS;
+
+  const startEditing = () => {
+    setLabelDraft(saved?.label ?? '');
+    setNoteDraft(saved?.note ?? '');
+    setEditorHint(null);
+    setEditing(true);
+  };
+
+  const cancelEditing = () => {
+    setEditing(false);
+    setEditorHint(null);
+  };
+
+  const classifySaveError = (error: unknown): string =>
+    error instanceof ApiError && error.status === 403
+      ? 'admin-token'
+      : error instanceof Error
+        ? error.message
+        : 'Failed to save label';
+
+  const save = async () => {
+    setSaving(true);
+    setEditorHint(null);
+    try {
+      await saveAddressLabel(
+        chainId,
+        address,
+        trimmedLabel,
+        trimmedNote === '' ? null : trimmedNote,
+      );
+      await labelQuery.refetch();
+      setEditing(false);
+    }
+    catch (error) {
+      setEditorHint(classifySaveError(error));
+    }
+    finally {
+      setSaving(false);
+    }
+  };
+
+  const remove = async () => {
+    setSaving(true);
+    setEditorHint(null);
+    try {
+      await deleteAddressLabel(chainId, address);
+      await labelQuery.refetch();
+      setEditing(false);
+    }
+    catch (error) {
+      // A 404 on remove means the label is already gone — the goal state.
+      if (error instanceof ApiError && error.status === 404) {
+        await labelQuery.refetch();
+        setEditing(false);
+      }
+      else {
+        setEditorHint(classifySaveError(error));
+      }
+    }
+    finally {
+      setSaving(false);
+    }
+  };
+
+  if (editing) {
+    const saveDisabled = saving || !labelValid || !noteValid;
+    const saveDisabledReason = !labelValid
+      ? `Label must be 1-${LABEL_MAX_CHARS} characters after trimming`
+      : !noteValid
+          ? `Note must be at most ${NOTE_MAX_CHARS} characters`
+          : undefined;
+    return (
+      <div className={labelEditor}>
+        <div className={labelEditorRow}>
+          <input
+            className={labelInput}
+            value={labelDraft}
+            onChange={e => setLabelDraft(e.target.value)}
+            placeholder="Label (required)"
+            aria-label="Address label"
+            maxLength={LABEL_MAX_CHARS + 10}
+            disabled={saving}
+            data-testid="label-input"
+          />
+        </div>
+        <div className={labelEditorRow}>
+          <input
+            className={labelInput}
+            value={noteDraft}
+            onChange={e => setNoteDraft(e.target.value)}
+            placeholder="Note (optional)"
+            aria-label="Address label note"
+            maxLength={NOTE_MAX_CHARS + 10}
+            disabled={saving}
+            data-testid="label-note-input"
+          />
+        </div>
+        {editorHint !== null && (
+          <p className={labelHint} data-testid="label-editor-hint">
+            {editorHint === 'admin-token'
+              ? 'Set the admin token in ⚙ RPC settings to edit labels'
+              : editorHint}
+          </p>
+        )}
+        <div className={labelEditorRow}>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => void save()}
+            loading={saving}
+            disabled={saveDisabled}
+            title={saveDisabled ? saveDisabledReason : 'Save the label'}
+            data-testid="label-save"
+          >
+            Save
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={cancelEditing}
+            disabled={saving}
+          >
+            Cancel
+          </Button>
+          {saved !== undefined && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => void remove()}
+              disabled={saving}
+              title="Remove the saved label"
+            >
+              Remove
+            </Button>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Read state. A label-channel failure renders a muted inline note — the
+  // rest of the Overview keeps working (the same scoping as the indexed
+  // fields' offline notice).
+  if (labelQuery.error !== undefined) {
+    return (
+      <span
+        className={labelHint}
+        title={labelQuery.error.message}
+        data-testid="label-unavailable"
+      >
+        Label unavailable
+      </span>
+    );
+  }
+
+  if (saved === undefined) {
+    // Still loading (or genuinely absent): while the first fetch is in
+    // flight the affordance waits — an absent label and an unsettled one
+    // must not flash between states.
+    if (labelQuery.loading) return <span className={labelHint}>…</span>;
+    return (
+      <button
+        type="button"
+        className={labelAddButton}
+        onClick={startEditing}
+        data-testid="label-add"
+      >
+        + add label
+      </button>
+    );
+  }
+
+  return (
+    <>
+      <span
+        className={labelChip}
+        title={saved.note ?? undefined}
+        data-testid="label-chip"
+      >
+        {saved.label}
+        {saved.note !== null && (
+          <span aria-label="This label has a note">ⓘ</span>
+        )}
+      </span>
+      <button
+        type="button"
+        className={labelEditButton}
+        onClick={startEditing}
+        aria-label="Edit label"
+        title="Edit label"
+        data-testid="label-edit"
+      >
+        ✎
+      </button>
+    </>
+  );
+}
+
 export default function Address() {
   const { params, router } = useMatched();
 
@@ -591,6 +966,24 @@ export default function Address() {
   const txTotal = txData?.total ?? 0;
   const txTotalPages = Math.max(1, Math.ceil(txTotal / txLimit));
 
+  // CSV export URL: mirrors the tx list's CURRENT ?window= param (the
+  // backend replays the same discovery), so the download always matches
+  // what the list paginates through. Built only when the tx tab is active
+  // (the button renders there alone).
+  const txExportHref = `${getApiBase()}/api/chains/${currentChainId}/addresses/${address}/transactions/export${
+    txSearchWindow !== undefined ? `?window=${txSearchWindow}` : ''
+  }`;
+  // Disabled with a reason while the list itself is loading/errored, or in
+  // degraded mode (a same-origin relative link would 404/serve SPA HTML):
+  // export what the list shows, not a mystery.
+  const txExportDisabledReason = txQuery.loading
+    ? 'Waiting for the transaction list to settle…'
+    : txQuery.error !== undefined
+      ? 'The transaction list failed — export follows the list'
+      : getApiBase() === ''
+        ? 'Backend not connected — export unavailable'
+        : undefined;
+
   // Beyond-data convergence (Transactions/List semantics): once a payload
   // settles and ?page= exceeds the deepest valid page, the URL is pinned
   // (replaced) to that page — an empty page is never shareable or
@@ -611,6 +1004,54 @@ export default function Address() {
       replace: true,
     });
   }, [txPageBeyondData, txTotalPages, setSearch]);
+
+  // Persistent record + code read (both declared here so the type verdict
+  // below — which must precede the token-mode holders query — can read
+  // them without forward references).
+  const persistent: AddressInfoResponse['address'] | undefined =
+    infoQuery.data?.address;
+  const code = codeQuery.data;
+
+  // Presentation-layer type verdict (./addressType): the persistent
+  // record wins over the RPC code read — EXCEPT when the persistent
+  // channel has ERRORED (offline backend): then it contributes no
+  // verdict at all (not even stale cached data), and the live RPC code
+  // read decides EOA vs Contract on its own. An EIP-7702 delegation
+  // designator still outranks both channels (a delegated EOA carries
+  // code yet remains an account, so "has code → contract" misfiles it).
+  // Lives ABOVE the transfers/holdings queries: the token-mode holders
+  // feed below branches on the settled token verdict, and hooks cannot
+  // be ordered after the values they feed.
+  const addressType = classifyAddressType({
+    persistentType:
+      infoQuery.error === undefined ? persistent?.isContract : undefined,
+    rpcCode: code,
+  });
+  // Independent RPC verdict for the contract-view link below: the link is
+  // a navigation affordance, so EITHER channel saying "contract" is enough
+  // — a stale persistent row (or a failed persistent channel) must not
+  // hide the contract page when the code read itself found contract code.
+  // A delegated EOA is the one exception: its designator is bytecode-like
+  // but deploys nothing at this address, so no contract page is offered.
+  const rpcClassifiesContract = code !== undefined && code !== '0x' && code.length > 2;
+  // Explicit `=== true` keeps this a plain-boolean || (not nullish), so the
+  // either-channel-suffices semantics survives the nullish-coalescing rule.
+  const showsContractLink =
+    addressType !== 'delegated-eoa' &&
+    (persistent?.isContract === true || rpcClassifiesContract);
+
+  // Token Overview detection (contracts only): one Multicall3 batch of
+  // name()/symbol()/decimals()/totalSupply() decides token-ness and the
+  // supply. EOAs (and unsettled classifications) arm nothing — zero
+  // multicall, zero network. A transport-level failure stays undefined so
+  // the card renders nothing rather than a wrong "not a token" verdict.
+  const tokenOverviewReads = useTokenOverview(
+    currentChainId,
+    address,
+    addressType === 'contract',
+  );
+  // Pure classification: null = not a token (or not settled) → no card.
+  const tokenClassification = classifyTokenOverview(tokenOverviewReads);
 
   // Token-holdings Overview section (discovered): the scan is the
   // transfers tab's own query — the Overview piggybacks on it with the
@@ -634,6 +1075,34 @@ export default function Address() {
     ttWindowParam,
   );
   const holdingsTransfers = holdingsQuery.data?.transfers ?? [];
+
+  // Token-side holders feed: a token contract gets its own scan in TOKEN
+  // mode (every row's token === the viewed contract — exactly what
+  // computeDiscoveredHolders aggregates). Keyed identically to the
+  // transfers tab's page-1 token-mode query, so the tab's scan populates
+  // the holders for free through the query cache. The PARTICIPANT rows
+  // above keep feeding aggregateTokenHoldings: token-mode rows carry
+  // direction 'none' (mints/burns) which the holdings nets would
+  // misclassify. Same lazy gate (transfersScanned) plus the settled token
+  // verdict — chainId 0 until both hold (the services' disabled-key
+  // shape, zero network).
+  const tokenHoldersQuery = useTokenTransfers(
+    transfersScanned && tokenClassification !== null ? currentChainId : 0,
+    address,
+    '0',
+    TRANSFER_LIMIT,
+    ttWindowParam,
+    'token',
+  );
+  // Mode guard: the result store keeps the previous settle across args
+  // switches, and a participant settle must never feed the holders
+  // aggregation (pre-mode legacy payloads without a mode field are
+  // trusted as-is).
+  const tokenHoldersData =
+    tokenHoldersQuery.data?.mode === 'participant'
+      ? undefined
+      : tokenHoldersQuery.data;
+  const tokenHoldersTransfers = tokenHoldersData?.transfers ?? [];
   // Metadata is only meaningful for the shared ERC-20/721 signature —
   // ERC-1155 rows carry their ids/amounts on the log themselves.
   const metaTokens = useMemo(
@@ -665,38 +1134,26 @@ export default function Address() {
     [holdingsTransfers, classifyShared],
   );
 
-  const persistent: AddressInfoResponse['address'] | undefined =
-    infoQuery.data?.address;
-  const code = codeQuery.data;
   // Backend-unreachable verdict for the attribution banner below: the
   // indexed fields (verification, contract name, creator) silently
   // disappear when the persistent channel dies, so the Overview card
   // must say why instead of just omitting rows.
   const persistentOffline = isBackendUnreachable(infoQuery.error);
-  // Presentation-layer type verdict (./addressType): the persistent
-  // record wins over the RPC code read — EXCEPT when the persistent
-  // channel has ERRORED (offline backend): then it contributes no
-  // verdict at all (not even stale cached data), and the live RPC code
-  // read decides EOA vs Contract on its own. An EIP-7702 delegation
-  // designator still outranks both channels (a delegated EOA carries
-  // code yet remains an account, so "has code → contract" misfiles it).
-  const addressType = classifyAddressType({
-    persistentType:
-      infoQuery.error === undefined ? persistent?.isContract : undefined,
-    rpcCode: code,
-  });
-  // Independent RPC verdict for the contract-view link below: the link is
-  // a navigation affordance, so EITHER channel saying "contract" is enough
-  // — a stale persistent row (or a failed persistent channel) must not
-  // hide the contract page when the code read itself found contract code.
-  // A delegated EOA is the one exception: its designator is bytecode-like
-  // but deploys nothing at this address, so no contract page is offered.
-  const rpcClassifiesContract = code !== undefined && code !== '0x' && code.length > 2;
-  // Explicit `=== true` keeps this a plain-boolean || (not nullish), so the
-  // either-channel-suffices semantics survives the nullish-coalescing rule.
-  const showsContractLink =
-    addressType !== 'delegated-eoa' &&
-    (persistent?.isContract === true || rpcClassifiesContract);
+  const tokenIsErc20 = tokenClassification?.isErc20 === true;
+  // Render-ready fields: decimals double as the holder-amount formatter
+  // (only reached when isErc20, but the fallback keeps the raw units
+  // honest if that invariant ever loosens).
+  const tokenDecimals = tokenClassification?.decimals ?? null;
+  const tokenSymbol = tokenClassification?.symbol ?? null;
+  const tokenSymbolSuffix = tokenSymbol !== null ? ` ${tokenSymbol}` : '';
+  // Discovered holders of the viewed token itself: net per-participant
+  // balances from the token-mode scan rows (each row IS this token),
+  // ERC-20 semantics only, ids excluded.
+  const tokenHolders = useMemo(
+    () =>
+      tokenIsErc20 ? computeDiscoveredHolders(tokenHoldersTransfers, address, true) : null,
+    [tokenIsErc20, tokenHoldersTransfers, address],
+  );
 
   // Old error semantics: the persistent error only surfaces when the code
   // fallback failed too; the realtime error surfaces on its own.
@@ -901,6 +1358,13 @@ export default function Address() {
                 <InfoGrid>
                   <InfoItem label="Address">{address}</InfoItem>
 
+                  {/* Personal annotation (backend-persisted, per chain):
+                      chip + edit when set, "+ add label" when not. Always
+                      offered — this is a single-user tool. */}
+                  <InfoItem label="Label">
+                    <AddressLabelRow chainId={currentChainId} address={address} />
+                  </InfoItem>
+
                   <InfoItem label="Balance">
                     {realTimeQuery.data
                       ? `${realTimeQuery.data.balance} ${getChainSymbol(currentChainId)}`
@@ -1072,6 +1536,114 @@ export default function Address() {
               </CardContent>
             </Card>
 
+            {/* Token Overview: contracts only, and only when at least one
+                token probe answered — a plain contract renders no card at
+                all (silent, never an error state). Lines appear exactly
+                when their probe responded; supply formats with the TOKEN's
+                decimals, raw base units when decimals is unknown. */}
+            {tokenClassification !== null && (
+              <Card className={tokenOverviewCard}>
+                <CardHeader>
+                  <div className={headerRow}>
+                    <CardTitle>Token Overview</CardTitle>
+                    <Badge
+                      variant={tokenClassification.isErc20 ? 'success' : 'warning'}
+                      size="sm"
+                    >
+                      {tokenClassification.isErc20
+                        ? 'ERC-20'
+                        : 'Token (standard unknown — possibly ERC-721)'}
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <InfoGrid>
+                    {tokenClassification.name !== null && (
+                      <InfoItem label="Name">{tokenClassification.name}</InfoItem>
+                    )}
+                    {tokenClassification.symbol !== null && (
+                      <InfoItem label="Symbol">{tokenClassification.symbol}</InfoItem>
+                    )}
+                    {tokenClassification.decimals !== null && (
+                      <InfoItem label="Decimals">
+                        {tokenClassification.decimals}
+                      </InfoItem>
+                    )}
+                    {tokenClassification.totalSupply !== null && (
+                      <InfoItem label="Total Supply">
+                        {formatTokenSupply(
+                          tokenClassification.totalSupply,
+                          tokenClassification.decimals,
+                        )}
+                        {tokenClassification.decimals === null && (
+                          <span className={holdingsMuted}>
+                            {' '}
+                            (raw base units — decimals unknown)
+                          </span>
+                        )}
+                      </InfoItem>
+                    )}
+
+                    {/* Holder balances are ERC-20 semantics — an
+                        unknown-standard token renders no holder rows at
+                        all instead of guessing meaning for ids/amounts. */}
+                    {tokenIsErc20 && tokenHolders !== null && (
+                      <InfoItem label="Top Holders (discovered)">
+                        {!transfersScanned ? (
+                          <>
+                            <span className={holdingsHint}>
+                              Holders are discovered from token transfers —
+                              none have been scanned for this address yet.
+                            </span>
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => selectActivityTab('transfers')}
+                            >
+                              Scan Token Transfers
+                            </Button>
+                          </>
+                        ) : tokenHoldersQuery.loading && !tokenHoldersData ? (
+                          'Scanning token transfers...'
+                        ) : tokenHoldersQuery.error ? (
+                          'Scan failed — see the Token Transfers tab.'
+                        ) : tokenHolders.holders.length === 0 ? (
+                          'No holders discovered in the scanned transfers.'
+                        ) : (
+                          <>
+                            {tokenHolders.holders.map(holder => (
+                              <div key={holder.address} className={holderRow}>
+                                <TypedLink
+                                  to={`/chain/${currentChainId}/address/${holder.address}`}
+                                  className={linkStyle}
+                                  title={holder.address}
+                                >
+                                  {formatAddr(holder.address)}
+                                </TypedLink>
+                                <span>
+                                  {tokenDecimals !== null
+                                    ? formatUnits(holder.net, tokenDecimals)
+                                    : holder.net.toString()}
+                                  {tokenSymbolSuffix}
+                                </span>
+                              </div>
+                            ))}
+                            <p className={holdingsCaveat}>
+                              Discovered via scanned transfers — may be
+                              incomplete
+                              {tokenHolders.excludedTransfers > 0
+                                ? ` (non-ERC-20 rows excluded: ${tokenHolders.excludedTransfers.toLocaleString()})`
+                                : ''}
+                            </p>
+                          </>
+                        )}
+                      </InfoItem>
+                    )}
+                  </InfoGrid>
+                </CardContent>
+              </Card>
+            )}
+
             <Card className={transactionsCard}>
               <CardHeader>
                 <div className={headerRow}>
@@ -1088,6 +1660,31 @@ export default function Address() {
                       </button>
                     ))}
                   </div>
+                  {/* CSV export (tx tab only): anchor download carrying the
+                      CURRENT window param — what the list below shows is
+                      what lands in the file. Disabled-with-reason while the
+                      list is unsettled or the backend is unreachable. */}
+                  {activityTab === 'transactions' && (
+                    <a
+                      className={cx(
+                        exportCsvLink,
+                        txExportDisabledReason !== undefined && exportCsvLinkDisabled,
+                      )}
+                      {...(txExportDisabledReason === undefined
+                        ? { href: txExportHref, download: true }
+                        : {})}
+                      aria-disabled={
+                        txExportDisabledReason !== undefined ? true : undefined
+                      }
+                      title={
+                        txExportDisabledReason
+                        ?? 'Download the discovered transactions as CSV'
+                      }
+                      data-testid="tx-export-csv"
+                    >
+                      Export CSV
+                    </a>
+                  )}
                   {/* Refresh honesty: the button refetches what the ACTIVE
                       tab shows — the tx history + the realtime balance read
                       that owns 'Last updated', or the token-transfer scan

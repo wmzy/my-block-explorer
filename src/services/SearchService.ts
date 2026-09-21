@@ -9,6 +9,9 @@ import { addressService, type AddressInfo } from './AddressService';
 // Vite config also bundles (honoApiPlugin dynamic import); that esbuild pass
 // does not resolve the '@/' alias, so runtime value imports must stay relative.
 import { detectSearchType, sanitizeInput } from '../utils/validation';
+import { and, count, desc, eq, or, sql } from 'drizzle-orm';
+// Same relative-import rule applies to the database module (see above).
+import { db, contractSources } from '../database/init';
 
 /**
  * Search result type
@@ -359,3 +362,188 @@ export const searchService = createSearchService({
   transactionService,
   addressService,
 });
+
+// --- Local contract cache (the cached-source directory) ---
+//
+// The contract_sources table is this explorer's own cache, populated when
+// a contract page is opened or force-refreshed. Two consumers share ONE
+// matching rule through the helpers below, so the directory page and the
+// global search can never disagree about what "matches":
+//   - GET /api/chains/:chainId/contracts (the directory list)
+//   - GET /api/search's additive localContracts field (free-text queries)
+// They live in this module (not ContractSourceService) because that one is
+// RPC/verification-oriented; this is a pure DuckDB read side, same family
+// as the search lookups above.
+
+// Directory page-size bounds, mirroring the transactions list conventions
+// (routes/contracts.ts enforces them at the HTTP boundary).
+export const CONTRACT_DIRECTORY_DEFAULT_LIMIT = 50;
+export const CONTRACT_DIRECTORY_MAX_LIMIT = 100;
+export const CONTRACT_DIRECTORY_MAX_OFFSET = 100_000;
+
+// Free-text search surfaces at most this many local cache hits: the
+// section is a shortcut into the directory, not the directory itself.
+export const LOCAL_CONTRACT_SEARCH_LIMIT = 5;
+
+export type CachedContractSummary = {
+  chainId: number;
+  address: string;
+  name: string | null;
+  isVerified: boolean;
+  verificationSource: string | null;
+  /** ISO timestamp of the last cache write; null when the row has none. */
+  updatedAt: string | null;
+};
+
+export type LocalContractHit = {
+  chainId: number;
+  address: string;
+  name: string | null;
+  isVerified: boolean;
+};
+
+// Case-insensitive substring on the cached name OR a case-insensitive
+// address prefix. DuckDB's contains()/starts_with() are byte-exact, so
+// both sides are lowered (cached addresses are lowercase hex; the needle
+// is normalized the same way). Escaping is a non-issue with these
+// functions: a '%' in the needle stays a literal percent, not a wildcard.
+const contractMatchFilter = (needle: string) => {
+  const lowered = needle.toLowerCase();
+  return or(
+    sql`contains(lower(${contractSources.contractName}), ${lowered})`,
+    sql`starts_with(lower(${contractSources.address}), ${lowered})`,
+  );
+};
+
+// The datetime column maps to Date through drizzle's fromDriver, but the
+// DuckDB adapter also has raw-read paths that hand back strings — accept
+// both, and never guess a date the row does not carry.
+// String shape note: DuckDB hands back the NAIVE stored value
+// ('2026-09-21 12:07:19.183', space-separated, no offset) and the stored
+// convention is UTC wall time (now() default). JS would parse that as
+// LOCAL time — on a UTC+8 machine every cached-at would read 8 hours old —
+// so a string without an explicit offset/designator is parsed as UTC.
+const toIsoTimestamp = (value: Date | string | null | undefined): string | null => {
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'string' && value.length > 0) {
+    const hasOffset = value.endsWith('Z') || /[+-]\d{2}:?\d{2}$/.test(value);
+    const normalized = hasOffset ? value : `${value.replace(' ', 'T')}Z`;
+    const parsed = new Date(normalized);
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  }
+  return null;
+};
+
+/**
+ * One directory page of cached contract_sources rows: verified rows lead,
+ * then most recently updated. `total` counts the whole filtered set so
+ * callers can page; `q`/`offset` echo the applied filter and offset so
+ * clients can refuse a settle that raced an argument switch.
+ */
+export async function listCachedContracts(options: {
+  chainId: number;
+  q?: string;
+  limit: number;
+  offset: number;
+}): Promise<{
+  contracts: CachedContractSummary[];
+  total: number;
+  q: string | null;
+  offset: number;
+}> {
+  const { chainId, limit, offset } = options;
+  const q = options.q?.trim() ?? '';
+
+  const filter = q !== ''
+    ? and(eq(contractSources.chainId, chainId), contractMatchFilter(q))
+    : eq(contractSources.chainId, chainId);
+
+  const rows = await db
+    .select({
+      address: contractSources.address,
+      contractName: contractSources.contractName,
+      isVerified: contractSources.isVerified,
+      verificationSource: contractSources.verificationSource,
+      lastUpdated: contractSources.lastUpdated,
+    })
+    .from(contractSources)
+    .where(filter)
+    .orderBy(
+      desc(contractSources.isVerified),
+      desc(contractSources.lastUpdated),
+      contractSources.address,
+    )
+    .limit(limit)
+    .offset(offset);
+
+  const countResult = await db
+    .select({ value: count() })
+    .from(contractSources)
+    .where(filter);
+
+  return {
+    contracts: rows.map(row => ({
+      chainId,
+      address: row.address,
+      name: row.contractName ?? null,
+      isVerified: row.isVerified ?? false,
+      verificationSource: row.verificationSource ?? null,
+      updatedAt: toIsoTimestamp(row.lastUpdated),
+    })),
+    // drizzle's count() casts DuckDB's BIGINT to a JS number (same note
+    // as the transactions list).
+    total: countResult[0]?.value || 0,
+    q: q !== '' ? q : null,
+    offset,
+  };
+}
+
+/**
+ * Free-text local-cache hits for the global search's additive
+ * localContracts field. Unscoped by default: each hit carries its own
+ * chainId so clients link to the right chain's page; pass a chainId to
+ * scope the match. Returns null when the cache read itself fails — an
+ * empty array must keep meaning "no matches", never "could not check" —
+ * so callers drop the field instead of asserting a fact they do not know.
+ */
+export async function searchLocalContractHits(
+  query: string,
+  chainId?: number,
+  limit = LOCAL_CONTRACT_SEARCH_LIMIT,
+): Promise<LocalContractHit[] | null> {
+  const q = query.trim();
+  if (q === '') return [];
+
+  try {
+    const rows = await db
+      .select({
+        chainId: contractSources.chainId,
+        address: contractSources.address,
+        contractName: contractSources.contractName,
+        isVerified: contractSources.isVerified,
+      })
+      .from(contractSources)
+      .where(
+        chainId !== undefined
+          ? and(eq(contractSources.chainId, chainId), contractMatchFilter(q))
+          : contractMatchFilter(q),
+      )
+      .orderBy(
+        desc(contractSources.isVerified),
+        desc(contractSources.lastUpdated),
+        contractSources.address,
+      )
+      .limit(limit);
+
+    return rows.map(row => ({
+      chainId: row.chainId,
+      address: row.address,
+      name: row.contractName ?? null,
+      isVerified: row.isVerified ?? false,
+    }));
+  }
+  catch (error) {
+    logger.warn({ err: error, query: q }, 'Local contract cache lookup failed');
+    return null;
+  }
+}

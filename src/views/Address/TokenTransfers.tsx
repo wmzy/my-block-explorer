@@ -8,7 +8,9 @@ import { css } from '@linaria/core';
 import { TypedLink, useSearch, useSetSearch } from '@native-router/react';
 import { erc20Abi, formatUnits } from 'viem';
 import { Alert } from 'haze-ui';
-import { useTokenTransfers, requestTokenTransfersRefresh, type TokenTransfer } from '@/services/tokenTransfers';
+import { useTokenTransfers, requestTokenTransfersRefresh, type TokenTransfer, type TransferScanMode } from '@/services/tokenTransfers';
+import { useTokenOverview } from '@/services/tokenMetadata';
+import { classifyTokenOverview } from '@/views/Address/tokenOverview';
 import { createRpcClient } from '@/utils/realTimeData';
 import { checkAddressValidity } from '@/views/Address/addressValidity';
 import { addressSearchSchema, shouldPinTransfersPage } from '@/views/Address/search';
@@ -58,6 +60,15 @@ const scanNote = css`
   margin: 0 0 var(--haze-space-3);
   color: var(--haze-color-text-muted);
   font-size: var(--haze-text-xs);
+`;
+
+// Mode toggle (detected-token contracts only): two small buttons picking
+// which eth_getLogs filter shape the tab scans with.
+const modeToggle = css`
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--haze-space-2);
+  margin: 0 0 var(--haze-space-3);
 `;
 
 // Neutral stand-in for the raw scan error when the page-level card
@@ -343,13 +354,22 @@ function TransferRow({ chainId, transfer }: { chainId: number; transfer: TokenTr
       {/* The scan contract carries no timestamps — an em dash, never a
           fabricated age; the title explains the placeholder. */}
       <td title="Timestamps are not available for scan results">—</td>
+      {/* Token-mode rows where the viewed contract is neither sender nor
+          recipient (mints, burns, user-to-user transfers of the viewed
+          token): an em dash, honestly explained — never a guessed IN/OUT. */}
       <td>
-        <Badge
-          variant={transfer.direction === 'in' ? 'success' : 'error'}
-          size="sm"
-        >
-          {transfer.direction === 'in' ? 'IN' : 'OUT'}
-        </Badge>
+        {transfer.direction === 'none' ? (
+          <span title="The viewed token contract emitted this log; it is neither sender nor recipient">
+            <Badge variant="default" size="sm">—</Badge>
+          </span>
+        ) : (
+          <Badge
+            variant={transfer.direction === 'in' ? 'success' : 'error'}
+            size="sm"
+          >
+            {transfer.direction === 'in' ? 'IN' : 'OUT'}
+          </Badge>
+        )}
       </td>
       <td>
         <CopyableHash
@@ -427,20 +447,59 @@ export default function TokenTransfers({
   // the previous one's window (the old reset-in-effect lagged one frame).
   const searchWindow = ttWindowParam;
 
+  // Token-centric scan decision. The participant scan filters by the
+  // viewed address as Transfer from/to — on a TOKEN CONTRACT's own page
+  // those topics rarely match, so the tab would stay empty exactly where
+  // transfers matter most. When the address is a detected token (the
+  // same module-cached useTokenOverview the page's Token Overview card
+  // rides — a second consumer costs no extra multicall), the tab scans
+  // the token's OWN emitted logs instead and offers both views. EOAs and
+  // non-token contracts keep the single participant view, unchanged.
+  const tokenReads = useTokenOverview(chainId, address, isContract === true);
+  const isTokenContract = classifyTokenOverview(tokenReads) !== null;
+  // False = the default view for a token contract (its own transfers).
+  // Local state, deliberately NOT a URL param: mode is a view choice, and
+  // the window/refresh/page params below stay shared by both modes.
+  const [participantView, setParticipantView] = useState(false);
+  const scanMode: TransferScanMode = isTokenContract && !participantView
+    ? 'token'
+    : 'participant';
+  const switchMode = (next: TransferScanMode) => {
+    if (next === scanMode) return;
+    setParticipantView(next === 'participant');
+    // The two lists have different lengths — a deep page of one is not a
+    // valid page of the other. Converge to page 1 (pushed, like a page
+    // turn, so back/forward keeps working); page 1 needs no rewrite.
+    if (page !== 1) {
+      void setSearch(prev => ({ ...prev, tab: 'transfers', ttPage: '1' }));
+    }
+  };
+
   // Cursor = decimal offset into the cached list ('0' = first page).
   const cursor = String((page - 1) * TRANSFER_LIMIT);
-  const query = useTokenTransfers(chainId, address, cursor, TRANSFER_LIMIT, searchWindow);
+  const query = useTokenTransfers(chainId, address, cursor, TRANSFER_LIMIT, searchWindow, scanMode);
 
-  const transfers = query.data?.transfers ?? [];
-  const coverage = query.data?.coverage;
-  const windowBlocks = query.data?.windowBlocks;
+  // Mode-switch guard: the query layer's result store keeps the previous
+  // settle across an args switch, so right after a toggle query.data is
+  // still the OTHER mode's page. Refuse it — the toggle must never flash
+  // the other list's rows under the newly selected label. Payloads
+  // without a mode tag (legacy caches) stay trusted, matching the
+  // optional-scannedAt convention.
+  const data
+    = query.data !== undefined && (query.data.mode === undefined || query.data.mode === scanMode)
+      ? query.data
+      : undefined;
+
+  const transfers = data?.transfers ?? [];
+  const coverage = data?.coverage;
+  const windowBlocks = data?.windowBlocks;
   // First-scan time (server cache hit) — absent on legacy payloads
   // without the field, in which case no freshness is claimed.
-  const scannedAt = query.data?.scannedAt;
+  const scannedAt = data?.scannedAt;
   const windowLabel = windowBlocks !== undefined ? windowBlocks.toLocaleString() : undefined;
   // nextCursor drives Next (null = end of the discovered list); no total
   // is claimed — the scan never asserts one.
-  const hasNext = query.data ? query.data.nextCursor !== null : false;
+  const hasNext = data ? data.nextCursor !== null : false;
   const externalToolLinks = getExternalToolLinks(chainId, address);
 
   // Beyond-data convergence (Transactions/List semantics): once a payload
@@ -452,7 +511,7 @@ export default function TokenTransfers({
   // claimed), so page 1 is the only provably valid target.
   const pageBeyondData = shouldPinTransfersPage(
     {
-      hasData: query.data !== undefined,
+      hasData: data !== undefined,
       loading: query.loading,
       hasError: query.error !== undefined,
     },
@@ -500,6 +559,39 @@ export default function TokenTransfers({
 
   return (
     <>
+      {/* Mode toggle (detected-token contracts only): the tab's scan is
+          token-centric by default (the contract's OWN Transfer logs —
+          participant topics rarely match a token's own transfers); the
+          participant view stays one click away because a contract can
+          also HOLD other tokens. Non-token addresses render no toggle and
+          keep the participant scan, unchanged. */}
+      {isTokenContract && (
+        <div
+          className={modeToggle}
+          role="group"
+          aria-label="Token transfers scan mode"
+        >
+          <Button
+            variant={scanMode === 'token' ? 'primary' : 'secondary'}
+            size="sm"
+            disabled={scanMode === 'token'}
+            title="Transfers emitted by this token contract"
+            onClick={() => switchMode('token')}
+          >
+            Transfers of this token
+          </Button>
+          <Button
+            variant={scanMode === 'participant' ? 'primary' : 'secondary'}
+            size="sm"
+            disabled={scanMode === 'participant'}
+            title="Transfers where this address is sender or recipient"
+            onClick={() => switchMode('participant')}
+          >
+            Transfers involving this address
+          </Button>
+        </div>
+      )}
+
       {query.loading && query.data && <LoadingState message="Loading page..." />}
 
       {/* Freshness of the tab's data: the scan rides a ~60s server cache,
@@ -595,7 +687,7 @@ export default function TokenTransfers({
           unverified, so "coverage unknown" reads differently from a
           complete scan that found nothing — never a trusted empty. */}
       {!query.loading && !query.error
-        && query.data !== undefined && transfers.length === 0
+        && data !== undefined && transfers.length === 0
         && coverage === undefined && (
         <>
           <Alert variant="warning">
