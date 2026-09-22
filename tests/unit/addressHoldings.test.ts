@@ -5,6 +5,7 @@ import { describe, it, expect } from 'vitest';
 
 import {
   aggregateTokenHoldings,
+  estimateHoldingsUsd,
   type SharedTokenClass,
 } from '@/views/Address/holdings';
 import type { TokenTransfer } from '@/services/tokenTransfers';
@@ -337,5 +338,56 @@ describe('aggregateTokenHoldings grouping and ordering', () => {
 
   it('returns an empty list for no transfers', () => {
     expect(aggregateTokenHoldings([], classify({}))).toEqual([]);
+  });
+});
+
+describe('estimateHoldingsUsd', () => {
+  const price = (usd: number, fetchedAt = 1_000) => ({ usd, fetchedAt });
+
+  it('sums only rows with both decimals and a usable price', () => {
+    // 1.5 tokens (18 decimals) at $2 and 3 tokens (6 decimals) at $1.5.
+    const estimate = estimateHoldingsUsd([
+      { amount: 15n * 10n ** 17n, decimals: 18, price: price(2) },
+      { amount: 3n * 10n ** 6n, decimals: 6, price: price(1.5) },
+    ]);
+
+    expect(estimate).not.toBeNull();
+    expect(estimate?.totalUsd).toBe(7.5);
+    expect(estimate?.pricedTokens).toBe(2);
+    expect(estimate?.erc20Tokens).toBe(2);
+  });
+
+  it('returns null when no row priced — the card renders nothing', () => {
+    expect(
+      estimateHoldingsUsd([
+        { amount: 1n, decimals: 18, price: null },
+        { amount: 1n, decimals: 18, price: undefined },
+        // Unpriced by missing decimals too (cannot value honestly).
+        { amount: 1n, decimals: undefined, price: price(2) },
+      ]),
+    ).toBeNull();
+  });
+
+  it('counts unpriced rows against erc20Tokens for the partial-pricing caveat', () => {
+    const estimate = estimateHoldingsUsd([
+      { amount: 10n ** 18n, decimals: 18, price: price(2) },
+      { amount: 10n ** 18n, decimals: 18, price: null },
+    ]);
+
+    expect(estimate?.pricedTokens).toBe(1);
+    expect(estimate?.erc20Tokens).toBe(2);
+  });
+
+  it('carries the newest fetch timestamp backing the total', () => {
+    const estimate = estimateHoldingsUsd([
+      { amount: 10n ** 18n, decimals: 18, price: price(2, 1_000) },
+      { amount: 10n ** 18n, decimals: 18, price: price(3, 5_000) },
+    ]);
+
+    expect(estimate?.fetchedAt).toBe(5_000);
+  });
+
+  it('returns null for an empty row list', () => {
+    expect(estimateHoldingsUsd([])).toBeNull();
   });
 });

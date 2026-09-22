@@ -1,0 +1,1 @@
+ALTER TABLE "address_labels" ADD COLUMN "source" varchar(16) DEFAULT 'user';

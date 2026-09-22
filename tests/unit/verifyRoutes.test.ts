@@ -11,15 +11,19 @@ import { Hono } from 'hono';
 const mocks = vi.hoisted(() => ({
   clearCache: vi.fn(),
   getContractSource: vi.fn(),
+  saveManualVerification: vi.fn(),
+  deleteManualVerification: vi.fn(),
   createRateLimiter: vi.fn(),
 }));
 
-// ContractSourceService pulls in DuckDB; only the two calls the route
-// makes are needed.
+// ContractSourceService pulls in DuckDB; only the calls the routes
+// make are needed.
 vi.mock('@/services/ContractSourceService', () => ({
   contractSourceService: {
     clearCache: mocks.clearCache,
     getContractSource: mocks.getContractSource,
+    saveManualVerification: mocks.saveManualVerification,
+    deleteManualVerification: mocks.deleteManualVerification,
   },
 }));
 
@@ -43,6 +47,7 @@ app.route('/', verifyRoutes);
 // the string in the URL.
 const ROUTE_ADDRESS = '0x1111111111111111111111111111111111111111';
 const PATH = `/chains/1/contracts/${ROUTE_ADDRESS}/verify`;
+const MANUAL_PATH = `/chains/1/contracts/${ROUTE_ADDRESS}/verify/manual`;
 
 const submitSpy = vi.spyOn(contractVerifyService, 'submitVerification');
 
@@ -52,6 +57,9 @@ const postJson = (path: string, body: unknown, headers: Record<string, string> =
     headers: { 'content-type': 'application/json', ...headers },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
+
+const del = (path: string, headers: Record<string, string> = {}) =>
+  app.request(path, { method: 'DELETE', headers });
 
 const validFiles = (): Record<string, string> => ({
   'metadata.json': '{"compiler":{"version":"0.8.20"}}',
@@ -68,6 +76,10 @@ beforeEach(() => {
   mocks.clearCache.mockClear();
   mocks.getContractSource.mockReset();
   mocks.getContractSource.mockResolvedValue({ verificationStatus: 'verified' });
+  mocks.saveManualVerification.mockReset();
+  mocks.saveManualVerification.mockResolvedValue(undefined);
+  mocks.deleteManualVerification.mockReset();
+  mocks.deleteManualVerification.mockResolvedValue(true);
 });
 
 afterEach(() => {
@@ -266,5 +278,187 @@ describe('outcome mapping', () => {
 
     expect(res.status).toBe(500);
     expect((await res.json()).error).toBe('verification_failed');
+  });
+});
+
+const validAbi = () => '[{"type":"function","name":"get","inputs":[],"outputs":[{"type":"uint256"}]}]';
+
+describe('POST .../verify/manual - validation', () => {
+  it('rejects a missing abi with 400 missing_fields', async () => {
+    for (const body of [{}, { sourceCode: '// x' }, null]) {
+      const res = await postJson(MANUAL_PATH, body);
+      expect(res.status).toBe(400);
+      const parsed = await res.json();
+      expect(parsed.error).toBe('missing_fields');
+      expect(parsed.message).toContain('abi');
+    }
+    expect(mocks.saveManualVerification).not.toHaveBeenCalled();
+  });
+
+  it('rejects a non-string abi with 400 missing_fields', async () => {
+    const res = await postJson(MANUAL_PATH, { abi: 42 });
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('missing_fields');
+    expect(mocks.saveManualVerification).not.toHaveBeenCalled();
+  });
+
+  it('rejects a non-JSON abi with 400 invalid_abi', async () => {
+    const res = await postJson(MANUAL_PATH, { abi: 'not json at all' });
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe('invalid_abi');
+    expect(mocks.saveManualVerification).not.toHaveBeenCalled();
+  });
+
+  it('rejects a JSON abi that is not an array with 400 invalid_abi', async () => {
+    const res = await postJson(MANUAL_PATH, { abi: '{"type":"function"}' });
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('invalid_abi');
+    expect(mocks.saveManualVerification).not.toHaveBeenCalled();
+  });
+
+  it('rejects an empty ABI array with 400 invalid_abi', async () => {
+    const res = await postJson(MANUAL_PATH, { abi: '[]' });
+
+    expect(res.status).toBe(400);
+    expect((await res.json()).error).toBe('invalid_abi');
+    expect(mocks.saveManualVerification).not.toHaveBeenCalled();
+  });
+
+  it('rejects a non-string optional field with 400 missing_fields', async () => {
+    for (const body of [
+      { abi: validAbi(), sourceCode: 123 },
+      { abi: validAbi(), name: false },
+    ]) {
+      const res = await postJson(MANUAL_PATH, body);
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toBe('missing_fields');
+    }
+    expect(mocks.saveManualVerification).not.toHaveBeenCalled();
+  });
+
+  it('rejects a malformed address with 400', async () => {
+    const res = await postJson('/chains/1/contracts/0x123/verify/manual', {
+      abi: validAbi(),
+    });
+
+    expect(res.status).toBe(400);
+    expect(mocks.saveManualVerification).not.toHaveBeenCalled();
+  });
+});
+
+describe('POST .../verify/manual - admin gate & success', () => {
+  it('passes through when ADMIN_TOKEN is unset', async () => {
+    const res = await postJson(MANUAL_PATH, { abi: validAbi() });
+
+    expect(res.status).toBe(200);
+    expect(mocks.saveManualVerification).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects a missing token with 403 when ADMIN_TOKEN is set', async () => {
+    process.env.ADMIN_TOKEN = 'secret';
+
+    const res = await postJson(MANUAL_PATH, { abi: validAbi() });
+
+    expect(res.status).toBe(403);
+    expect(mocks.saveManualVerification).not.toHaveBeenCalled();
+  });
+
+  it('accepts the matching token when ADMIN_TOKEN is set', async () => {
+    process.env.ADMIN_TOKEN = 'secret';
+
+    const res = await postJson(MANUAL_PATH, { abi: validAbi() }, { 'x-admin-token': 'secret' });
+
+    expect(res.status).toBe(200);
+    expect(mocks.saveManualVerification).toHaveBeenCalledTimes(1);
+  });
+
+  it('saves the mark and returns the freshly re-read source', async () => {
+    mocks.getContractSource.mockResolvedValue({
+      verificationStatus: 'verified',
+      verificationSource: 'manual',
+      abi: validAbi(),
+    });
+
+    const res = await postJson(MANUAL_PATH, {
+      abi: validAbi(),
+      sourceCode: 'contract C {}',
+      name: 'C',
+    });
+
+    expect(res.status).toBe(200);
+    // The save receives exactly the validated fields, keyed for the
+    // service upsert.
+    expect(mocks.saveManualVerification).toHaveBeenCalledWith(1, ROUTE_ADDRESS, {
+      abi: validAbi(),
+      sourceCode: 'contract C {}',
+      name: 'C',
+    });
+    // Same read-back pattern as the sourcify route: the response carries
+    // what the next GET will serve.
+    expect(mocks.getContractSource).toHaveBeenCalledWith(1, ROUTE_ADDRESS);
+    const body = await res.json();
+    expect(body.verified).toBe(true);
+    expect(body.verificationSource).toBe('manual');
+    expect(body.verificationStatus).toBe('verified');
+    expect(body.contractSource.verificationSource).toBe('manual');
+  });
+
+  it('omits the source payload when the read-back fails but keeps verified:true', async () => {
+    mocks.getContractSource.mockRejectedValue(new Error('read-back blew up'));
+
+    const res = await postJson(MANUAL_PATH, { abi: validAbi() });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.verified).toBe(true);
+    expect(body.verificationSource).toBe('manual');
+    expect(body.contractSource).toBeUndefined();
+    expect(body.verificationStatus).toBeUndefined();
+  });
+});
+
+describe('DELETE .../verify/manual', () => {
+  it('answers 404 not_found when the row is sourcify-verified (never deletes it)', async () => {
+    mocks.deleteManualVerification.mockResolvedValue(false);
+
+    const res = await del(MANUAL_PATH);
+
+    expect(res.status).toBe(404);
+    const body = await res.json();
+    expect(body.error).toBe('not_found');
+    // The guard lives in the service (only manual rows are deletable);
+    // the route never falls back to an unconditional clearCache.
+    expect(mocks.deleteManualVerification).toHaveBeenCalledWith(1, ROUTE_ADDRESS);
+    expect(mocks.clearCache).not.toHaveBeenCalled();
+  });
+
+  it('answers 200 and reports success when a manual mark was removed', async () => {
+    mocks.deleteManualVerification.mockResolvedValue(true);
+
+    const res = await del(MANUAL_PATH);
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.success).toBe(true);
+  });
+
+  it('rejects a missing token with 403 when ADMIN_TOKEN is set', async () => {
+    process.env.ADMIN_TOKEN = 'secret';
+
+    const res = await del(MANUAL_PATH);
+
+    expect(res.status).toBe(403);
+    expect(mocks.deleteManualVerification).not.toHaveBeenCalled();
+  });
+
+  it('rejects a malformed chain with 400', async () => {
+    const res = await del(`/chains/notanumber/contracts/${ROUTE_ADDRESS}/verify/manual`);
+
+    expect(res.status).toBe(400);
+    expect(mocks.deleteManualVerification).not.toHaveBeenCalled();
   });
 });

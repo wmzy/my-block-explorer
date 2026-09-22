@@ -13,7 +13,7 @@ const customRpcUrls = new Map<number, string>();
 let rpcConfigsLoaded = false;
 let rpcConfigsPromise: Promise<void> | null = null;
 
-type RpcConfigEntry = { chainId: number; url?: string | null };
+type RpcConfigEntry = { chainId: number; url?: string | null; urlRedacted?: boolean };
 
 const loadRpcConfigs = (): Promise<void> => {
   if (rpcConfigsLoaded) return Promise.resolve();
@@ -22,7 +22,9 @@ const loadRpcConfigs = (): Promise<void> => {
   rpcConfigsPromise = get<{ configs?: RpcConfigEntry[] }>('/api/rpc-configs')
     .then(data => {
       (data.configs ?? []).forEach(cfg => {
-        if (cfg.url) customRpcUrls.set(cfg.chainId, cfg.url);
+        // A redacted URL ('https://host/…') is uncallable — setting it
+        // would poison the client. Only trust full URLs.
+        if (cfg.url && cfg.urlRedacted !== true) customRpcUrls.set(cfg.chainId, cfg.url);
       });
       rpcConfigsLoaded = true;
     })
@@ -55,6 +57,26 @@ export const invalidateRpcClients = (): void => {
   rpcConfigsLoaded = false;
 };
 
+// Custom-chain registrations must serve THEIR rpcUrl: viem ships a
+// placeholder default for dev-chain ids (anvil 31337 → 127.0.0.1:8545)
+// that would silently shadow a real registration on another port.
+// Redacted URLs are skipped — they are uncallable. The runtime registry
+// (name/symbol) is filled by services/customChains; this wires the RPC
+// layer only. Idempotent; called whenever the chain list is (re)fetched.
+export const absorbCustomChainRpcUrls = (
+  chains: ReadonlyArray<{
+    chainId: number;
+    rpcUrl?: string | null;
+    urlRedacted?: boolean | null;
+  }>,
+): void => {
+  for (const chain of chains) {
+    if (chain.rpcUrl && chain.urlRedacted !== true) {
+      customRpcUrls.set(chain.chainId, chain.rpcUrl);
+    }
+  }
+};
+
 const buildClient = (chainId: number): PublicClient => {
   const chain = getChainInfo(chainId);
   if (!chain) {
@@ -76,6 +98,13 @@ const buildClient = (chainId: number): PublicClient => {
  */
 export const createRpcClient = async (chainId: number): Promise<PublicClient> => {
   await loadRpcConfigs();
+
+  // Custom-chain registrations (anvil/hardhat/private chains) load once
+  // per session BEFORE the first client build: a viem-shadowed id (anvil
+  // 31337 has a placeholder default RPC) must serve the registered URL,
+  // and no view-level gate runs for such ids. Dynamic import — the
+  // service statically imports this module (invalidateRpcClients).
+  await import('@/services/customChains').then(m => m.ensureCustomChainsLoaded());
 
   const cached = clientCache.get(chainId);
   if (cached) return cached;

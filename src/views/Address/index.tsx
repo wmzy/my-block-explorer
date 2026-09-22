@@ -15,6 +15,7 @@ import TokenTransfers, {
 } from '@/views/Address/TokenTransfers';
 import {
   aggregateTokenHoldings,
+  estimateHoldingsUsd,
   type SharedTokenClass,
   type TokenHolding,
 } from '@/views/Address/holdings';
@@ -47,6 +48,8 @@ import {
   useAddressTransactions,
   type AddressInfoResponse,
 } from '@/services/addresses';
+import { useTokenUsdPrices } from '@/services/prices';
+import { UsdValue } from '@/components/ui/UsdValue';
 import {
   useContractCode,
   useRealTimeAddressData,
@@ -256,6 +259,15 @@ const holdingsCaveat = css`
   margin: var(--haze-space-2) 0 0;
   color: var(--haze-color-text-muted);
   font-size: var(--haze-text-xs);
+`;
+
+// Estimated USD total line: sits between the holdings rows and the
+// caveat — small, but a figure the reader may act on, so one step above
+// the xs caveat text.
+const holdingsEstimateStyle = css`
+  margin: var(--haze-space-3) 0 0;
+  font-size: var(--haze-text-sm);
+  color: var(--haze-color-text);
 `;
 
 // Token Overview card: only contracts whose token probes answered render
@@ -644,6 +656,16 @@ const labelEditButton = css`
   }
 `;
 
+// Built-in provenance marker beside a seeded chip: quieter than the chip
+// itself — the label reads as one unit, with the marker only explaining
+// where it came from (and how to make it yours). Never shown for
+// operator-authored labels.
+const labelBuiltinMark = css`
+  font-size: var(--haze-text-xs);
+  color: var(--haze-color-text-muted);
+  white-space: nowrap;
+`;
+
 // The "+ add label" affordance: quiet on purpose (an invitation, not a
 // data row) but always visible — this is a single-user tool.
 const labelAddButton = css`
@@ -911,6 +933,15 @@ function AddressLabelRow({ chainId, address }: { chainId: number; address: strin
           <span aria-label="This label has a note">ⓘ</span>
         )}
       </span>
+      {saved.source === 'builtin' && (
+        <span
+          className={labelBuiltinMark}
+          title="Bundled with the explorer — edit or delete to make it yours"
+          data-testid="label-builtin-mark"
+        >
+          built-in
+        </span>
+      )}
       <button
         type="button"
         className={labelEditButton}
@@ -1190,6 +1221,36 @@ export default function Address() {
     [holdingsTransfers, classifyShared],
   );
 
+  // USD estimate over the discovered ERC-20 holdings rows: prices come
+  // from the browser-side DefiLlama layer in ONE batched request (≤30
+  // uncached ids per GET; unknown chains/tokens never fetch). The hook
+  // digests the token list itself, so the fresh map literal is safe.
+  const erc20Holdings = useMemo(
+    () =>
+      holdings.filter(
+        (holding): holding is Extract<TokenHolding, { kind: 'erc20' }> =>
+          holding.kind === 'erc20',
+      ),
+    [holdings],
+  );
+  const erc20HoldingPrices = useTokenUsdPrices(
+    currentChainId,
+    erc20Holdings.map((holding) => holding.token),
+  );
+  const holdingsUsdEstimate = useMemo(
+    () =>
+      erc20HoldingPrices === undefined
+        ? null
+        : estimateHoldingsUsd(
+            erc20Holdings.map((holding) => ({
+              amount: holding.net,
+              decimals: tokenMetas[holding.token.toLowerCase()]?.decimals,
+              price: erc20HoldingPrices.get(holding.token.toLowerCase()),
+            })),
+          ),
+    [erc20HoldingPrices, erc20Holdings, tokenMetas],
+  );
+
   // Backend-unreachable verdict for the attribution banner below: the
   // indexed fields (verification, contract name, creator) silently
   // disappear when the persistent channel dies, so the Overview card
@@ -1464,8 +1525,28 @@ export default function Address() {
                           holdings={holdings}
                           metas={tokenMetas}
                         />
+                        {/* Estimated USD total over the rows that priced:
+                            renders nothing until at least one price
+                            landed (never a $0.00 placeholder). */}
+                        {holdingsUsdEstimate !== null && (
+                          <p className={holdingsEstimateStyle}>
+                            Estimated value{' '}
+                            <UsdValue
+                              usd={holdingsUsdEstimate.totalUsd}
+                              price={{
+                                usd: holdingsUsdEstimate.totalUsd,
+                                fetchedAt: holdingsUsdEstimate.fetchedAt,
+                              }}
+                            />
+                          </p>
+                        )}
                         <p className={holdingsCaveat}>
                           Based on discovered transfers — may be incomplete
+                          {holdingsUsdEstimate !== null &&
+                            holdingsUsdEstimate.pricedTokens <
+                              holdingsUsdEstimate.erc20Tokens
+                            ? ' · valued at market price where available'
+                            : ''}
                         </p>
                       </>
                     )}

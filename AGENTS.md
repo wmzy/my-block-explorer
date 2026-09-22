@@ -576,3 +576,98 @@ pnpm typecheck           # tsc --noEmit
   indexer aggregates (burnt fees omitted). Tooling note: `pnpm vitest
   run a.test.ts b.test.ts` ANDs the positional filters and silently
   matches nothing — run one file per invocation
+- **2026-09-22/23 PM-review wave 3 (6 agents, 轻量本地运行定位)** — product
+  line re-pinned to "lightweight LOCAL tool" (not self-hosting); six
+  features landed, all browser-smoked end-to-end:
+  **Custom chains (T1)** — register ANY EVM chain viem doesn't ship
+  (anvil/hardhat/private/fresh L2s): `custom_chains` DuckDB table
+  (migration 0009) + runtime registry layer in `config/customChains.ts`
+  consumed by `getChainInfo` on BOTH sides (registry OVERRIDES viem for
+  dev-chain placeholder ids; the 409 gate `isBuiltInChainProtected`
+  keeps real viem networks unshadowable); `POST /api/chains/custom`
+  probes eth_chainId with a raw JSON-RPC POST (5s budget, same
+  rpcUrl-redaction policy as rpc-configs), DELETE 404/204; bootstrap in
+  `RpcManager.loadUserConfigs` (covers standalone server AND vite
+  bridge); UI: chain-selector "Add chain" + UnsupportedChainState
+  dead-end recovery sharing `AddCustomChainForm`. **Browser RPC
+  wiring (post-smoke fix)**: `realTimeData.absorbCustomChainRpcUrls` —
+  the browser's client cache must serve the REGISTERED url, not viem's
+  anvil default (8545) shadow; `createRpcClient` awaits
+  `ensureCustomChainsLoaded()` via dynamic import (breaks the static
+  cycle service→utils); `addCustomChain` re-seeds the url map AFTER
+  `invalidateRpcClients` clears it (input url, not the possibly-redacted
+  echo).
+  **Fiat price layer (T2)** — browser-side DefiLlama
+  (`services/prices.ts`, keyless, CORS-open): native coins via
+  coingecko:{id} map for the 10 POPULAR_CHAINS (POL =
+  polygon-ecosystem-token; arbitrum/base/op native = ethereum), tokens
+  via {llamaSlug}:{address} (gnosis = 'xdai', NOT 'gnosis'); 60s
+  session cache, in-flight dedupe, honest negative entries (one attempt
+  per TTL window), ≤30-id batched GET; `UsdValue` renders nothing on
+  unavailable/stale>10min (structural degrade-to-invisible, asserted on
+  real views); surfaces: tx Value row, Token page Price/Market Cap
+  ("via DefiLlama"), Address holdings estimate, gas tiers.
+  formatUsd: sub-cent amounts widen to 4 decimals ("$0.0032") —
+  "$0.00" for a cheap-chain transfer is information-free.
+  **Manual verification (T3)** — the designed-but-unwired
+  `verificationSource:'manual'` slot now has a full loop:
+  `POST/DELETE .../verify/manual` (admin-gated, 3/min) writes/removes
+  local-trust marks through the SAME saveToDatabase upsert; fresh marks
+  (<1h) serve from the DB shortcut incl. ABI-only marks; stale marks
+  re-probe Sourcify once — remote 'verified' supersedes manual,
+  remote miss keeps the mark (refreshManualMark); DELETE only removes
+  manual rows (sourcify/blockscan answer 404 untouched); UI "Manual
+  (local trust)" badge + panel (collapsed behind "Verify in this page"
+  alongside the Sourcify panel) with paste-≠-verification copy.
+  contract_sources storage keys stay CHECKSUMMED (formatAddress) — the
+  service's own convention, distinct from the events/labels lowercase
+  convention.
+  **Tx/day chart (T4)** — fifth Charts series "Transactions per Day
+  (sampled)": 16 uniformly-sampled blocks/day (512-call whole-series
+  budget, 4-worker eth_getBlockTransactionCount), extrapolated ×
+  blocksInDay/samples; <K/2 resolvable samples = absent day (gaps stay
+  gaps, never zeros); source label discloses "counts, not indexer
+  truth".
+  **Built-in label seeds (T5)** — 68 corroborated entries across 7
+  chains (`config/builtinLabels.ts`, provenance in note fields; the
+  data-quality bar capped L2 counts below target — never guess) seeded
+  on FIRST STARTUP ONLY (empty-table gate in `seedBuiltinLabels`,
+  hooked in RpcManager.loadUserConfigs; deletions stick across
+  restarts; deleting EVERY row re-arms seeding — documented tradeoff);
+  `address_labels.source` column ('builtin'|'user', migration 0010 —
+  DuckDB rejects ADD COLUMN with NOT NULL constraint, nullable default
+  matches signature_cache); PUT converts builtin→user (user intent
+  wins); UI chip carries a "Bundled with the explorer" marker.
+  **Wallet-connected send (T6)** — `util/wallet.ts` zero-dep EIP-1193
+  facade (EIP-3326/3085 method names are wallet_switchEthereumChain /
+  wallet_addEthereumChain — no eth_ prefix); Interact write functions
+  gain "Send with wallet" ONLY with an injected provider (byte-identical
+  DOM without — asserted); ONE buildCastCommand pass feeds
+  simulate/cast/send (single calldata source); eth_sendTransaction with
+  NO gas field; 4001 quiet; chain guard names switch/add/reject
+  outcomes; hash links to the internal tx route.
+  **Cross-cutting fixes found by integration smoke**:
+  (1) **DuckDB timestamp epoch bug (pre-existing, user-visible)** —
+  drizzle's datetime migrations create `TIMESTAMP_MS` columns, which
+  @duckdb/node-api returns as `DuckDBTimestampMillisecondsValue{millis}`
+  objects; the adapter only converted `DuckDBTimestampValue{micros}`, so
+  the object leaked to drizzle and coerced via its naive string form →
+  every DB-read Date shifted by the machine TZ (-8h on UTC+8;
+  verifiedAt/lastChecked/labels everywhere). Fix:
+  `duckdb-postgres-adapter.adaptResult` now converts micros/millis/
+  seconds timestamp objects AND strict-shape datetime strings (space or
+  T form, optional offset; offset-less = UTC wall) to correctly-parsed
+  Dates; `openSession()` pins every connection's session TZ to UTC
+  (DuckDB `now()` otherwise writes LOCAL wall time into naive columns —
+  mixed write semantics no reader can disambiguate). Historical dev-DB
+  rows written by the old now() may read ±TZ-shifted — fresh writes are
+  exact.
+  (2) **vite dev bridge strips the same-origin trust signal** —
+  same-origin GET fetches omit Origin by spec; the bridge has no socket
+  info → URL redaction fail-closed → the app's own frontend got
+  redacted (uncallable) RPC urls in dev. Fix: honoApiPlugin synthesizes
+  `Origin: http://{host}` for Origin-less requests (dev bridge only);
+  frontend additionally skips `urlRedacted` entries (defense in depth).
+  (3) rate-limiter discipline while smoke-testing: the verify bucket
+  (3/min) and add-chain bucket (5/min) refill fast — sleep ≥65s between
+  probe rounds, and jq-on-response masks error bodies (capture raw).

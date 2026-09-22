@@ -24,13 +24,19 @@ export type AddressLabelResult = {
   address: string;
   label: string;
   note: string | null;
+  /**
+   * Row provenance: 'builtin' = bundled seed, 'user' = operator-authored.
+   * An older backend without the field degrades to 'user'.
+   */
+  source: 'builtin' | 'user';
 };
 
-type LabelResponse = { label?: unknown; note?: unknown };
+type LabelResponse = { label?: unknown; note?: unknown; source?: unknown };
 
 // Shape guard for the API body: label is a non-empty string, note is a
 // string or null. Anything else degrades to a thrown ApiError instead of
-// rendering fabricated data.
+// rendering fabricated data. The source field is optional on the wire —
+// anything but 'builtin' reads as 'user' (forward/backward compatible).
 const parseLabelResponse = (
   body: LabelResponse,
   chainId: number,
@@ -40,7 +46,8 @@ const parseLabelResponse = (
     throw new ApiError('Malformed label response', 0);
   }
   const note = typeof body.note === 'string' ? body.note : null;
-  return { chainId, address, label: body.label, note };
+  const source = body.source === 'builtin' ? 'builtin' : 'user';
+  return { chainId, address, label: body.label, note, source };
 };
 
 /**

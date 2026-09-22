@@ -12,13 +12,24 @@
 //   at '/', which the landing redirect resolves through the viewer's
 //   remembered chain — the exact dishonest bounce this state exists to
 //   avoid — so every recovery link targets a concrete /chain/:id.
+// - "Connect this chain via RPC": for an id viem does not ship, the
+//   shared AddCustomChainForm registers the chain through the backend
+//   (which probes the RPC's eth_chainId) and navigates into it — the
+//   dead end becomes the onboarding path for anvil/hardhat/private
+//   chains. Before any of this renders as a verdict, the state consults
+//   the backend's custom registrations once (ensureCustomChainsLoaded):
+//   a chain registered in an earlier session resolves and redirects
+//   instead of dead-ending.
+import { useEffect, useState } from 'react';
 import { css, cx } from '@linaria/core';
-import { TypedLink } from '@native-router/react';
+import { TypedLink, useMatched } from '@native-router/react';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
-import { POPULAR_CHAINS, getChainName } from '@/config/chains';
+import { AddCustomChainForm } from '@/components/AddCustomChainForm';
+import { POPULAR_CHAINS, getChainInfo, getChainName } from '@/config/chains';
+import { ensureCustomChainsLoaded } from '@/services/customChains';
 import { parseChainIdParam } from '@/utils/chainParam';
-import { getPreferredChainId } from './Landing';
+import { getPreferredChainId, redirectReplace } from './Landing';
 
 const ctaRow = css`
   display: flex;
@@ -74,6 +85,14 @@ const chainGrid = css`
   gap: var(--haze-space-2);
 `;
 
+// Intro copy for the RPC recovery card: what the flow does and where the
+// chain id comes from (the endpoint's own answer — never the URL).
+const connectHint = css`
+  margin: 0 0 var(--haze-space-3);
+  font-size: var(--haze-text-sm);
+  color: var(--haze-color-text-secondary);
+`;
+
 export function UnsupportedChainState({
   chainId,
   rawChainId,
@@ -85,6 +104,8 @@ export function UnsupportedChainState({
    */
   rawChainId?: string;
 }) {
+  const { router } = useMatched();
+
   // Preferred chain, NOT the remembered one (see the module header).
   const preferredChainId = getPreferredChainId();
   const preferredChainName = getChainName(preferredChainId);
@@ -97,6 +118,40 @@ export function UnsupportedChainState({
   // What to name in the invalid message: the raw param when the caller
   // kept it, else a generic phrase (no raw string is available).
   const namedParam = rawChainId !== undefined ? `"${rawChainId}"` : 'the value in this URL';
+
+  // Before a well-formed id is declared unsupported, the backend's custom
+  // registrations must have been consulted once: a chain registered in an
+  // earlier session (the row lives in the backend's database) resolves
+  // here and the deep link recovers instead of dead-ending. The load
+  // never blocks rendering and never fails the page — worst case it
+  // settles without the chain and the honest unsupported state stands.
+  const [registryChecked, setRegistryChecked] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    ensureCustomChainsLoaded().finally(() => {
+      if (!cancelled) setRegistryChecked(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const registeredChainId
+    = registryChecked && !invalidId ? (getChainInfo(chainId)?.id ?? null) : null;
+
+  // Recovery redirect for a late-resolved registration. Replace (not
+  // push): the unsupported URL is not a place worth keeping in history.
+  // The effect depends on the resolved ID (a stable number), never the
+  // chain object — getChainInfo builds a fresh object per call, which
+  // would re-fire this redirect on every render.
+  useEffect(() => {
+    if (registeredChainId !== null) {
+      redirectReplace(router, `/chain/${registeredChainId}`).catch(() => undefined);
+    }
+  }, [registeredChainId, router]);
+
+  const openRegisteredChain = (targetChainId: number) => {
+    redirectReplace(router, `/chain/${targetChainId}`).catch(() => undefined);
+  };
 
   const message = invalidId
     ? `Invalid chain ID: ${namedParam} is not a valid chain ID (expected a decimal number like 1 or 11155111), so no chain data can be shown.`
@@ -129,6 +184,24 @@ export function UnsupportedChainState({
           </div>
         </CardContent>
       </Card>
+      {!invalidId && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Connect this chain via RPC</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <p className={connectHint}>
+              {'Running a chain this explorer does not know (anvil, hardhat, a private node)? '}
+              {'Point it at the RPC endpoint — the explorer asks the endpoint for its chain ID '}
+              and registers everything from there.
+            </p>
+            <AddCustomChainForm
+              expectedChainId={chainId}
+              onAdded={chain => openRegisteredChain(chain.chainId)}
+            />
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

@@ -66,6 +66,24 @@ export const userRpcConfigs = duckdbTable('user_rpc_configs', {
   ...timestampColumns,
 });
 
+// Custom chain registrations — EVM chains outside viem's static registry
+// that the user pointed the explorer at (anvil 31337, hardhat forks,
+// private geth, new L2s). The rpcUrl is the discovery source: everything
+// the explorer serves for the chain flows through it. One row per chain
+// id; re-registering replaces the row (upsert in routes/chains.ts). viem
+// stays the first lookup layer — these rows only fill ids viem does not
+// ship (the route 409s on ids viem already knows), so the two layers
+// never overlap.
+export const customChains = duckdbTable('custom_chains', {
+  chainId: integer().primaryKey(),
+  name: varchar({ length: 255 }).notNull(),
+  symbol: varchar({ length: 64 }).notNull(),
+  rpcUrl: varchar({ length: 500 }).notNull(),
+  decimals: integer().default(18),
+
+  ...timestampColumns,
+});
+
 // 区块表
 export const blocks = duckdbTable(
   'blocks',
@@ -349,6 +367,9 @@ export type NewEventTableRegistry = typeof eventTableRegistry.$inferInsert;
 export type UserRpcConfig = typeof userRpcConfigs.$inferSelect;
 export type NewUserRpcConfig = typeof userRpcConfigs.$inferInsert;
 
+export type CustomChainRecord = typeof customChains.$inferSelect;
+export type NewCustomChainRecord = typeof customChains.$inferInsert;
+
 export type Block = typeof blocks.$inferSelect;
 export type NewBlock = typeof blocks.$inferInsert;
 
@@ -411,6 +432,15 @@ export const addressLabels = duckdbTable(
     ...chainAddressColumns,
     label: varchar({ length: 64 }).notNull(),
     note: text(),
+    // Provenance of the row: 'builtin' = planted from the curated dataset
+    // shipped in the package (config/builtinLabels.ts, seeded on first
+    // startup); 'user' = authored by the operator. PUT always writes
+    // 'user' — editing a bundled label converts it into the operator's
+    // own (user intent wins over the seed). Nullable on purpose: DuckDB
+    // cannot ADD COLUMN with constraints, so the DEFAULT backfills
+    // pre-migration rows and the app layer (routes/labels.ts) pins the
+    // API contract to 'builtin' | 'user' regardless of storage nulls.
+    source: varchar({ length: 16 }).default('user'),
     createdAt: datetime().default(sql`now()`),
     updatedAt: datetime().default(sql`now()`),
   },

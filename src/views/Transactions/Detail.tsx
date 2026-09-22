@@ -25,6 +25,7 @@ import { finalityLabelFor, useFinalityHeads } from '@/services/blocks';
 import { useContractSource } from '@/services/contracts';
 import { useTransactionByHash } from '@/services/chainRpc';
 import { useTokenMetadata } from '@/services/tokenMetadata';
+import { nativeAmountToUsd, useNativeUsdPrice } from '@/services/prices';
 import { useLatestBlocksFeed } from '@/services/homeFeed';
 import { useSignatures, type SignatureOutcome } from '@/services/signatures';
 import type { DecodedTokenTransfer } from '@/utils/tokenTransferDecode';
@@ -38,6 +39,7 @@ import {
   selectorOf,
 } from '@/utils/txDecode';
 import { formatGasPrice, formatNumber, formatTokenAmount, formatValue } from '@/utils/format';
+import { UsdValue } from '@/components/ui/UsdValue';
 
 const getTxTypeText = (type: number): string => {
   const types: Record<number, string> = {
@@ -884,6 +886,12 @@ export default function TransactionDetail() {
   const finalityHeads = useFinalityHeads(headChainId).data;
   const { data: headFeed } = useLatestBlocksFeed(headChainId);
 
+  // USD valuation of the Value row (browser-side DefiLlama layer). Runs
+  // unconditionally like the hooks above: an unmapped chain settles null
+  // without any network, and an unavailable price renders nothing — the
+  // native amount row is complete on its own.
+  const nativePrice = useNativeUsdPrice(currentChainId);
+
   // Mined-position facts. A pending tx has no block, so neither the
   // confirmation count nor a finality label exists yet.
   const txBlockNumber = txInfo?.blockNumber ?? null;
@@ -1045,7 +1053,16 @@ export default function TransactionDetail() {
                         never looks like lost precision. */}
                     <span title={`${txInfo.value} wei`}>
                       {formatValue(BigInt(txInfo.value), getChainSymbol(currentChainId))}
-                    </span>
+                    </span>{' '}
+                    {/* USD refinement: exact multiply on the wei amount,
+                        cent rounding only at format time; nothing while
+                        the price settles or when it is unavailable. */}
+                    {nativePrice != null && (
+                      <UsdValue
+                        usd={nativeAmountToUsd(BigInt(txInfo.value), nativePrice)}
+                        price={nativePrice}
+                      />
+                    )}
                   </InfoItem>
                   <InfoItem label="Gas Limit">{formatGas(txInfo.gasLimit)}</InfoItem>
                   {txInfo.gasUsed && (

@@ -332,13 +332,24 @@ export class DuckDBPostgresAdapter {
     return this.instance!;
   }
 
+  // Every query connection runs with session TZ pinned to UTC: DuckDB's
+  // now() renders in the session timezone (system-local by default), so
+  // datetime defaults written on a non-UTC machine would store LOCAL wall
+  // time while JS-Date-bound params store UTC wall — mixed semantics no
+  // reader can disambiguate. SET is session-scoped, hence per-connection.
+  private async openSession(): Promise<Awaited<ReturnType<DuckDBInstance['connect']>>> {
+    const conn = await this.instance!.connect();
+    await conn.run('SET TimeZone=\'UTC\'');
+    return conn;
+  }
+
   // 内部查询执行方法 - 提取公共逻辑
   private async executeQuery(
     queryText: string,
     queryParams: unknown[],
     connection?: Awaited<ReturnType<DuckDBInstance['connect']>>,
   ): Promise<Record<string, unknown>[]> {
-    const conn = connection ?? (await this.instance!.connect());
+    const conn = connection ?? (await this.openSession());
     const shouldDisconnect = !connection;
 
     try {
@@ -405,7 +416,7 @@ export class DuckDBPostgresAdapter {
     }
 
     logger.info('DuckDB Transaction: BEGIN TRANSACTION');
-    const connection = await this.instance.connect();
+    const connection = await this.openSession();
     let transactionActive = false;
 
     try {
@@ -488,6 +499,22 @@ export class DuckDBPostgresAdapter {
     return '42000'; // 默认语法错误
   }
 
+  // DuckDB renders datetime columns as strings in several shapes: naive
+  // TIMESTAMP as 'YYYY-MM-DD HH:MM:SS[.ffffff]' (space-separated), and
+  // TIMESTAMPTZ as ISO 'T'-form whose offset suffix is OMITTED when the
+  // session timezone is UTC. ALL of them must become correctly-parsed
+  // Dates here: drizzle's naive-datetime mapper appends '+0000' to
+  // whatever string it receives, and for the offset-less forms V8's
+  // lenient fallback then parses them as LOCAL time (an 8h skew on
+  // UTC+8 machines). Offset-bearing inputs parse directly; everything
+  // else is treated as UTC wall time (the project's documented
+  // convention). The strict anchored shape keeps ordinary varchar
+  // columns (names, notes, source text) untouched.
+  private static readonly DATETIME_STRING =
+    /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(\.\d{1,9})?(Z|[+-]\d{2}:?\d{2})?$/;
+
+  private static readonly EXPLICIT_OFFSET = /(Z|[+-]\d{2}:?\d{2})$/;
+
   // 结果适配 - 将 DuckDB 结果转换为 PostgreSQL 兼容格式
   private adaptResult(result: Record<string, unknown>[]): Record<string, unknown>[] {
     return result.map((row: Record<string, unknown>) => {
@@ -495,6 +522,15 @@ export class DuckDBPostgresAdapter {
       for (const [key, value] of Object.entries(adaptedRow)) {
         if (typeof value === 'bigint') {
           adaptedRow[key] = value.toString();
+        } else if (
+          typeof value === 'string'
+          && DuckDBPostgresAdapter.DATETIME_STRING.test(value)
+        ) {
+          adaptedRow[key] = new Date(
+            DuckDBPostgresAdapter.EXPLICIT_OFFSET.test(value)
+              ? value
+              : `${value.replace(' ', 'T')}Z`,
+          );
         } else if (value && typeof value === 'object') {
           // Handle DuckDB HUGEINT (128-bit integer) returned by count(*)
           // HUGEINT is represented as { high: number, low: bigint } or similar
@@ -504,6 +540,19 @@ export class DuckDBPostgresAdapter {
             const low = typeof obj.low === 'bigint' ? obj.low : BigInt(obj.low as number);
             const high = typeof obj.high === 'number' ? BigInt(obj.high) : (obj.high as bigint);
             adaptedRow[key] = Number((high << 64n) + low);
+          } else if ('micros' in obj) {
+            // DuckDBTimestampValue (TIMESTAMP, µs precision): µs → ms
+            adaptedRow[key] = new Date(Number(obj.micros) / 1000);
+          } else if ('millis' in obj) {
+            // DuckDBTimestampMillisecondsValue (TIMESTAMP_MS — the type
+            // drizzle's `timestamp(3)`/datetime migrations create): already
+            // ms. Both classes carry ABSOLUTE UTC epochs, so the Date is
+            // exact; left unconverted the raw object later coerces through
+            // its naive string form and shifts by the machine TZ.
+            adaptedRow[key] = new Date(Number(obj.millis));
+          } else if ('seconds' in obj) {
+            // DuckDBTimestampSecondsValue (TIMESTAMP_S)
+            adaptedRow[key] = new Date(Number(obj.seconds) * 1000);
           } else if (value.constructor.name === 'DuckDBTimestampValue') {
             const tsValue = value as { micros?: number };
             adaptedRow[key] = new Date(Number(tsValue.micros) / 1000);

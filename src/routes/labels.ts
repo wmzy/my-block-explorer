@@ -92,7 +92,7 @@ const parseLabelBody = (
 // an explicit 404 so "no label set" is never confused with an error.
 const findLabelRow = async (chainId: number, address: `0x${string}`) => {
   const rows = await db
-    .select({ label: addressLabels.label, note: addressLabels.note })
+    .select({ label: addressLabels.label, note: addressLabels.note, source: addressLabels.source })
     .from(addressLabels)
     .where(and(eq(addressLabels.chainId, chainId), eq(addressLabels.address, address)));
   return rows[0] ?? null;
@@ -112,7 +112,13 @@ app.get('/chains/:chainId/labels/:address', async c => {
       );
     }
     c.header('Cache-Control', 'no-store');
-    return c.json({ label: row.label, note: row.note });
+    // source tells the client whether the row is a bundled seed
+    // ('builtin') or operator-authored ('user') — the UI renders the
+    // built-in marker from it. The column is nullable in storage (DuckDB
+    // ADD COLUMN cannot carry constraints); the API contract is pinned
+    // here: anything but 'builtin' reads as 'user'.
+    const source = row.source === 'builtin' ? 'builtin' : 'user';
+    return c.json({ label: row.label, note: row.note, source });
   }
   catch (error) {
     logger.error({ err: error }, 'Label lookup failed');
@@ -144,15 +150,19 @@ app.put('/chains/:chainId/labels/:address', requireAdminTokenIfConfigured, async
   const { label, note } = parsedBody;
 
   try {
+    // source is forced to 'user' on every write: an operator PUT over a
+    // bundled seed converts the row into their own — user intent wins
+    // over the dataset. Both the fresh-insert values and the
+    // conflict-update set carry it (the update path is the conversion).
     await db
       .insert(addressLabels)
-      .values({ chainId, address, label, note })
+      .values({ chainId, address, label, note, source: 'user' })
       .onConflictDoUpdate({
         target: [addressLabels.chainId, addressLabels.address],
-        set: { label, note, updatedAt: sql`now()` },
+        set: { label, note, source: 'user', updatedAt: sql`now()` },
       });
     c.header('Cache-Control', 'no-store');
-    return c.json({ label, note });
+    return c.json({ label, note, source: 'user' });
   }
   catch (error) {
     logger.error({ err: error }, 'Label upsert failed');

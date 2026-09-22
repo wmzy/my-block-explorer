@@ -7,7 +7,7 @@
 // (EOA, delegated EOA, settled-no-probes, transport failure, two-tier
 // invalid address), and the wave-1 mobile stacking convention.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, View, createRoutes } from '@native-router/react';
 import { getAddress } from 'viem';
 import { readFileSync } from 'node:fs';
@@ -15,6 +15,7 @@ import { resolve } from 'node:path';
 import '@testing-library/jest-dom/vitest';
 import type { ReactNode } from 'react';
 import TokenPage from '@/views/Token';
+import { resetPricesForTests } from '@/services/prices';
 // Type-only import: erased at runtime, so the vi.mock below is unaffected.
 import type { TokenTransfer, TokenTransferPage } from '@/services/tokenTransfers';
 
@@ -511,5 +512,55 @@ describe('Token page', () => {
     expect(src).toContain('@/views/Address/tokenOverview');
     const math = readFileSync(resolve(__dirname, '../../..', 'src/views/Token/tokenMath.ts'), 'utf8');
     expect(math).toContain('computeDiscoveredHolders');
+  });
+
+  // --- USD rows (browser-side DefiLlama price layer) ---
+
+  it('renders Price and Market Cap via DefiLlama when the token is priced', async () => {
+    resetPricesForTests();
+    const id = `ethereum:${getAddress(mocks.testAddress)}`;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: true, json: async () => ({ coins: { [id]: { price: 2.5 } } }) })),
+    );
+
+    try {
+      renderPage();
+
+      // Overview card: Price $2.50 and Market Cap 1,234,500 × $2.5 =
+      // $3,086,250 → compact $3.09M, each with the provenance suffix.
+      expect(await screen.findByText('$2.50')).toBeInTheDocument();
+      expect(screen.getByText('$3.09M')).toBeInTheDocument();
+      expect(screen.getAllByText('via DefiLlama')).toHaveLength(2);
+      expect(screen.getAllByTitle(/Price via DefiLlama · updated \d+s ago/)).toHaveLength(2);
+    } finally {
+      vi.unstubAllGlobals();
+      resetPricesForTests();
+    }
+  });
+
+  it('renders no USD rows and no provenance when the price fetch fails', async () => {
+    resetPricesForTests();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')));
+
+    try {
+      renderPage();
+
+      expect(
+        await screen.findByRole('heading', { level: 1, name: 'Mock Token (MCK)' }),
+      ).toBeInTheDocument();
+      await waitFor(() => {
+        // Settled-unavailable: zero USD nodes anywhere on the page.
+        expect(screen.queryByText(/\$/)).not.toBeInTheDocument();
+      });
+      expect(screen.queryByText('via DefiLlama')).not.toBeInTheDocument();
+      expect(screen.queryByText('Price')).not.toBeInTheDocument();
+      expect(screen.queryByText('Market Cap')).not.toBeInTheDocument();
+    } finally {
+      warn.mockRestore();
+      vi.unstubAllGlobals();
+      resetPricesForTests();
+    }
   });
 });

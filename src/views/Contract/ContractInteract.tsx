@@ -16,6 +16,7 @@ import { argsKey } from './types';
 import type { ContractSource } from './types';
 import { describeCallError } from './paramParsing';
 import { fetchContractAbi } from '@/services/contracts';
+import { useInjectedProvider } from '@/util/wallet';
 
 const functionListStyles = css`
   .function-item {
@@ -273,6 +274,11 @@ export function ContractInteract({
     name: '',
   });
   const [debouncedNameFilter, setDebouncedNameFilter] = useState('');
+
+  // Wallet liveness for the whole panel: one read on mount plus the
+  // provider's own chainChanged/accountsChanged events — no polling. A
+  // null result renders the panel exactly as it did before wallets.
+  const walletProvider = useInjectedProvider();
 
   // EIP-2535 diamonds: facet[0]'s ABI ships on implementationContract, the
   // other facets' ABIs are fetched lazily (one /abi call per facet, backend
@@ -676,7 +682,9 @@ export function ContractInteract({
       </div>
 
       <div style={{ marginBottom: '16px', fontSize: '14px', color: '#666' }}>
-        Write functions are simulations only. To execute transactions, use a Web3 wallet.
+        {walletProvider === null
+          ? 'Write functions are simulations only. To execute transactions, use a Web3 wallet.'
+          : 'Write functions simulate locally — or send them from your wallet below. This explorer never sees your keys.'}
       </div>
 
       {filteredFunctions.length > 0 ? (
@@ -692,6 +700,7 @@ export function ContractInteract({
               chainId={chainId}
               blockNumber={globalBlockNumber}
               contractAddress={contractAddress}
+              walletProvider={walletProvider}
             />
           ))}
         </div>

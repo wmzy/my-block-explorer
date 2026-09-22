@@ -5,6 +5,7 @@ import { getAddress } from 'viem';
 import { ApiError } from '@/util/apiError';
 import '@testing-library/jest-dom/vitest';
 import AddressView from '@/views/Address';
+import { resetPricesForTests } from '@/services/prices';
 
 // Mutable per-test data consumed by the service mocks below: the page test
 // pins view behavior, so the services layer is replaced with settled
@@ -1273,5 +1274,36 @@ describe('Token Holdings (discovered) overview section', () => {
     expect(
       screen.getByText('Based on discovered transfers — may be incomplete'),
     ).toBeInTheDocument();
+  });
+
+  // --- USD estimate (browser-side DefiLlama price layer) ---
+  it('renders no USD estimate when no holdings row is priceable — the price layer is never even consulted', async () => {
+    resetPricesForTests();
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+
+    try {
+      renderPage();
+
+      fireEvent.click(await screen.findByRole('button', { name: 'Scan Token Transfers' }));
+
+      await screen.findByText('ID 5 × -3');
+      expect(
+        screen.getByText('Based on discovered transfers — may be incomplete'),
+      ).toBeInTheDocument();
+
+      // ERC-1155-only holdings carry no priceable ERC-20 rows: zero
+      // DefiLlama requests (the spy still sees the page's own backend
+      // API calls), no estimate line, no USD anywhere — clean absence.
+      const llamaCalls = fetchSpy.mock.calls.filter(([url]) =>
+        String(url).includes('coins.llama.fi'),
+      );
+      expect(llamaCalls).toHaveLength(0);
+      expect(screen.queryByText('Estimated value')).not.toBeInTheDocument();
+      expect(screen.queryByText(/\$/)).not.toBeInTheDocument();
+    } finally {
+      vi.unstubAllGlobals();
+      resetPricesForTests();
+    }
   });
 });

@@ -64,6 +64,20 @@
       "when": 1789954262205,
       "tag": "0008_big_rocket_raccoon",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1790073347287,
+      "tag": "0009_quick_mac_gargan",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1790081637937,
+      "tag": "0010_complex_killer_shrike",
+      "breakpoints": true
     }
   ]
 }

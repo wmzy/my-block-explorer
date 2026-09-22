@@ -6,7 +6,7 @@ The backend is a Hono app (`src/api-app.ts`) that mounts the route modules in `s
 - **Format**: JSON (CSV for the event export).
 - **Auth**: read endpoints are open. Writes/admin endpoints are gated in two tiers, both via the `x-admin-token` header matching the server's `ADMIN_TOKEN` env. 🔐 **Opt-in tier** (`requireAdminTokenIfConfigured` — enforced only when `ADMIN_TOKEN` is set; without it requests pass through, keeping the zero-config local trust model): event-range mutations, `POST`/`DELETE /api/rpc-configs`, contract `clear-cache`, storage-layout cache delete, and `open-in-ide` — all non-destructive or regenerative operations (dropped caches re-fetch from upstream; the IDE endpoint only builds a URL), so a token-less local session stays fully functional. 🔒 **Fail-closed tier** (`requireAdminToken` — no token configured → `403`): `/api/performance/*`, the admin/diagnostic surface.
 - **Common response headers**: `X-Data-Source` (e.g. `database`, `rpc`, method tag), `X-Chain-Name`.
-- **Chain IDs**: any chain defined in `viem/chains`. Unknown IDs → `400 { "error": "Unsupported chain" }` (chain-scoped search additionally returns `supportedChains`).
+- **Chain IDs**: any chain defined in `viem/chains` (plus user-registered custom chains — see [Custom chains](#custom-chains)). Unknown IDs → `400 { "error": "Unsupported chain" }` (chain-scoped search additionally returns `supportedChains`).
 
 ## Health & meta
 
@@ -60,6 +60,9 @@ The backend is a Hono app (`src/api-app.ts`) that mounts the route modules in `s
 | `POST /api/chains/:chainId/contracts/:address/estimate-gas` | Gas estimate |
 | `POST /api/chains/:chainId/contracts/:address/open-in-ide` | 🔐 **admin (opt-in)** — build a remote-IDE URL |
 | `POST /api/chains/:chainId/contracts/:address/clear-cache` | 🔐 **admin (opt-in)** — drop cached contract source (regenerates on next fetch) |
+| `POST /api/chains/:chainId/contracts/:address/verify` | 🔐 **admin (opt-in)**, rate-limited (3/min·1) — submit a Sourcify verification bundle `{ files: { 'metadata.json': string, … } }` through the backend. `200 { verified: true, status: 'perfect' \| 'partial', verificationStatus? }`, `200 { verified: false, kind: 'unsupported_chain' \| 'rejected', message }` (Sourcify's words), `400 invalid_files`, `502 sourcify_unreachable` |
+| `POST /api/chains/:chainId/contracts/:address/verify/manual` | 🔐 **admin (opt-in)**, same rate limiter — save a **local-trust mark** for contracts the remote verifiers cannot cover (anvil/hardhat/private deployments). Body `{ abi: string, sourceCode?: string, name?: string }`; `abi` must parse to a non-empty array (`400 missing_fields` / `400 invalid_abi` otherwise). The mark stores `verificationStatus: 'verified'` + `verificationSource: 'manual'` — an annotation by the local operator, **not cryptographic verification**. Response carries the freshly re-read `contractSource`. GET re-probes Sourcify once per unverified TTL (1h); a remote match supersedes the mark |
+| `DELETE /api/chains/:chainId/contracts/:address/verify/manual` | 🔐 **admin (opt-in)** — remove the local-trust mark; the next GET re-probes remote verifiers. Deletes only rows with `verificationSource: 'manual'` — a sourcify/blockscan row answers `404 { error: 'not_found' }` and stays intact |
 
 ## Storage
 
@@ -120,3 +123,15 @@ At startup (`src/startupChecks.ts`, before `listen`): binding a **non-loopback `
 ## Errors
 
 Failures return `{ "error": string }` — the human-readable reason — often alongside an optional `message` with more detail, and conventional status codes (`400` validation, `403` admin gate, `404` not found, `500` internal). The admin gate's 403 body explains how to enable admin operations. On the frontend, `toApiError` (`src/util/http.ts`) surfaces `message` when present and falls back to `error` verbatim, so the text in `error` reaches the user as-is.
+
+## Custom chains
+
+User-registered EVM chains outside `viem/chains` (anvil 31337, hardhat forks, private geth, new L2s) — the whole explorer follows one RPC endpoint into the chain. `POST` probes the endpoint's `eth_chainId` with a raw JSON-RPC request (5s budget, no shared client) before anything is stored; the reported id **is** the registration's chain id, never a client-supplied one. Once registered, the chain resolves everywhere a viem chain does — chain-scoped routes (`/api/chains/:id/…`), the search layer, name/symbol/decimals lookups — and is served through the registered RPC (a per-chain `rpc-configs` override still wins when one exists). Registrations persist in the `custom_chains` table and re-register at server startup. `GET` applies the same URL-redaction policy as `GET /api/rpc-configs`.
+
+| Method & path | Notes |
+| --- | --- |
+| `GET /api/chains/custom` | List registrations (`{ chains: [{ chainId, name, symbol, decimals, rpcUrl, urlRedacted }] }`, newest-stable order by id). Open read; `rpcUrl` is the full URL only for CORS-allowlisted Origins / Origin-less loopback sockets — everyone else gets scheme + host and `urlRedacted: true` |
+| `POST /api/chains/custom` | 🔐 **admin (opt-in)** + rate limit 5/min · burst 2. Body `{ rpcUrl, name?, symbol?, decimals? }`: `rpcUrl` an absolute http(s) URL, `name`/`symbol` non-empty strings, `decimals` an integer 0–256 — violations → `400` with `code` (`invalid_url` / `invalid_fields` / `invalid_json`). The probe failing honestly → `502 { "error": "rpc_unreachable" \| "rpc_invalid_response", "message" }`. An id viem already ships → `409 { "error": "chain_already_known", "message", "existingName", "hint": "Use the RPC override (⚙ RPC panel) for a known chain" }`. Success → `201` echoing `{ chainId, name, symbol, decimals, rpcUrl }` (defaults `Chain ${id}` / `ETH` / `18`); same id re-registered → upsert (replace) |
+| `DELETE /api/chains/custom/:chainId` | 🔐 Remove a registration. Non-positive-integer id → `400 invalid_chain_id`; nothing registered under the id → `404`; success → `204` (the RPC manager hot-reloads and the chain stops resolving) |
+
+🔐 = `requireAdminTokenIfConfigured` (enforced only when `ADMIN_TOKEN` is set); see the Auth bullet at the top.

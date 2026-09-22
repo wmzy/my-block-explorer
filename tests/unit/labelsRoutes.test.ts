@@ -12,7 +12,7 @@ const dbState = vi.hoisted(() => ({
   // Single-row store: the route always addresses exactly one (chain,
   // address) per test, so insert-overwrites and select-returns model the
   // upsert/get pair without evaluating drizzle conditions.
-  row: null as { label: string; note: string | null } | null,
+  row: null as { label: string; note: string | null; source: string | null } | null,
   inserts: [] as Array<{ values: Record<string, unknown>; set: Record<string, unknown> }>,
   deleted: false,
 }));
@@ -49,6 +49,7 @@ vi.mock('@/database/drizzle', async () => {
             S.row = {
               label: conflict.set.label as string,
               note: (conflict.set.note ?? null) as string | null,
+              source: (conflict.set.source ?? null) as string | null,
             };
             return b;
           },
@@ -94,13 +95,35 @@ afterEach(() => {
 });
 
 describe('GET /chains/:chainId/labels/:address', () => {
-  it('returns the stored label and note', async () => {
-    dbState.row = { label: 'Cold wallet', note: 'hardware backup in safe' };
+  it('returns the stored label, note and user source', async () => {
+    dbState.row = { label: 'Cold wallet', note: 'hardware backup in safe', source: 'user' };
     const res = await request(`/chains/1/labels/${LABEL_ADDRESS}`);
     expect(res.status).toBe(200);
     await expect(res.json()).resolves.toEqual({
       label: 'Cold wallet',
       note: 'hardware backup in safe',
+      source: 'user',
+    });
+  });
+
+  it('reports source builtin for a seeded row', async () => {
+    dbState.row = { label: 'Uniswap V3: SwapRouter02', note: null, source: 'builtin' };
+    const res = await request(`/chains/1/labels/${LABEL_ADDRESS}`);
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({
+      label: 'Uniswap V3: SwapRouter02',
+      source: 'builtin',
+    });
+  });
+
+  it('coerces a null source (storage is nullable) to user, never leaking null', async () => {
+    dbState.row = { label: 'Legacy row', note: null, source: null };
+    const res = await request(`/chains/1/labels/${LABEL_ADDRESS}`);
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({
+      label: 'Legacy row',
+      note: null,
+      source: 'user',
     });
   });
 
@@ -155,14 +178,18 @@ describe('PUT /chains/:chainId/labels/:address — body validation', () => {
   it('trims the label and normalizes empty note to null', async () => {
     const res = await put({ label: '  Cold wallet  ', note: '   ' });
     expect(res.status).toBe(200);
-    await expect(res.json()).resolves.toEqual({ label: 'Cold wallet', note: null });
+    await expect(res.json()).resolves.toEqual({
+      label: 'Cold wallet',
+      note: null,
+      source: 'user',
+    });
   });
 
   it('omitted note clears an existing one (full replace)', async () => {
-    dbState.row = { label: 'Old', note: 'stale note' };
+    dbState.row = { label: 'Old', note: 'stale note', source: 'user' };
     const res = await put({ label: 'New' });
     expect(res.status).toBe(200);
-    await expect(res.json()).resolves.toEqual({ label: 'New', note: null });
+    await expect(res.json()).resolves.toEqual({ label: 'New', note: null, source: 'user' });
     // The upsert set carries the cleared note for the conflict path too.
     expect(dbState.inserts[0]?.set.note).toBeNull();
   });
@@ -170,14 +197,35 @@ describe('PUT /chains/:chainId/labels/:address — body validation', () => {
   it('upsert echoes the trimmed note', async () => {
     const res = await put({ label: 'Hot wallet', note: '  Metamask #3 ' });
     expect(res.status).toBe(200);
-    await expect(res.json()).resolves.toEqual({ label: 'Hot wallet', note: 'Metamask #3' });
+    await expect(res.json()).resolves.toEqual({
+      label: 'Hot wallet',
+      note: 'Metamask #3',
+      source: 'user',
+    });
+  });
+
+  it('converts a builtin row to a user label (user intent wins over the seed)', async () => {
+    dbState.row = { label: 'Binance 14', note: 'seeded', source: 'builtin' };
+    const res = await put({ label: 'My Binance contact', note: 'renamed' });
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({ source: 'user' });
+    // Both insert values and the conflict-update set force 'user' — the
+    // set path is the actual conversion of the pre-existing builtin row.
+    expect(dbState.inserts[0]?.values.source).toBe('user');
+    expect(dbState.inserts[0]?.set.source).toBe('user');
+    // And the store the next GET would serve reflects the conversion.
+    expect(dbState.row?.source).toBe('user');
   });
 
   it('PUT → GET roundtrip serves the saved row', async () => {
     await put({ label: 'Roundtrip', note: 'persisted' });
     const res = await request(`/chains/1/labels/${LABEL_ADDRESS}`);
     expect(res.status).toBe(200);
-    await expect(res.json()).resolves.toEqual({ label: 'Roundtrip', note: 'persisted' });
+    await expect(res.json()).resolves.toEqual({
+      label: 'Roundtrip',
+      note: 'persisted',
+      source: 'user',
+    });
   });
 
   it('rejects a malformed address with 400 before touching the db', async () => {
@@ -222,11 +270,18 @@ describe('admin gating on writes', () => {
 
 describe('DELETE /chains/:chainId/labels/:address', () => {
   it('removes an existing label with 204 and an empty body', async () => {
-    dbState.row = { label: 'Gone soon', note: null };
+    dbState.row = { label: 'Gone soon', note: null, source: 'user' };
     const res = await request(`/chains/1/labels/${LABEL_ADDRESS}`, { method: 'DELETE' });
     expect(res.status).toBe(204);
     expect(dbState.deleted).toBe(true);
     expect(await res.text()).toBe('');
+  });
+
+  it('deletes a builtin row too — the user said remove it', async () => {
+    dbState.row = { label: 'Binance 14', note: null, source: 'builtin' };
+    const res = await request(`/chains/1/labels/${LABEL_ADDRESS}`, { method: 'DELETE' });
+    expect(res.status).toBe(204);
+    expect(dbState.deleted).toBe(true);
   });
 
   it('returns 404 label_not_found when nothing is set', async () => {

@@ -15,6 +15,7 @@ import contractsRoutes from './routes/contracts';
 import eventsRoutes from './routes/events';
 import performanceRoutes from './routes/performance';
 import rpcConfigRoutes from './routes/rpc-config';
+import chainsRoutes from './routes/chains';
 import storageRoutes from './routes/storage';
 import signaturesRoutes from './routes/signatures';
 import labelsRoutes from './routes/labels';
@@ -74,6 +75,10 @@ app.get('/api/health', c => {
   });
 });
 
+// Custom-chain registration (/api/chains/custom…): mounted before the
+// chain-scoped sub-apps below so the literal "custom" segment can never
+// be captured by one of their :chainId param patterns.
+app.route('/api', chainsRoutes);
 app.route('/api', blocksRoutes);
 app.route('/api', transactionsRoutes);
 app.route('/api', addressesRoutes);

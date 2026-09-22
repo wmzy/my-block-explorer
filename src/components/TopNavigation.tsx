@@ -5,6 +5,7 @@ import { css, cx } from '@linaria/core';
 import { Input, Button } from 'haze-ui';
 import { useControl } from 'react-use-control';
 import RpcConfig from './RpcConfig';
+import { AddCustomChainForm } from './AddCustomChainForm';
 import {
   getChainInfo,
   getChainName,
@@ -406,6 +407,41 @@ const chainItemMeta = css`
   color: var(--haze-color-text-muted);
 `;
 
+// Dropdown footer holding the custom-chain entry point: a quiet action
+// row separated from the chain list, expanding into the shared
+// AddCustomChainForm in place.
+const dropdownFooter = css`
+  border-top: 1px solid var(--haze-color-border);
+  padding: var(--haze-space-3);
+  background: var(--haze-color-bg-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: var(--haze-space-2);
+  /* The expanded form + its feedback must fit inside the capped dropdown;
+     overflow scrolls instead of clipping silently. */
+  max-height: 300px;
+  overflow-y: auto;
+`;
+
+const addChainButton = css`
+  display: block;
+  width: 100%;
+  padding: var(--haze-space-2) var(--haze-space-3);
+  text-align: left;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: var(--haze-text-sm);
+  color: var(--haze-color-text-secondary);
+  font-family: var(--haze-font-sans);
+  border-radius: var(--haze-radius-md);
+
+  &:hover {
+    color: var(--haze-color-primary);
+    background: var(--haze-color-primary-subtle);
+  }
+`;
+
 // Search history styles
 const historyDropdown = css`
   position: absolute;
@@ -535,11 +571,16 @@ function ChainSelector({
   // has actually moved the highlight (or clicked) — a bare Enter used
   // to blind-pick the first filter hit, switching chains unasked.
   const [highlightedIndex, setHighlightedIndex] = useState<number | null>(null);
+  // Whether the dropdown footer shows the shared AddCustomChainForm
+  // (register an EVM chain viem does not ship by pointing the explorer
+  // at its RPC).
+  const [showAddChain, setShowAddChain] = useState(false);
 
   useEffect(() => {
     if (!isOpen) {
       setSearchTerm('');
       setHighlightedIndex(null);
+      setShowAddChain(false);
     }
   }, [isOpen]);
 
@@ -654,6 +695,7 @@ function ChainSelector({
             role="listbox"
             id="chain-selector-listbox"
             aria-label="Chains"
+            style={showAddChain ? { display: 'none' } : undefined}
           >
             {filteredChains.length === 0 ? (
               <div className={dropdownEmpty}>No matching chains found</div>
@@ -699,6 +741,35 @@ function ChainSelector({
                   </button>
                 );
               })
+            )}
+          </div>
+
+          <div className={dropdownFooter}>
+            {showAddChain ? (
+              <>
+                <AddCustomChainForm
+                  onAdded={chain => {
+                    // The chain is registered locally by the service, so
+                    // selecting it lands on a resolvable /chain/:id view.
+                    selectChain(chain.chainId);
+                  }}
+                />
+                <button
+                  type="button"
+                  className={addChainButton}
+                  onClick={() => setShowAddChain(false)}
+                >
+                  ← Back to chain list
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                className={addChainButton}
+                onClick={() => setShowAddChain(true)}
+              >
+                + Add chain via RPC
+              </button>
             )}
           </div>
         </div>

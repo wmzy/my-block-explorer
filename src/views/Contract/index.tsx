@@ -24,6 +24,7 @@ import { CustomAbiPanel, parseAbiString } from './CustomAbiPanel';
 import { StoragePanel } from './StoragePanel';
 import { OpenInIdeButton } from './OpenInIdeButton';
 import { SourcifyVerifyPanel } from './SourcifyVerifyPanel';
+import { ManualVerifyPanel } from './ManualVerifyPanel';
 import { cardStyles, errorStyles, loadingStyles } from './styles';
 import type { ContractABI, ContractCreationInfo, ContractSource } from './types';
 
@@ -693,6 +694,11 @@ const VERIFICATION_SOURCE_META: Record<string, { label: string; title: string }>
     title:
       'Source served from Blockscan\u2019s cross-explorer cache (vscode.blockscan.com) — not independently verified',
   },
+  manual: {
+    label: 'Manual (local trust)',
+    title:
+      'ABI/source pasted locally and stored in this explorer\u2019s database — a local trust annotation, not cryptographic verification',
+  },
 };
 
 // Renders under both /chain/:chainId/contract/:address and its /events
@@ -1076,6 +1082,26 @@ export default function Contract() {
                     </span>
                   </div>
                 )}
+                {contractSource.verificationSource === 'manual' && (
+                  <div className="info-item">
+                    <span className="label">Local Trust Mark</span>
+                    <span className="value">
+                      <span className={verifyCellStyles}>
+                        <button
+                          type="button"
+                          className={verifyInlineButtonStyles}
+                          aria-expanded={verifyPanelOpen}
+                          onClick={() => setVerifyPanelOpen(open => !open)}
+                        >
+                          {verifyPanelOpen ? 'Hide local trust panel' : 'Manage local trust mark'}
+                        </button>
+                        <span className={verifyHintStyles}>
+                          A locally-pasted annotation — manage or remove it in this page
+                        </span>
+                      </span>
+                    </span>
+                  </div>
+                )}
                 <div className="info-item">
                   <span className="label">Verification Source</span>
                   <span className="value">
@@ -1281,6 +1307,23 @@ export default function Contract() {
                 chainId={currentChainId}
                 address={address}
                 onVerified={() => void refetchSource()}
+              />
+            )}
+
+            {/* Manual (local-trust) mark: offered alongside Sourcify for
+                unverified contracts (the fallback for chains/deployments
+                Sourcify cannot cover) and as the management surface when a
+                mark already exists (state display + removal). Saves and
+                removals refetch the source so the page reflects the new
+                provenance immediately. */}
+            {(contractSource.verificationStatus === 'unverified' ||
+              contractSource.verificationSource === 'manual') &&
+              verifyPanelOpen && (
+              <ManualVerifyPanel
+                chainId={currentChainId}
+                address={address ?? ''}
+                marked={contractSource.verificationSource === 'manual'}
+                onChanged={() => void refetchSource()}
               />
             )}
 

@@ -65,6 +65,10 @@ type FixtureOptions = {
   /** Mark some fee days partially covered. */
   partialGas?: boolean;
   gasReason?: 'rpc-cap' | 'method-not-supported' | 'pre-eip-1559' | 'rpc-error' | null;
+  /** Thins some sampled tx days below the 16-sample basis. */
+  thinTxDays?: boolean;
+  /** Renders the tx card in its unavailable state (empty series). */
+  txReason?: 'method-not-supported' | 'rpc-error' | null;
 };
 
 const okSnapshot = (options: FixtureOptions = {}): ChartsSnapshot => {
@@ -95,6 +99,17 @@ const okSnapshot = (options: FixtureOptions = {}): ChartsSnapshot => {
   const gasCharted = gasDaily.length > 0 && options.gasReason !== 'pre-eip-1559' ? gasDaily : [];
   const gasExpected = blocksPerDay.reduce((total, point) => total + point.blocks, 0);
   const gasCovered = gasCharted.reduce((total, point) => total + point.coveredBlocks, 0);
+  // Sampled tx/day follows the resolved days (a boundary gap drops the
+  // day here too); a txReason fixture empties the whole series.
+  const txPerDay =
+    options.txReason === undefined || options.txReason === null
+      ? blocksPerDay.map((point, index) => ({
+          dayStart: point.dayStart,
+          transactions: 900_000 + index * 1_500,
+          samples: options.thinTxDays && index % 5 === 0 ? 9 : 16,
+          blocksInDay: point.blocks,
+        }))
+      : [];
   return {
     chainId: 1,
     dayKey: '2026-09-22',
@@ -106,6 +121,8 @@ const okSnapshot = (options: FixtureOptions = {}): ChartsSnapshot => {
     gasDaily: gasCharted,
     gasCoveredBlocks: gasCharted.length === 0 ? 0 : gasCovered,
     gasExpectedBlocks: gasExpected,
+    txPerDay,
+    txSamplesPerDay: 16,
   };
 };
 
@@ -114,6 +131,7 @@ const okResult = (options: FixtureOptions = {}): ChartsResult => ({
   chainId: 1,
   snapshot: okSnapshot(options),
   gasUnavailableReason: options.gasReason ?? null,
+  txUnavailableReason: options.txReason ?? null,
 });
 
 const unavailableResult = (
@@ -144,7 +162,7 @@ describe('Charts page', () => {
     expect(await screen.findByText('Ethereum Charts')).toBeVisible();
     expect(
       screen.getByText(
-        'Derived from block headers and eth_feeHistory windows fetched live from this chain\u2019s RPC — sampled estimates, not an indexer\u2019s full-chain aggregation.',
+        'Derived from block headers, eth_feeHistory windows, and sampled eth_getBlockTransactionCount probes fetched live from this chain\u2019s RPC — sampled estimates, not an indexer\u2019s full-chain aggregation.',
       ),
     ).toBeVisible();
 
@@ -156,19 +174,25 @@ describe('Charts page', () => {
       screen.getByText('day-boundary block numbers — derived from block timestamps'),
     ).toBeVisible();
     expect(screen.getByText('sampled: one block per day boundary')).toBeVisible();
+    expect(
+      screen.getByText('extrapolated from 16 sampled blocks per day — counts, not indexer truth'),
+    ).toBeVisible();
     // The fee chart labels the block window actually covered.
     expect(screen.getByText(/^daily averages · fee windows cover/)).toBeVisible();
 
-    // Four aria-labelled charts.
+    // Five aria-labelled charts.
     expect(screen.getByRole('img', { name: 'Blocks mined per day' })).toBeVisible();
     expect(screen.getByRole('img', { name: 'Average block time per day' })).toBeVisible();
     expect(screen.getByRole('img', { name: 'Gas used by the day-boundary block' })).toBeVisible();
     expect(
       screen.getByRole('img', { name: 'Daily average base fee and priority fee' }),
     ).toBeVisible();
+    expect(
+      screen.getByRole('img', { name: 'Extrapolated transactions per day from sampled blocks' }),
+    ).toBeVisible();
 
-    // One bar per charted day, one per card.
-    expect(screen.getAllByTestId('chart-bar')).toHaveLength(60);
+    // One bar per charted day per bar chart.
+    expect(screen.getAllByTestId('chart-bar')).toHaveLength(90);
     // Both fee series drew line segments.
     expect(screen.getAllByTestId('chart-line').length).toBeGreaterThanOrEqual(2);
 
@@ -184,11 +208,14 @@ describe('Charts page', () => {
     renderCharts('/chain/1/charts');
 
     expect(await screen.findByTestId('charts-blocks-day')).toBeVisible();
-    // 29 bars + 29 gas-used bars, never a zero-filled 30th.
-    expect(screen.getAllByTestId('chart-bar')).toHaveLength(58);
+    // 29 bars per bar chart (blocks, gas-used, tx/day), never a zero-filled 30th.
+    expect(screen.getAllByTestId('chart-bar')).toHaveLength(87);
     // The block-time line breaks into two segments around the gap.
     const blockTimeCard = screen.getByTestId('charts-block-time');
     expect(within(blockTimeCard).getAllByTestId('chart-line')).toHaveLength(2);
+    // The sampled tx card gapped the same day.
+    const txCard = screen.getByTestId('charts-tx-day');
+    expect(within(txCard).getAllByTestId('chart-bar')).toHaveLength(29);
   });
 
   it('names partial fee coverage instead of pretending the day was whole', async () => {
@@ -245,6 +272,42 @@ describe('Charts page', () => {
     expect(within(feeCard).getByText('Priority fee (25th pct reward, avg)')).toBeVisible();
   });
 
+  it('keeps boundary charts while the sampled tx section degrades per reason', async () => {
+    for (const reason of ['method-not-supported', 'rpc-error'] as const) {
+      mockUseChartStats.mockReturnValue({ data: okResult({ txReason: reason }), loading: false });
+
+      renderCharts('/chain/1/charts');
+
+      const txCard = await screen.findByTestId('charts-tx-unavailable');
+      if (reason === 'method-not-supported') {
+        expect(txCard).toHaveTextContent(
+          'Transaction counts unavailable — this endpoint does not implement eth_getBlockTransactionCount.',
+        );
+      } else {
+        expect(txCard).toHaveTextContent(
+          'Transaction counts unavailable — too few sampled blocks answered to extrapolate any day.',
+        );
+      }
+      // The boundary-derived charts kept rendering.
+      expect(screen.getByTestId('charts-blocks-day')).toBeVisible();
+      expect(screen.queryByTestId('charts-unavailable')).not.toBeInTheDocument();
+
+      cleanup();
+    }
+  });
+
+  it('names days resting on fewer samples than the basis claims', async () => {
+    mockUseChartStats.mockReturnValue({ data: okResult({ thinTxDays: true }), loading: false });
+
+    renderCharts('/chain/1/charts');
+
+    const txCard = await screen.findByTestId('charts-tx-day');
+    expect(within(txCard).getByText(/days rest on fewer than 16 sampled blocks/)).toBeVisible();
+    expect(
+      within(txCard).getByText(/extrapolated from the blocks that answered/),
+    ).toBeVisible();
+  });
+
   it('renders the honest page-level unavailable state per reason', async () => {
     const cases: ReadonlyArray<
       ['rpc-error' | 'method-not-supported' | 'insufficient-history', RegExp]
@@ -270,7 +333,7 @@ describe('Charts page', () => {
 
     renderCharts('/chain/1/charts');
 
-    expect(await screen.findAllByTestId('charts-skeleton')).toHaveLength(4);
+    expect(await screen.findAllByTestId('charts-skeleton')).toHaveLength(5);
     expect(screen.queryAllByTestId('chart-bar')).toHaveLength(0);
     expect(screen.queryByTestId('charts-unavailable')).not.toBeInTheDocument();
   });
@@ -281,7 +344,7 @@ describe('Charts page', () => {
     renderCharts('/chain/137/charts');
 
     expect(await screen.findByText('Polygon Charts')).toBeInTheDocument();
-    expect(screen.getAllByTestId('charts-skeleton')).toHaveLength(4);
+    expect(screen.getAllByTestId('charts-skeleton')).toHaveLength(5);
     expect(screen.queryAllByTestId('chart-bar')).toHaveLength(0);
   });
 

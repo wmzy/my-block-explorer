@@ -28,6 +28,8 @@ import {
   type GasUnavailableReason,
 } from '@/services/gasHistory';
 import { describeBlockProducer } from '@/utils/blockRpcData';
+import { gasTransferCostUsd, useNativeUsdPrice } from '@/services/prices';
+import { UsdValue } from '@/components/ui/UsdValue';
 import { redirectReplace, rememberChainId } from './Landing';
 import { UnsupportedChainState } from './UnsupportedChainState';
 import Watchlist from './Watchlist';
@@ -301,6 +303,14 @@ const gasTierValue = css`
   color: var(--haze-color-text);
 `;
 
+// Per-tier transfer-cost USD: secondary inside the mono tier value, so
+// the gwei figure stays the row's anchor.
+const gasTierUsdStyle = css`
+  font-family: var(--haze-font-body, inherit);
+  font-weight: var(--haze-weight-regular);
+  color: var(--haze-color-text-muted);
+`;
+
 const gasTierNote = css`
   font-size: var(--haze-text-xs);
   color: var(--haze-color-text-muted);
@@ -514,12 +524,21 @@ const GAS_UNAVAILABLE_COPY: Record<GasUnavailableReason, string> = {
 
 const GAS_TIER_LABELS = { slow: 'Slow', standard: 'Standard', fast: 'Fast' } as const;
 
+// The per-tier USD figure prices a plain ETH transfer (21,000 gas — the
+// canonical cheapest send), not the tier price alone.
+const TRANSFER_GAS_UNITS = 21_000;
+
 // EIP-1559 panel under the stats bar: base-fee sparkline over the actual
 // returned block window plus Slow/Standard/Fast priority-fee tiers. Same
 // tri-state honesty as the stat cards — first load pulses, a settled
 // unavailable state is explicit (never an error page), and present data
 // always wins over a background refetch.
 function GasPanel({ feed, chainId }: { feed: GasFeedState; chainId: number }) {
+  // USD valuation of the per-tier transfer cost (browser-side DefiLlama
+  // layer): an unmapped chain or unavailable price settles null without
+  // any network and the tier rows keep their gwei-only shape.
+  const nativePrice = useNativeUsdPrice(chainId);
+
   // Cross-chain guard: the query layer's store keeps the last settle while
   // the new chain's fetch runs, so another chain's result is treated as
   // absent — the panel pulses instead of flashing chain A's fees under
@@ -578,6 +597,25 @@ function GasPanel({ feed, chainId }: { feed: GasFeedState; chainId: number }) {
                     <span className={gasTierValue}>
                       {tiers ? `${formatGwei(tiers[tier])} gwei` : '—'}
                     </span>
+                    {/* Per-tier USD for a plain 21,000-gas transfer (base
+                        fee + this tier's tip): a SIBLING of the gwei value
+                        so the tier figure's text stays exactly "N gwei";
+                        renders only when the native coin priced. */}
+                    {tiers && nativePrice != null && (
+                      <span
+                        className={gasTierUsdStyle}
+                        title={`≈ cost of a plain ${TRANSFER_GAS_UNITS.toLocaleString()}-gas transfer at this tier (base fee + tip)`}
+                      >
+                        <UsdValue
+                          usd={gasTransferCostUsd(
+                            TRANSFER_GAS_UNITS,
+                            snapshot.currentBaseFeeGwei + tiers[tier],
+                            nativePrice,
+                          )}
+                          price={nativePrice}
+                        />
+                      </span>
+                    )}
                   </div>
                 ))}
                 <div className={gasTierNote}>

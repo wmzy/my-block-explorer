@@ -795,6 +795,29 @@ export class ContractSourceService {
         },
         'getContractSource: cache lookup result',
       );
+      // Manual marks ('verificationSource: manual', written by the
+      // verify/manual route) are served from this DB shortcut like any
+      // verified row — including ABI-only marks whose sourceCode is ''.
+      // They must not permanently block remote verification though: once
+      // the mark is older than the unverified TTL, the GET re-probes
+      // Sourcify once — a remote match overwrites the manual row
+      // (cryptographic verification supersedes local trust), a miss
+      // keeps the mark and refreshes lastChecked so the cadence stays
+      // roughly one probe per hour.
+      if (cached?.verificationSource === 'manual') {
+        if (this.isCacheValid(cached)) {
+          return cached;
+        }
+        const remote = await this.fetchFromSourcify(chainId, address);
+        if (remote) {
+          await this.saveToDatabase(remote);
+          return this.enhanceWithProxyInfo(remote);
+        }
+        await this.refreshManualMark(chainId, address);
+        cached.lastChecked = new Date();
+        return cached;
+      }
+
       if (cached?.verificationStatus === 'verified' && cached.sourceCode) {
         if (cached.isProxy) {
           return await this.enhanceWithProxyInfo(cached);
@@ -853,6 +876,53 @@ export class ContractSourceService {
     } catch (error) {
       logger.error({ err: error, address }, 'Failed to get contract source');
       return null;
+    }
+  }
+
+  // Saves a manual (local-trust) verification mark: the user-pasted ABI
+  // plus optional source/name, recorded as verified with
+  // verificationSource 'manual'. This is an annotation, not a
+  // cryptographic match — the UI badge and panel copy both say so. The
+  // write goes through the same saveToDatabase upsert every other
+  // source uses (serialization, implementation_addresses JSON column,
+  // onConflictDoUpdate on (chainId, address)), so a re-save replaces
+  // the mark wholesale and proxy fields stay null.
+  async saveManualVerification(
+    chainId: number,
+    address: Address,
+    input: { abi: string; sourceCode?: string; name?: string },
+  ): Promise<ContractSource> {
+    const now = new Date();
+    const manualSource: ContractSource = {
+      chainId,
+      address: formatAddress(address),
+      ...(input.name ? { name: input.name } : {}),
+      sourceCode: input.sourceCode ?? '',
+      abi: input.abi,
+      verificationStatus: 'verified',
+      verificationSource: 'manual',
+      verifiedAt: now,
+      lastChecked: now,
+    };
+    await this.saveToDatabase(manualSource);
+    return manualSource;
+  }
+
+  // Removes a manual mark. Deletes ONLY rows whose verificationSource is
+  // 'manual' — a sourcify/blockscan row answers false (the route maps
+  // that to 404) and is never touched. The delete reuses clearCache, so
+  // the next GET re-probes the remote verifiers from scratch.
+  async deleteManualVerification(chainId: number, address: Address): Promise<boolean> {
+    try {
+      const existing = await this.getFromDatabase(chainId, address);
+      if (existing?.verificationSource !== 'manual') {
+        return false;
+      }
+      await this.clearCache(chainId, address);
+      return true;
+    } catch (error) {
+      logger.error({ err: error, chainId, address }, 'Failed to delete manual verification');
+      return false;
     }
   }
 
@@ -1619,6 +1689,22 @@ export class ContractSourceService {
     }
   }
 
+  // Pushes a stale manual mark's TTL window forward after a Sourcify
+  // re-probe missed, so the ~1/h probe cadence from isCacheValid holds
+  // without re-writing the whole row.
+  private async refreshManualMark(chainId: number, address: Address): Promise<void> {
+    try {
+      await db
+        .update(contractSources)
+        .set({ lastUpdated: new Date() })
+        .where(
+          and(eq(contractSources.chainId, chainId), eq(contractSources.address, formatAddress(address))),
+        );
+    } catch (error) {
+      logger.error({ err: error, chainId, address }, 'Failed to refresh manual mark timestamp');
+    }
+  }
+
   // 检查缓存是否有效
   private isCacheValid(contractSource: ContractSource): boolean {
     const now = new Date();
@@ -1633,9 +1719,14 @@ export class ContractSourceService {
     // - Unverified/partial contracts: 1 hour — they may get verified at
     //   Sourcify at any moment, and that motive dominates the proxy flag
     //   (an unverified proxy has no cached source an upgrade could stale)
+    // - Manual marks: 1 hour — a local trust annotation is not an
+    //   immutable fact, so the GET pipeline re-probes Sourcify on the
+    //   unverified cadence and lets a real match supersede it
     let maxHours: number;
 
-    if (contractSource.verificationStatus === 'verified') {
+    if (contractSource.verificationSource === 'manual') {
+      maxHours = UNVERIFIED_CACHE_TTL_HOURS;
+    } else if (contractSource.verificationStatus === 'verified') {
       maxHours = contractSource.isProxy ? PROXY_CACHE_TTL_HOURS : VERIFIED_CACHE_TTL_HOURS;
     } else {
       maxHours = UNVERIFIED_CACHE_TTL_HOURS;

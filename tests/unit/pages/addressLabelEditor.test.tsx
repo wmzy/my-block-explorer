@@ -18,7 +18,13 @@ const mocks = vi.hoisted(() => {
     // Per-case label-query state (reshaped below per test).
     labelQuery: {
       data: undefined as
-      | { chainId: number; address: string; label: string; note: string | null }
+      | {
+        chainId: number;
+        address: string;
+        label: string;
+        note: string | null;
+        source: 'builtin' | 'user';
+      }
       | undefined,
       loading: false,
       fetching: false,
@@ -217,12 +223,37 @@ describe('Address label row', () => {
       address: mocks.testAddress,
       label: 'Cold wallet',
       note: 'hardware backup',
+      source: 'user',
     };
     renderPage();
     const chip = await screen.findByTestId('label-chip');
     expect(chip).toHaveTextContent('Cold wallet');
     expect(chip).toHaveAttribute('title', 'hardware backup');
     expect(screen.getByTestId('label-edit')).toBeInTheDocument();
+    // User-authored: no built-in provenance marker.
+    expect(screen.queryByTestId('label-builtin-mark')).not.toBeInTheDocument();
+  });
+
+  it('marks a built-in seed chip with the subtle built-in badge (edit stays available)', async () => {
+    mocks.labelQuery.data = {
+      chainId: 1,
+      address: mocks.testAddress,
+      label: 'Uniswap V3: SwapRouter02',
+      note: null,
+      source: 'builtin',
+    };
+    renderPage();
+    const mark = await screen.findByTestId('label-builtin-mark');
+    expect(mark).toHaveTextContent('built-in');
+    expect(mark).toHaveAttribute(
+      'title',
+      'Bundled with the explorer — edit or delete to make it yours',
+    );
+    // The edit affordance renders for seeds exactly as for user labels.
+    expect(screen.getByTestId('label-edit')).toBeInTheDocument();
+    expect(screen.getByTestId('label-chip')).toHaveTextContent(
+      'Uniswap V3: SwapRouter02',
+    );
   });
 
   it('happy path: edit → save (trimmed) → refetch → chip appears', async () => {
@@ -233,6 +264,7 @@ describe('Address label row', () => {
         address: mocks.testAddress,
         label: 'Cold wallet',
         note: 'hardware backup',
+        source: 'user',
       };
       return mocks.labelQuery.data;
     });
@@ -315,6 +347,7 @@ describe('Address label row', () => {
       address: mocks.testAddress,
       label: 'Old',
       note: null,
+      source: 'user',
     };
     renderPage();
 

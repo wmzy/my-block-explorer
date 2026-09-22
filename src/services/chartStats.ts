@@ -3,16 +3,20 @@
 //
 // Honesty contract first: this explorer's DuckDB event tables only cover
 // user-configured ranges, so these charts NEVER present themselves as
-// indexer truth. Everything is derived client-side from two RPC sources —
-// eth_getBlockByNumber headers (one binary-searched boundary per UTC day)
-// and chunked eth_feeHistory windows — and every series carries a source
-// label saying exactly what was sampled. Gaps stay gaps: a day that could
-// not be resolved is absent from the series, never zero-filled.
+// indexer truth. Everything is derived client-side from three RPC sources —
+// eth_getBlockByNumber headers (one binary-searched boundary per UTC day),
+// chunked eth_feeHistory windows, and uniformly sampled
+// eth_getBlockTransactionCount probes (the extrapolated tx/day series) —
+// and every series carries a source label saying exactly what was sampled.
+// Gaps stay gaps: a day that could not be resolved is absent from the
+// series, never zero-filled.
 //
 // Cost model: the first load of a chain on a given UTC day probes ~31 day
 // boundaries (a timestamp bisection each, reusing the previous day's block
-// as the floor so ranges shrink) plus one fee-history request per chunk of
-// each charted day. The settled snapshot is cached in-memory per
+// as the floor so ranges shrink), one fee-history request per chunk of
+// each charted day, and at most 16 tx-count samples per charted day under
+// a hard whole-series budget (TX_SAMPLE_BUDGET). The settled snapshot is
+// cached in-memory per
 // (chainId, UTC day): the 60s poll and remounts resolve from the cache,
 // and only a new UTC day makes the key stale. Failed or insufficient
 // computations never occupy the day slot — the next poll retries instead
@@ -44,6 +48,19 @@ const MIN_FEE_CHUNK_BLOCKS = 64;
 // Fee windows of different days are independent: a small pool keeps the
 // first Charts load from serializing one request per chunk.
 const FEE_DAY_CONCURRENCY = 3;
+
+// The extrapolated tx/day series samples K blocks uniformly inside each
+// charted day's span and scales the sampled sum up to the whole day.
+export const TX_SAMPLES_PER_DAY = 16;
+
+// Hard ceiling on eth_getBlockTransactionCount calls for the whole
+// snapshot: 30 charted days × 16 samples = 480, and the ceiling keeps a
+// hypothetically wider day grid from multiplying the RPC budget.
+export const TX_SAMPLE_BUDGET = 512;
+
+// Concurrent tx-count probes: enough to keep a 480-call first load moving
+// without leaning on the provider.
+const TX_SAMPLE_CONCURRENCY = 4;
 
 // A settled snapshot is immutable for the rest of the UTC day, so a poll
 // cadence only re-checks the day cache (plus retries unsettled failures).
@@ -118,6 +135,23 @@ export type GasChartUnavailableReason =
   | 'pre-eip-1559'
   | 'rpc-error';
 
+// Why the sampled tx/day card specifically cannot render while boundary
+// charts do. No 'rpc-cap' variant: eth_getBlockTransactionCount takes one
+// block, there is no window for a provider to cap — the existing values
+// already cover every genuine failure of this method.
+export type TxChartUnavailableReason = 'method-not-supported' | 'rpc-error';
+
+/** One extrapolated day of the sampled tx/day series. */
+export type TxPerDayPoint = {
+  dayStart: number;
+  /** Extrapolated transaction count: sampled sum × blocks-per-sample. */
+  transactions: number;
+  /** Sampled blocks the estimate actually rests on. */
+  samples: number;
+  /** Blocks in the day's span (what the sum was scaled to). */
+  blocksInDay: number;
+};
+
 export type ChartsSnapshot = {
   chainId: number;
   /** UTC day the series was computed for ('YYYY-MM-DD'). */
@@ -137,6 +171,14 @@ export type ChartsSnapshot = {
   gasDaily: DailyGasPoint[];
   gasCoveredBlocks: number;
   gasExpectedBlocks: number;
+  /**
+   * Extrapolated daily transaction counts from uniformly sampled blocks.
+   * A day whose sampling fell below half its attempted samples is absent
+   * — a gap, never a zero.
+   */
+  txPerDay: TxPerDayPoint[];
+  /** Sample blocks attempted per day (the sampling basis the label cites). */
+  txSamplesPerDay: number;
 };
 
 // Both variants carry the chain: the query layer's store keeps the last
@@ -147,6 +189,7 @@ export type ChartsResult =
     chainId: number;
     snapshot: ChartsSnapshot;
     gasUnavailableReason: GasChartUnavailableReason | null;
+    txUnavailableReason: TxChartUnavailableReason | null;
   }
   | { status: 'unavailable'; chainId: number; reason: ChartsUnavailableReason };
 
@@ -350,6 +393,72 @@ export function gasCoverageLabel(
   )}`;
 }
 
+// --- sampled tx/day series (extrapolated, gap-preserving) ---
+
+/**
+ * Sample blocks attempted per charted day once the whole-series RPC
+ * budget is divided over the grid: K per day, floored when a wider grid
+ * would multiply past TX_SAMPLE_BUDGET, zero when the grid cannot afford
+ * a single sample per day.
+ */
+export function txSamplesForDays(dayCount: number): number {
+  if (dayCount <= 0) return 0;
+  return Math.min(TX_SAMPLES_PER_DAY, Math.floor(TX_SAMPLE_BUDGET / dayCount));
+}
+
+/**
+ * Uniformly spread sample positions across a day's [startBlock,
+ * endBlockExclusive) span: the midpoints of `count` equal strata. A count
+ * at or above the span degenerates to every block of the day.
+ */
+export function sampledTxPositions(
+  startBlock: number,
+  endBlockExclusive: number,
+  count: number,
+): number[] {
+  const span = endBlockExclusive - startBlock;
+  if (span <= 0 || count <= 0) return [];
+  const take = Math.min(count, span);
+  const positions: number[] = [];
+  for (let i = 0; i < take; i += 1) {
+    positions.push(startBlock + Math.floor(((i + 0.5) * span) / take));
+  }
+  return positions;
+}
+
+/**
+ * Scale one day's resolved sample counts into an extrapolated daily
+ * estimate: sum × (blocksInDay / samples). Fewer than `minSamples`
+ * resolved samples leaves the day ABSENT — a gap, never a zero and never
+ * a thin-sample guess dressed up as data.
+ */
+export function extrapolateSampledTransactions(
+  dayStart: number,
+  blocksInDay: number,
+  resolved: ReadonlyArray<{ block: number; transactions: number }>,
+  minSamples: number,
+): TxPerDayPoint | null {
+  if (blocksInDay <= 0 || resolved.length < Math.max(1, minSamples)) return null;
+  const sum = resolved.reduce((total, sample) => total + sample.transactions, 0);
+  return {
+    dayStart,
+    transactions: Math.round((sum * blocksInDay) / resolved.length),
+    samples: resolved.length,
+    blocksInDay,
+  };
+}
+
+/**
+ * Source label for the sampled tx/day chart: the sampling basis in plain
+ * terms, riding the card header verbatim. Null when nothing was sampled.
+ */
+export function txSamplingLabel(
+  snapshot: Pick<ChartsSnapshot, 'txPerDay' | 'txSamplesPerDay'>,
+): string | null {
+  if (snapshot.txPerDay.length === 0) return null;
+  return `extrapolated from ${snapshot.txSamplesPerDay} sampled blocks per day — counts, not indexer truth`;
+}
+
 // --- failure classification ---
 
 // Collects the error's whole cause chain: viem wraps JSON-RPC errors
@@ -400,6 +509,7 @@ type ChartClient = {
     gasUsedRatio?: readonly number[];
     reward?: readonly (readonly bigint[])[];
   }>;
+  getBlockTransactionCount(args: { blockNumber: bigint }): Promise<number>;
 };
 
 const headerOf = (block: {
@@ -479,6 +589,84 @@ async function fetchDayGas(
   return { point, reason: point === null ? 'rpc-error' : null };
 }
 
+/** One charted day's block span, closed by two resolved boundaries. */
+type DaySpan = { dayStart: number; startBlock: number; endBlockExclusive: number };
+
+type TxSeriesOutcome = { points: TxPerDayPoint[]; reason: TxChartUnavailableReason | null };
+
+/**
+ * Sample every charted day's span uniformly (K blocks per day under the
+ * whole-series budget), fetch each sample's transaction count at a small
+ * fixed concurrency, and scale each resolved sum up to its day. A sample
+ * that errors is simply unresolvable — RPC flakiness thins a day's
+ * evidence, and a day below half its attempted samples stays absent (a
+ * gap, never a zero). A reason is reported only when every day gapped;
+ * any method-not-found outranks plain rpc errors for the honest copy.
+ */
+async function fetchSampledTxPerDay(
+  client: ChartClient,
+  spans: readonly DaySpan[],
+): Promise<TxSeriesOutcome> {
+  const samplesPerDay = txSamplesForDays(spans.length);
+  if (samplesPerDay <= 0) return { points: [], reason: null };
+  const daySamples = spans.map(span => ({
+    ...span,
+    blocks: sampledTxPositions(span.startBlock, span.endBlockExclusive, samplesPerDay),
+  }));
+  const tasks: number[] = [];
+  for (const day of daySamples) tasks.push(...day.blocks);
+  const counts = new Map<number, number>();
+  let methodUnsupported = false;
+  let sawFailure = false;
+  let nextSample = 0;
+  const workers = Array.from(
+    { length: Math.min(TX_SAMPLE_CONCURRENCY, tasks.length) },
+    async () => {
+      for (;;) {
+        const index = nextSample;
+        nextSample += 1;
+        if (index >= tasks.length) return;
+        try {
+          const count = await client.getBlockTransactionCount({
+            blockNumber: BigInt(tasks[index]),
+          });
+          if (Number.isFinite(count) && count >= 0) counts.set(tasks[index], count);
+        } catch (error) {
+          sawFailure = true;
+          if (METHOD_UNSUPPORTED_PATTERN.test(errorChainText(error))) methodUnsupported = true;
+        }
+      }
+    },
+  );
+  await Promise.all(workers);
+  const minSamples = Math.ceil(samplesPerDay / 2);
+  const points: TxPerDayPoint[] = [];
+  for (const day of daySamples) {
+    const resolved = day.blocks
+      .map(block => {
+        const count = counts.get(block);
+        return count === undefined ? null : { block, transactions: count };
+      })
+      .filter((sample): sample is { block: number; transactions: number } => sample !== null);
+    const point = extrapolateSampledTransactions(
+      day.dayStart,
+      day.endBlockExclusive - day.startBlock,
+      resolved,
+      minSamples,
+    );
+    if (point !== null) points.push(point);
+  }
+  const reason: TxChartUnavailableReason | null =
+    points.length > 0
+      ? null
+      : methodUnsupported
+        ? 'method-not-supported'
+        : sawFailure
+          ? 'rpc-error'
+          : null;
+  return { points, reason };
+}
+
 async function computeChartsSnapshot(chainId: number, nowMs: number): Promise<ChartsResult> {
   const client = await createRpcClient(chainId);
   const head = Number(await client.getBlockNumber());
@@ -544,6 +732,17 @@ async function computeChartsSnapshot(chainId: number, nowMs: number): Promise<Ch
   );
   await Promise.all(workers);
 
+  // Sampled tx/day series: uniform K samples inside each charted day's
+  // span (the same resolved boundaries), scaled to whole days.
+  const txSpans: DaySpan[] = blocksPerDay.flatMap(point => {
+    const start = boundaries.get(point.dayStart);
+    const end = boundaries.get(point.dayStart + MS_PER_DAY);
+    return start === undefined || end === undefined
+      ? []
+      : [{ dayStart: point.dayStart, startBlock: start.block, endBlockExclusive: end.block }];
+  });
+  const txOutcome = await fetchSampledTxPerDay(client, txSpans);
+
   const gasDaily = outcomes
     .map(outcome => outcome.point)
     .filter((point): point is DailyGasPoint => point !== null)
@@ -575,8 +774,11 @@ async function computeChartsSnapshot(chainId: number, nowMs: number): Promise<Ch
       gasDaily: chartedGasDaily,
       gasCoveredBlocks: gasUnavailableReason === 'pre-eip-1559' ? 0 : gasCoveredBlocks,
       gasExpectedBlocks,
+      txPerDay: txOutcome.points,
+      txSamplesPerDay: txSamplesForDays(txSpans.length),
     },
     gasUnavailableReason,
+    txUnavailableReason: txOutcome.reason,
   };
 }
 

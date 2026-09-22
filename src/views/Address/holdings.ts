@@ -209,3 +209,59 @@ export function aggregateTokenHoldings(
   }
   return holdings.sort(compareHoldings);
 }
+
+// ---------------------------------------------------------------------------
+// USD estimate (browser-side DefiLlama price layer)
+// ---------------------------------------------------------------------------
+
+// Price-observation subset the estimate consumes (structural twin of
+// services/prices' UsdPriceSnapshot — kept structural so this module
+// stays dependency-free and directly testable).
+export type UsdPriceLike = { usd: number; fetchedAt: number };
+
+/** What the holdings card needs to render an estimated USD total. */
+export type HoldingsUsdEstimate = {
+  /** Sum over the rows that resolved a usable price. */
+  totalUsd: number;
+  /** ERC-20 rows included in the total. */
+  pricedTokens: number;
+  /** All ERC-20 rows — the estimate's eligible universe. */
+  erc20Tokens: number;
+  /** Newest price fetch backing the total (tooltip/staleness gate). */
+  fetchedAt: number;
+};
+
+/**
+ * Estimated USD total over discovered ERC-20 holdings rows. A row
+ * contributes only when BOTH its decimals and a usable price are known —
+ * never a guessed decimal shift, never a guessed price. Returns null
+ * when no row priced (the card renders nothing, per the honesty
+ * contract). Float multiply at display precision only; rounding happens
+ * in the renderer.
+ */
+export function estimateHoldingsUsd(
+  rows: ReadonlyArray<{
+    amount: bigint;
+    decimals: number | undefined;
+    price: UsdPriceLike | null | undefined;
+  }>,
+): HoldingsUsdEstimate | null {
+  const estimate: HoldingsUsdEstimate = {
+    totalUsd: 0,
+    pricedTokens: 0,
+    erc20Tokens: rows.length,
+    fetchedAt: 0,
+  };
+
+  for (const row of rows) {
+    if (row.decimals === undefined) continue;
+    if (row.price === null || row.price === undefined) continue;
+    estimate.totalUsd += (Number(row.amount) / 10 ** row.decimals) * row.price.usd;
+    estimate.pricedTokens += 1;
+    if (row.price.fetchedAt > estimate.fetchedAt) {
+      estimate.fetchedAt = row.price.fetchedAt;
+    }
+  }
+
+  return estimate.pricedTokens === 0 ? null : estimate;
+}

@@ -11,6 +11,7 @@ import { encodeFunctionData, toEventSelector, type Abi, type Hex } from 'viem';
 import '@testing-library/jest-dom';
 
 import TransactionDetail from '@/views/Transactions/Detail';
+import { resetPricesForTests } from '@/services/prices';
 import { useContractSource } from '@/services/contracts';
 import { useTransactionByHash } from '@/services/chainRpc';
 import { createRpcClient } from '@/utils/realTimeData';
@@ -476,5 +477,55 @@ describe('TransactionDetail page', () => {
     fireEvent.click(screen.getByRole('button', { name: /Back to Explorer/ }));
     expect(await screen.findByTestId('tx-list')).toBeInTheDocument();
     expect(screen.queryByTestId('top-navigation')).not.toBeInTheDocument();
+  });
+
+  // --- Value-row USD (browser-side DefiLlama price layer) ---
+
+  it('appends the USD value beside the native amount when the native coin is priced', async () => {
+    resetPricesForTests();
+    vi.mocked(useTransactionByHash).mockReturnValue(
+      hookResult(makeTx({ value: '1000000000000000000' })),
+    );
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({ coins: { 'coingecko:ethereum': { price: 2000 } } }),
+      })),
+    );
+
+    try {
+      renderDetail();
+
+      // 1 ETH at $2000 beside the unchanged native figure.
+      expect(await screen.findByText('1.0000 ETH')).toBeInTheDocument();
+      expect(screen.getByText('$2,000.00')).toBeInTheDocument();
+    } finally {
+      vi.unstubAllGlobals();
+      resetPricesForTests();
+    }
+  });
+
+  it('renders the Value row without any USD node when the price fetch fails', async () => {
+    resetPricesForTests();
+    vi.mocked(useTransactionByHash).mockReturnValue(
+      hookResult(makeTx({ value: '1000000000000000000' })),
+    );
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')));
+
+    try {
+      renderDetail();
+
+      expect(await screen.findByText('1.0000 ETH')).toBeInTheDocument();
+      await waitFor(() => {
+        // Settled-unavailable: the Value row is complete on its own.
+        expect(screen.queryByText(/\$/)).not.toBeInTheDocument();
+      });
+    } finally {
+      warn.mockRestore();
+      vi.unstubAllGlobals();
+      resetPricesForTests();
+    }
   });
 });

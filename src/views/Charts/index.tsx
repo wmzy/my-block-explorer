@@ -1,13 +1,14 @@
 // Charts page (/chain/:chainId/charts): ~30 days of daily chain series —
-// blocks per day, average block time, sampled gas used, and daily fee
-// averages — all derived client-side from RPC block headers and chunked
-// eth_feeHistory windows (services/chartStats). The page states its
-// sampling basis up front and every chart carries its own source label:
-// the explorer's event tables only cover user-configured ranges, so
-// nothing here is presented as indexer truth. Gaps stay gaps — a day the
-// probes could not resolve is simply absent from a series, never
-// zero-filled — and the fee section degrades on its own reasons while
-// the boundary-derived charts keep rendering.
+// blocks per day, average block time, sampled gas used, daily fee
+// averages, and extrapolated transactions per day — all derived
+// client-side from RPC block headers, chunked eth_feeHistory windows, and
+// sampled eth_getBlockTransactionCount probes (services/chartStats). The
+// page states its sampling basis up front and every chart carries its own
+// source label: the explorer's event tables only cover user-configured
+// ranges, so nothing here is presented as indexer truth. Gaps stay gaps —
+// a day the probes could not resolve is simply absent from a series,
+// never zero-filled — and the fee and tx sections degrade on their own
+// reasons while the boundary-derived charts keep rendering.
 import { useMemo } from 'react';
 import { css, cx } from '@linaria/core';
 import { useMatched } from '@native-router/react';
@@ -23,10 +24,12 @@ import { formatGwei } from '@/services/gasHistory';
 import {
   CHART_DAY_COUNT,
   gasCoverageLabel,
+  txSamplingLabel,
   useChartStats,
   type ChartsSnapshot,
   type ChartsUnavailableReason,
   type GasChartUnavailableReason,
+  type TxChartUnavailableReason,
 } from '@/services/chartStats';
 import { getChainInfo, getChainName } from '@/config/chains';
 import {
@@ -74,13 +77,21 @@ const GAS_UNAVAILABLE_COPY: Record<GasChartUnavailableReason, string> = {
   'rpc-error': 'Fee history unavailable — the fee-history requests failed.',
 };
 
+// Why the sampled tx/day card alone cannot render while the rest does.
+const TX_UNAVAILABLE_COPY: Record<TxChartUnavailableReason, string> = {
+  'method-not-supported':
+    'Transaction counts unavailable — this endpoint does not implement eth_getBlockTransactionCount.',
+  'rpc-error':
+    'Transaction counts unavailable — too few sampled blocks answered to extrapolate any day.',
+};
+
 // Source labels: what each series is actually derived from. These ride
 // the card headers verbatim — the honesty contract made visible.
 const LABEL_BLOCKS_PER_DAY = 'block numbers at day boundaries — derived from block timestamps';
 const LABEL_BLOCK_TIME = 'day-boundary block numbers — derived from block timestamps';
 const LABEL_GAS_USED = 'sampled: one block per day boundary';
 const PAGE_SAMPLING_NOTE =
-  'Derived from block headers and eth_feeHistory windows fetched live from this chain\u2019s RPC — sampled estimates, not an indexer\u2019s full-chain aggregation.';
+  'Derived from block headers, eth_feeHistory windows, and sampled eth_getBlockTransactionCount probes fetched live from this chain\u2019s RPC — sampled estimates, not an indexer\u2019s full-chain aggregation.';
 const BURNT_FEES_NOTE =
   'Daily burnt-fee totals are not available without full indexing — they need every block\u2019s base fee \u00d7 gas used, not these samples.';
 
@@ -503,6 +514,71 @@ function GasFeesCard({
   );
 }
 
+// --- sampled tx/day card (own degradation states, like the fee card) ---
+
+function TxPerDayCard({
+  snapshot,
+  reason,
+}: {
+  snapshot: ChartsSnapshot;
+  reason: TxChartUnavailableReason | null;
+}) {
+  if (snapshot.txPerDay.length === 0) {
+    const effective: TxChartUnavailableReason = reason ?? 'rpc-error';
+    return (
+      <div data-testid="charts-tx-day">
+        <Card>
+          <CardHeader>
+            <CardTitle>Transactions per Day (sampled)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className={unavailableStyle} data-testid="charts-tx-unavailable">
+              {TX_UNAVAILABLE_COPY[effective]}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+  const txByDay = new Map(snapshot.txPerDay.map(point => [point.dayStart, point.transactions]));
+  const txSeries: GappedSeries = snapshot.gridDayStarts.map(day => txByDay.get(day) ?? null);
+  const txMean = meanOf(snapshot.txPerDay.map(point => point.transactions));
+  const thinDays = snapshot.txPerDay.filter(
+    point => point.samples < snapshot.txSamplesPerDay,
+  ).length;
+  return (
+    <div data-testid="charts-tx-day">
+      <Card>
+        <CardHeader>
+          <div className={headerRow}>
+            <CardTitle>Transactions per Day (sampled)</CardTitle>
+            <span className={sourceLabel}>{txSamplingLabel(snapshot)}</span>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <DayChart
+            gridDayStarts={snapshot.gridDayStarts}
+            mode="bars"
+            series={[{ values: txSeries, tone: 'primary' }]}
+            formatValue={compactTick}
+            ariaLabel="Extrapolated transactions per day from sampled blocks"
+          />
+          <p className={summaryRow}>
+            {txMean !== null ? `avg ${formatNumber(Math.round(txMean))} tx/day (est.)` : '—'}
+          </p>
+          {thinDays > 0 && (
+            <p className={caveat}>
+              {thinDays} of {snapshot.txPerDay.length} days rest on fewer than{' '}
+              {snapshot.txSamplesPerDay} sampled blocks (RPC gaps) — extrapolated from the blocks
+              that answered.
+            </p>
+          )}
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 // --- page ---
 
 export default function ChartsPage() {
@@ -573,6 +649,7 @@ function ChartsBody({ chainId }: { chainId: number }) {
         <ChartSkeletonCard title="Average Block Time" />
         <ChartSkeletonCard title="Gas Used (sampled)" />
         <ChartSkeletonCard title="Gas Prices (daily avg)" />
+        <ChartSkeletonCard title="Transactions per Day (sampled)" />
       </div>
     );
   }
@@ -597,15 +674,23 @@ function ChartsBody({ chainId }: { chainId: number }) {
     );
   }
 
-  return <ChartsCards snapshot={own.snapshot} gasUnavailableReason={own.gasUnavailableReason} />;
+  return (
+    <ChartsCards
+      snapshot={own.snapshot}
+      gasUnavailableReason={own.gasUnavailableReason}
+      txUnavailableReason={own.txUnavailableReason}
+    />
+  );
 }
 
 function ChartsCards({
   snapshot,
   gasUnavailableReason,
+  txUnavailableReason,
 }: {
   snapshot: ChartsSnapshot;
   gasUnavailableReason: GasChartUnavailableReason | null;
+  txUnavailableReason: TxChartUnavailableReason | null;
 }) {
   const grid = snapshot.gridDayStarts;
   // Grid-aligned series builders: a day without a resolved point stays a
@@ -713,6 +798,8 @@ function ChartsCards({
         </div>
 
         <GasFeesCard snapshot={snapshot} reason={gasUnavailableReason} />
+
+        <TxPerDayCard snapshot={snapshot} reason={txUnavailableReason} />
       </div>
 
       <div className={cardMargin} data-testid="charts-burnt-note">

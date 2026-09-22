@@ -5,10 +5,11 @@
 // rewards, first load, unavailable, hidden on unknown chains — is pinned
 // without any RPC.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, View, createRoutes } from '@native-router/react';
 import '@testing-library/jest-dom';
 import Home from '@/views/Home';
+import { resetPricesForTests } from '@/services/prices';
 import type { GasHistoryResult } from '@/services/gasHistory';
 
 vi.mock('@/components/TopNavigation', () => ({
@@ -204,5 +205,64 @@ describe('Home gas panel', () => {
     expect(screen.queryByTestId('gas-unavailable')).not.toBeInTheDocument();
     // The parked id means no RPC traffic at all.
     expect(mockUseGasHistory).toHaveBeenCalledWith(0);
+  });
+
+  // --- per-tier USD (browser-side DefiLlama price layer) ---
+
+  it('appends per-tier USD for a plain 21,000-gas transfer when the native coin is priced', async () => {
+    // Earlier tests in this file already settled (and TTL-cached) the
+    // chain-1 native price as unavailable — clear the module cache so
+    // this test's stubbed fetch is actually consulted.
+    resetPricesForTests();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({ coins: { 'coingecko:ethereum': { price: 2000 } } }),
+      })),
+    );
+    mockUseGasHistory.mockReturnValue({ data: okSnapshot({}), loading: false });
+
+    try {
+      renderHome('/chain/1');
+
+      await screen.findByText('last 120 blocks · #21,236,800–#21,236,919');
+      // 21000 × (12.5 base + tip) gwei at $2000/ETH:
+      // slow 13.3 → $0.56 · standard 14 → $0.59 · fast 15.7 → $0.66.
+      // The gwei figures stay exact-matchable siblings; the USD nodes
+      // appear once the price settles.
+      expect(await screen.findByText('$0.56')).toBeInTheDocument();
+      expect(screen.getByText('0.8 gwei')).toBeInTheDocument();
+      expect(screen.getByText('$0.59')).toBeInTheDocument();
+      expect(screen.getByText('1.5 gwei')).toBeInTheDocument();
+      expect(screen.getByText('$0.66')).toBeInTheDocument();
+      expect(screen.getByText('3.2 gwei')).toBeInTheDocument();
+      expect(screen.getAllByTitle(/cost of a plain 21,000-gas transfer/)).toHaveLength(3);
+    } finally {
+      vi.unstubAllGlobals();
+      resetPricesForTests();
+    }
+  });
+
+  it('renders zero USD nodes when the price fetch fails', async () => {
+    resetPricesForTests();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')));
+    mockUseGasHistory.mockReturnValue({ data: okSnapshot({}), loading: false });
+
+    try {
+      renderHome('/chain/1');
+
+      const panel = await screen.findByTestId('gas-panel');
+      await waitFor(() => {
+        // Settled-unavailable: the panel is complete without any USD.
+        expect(within(panel).queryByText(/\$/)).not.toBeInTheDocument();
+      });
+      expect(within(panel).getByText('0.8 gwei')).toBeInTheDocument();
+    } finally {
+      warn.mockRestore();
+      vi.unstubAllGlobals();
+      resetPricesForTests();
+    }
   });
 });

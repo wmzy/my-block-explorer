@@ -3,6 +3,8 @@
 // external service, so it is admin-gated when ADMIN_TOKEN is configured
 // (open in a zero-config local session, like clear-cache) and carries a
 // tight limiter — one submission can mean 30s of upstream compilation.
+// The /verify/manual siblings write a local-trust mark instead (no
+// external hop): same gate, same limiter on the POST.
 import { Hono } from 'hono';
 import { createLogger } from '../server/logger';
 import { getValidatedAddress, getValidatedChainId } from '../server/validation';
@@ -14,10 +16,11 @@ import {
   validateVerificationFiles,
 } from '../services/ContractVerifyService';
 import { contractSourceService } from '../services/ContractSourceService';
+import { safeJsonResponse } from '../utils/serialization';
 
 const logger = createLogger('verify-routes');
 
-const isRecordLike = (value: unknown): value is { files?: unknown } =>
+const isRecordLike = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
 
 const app = new Hono();
@@ -104,6 +107,146 @@ app.post(
       status: outcome.status,
       ...(verificationStatus !== undefined ? { verificationStatus } : {}),
     });
+  },
+);
+
+// POST /chains/:chainId/contracts/:address/verify/manual — local-trust
+// mark for contracts the remote verifiers cannot cover (anvil/hardhat/
+// private deployments). Body { abi: string, sourceCode?: string,
+// name?: string }: the ABI must parse to a non-empty array. The mark is
+// sticky local annotation, NOT cryptographic verification — the UI
+// badge and panel copy say so, and a later Sourcify match supersedes it
+// via the GET pipeline's TTL re-probe.
+//
+// Response contract:
+// - 200 { verified: true, verificationSource: 'manual', verificationStatus?,
+//        contractSource? } — contractSource is the freshly re-read source
+//   (same shape as GET .../source); omitted only when the read-back failed
+// - 400 { error: 'missing_fields' | 'invalid_abi', message }
+app.post(
+  '/chains/:chainId/contracts/:address/verify/manual',
+  requireAdminTokenIfConfigured,
+  contractVerifyRateLimiter,
+  async c => {
+    const chainId = getValidatedChainId(c.req.param('chainId'));
+    const address = getValidatedAddress(c.req.param('address'));
+
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      body = null;
+    }
+
+    const record = isRecordLike(body) ? body : {};
+    const abi = typeof record.abi === 'string' ? record.abi : undefined;
+    const sourceCode = typeof record.sourceCode === 'string' ? record.sourceCode : undefined;
+    const name = typeof record.name === 'string' ? record.name : undefined;
+
+    if (abi === undefined || abi.trim() === '') {
+      return c.json(
+        { error: 'missing_fields', message: 'abi is required and must be a non-empty string' },
+        400,
+      );
+    }
+    if (
+      (record.sourceCode !== undefined && sourceCode === undefined) ||
+      (record.name !== undefined && name === undefined)
+    ) {
+      return c.json(
+        { error: 'missing_fields', message: 'sourceCode and name must be strings when present' },
+        400,
+      );
+    }
+    let parsedAbi: unknown;
+    try {
+      parsedAbi = JSON.parse(abi);
+    } catch {
+      parsedAbi = null;
+    }
+    if (!Array.isArray(parsedAbi) || parsedAbi.length === 0) {
+      return c.json(
+        { error: 'invalid_abi', message: 'abi must be valid JSON parsing to a non-empty array' },
+        400,
+      );
+    }
+
+    try {
+      await contractSourceService.saveManualVerification(chainId, address, {
+        abi,
+        ...(sourceCode !== undefined ? { sourceCode } : {}),
+        ...(name !== undefined ? { name } : {}),
+      });
+    } catch (error) {
+      logger.error({ err: error, chainId, address }, 'Manual verification save failed');
+      return c.json(
+        { error: 'verification_failed', message: 'Failed to save manual verification' },
+        500,
+      );
+    }
+
+    // Read the mark back through the normal source pipeline so the
+    // response carries exactly what the next GET will serve. Informational:
+    // a read failure must not mask the successful save.
+    let fresh: Awaited<ReturnType<typeof contractSourceService.getContractSource>>;
+    try {
+      fresh = await contractSourceService.getContractSource(chainId, address);
+    } catch (error) {
+      logger.warn(
+        { err: error, chainId, address },
+        'Post-manual-verification source read-back failed; the mark itself was saved',
+      );
+      fresh = null;
+    }
+
+    // safeJsonResponse round-trips the ContractSource's Date fields to
+    // ISO strings (same treatment as the GET .../source route).
+    return c.json(
+      safeJsonResponse({
+        verified: true,
+        verificationSource: 'manual',
+        ...(fresh
+          ? { verificationStatus: fresh.verificationStatus, contractSource: fresh }
+          : {}),
+      }),
+    );
+  },
+);
+
+// DELETE /chains/:chainId/contracts/:address/verify/manual — removes the
+// local-trust mark (and only it: a sourcify/blockscan row answers 404 and
+// stays intact). Deleting the row clears the source cache, so the next
+// GET re-probes the remote verifiers and the contract reverts to
+// unverified unless they now cover it.
+app.delete(
+  '/chains/:chainId/contracts/:address/verify/manual',
+  requireAdminTokenIfConfigured,
+  async c => {
+    const chainId = getValidatedChainId(c.req.param('chainId'));
+    const address = getValidatedAddress(c.req.param('address'));
+
+    let deleted: boolean;
+    try {
+      deleted = await contractSourceService.deleteManualVerification(chainId, address);
+    } catch (error) {
+      logger.error({ err: error, chainId, address }, 'Manual verification delete failed');
+      return c.json(
+        { error: 'verification_failed', message: 'Failed to delete manual verification' },
+        500,
+      );
+    }
+
+    if (!deleted) {
+      return c.json(
+        {
+          error: 'not_found',
+          message: 'No manual verification mark exists for this contract',
+        },
+        404,
+      );
+    }
+
+    return c.json({ success: true, message: 'Manual verification mark removed' });
   },
 );
 

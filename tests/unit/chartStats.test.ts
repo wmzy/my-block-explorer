@@ -10,16 +10,22 @@ import type { PublicClient } from 'viem';
 import {
   CHART_DAY_COUNT,
   MAX_BOUNDARY_PROBES,
+  TX_SAMPLES_PER_DAY,
+  TX_SAMPLE_BUDGET,
   aggregateDailyGas,
   boundaryDayStarts,
   chartCacheKey,
   classifyChartsFailure,
   clearChartStatsCaches,
   deriveBlocksPerDay,
+  extrapolateSampledTransactions,
   fetchChartStats,
   findDayBoundary,
   gasCoverageLabel,
   realFeeWindowLength,
+  sampledTxPositions,
+  txSamplesForDays,
+  txSamplingLabel,
   utcDayKey,
   utcDayStart,
   type BlockHeaderLike,
@@ -365,6 +371,115 @@ describe('gasCoverageLabel', () => {
   });
 });
 
+// --- sampled tx/day series (pure builders) ---
+
+describe('txSamplesForDays', () => {
+  it('gives every day the full K while the budget allows', () => {
+    expect(txSamplesForDays(CHART_DAY_COUNT)).toBe(16);
+    expect(txSamplesForDays(32)).toBe(16); // floor(512/32) still 16
+    expect(txSamplesForDays(1)).toBe(16);
+  });
+
+  it('floors the per-day count once the grid would bust the whole-series budget', () => {
+    expect(txSamplesForDays(33)).toBe(15); // floor(512/33)
+    expect(txSamplesForDays(512)).toBe(1);
+    expect(txSamplesForDays(600)).toBe(0);
+    expect(txSamplesForDays(0)).toBe(0);
+  });
+});
+
+describe('sampledTxPositions', () => {
+  it('spreads samples at stratum midpoints across the day span', () => {
+    const positions = sampledTxPositions(1000, 8200, 16);
+    expect(positions).toHaveLength(16);
+    // Midpoints of sixteen equal 450-block strata.
+    expect(positions[0]).toBe(1225);
+    expect(positions[15]).toBe(7975);
+    for (let i = 1; i < positions.length; i += 1) {
+      expect(positions[i]).toBeGreaterThan(positions[i - 1]);
+    }
+    for (const position of positions) {
+      expect(position).toBeGreaterThanOrEqual(1000);
+      expect(position).toBeLessThan(8200);
+    }
+  });
+
+  it('degenerates to every block when the count reaches the span', () => {
+    expect(sampledTxPositions(50, 55, 16)).toEqual([50, 51, 52, 53, 54]);
+    expect(sampledTxPositions(50, 55, 5)).toEqual([50, 51, 52, 53, 54]);
+  });
+
+  it('returns nothing for empty spans or non-positive counts', () => {
+    expect(sampledTxPositions(10, 10, 16)).toEqual([]);
+    expect(sampledTxPositions(10, 20, 0)).toEqual([]);
+  });
+});
+
+describe('extrapolateSampledTransactions', () => {
+  const samples = (counts: readonly number[]) =>
+    counts.map((transactions, index) => ({ block: 100 + index, transactions }));
+
+  it('scales the sampled sum up to the whole day', () => {
+    const point = extrapolateSampledTransactions(
+      0,
+      7200,
+      samples([3, 1, 4, 1, 5, 9, 2, 6, 5, 3, 5, 8, 9, 7, 9, 3]),
+      8,
+    );
+    // Sum 80 over 16 samples of a 7200-block day: 80 × 450.
+    expect(point).toEqual({ dayStart: 0, transactions: 36_000, samples: 16, blocksInDay: 7200 });
+  });
+
+  it('rescales by the resolved share, not the attempted count', () => {
+    // 8 of 16 blocks answered (the minimum): the sum covers 8 sampled
+    // blocks, so it scales by 7200/8.
+    const point = extrapolateSampledTransactions(0, 7200, samples([2, 2, 2, 2, 3, 3, 3, 3]), 8);
+    expect(point?.transactions).toBe(20 * 900);
+    expect(point?.samples).toBe(8);
+  });
+
+  it('keeps a below-minimum day absent — a gap, never a zero', () => {
+    expect(extrapolateSampledTransactions(0, 7200, samples([5, 5, 5, 5, 5, 5, 5]), 8)).toBeNull();
+  });
+
+  it('keeps a genuinely empty sampled day as real zero data', () => {
+    // Eight answered samples that all hold 0 transactions extrapolate to
+    // 0 — sampled data, not an unresolvable gap.
+    expect(extrapolateSampledTransactions(0, 7200, samples([0, 0, 0, 0, 0, 0, 0, 0]), 8)).toEqual({
+      dayStart: 0,
+      transactions: 0,
+      samples: 8,
+      blocksInDay: 7200,
+    });
+  });
+
+  it('scales days with uneven block counts by their own span', () => {
+    // A 100-block day sampled at 3 blocks: sum 30 × (100/3) = 1000.
+    const point = extrapolateSampledTransactions(0, 100, samples([10, 20, 0]), 3);
+    expect(point).toEqual({ dayStart: 0, transactions: 1000, samples: 3, blocksInDay: 100 });
+  });
+
+  it('refuses degenerate spans', () => {
+    expect(extrapolateSampledTransactions(0, 0, samples([1, 2, 3]), 1)).toBeNull();
+    expect(extrapolateSampledTransactions(0, -5, samples([1]), 1)).toBeNull();
+  });
+});
+
+describe('txSamplingLabel', () => {
+  it('discloses the sampling basis verbatim', () => {
+    expect(
+      txSamplingLabel({
+        txPerDay: [{ dayStart: 0, transactions: 1, samples: 16, blocksInDay: 7200 }],
+        txSamplesPerDay: 16,
+      }),
+    ).toBe('extrapolated from 16 sampled blocks per day — counts, not indexer truth');
+  });
+
+  it('returns null with nothing sampled', () => {
+    expect(txSamplingLabel({ txPerDay: [], txSamplesPerDay: 16 })).toBeNull();
+  });
+});
+
 // --- failure classification ---
 
 describe('classifyChartsFailure', () => {
@@ -388,19 +503,33 @@ type ClientState = {
   blockNumberCalls: number;
   blockCalls: number;
   feeCalls: number;
+  txCountCalls: number;
+  txInFlight: number;
+  txPeakInFlight: number;
   failHead: boolean;
   pre1559: boolean;
+  /** Fail tx-count probes for exactly these block numbers. */
+  txFailBlocks: Set<number>;
+  txMethodUnsupported: boolean;
 };
 
 const weiOfGwei = (gwei: number): bigint => BigInt(Math.round(gwei * 1_000_000_000));
+
+// Deterministic per-block transaction count for the synthetic chain.
+const txCountOf = (block: number): number => (block % 150) + 10;
 
 const makeFakeClient = (head = HEAD) => {
   const state: ClientState = {
     blockNumberCalls: 0,
     blockCalls: 0,
     feeCalls: 0,
+    txCountCalls: 0,
+    txInFlight: 0,
+    txPeakInFlight: 0,
     failHead: false,
     pre1559: false,
+    txFailBlocks: new Set(),
+    txMethodUnsupported: false,
   };
   const client = {
     getBlockNumber: async (): Promise<bigint> => {
@@ -439,6 +568,28 @@ const makeFakeClient = (head = HEAD) => {
       // Spec's speculative next-block prediction.
       baseFeePerGas.push(0n);
       return { oldestBlock: BigInt(oldest), baseFeePerGas, gasUsedRatio: [], reward };
+    },
+    getBlockTransactionCount: async ({ blockNumber }: { blockNumber: bigint }) => {
+      state.txCountCalls += 1;
+      state.txInFlight += 1;
+      state.txPeakInFlight = Math.max(state.txPeakInFlight, state.txInFlight);
+      try {
+        // A microtask hop lets sibling pool workers overlap this probe,
+        // so the concurrency cap is observable.
+        await Promise.resolve();
+        const n = Number(blockNumber);
+        if (state.txMethodUnsupported) {
+          throw new Error(
+            'The method eth_getBlockTransactionCount does not exist/is not available',
+          );
+        }
+        if (state.txFailBlocks.has(n)) {
+          throw new Error('Request failed: eth_getBlockTransactionCountByNumber');
+        }
+        return txCountOf(n);
+      } finally {
+        state.txInFlight -= 1;
+      }
     },
   };
   return { client, state };
@@ -491,6 +642,27 @@ describe('fetchChartStats', () => {
     expect(snapshot.gasCoveredBlocks).toBe(CHART_DAY_COUNT * 7200);
     expect(snapshot.gasExpectedBlocks).toBe(CHART_DAY_COUNT * 7200);
     expect(snapshot.dayKey).toBe(utcDayKey(HEAD_MS));
+    // The sampled tx/day series charted every day at full sample depth,
+    // inside its whole-series RPC budget and its concurrency cap.
+    expect(result.txUnavailableReason).toBeNull();
+    expect(snapshot.txSamplesPerDay).toBe(TX_SAMPLES_PER_DAY);
+    expect(snapshot.txPerDay).toHaveLength(CHART_DAY_COUNT);
+    for (const day of snapshot.txPerDay) {
+      expect(day.samples).toBe(TX_SAMPLES_PER_DAY);
+      expect(day.blocksInDay).toBe(7200);
+    }
+    const firstTxDay = snapshot.txPerDay[0];
+    const firstSpanStart = expectedBoundary(snapshot.gridDayStarts[0]);
+    const firstSamples = sampledTxPositions(firstSpanStart, firstSpanStart + 7200, TX_SAMPLES_PER_DAY);
+    expect(firstTxDay.transactions).toBe(
+      Math.round(
+        (firstSamples.reduce((total, block) => total + txCountOf(block), 0) * 7200) /
+        TX_SAMPLES_PER_DAY,
+      ),
+    );
+    expect(state.txCountCalls).toBe(CHART_DAY_COUNT * TX_SAMPLES_PER_DAY);
+    expect(state.txCountCalls).toBeLessThanOrEqual(TX_SAMPLE_BUDGET);
+    expect(state.txPeakInFlight).toBeLessThanOrEqual(4);
     // The boundary bisections actually probed blocks.
     expect(state.blockCalls).toBeGreaterThan(CHART_DAY_COUNT);
     expect(state.feeCalls).toBeGreaterThan(CHART_DAY_COUNT);
@@ -545,6 +717,64 @@ describe('fetchChartStats', () => {
     expect(result.snapshot.gasCoveredBlocks).toBe(0);
     // Boundary-derived charts are unaffected.
     expect(result.snapshot.blocksPerDay).toHaveLength(CHART_DAY_COUNT);
+  });
+
+  it('leaves RPC-flaky tx samples as day gaps, never zeros', async () => {
+    const { client, state } = makeFakeClient();
+    // Two charted days on the synthetic chain's grid: one thinned below
+    // the 8-sample minimum (absent), one thinned to 13 (kept, rescaled).
+    const starts = boundaryDayStarts(FIXED_NOW);
+    const thinDayStart = starts[10];
+    const dropDayStart = starts[11];
+    const spanOf = (dayStart: number) => {
+      const start = expectedBoundary(dayStart);
+      return sampledTxPositions(start, start + 7200, TX_SAMPLES_PER_DAY);
+    };
+    state.txFailBlocks = new Set([
+      ...spanOf(thinDayStart).slice(0, 3),
+      ...spanOf(dropDayStart).slice(0, 9),
+    ]);
+    mockCreateRpcClient.mockResolvedValue(client as unknown as PublicClient);
+
+    const result = await fetchChartStats(1);
+    expect(result.status).toBe('ok');
+    if (result.status !== 'ok') return;
+    const { snapshot, txUnavailableReason } = result;
+    expect(txUnavailableReason).toBeNull();
+    expect(snapshot.txPerDay).toHaveLength(CHART_DAY_COUNT - 1);
+    // The sub-minimum day is absent — no fabricated zero point.
+    expect(snapshot.txPerDay.map(day => day.dayStart)).not.toContain(dropDayStart);
+    // The thinned-but-viable day keeps its point, rescaled to its 13
+    // answered samples: sum(13 counts) × 7200/13.
+    const thinned = snapshot.txPerDay.find(day => day.dayStart === thinDayStart);
+    expect(thinned?.samples).toBe(13);
+    const answered = spanOf(thinDayStart).slice(3);
+    expect(thinned?.transactions).toBe(
+      Math.round(
+        (answered.reduce((total, block) => total + txCountOf(block), 0) * 7200) / 13,
+      ),
+    );
+    // Every sample was still attempted — flakiness spends the budget, it
+    // does not shortcut it.
+    expect(state.txCountCalls).toBe(CHART_DAY_COUNT * TX_SAMPLES_PER_DAY);
+  });
+
+  it('classifies a tx-count method gap while the boundary charts survive', async () => {
+    const { client, state } = makeFakeClient();
+    state.txMethodUnsupported = true;
+    mockCreateRpcClient.mockResolvedValue(client as unknown as PublicClient);
+
+    const result = await fetchChartStats(1);
+    expect(result.status).toBe('ok');
+    if (result.status !== 'ok') return;
+    expect(result.txUnavailableReason).toBe('method-not-supported');
+    expect(result.snapshot.txPerDay).toEqual([]);
+    expect(result.snapshot.txSamplesPerDay).toBe(TX_SAMPLES_PER_DAY);
+    // The other series are unaffected.
+    expect(result.snapshot.blocksPerDay).toHaveLength(CHART_DAY_COUNT);
+    expect(result.snapshot.gasDaily).toHaveLength(CHART_DAY_COUNT);
+    expect(result.gasUnavailableReason).toBeNull();
+    expect(state.txCountCalls).toBe(CHART_DAY_COUNT * TX_SAMPLES_PER_DAY);
   });
 
   it('reports insufficient history on a chain younger than a day', async () => {

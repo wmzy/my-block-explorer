@@ -1,6 +1,7 @@
 // 链配置定义
 import type { Chain } from 'viem';
 import * as chains from 'viem/chains';
+import { getCustomChain, toViemChain } from './customChains';
 
 // 支持viem的所有链
 export const SUPPORTED_CHAINS: Chain[] = Object.values(chains);
@@ -19,9 +20,58 @@ export const POPULAR_CHAINS: Chain[] = [
   chains.gnosis,
 ];
 
-// 根据chainId获取链信息
-export function getChainInfo(chainId: number): Chain | null {
+// Static viem-registry lookup with NO custom-chain fallback. Callers that
+// must distinguish "shipped with viem" from "user-registered" — the custom
+// -chain route's 409 conflict check is the one — need the two layers
+// separated; everything else goes through getChainInfo below.
+export function getBuiltInChainInfo(chainId: number): Chain | null {
   return SUPPORTED_CHAINS.find(chain => chain.id === chainId) ?? null;
+}
+
+// viem's local-dev placeholders (anvil, hardhat and foundry all share id
+// 31337 with loopback default RPCs) are node templates, not networks: the
+// custom-chain flow exists precisely to point the explorer at a local
+// node, so registering over them is the advertised path. Every default
+// RPC being loopback marks a placeholder — real chains never ship that.
+function isLoopbackHttpUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'http:') return false;
+    return (
+      parsed.hostname === '127.0.0.1'
+      || parsed.hostname === 'localhost'
+      || parsed.hostname === '[::1]'
+      || parsed.hostname === '::1'
+    );
+  }
+  catch {
+    return false;
+  }
+}
+
+function isPlaceholderChain(chain: Chain): boolean {
+  const httpUrls = chain.rpcUrls.default.http;
+  return httpUrls.length > 0 && httpUrls.every(isLoopbackHttpUrl);
+}
+
+// True when a custom registration for this id must conflict (409): viem
+// ships the id as a REAL network whose metadata a registration would
+// shadow. Placeholder dev chains stay registrable; ids viem does not
+// ship at all trivially do not conflict either.
+export function isBuiltInChainProtected(chainId: number): boolean {
+  const candidates = chainsById.get(chainId) ?? [];
+  return candidates.some(chain => !isPlaceholderChain(chain));
+}
+
+// 根据chainId获取链信息：用户注册的自定义链（runtime registry，见
+// config/customChains.ts）优先，viem 静态注册表兜底。注册表必须赢：
+// 注册只能覆盖 viem 不认识的 id，或 viem 的本地开发占位链（31337 一族
+// —— 路由层对真实链 409），而占位链的默认 loopback URL 往往不是用户
+// 节点的实际地址，只有让注册项生效，登记的 RPC 才真正服务该链。
+export function getChainInfo(chainId: number): Chain | null {
+  const custom = getCustomChain(chainId);
+  if (custom) return toViemChain(custom);
+  return getBuiltInChainInfo(chainId);
 }
 
 // 获取链名称
@@ -55,7 +105,9 @@ export function getSupportedChainIds(): number[] {
 
 // 检查链是否支持
 export function isChainSupported(chainId: number): boolean {
-  return getSupportedChainIds().includes(chainId);
+  // Custom registrations sit on top of the viem id list; the O(1) registry
+  // check short-circuits before the linear scan.
+  return getCustomChain(chainId) !== undefined || getSupportedChainIds().includes(chainId);
 }
 
 // 用户RPC配置类型

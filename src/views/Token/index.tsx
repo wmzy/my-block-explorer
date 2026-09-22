@@ -28,8 +28,10 @@ import { LoadingState } from '@/components/ui/LoadingState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Badge } from '@/components/ui/Badge';
 import { CopyableHash } from '@/components/ui/CopyableHash';
+import { UsdValue } from '@/components/ui/UsdValue';
 import { useContractCode } from '@/services/addressRealTime';
 import { useTokenOverviewProbe } from '@/services/tokenMetadata';
+import { tokenAmountToUsd, useTokenUsdPrice } from '@/services/prices';
 import { useTokenTransfers } from '@/services/tokenTransfers';
 import { checkAddressValidity } from '@/views/Address/addressValidity';
 import { InvalidAddressError } from '@/views/Address';
@@ -315,6 +317,10 @@ export default function TokenPage() {
     address,
     validity.valid && chainInfo !== null && hasCode && !delegatedEoa,
   );
+  // USD price of this token (browser-side DefiLlama layer): unknown
+  // chain/token settles null without any network and the overview card
+  // below renders no price rows — USD is strictly an enhancement here.
+  const tokenPrice = useTokenUsdPrice(currentChainId, address);
   const classification = classifyTokenOverview(probe.reads);
   const isToken = classification !== null;
   const isErc20 = classification?.isErc20 === true;
@@ -553,6 +559,26 @@ export default function TokenPage() {
               {name !== null && <InfoItem label="Name">{name}</InfoItem>}
               {symbol !== null && <InfoItem label="Symbol">{symbol}</InfoItem>}
               {decimals !== null && <InfoItem label="Decimals">{decimals}</InfoItem>}
+              {/* USD rows appear only when DefiLlama knows this token
+                  (mapped chain + priced contract): an unknown token
+                  renders NOTHING, never a placeholder. Market cap needs
+                  both totalSupply and decimals — a supply in raw base
+                  units cannot be valued honestly. */}
+              {tokenPrice != null && (
+                <InfoItem label="Price">
+                  <UsdValue usd={tokenPrice.usd} price={tokenPrice} />
+                  <span className={mutedValue}> via DefiLlama</span>
+                </InfoItem>
+              )}
+              {tokenPrice != null && totalSupply !== null && decimals !== null && (
+                <InfoItem label="Market Cap">
+                  <UsdValue
+                    usd={tokenAmountToUsd(totalSupply, decimals, tokenPrice)}
+                    price={tokenPrice}
+                  />
+                  <span className={mutedValue}> via DefiLlama</span>
+                </InfoItem>
+              )}
               {totalSupply !== null && (
                 <InfoItem label="Total Supply">
                   {formatTokenSupply(totalSupply, decimals)}

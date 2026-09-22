@@ -5,10 +5,16 @@ import {
   getEffectiveRpcUrl,
   type UserRpcConfig,
 } from '../config/chains';
+import {
+  listCustomChainIds,
+  registerCustomChain,
+  removeCustomChain,
+} from '../config/customChains';
 import { createLogger } from '../server/logger';
 
 const logger = createLogger('rpc-manager');
-import { db, userRpcConfigs } from '../database/init';
+import { db, userRpcConfigs, customChains } from '../database/init';
+import { seedBuiltinLabels } from '../database/seedBuiltinLabels';
 import { eq } from 'drizzle-orm';
 import { createRetryableDbCall, RpcError, logError } from '../utils/errorHandler';
 
@@ -50,11 +56,67 @@ export class RpcManager {
       }
     });
 
+    // Custom chains (user-registered, outside viem's registry): each row
+    // feeds BOTH the runtime chain registry — so every getChainInfo
+    // consumer resolves the id process-wide — and this manager's per-chain
+    // RPC fallback, exactly the way userRpcConfigs rows do. This one load
+    // path serves both the startup bootstrap (the singleton constructor)
+    // and post-write reloads; failures are logged, never fatal, so a
+    // half-open database degrades to "no custom chains" instead of
+    // crashing the server. The registry is reconciled against the table:
+    // ids whose rows disappeared (DELETE /api/chains/custom/:id) drop out
+    // here too.
+    const loadCustomChains = createRetryableDbCall(async () => {
+      const rows = await db.select().from(customChains);
+
+      const loadedIds = new Set<number>();
+      for (const row of rows) {
+        loadedIds.add(row.chainId);
+        registerCustomChain({
+          chainId: row.chainId,
+          name: row.name,
+          symbol: row.symbol,
+          decimals: row.decimals ?? 18,
+          rpcUrl: row.rpcUrl,
+        });
+        // A user RPC override (user_rpc_configs) loaded above wins over
+        // the chain's own registration URL — keep it when one exists.
+        if (!this.userConfigs.has(row.chainId)) {
+          this.userConfigs.set(row.chainId, {
+            chainId: row.chainId,
+            customRpcUrl: row.rpcUrl,
+            rpcBackups: undefined,
+            timeout: 10000,
+            retryCount: 3,
+            rateLimit: 100,
+          });
+        }
+      }
+
+      for (const id of listCustomChainIds()) {
+        if (!loadedIds.has(id)) removeCustomChain(id);
+      }
+    });
+
     try {
       await loadConfigs();
     } catch (error) {
       logError(error, 'RpcManager.loadUserConfigs');
     }
+    try {
+      await loadCustomChains();
+    } catch (error) {
+      logError(error, 'RpcManager.loadCustomChains');
+    }
+
+    // Built-in label seeds: plant the curated dataset (config/
+    // builtinLabels.ts) into address_labels on first startup. This lives
+    // here because loadUserConfigs is the one bootstrap both lifecycles
+    // share — the standalone server and the vite dev bridge — so a fresh
+    // local instance gets the bundled names regardless of how it was
+    // started. The seeder is first-startup-only, never overwrites
+    // existing rows, and swallows its own failures.
+    await seedBuiltinLabels(db);
   }
 
   // 获取RPC客户端

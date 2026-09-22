@@ -1,13 +1,23 @@
 import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { css } from '@linaria/core';
-import { parseEther } from 'viem';
-import { getChainSymbol, getDefaultRpcUrl } from '@/config/chains';
+import { numberToHex, parseEther } from 'viem';
+import { getChainInfo, getChainName, getChainSymbol, getDefaultRpcUrl } from '@/config/chains';
 import { Collapsible } from '@/components/ui/Collapsible';
+import { CopyableHash } from '@/components/ui/CopyableHash';
 import { getFunctionSelector, formatSelectorForDisplay } from '@/utils/functionSelector';
 import { buildCastCommand } from '@/utils/castCommand';
 import { formatResultWithLinks } from '@/utils/addressTypeDetection';
 import { functionSignature, type EnhancedContractFunction } from '@/utils/contractInteraction';
+import {
+  ensureWalletChain,
+  isUserRejected,
+  providerErrorMessage,
+  requestAccounts,
+  sendWalletTransaction,
+  walletChainId,
+  type EIP1193Provider,
+} from '@/util/wallet';
 import { parseFunctionArgs, ADDRESS_PATTERN } from './paramParsing';
 import { argsKey } from './types';
 
@@ -137,6 +147,43 @@ const copyButtonStyles = css`
   }
 `;
 
+// Wallet send sits beside Simulate but must never be mistaken for it:
+// the broadcast action takes the success-card green, not simulate orange.
+const buttonSendStyles = css`
+  background: #2e7d32;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+
+  &:hover:not(:disabled) {
+    background: #256a29;
+  }
+
+  &:disabled {
+    background: #ccc;
+    cursor: not-allowed;
+  }
+`;
+
+// One-line trust note under the footer when the send action is offered.
+const walletNoteStyles = css`
+  margin-top: 6px;
+  font-size: 12px;
+  color: #888;
+`;
+
+// Quiet wallet outcomes (user rejection, chain-switch notes): muted, no
+// error palette — a decision is not a failure.
+const walletQuietStyles = css`
+  margin-top: 8px;
+  font-size: 13px;
+  color: #666;
+`;
+
 const resultSuccessStyles = css`
   margin-top: 12px;
   padding: 12px;
@@ -206,9 +253,21 @@ const selectorStyles = css`
   color: #1a73e8;
 `;
 
+// Wallet-send lifecycle for one form. 'rejected' is the user's own 4001
+// decision (quiet inline note); 'error' keeps the provider message
+// verbatim; 'sent' carries the broadcast hash for the internal tx link.
+type WalletSendState =
+  | { phase: 'idle' }
+  | { phase: 'sending' }
+  | { phase: 'sent'; txHash: string }
+  | { phase: 'rejected' }
+  | { phase: 'error'; message: string };
+
 // One collapsible form per function: typed argument inputs (payable adds
 // an ETH value field plus from), Query vs Simulate submit, and per-call
-// result/error slots keyed by call signature.
+// result/error slots keyed by call signature. When an injected EIP-1193
+// wallet is available, write functions additionally offer to broadcast
+// the SAME encoded call via eth_sendTransaction.
 export function FunctionCallForm({
   func,
   onCall,
@@ -218,6 +277,7 @@ export function FunctionCallForm({
   chainId,
   blockNumber,
   contractAddress,
+  walletProvider = null,
 }: {
   func: EnhancedContractFunction;
   onCall: (
@@ -234,6 +294,8 @@ export function FunctionCallForm({
   blockNumber: string;
   /** Target address for the cast command copy actions. */
   contractAddress?: string;
+  /** Injected wallet (EIP-1193) enabling the send action; null hides it. */
+  walletProvider?: EIP1193Provider | null;
 }) {
   const [args, setArgs] = useState<string[]>(func.inputs.map(() => ''));
   const [argErrors, setArgErrors] = useState<string[]>(func.inputs.map(() => ''));
@@ -264,34 +326,33 @@ export function FunctionCallForm({
     }
   })();
 
-  // --- Copy-as-cast support ------------------------------------------------
+  // --- Shared call encoding ------------------------------------------------
   //
-  // A paste-ready foundry `cast` command for the CURRENT form state,
-  // rebuilt every render (pure, cheap): the same validation and the same
-  // viem encoding the submit path uses decide whether a command exists at
-  // all. When it does not, the reason (first invalid field) becomes the
-  // disabled buttons' tooltip.
-  const castCommand = (() => {
-    if (contractAddress === undefined) {
-      return { ok: false as const, reason: 'contract address unavailable' };
-    }
-    const rpcUrl = getDefaultRpcUrl(chainId);
-    if (rpcUrl === '') {
-      return { ok: false as const, reason: 'no default RPC URL known for this chain' };
-    }
-    // Same rule as the submit validation: a payable amount that will not
-    // parse blocks everything, mirroring the field-level error.
-    if (isPayable && value.trim() !== '' && valueWei === '') {
-      return { ok: false as const, reason: `Invalid ${nativeSymbol} amount` };
-    }
-    return buildCastCommand({
-      func,
-      rawArgs: args,
-      contractAddress,
-      rpcUrl,
-      valueWei: isPayable && valueWei !== '' ? valueWei : undefined,
-    });
-  })();
+  // One buildCastCommand pass feeds every consumer of the form's current
+  // state: the cast copy actions AND the wallet send, which must broadcast
+  // exactly the bytes the Simulate path would run (same parsing, same
+  // trailing-empty omission, same viem encoder). The rpcUrl only shapes
+  // the pasted command's text — the calldata is RPC-independent.
+  const encodedCall =
+    contractAddress === undefined
+      ? ({ ok: false as const, reason: 'contract address unavailable' })
+      : isPayable && value.trim() !== '' && valueWei === ''
+        ? { ok: false as const, reason: `Invalid ${nativeSymbol} amount` }
+        : buildCastCommand({
+            func,
+            rawArgs: args,
+            contractAddress,
+            rpcUrl: getDefaultRpcUrl(chainId),
+            valueWei: isPayable && valueWei !== '' ? valueWei : undefined,
+          });
+
+  // The pasted command additionally requires a known default RPC (its
+  // weakest link); the wallet send deliberately does not — the wallet
+  // uses its own endpoint.
+  const castCommand =
+    encodedCall.ok && getDefaultRpcUrl(chainId) === ''
+      ? { ok: false as const, reason: 'no default RPC URL known for this chain' }
+      : encodedCall;
 
   // Label-swap feedback for the copy buttons (SourceCodeViewer/RawJson
   // pattern): the button itself reports the honest clipboard outcome.
@@ -320,6 +381,79 @@ export function FunctionCallForm({
 
   const copyLabel = (which: 'cast' | 'calldata', idle: string) =>
     copyFeedback?.which === which ? (copyFeedback.ok ? 'Copied ✓' : 'Copy failed') : idle;
+
+  // --- Wallet send ---------------------------------------------------------
+  //
+  // Broadcasts the SAME encoded call the Simulate path runs, through the
+  // injected provider. Outcomes render inline: a broadcast hash links to
+  // this explorer's own tx page, a user rejection stays quiet, and every
+  // other provider error keeps its message verbatim.
+  const [walletSend, setWalletSend] = useState<WalletSendState>({ phase: 'idle' });
+  const [walletSwitchNote, setWalletSwitchNote] = useState<string | null>(null);
+
+  const showsWalletSend = func.interactionType === 'write' && walletProvider !== null;
+
+  const handleSendWithWallet = async (): Promise<void> => {
+    // Capture before any await: property narrowing does not survive the
+    // async boundary, locals do.
+    const calldata = encodedCall.ok ? encodedCall.calldata : null;
+    if (walletProvider === null || contractAddress === undefined || calldata === null) return;
+
+    setWalletSwitchNote(null);
+    setWalletSend({ phase: 'sending' });
+    try {
+      // Chain guard: the route's chain vs the wallet's active chain. A
+      // mismatch walks the switch/add flow first; the outcome is named
+      // inline and a rejection aborts before any tx is built.
+      const activeChain = await walletChainId(walletProvider);
+      if (activeChain !== null && activeChain !== chainId) {
+        const outcome = await ensureWalletChain(walletProvider, getChainInfo(chainId));
+        if (outcome === 'rejected') {
+          setWalletSwitchNote(
+            `Rejected in wallet — wallet stayed on ${getChainName(activeChain)}.`,
+          );
+          setWalletSend({ phase: 'idle' });
+          return;
+        }
+        if (outcome === 'unknown_chain') {
+          setWalletSwitchNote(
+            `Unknown chain to this wallet — add chainId ${chainId} in the wallet and retry.`,
+          );
+          setWalletSend({ phase: 'idle' });
+          return;
+        }
+        if (outcome === 'switched') {
+          setWalletSwitchNote(`Wallet switched to ${getChainName(chainId)}.`);
+        }
+      }
+
+      // Also serves as the wallet-unlock prompt; the tx always sends from
+      // the wallet's first account.
+      const accounts = await requestAccounts(walletProvider);
+      if (accounts.length === 0) {
+        setWalletSend({ phase: 'error', message: 'No accounts available in wallet' });
+        return;
+      }
+
+      // No gas limit on purpose: the wallet estimates — a hardcoded value
+      // here would be a guess, and a wrong one would strand the tx.
+      const tx = {
+        from: accounts[0],
+        to: contractAddress,
+        data: calldata,
+        ...(isPayable && valueWei !== '' ? { value: numberToHex(BigInt(valueWei)) } : {}),
+      };
+      const txHash = await sendWalletTransaction(walletProvider, tx);
+      setWalletSend({ phase: 'sent', txHash });
+    } catch (error) {
+      // 4001 is the user's own decision: quiet inline note, no error card.
+      if (isUserRejected(error)) {
+        setWalletSend({ phase: 'rejected' });
+        return;
+      }
+      setWalletSend({ phase: 'error', message: providerErrorMessage(error) });
+    }
+  };
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
@@ -494,6 +628,25 @@ export function FunctionCallForm({
             {isLoading ? 'Loading...' : func.interactionType === 'read' ? 'Query' : 'Simulate'}
           </button>
 
+          {/* Broadcast action — only when an injected wallet exists. Shares
+              the encodedCall validation with the cast actions, so it is
+              enabled exactly when the current form state encodes. */}
+          {showsWalletSend && (
+            <button
+              type="button"
+              className={buttonSendStyles}
+              disabled={!encodedCall.ok || walletSend.phase === 'sending'}
+              onClick={() => void handleSendWithWallet()}
+              title={
+                encodedCall.ok
+                  ? 'Broadcast this call from your wallet (eth_sendTransaction) — the wallet estimates gas and confirms'
+                  : encodedCall.reason
+              }
+            >
+              {walletSend.phase === 'sending' ? 'Sending...' : 'Send with wallet'}
+            </button>
+          )}
+
           {/* Disabled with the first offending field as tooltip until the
               current args would encode — the copied command must never be
               a guess. The RPC caveat stays visible while enabled so the
@@ -528,6 +681,50 @@ export function FunctionCallForm({
             {copyLabel('calldata', 'Copy calldata')}
           </button>
         </div>
+
+        {/* Trust note: the send action broadcasts from the user's own
+            wallet; this explorer only ever sees public bytes. */}
+        {showsWalletSend && (
+          <div className={walletNoteStyles}>
+            Sent from your wallet; this explorer never sees your keys.
+          </div>
+        )}
+
+        {/* Chain-switch outcome from the send guard — named, never silent. */}
+        {walletSwitchNote && (
+          <div role="status" className={walletQuietStyles}>
+            {walletSwitchNote}
+          </div>
+        )}
+
+        {/* Quiet user rejection (4001): a decision, not an error card. */}
+        {walletSend.phase === 'rejected' && (
+          <div role="status" className={walletQuietStyles}>
+            Rejected in wallet
+          </div>
+        )}
+
+        {/* Broadcast success: the hash links to this explorer's own tx
+            page (route verified in views/index.tsx). */}
+        {walletSend.phase === 'sent' && (
+          <div className={resultSuccessStyles}>
+            <div className={resultTitleStyles}>Sent — transaction broadcast:</div>
+            <div className={resultContentStyles}>
+              <CopyableHash
+                value={walletSend.txHash}
+                href={`/chain/${chainId}/tx/${walletSend.txHash}`}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Other provider errors: attributed inline, message verbatim. */}
+        {walletSend.phase === 'error' && (
+          <div className={functionErrorStyles}>
+            <div className={functionErrorTitleStyles}>Wallet send error:</div>
+            <div className={functionErrorContentStyles}>{walletSend.message}</div>
+          </div>
+        )}
 
         {/* Results */}
         {result !== undefined && (

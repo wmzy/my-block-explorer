@@ -42,9 +42,22 @@ function honoApiPlugin(): Plugin {
             });
           }
 
+          // Same-origin GET fetches omit the Origin header by spec, but the
+          // API's URL-redaction policy treats Origin-less requests as
+          // untrusted (fail-closed without socket info — this in-process
+          // bridge has none). The dev server's own page IS the same-origin
+          // reader, so synthesize the request's own host as Origin. Dev
+          // bridge only: the standalone server never runs this code.
+          const headers: Record<string, string> = {
+            ...(req.headers as Record<string, string>),
+          };
+          if (!headers.origin && headers.host) {
+            headers.origin = `http://${headers.host}`;
+          }
+
           const request = new Request(url.toString(), {
             method: req.method,
-            headers: req.headers as Record<string, string>,
+            headers: headers,
             body: body,
           });
 

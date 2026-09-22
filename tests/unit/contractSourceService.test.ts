@@ -822,3 +822,234 @@ describe('ContractSourceService - not-a-contract gate & facet persistence', () =
     });
   });
 });
+
+describe('ContractSourceService - manual (local-trust) verification', () => {
+  const chainId = 1;
+  const contractAddress = '0x9991111111111111111111111111111111111111' as Address;
+  const ABI = '[{"type":"function","name":"get","inputs":[],"outputs":[{"type":"uint256"}]}]';
+
+  let service: ContractSourceService;
+  let selectQueue: Array<Array<unknown>>;
+  let insertValues: Array<Record<string, unknown>>;
+  let updateSets: Array<Record<string, unknown>>;
+  let fetchSpy: ReturnType<typeof vi.fn>;
+
+  // Both helpers return the installed stub so tests can assert on the
+  // exact fetch instance their scenario ran with.
+  const notFoundFetch = () => {
+    const stub = vi.fn(async () => ({ ok: false, status: 404 }));
+    vi.stubGlobal('fetch', stub);
+    return stub;
+  };
+
+  // A contract_sources row as saveToDatabase would have written it for a
+  // manual mark. lastUpdated drives the TTL re-probe decision.
+  const manualRow = (overrides: Record<string, unknown> = {}): Record<string, unknown> => ({
+    chainId,
+    address: contractAddress,
+    contractName: 'C',
+    compilerVersion: null,
+    optimizationUsed: null,
+    runs: null,
+    sourceCode: '',
+    sourceFiles: null,
+    abi: ABI,
+    constructorArguments: null,
+    evmVersion: null,
+    library: null,
+    licenseType: null,
+    proxy: null,
+    implementation: null,
+    implementationAddresses: null,
+    isVerified: true,
+    verificationSource: 'manual',
+    verificationDate: new Date(),
+    lastUpdated: new Date(),
+    ...overrides,
+  });
+
+  const sourcifyHitFetch = () => {
+    const stub = vi.fn(async () => ({
+      ok: true,
+      json: async () => ({
+        match: 'match',
+        abi: [{ type: 'function', name: 'get', inputs: [], outputs: [] }],
+        compilation: { name: 'Remote', compilerVersion: '0.8.20' },
+        sources: { 'Remote.sol': { content: 'contract Remote {}' } },
+      }),
+    }));
+    vi.stubGlobal('fetch', stub);
+    return stub;
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+
+    selectQueue = [];
+    insertValues = [];
+    updateSets = [];
+
+    mockDb.select.mockImplementation(() => ({
+      from: () => ({
+        where: () => ({
+          limit: async () => (selectQueue.length > 0 ? selectQueue.shift() : []),
+        }),
+      }),
+    }));
+    mockDb.insert.mockImplementation(() => ({
+      values: (v: Record<string, unknown>) => {
+        insertValues.push(v);
+        return { onConflictDoUpdate: async () => undefined };
+      },
+    }));
+    mockDb.delete.mockImplementation(() => ({ where: async () => undefined }));
+    (mockDb as Record<string, unknown>).update = vi.fn(() => ({
+      set: (v: Record<string, unknown>) => {
+        updateSets.push(v);
+        return { where: async () => undefined };
+      },
+    }));
+
+    // Default: every remote hop misses; tests that expect a hit install
+    // their own stub.
+    fetchSpy = notFoundFetch();
+
+    service = new ContractSourceService();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  describe('saveManualVerification', () => {
+    it('upserts a verified manual row with the pasted payload and null proxy fields', async () => {
+      const result = await service.saveManualVerification(chainId, contractAddress, {
+        abi: ABI,
+        sourceCode: 'contract C {}',
+        name: 'C',
+      });
+
+      expect(result.verificationStatus).toBe('verified');
+      expect(result.verificationSource).toBe('manual');
+      expect(result.abi).toBe(ABI);
+      expect(result.name).toBe('C');
+
+      expect(insertValues).toHaveLength(1);
+      const row = insertValues[0];
+      expect(row.chainId).toBe(chainId);
+      expect(row.address).toBe(contractAddress);
+      expect(row.isVerified).toBe(true);
+      expect(row.verificationSource).toBe('manual');
+      expect(row.contractName).toBe('C');
+      expect(row.sourceCode).toBe('contract C {}');
+      expect(row.abi).toBe(ABI);
+      expect(row.proxy).toBeNull();
+      expect(row.implementation).toBeNull();
+      expect(row.implementationAddresses).toBeNull();
+      expect(row.lastUpdated).toBeInstanceOf(Date);
+    });
+
+    it('round-trips: a saved manual row reads back as the served source', async () => {
+      await service.saveManualVerification(chainId, contractAddress, { abi: ABI, name: 'C' });
+      // Shape the DB row exactly as the captured insert wrote it.
+      const written = { ...insertValues[0] };
+      selectQueue.push([written]);
+
+      const read = await service.getContractSource(chainId, contractAddress);
+
+      expect(read).not.toBeNull();
+      expect(read?.verificationStatus).toBe('verified');
+      expect(read?.verificationSource).toBe('manual');
+      expect(read?.abi).toBe(ABI);
+      expect(read?.name).toBe('C');
+      // Served from the DB shortcut — no remote probe for a fresh mark.
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it('serves an ABI-only mark (empty sourceCode) from the DB shortcut', async () => {
+      // The generic verified shortcut requires sourceCode; the manual
+      // branch must not let an ABI-only mark fall through to the remote
+      // pipeline (which would overwrite it with an unverified row).
+      selectQueue.push([manualRow({ sourceCode: null })]);
+
+      const read = await service.getContractSource(chainId, contractAddress);
+
+      expect(read?.verificationSource).toBe('manual');
+      expect(read?.verificationStatus).toBe('verified');
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(insertValues).toHaveLength(0);
+    });
+  });
+
+  describe('manual-vs-remote precedence', () => {
+    it('re-probes Sourcify once a manual mark exceeds the unverified TTL; a hit supersedes it', async () => {
+      fetchSpy = sourcifyHitFetch();
+      // detectProxy would hit the RPC manager; the remote result is a
+      // plain non-proxy contract, so stub the probe to not-proxy.
+      vi.spyOn(service as any, 'detectProxy').mockResolvedValue({ isProxy: false });
+      selectQueue.push([
+        manualRow({ lastUpdated: new Date(Date.now() - 2 * 60 * 60 * 1000) }),
+      ]);
+
+      const result = await service.getContractSource(chainId, contractAddress);
+
+      // Cryptographic verification beats local trust.
+      expect(result?.verificationSource).toBe('sourcify');
+      expect(result?.verificationStatus).toBe('verified');
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+      expect(insertValues).toHaveLength(1);
+      expect(insertValues[0]?.verificationSource).toBe('sourcify');
+      expect(insertValues[0]?.isVerified).toBe(true);
+    });
+
+    it('keeps the manual mark on a remote miss and refreshes its TTL window', async () => {
+      selectQueue.push([
+        manualRow({ lastUpdated: new Date(Date.now() - 2 * 60 * 60 * 1000) }),
+      ]);
+
+      const result = await service.getContractSource(chainId, contractAddress);
+
+      expect(result?.verificationSource).toBe('manual');
+      expect(result?.verificationStatus).toBe('verified');
+      // The miss path must not rewrite the row as unverified…
+      expect(insertValues).toHaveLength(0);
+      // …nor run the not-a-contract gate (that belongs to the no-cache
+      // path, not the manual-mark path).
+      expect(mockGetClient).not.toHaveBeenCalled();
+      // The re-probe cadence window is pushed forward instead.
+      expect(updateSets).toHaveLength(1);
+      expect(updateSets[0]?.lastUpdated).toBeInstanceOf(Date);
+      // And the returned payload reflects the refreshed timestamp.
+      expect(result?.lastChecked.getTime()).toBeGreaterThan(Date.now() - 60 * 1000);
+    });
+  });
+
+  describe('deleteManualVerification', () => {
+    it('deletes a manual row via the cache clear and reports true', async () => {
+      selectQueue.push([manualRow()]);
+
+      const removed = await service.deleteManualVerification(chainId, contractAddress);
+
+      expect(removed).toBe(true);
+      expect(mockDb.delete).toHaveBeenCalledTimes(1);
+    });
+
+    it('refuses to delete a sourcify-verified row (reports false, row intact)', async () => {
+      selectQueue.push([manualRow({ verificationSource: 'sourcify' })]);
+
+      const removed = await service.deleteManualVerification(chainId, contractAddress);
+
+      expect(removed).toBe(false);
+      expect(mockDb.delete).not.toHaveBeenCalled();
+    });
+
+    it('reports false when no row exists', async () => {
+      selectQueue.push([]);
+
+      const removed = await service.deleteManualVerification(chainId, contractAddress);
+
+      expect(removed).toBe(false);
+      expect(mockDb.delete).not.toHaveBeenCalled();
+    });
+  });
+});
