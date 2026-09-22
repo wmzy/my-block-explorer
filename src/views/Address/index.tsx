@@ -53,6 +53,10 @@ import {
 } from '@/services/addressRealTime';
 import { useTokenTransfers } from '@/services/tokenTransfers';
 import { useTokenOverview } from '@/services/tokenMetadata';
+import { BalanceHistory } from '@/views/Address/BalanceHistory';
+import NftHoldings from '@/views/Address/NftHoldings';
+import InternalTxns from '@/views/Address/InternalTxns';
+import { ApprovalSection } from '@/views/Address/approvals';
 import { createRpcClient } from '@/utils/realTimeData';
 import { useEnsName } from '@/services/ens';
 import { formatRelativeTime } from '@/utils/format';
@@ -75,10 +79,29 @@ const headerRow = css`
   justify-content: space-between;
   align-items: center;
   margin-bottom: var(--haze-space-4);
+
+  /* Narrow screens: the activity header (segmented tabs + Export CSV +
+     Refresh) and the Token Overview title + classification badge never
+     fit one ~340px row — wrap to stacked lines instead of overflowing
+     the card (same breakpoint as the Contract page's tab header). */
+  @media (max-width: 768px) {
+    flex-wrap: wrap;
+    gap: var(--haze-space-2);
+  }
 `;
 
 const bannerLinks = css`
   margin: var(--haze-space-2) 0 var(--haze-space-3);
+`;
+
+// ENS names carry no length ceiling, and the page title is one: without a
+// break opportunity a long name pushes the whole page into horizontal
+// scroll. `anywhere` only kicks in for names that actually overflow —
+// normal titles (and "Address Details") are untouched.
+const addressHeaderStyle = css`
+  & h1 {
+    overflow-wrap: anywhere;
+  }
 `;
 
 // ENS row under the page header: name badge + the full hex address, still
@@ -106,6 +129,16 @@ const segmentedTabs = css`
   border: 1px solid var(--haze-color-border);
   border-radius: var(--haze-radius-lg);
   background: var(--haze-color-bg-subtle);
+
+  /* Narrow screens: the tab strip gets its own horizontal scroll (labels
+     stay one line — see tabButton's nowrap) instead of squeezing or
+     pushing the Export/Refresh actions out of the card. Mirrors the
+     Contract page's tab-strip affordance. */
+  @media (max-width: 768px) {
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
 `;
 
 const tabButton = css`
@@ -117,6 +150,8 @@ const tabButton = css`
   font-weight: var(--haze-weight-semibold);
   color: var(--haze-color-text-muted);
   cursor: pointer;
+  /* Labels never wrap mid-word: the strip scrolls instead (see above). */
+  white-space: nowrap;
 
   &:hover {
     color: var(--haze-color-text);
@@ -229,6 +264,18 @@ const tokenOverviewCard = css`
   margin-top: var(--haze-space-5);
 `;
 
+// The classification badge in the Token Overview header: haze badges
+// nowrap by default, and the honest long label ("Token (standard unknown
+// — possibly ERC-721)") out-measures a phone row — on narrow screens the
+// pill wraps its text instead of silently overflowing the card.
+const tokenBadgeStyle = css`
+  @media (max-width: 768px) {
+    & > span {
+      white-space: normal;
+    }
+  }
+`;
+
 // Export CSV affordance in the tx tab toolbar: an ANCHOR (the backend's
 // Content-Disposition drives the file save), visually a sibling of the
 // Refresh button. Disabled keeps it visible with a title reason — the
@@ -317,10 +364,12 @@ const MAX_SEARCH_WINDOW_BLOCKS = 50_000_000;
 // SAME schema — a narrower one would strip the other keys on every write.
 
 // Recent-activity card tabs. The transfers tab renders its own component
-// (and owns its query there), so the unmounted tab fetches nothing.
+// (and owns its query there), so the unmounted tab fetches nothing; the
+// internal tab likewise owns its traces and reuses the tx tab's rows.
 const activityTabs: ReadonlyArray<{ id: ActivityTabId; label: string }> = [
   { id: 'transactions', label: 'Transactions' },
   { id: 'transfers', label: 'Token Transfers' },
+  { id: 'internal', label: 'Internal Txns' },
 ];
 
 // status: 1 → success, 0 → failed, -1 → pending (no receipt yet, NOT
@@ -930,11 +979,15 @@ export default function Address() {
   const activityTab = effectiveActivityTab(tabParam, ttPageParam);
   const [transfersRefreshSignal, setTransfersRefreshSignal] = useState(0);
   const [transfersRefreshing, setTransfersRefreshing] = useState(false);
+  // Same spinner-signal pattern for the internal tab's re-trace.
+  const [internalRefreshSignal, setInternalRefreshSignal] = useState(0);
+  const [internalRefreshing, setInternalRefreshing] = useState(false);
   const selectActivityTab = (tab: ActivityTabId) => {
     void setSearch(prev => ({ ...prev, tab }));
-    // A pending transfers refresh can no longer report back once the tab
-    // unmounts — drop its spinner instead of spinning forever.
+    // A pending transfers/internal refresh can no longer report back once
+    // the tab unmounts — drop its spinner instead of spinning forever.
     setTransfersRefreshing(false);
+    setInternalRefreshing(false);
   };
 
   // Widened search window (blocks) from ?window= — undefined is the
@@ -945,14 +998,17 @@ export default function Address() {
   const txLimit = 10;
   // Tx-scan gating, symmetric with the transfers tab's lazy fetch: the
   // heuristic history scan is expensive (tens of seconds on deep windows)
-  // and only the transactions tab renders it, so a transfers-only deep
-  // link (?tab=transfers / ?ttPage=2+) must not pay for it. Args-level
-  // gate — chainId <= 0 is the services' own disabled-key shape (resolves
-  // undefined without touching the network); switching back to the tab
+  // and only the transactions/internal tabs render it, so a transfers-only
+  // deep link (?tab=transfers / ?ttPage=2+) must not pay for it. The
+  // internal tab reuses the SAME key (limit/offset/window) so switching
+  // between it and the transactions tab never refetches — the internal
+  // traces ride the rows already in the cache. Args-level gate — chainId
+  // <= 0 is the services' own disabled-key shape (resolves undefined
+  // without touching the network); switching back to a consuming tab
   // restores the real key and the fetch runs then.
-  const txTabActive = activityTab === 'transactions';
+  const txScanActive = activityTab !== 'transfers';
   const txQuery = useAddressTransactions(
-    txTabActive ? currentChainId : 0,
+    txScanActive ? currentChainId : 0,
     address,
     txLimit,
     (txPage - 1) * txLimit,
@@ -989,11 +1045,11 @@ export default function Address() {
   // (replaced) to that page — an empty page is never shareable or
   // refreshable, and Prev-walking back becomes unnecessary. Mid-flight
   // (or failed) fetches converge nothing: the transient empty-page row
-  // further below stays the fallback for those races. Gated on the tx tab
-  // like the fetch itself — a transfers-tab visit never rewrites the URL
-  // behind a scan it is not running.
+  // further below stays the fallback for those races. Gated on the tx
+  // scan's tabs like the fetch itself — a transfers-tab visit never
+  // rewrites the URL behind a scan it is not running.
   const txPageBeyondData =
-    txTabActive &&
+    txScanActive &&
     txData !== undefined &&
     !txQuery.loading &&
     txQuery.error === undefined &&
@@ -1313,6 +1369,7 @@ export default function Address() {
         <PageHeader
           title={ensName ?? 'Address Details'}
           chainInfo={`${getChainName(currentChainId)} • Chain ID: ${currentChainId}`}
+          className={addressHeaderStyle}
         />
 
         {ensName && (
@@ -1413,6 +1470,16 @@ export default function Address() {
                       </>
                     )}
                   </InfoItem>
+
+                  {/* NFT holdings from the SAME first-page transfers scan
+                      (no refetch): renders nothing when the window holds no
+                      NFT rows — clean absence, never an empty-state card. */}
+                  <NftHoldings
+                    transfers={holdingsTransfers}
+                    address={address}
+                    chainId={currentChainId}
+                    loading={holdingsQuery.loading && !holdingsQuery.data}
+                  />
 
                   {/* The RPC nonce counts OUTGOING transactions only —
                       never label it a total transaction count. The inline
@@ -1536,6 +1603,25 @@ export default function Address() {
               </CardContent>
             </Card>
 
+            {/* Token approvals (read-only erc20 approve scan): self-contained
+                — own fetch/loading/error/caveat states; renders null when it
+                has nothing useful to show, so it composes cleanly into the
+                token area beside the discovered-holdings rows above. */}
+            <ApprovalSection chainId={currentChainId} address={address} />
+
+            {/* Balance-over-time chart: rides the same cached discovered-tx
+                scan as the Transactions tab (?window= shared) and anchors to
+                the LIVE RPC balance; self-gates for EOAs without history. */}
+            <BalanceHistory
+              className={tokenOverviewCard}
+              chainId={currentChainId}
+              address={address}
+              currentBalance={
+                realTimeQuery.data ? BigInt(realTimeQuery.data.balanceWei) : null
+              }
+              searchWindow={txSearchWindow}
+            />
+
             {/* Token Overview: contracts only, and only when at least one
                 token probe answered — a plain contract renders no card at
                 all (silent, never an error state). Lines appear exactly
@@ -1549,11 +1635,18 @@ export default function Address() {
                     <Badge
                       variant={tokenClassification.isErc20 ? 'success' : 'warning'}
                       size="sm"
+                      className={tokenBadgeStyle}
                     >
                       {tokenClassification.isErc20
                         ? 'ERC-20'
                         : 'Token (standard unknown — possibly ERC-721)'}
                     </Badge>
+                    <TypedLink
+                      to={`/chain/${currentChainId}/token/${address}`}
+                      className={linkStyle}
+                    >
+                      View token page
+                    </TypedLink>
                   </div>
                 </CardHeader>
                 <CardContent>
@@ -1687,9 +1780,11 @@ export default function Address() {
                   )}
                   {/* Refresh honesty: the button refetches what the ACTIVE
                       tab shows — the tx history + the realtime balance read
-                      that owns 'Last updated', or the token-transfer scan
+                      that owns 'Last updated', the token-transfer scan
                       (through the refresh signal the transfers component
-                      consumes). */}
+                      consumes), or the internal tab's traces (its own
+                      refresh signal — the tx rows it re-reads come from the
+                      shared cache). */}
                   <Button
                     variant="secondary"
                     size="sm"
@@ -1697,15 +1792,20 @@ export default function Address() {
                       if (activityTab === 'transactions') {
                         void txQuery.refetch();
                         void realTimeQuery.refetch();
-                      } else {
+                      } else if (activityTab === 'transfers') {
                         setTransfersRefreshing(true);
                         setTransfersRefreshSignal(signal => signal + 1);
+                      } else {
+                        setInternalRefreshing(true);
+                        setInternalRefreshSignal(signal => signal + 1);
                       }
                     }}
                     loading={
                       activityTab === 'transactions'
                         ? txQuery.fetching || realTimeQuery.fetching
-                        : transfersRefreshing
+                        : activityTab === 'transfers'
+                          ? transfersRefreshing
+                          : internalRefreshing
                     }
                   >
                     Refresh
@@ -1724,15 +1824,31 @@ export default function Address() {
                     refreshSignal={transfersRefreshSignal}
                     onRefreshed={() => setTransfersRefreshing(false)}
                   />
+                ) : activityTab === 'internal' ? (
+                  <InternalTxns
+                    chainId={currentChainId}
+                    address={address}
+                    /* The tx tab's OWN window rides along — no refetch
+                       here; the traces read the rows the shared query
+                       already settled (same key, cached). */
+                    transactions={transactions}
+                    txLoading={txQuery.loading}
+                    txError={txQuery.error?.message}
+                    txPage={txPage}
+                    refreshSignal={internalRefreshSignal}
+                    onRefreshed={() => setInternalRefreshing(false)}
+                  />
                 ) : (
                   <>
                     {/* Indexing-scope notice (tx tab only): internal txs stay
-                    outside the heuristic's reach at every coverage level;
-                    token transfers moved to their own tab with its own
+                    outside the heuristic's reach at every coverage level —
+                    the Internal Txns tab traces them on demand instead.
+                    Token transfers moved to their own tab with its own
                     coverage banners. */}
                     <p className={tokenNotice}>
-                      Internal transactions are not indexed — native ETH activity
-                      only. Token transfers (ERC-20/721/1155) live in the Token
+                      This list covers external transactions only — internal
+                      transfers are traced separately in the Internal Txns tab,
+                      and token transfers (ERC-20/721/1155) live in the Token
                       Transfers tab.
                     </p>
 

@@ -23,7 +23,10 @@ import { z } from 'zod';
 //   (?ttPage=2+) select the transfers tab (see effectiveActivityTab). A
 //   `.catch(...)` default would make "explicit transactions"
 //   indistinguishable from "no tab in the URL" and break one of the two.
-export const activityTabSchema = z.enum(['transactions', 'transfers']);
+//   The internal tab ('internal' = on-demand callTracer tracing) is
+//   reachable only through an explicit ?tab=internal — no inference
+//   selects it, so existing deep-link behavior is unchanged.
+export const activityTabSchema = z.enum(['transactions', 'transfers', 'internal']);
 
 export type ActivityTabId = z.infer<typeof activityTabSchema>;
 

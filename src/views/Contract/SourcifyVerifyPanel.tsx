@@ -53,6 +53,9 @@ const fileRowStyles = css`
 
 const fileInputStyles = css`
   font-size: 13px;
+  /* Native file inputs have an intrinsic width; cap it so the picker never
+     stretches past the card on a phone. */
+  max-width: 100%;
 `;
 
 const chipsStyles = css`
@@ -106,6 +109,7 @@ const actionsRowStyles = css`
   align-items: center;
   gap: 12px;
   margin-top: 14px;
+  flex-wrap: wrap;
 `;
 
 const submitStyles = css`

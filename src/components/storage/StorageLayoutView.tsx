@@ -36,6 +36,14 @@ const listItemStyle = css`
   background: var(--haze-color-bg-subtle);
   border: 1px solid var(--haze-color-border);
   border-radius: var(--haze-radius-md);
+
+  /* Phone widths: the fixed 120px slot column beside the value pane leaves
+     values a sliver — stack slot info above the value (the same row
+     stacking the Blocks/Detail withdrawal rows use). */
+  @media (max-width: 768px) {
+    flex-direction: column;
+    gap: var(--haze-space-2);
+  }
 `;
 
 const slotInfoStyle = css`
@@ -59,6 +67,12 @@ const slotLabelStyle = css`
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 150px;
+
+  /* Phone widths: stacked rows have the full card width — the label never
+     needs the desktop ellipsis cap. */
+  @media (max-width: 768px) {
+    max-width: 100%;
+  }
 `;
 
 const valueContainerStyle = css`

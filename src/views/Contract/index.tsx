@@ -32,6 +32,12 @@ const pageStyles = css`
   margin: 0 auto;
   padding: 20px;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+
+  /* Phone widths: trade page gutters for content width (mono hashes and
+     code blocks need every pixel at 375px). */
+  @media (max-width: 768px) {
+    padding: 12px;
+  }
 `;
 
 const headerStyles = css`
@@ -58,7 +64,13 @@ const headerStyles = css`
   }
 
   @media (max-width: 768px) {
+    h1 {
+      font-size: 20px;
+    }
+
     .address {
+      display: inline-block;
+      max-width: 100%;
       word-break: break-all;
     }
   }
@@ -69,6 +81,24 @@ const headerStyles = css`
 // previous spot lived inside the loaded contract-source card).
 const headerExternalLinks = css`
   margin-top: 8px;
+`;
+
+// Card header row (title + trailing action): wraps on narrow screens so a
+// long implementation name or title never pushes the Force Refresh / Open
+// in IDE action off the card — the action drops to its own full-width row.
+const cardHeaderStyles = css`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+
+  h2 {
+    margin: 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
 `;
 
 const tabsStyles = css`
@@ -109,10 +139,15 @@ const tabsStyles = css`
   @media (max-width: 768px) {
     flex-direction: column;
     align-items: stretch;
+    gap: 8px;
 
     .tabs-left {
       overflow-x: auto;
       -webkit-overflow-scrolling: touch;
+    }
+
+    .tab {
+      padding: 10px 12px;
     }
   }
 `;
@@ -278,6 +313,17 @@ const infoGridStyles = css`
     color: #1a1a1a;
     word-break: break-all;
   }
+
+  /* Phone widths: the two-column label/value row crushes long mono values
+     (hashes, implementation addresses) into a sliver — stack label above
+     value instead, the same degradation the InfoGrid rows use. */
+  @media (max-width: 768px) {
+    .info-item {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 4px;
+    }
+  }
 `;
 
 const backButtonStyles = css`
@@ -329,6 +375,13 @@ const verifyCellStyles = css`
   align-items: flex-end;
   gap: 4px;
   text-align: right;
+
+  /* Phone widths: the info rows stack label above value — the unverified
+     cell's right alignment would hang off the stacked edge. */
+  @media (max-width: 768px) {
+    align-items: flex-start;
+    text-align: left;
+  }
 `;
 
 const verifyLinkStyles = css`
@@ -956,15 +1009,8 @@ export default function Contract() {
         {contractSource && (
           <>
             <div className={cardStyles}>
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  marginBottom: '16px',
-                }}
-              >
-                <h2 style={{ margin: 0 }}>Contract Information</h2>
+              <div className={cardHeaderStyles}>
+                <h2>Contract Information</h2>
                 <button
                   onClick={handleClearCache}
                   disabled={refreshing}
@@ -1369,15 +1415,8 @@ export default function Contract() {
             {/* Source Code */}
             {activeTab === 'source' && (
               <div className={cardStyles}>
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    marginBottom: '16px',
-                  }}
-                >
-                  <h2 style={{ margin: 0 }}>
+                <div className={cardHeaderStyles}>
+                  <h2>
                     {isProxy
                       ? contractTarget === 'impl'
                         ? `Implementation Source (${contractSource.implementationContract?.name ?? 'Unknown'})`

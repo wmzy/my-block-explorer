@@ -89,9 +89,9 @@ const logoText = css`
   color: var(--haze-color-text);
 `;
 
-// Page links beside the logo. The explorer has exactly one top-level list
-// beyond home (the cached-contract directory); the group keeps the slot
-// if more follow.
+// Page links beside the logo: the cached-contract directory and the
+// charts page. Flex with a small gap keeps the group readable at any
+// member count.
 const navLinks = css`
   display: flex;
   align-items: center;
@@ -130,6 +130,21 @@ const searchArea = css`
 const searchRow = css`
   display: flex;
   gap: var(--haze-space-2);
+
+  /* Narrow screens: the haze Input renders a bare <input> and the search
+     Button a plain <button> (~36px tall) — grow both to the 44px touch
+     target and let the input take whatever width the row has left. */
+  @media (max-width: 768px) {
+    input {
+      flex: 1 1 auto;
+      min-width: 0;
+      min-height: 44px;
+    }
+
+    button {
+      min-height: 44px;
+    }
+  }
 `;
 
 const searchNoticeBox = css`
@@ -176,6 +191,15 @@ const rightControls = css`
   display: flex;
   align-items: center;
   gap: var(--haze-space-3);
+
+  /* Narrow screens: the nowrap row (theme + RPC + 180px chain button +
+     version chip) exceeds the viewport — let the controls wrap onto a
+     second row, right-aligned under the search row. */
+  @media (max-width: 768px) {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    row-gap: var(--haze-space-2);
+  }
 `;
 
 // Theme cycle control (Light → Dark → System). Icon-only at the RPC
@@ -221,6 +245,13 @@ const versionChip = css`
 // Chain selector styles
 const selectorWrapper = css`
   position: relative;
+
+  /* Narrow screens: un-position the wrapper so the dropdown's containing
+     block becomes the sticky nav (full viewport width) instead of the
+     wrapper — the picker can then span the screen, not the wrapped row. */
+  @media (max-width: 768px) {
+    position: static;
+  }
 `;
 
 const selectorButton = css`
@@ -284,6 +315,15 @@ const dropdown = css`
   min-width: 320px;
   max-height: 400px;
   overflow: hidden;
+
+  /* Narrow screens: anchored to the full-width nav (selectorWrapper goes
+     static), the picker spans nearly the whole viewport below the wrapped
+     bar — no off-screen clipping to the left of the right-anchored rule. */
+  @media (max-width: 768px) {
+    left: var(--haze-space-4);
+    right: var(--haze-space-4);
+    min-width: 0;
+  }
 `;
 
 const dropdownSearch = css`
@@ -1164,8 +1204,9 @@ export default function TopNavigation({
             <span className={logoText}>My Block Explorer</span>
           </div>
 
-          {/* Directory of cached contracts for the selected chain (same
-              in-app navigation as the logo above). */}
+          {/* In-app page links beside the logo, same navigation as the
+              logo above: the cached-contract directory and the daily
+              charts derived from live RPC sampling. */}
           <div className={navLinks}>
             <button
               type="button"
@@ -1173,6 +1214,13 @@ export default function TopNavigation({
               onClick={() => goTo(`/chain/${currentChainId}/contracts`)}
             >
               Contracts
+            </button>
+            <button
+              type="button"
+              className={navLink}
+              onClick={() => goTo(`/chain/${currentChainId}/charts`)}
+            >
+              Charts
             </button>
           </div>
 

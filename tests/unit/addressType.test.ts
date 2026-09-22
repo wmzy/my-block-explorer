@@ -67,6 +67,36 @@ describe('classifyAddressType', () => {
     expect(classifyAddressType({ rpcCode: '0xef0100deadbeef' })).toBe('contract');
     expect(classifyAddressType({ rpcCode: `${designator}00` })).toBe('contract');
   });
+
+  // Offline composition: the persistent channel has ERRORED (backend
+  // down), so the view passes persistentType: undefined and the code read
+  // alone must classify. This is the layer the documented residual lived
+  // in — the realtime service now restores '0x' where viem folds a
+  // successful no-code read into undefined, so a settled EOA read reaches
+  // the classifier as '0x' instead of masquerading as "not read".
+  describe('offline composition (persistent channel errored, RPC up)', () => {
+    it('derives the verdict from a successful RPC read alone', () => {
+      expect(classifyAddressType({ persistentType: undefined, rpcCode: contractCode })).toBe(
+        'contract',
+      );
+      expect(classifyAddressType({ persistentType: undefined, rpcCode: '0x' })).toBe('eoa');
+    });
+
+    it('a 0xef0100 read stays a delegated EOA offline', () => {
+      expect(classifyAddressType({ persistentType: undefined, rpcCode: designator })).toBe(
+        'delegated-eoa',
+      );
+    });
+
+    it('undefined rpcCode still means "not read": Unknown stays honest', () => {
+      // Both channels contributed nothing (persistent errored, code read
+      // never settled or failed) — Unknown is the honest verdict, exactly
+      // the state the '0x'-restoration must NOT fake away.
+      expect(classifyAddressType({ persistentType: undefined, rpcCode: undefined })).toBe(
+        'unknown',
+      );
+    });
+  });
 });
 
 describe('delegationTarget', () => {

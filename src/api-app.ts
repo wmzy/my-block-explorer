@@ -19,6 +19,8 @@ import storageRoutes from './routes/storage';
 import signaturesRoutes from './routes/signatures';
 import labelsRoutes from './routes/labels';
 import verifyRoutes from './routes/verify';
+import approvalsRoutes from './routes/approvals';
+import streamRoutes from './routes/stream';
 import debugRoutes from './routes/debug';
 import { reconcileInterruptedRanges } from './services/EventIndexingService';
 
@@ -86,6 +88,10 @@ app.route('/api', storageRoutes);
 app.route('/api', signaturesRoutes);
 app.route('/api', labelsRoutes);
 app.route('/api', verifyRoutes);
+app.route('/api', approvalsRoutes);
+// SSE block stream: mounted with the API sub-apps but self-manages its
+// response lifecycle (streamSSE + heartbeat + abort handling inside).
+app.route('/api', streamRoutes);
 // Debug routes expose raw SQL execution: mounted only when explicitly
 // opted in via ENABLE_DEBUG_API=1, and gated by requireAdminTokenIfConfigured
 // inside the sub-app (x-admin-token once ADMIN_TOKEN is set; open in a

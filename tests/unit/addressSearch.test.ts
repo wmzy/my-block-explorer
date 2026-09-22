@@ -63,6 +63,7 @@ describe('addressSearchSchema', () => {
     it('degrades junk values to undefined (derivation decides the tab)', () => {
       expect(parse('tab=transfers').tab).toBe('transfers');
       expect(parse('tab=transactions').tab).toBe('transactions');
+      expect(parse('tab=internal').tab).toBe('internal');
       expect(parse('tab=bogus').tab).toBeUndefined();
     });
   });
@@ -79,6 +80,7 @@ describe('effectiveActivityTab', () => {
   it('lets an explicit ?tab= always win', () => {
     expect(effectiveActivityTab('transactions', 5)).toBe('transactions');
     expect(effectiveActivityTab('transfers', 1)).toBe('transfers');
+    expect(effectiveActivityTab('internal', 5)).toBe('internal');
   });
 
   it('lands a deep-linked transfers page on the transfers tab', () => {

@@ -434,3 +434,53 @@ export function useTokenOverview(
 
   return active ? reads : undefined;
 }
+
+/** Settle-aware twin of `useTokenOverview`'s result (see the hook below). */
+export type TokenOverviewProbe = {
+  reads: TokenOverviewReads | undefined;
+  /**
+   * True once the first fetch RESOLVED — including a resolution of
+   * undefined, which per this module's honesty contract is a
+   * transport-level failure, NOT a "not a token" verdict.
+   */
+  settled: boolean;
+};
+
+// Stable inactive shape: the disabled hook must not hand consumers a
+// fresh object literal every render.
+const UNSETTLED_PROBE: TokenOverviewProbe = { reads: undefined, settled: false };
+
+/**
+ * Settle-aware variant of useTokenOverview for views that must branch on
+ * WHY the reads are absent: `!settled` = still reading, `settled` with
+ * all-null reads = the contract answered and has no token interface, and
+ * `settled` with undefined reads = transport-level failure (never a
+ * not-a-token verdict). Same fetch/cache/in-flight path underneath — a
+ * consumer of this hook and a consumer of useTokenOverview share one
+ * multicall per token. Additive: the address-page consumers keep their
+ * plain-reads signature unchanged.
+ */
+export function useTokenOverviewProbe(
+  chainId: number,
+  token: string,
+  enabled: boolean,
+): TokenOverviewProbe {
+  const active = enabled && token !== '' && chainId > 0;
+  const [probe, setProbe] = useState<TokenOverviewProbe>(UNSETTLED_PROBE);
+
+  useEffect(() => {
+    if (!active) return;
+    // A changed target must not briefly show the previous contract's
+    // settle — drop both fields so consumers see the honest loading state.
+    setProbe(UNSETTLED_PROBE);
+    let cancelled = false;
+    void fetchTokenOverview(chainId, token).then((resolved) => {
+      if (!cancelled) setProbe({ reads: resolved, settled: true });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [active, chainId, token]);
+
+  return active ? probe : UNSETTLED_PROBE;
+}

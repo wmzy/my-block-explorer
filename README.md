@@ -6,7 +6,7 @@ A self-hosted, **single-user** block explorer for EVM developers. Browse any vie
 
 Live frontend-only demo (no local backend — the API-dependent features need your own server): https://wmzy.github.io/my-block-explorer/
 
-> **Desktop-first.** The UI is built for desktop widths. Mobile/small-screen layouts are not adapted and the small-screen experience is not guaranteed; on a phone expect broken or cramped layouts rather than a responsive fallback.
+> **Mobile-adapted.** All pages stack responsively at ≤768px (tables scroll in-card, wide columns like the tx-list Method column collapse); deep views were browser-verified at 375px. Density is still tuned for desktop — report anything cramped.
 
 ## Features
 
@@ -14,6 +14,11 @@ Live frontend-only demo (no local backend — the API-dependent features need yo
 - **On-demand event indexing** — index specific block ranges for a contract, query decoded events with argument filters, export CSV
 - **Contract tools** — verified source & ABI (Sourcify → Etherscan fallback), storage layout + slot reads, `read`/`simulate`/`estimate-gas`, in-page Sourcify verification, `cast` command export from the Interact form
 - **Token pages (lightweight)** — ERC-20 detection on contract addresses (name/symbol/decimals/totalSupply via Multicall3), token-centric transfer scan (filter by emitting contract), and discovered top holders with explicit "may be incomplete" caveats
+- **Dedicated token view** — `/chain/:id/token/:address` assembles overview, transfers, top-10 holders distribution and mint/burn totals (all discovery-based, honestly caveated); self-guards EOAs and non-token contracts
+- **Address depth** — balance-over-time chart (anchored to the live RPC balance), NFT holdings aggregation (ERC-721 id sets / ERC-1155 deltas from the transfers scan), read-only approvals viewer (discovered spenders + live allowance reads; revoke via revoke.cash), and an Internal Txns tab (browser-side callTracer over the discovered window, bounded to the first 25 txs)
+- **Decoded method names in tx lists** — batched openchain selector resolution (one request per 25 rows); plain transfers stay honest "—"
+- **Charts** — `/chain/:id/charts`: blocks/day, block time, gas usage and gas prices over ~30 days, sampled client-side from RPC with per-chart source labels (never presented as full-chain indexer truth)
+- **Live blocks + watchlist** — SSE push of new blocks with silent fallback to polling; watch addresses (browser-local) get in-page + browser-notification matches against live blocks while the page is open
 - **Signature decoding** — unknown function selectors and event topic0s resolve through the openchain signature database (DuckDB-cached, 24h negative TTL) on transaction details
 - **Call traces** — `debug_traceTransaction` (callTracer) renders as an indented call tree on tx details when the RPC supports it, with honest "not supported by this RPC" degradation
 - **Address annotations** — private per-chain labels (backend-persisted, admin-gated writes) and CSV export of the discovered transaction list

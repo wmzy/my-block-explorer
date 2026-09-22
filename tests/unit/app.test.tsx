@@ -30,6 +30,8 @@ describe('route table', () => {
       '/chain/:chainId/blocks',
       '/chain/:chainId/transactions',
       '/chain/:chainId/contracts',
+      '/chain/:chainId/token/:address',
+      '/chain/:chainId/charts',
       '/chain/:chainId/block/:blockNumber',
       '/chain/:chainId/tx/:txHash',
       '/chain/:chainId/address/:address',

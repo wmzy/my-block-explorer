@@ -103,6 +103,8 @@ describe('GET /chains/:chainId/addresses/:address/transactions — page/limit pa
       20,
       0,
       undefined,
+      // Additive balance-history option (off without ?balanceHistory=1).
+      { includeBalancePoints: false },
     );
   });
 
@@ -135,6 +137,7 @@ describe('GET /chains/:chainId/addresses/:address/transactions — page/limit pa
       50,
       50,
       undefined,
+      { includeBalancePoints: false },
     );
   });
 
@@ -147,6 +150,7 @@ describe('GET /chains/:chainId/addresses/:address/transactions — page/limit pa
       10,
       0,
       undefined,
+      { includeBalancePoints: false },
     );
   });
 });

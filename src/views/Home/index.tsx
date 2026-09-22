@@ -3,7 +3,7 @@ import { css, cx } from '@linaria/core';
 import { Alert } from 'haze-ui';
 import { TypedLink, useMatched } from '@native-router/react';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
-import { Badge } from '@/components/ui/Badge';
+import { Badge, StatusBadge } from '@/components/ui/Badge';
 import TopNavigation from '@/components/TopNavigation';
 import { getChainInfo, getChainSymbol, getChainType } from '@/config/chains';
 import {
@@ -17,7 +17,8 @@ import { parseChainIdParam } from '@/utils/chainParam';
 import { PageContainer } from '@/components/ui/PageLayout';
 import { Button } from '@/components/ui/Button';
 import { ErrorState } from '@/components/ui/ErrorState';
-import { useLatestBlocksFeed, useLatestTransactionsFeed } from '@/services/homeFeed';
+import { useLatestBlocksFeed, useLatestTransactionsFeed, HOME_FEED_ITEMS } from '@/services/homeFeed';
+import { useLiveBlocks, mergeLiveBlocks } from '@/services/liveChain';
 import {
   buildSparklinePath,
   formatGwei,
@@ -29,6 +30,7 @@ import {
 import { describeBlockProducer } from '@/utils/blockRpcData';
 import { redirectReplace, rememberChainId } from './Landing';
 import { UnsupportedChainState } from './UnsupportedChainState';
+import Watchlist from './Watchlist';
 
 // --- styles ---
 
@@ -136,6 +138,15 @@ const listRow = css`
   justify-content: space-between;
   align-items: center;
   gap: var(--haze-space-2);
+
+  /* Mobile feeds get ~193px of body width next to the 40px row icon; the
+     hash link (~137px) plus the nowrap listMeta (relative time, "Block N")
+     cannot share one line, so the meta drops below the link instead of
+     overflowing into the card padding (same wrap approach as the hardened
+     tx/block detail header rows). */
+  @media (max-width: 768px) {
+    flex-wrap: wrap;
+  }
 `;
 
 const listPrimary = css`
@@ -186,6 +197,15 @@ const cardHeaderRow = css`
   display: flex;
   justify-content: space-between;
   align-items: center;
+
+  /* The gas header pairs the title with the nowrap block-window label
+     (~224px at 12px); at 375px the two exceed the ~245px header width, so
+     the label drops under the title instead of spilling into the card
+     padding. Feed headers carry only a title and are unaffected. */
+  @media (max-width: 768px) {
+    flex-wrap: wrap;
+    row-gap: var(--haze-space-1);
+  }
 `;
 
 // Message + Retry row inside the stale-data warning alert.
@@ -648,9 +668,28 @@ export default function Home() {
   // Gas history rides its own polled feed (60s cadence): a fee-history
   // failure must degrade only this panel, never the feeds above.
   const gasFeed = useGasHistory(feedChainId);
+  // Live block stream (SSE enhancement): while it delivers blocks the
+  // latest-blocks list gets fresher heads; the moment it fails it
+  // silently stops mattering (the polled feed is the source of truth).
+  const live = useLiveBlocks(feedChainId);
 
-  const blocks = blocksFeed.data?.blocks ?? [];
-  const latestBlockNumber = blocksFeed.data?.latestBlockNumber ?? null;
+  // Live-mode merge: pushed blocks join the polled list at the head —
+  // deduped by number, newest first, capped at the feed's list length.
+  // On 'polling' (no stream, stream error, browser without EventSource)
+  // the polled feed alone is rendered.
+  const polledBlocks = blocksFeed.data?.blocks ?? [];
+  const blocks = live.mode === 'live'
+    ? mergeLiveBlocks(polledBlocks, live.blocks, HOME_FEED_ITEMS)
+    : polledBlocks;
+  // Newest head across both channels: the stream leads when connected,
+  // but a catch-up poll that momentarily ran ahead still wins honestly.
+  const liveHead = live.mode === 'live' && live.blocks[0] !== undefined
+    ? BigInt(live.blocks[0].number)
+    : null;
+  const polledHead = blocksFeed.data?.latestBlockNumber ?? null;
+  const latestBlockNumber = liveHead !== null && (polledHead === null || liveHead > polledHead)
+    ? liveHead
+    : polledHead;
   const gasPrice = blocksFeed.data?.gasPrice ?? null;
   const transactions = transactionsFeed.data ?? [];
   // True while either feed is still on its FIRST fetch (polledQuery's
@@ -754,6 +793,11 @@ export default function Home() {
             own feed and hides entirely with the unsupported-chain return. */}
         <GasPanel feed={gasFeed} chainId={currentChainId} />
 
+        {/* Watchlist: per-browser tracked addresses matched against live
+            blocks while this page is open (storage in util/watchlist.ts;
+            the panel carries its own honest-scope copy). */}
+        <Watchlist chainId={feedChainId} live={live.mode === 'live'} />
+
         {/* Stale branch: fetch failing but old data still on screen */}
         {showStaleBanner && lastUpdatedAt !== undefined && (
           <Alert variant="warning">
@@ -787,6 +831,21 @@ export default function Home() {
               <CardHeader>
                 <div className={cardHeaderRow}>
                   <CardTitle>Latest Blocks</CardTitle>
+                  {/* Stream vs poll provenance for this list. 'Live' only
+                      once a pushed block has actually arrived — an
+                      open-but-silent stream still counts as polling. */}
+                  <span
+                    data-testid="live-mode-indicator"
+                    title={
+                      live.mode === 'live'
+                        ? 'New blocks arrive over a server-sent event stream as they are mined.'
+                        : 'Updating by polling every 12s — the live event stream is unavailable or not connected.'
+                    }
+                  >
+                    <StatusBadge status={live.mode === 'live' ? 'online' : 'pending'}>
+                      {live.mode === 'live' ? 'Live' : 'Polling'}
+                    </StatusBadge>
+                  </span>
                 </div>
               </CardHeader>
               <CardContent>

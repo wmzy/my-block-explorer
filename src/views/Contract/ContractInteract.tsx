@@ -31,6 +31,9 @@ const functionListStyles = css`
       font-weight: 600;
       color: #1a1a1a;
       margin-bottom: 4px;
+      /* Long signatures (nested tuple args) wrap instead of pushing the
+         card wide on a phone. */
+      word-break: break-all;
     }
 
     .function-type {
@@ -582,7 +585,14 @@ export function ContractInteract({
               ? 'Interacting via the diamond proxy address — the function list merges every facet\u2019s ABI.'
               : 'Interacting with implementation contract via proxy address.'}
           {!isDiamondProxy && contractSource.implementationAddress && (
-            <span style={{ marginLeft: '8px', fontFamily: 'monospace', fontSize: '12px' }}>
+            <span
+              style={{
+                marginLeft: '8px',
+                fontFamily: 'monospace',
+                fontSize: '12px',
+                wordBreak: 'break-all',
+              }}
+            >
               Implementation: {contractSource.implementationAddress}
             </span>
           )}

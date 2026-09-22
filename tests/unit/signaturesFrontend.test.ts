@@ -3,6 +3,7 @@
 // retries), and shape filtering so a malformed selector can never 400 the
 // batch. The HTTP layer is mocked — no network.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { renderHook, act, waitFor } from '@testing-library/react';
 
 const mocks = vi.hoisted(() => ({
   get: vi.fn(),
@@ -15,8 +16,11 @@ vi.mock('@/util/http', () => ({
 }));
 
 import {
+  MAX_SELECTORS_PER_REQUEST,
+  chunkSelectors,
   fetchSignatures,
   resetSignatureOutcomeCacheForTests,
+  useSignaturesBatched,
 } from '@/services/signatures';
 
 const FN_SELECTOR = '0xa9059cbb';
@@ -129,5 +133,102 @@ describe('fetchSignatures - outcome honesty', () => {
     expect(outcomes[FN_SELECTOR]).toEqual({ unavailable: true });
     expect(outcomes[EVENT_TOPIC0]).toEqual({ unavailable: true });
     expect(mocks.get).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('chunkSelectors - request-cap chunking', () => {
+  it('returns no chunks for an empty list', () => {
+    expect(chunkSelectors([], MAX_SELECTORS_PER_REQUEST)).toEqual([]);
+  });
+
+  it('keeps a list under the cap as one chunk, order preserved', () => {
+    expect(chunkSelectors(['a', 'b', 'c'], 25)).toEqual([['a', 'b', 'c']]);
+  });
+
+  it('splits at the cap: 26 items under a 25 cap become 25 + 1', () => {
+    const items = Array.from({ length: 26 }, (_, i) => `s${i}`);
+    const chunks = chunkSelectors(items, 25);
+
+    expect(chunks.map(chunk => chunk.length)).toEqual([25, 1]);
+    // Order is preserved across the split.
+    expect(chunks.flat()).toEqual(items);
+  });
+
+  it('clamps a cap below 1 to one item per chunk', () => {
+    expect(chunkSelectors(['a', 'b'], 0)).toEqual([['a'], ['b']]);
+  });
+});
+
+describe('useSignaturesBatched - one GET per ≤25-selector chunk', () => {
+  const selectorAt = (i: number): string => `0x${i.toString(16).padStart(8, '0')}`;
+
+  // Responder that resolves every function selector it is asked about.
+  const resolveAllAsked = () =>
+    mocks.get.mockImplementation(async (_url: string, params?: Record<string, string>) => {
+      const results: Record<string, unknown> = {};
+      for (const selector of (params?.function ?? '').split(',').filter(Boolean)) {
+        results[selector] = {
+          kind: 'function',
+          signatures: [`sig${selector.slice(2)}(uint256)`],
+          source: 'openchain',
+        };
+      }
+      return { results };
+    });
+
+  it('a 20-selector page is a single request covering the whole set', async () => {
+    resolveAllAsked();
+    const selectors = Array.from({ length: 20 }, (_, i) => selectorAt(i + 1));
+
+    const { result } = renderHook(() => useSignaturesBatched(selectors));
+
+    await waitFor(() => expect(Object.keys(result.current)).toHaveLength(20));
+    expect(mocks.get).toHaveBeenCalledTimes(1);
+    const [, params] = mocks.get.mock.calls[0];
+    expect(params?.function.split(',')).toHaveLength(20);
+  });
+
+  it('a 30-selector set splits into two requests, each within the 25 cap', async () => {
+    resolveAllAsked();
+    const selectors = Array.from({ length: 30 }, (_, i) => selectorAt(i + 100));
+
+    const { result } = renderHook(() => useSignaturesBatched(selectors));
+
+    await waitFor(() => expect(Object.keys(result.current)).toHaveLength(30));
+    expect(mocks.get).toHaveBeenCalledTimes(2);
+    const sizes = mocks.get.mock.calls.map(
+      call => (call[1]?.function ?? '').split(',').filter(Boolean).length,
+    );
+    expect(sizes.every(size => size > 0 && size <= MAX_SELECTORS_PER_REQUEST)).toBe(true);
+    expect(sizes.reduce((sum, size) => sum + size, 0)).toBe(30);
+    // The merged map carries every selector's resolved outcome.
+    const firstOutcome = result.current[selectors[0]];
+    const lastOutcome = result.current[selectors[29]];
+    expect('signatures' in firstOutcome ? firstOutcome.signatures[0] : undefined).toBe(
+      `sig${selectors[0].slice(2)}(uint256)`,
+    );
+    expect('signatures' in lastOutcome ? lastOutcome.signatures[0] : undefined).toBe(
+      `sig${selectors[29].slice(2)}(uint256)`,
+    );
+  });
+
+  it('a set beyond the 4-slot ceiling resolves only the first 100 selectors', async () => {
+    resolveAllAsked();
+    const selectors = Array.from({ length: 120 }, (_, i) => selectorAt(i + 1000));
+
+    const { result } = renderHook(() => useSignaturesBatched(selectors));
+
+    // 4 slots × 25 = 100 resolved; the remaining 20 stay absent (raw
+    // fallback in the UI) — the request count is never unbounded.
+    await waitFor(() => expect(Object.keys(result.current)).toHaveLength(100));
+    expect(mocks.get).toHaveBeenCalledTimes(4);
+  });
+
+  it('an empty selector set issues no request at all', async () => {
+    const { result } = renderHook(() => useSignaturesBatched([]));
+
+    await act(async () => {});
+    expect(mocks.get).not.toHaveBeenCalled();
+    expect(result.current).toEqual({});
   });
 });

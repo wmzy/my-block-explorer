@@ -116,6 +116,13 @@ app.get('/chains/:chainId/addresses/:address/transactions', addressTransactionsR
   const windowBlocks =
     rawWindow !== undefined && /^\d+$/.test(rawWindow) ? Number(rawWindow) : undefined;
 
+  // Additive opt-in (?balanceHistory=1): attaches `balancePoints` — the
+  // cumulative discovered-delta series computed from the SAME cached
+  // discovery set this endpoint paginates (see AddressService). Only the
+  // literal '1' opts in; any other value keeps the response payload
+  // byte-identical for existing consumers.
+  const includeBalanceHistory = c.req.query('balanceHistory') === '1';
+
   try {
     const result = await addressService.getAddressTransactions(
       chainId,
@@ -123,6 +130,7 @@ app.get('/chains/:chainId/addresses/:address/transactions', addressTransactionsR
       limit,
       offset,
       windowBlocks,
+      { includeBalancePoints: includeBalanceHistory },
     );
     c.header('X-Data-Source', result.method);
     c.header('X-Chain-Name', getChainName(chainId));
@@ -145,6 +153,14 @@ app.get('/chains/:chainId/addresses/:address/transactions', addressTransactionsR
       coverage: result.coverage,
       reason: result.reason,
       searchWindowBlocks: result.searchWindowBlocks,
+      ...(includeBalanceHistory
+        ? {
+            // Per-tx cumulative discovered deltas + the leading 0 anchor;
+            // count includes the anchor (discovered txs + 1 when non-empty).
+            balancePoints: result.balancePoints ?? [],
+            balancePointsCount: result.balancePoints?.length ?? 0,
+          }
+        : {}),
       timestamp: new Date().toISOString(),
     });
 

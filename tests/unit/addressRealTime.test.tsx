@@ -16,10 +16,30 @@ import {
   type RealTimeAddressData,
 } from '@/services/addressRealTime';
 import { getContractCode, getRealTimeAddressData } from '@/utils/realTimeData';
+import { useAddressInfo } from '@/services/addresses';
+import { classifyAddressType } from '@/views/Address/addressType';
+import { ApiError } from '@/util/apiError';
 
 // The service layer's only RPC dependency is utils/realTimeData; mocking it
 // keeps these tests on the query layer's observable behavior.
 vi.mock('@/utils/realTimeData');
+
+// The persistent channel's HTTP layer, mocked offline for the composition
+// tests below: every `get` rejects with the backend-unreachable ApiError
+// (status 0) the real service discovery failure produces. Everything else
+// (api clients, withSignal) stays real.
+vi.mock('@/util/http', async importOriginal => {
+  const actual = await importOriginal<typeof import('@/util/http')>();
+  // Imported inside the factory: vi.mock hoists above the file's imports,
+  // so an outer ApiError binding would be uninitialized here.
+  const { ApiError } = await import('@/util/apiError');
+  return {
+    ...actual,
+    get: vi.fn().mockRejectedValue(
+      new ApiError('Backend not connected — indexed data unavailable', 0),
+    ),
+  };
+});
 
 const mockedRealTime = vi.mocked(getRealTimeAddressData);
 const mockedGetCode = vi.mocked(getContractCode);
@@ -226,5 +246,103 @@ describe('useContractCode', () => {
     expect(second.result.current.data).toBe('0xdeadbeef');
     expect(second.result.current.loading).toBe(false);
     expect(mockedGetCode).toHaveBeenCalledTimes(1);
+  });
+
+  // The documented offline residual lived exactly here: viem folds a
+  // successful no-code read into undefined, so the EOA verdict collapsed
+  // into "not read" and the Type row stuck on Unknown with the backend
+  // down. The success path must keep '0x' (read, no code) apart from
+  // undefined (not read).
+  it('restores the 0x marker when viem folds a successful no-code read into undefined', async () => {
+    mockedGetCode.mockResolvedValue(undefined);
+    await expect(fetchContractCode(testChainId, testAddress)).resolves.toBe('0x');
+  });
+
+  it('passes deployed bytecode through untouched', async () => {
+    mockedGetCode.mockResolvedValue('0xdeadbeef');
+    await expect(fetchContractCode(testChainId, testAddress)).resolves.toBe('0xdeadbeef');
+  });
+
+  it('settles the restored EOA marker through the hook, not an unread undefined', async () => {
+    mockedGetCode.mockResolvedValue(undefined);
+    const { result } = renderHook(() => useContractCode(testChainId, testAddress));
+
+    await waitFor(() => expect(result.current.data).toBe('0x'));
+    expect(result.current.error).toBeUndefined();
+  });
+});
+
+// The two-channel composition behind the Overview Type row, exercised at
+// the service/hook level with BOTH channels real: the persistent channel's
+// HTTP layer rejects (backend offline — mocked via '@/util/http'), the RPC
+// channel resolves. The classification mirrors the view's exact
+// composition: an errored persistent channel contributes no verdict, and a
+// successful code read alone must decide EOA/Contract/Delegated — while
+// the persistent failure stays visible as its own state (never swallowed).
+function useOfflineTypeComposition() {
+  const info = useAddressInfo(testChainId, testAddress);
+  const code = useContractCode(testChainId, testAddress);
+  return {
+    infoError: info.error,
+    codeData: code.data,
+    codeError: code.error,
+    type: classifyAddressType({
+      persistentType:
+        info.error === undefined ? info.data?.address.isContract : undefined,
+      rpcCode: code.data,
+    }),
+  };
+}
+
+describe('offline composition (persistent channel down, RPC up)', () => {
+  beforeEach(() => {
+    clearAllCaches();
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    clearAllCaches();
+  });
+
+  it('a successful EOA read classifies EOA, not Unknown, while the backend failure stays exposed', async () => {
+    // viem's shape for a successful no-code read is undefined — the exact
+    // input that used to leave the offline Type row on "Unknown".
+    mockedGetCode.mockResolvedValue(undefined);
+    const { result } = renderHook(() => useOfflineTypeComposition());
+
+    await waitFor(() => expect(result.current.type).toBe('eoa'));
+    expect(result.current.codeData).toBe('0x');
+    expect(result.current.codeError).toBeUndefined();
+    // The persistent channel's failure surfaces as its own state.
+    expect(result.current.infoError).toBeInstanceOf(ApiError);
+    expect(result.current.infoError?.message).toBe(
+      'Backend not connected — indexed data unavailable',
+    );
+  });
+
+  it('a successful bytecode read classifies Contract', async () => {
+    mockedGetCode.mockResolvedValue('0x608060405234801561000f57600080fd5b50');
+    const { result } = renderHook(() => useOfflineTypeComposition());
+
+    await waitFor(() => expect(result.current.type).toBe('contract'));
+    expect(result.current.infoError).toBeInstanceOf(ApiError);
+  });
+
+  it('a 0xef0100 designator read classifies Delegated EOA (EIP-7702)', async () => {
+    const delegate = `0x${'ab'.repeat(20)}`;
+    mockedGetCode.mockResolvedValue(`0xef0100${delegate.slice(2)}`);
+    const { result } = renderHook(() => useOfflineTypeComposition());
+
+    await waitFor(() => expect(result.current.type).toBe('delegated-eoa'));
+    expect(result.current.infoError).toBeInstanceOf(ApiError);
+  });
+
+  it('a failed code read keeps Unknown honest (both channels down)', async () => {
+    mockedGetCode.mockRejectedValue(new Error('RPC read failed'));
+    const { result } = renderHook(() => useOfflineTypeComposition());
+
+    await waitFor(() => expect(result.current.codeError).toBeDefined());
+    expect(result.current.type).toBe('unknown');
+    expect(result.current.infoError).toBeInstanceOf(ApiError);
   });
 });

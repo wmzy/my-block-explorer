@@ -49,6 +49,19 @@ const routes = createRoutes({
       component: () => import('./Contracts/List'),
     },
     {
+      // Token lens over a contract address (self-guarding view: EOA /
+      // delegated EOA / non-token contracts render dedicated in-page
+      // cards, so no loader rejection is needed).
+      path: '/chain/:chainId/token/:address',
+      component: () => import('./Token'),
+    },
+    {
+      // Daily chain charts from client-side RPC sampling (no backend, no
+      // indexer claims — the page labels its own sampling basis).
+      path: '/chain/:chainId/charts',
+      component: () => import('./Charts'),
+    },
+    {
       path: '/chain/:chainId/block/:blockNumber',
       component: () => import('./Blocks/Detail'),
     },
@@ -149,12 +162,16 @@ export function deriveDocumentTitle(pathname: string, search: string): string {
       return `${chainName} Transactions`;
     case 'contracts':
       return `${chainName} Contracts`;
+    case 'charts':
+      return `${chainName} Charts`;
     case 'block':
       return segments[3] ? `Block #${segments[3]} · ${chainName}` : FALLBACK_TITLE;
     case 'tx':
       return segments[3] ? `Tx ${shortHash(segments[3])} · ${chainName}` : FALLBACK_TITLE;
     case 'address':
       return segments[3] ? `Address ${shortHash(segments[3])} · ${chainName}` : FALLBACK_TITLE;
+    case 'token':
+      return segments[3] ? `Token ${shortHash(segments[3])} · ${chainName}` : FALLBACK_TITLE;
     case 'contract':
       // The /events subpath shares the plain contract title.
       return segments[3] ? `Contract ${shortHash(segments[3])} · ${chainName}` : FALLBACK_TITLE;
@@ -163,11 +180,96 @@ export function deriveDocumentTitle(pathname: string, search: string): string {
   }
 }
 
-// Sets document.title per route. `useMatched` is NOT usable at this level:
-// the router provides the matched-route context only inside the resolved
-// view tree, so this follows ScrollRestoration's sanctioned pattern instead
-// — observe the router's own history (initial location + every
-// push/replace/pop) and derive the title from the bare location.
+// Share blurb for routes the title cannot describe alone (og:description /
+// twitter card source). Same bare-location derivation as the title: each
+// route family names its entity and chain; unknown shapes fall back to the
+// generic explorer blurb. A malformed chainId still keeps the family's
+// blurb with "the chain" in the noun slot — the family (tx/address/…) is
+// recognizable from the path alone, so a shared link keeps a meaningful
+// description instead of the generic fallback.
+const FALLBACK_DESCRIPTION =
+  'A modern blockchain explorer for Ethereum and compatible networks — blocks, transactions, addresses and contracts.';
+
+export function deriveMetaDescription(pathname: string, search: string): string {
+  const segments = pathname.split('/').filter(Boolean);
+
+  if (segments[0] === 'search') {
+    const chainParam = new URLSearchParams(search).get('chain');
+    const chainId = chainParam !== null ? Number.parseInt(chainParam, 10) : Number.NaN;
+    return Number.isFinite(chainId)
+      ? `Search blocks, transactions, addresses and contracts on ${getChainName(chainId)}.`
+      : 'Search blocks, transactions, addresses and contracts across chains.';
+  }
+
+  if (segments[0] !== 'chain' || segments.length < 2) return FALLBACK_DESCRIPTION;
+
+  const chainId = Number.parseInt(segments[1], 10);
+  const chainNoun = Number.isFinite(chainId) ? getChainName(chainId) : 'the chain';
+
+  switch (segments[2]) {
+    case undefined:
+      return `Explore ${chainNoun}: latest blocks, transactions, gas and chain stats.`;
+    case 'blocks':
+      return `Browse the latest blocks on ${chainNoun}.`;
+    case 'transactions':
+      return `Browse the latest transactions on ${chainNoun}.`;
+    case 'contracts':
+      return `Browse the explorer's cached contracts on ${chainNoun}.`;
+    case 'charts':
+      return `Daily chain charts for ${chainNoun} — blocks per day, block time, gas usage and gas prices (sampled from RPC).`;
+    case 'block':
+      return segments[3]
+        ? `View block #${segments[3]} on ${chainNoun} — transactions, gas used and more.`
+        : FALLBACK_DESCRIPTION;
+    case 'tx':
+      return segments[3]
+        ? `View transaction ${shortHash(segments[3])} on ${chainNoun} — block, gas, status and decoded calls.`
+        : FALLBACK_DESCRIPTION;
+    case 'address':
+      return segments[3]
+        ? `View address ${shortHash(segments[3])} on ${chainNoun} — balance, nonce, transactions and token holdings.`
+        : FALLBACK_DESCRIPTION;
+    case 'token':
+      return segments[3]
+        ? `View token ${shortHash(segments[3])} on ${chainNoun} — overview, transfers, holders and mint/burn totals.`
+        : FALLBACK_DESCRIPTION;
+    case 'contract':
+      // The /events subpath shares the plain contract blurb.
+      return segments[3]
+        ? `View contract ${shortHash(segments[3])} on ${chainNoun} — source, ABI, events and interaction.`
+        : FALLBACK_DESCRIPTION;
+    default:
+      return FALLBACK_DESCRIPTION;
+  }
+}
+
+// Idempotent meta-tag maintenance: finds the existing tag by its
+// property/name attribute, creates it once when missing, then keeps the
+// content in sync. Re-renders and re-syncs update in place — never a
+// duplicate tag. (Static crawlers that never execute JS still see only the
+// index.html head; these tags serve JS-executing clients and link
+// unfurlers that do.)
+const setMetaContent = (
+  attribute: 'name' | 'property',
+  key: string,
+  content: string,
+): void => {
+  const tag =
+    document.head.querySelector<HTMLMetaElement>(`meta[${attribute}="${key}"]`) ??
+    document.createElement('meta');
+  if (!tag.isConnected) {
+    tag.setAttribute(attribute, key);
+    document.head.appendChild(tag);
+  }
+  tag.setAttribute('content', content);
+};
+
+// Sets document.title and the share-card meta tags per route. `useMatched`
+// is NOT usable at this level: the router provides the matched-route
+// context only inside the resolved view tree, so this follows
+// ScrollRestoration's sanctioned pattern instead — observe the router's own
+// history (initial location + every push/replace/pop) and derive both the
+// title and the description from the bare location.
 // Exported for the harness test (mounted at the same Router-children
 // position as in App below).
 export function DocumentTitle() {
@@ -180,7 +282,16 @@ export function DocumentTitle() {
         router.baseUrl !== '' && pathname.startsWith(router.baseUrl)
           ? pathname.slice(router.baseUrl.length)
           : pathname;
-      document.title = deriveDocumentTitle(localPath, search);
+      const title = deriveDocumentTitle(localPath, search);
+      document.title = title;
+      setMetaContent('property', 'og:title', title);
+      setMetaContent(
+        'property',
+        'og:description',
+        deriveMetaDescription(localPath, search),
+      );
+      setMetaContent('property', 'og:type', 'website');
+      setMetaContent('name', 'twitter:card', 'summary');
     };
     sync();
     return router.history.listen(sync);

@@ -99,11 +99,19 @@ const TableContainer = styled.div`
   background: white;
   border-radius: 8px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-  overflow: hidden;
+  /* In-card touch scroller (DataTable mobile pattern): below the content
+     floor the table keeps its natural width and scrolls here instead of
+     clipping nowrap cells at phone widths. */
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
 `;
 
 const Table = styled.table`
   width: 100%;
+  /* Content defines the floor: the table never compresses its columns past
+     their natural width — narrow viewports scroll the container above. */
+  min-width: max-content;
   border-collapse: collapse;
   font-size: 14px;
 `;
@@ -200,6 +208,10 @@ const PaginationContainer = styled.div`
   padding: 16px;
   background: #f8fafc;
   border-top: 1px solid #e2e8f0;
+  /* Phone widths: page info and the controls row each fill a phone line —
+     wrap instead of hiding Next/Export behind the table's side pan. */
+  flex-wrap: wrap;
+  gap: 8px;
 `;
 
 const PaginationInfo = styled.div`
@@ -211,6 +223,7 @@ const PaginationControls = styled.div`
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
 `;
 
 const PaginationButton = styled.button<{ disabled?: boolean }>`

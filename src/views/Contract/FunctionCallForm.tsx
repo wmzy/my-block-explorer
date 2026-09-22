@@ -192,6 +192,9 @@ const functionErrorTitleStyles = css`
 const functionErrorContentStyles = css`
   font-size: 13px;
   color: #b71c1c;
+  /* Revert payloads can be one long hex run: wrap anywhere instead of
+     pushing the card wide. */
+  overflow-wrap: anywhere;
 `;
 
 const selectorStyles = css`

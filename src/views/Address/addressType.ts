@@ -41,9 +41,14 @@ export function delegationTarget(code: string | undefined): string | undefined {
 }
 
 export type AddressTypeInput = {
-  /** Persistent channel's isContract flag; undefined = no settled record. */
+  /** Persistent channel's isContract flag; undefined = no settled record (or the channel errored — an errored channel contributes no verdict). */
   persistentType?: boolean;
-  /** Live eth_getCode result ('0x' for plain EOAs); undefined = not read. */
+  /**
+   * Live eth_getCode result. '0x' = the read SUCCEEDED and the account
+   * carries no code (the realtime service restores '0x' where viem folds
+   * it into undefined); undefined = not read (gated args / never settled /
+   * failed — a failed read rejects the query, so data stays undefined).
+   */
   rpcCode?: string;
 };
 

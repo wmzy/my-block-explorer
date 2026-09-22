@@ -126,9 +126,12 @@ vi.mock('@/services/tokenTransfers', () => ({
 }));
 
 // EOAs arm no token probes; undefined reads = "not a token / unsettled",
-// so the Token Overview card stays out of these tests' way.
+// so the Token Overview card stays out of these tests' way. The approvals
+// section resolves token labels through useTokenMetadata — the loading
+// shape (undefined) keeps it out of the way the same way.
 vi.mock('@/services/tokenMetadata', () => ({
   useTokenOverview: () => undefined,
+  useTokenMetadata: () => undefined,
 }));
 
 vi.mock('@/utils/format', () => ({

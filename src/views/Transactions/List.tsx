@@ -22,18 +22,31 @@ import { redirectReplace } from '@/views/Home/Landing';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
 import { useLatestTransactions } from '@/services/chainRpc';
 import { useLatestBlocksFeed } from '@/services/homeFeed';
+import { useSignaturesBatched } from '@/services/signatures';
 import { txCursorFromBlock } from '@/utils/blockRpcData';
 import { formatNumber, formatRelativeTime, formatValue } from '@/utils/format';
+import {
+  TxMethodCell,
+  methodColumnStyle,
+  pageMethodSelectors,
+} from '@/views/Transactions/methodColumn';
 
 const LIMIT = 20;
 
 // Header row: the page title on the left, the Refresh control on the right
-// (re-anchors the walk at the live chain head).
+// (re-anchors the walk at the live chain head). At the established 768px
+// breakpoint the controls stack under the title (Contract header pattern)
+// instead of squeezing both onto one ~340px line.
 const listToolbar = css`
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
   gap: var(--haze-space-3);
+
+  @media (max-width: 768px) {
+    flex-direction: column;
+    align-items: stretch;
+  }
 `;
 
 // Staleness hint row rendered under the table (Blocks/List pattern): the
@@ -241,6 +254,14 @@ export default function TransactionsList() {
   const { data, loading, error, refetch } = query;
   const transactions = data?.transactions ?? [];
 
+  // Method-column enrichment: every distinct selector visible on the page
+  // resolves through ONE batched openchain lookup (the service chunks at
+  // the API's 25-selector cap; a 20-row page fits a single request), and
+  // the session memo makes paging back over a seen page free. While the
+  // batch is in flight the cells keep their raw fallbacks — the lookup
+  // enhances, never blocks.
+  const methodOutcomes = useSignaturesBatched(pageMethodSelectors(transactions));
+
   // A URL page beyond the walked depth (deep link or reload mid-walk) is
   // reached by walking: each loaded page's nextCursor extends the stack
   // until it covers the requested page. When the chain runs out first, the
@@ -395,7 +416,7 @@ export default function TransactionsList() {
           </div>
         )}
 
-        {loading && <TableSkeleton rows={10} cols={7} />}
+        {loading && <TableSkeleton rows={10} cols={8} />}
 
         {error && (
           <ErrorState
@@ -422,6 +443,7 @@ export default function TransactionsList() {
             <thead>
               <tr>
                 <th>Txn Hash</th>
+                <th className={methodColumnStyle}>Method</th>
                 <th>Block</th>
                 <th>Age</th>
                 <th>From</th>
@@ -439,6 +461,9 @@ export default function TransactionsList() {
                       truncated={formatHash(tx.hash)}
                       href={`/chain/${currentChainId}/tx/${tx.hash}`}
                     />
+                  </td>
+                  <td className={methodColumnStyle}>
+                    <TxMethodCell tx={tx} outcomes={methodOutcomes} />
                   </td>
                   <td>
                     {tx.blockNumber === null ? (

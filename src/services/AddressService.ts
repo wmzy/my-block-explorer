@@ -41,7 +41,7 @@ export type AddressInfo = PersistentAddressData & {
   lastQueried: Date;
 };
 
-type DiscoveredTransaction = {
+export type DiscoveredTransaction = {
   hash: string;
   blockNumber: bigint;
   fromAddress: string;
@@ -68,7 +68,70 @@ export type AddressTransactionsResult = {
   coverage: 'complete' | 'partial' | 'none';
   reason?: 'no-outgoing-transactions' | 'zero-balance' | 'search-failed';
   searchWindowBlocks?: number;
+  // Additive opt-in payload (?balanceHistory=1): per-block cumulative
+  // discovered-delta points computed from the FULL cached discovery list
+  // (never just the served page). Absent unless requested — existing
+  // consumers see a byte-identical shape.
+  balancePoints?: DiscoveredBalancePoint[];
 };
+
+// One step of the discovered balance series. Numeric fields are decimal
+// strings so BigInt exactness survives JSON. Timestamps are ISO-8601 UTC
+// (the block scan records new Date(blockTimestamp * 1000).toISOString()).
+export type DiscoveredBalancePoint = {
+  blockNumber: string;
+  timestamp: string;
+  // Running sum of signed native-value deltas (wei) from the oldest
+  // discovered transaction up to and including this one. The leading
+  // anchor point carries '0' — the discovered change BEFORE the oldest
+  // discovered transaction. The address's ABSOLUTE balance at that point
+  // is unknown from this scan (older activity may be undiscovered).
+  cumulativeValue: string;
+};
+
+/**
+ * Cumulative discovered-balance series for one address, computed from a
+ * discovered transaction list. Pure: any input ordering is normalized to
+ * newest→oldest (stable for same-block entries — intra-block order is
+ * discovery order, not consensus index order), then walked oldest→newest
+ * accumulating signed native-value deltas (+incoming, −outgoing;
+ * self-transfers net 0). The result is chronological (oldest first) and
+ * starts with the explicit 0 anchor at the oldest discovered transaction.
+ * Token transfers are excluded by construction: discovery scans raw
+ * native-value transactions only.
+ */
+export function computeDiscoveredBalancePoints(
+  transactions: readonly DiscoveredTransaction[],
+  address: string,
+): DiscoveredBalancePoint[] {
+  if (transactions.length === 0) return [];
+  const lowerAddr = address.toLowerCase();
+  const sorted = [...transactions].sort((a, b) =>
+    a.blockNumber > b.blockNumber ? -1 : a.blockNumber < b.blockNumber ? 1 : 0,
+  );
+  const oldest = sorted[sorted.length - 1];
+  const points: DiscoveredBalancePoint[] = [
+    {
+      blockNumber: String(oldest.blockNumber),
+      timestamp: oldest.timestamp,
+      cumulativeValue: '0',
+    },
+  ];
+  let cumulative = 0n;
+  for (let i = sorted.length - 1; i >= 0; i--) {
+    const tx = sorted[i];
+    let delta = 0n;
+    if (tx.fromAddress.toLowerCase() === lowerAddr) delta -= BigInt(tx.value);
+    if (tx.toAddress.toLowerCase() === lowerAddr) delta += BigInt(tx.value);
+    cumulative += delta;
+    points.push({
+      blockNumber: String(tx.blockNumber),
+      timestamp: tx.timestamp,
+      cumulativeValue: cumulative.toString(),
+    });
+  }
+  return points;
+}
 
 const SCAN_THRESHOLD = 64n;
 const MAX_RPC_CALLS = 200;
@@ -465,6 +528,7 @@ const createAddressService = (deps: AddressServiceDeps) => {
       limit = 20,
       offset = 0,
       windowBlocks?: number,
+      options?: { includeBalancePoints?: boolean },
     ): Promise<AddressTransactionsResult> => {
       // An explicit window is clamped into [1, MAX]; undefined stays
       // undefined so the txCount-tiered default range applies.
@@ -484,9 +548,15 @@ const createAddressService = (deps: AddressServiceDeps) => {
         logger.info(
           `Serving cached tx search for ${address} on chain ${chainId}`,
         );
+        // Points are computed from the cached FULL list on demand, so a
+        // chart request always agrees with the list served from the same
+        // cache entry.
         return {
           ...cached,
           transactions: cached.transactions.slice(offset, offset + limit),
+          ...(options?.includeBalancePoints
+            ? { balancePoints: computeDiscoveredBalancePoints(cached.transactions, address) }
+            : {}),
         };
       }
 
@@ -583,6 +653,9 @@ const createAddressService = (deps: AddressServiceDeps) => {
         return {
           ...result,
           transactions: result.transactions.slice(offset, offset + limit),
+          ...(options?.includeBalancePoints
+            ? { balancePoints: computeDiscoveredBalancePoints(result.transactions, address) }
+            : {}),
         };
       } catch (error) {
         logger.error({ err: error }, `Binary search failed for ${address}`);
@@ -592,6 +665,9 @@ const createAddressService = (deps: AddressServiceDeps) => {
           method: 'fallback',
           coverage: 'none',
           reason: 'search-failed',
+          // Shape consistency: a failed search discovered nothing, so the
+          // series is empty rather than absent.
+          ...(options?.includeBalancePoints ? { balancePoints: [] } : {}),
         };
       }
     },

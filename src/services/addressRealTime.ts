@@ -25,8 +25,10 @@ export type RealTimeAddressData = {
   lastUpdatedAt: number;
 };
 
-// viem's getCode resolves the deployed bytecode hex ('0x' for EOAs) or
-// undefined for an account without code.
+// viem's getCode resolves the deployed bytecode hex or undefined — for an
+// account WITHOUT code it folds the raw '0x' answer into undefined (see
+// fetchContractCode, which restores '0x' so a successful no-code read
+// stays distinguishable from "not read" at the consumers' boundary).
 export type ContractCode = Awaited<ReturnType<typeof getContractCode>>;
 
 // Gated fetches: invalid args resolve undefined without touching the RPC —
@@ -42,12 +44,20 @@ export async function fetchRealTimeAddressData(
   return { ...data, lastUpdatedAt: Date.now() };
 }
 
-export function fetchContractCode(
+export async function fetchContractCode(
   chainId: number,
   address: string,
 ): Promise<ContractCode | undefined> {
   if (!(chainId > 0) || address.length === 0) return Promise.resolve(undefined);
-  return getContractCode(chainId, address);
+  const code = await getContractCode(chainId, address);
+  // viem folds a successful no-code read ('0x') into undefined, which the
+  // type classifier reads as "not read". Restoring '0x' keeps the two
+  // states apart: undefined = not read (gated args / never settled), '0x'
+  // = the RPC answered and the account carries no code. The distinction
+  // is load-bearing offline — with the persistent channel errored, the
+  // code read alone classifies the address, and an EOA must not fall back
+  // to "Unknown" after a successful read (the documented offline residual).
+  return code ?? '0x';
 }
 
 // Live values change every block → default cache (5min) + default 2s

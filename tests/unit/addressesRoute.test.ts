@@ -56,6 +56,8 @@ describe('GET /chains/:chainId/addresses/:address/transactions — window param'
       20,
       0,
       10_000_000,
+      // Additive balance-history option (off without ?balanceHistory=1).
+      { includeBalancePoints: false },
     );
     const body = await res.json();
     expect(body.searchWindowBlocks).toBe(10_000_000);
@@ -71,6 +73,7 @@ describe('GET /chains/:chainId/addresses/:address/transactions — window param'
       20,
       0,
       undefined,
+      { includeBalancePoints: false },
     );
   });
 
@@ -82,6 +85,7 @@ describe('GET /chains/:chainId/addresses/:address/transactions — window param'
       20,
       0,
       undefined,
+      { includeBalancePoints: false },
     );
 
     await requestTx('?window=');
@@ -91,6 +95,7 @@ describe('GET /chains/:chainId/addresses/:address/transactions — window param'
       20,
       0,
       undefined,
+      { includeBalancePoints: false },
     );
   });
 
@@ -103,6 +108,7 @@ describe('GET /chains/:chainId/addresses/:address/transactions — window param'
       10,
       10,
       5_000_000,
+      { includeBalancePoints: false },
     );
   });
 

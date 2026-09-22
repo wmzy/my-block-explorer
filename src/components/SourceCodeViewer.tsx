@@ -32,6 +32,13 @@ const layoutStyles = css`
   min-height: 400px;
   width: 100%;
   overflow: hidden;
+
+  /* Phone widths: the fixed 260px file tree beside the code pane leaves the
+     code a sliver — stack the tree above the code instead. */
+  @media (max-width: 768px) {
+    flex-direction: column;
+    min-height: 0;
+  }
 `;
 
 const treeContainerStyles = css`
@@ -43,6 +50,17 @@ const treeContainerStyles = css`
   overflow-y: auto;
   padding: 8px;
   flex-shrink: 0;
+
+  /* Phone widths: full-width strip above the code pane, height-capped so a
+     long file tree never claims the viewport. */
+  @media (max-width: 768px) {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    max-height: 180px;
+    border-right: none;
+    border-bottom: 1px solid #e1e5e9;
+  }
 `;
 
 const treeWrapperStyles = css`
@@ -72,6 +90,14 @@ const codeBlockStyles = css`
   max-height: 500px;
   overflow-y: auto;
   margin: 0;
+
+  /* Phone widths: keep code formatting intact and scroll sideways inside
+     the block (the card never widens); wrapping is kept on wide screens
+     where lines fit. */
+  @media (max-width: 768px) {
+    white-space: pre;
+    padding: 12px;
+  }
 `;
 
 const copyButtonStyles = css`

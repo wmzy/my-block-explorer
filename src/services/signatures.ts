@@ -122,3 +122,51 @@ export function useSignatures(selectors: readonly string[]): Record<string, Sign
   const query = useSignaturesQuery([digest]);
   return query.data ?? EMPTY_OUTCOMES;
 }
+
+/** The /api/signatures cap: at most 25 selectors per request. */
+export const MAX_SELECTORS_PER_REQUEST = 25;
+
+// useSignaturesBatched calls useSignatures a FIXED number of times per
+// render (rules of hooks); 4 slots × 25 selectors = 100 selectors per
+// surface, far above any visible page (a 20-row list needs one slot).
+// Selectors beyond the ceiling stay unresolved and render their raw
+// fallback — requests are never unbounded.
+const MAX_BATCH_CHUNKS = 4;
+
+/**
+ * Pure: split a list into consecutive chunks of at most `maxPerChunk`
+ * items, order preserved. `maxPerChunk` below 1 is clamped to 1; an empty
+ * list yields no chunks.
+ */
+export function chunkSelectors<T>(items: readonly T[], maxPerChunk: number): T[][] {
+  const size = Math.max(1, Math.floor(maxPerChunk));
+  const chunks: T[][] = [];
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+  return chunks;
+}
+
+/**
+ * Resolve openchain signatures for a selector set that may exceed the
+ * API's 25-selector request cap: the set is chunked (≤ cap per chunk) and
+ * every chunk rides its own batched GET; the outcomes merge into one map.
+ * Chunks are disjoint by construction, so the merge never overwrites.
+ * Selectors resolved earlier in the session answer from the module memo
+ * with no request — paging back over an already-seen page is free.
+ */
+export function useSignaturesBatched(
+  selectors: readonly string[],
+): Record<string, SignatureOutcome> {
+  const chunks = chunkSelectors(
+    [...new Set(selectors.filter(selector => selector !== ''))],
+    MAX_SELECTORS_PER_REQUEST,
+  ).slice(0, MAX_BATCH_CHUNKS);
+  // Fixed hook-call count: unused slots resolve an empty set — the ''
+  // digest answers from the query cache without any request.
+  const chunk0 = useSignatures(chunks[0] ?? []);
+  const chunk1 = useSignatures(chunks[1] ?? []);
+  const chunk2 = useSignatures(chunks[2] ?? []);
+  const chunk3 = useSignatures(chunks[3] ?? []);
+  return { ...chunk0, ...chunk1, ...chunk2, ...chunk3 };
+}

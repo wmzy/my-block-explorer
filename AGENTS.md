@@ -383,9 +383,9 @@ pnpm typecheck           # tsc --noEmit
   state-invalid); rpc-config POST validates chainId/URL (`invalid_*`
   codes, response carries `action: created|replaced`); open-in-ide is
   opt-in admin-gated; docs/API.md auth section now matches the actual
-  two-tier gates. Known residual: with the backend offline the address
-  Type row can stay "Unknown" even though the RPC `eth_getCode` read
-  succeeded (SWR-layer run/abort semantics — honest, offline-only)
+  two-tier gates. (The offline-Type residual here was RESOLVED in the
+  2026-09-22 feature wave — real cause was viem folding a successful
+  '0x' getCode read into undefined, not SWR semantics)
 - **2026-09-20/21 PM-review fix wave (4 batches, 16 agents + integration)** —
   product-review findings fixed end-to-end (all verified: tsc/lint clean,
   full suite 103 files green, live browser smoke on Polygon+mainnet):
@@ -511,7 +511,68 @@ pnpm typecheck           # tsc --noEmit
   shifts hours by the machine TZ); drizzle migrations that are hand-written
   MUST get a meta snapshot or the next `db:generate` re-emits their diff
   (0006 lacked one → 0007 double-added implementation_addresses; fixed in
-  0007 with an explanatory comment). Known residuals: mobile is still
-  desktop-first outside tx/block detail pages (README documents this);
-  Sourcify panel rendering verified via jsdom suite + live API probes
+  0007 with an explanatory comment). Known residuals: ~~mobile is still
+  desktop-first outside tx/block detail pages~~ (RESOLVED in the
+  2026-09-22 wave — app-wide 375px pass); Sourcify panel rendering
+  verified via jsdom suite + live API probes
   (every random chain sample turned out verified)
+- **2026-09-22 PM-review gap wave (3 waves, 12 agents + integration)** —
+  competitor-gap features vs Etherscan/Blockscout/Otterscan, all
+  live-browser-smoked on Polygon (150 test files / 1956 tests green;
+  tsc clean; eslint 0 errors):
+  **Mobile parity** — the whole app is now 375px-clean (address/contract/
+  home/lists/header families stack at ≤768px, tables scroll in-card,
+  DataTable pagination wraps; tx list drops its Method column at mobile).
+  **Tx-list Method column** — batched openchain selector decode
+  (`useSignaturesBatched`: 25-Selectors/request chunks, fixed 4 hook slots,
+  session-level memo so paging back is free); honest display model: plain
+  transfer → "—", creation → "Contract Creation", unresolved → truncated
+  selector. **Token page** — `/chain/:id/token/:address` self-guarding
+  lens (EOA/7702/deployed-non-token each get a dedicated card; guards
+  reuse the two-tier checksum util); assembles Token Overview + real
+  TokenTransfers component (token mode, zero scan fork) + top-10 holders
+  bars + mint/burn aggregation (0x0 flows), all "discovered" caveats;
+  Address page Token Overview card links here. **Balance history** —
+  `?balanceHistory=1` additive fields on the transactions endpoint
+  (byte-identical without the literal `1`): chronological BigInt-exact
+  cumulative series over the cached discovered set, first point anchors
+  at 0 (pre-oldest-tx absolute balance unknowable); the card anchors the
+  series to the live RPC balance, rides the same ?window= cache as the
+  tx list. **NFT holdings** — per-contract 721 id-set / 1155 amount-delta
+  aggregation from the SAME first-page transfers scan (no refetch,
+  renders nothing when no NFT rows — clean absence); reuses the
+  useTokenMetas session cache. **Approvals viewer** — read-only
+  `GET .../addresses/:a/approvals` (owner-filtered Approval sweep reusing
+  TokenTransferService's chunk ladder/ceiling memory → distinct pairs →
+  Multicall3 allowance at head, 100-pair cap + truncated flag, ~60s cache,
+  10·3 rate bucket); revoke is an external revoke.cash link only — no
+  wallet plumbing; ApprovalSection renders after the Address overview.
+  **Internal Txns tab** — `?tab=internal` (additive enum; existing
+  deep-link inference byte-identical): browser-side callTracer over the
+  FIRST 25 discovered txs of the current window (same query key — no
+  refetch), 4-way concurrency, value/address-filtered flattened rows,
+  per-tx failures collapsed+listed, RPC-without-debug_* renders the
+  honest unsupported card. **Charts page** — `/chain/:id/charts` +
+  nav entry: blocks/day (day-boundary binary search), avg block time,
+  gas used, gas prices (chunked feeHistory with adaptive per-chain
+  ceiling) — all client-side sampled with per-chart source labels and a
+  page-level sampling disclaimer; gaps stay gaps; burnt fees honestly
+  skipped ("not available without full indexing"). **Live SSE +
+  watchlist** — `GET .../blocks/stream` (streamSSE, 1s head poll,
+  heartbeat, catch-up cap 10, error-event-then-close, 12·6 bucket);
+  Home merges live blocks with silent fallback to polling ("Live"/
+  "Polling" badge); Watchlist (localStorage `be:watchlist`, max 25,
+  two-tier validation) matches live blocks' tx from/to (bounded: one
+  block fetch per event, 500 txs, only when non-empty) → browser
+  Notification; copy states "not a background service". **OG/meta** —
+  DocumentTitle now also maintains og:title/og:description/twitter:card
+  via pure `deriveMetaDescription` (JS-executing clients only — no
+  prerender). **Residual fixed** — offline address Type: viem folds a
+  successful '0x' getCode into undefined; `fetchContractCode` now
+  returns `code ?? '0x'` so RPC-derived EOA/contract/7702 verdicts
+  render offline. New endpoints documented in docs/API.md. Known
+  residuals: OG tags need JS (no SSG); approvals/NFT/holders are
+  window-limited discoveries by design; charts are samples, not
+  indexer aggregates (burnt fees omitted). Tooling note: `pnpm vitest
+  run a.test.ts b.test.ts` ANDs the positional filters and silently
+  matches nothing — run one file per invocation

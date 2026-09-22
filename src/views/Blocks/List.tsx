@@ -23,12 +23,15 @@ import { formatNumber, formatRelativeTime } from '@/utils/format';
 const LIMIT = 20;
 
 // Header row: the page title on the left, the pagination Refresh control
-// on the right (re-anchors the walk at the live chain head).
+// on the right (re-anchors the walk at the live chain head). Wraps on
+// narrow screens so Refresh never squeezes the title into one cramped
+// row (same family as the transactions detail headerLinksRow).
 const listToolbar = css`
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
   gap: var(--haze-space-3);
+  flex-wrap: wrap;
 `;
 
 // PageHeader block + the testnet pill on one row.

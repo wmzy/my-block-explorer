@@ -42,12 +42,23 @@ const toolbarActions = css`
   display: flex;
   align-items: center;
   gap: var(--haze-space-2);
+
+  @media (max-width: 768px) {
+    flex-wrap: wrap;
+  }
 `;
 
 // The filter input keeps its own width; the Refresh button follows it.
+// On narrow screens the input owns a full-width row and Refresh wraps
+// below it — a full-width input is a better tap target than a ~240px
+// squeeze next to the button.
 const filterBox = css`
   width: 280px;
   max-width: 100%;
+
+  @media (max-width: 768px) {
+    width: 100%;
+  }
 `;
 
 // Honesty line under the toolbar: this lists the explorer's own cache,

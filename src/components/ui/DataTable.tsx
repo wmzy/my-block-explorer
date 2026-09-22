@@ -59,6 +59,15 @@ const paginationStyle = css`
   padding: var(--haze-space-4);
   border-top: 1px solid var(--haze-color-border);
   background: var(--haze-color-bg-subtle);
+
+  /* Narrow screens: the long page-info sentence ("Page 1 of 40 • At
+     least 1,000 transactions discovered") and the Prev/Next pair never
+     share one ~340px row — wrap (info line first, buttons beneath)
+     instead of overflowing the card. */
+  @media (max-width: 768px) {
+    flex-wrap: wrap;
+    gap: var(--haze-space-2);
+  }
 `;
 
 const pageInfoStyle = css`

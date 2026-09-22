@@ -14,6 +14,12 @@ export const cardStyles = css`
     margin: 0 0 16px 0;
     color: #1a1a1a;
   }
+
+  /* Phone widths: trade inner padding for content width — mono hashes and
+     code blocks get the room the gutters were wasting. */
+  @media (max-width: 768px) {
+    padding: 16px;
+  }
 `;
 
 export const loadingStyles = css`

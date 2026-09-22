@@ -235,6 +235,29 @@ vi.mock('@/utils/format', () => ({
   formatRelativeTime: () => '3 min ago',
 }));
 
+// The internal tab's REAL component fires browser RPC traces and has its
+// own focused test file; here it is stubbed so the page test pins the
+// plumbing — tab state, query gating, and the tx rows passed through.
+vi.mock('@/views/Address/InternalTxns', () => ({
+  default: (props: {
+    chainId: number;
+    address: string;
+    transactions: ReadonlyArray<{ hash: string }>;
+    txLoading: boolean;
+    txError: string | undefined;
+    txPage: number;
+  }) => (
+    <div
+      data-testid="internal-txns-stub"
+      data-chain={props.chainId}
+      data-address={props.address}
+      data-hashes={props.transactions.map(tx => tx.hash).join(',')}
+      data-loading={String(props.txLoading)}
+      data-page={String(props.txPage)}
+    />
+  ),
+}));
+
 const routes = createRoutes([
   {
     path: '/chain/:chainId/address/:address',
@@ -447,13 +470,13 @@ describe('Address view', () => {
 
   it('shows the indexing-scope notice at every coverage level', async () => {
     // Default (no coverage tags) case first. The notice still discloses
-    // internal txs as uncovered while pointing token transfers at their
-    // own tab.
+    // the external-only scope while pointing internal transfers and token
+    // transfers at their own tabs.
     renderPage();
     expect(
-      await screen.findByText(/Internal transactions are not indexed/),
+      await screen.findByText(/external transactions only/),
     ).toBeInTheDocument();
-    expect(screen.getByText(/native ETH activity only/)).toBeInTheDocument();
+    expect(screen.getByText(/Internal Txns tab/)).toBeInTheDocument();
     expect(screen.getByText(/Token Transfers tab/)).toBeInTheDocument();
   });
 
@@ -467,7 +490,7 @@ describe('Address view', () => {
     renderPage();
 
     expect(
-      await screen.findByText(/Internal transactions are not indexed/),
+      await screen.findByText(/external transactions only/),
     ).toBeInTheDocument();
   });
 
@@ -629,6 +652,37 @@ describe('Address view', () => {
 
     expect(await screen.findByRole('columnheader', { name: 'Value' })).toBeInTheDocument();
     expect(screen.queryByRole('columnheader', { name: 'Amount' })).not.toBeInTheDocument();
+  });
+
+  it('renders the Internal Txns tab from a ?tab=internal deep link', async () => {
+    renderPage(`/chain/1/address/${mocks.testAddress}?tab=internal`);
+
+    const tab = await screen.findByRole('button', { name: 'Internal Txns' });
+    expect(tab).toHaveAttribute('aria-pressed', 'true');
+
+    // The tab content receives the tx tab's OWN rows (no refetch of the
+    // heuristic scan) plus the page number for its scope label.
+    const stub = await screen.findByTestId('internal-txns-stub');
+    expect(stub).toHaveAttribute('data-chain', '1');
+    expect(stub).toHaveAttribute('data-address', mocks.testAddress);
+    expect(stub).toHaveAttribute('data-page', '1');
+    expect(stub).toHaveAttribute(
+      'data-hashes',
+      mocks.mockTransactions.map(tx => tx.hash).join(','),
+    );
+
+    // The tx table itself does not render on this tab.
+    expect(screen.queryByRole('columnheader', { name: 'Value' })).not.toBeInTheDocument();
+  });
+
+  it('arms the tx history scan for the internal tab — its traces read those rows', async () => {
+    // Complement of the transfers-only gate below: the internal tab
+    // consumes the discovered window, so the scan must run (chainId arg
+    // real, not the disabled-key 0).
+    renderPage(`/chain/1/address/${mocks.testAddress}?tab=internal`);
+
+    await screen.findByTestId('internal-txns-stub');
+    expect(mocks.txQueryArgs[0]).toBe(1);
   });
 
   it('marks the active tab button with aria-pressed', async () => {
