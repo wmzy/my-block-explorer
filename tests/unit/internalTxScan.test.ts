@@ -6,11 +6,16 @@
 import { describe, it, expect } from 'vitest';
 import {
   aggregateInternalTxns,
+  clampInternalTxDepth,
   flattenInternalTxTree,
   internalTxSummary,
   isInternalTxRow,
+  selectTraceScope,
   tracedScopeLabel,
+  DEFAULT_INTERNAL_TX_DEPTH,
   MAX_INTERNAL_TRACE_DEPTH,
+  MAX_INTERNAL_TX_DEPTH,
+  MIN_INTERNAL_TX_DEPTH,
   type InternalTxRow,
   type TraceTxOutcome,
 } from '@/utils/internalTxScan';
@@ -286,5 +291,56 @@ describe('labels', () => {
     expect(tracedScopeLabel(10, 3)).toBe(
       'Traced 10 discovered transactions (page 3 of the discovered set)',
     );
+  });
+});
+
+describe('trace depth bounds', () => {
+  it('exposes the shipped default depth (a UI contract, not an accident)', () => {
+    expect(DEFAULT_INTERNAL_TX_DEPTH).toBe(25);
+  });
+
+  it('clamps out-of-range depths into the supported range and keeps in-range ones', () => {
+    expect(clampInternalTxDepth(9)).toBe(MIN_INTERNAL_TX_DEPTH);
+    expect(clampInternalTxDepth(201)).toBe(MAX_INTERNAL_TX_DEPTH);
+    expect(clampInternalTxDepth(42)).toBe(42);
+    expect(clampInternalTxDepth(MIN_INTERNAL_TX_DEPTH)).toBe(MIN_INTERNAL_TX_DEPTH);
+    expect(clampInternalTxDepth(MAX_INTERNAL_TX_DEPTH)).toBe(MAX_INTERNAL_TX_DEPTH);
+  });
+
+  it('floors fractional depths before clamping (the fn is total)', () => {
+    expect(clampInternalTxDepth(41.9)).toBe(41);
+    expect(clampInternalTxDepth(0.5)).toBe(MIN_INTERNAL_TX_DEPTH);
+  });
+});
+
+describe('selectTraceScope', () => {
+  const txs = Array.from({ length: 10 }, (_, i) => ({ hash: `0x${i}` }));
+
+  it('traces only the first `depth` transactions and flags the cut honestly', () => {
+    const scope = selectTraceScope(txs, 3);
+    expect(scope.txs.map(tx => tx.hash)).toEqual(['0x0', '0x1', '0x2']);
+    expect(scope.truncated).toBe(true);
+  });
+
+  it('covers the whole window without truncation when depth reaches past it', () => {
+    const scope = selectTraceScope(txs, 10);
+    expect(scope.txs).toHaveLength(10);
+    expect(scope.truncated).toBe(false);
+    expect(selectTraceScope(txs, 200).truncated).toBe(false);
+  });
+
+  it('clamps nothing itself: an extreme depth takes the whole list, a sub-minimum one is honored', () => {
+    // The clamp into 10..200 is the URL layer's job — the scan honors
+    // exactly the depth it is handed (here: below the supported floor).
+    expect(selectTraceScope(txs, 5000)).toEqual({ txs, truncated: false });
+    expect(selectTraceScope(txs, 3).txs).toHaveLength(3);
+    expect(selectTraceScope(txs, 0)).toEqual({ txs: [], truncated: true });
+  });
+
+  it('returns a sliced copy, never a window into a list the caller may still mutate', () => {
+    const source = [{ hash: '0xa' }, { hash: '0xb' }];
+    const scope = selectTraceScope(source, 50);
+    scope.txs.pop();
+    expect(source).toHaveLength(2);
   });
 });

@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { css } from '@linaria/core';
+import type { Abi } from 'viem';
 import {
   parseContractFunctionsUnified,
   filterFunctions,
@@ -370,6 +371,22 @@ export function ContractInteract({
     return baseABI;
   };
 
+  // Parsed form of the target ABI for revert-data decoding of failed
+  // read/simulate/send calls (describeCallError/describeRevertedCall):
+  // both need a viem Abi, while the call plumbing above works on the raw
+  // JSON string. Unparseable/absent means no decoding — never a failure.
+  const decodeAbi = useMemo<Abi | undefined>(() => {
+    const raw = resolveTargetABI();
+    if (!raw) return undefined;
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      return Array.isArray(parsed) ? (parsed as Abi) : undefined;
+    } catch {
+      return undefined;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- recompute only when the ABI inputs behind resolveTargetABI change
+  }, [abiOverride, contractSource, facetMerge, contractTarget]);
+
   // Live field-level feedback: digits only (decimal block height); empty
   // input clears the override back to 'latest'.
   const handleGlobalBlockChange = (value: string) => {
@@ -463,8 +480,9 @@ export function ContractInteract({
     } catch (error) {
       console.error('Read function call failed:', error);
       // Faithful message: API/encode errors keep their text; only actual
-      // transport failures read as network errors.
-      setErrors(prev => ({ ...prev, [key]: describeCallError(error) }));
+      // transport failures read as network errors; a decodable revert
+      // payload leads with the decoded custom error.
+      setErrors(prev => ({ ...prev, [key]: describeCallError(error, decodeAbi) }));
     } finally {
       setLoadingStates(prev => ({ ...prev, [key]: false }));
     }
@@ -526,8 +544,9 @@ export function ContractInteract({
       }
     } catch (error) {
       console.error('Simulate function call failed:', error);
-      // Same faithful classification as the read path.
-      setErrors(prev => ({ ...prev, [key]: describeCallError(error) }));
+      // Same faithful classification as the read path, custom-error revert
+      // decoding included.
+      setErrors(prev => ({ ...prev, [key]: describeCallError(error, decodeAbi) }));
     } finally {
       setLoadingStates(prev => ({ ...prev, [key]: false }));
     }
@@ -701,6 +720,7 @@ export function ContractInteract({
               blockNumber={globalBlockNumber}
               contractAddress={contractAddress}
               walletProvider={walletProvider}
+              abi={decodeAbi}
             />
           ))}
         </div>

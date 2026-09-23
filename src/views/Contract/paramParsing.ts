@@ -19,7 +19,10 @@
 // then selects the shorter signature). An empty input followed by a filled
 // one is a field-level 'required' error.
 
+import type { Abi } from 'viem';
+
 import { ApiError } from '@/util/apiError';
+import { describeRevertData, extractRevertData } from '@/utils/txDecode';
 
 // A nested ABI component as viem models it: `name` is optional (unnamed
 // tuple members exist), so labels fall back to the position.
@@ -312,11 +315,34 @@ function unquote(element: string): string {
   return trimmed;
 }
 
+// Revert-data enrichment for read/simulate/send failures: walks the viem
+// BaseError cause chain for the raw 0x revert payload (the hex sits on a
+// `data` property of some inner error) and decodes it against the panel's
+// ABI. Only custom errors produce output — viem's own message already
+// carries Error(string)/Panic reasons, while custom errors surface as a
+// generic "The contract function 'x' reverted." dump when the raw error is
+// unavailable. Returns null when there is nothing to decode so callers
+// keep their existing classification untouched.
+export function describeRevertedCall(error: unknown, abi?: Abi): string | null {
+  if (abi === undefined || abi.length === 0) return null;
+  const data = extractRevertData(error);
+  if (data === null) return null;
+  const description = describeRevertData(data, abi);
+  if (description?.kind !== 'custom') return null;
+  return `ContractFunctionReverted: ${description.name}(${description.argsText})`;
+}
+
 // Faithful error rendering for read/simulate call failures: ApiError keeps
 // its status, encoder errors keep their message, and only transport
 // failures (fetch TypeErrors, viem's 'HTTP request failed') get the
-// network label. Nothing is collapsed into a generic message.
-export function describeCallError(error: unknown): string {
+// network label. Nothing is collapsed into a generic message. When an ABI
+// is supplied and the failure carries decodable revert data, the decoded
+// custom error leads instead — enrichment, not replacement: every other
+// path renders exactly as before.
+export function describeCallError(error: unknown, abi?: Abi): string {
+  const reverted = describeRevertedCall(error, abi);
+  if (reverted !== null) return reverted;
+
   if (error instanceof ApiError) {
     return `API error (${error.status}): ${error.message}`;
   }

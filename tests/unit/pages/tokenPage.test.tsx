@@ -519,9 +519,34 @@ describe('Token page', () => {
   it('renders Price and Market Cap via DefiLlama when the token is priced', async () => {
     resetPricesForTests();
     const id = `ethereum:${getAddress(mocks.testAddress)}`;
+    const now = Math.floor(Date.now() / 1000);
+    // Spot and history hit the same host: branch on the path so the
+    // Price History card settles ok too (Low $2.00 / High $3.50 /
+    // Latest $3.00 — all distinct from the spot $2.50 figures so
+    // getByText stays unambiguous).
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => ({ ok: true, json: async () => ({ coins: { [id]: { price: 2.5 } } }) })),
+      vi.fn(async (input: RequestInfo | URL) => {
+        if (String(input).includes('/chart/')) {
+          return {
+            ok: true,
+            json: async () => ({
+              coins: {
+                [id]: {
+                  symbol: 'MCK',
+                  confidence: 0.9,
+                  prices: [
+                    { timestamp: now - 5 * 86_400, price: 2 },
+                    { timestamp: now - 3 * 86_400, price: 3.5 },
+                    { timestamp: now - 1 * 86_400, price: 3 },
+                  ],
+                },
+              },
+            }),
+          };
+        }
+        return { ok: true, json: async () => ({ coins: { [id]: { price: 2.5 } } }) };
+      }),
     );
 
     try {
@@ -529,10 +554,21 @@ describe('Token page', () => {
 
       // Overview card: Price $2.50 and Market Cap 1,234,500 × $2.5 =
       // $3,086,250 → compact $3.09M, each with the provenance suffix.
-      expect(await screen.findByText('$2.50')).toBeInTheDocument();
+      expect(await screen.findAllByText('$2.50')).toHaveLength(2);
       expect(screen.getByText('$3.09M')).toBeInTheDocument();
-      expect(screen.getAllByText('via DefiLlama')).toHaveLength(2);
+      // Two provenance rows + the Price History card's source chip.
+      expect(screen.getAllByText('via DefiLlama')).toHaveLength(3);
       expect(screen.getAllByTitle(/Price via DefiLlama · updated \d+s ago/)).toHaveLength(2);
+      // Price History card (ok): Low/High/Latest facts from the series
+      // extent, plus the Live fact mirroring the spot snapshot ($2.50 —
+      // the second occurrence counted above).
+      expect(screen.getByText('Low')).toBeInTheDocument();
+      expect(screen.getByText('$2.00')).toBeInTheDocument();
+      expect(screen.getByText('High')).toBeInTheDocument();
+      expect(screen.getByText('$3.50')).toBeInTheDocument();
+      expect(screen.getByText('Latest')).toBeInTheDocument();
+      expect(screen.getByText('$3.00')).toBeInTheDocument();
+      expect(screen.getByText('Live')).toBeInTheDocument();
     } finally {
       vi.unstubAllGlobals();
       resetPricesForTests();
@@ -551,12 +587,18 @@ describe('Token page', () => {
         await screen.findByRole('heading', { level: 1, name: 'Mock Token (MCK)' }),
       ).toBeInTheDocument();
       await waitFor(() => {
-        // Settled-unavailable: zero USD nodes anywhere on the page.
+        // Settled-unavailable: zero USD figures anywhere on the page.
         expect(screen.queryByText(/\$/)).not.toBeInTheDocument();
       });
-      expect(screen.queryByText('via DefiLlama')).not.toBeInTheDocument();
+      // The OVERVIEW card's provenance rows are gone; the Price History
+      // card legitimately keeps its source chip while its own separate
+      // lookup settles unavailable with the reason on display.
+      expect(screen.queryAllByTitle(/Price via DefiLlama · updated/)).toHaveLength(0);
       expect(screen.queryByText('Price')).not.toBeInTheDocument();
       expect(screen.queryByText('Market Cap')).not.toBeInTheDocument();
+      expect(
+        await screen.findByText('Price history unavailable — request failed.'),
+      ).toBeInTheDocument();
     } finally {
       warn.mockRestore();
       vi.unstubAllGlobals();

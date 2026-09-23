@@ -4,10 +4,15 @@
 // omission rule, and faithful call-error classification.
 import { describe, it, expect } from 'vitest';
 
-import { parseFunctionArgs, describeCallError, paramLabel } from '@/views/Contract/paramParsing';
+import {
+  describeCallError,
+  describeRevertedCall,
+  paramLabel,
+  parseFunctionArgs,
+} from '@/views/Contract/paramParsing';
 import type { ParamDescriptor } from '@/views/Contract/paramParsing';
 import { ApiError } from '@/util/apiError';
-import { encodeFunctionData } from 'viem';
+import { encodeErrorResult, encodeFunctionData, parseAbi, type Abi } from 'viem';
 
 const ADDR_A = '0x1111111111111111111111111111111111111111';
 const ADDR_B = '0x2222222222222222222222222222222222222222';
@@ -273,5 +278,69 @@ describe('describeCallError', () => {
     expect(describeCallError('node rejected the call')).toBe('node rejected the call');
     expect(describeCallError(null)).toBe('Unknown error');
     expect(describeCallError({ weird: true })).toBe('Unknown error');
+  });
+});
+
+describe('describeRevertedCall / describeCallError revert enrichment', () => {
+  const errorAbi: Abi = parseAbi(['error InsufficientBalance(uint256 available, uint256 required)']);
+  const revertData = encodeErrorResult({
+    abi: errorAbi,
+    errorName: 'InsufficientBalance',
+    args: [100n, 250n],
+  });
+
+  // viem-shaped failure: ContractFunctionExecutionError wrapping inner
+  // causes whose `data` property carries the raw revert payload.
+  const viemRevertError = () => {
+    const inner = Object.assign(new Error('RPC error'), { data: revertData });
+    return new Error('The contract function "withdraw" reverted.', { cause: inner });
+  };
+
+  it('decodes a custom error from the cause chain with its args', () => {
+    expect(describeRevertedCall(viemRevertError(), errorAbi)).toBe(
+      'ContractFunctionReverted: InsufficientBalance(100, 250)',
+    );
+  });
+
+  it('leads describeCallError with the decoded custom error when an ABI is supplied', () => {
+    expect(describeCallError(viemRevertError(), errorAbi)).toBe(
+      'ContractFunctionReverted: InsufficientBalance(100, 250)',
+    );
+  });
+
+  it('keeps the single-argument classification byte-identical even with revert data present', () => {
+    // No ABI supplied: the exact pre-enrichment rendering.
+    expect(describeCallError(viemRevertError())).toBe(
+      'The contract function "withdraw" reverted.',
+    );
+    expect(describeRevertedCall(viemRevertError())).toBeNull();
+  });
+
+  it('keeps existing classification when the payload does not decode', () => {
+    // Unknown selector: nothing in the ABI matches — fall through.
+    const unknownData = `0xdeadbeef${'0'.repeat(120)}`;
+    const unknownError = () => {
+      const inner = Object.assign(new Error('RPC error'), { data: unknownData });
+      return new TypeError('fetch failed', { cause: inner });
+    };
+    expect(describeRevertedCall(unknownError(), errorAbi)).toBeNull();
+    // Transport classification still applies (enrichment, not replacement).
+    expect(describeCallError(unknownError(), errorAbi)).toBe('Network error: fetch failed');
+  });
+
+  it('ignores Error(string) payloads — viem messages already carry the reason', () => {
+    const body = Array.from(new TextEncoder().encode('Insufficient balance'), b =>
+      b.toString(16).padStart(2, '0'),
+    ).join('');
+    const word = (n: number) => n.toString(16).padStart(64, '0');
+    const errorStringData = `0x08c379a0${word(32)}${word(18)}${body.padEnd(64, '0')}`;
+    const error = () =>
+      Object.assign(new Error('The contract function "withdraw" reverted with reason: Insufficient balance'), {
+        data: errorStringData,
+      });
+    expect(describeRevertedCall(error(), errorAbi)).toBeNull();
+    expect(describeCallError(error(), errorAbi)).toBe(
+      'The contract function "withdraw" reverted with reason: Insufficient balance',
+    );
   });
 });

@@ -4,14 +4,21 @@
 // debug_traceTransaction); pinned states: auto-run on mount with bounded
 // concurrency, row rendering with the honest bounds label, the
 // not-supported-by-this-RPC info state with retry, per-tx failures listed
-// collapsed, source-list (loading/error/empty) states, and the refresh
-// signal re-trace.
+// collapsed, source-list (loading/error/empty) states, the refresh
+// signal re-trace, the URL-driven trace depth (?itDepth= deep links,
+// preset control writes, silent clamping) and the live trace progress
+// counter over the standing coverage line.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { MemoryRouter, createRoutes } from '@native-router/react';
+import { MemoryRouter, createRoutes, useSearchParams } from '@native-router/react';
 import '@testing-library/jest-dom';
 
-import InternalTxns, { TRACE_TX_LIMIT } from '@/views/Address/InternalTxns';
+import InternalTxns from '@/views/Address/InternalTxns';
+import {
+  DEFAULT_INTERNAL_TX_DEPTH,
+  MAX_INTERNAL_TX_DEPTH,
+  MIN_INTERNAL_TX_DEPTH,
+} from '@/utils/internalTxScan';
 import { createRpcClient } from '@/utils/realTimeData';
 
 vi.mock('@/utils/realTimeData', () => ({
@@ -79,6 +86,13 @@ const routes = createRoutes([
   { path: '/chain/:chainId/tx/:txHash', component: () => Promise.resolve(Blank) },
 ]);
 
+// Exposes the live search string so cases can pin ?itDepth= round-trips
+// through the URL (memory history is not window.location).
+function SearchProbe() {
+  const [params] = useSearchParams();
+  return <div data-testid="search-probe">{params.toString()}</div>;
+}
+
 const requestMock = vi.fn<(args: { method: string; params: unknown[] }) => Promise<unknown>>();
 
 const defaultProps = () => ({
@@ -90,9 +104,16 @@ const defaultProps = () => ({
   txPage: 1,
 });
 
-const renderTab = (props: Partial<ReturnType<typeof defaultProps>> = {}) =>
+const renderTab = (
+  props: Partial<ReturnType<typeof defaultProps>> = {},
+  search = '',
+) =>
   render(
-    <MemoryRouter routes={routes} initialEntries={['/chain/1/address/0xdeadbeef']}>
+    <MemoryRouter
+      routes={routes}
+      initialEntries={[`/chain/1/address/0xdeadbeef${search}`]}
+    >
+      <SearchProbe />
       <InternalTxns {...defaultProps()} {...props} />
     </MemoryRouter>,
   );
@@ -156,18 +177,18 @@ describe('InternalTxns', () => {
     expect(peak).toBeLessThanOrEqual(4);
   });
 
-  it('traces at most TRACE_TX_LIMIT transactions of the window', async () => {
+  it(`traces at most ${DEFAULT_INTERNAL_TX_DEPTH} transactions of the window`, async () => {
     requestMock.mockResolvedValue({ type: 'CALL', from: SENDER, to: TARGET, input: '0x' });
     renderTab({
-      transactions: Array.from({ length: TRACE_TX_LIMIT + 3 }, (_, i) => ({
+      transactions: Array.from({ length: DEFAULT_INTERNAL_TX_DEPTH + 3 }, (_, i) => ({
         hash: `0x${String(i).padStart(64, '0')}`,
       })),
     });
 
     const summary = await screen.findByTestId('internal-txns-summary');
-    expect(requestMock).toHaveBeenCalledTimes(TRACE_TX_LIMIT);
+    expect(requestMock).toHaveBeenCalledTimes(DEFAULT_INTERNAL_TX_DEPTH);
     expect(summary).toHaveTextContent(
-      `Traced the first ${TRACE_TX_LIMIT} discovered transactions`,
+      `Traced the first ${DEFAULT_INTERNAL_TX_DEPTH} discovered transactions`,
     );
   });
 
@@ -294,5 +315,149 @@ describe('InternalTxns', () => {
     await waitFor(() => {
       expect(onRefreshed).toHaveBeenCalled();
     });
+  });
+
+  it('shows the standing coverage line (depth cap included) in every phase', () => {
+    // Even while the source list is still loading — the explanation of
+    // why the list may be short never hides behind a collapsed section.
+    renderTab({ txLoading: true });
+
+    const note = screen.getByTestId('internal-txns-scope-note');
+    expect(note).toHaveTextContent(
+      `first ${DEFAULT_INTERNAL_TX_DEPTH.toLocaleString()} discovered transactions`,
+    );
+    expect(note).toHaveTextContent('not full indexing');
+    // The depth control sits beside the line, so the cap is adjustable.
+    expect(
+      screen.getByRole('combobox', { name: 'Trace depth' }),
+    ).toHaveValue(String(DEFAULT_INTERNAL_TX_DEPTH));
+  });
+
+  it('names the window length when it exceeds the depth (honest truncation)', async () => {
+    requestMock.mockResolvedValue({ type: 'CALL', from: SENDER, to: TARGET, input: '0x' });
+    renderTab({
+      transactions: Array.from({ length: DEFAULT_INTERNAL_TX_DEPTH + 3 }, (_, i) => ({
+        hash: `0x${String(i).padStart(64, '0')}`,
+      })),
+    });
+
+    await screen.findByTestId('internal-txns-summary');
+    expect(screen.getByTestId('internal-txns-scope-note')).toHaveTextContent(
+      `window holds ${(DEFAULT_INTERNAL_TX_DEPTH + 3).toLocaleString()}`,
+    );
+  });
+
+  it('seeds the trace depth from a shared ?itDepth= deep link', async () => {
+    requestMock.mockResolvedValue({ type: 'CALL', from: SENDER, to: TARGET, input: '0x' });
+    renderTab(
+      {
+        transactions: Array.from({ length: 60 }, (_, i) => ({
+          hash: `0x${String(i).padStart(64, '0')}`,
+        })),
+      },
+      '?itDepth=50',
+    );
+
+    const summary = await screen.findByTestId('internal-txns-summary');
+    expect(requestMock).toHaveBeenCalledTimes(50);
+    expect(summary).toHaveTextContent('Traced the first 50 discovered transactions');
+    expect(screen.getByRole('combobox', { name: 'Trace depth' })).toHaveValue('50');
+  });
+
+  it('silently clamps out-of-range ?itDepth= deep links into the supported range', async () => {
+    requestMock.mockResolvedValue({ type: 'CALL', from: SENDER, to: TARGET, input: '0x' });
+    renderTab(
+      {
+        transactions: Array.from({ length: MAX_INTERNAL_TX_DEPTH + 5 }, (_, i) => ({
+          hash: `0x${String(i).padStart(64, '0')}`,
+        })),
+      },
+      `?itDepth=${MAX_INTERNAL_TX_DEPTH + 99}`,
+    );
+
+    const summary = await screen.findByTestId('internal-txns-summary');
+    expect(requestMock).toHaveBeenCalledTimes(MAX_INTERNAL_TX_DEPTH);
+    expect(summary).toHaveTextContent(
+      `Traced the first ${MAX_INTERNAL_TX_DEPTH} discovered transactions`,
+    );
+  });
+
+  it('raises a sub-floor ?itDepth= deep link to the minimum depth', async () => {
+    requestMock.mockResolvedValue({ type: 'CALL', from: SENDER, to: TARGET, input: '0x' });
+    renderTab(
+      {
+        transactions: Array.from({ length: MIN_INTERNAL_TX_DEPTH + 2 }, (_, i) => ({
+          hash: `0x${String(i).padStart(64, '0')}`,
+        })),
+      },
+      '?itDepth=9',
+    );
+
+    const summary = await screen.findByTestId('internal-txns-summary');
+    expect(requestMock).toHaveBeenCalledTimes(MIN_INTERNAL_TX_DEPTH);
+    expect(summary).toHaveTextContent(
+      `Traced the first ${MIN_INTERNAL_TX_DEPTH} discovered transactions`,
+    );
+  });
+
+  it('offers a between-preset deep-linked depth as its own truthful option', () => {
+    requestMock.mockResolvedValue({ type: 'CALL', from: SENDER, to: TARGET, input: '0x' });
+    renderTab(
+      {
+        transactions: Array.from({ length: 60 }, (_, i) => ({
+          hash: `0x${String(i).padStart(64, '0')}`,
+        })),
+      },
+      '?itDepth=42',
+    );
+
+    const select = screen.getByRole('combobox', { name: 'Trace depth' });
+    expect(select).toHaveValue('42');
+    expect(screen.getByRole('option', { name: '42' })).toBeInTheDocument();
+  });
+
+  it('writes the chosen depth into ?itDepth= (pinned to the internal tab) and re-scans', async () => {
+    requestMock.mockResolvedValue({ type: 'CALL', from: SENDER, to: TARGET, input: '0x' });
+    renderTab({
+      transactions: Array.from({ length: 60 }, (_, i) => ({
+        hash: `0x${String(i).padStart(64, '0')}`,
+      })),
+    });
+
+    await screen.findByTestId('internal-txns-summary');
+    expect(requestMock).toHaveBeenCalledTimes(DEFAULT_INTERNAL_TX_DEPTH);
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Trace depth' }), {
+      target: { value: '50' },
+    });
+
+    // The depth rides the URL (shareable, refresh-stable) and the write
+    // keeps the deep link landing on this tab.
+    await waitFor(() =>
+      expect(screen.getByTestId('search-probe')).toHaveTextContent('itDepth=50'),
+    );
+    expect(screen.getByTestId('search-probe')).toHaveTextContent('tab=internal');
+
+    // A different slice is a different universe: the wider depth re-scans.
+    await waitFor(() => expect(requestMock).toHaveBeenCalledTimes(75));
+    const summary = await screen.findByTestId('internal-txns-summary');
+    expect(summary).toHaveTextContent('Traced the first 50 discovered transactions');
+  });
+
+  it('renders live trace progress as "Traced X of N transactions" while the pool settles', async () => {
+    let releaseSecond: (() => void) | undefined;
+    requestMock.mockImplementation(({ params }) => {
+      if (params[0] === TX_A) return Promise.resolve(traceWithInternalPayout());
+      return new Promise(resolve => {
+        releaseSecond = () => resolve(traceWithInternalPayout());
+      });
+    });
+    renderTab();
+
+    // First tx settled, second still tracing: the counter is live.
+    expect(await screen.findByText('Traced 1 of 2 transactions…')).toBeInTheDocument();
+
+    releaseSecond?.();
+    expect(await screen.findByTestId('internal-txns-summary')).toBeInTheDocument();
   });
 });

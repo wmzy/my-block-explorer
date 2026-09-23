@@ -81,7 +81,10 @@ export const balanceHistoryCache = createQueryCache<
 
 const queryBalanceHistory = bindQueryFn(fetchAddressBalanceHistory, balanceHistoryCache);
 
-const useBalanceHistoryQuery = createQueryHook({ queryFn: queryBalanceHistory });
+// Exported for the Overview card's SummaryStatsRow: same args → same
+// cache entry the BalanceHistory chart consumes, so the stats strip and
+// the chart can never disagree AND cost zero extra requests.
+export const useBalanceHistoryQuery = createQueryHook({ queryFn: queryBalanceHistory });
 
 export type BalanceHistoryProps = {
   /**
@@ -271,6 +274,8 @@ const EMPTY_DISCOVERY_COPY: Record<string, string> = {
 
 /**
  * Attach block times to the tx rows for the time-proportional x axis.
+ * Exported: the Overview card's SummaryStatsRow applies the same
+ * alignment so both surfaces show the same dates from one response.
  * The wire's tx rows carry NO timestamp (formatTransactionForApi only
  * converts Date instances while the discovered set stores ISO strings —
  * pre-existing behavior), but the backend balancePoints serialize theirs
@@ -280,7 +285,7 @@ const EMPTY_DISCOVERY_COPY: Record<string, string> = {
  * leaves the rows untouched — the chart then falls back to even index
  * spacing, never to a fabricated time.
  */
-function withBlockTimes(page: BalanceHistoryPage): BalanceTxInput[] {
+export function withBlockTimes(page: BalanceHistoryPage): BalanceTxInput[] {
   const points = page.balancePoints;
   if (
     points === undefined ||

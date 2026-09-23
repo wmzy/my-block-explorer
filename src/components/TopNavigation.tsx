@@ -1276,9 +1276,17 @@ export default function TopNavigation({
           </div>
 
           {/* In-app page links beside the logo, same navigation as the
-              logo above: the cached-contract directory and the daily
-              charts derived from live RPC sampling. */}
+              logo above: the node's pending pool, the cached-contract
+              directory and the daily charts derived from live RPC
+              sampling. */}
           <div className={navLinks}>
+            <button
+              type="button"
+              className={navLink}
+              onClick={() => goTo(`/chain/${currentChainId}/pending`)}
+            >
+              Pending
+            </button>
             <button
               type="button"
               className={navLink}

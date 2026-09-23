@@ -46,6 +46,8 @@ Exact versions in `package.json`.
 
 ## Getting started
 
+Three run modes, one frontend: (1) **RPC-only** — open the frontend, no backend, everything read live from public RPCs; (2) **local backend** — `npx my-block-explorer --port 8201` adds event indexing, labels and contract caching in local DuckDB files; (3) **shared deployment** — the same API on a reachable host with `ADMIN_TOKEN` and a CORS allowlist. Details: [docs/INSTALLATION.md](docs/INSTALLATION.md#three-ways-to-run-it).
+
 Requires Node.js 22+ and [pnpm](https://pnpm.io/) (the repo's node_modules layout breaks npm).
 
 ```bash

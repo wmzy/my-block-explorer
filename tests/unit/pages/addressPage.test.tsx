@@ -147,6 +147,20 @@ const mocks = vi.hoisted(() => {
     realTimeRefetch: () => undefined,
     // Reshaped per case by the ENS header tests.
     ens: { data: null as string | null, loading: false },
+    // The Overview's SummaryStatsRow consumes the balance-history page
+    // (same cached response the chart card renders). Undefined by
+    // default so every other describe keeps the card's pre-existing
+    // no-data rendering; the summary-stats describe seeds it per case.
+    balanceHistoryPage: undefined as
+    | {
+      chainId: number;
+      address: string;
+      transactions: typeof mockTransactions;
+      total: number;
+    }
+    | undefined,
+    balanceLoading: false,
+    balanceError: undefined as Error | undefined,
   };
 });
 
@@ -232,7 +246,11 @@ vi.mock('@/services/tokenTransfers', () => ({
   requestTokenTransfersRefresh: () => undefined,
 }));
 
-vi.mock('@/utils/format', () => ({
+// Partial: the real formatters stay (the Balance-over-time card renders
+// settled fixture data through formatNumber once the summary-stats
+// harness seeds its page — see the BalanceHistory partial mock below).
+vi.mock('@/utils/format', async importOriginal => ({
+  ...(await importOriginal<typeof import('@/utils/format')>()),
   formatRelativeTime: () => '3 min ago',
 }));
 
@@ -258,6 +276,25 @@ vi.mock('@/views/Address/InternalTxns', () => ({
     />
   ),
 }));
+
+// The Overview's SummaryStatsRow reads the balance-history page through
+// the SAME exported hook the real Balance-over-time card consumes (one
+// cache entry in production — zero extra requests). Only the hook is
+// stubbed here, per-case fixture data with no http layer; the card
+// component, withBlockTimes and everything else stay real.
+vi.mock('@/views/Address/BalanceHistory', async importOriginal => {
+  const actual = await importOriginal<typeof import('@/views/Address/BalanceHistory')>();
+  return {
+    ...actual,
+    useBalanceHistoryQuery: () => ({
+      data: mocks.balanceHistoryPage,
+      loading: mocks.balanceLoading,
+      fetching: false,
+      error: mocks.balanceError,
+      refetch: () => undefined,
+    }),
+  };
+});
 
 const routes = createRoutes([
   {
@@ -1305,5 +1342,65 @@ describe('Token Holdings (discovered) overview section', () => {
       vi.unstubAllGlobals();
       resetPricesForTests();
     }
+  });
+});
+
+// The Overview card's summary stats strip over the tx tab's discovered
+// rows: renders only when that set is non-empty, with the one-line
+// discovered-window caveat; an empty set → clean absence (never
+// zeros-as-facts). The fixture rows carry timestamps, so this pins the
+// strip's plumbing through the page (the lazy block-lookup fallback has
+// its own focused file: addressSummaryStatsRow.test.tsx).
+describe('Overview summary stats row', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mocks.addressTransactions = {
+      transactions: mocks.mockTransactions,
+      total: mocks.mockTransactions.length,
+    };
+    // The strip's data source is the balance-history page (widest cached
+    // slice of the discovered set — the same response the chart card
+    // renders in production).
+    mocks.balanceHistoryPage = {
+      chainId: 1,
+      address: mocks.testAddress,
+      transactions: mocks.mockTransactions,
+      total: mocks.mockTransactions.length,
+    };
+  });
+
+  it('renders FIRST/LAST SEEN and TOTAL IN/OUT over the discovered fixture, with the window caveat', async () => {
+    renderPage();
+    // The route component resolves async — wait for the strip's labels.
+    await screen.findByText('First Seen');
+    // Fixture: 1 ETH out at block 18,000,001 + 0.5 ETH in at 18,000,000,
+    // both rows timestamped (dates render — year presence keeps the
+    // assertion locale-agnostic).
+    expect(screen.getByText('First Seen').nextElementSibling).toHaveTextContent('2024');
+    expect(screen.getByText('Last Seen').nextElementSibling).toHaveTextContent('2024');
+    expect(screen.getByText('Total In').nextElementSibling).toHaveTextContent('0.5000 ETH');
+    expect(screen.getByText('Total Out').nextElementSibling).toHaveTextContent('1.0000 ETH');
+    // The discovered semantics ride with the strip — never lifetime
+    // totals; the fixture page carries the full set (2 of 2).
+    expect(screen.getByTestId('summary-stats-row')).toHaveTextContent(
+      /the 2 discovered transactions of the selected window/,
+    );
+  });
+
+  it('renders nothing when the discovered set is empty', async () => {
+    mocks.addressTransactions = { transactions: [], total: 0 };
+    mocks.balanceHistoryPage = {
+      chainId: 1,
+      address: mocks.testAddress,
+      transactions: [],
+      total: 0,
+    };
+    renderPage();
+    // Wait for the page itself (the Overview card) before pinning the
+    // strip's absence — an unmounted page proves nothing.
+    await screen.findByText('Overview');
+    expect(screen.queryByTestId('summary-stats-row')).not.toBeInTheDocument();
+    expect(screen.queryByText('Total In')).not.toBeInTheDocument();
+    expect(screen.queryByText('First Seen')).not.toBeInTheDocument();
   });
 });

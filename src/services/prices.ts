@@ -10,6 +10,12 @@
 // window per subject (no retry storms). Consumers render nothing when a
 // price is unavailable — USD is always an enhancement, never a fixture.
 //
+// A sibling historical layer (fetchPriceHistory, verified live
+// 2026-09-23) pulls daily series from the same host's /chart endpoint
+// with the same contract: never throws, settles every subject to ok or
+// unavailable-with-reason, caches each verdict (positive AND negative)
+// for one TTL window, and never fabricates a day the API did not answer.
+//
 // Both id maps below were verified live against the API on 2026-09-22
 // (one native-coin request + https://coins.llama.fi/chains for slugs).
 
@@ -103,6 +109,8 @@ const inflight = new Map<string, Promise<UsdPriceSnapshot | null>>();
 export function resetPricesForTests(): void {
   priceCache.clear();
   inflight.clear();
+  priceHistoryCache.clear();
+  priceHistoryInflight.clear();
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -423,4 +431,326 @@ export function gasTransferCostUsd(
   price: UsdPriceSnapshot,
 ): number {
   return ((gasUnits * gweiPrice) / 1e9) * price.usd;
+}
+
+// ---------------------------------------------------------------------------
+// Historical price series (DefiLlama /chart — same keyless, CORS-open
+// host as the spot layer, same honesty contract)
+// ---------------------------------------------------------------------------
+
+/** One usable historical observation: epoch-seconds timestamp + USD price. */
+export type PricePoint = { timestamp: number; price: number };
+
+/** Supported history windows in days; anything else normalizes to 30. */
+export type PriceHistoryWindow = 7 | 30;
+
+/** min/max over a series' prices — ready for axis scaling. */
+export type PriceHistoryExtent = { min: number; max: number };
+
+/** Why a history lookup settled unavailable — short, display-ready. */
+export type PriceHistoryReason =
+  | 'unmapped chain or token'
+  | 'request failed'
+  | 'malformed response'
+  | 'no usable points in the window';
+
+export type PriceHistoryOk = {
+  status: 'ok';
+  /** Usable observations inside the window: ascending, deduplicated. */
+  points: PricePoint[];
+  /** min/max over the points' prices. */
+  extent: PriceHistoryExtent;
+  /** API-reported coin symbol, when it answered with one. */
+  symbol: string | null;
+  /** API-reported confidence (0–1), when it answered with one. */
+  confidence: number | null;
+  /** The window's `start` request param (epoch seconds) — the grid origin. */
+  start: number;
+  windowDays: PriceHistoryWindow;
+};
+
+export type PriceHistoryOutcome = PriceHistoryOk | {
+  status: 'unavailable';
+  reason: PriceHistoryReason;
+};
+
+// A daily series moves slowly: a settled result (or settled-unavailable
+// verdict) is trusted far longer than a spot price before refetching.
+const PRICE_HISTORY_TTL_MS = 10 * 60 * 1000;
+
+const SECONDS_PER_DAY = 86_400;
+
+const CHART_API_URL = 'https://coins.llama.fi/chart/';
+
+type HistoryCacheEntry = { outcome: PriceHistoryOutcome; expires: number };
+
+// cache key (chain|token|window) → settled outcome + expiry. An
+// unavailable outcome is an honest negative exactly like the spot
+// layer's null snapshot: the verdict stands for one TTL window — one
+// attempt per window, no retry storms.
+const priceHistoryCache = new Map<string, HistoryCacheEntry>();
+
+// cache key → never-rejecting in-flight promise, shared by concurrent
+// callers for the same subject/window.
+const priceHistoryInflight = new Map<string, Promise<PriceHistoryOutcome>>();
+
+// Cache key per subject+window. The '' token slot is the native coin;
+// ids are derived deterministically from these same inputs, so the pair
+// is a faithful identity for the request.
+const historyKey = (
+  chainId: number,
+  tokenAddress: string | undefined,
+  windowDays: PriceHistoryWindow,
+): string => `${chainId}|${tokenAddress ?? ''}|${windowDays}`;
+
+const normalizeWindow = (windowDays: number): PriceHistoryWindow =>
+  windowDays === 7 ? 7 : 30;
+
+/**
+ * Pure: the /chart request URL for one coin id and window —
+ * `?start=now-windowDays*86400&span=windowDays&period=1d&searchWidth=600`
+ * (the contract probed live 2026-09-23).
+ */
+export function priceHistoryUrl(
+  coinId: string,
+  windowDays: PriceHistoryWindow,
+  nowEpochSeconds: number,
+): string {
+  const start = nowEpochSeconds - windowDays * SECONDS_PER_DAY;
+  return `${CHART_API_URL}${coinId}?start=${start}&span=${windowDays}&period=1d&searchWidth=600`;
+}
+
+// Narrows one raw prices[] entry to a usable point. Non-record entries,
+// non-finite/negative timestamps and zero/negative/non-finite prices are
+// dropped — never displayed, never interpolated over. Points before the
+// window start (searchWidth can pull pre-window neighbors) go too.
+const readPoint = (
+  entry: unknown,
+  windowStart: number,
+): PricePoint | null => {
+  if (!isRecord(entry)) return null;
+  const { timestamp, price } = entry;
+  if (
+    typeof timestamp !== 'number' ||
+    !Number.isFinite(timestamp) ||
+    timestamp < 0 ||
+    timestamp < windowStart
+  ) {
+    return null;
+  }
+  if (typeof price !== 'number' || !Number.isFinite(price) || price <= 0) {
+    return null;
+  }
+  return { timestamp, price };
+};
+
+/**
+ * Pure shaping of a raw /chart `prices` array: drop malformed entries and
+ * pre-window points, keep the LAST occurrence of a duplicated timestamp,
+ * sort ascending. Missing days are NEVER fabricated — the output carries
+ * exactly the observations the API answered with, so downstream renders
+ * gaps as gaps (the Charts page series contract: no zero-fill, no
+ * interpolation). A non-array input shapes to zero points. Returns the
+ * points plus their min/max extent for axis scaling; zero usable points
+ * → empty points and a null extent (the caller classifies that verdict).
+ */
+export function shapePriceHistory(
+  prices: unknown,
+  windowStartEpochSeconds: number,
+): { points: PricePoint[]; extent: PriceHistoryExtent | null } {
+  if (!Array.isArray(prices)) return { points: [], extent: null };
+  // Map insert-overwrite keeps the LAST duplicate; ascending order comes
+  // from the sort, not iteration order.
+  const byTimestamp = new Map<number, PricePoint>();
+  for (const entry of prices) {
+    const point = readPoint(entry, windowStartEpochSeconds);
+    if (point !== null) byTimestamp.set(point.timestamp, point);
+  }
+  const points = [...byTimestamp.values()].sort(
+    (a, b) => a.timestamp - b.timestamp,
+  );
+  let min = Infinity;
+  let max = -Infinity;
+  for (const { price } of points) {
+    if (price < min) min = price;
+    if (price > max) max = price;
+  }
+  return { points, extent: points.length > 0 ? { min, max } : null };
+}
+
+const readSymbol = (coin: Record<string, unknown>): string | null =>
+  typeof coin.symbol === 'string' && coin.symbol.length > 0
+    ? coin.symbol
+    : null;
+
+const readConfidence = (coin: Record<string, unknown>): number | null => {
+  const { confidence } = coin;
+  return (
+    typeof confidence === 'number' &&
+    Number.isFinite(confidence) &&
+    confidence >= 0 &&
+    confidence <= 1
+      ? confidence
+      : null
+  );
+};
+
+// One /chart GET for a single coin id. Classifies every failure mode
+// into the outcome taxonomy: HTTP/network/timeout → 'request failed'
+// (ONE console.warn, mirroring the spot chunk), a non-record coins
+// wrapper or non-array prices → 'malformed response', and an answered-
+// but-empty series → 'no usable points in the window'. Never throws.
+const runHistoryRequest = async (
+  coinId: string,
+  windowDays: PriceHistoryWindow,
+  nowEpochSeconds: number,
+): Promise<PriceHistoryOutcome> => {
+  const start = nowEpochSeconds - windowDays * SECONDS_PER_DAY;
+  let parsed: unknown;
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    try {
+      const response = await fetch(
+        priceHistoryUrl(coinId, windowDays, nowEpochSeconds),
+        { signal: controller.signal },
+      );
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      parsed = await response.json();
+    } finally {
+      clearTimeout(timer);
+    }
+  } catch (error) {
+    console.warn(
+      '[prices] DefiLlama chart request failed:',
+      error instanceof Error ? error.message : error,
+    );
+    return { status: 'unavailable', reason: 'request failed' };
+  }
+
+  const coins = isRecord(parsed) && isRecord(parsed.coins) ? parsed.coins : null;
+  const coin = coins !== null ? coins[coinId] : undefined;
+  if (!isRecord(coin)) {
+    // A missing/invalid coins wrapper is malformed transport; a valid
+    // wrapper without our key is the API's definitive "unknown coin".
+    return {
+      status: 'unavailable',
+      reason:
+        coins === null ? 'malformed response' : 'no usable points in the window',
+    };
+  }
+  if (!Array.isArray(coin.prices)) {
+    return { status: 'unavailable', reason: 'malformed response' };
+  }
+  const { points, extent } = shapePriceHistory(coin.prices, start);
+  if (extent === null) {
+    return { status: 'unavailable', reason: 'no usable points in the window' };
+  }
+  return {
+    status: 'ok',
+    points,
+    extent,
+    symbol: readSymbol(coin),
+    confidence: readConfidence(coin),
+    start,
+    windowDays,
+  };
+};
+
+/**
+ * Historical USD price series for a chain's native coin (no
+ * `tokenAddress`) or one ERC-20 (`tokenAddress`), over the last
+ * `windowDays` days (30 default; 7 supported — anything else normalizes
+ * to 30). Never throws: an unmapped chain/token settles without any
+ * network access, and HTTP failures, timeouts and malformed bodies all
+ * settle `{status:'unavailable', reason}`. Every verdict — ok AND
+ * unavailable — is cached for one ~10min TTL window (one attempt per
+ * window, mirroring the spot layer's negative entries); concurrent calls
+ * for the same subject/window share one in-flight request.
+ */
+export async function fetchPriceHistory(
+  chainId: number,
+  tokenAddress?: string,
+  windowDays: PriceHistoryWindow = 30,
+): Promise<PriceHistoryOutcome> {
+  const window = normalizeWindow(windowDays);
+  const key = historyKey(chainId, tokenAddress, window);
+  const nowMs = Date.now();
+
+  const cached = priceHistoryCache.get(key);
+  if (cached !== undefined && cached.expires > nowMs) return cached.outcome;
+
+  const existing = priceHistoryInflight.get(key);
+  if (existing !== undefined) return existing;
+
+  const coinId =
+    tokenAddress === undefined
+      ? nativePriceId(chainId)
+      : tokenPriceId(chainId, tokenAddress);
+
+  const settle = (outcome: PriceHistoryOutcome): PriceHistoryOutcome => {
+    priceHistoryCache.set(key, { outcome, expires: Date.now() + PRICE_HISTORY_TTL_MS });
+    priceHistoryInflight.delete(key);
+    return outcome;
+  };
+
+  const launched: Promise<PriceHistoryOutcome> =
+    coinId === null
+      ? Promise.resolve<PriceHistoryOutcome>({
+          status: 'unavailable',
+          reason: 'unmapped chain or token',
+        })
+      : runHistoryRequest(coinId, window, Math.floor(nowMs / 1000));
+  // runHistoryRequest never rejects by construction; the rejection arm
+  // only future-proofs the never-throw contract — and still caches its
+  // verdict so a pathological loop cannot become a retry storm.
+  const tracked = launched.then(settle, () =>
+    settle({ status: 'unavailable', reason: 'request failed' }),
+  );
+  priceHistoryInflight.set(key, tracked);
+  return tracked;
+}
+
+// Fresh cached outcome for a key, synchronously — the hook's no-flash
+// fast path for already-known series (e.g. toggling the window back).
+const peekHistory = (key: string): PriceHistoryOutcome | undefined => {
+  const entry = priceHistoryCache.get(key);
+  return entry !== undefined && entry.expires > Date.now()
+    ? entry.outcome
+    : undefined;
+};
+
+/**
+ * Price history for one subject through fetchPriceHistory, with this
+ * module's hook shape: `undefined` while in flight, then the settled
+ * outcome (ok or unavailable-with-reason — the unavailable state is a
+ * displayable fact here, not just null). A fresh cache entry surfaces
+ * synchronously on mount, so revisiting a known series never flashes
+ * the loading state.
+ */
+export function usePriceHistory(
+  chainId: number,
+  tokenAddress?: string,
+  windowDays: PriceHistoryWindow = 30,
+): PriceHistoryOutcome | undefined {
+  const key = historyKey(chainId, tokenAddress, normalizeWindow(windowDays));
+  const [outcome, setOutcome] = useState<PriceHistoryOutcome | undefined>(() =>
+    peekHistory(key),
+  );
+
+  useEffect(() => {
+    // Same-key cache hit: settle synchronously, zero network.
+    const cached = peekHistory(key);
+    setOutcome(cached);
+    if (cached !== undefined) return;
+    let cancelled = false;
+    void fetchPriceHistory(chainId, tokenAddress, windowDays).then((settled) => {
+      if (!cancelled) setOutcome(settled);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [key, chainId, tokenAddress, windowDays]);
+
+  return outcome;
 }

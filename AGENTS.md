@@ -671,3 +671,88 @@ pnpm typecheck           # tsc --noEmit
   (3) rate-limiter discipline while smoke-testing: the verify bucket
   (3/min) and add-chain bucket (5/min) refill fast — sleep ≥65s between
   probe rounds, and jq-on-response masks error bodies (capture raw).
+- **2026-09-23 PM-review gap wave (3 waves, 10 features + integration)** —
+  the PM review's P0/P1/P2 list landed via 10 concurrent-wave agents
+  (2 agents self-split service/UI slices via child tasks); all verified:
+  tsc 0 errors, eslint 0 errors, 966 changed-file tests green, live
+  browser smoke on Polygon (drpc archive) + mainnet:
+  **Mempool page (P0)** — `/chain/:id/pending` route + nav "Pending":
+  browser-side `txpool_content` via the shared client
+  (`services/txpool.ts`, 5s polled hook, account/nonce flattening,
+  200-entry display cap, no age column — pool entries carry no
+  timestamps); honest unsupported/failed states. Integration fix:
+  providers that ACCEPT the POST but never answer it (publicnode) held
+  the page in first-load skeleton forever → `fetchPendingTransactions`
+  races an 8s request budget and settles 'failed' + Retry (regression-
+  test pinned).
+  **Custom-error decode (P0)** — `utils/txDecode.ts` `describeRevertData
+  (data, abi?)` (Error(string)/Panic byte-identical zero-ABI, viem
+  decodeErrorResult for custom errors, BigInt-safe arg formatting,
+  never throws); tx Detail revert card + Interact read/simulate/send
+  failures decode `ContractFunctionReverted: Name(args)` when an ABI is
+  in hand; no-ABI paths byte-identical.
+  **CoverageBadge + copy tiering (P0)** — `components/ui/CoverageBadge
+  .tsx` (levels live|cached-immutable|discovered|sampled|partial|
+  unavailable, glyph+label distinguishable without color, ⓘ detail
+  disclosure) + pure derivations `views/Address/coverage.ts` /
+  `views/Contract/coverage.ts`; ONE page-level badge per page, per-card
+  long caveat paragraphs relocated into the badge detail (Address
+  offline/tx-tab copy shortened, tests re-pinned); mandatory one-line
+  chips stay inline.
+  **NFT metadata (P0)** — `services/nftMetadata.ts`: tokenURI/uri({id}
+  substitution) → ipfs→gateway rewrite → JSON fetch (5s budget) →
+  name/image; honesty split revert→'none' cached 1h vs transport→
+  'unavailable' uncached; `be:ipfsGateway` setting (default ipfs.io,
+  editable in the RPC/settings modal); NftHoldings renders 44px thumbs
+  for the first 24 items, shimmer/placeholder/chip states. (Live smoke
+  omitted: public RPCs silently cap getLogs — unit-covered 54 tests.)
+  **Address summary stats (P1)** — FIRST/LAST SEEN + TOTAL IN/OUT
+  (BigInt-exact, per-chain decimals) in the Overview card. Data source
+  is the **balance-history page** (same cache entry the chart consumes —
+  limit 50, backend-aligned timestamps; integration rewire: first
+  landing folded only the tx tab's 10-row page) via exported
+  `useBalanceHistoryQuery`/`withBlockTimes`; caveat discloses "newest N
+  of M discovered transactions" when the page caps the set; boundary
+  timestamps lazily resolve via ≤2 cached getBlock calls, else honest
+  "Block N".
+  **Token price history (P1)** — `services/prices.ts` historical layer:
+  DefiLlama `/chart/{coins}` (verified API shape), 30d/7d windows, 10min
+  TTL + negative caching + in-flight dedupe, gaps never zero-filled;
+  Token page sparkline card (Low/High/Latest/Live labels, real-timestamp
+  date labels, 'via DefiLlama' chip).
+  **Internal-txns depth (P1)** — `?itDepth=` rides the address search
+  schema (clamp 10–200, default 25; valid-but-out-of-range narrows to
+  the bound, structurally-invalid degrades to undefined); preset select
+  25/50/100/200 pins tab=internal on write; always-visible standing
+  scope line ("first N discovered transactions of the selected window —
+  not full indexing"); live "Traced X of N" progress. Clamp lives in
+  the URL layer, the scan honors the depth it is handed.
+  **Three-mode onboarding (P2)** — docs/INSTALLATION.md "Three ways to
+  run" (RPC-only / local full / shared deployment — every claim verified
+  against middleware/startupChecks code) + README blurb; GettingStarted
+  card holds the '/' Landing redirect ONLY while discovery settled
+  backend-less AND `be:onboardingDismissed` unset (no flash: Landing
+  otherwise redirects within one frame); Copy npx command; dismiss
+  persists.
+  **Cross-chain probe (P1)** — `services/crossChainProbe.ts`: balance+
+  getCode (code ?? '0x', 0xef0100 designator → contract) on first-5
+  POPULAR_CHAINS excluding current + registered customs, cap 6,
+  concurrency 3, 4s per-call budget; CrossChainStrip under the Overview
+  card: collapsed one-line summary ("probing failed on N"), chips =
+  TypedLinks to the address on that chain, USD only where DefiLlama
+  spot resolved (knowns sort before unknowns, never raw-unit
+  comparison), ✕ unavailable chips visible with reason.
+  **Integration fixes this wave**: crossChainProbe imported
+  `listCustomChains` from services/ (it lives in config/customChains —
+  sync registry; services/ only has the one-shot load) — fixed + test
+  mock moved; nftMetadata unknown→Record via type-guard predicate;
+  eslint auto-fix batch (quote-props etc.); SummaryStatsRow rewired to
+  the shared balance-history cache (see above); txpool request budget
+  (see above). RPC note: publicnode polygon lacks archive state
+  (binary-search eth_getBalance at old blocks → "historical state …
+  not available" → honest search-failed coverage); the stored polygon
+  rpc-config was switched to polygon.drpc.org during smoke (archive
+  capable — left in place).
+  **Deferred by PM decision**: i18n; full internal-txn indexing; DEX/
+  MEV surfaces; account/API-key systems (out of scope for the
+  lightweight-local positioning).

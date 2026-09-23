@@ -33,9 +33,10 @@ import type { RpcLogEntry, RpcTxAuthorization } from '@/utils/blockRpcData';
 import { createRpcClient } from '@/utils/realTimeData';
 import {
   decodeFunctionCall,
-  decodeRevertReason,
+  describeRevertData,
   extractRevertData,
   formatCallArgs,
+  formatRevertDescription,
   selectorOf,
 } from '@/utils/txDecode';
 import { formatGasPrice, formatNumber, formatTokenAmount, formatValue } from '@/utils/format';
@@ -281,7 +282,7 @@ function EventLogEntry({
 type RevertState =
   | { kind: 'idle' }
   | { kind: 'loading' }
-  | { kind: 'decoded'; reason: string }
+  | { kind: 'decoded'; reason: string; rawData: string }
   | { kind: 'unavailable' };
 
 // Persistent small print under the revert replay result, at the same visual
@@ -344,10 +345,15 @@ function RevertReasonCard({
         if (cancelled) return;
         const data = extractRevertData(err);
         if (data !== null) {
-          // Unknown payloads still shown raw; decodeRevertReason handles
-          // Error(string), Panic(uint256) and ABI custom errors.
-          const reason = decodeRevertReason(data, abi ?? undefined);
-          setState({ kind: 'decoded', reason: reason ?? data });
+          // Structured decode: Error(string)/Panic need no ABI; custom
+          // errors decode when the called contract has a verified ABI —
+          // rendering as ErrorName(args). Unknown payloads still show raw.
+          const description = describeRevertData(data, abi ?? undefined);
+          setState({
+            kind: 'decoded',
+            reason: description === null ? data : formatRevertDescription(description),
+            rawData: data,
+          });
         } else {
           setState({ kind: 'unavailable' });
         }
@@ -369,7 +375,13 @@ function RevertReasonCard({
       </CardHeader>
       <CardContent>
         {state.kind === 'loading' && <p>Checking revert reason…</p>}
-        {state.kind === 'decoded' && <span className={monoStyle}>{state.reason}</span>}
+        {state.kind === 'decoded' && (
+          // Raw payload stays one hover away — the decoded display never
+          // replaces the verbatim bytes the node returned.
+          <span className={monoStyle} title={state.rawData}>
+            {state.reason}
+          </span>
+        )}
         {state.kind === 'unavailable' && (
           <p>
             Reason unavailable — replaying the call did not return a revert string. Replays of older

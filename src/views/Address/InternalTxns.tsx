@@ -4,12 +4,12 @@
 // so the debug_traceTransaction calls run in the browser against the
 // chain's RPC (same client factory and honesty pattern as the tx detail
 // page's Call Trace card). Bounds are part of the surface: only the first
-// TRACE_TX_LIMIT discovered transactions are traced, with a small
-// parallel pool, and the scope label says so — completeness is never
-// implied (discovery itself is heuristic).
+// traceDepth discovered transactions are traced (?itDepth=, default 25,
+// clamped 10..200), with a small parallel pool, and the scope line says
+// so — completeness is never implied (discovery itself is heuristic).
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { css } from '@linaria/core';
-import { TypedLink } from '@native-router/react';
+import { TypedLink, useSearch, useSetSearch } from '@native-router/react';
 import { formatUnits } from 'viem';
 import { Alert } from 'haze-ui';
 import { getChainInfo, getChainSymbol } from '@/config/chains';
@@ -20,9 +20,13 @@ import {
   flattenInternalTxTree,
   internalTxSummary,
   tracedScopeLabel,
+  selectTraceScope,
+  DEFAULT_INTERNAL_TX_DEPTH,
+  MAX_INTERNAL_TX_DEPTH,
   type InternalTxAggregate,
   type TraceTxOutcome,
 } from '@/utils/internalTxScan';
+import { addressSearchSchema, effectiveInternalTxDepth } from '@/views/Address/search';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { Collapsible } from '@/components/ui/Collapsible';
@@ -31,19 +35,53 @@ import { DataTable, linkStyle } from '@/components/ui/DataTable';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { LoadingState } from '@/components/ui/LoadingState';
 
-// v1 bound: at most this many discovered transactions get traced per scan.
-export const TRACE_TX_LIMIT = 25;
+// Trace-depth presets offered by the compact control: the scan default,
+// two widenings, and the clamp ceiling. A deep-linked depth between
+// presets is not coerced — the control offers the actual (clamped)
+// value as an extra option so it never lies about the current setting.
+const DEPTH_PRESETS = [DEFAULT_INTERNAL_TX_DEPTH, 50, 100, MAX_INTERNAL_TX_DEPTH];
 
 // Bounded concurrency: ~4 parallel debug_traceTransaction calls keeps the
 // pool polite against public RPCs while making the scan finish in batches.
 const TRACE_CONCURRENCY = 4;
 
-// Static scope note at the head of the tab: renders in every phase so the
-// data's provenance (on-demand traces over a heuristic window, not an
-// indexer) is never hidden behind a loading state.
-const scopeNote = css`
+// Header row at the head of the tab: the standing scope line (renders in
+// every phase so the data's provenance — on-demand traces over a
+// heuristic window with a depth cap, not an indexer — is never hidden
+// behind a loading state or a collapsed section) beside the compact
+// depth control that widens the sweep.
+const tabHeader = css`
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--haze-space-2) var(--haze-space-3);
   margin: 0 0 var(--haze-space-3);
+`;
+
+const scopeNote = css`
+  margin: 0;
+  flex: 1 1 32rem;
   color: var(--haze-color-text-muted);
+  font-size: var(--haze-text-xs);
+`;
+
+// Compact depth control: a labeled native select over the presets.
+const depthControl = css`
+  margin: 0;
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--haze-space-2);
+  font-size: var(--haze-text-xs);
+  color: var(--haze-color-text-muted);
+  white-space: nowrap;
+`;
+
+const depthSelect = css`
+  padding: var(--haze-space-1) var(--haze-space-2);
+  border: 1px solid var(--haze-color-border);
+  border-radius: var(--haze-radius-lg);
+  background: var(--haze-color-bg);
+  color: var(--haze-color-text);
   font-size: var(--haze-text-xs);
 `;
 
@@ -208,11 +246,31 @@ export default function InternalTxns({
   refreshSignal = 0,
   onRefreshed,
 }: InternalTxnsProps) {
-  // v1 bound applies before anything else: the first TRACE_TX_LIMIT
-  // transactions of the window are the scan's whole universe.
-  const tracedTxs = useMemo(
-    () => transactions.slice(0, TRACE_TX_LIMIT),
-    [transactions],
+  // Trace depth rides ?itDepth= through the shared address-page schema:
+  // deep-linkable, refresh/share-stable, and never carried across to a
+  // different address's URL. An explicit valid value wins (clamped into
+  // 10..200); absent/malformed is the scan default. URL-driven, never
+  // local state — same contract as the transfers tab's ?ttWindow=.
+  const setSearch = useSetSearch(addressSearchSchema);
+  const { itDepth: itDepthParam } = useSearch(addressSearchSchema);
+  const traceDepth = effectiveInternalTxDepth(itDepthParam);
+  const setTraceDepth = (next: number) => {
+    // Pins ?tab=internal (this component only renders there, so its URL
+    // writes must keep the deep link landing on this tab) and pushes a
+    // history entry, so back/forward steps between depths.
+    void setSearch(prev => ({
+      ...prev,
+      tab: 'internal',
+      itDepth: String(next),
+    }));
+  };
+
+  // The depth bound applies before anything else: the first traceDepth
+  // transactions of the window are the scan's whole universe (pure
+  // selection in internalTxScan — truncation is knowable without RPC).
+  const { txs: tracedTxs, truncated: windowDeeperThanTrace } = useMemo(
+    () => selectTraceScope(transactions, traceDepth),
+    [transactions, traceDepth],
   );
   const traceKey = useMemo(() => tracedTxs.map(tx => tx.hash).join('|'), [tracedTxs]);
 
@@ -272,13 +330,40 @@ export default function InternalTxns({
     void runScan();
   };
 
+  // Presets, plus the actual (clamped) depth when a shared deep link sits
+  // between them — the select always shows the truth.
+  const depthOptions = DEPTH_PRESETS.includes(traceDepth)
+    ? DEPTH_PRESETS
+    : [...DEPTH_PRESETS, traceDepth].sort((a, b) => a - b);
+
   return (
     <div data-testid="internal-txns">
-      <p className={scopeNote}>
-        Internal transfers are traced on demand with{' '}
-        <code>debug_traceTransaction</code> over the discovered transaction
-        window — they are not indexed, and discovery itself is heuristic.
-      </p>
+      <div className={tabHeader}>
+        <p className={scopeNote} data-testid="internal-txns-scope-note">
+          Internal transfers are traced on demand with{' '}
+          <code>debug_traceTransaction</code> over the first{' '}
+          {traceDepth.toLocaleString()} discovered transactions of the
+          selected window{windowDeeperThanTrace
+            ? ` (the window holds ${transactions.length.toLocaleString()} — more than the depth covers)`
+            : ''}{' '}
+          — not full indexing, and discovery itself is heuristic.
+        </p>
+        <label className={depthControl}>
+          Trace depth
+          <select
+            data-testid="internal-tx-depth"
+            className={depthSelect}
+            value={String(traceDepth)}
+            onChange={e => setTraceDepth(Number(e.target.value))}
+          >
+            {depthOptions.map(option => (
+              <option key={option} value={String(option)}>
+                {option.toLocaleString()}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
 
       {txLoading && <LoadingState message="Scanning recent chain history..." />}
 
@@ -298,7 +383,7 @@ export default function InternalTxns({
 
       {sourceReady && progress !== null && aggregate === null && (
         <LoadingState
-          message={`Tracing internal calls (${progress.settled}/${progress.total} transactions)...`}
+          message={`Traced ${progress.settled.toLocaleString()} of ${progress.total.toLocaleString()} transactions…`}
         />
       )}
 

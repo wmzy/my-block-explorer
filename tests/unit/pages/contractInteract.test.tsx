@@ -8,6 +8,7 @@
 // on write result cards.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { encodeErrorResult, getAddress, parseAbi } from 'viem';
 
 import { ContractInteract } from '@/views/Contract/ContractInteract';
 import { readContract, simulateContract } from '@/utils/contractInteraction';
@@ -446,5 +447,62 @@ describe('ContractInteract same-name overloads', () => {
     expect(screen.getByText('uint-result')).toBeInTheDocument();
     // Two separate result cards, not one shared slot.
     expect(screen.getAllByText('Result:')).toHaveLength(2);
+  });
+});
+
+describe('ContractInteract revert decoding', () => {
+  // Read surface whose ABI also declares the custom error the RPC revert
+  // carries — both the function list and the error decoder consume it.
+  const readErrorAbi = parseAbi([
+    'function owner() view returns (address)',
+    'error Blacklisted(address account)',
+  ]);
+  const READ_ERROR_ABI = JSON.stringify(readErrorAbi);
+  const blacklistData = encodeErrorResult({
+    abi: readErrorAbi,
+    errorName: 'Blacklisted',
+    args: [PROXY_ADDRESS],
+  });
+
+  it('decodes a custom-error revert of a failed query inline', async () => {
+    // viem-shaped failure: the wrapper threw (instead of answering
+    // {success:false}) with the raw revert payload on an inner cause.
+    vi.mocked(readContract).mockRejectedValue(
+      new Error('The contract function "owner" reverted.', {
+        cause: Object.assign(new Error('RPC error'), { data: blacklistData }),
+      }),
+    );
+
+    renderInteract({ contractSource: simpleSource(READ_ERROR_ABI) });
+    expect(await screen.findByText('owner')).toBeInTheDocument();
+
+    expandFunction(/owner/);
+    fireEvent.click(screen.getByRole('button', { name: 'Query' }));
+
+    // The decoded custom error leads the inline error card, args formatted
+    // (address checksummed).
+    expect(
+      await screen.findByText(`ContractFunctionReverted: Blacklisted(${getAddress(PROXY_ADDRESS)})`),
+    ).toBeInTheDocument();
+  });
+
+  it('keeps the verbatim message when the revert payload matches no ABI error', async () => {
+    const undecodable = `0xdeadbeef${'0'.repeat(120)}`;
+    vi.mocked(readContract).mockRejectedValue(
+      new Error('The contract function "owner" reverted.', {
+        cause: Object.assign(new Error('RPC error'), { data: undecodable }),
+      }),
+    );
+
+    renderInteract({ contractSource: simpleSource(READ_ERROR_ABI) });
+    expect(await screen.findByText('owner')).toBeInTheDocument();
+
+    expandFunction(/owner/);
+    fireEvent.click(screen.getByRole('button', { name: 'Query' }));
+
+    expect(
+      await screen.findByText('The contract function "owner" reverted.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/ContractFunctionReverted/)).not.toBeInTheDocument();
   });
 });

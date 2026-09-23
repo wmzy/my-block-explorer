@@ -11,7 +11,7 @@
 // An EOA / non-token contract landing here is a fact, not a failure
 // (RouterError's not_a_contract precedent, as an in-page card): the view
 // self-guards, so the route needs NO loader — see NotATokenContractState.
-import { useMemo, type ReactNode } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { css, cx } from '@linaria/core';
 import { TypedLink, useMatched, useSearch } from '@native-router/react';
 import { navigate } from '@native-router/core';
@@ -28,11 +28,27 @@ import { LoadingState } from '@/components/ui/LoadingState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Badge } from '@/components/ui/Badge';
 import { CopyableHash } from '@/components/ui/CopyableHash';
-import { UsdValue } from '@/components/ui/UsdValue';
+import { UsdValue, formatUsd } from '@/components/ui/UsdValue';
 import { useContractCode } from '@/services/addressRealTime';
 import { useTokenOverviewProbe } from '@/services/tokenMetadata';
-import { tokenAmountToUsd, useTokenUsdPrice } from '@/services/prices';
+import {
+  tokenAmountToUsd,
+  usePriceHistory,
+  useTokenUsdPrice,
+  type PriceHistoryOk,
+  type PriceHistoryWindow,
+  type UsdPriceSnapshot,
+} from '@/services/prices';
 import { useTokenTransfers } from '@/services/tokenTransfers';
+import {
+  buildLineSegments,
+  expandExtent,
+  formatDayTick,
+  linePoints,
+  lineYScaler,
+  seriesExtent,
+} from '@/views/Charts/chartSvg';
+import { toDailyGappedSeries } from './priceHistorySeries';
 import { checkAddressValidity } from '@/views/Address/addressValidity';
 import { InvalidAddressError } from '@/views/Address';
 import { isEip7702Designator } from '@/views/Address/addressType';
@@ -171,6 +187,120 @@ const nextStepLinks = css`
   }
 `;
 
+// --- Price History card (browser-side DefiLlama /chart series) ---
+
+// Sparkline box: uniformly scaled viewBox like the Charts page line
+// charts, so point markers stay circular at any card width.
+const priceChartBox = css`
+  display: block;
+  width: 100%;
+  height: auto;
+`;
+
+const priceLine = css`
+  stroke: var(--haze-color-primary);
+  stroke-width: 1.5;
+  fill: none;
+`;
+
+const priceDotLatest = css`
+  fill: var(--haze-color-primary);
+`;
+
+// Hollow live-spot marker (drawn only when the spot layer has a price):
+// visually secondary to the series' own filled last-point dot.
+const priceDotSpot = css`
+  fill: none;
+  stroke: var(--haze-color-text-muted);
+  stroke-width: 1.5;
+`;
+
+// First→last date labels under the chart, from the real point
+// timestamps (never the window bounds — only observed days claim space).
+const priceDateRow = css`
+  display: flex;
+  justify-content: space-between;
+  margin-top: var(--haze-space-2);
+  font-family: var(--haze-font-mono);
+  font-size: var(--haze-text-xs);
+  color: var(--haze-color-text-muted);
+`;
+
+const priceFactsRow = css`
+  display: flex;
+  gap: var(--haze-space-5);
+  flex-wrap: wrap;
+  margin-top: var(--haze-space-2);
+`;
+
+const priceFact = css`
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+`;
+
+const priceFactLabel = css`
+  font-size: var(--haze-text-xs);
+  color: var(--haze-color-text-muted);
+`;
+
+const priceFactValue = css`
+  font-family: var(--haze-font-mono);
+  font-size: var(--haze-text-sm);
+`;
+
+// Header side: source chip + window toggle (the spot rows' "via
+// DefiLlama" convention), wraps under the title on narrow screens.
+const priceHeaderSide = css`
+  display: inline-flex;
+  align-items: center;
+  gap: var(--haze-space-3);
+  font-size: var(--haze-text-xs);
+  color: var(--haze-color-text-muted);
+`;
+
+const windowToggleGroup = css`
+  display: inline-flex;
+  gap: var(--haze-space-1);
+`;
+
+const windowToggle = css`
+  border: 1px solid var(--haze-color-border);
+  background: none;
+  color: var(--haze-color-text-muted);
+  font-family: var(--haze-font-mono);
+  font-size: var(--haze-text-xs);
+  padding: 1px 8px;
+  cursor: pointer;
+`;
+
+const windowToggleActive = css`
+  color: var(--haze-color-primary);
+  border-color: var(--haze-color-primary);
+`;
+
+// Chart-shaped loading placeholder (the Charts page pulse convention:
+// opacity-only animation, so it stays on the compositor).
+const priceChartSkeleton = css`
+  display: block;
+  width: 100%;
+  height: 96px;
+  border-radius: var(--haze-radius-sm, 4px);
+  background: var(--haze-color-border);
+  opacity: 0.35;
+  animation: price-history-pulse 1.6s ease-in-out infinite;
+
+  @keyframes price-history-pulse {
+    0%,
+    100% {
+      opacity: 0.35;
+    }
+    50% {
+      opacity: 0.7;
+    }
+  }
+`;
+
 const formatAddr = (a: string) => (a ? `${a.slice(0, 8)}...${a.slice(-6)}` : 'N/A');
 
 /**
@@ -282,6 +412,201 @@ function TokenPageShell({
         {children}
       </PageContainer>
     </>
+  );
+}
+
+// --- Price History card ---
+
+// Sparkline geometry: uniformly scaled viewBox like the Charts page line
+// charts, so point markers stay circular at any card width.
+const PRICE_CHART_WIDTH = 320;
+const PRICE_CHART_HEIGHT = 96;
+const PRICE_CHART_PAD = 8;
+
+/**
+ * The ok-state chart body: the daily series through the Charts page's
+ * gap-preserving primitives — a day without an observation stays an
+ * honest gap (never zero-filled, never interpolated), exactly like the
+ * Charts page series. First→last date labels come from the real point
+ * timestamps; Low/High/Latest facts carry the extent and the last
+ * observation. `spotPrice` (when the spot layer also has one) draws a
+ * hollow live marker at the series' end, on the series' own scale —
+ * clamped to the box when the live value sits outside the charted
+ * range, with that fact disclosed in the marker's title.
+ */
+function PriceHistoryChart({
+  outcome,
+  spotPrice,
+}: {
+  outcome: PriceHistoryOk;
+  spotPrice: UsdPriceSnapshot | null;
+}) {
+  const { points, extent, start, windowDays } = outcome;
+  const series = useMemo(
+    () => toDailyGappedSeries(points, start, windowDays),
+    [points, start, windowDays],
+  );
+  const segments = useMemo(
+    () =>
+      buildLineSegments(series, PRICE_CHART_WIDTH, PRICE_CHART_HEIGHT, PRICE_CHART_PAD),
+    [series],
+  );
+  const markers = useMemo(
+    () => linePoints(series, PRICE_CHART_WIDTH, PRICE_CHART_HEIGHT, PRICE_CHART_PAD),
+    [series],
+  );
+  const lastMarker = markers.length > 0 ? markers[markers.length - 1] : undefined;
+  const firstPoint = points[0];
+  const lastPoint = points[points.length - 1];
+  if (firstPoint === undefined || lastPoint === undefined) return null; // ok ⇒ ≥1 point
+
+  // The spot marker reuses the line geometry's exact transform (the
+  // same defaults buildLineSegments applies internally), so it can only
+  // land where the series itself would plot it.
+  const spotY =
+    spotPrice !== null && lastMarker !== undefined
+      ? lineYScaler(
+          expandExtent(seriesExtent([series]) ?? { min: 0, max: 1 }),
+          PRICE_CHART_PAD,
+          PRICE_CHART_HEIGHT - 2 * PRICE_CHART_PAD,
+        )(spotPrice.usd)
+      : null;
+
+  return (
+    <div>
+      <svg
+        className={priceChartBox}
+        viewBox={`0 0 ${PRICE_CHART_WIDTH} ${PRICE_CHART_HEIGHT}`}
+        role="img"
+        aria-label={`USD price over the last ${windowDays} days via DefiLlama — low ${formatUsd(extent.min)}, high ${formatUsd(extent.max)}, latest ${formatUsd(lastPoint.price)}`}
+      >
+        {segments.map((segment, index) => (
+          <path key={index} className={priceLine} d={segment} />
+        ))}
+        {lastMarker !== undefined && (
+          <circle
+            className={priceDotLatest}
+            cx={lastMarker.x}
+            cy={lastMarker.y}
+            r={2.5}
+            data-testid="price-history-latest"
+          >
+            <title>
+              {`Latest ${formatUsd(lastPoint.price)} · ${formatDayTick(lastPoint.timestamp * 1000)}`}
+            </title>
+          </circle>
+        )}
+        {spotPrice !== null && spotY !== null && lastMarker !== undefined && (
+          <circle
+            className={priceDotSpot}
+            cx={lastMarker.x}
+            cy={spotY}
+            r={3.5}
+            data-testid="price-history-spot"
+          >
+            <title>{`Live spot ${formatUsd(spotPrice.usd)}`}</title>
+          </circle>
+        )}
+      </svg>
+      <div className={priceDateRow}>
+        <span>{formatDayTick(firstPoint.timestamp * 1000)}</span>
+        <span>{formatDayTick(lastPoint.timestamp * 1000)}</span>
+      </div>
+      <div className={priceFactsRow}>
+        <span className={priceFact}>
+          <span className={priceFactLabel}>Low</span>
+          <span className={priceFactValue}>{formatUsd(extent.min)}</span>
+        </span>
+        <span className={priceFact}>
+          <span className={priceFactLabel}>High</span>
+          <span className={priceFactValue}>{formatUsd(extent.max)}</span>
+        </span>
+        <span className={priceFact}>
+          <span className={priceFactLabel}>Latest</span>
+          <span className={priceFactValue}>{formatUsd(lastPoint.price)}</span>
+        </span>
+        {spotPrice !== null && (
+          <span className={priceFact}>
+            <span className={priceFactLabel}>Live</span>
+            <span className={priceFactValue}>{formatUsd(spotPrice.usd)}</span>
+          </span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Price History card: this token's daily USD series from the
+ * browser-side DefiLlama /chart layer — the same key builders and
+ * honesty contract as the spot rows in the overview card above. Tri-
+ * state like the Gas panel: a chart-shaped shimmer while loading, the
+ * chart when ok, and a single muted line carrying the reason when
+ * unavailable (the card collapses to that line — never a spinner-
+ * forever, never an error card). The 30d/7d toggle covers both
+ * supported windows; an already-fetched window re-renders from cache
+ * without a loading flash.
+ */
+function PriceHistoryCard({
+  chainId,
+  address,
+  spotPrice,
+}: {
+  chainId: number;
+  address: string;
+  spotPrice: UsdPriceSnapshot | null | undefined;
+}) {
+  const [windowDays, setWindowDays] = useState<PriceHistoryWindow>(30);
+  const history = usePriceHistory(chainId, address, windowDays);
+
+  const sourceTitle =
+    history?.status === 'ok' && history.confidence !== null
+      ? `via DefiLlama · confidence ${(history.confidence * 100).toFixed(0)}%`
+      : 'via DefiLlama';
+
+  return (
+    <Card className={cardMargin}>
+      <CardHeader>
+        <div className={headerRow}>
+          <CardTitle>Price History</CardTitle>
+          <span className={priceHeaderSide}>
+            <span title={sourceTitle}>via DefiLlama</span>
+            <span
+              className={windowToggleGroup}
+              role="group"
+              aria-label="Price history window"
+            >
+              {([30, 7] as const).map((option) => (
+                <button
+                  key={option}
+                  type="button"
+                  className={cx(windowToggle, option === windowDays && windowToggleActive)}
+                  aria-pressed={option === windowDays}
+                  onClick={() => setWindowDays(option)}
+                >
+                  {option}d
+                </button>
+              ))}
+            </span>
+          </span>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {history === undefined ? (
+          <span
+            className={priceChartSkeleton}
+            data-testid="price-history-skeleton"
+            aria-label="Loading price history"
+          />
+        ) : history.status === 'unavailable' ? (
+          <p className={caveat} data-testid="price-history-unavailable">
+            Price history unavailable — {history.reason}.
+          </p>
+        ) : (
+          <PriceHistoryChart outcome={history} spotPrice={spotPrice ?? null} />
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -593,6 +918,18 @@ export default function TokenPage() {
             </InfoGrid>
           </CardContent>
         </Card>
+
+        {/* Price history: the same browser-side DefiLlama layer as the
+            spot rows above, as a daily sparkline through the Charts
+            page's gap-preserving primitives. The card always renders
+            for a token — unavailable collapses it to one muted line
+            carrying the reason (honest, never an error card); the spot
+            snapshot from the overview card doubles as the live marker. */}
+        <PriceHistoryCard
+          chainId={currentChainId}
+          address={address}
+          spotPrice={tokenPrice}
+        />
 
         {/* Holders: ERC-20 semantics only (an unknown-standard token
             renders no holder rows instead of guessing meaning for ids);

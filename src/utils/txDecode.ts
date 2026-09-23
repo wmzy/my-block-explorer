@@ -4,6 +4,7 @@ import {
   decodeAbiParameters,
   decodeErrorResult,
   decodeFunctionData,
+  getAddress,
   type Abi,
   type AbiParameter,
   type Hex,
@@ -66,8 +67,39 @@ export function decodeFunctionCall(inputData: string, abi: Abi): DecodedFunction
  * (b) `Panic(uint256)` — mapped through the documented Solidity code table,
  * (c) custom errors declared in the provided ABI via decodeErrorResult.
  * Returns null when nothing decodes (unknown selector, truncated payload…).
+ * Thin legacy wrapper over describeRevertData/formatRevertDescription — the
+ * structured pair is the source of truth for all decoding.
  */
 export function decodeRevertReason(data: string, abi?: Abi): string | null {
+  const description = describeRevertData(data, abi);
+  // Legacy semantics: an unreadable payload is "no reason", not raw hex.
+  if (description === null || description.kind === 'unknown') return null;
+  return formatRevertDescription(description);
+}
+
+/**
+ * Structured classification of a revert payload. `string`/`panic` need no
+ * ABI (standard Solidity encodings); `custom` requires an ABI that declares
+ * the error; `unknown` is any other well-formed selector-prefixed payload.
+ */
+export type RevertDescription =
+  | { kind: 'string'; message: string }
+  | { kind: 'panic'; code: bigint; description: string }
+  | { kind: 'custom'; name: string; argsText: string }
+  | { kind: 'unknown'; selector: string; data: string };
+
+/**
+ * Classify a raw revert payload into a structured description without ever
+ * throwing. Empty '0x' (and payloads without a full 4-byte selector) are
+ * NOT reverts — null, so callers can distinguish "no revert data" from
+ * "revert data we cannot read". Standard Error(string)/Panic(uint256)
+ * selectors decode without an ABI exactly like decodeRevertReason; every
+ * other selector is decoded against the provided ABI via viem's
+ * decodeErrorResult (which throws when nothing matches — the 'unknown'
+ * fallback). Truncated/corrupt payloads of a known selector also land in
+ * 'unknown' rather than throwing.
+ */
+export function describeRevertData(data: string, abi?: Abi): RevertDescription | null {
   if (typeof data !== 'string' || !data.startsWith('0x') || data.length < 10) return null;
   const selector = data.slice(0, 10).toLowerCase();
 
@@ -79,39 +111,112 @@ export function decodeRevertReason(data: string, abi?: Abi): string | null {
         // viem's size arithmetic assumes the 0x and mis-measures without it.
         `0x${data.slice(10)}`,
       );
-      return typeof message === 'string' ? message : null;
+      if (typeof message === 'string') return { kind: 'string', message };
     } catch {
-      return null;
+      // Truncated/corrupt Error(string) payload — fall through to unknown.
     }
-  }
-
-  if (selector === PANIC_SELECTOR) {
+  } else if (selector === PANIC_SELECTOR) {
     try {
       const [code] = decodeAbiParameters(
         [{ type: 'uint256' }] as readonly AbiParameter[],
         // Same re-prefixing as the Error(string) branch above.
         `0x${data.slice(10)}`,
       );
-      const codeHex = `0x${(code as bigint).toString(16).padStart(2, '0')}`;
-      return `Panic ${codeHex}: ${PANIC_CODES[codeHex] ?? 'unknown panic code'}`;
+      if (typeof code === 'bigint') return { kind: 'panic', code, description: panicDescription(code) };
     } catch {
-      return null;
+      // Truncated/corrupt Panic(uint256) payload — fall through to unknown.
     }
-  }
-
-  if (abi !== undefined && abi.length > 0) {
+  } else if (abi !== undefined && abi.length > 0) {
     try {
       const { errorName, args } = decodeErrorResult({ abi, data: data as Hex });
-      const argList = args ?? [];
-      return argList.length > 0
-        ? `${errorName}(${formatCallArgs(argList)})`
-        : errorName;
+      return { kind: 'custom', name: errorName, argsText: formatErrorArgs(args) };
     } catch {
-      // Selector matches no error in the ABI — fall through.
+      // Selector matches no error in the ABI (or the payload is truncated)
+      // — fall through to unknown.
     }
   }
 
-  return null;
+  return { kind: 'unknown', selector, data };
+}
+
+/** Solidity panic-code table lookup shared by both revert decoders. */
+function panicDescription(code: bigint): string {
+  const codeHex = `0x${code.toString(16).padStart(2, '0')}`;
+  return PANIC_CODES[codeHex] ?? 'unknown panic code';
+}
+
+/**
+ * Display string for a RevertDescription: Error(string) keeps its plain
+ * message, Panic keeps the exact `Panic 0xNN: cause` shape decodeRevertReason
+ * has always produced (zero-ABI rendering stays byte-identical), custom
+ * errors render as `Name(args)`, unknown payloads fall back to raw hex.
+ */
+export function formatRevertDescription(description: RevertDescription): string {
+  switch (description.kind) {
+    case 'string':
+      return description.message;
+    case 'panic': {
+      const codeHex = `0x${description.code.toString(16).padStart(2, '0')}`;
+      return `Panic ${codeHex}: ${description.description}`;
+    }
+    case 'custom':
+      return description.argsText !== '' ? `${description.name}(${description.argsText})` : description.name;
+    case 'unknown':
+      return description.data;
+  }
+}
+
+// Decimal grouping separator for large custom-error integers: a thin space
+// keeps the digits readable without looking like a different value the way
+// a comma can in mixed-locale contexts.
+const THIN_SPACE = '\u2009';
+const groupDecimal = (value: bigint): string =>
+  value.toString().replace(/\B(?=(\d{3})+(?!\d))/g, THIN_SPACE);
+
+// Hex blobs longer than this render truncated; short ones stay verbatim.
+const MAX_RAW_HEX_DISPLAY = 20;
+const truncateHex = (value: string): string =>
+  value.length <= MAX_RAW_HEX_DISPLAY ? value : `${value.slice(0, 10)}…${value.slice(-8)}`;
+
+/**
+ * BigInt-safe display form for one decoded custom-error argument:
+ * addresses render checksummed, uints as grouped decimals, long byte blobs
+ * truncated, and nested tuples/structs as compact JSON (bigints flattened
+ * to their grouped-decimal strings so JSON.stringify can never throw).
+ */
+function formatErrorArg(value: unknown): string {
+  if (typeof value === 'bigint') return groupDecimal(value);
+  if (typeof value === 'boolean' || typeof value === 'number') return String(value);
+  if (typeof value === 'string') {
+    if (/^0x[0-9a-fA-F]{40}$/.test(value)) {
+      try {
+        return getAddress(value);
+      } catch {
+        return value;
+      }
+    }
+    if (/^0x[0-9a-fA-F]+$/.test(value)) return truncateHex(value);
+    return JSON.stringify(value);
+  }
+  if (Array.isArray(value)) return `[${value.map(formatErrorArg).join(', ')}]`;
+  if (typeof value === 'object' && value !== null) {
+    return `{${Object.entries(value)
+      .map(([key, entry]) => `${JSON.stringify(key)}:${formatErrorArg(entry)}`)
+      .join(',')}}`;
+  }
+  return String(value);
+}
+
+/** Display form for a decoded custom-error arg list: `arg1, arg2, …`. */
+function formatErrorArgs(args: unknown): string {
+  if (args === null || args === undefined) return '';
+  // viem returns an array for decoded error args (named or positional);
+  // a name-keyed object is accepted defensively and flattened by value.
+  if (Array.isArray(args)) return args.map(formatErrorArg).join(', ');
+  if (typeof args === 'object') {
+    return Object.values(args as Record<string, unknown>).map(formatErrorArg).join(', ');
+  }
+  return formatErrorArg(args);
 }
 
 /**

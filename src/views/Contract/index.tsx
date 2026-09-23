@@ -11,14 +11,16 @@ import RpcFunctionError from '@/components/RpcFunctionError';
 import RpcConfig from '@/components/RpcConfig';
 import { ExternalLinks } from '@/components/ui/ExternalLinks';
 import { BackendOfflineState } from '@/components/ui/ErrorState';
+import { CoverageBadge } from '@/components/ui/CoverageBadge';
 import { SourceCodeViewer } from '@/components/SourceCodeViewer';
 import { post, isBackendUnreachable } from '@/util/http';
 import { ApiError } from '@/util/apiError';
 import { useServiceDiscovery } from '@/hooks/ServiceDiscoveryContext';
 import { redirectReplace } from '@/views/Home/Landing';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
-import { useContractCreation, useContractSource } from '@/services/contracts';
+import { useContractCreation, useContractSource, useStorageLayout } from '@/services/contracts';
 import { EventsPanel } from './EventsPanel';
+import { deriveContractCoverage } from './coverage';
 import { ContractInteract } from './ContractInteract';
 import { CustomAbiPanel, parseAbiString } from './CustomAbiPanel';
 import { StoragePanel } from './StoragePanel';
@@ -82,6 +84,13 @@ const headerStyles = css`
 // previous spot lived inside the loaded contract-source card).
 const headerExternalLinks = css`
   margin-top: 8px;
+`;
+
+// Page-level coverage badge row: sits under the page header (after the
+// cross-verification links) — one aggregated honesty chip; the per-source
+// explanations expand from its ⓘ affordance.
+const coverageBadgeStyles = css`
+  margin: 8px 0 16px;
 `;
 
 // Card header row (title + trailing action): wraps on narrow screens so a
@@ -771,6 +780,29 @@ export default function Contract() {
   const loading = sourceLoading;
   const error = sourceError?.message ?? null;
 
+  // Storage-coverage gate for the page-level badge: the storage layout is
+  // the Storage tab's own lazy query — sticky-armed once that tab is (or
+  // has been) open, mirroring the Address page's transfersScanned pattern.
+  // Before the first visit the disabled key (chainId 0 / empty address,
+  // the service's own no-network shape) resolves undefined; afterwards the
+  // page-level hook SHARES the tab's cache entry (same args → same key),
+  // so the badge's storage state costs zero extra fetches.
+  const [storageVisitedEver, setStorageVisitedEver] = useState(activeTab === 'storage');
+  useEffect(() => {
+    if (activeTab === 'storage') setStorageVisitedEver(true);
+  }, [activeTab]);
+  const storageVisited = storageVisitedEver || activeTab === 'storage';
+  // Same address the Storage tab reads the layout for (impl toggle → the
+  // implementation's layout; everything else → the contract itself).
+  const storageLayoutAddress =
+    contractTarget === 'impl'
+      ? ((contractSource?.implementationAddress) ?? address ?? '')
+      : (address ?? '');
+  const storageLayoutQuery = useStorageLayout(
+    storageVisited ? currentChainId : 0,
+    storageVisited ? storageLayoutAddress : '',
+  );
+
   // Backend-offline recovery: reuse the discovery layer's reconnect (the
   // same mechanism the connection badge uses) and refetch once a backend
   // answers — a plain Retry would just fast-fail again while the API base
@@ -953,6 +985,36 @@ export default function Contract() {
     );
   }
 
+  // Dedicated not-a-contract 404 (extracted for the badge gate below): the
+  // whole page becomes a guidance card, so a coverage chip would only add
+  // noise on top of it.
+  const isNotAContractState =
+    sourceError instanceof ApiError &&
+    sourceError.status === 404 &&
+    sourceError.code === 'not_a_contract';
+
+  // Page-level coverage aggregate (PM review: one honest chip near the
+  // header). Pure derivation in ./coverage, unit-tested there.
+  const contractCoverage = deriveContractCoverage({
+    source: {
+      loading: sourceLoading,
+      failed: sourceError !== undefined,
+      verificationStatus:
+        typeof contractSource?.verificationStatus === 'string'
+          ? contractSource.verificationStatus
+          : undefined,
+    },
+    storage: {
+      visited: storageVisited,
+      loading: storageLayoutQuery.loading,
+      failed: storageLayoutQuery.error !== undefined,
+      found:
+        storageLayoutQuery.data?.found === true &&
+        storageLayoutQuery.data?.layout !== undefined,
+      inferred: storageLayoutQuery.data?.source === 'evmole',
+    },
+  });
+
   return (
     <>
       <TopNavigation currentChainId={currentChainId} onChainChange={handleChainChange} />
@@ -989,28 +1051,40 @@ export default function Contract() {
           )}
         </div>
 
+        {/* One aggregated coverage chip above the cards: per-source
+            explanations expand from its ⓘ affordance; the event-driven
+            notices below (custom-ABI, diamond) stay inline. Hidden only on
+            the not-a-contract guidance card, where there is no data page
+            to summarize. */}
+        {!isNotAContractState && (
+          <CoverageBadge
+            level={contractCoverage.level}
+            label={contractCoverage.label}
+            detail={contractCoverage.detail}
+            className={coverageBadgeStyles}
+          />
+        )}
+
         {loading && <div className={loadingStyles}>Loading contract information...</div>}
 
-        {sourceError instanceof ApiError &&
-          sourceError.status === 404 &&
-          sourceError.code === 'not_a_contract' ? (
-        // P1-2: the backend reports this address carries no code (C-1
-        // contract) — a dedicated state with the address-page link beats
-        // the generic error strip for a navigable dead end.
-              <NotAContractState chainId={currentChainId} address={address} />
-            ) : sourceError && isBackendUnreachable(sourceError) ? (
-              <BackendOfflineState
-                onRetryConnection={() => void handleRetryConnection()}
-                retryConnectionPending={retryingConnection}
-              />
-            ) : (
-              error && (
-                <div className={errorStyles}>
-                  Error:
-                  {error}
-                </div>
-              )
-            )}
+        {isNotAContractState ? (
+          // P1-2: the backend reports this address carries no code (C-1
+          // contract) — a dedicated state with the address-page link beats
+          // the generic error strip for a navigable dead end.
+          <NotAContractState chainId={currentChainId} address={address} />
+        ) : sourceError && isBackendUnreachable(sourceError) ? (
+          <BackendOfflineState
+            onRetryConnection={() => void handleRetryConnection()}
+            retryConnectionPending={retryingConnection}
+          />
+        ) : (
+          error && (
+            <div className={errorStyles}>
+              Error:
+              {error}
+            </div>
+          )
+        )}
 
         {contractSource && (
           <>

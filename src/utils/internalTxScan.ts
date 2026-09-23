@@ -43,8 +43,57 @@ export const MAX_INTERNAL_TRACE_DEPTH = 128;
 /** Row ceiling per traced transaction (runaway trees must not flood the tab). */
 export const MAX_ROWS_PER_TX = 200;
 
-/** Row ceiling across the whole aggregate (25 traced txs x deep trees). */
+/** Row ceiling across the whole aggregate (depth-capped traced txs x deep trees). */
 export const MAX_TOTAL_ROWS = 1000;
+
+/**
+ * Default number of discovered transactions one scan traces — the depth
+ * the tab runs at when ?itDepth= is absent, kept equal to the original
+ * hardcoded bound so a plain visit scans exactly as it always did.
+ */
+export const DEFAULT_INTERNAL_TX_DEPTH = 25;
+
+/** Supported range of the trace-depth setting (?itDepth= clamps into it). */
+export const MIN_INTERNAL_TX_DEPTH = 10;
+export const MAX_INTERNAL_TX_DEPTH = 200;
+
+/**
+ * Clamp a requested trace depth into the supported range. Silent by
+ * design (the ?ttWindow= precedent): a deep link asking for 9 or 5000
+ * still scans — at 10 or 200 — instead of degrading to the default.
+ * Pure so the clamp contract (9 → 10, 201 → 200) is testable.
+ */
+export const clampInternalTxDepth = (depth: number): number =>
+  Math.min(
+    MAX_INTERNAL_TX_DEPTH,
+    Math.max(MIN_INTERNAL_TX_DEPTH, Math.floor(depth)),
+  );
+
+export type InternalTxScope<T> = {
+  /** The transactions to trace: the first `depth` of the discovered list, in discovered order. */
+  txs: T[];
+  /** True when the discovered list was longer than the depth — the scan covers a bounded slice, not the whole window. */
+  truncated: boolean;
+};
+
+/**
+ * The scan's universe under a depth setting: the first `depth` discovered
+ * transactions. The depth is floored (never negative) but deliberately
+ * NOT clamped — narrowing into the supported 10..200 range is the URL
+ * layer's job (effectiveInternalTxDepth), so the scan honors exactly the
+ * depth it is handed. Pure so the depth cap's honesty (how many are
+ * traced, whether the window was cut) is testable without any RPC.
+ */
+export function selectTraceScope<T extends { hash: string }>(
+  txs: readonly T[],
+  depth: number,
+): InternalTxScope<T> {
+  const bounded = Math.max(0, Math.floor(depth));
+  return {
+    txs: txs.slice(0, bounded),
+    truncated: txs.length > bounded,
+  };
+}
 
 export type InternalTxFlattenOptions = {
   /** Deepest nesting level still walked (frames AT the level are kept). */

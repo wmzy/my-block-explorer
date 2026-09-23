@@ -42,6 +42,9 @@ describe('deriveDocumentTitle', () => {
     expect(deriveDocumentTitle('/chain/1', '')).toBe('Ethereum Explorer');
     expect(deriveDocumentTitle('/chain/137/blocks', '')).toBe('Polygon Blocks');
     expect(deriveDocumentTitle('/chain/8453/transactions', '')).toBe('Base Transactions');
+    // The pending-pool page is entity-first ("Pending Transactions · …"),
+    // not the list-page "{chain} Transactions" shape.
+    expect(deriveDocumentTitle('/chain/1/pending', '')).toBe('Pending Transactions · Ethereum');
   });
 
   it('titles search with its chain context when ?chain= rides the URL', () => {
@@ -97,6 +100,9 @@ describe('deriveMetaDescription', () => {
     );
     expect(deriveMetaDescription('/chain/1/contracts', '')).toBe(
       `Browse the explorer's cached contracts on Ethereum.`,
+    );
+    expect(deriveMetaDescription('/chain/137/pending', '')).toBe(
+      `Pending (unconfirmed) transactions in this node's transaction pool on Polygon.`,
     );
   });
 

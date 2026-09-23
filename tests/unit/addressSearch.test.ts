@@ -1,14 +1,20 @@
 // URL-driven state of the address page: the shared schema's parse
 // semantics (deep-link survival and degradation for ?page=/?window=/
-// ?ttPage=/?ttWindow=/?tab=) plus the two pure derivations the view and
-// the transfers tab consume (effective activity tab, beyond-data
-// convergence).
+// ?ttPage=/?ttWindow=/?itDepth=/?tab=) plus the pure derivations the
+// view and the transfers/internal tabs consume (effective activity tab,
+// beyond-data convergence, effective internal-tx trace depth).
 import { describe, it, expect } from 'vitest';
 import {
   addressSearchSchema,
   effectiveActivityTab,
+  effectiveInternalTxDepth,
   shouldPinTransfersPage,
 } from '@/views/Address/search';
+import {
+  DEFAULT_INTERNAL_TX_DEPTH,
+  MAX_INTERNAL_TX_DEPTH,
+  MIN_INTERNAL_TX_DEPTH,
+} from '@/utils/internalTxScan';
 
 // Same input shape the router feeds the schema (parseSearchInput): a
 // plain object of string values from the query string.
@@ -22,6 +28,7 @@ describe('addressSearchSchema', () => {
       window: undefined,
       ttPage: 3,
       ttWindow: 500_000,
+      itDepth: undefined,
       tab: 'transfers',
     });
   });
@@ -32,6 +39,7 @@ describe('addressSearchSchema', () => {
       window: undefined,
       ttPage: 1,
       ttWindow: undefined,
+      itDepth: undefined,
       tab: undefined,
     });
   });
@@ -73,6 +81,53 @@ describe('addressSearchSchema', () => {
       expect(parse('ttPage=4').ttPage).toBe(4);
       expect(parse('ttPage=abc').ttPage).toBe(1);
     });
+  });
+
+  describe('?itDepth=', () => {
+    it('keeps any positive integer — out-of-range values clamp downstream, not here', () => {
+      // Unlike ?ttWindow= (out-of-range → undefined → default), an
+      // explicit-but-extreme depth is still an intent to widen/narrow:
+      // the schema lets it through and the effective derivation clamps.
+      expect(parse('itDepth=25').itDepth).toBe(25);
+      expect(parse('itDepth=42').itDepth).toBe(42);
+      expect(parse('itDepth=9').itDepth).toBe(9);
+      expect(parse('itDepth=5000').itDepth).toBe(5000);
+    });
+
+    it('degrades structurally invalid values to undefined (the scan default)', () => {
+      expect(parse('itDepth=abc').itDepth).toBeUndefined();
+      expect(parse('itDepth=2.5').itDepth).toBeUndefined();
+      expect(parse('itDepth=').itDepth).toBeUndefined();
+      expect(parse('itDepth=-3').itDepth).toBeUndefined();
+      expect(parse('itDepth=0').itDepth).toBeUndefined();
+    });
+
+    it('is independent from the transfers tab\'s ?ttWindow= key', () => {
+      const parsed = parse('ttWindow=500000&itDepth=50');
+      expect(parsed.ttWindow).toBe(500_000);
+      expect(parsed.itDepth).toBe(50);
+    });
+  });
+});
+
+describe('effectiveInternalTxDepth', () => {
+  it('derives the scan default when the param is absent or malformed', () => {
+    expect(effectiveInternalTxDepth(undefined)).toBe(DEFAULT_INTERNAL_TX_DEPTH);
+  });
+
+  it('lets an explicit in-range depth win over the default', () => {
+    expect(effectiveInternalTxDepth(42)).toBe(42);
+    expect(effectiveInternalTxDepth(MIN_INTERNAL_TX_DEPTH)).toBe(MIN_INTERNAL_TX_DEPTH);
+    expect(effectiveInternalTxDepth(MAX_INTERNAL_TX_DEPTH)).toBe(MAX_INTERNAL_TX_DEPTH);
+  });
+
+  it('silently clamps out-of-range depths into the supported range', () => {
+    // The ?ttWindow= clamp precedent: an extreme shared link still
+    // widens/narrows the sweep instead of snapping back to the default.
+    expect(effectiveInternalTxDepth(9)).toBe(MIN_INTERNAL_TX_DEPTH);
+    expect(effectiveInternalTxDepth(1)).toBe(MIN_INTERNAL_TX_DEPTH);
+    expect(effectiveInternalTxDepth(201)).toBe(MAX_INTERNAL_TX_DEPTH);
+    expect(effectiveInternalTxDepth(5000)).toBe(MAX_INTERNAL_TX_DEPTH);
   });
 });
 

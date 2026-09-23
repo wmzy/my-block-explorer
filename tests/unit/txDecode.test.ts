@@ -3,16 +3,20 @@ import {
   encodeAbiParameters,
   encodeErrorResult,
   encodeFunctionData,
+  getAddress,
   parseAbi,
   type Abi,
 } from 'viem';
 import {
   decodeFunctionCall,
   decodeRevertReason,
+  describeRevertData,
   extractRevertData,
   formatArgValue,
   formatCallArgs,
+  formatRevertDescription,
   selectorOf,
+  type RevertDescription,
 } from '@/utils/txDecode';
 
 const TRANSFER_SELECTOR = '0xa9059cbb'; // transfer(address,uint256)
@@ -154,5 +158,131 @@ describe('formatArgValue / formatCallArgs', () => {
 
   it('joins mixed arg lists with ", "', () => {
     expect(formatCallArgs([100n, 'hello', '0xabc'])).toBe('100, "hello", 0xabc');
+  });
+});
+
+describe('describeRevertData', () => {
+  // Mixed-shape custom error: one arg per display category the formatter
+  // special-cases (address → checksummed, uint → grouped decimal, string →
+  // quoted) plus a bytes and a nested-tuple variant below.
+  const mixedErrorAbi: Abi = parseAbi([
+    'error TransferFailed(address sender, uint256 amount, string reason)',
+    'error BadBytes(bytes data)',
+    'error BadTuple((uint256 a, address b) pair)',
+  ]);
+
+  it('decodes a custom error with mixed args to name plus formatted args', () => {
+    const data = encodeErrorResult({
+      abi: mixedErrorAbi,
+      errorName: 'TransferFailed',
+      args: [RECIPIENT.toLowerCase(), 1000000n, 'nope'],
+    });
+    const description = describeRevertData(data, mixedErrorAbi);
+    expect(description).toEqual({
+      kind: 'custom',
+      name: 'TransferFailed',
+      argsText: `${getAddress(RECIPIENT)}, 1\u2009000\u2009000, "nope"`,
+    });
+  });
+
+  it('renders long byte-blob args truncated and nested tuples as compact JSON', () => {
+    const blob = `0x${'ab'.repeat(32)}`;
+    expect(
+      describeRevertData(
+        encodeErrorResult({ abi: mixedErrorAbi, errorName: 'BadBytes', args: [blob] }),
+        mixedErrorAbi,
+      ),
+    ).toEqual({
+      kind: 'custom',
+      name: 'BadBytes',
+      argsText: `${blob.slice(0, 10)}…${blob.slice(-8)}`,
+    });
+
+    expect(
+      describeRevertData(
+        encodeErrorResult({ abi: mixedErrorAbi, errorName: 'BadTuple', args: [{ a: 1n, b: RECIPIENT }] }),
+        mixedErrorAbi,
+      ),
+    ).toEqual({
+      kind: 'custom',
+      name: 'BadTuple',
+      // Nested struct: compact JSON-ish, bigint flattened to grouped decimal,
+      // nested address rendered checksummed like a top-level one.
+      argsText: `{"a":1,"b":${getAddress(RECIPIENT)}}`,
+    });
+  });
+
+  // Tests below feed formatRevertDescription with a non-null description;
+  // a null here is a test bug, so the helper fails loudly.
+  const described = (data: string, abi?: Abi): RevertDescription => {
+    const description = describeRevertData(data, abi);
+    if (description === null) throw new Error(`expected ${data} to describe`);
+    return description;
+  };
+
+  it('decodes Error(string) without an ABI and keeps its display identical to decodeRevertReason', () => {
+    const description = described(errorStringData);
+    expect(description).toEqual({ kind: 'string', message: 'Insufficient balance' });
+    expect(formatRevertDescription(description)).toBe(decodeRevertReason(errorStringData));
+  });
+
+  it('decodes Panic(uint256) without an ABI with the documented code table', () => {
+    const overflow = described(panicData(0x11));
+    expect(overflow).toEqual({ kind: 'panic', code: 0x11n, description: 'arithmetic overflow/underflow' });
+    expect(formatRevertDescription(overflow)).toBe(decodeRevertReason(panicData(0x11)));
+
+    const assert = described(panicData(0x01));
+    expect(assert).toEqual({ kind: 'panic', code: 1n, description: 'assert failed' });
+
+    const unknown = described(panicData(0x99));
+    expect(unknown).toEqual({ kind: 'panic', code: 0x99n, description: 'unknown panic code' });
+    expect(formatRevertDescription(unknown)).toBe('Panic 0x99: unknown panic code');
+  });
+
+  it('classifies unknown selectors with selector and raw data', () => {
+    const raw = `0xdeadbeef${'0'.repeat(120)}`;
+    expect(describeRevertData(raw)).toEqual({ kind: 'unknown', selector: '0xdeadbeef', data: raw });
+    // An ABI that lacks the error changes nothing — still unknown, not null.
+    expect(describeRevertData(raw, erc20Abi)).toEqual({
+      kind: 'unknown',
+      selector: '0xdeadbeef',
+      data: raw,
+    });
+  });
+
+  it('returns null for empty and selector-less payloads', () => {
+    expect(describeRevertData('0x')).toBeNull();
+    expect(describeRevertData('0x08c379a')).toBeNull();
+    expect(describeRevertData('')).toBeNull();
+  });
+
+  it('never throws on malformed or truncated payloads', () => {
+    // Truncated Error(string) body: the selector matches but the payload
+    // cannot decode — 'unknown', not an exception.
+    expect(describeRevertData(`${ERROR_STRING_SELECTOR}00000032`)).toEqual({
+      kind: 'unknown',
+      selector: ERROR_STRING_SELECTOR,
+      data: `${ERROR_STRING_SELECTOR}00000032`,
+    });
+    // Truncated Panic body.
+    expect(describeRevertData(`${PANIC_SELECTOR}00`)).toEqual({
+      kind: 'unknown',
+      selector: PANIC_SELECTOR,
+      data: `${PANIC_SELECTOR}00`,
+    });
+    // Odd-length hex after the selector.
+    expect(describeRevertData(`0xdeadbeefz`)).toEqual({
+      kind: 'unknown',
+      selector: '0xdeadbeef',
+      data: '0xdeadbeefz',
+    });
+  });
+
+  it('formats a no-arg custom error as the bare name', () => {
+    const noArgAbi: Abi = parseAbi(['error NotOwner()']);
+    const data = encodeErrorResult({ abi: noArgAbi, errorName: 'NotOwner' });
+    const description = described(data, noArgAbi);
+    expect(description).toEqual({ kind: 'custom', name: 'NotOwner', argsText: '' });
+    expect(formatRevertDescription(description)).toBe('NotOwner');
   });
 });

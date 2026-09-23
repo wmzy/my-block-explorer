@@ -9,8 +9,8 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter, createRoutes } from '@native-router/react';
-import { encodeFunctionData, numberToHex, parseEther } from 'viem';
-import type { AbiFunction } from 'viem';
+import { encodeErrorResult, encodeFunctionData, getAddress, numberToHex, parseAbi, parseEther } from 'viem';
+import type { Abi, AbiFunction } from 'viem';
 
 import { FunctionCallForm } from '@/views/Contract/FunctionCallForm';
 import { ContractInteract } from '@/views/Contract/ContractInteract';
@@ -119,6 +119,7 @@ function renderWriteForm(options: {
   provider?: EIP1193Provider | null;
   func?: EnhancedContractFunction;
   chainId?: number;
+  abi?: Abi;
 } = {}) {
   const func = options.func ?? transferFunc;
   const result = render(
@@ -133,6 +134,7 @@ function renderWriteForm(options: {
         blockNumber=""
         contractAddress={CONTRACT}
         walletProvider={options.provider}
+        abi={options.abi}
       />
     </MemoryRouter>,
   );
@@ -366,6 +368,37 @@ describe('FunctionCallForm wallet send flow', () => {
     expect(await screen.findByText('Wallet send error:')).toBeInTheDocument();
     expect(screen.getByText('execution reverted: insufficient allowance')).toBeInTheDocument();
     expect(screen.queryByText('Rejected in wallet')).not.toBeInTheDocument();
+  });
+
+  it('decodes a custom-error revert payload the wallet reports on send', async () => {
+    // Wallets surface eth_estimateGas revert data on the send error's
+    // `data` property; the form's ABI decodes it into the custom error.
+    const sendAbi: Abi = parseAbi([
+      'function transfer(address to, uint256 amount) returns (bool)',
+      'error InsufficientAllowance(address spender, uint256 required)',
+    ]);
+    const revertData = encodeErrorResult({
+      abi: sendAbi,
+      errorName: 'InsufficientAllowance',
+      args: [SENDER, 1000000n],
+    });
+    const { provider } = makeWallet({
+      sendError: Object.assign(new Error('execution reverted'), { data: revertData }),
+    });
+    renderWriteForm({ provider, abi: sendAbi });
+
+    fillTransfer(RECIPIENT, '100');
+    fireEvent.click(screen.getByRole('button', { name: 'Send with wallet' }));
+
+    expect(await screen.findByText('Wallet send error:')).toBeInTheDocument();
+    // Decoded custom error leads: name plus checksummed address and
+    // grouped-decimal amount (getByText normalizes the thin-space
+    // grouping to plain spaces on the node side).
+    expect(
+      screen.getByText(
+        `ContractFunctionReverted: InsufficientAllowance(${getAddress(SENDER)}, 1 000 000)`,
+      ),
+    ).toBeInTheDocument();
   });
 });
 

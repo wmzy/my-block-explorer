@@ -6,6 +6,12 @@ import { toast } from 'sonner';
 import { ApiError } from '../util/apiError';
 import { get } from '../util/http';
 import { clearAdminToken, hasAdminToken, setAdminToken } from '../util/adminAuth';
+import {
+  DEFAULT_IPFS_GATEWAY,
+  getIpfsGateway,
+  normalizeIpfsGateway,
+  setIpfsGateway,
+} from '@/services/nftMetadata';
 import { getChainName } from '../config/chains';
 import { getRpcPresets, type RpcPreset } from '../config/rpcPresets';
 import {
@@ -300,10 +306,18 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
   const [adminTokenStored, setAdminTokenStored] = useState(() => hasAdminToken());
   const [saveForbidden, setSaveForbidden] = useState(false);
 
+  // IPFS gateway: browser-local preference the NFT metadata service uses
+  // to rewrite ipfs:// URIs into https URLs. Initialized from the stored
+  // value; Save persists the normalized form, Reset falls back to the
+  // default gateway.
+  const [ipfsGatewayInput, setIpfsGatewayInput] = useState(() => getIpfsGateway());
+  const [ipfsGatewayStored, setIpfsGatewayStored] = useState(() => getIpfsGateway());
+
   const chainName = getChainName(chainId);
   const presets = getRpcPresets(chainId);
   const adminTokenInputId = useId();
   const customFormId = useId();
+  const ipfsGatewayInputId = useId();
 
   useEffect(() => {
     if (isOpen) {
@@ -374,6 +388,25 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
     setSaveForbidden(false);
     toast.success('Admin token cleared.');
     await loadCurrentConfig();
+  };
+
+  // Persists the normalized gateway (trailing slashes trimmed, scheme
+  // defaulted to https). NftMetadata resolution keys its cache by gateway,
+  // so the next resolution picks the new value up without a reload.
+  const handleSaveIpfsGateway = () => {
+    const gateway = normalizeIpfsGateway(ipfsGatewayInput);
+    if (!gateway) return;
+    setIpfsGateway(gateway);
+    setIpfsGatewayInput(gateway);
+    setIpfsGatewayStored(gateway);
+    toast.success('IPFS gateway saved.');
+  };
+
+  const handleResetIpfsGateway = () => {
+    setIpfsGateway('');
+    setIpfsGatewayStored(DEFAULT_IPFS_GATEWAY);
+    setIpfsGatewayInput(DEFAULT_IPFS_GATEWAY);
+    toast.success(`IPFS gateway reset to ${DEFAULT_IPFS_GATEWAY}.`);
   };
 
   const handlePresetSelect = async (preset: RpcPreset) => {
@@ -815,6 +848,50 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
             disabled={!adminTokenStored}
           >
             Clear
+          </button>
+        </div>
+      </div>
+      {/* IPFS gateway: browser-local preference the NFT metadata service
+          reads when rewriting ipfs:// token/image URIs to https */}
+      <div className={sectionStyles}>
+        <h3>IPFS gateway</h3>
+        <p>
+          Gateway used to rewrite <code>ipfs://</code> NFT metadata and image URIs
+          into browser-fetchable https URLs. Stored in this browser only.
+        </p>
+        <div className={customFormStyles}>
+          <div className="form-group">
+            <label htmlFor={ipfsGatewayInputId}>IPFS gateway (stored in this browser)</label>
+            <input
+              id={ipfsGatewayInputId}
+              type="text"
+              value={ipfsGatewayInput}
+              onChange={e => setIpfsGatewayInput(e.target.value)}
+              placeholder={DEFAULT_IPFS_GATEWAY}
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </div>
+        </div>
+        <div className={`${buttonStyles} btn-group`}>
+          <button
+            type="button"
+            className="btn primary small"
+            onClick={handleSaveIpfsGateway}
+            disabled={
+              !ipfsGatewayInput.trim()
+              || normalizeIpfsGateway(ipfsGatewayInput) === ipfsGatewayStored
+            }
+          >
+            Save gateway
+          </button>
+          <button
+            type="button"
+            className="btn secondary small"
+            onClick={handleResetIpfsGateway}
+            disabled={ipfsGatewayStored === DEFAULT_IPFS_GATEWAY}
+          >
+            Reset to default
           </button>
         </div>
       </div>

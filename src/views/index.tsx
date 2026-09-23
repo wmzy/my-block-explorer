@@ -42,6 +42,13 @@ const routes = createRoutes({
       component: () => import('./Transactions/List'),
     },
     {
+      // The node's own transaction pool (txpool_content): live browser
+      // RPC with an honest unsupported state when the endpoint keeps its
+      // txpool private (most public RPCs do).
+      path: '/chain/:chainId/pending',
+      component: () => import('./Transactions/Pending'),
+    },
+    {
       // Cached-contract directory (the explorer's own contract_sources
       // rows): a plain list fetch, so no loader; the view owns ?q= and
       // ?offset=.
@@ -160,6 +167,8 @@ export function deriveDocumentTitle(pathname: string, search: string): string {
       return `${chainName} Blocks`;
     case 'transactions':
       return `${chainName} Transactions`;
+    case 'pending':
+      return `Pending Transactions · ${chainName}`;
     case 'contracts':
       return `${chainName} Contracts`;
     case 'charts':
@@ -213,6 +222,8 @@ export function deriveMetaDescription(pathname: string, search: string): string 
       return `Browse the latest blocks on ${chainNoun}.`;
     case 'transactions':
       return `Browse the latest transactions on ${chainNoun}.`;
+    case 'pending':
+      return `Pending (unconfirmed) transactions in this node's transaction pool on ${chainNoun}.`;
     case 'contracts':
       return `Browse the explorer's cached contracts on ${chainNoun}.`;
     case 'charts':

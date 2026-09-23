@@ -4,12 +4,16 @@
 // preferred chain from the sorted chain config, else /chain/1 as the
 // dead-last fallback (mainnet is always in the supported set).
 //
+// First-run exception: while discovery has settled with NO backend and the
+// persistent onboarding flag is unset, the redirect is held and the
+// GettingStarted guide renders instead (see ./GettingStarted.tsx).
+//
 // The remembered-chain resolution is deliberately scoped to this '/' entry
 // point: it is the "reopen where I left off" behavior for the app root and
 // nothing else. Recovery UIs (UnsupportedChainState) link straight to
 // concrete /chain/:id destinations and must never bounce through this
 // redirect, which would reopen the link viewer's remembered chain.
-import { useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   commitReplace,
   navigate,
@@ -18,7 +22,15 @@ import {
   type RouterInstance,
 } from '@native-router/core';
 import { useMatched } from '@native-router/react';
+import { useServiceDiscovery } from '@/hooks/ServiceDiscoveryContext';
 import { getSortedChains, isChainSupported } from '@/config/chains';
+import {
+  GettingStarted,
+  backendConnectedFromStatus,
+  readOnboardingDismissed,
+  shouldShowGettingStarted,
+  writeOnboardingDismissed,
+} from './GettingStarted';
 
 export const LAST_CHAIN_STORAGE_KEY = 'be:lastChainId';
 
@@ -91,11 +103,33 @@ export function navigateBack<R extends BaseRoute>(
 
 export default function Landing() {
   const { router } = useMatched();
+  const { status } = useServiceDiscovery();
+  const backendConnected = backendConnectedFromStatus(status);
+  // Dismissal is persistent (localStorage flag): once the user closes
+  // the first-run guide it never comes back, on any visit.
+  const [dismissed, setDismissed] = useState(readOnboardingDismissed);
+  const showGuide = shouldShowGettingStarted({ backendConnected, dismissed });
 
   useEffect(() => {
+    // First-run guide hold: while the card is showing (discovery settled
+    // with no backend + not dismissed) the entry redirect waits so the
+    // guide is actually readable. Any dismissal — or a backend connecting
+    // mid-session, matching the setup panel's auto-detect promise —
+    // releases the redirect via this effect's dependency.
+    if (showGuide) return;
     redirectReplace(router, resolveLandingChainPath()).catch(() => undefined);
-  }, [router]);
+  }, [router, showGuide]);
 
-  // Redirect-only view: nothing to paint while the replace commit runs.
+  const handleDismiss = useCallback(() => {
+    writeOnboardingDismissed();
+    setDismissed(true);
+  }, []);
+
+  if (showGuide) {
+    return <GettingStarted onDismiss={handleDismiss} />;
+  }
+
+  // Otherwise redirect-only view: nothing to paint while the replace
+  // commit runs.
   return null;
 }

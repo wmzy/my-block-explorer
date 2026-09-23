@@ -7,7 +7,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter, View, createRoutes } from '@native-router/react';
-import { encodeFunctionData, toEventSelector, type Abi, type Hex } from 'viem';
+import { encodeErrorResult, encodeFunctionData, parseAbi, toEventSelector, type Abi, type Hex } from 'viem';
 import '@testing-library/jest-dom';
 
 import TransactionDetail from '@/views/Transactions/Detail';
@@ -262,6 +262,46 @@ describe('TransactionDetail page', () => {
       await screen.findByRole('heading', { name: 'Revert Reason (best effort)' }),
     ).toBeInTheDocument();
     expect(screen.getByText('Insufficient balance')).toBeInTheDocument();
+  });
+
+  it('decodes a custom error of a failed transaction when the ABI is verified', async () => {
+    // Verified source whose ABI declares the custom error the replay hits.
+    const revertAbi = parseAbi([
+      'function transfer(address to, uint256 amount) returns (bool)',
+      'error InsufficientBalance(uint256 available, uint256 required)',
+    ]);
+    const revertData = encodeErrorResult({
+      abi: revertAbi,
+      errorName: 'InsufficientBalance',
+      args: [100n, 250n],
+    });
+
+    vi.mocked(useTransactionByHash).mockReturnValue(hookResult(makeTx({ status: 0 })));
+    vi.mocked(useContractSource).mockReturnValue(
+      hookResult({
+        contractSource: {
+          chainId: 1,
+          address: TOKEN,
+          name: 'TestToken',
+          abi: JSON.stringify(revertAbi),
+          verificationStatus: 'verified',
+        },
+      }),
+    );
+    const inner = Object.assign(new Error('RPC error'), { data: revertData });
+    mockRpcClient(vi.fn().mockRejectedValue(new Error('execution reverted', { cause: inner })));
+
+    renderDetail();
+
+    expect(
+      await screen.findByRole('heading', { name: 'Revert Reason (best effort)' }),
+    ).toBeInTheDocument();
+    // Decoded custom error: ErrorName(arg, arg) with grouped decimals.
+    expect(screen.getByText('InsufficientBalance(100, 250)')).toBeInTheDocument();
+    // The permanent end-of-block caveat stays.
+    expect(screen.getByText(/Replayed against end-of-block state/)).toBeInTheDocument();
+    // Raw payload remains available on hover.
+    expect(screen.getByTitle(revertData)).toBeInTheDocument();
   });
 
   it('reports an honest unavailable note when the replay resolves without reverting', async () => {

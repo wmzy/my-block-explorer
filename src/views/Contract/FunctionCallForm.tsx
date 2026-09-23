@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { css } from '@linaria/core';
-import { numberToHex, parseEther } from 'viem';
+import { numberToHex, parseEther, type Abi } from 'viem';
 import { getChainInfo, getChainName, getChainSymbol, getDefaultRpcUrl } from '@/config/chains';
 import { Collapsible } from '@/components/ui/Collapsible';
 import { CopyableHash } from '@/components/ui/CopyableHash';
@@ -18,7 +18,7 @@ import {
   walletChainId,
   type EIP1193Provider,
 } from '@/util/wallet';
-import { parseFunctionArgs, ADDRESS_PATTERN } from './paramParsing';
+import { describeRevertedCall, parseFunctionArgs, ADDRESS_PATTERN } from './paramParsing';
 import { argsKey } from './types';
 
 const functionNameReadStyles = css`
@@ -278,6 +278,7 @@ export function FunctionCallForm({
   blockNumber,
   contractAddress,
   walletProvider = null,
+  abi,
 }: {
   func: EnhancedContractFunction;
   onCall: (
@@ -296,6 +297,8 @@ export function FunctionCallForm({
   contractAddress?: string;
   /** Injected wallet (EIP-1193) enabling the send action; null hides it. */
   walletProvider?: EIP1193Provider | null;
+  /** The panel's resolved contract ABI — decodes revert data of failed sends. */
+  abi?: Abi;
 }) {
   const [args, setArgs] = useState<string[]>(func.inputs.map(() => ''));
   const [argErrors, setArgErrors] = useState<string[]>(func.inputs.map(() => ''));
@@ -451,7 +454,11 @@ export function FunctionCallForm({
         setWalletSend({ phase: 'rejected' });
         return;
       }
-      setWalletSend({ phase: 'error', message: providerErrorMessage(error) });
+      // A provider revert with decodable data leads with the decoded custom
+      // error (ContractFunctionReverted: Name(args)); every other provider
+      // error keeps its message verbatim.
+      const reverted = describeRevertedCall(error, abi);
+      setWalletSend({ phase: 'error', message: reverted ?? providerErrorMessage(error) });
     }
   };
 

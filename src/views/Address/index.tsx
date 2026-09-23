@@ -34,6 +34,13 @@ import {
   effectiveActivityTab,
   type ActivityTabId,
 } from '@/views/Address/search';
+import { deriveAddressCoverage } from '@/views/Address/coverage';
+import {
+  computeAddressSummaryStats,
+  formatNativeTotal,
+  formatSeenBoundary,
+  type SummaryTxRow,
+} from '@/views/Address/summaryStats';
 import { isBackendUnreachable } from '@/util/http';
 import { getApiBase } from '@/util/apiBase';
 import { ApiError } from '@/util/apiError';
@@ -56,9 +63,10 @@ import {
 } from '@/services/addressRealTime';
 import { useTokenTransfers } from '@/services/tokenTransfers';
 import { useTokenOverview } from '@/services/tokenMetadata';
-import { BalanceHistory } from '@/views/Address/BalanceHistory';
+import { BalanceHistory, useBalanceHistoryQuery, withBlockTimes } from '@/views/Address/BalanceHistory';
 import NftHoldings from '@/views/Address/NftHoldings';
 import InternalTxns from '@/views/Address/InternalTxns';
+import { CrossChainStrip } from '@/views/Address/CrossChainStrip';
 import { ApprovalSection } from '@/views/Address/approvals';
 import { createRpcClient } from '@/utils/realTimeData';
 import { useEnsName } from '@/services/ens';
@@ -73,6 +81,7 @@ import { DataTable, Pagination, linkStyle } from '@/components/ui/DataTable';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Badge } from '@/components/ui/Badge';
+import { CoverageBadge } from '@/components/ui/CoverageBadge';
 import { Button } from '@/components/ui/Button';
 import { CopyableHash } from '@/components/ui/CopyableHash';
 import { ExternalLinks } from '@/components/ui/ExternalLinks';
@@ -95,6 +104,13 @@ const headerRow = css`
 
 const bannerLinks = css`
   margin: var(--haze-space-2) 0 var(--haze-space-3);
+`;
+
+// Page-level coverage badge row: sits under the page header (below the ENS
+// row when present) — one aggregated honesty chip above the cards, with
+// the per-source explanations expanding from its ⓘ affordance.
+const coverageBadgeRow = css`
+  margin: 0 0 var(--haze-space-4);
 `;
 
 // ENS names carry no length ceiling, and the page title is one: without a
@@ -956,6 +972,208 @@ function AddressLabelRow({ chainId, address }: { chainId: number; address: strin
   );
 }
 
+// --- Overview summary stats (discovered set) ---
+
+// Etherscan-density strip at the top of the Overview card: FIRST/LAST
+// SEEN + TOTAL IN/OUT over the tx rows the Transactions tab discovered
+// for the current window. Sits above the InfoGrid rows; the page-level
+// CoverageBadge above the cards keeps the long coverage explanation, so
+// this strip carries only the one-line discovered caveat below.
+const summaryStatsStyle = css`
+  margin: 0 0 var(--haze-space-4);
+  padding-bottom: var(--haze-space-4);
+  border-bottom: 1px solid var(--haze-color-bg-muted);
+`;
+
+const summaryStatsGrid = css`
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--haze-space-3) var(--haze-space-4);
+
+  /* 375px pass: four cells cannot share a phone row — stack 2×2 (the
+     same breakpoint the InfoGrid rows and card headers stack at). */
+  @media (max-width: 768px) {
+    grid-template-columns: repeat(2, 1fr);
+  }
+`;
+
+const summaryStatsCell = css`
+  display: flex;
+  flex-direction: column;
+  gap: var(--haze-space-1);
+  min-width: 0;
+`;
+
+const summaryStatsLabel = css`
+  color: var(--haze-color-text-muted);
+  font-size: var(--haze-text-xs);
+  font-weight: var(--haze-weight-medium);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+`;
+
+const summaryStatsValue = css`
+  font-family: var(--haze-font-mono);
+  font-size: var(--haze-text-sm);
+  color: var(--haze-color-text);
+  overflow-wrap: anywhere;
+`;
+
+// The discovered semantics, one line: the glyph is the CoverageBadge's
+// color-independent 'discovered' mark (◍ ring) — the long explanation
+// lives in the page badge's expandable detail, never duplicated here.
+const summaryStatsCaveat = css`
+  margin: var(--haze-space-3) 0 0;
+  color: var(--haze-color-text-muted);
+  font-size: var(--haze-text-xs);
+`;
+
+// Boundary-block timestamp lookups. The discovered-set wire rows carry no
+// timestamp, so each boundary block resolves through ONE cached
+// browser-RPC getBlock (module-level: pagination and remounts reuse it);
+// a failed lookup caches null and the cell keeps the honest block-number
+// fallback. Never estimated, never retried per render.
+const blockTimestampCache = new Map<string, number | null>();
+
+// Test isolation for the module-level lookup cache (the same pattern as
+// services/prices' resetPricesForTests): without it one test's cached
+// block lookup would suppress the next test's RPC path.
+export const resetBlockTimestampCacheForTests = (): void => {
+  blockTimestampCache.clear();
+};
+
+const formatDateTimeLocal = (epochMs: number): string => new Date(epochMs).toLocaleString();
+
+// The row-carrying boundary wins as-is; a boundary whose row carried no
+// timestamp reads the RPC lookup cache (number → date, null/absent → the
+// "Block N" fallback below).
+const withCachedTimestamp = (
+  chainId: number,
+  seen: { blockNumber: number; timestamp?: number },
+): { blockNumber: number; timestamp?: number } => {
+  if (seen.timestamp !== undefined) return seen;
+  const cached = blockTimestampCache.get(`${chainId}:${seen.blockNumber}`);
+  return cached === undefined || cached === null
+    ? seen
+    : { blockNumber: seen.blockNumber, timestamp: cached };
+};
+
+// Exported for its focused test file (the same pattern as
+// InvalidAddressError): pure props + one lazy RPC effect, no router.
+export function SummaryStatsRow({
+  chainId,
+  address,
+  rows,
+  symbol,
+  decimals,
+  discoveredTotal,
+}: {
+  chainId: number;
+  address: string;
+  // Structural minimum: satisfied by both the tx tab's TxRecord and the
+  // balance-history page's BalanceTxInput (the current data source).
+  rows: readonly SummaryTxRow[];
+  symbol: string;
+  decimals: number;
+  /** Full discovered count for the window — rows may be a capped slice; the caveat says which. */
+  discoveredTotal?: number;
+}) {
+  const stats = useMemo(
+    () => computeAddressSummaryStats(rows, address),
+    [rows, address],
+  );
+
+  // Boundaries still needing a timestamp: the row carried none and no
+  // cached lookup (success or failure) answered yet.
+  const pendingBlocks = [stats.firstSeen, stats.lastSeen].reduce<number[]>(
+    (acc, boundary) => {
+      if (
+        boundary !== null &&
+        boundary.timestamp === undefined &&
+        !blockTimestampCache.has(`${chainId}:${boundary.blockNumber}`) &&
+        !acc.includes(boundary.blockNumber)
+      ) {
+        acc.push(boundary.blockNumber);
+      }
+      return acc;
+    },
+    [],
+  );
+  const pendingKey = `${chainId}:${pendingBlocks.join(',')}`;
+  // Lookup outcomes only re-render the strip (the cache itself is the
+  // display's source of truth above).
+  const [, bumpLookupTick] = useState(0);
+  useEffect(() => {
+    if (pendingBlocks.length === 0) return;
+    let cancelled = false;
+    void (async () => {
+      const client = await createRpcClient(chainId).catch(() => null);
+      for (const blockNumber of pendingBlocks) {
+        const block =
+          client === null
+            ? null
+            : await client.getBlock({ blockNumber: BigInt(blockNumber) }).catch(() => null);
+        if (cancelled) return;
+        blockTimestampCache.set(
+          `${chainId}:${blockNumber}`,
+          block === null ? null : Number(block.timestamp) * 1000,
+        );
+        bumpLookupTick(tick => tick + 1);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // pendingKey pins the exact (chain, blocks) request set.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingKey]);
+
+  // Clean absence: no discovered rows → no strip, never zeros-as-facts.
+  if (stats.txCount === 0 || stats.firstSeen === null || stats.lastSeen === null) {
+    return null;
+  }
+
+  const cells = [
+    {
+      label: 'First Seen',
+      value: formatSeenBoundary(
+        withCachedTimestamp(chainId, stats.firstSeen),
+        formatDateTimeLocal,
+      ),
+    },
+    {
+      label: 'Last Seen',
+      value: formatSeenBoundary(
+        withCachedTimestamp(chainId, stats.lastSeen),
+        formatDateTimeLocal,
+      ),
+    },
+    { label: 'Total In', value: formatNativeTotal(stats.totalIn, decimals, symbol) },
+    { label: 'Total Out', value: formatNativeTotal(stats.totalOut, decimals, symbol) },
+  ];
+
+  return (
+    <div className={summaryStatsStyle} data-testid="summary-stats-row">
+      <div className={summaryStatsGrid}>
+        {cells.map(cell => (
+          <div key={cell.label} className={summaryStatsCell}>
+            <span className={summaryStatsLabel}>{cell.label}</span>
+            <span className={summaryStatsValue}>{cell.value}</span>
+          </div>
+        ))}
+      </div>
+      <p className={summaryStatsCaveat}>
+        ◍ Over{' '}
+        {discoveredTotal !== undefined && discoveredTotal > stats.txCount
+          ? `the newest ${stats.txCount.toLocaleString()} of ${discoveredTotal.toLocaleString()} discovered transactions`
+          : `the ${stats.txCount.toLocaleString()} discovered transactions`}{' '}
+        of the selected window — not lifetime totals.
+      </p>
+    </div>
+  );
+}
+
 export default function Address() {
   const { params, router } = useMatched();
 
@@ -981,6 +1199,11 @@ export default function Address() {
   // resolved name, when any, becomes the header's primary label.
   const ensQuery = useEnsName(address, currentChainId);
   const ensName = ensQuery.data;
+
+  // Page-level read of the label channel for the coverage badge: same args
+  // as the Label row below, so the query store shares ONE cache entry (no
+  // second fetch) — this only mirrors its state at page scope.
+  const labelCoverageQuery = useAddressLabel(currentChainId, address);
 
   // Tx-list pagination and the deepened search window are URL-driven
   // (?page= / ?window=): shareable deep links and working back/forward.
@@ -1052,6 +1275,23 @@ export default function Address() {
   const txData = txQuery.data as AddressTxPage | undefined;
   const txTotal = txData?.total ?? 0;
   const txTotalPages = Math.max(1, Math.ceil(txTotal / txLimit));
+
+  // Shared balance-history page: SAME cache entry the BalanceHistory
+  // chart consumes (identical args — zero extra requests), the widest
+  // single-page slice of the discovered set (limit 50) with
+  // backend-aligned timestamps. Feeds the Overview's SummaryStatsRow so
+  // the stats strip and the chart can never disagree.
+  const balanceHistoryQuery = useBalanceHistoryQuery([currentChainId, address, txSearchWindow]);
+  // Cross-chain guard (the chart's own pattern): the query layer keeps
+  // the last settle across an args switch — only same-chain data serves.
+  const balanceHistoryPage =
+    balanceHistoryQuery.data?.chainId === currentChainId
+      ? balanceHistoryQuery.data
+      : undefined;
+  const summaryStatsRows = useMemo(
+    () => (balanceHistoryPage === undefined ? [] : withBlockTimes(balanceHistoryPage)),
+    [balanceHistoryPage],
+  );
 
   // CSV export URL: mirrors the tx list's CURRENT ?window= param (the
   // backend replays the same discovery), so the download always matches
@@ -1417,6 +1657,38 @@ export default function Address() {
     ? `${txTotal.toLocaleString()} transactions`
     : `At least ${txTotal.toLocaleString()} transactions discovered`;
 
+  // Page-level coverage aggregate (PM review: one honest chip near the
+  // header instead of stacked caveat paragraphs). Pure derivation in
+  // ./coverage, unit-tested there — the long per-source sentences live in
+  // the badge's expandable detail; the inline caveats keep one-liners.
+  const addressCoverage = deriveAddressCoverage({
+    realtime: {
+      loading: realTimeQuery.loading,
+      failed: realTimeQuery.error !== undefined,
+    },
+    indexed: {
+      loading: infoQuery.loading,
+      failed: infoQuery.error !== undefined,
+    },
+    txHistory: {
+      active: txScanActive,
+      loading: txQuery.loading,
+      failed: txQuery.error !== undefined,
+      coverage: txCoverage,
+      reason: txReason,
+      searchWindowBlocks: txSearchWindowBlocks,
+    },
+    transfersScan: {
+      scanned: transfersScanned,
+      loading: holdingsQuery.loading,
+      failed: holdingsQuery.error !== undefined,
+    },
+    labels: {
+      loading: labelCoverageQuery.loading,
+      failed: labelCoverageQuery.error !== undefined,
+    },
+  });
+
   return (
     <>
       <TopNavigation currentChainId={currentChainId} onChainChange={handleChainChange} />
@@ -1442,6 +1714,16 @@ export default function Address() {
           </div>
         )}
 
+        {/* One aggregated coverage chip above the cards: the per-source
+            explanations expand from its ⓘ affordance, so the cards below
+            keep only their mandatory one-liner caveats. */}
+        <CoverageBadge
+          level={addressCoverage.level}
+          label={addressCoverage.label}
+          detail={addressCoverage.detail}
+          className={coverageBadgeRow}
+        />
+
         {isInitialLoading && <LoadingState message="Loading address information..." />}
 
         {/* Real failures only: an invalid address never reaches this
@@ -1461,10 +1743,9 @@ export default function Address() {
               <div className={offlineNotice} role="status">
                 <Alert variant="warning">
                   Indexed address details are unavailable — the explorer&apos;s
-                  indexing backend is not connected. Verification status,
-                  contract name and creation info need it; balance, nonce and
-                  the type classification below still come from the live
-                  chain RPC.
+                  indexing backend is not connected; balance, nonce and the
+                  type classification below still come from the live chain
+                  RPC (per-source detail in the coverage badge above).
                 </Alert>
               </div>
             )}
@@ -1473,6 +1754,20 @@ export default function Address() {
                 <CardTitle>Overview</CardTitle>
               </CardHeader>
               <CardContent>
+                {/* Summary stats over the balance-history page's discovered
+                    rows (the same cached response the chart below renders —
+                    limit 50, timestamps backend-aligned): renders only when
+                    that set is non-empty (clean absence otherwise); dates
+                    fall back to honest block numbers when no timestamp
+                    resolves. */}
+                <SummaryStatsRow
+                  chainId={currentChainId}
+                  address={address}
+                  rows={summaryStatsRows}
+                  symbol={getChainSymbol(currentChainId)}
+                  decimals={chainInfo.nativeCurrency?.decimals ?? 18}
+                  discoveredTotal={balanceHistoryPage?.total}
+                />
                 <InfoGrid>
                   <InfoItem label="Address">{address}</InfoItem>
 
@@ -1683,6 +1978,12 @@ export default function Address() {
                 </InfoGrid>
               </CardContent>
             </Card>
+
+            {/* Cross-chain presence (bounded probe): collapsed one-line
+                summary under the Overview card — balance+code reads on a
+                fixed candidate set of other networks, chips expanded only
+                on user intent. Self-contained: own probe, prices, states. */}
+            <CrossChainStrip chainId={currentChainId} address={address} />
 
             {/* Token approvals (read-only erc20 approve scan): self-contained
                 — own fetch/loading/error/caveat states; renders null when it
@@ -1925,12 +2226,13 @@ export default function Address() {
                     outside the heuristic's reach at every coverage level —
                     the Internal Txns tab traces them on demand instead.
                     Token transfers moved to their own tab with its own
-                    coverage banners. */}
+                    coverage banners; the coverage badge above carries the
+                    full per-source wording (incl. the ERC-20/721/1155
+                    enumeration). */}
                     <p className={tokenNotice}>
                       This list covers external transactions only — internal
-                      transfers are traced separately in the Internal Txns tab,
-                      and token transfers (ERC-20/721/1155) live in the Token
-                      Transfers tab.
+                      transfers are traced in the Internal Txns tab, token
+                      transfers in the Token Transfers tab.
                     </p>
 
                     {txQuery.loading && (
