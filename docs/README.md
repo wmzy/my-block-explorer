@@ -1,18 +1,13 @@
 # Project docs
 
-Living documents (kept in sync with the code):
+Lean, maintained set — the code stays the source of truth; these files explain it:
 
-- [DEPLOYMENT.md](./DEPLOYMENT.md) — real deployment shapes + security warnings
-- [INSTALLATION.md](./INSTALLATION.md) — install from source, env vars, troubleshooting
+- [README](../README.md) — top-level: positioning, features, security model, verified behavior notes. Start here.
+- [INSTALLATION.md](./INSTALLATION.md) — install from source, the three run modes, troubleshooting
 - [CONFIG.md](./CONFIG.md) — everything actually configurable (env vars, config files, RPC overrides)
 - [API.md](./API.md) — API reference (route files are the source of truth)
-- [AUTO_DISCOVERY.md](./AUTO_DISCOVERY.md) — how the frontend finds the backend
-- [ALL_CHAINS_SUPPORT.md](./ALL_CHAINS_SUPPORT.md) — all viem chains, popular-chain pinning
+- [ARCHITECTURE.md](./ARCHITECTURE.md) — the system as shipped (routing, chain switching, search dispatch, auto-discovery) followed by the original design-time document
+- [DEPLOYMENT.md](./DEPLOYMENT.md) — real deployment shapes + security warnings
 
-Historical / design records (not maintained against the code; read as background):
-
-- [ARCHITECTURE.md](./ARCHITECTURE.md) — original architecture design doc; the deployment section reflects reality, the rest is design-time notes
-- [DATA_STRATEGY.md](./DATA_STRATEGY.md), [ON_DEMAND_SYNC.md](./ON_DEMAND_SYNC.md), [DEVELOPMENT_SUMMARY.md](./DEVELOPMENT_SUMMARY.md), [SRC_MIGRATION_STATUS.md](./SRC_MIGRATION_STATUS.md), [SEARCH_FIX.md](./SEARCH_FIX.md), [NAVIGATION.md](./NAVIGATION.md), [CHAIN_SWITCHING.md](./CHAIN_SWITCHING.md), [COMPONENTS.md](./COMPONENTS.md)
-- [optimization/](./optimization/) — a 2024-era performance work log; its headline numbers ("99%+ faster", "1-9 ms") were never re-verified and should not be quoted as current behavior
-
-Start with the top-level [README](../README.md) for positioning, security model, and verified behavior notes.
+[archive/](./archive/) — historical design records and work logs, kept for
+background only; they do not describe current behavior.

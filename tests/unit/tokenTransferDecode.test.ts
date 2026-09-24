@@ -7,7 +7,10 @@ import {
   parseAbiParameters,
   type Hex,
 } from 'viem';
-import { decodeTokenTransfersFromLogs } from '@/utils/tokenTransferDecode';
+import {
+  decodeTokenTransfersFromLogs,
+  transferStandardFromTopics,
+} from '@/utils/tokenTransferDecode';
 
 // Addresses are derived through getAddress so the expected checksummed
 // forms below are viem's, not hand-transcribed ones.
@@ -177,5 +180,48 @@ describe('decodeTokenTransfersFromLogs', () => {
       'erc1155_single',
     ]);
     expect(decoded[1].from).toBe(RECIPIENT); // batch keeps its own from/to
+  });
+});
+
+describe('transferStandardFromTopics', () => {
+  // Same fixture family as the decoder cases above: real viem-encoded
+  // topic vectors, so the shapes pinned here are the wire shapes.
+  it('splits the shared Transfer selector by indexed-topic count', () => {
+    expect(transferStandardFromTopics(erc20Log(SENDER, RECIPIENT, 1n).topics)).toBe('erc20');
+    expect(transferStandardFromTopics(erc721Log(SENDER, RECIPIENT, 3n).topics)).toBe('erc721');
+  });
+
+  it('classifies both ERC-1155 selector shapes as erc1155', () => {
+    expect(transferStandardFromTopics(erc1155SingleLog(SENDER, RECIPIENT, 4n, 5n).topics)).toBe('erc1155');
+    expect(transferStandardFromTopics(erc1155BatchLog(SENDER, RECIPIENT, [1n], [2n]).topics)).toBe('erc1155');
+  });
+
+  it('returns undefined for unknown topic0 values and topicless logs', () => {
+    expect(transferStandardFromTopics([`0x${'ab'.repeat(32)}`])).toBeUndefined();
+    expect(transferStandardFromTopics([])).toBeUndefined();
+  });
+
+  it('returns undefined for nonstandard topic counts on known selectors', () => {
+    const transferTopics = topicsOf({
+      abi: erc20TransferAbi,
+      eventName: 'Transfer',
+      args: { from: SENDER, to: RECIPIENT },
+    });
+    // Five topics: neither the 3-topic ERC-20 nor the 4-topic ERC-721 shape.
+    expect(
+      transferStandardFromTopics([...transferTopics, transferTopics[0], transferTopics[0]]),
+    ).toBeUndefined();
+    // TransferSingle missing its operator slot (3 topics, not 4).
+    const singleTopics = topicsOf({
+      abi: erc1155SingleAbi,
+      eventName: 'TransferSingle',
+      args: { operator: SENDER, from: SENDER, to: RECIPIENT },
+    });
+    expect(transferStandardFromTopics(singleTopics.slice(1))).toBeUndefined();
+  });
+
+  it('tolerates a mixed-case topic0 like the decoder does', () => {
+    const topics = erc20Log(SENDER, RECIPIENT, 1n).topics;
+    expect(transferStandardFromTopics([topics[0].toUpperCase(), ...topics.slice(1)])).toBe('erc20');
   });
 });

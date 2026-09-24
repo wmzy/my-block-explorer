@@ -2,7 +2,10 @@
 // eth_getLogs scan (see services/tokenTransfers.ts) — there is no indexer
 // behind it, so coverage honesty is part of the surface. Token symbol and
 // decimals enrichment is frontend RPC territory by design: the backend
-// deliberately never reads token metadata.
+// deliberately never reads token metadata. Standard filter chips
+// (?ttStandard=) are client-side over the fetched page and classify rows
+// by the backend's log-shape evidence (TokenTransfer.logStandard), which
+// can honestly diverge from the metadata-resolved Standard pill.
 import { useEffect, useRef, useState } from 'react';
 import { css } from '@linaria/core';
 import { TypedLink, useSearch, useSetSearch } from '@native-router/react';
@@ -13,12 +16,12 @@ import { useTokenOverview } from '@/services/tokenMetadata';
 import { classifyTokenOverview } from '@/views/Address/tokenOverview';
 import { createRpcClient } from '@/utils/realTimeData';
 import { checkAddressValidity } from '@/views/Address/addressValidity';
-import { addressSearchSchema, shouldPinTransfersPage } from '@/views/Address/search';
+import { addressSearchSchema, effectiveTransferStandard, shouldPinTransfersPage, type TransferStandardId } from '@/views/Address/search';
 import { getExternalToolLinks } from '@/config/externalTools';
 import { formatRelativeTime } from '@/utils/format';
 import { DataTable, Pagination, linkStyle } from '@/components/ui/DataTable';
 import { LoadingState } from '@/components/ui/LoadingState';
-import { ErrorState } from '@/components/ui/ErrorState';
+import { ErrorState, EmptyState } from '@/components/ui/ErrorState';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { CopyableHash } from '@/components/ui/CopyableHash';
@@ -70,6 +73,29 @@ const modeToggle = css`
   gap: var(--haze-space-2);
   margin: 0 0 var(--haze-space-3);
 `;
+
+// Standard filter chips (the mode toggle's visual language): All /
+// ERC-20 / ERC-721 / ERC-1155, driven by ?ttStandard=. Named …Row to stay
+// distinct from the component's `standardFilter` value (the effective
+// ?ttStandard=), which would shadow a same-named module constant inside
+// the component body.
+const standardFilterRow = css`
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--haze-space-2);
+  margin: 0 0 var(--haze-space-3);
+`;
+
+// The chip row: "All" plus one chip per log-evidenced standard. Filtering
+// is CLIENT-SIDE over the fetched page (the scan shape never changes), so
+// a chip that empties the page keeps the pagination and the ?ttPage=
+// convergence path untouched.
+const STANDARD_FILTERS: readonly { id: TransferStandardId | undefined; label: string }[] = [
+  { id: undefined, label: 'All' },
+  { id: 'erc20', label: 'ERC-20' },
+  { id: 'erc721', label: 'ERC-721' },
+  { id: 'erc1155', label: 'ERC-1155' },
+];
 
 // Neutral stand-in for the raw scan error when the page-level card
 // already explains the cause (invalid address): muted, no retry — the
@@ -430,7 +456,7 @@ export default function TokenTransfers({
   // also pins ?tab=transfers — this component only renders on that tab,
   // so its URL writes must keep the deep link landing there.
   const setSearch = useSetSearch(addressSearchSchema);
-  const { ttPage: ttPageParam, ttWindow: ttWindowParam } = useSearch(addressSearchSchema);
+  const { ttPage: ttPageParam, ttWindow: ttWindowParam, ttStandard: ttStandardParam } = useSearch(addressSearchSchema);
   const page = Math.max(1, Math.floor(ttPageParam));
   const setPage = (next: number) => {
     void setSearch(prev => ({
@@ -438,6 +464,25 @@ export default function TokenTransfers({
       tab: 'transfers',
       ttPage: String(Math.max(1, Math.floor(next))),
     }));
+  };
+  // Standard filter chip (?ttStandard=): URL-driven like ?ttPage=, with
+  // the same explicit-vs-absent discipline — an explicit standard wins,
+  // absence is "all standards". Client-side over the fetched rows only:
+  // the scan, the pagination and the beyond-data convergence below all
+  // keep operating on the unfiltered list.
+  const standardFilter = effectiveTransferStandard(ttStandardParam);
+  const setStandardFilter = (next: TransferStandardId | undefined) => {
+    void setSearch(prev => {
+      const merged: Record<string, string | string[]> = { ...prev, tab: 'transfers' };
+      // undefined must DELETE the key (SearchInput values are strings
+      // only): "All" is the ABSENT state, never a serialized value.
+      if (next === undefined) {
+        delete merged.ttStandard;
+      } else {
+        merged.ttStandard = next;
+      }
+      return merged;
+    });
   };
   // Widened scan window (blocks) from ?ttWindow= — undefined is the
   // backend default. URL-driven (never local state): the window survives
@@ -491,6 +536,16 @@ export default function TokenTransfers({
       : undefined;
 
   const transfers = data?.transfers ?? [];
+  // Rows the table renders: the standard chip filters the FETCHED page
+  // client-side. Derived strictly downstream of `transfers` — every
+  // banner, the convergence input and the table's show-condition below
+  // keep reading the raw list, so an empty-after-filter page can never
+  // trip the ?ttPage= reset. Rows without log-shape evidence
+  // (pre-logStandard payloads, nonstandard topic counts) are hidden
+  // under an active chip — never guessed into a bucket.
+  const visibleTransfers = standardFilter === undefined
+    ? transfers
+    : transfers.filter(transfer => transfer.logStandard === standardFilter);
   const coverage = data?.coverage;
   const windowBlocks = data?.windowBlocks;
   // First-scan time (server cache hit) — absent on legacy payloads
@@ -591,6 +646,28 @@ export default function TokenTransfers({
           </Button>
         </div>
       )}
+
+      {/* Standard filter chips: client-side over the fetched page, so the
+          scan shape (and the ?ttPage= convergence) never changes with the
+          filter. ?ttStandard= rides the URL — shareable, refresh-stable,
+          back/forward steps between filters. */}
+      <div
+        className={standardFilterRow}
+        role="group"
+        aria-label="Token transfers standard filter"
+      >
+        {STANDARD_FILTERS.map(filter => (
+          <Button
+            key={filter.label}
+            variant={standardFilter === filter.id ? 'primary' : 'secondary'}
+            size="sm"
+            disabled={standardFilter === filter.id}
+            onClick={() => setStandardFilter(filter.id)}
+          >
+            {filter.label}
+          </Button>
+        ))}
+      </div>
 
       {query.loading && query.data && <LoadingState message="Loading page..." />}
 
@@ -718,38 +795,53 @@ export default function TokenTransfers({
 
       {(transfers.length > 0 || page > 1) && (
         <>
-          <DataTable>
-            <thead>
-              <tr>
-                <th>Tx Hash</th>
-                <th>Block</th>
-                <th title="Timestamps are not available for scan results">Age</th>
-                <th>Direction</th>
-                <th>Token</th>
-                <th>Standard</th>
-                <th>From</th>
-                <th>To</th>
-                <th>Amount</th>
-              </tr>
-            </thead>
-            <tbody>
-              {transfers.map(transfer => (
-                <TransferRow key={`${transfer.txHash}-${transfer.logIndex}`} chainId={chainId} transfer={transfer} />
-              ))}
-              {transfers.length === 0 && (
-                <tr>
-                  <td className={emptyPageCell} colSpan={9}>
-                    No transfers on this page
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </DataTable>
-          {/* Same explanation as the Age header tooltip, stated once in
-              full: the eth_getLogs scan contract carries no timestamps. */}
-          <p className={timestampLegend}>
-            Timestamps are not available for scan results.
-          </p>
+          {/* Filter-emptied page: the raw page HAS rows, none match the
+              active chip — an honest per-page empty (the filter is
+              client-side), with the chip still active and the pagination
+              intact. ?ttPage= is deliberately untouched: the beyond-data
+              convergence above reads the RAW row count, so this state can
+              never trigger it. */}
+          {standardFilter !== undefined && visibleTransfers.length === 0 && transfers.length > 0 ? (
+            <EmptyState
+              message={`No ${STANDARD_FILTERS.find(f => f.id === standardFilter)?.label ?? standardFilter.toUpperCase()} transfers on this page`}
+            />
+          ) : (
+            <>
+              <DataTable>
+                <thead>
+                  <tr>
+                    <th>Tx Hash</th>
+                    <th>Block</th>
+                    <th title="Timestamps are not available for scan results">Age</th>
+                    <th>Direction</th>
+                    <th>Token</th>
+                    <th>Standard</th>
+                    <th>From</th>
+                    <th>To</th>
+                    <th>Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleTransfers.map(transfer => (
+                    <TransferRow key={`${transfer.txHash}-${transfer.logIndex}`} chainId={chainId} transfer={transfer} />
+                  ))}
+                  {transfers.length === 0 && (
+                    <tr>
+                      <td className={emptyPageCell} colSpan={9}>
+                        No transfers on this page
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </DataTable>
+              {/* Same explanation as the Age header tooltip, stated once
+                  in full: the eth_getLogs scan contract carries no
+                  timestamps. */}
+              <p className={timestampLegend}>
+                Timestamps are not available for scan results.
+              </p>
+            </>
+          )}
           <Pagination
             page={page}
             pageInfo={`Page ${page}`}

@@ -61,16 +61,19 @@ export const createRpcClient = async (chainId: number): Promise<PublicClient>
 export const withRetry = async <T>(fn: () => Promise<T>, maxRetries = 3): Promise<T>
 ```
 
-## INCOMPLETE BARREL
+## BARREL
 
-`index.ts` only exports `format` and `validation` — other utils require deep
-imports:
+`index.ts` re-exports all util modules (8 cross-module name collisions are
+resolved with explicit re-exports that take precedence over ambiguous star
+exports: `formatAddress`→`format`, `isValidAddress`/`sanitizeInput`→
+`validation`, `withRetry`→`errorHandler`, the five `rpcConfigService`
+functions). Deep imports remain canonical for call sites — the barrel is
+convenience surface, and `serialization.ts` pulls the pino logger through it
+(browser code should keep deep imports there).
 
 ```typescript
-// ❌ Not available
+// Both work; deep imports are still the norm in call sites
 import { createRpcClient } from '@/utils';
-
-// ✅ Required
 import { createRpcClient } from '@/utils/realTimeData';
 ```
 

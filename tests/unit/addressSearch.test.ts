@@ -8,6 +8,7 @@ import {
   addressSearchSchema,
   effectiveActivityTab,
   effectiveInternalTxDepth,
+  effectiveTransferStandard,
   shouldPinTransfersPage,
 } from '@/views/Address/search';
 import {
@@ -28,6 +29,7 @@ describe('addressSearchSchema', () => {
       window: undefined,
       ttPage: 3,
       ttWindow: 500_000,
+      ttStandard: undefined,
       itDepth: undefined,
       tab: 'transfers',
     });
@@ -39,6 +41,7 @@ describe('addressSearchSchema', () => {
       window: undefined,
       ttPage: 1,
       ttWindow: undefined,
+      ttStandard: undefined,
       itDepth: undefined,
       tab: undefined,
     });
@@ -80,6 +83,30 @@ describe('addressSearchSchema', () => {
     it('coerces to a number and degrades garbage to 1', () => {
       expect(parse('ttPage=4').ttPage).toBe(4);
       expect(parse('ttPage=abc').ttPage).toBe(1);
+    });
+  });
+
+  describe('?ttStandard=', () => {
+    it('keeps each valid standard as an explicit filter', () => {
+      expect(parse('ttStandard=erc20').ttStandard).toBe('erc20');
+      expect(parse('ttStandard=erc721').ttStandard).toBe('erc721');
+      expect(parse('ttStandard=erc1155').ttStandard).toBe('erc1155');
+    });
+
+    it('degrades junk values to undefined (absence = all standards)', () => {
+      // No 'all' member exists to dead-end on: absence IS the all-state,
+      // so a malformed deep link degrades to "no filter" rather than a
+      // serialized default (the ?tab= explicit-vs-absent discipline).
+      expect(parse('ttStandard=bogus').ttStandard).toBeUndefined();
+      expect(parse('ttStandard=').ttStandard).toBeUndefined();
+      expect(parse('ttStandard=ERC20').ttStandard).toBeUndefined();
+    });
+
+    it('is independent from the transfers tab\'s other keys', () => {
+      const parsed = parse('ttPage=2&ttWindow=500000&ttStandard=erc721');
+      expect(parsed.ttPage).toBe(2);
+      expect(parsed.ttWindow).toBe(500_000);
+      expect(parsed.ttStandard).toBe('erc721');
     });
   });
 
@@ -144,6 +171,21 @@ describe('effectiveActivityTab', () => {
 
   it('defaults to the transactions tab otherwise', () => {
     expect(effectiveActivityTab(undefined, 1)).toBe('transactions');
+  });
+});
+
+describe('effectiveTransferStandard', () => {
+  it('lets an explicit valid ?ttStandard= win (never inferred, never defaulted)', () => {
+    expect(effectiveTransferStandard('erc20')).toBe('erc20');
+    expect(effectiveTransferStandard('erc721')).toBe('erc721');
+    expect(effectiveTransferStandard('erc1155')).toBe('erc1155');
+  });
+
+  it('derives "all standards" from absence', () => {
+    // The schema already degraded malformed values to undefined, so the
+    // derivation only ever sees a valid member or absence — both must
+    // stay distinguishable (the ?tab= lesson).
+    expect(effectiveTransferStandard(undefined)).toBeUndefined();
   });
 });
 

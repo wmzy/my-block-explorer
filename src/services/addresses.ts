@@ -25,6 +25,25 @@ export type AddressTransactionPage = {
     | 'search-failed';
   searchWindowBlocks?: number;
   window?: number;
+  /**
+   * Deep-scan job state when one exists for this address (absent on
+   * legacy payloads — the backend drops the key when no job row exists).
+   * Shape: the /scan job DTO; parsed defensively by the Deep Scan panel
+   * (scanJobFromTxPayload in services/addressScan.ts), so this typed
+   * surface is documentation + direct consumers, not a hard dependency.
+   */
+  deepScan?: {
+    status: 'pending' | 'running' | 'paused' | 'error' | 'complete';
+    fromBlock: number;
+    toBlock: number;
+    cursorBlock: number;
+    blocksWalked: number;
+    blocksTotal: number;
+    txsFound: number;
+    errorMessage: string | null;
+    coverage: 'complete' | null;
+    updatedAt: string;
+  };
 };
 
 // Response envelope of GET /api/chains/:chainId/addresses/:address. The

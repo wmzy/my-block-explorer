@@ -90,6 +90,9 @@ const mocks = vi.hoisted(() => {
       | 'zero-balance'
       | 'search-failed';
     searchWindowBlocks?: number;
+    // Additive deep-scan job riding the payload (typed opaque: the page
+    // reads it defensively through parseScanJob, never structurally).
+    deepScan?: unknown;
   };
   const initialAddressTxPage: AddressTxPageMock = {
     transactions: mockTransactions,
@@ -230,6 +233,28 @@ vi.mock('@/services/addressRealTime', () => ({
 vi.mock('@/services/ens', () => ({
   useEnsName: () => mocks.ens,
 }));
+
+// The Deep Scan panel rides the transactions tab; its network hook is
+// mocked to a settled no-job state so the page test stays offline, while
+// the pure payload parsers (scanJobFromTxPayload — read by the coverage
+// derivation below) stay REAL: the defensive deepScan-field read keeps
+// being exercised through the page itself.
+vi.mock('@/services/addressScan', async importOriginal => {
+  const actual = await importOriginal<typeof import('@/services/addressScan')>();
+  return {
+    ...actual,
+    useScanJob: () => ({
+      data: null,
+      loading: false,
+      fetching: false,
+      error: undefined,
+      failureCount: 0,
+      stale: false,
+      dataUpdatedAt: undefined,
+      refetch: () => undefined,
+    }),
+  };
+});
 
 // The transfers tab renders the REAL TokenTransfers component against this
 // settled page (ERC-1155 rows → no RPC enrichment, see the fixture above).
@@ -1402,5 +1427,33 @@ describe('Overview summary stats row', () => {
     expect(screen.queryByTestId('summary-stats-row')).not.toBeInTheDocument();
     expect(screen.queryByText('Total In')).not.toBeInTheDocument();
     expect(screen.queryByText('First Seen')).not.toBeInTheDocument();
+  });
+
+  it('lifts the coverage badge line when the payload carries a completed genesis deep scan', async () => {
+    // The heuristic channel alone stays partial; the additive deepScan
+    // job (complete + genesis-anchored) is the only sanctioned lift.
+    mocks.addressTransactions = {
+      transactions: mocks.mockTransactions,
+      total: mocks.mockTransactions.length,
+      coverage: 'partial',
+      deepScan: {
+        status: 'complete',
+        fromBlock: 0,
+        toBlock: 18_000_000,
+        cursorBlock: 18_000_000,
+        blocksWalked: 18_000_001,
+        blocksTotal: 18_000_001,
+        txsFound: 2,
+        errorMessage: null,
+        coverage: 'complete',
+        updatedAt: '2026-09-24T00:00:00.000Z',
+      },
+    };
+    renderPage();
+    await screen.findByText('Overview');
+    fireEvent.click(screen.getByTestId('coverage-badge-toggle'));
+    expect(screen.getByTestId('coverage-badge-detail')).toHaveTextContent(
+      'complete (deep scan)',
+    );
   });
 });

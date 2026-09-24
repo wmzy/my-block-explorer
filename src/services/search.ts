@@ -53,6 +53,20 @@ export type SearchResult = {
     name: string | null;
     isVerified: boolean;
   }>;
+  /**
+   * Curated token/label hits (free-text queries only): known-token symbol
+   * matches from the curated per-chain list plus this explorer's address
+   * labels (user + builtin), deduped by address (the label wins). NOT a
+   * token index — curated sources only, and the section copy says so.
+   * Absent when the label read failed or the query wasn't free text;
+   * empty array = successful read with zero matches.
+   */
+  tokenHits?: Array<{
+    chainId: number;
+    address: string;
+    matchText: string;
+    source: 'known-token' | 'label';
+  }>;
   /** Human-readable note (e.g. ENS names resolve client-side). */
   message?: string | null;
   data?: unknown;

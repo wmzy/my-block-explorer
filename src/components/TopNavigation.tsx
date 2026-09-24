@@ -1301,6 +1301,16 @@ export default function TopNavigation({
             >
               Charts
             </button>
+            {/* SQL console: admin-gated read-only queries against the
+                explorer's own DuckDB. Not chain-scoped (it queries the
+                main database), so it links to the bare /sql path. */}
+            <button
+              type="button"
+              className={navLink}
+              onClick={() => goTo('/sql')}
+            >
+              SQL
+            </button>
           </div>
 
           <div ref={searchContainerRef} className={searchArea}>

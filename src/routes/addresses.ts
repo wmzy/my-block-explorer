@@ -1,6 +1,21 @@
 import { Hono } from 'hono';
 import { createLogger } from '../server/logger';
 import { addressService } from '../services/AddressService';
+import type { DiscoveredTransaction } from '../services/AddressService';
+import {
+  createOrReplaceScanJob,
+  deleteScanJob,
+  getScanFindings,
+  getScanJobRow,
+  hydrateFindings,
+  isScanJobActive,
+  pauseScanJob,
+  resumeScanJob,
+  toScanJobDto,
+  validateScanJobBody,
+  type ScanJobDto,
+} from '../services/AddressScanService';
+import { requireAdminTokenIfConfigured } from '../middleware/admin-token';
 import { getChainName } from '../config/chains';
 
 const logger = createLogger('addresses-routes');
@@ -124,18 +139,50 @@ app.get('/chains/:chainId/addresses/:address/transactions', addressTransactionsR
   const includeBalanceHistory = c.req.query('balanceHistory') === '1';
 
   try {
+    // Additive deep-scan contract: the `deepScan` field appears ONLY when
+    // a scan job row exists (no row → legacy response byte-identical).
+    // Persisted findings merge into the discovered list; a completed
+    // genesis-anchored walk is the ONLY sanctioned coverage lift.
+    let scanJobDto: ScanJobDto | undefined;
+    let deepScanFindings: DiscoveredTransaction[] | undefined;
+    const scanJobRow = await getScanJobRow(chainId, address);
+    if (scanJobRow) {
+      scanJobDto = toScanJobDto(scanJobRow);
+      const findingRows = await getScanFindings(chainId, address);
+      if (findingRows.length > 0) {
+        try {
+          deepScanFindings = await hydrateFindings(chainId, address, findingRows);
+        } catch (error) {
+          // Hydration is RPC-bound: degrade to the heuristic-only list
+          // (deepScan still reported) rather than failing the endpoint or
+          // serving fabricated transaction fields.
+          logger.warn(
+            { err: error, chainId, address },
+            'Deep-scan findings hydration failed; serving heuristic-only list',
+          );
+        }
+      }
+    }
+
     const result = await addressService.getAddressTransactions(
       chainId,
       address,
       limit,
       offset,
       windowBlocks,
-      { includeBalancePoints: includeBalanceHistory },
+      {
+        includeBalancePoints: includeBalanceHistory,
+        ...(deepScanFindings ? { deepScanFindings } : {}),
+      },
     );
     c.header('X-Data-Source', result.method);
     c.header('X-Chain-Name', getChainName(chainId));
 
     const totalPages = Math.max(1, Math.ceil(result.total / limit));
+    // The only sanctioned 'complete' in the product: a finished,
+    // genesis-anchored deep scan. Everything else keeps the honest
+    // heuristic coverage verdict.
+    const coverageLifted = scanJobDto?.coverage === 'complete';
 
     const responseData = safeJsonResponse({
       chainId,
@@ -150,8 +197,8 @@ app.get('/chains/:chainId/addresses/:address/transactions', addressTransactionsR
         total: result.total,
       },
       method: result.method,
-      coverage: result.coverage,
-      reason: result.reason,
+      coverage: coverageLifted ? 'complete' : result.coverage,
+      reason: coverageLifted ? 'deep-scan' : result.reason,
       searchWindowBlocks: result.searchWindowBlocks,
       ...(includeBalanceHistory
         ? {
@@ -161,6 +208,7 @@ app.get('/chains/:chainId/addresses/:address/transactions', addressTransactionsR
             balancePointsCount: result.balancePoints?.length ?? 0,
           }
         : {}),
+      ...(scanJobDto ? { deepScan: scanJobDto } : {}),
       timestamp: new Date().toISOString(),
     });
 
@@ -253,5 +301,150 @@ app.get(
     }
   },
 );
+
+// ============================================================
+// Deep scan — persistent per-address transaction-discovery jobs.
+// Writes (create/pause/resume/delete) are admin-opt-in gated and share
+// one 3/min burst-2 bucket (a scan job drives long-lived RPC walks);
+// GET is an open read. Tag bounds resolve ONCE at creation to concrete
+// numbers; stored rows never carry tags.
+// ============================================================
+const addressScanWriteLimiter = createRateLimiter({
+  name: 'address-scan-write',
+  requestsPerMinute: 3,
+  burst: 2,
+});
+
+// POST /chains/:chainId/addresses/:address/scan — create (202), return
+// the existing job when the resolved bounds match (200, idempotent),
+// 400 invalid_bounds on bad bodies/bounds, 400 scan_conflict when a job
+// with different bounds exists unless force resets it. The walk runs in
+// the background (202-async start); poll GET for progress.
+app.post('/chains/:chainId/addresses/:address/scan', requireAdminTokenIfConfigured, addressScanWriteLimiter, async (c) => {
+  const chainId = getValidatedChainId(c.req.param('chainId'));
+  const address = getValidatedAddress(c.req.param('address'));
+
+  let body: unknown = {};
+  try {
+    body = await c.req.json();
+  } catch {
+    // Empty or non-JSON body → default bounds (earliest..latest).
+  }
+
+  const validated = validateScanJobBody(body);
+  if (!validated.ok) {
+    return c.json({ error: 'invalid_bounds', message: validated.message }, 400);
+  }
+
+  try {
+    const outcome = await createOrReplaceScanJob(chainId, address, {
+      fromBlock: validated.fromBlock,
+      toBlock: validated.toBlock,
+      force: validated.force,
+    });
+    if (!outcome.ok) {
+      return c.json({ error: 'invalid_bounds', message: outcome.message }, 400);
+    }
+    if (outcome.result.outcome === 'conflict') {
+      return c.json({ error: 'scan_conflict', message: outcome.result.message }, 400);
+    }
+
+    c.header('X-Chain-Name', getChainName(chainId));
+    return c.json(
+      toScanJobDto(outcome.result.job),
+      outcome.result.outcome === 'created' ? 202 : 200,
+    );
+  } catch (error) {
+    logger.error({ err: error }, 'Create address scan API error');
+    return c.json({ error: 'Failed to create address scan' }, 500);
+  }
+});
+
+// GET /chains/:chainId/addresses/:address/scan — open read of the job
+// (404 when no job row exists).
+app.get('/chains/:chainId/addresses/:address/scan', async (c) => {
+  const chainId = getValidatedChainId(c.req.param('chainId'));
+  const address = getValidatedAddress(c.req.param('address'));
+
+  try {
+    const row = await getScanJobRow(chainId, address);
+    if (!row) {
+      return c.json({ error: 'no_scan_job' }, 404);
+    }
+    c.header('X-Chain-Name', getChainName(chainId));
+    return c.json(toScanJobDto(row));
+  } catch (error) {
+    logger.error({ err: error }, 'Get address scan API error');
+    return c.json({ error: 'Failed to get address scan' }, 500);
+  }
+});
+
+// POST /chains/:chainId/addresses/:address/scan/pause — flags the live
+// loop; the job settles into 'paused' at its last checkpointed cursor.
+app.post('/chains/:chainId/addresses/:address/scan/pause', requireAdminTokenIfConfigured, addressScanWriteLimiter, async (c) => {
+  const chainId = getValidatedChainId(c.req.param('chainId'));
+  const address = getValidatedAddress(c.req.param('address'));
+
+  try {
+    const row = await getScanJobRow(chainId, address);
+    // Only a genuinely walking job can pause: the row claims 'running'
+    // AND a live loop exists for it. A 'running' row without a loop is a
+    // restart-stranded job (reconcile flips it to 'error' at startup).
+    if (row?.status !== 'running' || !isScanJobActive(chainId, address)) {
+      return c.json(
+        {
+          error: 'invalid_state',
+          message: `Scan job is not running (status: ${row?.status ?? 'none'})`,
+        },
+        400,
+      );
+    }
+
+    pauseScanJob(chainId, address);
+
+    c.header('X-Chain-Name', getChainName(chainId));
+    // The row still reads 'running' until the loop settles the current
+    // segment; polling GET observes the 'paused' flip within a segment.
+    return c.json(toScanJobDto(row), 202);
+  } catch (error) {
+    logger.error({ err: error }, 'Pause address scan API error');
+    return c.json({ error: 'Failed to pause address scan' }, 500);
+  }
+});
+
+// POST /chains/:chainId/addresses/:address/scan/resume — continue a
+// paused job exactly from its checkpointed cursor.
+app.post('/chains/:chainId/addresses/:address/scan/resume', requireAdminTokenIfConfigured, addressScanWriteLimiter, async (c) => {
+  const chainId = getValidatedChainId(c.req.param('chainId'));
+  const address = getValidatedAddress(c.req.param('address'));
+
+  try {
+    const resumed = await resumeScanJob(chainId, address);
+    if (!resumed.ok) {
+      return c.json({ error: 'invalid_state', message: resumed.message }, 400);
+    }
+
+    c.header('X-Chain-Name', getChainName(chainId));
+    return c.json(toScanJobDto(resumed.job), 202);
+  } catch (error) {
+    logger.error({ err: error }, 'Resume address scan API error');
+    return c.json({ error: 'Failed to resume address scan' }, 500);
+  }
+});
+
+// DELETE /chains/:chainId/addresses/:address/scan — idempotent removal
+// of the job row AND its findings.
+app.delete('/chains/:chainId/addresses/:address/scan', requireAdminTokenIfConfigured, addressScanWriteLimiter, async (c) => {
+  const chainId = getValidatedChainId(c.req.param('chainId'));
+  const address = getValidatedAddress(c.req.param('address'));
+
+  try {
+    await deleteScanJob(chainId, address);
+    return c.body(null, 204);
+  } catch (error) {
+    logger.error({ err: error }, 'Delete address scan API error');
+    return c.json({ error: 'Failed to delete address scan' }, 500);
+  }
+});
 
 export default app;

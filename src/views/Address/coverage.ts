@@ -23,6 +23,14 @@ export type AddressCoverageInputs = {
     readonly coverage?: 'complete' | 'partial' | 'none';
     readonly reason?: string;
     readonly searchWindowBlocks?: number;
+    /**
+     * Coverage asserted by the persistent deep-scan job riding the tx
+     * payload (deepScan.coverage): 'complete' ONLY when a genesis-anchored
+     * walk finished — the product's single sanctioned complete path. Any
+     * other job state (or no job at all) leaves the levels below
+     * untouched.
+     */
+    readonly deepScanCoverage?: 'complete' | null;
   };
   /** Opt-in token-transfers log scan (shared with the transfers tab). */
   readonly transfersScan: {
@@ -87,6 +95,7 @@ const txHistorySource = ({
   coverage,
   reason,
   searchWindowBlocks,
+  deepScanCoverage,
 }: AddressCoverageInputs['txHistory']): CoverageSource => {
   if (failed) {
     return {
@@ -102,6 +111,18 @@ const txHistorySource = ({
   }
   if (loading) {
     return { level: 'partial', detail: 'Transaction history: heuristic scan running…' };
+  }
+  // Deep scan lift: a finished genesis-anchored walk proved the external
+  // history exhaustive, so this source upgrades to the deep-scan complete
+  // claim no matter what the heuristic window alone would say. The only
+  // sanctioned complete path in the product — the genesis anchor is what
+  // makes "no activity outside the walk" provable.
+  if (deepScanCoverage === 'complete') {
+    return {
+      level: 'discovered',
+      detail:
+        'Transaction history: complete (deep scan) — every block from genesis was walked verifying balance checkpoints, so no external transaction is missing (internal transfers and token transfers stay in their own tabs)',
+    };
   }
   if (coverage === 'complete') {
     return {

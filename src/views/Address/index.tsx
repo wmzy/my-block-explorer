@@ -35,6 +35,8 @@ import {
   type ActivityTabId,
 } from '@/views/Address/search';
 import { deriveAddressCoverage } from '@/views/Address/coverage';
+import { DeepScan } from '@/views/Address/DeepScan';
+import { scanJobFromTxPayload } from '@/services/addressScan';
 import {
   computeAddressSummaryStats,
   formatNativeTotal,
@@ -64,6 +66,7 @@ import {
 import { useTokenTransfers } from '@/services/tokenTransfers';
 import { useTokenOverview } from '@/services/tokenMetadata';
 import { BalanceHistory, useBalanceHistoryQuery, withBlockTimes } from '@/views/Address/BalanceHistory';
+import KnownTokens from '@/views/Address/KnownTokens';
 import NftHoldings from '@/views/Address/NftHoldings';
 import InternalTxns from '@/views/Address/InternalTxns';
 import { CrossChainStrip } from '@/views/Address/CrossChainStrip';
@@ -1677,6 +1680,9 @@ export default function Address() {
       coverage: txCoverage,
       reason: txReason,
       searchWindowBlocks: txSearchWindowBlocks,
+      // Additive deep-scan field off the tx payload (parsed defensively:
+      // legacy payloads carry no job and leave the levels untouched).
+      deepScanCoverage: scanJobFromTxPayload(txData)?.coverage,
     },
     transfersScan: {
       scanned: transfersScanned,
@@ -1846,6 +1852,14 @@ export default function Address() {
                       </>
                     )}
                   </InfoItem>
+
+                  {/* Known Tokens (curated list, live balances): one cheap
+                      Multicall3 batch over the per-chain known-token list —
+                      fires for every address (EOA and contract alike), so
+                      holdings exist on this page even before any transfer
+                      scan; silent absence while in flight or on RPC
+                      failure. */}
+                  <KnownTokens chainId={currentChainId} address={address} />
 
                   {/* NFT holdings from the SAME first-page transfers scan
                       (no refetch): renders nothing when the window holds no
@@ -2234,6 +2248,19 @@ export default function Address() {
                       transfers are traced in the Internal Txns tab, token
                       transfers in the Token Transfers tab.
                     </p>
+
+                    {/* Deep Scan panel (tx tab only): the persistent
+                        discovery job that can upgrade this list's coverage
+                        from discovered to provably complete. Reads the
+                        job riding this very payload (additive deepScan
+                        field, parsed defensively) while its own live GET
+                        settles; unmounting on tab switch also stops the
+                        panel's poll cadence. */}
+                    <DeepScan
+                      chainId={currentChainId}
+                      address={address}
+                      txPayload={txData}
+                    />
 
                     {txQuery.loading && (
                       <LoadingState message="Scanning recent chain history..." />

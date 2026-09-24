@@ -22,6 +22,14 @@ import {
 //   transfers-tab twin of ?window= (separate key so the two tabs never
 //   clobber each other's depth). Clamped to the backend's 1..50M range;
 //   absent/malformed/out-of-range means the backend default window.
+// - ?ttStandard= token-transfers standard filter chip ('erc20'/'erc721'
+//   /'erc1155'). Same explicit-vs-absent discipline as ?tab=: an
+//   EXPLICIT value always wins, absence means "all standards" — a
+//   `.catch(...)` default would make "explicit all" indistinguishable
+//   from "no filter in the URL" (there is no 'all' enum member to
+//   dead-end on, so absence IS the all-state). The filter is client-side
+//   over the fetched page (never a scan-shape change), so it shares no
+//   path with the ?ttPage= beyond-data convergence.
 // - ?itDepth= internal-txns tab trace depth: how many of the discovered
 //   transactions the browser-side callTracer scan traces. Structurally
 //   invalid values (non-integer, non-positive) degrade to undefined —
@@ -42,11 +50,20 @@ export const activityTabSchema = z.enum(['transactions', 'transfers', 'internal'
 
 export type ActivityTabId = z.infer<typeof activityTabSchema>;
 
+// Token-standard filter chips of the transfers tab. Matches the row
+// field the backend derives from the log's topic shape
+// (TokenTransfer.logStandard) — not the metadata-disambiguated display
+// enum.
+export const transferStandardSchema = z.enum(['erc20', 'erc721', 'erc1155']);
+
+export type TransferStandardId = z.infer<typeof transferStandardSchema>;
+
 export const addressSearchSchema = z.object({
   page: z.coerce.number().catch(1),
   window: z.coerce.number().int().min(1).optional().catch(undefined),
   ttPage: z.coerce.number().catch(1),
   ttWindow: z.coerce.number().int().min(1).max(50_000_000).optional().catch(undefined),
+  ttStandard: transferStandardSchema.optional().catch(undefined),
   itDepth: z.coerce.number().int().positive().optional().catch(undefined),
   tab: activityTabSchema.optional().catch(undefined),
 });
@@ -67,6 +84,17 @@ export const effectiveActivityTab = (
   tab: ActivityTabId | undefined,
   ttPage: number,
 ): ActivityTabId => tab ?? (ttPage > 1 ? 'transfers' : 'transactions');
+
+// Effective token-standard filter for the transfers tab. An explicit
+// valid ?ttStandard= wins; absence (or a malformed value — the schema's
+// .catch(undefined) already degraded it) means "all standards". Pure so
+// the explicit-vs-absent contract is testable (the ?tab= lesson: the
+// distinction must stay observable, never baked into a default). No
+// inference branch exists on purpose — no other param implies a
+// standard, unlike ttPage's tab inference.
+export const effectiveTransferStandard = (
+  ttStandard: TransferStandardId | undefined,
+): TransferStandardId | undefined => ttStandard;
 
 // True when the token-transfers payload has settled (data present, not
 // loading, no error) with zero rows at this page offset on a page past

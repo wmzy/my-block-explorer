@@ -2,13 +2,18 @@
 // display derived from the calldata's 4-byte selector, resolved through
 // the shared openchain-backed signature service — the same source the tx
 // detail page chips as "openchain", reusing its visual language (mono
-// name, muted "+N more", provenance chip). Pure extraction and display
-// mapping live here, exported for unit tests; the service batches every
-// visible selector into ≤25-per-request lookups behind a session memo,
-// so paging back over a seen page costs no requests.
+// name, muted "+N more", provenance chip). Rows whose to-address is in
+// the curated known-routers set for the current chain additionally get a
+// protocol chip ('Uniswap V3', …) beside the method display — a display
+// hint about the target contract, never a claim about unlisted rows.
+// Pure extraction and display mapping live here, exported for unit
+// tests; the service batches every visible selector into ≤25-per-request
+// lookups behind a session memo, so paging back over a seen page costs
+// no requests.
 import { css } from '@linaria/core';
 
 import { monoStyle } from '@/components/ui/DataTable';
+import { protocolRouterLabel } from '@/config/knownRouters';
 import type { SignatureOutcome } from '@/services/signatures';
 import type { RpcTransaction } from '@/utils/blockRpcData';
 import { selectorOf } from '@/utils/txDecode';
@@ -104,6 +109,25 @@ const openchainChipStyle = css`
   white-space: nowrap;
 `;
 
+// Protocol identity chip for curated router targets (config/knownRouters):
+// same compact geometry as the provenance chip but tinted, so "what the
+// target is" (Uniswap V3) reads stronger than "where the name came from"
+// (openchain). It labels the to-address only — an unchipped row is
+// uncurated, not "not a router".
+const protocolChipStyle = css`
+  display: inline-block;
+  margin-right: var(--haze-space-1);
+  padding: 0 var(--haze-space-1);
+  border: 1px solid var(--haze-color-border);
+  border-radius: var(--haze-radius-sm);
+  background: var(--haze-color-primary-subtle);
+  font-size: 10px;
+  line-height: 16px;
+  color: var(--haze-color-text);
+  vertical-align: middle;
+  white-space: nowrap;
+`;
+
 // Mobile degradation for the Method column at the established 768px
 // breakpoint: the eight-column table drops its least-essential column
 // instead of widening the card's horizontal scroller. Applied to both the
@@ -116,21 +140,47 @@ export const methodColumnStyle = css`
 
 const truncateSelector = (selector: string): string => `${selector.slice(0, 8)}…`;
 
+// Standalone protocol chip for surfaces that show a to-address-derived
+// method header (the tx detail page's Method row): renders nothing when
+// the address is not in the curated set for the chain. Exported for
+// reuse outside the list table.
+export function ProtocolRouterChip({
+  chainId,
+  toAddress,
+}: {
+  chainId: number;
+  toAddress: string | null | undefined;
+}) {
+  const router = protocolRouterLabel(chainId, toAddress);
+  if (router === null) return null;
+  return <span className={protocolChipStyle}>{router.label}</span>;
+}
+
 // One row's Method cell, rendered from the pure display mapping: em-dash
 // with an explanatory title for the no-method rows, the truncated
 // selector (full value in the title) while pending or unresolved, and the
 // resolved function's base name plus the muted "+N more" and openchain
-// chip once a candidate list lands (full signature in the title).
+// chip once a candidate list lands (full signature in the title). A
+// curated router label chips in front of the selector/resolved displays
+// — the no-method rows keep their plain em-dash (the chip says what the
+// target is; there is no method display to sit beside), and an uncurated
+// row renders exactly as before.
 export function MethodCell({
   inputData,
   toAddress,
   outcome,
+  routerLabel,
 }: {
   inputData: string | undefined;
   toAddress: string | null | undefined;
   outcome: SignatureOutcome | undefined;
+  routerLabel?: string | null;
 }) {
   const display = methodDisplay(inputData, toAddress, outcome);
+  const chip =
+    routerLabel != null && (display.kind === 'selector' || display.kind === 'resolved') ? (
+      <span className={protocolChipStyle}>{routerLabel}</span>
+    ) : null;
   switch (display.kind) {
     case 'transfer':
       return (
@@ -152,39 +202,51 @@ export function MethodCell({
       );
     case 'selector':
       return (
-        <span className={monoStyle} title={display.selector}>
-          {truncateSelector(display.selector)}
-        </span>
+        <>
+          {chip}
+          <span className={monoStyle} title={display.selector}>
+            {truncateSelector(display.selector)}
+          </span>
+        </>
       );
     case 'resolved':
       return (
-        <span title={display.signature}>
-          <span className={monoStyle}>{display.name}</span>
-          {display.moreCount > 0 && (
-            <span className={moreCandidatesStyle}>{`(+${display.moreCount} more)`}</span>
-          )}
-          <span className={openchainChipStyle}>openchain</span>
-        </span>
+        <>
+          {chip}
+          <span title={display.signature}>
+            <span className={monoStyle}>{display.name}</span>
+            {display.moreCount > 0 && (
+              <span className={moreCandidatesStyle}>{`(+${display.moreCount} more)`}</span>
+            )}
+            <span className={openchainChipStyle}>openchain</span>
+          </span>
+        </>
       );
   }
 }
 
 // Row-level wrapper: computes the row's selector once and indexes the
 // page's resolved outcomes (undefined while pending, or when the selector
-// was not requested — creation rows and plain transfers have none).
+// was not requested — creation rows and plain transfers have none). The
+// chain id scopes the curated-router lookup: an address only chips on a
+// chain whose official deployment list contains it.
 export function TxMethodCell({
   tx,
   outcomes,
+  chainId,
 }: {
   tx: Pick<RpcTransaction, 'inputData' | 'toAddress'>;
   outcomes: Record<string, SignatureOutcome>;
+  chainId: number;
 }) {
   const selector = selectorOf(tx.inputData);
+  const router = protocolRouterLabel(chainId, tx.toAddress);
   return (
     <MethodCell
       inputData={tx.inputData}
       toAddress={tx.toAddress}
       outcome={selector !== null ? outcomes[selector] : undefined}
+      routerLabel={router?.label ?? null}
     />
   );
 }

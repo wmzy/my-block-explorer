@@ -39,6 +39,7 @@ describe('route table', () => {
       '/chain/:chainId/contract/:address',
       '/chain/:chainId/contract/:address/events',
       '/search',
+      '/sql',
     ]);
   });
 

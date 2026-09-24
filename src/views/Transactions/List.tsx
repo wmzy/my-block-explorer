@@ -463,7 +463,7 @@ export default function TransactionsList() {
                     />
                   </td>
                   <td className={methodColumnStyle}>
-                    <TxMethodCell tx={tx} outcomes={methodOutcomes} />
+                    <TxMethodCell tx={tx} outcomes={methodOutcomes} chainId={currentChainId} />
                   </td>
                   <td>
                     {tx.blockNumber === null ? (

@@ -7,6 +7,10 @@ import {
 } from 'viem';
 import { rpcManager } from './RpcManager';
 import { createLogger } from '../server/logger';
+import {
+  transferStandardFromTopics,
+  type TokenStandardId,
+} from '../utils/tokenTransferDecode';
 
 const logger = createLogger('token-transfer-service');
 
@@ -24,6 +28,17 @@ export type TokenTransfer = {
   logIndex: number;
   token: string;
   standard: TokenTransferStandard;
+  // Log-shape evidence, derived from the same topic0 whitelist + indexed
+  // topic count the tx-detail decoder applies (utils/
+  // tokenTransferDecode.transferStandardFromTopics): shared Transfer
+  // selector with three topics → 'erc20', four → 'erc721' (the indexed
+  // tokenId), ERC-1155 single/batch selectors → 'erc1155'. Deliberately
+  // NOT folded into `standard`: the event-family enum stays
+  // metadata-disambiguated for display, while this field carries what the
+  // LOG ALONE proves — the transfers-tab standard filter chips consume
+  // it. Optional because pre-logStandard payloads stay renderable (the
+  // scannedAt/mode convention); undefined honestly reads "unknown".
+  logStandard?: TokenStandardId;
   from: string;
   to: string;
   value: string;
@@ -224,6 +239,9 @@ const decodeTransferLog = (
     token: log.address.toLowerCase(),
     direction,
   };
+  // Derived once from the topic shape (the tx-detail decoder's whitelist
+  // + count rules — single source, no duplicated topic0 literals).
+  const logStandard = transferStandardFromTopics(log.topics);
   try {
     if (key === 'erc20') {
       const decoded = decodeEventLog({
@@ -233,10 +251,28 @@ const decodeTransferLog = (
         strict: false,
       });
       const { from, to, value } = (decoded.args ?? {}) as DecodedTransferArgs;
-      if (!from || !to || value === undefined) return null;
+      if (!from || !to) return null;
+      // Shared-signature split (the classifier's topic rule): four topics
+      // mean the tokenId is INDEXED (topics[3]) and data stays empty —
+      // viem then decodes no `value` at all, so without this branch every
+      // ERC-721 log would be dropped as undecodable. Three topics are the
+      // ERC-20 shape with the value word in data.
+      if (logStandard === 'erc721') {
+        const tokenId = BigInt(log.topics[3]).toString();
+        return {
+          ...base,
+          standard: 'erc20-or-erc721',
+          logStandard,
+          from: from.toLowerCase(),
+          to: to.toLowerCase(),
+          value: tokenId,
+        };
+      }
+      if (value === undefined) return null;
       return {
         ...base,
         standard: 'erc20-or-erc721',
+        logStandard,
         from: from.toLowerCase(),
         to: to.toLowerCase(),
         value: value.toString(),
@@ -254,6 +290,7 @@ const decodeTransferLog = (
       return {
         ...base,
         standard: 'erc1155-single',
+        logStandard,
         from: from.toLowerCase(),
         to: to.toLowerCase(),
         value: value.toString(),
@@ -276,6 +313,7 @@ const decodeTransferLog = (
     return {
       ...base,
       standard: 'erc1155-batch',
+      logStandard,
       from: from.toLowerCase(),
       to: to.toLowerCase(),
       value: String(tokenIds.length),

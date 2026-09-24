@@ -32,6 +32,24 @@ export type LiveBlockPayload = {
   sizeBytes?: number;
 };
 
+// One SSE `watch` event's data payload — mirrors the WatchService feed
+// event (src/services/WatchService.ts WatchFeedEvent) that the block
+// stream piggybacks as `watch` frames (src/routes/stream.ts) and the
+// ring-buffer endpoint serves. Bigints arrive as decimal strings.
+// Tolerant by contract: unknown/ malformed frames are dropped by the
+// guard below, never surfaced.
+export type LiveWatchEvent = {
+  kind: 'log' | 'gap';
+  chainId: number;
+  address: string;
+  blockNumber: string;
+  txHash: string | null;
+  logIndex: number | null;
+  topic0: string | null;
+  message: string | null;
+  at: string;
+};
+
 // 'live' only once a pushed block has actually arrived — never merely
 // because a connection opened (an open-but-silent stream is the polling
 // page's world until it proves itself).
@@ -71,12 +89,38 @@ const isLiveBlockPayload = (value: unknown): value is LiveBlockPayload => {
   );
 };
 
+// Structural guard for a `watch` frame: exactly the fields every
+// consumer of LiveWatchEvent reads, with the server's wire types. A
+// frame that fails this never reaches a listener (tolerant parsing —
+// a newer backend adding fields stays readable; a different shape is
+// dropped, never half-delivered).
+const isLiveWatchEvent = (value: unknown): value is LiveWatchEvent => {
+  if (typeof value !== 'object' || value === null) return false;
+  const v = value as Record<string, unknown>;
+  return (
+    (v.kind === 'log' || v.kind === 'gap')
+    && typeof v.chainId === 'number'
+    && typeof v.address === 'string'
+    && typeof v.blockNumber === 'string'
+    && (v.txHash === null || typeof v.txHash === 'string')
+    && (v.logIndex === null || typeof v.logIndex === 'number')
+    && (v.topic0 === null || typeof v.topic0 === 'string')
+    && (v.message === null || typeof v.message === 'string')
+    && typeof v.at === 'string'
+  );
+};
+
+// Exported for tests and consumers that parse frames off the wire
+// themselves (the SSE roundtrip contract lives with its client twin).
+export { isLiveWatchEvent };
+
 type LiveStreamEntry = {
   chainId: number;
   state: LiveChainState;
   refs: number;
   stateListeners: Set<(state: LiveChainState) => void>;
   blockListeners: Set<(block: LiveBlockPayload) => void>;
+  watchListeners: Set<(event: LiveWatchEvent) => void>;
   source: EventSource | null;
   /** Permanent downgrade for this entry after an error (same API base). */
   gaveUp: boolean;
@@ -150,6 +194,23 @@ const openStream = (entry: LiveStreamEntry): void => {
     handleBlockEvent(entry, data);
   });
 
+  // Server-side watch events ride the same connection as named `watch`
+  // frames. Tolerant by construction: any other event NAME simply has no
+  // listener here (ignored by EventSource), and a `watch` frame that
+  // fails the shape guard is dropped whole — no dedupe needed beyond the
+  // consumers' own keys (this manager never replays: it gives up
+  // permanently instead of auto-reconnecting).
+  source.addEventListener('watch', event => {
+    let data: unknown;
+    try {
+      data = JSON.parse((event as MessageEvent<string>).data);
+    } catch {
+      return;
+    }
+    if (!isLiveWatchEvent(data)) return;
+    for (const listener of entry.watchListeners) listener(data);
+  });
+
   // The server's explicit terminal event (unknown chain, dead RPC): log
   // the message, then let the close below do the downgrade — the browser
   // fires onerror when the server ends the stream.
@@ -184,6 +245,7 @@ const acquire = (chainId: number): LiveStreamEntry => {
     refs: 1,
     stateListeners: new Set(),
     blockListeners: new Set(),
+    watchListeners: new Set(),
     source: null,
     gaveUp: false,
     seen: new Set(),
@@ -264,6 +326,26 @@ export function subscribeLiveBlockEvents(
   };
 }
 
+/**
+ * Subscribe to the backend's server-side watch events for one chain
+ * (shared EventSource with the block stream — same connection, same
+ * silent-fallback contract). No replay at subscribe: only events pushed
+ * after subscribing are delivered; history comes from the ring-buffer
+ * endpoint (GET /api/chains/:chainId/watch/events).
+ */
+export function subscribeWatchEvents(
+  chainId: number,
+  onEvent: (event: LiveWatchEvent) => void,
+): () => void {
+  if (!(chainId > 0)) return () => undefined;
+  const entry = acquire(chainId);
+  entry.watchListeners.add(onEvent);
+  return () => {
+    entry.watchListeners.delete(onEvent);
+    release(chainId);
+  };
+}
+
 /** Live-chain state hook: `{ mode, blocks }` for one chain. */
 export function useLiveBlocks(chainId: number): LiveChainState {
   const [state, setState] = useState<LiveChainState>(POLLING_ONLY_STATE);
@@ -283,6 +365,22 @@ export function useLiveBlockEvents(
   onBlockRef.current = onBlock;
   useEffect(
     () => subscribeLiveBlockEvents(chainId, block => onBlockRef.current(block)),
+    [chainId],
+  );
+}
+
+/**
+ * Watch-event callback hook (latest-ref semantics, same shared
+ * EventSource as the block hooks — see subscribeWatchEvents).
+ */
+export function useWatchEvents(
+  chainId: number,
+  onEvent: (event: LiveWatchEvent) => void,
+): void {
+  const onEventRef = useRef(onEvent);
+  onEventRef.current = onEvent;
+  useEffect(
+    () => subscribeWatchEvents(chainId, event => onEventRef.current(event)),
     [chainId],
   );
 }

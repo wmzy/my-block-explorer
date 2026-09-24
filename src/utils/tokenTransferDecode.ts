@@ -14,6 +14,9 @@ export type DecodedTokenTransfer =
   | { kind: 'erc1155_single'; token: string; from: string; to: string; id: string; amount: string }
   | { kind: 'erc1155_batch'; token: string; from: string; to: string; ids: string[]; amounts: string[] };
 
+/** Token standard families a Transfer log's topic shape can evidence. */
+export type TokenStandardId = 'erc20' | 'erc721' | 'erc1155';
+
 /** Structural slice of viem's `Log` that this decoder consumes. */
 type TransferLog = {
   address: string;
@@ -33,6 +36,34 @@ const TRANSFER_BATCH_TOPIC0 = '0x4a39dc06d4c0dbc64b70af90fd698a233a518aa5d07e595
 // is malformed event data and must not decode.
 const UINT256_WORD = /^0x[0-9a-fA-F]{64}$/;
 const UINT256_WORD_PAIR = /^0x[0-9a-fA-F]{128}$/;
+
+/**
+ * Classify a log's token standard from its topic shape alone — the same
+ * topic0 whitelist and indexed-topic-count rules `decodeTransferLog`
+ * applies: the shared Transfer selector with three topics is ERC-20 (the
+ * value rides in data), with four it is ERC-721 (the indexed tokenId is
+ * the fourth); the ERC-1155 single/batch selectors are ERC-1155. Anything
+ * else (unknown topic0, nonstandard topic count, no topics) returns
+ * undefined — the standard is then honestly unknown, never guessed.
+ */
+export function transferStandardFromTopics(
+  topics: readonly string[],
+): TokenStandardId | undefined {
+  const topic0 = topics[0]?.toLowerCase();
+  if (topic0 === undefined) return undefined;
+  if (topic0 === TRANSFER_TOPIC0) {
+    if (topics.length === 3) return 'erc20';
+    if (topics.length === 4) return 'erc721';
+    return undefined;
+  }
+  if (
+    (topic0 === TRANSFER_SINGLE_TOPIC0 || topic0 === TRANSFER_BATCH_TOPIC0)
+    && topics.length === 4
+  ) {
+    return 'erc1155';
+  }
+  return undefined;
+}
 
 /**
  * Checksummed address from a 32-byte indexed topic: topics are left-padded

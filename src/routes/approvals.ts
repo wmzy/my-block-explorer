@@ -24,14 +24,15 @@ const windowSchema = z.coerce.number().int().min(1).max(50_000_000).optional().c
 // 400ing, matching the fallback philosophy of the schema above.
 const refreshSchema = z.literal('1').optional().catch(undefined);
 
-// On-demand approvals discovery (owner-filtered Approval eth_getLogs
-// sweep + Multicall3 allowance reads). Stateless and read-only: no auth
-// gate, no DuckDB writes — symbol/decimals enrichment happens in the
-// frontend. Each miss triggers a chunked public-RPC scan, so the endpoint
-// is rate-limited per client with the same 10/min burst-3 configuration
-// family as the address-tx and token-transfers scan routes (its own
-// bucket name, so opening this section never eats the tx list's
-// allowance).
+// On-demand approvals discovery (owner-filtered approval-event
+// eth_getLogs sweep — ERC-20/ERC-721 Approval + ERC-1155
+// ApprovalForAll — plus Multicall3 current-state reads per kind).
+// Stateless and read-only: no auth gate, no DuckDB writes —
+// symbol/decimals enrichment happens in the frontend. Each miss
+// triggers a chunked public-RPC scan, so the endpoint is rate-limited
+// per client with the same 10/min burst-3 configuration family as the
+// address-tx and token-transfers scan routes (its own bucket name, so
+// opening this section never eats the tx list's allowance).
 const approvalsRateLimiter = createRateLimiter({ name: 'address-approvals', requestsPerMinute: 10, burst: 3 });
 app.get('/chains/:chainId/addresses/:address/approvals', approvalsRateLimiter, async (c) => {
   const chainId = getValidatedChainId(c.req.param('chainId'));
@@ -50,8 +51,12 @@ app.get('/chains/:chainId/addresses/:address/approvals', approvalsRateLimiter, a
 
     // Honesty fields are the contract the view renders: coverage is
     // window-scoped (never full-history), pairCount is the pre-cap
-    // discovery total, truncated says the allowance reads were capped,
-    // and reason names a discovery-without-current-values degrade.
+    // discovery total across ALL approval kinds, truncated says the
+    // current-state reads were capped, and reason names a
+    // discovery-without-current-values degrade. `history`/
+    // `historyTruncated` (the raw events the same sweep retained,
+    // newest-first, capped) are ADDITIVE: absent entirely when the scan
+    // saw no events, so existing consumers keep their exact shape.
     const responseData = safeJsonResponse({
       chainId,
       address,
@@ -63,6 +68,9 @@ app.get('/chains/:chainId/addresses/:address/approvals', approvalsRateLimiter, a
       coverage: result.coverage,
       pairCount: result.pairCount,
       truncated: result.truncated,
+      ...(result.history.length > 0
+        ? { history: result.history, historyTruncated: result.historyTruncated }
+        : {}),
       ...(result.reason !== undefined ? { reason: result.reason } : {}),
     });
 

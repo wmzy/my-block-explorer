@@ -6,6 +6,7 @@ import {
   erc20Abi,
   pad,
   parseAbiParameters,
+  toHex,
   type Address,
   type Hex,
 } from 'viem';
@@ -61,6 +62,24 @@ const erc20Log = (
     logIndex,
   );
 
+// ERC-721 shape of the SHARED Transfer selector: the tokenId is the
+// fourth indexed topic and data stays empty (the ERC-20 value word never
+// exists on the wire for this shape). toHex — NOT pad — because a topic
+// word on the wire is a hex string (pad(bigint) would emit bytes).
+const erc721Log = (
+  from: Address,
+  to: Address,
+  tokenId: bigint,
+  blockNumber: number,
+  logIndex: number,
+): ScanLog =>
+  logOf(
+    [ERC20_TOPIC, topicAddress(from), topicAddress(to), toHex(tokenId, { size: 32 })],
+    '0x',
+    blockNumber,
+    logIndex,
+  );
+
 const singleLog = (
   operator: Address,
   from: Address,
@@ -96,9 +115,13 @@ const batchLog = (
 // Mirrors viem's event+args filtering: topic0 comes from the event
 // signature the query carries (parseAbi events carry no hash field, so it
 // is derived here the same way viem does), and from/to match the indexed
-// slot per shape (Transfer: t1/t2; ERC-1155 Single/Batch: t2/t3 — the
-// operator slot t1 is never direction-filtered). topicAddress is defined
-// above with the log fixtures.
+// slot per event family — the shared Transfer selector keeps from/to in
+// topics[1]/[2] whatever the topic count (an ERC-721 log appends the
+// tokenId as topics[3]; viem's positional null-wildcard topic vector
+// matches the fourth topic at those same slots), while ERC-1155
+// Single/Batch keep the operator in topics[1] and from/to in topics[2]/t3
+// (the operator slot is never direction-filtered). topicAddress is
+// defined above with the log fixtures.
 const signatureOf = (event: GetLogsArgs['event']): Hex =>
   encodeEventTopics({ abi: [event], eventName: event.name })[0];
 
@@ -108,11 +131,11 @@ const matchesFilter = (log: ScanLog, args: GetLogsArgs): boolean => {
   if (args.address !== undefined) {
     return log.address.toLowerCase() === args.address.toLowerCase();
   }
-  const isErc20Shape = log.topics.length === 3;
+  const isTransferFamily = args.event.name === 'Transfer';
   const wantFrom = args.args?.from !== undefined ? topicAddress(args.args.from) : null;
   const wantTo = args.args?.to !== undefined ? topicAddress(args.args.to) : null;
-  const fromTopic = isErc20Shape ? log.topics[1] : log.topics[2];
-  const toTopic = isErc20Shape ? log.topics[2] : log.topics[3];
+  const fromTopic = isTransferFamily ? log.topics[1] : log.topics[2];
+  const toTopic = isTransferFamily ? log.topics[2] : log.topics[3];
   if (wantFrom !== null && fromTopic !== wantFrom) return false;
   if (wantTo !== null && toTopic !== wantTo) return false;
   return true;
@@ -188,6 +211,7 @@ describe('TokenTransferService - merge, sort and self-transfer dedupe', () => {
     const [incoming, outgoing, single, batch, self] = result.transfers;
 
     expect(outgoing.standard).toBe('erc20-or-erc721');
+    expect(outgoing.logStandard).toBe('erc20');
     expect(outgoing.value).toBe('1000');
     expect(outgoing.from).toBe(OWNER.toLowerCase());
     expect(outgoing.to).toBe(OTHER.toLowerCase());
@@ -197,11 +221,13 @@ describe('TokenTransferService - merge, sort and self-transfer dedupe', () => {
     expect(incoming.value).toBe('2000');
 
     expect(single.standard).toBe('erc1155-single');
+    expect(single.logStandard).toBe('erc1155');
     expect(single.tokenIds).toEqual(['7']);
     expect(single.amounts).toEqual(['5']);
     expect(single.value).toBe('5');
 
     expect(batch.standard).toBe('erc1155-batch');
+    expect(batch.logStandard).toBe('erc1155');
     expect(batch.tokenIds).toEqual(['1', '2']);
     expect(batch.amounts).toEqual(['3', '4']);
     // Batch `value` carries the token-ID count (documented choice).
@@ -214,6 +240,53 @@ describe('TokenTransferService - merge, sort and self-transfer dedupe', () => {
     expect(self.to).toBe(OWNER.toLowerCase());
     expect(self.value).toBe('42');
     expect(result.transfers.filter((t) => t.blockNumber === 600)).toHaveLength(1);
+  });
+
+  it('keeps ERC-721-shaped Transfer logs (4 topics, empty data) as rows with the tokenId as value', async () => {
+    // Regression shape: viem decodes no `value` for a 4-topic log against
+    // the ERC-20 event, so these rows used to be dropped as undecodable —
+    // the exact family the ?ttStandard=erc721 filter chip needs on screen.
+    const tokenId = 2n ** 128n + 1n; // deliberately beyond Number.MAX_SAFE_INTEGER
+    const logs = [
+      erc721Log(OTHER, OWNER, 77n, 900, 0), // incoming
+      erc721Log(OWNER, OTHER, tokenId, 800, 1), // outgoing
+    ];
+    const { service } = makeHarness({ logs, latest: 1_000n });
+
+    const result = await service.getTokenTransfers(1, OWNER, 0, 25);
+
+    expect(result.transfers).toHaveLength(2);
+    // Both directions surface: the positional topic vector matches the
+    // fourth topic at the same from/to slots as the 3-topic shape.
+    expect(result.transfers.map((t) => t.direction)).toEqual(['in', 'out']);
+    const [incoming, outgoing] = result.transfers;
+    for (const row of [incoming, outgoing]) {
+      expect(row.standard).toBe('erc20-or-erc721');
+      expect(row.logStandard).toBe('erc721');
+      expect(row.tokenIds).toBeUndefined();
+    }
+    expect(incoming.value).toBe('77');
+    expect(incoming.from).toBe(OTHER.toLowerCase());
+    expect(incoming.to).toBe(OWNER.toLowerCase());
+    expect(outgoing.value).toBe('340282366920938463463374607431768211457');
+    expect(outgoing.from).toBe(OWNER.toLowerCase());
+    expect(outgoing.to).toBe(OTHER.toLowerCase());
+  });
+
+  it('skips a 4-topic Transfer log whose tokenId topic is not parseable hex', async () => {
+    const garbage: ScanLog = {
+      ...erc721Log(OTHER, OWNER, 77n, 900, 0),
+      topics: [ERC20_TOPIC, topicAddress(OTHER), topicAddress(OWNER), '0xnot-hex'],
+    };
+    const { service } = makeHarness({ logs: [garbage, erc20Log(OWNER, OTHER, 5n, 800, 0)], latest: 1_000n });
+
+    const result = await service.getTokenTransfers(1, OWNER, 0, 25);
+
+    // Only the healthy neighbour survives — a malformed log is skipped,
+    // never thrown.
+    expect(result.transfers).toHaveLength(1);
+    expect(result.transfers[0].value).toBe('5');
+    expect(result.transfers[0].logStandard).toBe('erc20');
   });
 });
 

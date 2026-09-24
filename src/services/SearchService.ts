@@ -11,7 +11,11 @@ import { addressService, type AddressInfo } from './AddressService';
 import { detectSearchType, sanitizeInput } from '../utils/validation';
 import { and, count, desc, eq, or, sql } from 'drizzle-orm';
 // Same relative-import rule applies to the database module (see above).
-import { db, contractSources } from '../database/init';
+import { db, contractSources, addressLabels } from '../database/init';
+// Pure data + functions, no frontend-only imports: safe to bundle into the
+// backend graph (and through the Vite config's alias-less esbuild pass,
+// hence the relative path).
+import { KNOWN_TOKENS, knownTokensForChain } from '../config/knownTokens';
 
 /**
  * Search result type
@@ -544,6 +548,155 @@ export async function searchLocalContractHits(
   }
   catch (error) {
     logger.warn({ err: error, query: q }, 'Local contract cache lookup failed');
+    return null;
+  }
+}
+
+// --- Token/label entity hits (curated known tokens + address labels) ---
+//
+// The global search's free-text branch ALSO matches two curated sources
+// this explorer owns outright — no indexer claim, no token registry:
+//   - config/knownTokens.ts: the corroborated per-chain curated list.
+//     Its symbol is a display hint; matching it is a shortcut to the
+//     token page, never a claim the list is complete.
+//   - address_labels rows: the operator's own annotations plus the
+//     builtin labels seeded on first startup.
+// One pure matcher owns every rule below (fixture-testable with no
+// database); searchTokenEntityHits only feeds it DB rows.
+
+// Free-text search surfaces at most this many token/label hits: like the
+// local-contract section, a curated shortcut — not a directory.
+export const TOKEN_ENTITY_SEARCH_LIMIT = 5;
+
+// Label rows read per query before the cap is applied: enough headroom to
+// keep the address dedup honest past the visible cut, bounded because the
+// table is the operator's own (small by construction).
+const TOKEN_ENTITY_LABEL_READ_LIMIT = 50;
+
+export type TokenEntityHitSource = 'known-token' | 'label';
+
+export type TokenEntityHit = {
+  chainId: number;
+  address: string;
+  matchText: string;
+  source: TokenEntityHitSource;
+};
+
+// Matcher inputs are deliberately plain shapes so fixtures drive the
+// tests without a database (and without the curated config's contents).
+export type KnownTokenEntry = { chainId: number; address: string; symbol: string };
+export type LabelEntry = { chainId: number; address: string; label: string };
+
+/**
+ * Pure matcher behind the global search's additive tokenHits field:
+ * case-insensitive substring on the curated symbol or the label text.
+ * Dedup rule: when one address hits both sources, the label wins — a
+ * user/builtin label is authored intent about that address and outranks
+ * the curated symbol hint (which is a display hint only). Labels merge
+ * first so that precedence is also the visible order; known-token
+ * entries skip any (chain, address) already claimed. Ordering within
+ * each source is the caller's (labels arrive deterministically ordered
+ * by chainId/address from SQL; known tokens keep curated list order).
+ */
+export function matchTokenEntityHits(
+  query: string,
+  knownTokens: readonly KnownTokenEntry[],
+  labels: readonly LabelEntry[],
+  limit = TOKEN_ENTITY_SEARCH_LIMIT,
+): TokenEntityHit[] {
+  const needle = query.trim().toLowerCase();
+  if (needle === '' || limit <= 0) return [];
+
+  const hits: TokenEntityHit[] = [];
+  const seen = new Set<string>();
+  const claim = (chainId: number, address: string): boolean => {
+    // Lowercase key: known-token addresses are stored EIP-55 checksummed
+    // while label storage keys are lowercase — same entity either way.
+    const key = `${chainId}:${address.toLowerCase()}`;
+    if (seen.has(key)) return true;
+    seen.add(key);
+    return false;
+  };
+
+  for (const row of labels) {
+    if (!row.label.toLowerCase().includes(needle)) continue;
+    if (claim(row.chainId, row.address)) continue;
+    hits.push({
+      chainId: row.chainId,
+      address: row.address,
+      matchText: row.label,
+      source: 'label',
+    });
+    if (hits.length >= limit) return hits;
+  }
+  for (const token of knownTokens) {
+    if (!token.symbol.toLowerCase().includes(needle)) continue;
+    if (claim(token.chainId, token.address)) continue;
+    hits.push({
+      chainId: token.chainId,
+      address: token.address,
+      matchText: token.symbol,
+      source: 'known-token',
+    });
+    if (hits.length >= limit) return hits;
+  }
+  return hits;
+}
+
+// Same byte-exact contains() note as contractMatchFilter above: DuckDB's
+// contains() is byte-exact, so both sides are lowered and a '%' in the
+// needle stays a literal percent, not a wildcard.
+const labelMatchFilter = (needle: string) => {
+  const lowered = needle.toLowerCase();
+  return sql`contains(lower(${addressLabels.label}), ${lowered})`;
+};
+
+/**
+ * Token/label hits for the global search's additive tokenHits field:
+ * curated known-token symbol matches plus this explorer's address_labels
+ * rows (user + builtin), scoped to `chainId` when given — unscoped hits
+ * each carry their own chainId so clients link to the right chain (same
+ * semantics as localContracts). Returns null when the label read itself
+ * fails: an absent field never claims "no matches" was checked.
+ */
+export async function searchTokenEntityHits(
+  query: string,
+  chainId?: number,
+  limit = TOKEN_ENTITY_SEARCH_LIMIT,
+): Promise<TokenEntityHit[] | null> {
+  const q = query.trim();
+  if (q === '') return [];
+
+  // Curated known tokens for the scope: one chain's list when scoped,
+  // every curated chain otherwise (integer keys iterate ascending, so
+  // unscoped order is deterministic).
+  const knownEntries: KnownTokenEntry[] = chainId !== undefined
+    ? knownTokensForChain(chainId).map(token => ({ chainId, ...token }))
+    : Object.entries(KNOWN_TOKENS).flatMap(
+        ([id, list]) => list.map(token => ({ chainId: Number(id), ...token })),
+      );
+
+  try {
+    const labelRows = await db
+      .select({
+        chainId: addressLabels.chainId,
+        address: addressLabels.address,
+        label: addressLabels.label,
+      })
+      .from(addressLabels)
+      .where(
+        chainId !== undefined
+          ? and(eq(addressLabels.chainId, chainId), labelMatchFilter(q))
+          : labelMatchFilter(q),
+      )
+      // Deterministic merge order for the matcher (chainId, address).
+      .orderBy(addressLabels.chainId, addressLabels.address)
+      .limit(TOKEN_ENTITY_LABEL_READ_LIMIT);
+
+    return matchTokenEntityHits(q, knownEntries, labelRows, limit);
+  }
+  catch (error) {
+    logger.warn({ err: error, query: q }, 'Address label lookup failed');
     return null;
   }
 }

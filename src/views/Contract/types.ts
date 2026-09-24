@@ -22,6 +22,9 @@ export type ContractSource = {
   address: string;
   name?: string;
   compilerVersion?: string;
+  // EVM target version from the compile settings (local-compile marks
+  // carry it; remote verifiers do not).
+  evmVersion?: string;
   optimizationEnabled?: boolean;
   optimizationRuns?: number;
   sourceCode: string;
@@ -31,9 +34,16 @@ export type ContractSource = {
   verificationStatus: 'verified' | 'unverified' | 'partial';
   // Mirrors the backend ContractSourceService union: 'sourcify' and
   // 'blockscan' are the two remote verifiers (the latter is the
-  // vscode.blockscan.com source cache); 'manual'/'unknown'/'none' mark
-  // locally-supplied or missing provenance.
-  verificationSource: 'sourcify' | 'blockscan' | 'manual' | 'unknown' | 'none';
+  // vscode.blockscan.com source cache); 'manual' marks a locally-pasted
+  // trust annotation, 'local-compile' a real local recompile match
+  // (CompileVerifyService), 'unknown'/'none' missing provenance.
+  verificationSource:
+    | 'sourcify'
+    | 'blockscan'
+    | 'manual'
+    | 'local-compile'
+    | 'unknown'
+    | 'none';
   verifiedAt?: string;
   lastChecked: string;
   isProxy?: boolean;

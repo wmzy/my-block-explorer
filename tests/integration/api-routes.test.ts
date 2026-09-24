@@ -1,5 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { createRequire } from 'node:module';
 import app from '@/api-app';
+
+// The version reported by /api and /api/health is the package.json field
+// (src/version.ts) — pin the contract, not the literal, so releases don't
+// break this test.
+const packageVersion: string = createRequire(import.meta.url)('../../package.json').version;
 
 // The rpc-configs GET is the only db-backed route this file exercises.
 // DuckDB files are single-writer and other suite files may legitimately
@@ -26,7 +32,7 @@ describe('API routes', () => {
       const data = await response.json();
       expect(data).toMatchObject({
         name: 'My Block Explorer API',
-        version: '1.0.0',
+        version: packageVersion,
         description: 'A modern blockchain explorer API',
       });
       expect(data).toHaveProperty('endpoints');
@@ -43,7 +49,7 @@ describe('API routes', () => {
       const data = await response.json();
       expect(data).toMatchObject({
         status: 'ok',
-        version: '1.0.0',
+        version: packageVersion,
       });
       expect(typeof data.adminTokenConfigured).toBe('boolean');
       expect(typeof data.debugApiEnabled).toBe('boolean');

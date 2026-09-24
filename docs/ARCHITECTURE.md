@@ -1,4 +1,95 @@
+# Architecture
+
+This file has two parts:
+
+- **Part 1 — System as shipped (maintained).** English, verified against the code; the cited files are the source of truth. It absorbs the former standalone docs on navigation, chain switching and auto-discovery.
+- **Part 2 — the original design-time document (中文, below the divider).** Its deployment section reflects reality; the rest is design-era background. Further historical design records live in [archive/](./archive/).
+
+## Part 1 — System as shipped
+
+### Routing and navigation
+
+There is no React Router and no nested routing. `src/views/index.tsx` defines one **flat `createRoutes` table** (`@native-router/react`), each route mapping to a lazily imported view. Every data page is scoped by a `/chain/:chainId` prefix; the full current path set (see the file — it is the source of truth):
+
+`/` · `/chain/:chainId` · `/blocks` · `/transactions` · `/pending` · `/contracts` · `/token/:address` · `/charts` · `/block/:blockNumber` (numbers only, not hashes) · `/tx/:txHash` · `/address/:address` · `/contract/:address` (+ `/events`) · `/search`
+
+- `src/views/index.tsx` exports `AppPaths` (a literal union of every route path). `TypedLink<AppPaths>` narrows its `to` prop against that union, so a path typo or incomplete `params` fails at compile time. Views read route params with `useMatched()` and query params with `useSearch(schema)` (e.g. the transactions list filters by `?block=`).
+- The two contract routes attach `data: contractSourceLoader` with a skeleton `pendingComponent` — contract source is immutable, so it resolves during navigation and the view's hook serves the loader-primed cache entry.
+- The router's base URL derives from `import.meta.env.BASE_URL`, so the GitHub Pages subpath deploy (`VITE_BASE=/my-block-explorer/`) navigates correctly.
+- After a search resolves, `/search` writes the resolved chain back into the URL and renders a "Searched on {chain}" line, so deep links are shareable and unambiguous.
+
+### The chain model: the chain lives in the URL
+
+There is no global chain state. Because the chain is a route param, a deep link is unambiguous, shareable and reload-safe; switching chains is *just a navigation* — nothing is torn down or re-bootstrapped.
+
+- `src/config/chains.ts` — `SUPPORTED_CHAINS = Object.values(chains)` from `viem/chains`: **every chain viem defines works, with no per-chain registration**. In the pinned viem version that is 732 exports deduped to 704 unique chain ids (several exports are aliases or testnet twins of one id; the picker dedupes by id). "Supported" means exactly `isChainSupported(id)` — an id lookup in that set; a viem upgrade is what adds chains.
+- `POPULAR_CHAINS` pins 10 chains (mainnet, Polygon, BSC, Arbitrum, Base, Optimism, Avalanche, Fantom, Celo, Gnosis) at the top of the picker, marked ⭐. Testnets get a badge (`getChainType`). To pin a chain, add it to `POPULAR_CHAINS` — there is nothing else to add per chain.
+
+**Landing and the remembered chain.** `/` is the redirect-only `Landing` view (`src/views/Home/Landing.tsx`). At mount it replaces the URL with: (1) the **last chain the user actually viewed**, if still a supported id — persisted in localStorage under `be:lastChainId` (`LAST_CHAIN_STORAGE_KEY`), written by the Home view via `rememberChainId()`; (2) else the **preferred chain** — mainnet when supported, else the head of the sorted chain list (`getPreferredChainId()`); (3) else `/chain/1` as the dead-last fallback.
+
+**Switching chains.** Every view mounts `TopNavigation` and passes a `handleChainChange` that calls `redirectReplace` (exported from `src/views/Home/Landing.tsx`: `preload` + `commitReplace` — navigate-with-replace semantics, so chain hops replace the current history entry instead of piling new ones). Preservation of the entity param is decided per view:
+
+| From | Goes to | Rationale |
+| --- | --- | --- |
+| Home | `/chain/:newId` | the new chain's home |
+| Blocks / Transactions lists | the same list on the new chain | lists carry no params worth keeping |
+| Address page | `/chain/:newId/address/:address` | an address is chain-agnostic |
+| Contract page | `/chain/:newId/contract/:address` | the address is chain-agnostic; the `/events` subpath is not preserved — the view lands on its default tab |
+| Tx detail | `/chain/:newId/tx/:hash` | the hash is chain-agnostic; re-resolves this exact tx on the target chain's RPC |
+| **Block detail** | **`/chain/:newId`** (chain home) | **the exception**: a block *number* is not a chain-agnostic identity — the same number on another chain is a different block, so keeping it would silently show unrelated data |
+| Search page | no navigation | re-runs the current query on the new chain; with no query, the chain becomes the context for the next search |
+
+**Unsupported chain deep links.** A deep link like `/chain/999999` does **not** silently redirect to another chain. Views render `UnsupportedChainState` (`src/views/Home/UnsupportedChainState.tsx`): an explicit "no configuration for chain ID X" error plus two **deterministic** recovery CTAs — *"Go to Mainnet"* (or the preferred chain; deliberately **not** the viewer's remembered chain, so a shared link behaves identically for every visitor) and *"Open chain list"* (the `/` landing route).
+
+**The chain selector UI.** `ChainSelector` (inside `src/components/TopNavigation.tsx`, top-right) shows the current chain name (+ Testnet badge) and offers:
+
+- a type-over filter — `searchChains()` matches name, chain id or native symbol, with a "Found N chains · Press Enter to select first" hint;
+- keyboard: `Enter` picks the first filtered match, `Escape` closes; the search term resets when the dropdown closes; click-outside closes;
+- entries show `ID • native symbol`, ⭐ for `POPULAR_CHAINS`, testnet badges; the list comes from `getSortedChains()` (sorted by type and popularity, deduped by id).
+
+### Search dispatch (the top-bar search box)
+
+One dispatcher (`navigateForQuery` in `src/components/TopNavigation.tsx`) sanitizes the input and classifies it with the shared `utils/validation` helpers (the same pair every other search surface uses):
+
+- **Address** → deep-links straight to `/chain/:chainId/address/:address` on the current chain.
+- **Block number** → deep-links straight to the block page (numbers only).
+- **Hash** → goes through the chain-scoped search API (`GET /api/chains/:chainId/search`, via the discovered API base — never a raw same-origin fetch) to decide tx vs. block-hash; a block hash lands on the block page by number.
+- **ENS name** → resolved **client-side against a mainnet client** (`createRpcClient(1)` — the ENS registry only exists on mainnet, so the lookup target never changes with the viewed chain); the resolved address is then viewed on the *current* chain, and every ENS surface labels the result "resolved on Ethereum". "Name not found" (definitive) and "resolution failed" (RPC did not answer — offers Retry) are distinct outcomes.
+- **Anything else** → `/search?q=…&chain=…` so the global search endpoint searches the current chain and its suggestions link back to that chain.
+
+Inline notices under the box distinguish a definitive miss, a degraded (data-source errored) response, and ENS resolved/failed outcomes. Focusing the box shows the **per-browser history dropdown** — entries live in localStorage (`be:searchHistory`, max 10, never sent to or read from the server) with a Clear button and per-item removal; a history entry re-runs on the chain it was recorded on.
+
+### RPC settings modal (`src/components/RpcConfig.tsx`)
+
+Opened from the **⚙️ RPC** button in `TopNavigation`, and from the "configure RPC" action of `RpcFunctionError` on contract pages.
+
+- **Reads are open**: the modal loads the current override list via `GET /api/rpc-configs` without any token (the response carries endpoint URLs only, redacted for origins the CORS policy doesn't trust — no secrets).
+- **Test before save, client-side**: "Test connection" fetches `eth_chainId` / block history directly against the entered URL in the browser (chain-id match, history support, recommended event range) and blocks the save on failure.
+- **Writes are opt-in gated server-side**: save/delete (`POST` / `DELETE /api/rpc-configs`) require the `x-admin-token` header only when the server has `ADMIN_TOKEN` set; a 403 surfaces a notice in the modal.
+- The **"Admin token (stored in this browser)"** field persists the token in localStorage (`src/util/adminAuth.ts`); the HTTP layer attaches it to every request automatically.
+
+### Frontend↔backend auto-discovery
+
+How the frontend finds the API server: `src/hooks/useAutoDiscovery.ts` (hook) + `src/util/apiBase.ts` (base URL consumed by the HTTP layer) + the service-discovery gate in `src/index.tsx` (renders the `ServiceSetup` screen until a backend is found).
+
+1. On mount, `autoDiscover()` scans **`localhost` ports 8201–8205**, probing `GET /api/health` on each with an `AbortController` timeout (`probeHealth`). Status machine: `idle → discovering → found | not-found | error`.
+2. The first healthy backend wins; its URL is persisted to localStorage (`my-block-explorer-api-url`) and pushed into `setApiBase()` so every request from `src/util/http.ts` (fetch-fun chain) is prefixed with it.
+3. If no port answers, the app shows the setup screen with a **manual URL fallback**: the user types a backend URL, it is validated by probing `/api/health`, then persisted like an auto-discovered one. The screen keeps re-probing automatically (~4 s).
+4. `reconnect()` prefers the saved URL and falls back to a fresh port scan; `disconnect()` clears runtime state but keeps the saved URL — a temporarily unreachable saved URL only degrades to the localhost scan for that session (the choice is **never auto-cleared**).
+
+What this means per run mode:
+
+- **Dev (`pnpm dev`)**: the Hono app is bridged into the Vite server on `:3000`, but the frontend still prefers a discovered standalone backend on 8201–8205 when one is running. Mind the single-writer rule: don't run the bridged API and a standalone server against the same DuckDB files at once.
+- **`pnpm dev:server` / `pnpm start`**: standalone API on 8201 — discovered automatically by any frontend opened from localhost.
+- **Hosted frontend (GitHub Pages etc.)**: discovery **cannot** find a remote backend — the scan is localhost-only. Every user enters their own backend URL manually once (persists per browser), and the backend must allow the frontend's origin (`CORS_ALLOWED_ORIGINS` or `FRONTEND_URL`; see the README's CORS section).
+
+The topbar's backend version chip reads `ServiceInfo.version` (`{ host, port, url, version?, latency? }`) from the discovery layer's cached health probe — no extra request, never blocks rendering.
+
+---
+
 # 系统架构设计文档
+
+> Historical design-time document (kept as background). The deployment section reflects reality; the rest is design-era notes.
 
 ## 概述
 

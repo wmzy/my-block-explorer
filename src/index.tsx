@@ -17,6 +17,11 @@ import { DiscoveryGate } from '@/components/ServiceSetup';
 import { ServiceDiscoveryProvider } from '@/hooks/ServiceDiscoveryContext';
 import { useServiceDiscovery } from '@/hooks/ServiceDiscoveryContext';
 import { readThemePreference, setDocumentThemeAttribute } from '@/themePreference';
+import { getApiBase, onApiBaseChange } from '@/util/apiBase';
+import { formatAddress, formatNumber } from '@/utils/format';
+import { getPreferredChainId, readRememberedChainId } from '@/views/Home/Landing';
+import { subscribeWatchEvents, type LiveWatchEvent } from '@/services/liveChain';
+import { watchEventKey } from '@/services/watch';
 
 // SPA route recovery for GitHub Pages 404 redirect
 // 404.html encodes the original path into the hash (e.g. #/chain/1)
@@ -89,3 +94,65 @@ root.render(
     <Root />
   </ServiceDiscoveryProvider>,
 );
+
+// Server-watch notifications (global): while a backend base is known,
+// tail the backend's watch feed for the CURRENT chain and raise one
+// browser Notification per event. Honest scope, matching the panel copy:
+// - the BACKEND watches on-chain whether or not any tab is open, but
+//   these alerts fire only while an explorer tab is open (this module);
+// - permission is never auto-requested (browsers require a gesture) —
+//   the Watchlist panel's Enable-notifications button owns that;
+// - only 'log' events notify; gap markers (unchecked ranges) stay in the
+//   panel feed where their full message is readable;
+// - a dead/degraded SSE stream silently stops alerts (the liveChain
+//   fallback contract) — the panel's feed keeps the record.
+// The current chain is re-resolved from the remembered-chain key on a
+// slow interval: the key is written on every chain navigation but has no
+// same-tab event, and a storage listener only fires cross-tab.
+(function wireWatchNotifications() {
+  if (typeof Notification === 'undefined') return;
+
+  const NOTIFICATION_MEMORY = 500;
+  const seen = new Set<string>();
+
+  const notify = (event: LiveWatchEvent) => {
+    if (event.kind !== 'log') return;
+    const key = watchEventKey(event);
+    if (seen.has(key)) return;
+    seen.add(key);
+    if (seen.size > NOTIFICATION_MEMORY) seen.clear();
+    if (Notification.permission !== 'granted') return;
+    try {
+      new Notification('Watch activity', {
+        body: `${formatAddress(event.address)} in block ${formatNumber(event.blockNumber)} · tx ${event.txHash ?? ''}`,
+        // The OS-level dedupe tag mirrors the in-memory key.
+        tag: key,
+      });
+    } catch {
+      // A rejected constructor (platform restrictions) must not break
+      // anything — the panel's feed still records the event.
+    }
+  };
+
+  let unsubscribe: (() => void) | null = null;
+  let currentChain = 0;
+
+  const evaluate = () => {
+    const base = getApiBase();
+    const chainId = readRememberedChainId() ?? getPreferredChainId();
+    if (base === '' || !(chainId > 0)) {
+      unsubscribe?.();
+      unsubscribe = null;
+      currentChain = 0;
+      return;
+    }
+    if (chainId === currentChain) return;
+    unsubscribe?.();
+    currentChain = chainId;
+    unsubscribe = subscribeWatchEvents(chainId, notify);
+  };
+
+  evaluate();
+  onApiBaseChange(evaluate);
+  setInterval(evaluate, 5_000);
+})();

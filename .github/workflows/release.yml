@@ -37,6 +37,24 @@ jobs:
       - run: pnpm build:server
       - run: npm run test
 
+      # semantic-release derives versions from commit messages and publishes
+      # from the workflow workspace — it never writes the bump back to this
+      # repo (no @semantic-release/git plugin, credentials not persisted), so
+      # package.json drifts silently unless kept in sync by hand. Fail loudly
+      # instead: package.json must always match the latest published tag.
+      - name: Verify package.json version matches the latest release tag
+        run: |
+          LATEST_TAG=$(git tag --list 'v*' --sort=-v:refname | head -n 1)
+          if [ -z "$LATEST_TAG" ]; then
+            echo "No release tags exist yet; skipping version sync check."
+            exit 0
+          fi
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if [ "v$PKG_VERSION" != "$LATEST_TAG" ]; then
+            echo "::error::package.json version ($PKG_VERSION) is out of sync with the latest release tag ($LATEST_TAG). After each release, update package.json to the released version in your next commit."
+            exit 1
+          fi
+
       - name: Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

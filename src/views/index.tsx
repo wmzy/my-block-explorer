@@ -101,6 +101,14 @@ const routes = createRoutes({
       path: '/search',
       component: () => import('./Search'),
     },
+    {
+      // SQL console: read-only admin-gated queries against the explorer's
+      // MAIN DuckDB (every chain's indexed rows), so — unlike every other
+      // data page — it is deliberately not chain-scoped and reads no
+      // :chainId param; the view copy says so.
+      path: '/sql',
+      component: () => import('./Sql'),
+    },
   ],
 });
 

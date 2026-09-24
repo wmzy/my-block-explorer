@@ -1,0 +1,310 @@
+// Deep scan service (PM review Wave 3): the persistent, resumable
+// per-address transaction-discovery job. The backend walks the chain
+// block-by-block from a start bound, verifying balance checkpoints, and
+// upgrades the address's transaction history from heuristic partial
+// discovery toward proven completeness — the only sanctioned 'complete'
+// path in the product (a genesis-anchored walk that finished).
+//
+// Endpoints (pinned contract, base /api/chains/:chainId/addresses/:address/scan):
+// - POST ""        → 202 {job} (400 invalid_bounds / scan_conflict)
+// - POST "/pause"  → 202 {job} (400 invalid_state when not running)
+// - POST "/resume" → 202 {job} (400 when not paused)
+// - DELETE ""      → 204, idempotent, removes the job AND its findings
+// - GET ""         → 200 {job} | 404 {error:'no_scan_job'}
+// Writes are admin-gated (x-admin-token, opt-in tier); reads are open.
+//
+// Deliberately independent of services/addresses.ts: the tx-history
+// payload carries the job inline (`deepScan`), and that payload flows
+// through parseScanJob here instead — the panel never imports the
+// orchestrator's module.
+import {
+  hashArgs,
+  useArgsStatus,
+  useCache,
+  useInjectable,
+  useLoading,
+  usePolling,
+  useRefresh,
+  useResultSelect,
+  useRun,
+  type CacheProvider,
+} from 'react-toolroom/async';
+import * as ff from 'fetch-fun';
+
+import { ApiError } from '@/util/apiError';
+import { DEFAULT_STALE_TIME } from '@/util/loaderCache';
+import { bindQueryFn, createQueryCache } from '@/util/useQuery';
+import { api, del, get, post, withSignal, type ApiClient } from '@/util/http';
+
+export const SCAN_JOB_STATUSES = ['pending', 'running', 'paused', 'error', 'complete'] as const;
+
+export type ScanJobStatus = (typeof SCAN_JOB_STATUSES)[number];
+
+// Wire shape of a scan job, verbatim from the pinned contract. Numeric
+// bounds are concrete resolved block numbers (tags like 'earliest'/
+// 'latest' resolve once at creation and never ride stored rows).
+// coverage === 'complete' ONLY when status === 'complete' AND
+// fromBlock === 0 — the genesis anchor is the sole bound where "no
+// activity outside the walk" is provable; everything else stays null.
+export type ScanJob = {
+  status: ScanJobStatus;
+  fromBlock: number;
+  toBlock: number;
+  cursorBlock: number;
+  blocksWalked: number;
+  blocksTotal: number;
+  txsFound: number;
+  errorMessage: string | null;
+  coverage: 'complete' | null;
+  updatedAt: string;
+};
+
+const nonNegativeInteger = (value: unknown): number | null =>
+  typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : null;
+
+/**
+ * Narrow pure guard for a scan-job payload: every field must match the
+ * contract shape or the whole payload rejects to null. Never throws —
+ * unknown status, non-numeric bounds, nested junk and missing fields all
+ * degrade to "no parseable job" so the panel renders its fallbacks
+ * instead of crashing on a legacy or malformed payload.
+ */
+export function parseScanJob(payload: unknown): ScanJob | null {
+  if (typeof payload !== 'object' || payload === null) return null;
+  const p = payload as Record<string, unknown>;
+  const status = SCAN_JOB_STATUSES.find(s => s === p.status);
+  if (status === undefined) return null;
+  const fromBlock = nonNegativeInteger(p.fromBlock);
+  const toBlock = nonNegativeInteger(p.toBlock);
+  const cursorBlock = nonNegativeInteger(p.cursorBlock);
+  const blocksWalked = nonNegativeInteger(p.blocksWalked);
+  const blocksTotal = nonNegativeInteger(p.blocksTotal);
+  const txsFound = nonNegativeInteger(p.txsFound);
+  if (
+    fromBlock === null || toBlock === null || cursorBlock === null
+    || blocksWalked === null || blocksTotal === null || txsFound === null
+  ) {
+    return null;
+  }
+  if (typeof p.updatedAt !== 'string' || p.updatedAt === '') return null;
+  if (p.errorMessage !== null && typeof p.errorMessage !== 'string') return null;
+  if (p.coverage !== null && p.coverage !== 'complete') return null;
+  return {
+    status,
+    fromBlock,
+    toBlock,
+    cursorBlock,
+    blocksWalked,
+    blocksTotal,
+    txsFound,
+    errorMessage: p.errorMessage,
+    coverage: p.coverage,
+    updatedAt: p.updatedAt,
+  };
+}
+
+/**
+ * Read the job riding a transactions payload (`deepScan` field). The
+ * payload arrives as unknown from the orchestrator's untyped perspective
+ * (the field is additive — legacy responses carry no key at all), so the
+ * read is defensive end to end: absent/junk field → null.
+ */
+export function scanJobFromTxPayload(payload: unknown): ScanJob | null {
+  if (typeof payload !== 'object' || payload === null) return null;
+  return parseScanJob((payload as Record<string, unknown>).deepScan);
+}
+
+// Error mapping for the scan endpoints: identical to the base chain in
+// util/http (message/code/details extraction, timeout → 408, network →
+// status 0) with ONE extension — the pinned scan 400s discriminate via
+// the body's `error` field ('scan_conflict', 'invalid_bounds'), which
+// the base mapper drops when a `message` also rides the body. Here that
+// discriminator additionally surfaces as ApiError.code so the panel can
+// branch on scan_conflict verbatim instead of sniffing message copy.
+// Piping mapError REPLACES the base mapper (fetch-fun semantics), so this
+// replicates the base branches it replaces.
+const scanApi: ApiClient = api.pipe(
+  ff.mapError,
+  (e: unknown): unknown => {
+    if (e instanceof ff.HTTPError) {
+      const body: Record<string, unknown> =
+        typeof e.data === 'object' && e.data !== null
+          ? (e.data as Record<string, unknown>)
+          : {};
+      const message = typeof body.message === 'string' ? body.message : undefined;
+      const errorText = typeof body.error === 'string' ? body.error : undefined;
+      const code = typeof body.code === 'string' ? body.code : errorText;
+      return new ApiError(
+        message ?? errorText ?? `HTTP ${e.status}`,
+        e.status,
+        code,
+        'details' in body ? body.details : undefined,
+      );
+    }
+    if (e instanceof ff.TimeoutError) return new ApiError('Request timeout', 408);
+    if (e instanceof ff.NetworkError) return new ApiError(e.message, 0);
+    return e;
+  },
+);
+
+// 200 envelopes are {job}; anything else is a malformed response, not a
+// job (labels.ts parseLabelResponse pattern — a bad shape fails loudly
+// instead of rendering a lie).
+const jobFromEnvelope = (body: unknown): ScanJob => {
+  const envelope: Record<string, unknown> =
+    typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {};
+  const job = parseScanJob(envelope.job);
+  if (job === null) throw new ApiError('Malformed scan job response', 0);
+  return job;
+};
+
+/**
+ * GET the current scan job. A 404 settles as null — "no job row" is a
+ * valid state (the panel's intro state), not an error. Other failures
+ * reject; the query layer surfaces them to the hook's error channel.
+ */
+export async function fetchScanJob(
+  chainId: number,
+  address: string,
+  signal?: AbortSignal,
+): Promise<ScanJob | null | undefined> {
+  if (!(chainId > 0) || address.length === 0) return undefined;
+  try {
+    const body = await get<unknown>(
+      `/api/chains/${chainId}/addresses/${address}/scan`,
+      undefined,
+      withSignal(scanApi, signal),
+    );
+    return jobFromEnvelope(body);
+  }
+  catch (error) {
+    if (error instanceof ApiError && error.status === 404) return null;
+    throw error;
+  }
+}
+
+export type StartScanOptions = {
+  /** Concrete start block; omitted → 'earliest' (the only bound that can ever claim complete coverage). */
+  fromBlock?: number;
+  /** Replace an existing job with different bounds (resets progress). */
+  force?: boolean;
+};
+
+/** POST the scan job (create). Rejects with ApiError; 400 scan_conflict when a job exists with different bounds and force was not set. */
+export async function startScanJob(
+  chainId: number,
+  address: string,
+  options: StartScanOptions = {},
+): Promise<ScanJob> {
+  const body: { fromBlock: number | 'earliest'; force?: boolean } = {
+    fromBlock: options.fromBlock ?? 'earliest',
+  };
+  if (options.force) body.force = true;
+  return jobFromEnvelope(
+    await post<unknown>(
+      `/api/chains/${chainId}/addresses/${address}/scan`,
+      body,
+      scanApi,
+    ),
+  );
+}
+
+/** POST /pause. Rejects with ApiError 400 invalid_state when the job is not running. */
+export async function pauseScanJob(chainId: number, address: string): Promise<ScanJob> {
+  return jobFromEnvelope(
+    await post<unknown>(`/api/chains/${chainId}/addresses/${address}/scan/pause`, {}, scanApi),
+  );
+}
+
+/** POST /resume. Rejects with ApiError 400 when the job is not paused. */
+export async function resumeScanJob(chainId: number, address: string): Promise<ScanJob> {
+  return jobFromEnvelope(
+    await post<unknown>(`/api/chains/${chainId}/addresses/${address}/scan/resume`, {}, scanApi),
+  );
+}
+
+/** DELETE the job AND its persisted findings. Idempotent (204). */
+export function deleteScanJob(chainId: number, address: string): Promise<unknown> {
+  return del<unknown>(`/api/chains/${chainId}/addresses/${address}/scan`, scanApi);
+}
+
+// Live read of the job with active-only polling: the 3s cadence runs
+// ONLY while the job is pending/running; settled jobs (paused/error/
+// complete) and the no-job state swap to a never-firing interval. The
+// composition mirrors services/chainRpc.ts useTransactionByHash (the
+// conditional-polling precedent) rather than createPolledQueryHook,
+// because a usePolling tick only reaches the stores this hook reads when
+// the poller shares the same useInjectable instance as the useRun below
+// (see polledQuery.ts header). usePolling's default also skips ticks
+// while the document is hidden, and the timer is cleaned up on unmount —
+// switching away from the transactions tab unmounts this panel and stops
+// the cadence entirely.
+const scanJobCache = createQueryCache<ScanJob | null | undefined, [number, string]>(
+  'address-scan-job',
+);
+
+const queryScanJob = bindQueryFn(fetchScanJob, scanJobCache);
+
+const SCAN_POLL_INTERVAL = 3_000;
+
+// usePolling has no disabled state; the stopped cadence is expressed as
+// the largest setInterval delay environments accept without clamping the
+// timer down to 1 ms (~24.8 days) — chainRpc.ts's proven constant.
+const POLL_DISABLED_INTERVAL = 2_147_483_000;
+
+// useResultSelect always applies select when a result exists; a
+// module-level identity keeps the reference stable.
+const identity = <T>(r: T) => r;
+
+export type ScanJobQueryResult = {
+  data: ScanJob | null | undefined;
+  loading: boolean;
+  fetching: boolean;
+  error: Error | undefined;
+  failureCount: number;
+  stale: boolean;
+  dataUpdatedAt: number | undefined;
+  refetch: () => void | Promise<unknown>;
+};
+
+/**
+ * The current scan job: null = no job row, undefined = disabled key
+ * (chainId <= 0 / blank address) or nothing settled yet. Polls every 3s
+ * only while a job is pending/running.
+ */
+export function useScanJob(chainId: number, address: string): ScanJobQueryResult {
+  // Same widening createQueryHook/polledQuery perform: the runtime call
+  // signature is [...K, signal?] and the cache slot widens with it.
+  const runArgs = [chainId, address] as unknown as [number, string, signal?: AbortSignal];
+  const provider = scanJobCache as unknown as CacheProvider<
+    ScanJob | null | undefined,
+    [number, string, signal?: AbortSignal]
+  >;
+
+  const injectable = useInjectable(queryScanJob, { name: queryScanJob.name || 'query' });
+  const stale = useCache(injectable, provider, DEFAULT_STALE_TIME);
+  const data = useResultSelect(injectable, identity);
+  const fetching = useLoading(injectable);
+  const status = useArgsStatus(injectable, runArgs);
+  const loading = status.loading && status.data === undefined;
+
+  useRun(injectable, runArgs, { signal: true, hash: hashArgs });
+
+  const active = data?.status === 'pending' || data?.status === 'running';
+  usePolling(injectable, active ? SCAN_POLL_INTERVAL : POLL_DISABLED_INTERVAL, {
+    args: [chainId, address] as unknown as [number, string, signal?: AbortSignal],
+  });
+
+  const refetch = useRefresh(injectable, runArgs, provider);
+
+  return {
+    data,
+    loading,
+    fetching,
+    error: status.error,
+    failureCount: status.failureCount,
+    stale,
+    dataUpdatedAt: status.dataUpdatedAt,
+    refetch,
+  };
+}

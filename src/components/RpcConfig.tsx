@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useId } from 'react';
+import React, { useState, useEffect, useId, useRef } from 'react';
 import { css } from '@linaria/core';
 import { Dialog } from 'haze-ui';
 import { useControl, type Control } from 'react-use-control';
@@ -22,6 +22,13 @@ import {
   type RpcConfig,
   type RpcTestResult,
 } from '../utils/rpcConfigService';
+import { parseBackup, planRestore, type RestorePlan } from '@/util/localBackup';
+import {
+  collectBackupParts,
+  executeRestore,
+  exportBackupFile,
+  type RestoreReport,
+} from '@/services/backupRestore';
 
 const dialogContent = css`
   width: 90%;
@@ -276,6 +283,39 @@ const globalEffectHintStyles = css`
   margin-top: 8px;
 `;
 
+// Backup confirmation (what a restore WILL do) and the post-restore
+// per-section summary share one panel look: quiet box, tight list.
+const backupPanelStyles = css`
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-top: 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #495057;
+
+  strong {
+    display: block;
+    margin-bottom: 6px;
+    color: #333;
+  }
+
+  ul {
+    margin: 0;
+    padding-left: 18px;
+  }
+
+  li {
+    margin-bottom: 4px;
+  }
+
+  .note {
+    margin-top: 6px;
+    color: #664d03;
+  }
+`;
+
 type Props = {
   open?: Control<boolean>;
   onClose?: () => void;
@@ -312,6 +352,18 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
   // default gateway.
   const [ipfsGatewayInput, setIpfsGatewayInput] = useState(() => getIpfsGateway());
   const [ipfsGatewayStored, setIpfsGatewayStored] = useState(() => getIpfsGateway());
+
+  // Backup & restore: the local-data portability section. Export gathers
+  // backend + browser parts and downloads explorer-backup.json; import
+  // parses the file, shows the exact write plan for confirmation, then
+  // executes it with per-section reporting.
+  const backupFileInputRef = useRef<HTMLInputElement | null>(null);
+  const [backupBusy, setBackupBusy] = useState(false);
+  const [backupMessage, setBackupMessage] = useState<string | null>(null);
+  const [pendingRestore, setPendingRestore] = useState<RestorePlan | null>(null);
+  const [pendingRestoreNotes, setPendingRestoreNotes] = useState<string[]>([]);
+  const [restoreReport, setRestoreReport] = useState<RestoreReport | null>(null);
+  const [restoring, setRestoring] = useState(false);
 
   const chainName = getChainName(chainId);
   const presets = getRpcPresets(chainId);
@@ -407,6 +459,87 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
     setIpfsGatewayStored(DEFAULT_IPFS_GATEWAY);
     setIpfsGatewayInput(DEFAULT_IPFS_GATEWAY);
     toast.success(`IPFS gateway reset to ${DEFAULT_IPFS_GATEWAY}.`);
+  };
+
+  // Export: collectBackupParts absorbs every expected failure into the
+  // file's notes field (backend unreachable, admin gate, redacted URLs),
+  // so a landing here means the download itself failed.
+  const handleExportBackup = async () => {
+    setBackupBusy(true);
+    setBackupMessage(null);
+    try {
+      const parts = await collectBackupParts();
+      exportBackupFile(parts);
+      if (parts.notes && parts.notes.length > 0) {
+        toast.success(`Backup exported — with notes:\n${parts.notes.join('\n')}`);
+      }
+      else {
+        toast.success('Backup exported to explorer-backup.json.');
+      }
+    }
+    catch (error) {
+      console.error('Backup export failed:', error);
+      toast.error('Backup export failed.');
+    }
+    finally {
+      setBackupBusy(false);
+    }
+  };
+
+  const handleBackupFileChosen = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const input = e.target;
+    const file = input.files !== null ? input.files[0] : undefined;
+    // Reset so picking the same file again re-fires onChange.
+    input.value = '';
+    if (file === undefined) return;
+
+    setBackupMessage(null);
+    setPendingRestore(null);
+    setPendingRestoreNotes([]);
+    setRestoreReport(null);
+
+    let text: string;
+    try {
+      text = await file.text();
+    }
+    catch {
+      setBackupMessage('The file could not be read.');
+      return;
+    }
+    const parsed = parseBackup(text);
+    if (!parsed.ok) {
+      setBackupMessage(parsed.error.message);
+      return;
+    }
+    setPendingRestoreNotes(parsed.file.notes ?? []);
+    setPendingRestore(planRestore(parsed.file, key => {
+      try {
+        return localStorage.getItem(key);
+      }
+      catch {
+        return null;
+      }
+    }));
+  };
+
+  const handleExecuteRestore = async () => {
+    if (pendingRestore === null || restoring) return;
+    setRestoring(true);
+    try {
+      const report = await executeRestore(pendingRestore);
+      setRestoreReport(report);
+      setPendingRestore(null);
+      setPendingRestoreNotes([]);
+    }
+    catch (error) {
+      // executeRestore absorbs per-item failures into its report; a
+      // throw here is an unexpected crash and lands verbatim.
+      console.error('Restore failed:', error);
+      setBackupMessage(error instanceof Error ? error.message : 'Restore failed.');
+    }
+    finally {
+      setRestoring(false);
+    }
   };
 
   const handlePresetSelect = async (preset: RpcPreset) => {
@@ -894,6 +1027,196 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
             Reset to default
           </button>
         </div>
+      </div>
+      {/* Backup & restore: one-click portability of the user's local
+          data — labels and custom chains from the backend, browser
+          preferences from localStorage (the single-user promise: your
+          data is yours). */}
+      <div className={sectionStyles}>
+        <h3>Backup &amp; restore</h3>
+        <p>
+          Export your address labels, custom chains and this browser's
+          preferences (watchlist, theme, IPFS gateway, custom ABIs) to one
+          JSON file, and restore them here or on another machine.
+        </p>
+        <div className={`${buttonStyles} btn-group`}>
+          <button
+            type="button"
+            className="btn primary small"
+            onClick={handleExportBackup}
+            disabled={backupBusy}
+          >
+            {backupBusy ? 'Exporting…' : 'Export backup'}
+          </button>
+          <button
+            type="button"
+            className="btn secondary small"
+            onClick={() => backupFileInputRef.current?.click()}
+            disabled={restoring}
+          >
+            Restore from file…
+          </button>
+        </div>
+        <input
+          ref={backupFileInputRef}
+          type="file"
+          accept="application/json,.json"
+          style={{ display: 'none' }}
+          onChange={handleBackupFileChosen}
+        />
+        {backupMessage !== null && (
+          <div className={backupPanelStyles} data-testid="backup-message">
+            <strong>Backup file not accepted</strong>
+            <div>{backupMessage}</div>
+          </div>
+        )}
+        {pendingRestore !== null && (
+          <div className={backupPanelStyles} data-testid="restore-confirm">
+            <strong>Restore this backup?</strong>
+            <ul>
+              <li>
+                {pendingRestore.labelPuts.length}
+                {' '}
+                address label(s) will be saved to the backend
+              </li>
+              <li>
+                {pendingRestore.chainPosts.length}
+                {' '}
+                custom chain(s) will be re-registered (each RPC is probed
+                server-side)
+              </li>
+              <li>
+                {pendingRestore.storageWrites.length}
+                {' '}
+                browser preference key(s) will be written
+                {pendingRestore.storageWrites.some(w => w.overwrites)
+                  ? ` (${pendingRestore.storageWrites.filter(w => w.overwrites).length} overwriting current values)`
+                  : ''}
+              </li>
+            </ul>
+            {pendingRestore.labelPuts.length === 0
+              && pendingRestore.chainPosts.length === 0
+              && pendingRestore.storageWrites.length === 0 && (
+              <div className="note">
+                Nothing to change — this browser already matches the backup.
+              </div>
+            )}
+            {pendingRestoreNotes.map(noteLine => (
+              <div className="note" key={noteLine}>
+                ℹ️
+                {' '}
+                {noteLine}
+              </div>
+            ))}
+            <div className={`${buttonStyles} btn-group`}>
+              <button
+                type="button"
+                className="btn primary small"
+                onClick={handleExecuteRestore}
+                disabled={
+                  restoring
+                  || (pendingRestore.labelPuts.length === 0
+                    && pendingRestore.chainPosts.length === 0
+                    && pendingRestore.storageWrites.length === 0)
+                }
+              >
+                {restoring ? 'Restoring…' : 'Restore now'}
+              </button>
+              <button
+                type="button"
+                className="btn secondary small"
+                onClick={() => {
+                  setPendingRestore(null);
+                  setPendingRestoreNotes([]);
+                }}
+                disabled={restoring}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+        {restoreReport !== null && (
+          <div className={backupPanelStyles} data-testid="restore-report">
+            <strong>Restore summary</strong>
+            <ul>
+              <li>
+                Browser preferences:
+                {' '}
+                {restoreReport.storage.written}
+                {' '}
+                written
+                {restoreReport.storage.failures.length > 0
+                  ? `, ${restoreReport.storage.failures.length} failed`
+                  : ''}
+                {restoreReport.storage.written > 0 ? ' — reload the page to apply them' : ''}
+              </li>
+              {restoreReport.storage.failures.map(failure => (
+                <li key={failure.key}>
+                  ⚠️
+                  {' '}
+                  {failure.key}
+                  :
+                  {' '}
+                  {failure.message}
+                </li>
+              ))}
+              <li>
+                Labels:
+                {' '}
+                {restoreReport.labels.restored}
+                {' '}
+                of
+                {' '}
+                {restoreReport.labels.attempted}
+                {' '}
+                restored
+              </li>
+              {restoreReport.labels.adminDenied && (
+                <li>
+                  ⚠️ Admin token required — labels were not restored. Save
+                  the token under &quot;Admin token&quot;, then restore again.
+                </li>
+              )}
+              {restoreReport.labels.failures.map(failure => (
+                <li key={failure.address}>
+                  ⚠️
+                  {' '}
+                  {failure.address}
+                  :
+                  {' '}
+                  {failure.message}
+                </li>
+              ))}
+              <li>
+                Custom chains:
+                {' '}
+                {restoreReport.chains.registered}
+                {' '}
+                of
+                {' '}
+                {restoreReport.chains.attempted}
+                {' '}
+                registered
+              </li>
+              {restoreReport.chains.adminDenied && (
+                <li>
+                  ⚠️ Admin token required — custom chains were not registered.
+                </li>
+              )}
+              {restoreReport.chains.failures.map(failure => (
+                <li key={failure.name}>
+                  ⚠️
+                  {' '}
+                  {failure.name}
+                  :
+                  {' '}
+                  {failure.message}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </div>
     </Dialog>
   );

@@ -166,16 +166,6 @@ export const indexedAddresses = duckdbTable(
   ],
 );
 
-// 搜索历史表
-export const searchHistory = duckdbTable('search_history', {
-  id: integer().primaryKey(),
-  chainId: integer(),
-  query: varchar({ length: 255 }),
-  searchType: varchar({ length: 20 }),
-  resultCount: integer().default(0),
-  searchedAt: datetime().default(sql`now()`),
-});
-
 // 用户偏好表
 export const userPreferences = duckdbTable('user_preferences', {
   id: integer().primaryKey(),
@@ -449,3 +439,84 @@ export const addressLabels = duckdbTable(
 
 export type AddressLabelRecord = typeof addressLabels.$inferSelect;
 export type NewAddressLabelRecord = typeof addressLabels.$inferInsert;
+
+// Watch subscriptions — the server-side twin of the browser watchlist
+// (util/watchlist.ts): addresses the LOCAL backend tails on-chain (one
+// getLogs sweep per interval, services/WatchService.ts), so watching
+// continues while the backend runs even when no explorer tab is open
+// (browser notifications still need an open tab — see src/index.tsx).
+// One row per (chain, address), PUT upsert semantics (routes/watch.ts).
+// Storage keys stay lowercase per the project-wide convention (C-3);
+// address is varchar(42) rather than the char(42) address() type so the
+// exact casing the writer validated is what comparisons see. The
+// lastProcessedBlock cursor is the inclusive head of the last completed
+// sweep — null until the first tick baselines the row at the
+// then-current head (watching starts at subscribe time, never history).
+export const watchSubscriptions = duckdbTable(
+  'watch_subscriptions',
+  {
+    chainId: integer().notNull(),
+    address: varchar({ length: 42 }).notNull(),
+    label: varchar({ length: 100 }),
+    lastProcessedBlock: bignum(),
+    createdAt: datetime().default(sql`now()`),
+    updatedAt: datetime().default(sql`now()`),
+  },
+  table => [primaryKey({ columns: [table.chainId, table.address] })],
+);
+
+export type WatchSubscriptionRecord = typeof watchSubscriptions.$inferSelect;
+export type NewWatchSubscription = typeof watchSubscriptions.$inferInsert;
+
+// Address deep-scan jobs — a persistent, resumable per-address transaction
+// discovery walk (services/AddressScanService.ts). One row per
+// (chain, address): a second POST with different bounds is a conflict
+// unless force resets the row. Block bounds resolve ONCE at creation to
+// concrete numbers — stored rows never carry tags (same rule as event
+// ranges). The walk is FORWARD: cursorBlock is the highest CONTIGUOUS
+// verified block starting at fromBlock (fromBlock - 1 before any
+// progress), so blocksWalked = cursorBlock - fromBlock + 1 and the job
+// completes when cursorBlock === toBlock. Coverage is NEVER stored — it
+// is derived ('complete' only when status === 'complete' AND fromBlock
+// === 0, the genesis anchor where "no activity outside the walk" is
+// provable). Storage keys stay lowercase per the project-wide
+// convention; address is varchar(42) like watch_subscriptions so
+// comparisons see exactly the normalized writer input.
+export const addressScanJobs = duckdbTable(
+  'address_scan_jobs',
+  {
+    chainId: integer().notNull(),
+    address: varchar({ length: 42 }).notNull(),
+    fromBlock: bignum().notNull(),
+    toBlock: bignum().notNull(),
+    cursorBlock: bignum().notNull(),
+    status: varchar({ length: 20 }).notNull().default('pending'),
+    txsFound: integer().notNull().default(0),
+    errorMessage: text(),
+    updatedAt: datetime().notNull().default(sql`now()`),
+  },
+  table => [primaryKey({ columns: [table.chainId, table.address] })],
+);
+
+export type AddressScanJobRecord = typeof addressScanJobs.$inferSelect;
+export type NewAddressScanJob = typeof addressScanJobs.$inferInsert;
+
+// Deep-scan findings — one row per transaction hash the walk verified as
+// touching the address. The pinned storage contract is deliberately
+// minimal (hash + block number): full transaction envelopes are
+// hydrated at read time from immutable RPC data (cached), never stored.
+// Deleting the job row removes its findings (composite PK shares the
+// (chain, address) key prefix).
+export const addressScanFindings = duckdbTable(
+  'address_scan_findings',
+  {
+    chainId: integer().notNull(),
+    address: varchar({ length: 42 }).notNull(),
+    txHash: txHash().notNull(),
+    blockNumber: bignum().notNull(),
+  },
+  table => [primaryKey({ columns: [table.chainId, table.address, table.txHash] })],
+);
+
+export type AddressScanFindingRecord = typeof addressScanFindings.$inferSelect;
+export type NewAddressScanFinding = typeof addressScanFindings.$inferInsert;

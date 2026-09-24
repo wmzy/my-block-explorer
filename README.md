@@ -168,12 +168,12 @@ Details a developer will run into:
 
 ## Docs
 
-- [Deployment](docs/DEPLOYMENT.md)
 - [Installation](docs/INSTALLATION.md)
 - [Configuration](docs/CONFIG.md)
+- [Deployment](docs/DEPLOYMENT.md)
 - [API reference](docs/API.md)
-- [All-chains support](docs/ALL_CHAINS_SUPPORT.md)
-- [Architecture](docs/ARCHITECTURE.md) (historical design notes)
+- [Architecture](docs/ARCHITECTURE.md) — the system as shipped (routing, chain switching, search dispatch, auto-discovery), followed by the original design-time document
+- [Docs index](docs/README.md) · [historical archive](docs/archive/)
 
 ## License
 

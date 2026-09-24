@@ -31,11 +31,27 @@ app.route('/', approvalsRoutes);
 const ADDRESS = '0xaabbccddeeff00112233445566778899aabbccdd';
 const CHECKSUMMED = getAddress(ADDRESS);
 
+// The route's history wire shape (mirrors the service's
+// ApprovalHistoryEvent; kept structural here so the mock stays a plain
+// payload, not an import of the mocked-away module).
+type HistoryEventFixture = {
+  kind: 'erc20' | 'erc721' | 'erc1155';
+  approvalEvent: 'Approval' | 'ApprovalForAll';
+  token: string;
+  owner: string;
+  spender: string;
+  blockNumber: number;
+  txHash: string;
+  value: string | null;
+};
+
 const resultOf = (overrides: Partial<{
   coverage: 'complete' | 'partial' | 'scan-failed';
   pairCount: number;
   truncated: boolean;
   reason: 'allowance-read-failed';
+  history: HistoryEventFixture[];
+  historyTruncated: boolean;
 }> = {}) => ({
   approvals: [
     {
@@ -45,11 +61,26 @@ const resultOf = (overrides: Partial<{
       isMax: true,
     },
   ],
+  history: [] as HistoryEventFixture[],
+  historyTruncated: false,
   scannedAt: '2026-09-22T00:00:00.000Z',
   windowBlocks: 100_000,
   coverage: 'complete' as const,
   pairCount: 1,
   truncated: false,
+  ...overrides,
+});
+
+// One raw event the service could have retained from the sweep.
+const historyEventOf = (overrides: Partial<HistoryEventFixture> = {}): HistoryEventFixture => ({
+  kind: 'erc20',
+  approvalEvent: 'Approval',
+  token: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+  owner: ADDRESS,
+  spender: '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+  blockNumber: 19_000_123,
+  txHash: '0x1111111111111111111111111111111111111111111111111111111111111111',
+  value: '1500000000000000000',
   ...overrides,
 });
 
@@ -144,6 +175,46 @@ describe('GET approvals - response envelope', () => {
     expect(body.pairCount).toBe(1);
     expect(body.truncated).toBe(false);
     expect(body.reason).toBeUndefined();
+  });
+
+  it('omits history fields entirely when the sweep retained no events (additive shape)', async () => {
+    const res = await request(`/chains/1/addresses/${ADDRESS}/approvals`);
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    // Byte-identical pre-history shape: neither key exists, so existing
+    // consumers never see an empty-array surprise.
+    expect('history' in body).toBe(false);
+    expect('historyTruncated' in body).toBe(false);
+    // The pre-existing fields are unchanged by the addition.
+    expect(body.pairCount).toBe(1);
+    expect(body.truncated).toBe(false);
+  });
+
+  it('passes retained events through as `history` with the truncation flag', async () => {
+    const events = [
+      historyEventOf({ blockNumber: 21, value: '0' }),
+      historyEventOf({
+        kind: 'erc1155',
+        approvalEvent: 'ApprovalForAll',
+        spender: '0xcccccccccccccccccccccccccccccccccccccccc',
+        blockNumber: 20,
+        value: null,
+      }),
+    ];
+    mocks.getApprovals.mockResolvedValue(
+      resultOf({ history: events, historyTruncated: true }),
+    );
+
+    const res = await request(`/chains/1/addresses/${ADDRESS}/approvals`);
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.history).toEqual(events);
+    expect(body.historyTruncated).toBe(true);
+    // Existing fields still present and unchanged alongside the addition.
+    expect(body.pairCount).toBe(1);
+    expect(body.coverage).toBe('complete');
   });
 
   it('passes the degraded reason through when allowance reads failed', async () => {

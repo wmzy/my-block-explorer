@@ -29,6 +29,17 @@ export type TokenTransfer = {
   logIndex: number;
   token: string;
   standard: TokenTransferStandard;
+  // Log-shape evidence from the backend row mapping (topic0 whitelist +
+  // indexed-topic count — see utils/tokenTransferDecode
+  // .transferStandardFromTopics): 'erc20'/'erc721' split the shared
+  // Transfer selector by topic count, 'erc1155' covers single+batch.
+  // Distinct from `standard` on purpose: the event-family enum stays
+  // metadata-disambiguated for display while this field carries what the
+  // log alone proves (the transfers-tab filter chips consume it).
+  // Optional: pre-logStandard payloads stay renderable; under an active
+  // filter, undefined rows are honestly hidden, never guessed into a
+  // bucket.
+  logStandard?: 'erc20' | 'erc721' | 'erc1155';
   from: string;
   to: string;
   value: string;

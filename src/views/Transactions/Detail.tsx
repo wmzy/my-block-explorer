@@ -6,6 +6,7 @@ import { decodeEventLog, type Abi, type Hex } from 'viem';
 
 import TopNavigation from '@/components/TopNavigation';
 import { CallTraceCard } from '@/views/Transactions/CallTrace';
+import { ProtocolRouterChip } from '@/views/Transactions/methodColumn';
 import { RawDataBlock } from '@/components/transactions/RawDataBlock';
 import { Badge } from '@/components/ui/Badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
@@ -30,6 +31,10 @@ import { useLatestBlocksFeed } from '@/services/homeFeed';
 import { useSignatures, type SignatureOutcome } from '@/services/signatures';
 import type { DecodedTokenTransfer } from '@/utils/tokenTransferDecode';
 import type { RpcLogEntry, RpcTxAuthorization } from '@/utils/blockRpcData';
+import {
+  decodeSafeExecTransaction,
+  type DecodedSafeExecTransaction,
+} from '@/utils/safeDecode';
 import { createRpcClient } from '@/utils/realTimeData';
 import {
   decodeFunctionCall,
@@ -407,11 +412,13 @@ function RevertReasonCard({
 // with the openchain-resolved name (when the backend cache has one) shown
 // next to the raw selector, chipped to mark its database provenance.
 function FunctionCallCard({
+  chainId,
   inputData,
   toAddress,
   abi,
   resolvedFunction,
 }: {
+  chainId: number;
   inputData: string | undefined;
   toAddress: string | undefined;
   abi: Abi | null;
@@ -432,6 +439,7 @@ function FunctionCallCard({
       <CardContent>
         <InfoGrid>
           <InfoItem label="Method">
+            <ProtocolRouterChip chainId={chainId} toAddress={toAddress} />
             {selector !== null ? (
               <>
                 <span className={monoStyle}>{selector}</span>
@@ -450,6 +458,96 @@ function FunctionCallCard({
           )}
         </InfoGrid>
         <RawDataBlock title="Raw Input" data={inputData} />
+      </CardContent>
+    </Card>
+  );
+}
+
+// Muted small print under the Safe decode rows: the two honesty limits of
+// the card — detection is selector-based only, and the signature count is
+// an estimate because non-ECDSA entries are not 65-byte packed.
+const safeCaveatStyle = css`
+  margin: var(--haze-space-2) 0 0;
+  font-size: var(--haze-text-xs);
+  color: var(--haze-color-text-muted);
+`;
+
+// Safe-style multisig decode of an execTransaction payload: the INNER call
+// (target link, forwarded value, operation badge, inner selector) plus the
+// signature-blob summary. Detection is purely selector+shape based on the
+// calldata — the caveat states that explicitly, so the card never implies
+// the target contract was verified to be a Gnosis Safe. The inner method
+// name reuses the page's openchain lookup (ResolvedSignatureName) — the
+// ABI-decode path cannot apply because the verified ABI belongs to the
+// Safe, not the inner target.
+function SafeMultisigCard({
+  chainId,
+  decoded,
+  resolvedInner,
+}: {
+  chainId: number;
+  /** null when the calldata is not an execTransaction payload — card hidden. */
+  decoded: DecodedSafeExecTransaction | null;
+  /** Openchain outcome for the inner call's selector; undefined while loading. */
+  resolvedInner: SignatureOutcome | undefined;
+}) {
+  if (decoded === null) return null;
+
+  const innerSelector = selectorOf(decoded.data);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Safe-style Multisig (execTransaction)</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <InfoGrid>
+          <InfoItem label="Inner Call Target">
+            <TypedLink to={`/chain/${chainId}/address/${decoded.to}`} className={linkStyle}>
+              {decoded.to}
+            </TypedLink>
+          </InfoItem>
+          <InfoItem label="Inner Value">
+            {/* Exact wei rides the title, same contract as the Value row. */}
+            <span title={`${decoded.value} wei`}>
+              {formatValue(decoded.value, getChainSymbol(chainId))}
+            </span>
+          </InfoItem>
+          <InfoItem label="Operation">
+            {/* DELEGATECALL replaces the target's code context — the
+                warning tone marks the escalated trust it implies. */}
+            {decoded.operation === 'DELEGATECALL' ? (
+              <Badge variant="warning" size="sm">
+                DELEGATECALL
+              </Badge>
+            ) : (
+              <Badge size="sm">CALL</Badge>
+            )}
+          </InfoItem>
+          <InfoItem label="Inner Method">
+            {innerSelector !== null ? (
+              <>
+                <span className={monoStyle}>{innerSelector}</span>
+                <ResolvedSignatureName outcome={resolvedInner} />
+              </>
+            ) : (
+              'None (native transfer)'
+            )}
+          </InfoItem>
+          <InfoItem label="Signatures">
+            {/* Full blob stays one hover away behind the summary. */}
+            <span className={monoStyle} title={decoded.signatures}>
+              {`≈${decoded.approximateSignatureCount} ${
+                decoded.approximateSignatureCount === 1 ? 'signature' : 'signatures'
+              } (${decoded.signatureByteLength} bytes)`}
+            </span>
+          </InfoItem>
+        </InfoGrid>
+        <p className={safeCaveatStyle}>
+          Detected from the 0x6a761202 calldata selector and ABI shape — this does not verify the
+          target contract is a Gnosis Safe. The signature count is an estimate: approved-hash and
+          contract signatures are not packed as 65-byte ECDSA entries.
+        </p>
       </CardContent>
     </Card>
   );
@@ -857,6 +955,22 @@ export default function TransactionDetail() {
   // (plain transfers and contract creations have none).
   const functionSelector = useMemo(() => selectorOf(txInfo?.inputData), [txInfo]);
 
+  // Safe-style multisig decode: a successful execTransaction decode makes
+  // the SafeMultisigCard render the inner call. Gated on a known target —
+  // a contract creation cannot be a Safe exec. Pure decoder, total: any
+  // non-match (including a truncated or malformed payload) is null.
+  const safeExec = useMemo(
+    () => (txInfo?.toAddress ? decodeSafeExecTransaction(txInfo.inputData) : null),
+    [txInfo],
+  );
+
+  // Selector of the inner call payload (null for the plain-transfer case),
+  // fed into the same batched openchain lookup as every other selector.
+  const safeInnerSelector = useMemo(
+    () => (safeExec !== null ? selectorOf(safeExec.data) : null),
+    [safeExec],
+  );
+
   // Selectors worth an openchain lookup: the function selector when the
   // ABI is missing or does not match it, plus every log topic0 with no
   // decoded event name — resolved by the backend cache in ONE batched
@@ -875,6 +989,10 @@ export default function TransactionDetail() {
           : null;
       if (decoded === null) selectors.push(functionSelector);
     }
+    // Inner call of a decoded Safe execTransaction: the openchain name is
+    // selector-based and contract-agnostic (chipped provenance), so it is
+    // honest here even though the verified ABI belongs to the Safe.
+    if (safeInnerSelector !== null) selectors.push(safeInnerSelector);
     for (const log of txInfo.logs) {
       if (
         log.topics.length > 0 &&
@@ -884,7 +1002,7 @@ export default function TransactionDetail() {
       }
     }
     return [...new Set(selectors)].slice(0, 25);
-  }, [txInfo, contractAbi, functionSelector]);
+  }, [txInfo, contractAbi, functionSelector, safeInnerSelector]);
 
   const signatureOutcomes = useSignatures(signatureSelectors);
 
@@ -1137,11 +1255,20 @@ export default function TransactionDetail() {
             )}
 
             <FunctionCallCard
+              chainId={currentChainId}
               inputData={txInfo.inputData}
               toAddress={txInfo.toAddress}
               abi={contractAbi}
               resolvedFunction={
                 functionSelector !== null ? signatureOutcomes[functionSelector] : undefined
+              }
+            />
+
+            <SafeMultisigCard
+              chainId={currentChainId}
+              decoded={safeExec}
+              resolvedInner={
+                safeInnerSelector !== null ? signatureOutcomes[safeInnerSelector] : undefined
               }
             />
 

@@ -20,6 +20,10 @@ vi.mock('@/services/liveChain', () => ({
   ) => {
     liveBlockHandler = onBlock;
   },
+  // The server-watch section's live tail: inert in these tests (the
+  // connected half never mounts without an API base; the surface must
+  // exist because the panel imports it).
+  useWatchEvents: () => undefined,
 }));
 
 const getBlockMock = vi.fn();

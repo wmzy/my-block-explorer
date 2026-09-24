@@ -735,6 +735,11 @@ export default function Search() {
   const localContracts = (result)
     ?.localContracts;
 
+  // Curated token/label hits from the same additive free-text contract
+  // (SearchService's tokenHits): known-token symbol matches plus this
+  // explorer's own labels; each hit links to its own chain.
+  const tokenHits = result?.tokenHits;
+
   return (
     <>
       <TopNavigation currentChainId={navChainId} onChainChange={handleNavChainChange} />
@@ -829,6 +834,45 @@ export default function Search() {
                           Unverified
                         </Badge>
                       )}
+                      <span className={localContractChain}>{getChainName(hit.chainId)}</span>
+                    </TypedLink>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* Curated token/label hits (free-text queries only): known-token
+            symbols from the curated list and this explorer's own labels —
+            an honest curated subset, never presented as a token index
+            (the note says so). Known-token rows link to the token page,
+            label rows to the address page, each on its own chain. Not
+            rendered at all when the response carries no hits. */}
+        {tokenHits !== undefined && tokenHits.length > 0 && (
+          <div className={resultCard}>
+            <Card>
+              <CardHeader>
+                <CardTitle>Known tokens &amp; labels (curated)</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className={localContractsNote}>
+                  Curated known tokens and your labels — not every token on this chain.
+                </p>
+                <div className={localContractsList}>
+                  {tokenHits.map(hit => (
+                    <TypedLink
+                      key={`${hit.chainId}-${hit.address}`}
+                      to={hit.source === 'known-token'
+                        ? `/chain/${hit.chainId}/token/${hit.address}`
+                        : `/chain/${hit.chainId}/address/${hit.address}`}
+                      className={localContractRow}
+                    >
+                      <span className={localContractName}>{hit.matchText}</span>
+                      <span className={localContractAddress}>{hit.address}</span>
+                      <Badge variant="default" size="sm">
+                        {hit.source === 'known-token' ? 'Known token' : 'Label'}
+                      </Badge>
                       <span className={localContractChain}>{getChainName(hit.chainId)}</span>
                     </TypedLink>
                   ))}

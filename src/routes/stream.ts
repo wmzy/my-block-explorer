@@ -21,6 +21,7 @@ import type { Block, PublicClient } from 'viem';
 import { createLogger } from '../server/logger';
 import { getValidatedChainId } from '../server/validation';
 import { rpcManager } from '../services/RpcManager';
+import { watchService, type WatchFeedEvent } from '../services/WatchService';
 import { createRateLimiter } from '../middleware/rate-limit';
 
 const logger = createLogger('stream-routes');
@@ -143,76 +144,102 @@ app.get('/chains/:chainId/blocks/stream', c => {
     let consecutiveErrors = 0;
     let lastWriteMs = Date.now();
 
-    while (!signal.aborted && !stream.aborted && !stream.closed) {
-      let head: bigint;
-      try {
-        head = await client.getBlockNumber();
-        consecutiveErrors = 0;
-      } catch (err) {
-        consecutiveErrors++;
-        if (consecutiveErrors >= BLOCK_STREAM_MAX_CONSECUTIVE_ERRORS) {
-          logger.error(
-            { err, chainId, consecutiveErrors },
-            'Block stream giving up after repeated head-poll failures',
-          );
-          await stream.writeSSE({
-            event: 'error',
-            data: errorEvent({
-              error: 'rpc_failed',
-              message: `Chain ${chainId} head polls failed ${consecutiveErrors} times in a row`,
-            }),
-          });
-          return;
-        }
-        await stream.sleep(BLOCK_STREAM_POLL_INTERVAL_MS);
-        continue;
-      }
+    // Watch feed piggyback: this connection also receives the
+    // WatchService's events for THIS chain as `watch` frames — the exact
+    // JSON shape the ring-buffer endpoint (GET /watch/events) serves.
+    // Events arriving between loop cycles are queued here and flushed by
+    // the loop below (the stream's single writer), so block semantics,
+    // heartbeats and error handling are untouched. No replay at connect:
+    // the ring buffer endpoint covers history; the stream is a live tail.
+    const pendingWatch: WatchFeedEvent[] = [];
+    const unsubscribeWatch = watchService.subscribeChainEvents(chainId, event => {
+      pendingWatch.push(event);
+    });
 
-      if (lastEmitted === null) {
-        lastEmitted = head;
-      } else if (head < lastEmitted) {
-        // Reorg shrank the head: resync the baseline so the stream follows
-        // the new branch (already-emitted blocks on the abandoned branch
-        // stay emitted — this is a live tail, not a canonical history).
-        logger.warn(
-          { chainId, lastEmitted: lastEmitted.toString(), head: head.toString() },
-          'Block stream head moved backwards (reorg); resyncing baseline',
-        );
-        lastEmitted = head;
-      } else if (head > lastEmitted) {
-        const gap: bigint = head - lastEmitted;
-        const from: bigint =
-          gap > BigInt(BLOCK_STREAM_MAX_CATCHUP)
-            ? head - BigInt(BLOCK_STREAM_MAX_CATCHUP - 1)
-            : lastEmitted + 1n;
-        for (let n: bigint = from; n <= head; n++) {
-          if (signal.aborted || stream.aborted) return;
-          try {
-            const block = await client.getBlock({ blockNumber: n });
-            const payload = toPayload(block);
-            if (payload) {
-              await stream.writeSSE({ event: 'block', data: JSON.stringify(payload) });
-              lastWriteMs = Date.now();
-            }
-            lastEmitted = n;
-          } catch (err) {
-            // One unreadable block holds the cursor so the next cycle
-            // retries it; the rest of the backlog follows after.
-            logger.warn(
-              { err, chainId, blockNumber: n.toString() },
-              'Block stream could not fetch a new block; will retry next cycle',
+    try {
+      while (!signal.aborted && !stream.aborted && !stream.closed) {
+        // Flush queued watch events first — they must never sit behind the
+        // head-poll cycle.
+        while (pendingWatch.length > 0) {
+          const event = pendingWatch.shift()!;
+          await stream.writeSSE({ event: 'watch', data: JSON.stringify(event) });
+          lastWriteMs = Date.now();
+        }
+
+        let head: bigint;
+        try {
+          head = await client.getBlockNumber();
+          consecutiveErrors = 0;
+        } catch (err) {
+          consecutiveErrors++;
+          if (consecutiveErrors >= BLOCK_STREAM_MAX_CONSECUTIVE_ERRORS) {
+            logger.error(
+              { err, chainId, consecutiveErrors },
+              'Block stream giving up after repeated head-poll failures',
             );
-            break;
+            await stream.writeSSE({
+              event: 'error',
+              data: errorEvent({
+                error: 'rpc_failed',
+                message: `Chain ${chainId} head polls failed ${consecutiveErrors} times in a row`,
+              }),
+            });
+            return;
+          }
+          await stream.sleep(BLOCK_STREAM_POLL_INTERVAL_MS);
+          continue;
+        }
+
+        if (lastEmitted === null) {
+          lastEmitted = head;
+        } else if (head < lastEmitted) {
+          // Reorg shrank the head: resync the baseline so the stream follows
+          // the new branch (already-emitted blocks on the abandoned branch
+          // stay emitted — this is a live tail, not canonical history).
+          logger.warn(
+            { chainId, lastEmitted: lastEmitted.toString(), head: head.toString() },
+            'Block stream head moved backwards (reorg); resyncing baseline',
+          );
+          lastEmitted = head;
+        } else if (head > lastEmitted) {
+          const gap: bigint = head - lastEmitted;
+          const from: bigint =
+            gap > BigInt(BLOCK_STREAM_MAX_CATCHUP)
+              ? head - BigInt(BLOCK_STREAM_MAX_CATCHUP - 1)
+              : lastEmitted + 1n;
+          for (let n: bigint = from; n <= head; n++) {
+            if (signal.aborted || stream.aborted) return;
+            try {
+              const block = await client.getBlock({ blockNumber: n });
+              const payload = toPayload(block);
+              if (payload) {
+                await stream.writeSSE({ event: 'block', data: JSON.stringify(payload) });
+                lastWriteMs = Date.now();
+              }
+              lastEmitted = n;
+            } catch (err) {
+              // One unreadable block holds the cursor so the next cycle
+              // retries it; the rest of the backlog follows after.
+              logger.warn(
+                { err, chainId, blockNumber: n.toString() },
+                'Block stream could not fetch a new block; will retry next cycle',
+              );
+              break;
+            }
           }
         }
-      }
 
-      if (Date.now() - lastWriteMs >= BLOCK_STREAM_HEARTBEAT_MS) {
-        await stream.write(`: heartbeat ${Date.now()}\n\n`);
-        lastWriteMs = Date.now();
-      }
+        if (Date.now() - lastWriteMs >= BLOCK_STREAM_HEARTBEAT_MS) {
+          await stream.write(`: heartbeat ${Date.now()}\n\n`);
+          lastWriteMs = Date.now();
+        }
 
-      await stream.sleep(BLOCK_STREAM_POLL_INTERVAL_MS);
+        await stream.sleep(BLOCK_STREAM_POLL_INTERVAL_MS);
+      }
+    } finally {
+      // Every exit path (clean close, client abort, give-up) releases the
+      // per-connection watch subscription.
+      unsubscribeWatch();
     }
   });
 });

@@ -4,6 +4,7 @@ import { timing } from 'hono/timing';
 import { loggerMiddleware } from './middleware/logger';
 import { corsMiddleware } from './middleware/cors';
 import { createLogger } from './server/logger';
+import { appVersion } from './version';
 import { createApiError } from './utils/api-error';
 import blocksRoutes from './routes/blocks';
 import transactionsRoutes from './routes/transactions';
@@ -21,9 +22,12 @@ import signaturesRoutes from './routes/signatures';
 import labelsRoutes from './routes/labels';
 import verifyRoutes from './routes/verify';
 import approvalsRoutes from './routes/approvals';
+import sqlRoutes from './routes/sql';
+import watchRoutes from './routes/watch';
 import streamRoutes from './routes/stream';
 import debugRoutes from './routes/debug';
 import { reconcileInterruptedRanges } from './services/EventIndexingService';
+import { reconcileInterruptedAddressScans } from './services/AddressScanService';
 
 const logger = createLogger('api-app');
 
@@ -48,7 +52,7 @@ app.onError((e, c) => {
 app.get('/api', c => {
   return c.json({
     name: 'My Block Explorer API',
-    version: '1.0.0',
+    version: appVersion(),
     description: 'A modern blockchain explorer API',
     endpoints: {
       health: '/api/health',
@@ -70,7 +74,7 @@ app.get('/api/health', c => {
     status: 'ok',
     adminTokenConfigured: Boolean(process.env.ADMIN_TOKEN),
     debugApiEnabled: process.env.ENABLE_DEBUG_API === '1',
-    version: '1.0.0',
+    version: appVersion(),
     timestamp: new Date().toISOString(),
   });
 });
@@ -94,6 +98,16 @@ app.route('/api', signaturesRoutes);
 app.route('/api', labelsRoutes);
 app.route('/api', verifyRoutes);
 app.route('/api', approvalsRoutes);
+// SQL console: admin-only read-only queries against this explorer's own
+// DuckDB (POST /api/sql/query + GET /api/sql/tables). Gated by the STRICT
+// admin tier inside the sub-app — unlike the opt-in gates, it fails closed
+// when ADMIN_TOKEN is unset, because this surface executes raw SQL.
+app.route('/api', sqlRoutes);
+// Watch subscriptions: server-side address watching (WatchService tick +
+// getLogs per subscription, ring buffer + SSE `watch` frames). Mounting
+// the module also starts the watcher (it self-starts at module scope and
+// is a no-op until a subscription exists).
+app.route('/api', watchRoutes);
 // SSE block stream: mounted with the API sub-apps but self-manages its
 // response lifecycle (streamSSE + heartbeat + abort handling inside).
 app.route('/api', streamRoutes);
@@ -112,6 +126,13 @@ if (process.env.ENABLE_DEBUG_API === '1') {
 // on the database, and a failure to reconcile is logged, not fatal.
 void reconcileInterruptedRanges().catch(err =>
   logger.error({ err }, 'Failed to reconcile interrupted indexing ranges'),
+);
+
+// Same fire-and-forget startup reconciliation for address deep-scan jobs:
+// rows stuck in 'running' from a previous process flip to 'error' so the
+// Deep Scan panel offers Resume from the last checkpointed cursor.
+void reconcileInterruptedAddressScans().catch(err =>
+  logger.error({ err }, 'Failed to reconcile interrupted address scans'),
 );
 
 app.notFound(c => {

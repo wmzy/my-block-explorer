@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, type ReactNode } from 'react';
 import { css } from '@linaria/core';
 import type { Abi } from 'viem';
 import {
@@ -12,6 +12,7 @@ import {
   type ReadWriteFilter,
 } from '@/utils/contractInteraction';
 import { FunctionCallForm } from './FunctionCallForm';
+import { resolveRevokeTarget, type RevokeIntent } from './revokeIntent';
 import { cardStyles } from './styles';
 import { argsKey } from './types';
 import type { ContractSource } from './types';
@@ -142,6 +143,38 @@ const facetNoteStyles = css`
   }
 `;
 
+// Revoke-intent card: the container sits above the function list; the
+// note rows inside reuse the amber honesty palette (the standard-ABI
+// fallback is a caveat, never silent).
+const revokeCardStyles = css`
+  margin-bottom: 20px;
+  padding: 14px 16px;
+  background: #fdf3f4;
+  border: 1px solid #e6a0a6;
+  border-radius: 8px;
+  font-size: 14px;
+  color: #7a3b42;
+
+  div + div {
+    margin-top: 6px;
+  }
+`;
+
+const revokeTitleStyles = css`
+  font-size: 15px;
+  font-weight: 600;
+`;
+
+const revokeSummaryStyles = css`
+  word-break: break-word;
+  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+  font-size: 12px;
+`;
+
+const revokeNoteStyles = css`
+  font-size: 13px;
+`;
+
 // The block override feeds viem's bigint `blockNumber` parameter directly —
 // this call path supports no named tags ('latest', 'safe', ...) — so only
 // plain decimal digits are acceptable. Empty input means 'latest'.
@@ -247,6 +280,10 @@ export const mergeFacetAbis = (
 // Interact tab: parses the (possibly proxy + implementation) ABI into the
 // unified function list, exposes read/write/name filters and a global block
 // override, and routes each submit to a read or a write simulation.
+// A `revoke` intent (decoded from ?revoke= by the Contract page) prepends
+// a Revoke card: the standard revocation call for the intent's kind,
+// pre-filled and ready to simulate or broadcast through the existing
+// wallet-send path.
 export function ContractInteract({
   chainId,
   contractAddress,
@@ -254,6 +291,7 @@ export function ContractInteract({
   contractTarget,
   abiOverride,
   mode = 'all',
+  revoke = null,
 }: {
   chainId: number;
   contractAddress: string;
@@ -261,6 +299,8 @@ export function ContractInteract({
   contractTarget?: 'proxy' | 'impl';
   abiOverride?: string;
   mode?: 'all' | 'read' | 'write';
+  /** Decoded ?revoke= intent; null renders the panel exactly as before. */
+  revoke?: RevokeIntent | null;
 }) {
   const [allFunctions, setAllFunctions] = useState<EnhancedContractFunction[]>([]);
   const [loading, setLoading] = useState(true);
@@ -387,6 +427,54 @@ export function ContractInteract({
     // eslint-disable-next-line react-hooks/exhaustive-deps -- recompute only when the ABI inputs behind resolveTargetABI change
   }, [abiOverride, contractSource, facetMerge, contractTarget]);
 
+  // ---- Revoke intent (?revoke=) -----------------------------------------
+  //
+  // Function selection prefers the contract's verified ABI when it
+  // carries the exact signature (a non-standard token could redefine the
+  // name); otherwise the bundled standard-ABI fragment stands in and the
+  // card says so. Both sources feed the SAME FunctionCallForm/wallet-send
+  // plumbing as the regular function list — no parallel call path.
+  const revokeSelection = useMemo(
+    () => (revoke !== null ? resolveRevokeTarget(revoke, allFunctions) : null),
+    [revoke, allFunctions],
+  );
+
+  // The callable the revoke form renders: the verified-ABI function when
+  // available, else the fragment parsed into the same enhanced shape.
+  const revokeFunc = useMemo(() => {
+    if (revokeSelection === null) return null;
+    if (revokeSelection.source === 'verified-abi') {
+      const signature = revokeSelection.call.signature;
+      return (
+        allFunctions.find(
+          func => func.interactionType === 'write' && functionSignature(func) === signature,
+        ) ?? null
+      );
+    }
+    const [fragment] = parseContractFunctionsUnified(revokeSelection.call.fragmentAbi, undefined);
+    return fragment ?? null;
+  }, [revokeSelection, allFunctions]);
+
+  // Calls from the revoke form route against the fragment when it is the
+  // source (the verified ABI would not encode the selector); the
+  // verified source rides the panel's normal target ABI resolution.
+  const revokeCallAbi =
+    revokeSelection?.source === 'standard-fragment' ? revokeSelection.call.fragmentAbi : undefined;
+
+  // Revert-decoding ABI for the revoke form's send path: the fragment
+  // itself when it stands in (it carries no custom errors — decode is a
+  // no-op, honestly), the panel ABI when the verified function is used.
+  const revokeDecodeAbi = useMemo<Abi | undefined>(() => {
+    if (revokeSelection === null) return undefined;
+    if (revokeSelection.source === 'verified-abi') return decodeAbi;
+    try {
+      const parsed: unknown = JSON.parse(revokeSelection.call.fragmentAbi);
+      return Array.isArray(parsed) ? (parsed as Abi) : undefined;
+    } catch {
+      return undefined;
+    }
+  }, [revokeSelection, decodeAbi]);
+
   // Live field-level feedback: digits only (decimal block height); empty
   // input clears the override back to 'latest'.
   const handleGlobalBlockChange = (value: string) => {
@@ -494,6 +582,9 @@ export function ContractInteract({
     rawArgs: string[],
     value?: string,
     from?: string,
+    // Per-form ABI override (the revoke form's standard fragment when the
+    // verified ABI lacks the signature); undefined rides the panel target.
+    callAbi?: string,
   ) => {
     // Signature-keyed like the read path: same-name write overloads with
     // identical raw args/value/from must never share a result slot.
@@ -509,7 +600,7 @@ export function ContractInteract({
       setLoadingStates(prev => ({ ...prev, [key]: true }));
       setErrors(prev => ({ ...prev, [key]: '' }));
 
-      const targetABI = resolveTargetABI();
+      const targetABI = callAbi ?? resolveTargetABI();
       if (!targetABI) {
         setErrors(prev => ({
           ...prev,
@@ -573,14 +664,91 @@ export function ContractInteract({
 
   const targetABI = resolveTargetABI();
 
+  // The revoke surface, whenever an intent is present. Three shapes:
+  // - resolved + callable → the Revoke card (form embedded below);
+  // - intent present but unresolvable → the honest unavailable state
+  //   (practically unreachable — the fragment always carries the
+  //   signature — but a broken intent must never render as nothing);
+  // - no intent → null (the panel renders exactly as before).
+  const kindLabel =
+    revokeSelection?.call.kind === 'erc20'
+      ? 'ERC-20'
+      : revokeSelection?.call.kind === 'erc721'
+        ? 'ERC-721'
+        : revokeSelection?.call.kind === 'erc1155'
+          ? 'ERC-1155'
+          : '';
+  const revokeArea: ReactNode =
+    revoke === null
+      ? null
+      : revokeSelection === null || revokeFunc === null
+        ? (
+            <div className={cardStyles} data-testid="revoke-unavailable">
+              <h2>Revoke approval</h2>
+              <div>
+                This revoke link does not describe a revocable approval, so nothing was
+                pre-filled. Re-scan the address page&apos;s Approvals card and use its
+                Revoke action, or manage approvals on revoke.cash.
+              </div>
+            </div>
+          )
+        : (
+            <div className={revokeCardStyles} data-testid="revoke-intent-card">
+              <div className={revokeTitleStyles}>Revoke {kindLabel} approval</div>
+              <div className={revokeSummaryStyles}>{revokeSelection.call.summary}</div>
+              {revokeSelection.source === 'standard-fragment' ? (
+                <div role="status" className={revokeNoteStyles} data-testid="revoke-standard-abi-note">
+                  Using the standard {kindLabel} ABI — not this contract&apos;s verified ABI. A
+                  non-standard token could behave differently; verify before sending.
+                </div>
+              ) : (
+                <div role="status" className={revokeNoteStyles} data-testid="revoke-verified-abi-note">
+                  Function taken from this contract&apos;s verified ABI.
+                </div>
+              )}
+              <FunctionCallForm
+                key={`revoke-${revokeSelection.call.kind}-${revokeSelection.call.signature}`}
+                func={revokeFunc}
+                onCall={(func, args, rawArgs, value, from) =>
+                  void simulateWriteFunction(func, args, rawArgs, value, from, revokeCallAbi)}
+                results={results}
+                errors={errors}
+                loadingStates={loadingStates}
+                chainId={chainId}
+                blockNumber={globalBlockNumber}
+                contractAddress={contractAddress}
+                walletProvider={walletProvider}
+                abi={revokeDecodeAbi}
+                initialArgs={revokeSelection.call.args}
+                defaultExpanded
+              />
+            </div>
+          );
+
   // An abiOverride alone is a fully usable ABI: only the total absence of a
-  // target ABI (no server source, no paste) locks the panel.
+  // target ABI (no server source, no paste) locks the panel — except for
+  // a revoke intent, whose standard-ABI fragment keeps the revoke call
+  // usable even without any verified ABI.
   if (!targetABI) {
+    if (revokeArea === null) {
+      return (
+        <div className={cardStyles}>
+          <h2>{title}</h2>
+          <div>Contract ABI not available</div>
+        </div>
+      );
+    }
     return (
-      <div className={cardStyles}>
-        <h2>{title}</h2>
-        <div>Contract ABI not available</div>
-      </div>
+      <>
+        {revokeArea}
+        <div className={cardStyles}>
+          <h2>{title}</h2>
+          <div>
+            Contract ABI not available — only the revoke action above is offered
+            here. Paste an ABI below the tab bar to unlock the full Interact surface.
+          </div>
+        </div>
+      </>
     );
   }
 
@@ -592,6 +760,8 @@ export function ContractInteract({
 
   return (
     <>
+      {revokeArea}
+
       {isProxyMode && (
         <div
           style={{

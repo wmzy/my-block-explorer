@@ -1,18 +1,23 @@
 // Labels route contract: address validation, PUT body validation (label
 // 1-64 trimmed, note <=500/null), upsert semantics (full replace incl.
-// note clearing), GET 200/404 and DELETE 204/404, and the admin gate on
-// writes. The drizzle layer is faked (eventIndexingRanges.test.ts
-// pattern): a single-row in-memory store routed by table identity. The
-// where()-keying itself is drizzle's contract — these tests pin the route
-// wiring, not SQL generation.
+// note clearing), GET 200/404 and DELETE 204/404, the admin gate on
+// writes, and the list-all feed GET /labels (backup export: admin tiers,
+// ISO timestamps, source pinning). The drizzle layer is faked
+// (eventIndexingRanges.test.ts pattern): an in-memory store routed by
+// table identity. The where()-keying itself is drizzle's contract —
+// these tests pin the route wiring, not SQL generation.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Hono } from 'hono';
+import { resetRateLimiterState } from '@/middleware/rate-limit';
 
 const dbState = vi.hoisted(() => ({
-  // Single-row store: the route always addresses exactly one (chain,
-  // address) per test, so insert-overwrites and select-returns model the
-  // upsert/get pair without evaluating drizzle conditions.
+  // Single-row store: the per-address route always addresses exactly one
+  // (chain, address) per test, so insert-overwrites and select-returns
+  // model the upsert/get pair without evaluating drizzle conditions.
   row: null as { label: string; note: string | null; source: string | null } | null,
+  // Multi-row store: what the list route's table scan (no where clause)
+  // resolves with — raw rows carrying every selected column.
+  listRows: [] as Array<Record<string, unknown>>,
   inserts: [] as Array<{ values: Record<string, unknown>; set: Record<string, unknown> }>,
   deleted: false,
 }));
@@ -24,14 +29,25 @@ vi.mock('@/database/drizzle', async () => {
   return {
     db: {
       select: () => {
+        // The per-address builder chains .where() before awaiting; the
+        // list route awaits right after .from().orderBy(). The flag
+        // routes the same thenable to the right store.
+        let sawWhere = false;
         const b: Record<string, unknown> = {
           from: (t: unknown) => {
             if (t !== addressLabels) throw new Error('unexpected select table');
             return b;
           },
-          where: () => b,
+          where: () => {
+            sawWhere = true;
+            return b;
+          },
+          orderBy: () => b,
           then: (res: unknown, rej: unknown) =>
-            Promise.resolve(S.row === null ? [] : [S.row]).then(res as never, rej as never),
+            Promise.resolve(sawWhere ? (S.row === null ? [] : [S.row]) : S.listRows).then(
+              res as never,
+              rej as never,
+            ),
         };
         return b;
       },
@@ -85,8 +101,13 @@ const request = (path: string, init?: RequestInit) => app.request(path, init);
 beforeEach(() => {
   vi.clearAllMocks();
   dbState.row = null;
+  dbState.listRows = [];
   dbState.inserts = [];
   dbState.deleted = false;
+  // The list endpoint's limiter (10/min, burst 3) is process-shared and
+  // app.request() collapses every call into one fallback bucket — every
+  // test must start with a full bucket.
+  resetRateLimiterState();
   delete process.env.ADMIN_TOKEN;
 });
 
@@ -145,6 +166,78 @@ describe('GET /chains/:chainId/labels/:address', () => {
     // reliable "unsupported" case is an id outside viem's entire list.
     const res = await request(`/chains/424242424242424/labels/${LABEL_ADDRESS}`);
     expect(res.status).toBe(400);
+  });
+});
+
+describe('GET /labels — list every label (backup/export feed)', () => {
+  const ADDRESS_A = '0x1234567890abcdef1234567890abcdef12345678';
+  const ADDRESS_B = '0xabcdef0123456789012345678901234567890123';
+
+  it('serves all rows across chains with ISO timestamps and pinned sources', async () => {
+    dbState.listRows = [
+      {
+        chainId: 1,
+        address: ADDRESS_A,
+        label: 'Cold wallet',
+        note: 'hardware backup in safe',
+        source: null, // storage is nullable — the API contract pins it to 'user'
+        updatedAt: new Date('2026-09-24T10:30:00.000Z'),
+      },
+      {
+        chainId: 137,
+        address: ADDRESS_B,
+        label: 'Binance 14',
+        note: null,
+        source: 'builtin',
+        // Naive UTC string (space-separated, no offset): must parse as
+        // UTC wall clock, never machine-local.
+        updatedAt: '2026-09-21 12:07:19.183',
+      },
+    ];
+    const res = await request('/labels');
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({
+      labels: [
+        {
+          chainId: 1,
+          address: ADDRESS_A,
+          label: 'Cold wallet',
+          note: 'hardware backup in safe',
+          source: 'user',
+          updatedAt: '2026-09-24T10:30:00.000Z',
+        },
+        {
+          chainId: 137,
+          address: ADDRESS_B,
+          label: 'Binance 14',
+          note: null,
+          source: 'builtin',
+          updatedAt: '2026-09-21T12:07:19.183Z',
+        },
+      ],
+    });
+  });
+
+  it('answers an empty table with an explicit empty list', async () => {
+    const res = await request('/labels');
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({ labels: [] });
+  });
+
+  it('enforces the admin gate when ADMIN_TOKEN is configured', async () => {
+    process.env.ADMIN_TOKEN = 'secret';
+    const res = await request('/labels');
+    expect(res.status).toBe(403);
+  });
+
+  it('passes the gate with the right token', async () => {
+    process.env.ADMIN_TOKEN = 'secret';
+    dbState.listRows = [
+      { chainId: 1, address: ADDRESS_A, label: 'One', note: null, source: 'user', updatedAt: null },
+    ];
+    const res = await request('/labels', { headers: { 'x-admin-token': 'secret' } });
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({ labels: [{ label: 'One' }] });
   });
 });
 

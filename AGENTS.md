@@ -35,8 +35,8 @@ block-explorer/
 │   │                       # cors-origins.ts (origin allowlist shared with vite.config.ts)
 │   ├── config/             # Multi-chain configuration (viem chains)
 │   └── types/              # TypeScript definitions
-├── data/                   # DuckDB files (main + per-chain)
-├── docs/                   # Architecture documentation
+├── data/                   # DuckDB files (main + per-chain), solc-cache/
+├── docs/                   # README/INSTALLATION/CONFIG/API/ARCHITECTURE/DEPLOYMENT + archive/
 └── drizzle/                # Migration files
 ```
 
@@ -208,8 +208,10 @@ pnpm typecheck           # tsc --noEmit
 - **CI/CD exists** — `.github/workflows` has `ci.yml`, `release.yml`, `deploy-pages.yml`
 - **Test layout** — `tests/` (unit + integration + e2e) is the live suite;
   historical `src/tests/` / `test/` dirs no longer exist
-- **Barrel exports incomplete** — `src/utils/index.ts` only exports 2 of 19
-  utils
+- **Barrel complete** — `src/utils/index.ts` re-exports all util modules (8
+  name collisions resolved by explicit re-exports; deep imports stay canonical
+  in call sites; `serialization.ts` pulls pino through the barrel — browser
+  code deep-imports it)
 - **Proxy port 7890** — Set `HTTP_PROXY`/`HTTPS_PROXY` if network issues
 - **Admin auth is two-tier** (`src/middleware/admin-token.ts`, `x-admin-token`
   header, timing-safe compare). Strict tier (`requireAdminToken`, **fail
@@ -430,7 +432,8 @@ pnpm typecheck           # tsc --noEmit
   (dedup by signature, facet[0] wins; failed facets named in-panel),
   history-aware Back, tab push, creation gas 0→Unknown, Value label
   uses getChainSymbol, verificationSource friendly labels
-  (types.ts union corrected: sourcify|blockscan|manual|unknown|none —
+  (types.ts union corrected: sourcify|blockscan|manual|unknown|none
+  (+ 'local-compile' since the 2026-09-23/24 wave) —
   'etherscan'/'etherspan' never existed).
   **Polish** — Home dual-column progressive render + stat-card
   skeleton/value/unavailable tri-state, chain selector full keyboard
@@ -545,8 +548,11 @@ pnpm typecheck           # tsc --noEmit
   `GET .../addresses/:a/approvals` (owner-filtered Approval sweep reusing
   TokenTransferService's chunk ladder/ceiling memory → distinct pairs →
   Multicall3 allowance at head, 100-pair cap + truncated flag, ~60s cache,
-  10·3 rate bucket); revoke is an external revoke.cash link only — no
-  wallet plumbing; ApprovalSection renders after the Address overview.
+  10·3 rate bucket); ~~revoke is an external revoke.cash link only — no
+  wallet plumbing~~ (RESOLVED in the 2026-09-23/24 wave — in-product
+  Revoke now links a prefilled interact card, revoke.cash demoted to
+  secondary; the sweep also grew 721/1155 kinds — see below);
+  ApprovalSection renders after the Address overview.
   **Internal Txns tab** — `?tab=internal` (additive enum; existing
   deep-link inference byte-identical): browser-side callTracer over the
   FIRST 25 discovered txs of the current window (same query key — no
@@ -756,3 +762,160 @@ pnpm typecheck           # tsc --noEmit
   **Deferred by PM decision**: i18n; full internal-txn indexing; DEX/
   MEV surfaces; account/API-key systems (out of scope for the
   lightweight-local positioning).
+- **2026-09-23/24 PM-review implementation wave (7 streams + integration)** —
+  the PM review's implementation round landed (all verified: tsc clean,
+  eslint 0 errors, 185 test files / 2556 tests green, live browser smoke
+  on Polygon + mainnet):
+  **Known token balances** — `src/config/knownTokens.ts`: 87 curated
+  addresses across the 10 POPULAR_CHAINS, every entry corroborated
+  against at least two of DefiLlama prices echo / on-chain symbol()·
+  decimals() reads / publisher pages; chains we could not corroborate
+  widely (fantom, celo) ship honest short lists — never a guess, never
+  padding. Addresses ONLY: `symbol` is a display hint, decimals/symbol
+  truth always resolves at runtime (stale curation can never fabricate
+  amounts). `src/services/knownTokenBalances.ts` resolves the list in
+  ONE Multicall3 balanceOf batch (session cache);
+  `src/views/Address/KnownTokens.tsx` renders "Known Tokens · checked N
+  known tokens — live balances, not a complete asset list" (USD-known-
+  first sort, cap 8 + remainder link; fires for EOAs AND contracts —
+  unlike discovered holdings it needs no prior scan).
+  **Approvals across token standards** — `ApprovalScanService` now
+  sweeps ERC-1155 ApprovalForAll (isApprovedForAll reads) alongside the
+  Approval topic; the ERC-20/721 Approval topic0 collision is split by
+  indexed-topic count (4 topics = erc721 → getApproved(tokenId) reads).
+  Response rows carry `kind` + optional `tokenId`; for NFT kinds
+  `allowance`/`isMax` are documented SCOPE sentinels, not amounts
+  ('1'/false = one token id; '1'/true = all ids). Cap 100 across kinds;
+  dead grants are omitted but counted.
+  **In-product revoke** — approval rows link Revoke →
+  `/contract/:token?tab=interact&revoke=1.<kind>.<token>.<spender>
+  [.<tokenId>]` (pure codec `views/Contract/revokeIntent.ts`);
+  ContractInteract renders a prefilled revoke card (erc20
+  approve(spender,0) / erc721 approve(0x0,tokenId) / 1155
+  setApprovalForAll(operator,false)). A verified ABI carrying the exact
+  signature wins over the bundled standard fragment; the fragment path
+  is honestly labeled "standard {kind} ABI — not this contract's
+  verified ABI" (never silently assumed). FunctionCallForm gained
+  initialArgs/defaultExpanded to drive the prefill; revoke.cash stays
+  as a secondary link.
+  **Server-side watch subscriptions** — `watch_subscriptions` table
+  (migration 0011) + `WatchService` (4s tick, per-subscription ranged
+  getLogs, 200-block gap cap with honest gap markers, ring buffer
+  100/chain) + `src/routes/watch.ts` (GET/PUT/DELETE + events;
+  opt-in admin + 5/min; cap 25/chain; needs RPC config) + SSE `watch`
+  frames piggybacked on the existing blocks/stream + `liveChain.ts`
+  subscribeWatchEvents/useWatchEvents; Watchlist panel gains a second
+  section + global browser Notifications wired in src/index.tsx
+  (dedupe by chain:txHash:logIndex). Honest copy pinned: watching
+  starts at subscribe (never walks history) and runs only while the
+  backend runs.
+  **Local compile verification** — `CompileVerifyService` +
+  `POST .../verify/compile` & `GET .../verify/compilers` (opt-in admin
+  + shared 3/min bucket): downloads solc wasm from the official
+  list.json (sha256-verified, cached `data/solc-cache/*.cjs` — .cjs
+  because the package is `"type":"module"` and a .js soljson dies on
+  `__dirname` in real node; tsx dev masks it), compiles standard JSON
+  (Hardhat build-info unwrapped), matches runtime bytecode with
+  auxdata-stripping tiers exact/matches-metadata-only/mismatch (+
+  first diff offset). Any match persists verificationSource
+  'local-compile' via `ContractSourceService.saveLocalCompileVerification`
+  (new public path; the verificationSource union widened on both sides;
+  evmVersion plumbed) and clears the source cache; CompileVerifyPanel
+  sits beside the Sourcify panel on unverified contracts.
+  **Docs + release discipline** — docs/ consolidated (9 files deleted/
+  folded, historical → docs/archive/, entry set README/INSTALLATION/
+  CONFIG/API/ARCHITECTURE/DEPLOYMENT). release.yml truth pinned:
+  semantic-release from conventional commits on push to main, version
+  NEVER written back to the repo (no @semantic-release/git) — a guard
+  step now FAILS when package.json ≠ latest v-tag; package.json set to
+  1.2.0; CHANGELOG.md created (hand-maintained; tags authoritative).
+  `/api/health` + `/api` index version now read package.json via
+  `src/version.ts` (was hardcoded "1.0.0"; appVersion resolves lazily,
+  degrades to 'unknown' rather than a fabricated number).
+  **Bug fixed en route (pre-existing)** — `views/Address/approvals.tsx`
+  fetched `/chains/...` missing the `/api` prefix → always HTTP 404
+  through the app (vite-bridge curl hid it). Frontend service paths
+  MUST start with `/api/` (apiBase is origin-only). Diagnosis pattern:
+  addInitScript-patched window.fetch survives navigation, but
+  page.on('response') does NOT catch pre-listener requests.
+  **Conventions worth pinning** — react-toolroom query caches hold
+  ERRORS too: a transient failure sticks until remount, so surfaced
+  sections should offer retry affordances (~~the approvals section currently
+  lacks one~~ — RESOLVED in the 2026-09-24 wave: inline Retry wired to
+  refetch).
+- **2026-09-24 PM gap wave (3 waves, 10 tasks + integration)** — the PM
+  review's P0/P1 list landed (all verified: tsc clean, eslint 0 errors,
+  204 test files / 2856 tests green via `vitest --changed`):
+  **Address deep scan (P0)** — `address_scan_jobs` + `address_scan_findings`
+  (migration 0013) + `AddressScanService` forward-walk engine (balance
+  checkpoints at adaptive 50k-block batches halving on provider range
+  errors; binary-searched change blocks scanned via the shared
+  scanBlockForAddressTransactions extracted from AddressService; findings
+  persisted; max 2 concurrent addresses, one serial loop each; progress
+  checkpointed per segment with compare-and-set so a force-replaced row
+  can't be clobbered; `reconcileInterruptedAddressScans` wired in
+  api-app.ts startup). Routes: POST/GET …/scan + pause/resume/DELETE
+  (writes opt-in admin + 3/min·2). Transactions endpoint gains additive
+  `deepScan` + findings merge (heuristic ∪ findings, dedup by hash,
+  blockNumber desc) and the FIRST sanctioned `coverage:'complete'` path
+  (reason `'deep-scan'`) — genesis-anchored finished walks ONLY
+  (fromBlock===0; coverage derived, never stored). Frontend `DeepScan`
+  panel on the tx tab (3s poll only while running, ETA from the range
+  manager's sampler approach, pause/resume/delete, force-restart on
+  scan_conflict); `services/addressScan.ts` exports the pure
+  `parseScanJob` guard so the panel never imports services/addresses.ts.
+  **Entity search (P0)** — free-text `/api/search` gains `tokenHits` (≤5):
+  knownTokens symbols + address_labels text, label wins on dedup, field
+  dropped (not emptied) on a failed labels read; Search page "Known
+  tokens & labels (curated)" section.
+  **Token standard filter** — transfers rows carry `logStandard`
+  (log-shape-proven standard; separate from the metadata-disambiguated
+  `standard` enum) + `?ttStandard=` chips on the transfers tab
+  (optional().catch(undefined), absence = all; filter-emptied page renders
+  EmptyState without touching ?ttPage). **En-route bug fix**: 4-topic
+  ERC-721 Transfer rows were silently dropped by EVERY scan (viem
+  decodeEventLog returns no `value` for the ERC-20 shape against 4-topic
+  logs; tokenId now read from topics[3]).
+  **Approval history** — additive `history`/`historyTruncated` (raw swept
+  events, newest-first cap 200; ApprovalForAll(false) excluded — the wire
+  shape cannot represent unapproval); collapsible timeline riding the same
+  fetch; approvals section gained the inline Retry.
+  **Safe decode** — `utils/safeDecode.ts` `decodeSafeExecTransaction`
+  (selector 0x6a761202 + **canonical re-encode round-trip guard** — viem
+  decodes TAIL-truncated dynamic `bytes` leniently, fabricating missing
+  bytes instead of throwing); tx Detail "Safe-style Multisig" card (inner
+  call target/value/operation badge, inner selector via the page's
+  openchain batch, ≈N signatures estimate with packing caveat;
+  selector-based detection, never a verified-Safe claim).
+  **Protocol labels** — `config/knownRouters.ts`: 62 Uniswap-family
+  addresses × 8 chains (V2 Router02, V3 SwapRouter v1 + SwapRouter02,
+  Universal Router V1–V2.1.2), every entry source-cited (docs repo +
+  sdk-core + UR deploy JSONs) AND on-chain getCode-verified; fantom/gnosis
+  ship empty (no official deployment — never guess). `ProtocolRouterChip`
+  in the tx-list Method column + Detail's Method item (orchestrator-wired
+  seam); labels are display hints, uncurated ≠ not-a-router.
+  **Local data portability** — `GET /api/labels` (opt-in admin, no-store,
+  10/min·3) + settings-modal "Backup & restore": explorer-backup.json v1
+  (labels, custom chains, watchlist/theme/ipfsGateway/custom ABIs);
+  custom-abi keys PATTERN-PINNED so a hostile file cannot write arbitrary
+  localStorage keys; backend-unreachable exports browser-local parts with
+  an honest notes[] attribution; import runs per-item with per-section
+  results (403 → one admin-token line, chain probes reported per-chain).
+  **Admin SQL console** — `/sql` page (NOT chain-scoped — queries the MAIN
+  DuckDB) + `POST /api/sql/query` / `GET /api/sql/tables` (STRICT
+  fail-closed admin — raw SQL never open by default; pure
+  `isReadOnlyQuery` guard: single statement, SELECT/WITH start, 22
+  forbidden word tokens anywhere; `runAndReadUntil(501)` measured
+  truncation so giant results never materialize; DuckDB-style column
+  dedup; session TZ pinned UTC; 6/min·3; two distinct 403 faces — server
+  token unset vs browser token wrong; be:sqlConsole history max 10).
+  **Cleanup** — `search_history` dropped (migration 0012; the parallel
+  definition in `src/database/chain-schema.ts` remains, unused — future
+  cleanup candidate); utils barrel completed. **Conventions pinned**:
+  (1) viem lenient-decodes truncated tail bytes — external-calldata
+  decoders need a re-encode round-trip guard; (2) creation tx rows carry
+  `toAddress: ''` (normalized in blockRpcData), never null; (3) the wave
+  pattern that worked: per-wave file-ownership lists + orchestrator-only
+  wiring of cross seams (ProtocolRouterChip→Detail, deepScan field→
+  services/addresses.ts, reconcile call→api-app) + one pinned API
+  contract doc for parallel backend/frontend slices.

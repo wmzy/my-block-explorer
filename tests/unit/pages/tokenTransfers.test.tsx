@@ -32,6 +32,7 @@ const mocks = vi.hoisted(() => {
       logIndex: 0,
       token: tokenErc20,
       standard: 'erc20-or-erc721',
+      logStandard: 'erc20',
       from: counterparty,
       to: holder,
       value: '1500000000000000000',
@@ -43,6 +44,7 @@ const mocks = vi.hoisted(() => {
       logIndex: 1,
       token: tokenErc721,
       standard: 'erc20-or-erc721',
+      logStandard: 'erc721',
       from: holder,
       to: counterparty,
       value: '77',
@@ -54,6 +56,7 @@ const mocks = vi.hoisted(() => {
       logIndex: 2,
       token: tokenUnknown,
       standard: 'erc20-or-erc721',
+      logStandard: 'erc20',
       from: counterparty,
       to: holder,
       value: '999',
@@ -65,6 +68,7 @@ const mocks = vi.hoisted(() => {
       logIndex: 3,
       token: tokenErc20,
       standard: 'erc1155-single',
+      logStandard: 'erc1155',
       from: holder,
       to: counterparty,
       value: '3',
@@ -78,6 +82,7 @@ const mocks = vi.hoisted(() => {
       logIndex: 4,
       token: tokenErc20,
       standard: 'erc1155-batch',
+      logStandard: 'erc1155',
       from: counterparty,
       to: holder,
       value: '3',
@@ -365,7 +370,9 @@ describe('TokenTransfers tab', () => {
     renderTab();
 
     expect(await screen.findByText('1.5 TKN')).toBeInTheDocument();
-    expect(screen.getByText('ERC-20')).toBeInTheDocument();
+    // The Standard pill (a span), not the identically-labeled filter chip
+    // button introduced with ?ttStandard=.
+    expect(screen.getByText('ERC-20', { selector: 'span' })).toBeInTheDocument();
     // Symbol-known token column shows the symbol instead of the address;
     // the link routes to the token's contract page, not the address page.
     expect(screen.getByText('TKN').closest('a')?.getAttribute('href')).toBe(
@@ -377,7 +384,7 @@ describe('TokenTransfers tab', () => {
     renderTab();
 
     expect(await screen.findByText(/Token ID 77/)).toBeInTheDocument();
-    expect(screen.getByText('ERC-721')).toBeInTheDocument();
+    expect(screen.getByText('ERC-721', { selector: 'span' })).toBeInTheDocument();
   });
 
   it('falls back to the raw value + shortened token address when metadata is unreadable', async () => {
@@ -396,7 +403,7 @@ describe('TokenTransfers tab', () => {
 
     expect(await screen.findByText('ID 5 × 3')).toBeInTheDocument();
     expect(screen.getByText('ID 1 +2 more')).toBeInTheDocument();
-    expect(screen.getByText('ERC-1155')).toBeInTheDocument();
+    expect(screen.getByText('ERC-1155', { selector: 'span' })).toBeInTheDocument();
     expect(screen.getByText('ERC-1155 Batch')).toBeInTheDocument();
   });
 
@@ -890,5 +897,131 @@ describe('TokenTransfers tab - scan mode', () => {
     ).toBeInTheDocument();
     expect(screen.queryByText('IN')).not.toBeInTheDocument();
     expect(screen.queryByText('OUT')).not.toBeInTheDocument();
+  });
+});
+
+describe('TokenTransfers tab - standard filter chips', () => {
+  // Row identity per fixture: the truncated tx-hash text each row renders.
+  const rowOf = (n: 1 | 2 | 3 | 4 | 5) => `0x${String(n).repeat(8)}...${String(n).repeat(8)}`;
+
+  beforeEach(() => {
+    mocks.page = {
+      transfers: mocks.transfers,
+      nextCursor: String(mocks.transfers.length),
+      coverage: 'partial',
+      windowBlocks: 50_000,
+    };
+    mocks.loading = false;
+    mocks.emptyData = false;
+    mocks.error = undefined;
+    mocks.isContract = false;
+    mocks.detection = 'none';
+    mocks.modeTag = undefined;
+  });
+
+  it('renders the chip group with All active and every row visible by default', async () => {
+    renderTab();
+
+    await screen.findByRole('group', { name: 'Token transfers standard filter' });
+    for (const label of ['All', 'ERC-20', 'ERC-721', 'ERC-1155']) {
+      expect(screen.getByRole('button', { name: label })).toBeInTheDocument();
+    }
+    // Absent ?ttStandard= is the all-state: All is the active (disabled)
+    // chip and no ttStandard key exists in the URL.
+    expect(screen.getByRole('button', { name: 'All' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'ERC-20' })).toBeEnabled();
+    expect(screen.getByTestId('search-probe').textContent).not.toContain('ttStandard=');
+    expect(await screen.findAllByRole('row')).toHaveLength(1 + mocks.transfers.length);
+  });
+
+  it('filters the rendered rows client-side and writes ?ttStandard= with the tab pinned', async () => {
+    renderTab();
+
+    await screen.findByRole('columnheader', { name: 'Amount' });
+    fireEvent.click(screen.getByRole('button', { name: 'ERC-721' }));
+
+    // Only the ERC-721-shaped row stays on screen; the others are hidden,
+    // not re-fetched (the scan args never change with the filter).
+    expect(await screen.findByText(rowOf(2))).toBeInTheDocument();
+    expect(screen.queryByText(rowOf(1))).not.toBeInTheDocument();
+    expect(screen.queryByText(rowOf(4))).not.toBeInTheDocument();
+    expect(screen.queryByText(rowOf(5))).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'ERC-721' })).toBeDisabled();
+    // The filter rides the URL with the tab pinned exactly like ?ttPage=.
+    expect(screen.getByTestId('search-probe').textContent).toContain('ttStandard=erc721');
+    expect(screen.getByTestId('search-probe').textContent).toContain('tab=transfers');
+    expect(mocks.queryArgs[2]).toBe('0');
+
+    // Back to All: the key is dropped (never a serialized "all" value).
+    fireEvent.click(screen.getByRole('button', { name: 'All' }));
+    await waitFor(() =>
+      expect(screen.getByTestId('search-probe').textContent).not.toContain('ttStandard='));
+    expect(await screen.findAllByRole('row')).toHaveLength(1 + mocks.transfers.length);
+  });
+
+  it('hides rows without log-shape evidence under an active chip instead of guessing', async () => {
+    // Legacy pre-logStandard payload: rows carry no evidence, so an
+    // active filter honestly hides them all (they come back on All).
+    const legacyRows = mocks.transfers.map((row) => {
+      const legacy = { ...row };
+      delete legacy.logStandard;
+      return legacy;
+    });
+    mocks.page = {
+      transfers: legacyRows,
+      nextCursor: String(legacyRows.length),
+      coverage: 'partial',
+      windowBlocks: 50_000,
+    };
+
+    renderTab('/?tab=transfers&ttStandard=erc20');
+
+    expect(await screen.findByText(/No ERC-20 transfers on this page/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'All' }));
+    expect(await screen.findAllByRole('row')).toHaveLength(1 + legacyRows.length);
+  });
+
+  it('lands a ?ttStandard= deep link already filtered', async () => {
+    renderTab('/?tab=transfers&ttStandard=erc1155');
+
+    // Only the two ERC-1155 rows render; the chip is active from the URL.
+    expect(await screen.findByText(rowOf(4))).toBeInTheDocument();
+    expect(screen.getByText(rowOf(5))).toBeInTheDocument();
+    expect(screen.queryByText(rowOf(1))).not.toBeInTheDocument();
+    expect(screen.queryByText(rowOf(2))).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'ERC-1155' })).toBeDisabled();
+    // The deep link is preserved verbatim — no rewrite on landing.
+    expect(screen.getByTestId('search-probe').textContent).toContain('ttStandard=erc1155');
+  });
+
+  it('degrades a malformed ?ttStandard= deep link to the all-state', async () => {
+    renderTab('/?tab=transfers&ttStandard=bogus');
+
+    expect(await screen.findAllByRole('row')).toHaveLength(1 + mocks.transfers.length);
+    expect(screen.getByRole('button', { name: 'All' })).toBeDisabled();
+  });
+
+  it('renders the per-page empty state without touching ?ttPage when the filter empties the page', async () => {
+    // Raw page HAS rows (so the beyond-data convergence must never fire),
+    // none of them ERC-721-shaped.
+    const non721Rows = mocks.transfers.filter((row) => row.logStandard !== 'erc721');
+    mocks.page = {
+      transfers: non721Rows,
+      nextCursor: String(non721Rows.length),
+      coverage: 'partial',
+      windowBlocks: 50_000,
+    };
+
+    renderTab('/?tab=transfers&ttPage=2&ttStandard=erc721');
+
+    expect(await screen.findByText(/No ERC-721 transfers on this page/)).toBeInTheDocument();
+    // The chip stays active and the deep page stays pinned: the filter is
+    // client-side, so it can never trip the ?ttPage= reset.
+    expect(screen.getByRole('button', { name: 'ERC-721' })).toBeDisabled();
+    expect(screen.getByTestId('search-probe').textContent).toContain('ttPage=2');
+    expect(screen.getByTestId('search-probe').textContent).toContain('ttStandard=erc721');
+    // Pagination stays reachable — the filter only narrowed THIS page.
+    expect(screen.getByText('Page 2')).toBeInTheDocument();
+    expect(screen.queryByText('No transfers on this page')).not.toBeInTheDocument();
   });
 });

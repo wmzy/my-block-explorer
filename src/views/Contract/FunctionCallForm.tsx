@@ -267,7 +267,9 @@ type WalletSendState =
 // an ETH value field plus from), Query vs Simulate submit, and per-call
 // result/error slots keyed by call signature. When an injected EIP-1193
 // wallet is available, write functions additionally offer to broadcast
-// the SAME encoded call via eth_sendTransaction.
+// the SAME encoded call via eth_sendTransaction. `initialArgs` pre-fills
+// the argument inputs once on mount (the revoke intent lands the user on
+// a ready-to-send form); the user's edits always win afterwards.
 export function FunctionCallForm({
   func,
   onCall,
@@ -279,6 +281,8 @@ export function FunctionCallForm({
   contractAddress,
   walletProvider = null,
   abi,
+  initialArgs,
+  defaultExpanded = false,
 }: {
   func: EnhancedContractFunction;
   onCall: (
@@ -299,13 +303,40 @@ export function FunctionCallForm({
   walletProvider?: EIP1193Provider | null;
   /** The panel's resolved contract ABI — decodes revert data of failed sends. */
   abi?: Abi;
+  /**
+   * Raw prefill strings for the argument inputs (same shapes a user would
+   * type), applied once on mount and re-applied only when this payload
+   * itself changes — never fighting user edits or the composite-arg
+   * parsing, which sees the values as ordinary input text.
+   */
+  initialArgs?: readonly string[];
+  /** Start expanded (a revoke intent lands the user on the ready form). */
+  defaultExpanded?: boolean;
 }) {
-  const [args, setArgs] = useState<string[]>(func.inputs.map(() => ''));
+  const [args, setArgs] = useState<string[]>(() =>
+    func.inputs.map((_, index) => initialArgs?.[index] ?? ''),
+  );
   const [argErrors, setArgErrors] = useState<string[]>(func.inputs.map(() => ''));
   const [value, setValue] = useState('');
   const [valueError, setValueError] = useState('');
   const [from, setFrom] = useState('');
   const [fromError, setFromError] = useState('');
+
+  // Re-prefill when the prefill PAYLOAD changes (e.g. the route carries a
+  // different ?revoke= intent into the same mounted form): the serialized
+  // key only moves when the payload does, so user edits between intent
+  // switches are never clobbered.
+  const initialArgsKey = initialArgs === undefined ? '' : initialArgs.join('\u0000');
+  useEffect(() => {
+    if (initialArgsKey === '') return;
+    setArgs(prev => {
+      const next = func.inputs.map((_, index) => initialArgs?.[index] ?? '');
+      return next.length === prev.length && next.every((entry, index) => entry === prev[index])
+        ? prev
+        : next;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- re-prefill only when the prefill payload changes
+  }, [initialArgsKey]);
 
   const selector = getFunctionSelector(func);
   const selectorDisplay = formatSelectorForDisplay(selector);
@@ -549,7 +580,7 @@ export function FunctionCallForm({
   const isOmittable = (index: number) => args.slice(index + 1).every(arg => arg.trim() === '');
 
   return (
-    <Collapsible title={headerTitle} defaultExpanded={false} badge={badge}>
+    <Collapsible title={headerTitle} defaultExpanded={defaultExpanded} badge={badge}>
       <form onSubmit={handleSubmit}>
         {/* Function Arguments */}
         {func.inputs.map((input, index) => (

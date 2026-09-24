@@ -1,4 +1,9 @@
 import { describe, it, expect, afterAll, vi } from 'vitest';
+import { createRequire } from 'node:module';
+
+// /api/health reports the package.json version (src/version.ts) — pin the
+// contract, not the literal.
+const packageVersion: string = createRequire(import.meta.url)('../../package.json').version;
 
 // Same DuckDB isolation pattern as tests/integration/api-routes.test.ts:
 // the db client is mocked (schema exports stay real) so this file never
@@ -57,7 +62,7 @@ describe('GET /api/health', () => {
       adminTokenConfigured: true,
       debugApiEnabled: true,
     });
-    expect(body.version).toBe('1.0.0');
+    expect(body.version).toBe(packageVersion);
     expect(typeof body.timestamp).toBe('string');
   });
 });

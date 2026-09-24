@@ -101,6 +101,9 @@ export type ContractSource = {
   address: Address;
   name?: string;
   compilerVersion?: string;
+  // EVM target version from the compile settings (e.g. 'shanghai');
+  // persisted in contract_sources.evm_version, read back on cache hits.
+  evmVersion?: string;
   optimizationEnabled?: boolean;
   optimizationRuns?: number;
   sourceCode: string;
@@ -108,7 +111,18 @@ export type ContractSource = {
   abi: string;
   constructorArguments?: string;
   verificationStatus: 'verified' | 'unverified' | 'partial';
-  verificationSource: 'sourcify' | 'blockscan' | 'manual' | 'unknown' | 'none';
+  // Mirrors the frontend union: 'sourcify' and 'blockscan' are the two
+  // remote verifiers (the latter is the vscode.blockscan.com source
+  // cache); 'manual' marks locally-pasted trust, 'local-compile' a real
+  // local recompile match (CompileVerifyService), 'unknown'/'none' missing
+  // provenance.
+  verificationSource:
+    | 'sourcify'
+    | 'blockscan'
+    | 'manual'
+    | 'local-compile'
+    | 'unknown'
+    | 'none';
   verifiedAt?: Date;
   lastChecked: Date;
   isProxy?: boolean;
@@ -908,6 +922,51 @@ export class ContractSourceService {
     return manualSource;
   }
 
+  // Saves a local compile-verification record (CompileVerifyService): the
+  // caller matched recompiled runtime bytecode against the chain, so
+  // unlike the manual mark this IS a real match — the row records
+  // verificationSource 'local-compile' plus the compiler settings that
+  // produced it. Same saveToDatabase upsert every other source uses, so a
+  // re-save replaces the record wholesale and proxy fields stay null.
+  async saveLocalCompileVerification(
+    chainId: number,
+    address: Address,
+    input: {
+      name: string;
+      abi: string;
+      sourceFiles: ContractFile[];
+      sourceCode: string;
+      compilerVersion: string;
+      optimizationEnabled?: boolean;
+      optimizationRuns?: number;
+      evmVersion?: string;
+    },
+  ): Promise<ContractSource> {
+    const now = new Date();
+    const source: ContractSource = {
+      chainId,
+      address: formatAddress(address),
+      name: input.name,
+      compilerVersion: input.compilerVersion,
+      ...(input.evmVersion !== undefined ? { evmVersion: input.evmVersion } : {}),
+      ...(input.optimizationEnabled !== undefined
+        ? { optimizationEnabled: input.optimizationEnabled }
+        : {}),
+      ...(input.optimizationRuns !== undefined
+        ? { optimizationRuns: input.optimizationRuns }
+        : {}),
+      sourceCode: input.sourceCode,
+      sourceFiles: input.sourceFiles,
+      abi: input.abi,
+      verificationStatus: 'verified',
+      verificationSource: 'local-compile',
+      verifiedAt: now,
+      lastChecked: now,
+    };
+    await this.saveToDatabase(source);
+    return source;
+  }
+
   // Removes a manual mark. Deletes ONLY rows whose verificationSource is
   // 'manual' — a sourcify/blockscan row answers false (the route maps
   // that to 404) and is never touched. The delete reuses clearCache, so
@@ -1574,6 +1633,7 @@ export class ContractSourceService {
         address: row.address,
         name: row.contractName ?? undefined,
         compilerVersion: row.compilerVersion ?? undefined,
+        evmVersion: row.evmVersion ?? undefined,
         optimizationEnabled: row.optimizationUsed ?? undefined,
         optimizationRuns: row.runs ?? undefined,
         sourceCode: row.sourceCode ?? '',
@@ -1582,7 +1642,12 @@ export class ContractSourceService {
         constructorArguments: row.constructorArguments ?? undefined,
         verificationStatus: row.isVerified ? 'verified' : 'unverified',
         verificationSource:
-          (row.verificationSource as 'sourcify' | 'blockscan' | 'manual' | 'unknown') ?? 'unknown',
+          (row.verificationSource as
+          | 'sourcify'
+          | 'blockscan'
+          | 'manual'
+          | 'local-compile'
+          | 'unknown') ?? 'unknown',
         verifiedAt: row.verificationDate ?? undefined,
         lastChecked: row.lastUpdated ?? new Date(),
         isProxy: row.proxy ? true : false,
@@ -1626,6 +1691,7 @@ export class ContractSourceService {
           address: contractSource.address,
           contractName: contractSource.name ?? null,
           compilerVersion: contractSource.compilerVersion ?? null,
+          evmVersion: contractSource.evmVersion ?? null,
           optimizationUsed: contractSource.optimizationEnabled ?? null,
           runs: contractSource.optimizationRuns ?? null,
           sourceCode: contractSource.sourceCode ?? null,
@@ -1645,6 +1711,7 @@ export class ContractSourceService {
           set: {
             contractName: contractSource.name ?? null,
             compilerVersion: contractSource.compilerVersion ?? null,
+            evmVersion: contractSource.evmVersion ?? null,
             optimizationUsed: contractSource.optimizationEnabled ?? null,
             runs: contractSource.optimizationRuns ?? null,
             sourceCode: contractSource.sourceCode ?? null,

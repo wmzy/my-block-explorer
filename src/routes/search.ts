@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { searchService, searchLocalContractHits } from '../services/SearchService';
+import { searchService, searchLocalContractHits, searchTokenEntityHits } from '../services/SearchService';
 import {
   getChainName,
   getSortedChains,
@@ -96,6 +96,18 @@ app.get('/search', searchRateLimiter, async (c) => {
       ? await searchLocalContractHits(sanitized, hasChainHint ? requestedChainId : undefined)
       : undefined;
 
+    // Curated token/label hits ride the SAME free-text-only, strictly
+    // additive contract: known-token symbols (the curated per-chain list
+    // in config/knownTokens.ts) plus this explorer's address_labels rows
+    // (user + builtin), deduped by address with the label winning, at
+    // most 5, scoped to ?chainId= when present — unscoped hits each
+    // carry their own chainId so clients link to the right chain. A
+    // FAILED label read drops this field independently of localContracts
+    // above; an absent section never claims "no matches" was checked.
+    const tokenHits = searchType === 'unknown'
+      ? await searchTokenEntityHits(sanitized, hasChainHint ? requestedChainId : undefined)
+      : undefined;
+
     // Hash/block hits now flow through this endpoint too, and their Block/
     // Transaction payloads carry BigInt fields (number, timestamp, gasUsed)
     // that raw JSON.stringify would throw on — the same reason the
@@ -110,6 +122,9 @@ app.get('/search', searchRateLimiter, async (c) => {
         ...result,
         ...(localContracts !== undefined && localContracts !== null
           ? { localContracts }
+          : {}),
+        ...(tokenHits !== undefined && tokenHits !== null
+          ? { tokenHits }
           : {}),
         searchedChainId,
         timestamp: new Date().toISOString(),

@@ -1,6 +1,6 @@
 {
   "name": "my-block-explorer",
-  "version": "0.0.0",
+  "version": "1.2.0",
   "type": "module",
   "description": "Multi-chain blockchain explorer with auto-discovery",
   "bin": {
@@ -80,6 +80,7 @@
     "react-dom": "^19.3.0",
     "react-toolroom": "^1.1.1",
     "react-use-control": "^1.6.1",
+    "solc": "^0.8.37",
     "sonner": "^2.0.8",
     "storage-layout-fetcher": "^0.2.1",
     "undici": "^8.10.2",

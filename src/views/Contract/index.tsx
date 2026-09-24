@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { css } from '@linaria/core';
 import { useControl } from 'react-use-control';
 import { z } from 'zod';
@@ -22,10 +22,12 @@ import { useContractCreation, useContractSource, useStorageLayout } from '@/serv
 import { EventsPanel } from './EventsPanel';
 import { deriveContractCoverage } from './coverage';
 import { ContractInteract } from './ContractInteract';
+import { decodeRevokeIntent } from './revokeIntent';
 import { CustomAbiPanel, parseAbiString } from './CustomAbiPanel';
 import { StoragePanel } from './StoragePanel';
 import { OpenInIdeButton } from './OpenInIdeButton';
 import { SourcifyVerifyPanel } from './SourcifyVerifyPanel';
+import { CompileVerifyPanel } from './CompileVerifyPanel';
 import { ManualVerifyPanel } from './ManualVerifyPanel';
 import { cardStyles, errorStyles, loadingStyles } from './styles';
 import type { ContractABI, ContractCreationInfo, ContractSource } from './types';
@@ -604,6 +606,10 @@ type TabId = (typeof CONTRACT_TABS)[number];
 
 const contractSearchSchema = z.object({
   tab: z.enum(CONTRACT_TABS).optional().catch(undefined),
+  // Encoded in-product revoke intent (views/Contract/revokeIntent.ts):
+  // a plain string here — decodeRevokeIntent validates the shape and any
+  // junk degrades to "no intent" (the Interact panel renders as usual).
+  revoke: z.string().optional().catch(undefined),
 });
 
 const PROXY_TYPE_LABELS: Record<string, string> = {
@@ -693,20 +699,25 @@ const formatCreationGas = (gasUsed: string): string => {
 // not know ('manual'/'unknown'/'none' and anything the backend may grow)
 // render as-is — honesty over invention.
 const VERIFICATION_SOURCE_META: Record<string, { label: string; title: string }> = {
-  sourcify: {
+  'sourcify': {
     label: 'Sourcify — independent verification',
     title:
       'Source matched independently by the Sourcify verification service (verify.sourcify.dev)',
   },
-  blockscan: {
+  'blockscan': {
     label: 'Blockscan — third-party source cache',
     title:
       'Source served from Blockscan\u2019s cross-explorer cache (vscode.blockscan.com) — not independently verified',
   },
-  manual: {
+  'manual': {
     label: 'Manual (local trust)',
     title:
       'ABI/source pasted locally and stored in this explorer\u2019s database — a local trust annotation, not cryptographic verification',
+  },
+  'local-compile': {
+    label: 'Local compile — bytecode matched',
+    title:
+      'Source recompiled locally with the official solc build and matched against the on-chain runtime bytecode (a metadata-hash difference alone was tolerated and reported)',
   },
 };
 
@@ -716,7 +727,14 @@ const VERIFICATION_SOURCE_META: Record<string, { label: string; title: string }>
 export default function Contract() {
   const { params, router, location } = useMatched();
   const setSearch = useSetSearch(contractSearchSchema);
-  const { tab: tabParam } = useSearch(contractSearchSchema);
+  const { tab: tabParam, revoke: revokeParam } = useSearch(contractSearchSchema);
+
+  // Decoded ?revoke= intent (null when absent or malformed) — flows into
+  // the Interact tab's pre-filled revoke form.
+  const revokeIntent = useMemo(
+    () => (revokeParam !== undefined ? decodeRevokeIntent(revokeParam) : null),
+    [revokeParam],
+  );
 
   const [refreshing, setRefreshing] = useState(false);
   // Visible outcome of the last Force Refresh: success notice or failure
@@ -748,8 +766,9 @@ export default function Contract() {
   const setActiveTab = (tab: TabId) => {
     // Push, not replace (same as the Address page's selectActivityTab):
     // a tab switch is user navigation, so the browser Back returns to the
-    // previous tab instead of leaving the page.
-    void setSearch({ tab });
+    // previous tab instead of leaving the page. The functional form keeps
+    // sibling params (?revoke= rides along until the user navigates away).
+    void setSearch(prev => ({ ...prev, tab }));
   };
 
   const currentChainId = Number(chainId ?? 1);
@@ -893,7 +912,11 @@ export default function Contract() {
       // programmatic default, not a user navigation — it must not push a
       // history entry the user never made.
       const implViewLocked = abiHasNoEntries(implABI) && !customAbiRaw;
-      void setSearch({ tab: implViewLocked ? 'events' : 'interact' }, { replace: true });
+      // Functional form: keep sibling search params (?revoke= survives the
+      // proxy default-tab rewrite).
+      void setSearch(prev => ({ ...prev, tab: implViewLocked ? 'events' : 'interact' }), {
+        replace: true,
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- proxies default to the interact tab once their layout is known
   }, [contractSource]);
@@ -1192,7 +1215,10 @@ export default function Contract() {
                 {contractSource.compilerVersion && (
                   <div className="info-item">
                     <span className="label">Compiler Version</span>
-                    <span className="value">{contractSource.compilerVersion}</span>
+                    <span className="value">
+                      {contractSource.compilerVersion}
+                      {contractSource.evmVersion && ` (EVM: ${contractSource.evmVersion})`}
+                    </span>
                   </div>
                 )}
                 {contractSource.optimizationEnabled !== undefined && (
@@ -1380,6 +1406,21 @@ export default function Contract() {
               <SourcifyVerifyPanel
                 chainId={currentChainId}
                 address={address}
+                onVerified={() => void refetchSource()}
+              />
+            )}
+
+            {/* Local compile verification: beside the Sourcify panel for
+                unverified contracts, and also when only a manual trust
+                mark exists (a recompile match is a real verification and
+                upgrades the annotation). On success the source refetch
+                flips this page to its verified state. */}
+            {(contractSource.verificationStatus === 'unverified' ||
+              contractSource.verificationSource === 'manual') &&
+              verifyPanelOpen && (
+              <CompileVerifyPanel
+                chainId={currentChainId}
+                address={address ?? ''}
                 onVerified={() => void refetchSource()}
               />
             )}
@@ -1653,7 +1694,11 @@ export default function Contract() {
             )}
 
             {activeTab === 'interact' &&
-              (abiLocked ? (
+              // A revoke intent unlocks the tab even without a verified
+              // ABI: its standard-ABI fragment keeps the revoke call
+              // callable (ContractInteract renders the honest
+              // ABI-unavailable note for everything else).
+              (abiLocked && revokeIntent === null ? (
                 <AbiUnlockHint
                   title="Paste an ABI to unlock this tab"
                   message={
@@ -1671,6 +1716,7 @@ export default function Contract() {
                   contractSource={contractSource}
                   contractTarget={isProxy ? contractTarget : undefined}
                   abiOverride={serverAbiUnavailable && customAbiRaw ? customAbiRaw : undefined}
+                  revoke={revokeIntent}
                 />
               ))}
           </>

@@ -133,6 +133,33 @@ export function computeDiscoveredBalancePoints(
   return points;
 }
 
+/**
+ * Union of the heuristic discovery list with persisted deep-scan findings:
+ * dedup by tx hash (heuristic entry wins — it carries data from the same
+ * live scan), sorted by blockNumber descending (stable for same-block
+ * entries). Pure: any input ordering is normalized. This is the merge the
+ * transactions endpoint applies when a deep-scan job has persisted
+ * findings, so `total` is the merged count.
+ */
+export function mergeDiscoveredTransactions(
+  heuristic: readonly DiscoveredTransaction[],
+  findings: readonly DiscoveredTransaction[],
+): DiscoveredTransaction[] {
+  if (findings.length === 0) return [...heuristic];
+  const seen = new Set(heuristic.map(tx => tx.hash.toLowerCase()));
+  const merged = [...heuristic];
+  for (const tx of findings) {
+    if (!seen.has(tx.hash.toLowerCase())) {
+      seen.add(tx.hash.toLowerCase());
+      merged.push(tx);
+    }
+  }
+  merged.sort((a, b) =>
+    a.blockNumber > b.blockNumber ? -1 : a.blockNumber < b.blockNumber ? 1 : 0,
+  );
+  return merged;
+}
+
 const SCAN_THRESHOLD = 64n;
 const MAX_RPC_CALLS = 200;
 const BATCH_CONCURRENCY = 8;
@@ -183,11 +210,47 @@ const resolveSearchWindow = (txCount: number, requested?: number): bigint => {
   return BigInt(clamped);
 };
 
-const getBalanceAt = async (
+// Balance at a block boundary — the shared primitive of BOTH discovery
+// paths: the heuristic binary search above and the deep-scan forward walk
+// (services/AddressScanService.ts) verify "segment contains no
+// balance-changing tx" through equality of two boundary reads.
+export const getBalanceAt = async (
   client: PublicClient,
   address: Address,
   blockNumber: bigint,
 ): Promise<bigint> => client.getBalance({ address, blockNumber });
+
+// Extract the transactions of one already-fetched block that involve the
+// target address (lowercase compare on both ends). Shared by the
+// heuristic's scanBlocksForAddress and the deep-scan walk's per-change
+// block scan so the two paths can never disagree on what counts as a hit.
+export const scanBlockForAddressTransactions = (
+  block: {
+    number?: bigint | null;
+    timestamp: bigint;
+    transactions: readonly (string | { hash: string; from: string; to?: string | null; value: bigint })[];
+  },
+  address: Address,
+): DiscoveredTransaction[] => {
+  const lowerAddr = address.toLowerCase();
+  const results: DiscoveredTransaction[] = [];
+  for (const tx of block.transactions) {
+    if (typeof tx === 'string') continue;
+    const from = tx.from?.toLowerCase();
+    const to = tx.to?.toLowerCase();
+    if (from === lowerAddr || to === lowerAddr) {
+      results.push({
+        hash: tx.hash,
+        blockNumber: block.number ?? 0n,
+        fromAddress: tx.from,
+        toAddress: tx.to ?? '',
+        value: tx.value.toString(),
+        timestamp: new Date(Number(block.timestamp) * 1000).toISOString(),
+      });
+    }
+  }
+  return results;
+};
 
 /**
  * Scan a contiguous range of blocks and extract transactions involving the target address.
@@ -201,7 +264,6 @@ const scanBlocksForAddress = async (
   limit: number,
   rpcCallCount: { value: number },
 ): Promise<DiscoveredTransaction[]> => {
-  const lowerAddr = address.toLowerCase();
   const results: DiscoveredTransaction[] = [];
 
   const blockNumbers: bigint[] = [];
@@ -222,21 +284,8 @@ const scanBlocksForAddress = async (
 
     for (const block of blocks) {
       if (!block?.transactions || results.length >= limit) continue;
-      for (const tx of block.transactions) {
-        if (typeof tx === 'string') continue;
-        const from = tx.from?.toLowerCase();
-        const to = tx.to?.toLowerCase();
-        if (from === lowerAddr || to === lowerAddr) {
-          results.push({
-            hash: tx.hash,
-            blockNumber: block.number ?? 0n,
-            fromAddress: tx.from,
-            toAddress: tx.to ?? '',
-            value: tx.value.toString(),
-            timestamp: new Date(Number(block.timestamp) * 1000).toISOString(),
-          });
-        }
-      }
+      const remaining = limit - results.length;
+      results.push(...scanBlockForAddressTransactions(block, address).slice(0, remaining));
     }
   }
 
@@ -528,7 +577,15 @@ const createAddressService = (deps: AddressServiceDeps) => {
       limit = 20,
       offset = 0,
       windowBlocks?: number,
-      options?: { includeBalancePoints?: boolean },
+      options?: {
+        includeBalancePoints?: boolean;
+        // Persisted deep-scan findings for this address (hydrated
+        // DiscoveredTransaction envelopes from AddressScanService). When
+        // present, the served page slices the heuristic ∪ findings union
+        // and `total` is the merged count — the additive deep-scan
+        // contract of the transactions endpoint.
+        deepScanFindings?: readonly DiscoveredTransaction[];
+      },
     ): Promise<AddressTransactionsResult> => {
       // An explicit window is clamped into [1, MAX]; undefined stays
       // undefined so the txCount-tiered default range applies.
@@ -542,20 +599,38 @@ const createAddressService = (deps: AddressServiceDeps) => {
       // Distinct windows are distinct searches; the txCount-tiered default
       // gets its own key so an explicit window never aliases it.
       const cacheKey = `${chainId}:${address.toLowerCase()}:${requestedWindow ?? 'default'}`;
+      // Findings merge into the page, so the cached heuristic list may
+      // need to cover deeper than the naked slice (injected findings push
+      // heuristic items down the merged order).
+      const neededItems = offset + limit + (options?.deepScanFindings?.length ?? 0);
 
-      const cached = readTxSearchCache(cacheKey, offset + limit);
+      const cached = readTxSearchCache(cacheKey, neededItems);
       if (cached) {
         logger.info(
           `Serving cached tx search for ${address} on chain ${chainId}`,
         );
         // Points are computed from the cached FULL list on demand, so a
         // chart request always agrees with the list served from the same
-        // cache entry.
+        // cache entry (the merge, when present, applies to both).
+        const mergedFull = options?.deepScanFindings
+          ? mergeDiscoveredTransactions(cached.transactions, options.deepScanFindings)
+          : cached.transactions;
+        // Honesty floor: a heuristic 'none' verdict ('zero-balance',
+        // 'search-failed') is false when persisted deep-scan findings are
+        // being served — the honest verdict for a non-empty merged list
+        // is 'partial' (the route lifts it to 'complete' only for a
+        // finished genesis-anchored walk).
+        const coverageFloor =
+          options?.deepScanFindings && mergedFull.length > 0 && cached.coverage === 'none'
+            ? 'partial'
+            : cached.coverage;
         return {
           ...cached,
-          transactions: cached.transactions.slice(offset, offset + limit),
+          coverage: coverageFloor,
+          transactions: mergedFull.slice(offset, offset + limit),
+          total: mergedFull.length,
           ...(options?.includeBalancePoints
-            ? { balancePoints: computeDiscoveredBalancePoints(cached.transactions, address) }
+            ? { balancePoints: computeDiscoveredBalancePoints(mergedFull, address) }
             : {}),
         };
       }
@@ -641,7 +716,7 @@ const createAddressService = (deps: AddressServiceDeps) => {
       };
 
       try {
-        const budget = discoveryBudgetFor(offset, limit);
+        const budget = discoveryBudgetFor(neededItems, 0);
         const result = await withTimeout(
           doSearch(budget),
           TX_SEARCH_TIMEOUT_MS,
@@ -650,11 +725,25 @@ const createAddressService = (deps: AddressServiceDeps) => {
         // Cache the canonical full-list result; failures stay uncached so
         // the next request retries instead of memorizing the error.
         writeTxSearchCache(cacheKey, result, budget);
+        // The merge is applied at read time (the cache stays heuristic
+        // only) so persisted findings surface even on heuristic-skip
+        // paths like zero-balance.
+        const mergedFull = options?.deepScanFindings
+          ? mergeDiscoveredTransactions(result.transactions, options.deepScanFindings)
+          : result.transactions;
+        // Same honesty floor as the cached path: served findings disprove
+        // a heuristic 'none' verdict.
+        const coverageFloor =
+          options?.deepScanFindings && mergedFull.length > 0 && result.coverage === 'none'
+            ? 'partial'
+            : result.coverage;
         return {
           ...result,
-          transactions: result.transactions.slice(offset, offset + limit),
+          coverage: coverageFloor,
+          transactions: mergedFull.slice(offset, offset + limit),
+          total: mergedFull.length,
           ...(options?.includeBalancePoints
-            ? { balancePoints: computeDiscoveredBalancePoints(result.transactions, address) }
+            ? { balancePoints: computeDiscoveredBalancePoints(mergedFull, address) }
             : {}),
         };
       } catch (error) {

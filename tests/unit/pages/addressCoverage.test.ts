@@ -199,3 +199,66 @@ describe('deriveAddressCoverage', () => {
     expect(summary.detail[5]).toContain('loading your saved annotation');
   });
 });
+
+// Deep scan lift (PM review Wave 3): a finished genesis-anchored walk is
+// the ONLY sanctioned complete path — when the tx payload's
+// deepScan.coverage reads 'complete', the tx-history source upgrades to
+// the deep-scan complete claim over whatever the heuristic window alone
+// would say. Every other job state (or no job field at all) must leave
+// the pre-existing derivation byte-identical.
+describe('deriveAddressCoverage deep-scan lift', () => {
+  it('lifts a heuristic-partial history to the deep-scan complete claim', () => {
+    const summary = deriveAddressCoverage({
+      ...settled,
+      txHistory: { ...settled.txHistory, deepScanCoverage: 'complete' },
+    });
+    // The other sources still bound the aggregate honestly (transfers
+    // scan stays discovered, realtime live) — the lift only rewrites the
+    // tx-history line, and the aggregate no longer degrades BECAUSE of
+    // the tx channel... on this fixture transfersScan was already
+    // scanned, so the worst remaining source decides the chip.
+    expect(summary.detail[2]).toBe(
+      'Transaction history: complete (deep scan) — every block from genesis was walked verifying balance checkpoints, so no external transaction is missing (internal transfers and token transfers stay in their own tabs)',
+    );
+  });
+
+  it('leaves every existing derivation untouched without a complete deep scan', () => {
+    // No field at all (legacy payload), null job coverage, and an
+    // explicit non-complete state must all fold to the SAME output as
+    // before the field existed.
+    const baseline = deriveAddressCoverage(settled);
+    for (const deepScanCoverage of [undefined, null] as const) {
+      const summary = deriveAddressCoverage({
+        ...settled,
+        txHistory: { ...settled.txHistory, deepScanCoverage },
+      });
+      expect(summary).toEqual(baseline);
+    }
+  });
+
+  it('keeps failure/deferred/loading states ahead of the lift', () => {
+    // A complete walk cannot rescue a channel whose payload failed or
+    // never loaded — those states still report themselves.
+    const failed = deriveAddressCoverage({
+      ...settled,
+      txHistory: { ...settled.txHistory, failed: true, deepScanCoverage: 'complete' },
+    });
+    expect(failed.detail[2]).toContain('history search failed');
+
+    const deferred = deriveAddressCoverage({
+      ...settled,
+      txHistory: {
+        ...settled.txHistory,
+        active: false,
+        deepScanCoverage: 'complete',
+      },
+    });
+    expect(deferred.detail[2]).toContain('scan deferred');
+
+    const loading = deriveAddressCoverage({
+      ...settled,
+      txHistory: { ...settled.txHistory, loading: true, deepScanCoverage: 'complete' },
+    });
+    expect(loading.detail[2]).toContain('heuristic scan running');
+  });
+});

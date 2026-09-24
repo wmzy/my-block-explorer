@@ -1,9 +1,12 @@
 // Address-label routes: user-authored annotations pinned to one address on
-// one chain (GET /api/chains/:chainId/labels/:address). Reads are open — a
-// label is the operator's own note about a public address. Writes (PUT
-// upsert, DELETE) are gated by requireAdminTokenIfConfigured, so a
-// zero-config local session edits freely while a token-configured server
-// stays protected.
+// one chain (GET /api/chains/:chainId/labels/:address) plus the list-all
+// feed for local-data backup (GET /api/labels). Per-address reads are
+// open — a label is the operator's own note about a public address —
+// while the list dumps the operator's whole notes layer, so it is gated
+// by requireAdminTokenIfConfigured (a shared-deploy server must not leak
+// one visitor's notes to unauthenticated readers; a zero-config local
+// session keeps full access). Writes (PUT upsert, DELETE) use the same
+// opt-in gate.
 //
 // Honesty rules: a missing label is 404 'label_not_found' (an explicit
 // "absent" answer, never a 200 with nulls); PUT replaces the row wholesale
@@ -17,6 +20,7 @@ import { db, addressLabels } from '../database/init';
 import { createLogger } from '../server/logger';
 import { getValidatedAddress, getValidatedChainId } from '../server/validation';
 import { requireAdminTokenIfConfigured } from '../middleware/admin-token';
+import { createRateLimiter } from '../middleware/rate-limit';
 
 const logger = createLogger('labels-routes');
 
@@ -123,6 +127,71 @@ app.get('/chains/:chainId/labels/:address', async c => {
   catch (error) {
     logger.error({ err: error }, 'Label lookup failed');
     return c.json({ error: 'internal_error', message: 'Label lookup failed' }, 500);
+  }
+});
+
+// Naive-UTC-safe datetime → ISO conversion, same contract as
+// services/SearchService.ts toIsoTimestamp: the drizzle adapter
+// normalizes DuckDB datetime reads to Date, but any string reaching this
+// layer without an explicit offset/designator is a naive UTC wall clock
+// and must parse as UTC — never machine-local (which would skew every
+// exported updatedAt by the server's timezone).
+const toIsoTimestamp = (value: Date | string | null | undefined): string | null => {
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'string' && value.length > 0) {
+    const hasOffset = value.endsWith('Z') || /[+-]\d{2}:?\d{2}$/.test(value);
+    const normalized = hasOffset ? value : `${value.replace(' ', 'T')}Z`;
+    const parsed = new Date(normalized);
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  }
+  return null;
+};
+
+// The list endpoint scans the whole table on every hit, so it carries its
+// own tight limiter (the per-address GET stays unlimited — it is a
+// primary-key lookup).
+const listRateLimiter = createRateLimiter({
+  name: 'labels-list',
+  requestsPerMinute: 10,
+  burst: 3,
+});
+
+// GET /labels — every label row across chains, the backup/export feed.
+// Gated by requireAdminTokenIfConfigured: unlike the per-address read
+// ("what does this address look like"), this dumps the operator's entire
+// notes layer, which a shared deployment must not hand to
+// unauthenticated readers. Deterministic ordering (chain, address) keeps
+// repeated exports diff-friendly.
+app.get('/labels', requireAdminTokenIfConfigured, listRateLimiter, async c => {
+  try {
+    const rows = await db
+      .select({
+        chainId: addressLabels.chainId,
+        address: addressLabels.address,
+        label: addressLabels.label,
+        note: addressLabels.note,
+        source: addressLabels.source,
+        updatedAt: addressLabels.updatedAt,
+      })
+      .from(addressLabels)
+      .orderBy(addressLabels.chainId, addressLabels.address);
+    c.header('Cache-Control', 'no-store');
+    return c.json({
+      labels: rows.map(row => ({
+        chainId: row.chainId,
+        address: row.address,
+        label: row.label,
+        note: row.note,
+        // Same contract pin as the per-address GET: storage nulls read
+        // as 'user' — the API never leaks a null source.
+        source: row.source === 'builtin' ? 'builtin' : 'user',
+        updatedAt: toIsoTimestamp(row.updatedAt),
+      })),
+    });
+  }
+  catch (error) {
+    logger.error({ err: error }, 'Label list failed');
+    return c.json({ error: 'internal_error', message: 'Failed to list labels' }, 500);
   }
 });
 
