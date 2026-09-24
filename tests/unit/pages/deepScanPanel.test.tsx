@@ -3,11 +3,13 @@
 // the GET envelope parsing (404 → no-job intro), the POST bodies of the
 // mutating actions, the honest renderings per job state (progress/pause,
 // error/resume, the genesis-anchored complete line), the scan_conflict
-// force-restart affordance, and the poll lifecycle (3s while pending/
-// running, stopped when settled, nothing after unmount). The ETA
-// wrappers' sampler math (window threshold, void-on-pause, void-on-
-// regression) is pinned as pure functions the same way the range
-// manager's own sampler is.
+// force-restart affordance, the settled-only catch-up affordance (202 →
+// optimistic notice + immediate refetch, already_caught_up as a friendly
+// notice, invalid_state verbatim, 404 vanish → refetch), and the poll
+// lifecycle (3s while pending/running, stopped when settled, nothing
+// after unmount). The ETA wrappers' sampler math (window threshold,
+// void-on-pause, void-on-regression) is pinned as pure functions the
+// same way the range manager's own sampler is.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
@@ -206,6 +208,9 @@ describe('DeepScan panel rendering', () => {
     const completeLine = screen.getByTestId('deep-scan-complete');
     expect(completeLine.textContent).toContain('every block from genesis (0)');
     expect(completeLine.textContent).toContain('only provable "complete" coverage');
+    // The completeness claim is scoped to the walk's own end bound —
+    // the chain may have moved past it (see catch-up below).
+    expect(completeLine.textContent).toContain('… up to block 20,000,000');
   });
 
   it('keeps a finished non-genesis walk honest: no complete line, genesis caveat instead', async () => {
@@ -285,6 +290,155 @@ describe('DeepScan panel rendering', () => {
     mocks.del.mockResolvedValue(undefined);
     fireEvent.click(screen.getByTestId('deep-scan-delete'));
     await waitFor(() => expect(mocks.del).toHaveBeenCalledWith(SCAN_URL, expect.anything()));
+  });
+});
+
+describe('DeepScan catch-up affordance', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    clearAllCaches();
+    mocks.get.mockReset();
+    mocks.post.mockReset();
+    mocks.del.mockReset();
+  });
+
+  // Fresh mount per status: the query cache is keyed by (chainId,
+  // address), so a second render of the same key would read the first
+  // render's cached job instead of the new mock unless cleared.
+  const mountWithStatus = async (status: ScanJob['status']) => {
+    clearAllCaches();
+    mocks.get.mockResolvedValue(envelope({ ...runningJob, status }));
+    const view = renderPanel();
+    await settle();
+    return view;
+  };
+
+  it('offers catch-up only on settled jobs (complete/paused/error), never while live', async () => {
+    // A live walk: the bound is what it is — no catch-up.
+    const running = await mountWithStatus('running');
+    expect(screen.queryByTestId('deep-scan-catchup')).not.toBeInTheDocument();
+    running.unmount();
+
+    const pending = await mountWithStatus('pending');
+    expect(screen.queryByTestId('deep-scan-catchup')).not.toBeInTheDocument();
+    pending.unmount();
+
+    for (const status of ['complete', 'paused', 'error'] as const) {
+      const view = await mountWithStatus(status);
+      const button = screen.getByTestId('deep-scan-catchup');
+      expect(button).toBeInTheDocument();
+      expect(button.textContent).toContain('Catch up to latest');
+      view.unmount();
+    }
+  });
+
+  it('POSTs /catchup on click and shows the optimistic notice + immediate refetch on 202', async () => {
+    mocks.get.mockResolvedValueOnce(envelope({ ...runningJob, status: 'paused' }));
+    const view = renderPanel();
+    await settle();
+    expect(mocks.get).toHaveBeenCalledTimes(1);
+
+    // The refetch hangs: pins that 'Catching up…' renders optimistically,
+    // straight off the 202, before any live read replaces it.
+    mocks.get.mockReturnValue(new Promise(() => undefined));
+    mocks.post.mockResolvedValueOnce(envelope({ ...runningJob, status: 'pending' }));
+    fireEvent.click(screen.getByTestId('deep-scan-catchup'));
+
+    await waitFor(() =>
+      expect(mocks.post).toHaveBeenCalledWith(`${SCAN_URL}/catchup`, {}, expect.anything()),
+    );
+    await waitFor(() =>
+      expect(screen.getByTestId('deep-scan-catchup-notice').textContent)
+        .toContain('Catching up'),
+    );
+    await waitFor(() => expect(mocks.get).toHaveBeenCalledTimes(2));
+    view.unmount();
+  });
+
+  it('hands the story to the polled GET once the refetch sees the walk active again', async () => {
+    mocks.get.mockResolvedValue(envelope({ ...runningJob, status: 'paused' }));
+    renderPanel();
+    await settle();
+
+    mocks.post.mockResolvedValueOnce(envelope({ ...runningJob, status: 'pending' }));
+    mocks.get.mockResolvedValue(envelope({ ...runningJob, status: 'pending' }));
+    fireEvent.click(screen.getByTestId('deep-scan-catchup'));
+
+    await waitFor(() => expect(mocks.get).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(screen.getByTestId('deep-scan-status').textContent).toMatch(/Pending/i),
+    );
+    // The live walk hides the affordance again and retires the notice.
+    expect(screen.queryByTestId('deep-scan-catchup')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('deep-scan-catchup-notice')).not.toBeInTheDocument();
+  });
+
+  it('renders already_caught_up as a friendly inline notice, not an error, and keeps the controls', async () => {
+    mocks.get.mockResolvedValue(envelope({ ...runningJob, status: 'complete' }));
+    renderPanel();
+    await settle();
+
+    mocks.post.mockRejectedValueOnce(
+      new ApiError('Scan is already at the chain head', 400, 'already_caught_up'),
+    );
+    fireEvent.click(screen.getByTestId('deep-scan-catchup'));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('deep-scan-catchup-notice').textContent)
+        .toContain('Already at the chain head'),
+    );
+    expect(screen.queryByTestId('deep-scan-action-error')).not.toBeInTheDocument();
+    expect(screen.getByTestId('deep-scan-catchup')).toBeInTheDocument();
+    expect(screen.getByTestId('deep-scan-delete')).toBeInTheDocument();
+
+    // The notice self-clears on the next action (here: one that hangs).
+    mocks.post.mockReset().mockReturnValue(new Promise(() => undefined));
+    fireEvent.click(screen.getByTestId('deep-scan-catchup'));
+    await waitFor(() =>
+      expect(screen.queryByTestId('deep-scan-catchup-notice')).not.toBeInTheDocument(),
+    );
+  });
+
+  it('surfaces invalid_state verbatim and keeps the existing controls', async () => {
+    mocks.get.mockResolvedValue(envelope({ ...runningJob, status: 'paused' }));
+    renderPanel();
+    await settle();
+
+    mocks.post.mockRejectedValueOnce(
+      new ApiError('Scan is running — wait for it to finish or pause it first', 400, 'invalid_state'),
+    );
+    fireEvent.click(screen.getByTestId('deep-scan-catchup'));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('deep-scan-action-error').textContent)
+        .toContain('Scan is running — wait for it to finish or pause it first'),
+    );
+    expect(screen.queryByTestId('deep-scan-catchup-notice')).not.toBeInTheDocument();
+    expect(screen.getByTestId('deep-scan-catchup')).toBeInTheDocument();
+    expect(screen.getByTestId('deep-scan-resume')).toBeInTheDocument();
+    expect(screen.getByTestId('deep-scan-delete')).toBeInTheDocument();
+  });
+
+  it('refetches without an error when the job vanished (404 — e.g. deleted in another tab)', async () => {
+    mocks.get.mockResolvedValue(envelope({ ...runningJob, status: 'paused' }));
+    renderPanel();
+    await settle();
+    expect(mocks.get).toHaveBeenCalledTimes(1);
+
+    // The helper resolves a 404 as null → the action's then-branch
+    // refetches; the live read now reports the absence → the intro.
+    // (The refetch rejects the way the real 404 does — envelope(null)
+    // would be a malformed 200, not the backend's no_scan_job 404.)
+    mocks.post.mockRejectedValueOnce(new ApiError('no_scan_job', 404, 'no_scan_job'));
+    mocks.get.mockRejectedValueOnce(new ApiError('no_scan_job', 404, 'no_scan_job'));
+    fireEvent.click(screen.getByTestId('deep-scan-catchup'));
+
+    await waitFor(() => expect(mocks.get).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(screen.getByText(/walks the chain from a start block verifying balance/i))
+        .toBeInTheDocument(),
+    );
+    expect(screen.queryByTestId('deep-scan-action-error')).not.toBeInTheDocument();
   });
 });
 

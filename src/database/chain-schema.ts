@@ -140,16 +140,6 @@ export const indexedAddresses = duckdbTable('indexed_addresses', {
   indexedAt: datetime().default(sql`now()`),
 });
 
-// ─── 6. Search History ───────────────────────────────────────────────────────
-
-export const searchHistory = duckdbTable('search_history', {
-  id: integer().primaryKey(),
-  query: varchar({ length: 255 }),
-  searchType: varchar({ length: 20 }),
-  resultCount: integer().default(0),
-  searchedAt: datetime().default(sql`now()`),
-});
-
 // ─── 7. User Preferences ─────────────────────────────────────────────────────
 
 export const userPreferences = duckdbTable('user_preferences', {
@@ -275,9 +265,6 @@ export type NewChainContractCreationInfo = typeof contractCreationInfo.$inferIns
 
 export type ChainIndexedAddress = typeof indexedAddresses.$inferSelect;
 export type NewChainIndexedAddress = typeof indexedAddresses.$inferInsert;
-
-export type ChainSearchHistory = typeof searchHistory.$inferSelect;
-export type NewChainSearchHistory = typeof searchHistory.$inferInsert;
 
 export type ChainUserPreference = typeof userPreferences.$inferSelect;
 export type NewChainUserPreference = typeof userPreferences.$inferInsert;

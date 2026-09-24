@@ -1,8 +1,9 @@
 /**
  * Pure deep-scan helpers: bounds validation (tags, ordering, negatives),
- * conflict/force decision table, checkpoint math (cursor advance,
- * blocksWalked/blocksTotal), coverage derivation (genesis-only), the job
- * DTO mapping, and the heuristic ∪ findings merge.
+ * conflict/force decision table, catch-up decision table (status × head),
+ * checkpoint math (cursor advance, blocksWalked/blocksTotal), coverage
+ * derivation (genesis-only), the job DTO mapping, and the heuristic ∪
+ * findings merge.
  */
 
 import { describe, it, expect, vi } from 'vitest';
@@ -20,6 +21,7 @@ import {
   decideScanJobCreation,
   deriveScanCoverage,
   initialCursorBlock,
+  planCatchup,
   toScanJobDto,
   validateScanJobBody,
 } from '@/services/AddressScanService';
@@ -131,6 +133,46 @@ describe('decideScanJobCreation — conflict/force semantics', () => {
     });
     expect(decideScanJobCreation(existing, { fromBlock: 0, toBlock: 1000 }, true)).toEqual({
       action: 'replace',
+    });
+  });
+});
+
+describe('planCatchup — catch-up decision table', () => {
+  it('rejects a running walk first, regardless of the head relation', () => {
+    // The running check precedes the head comparison on every
+    // combination — extending bounds under a live loop is unsafe even
+    // when the head has not moved.
+    for (const head of [500, 1000, 1500]) {
+      expect(planCatchup({ status: 'running', toBlock: 1000 }, head)).toEqual({
+        action: 'invalid-state',
+        message: 'Scan is running — wait for it to finish or pause it first',
+      });
+    }
+  });
+
+  it('extends every settled status to the head when the chain moved on', () => {
+    for (const status of ['pending', 'paused', 'error', 'complete'] as const) {
+      expect(planCatchup({ status, toBlock: 1000 }, 1500)).toEqual({
+        action: 'extend',
+        toBlock: 1500,
+      });
+    }
+  });
+
+  it('is already caught up at an equal head (no extension, any settled status)', () => {
+    for (const status of ['pending', 'paused', 'error', 'complete'] as const) {
+      expect(planCatchup({ status, toBlock: 1000 }, 1000)).toEqual({
+        action: 'already-caught-up',
+      });
+    }
+  });
+
+  it('is already caught up when the head sits below the stored bound (reorg aside)', () => {
+    expect(planCatchup({ status: 'complete', toBlock: 1000 }, 999)).toEqual({
+      action: 'already-caught-up',
+    });
+    expect(planCatchup({ status: 'paused', toBlock: 1000 }, 0)).toEqual({
+      action: 'already-caught-up',
     });
   });
 });

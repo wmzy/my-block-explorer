@@ -2631,20 +2631,6 @@ CREATE INDEX idx_indexed_addresses_chain_queried ON indexed_addresses(chain_id, 
 CREATE INDEX idx_indexed_addresses_global ON indexed_addresses(address); -- 跨链地址查询
 ```
 
-##### 搜索历史表
-```sql
-CREATE TABLE search_history (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    chain_id INTEGER,                           -- 链ID（可选，跨链搜索时为NULL）
-    query VARCHAR(100) NOT NULL,                -- 搜索关键词
-    result_type VARCHAR(20),                     -- 'block', 'transaction', 'address'
-    result_id VARCHAR(66),                       -- 结果ID
-    searched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE INDEX idx_search_history_chain ON search_history(chain_id, searched_at DESC);
-```
-
 ##### 用户偏好表
 ```sql
 CREATE TABLE user_preferences (
@@ -2716,10 +2702,6 @@ GROUP BY chain_id;
 #### 数据清理策略
 
 ```sql
--- 定期清理旧的搜索历史（保留最近30天）
-DELETE FROM search_history 
-WHERE searched_at < datetime('now', '-30 days');
-
 -- 清理长期未查询的地址索引（按链清理）
 DELETE FROM indexed_addresses 
 WHERE last_queried < datetime('now', '-90 days')

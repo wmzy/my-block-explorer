@@ -4,13 +4,37 @@
 // payload). A malformed job must degrade to null — never throw, never
 // half-parse — so a legacy or junk payload renders the panel's fallback
 // states instead of crashing the transactions tab.
-import { describe, it, expect } from 'vitest';
+//
+// catchupScanJob tests pin the imperative helper's wire behavior against
+// the pinned catch-up contract: the flat-DTO 202 the backend's own route
+// tests freeze, both 400 discriminators (invalid_state / already_caught_up
+// via ApiError.code), the 404-resolves-null vanish semantics, and the
+// admin-gate 403 that the panel decorates with its token hint.
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+import { ApiError } from '@/util/apiError';
 import {
+  catchupScanJob,
   parseScanJob,
   scanJobFromTxPayload,
   type ScanJob,
 } from '@/services/addressScan';
+
+const mocks = vi.hoisted(() => ({
+  post: vi.fn(),
+}));
+
+// Only the network edge is replaced (deepScanPanel.test.tsx's mock
+// shape); `api` needs a pipe() stub because the service derives its
+// scanApi chain at module level. Rejections are constructed as ApiError
+// exactly the way the real scanError mapper would surface them.
+vi.mock('@/util/http', () => ({
+  get: vi.fn(),
+  post: (...args: unknown[]) => mocks.post(...args),
+  del: vi.fn(),
+  api: { pipe: () => ({}) },
+  withSignal: (o: unknown) => o,
+}));
 
 // Verbatim contract shape: every field present, coverage null (the
 // honest default — only a finished genesis-anchored walk may read
@@ -116,5 +140,80 @@ describe('scanJobFromTxPayload', () => {
     expect(scanJobFromTxPayload({ deepScan: 'running' })).toBeNull();
     expect(scanJobFromTxPayload({ deepScan: { status: 'running' } })).toBeNull();
     expect(scanJobFromTxPayload({ deepScan: { ...validJob, status: 'weird' } })).toBeNull();
+  });
+});
+
+describe('catchupScanJob', () => {
+  const CHAIN_ID = 1;
+  const ADDRESS = '0x1234567890abcdef1234567890abcdef12345678';
+  const CATCHUP_URL = `/api/chains/${CHAIN_ID}/addresses/${ADDRESS}/scan/catchup`;
+
+  beforeEach(() => {
+    mocks.post.mockReset();
+  });
+
+  it('202 → resolves the updated job, parsing the AWAITED body (flat DTO, the shape the route tests pin)', async () => {
+    // The backend answers c.json(toScanJobDto(row)) — a flat DTO, no
+    // wrapper. An unawaited post (the wave-3 bug class) would hand the
+    // parser a Promise and reject with 'Malformed scan job response'.
+    const updated: ScanJob = {
+      ...validJob,
+      status: 'pending',
+      toBlock: 21_000_000,
+      blocksTotal: 21_000_001,
+      blocksWalked: 1_234_568,
+    };
+    mocks.post.mockResolvedValue(updated);
+
+    await expect(catchupScanJob(CHAIN_ID, ADDRESS)).resolves.toEqual(updated);
+    expect(mocks.post).toHaveBeenCalledWith(CATCHUP_URL, {}, expect.anything());
+  });
+
+  it('still parses the {job}-wrapped envelope the first frontend tests froze', async () => {
+    mocks.post.mockResolvedValue({ job: validJob });
+    await expect(catchupScanJob(CHAIN_ID, ADDRESS)).resolves.toEqual(validJob);
+  });
+
+  it('rejects a malformed 202 body loudly instead of rendering a lie', async () => {
+    mocks.post.mockResolvedValue({ status: 'running' });
+    await expect(catchupScanJob(CHAIN_ID, ADDRESS)).rejects.toMatchObject({
+      message: 'Malformed scan job response',
+      status: 0,
+    });
+  });
+
+  it('400 invalid_state → rejects with the backend message verbatim and its discriminator code', async () => {
+    mocks.post.mockRejectedValue(
+      new ApiError('Scan is running — wait for it to finish or pause it first', 400, 'invalid_state'),
+    );
+    await expect(catchupScanJob(CHAIN_ID, ADDRESS)).rejects.toMatchObject({
+      message: 'Scan is running — wait for it to finish or pause it first',
+      status: 400,
+      code: 'invalid_state',
+    });
+  });
+
+  it('400 already_caught_up → rejects with the already_caught_up code (a notice upstream, not an error)', async () => {
+    mocks.post.mockRejectedValue(
+      new ApiError('Scan is already at the chain head', 400, 'already_caught_up'),
+    );
+    await expect(catchupScanJob(CHAIN_ID, ADDRESS)).rejects.toMatchObject({
+      message: 'Scan is already at the chain head',
+      status: 400,
+      code: 'already_caught_up',
+    });
+  });
+
+  it('404 no_scan_job → resolves null (the job vanished; the caller refetches)', async () => {
+    mocks.post.mockRejectedValue(new ApiError('no_scan_job', 404, 'no_scan_job'));
+    await expect(catchupScanJob(CHAIN_ID, ADDRESS)).resolves.toBeNull();
+  });
+
+  it('403 admin-gated → rejects with the ApiError the panel decorates with its token hint', async () => {
+    mocks.post.mockRejectedValue(new ApiError('Invalid admin token.', 403));
+    await expect(catchupScanJob(CHAIN_ID, ADDRESS)).rejects.toMatchObject({
+      message: 'Invalid admin token.',
+      status: 403,
+    });
   });
 });

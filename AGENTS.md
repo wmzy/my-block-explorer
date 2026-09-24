@@ -910,8 +910,8 @@ pnpm typecheck           # tsc --noEmit
   dedup; session TZ pinned UTC; 6/min·3; two distinct 403 faces — server
   token unset vs browser token wrong; be:sqlConsole history max 10).
   **Cleanup** — `search_history` dropped (migration 0012; the parallel
-  definition in `src/database/chain-schema.ts` remains, unused — future
-  cleanup candidate); utils barrel completed. **Conventions pinned**:
+  per-chain definition in `src/database/chain-schema.ts` was removed in the
+  2026-09-24 leftovers wave); utils barrel completed. **Conventions pinned**:
   (1) viem lenient-decodes truncated tail bytes — external-calldata
   decoders need a re-encode round-trip guard; (2) creation tx rows carry
   `toAddress: ''` (normalized in blockRpcData), never null; (3) the wave

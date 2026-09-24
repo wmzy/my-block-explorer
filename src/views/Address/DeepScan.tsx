@@ -1,6 +1,7 @@
 // Deep Scan panel (PM review Wave 3, P0): start/pause/resume/delete the
 // address's persistent transaction-discovery job, live progress with an
-// honest ETA, and the coverage lift — the first place the product may say
+// honest ETA, catch a settled walk up to the current chain head, and the
+// coverage lift — the first place the product may say
 // "complete". Mounted inside the transactions tab's card, above the tx
 // list; unmounting (tab switch / navigation) also stops the hook's poll
 // cadence (see services/addressScan.ts useScanJob).
@@ -28,6 +29,7 @@ import {
 } from '@/components/events/IndexingRangeManager';
 import { ApiError } from '@/util/apiError';
 import {
+  catchupScanJob,
   deleteScanJob,
   pauseScanJob,
   resumeScanJob,
@@ -57,6 +59,12 @@ const describeMutationError = (error: unknown, fallback: string): string => {
 // field; services/addressScan.ts surfaces it as ApiError.code.
 const isScanConflict = (error: unknown): error is ApiError =>
   error instanceof ApiError && error.status === 400 && error.code === 'scan_conflict';
+
+// The catch-up 400 discriminates the same way: already_caught_up is good
+// news (a friendly notice, not an error) while invalid_state keeps its
+// message verbatim through the generic action-error path.
+const isAlreadyCaughtUp = (error: unknown): error is ApiError =>
+  error instanceof ApiError && error.status === 400 && error.code === 'already_caught_up';
 
 const STATUS_LINE: Record<ScanJobStatus, string> = {
   pending: 'Pending — the backend has the job; the walk starts shortly',
@@ -116,7 +124,7 @@ export const estimateScanEta = (
     currentBlock: BigInt(job.cursorBlock),
   });
 
-type ScanAction = 'start' | 'force-start' | 'pause' | 'resume' | 'delete';
+type ScanAction = 'start' | 'force-start' | 'pause' | 'resume' | 'catchup' | 'delete';
 
 const panelStyle = css`
   border: 1px solid var(--haze-border, #e5e7eb);
@@ -259,7 +267,19 @@ export function DeepScan({ chainId, address, txPayload }: DeepScanProps) {
   const [action, setAction] = useState<ScanAction | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [conflictMessage, setConflictMessage] = useState<string | null>(null);
+  // Catch-up's friendly inline line ('Catching up…' after a 202, 'Already
+  // at the chain head' after that 400) — informational, never an error.
+  const [catchupNotice, setCatchupNotice] = useState<string | null>(null);
   const [fromBlockInput, setFromBlockInput] = useState('');
+
+  // The catch-up notices are transitional: once the live read observes
+  // the walk active again, the pending/running status line takes over
+  // the story — and a cleared notice must never resurface when a later
+  // walk re-settles.
+  const liveStatus = scan.data?.status;
+  useEffect(() => {
+    if (liveStatus === 'pending' || liveStatus === 'running') setCatchupNotice(null);
+  }, [liveStatus]);
 
   const trimmedFrom = fromBlockInput.trim();
   const parsedFrom: number | 'earliest' = trimmedFrom === '' ? 'earliest' : Number(trimmedFrom);
@@ -274,6 +294,7 @@ export function DeepScan({ chainId, address, txPayload }: DeepScanProps) {
     setAction(kind);
     setActionError(null);
     setConflictMessage(null);
+    setCatchupNotice(null);
     invoke()
       .then(() => scan.refetch())
       .catch((error: unknown) => {
@@ -281,6 +302,10 @@ export function DeepScan({ chainId, address, txPayload }: DeepScanProps) {
         // it hands the user a decision (force-restart or leave it).
         if (kind === 'start' && isScanConflict(error)) {
           setConflictMessage(error.message);
+        }
+        // Catch-up reporting "already there" is good news, not an error.
+        else if (kind === 'catchup' && isAlreadyCaughtUp(error)) {
+          setCatchupNotice('Already at the chain head');
         }
         else {
           setActionError(describeMutationError(error, fallback));
@@ -298,6 +323,22 @@ export function DeepScan({ chainId, address, txPayload }: DeepScanProps) {
           ...(force ? { force: true } : {}),
         }),
       'Starting the deep scan failed.',
+    );
+  };
+
+  // Catch up to latest: extend the settled walk's end bound to the
+  // current chain head. runAction refetches on settle either way; on a
+  // 202 the optimistic notice bridges until the refetched (then polled)
+  // read shows the re-queued walk, and a 404 resolves null — the vanished
+  // job needs no notice, the refetch re-syncs the panel to its absence.
+  const catchup = (): void => {
+    runAction(
+      'catchup',
+      async () => {
+        const updated = await catchupScanJob(chainId, address);
+        if (updated !== null) setCatchupNotice('Catching up…');
+      },
+      'Catching up the deep scan failed.',
     );
   };
 
@@ -462,6 +503,23 @@ export function DeepScan({ chainId, address, txPayload }: DeepScanProps) {
             Resume
           </Button>
         )}
+        {/* Catch-up is a settled-state affordance ONLY: while the job is
+            pending/running the walk is live and its toBlock is what it is
+            — re-anchoring a live walk mid-flight would misrepresent its
+            own progress contract. Once settled (complete/paused/error)
+            the bound is frozen and stale, so the user may extend it to
+            the current chain head. */}
+        {(job.status === 'complete' || job.status === 'paused' || job.status === 'error') && (
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={catchup}
+            loading={action === 'catchup'}
+            data-testid="deep-scan-catchup"
+          >
+            Catch up to latest
+          </Button>
+        )}
         <Button
           variant="ghost"
           size="sm"
@@ -473,6 +531,11 @@ export function DeepScan({ chainId, address, txPayload }: DeepScanProps) {
           Delete job
         </Button>
       </div>
+      {catchupNotice !== null && (
+        <p className={mutedStyle} data-testid="deep-scan-catchup-notice">
+          {catchupNotice}
+        </p>
+      )}
       {job.status === 'error' && job.errorMessage !== null && (
         <div className={blockStyle} data-testid="deep-scan-error">
           <Alert variant="danger">{job.errorMessage}</Alert>
@@ -483,7 +546,9 @@ export function DeepScan({ chainId, address, txPayload }: DeepScanProps) {
           Deep scan complete — every block from genesis (0) to{' '}
           {job.toBlock.toLocaleString()} was walked and verified. No external
           transaction for this address exists outside this list: this is the
-          product&apos;s only provable &quot;complete&quot; coverage.
+          product&apos;s only provable &quot;complete&quot; coverage … up to
+          block{' '}
+          {job.toBlock.toLocaleString()}.
         </p>
       )}
       {job.status === 'complete' && job.coverage === null && (

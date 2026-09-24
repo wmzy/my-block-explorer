@@ -3,6 +3,7 @@ import { createLogger } from '../server/logger';
 import { addressService } from '../services/AddressService';
 import type { DiscoveredTransaction } from '../services/AddressService';
 import {
+  catchupScanJob,
   createOrReplaceScanJob,
   deleteScanJob,
   getScanFindings,
@@ -145,23 +146,24 @@ app.get('/chains/:chainId/addresses/:address/transactions', addressTransactionsR
     // genesis-anchored walk is the ONLY sanctioned coverage lift.
     let scanJobDto: ScanJobDto | undefined;
     let deepScanFindings: DiscoveredTransaction[] | undefined;
-    const scanJobRow = await getScanJobRow(chainId, address);
-    if (scanJobRow) {
-      scanJobDto = toScanJobDto(scanJobRow);
-      const findingRows = await getScanFindings(chainId, address);
-      if (findingRows.length > 0) {
-        try {
+    try {
+      const scanJobRow = await getScanJobRow(chainId, address);
+      if (scanJobRow) {
+        scanJobDto = toScanJobDto(scanJobRow);
+        const findingRows = await getScanFindings(chainId, address);
+        if (findingRows.length > 0) {
           deepScanFindings = await hydrateFindings(chainId, address, findingRows);
-        } catch (error) {
-          // Hydration is RPC-bound: degrade to the heuristic-only list
-          // (deepScan still reported) rather than failing the endpoint or
-          // serving fabricated transaction fields.
-          logger.warn(
-            { err: error, chainId, address },
-            'Deep-scan findings hydration failed; serving heuristic-only list',
-          );
         }
       }
+    } catch (error) {
+      // The deep-scan enrichment is additive: any failure in the lookup,
+      // findings read, or RPC hydration degrades to the heuristic-only
+      // legacy-shaped response rather than failing the endpoint (a
+      // DuckDB hiccup must not 500 the core tx list).
+      logger.warn(
+        { err: error, chainId, address },
+        'Deep-scan enrichment failed; serving heuristic-only list',
+      );
     }
 
     const result = await addressService.getAddressTransactions(
@@ -429,6 +431,34 @@ app.post('/chains/:chainId/addresses/:address/scan/resume', requireAdminTokenIfC
   } catch (error) {
     logger.error({ err: error }, 'Resume address scan API error');
     return c.json({ error: 'Failed to resume address scan' }, 500);
+  }
+});
+
+// POST /chains/:chainId/addresses/:address/scan/catchup — extend a
+// settled walk's toBlock to the CURRENT chain head, preserving cursor
+// and findings. 404 no_scan_job / 400 invalid_state (running — extending
+// bounds under a live loop is unsafe) / 400 already_caught_up / 202 with
+// the updated job (blocksTotal recomputed, blocksWalked unchanged so
+// progress dips honestly; a completed walk requeues and resumes from
+// cursor + 1).
+app.post('/chains/:chainId/addresses/:address/scan/catchup', requireAdminTokenIfConfigured, addressScanWriteLimiter, async (c) => {
+  const chainId = getValidatedChainId(c.req.param('chainId'));
+  const address = getValidatedAddress(c.req.param('address'));
+
+  try {
+    const result = await catchupScanJob(chainId, address);
+    if (!result.ok) {
+      if (result.error === 'no_scan_job') {
+        return c.json({ error: 'no_scan_job' }, 404);
+      }
+      return c.json({ error: result.error, message: result.message }, 400);
+    }
+
+    c.header('X-Chain-Name', getChainName(chainId));
+    return c.json(toScanJobDto(result.job), 202);
+  } catch (error) {
+    logger.error({ err: error }, 'Catch up address scan API error');
+    return c.json({ error: 'Failed to catch up address scan' }, 500);
   }
 });
 

@@ -1,10 +1,10 @@
 /**
- * Deep-scan route contract conformance: the four /scan endpoints (202
+ * Deep-scan route contract conformance: the five /scan endpoints (202
  * async start, 200 idempotent, 400 invalid_bounds / scan_conflict /
- * invalid_state, 404 no_scan_job, 204 idempotent delete), admin opt-in
- * gating on writes, the shared 3/min burst-2 write limiter, and the
- * additive deepScan field on the transactions endpoint (absent key when
- * no job row exists — legacy responses byte-identical).
+ * invalid_state / already_caught_up, 404 no_scan_job, 204 idempotent
+ * delete), admin opt-in gating on writes, the shared 3/min burst-2 write
+ * limiter, and the additive deepScan field on the transactions endpoint
+ * (absent key when no job row exists — legacy responses byte-identical).
  */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -24,6 +24,7 @@ vi.mock('@/services/AddressScanService', async (importOriginal) => {
   return {
     ...actual,
     createOrReplaceScanJob: mocks.createOrReplaceScanJob,
+    catchupScanJob: mocks.catchupScanJob,
     getScanJobRow: mocks.getScanJobRow,
     getScanFindings: mocks.getScanFindings,
     hydrateFindings: mocks.hydrateFindings,
@@ -46,6 +47,7 @@ const ROUTE_ADDRESS = '0x1111111111111111111111111111111111111111';
 const mocks = vi.hoisted(() => ({
   getAddressTransactions: vi.fn(),
   createOrReplaceScanJob: vi.fn(),
+  catchupScanJob: vi.fn(),
   getScanJobRow: vi.fn(),
   getScanFindings: vi.fn(),
   hydrateFindings: vi.fn(),
@@ -279,6 +281,122 @@ describe('POST /scan/pause and /scan/resume', () => {
       error: 'invalid_state',
       message: 'Scan job is not paused (status: running)',
     });
+  });
+});
+
+describe('POST /scan/catchup', () => {
+  beforeEach(() => {
+    mocks.catchupScanJob.mockResolvedValue({
+      ok: true,
+      job: jobRow({ status: 'pending', toBlock: 1500n, cursorBlock: 1000n, txsFound: 1 }),
+      started: null,
+    });
+  });
+
+  it('extends the walk to the head → 202 with the updated job DTO', async () => {
+    const res = await app.request(scanPath('/catchup'), { method: 'POST' });
+    expect(res.status).toBe(202);
+    const body = await res.json();
+    // Same pinned 10-field shape as the other scan endpoints.
+    expect(Object.keys(body).sort()).toEqual(
+      [
+        'blocksTotal',
+        'blocksWalked',
+        'coverage',
+        'cursorBlock',
+        'errorMessage',
+        'fromBlock',
+        'status',
+        'toBlock',
+        'txsFound',
+        'updatedAt',
+      ].sort(),
+    );
+    // blocksTotal recomputed against the new head; walked unchanged.
+    expect(body).toMatchObject({
+      status: 'pending',
+      fromBlock: 0,
+      toBlock: 1500,
+      cursorBlock: 1000,
+      blocksWalked: 1001,
+      blocksTotal: 1501,
+      txsFound: 1,
+    });
+    expect(mocks.catchupScanJob).toHaveBeenCalledWith(1, ROUTE_ADDRESS);
+  });
+
+  it('answers 404 no_scan_job (no message) when no row exists', async () => {
+    mocks.catchupScanJob.mockResolvedValue({ ok: false, error: 'no_scan_job' });
+    const res = await app.request(scanPath('/catchup'), { method: 'POST' });
+    expect(res.status).toBe(404);
+    expect(await res.json()).toEqual({ error: 'no_scan_job' });
+  });
+
+  it('answers 400 invalid_state with the displayable message when the scan is running', async () => {
+    mocks.catchupScanJob.mockResolvedValue({
+      ok: false,
+      error: 'invalid_state',
+      message: 'Scan is running — wait for it to finish or pause it first',
+    });
+    const res = await app.request(scanPath('/catchup'), { method: 'POST' });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error: 'invalid_state',
+      message: 'Scan is running — wait for it to finish or pause it first',
+    });
+  });
+
+  it('answers 400 already_caught_up with the displayable message', async () => {
+    mocks.catchupScanJob.mockResolvedValue({
+      ok: false,
+      error: 'already_caught_up',
+      message: 'Scan is already at the chain head',
+    });
+    const res = await app.request(scanPath('/catchup'), { method: 'POST' });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error: 'already_caught_up',
+      message: 'Scan is already at the chain head',
+    });
+  });
+
+  it('is admin gated like the other writes: 403 tiers, service untouched until authorized', async () => {
+    vi.stubEnv('ADMIN_TOKEN', 'secret-token');
+
+    const noToken = await app.request(scanPath('/catchup'), { method: 'POST' });
+    expect(noToken.status).toBe(403);
+    const wrongToken = await app.request(scanPath('/catchup'), {
+      method: 'POST',
+      headers: { 'x-admin-token': 'wrong' },
+    });
+    expect(wrongToken.status).toBe(403);
+    expect(mocks.catchupScanJob).not.toHaveBeenCalled();
+
+    const rightToken = await app.request(scanPath('/catchup'), {
+      method: 'POST',
+      headers: { 'x-admin-token': 'secret-token' },
+    });
+    expect(rightToken.status).toBe(202);
+    expect(mocks.catchupScanJob).toHaveBeenCalledWith(1, ROUTE_ADDRESS);
+  });
+
+  it('shares the address-scan-write bucket: throttled once the burst is spent', async () => {
+    mocks.createOrReplaceScanJob.mockResolvedValue({
+      ok: true,
+      result: { outcome: 'created', job: jobRow({ status: 'pending', cursorBlock: -1n }), started: null },
+    });
+
+    const first = await app.request(scanPath(), { method: 'POST' });
+    const second = await app.request(scanPath(), { method: 'POST' });
+    expect(first.status).toBe(202);
+    expect(second.status).toBe(202);
+
+    // Third write in the same window — the catchup draws from the SAME
+    // bucket as create/pause/resume/delete, not a new one.
+    const third = await app.request(scanPath('/catchup'), { method: 'POST' });
+    expect(third.status).toBe(429);
+    expect(await third.json()).toMatchObject({ error: 'rate_limited' });
+    expect(mocks.catchupScanJob).not.toHaveBeenCalled();
   });
 });
 

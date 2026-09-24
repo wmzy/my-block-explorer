@@ -4,7 +4,8 @@
  * scripted RPC client: empty-segment advance, change discovery with
  * persisted findings, provider-error honesty (verbatim message, never
  * silently complete), checkpoint persistence and resume-from-cursor,
- * pause, conflict/force semantics, delete, and restart reconciliation.
+ * catch-up requeue from a completed walk, pause, conflict/force
+ * semantics, delete, and restart reconciliation.
  */
 
 import { describe, it, expect, vi } from 'vitest';
@@ -34,6 +35,7 @@ import { and, eq } from 'drizzle-orm';
 import { db } from '@/database/drizzle';
 import { addressScanJobs, addressScanFindings } from '@/database/schema';
 import {
+  catchupScanJob,
   createOrReplaceScanJob,
   deleteScanJob,
   pauseScanJob,
@@ -307,6 +309,79 @@ describe('deep scan walk engine', () => {
     }
     const findings = await getFindings(1, address);
     expect(findings[0].blockNumber).toBe(600n);
+  });
+
+  it('catch-up requeues a completed walk and resumes from the cursor with findings intact', async () => {
+    const address = uniqueAddress();
+    // A completed 0..1000 genesis walk that already found one tx at 600.
+    await db.insert(addressScanJobs).values({
+      chainId: 1,
+      address,
+      fromBlock: 0n,
+      toBlock: 1000n,
+      cursorBlock: 1000n,
+      status: 'complete',
+      txsFound: 1,
+      errorMessage: null,
+      updatedAt: new Date(),
+    });
+    await db.insert(addressScanFindings).values({
+      chainId: 1,
+      address,
+      txHash: '0x1110000000000000000000000000000000000000000000000000000000000cafe',
+      blockNumber: 600n,
+    });
+
+    // The chain moved on: head 1500, a second change lands at 1300.
+    const client = buildClient({
+      head: 1500n,
+      balances: bn => (bn < 600n ? 0n : bn < 1300n ? 5n : 9n),
+      blocks: {
+        1300: {
+          number: 1300n,
+          timestamp: 1700001300n,
+          transactions: [
+            {
+              hash: '0x2220000000000000000000000000000000000000000000000000000000000cafe',
+              from: `0x${'4'.repeat(40)}`,
+              to: address,
+              value: 4n,
+            },
+          ],
+        },
+      },
+    });
+    mocks.client = client;
+
+    const caughtUp = await catchupScanJob(1, address);
+    expect(caughtUp.ok).toBe(true);
+    if (!caughtUp.ok) throw new Error('catchup failed');
+    // The returned job: requeued as pending, extended to the head, with
+    // cursor/blocksWalked preserved and blocksTotal recomputed.
+    expect(toScanJobDto(caughtUp.job)).toMatchObject({
+      status: 'pending',
+      toBlock: 1500,
+      cursorBlock: 1000,
+      blocksWalked: 1001,
+      blocksTotal: 1501,
+      txsFound: 1,
+    });
+    expect(caughtUp.started).not.toBeNull();
+    await caughtUp.started;
+
+    const row = await getJob(1, address);
+    expect(row?.status).toBe('complete');
+    expect(row?.toBlock).toBe(1500n);
+    expect(row?.cursorBlock).toBe(1500n);
+    expect(row?.txsFound).toBe(2);
+    // The pre-catchup finding survived; the new one joined it.
+    const foundBlocks = (await getFindings(1, address)).map(f => f.blockNumber);
+    expect(foundBlocks.sort((a, b) => Number(a - b))).toEqual([600n, 1300n]);
+    // Contiguous-cursor semantics: every balance read sits at or above
+    // the preserved cursor — no re-walk of the verified segment.
+    for (const bn of balanceCallBlocks(client)) {
+      expect(bn).toBeGreaterThanOrEqual(1000n);
+    }
   });
 
   it('pauses the live loop at the last checkpointed segment', async () => {

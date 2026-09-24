@@ -9,6 +9,9 @@
 // - POST ""        → 202 {job} (400 invalid_bounds / scan_conflict)
 // - POST "/pause"  → 202 {job} (400 invalid_state when not running)
 // - POST "/resume" → 202 {job} (400 when not paused)
+// - POST "/catchup" → 202 {job} — extend a SETTLED walk's frozen toBlock
+//   to the current chain head (400 invalid_state when the walk is live /
+//   already_caught_up when it already ends at the head; 404 no_scan_job)
 // - DELETE ""      → 204, idempotent, removes the job AND its findings
 // - GET ""         → 200 {job} | 404 {error:'no_scan_job'}
 // Writes are admin-gated (x-admin-token, opt-in tier); reads are open.
@@ -147,13 +150,15 @@ const scanApi: ApiClient = api.pipe(
   },
 );
 
-// 200 envelopes are {job}; anything else is a malformed response, not a
-// job (labels.ts parseLabelResponse pattern — a bad shape fails loudly
-// instead of rendering a lie).
+// 200/202 bodies are the job DTO itself — FLAT, the shape every scan
+// route's own tests pin (`c.json(toScanJobDto(row))`); the {job}-wrapped
+// envelope is additionally accepted so the shape the first frontend
+// tests froze keeps parsing (labels.ts parseLabelResponse pattern — a
+// bad shape still fails loudly instead of rendering a lie).
 const jobFromEnvelope = (body: unknown): ScanJob => {
-  const envelope: Record<string, unknown> =
+  const record: Record<string, unknown> =
     typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {};
-  const job = parseScanJob(envelope.job);
+  const job = parseScanJob(record) ?? parseScanJob(record.job);
   if (job === null) throw new ApiError('Malformed scan job response', 0);
   return job;
 };
@@ -221,6 +226,28 @@ export async function resumeScanJob(chainId: number, address: string): Promise<S
   return jobFromEnvelope(
     await post<unknown>(`/api/chains/${chainId}/addresses/${address}/scan/resume`, {}, scanApi),
   );
+}
+
+/**
+ * POST /catchup: extend a SETTLED walk's frozen end bound to the current
+ * chain head — the backend re-queues the job and resumes from the
+ * checkpointed cursor, findings intact. Rejects with ApiError 400
+ * invalid_state while the walk is live and 400 already_caught_up when it
+ * already ends at the head (both discriminate via ApiError.code, like
+ * the start 400s); a 404 — the job vanished, e.g. deleted in another
+ * tab — resolves as null rather than an error (fetchScanJob's semantics:
+ * "no job row" is a valid state), so callers simply refetch.
+ */
+export async function catchupScanJob(chainId: number, address: string): Promise<ScanJob | null> {
+  try {
+    return jobFromEnvelope(
+      await post<unknown>(`/api/chains/${chainId}/addresses/${address}/scan/catchup`, {}, scanApi),
+    );
+  }
+  catch (error) {
+    if (error instanceof ApiError && error.status === 404) return null;
+    throw error;
+  }
 }
 
 /** DELETE the job AND its persisted findings. Idempotent (204). */

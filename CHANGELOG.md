@@ -17,7 +17,8 @@ process.
 - **Protocol method labels** — curated Uniswap router family (62 corroborated addresses across 8 chains, per-entry source citations + on-chain liveness checks; chains without official deployments ship empty) chip the tx-list Method column and tx detail.
 - **Local data portability** — `GET /api/labels` (opt-in admin) + a settings-modal Backup & restore section exporting/importing `explorer-backup.json` (labels, custom chains, watchlist/theme/IPFS gateway/custom ABIs; localStorage keys pattern-pinned so a hostile file cannot write arbitrary keys).
 - **Admin SQL console** — `/sql` page + `POST /api/sql/query` / `GET /api/sql/tables` over the explorer's own DuckDB: strict fail-closed admin tier, single SELECT/WITH statement guard, 22 forbidden word tokens, 500-row measured cap, JSON-normalized cells.
-- **Cleanup** — vestigial `search_history` table dropped (migration 0012); deep-scan tables are migration 0013; the `@/utils` barrel now re-exports all util modules (8 name collisions resolved explicitly).
+- **Cleanup** — vestigial `search_history` table dropped (migration 0012; the parallel per-chain `chain-schema.ts` definition removed too); deep-scan tables are migration 0013; the `@/utils` barrel now re-exports all util modules (8 name collisions resolved explicitly).
+- **Deep scan catch-up** — `POST …/scan/catchup` extends a settled walk's `toBlock` to the current chain head (cursor + findings preserved, no re-walk); the Deep Scan panel offers "Catch up to latest" and scopes the complete claim to "… up to block N". En-route fix: the panel's job parser only accepted `{job}`-wrapped envelopes while every scan route returns the flat DTO — the panel was broken against the real backend behind mocked tests.
 
 
 ## 1.2.0 — 2026-09-19

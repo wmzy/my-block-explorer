@@ -215,6 +215,37 @@ export const decideScanJobCreation = (
   return { action: 'replace' };
 };
 
+/**
+ * Pure catch-up decision for a settled walk against the CURRENT chain
+ * head: a job's toBlock was frozen at creation-time head, so a finished
+ * (or paused/errored) walk can be extended once the chain moved on.
+ * - 'running' → invalid-state FIRST: extending the bounds under a live
+ *   loop is unsafe (the loop snapshots bounds at start and walks to its
+ *   own to; a mid-flight extension would strand the loop's final
+ *   'complete' write against a toBlock it never reached).
+ * - head <= toBlock → already caught up (a chain reorg aside, the stored
+ *   toBlock already covers everything that exists).
+ * - otherwise → extend to the head, preserving cursor + findings.
+ */
+export type ScanCatchupPlan =
+  | { action: 'extend'; toBlock: number }
+  | { action: 'already-caught-up' }
+  | { action: 'invalid-state'; message: string };
+
+export const planCatchup = (
+  job: { status: ScanJobStatus; toBlock: number },
+  head: number,
+): ScanCatchupPlan => {
+  if (job.status === 'running') {
+    return {
+      action: 'invalid-state',
+      message: 'Scan is running — wait for it to finish or pause it first',
+    };
+  }
+  if (head <= job.toBlock) return { action: 'already-caught-up' };
+  return { action: 'extend', toBlock: head };
+};
+
 // Checkpoint math for the FORWARD walk: cursorBlock is the highest
 // CONTIGUOUS verified block starting at fromBlock. Before any progress it
 // sits at fromBlock - 1 (block -1 for a genesis-anchored walk — no
@@ -899,6 +930,88 @@ export const resumeScanJob = async (
   const updated = await getScanJobRow(chainId, address);
   if (!updated) return { ok: false, message: 'Scan job disappeared during resume' };
   ensureScanRunning(chainId, address);
+  const handle = runningScanJobs.get(scanJobKey(chainId, address));
+  return { ok: true, job: updated, started: handle?.done ?? null };
+};
+
+export type CatchupScanJobResult =
+  | { ok: true; job: AddressScanJobRecord; started: Promise<void> | null }
+  | { ok: false; error: 'no_scan_job' }
+  | { ok: false; error: 'invalid_state' | 'already_caught_up'; message: string };
+
+/**
+ * POST /scan/catchup semantics: extend a settled walk's toBlock to the
+ * CURRENT chain head without losing cursor progress or findings. The
+ * head is resolved ONCE through the same tag-bounds resolver creation
+ * uses for toBlock:'latest'. The extension is compare-and-set on the
+ * observed (status, toBlock) — a concurrent force-replace/delete keeps
+ * its own lifecycle instead of being clobbered (the same discipline as
+ * the walk loop's running flip). Status transitions: 'complete' →
+ * 'pending' (requeued through the same start path a same-bounds restart
+ * uses), everything else keeps its status until an explicit
+ * pause/resume/re-POST moves it.
+ */
+export const catchupScanJob = async (
+  chainId: number,
+  address: string,
+): Promise<CatchupScanJobResult> => {
+  const row = await getScanJobRow(chainId, address);
+  if (!row) return { ok: false, error: 'no_scan_job' };
+
+  const client = await rpcManager.getClient(chainId);
+  // fromBlock 0 can never exceed the head, so this resolver call cannot
+  // fail — only its resolved toBlock (the current head) is consumed.
+  const resolved = await resolveScanBounds(client, { fromBlock: 0, toBlock: 'latest' });
+  if (!resolved.ok) {
+    throw new Error(`Failed to resolve chain head: ${resolved.message}`);
+  }
+
+  const status: ScanJobStatus = isScanJobStatus(row.status) ? row.status : 'error';
+  const plan = planCatchup({ status, toBlock: Number(row.toBlock) }, resolved.toBlock);
+  if (plan.action === 'invalid-state') {
+    return { ok: false, error: 'invalid_state', message: plan.message };
+  }
+  if (plan.action === 'already-caught-up') {
+    return { ok: false, error: 'already_caught_up', message: 'Scan is already at the chain head' };
+  }
+
+  const nextStatus: ScanJobStatus = status === 'complete' ? 'pending' : status;
+  // Drop any queued start for this key BEFORE mutating the row: a pump
+  // firing between the CAS and the requeue below could otherwise start a
+  // loop against the pre-extension snapshot (which then self-aborts on
+  // the bounds re-check, stranding a 'running' row). Same discipline as
+  // force-replace.
+  removeFromScanQueue(chainId, address);
+  await db
+    .update(addressScanJobs)
+    .set({ toBlock: BigInt(plan.toBlock), status: nextStatus, updatedAt: new Date() })
+    .where(
+      and(
+        eq(addressScanJobs.chainId, chainId),
+        eq(addressScanJobs.address, address.toLowerCase()),
+        eq(addressScanJobs.status, status),
+        eq(addressScanJobs.toBlock, row.toBlock),
+      ),
+    );
+
+  const updated = await getScanJobRow(chainId, address);
+  if (!updated) return { ok: false, error: 'no_scan_job' };
+  if (Number(updated.toBlock) !== plan.toBlock) {
+    // The row moved underneath (force-replace/delete raced the CAS) and
+    // this attempt changed nothing — an honest retryable refusal, never
+    // a silent clobber.
+    return {
+      ok: false,
+      error: 'invalid_state',
+      message: 'Scan job changed concurrently — retry the catch-up',
+    };
+  }
+
+  // complete→pending requeue: same start path as a same-bounds restart
+  // (immediate loop start, or queued behind the concurrency cap). A
+  // 'pending' row that was already queued is untouched by the guard; a
+  // stranded one gets its missing start. paused/error stay settled.
+  if (nextStatus === 'pending') ensureScanRunning(chainId, address);
   const handle = runningScanJobs.get(scanJobKey(chainId, address));
   return { ok: true, job: updated, started: handle?.done ?? null };
 };
