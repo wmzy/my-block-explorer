@@ -109,6 +109,14 @@ const routes = createRoutes({
       path: '/sql',
       component: () => import('./Sql'),
     },
+    {
+      // Static explainer for the data-coverage vocabulary the CoverageBadge
+      // chips carry (linked from the badge's expanded detail): pure copy,
+      // no loader, and deliberately not chain-scoped — the levels describe
+      // data sourcing, which is the same on every chain.
+      path: '/about/coverage',
+      component: () => import('./Coverage/Legend'),
+    },
   ],
 });
 
@@ -160,6 +168,12 @@ export function deriveDocumentTitle(pathname: string, search: string): string {
     return Number.isFinite(chainId)
       ? `Search · ${getChainName(chainId)}`
       : 'Search · Explorer';
+  }
+
+  // Static coverage explainer: exact shape only — deeper /about/* paths are
+  // unknown shapes and keep the fallback.
+  if (segments[0] === 'about' && segments[1] === 'coverage' && segments.length === 2) {
+    return `Data Coverage — ${FALLBACK_TITLE}`;
   }
 
   if (segments[0] !== 'chain' || segments.length < 2) return FALLBACK_TITLE;
@@ -216,6 +230,10 @@ export function deriveMetaDescription(pathname: string, search: string): string 
     return Number.isFinite(chainId)
       ? `Search blocks, transactions, addresses and contracts on ${getChainName(chainId)}.`
       : 'Search blocks, transactions, addresses and contracts across chains.';
+  }
+
+  if (segments[0] === 'about' && segments[1] === 'coverage' && segments.length === 2) {
+    return 'What the data-coverage levels — live, cached, discovered, sampled, partial and unavailable — mean in this explorer, and why its numbers can differ from full-indexer explorers.';
   }
 
   if (segments[0] !== 'chain' || segments.length < 2) return FALLBACK_DESCRIPTION;

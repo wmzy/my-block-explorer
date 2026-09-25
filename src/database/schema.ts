@@ -1,11 +1,12 @@
 /**
- * DuckDB 兼容的数据库 Schema
- * 使用类型安全的 DuckDB 专用构造器，确保只使用支持的特性
+ * DuckDB-compatible database schema
+ * Built on type-safe DuckDB-specific constructors so only supported
+ * features are used.
  *
- * 设计原则：
- * 1. 在 schema 定义层面确保 DuckDB 兼容性
- * 2. 使用明确的 DuckDB 类型构造器
- * 3. 避免在运行时做不安全的 SQL 转换
+ * Design principles:
+ * 1. Guarantee DuckDB compatibility at the schema-definition level
+ * 2. Use explicit DuckDB type constructors
+ * 3. Avoid unsafe SQL conversions at runtime
  */
 import { sql } from 'drizzle-orm';
 import {
@@ -13,7 +14,7 @@ import {
   varchar,
   text,
   boolean,
-  // EVM 特定类型
+  // EVM-specific types
   address,
   txHash,
   blockHash,
@@ -21,41 +22,41 @@ import {
   hexData,
   txType,
   txStatus,
-  // 时间类型
+  // Time types
   timestamp,
   datetime,
-  // 通用大数类型
+  // Generic big-number types
   bignum,
   uint256,
-  // 表和约束构造器
+  // Table and constraint builders
   duckdbTable,
   primaryKey,
   unique,
 } from './db-types';
 
-// 通用字段组合
+// Common field combinations
 const timestampColumns = {
   createdAt: datetime().default(sql`now()`),
   updatedAt: datetime().default(sql`now()`),
 } as const;
 
-// 链相关的基础字段
+// Chain-related base fields
 const chainColumns = {
   chainId: integer().notNull(),
 } as const;
 
-// 地址相关字段
+// Address-related fields
 const addressColumns = {
   address: address().notNull(),
 } as const;
 
-// 链+地址组合（常用于合约相关表）
+// Chain + address combination (common in contract-related tables)
 const chainAddressColumns = {
   ...chainColumns,
   ...addressColumns,
 } as const;
 
-// 用户RPC配置表
+// User RPC configuration table
 export const userRpcConfigs = duckdbTable('user_rpc_configs', {
   chainId: integer().primaryKey(),
   name: varchar({ length: 255 }),
@@ -84,19 +85,19 @@ export const customChains = duckdbTable('custom_chains', {
   ...timestampColumns,
 });
 
-// 区块表
+// Blocks table
 export const blocks = duckdbTable(
   'blocks',
   {
     ...chainColumns,
-    number: bignum().notNull(), // 区块号
+    number: bignum().notNull(), // block number
     hash: blockHash().notNull(),
     parentHash: blockHash(),
     timestamp: timestamp(),
     miner: address(),
-    gasLimit: bignum(), // Gas 限制
-    gasUsed: bignum(), // Gas 使用量
-    baseFeePerGas: bignum(), // Gas 价格
+    gasLimit: bignum(), // gas limit
+    gasUsed: bignum(), // gas used
+    baseFeePerGas: bignum(), // gas price
     transactionCount: integer(),
     sizeBytes: integer(),
     difficulty: uint256(),
@@ -111,45 +112,46 @@ export const blocks = duckdbTable(
   table => [
     primaryKey({ columns: [table.chainId, table.number] }),
     unique().on(table.chainId, table.hash),
-    // 注意：索引在迁移脚本中手动创建，避免 Drizzle 生成不兼容的索引语法
+    // NOTE: indexes are created manually in migration scripts to avoid
+    // Drizzle generating incompatible index syntax
   ],
 );
 
-// 交易表
+// Transactions table
 export const transactions = duckdbTable(
   'transactions',
   {
     ...chainColumns,
     hash: txHash().notNull(),
-    blockNumber: bignum(), // 区块号
+    blockNumber: bignum(), // block number
     transactionIndex: integer(),
     fromAddress: address(),
     toAddress: address(),
-    value: bignum(), // Wei 金额
-    gasLimit: bignum(), // Gas 限制
-    gasPrice: bignum(), // Gas 价格
-    maxFeePerGas: bignum(), // 最大 Gas 费用
-    maxPriorityFeePerGas: bignum(), // 最大优先费用
-    gasUsed: bignum(), // Gas 使用量
-    effectiveGasPrice: bignum(), // 有效 Gas 价格
+    value: bignum(), // value in wei
+    gasLimit: bignum(), // gas limit
+    gasPrice: bignum(), // gas price
+    maxFeePerGas: bignum(), // max gas fee
+    maxPriorityFeePerGas: bignum(), // max priority fee
+    gasUsed: bignum(), // gas used
+    effectiveGasPrice: bignum(), // effective gas price
     status: txStatus(),
     type: txType().default(0),
-    nonce: bignum(), // Nonce 值
+    nonce: bignum(), // nonce value
     inputData: hexData(),
     logsCount: integer().default(0),
     contractAddress: address(),
-    cumulativeGasUsed: bignum(), // 累计 Gas 使用量
+    cumulativeGasUsed: bignum(), // cumulative gas used
     timestamp: timestamp(),
     indexedAt: datetime().default(sql`now()`),
   },
   table => [
     primaryKey({ columns: [table.chainId, table.hash] }),
     unique().on(table.chainId, table.blockNumber, table.transactionIndex),
-    // 注意：索引在迁移脚本中手动创建
+    // NOTE: indexes are created manually in migration scripts
   ],
 );
 
-// 已索引地址表
+// Indexed addresses table
 export const indexedAddresses = duckdbTable(
   'indexed_addresses',
   {
@@ -162,11 +164,11 @@ export const indexedAddresses = duckdbTable(
   },
   table => [
     primaryKey({ columns: [table.chainId, table.address] }),
-    // 注意：索引在迁移脚本中手动创建
+    // NOTE: indexes are created manually in migration scripts
   ],
 );
 
-// 用户偏好表
+// User preferences table
 export const userPreferences = duckdbTable('user_preferences', {
   id: integer().primaryKey(),
   theme: varchar({ length: 20 }).default('light'),
@@ -174,7 +176,7 @@ export const userPreferences = duckdbTable('user_preferences', {
   updatedAt: datetime().default(sql`now()`),
 });
 
-// 索引状态表
+// Index status table
 export const indexStatus = duckdbTable(
   'index_status',
   {
@@ -186,7 +188,7 @@ export const indexStatus = duckdbTable(
   table => [primaryKey({ columns: [table.chainId, table.indexType] })],
 );
 
-// 访问历史表
+// Access history table
 export const accessHistory = duckdbTable(
   'access_history',
   {
@@ -199,11 +201,11 @@ export const accessHistory = duckdbTable(
   },
   table => [
     primaryKey({ columns: [table.chainId, table.type, table.identifier] }),
-    // 注意：索引在迁移脚本中手动创建
+    // NOTE: indexes are created manually in migration scripts
   ],
 );
 
-// 合约源码表
+// Contract source table
 export const contractSources = duckdbTable(
   'contract_sources',
   {
@@ -230,11 +232,11 @@ export const contractSources = duckdbTable(
   },
   table => [
     primaryKey({ columns: [table.chainId, table.address] }),
-    // 注意：索引在迁移脚本中手动创建
+    // NOTE: indexes are created manually in migration scripts
   ],
 );
 
-// 合约创建信息表
+// Contract creation info table
 export const contractCreationInfo = duckdbTable(
   'contract_creation_info',
   {
@@ -249,7 +251,7 @@ export const contractCreationInfo = duckdbTable(
   },
   table => [
     primaryKey({ columns: [table.chainId, table.address] }),
-    // 注意：索引在迁移脚本中手动创建
+    // NOTE: indexes are created manually in migration scripts
   ],
 );
 
@@ -319,7 +321,7 @@ export const contractEvents = duckdbTable(
   ],
 );
 
-// 事件表注册表
+// Event table registry
 export const eventTableRegistry = duckdbTable(
   'event_table_registry',
   {
@@ -350,7 +352,7 @@ export const storageLayouts = duckdbTable(
   table => [primaryKey({ columns: [table.chainId, table.address] })],
 );
 
-// 导出类型推断
+// Inferred type exports
 export type EventTableRegistry = typeof eventTableRegistry.$inferSelect;
 export type NewEventTableRegistry = typeof eventTableRegistry.$inferInsert;
 
@@ -492,6 +494,19 @@ export const addressScanJobs = duckdbTable(
     cursorBlock: bignum().notNull(),
     status: varchar({ length: 20 }).notNull().default('pending'),
     txsFound: integer().notNull().default(0),
+    // Deep-scan trace recording: the POST /scan opt-in and the provider
+    // capability verdict. Nullable-on-purpose (no .notNull()) mirrors
+    // address_labels.source: DuckDB cannot ADD COLUMN with constraints,
+    // so these arrive on the EXISTING table via ALTER with DEFAULTs only
+    // and the DTO layer normalizes storage nulls (tracesRequested ?? false,
+    // tracesSupported ?? null, tracesRecorded ?? 0).
+    tracesRequested: boolean().default(false),
+    // null = not yet probed (no change block traced so far); flips to
+    // true on the first successful debug_traceTransaction and to false —
+    // once — when the provider proves it lacks the method (the walk then
+    // skips all further tracing but continues normally).
+    tracesSupported: boolean(),
+    tracesRecorded: integer().default(0),
     errorMessage: text(),
     updatedAt: datetime().notNull().default(sql`now()`),
   },
@@ -520,3 +535,42 @@ export const addressScanFindings = duckdbTable(
 
 export type AddressScanFindingRecord = typeof addressScanFindings.$inferSelect;
 export type NewAddressScanFinding = typeof addressScanFindings.$inferInsert;
+
+// Deep-scan internal transactions — callTracer frames the walk records
+// for change blocks when the job opted into tracing (tracesRequested).
+// One row per (chain, address, txHash, tracePath): tracePath is the
+// depth-joined child-index path from the traced root ('0' = the root's
+// first sub-call, '0.1' that child's second sub-call, ...), so sibling
+// and nested frames never collide under the composite PK. Only the four
+// call/callcode/delegatecall/staticcall frame types are recorded, so
+// from/to always exist. transactionIndex (the tx's position in
+// block.transactions) is stored alongside blockNumber — an authorized
+// deviation from the findings minimalism — because the API orders
+// newest-first by blockNumber desc, then tx index, and the walk is the
+// only place that knows the index. Coverage honesty: these rows NEVER
+// feed the coverage derivation — transaction coverage stays derived
+// from the walk alone. Deleting the job row removes them (composite PK
+// shares the (chain, address) key prefix, same as findings).
+export const addressScanInternalTxs = duckdbTable(
+  'address_scan_internal_txs',
+  {
+    chainId: integer().notNull(),
+    address: varchar({ length: 42 }).notNull(),
+    txHash: txHash().notNull(),
+    tracePath: varchar().notNull(),
+    blockNumber: bignum().notNull(),
+    transactionIndex: integer().notNull(),
+    fromAddress: address().notNull(),
+    toAddress: address().notNull(),
+    value: bignum().notNull(),
+    callType: varchar({ length: 20 }).notNull(),
+    reverted: boolean().notNull(),
+    blockTimestamp: datetime().notNull(),
+  },
+  table => [
+    primaryKey({ columns: [table.chainId, table.address, table.txHash, table.tracePath] }),
+  ],
+);
+
+export type AddressScanInternalTxRecord = typeof addressScanInternalTxs.$inferSelect;
+export type NewAddressScanInternalTx = typeof addressScanInternalTxs.$inferInsert;

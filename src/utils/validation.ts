@@ -83,7 +83,7 @@ export function detectSearchType(
     return 'block';
   }
 
-  // ENS name detection (e.g. 'vitalik.eth', 'a.b.eth', '日本.eth'). ENS
+  // ENS name detection (e.g. 'vitalik.eth', 'a.b.eth', 'übär.eth'). ENS
   // names are resolved in the browser against a mainnet client; consumers
   // must handle the 'ens' type without a server round-trip. Validity is
   // ENSIP-15: viem's normalize accepts the full Unicode name space (IDN

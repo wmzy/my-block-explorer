@@ -6,8 +6,8 @@ import { get, post, del } from '@/util/http';
 import { ApiError } from '@/util/apiError';
 
 const containerStyles = css`
-  background: white;
-  border: 1px solid #e1e5e9;
+  background: var(--haze-color-bg);
+  border: 1px solid var(--haze-color-border);
   border-radius: 8px;
   padding: 20px;
   margin-bottom: 20px;
@@ -30,12 +30,12 @@ const headerStyles = css`
     margin: 0;
     font-size: 18px;
     font-weight: 600;
-    color: #1a1a1a;
+    color: var(--haze-color-text);
   }
 
   .creation-info {
     font-size: 13px;
-    color: #666;
+    color: var(--haze-color-text-muted);
   }
 `;
 
@@ -50,12 +50,12 @@ const rangeItemStyles = css`
   align-items: center;
   justify-content: space-between;
   padding: 12px 16px;
-  background: #f8f9fa;
-  border: 1px solid #e1e5e9;
+  background: var(--haze-color-bg-subtle);
+  border: 1px solid var(--haze-color-border);
   border-radius: 6px;
 
   &:hover {
-    background: #f1f3f5;
+    background: var(--haze-color-bg-muted);
   }
 
   /* Narrow screens: range facts and their action buttons cannot share one
@@ -84,7 +84,7 @@ const rangeInfoStyles = css`
 
   .range-progress {
     font-size: 12px;
-    color: #666;
+    color: var(--haze-color-text-muted);
   }
 `;
 
@@ -97,28 +97,28 @@ const statusBadgeStyles = css`
   text-transform: uppercase;
 
   &.pending {
-    background: #fef3c7;
-    color: #92400e;
+    background: var(--haze-color-warning-subtle);
+    color: var(--haze-color-warning);
   }
 
   &.indexing {
-    background: #dbeafe;
-    color: #1d4ed8;
+    background: var(--haze-color-info-subtle);
+    color: var(--haze-color-info);
   }
 
   &.paused {
-    background: #f3e8ff;
-    color: #7c3aed;
+    background: var(--haze-color-bg-muted);
+    color: var(--haze-color-text-secondary);
   }
 
   &.completed {
-    background: #d1fae5;
-    color: #065f46;
+    background: var(--haze-color-success-subtle);
+    color: var(--haze-color-success);
   }
 
   &.error {
-    background: #fee2e2;
-    color: #dc2626;
+    background: var(--haze-color-danger-subtle);
+    color: var(--haze-color-danger);
   }
 `;
 
@@ -127,10 +127,10 @@ const directionBadgeStyles = css`
   align-items: center;
   gap: 4px;
   padding: 2px 6px;
-  background: #e5e7eb;
+  background: var(--haze-color-bg-muted);
   border-radius: 4px;
   font-size: 11px;
-  color: #374151;
+  color: var(--haze-color-text);
 
   svg {
     width: 12px;
@@ -145,9 +145,9 @@ const stalenessBannerStyles = css`
   margin-bottom: 12px;
   padding: var(--haze-space-2, 8px) var(--haze-space-3, 12px);
   font-size: var(--haze-text-sm, 13px);
-  color: var(--haze-color-text-secondary, #6b7280);
-  background: var(--haze-color-bg-subtle, #f9fafb);
-  border: 1px solid var(--haze-color-border, #e5e7eb);
+  color: var(--haze-color-text-secondary);
+  background: var(--haze-color-bg-subtle);
+  border: 1px solid var(--haze-color-border);
   border-radius: var(--haze-radius-md, 6px);
 `;
 
@@ -156,22 +156,22 @@ const stalenessDotStyles = css`
   height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
-  background: var(--haze-color-warning, #f59e0b);
+  background: var(--haze-color-warning);
 `;
 
 const actionButtonStyles = css`
   padding: 6px 12px;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--haze-color-border);
   border-radius: 4px;
-  background: white;
-  color: #374151;
+  background: var(--haze-color-bg);
+  color: var(--haze-color-text);
   font-size: 12px;
   cursor: pointer;
   transition: all 0.2s;
 
   &:hover:not(:disabled) {
-    background: #f3f4f6;
-    border-color: #9ca3af;
+    background: var(--haze-color-bg-muted);
+    border-color: var(--haze-color-border-hover);
   }
 
   &:disabled {
@@ -180,22 +180,22 @@ const actionButtonStyles = css`
   }
 
   &.primary {
-    background: #3b82f6;
-    border-color: #3b82f6;
-    color: white;
+    background: var(--haze-color-primary);
+    border-color: var(--haze-color-primary);
+    color: var(--haze-color-text-inverse);
 
     &:hover:not(:disabled) {
-      background: #2563eb;
+      background: var(--haze-color-primary-hover);
     }
   }
 
   &.danger {
-    background: #ef4444;
-    border-color: #ef4444;
-    color: white;
+    background: var(--haze-color-danger);
+    border-color: var(--haze-color-danger);
+    color: var(--haze-color-text-inverse);
 
     &:hover:not(:disabled) {
-      background: #dc2626;
+      background: var(--haze-color-danger-hover);
     }
   }
 `;
@@ -205,8 +205,8 @@ const addFormStyles = css`
   gap: 12px;
   align-items: flex-end;
   padding: 16px;
-  background: #f8fafc;
-  border: 1px solid #e1e5e9;
+  background: var(--haze-color-bg-subtle);
+  border: 1px solid var(--haze-color-border);
   border-radius: 6px;
   margin-top: 16px;
 
@@ -229,25 +229,25 @@ const quickActionsStyles = css`
   gap: 8px;
   flex-wrap: wrap;
   padding: 12px 16px;
-  background: #f0f9ff;
-  border: 1px solid #bae6fd;
+  background: var(--haze-color-info-subtle);
+  border: 1px solid var(--haze-color-border);
   border-radius: 6px;
   margin-top: 16px;
 `;
 
 const quickButtonStyles = css`
   padding: 6px 12px;
-  border: 1px solid #0ea5e9;
+  border: 1px solid var(--haze-color-info);
   border-radius: 4px;
-  background: white;
-  color: #0369a1;
+  background: var(--haze-color-bg);
+  color: var(--haze-color-info);
   font-size: 12px;
   cursor: pointer;
   transition: all 0.2s;
 
   &:hover:not(:disabled) {
-    background: #e0f2fe;
-    border-color: #0284c7;
+    background: var(--haze-color-info-subtle);
+    border-color: var(--haze-color-info-hover);
   }
 
   &:disabled {
@@ -264,33 +264,33 @@ const inputGroupStyles = css`
   label {
     font-size: 12px;
     font-weight: 500;
-    color: #374151;
+    color: var(--haze-color-text);
   }
 
   input,
   select {
     padding: 8px 12px;
-    border: 1px solid #d1d5db;
+    border: 1px solid var(--haze-color-border);
     border-radius: 4px;
     font-size: 13px;
     width: 120px;
 
     &:focus {
       outline: none;
-      border-color: #3b82f6;
-      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+      border-color: var(--haze-color-primary);
+      box-shadow: 0 0 0 2px var(--haze-color-focus-ring);
     }
   }
 `;
 
 const warningStyles = css`
   padding: 12px 16px;
-  background: #fef3c7;
-  border: 1px solid #fcd34d;
+  background: var(--haze-color-warning-subtle);
+  border: 1px solid var(--haze-color-warning);
   border-radius: 6px;
   margin-top: 12px;
   font-size: 13px;
-  color: #92400e;
+  color: var(--haze-color-warning);
 
   strong {
     font-weight: 600;
@@ -300,7 +300,7 @@ const warningStyles = css`
 const emptyStateStyles = css`
   text-align: center;
   padding: 24px;
-  color: #6b7280;
+  color: var(--haze-color-text-muted);
   font-size: 14px;
 `;
 
@@ -1262,7 +1262,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
                     padding: '2px 8px',
                     background: 'none',
                     border: 'none',
-                    color: '#92400e',
+                    color: 'var(--haze-color-warning)',
                     cursor: 'pointer',
                   }}
                   onClick={() => setOverlaps([])}
@@ -1377,7 +1377,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
                       <span>{range.totalEventsIndexed.toLocaleString()} events indexed</span>
                     )}
                     {range.errorMessage && (
-                      <span style={{ color: '#dc2626' }}>{range.errorMessage}</span>
+                      <span style={{ color: 'var(--haze-color-danger)' }}>{range.errorMessage}</span>
                     )}
                   </div>
                 </div>
@@ -1391,7 +1391,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
         <>
           <div className={quickActionsStyles}>
             <span
-              style={{ fontSize: '12px', color: '#0369a1', fontWeight: 500, marginRight: '8px' }}
+              style={{ fontSize: '12px', color: 'var(--haze-color-info)', fontWeight: 500, marginRight: '8px' }}
             >
               Quick Create:
             </span>

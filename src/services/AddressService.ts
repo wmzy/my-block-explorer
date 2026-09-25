@@ -8,7 +8,7 @@ import { createLogger } from '../server/logger';
 const logger = createLogger('address-service');
 
 /**
- * 持久化地址数据类型（永不改变或很少改变的数据）
+ * Persistent address data types (data that never or rarely changes)
  */
 export type PersistentAddressData = {
   isContract: boolean;
@@ -27,7 +27,7 @@ export type PersistentAddressData = {
 };
 
 /**
- * 地址信息类型（getAddressInfo 返回类型）
+ * Address info type (return type of getAddressInfo)
  *
  * Balance and transaction count are deliberately absent: this payload is
  * the persistent/indexer channel only. Live values come from the realtime

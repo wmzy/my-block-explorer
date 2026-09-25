@@ -5,9 +5,11 @@
 // the header + overview grid + discovered caveats, the holders ranking
 // with share percentages, mint/burn aggregates, every not-a-token guard
 // (EOA, delegated EOA, settled-no-probes, transport failure, two-tier
-// invalid address), and the wave-1 mobile stacking convention.
+// invalid address), the wave-1 mobile stacking convention, and the
+// verified-ABI risk-scan card (severity chips, expanded evidence
+// signatures, and the no-card contract for unverified answers).
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { MemoryRouter, View, createRoutes } from '@native-router/react';
 import { getAddress } from 'viem';
 import { readFileSync } from 'node:fs';
@@ -46,6 +48,9 @@ type TokenPageMocks = {
   transfersData: TokenTransferPage | undefined;
   transfersLoading: boolean;
   transfersError: Error | undefined;
+  // /contracts/:address/source envelope (the risk-scan card's only feed):
+  // undefined = no answer yet; default in beforeEach = unverified.
+  sourceEnvelope: Record<string, unknown> | undefined;
   calls: unknown[][];
 };
 
@@ -115,6 +120,12 @@ const mocks = vi.hoisted<TokenPageMocks>(() => {
     transfersData: scanPage,
     transfersLoading: false,
     transfersError: undefined,
+    // Unverified by default: every pre-existing test keeps a page DOM
+    // with no risk-scan card (the unverified-token contract).
+    sourceEnvelope: {
+      found: true,
+      contractSource: { verificationStatus: 'unverified', abi: '[]' },
+    },
     // Every useTokenTransfers call's positional args (the page piggyback
     // AND the real TokenTransfers component share the service hook).
     calls: [],
@@ -194,6 +205,20 @@ vi.mock('@/services/tokenTransfers', () => ({
   requestTokenTransfersRefresh: () => undefined,
 }));
 
+// The risk-scan card's ONLY feed: the server's source/verification
+// envelope (shared with the Contract page). A pasted custom ABI lives in
+// the Contract page's localStorage and never reaches the token page —
+// the mock keeps that honest by exposing nothing but this hook.
+vi.mock('@/services/contracts', () => ({
+  useContractSource: () => ({
+    data: mocks.sourceEnvelope,
+    loading: false,
+    fetching: false,
+    error: undefined,
+    refetch: () => undefined,
+  }),
+}));
+
 vi.mock('@/utils/realTimeData', () => ({
   // Row-enrichment stand-in: every token resolves symbol + decimals so the
   // shared-signature rows render as ERC-20 amounts.
@@ -229,6 +254,46 @@ const renderPage = (path = `/chain/1/token/${mocks.testAddress}`) =>
 
 const formatAddr = (a: string) => `${a.slice(0, 8)}...${a.slice(-6)}`;
 
+// --- Contract functions (risk scan) fixtures ---
+
+// The mandatory one-line caveat, pinned verbatim (renders exactly once).
+const RISK_CAVEAT =
+  'Static scan of the verified ABI — function presence, not an audit; presence ≠ reachable.';
+
+const abiEntry = (
+  name: string,
+  inputs: string[],
+  stateMutability: 'view' | 'nonpayable' = 'nonpayable',
+) => ({
+  type: 'function',
+  name,
+  inputs: inputs.map(t => ({ name: '', type: t })),
+  outputs: [],
+  stateMutability,
+});
+
+// Mint + pause/unpause on top of a transfer surface: two warning flags.
+const MINTABLE_PAUSABLE_ABI = JSON.stringify([
+  abiEntry('name', [], 'view'),
+  abiEntry('transfer', ['address', 'uint256']),
+  abiEntry('mint', ['address', 'uint256']),
+  abiEntry('pause', []),
+  abiEntry('unpause', []),
+]);
+
+// Standard ERC-20 surface: no risk vocabulary at all — scanned clean.
+const STANDARD_ERC20_ABI = JSON.stringify([
+  abiEntry('name', [], 'view'),
+  abiEntry('symbol', [], 'view'),
+  abiEntry('decimals', [], 'view'),
+  abiEntry('totalSupply', [], 'view'),
+  abiEntry('balanceOf', ['address'], 'view'),
+  abiEntry('allowance', ['address', 'address'], 'view'),
+  abiEntry('transfer', ['address', 'uint256']),
+  abiEntry('transferFrom', ['address', 'address', 'uint256']),
+  abiEntry('approve', ['address', 'uint256']),
+]);
+
 describe('Token page', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -246,6 +311,10 @@ describe('Token page', () => {
     mocks.transfersData = mocks.scanPage;
     mocks.transfersLoading = false;
     mocks.transfersError = undefined;
+    mocks.sourceEnvelope = {
+      found: true,
+      contractSource: { verificationStatus: 'unverified', abi: '[]' },
+    };
     mocks.calls = [];
   });
 
@@ -512,6 +581,116 @@ describe('Token page', () => {
     expect(src).toContain('@/views/Address/tokenOverview');
     const math = readFileSync(resolve(__dirname, '../../..', 'src/views/Token/tokenMath.ts'), 'utf8');
     expect(math).toContain('computeDiscoveredHolders');
+  });
+
+  // --- Contract functions (risk scan) card ---
+
+  it('renders the risk-scan card for a verified ABI: severity chips below the overview, expanded evidence, one caveat', async () => {
+    mocks.sourceEnvelope = {
+      found: true,
+      contractSource: { verificationStatus: 'verified', abi: MINTABLE_PAUSABLE_ABI },
+    };
+    renderPage();
+
+    const overview = await screen.findByText('Token Overview');
+    const cardTitle = await screen.findByText('Contract functions (risk scan)');
+    // The card sits BELOW Token Overview (never above the token facts).
+    expect(
+      overview.compareDocumentPosition(cardTitle) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+
+    // Flags as severity chips (mint + pausable, both warnings) with
+    // details collapsed until asked.
+    const mintChip = screen.getByTestId('abi-risk-flag-mint');
+    expect(mintChip).toHaveAttribute('data-severity', 'warning');
+    expect(mintChip).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByTestId('abi-risk-flag-pausable')).toHaveAttribute(
+      'data-severity',
+      'warning',
+    );
+    expect(screen.queryByTestId('abi-risk-detail-mint')).not.toBeInTheDocument();
+
+    // Expanding a chip shows the neutral detail sentence and the exact
+    // matching signatures (evidence), never a verdict.
+    fireEvent.click(mintChip);
+    const mintDetail = screen.getByTestId('abi-risk-detail-mint');
+    expect(mintDetail).toHaveTextContent('Mint function present — supply can change');
+    expect(mintDetail).toHaveTextContent('mint(address,uint256)');
+    expect(mintChip).toHaveAttribute('aria-expanded', 'true');
+
+    // The mandatory caveat appears exactly once.
+    expect(screen.getAllByText(RISK_CAVEAT)).toHaveLength(1);
+  });
+
+  it('renders NO risk-scan card while the answer is unverified (page DOM unchanged)', async () => {
+    renderPage();
+
+    await screen.findByText('Token Overview');
+    expect(
+      screen.queryByText('Contract functions (risk scan)'),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText(RISK_CAVEAT)).not.toBeInTheDocument();
+  });
+
+  it('renders no card when the verified answer carries an empty ABI', async () => {
+    mocks.sourceEnvelope = {
+      found: true,
+      contractSource: { verificationStatus: 'verified', abi: '[]' },
+    };
+    renderPage();
+
+    await screen.findByText('Token Overview');
+    expect(
+      screen.queryByText('Contract functions (risk scan)'),
+    ).not.toBeInTheDocument();
+  });
+
+  it('renders the scanned-clean line for a verified standard ERC-20 ABI', async () => {
+    mocks.sourceEnvelope = {
+      found: true,
+      contractSource: { verificationStatus: 'verified', abi: STANDARD_ERC20_ABI },
+    };
+    renderPage();
+
+    expect(
+      await screen.findByText(
+        /No mint, pause, blacklist, upgrade, ownership or fee-control functions found/,
+      ),
+    ).toBeInTheDocument();
+    // Scanned clean is still just a scan: no chips, one caveat.
+    expect(screen.queryByTestId('abi-risk-flag-mint')).not.toBeInTheDocument();
+    expect(screen.getAllByText(RISK_CAVEAT)).toHaveLength(1);
+  });
+
+  it('scans the backend-resolved implementation ABI for proxy tokens', async () => {
+    const impl = `0x${'cc'.repeat(20)}`;
+    mocks.sourceEnvelope = {
+      found: true,
+      contractSource: {
+        verificationStatus: 'verified',
+        // The proxy shell's own surface is clean — only the resolved
+        // implementation carries the upgrade path.
+        abi: JSON.stringify([abiEntry('totalSupply', [], 'view')]),
+        isProxy: true,
+        implementationAddress: impl,
+        implementationContract: {
+          verificationStatus: 'verified',
+          abi: JSON.stringify([
+            abiEntry('transfer', ['address', 'uint256']),
+            abiEntry('upgradeTo', ['address']),
+          ]),
+        },
+      },
+    };
+    renderPage();
+
+    const upgradeChip = await screen.findByTestId('abi-risk-flag-upgradeable');
+    expect(upgradeChip).toHaveAttribute('data-severity', 'info');
+    fireEvent.click(upgradeChip);
+    expect(screen.getByTestId('abi-risk-detail-upgradeable')).toHaveTextContent(
+      'upgradeTo(address)',
+    );
+    expect(screen.getAllByText(RISK_CAVEAT)).toHaveLength(1);
   });
 
   // --- USD rows (browser-side DefiLlama price layer) ---

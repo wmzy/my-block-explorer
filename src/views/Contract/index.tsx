@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { css } from '@linaria/core';
+import { getAddress, type Address, type Hex } from 'viem';
 import { useControl } from 'react-use-control';
 import { z } from 'zod';
 import { navigate } from '@native-router/core';
@@ -19,6 +20,16 @@ import { useServiceDiscovery } from '@/hooks/ServiceDiscoveryContext';
 import { redirectReplace } from '@/views/Home/Landing';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
 import { useContractCreation, useContractSource, useStorageLayout } from '@/services/contracts';
+import { createRpcClient } from '@/utils/realTimeData';
+import {
+  EIP1822_PROXIABLE_SLOT,
+  EIP1967_BEACON_SLOT,
+  EIP1967_IMPLEMENTATION_SLOT,
+  classifyProxyCode,
+  decodeMinimalProxy,
+  slotValueToAddress,
+  type DetectedProxy,
+} from '@/utils/proxyDetection';
 import { EventsPanel } from './EventsPanel';
 import { deriveContractCoverage } from './coverage';
 import { ContractInteract } from './ContractInteract';
@@ -268,6 +279,35 @@ const diamondNoticeStyles = css`
   border-radius: 6px;
   font-size: 14px;
   color: #8a6d3b;
+`;
+
+// Kind badge inside the on-chain proxy detection card: the info palette
+// keeps it distinct from the verified-proxy badge rows in the info grid.
+const proxyKindBadgeStyles = css`
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 4px;
+  background: var(--haze-info-subtle);
+  color: var(--haze-info);
+  font-weight: 600;
+  font-size: 13px;
+`;
+
+const proxyImplLinkStyles = css`
+  color: var(--haze-primary);
+  text-decoration: none;
+
+  &:hover {
+    text-decoration: underline;
+  }
+`;
+
+// Honest provenance footnote: the detection above is bytecode/storage-slot
+// inference, not verification — muted so it reads as a caveat, not a label.
+const proxyFootnoteStyles = css`
+  margin: 12px 0 0;
+  font-size: 13px;
+  color: var(--haze-text-muted);
 `;
 
 const shadowNoticeButtonStyles = css`
@@ -624,6 +664,222 @@ const PROXY_TYPE_LABELS: Record<string, string> = {
   'unknown': 'Unknown',
 };
 
+// Labels for the on-chain detection card (a different surface than the
+// server-resolved PROXY_TYPE_LABELS above: these kinds name the detection
+// mechanism, not a verified proxy flavor).
+const DETECTED_PROXY_KIND_LABELS: Record<DetectedProxy['kind'], string> = {
+  eip1967: 'EIP-1967',
+  eip1822: 'EIP-1822',
+  beacon: 'Beacon (EIP-1967)',
+  eip1167: 'Minimal (EIP-1167)',
+};
+
+const DETECTED_PROXY_VIA_LABELS: Record<DetectedProxy['via'], string> = {
+  'bytecode': 'runtime bytecode pattern',
+  'storage-slot': 'implementation storage slot',
+  'beacon-slot': 'beacon storage slot + implementation() call on the beacon',
+};
+
+// ABI for the implementation() view function exposed by EIP-1967 beacon
+// contracts (same fragment the backend's ContractSourceService uses).
+const BEACON_IMPLEMENTATION_ABI = [
+  {
+    inputs: [],
+    name: 'implementation',
+    outputs: [{ internalType: 'address', name: '', type: 'address' }],
+    stateMutability: 'view',
+    type: 'function',
+  },
+] as const;
+
+// readContract() answers the raw decoded string: a beacon without the
+// function (or a decode miss) must not leak a bogus value into a link.
+const isNonZeroAddress = (value: unknown): value is Address =>
+  typeof value === 'string' && /^0x[0-9a-fA-F]{40}$/.test(value) && !/^0x0{40}$/i.test(value);
+
+// On-chain proxy detection for contracts the verification services could
+// not resolve (unverified payloads with no implementation data). The pure
+// bytecode/slot classification lives in @/utils/proxyDetection; this
+// resolver owns the RPC dance: code first (EIP-1167 clones answer from
+// bytecode alone), then the EIP-1967 implementation slot, the EIP-1822
+// proxiable slot, and finally the EIP-1967 beacon slot — whose beacon is
+// static-called for the real implementation. Every step is
+// failure-tolerant: any RPC error resolves null instead of throwing, so
+// the card treats a miss as "no detection", never as a dead end.
+const resolveProxyImplementation = async (
+  chainId: number,
+  address: string,
+): Promise<DetectedProxy | null> => {
+  try {
+    const client = await createRpcClient(chainId);
+
+    let code: Hex;
+    try {
+      // viem folds an absent account's code into undefined — treat that as
+      // empty code (same precedent as fetchContractCode's `code ?? '0x'`).
+      code = (await client.getCode({ address: address as Address })) ?? '0x';
+    } catch {
+      return null;
+    }
+    if (code === '0x') return null;
+
+    const codeKind = classifyProxyCode(code);
+    // EIP-1167 clones carry the implementation in their runtime bytecode —
+    // no storage probes needed.
+    if (codeKind?.kind === 'eip1167') {
+      return { kind: 'eip1167', implementation: decodeMinimalProxy(code), via: 'bytecode' };
+    }
+
+    const readSlotAddress = async (slot: Hex): Promise<Address | null> => {
+      try {
+        // getStorageAt types as `0x${string} | undefined`; an unset slot
+        // reads as undefined on some providers — the zero-value sentinel is
+        // the honest equivalent (slotValueToAddress nulls it).
+        const value = (await client.getStorageAt({ address: address as Address, slot }))
+          ?? `0x${'0'.repeat(64)}`;
+        return slotValueToAddress(value);
+      } catch {
+        return null;
+      }
+    };
+
+    const impl1967 = await readSlotAddress(EIP1967_IMPLEMENTATION_SLOT);
+    if (impl1967) {
+      return {
+        kind: 'eip1967',
+        implementation: impl1967,
+        via: 'storage-slot',
+        slot: EIP1967_IMPLEMENTATION_SLOT,
+      };
+    }
+
+    const impl1822 = await readSlotAddress(EIP1822_PROXIABLE_SLOT);
+    if (impl1822) {
+      return {
+        kind: 'eip1822',
+        implementation: impl1822,
+        via: 'storage-slot',
+        slot: EIP1822_PROXIABLE_SLOT,
+      };
+    }
+
+    const beacon = await readSlotAddress(EIP1967_BEACON_SLOT);
+    if (beacon) {
+      let implementation: Address | null = null;
+      try {
+        const result = await client.readContract({
+          address: beacon,
+          abi: BEACON_IMPLEMENTATION_ABI,
+          functionName: 'implementation',
+        });
+        implementation = isNonZeroAddress(result) ? getAddress(result) : null;
+      } catch {
+        implementation = null;
+      }
+      return { kind: 'beacon', implementation, via: 'beacon-slot', slot: EIP1967_BEACON_SLOT };
+    }
+
+    // No slot hit: a canonical beacon-proxy bytecode prefix still names
+    // the kind honestly (implementation stays unknown).
+    if (codeKind?.kind === 'beacon') {
+      return { kind: 'beacon', implementation: null, via: 'bytecode' };
+    }
+
+    return null;
+  } catch {
+    // Client creation itself failed (no RPC configured, offline chain) —
+    // an unresolvable probe is a miss, not an error surface.
+    return null;
+  }
+};
+
+// Lazy on-chain proxy detection card: mounted only for contracts whose
+// payload carries no server-resolved implementation, probes once on mount
+// (plus on chain/address change) and renders nothing unless a proxy was
+// actually detected — verified pages stay byte-identical and a miss never
+// dead-ends.
+function ProxyDetectionCard({
+  chainId,
+  address,
+  enabled,
+}: {
+  chainId: number;
+  address: string;
+  enabled: boolean;
+}) {
+  const [detection, setDetection] = useState<DetectedProxy | null>(null);
+  const [settled, setSettled] = useState(false);
+
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false;
+    setDetection(null);
+    setSettled(false);
+    resolveProxyImplementation(chainId, address)
+      .then(result => {
+        if (!cancelled) {
+          setDetection(result);
+          setSettled(true);
+        }
+      })
+      .catch(() => {
+        // The resolver never throws, but a rejected promise must still
+        // settle the card instead of leaving it pending forever.
+        if (!cancelled) setSettled(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [chainId, address, enabled]);
+
+  if (!enabled || !settled || !detection) return null;
+
+  const viaLabel = DETECTED_PROXY_VIA_LABELS[detection.via];
+
+  return (
+    <div className={cardStyles}>
+      <div className={cardHeaderStyles}>
+        <h2>Proxy Detection</h2>
+      </div>
+      <div className={infoGridStyles}>
+        <div className="info-item">
+          <span className="label">Proxy Kind</span>
+          <span className="value">
+            <span className={proxyKindBadgeStyles}>
+              {DETECTED_PROXY_KIND_LABELS[detection.kind]} Proxy
+            </span>
+          </span>
+        </div>
+        <div className="info-item">
+          <span className="label">Implementation</span>
+          <span className="value">
+            {detection.implementation ? (
+              <TypedLink
+                className={proxyImplLinkStyles}
+                to={`/chain/${chainId}/contract/${detection.implementation}`}
+              >
+                {detection.implementation}
+              </TypedLink>
+            ) : (
+              'Not resolved'
+            )}
+          </span>
+        </div>
+        <div className="info-item">
+          <span className="label">Detected Via</span>
+          <span className="value">
+            {viaLabel}
+            {detection.slot ? ` (${detection.slot})` : ''}
+          </span>
+        </div>
+      </div>
+      <p className={proxyFootnoteStyles}>
+        Detected on-chain via {viaLabel} — not verified source data.
+      </p>
+    </div>
+  );
+}
+
 // Deep link into Sourcify's verification UI with chain and address
 // prefilled (its /widget route reads ?chainId= and ?address=; a chain
 // Sourcify does not list degrades to a chain picker there). Mirrors the
@@ -858,6 +1114,18 @@ export default function Contract() {
     (facet): facet is string => !!facet,
   );
   const isDiamond = diamondFacets.length > 1;
+
+  // On-chain proxy probe gate: fire only when no server-side proxy data
+  // exists — no implementation address, no facet list, and nothing the
+  // verification services have already ruled on (verified payloads). A
+  // backend-flagged proxy whose implementation could not be resolved
+  // (isProxy without an address) still gets the on-chain second chance.
+  const serverKnowsImplementation =
+    !!contractSource?.implementationAddress || diamondFacets.length > 0;
+  const proxyProbeEnabled =
+    !!contractSource &&
+    contractSource.verificationStatus !== 'verified' &&
+    !serverKnowsImplementation;
 
   // Thin adapter: server ABI strings live on the contract source payload
   // (implementation or proxy side) and inherit its verification status.
@@ -1394,6 +1662,16 @@ export default function Contract() {
                 )}
               </div>
             </div>
+
+            {/* On-chain proxy detection (unverified contracts only, see the
+                proxyProbeEnabled gate): probes lazily on mount and renders
+                nothing unless a proxy was detected, so verified pages and
+                probe misses keep their exact layout. */}
+            <ProxyDetectionCard
+              chainId={currentChainId}
+              address={address}
+              enabled={proxyProbeEnabled}
+            />
 
             {/* In-page Sourcify verification: opened from the unverified
                 cell in the info grid above. Submits the picked bundle

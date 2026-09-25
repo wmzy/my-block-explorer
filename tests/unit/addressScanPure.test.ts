@@ -1,9 +1,11 @@
 /**
- * Pure deep-scan helpers: bounds validation (tags, ordering, negatives),
- * conflict/force decision table, catch-up decision table (status × head),
- * checkpoint math (cursor advance, blocksWalked/blocksTotal), coverage
- * derivation (genesis-only), the job DTO mapping, and the heuristic ∪
- * findings merge.
+ * Pure deep-scan helpers: bounds validation (tags, ordering, negatives,
+ * the includeTraces opt-in), conflict/force decision table, catch-up
+ * decision table (status × head), checkpoint math (cursor advance,
+ * blocksWalked/blocksTotal), coverage derivation (genesis-only), the
+ * job DTO mapping (incl. the additive traces* fields), the trace-frame
+ * flattening for internal transactions, and the heuristic ∪ findings
+ * merge.
  */
 
 import { describe, it, expect, vi } from 'vitest';
@@ -20,22 +22,26 @@ import {
   computeBlocksWalked,
   decideScanJobCreation,
   deriveScanCoverage,
+  flattenTraceFramesForAddress,
   initialCursorBlock,
   planCatchup,
   toScanJobDto,
   validateScanJobBody,
 } from '@/services/AddressScanService';
+import { normalizeCallTrace } from '@/utils/traceFormat';
+import type { CallTraceNode } from '@/utils/traceFormat';
 import type { AddressScanJobRecord } from '@/database/schema';
 import { mergeDiscoveredTransactions } from '@/services/AddressService';
 import type { DiscoveredTransaction } from '@/services/AddressService';
 
 describe('validateScanJobBody', () => {
-  it('defaults to earliest..latest with force false', () => {
+  it('defaults to earliest..latest with force false and includeTraces false', () => {
     expect(validateScanJobBody({})).toEqual({
       ok: true,
       fromBlock: 'earliest',
       toBlock: 'latest',
       force: false,
+      includeTraces: false,
     });
     expect(validateScanJobBody(undefined)).toEqual(
       validateScanJobBody({}),
@@ -48,13 +54,32 @@ describe('validateScanJobBody', () => {
       fromBlock: 100,
       toBlock: 900,
       force: true,
+      includeTraces: false,
     });
     expect(validateScanJobBody({ fromBlock: 0, toBlock: 0 })).toEqual({
       ok: true,
       fromBlock: 0,
       toBlock: 0,
       force: false,
+      includeTraces: false,
     });
+  });
+
+  it('accepts boolean includeTraces and defaults it to false when absent', () => {
+    expect(validateScanJobBody({ includeTraces: true })).toMatchObject({
+      ok: true,
+      includeTraces: true,
+    });
+    expect(validateScanJobBody({ fromBlock: 5, toBlock: 10 })).toMatchObject({
+      ok: true,
+      includeTraces: false,
+    });
+  });
+
+  it('rejects non-boolean includeTraces', () => {
+    expect(validateScanJobBody({ includeTraces: 'yes' })).toMatchObject({ ok: false });
+    expect(validateScanJobBody({ includeTraces: 1 })).toMatchObject({ ok: false });
+    expect(validateScanJobBody({ includeTraces: null })).toMatchObject({ ok: false });
   });
 
   it('rejects unknown tags (including event-range tags)', () => {
@@ -223,6 +248,9 @@ describe('toScanJobDto', () => {
     cursorBlock: 399n,
     status: 'running',
     txsFound: 2,
+    tracesRequested: false,
+    tracesSupported: null,
+    tracesRecorded: 0,
     errorMessage: null,
     updatedAt: new Date('2026-09-24T00:00:00.000Z'),
     ...overrides,
@@ -237,10 +265,33 @@ describe('toScanJobDto', () => {
       blocksWalked: 400,
       blocksTotal: 1001,
       txsFound: 2,
+      tracesRequested: false,
+      tracesSupported: null,
+      tracesRecorded: 0,
       errorMessage: null,
       coverage: null,
       updatedAt: '2026-09-24T00:00:00.000Z',
     });
+  });
+
+  it('normalizes storage-null traces* fields to the additive DTO defaults', () => {
+    // Pre-migration rows (and DuckDB's constraint-free ADD COLUMN) read
+    // back null — the DTO contract pins false / null (not yet probed) / 0.
+    const dto = toScanJobDto(
+      row({ tracesRequested: null, tracesSupported: null, tracesRecorded: null }),
+    );
+    expect(dto.tracesRequested).toBe(false);
+    expect(dto.tracesSupported).toBeNull();
+    expect(dto.tracesRecorded).toBe(0);
+  });
+
+  it('carries recorded trace state through unchanged', () => {
+    const dto = toScanJobDto(
+      row({ tracesRequested: true, tracesSupported: true, tracesRecorded: 7 }),
+    );
+    expect(dto.tracesRequested).toBe(true);
+    expect(dto.tracesSupported).toBe(true);
+    expect(dto.tracesRecorded).toBe(7);
   });
 
   it('reports zero walked for a job that has not started (cursor from-1)', () => {
@@ -264,6 +315,131 @@ describe('toScanJobDto', () => {
       toScanJobDto(row({ status: 'error', errorMessage: 'historical state not available' }))
         .errorMessage,
     ).toBe('historical state not available');
+  });
+});
+
+describe('flattenTraceFramesForAddress', () => {
+  // Mixed-case scanned address: matching is case-insensitive, and frames
+  // below match via lowercase to's AND a checksummed from.
+  const SCANNED = '0xAbCdEf0123456789AbCdEf0123456789AbCdEf01';
+  const scannedLower = SCANNED.toLowerCase();
+  const OTHER_A = `0x${'11'.repeat(20)}`;
+  const OTHER_B = `0x${'22'.repeat(20)}`;
+  const OTHER_C = `0x${'33'.repeat(20)}`;
+  const OTHER_D = `0x${'44'.repeat(20)}`;
+
+  const rawFrame = (
+    type: string,
+    from: string,
+    to: string,
+    extra: Record<string, unknown> = {},
+  ): Record<string, unknown> => ({ type, from, to, gas: '0x1', gasUsed: '0x1', ...extra });
+
+  // Raw Geth-style payload normalized through the REAL normalizer, so
+  // depths are computed exactly as the walk sees them.
+  const tree = normalizeCallTrace({
+    // depth 0 — the external transaction itself: involves the scanned
+    // address with value, but the root is never a recorded frame.
+    type: 'CALL',
+    from: OTHER_A,
+    to: SCANNED,
+    value: '0x5',
+    calls: [
+      // [0] kept: to-side lowercase match, value-carrying, reverted.
+      rawFrame('CALL', OTHER_A, scannedLower, {
+        value: '0x3',
+        error: 'execution reverted',
+      }),
+      // [1] dropped: CREATE is not a recorded call type — but its
+      // subtree still walks, and its STATICCALL child to the scanned
+      // address IS kept (value unreported → honest 0n).
+      {
+        type: 'CREATE',
+        from: SCANNED,
+        to: OTHER_B,
+        value: '0x1',
+        init: '0x6000',
+        calls: [rawFrame('STATICCALL', OTHER_C, scannedLower)],
+      },
+      // [2] dropped: SELFDESTRUCT involves the address but is not a call.
+      { type: 'SELFDESTRUCT', from: SCANNED, to: OTHER_B },
+      // [3] dropped: a CALL between two OTHER addresses — value alone is
+      // not the deep-scan filter; its child still keeps a path slot.
+      rawFrame('CALL', OTHER_C, OTHER_D, {
+        value: '0x9',
+        calls: [rawFrame('CALLCODE', SCANNED, OTHER_B, { value: '0x2' })],
+      }),
+    ],
+  }) as CallTraceNode;
+
+  it('keeps depth>=1 address-matching call-type frames with positional tracePaths', () => {
+    expect(flattenTraceFramesForAddress(tree, SCANNED, 7)).toEqual([
+      {
+        tracePath: '0',
+        from: OTHER_A,
+        to: scannedLower,
+        value: 3n,
+        callType: 'call',
+        reverted: true,
+        transactionIndex: 7,
+      },
+      {
+        tracePath: '1.0',
+        from: OTHER_C,
+        to: scannedLower,
+        value: 0n,
+        callType: 'staticcall',
+        reverted: false,
+        transactionIndex: 7,
+      },
+      {
+        tracePath: '3.0',
+        from: SCANNED,
+        to: OTHER_B,
+        value: 2n,
+        callType: 'callcode',
+        reverted: false,
+        transactionIndex: 7,
+      },
+    ]);
+  });
+
+  it('matches case-insensitively on both from and to sides', () => {
+    const frames = flattenTraceFramesForAddress(tree, scannedLower, 7);
+    // '0' matched via lowercase to; '3.0' matched via the checksummed
+    // from — both survive the lowercase-scan variant of the address.
+    expect(frames.map(f => f.tracePath)).toEqual(['0', '1.0', '3.0']);
+  });
+
+  it('never emits the root frame even when it involves the address', () => {
+    const rootOnly = normalizeCallTrace(
+      rawFrame('CALL', OTHER_A, SCANNED, { value: '0x5' }),
+    ) as CallTraceNode;
+    expect(flattenTraceFramesForAddress(rootOnly, SCANNED, 0)).toEqual([]);
+  });
+
+  it('returns [] when no frame involves the address', () => {
+    const unrelated = normalizeCallTrace({
+      type: 'CALL',
+      from: OTHER_A,
+      to: OTHER_B,
+      value: '0x1',
+      calls: [rawFrame('DELEGATECALL', OTHER_C, OTHER_D, { value: '0x2' })],
+    }) as CallTraceNode;
+    expect(flattenTraceFramesForAddress(unrelated, SCANNED, 3)).toEqual([]);
+  });
+
+  it('marks a frame reverted when it carries a revertReason instead of an error', () => {
+    const reverted = normalizeCallTrace({
+      type: 'CALL',
+      from: OTHER_A,
+      to: OTHER_B,
+      calls: [rawFrame('DELEGATECALL', SCANNED, OTHER_B, { revertReason: '0x08c379a0' })],
+    }) as CallTraceNode;
+    const [frame] = flattenTraceFramesForAddress(reverted, scannedLower, 0);
+    expect(frame?.reverted).toBe(true);
+    expect(frame?.callType).toBe('delegatecall');
+    expect(frame?.transactionIndex).toBe(0);
   });
 });
 

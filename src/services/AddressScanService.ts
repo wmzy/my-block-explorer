@@ -53,13 +53,15 @@
  * process to 'error' with a resume hint.
  */
 
-import { and, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import { db } from '../database/drizzle';
 import {
   addressScanJobs,
   addressScanFindings,
+  addressScanInternalTxs,
   type AddressScanJobRecord,
   type AddressScanFindingRecord,
+  type NewAddressScanInternalTx,
 } from '../database/schema';
 import { rpcManager } from './RpcManager';
 // Reuses the heuristic discovery's own primitives — never a reimplementation.
@@ -69,6 +71,13 @@ import {
   type DiscoveredTransaction,
 } from './AddressService';
 import { createLogger } from '../server/logger';
+// Trace reuse: the same pure normalizer the frontend Call Trace card and
+// internal-tx tab use (utils/traceFormat) — never a reimplementation.
+import {
+  isTraceUnsupportedError,
+  normalizeCallTrace,
+  type CallTraceNode,
+} from '../utils/traceFormat';
 import type { Address, PublicClient } from 'viem';
 
 const logger = createLogger('address-scan-service');
@@ -95,15 +104,22 @@ export const isScanJobStatus = (value: string): value is ScanJobStatus =>
 /**
  * Pure validation of the POST /scan body: {fromBlock?: number|'earliest'
  * (default 'earliest'), toBlock?: number|'latest' (default 'latest'),
- * force?: boolean}. Numbers must be non-negative integers; the ONLY
- * accepted tags are 'earliest' and 'latest' (anything else — including
- * the event-range tags 'finalized'/'safe' — is an unknown tag here).
- * Ordering is validated on the tag-equivalent scale (earliest = 0,
- * latest = +∞); the post-resolution check against the concrete chain
- * head happens in resolveScanBounds.
+ * force?: boolean, includeTraces?: boolean (default false)}. Numbers must
+ * be non-negative integers; the ONLY accepted tags are 'earliest' and
+ * 'latest' (anything else — including the event-range tags
+ * 'finalized'/'safe' — is an unknown tag here). Ordering is validated on
+ * the tag-equivalent scale (earliest = 0, latest = +∞); the
+ * post-resolution check against the concrete chain head happens in
+ * resolveScanBounds.
  */
 export type ScanBodyValidation =
-  | { ok: true; fromBlock: ScanBoundInput; toBlock: ScanBoundInput; force: boolean }
+  | {
+    ok: true;
+    fromBlock: ScanBoundInput;
+    toBlock: ScanBoundInput;
+    force: boolean;
+    includeTraces: boolean;
+  }
   | { ok: false; message: string };
 
 const boundOrderKey = (bound: ScanBoundInput): number =>
@@ -114,7 +130,12 @@ export const validateScanJobBody = (body: unknown): ScanBodyValidation => {
   if (typeof body !== 'object' || Array.isArray(body)) {
     return { ok: false, message: 'Request body must be a JSON object' };
   }
-  const raw = body as { fromBlock?: unknown; toBlock?: unknown; force?: unknown };
+  const raw = body as {
+    fromBlock?: unknown;
+    toBlock?: unknown;
+    force?: unknown;
+    includeTraces?: unknown;
+  };
 
   const parseBound = (
     value: unknown,
@@ -149,6 +170,10 @@ export const validateScanJobBody = (body: unknown): ScanBodyValidation => {
     return { ok: false, message: 'force must be a boolean' };
   }
 
+  if (typeof raw.includeTraces !== 'undefined' && typeof raw.includeTraces !== 'boolean') {
+    return { ok: false, message: 'includeTraces must be a boolean' };
+  }
+
   if (boundOrderKey(from.value) > boundOrderKey(to.value)) {
     return {
       ok: false,
@@ -156,7 +181,13 @@ export const validateScanJobBody = (body: unknown): ScanBodyValidation => {
     };
   }
 
-  return { ok: true, fromBlock: from.value, toBlock: to.value, force: raw.force === true };
+  return {
+    ok: true,
+    fromBlock: from.value,
+    toBlock: to.value,
+    force: raw.force === true,
+    includeTraces: raw.includeTraces === true,
+  };
 };
 
 /**
@@ -270,7 +301,8 @@ export const deriveScanCoverage = (
 
 /**
  * The API job shape (pinned contract). Numeric block fields are plain
- * numbers; updatedAt is ISO-8601 UTC.
+ * numbers; updatedAt is ISO-8601 UTC. The three traces* fields are
+ * additive: tracesSupported null means "not yet probed".
  */
 export type ScanJobDto = {
   status: ScanJobStatus;
@@ -280,6 +312,9 @@ export type ScanJobDto = {
   blocksWalked: number;
   blocksTotal: number;
   txsFound: number;
+  tracesRequested: boolean;
+  tracesSupported: boolean | null;
+  tracesRecorded: number;
   errorMessage: string | null;
   coverage: 'complete' | null;
   updatedAt: string;
@@ -298,6 +333,11 @@ export const toScanJobDto = (row: AddressScanJobRecord): ScanJobDto => {
     blocksWalked: computeBlocksWalked(fromBlock, cursorBlock),
     blocksTotal: computeBlocksTotal(fromBlock, toBlock),
     txsFound: row.txsFound ?? 0,
+    // Storage nulls (pre-migration rows / DuckDB's constraint-free ADD
+    // COLUMN) normalize here, never at read sites.
+    tracesRequested: row.tracesRequested ?? false,
+    tracesSupported: row.tracesSupported ?? null,
+    tracesRecorded: row.tracesRecorded ?? 0,
     errorMessage: row.errorMessage ?? null,
     coverage: deriveScanCoverage(status, fromBlock),
     updatedAt: (row.updatedAt instanceof Date
@@ -305,6 +345,90 @@ export const toScanJobDto = (row: AddressScanJobRecord): ScanJobDto => {
       : new Date(String(row.updatedAt))
     ).toISOString(),
   };
+};
+
+// ============================================
+// Trace flattening (pure) — internal-tx frames for one address
+// ============================================
+
+// Only the four call-frame types become internal-tx rows: CREATE/CREATE2
+// describe code deployment (their `to` is the created contract) and
+// SELFDESTRUCT a refund — none is a call between two existing addresses.
+// Compared lowercased against the normalized node's verbatim type.
+const RECORDED_CALL_TYPES: readonly string[] = [
+  'call',
+  'callcode',
+  'delegatecall',
+  'staticcall',
+];
+
+/** One flattened callTracer frame that involves the scanned address. */
+export type FlattenedTraceFrame = {
+  /** Depth-joined child-index path from the traced root ('0' = the root's first sub-call, '0.1' that child's second). */
+  tracePath: string;
+  /** Frame sender, verbatim from the normalized tree. */
+  from: string;
+  /** Frame callee, verbatim from the normalized tree. */
+  to: string;
+  /** Exact wei moved by the frame; 0n when the node reported no value (honest absence — see the walk comment). */
+  value: bigint;
+  /** call/callcode/delegatecall/staticcall, lowercase. */
+  callType: string;
+  /** True when the frame reported an error or revert reason. */
+  reverted: boolean;
+  /** The parent transaction's position in block.transactions. */
+  transactionIndex: number;
+};
+
+const frameSideMatches = (side: string | null, address: string): boolean =>
+  side !== null && side.toLowerCase() === address.toLowerCase();
+
+/**
+ * Flatten one normalized callTracer tree into the internal-tx frames the
+ * walk records for the scanned address: frames BELOW the root
+ * (depth >= 1 — the root IS the external transaction the tx list already
+ * shows) whose from OR to equals the address (case-insensitive) and
+ * whose type is one of the four recorded call types. DFS pre-order =
+ * execution order, so output is deterministic. tracePath indexes count
+ * EVERY child of the tree — dropped frames (other types, other
+ * addresses) still occupy their positional slot, keeping paths stable
+ * against the raw trace. Frames missing from/to (degenerate provider
+ * data — the four call types always report both) cannot be stored
+ * honestly and are skipped.
+ */
+export const flattenTraceFramesForAddress = (
+  root: CallTraceNode,
+  address: string,
+  transactionIndex: number,
+): FlattenedTraceFrame[] => {
+  const frames: FlattenedTraceFrame[] = [];
+  const walk = (node: CallTraceNode, path: readonly number[]): void => {
+    const callType = node.type.toLowerCase();
+    if (
+      node.depth >= 1 &&
+      RECORDED_CALL_TYPES.includes(callType) &&
+      node.from !== null &&
+      node.to !== null &&
+      (frameSideMatches(node.from, address) || frameSideMatches(node.to, address))
+    ) {
+      frames.push({
+        tracePath: path.join('.'),
+        from: node.from,
+        to: node.to,
+        // Kept frames always involve the address, but value-carrying is
+        // not guaranteed (STATICCALL commonly omits it): null stores as
+        // 0n — honest absence of a reported value, never a fabricated
+        // transfer.
+        value: node.value ?? 0n,
+        callType,
+        reverted: node.error !== null || node.revertReason !== null,
+        transactionIndex,
+      });
+    }
+    node.calls.forEach((child, childIndex) => walk(child, [...path, childIndex]));
+  };
+  walk(root, []);
+  return frames;
 };
 
 // ============================================
@@ -412,6 +536,8 @@ type ScanJobUpdate = Partial<{
   txsFound: number;
   status: ScanJobStatus;
   errorMessage: string | null;
+  tracesSupported: boolean | null;
+  tracesRecorded: number;
 }>;
 
 // Loop writes are compare-and-set on status = 'running' whenever the loop
@@ -446,6 +572,35 @@ const countFindings = async (chainId: number, address: string): Promise<number> 
       ),
     );
   return Number(rows[0]?.count ?? 0);
+};
+
+// Live count of recorded internal-tx rows — same idiom as countFindings;
+// tracesRecorded on the job row is always a fresh count, never an
+// increment (force-replace resets ride on the row rewrite).
+const countInternalTxs = async (chainId: number, address: string): Promise<number> => {
+  const rows = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(addressScanInternalTxs)
+    .where(
+      and(
+        eq(addressScanInternalTxs.chainId, chainId),
+        eq(addressScanInternalTxs.address, address.toLowerCase()),
+      ),
+    );
+  return Number(rows[0]?.count ?? 0);
+};
+
+// Internal-tx rows share the findings' (chain, address) key prefix, so
+// force-replace and job deletion remove them alongside findings.
+const deleteInternalTxs = async (chainId: number, address: string): Promise<void> => {
+  await db
+    .delete(addressScanInternalTxs)
+    .where(
+      and(
+        eq(addressScanInternalTxs.chainId, chainId),
+        eq(addressScanInternalTxs.address, address.toLowerCase()),
+      ),
+    );
 };
 
 const persistFindings = async (
@@ -542,6 +697,84 @@ export const hydrateFindings = async (
 };
 
 // ============================================
+// Internal transactions (read path)
+// ============================================
+
+/** One recorded internal call — the pinned GET internal-transactions row. */
+export type InternalTransactionDto = {
+  transactionHash: `0x${string}`;
+  blockNumber: number;
+  from: string;
+  to: string;
+  /** Exact wei, decimal string (bigint-exact across JSON). */
+  value: string;
+  /** call/callcode/delegatecall/staticcall, lowercase. */
+  callType: string;
+  reverted: boolean;
+  /** Depth-joined child-index path from the traced root ('0', '0.1', ...). */
+  tracePath: string;
+  /** ISO-8601 UTC. */
+  timestamp: string;
+};
+
+export type InternalTransactionsPage = {
+  transactions: InternalTransactionDto[];
+  total: number;
+  offset: number;
+  limit: number;
+};
+
+/**
+ * Recorded internal transactions for the address, newest-first
+ * (blockNumber desc, then transactionIndex desc — both stored on the
+ * row for exactly this ordering). An unknown address, or one whose walk
+ * never opted into tracing, is NOT an error: empty list, total 0.
+ */
+export const listInternalTransactions = async (
+  chainId: number,
+  address: string,
+  pagination: { offset: number; limit: number },
+): Promise<InternalTransactionsPage> => {
+  const where = and(
+    eq(addressScanInternalTxs.chainId, chainId),
+    eq(addressScanInternalTxs.address, address.toLowerCase()),
+  );
+  const rows = await db
+    .select()
+    .from(addressScanInternalTxs)
+    .where(where)
+    .orderBy(
+      desc(addressScanInternalTxs.blockNumber),
+      desc(addressScanInternalTxs.transactionIndex),
+    )
+    .limit(pagination.limit)
+    .offset(pagination.offset);
+  const countRows = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(addressScanInternalTxs)
+    .where(where);
+  return {
+    transactions: rows.map(row => ({
+      transactionHash: row.txHash,
+      blockNumber: Number(row.blockNumber),
+      from: row.fromAddress,
+      to: row.toAddress,
+      value: row.value.toString(),
+      callType: row.callType,
+      reverted: row.reverted,
+      tracePath: row.tracePath,
+      timestamp: (row.blockTimestamp instanceof Date
+        ? row.blockTimestamp
+        : new Date(String(row.blockTimestamp))
+      ).toISOString(),
+    })),
+    total: Number(countRows[0]?.count ?? 0),
+    offset: pagination.offset,
+    limit: pagination.limit,
+  };
+};
+
+// ============================================
 // Provider error classification (chunk-ladder lesson)
 // ============================================
 
@@ -611,6 +844,123 @@ const findFirstBalanceChange = async (
   return { block: hi, balance: await getBalanceAt(client, address, hi) };
 };
 
+// ============================================
+// Internal-transaction tracing (change blocks)
+// ============================================
+
+// ~4 parallel debug_traceTransaction calls keeps the pool polite against
+// public RPCs while a block's txs trace in batches (same bound as the
+// browser-side internal-tx tab).
+const TRACE_CONCURRENCY = 4;
+
+// The block slice the tracer needs: the walk already fetched the block
+// with includeTransactions — the hash is the trace key and the array
+// position is the transactionIndex the API orders by.
+type TraceableBlock = {
+  number: bigint;
+  timestamp: bigint;
+  transactions: readonly { hash: `0x${string}` }[];
+};
+
+type TraceBlockOutcome = 'traced' | 'unsupported';
+
+/**
+ * Trace EVERY transaction of a change block — internal calls can live in
+ * txs that never touch the scanned address top-level, so the address's
+ * own txs are not enough — and persist the frames that involve the
+ * address. Never throws to the walk:
+ * - a provider without debug_traceTransaction reports 'unsupported'
+ *   (isTraceUnsupportedError); the caller marks tracesSupported=false on
+ *   the job row once and skips all further tracing this loop;
+ * - any other per-tx failure logs a warning and skips just that tx.
+ * Rows land with onConflictDoNothing on the composite PK: a walk resumed
+ * after a crash between the row write and the cursor checkpoint
+ * re-traces the same block without duplicating rows.
+ */
+const traceBlockInternalTransactions = async (
+  chainId: number,
+  address: string,
+  client: PublicClient,
+  block: TraceableBlock,
+): Promise<TraceBlockOutcome> => {
+  const rows: NewAddressScanInternalTx[] = [];
+  const blockTimestamp = new Date(Number(block.timestamp) * 1000);
+  let unsupported = false;
+  let next = 0;
+
+  // Bounded-concurrency pool with lazy dispatch: an unsupported verdict
+  // stops NEW work; requests already in flight still settle (their
+  // successes, if any, persist below — real rows are never dropped).
+  const worker = async (): Promise<void> => {
+    for (;;) {
+      if (unsupported) return;
+      const index = next;
+      next += 1;
+      if (index >= block.transactions.length) return;
+      const tx = block.transactions[index];
+      try {
+        const raw = await (
+          // Narrow cast around viem's typed client.request, which has no
+          // debug namespace (same route as the Call Trace card).
+          client as unknown as {
+            request: (args: { method: string; params: unknown[] }) => Promise<unknown>;
+          }
+        ).request({
+          method: 'debug_traceTransaction',
+          params: [tx.hash, { tracer: 'callTracer' }],
+        });
+        const root = normalizeCallTrace(raw);
+        if (root !== null) {
+          for (const frame of flattenTraceFramesForAddress(root, address, index)) {
+            rows.push({
+              chainId,
+              address: address.toLowerCase(),
+              txHash: tx.hash.toLowerCase() as `0x${string}`,
+              tracePath: frame.tracePath,
+              blockNumber: block.number,
+              transactionIndex: frame.transactionIndex,
+              fromAddress: frame.from as `0x${string}`,
+              toAddress: frame.to as `0x${string}`,
+              value: frame.value,
+              callType: frame.callType,
+              reverted: frame.reverted,
+              blockTimestamp,
+            });
+          }
+        }
+      } catch (err) {
+        if (isTraceUnsupportedError(err)) {
+          unsupported = true;
+          return;
+        }
+        logger.warn(
+          { err, chainId, address, hash: tx.hash },
+          'debug_traceTransaction failed; skipping trace for this transaction',
+        );
+      }
+    }
+  };
+
+  await Promise.all(
+    Array.from({ length: Math.min(TRACE_CONCURRENCY, block.transactions.length) }, worker),
+  );
+
+  if (rows.length > 0) {
+    await db
+      .insert(addressScanInternalTxs)
+      .values(rows)
+      .onConflictDoNothing({
+        target: [
+          addressScanInternalTxs.chainId,
+          addressScanInternalTxs.address,
+          addressScanInternalTxs.txHash,
+          addressScanInternalTxs.tracePath,
+        ],
+      });
+  }
+  return unsupported ? 'unsupported' : 'traced';
+};
+
 const startScanLoop = (chainId: number, address: string): ScanJobHandle => {
   const key = scanJobKey(chainId, address);
   const existing = runningScanJobs.get(key);
@@ -649,6 +999,13 @@ const runScanWalk = async (
     toBlock: row.toBlock,
     cursorBlock: row.cursorBlock,
   };
+
+  // Trace opt-in snapshots from the row: a resumed walk keeps tracing —
+  // or keeps its known-unsupported verdict — exactly as the creating
+  // POST asked. tracesSupported flips are written only on change.
+  const tracesRequested = row.tracesRequested === true;
+  let tracesSupported: boolean | null = row.tracesSupported ?? null;
+  let traceActive = tracesRequested && tracesSupported !== false;
 
   // Compare-and-set the running flip on the status this loop observed; a
   // row replaced underneath (force-recreate between read and write) keeps
@@ -719,13 +1076,43 @@ const runScanWalk = async (
         rememberHydratedTransactions(txs);
         await persistFindings(chainId, address, txs);
       }
+
+      // Internal-transaction recording (opt-in): every tx of the change
+      // block, inline with the segment walk (no extra checkpoints — rows
+      // are idempotent under the composite PK). Never fatal; a failure
+      // warns and the walk continues without traces.
+      let traceUpdate: ScanJobUpdate = {};
+      if (traceActive && block) {
+        try {
+          const outcome = await traceBlockInternalTransactions(chainId, address, client, block);
+          if (outcome === 'unsupported') {
+            traceActive = false;
+            tracesSupported = false;
+            traceUpdate = { tracesSupported: false };
+          } else if (tracesSupported !== true) {
+            tracesSupported = true;
+            traceUpdate = { tracesSupported: true };
+          }
+          traceUpdate.tracesRecorded = await countInternalTxs(chainId, address);
+        } catch (err) {
+          logger.warn(
+            { err, chainId, address, blockNumber: first.block },
+            'Internal-transaction tracing failed; continuing walk without traces',
+          );
+        }
+      }
+
       cursor = first.block;
       baseline = first.balance;
       transientRetries = 0;
       await updateScanJobRow(
         chainId,
         address,
-        { cursorBlock: cursor, ...(txs.length > 0 ? { txsFound: await countFindings(chainId, address) } : {}) },
+        {
+          cursorBlock: cursor,
+          ...(txs.length > 0 ? { txsFound: await countFindings(chainId, address) } : {}),
+          ...traceUpdate,
+        },
         { onlyIfRunning: true },
       );
     } catch (err) {
@@ -765,7 +1152,15 @@ const runScanWalk = async (
   await updateScanJobRow(
     chainId,
     address,
-    { status: 'complete', cursorBlock: to, txsFound, errorMessage: null },
+    {
+      status: 'complete',
+      cursorBlock: to,
+      txsFound,
+      errorMessage: null,
+      // Live count at completion — tracesRecorded never lags the final
+      // state of the traced walk (unsupported walks count 0 naturally).
+      ...(tracesRequested ? { tracesRecorded: await countInternalTxs(chainId, address) } : {}),
+    },
     { onlyIfRunning: true },
   );
   logger.info(
@@ -785,15 +1180,24 @@ export type CreateScanJobResult =
 
 /**
  * POST /scan semantics: resolve tag bounds ONCE against the chain, then
- * create / return-idempotent / conflict / force-replace. `started` is the
- * background walk's completion promise when this call started (or
- * restarted) a loop, null when the job queued or no loop was needed —
- * routes ignore it, tests await it for deterministic runs.
+ * create / return-idempotent / conflict / force-replace. includeTraces
+ * persists as tracesRequested on create AND on force-replace (a reset
+ * walk re-asks the provider; tracesSupported drops back to unprobed and
+ * recorded rows are wiped with the findings); the idempotent path leaves
+ * the stored row alone. `started` is the background walk's completion
+ * promise when this call started (or restarted) a loop, null when the
+ * job queued or no loop was needed — routes ignore it, tests await it
+ * for deterministic runs.
  */
 export const createOrReplaceScanJob = async (
   chainId: number,
   address: string,
-  input: { fromBlock: ScanBoundInput; toBlock: ScanBoundInput; force: boolean },
+  input: {
+    fromBlock: ScanBoundInput;
+    toBlock: ScanBoundInput;
+    force: boolean;
+    includeTraces: boolean;
+  },
 ): Promise<
   { ok: true; result: CreateScanJobResult } | { ok: false; error: 'invalid_bounds'; message: string }
 > => {
@@ -850,6 +1254,9 @@ export const createOrReplaceScanJob = async (
           eq(addressScanFindings.address, address.toLowerCase()),
         ),
       );
+    // Internal-tx rows share the (chain, address) key prefix — the reset
+    // walk must not serve the previous walk's traces.
+    await deleteInternalTxs(chainId, address);
   }
 
   const values = {
@@ -860,6 +1267,11 @@ export const createOrReplaceScanJob = async (
     cursorBlock: BigInt(initialCursorBlock(fromBlock)),
     status: 'pending',
     txsFound: 0,
+    tracesRequested: input.includeTraces,
+    // Fresh walk, fresh probe: an unsupported verdict from the previous
+    // walk must not silently suppress tracing on a new provider.
+    tracesSupported: null,
+    tracesRecorded: 0,
     errorMessage: null,
     updatedAt: new Date(),
   };
@@ -874,6 +1286,9 @@ export const createOrReplaceScanJob = async (
         cursorBlock: values.cursorBlock,
         status: values.status,
         txsFound: values.txsFound,
+        tracesRequested: values.tracesRequested,
+        tracesSupported: values.tracesSupported,
+        tracesRecorded: values.tracesRecorded,
         errorMessage: values.errorMessage,
         updatedAt: values.updatedAt,
       },
@@ -1018,7 +1433,7 @@ export const catchupScanJob = async (
 
 /**
  * DELETE: idempotent. Stops any live loop, removes queued starts, then
- * deletes the job row AND its findings rows.
+ * deletes the job row AND its findings AND its internal-tx rows.
  */
 export const deleteScanJob = async (chainId: number, address: string): Promise<void> => {
   const key = scanJobKey(chainId, address);
@@ -1033,6 +1448,7 @@ export const deleteScanJob = async (chainId: number, address: string): Promise<v
         eq(addressScanFindings.address, address.toLowerCase()),
       ),
     );
+  await deleteInternalTxs(chainId, address);
   await db
     .delete(addressScanJobs)
     .where(

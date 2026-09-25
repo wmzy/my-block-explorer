@@ -1,5 +1,5 @@
 /**
- * 错误处理和重试机制
+ * Error handling and retry mechanisms
  */
 
 export type RetryOptions = {
@@ -10,7 +10,7 @@ export type RetryOptions = {
 };
 
 /**
- * 重试装饰器
+ * Retry decorator
  */
 export function withRetry<T extends unknown[], R>(
   fn: (...args: T) => Promise<R>,
@@ -30,17 +30,17 @@ export function withRetry<T extends unknown[], R>(
       } catch (error) {
         lastError = error;
 
-        // 检查是否应该重试
+        // Check whether to retry
         if (options.retryCondition && !options.retryCondition(error)) {
           throw error;
         }
 
-        // 如果是最后一次尝试，直接抛出错误
+        // On the final attempt, rethrow immediately
         if (attempt === options.maxRetries) {
           break;
         }
 
-        // 等待后重试
+        // Wait, then retry
         await sleep(currentDelay);
         currentDelay *= options.backoff;
 
@@ -53,14 +53,14 @@ export function withRetry<T extends unknown[], R>(
 }
 
 /**
- * 睡眠函数
+ * Sleep helper
  */
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
 /**
- * RPC错误类型
+ * RPC error type
  */
 export class RpcError extends Error {
   constructor(
@@ -75,7 +75,7 @@ export class RpcError extends Error {
 }
 
 /**
- * 数据库错误类型
+ * Database error type
  */
 export class DatabaseError extends Error {
   constructor(
@@ -88,7 +88,7 @@ export class DatabaseError extends Error {
 }
 
 /**
- * 验证错误类型
+ * Validation error type
  */
 export class ValidationError extends Error {
   constructor(
@@ -101,23 +101,23 @@ export class ValidationError extends Error {
 }
 
 /**
- * 检查是否为可重试的错误
+ * Check whether an error is retryable
  */
 export function isRetryableError(error: unknown): boolean {
   const err = error as { code?: string; status?: number };
-  // 网络错误
+  // Network errors
   if (err.code === 'ECONNRESET' || err.code === 'ENOTFOUND' || err.code === 'ETIMEDOUT') {
     return true;
   }
 
-  // HTTP状态码错误
+  // HTTP status code errors
   if (typeof err.status === 'number' && err.status >= 500 && err.status < 600) {
     return true;
   }
 
-  // RPC特定错误
+  // RPC-specific errors
   if (error instanceof RpcError) {
-    // 某些RPC错误码是可重试的
+    // Some RPC error codes are retryable
     const retryableCodes = [-32603, -32005, -32000]; // Internal error, limit exceeded, unknown error
     return retryableCodes.includes(error.code ?? 0);
   }
@@ -126,7 +126,7 @@ export function isRetryableError(error: unknown): boolean {
 }
 
 /**
- * 标准化错误响应
+ * Normalize an error response
  */
 export function normalizeError(error: unknown): {
   message: string;
@@ -160,7 +160,7 @@ export function normalizeError(error: unknown): {
   }
 
   const err = error as { code?: string; message?: string };
-  // 网络错误
+  // Network errors
   if (err.code === 'ECONNRESET' || err.code === 'ENOTFOUND' || err.code === 'ETIMEDOUT') {
     return {
       message: `Network error: ${err.message ?? 'Unknown'}`,
@@ -170,7 +170,7 @@ export function normalizeError(error: unknown): {
     };
   }
 
-  // 默认错误
+  // Default error case
   return {
     message: (error instanceof Error ? error.message : err.message) ?? 'Unknown error',
     type: 'unknown',
@@ -179,7 +179,7 @@ export function normalizeError(error: unknown): {
 }
 
 /**
- * 创建带重试的RPC调用函数
+ * Create a retryable RPC call function
  */
 export function createRetryableRpcCall<T extends unknown[], R>(
   rpcFunction: (...args: T) => Promise<R>,
@@ -201,7 +201,7 @@ export function createRetryableRpcCall<T extends unknown[], R>(
 }
 
 /**
- * 创建带重试的数据库操作函数
+ * Create a retryable database operation function
  */
 export function createRetryableDbCall<T extends unknown[], R>(
   dbFunction: (...args: T) => Promise<R>,
@@ -212,7 +212,7 @@ export function createRetryableDbCall<T extends unknown[], R>(
     backoff: 2,
     retryCondition: (error: unknown) => {
       const err = error instanceof Error ? error : { message: String(error) };
-      // 数据库锁定错误可以重试
+      // Database-locked errors can be retried
       if (err.message?.includes('database is locked') || err.message?.includes('SQLITE_BUSY')) {
         return true;
       }
@@ -222,7 +222,7 @@ export function createRetryableDbCall<T extends unknown[], R>(
 }
 
 /**
- * 错误日志记录
+ * Error logging
  */
 export function logError(
   error: unknown,
@@ -239,7 +239,7 @@ export function logError(
     ...additionalInfo,
   });
 
-  // 如果是严重错误，可以在这里添加报警逻辑
+  // Critical errors could trigger alerting here
   if (!normalized.retryable && normalized.type !== 'validation') {
     console.error(`[${context}] CRITICAL ERROR - Manual intervention may be required`);
   }

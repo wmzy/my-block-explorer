@@ -1,6 +1,6 @@
 /**
- * ABI事件解码服务
- * 负责解码以太坊事件日志并提供类型安全的解码结果
+ * ABI event decoding service
+ * Decodes Ethereum event logs into type-safe results
  */
 
 import { decodeEventLog, Log, Abi, toHex, keccak256, AbiEvent } from 'viem';
@@ -15,7 +15,7 @@ import {
 } from '../types/events';
 
 /**
- * 事件解码配置
+ * Event decoding configuration
  */
 interface DecodingConfig {
   enableStrictValidation: boolean;
@@ -25,7 +25,7 @@ interface DecodingConfig {
 }
 
 /**
- * 默认解码配置
+ * Default decoding configuration
  */
 const DEFAULT_DECODING_CONFIG: DecodingConfig = {
   enableStrictValidation: true,
@@ -35,7 +35,7 @@ const DEFAULT_DECODING_CONFIG: DecodingConfig = {
 };
 
 /**
- * 事件解码服务类
+ * Event decoding service
  */
 export class EventDecodingService {
   private config: DecodingConfig;
@@ -50,7 +50,7 @@ export class EventDecodingService {
   }
 
   /**
-   * 解码单个事件日志
+   * Decode a single event log
    */
   async decodeLog(
     log: Log,
@@ -59,11 +59,11 @@ export class EventDecodingService {
     blockTimestamp?: number,
   ): Promise<DecodedEvent> {
     try {
-      // 构建Viem兼容的ABI事件定义
+      // Build a viem-compatible ABI event definition
       const abiEventDef = this.buildAbiEventDefinition(abiEvent);
       const abi: Abi = [abiEventDef];
 
-      // 使用Viem解码事件
+      // Decode the event with viem
       const decodedLog = decodeEventLog({
         abi,
         data: log.data,
@@ -79,35 +79,35 @@ export class EventDecodingService {
         );
       }
 
-      // 格式化解码后的参数
+      // Format the decoded arguments
       const formattedArgs = await this.formatDecodedArgs(
         decodedLog.args as unknown as DecodedEventData,
         abiEvent,
       );
 
-      // 构建完整的事件对象
+      // Build the complete event object
       const decodedEvent: DecodedEvent = {
         chainId,
         contractAddress: log.address,
         eventName: decodedLog.eventName ?? 'Unknown',
         eventSignature: this.getEventSignature(abiEvent),
 
-        // 交易信息
+        // Transaction info
         txHash: log.transactionHash ?? '0x',
         blockNumber: log.blockNumber!,
         blockHash: log.blockHash!,
         transactionIndex: log.transactionIndex!,
         logIndex: log.logIndex!,
 
-        // 时间信息 — absent stays null; a zero would fake epoch time
+        // Timestamp info — absent stays null; a zero would fake epoch time
         blockTimestamp: blockTimestamp ?? null,
 
-        // 解码数据
+        // Decoded data
         args: formattedArgs,
         rawTopics: log.topics,
         rawData: log.data,
 
-        // 处理信息
+        // Processing info
         indexedAt: new Date(),
         processingErrors: [],
       };
@@ -126,7 +126,7 @@ export class EventDecodingService {
   }
 
   /**
-   * 批量解码事件日志
+   * Decode event logs in batch
    */
   async decodeLogs(
     logs: Log[],
@@ -141,7 +141,7 @@ export class EventDecodingService {
       const log = logs[i];
 
       try {
-        // 根据主题0找到对应的ABI事件定义
+        // Find the ABI event definition matching topic 0
         const eventSignature = log.topics[0];
         const abiEvent = eventSignature ? abiEvents.get(eventSignature) : undefined;
 
@@ -165,11 +165,11 @@ export class EventDecodingService {
         errors.push(eventError);
       }
 
-      // 调用进度回调
+      // Invoke the progress callback
       onProgress?.(i + 1, logs.length);
     }
 
-    // 如果有错误，可以记录到日志或监控系统
+    // Errors could be reported to a logger or monitoring system
     if (errors.length > 0) {
       console.warn(`Decoded ${results.length} events with ${errors.length} errors`);
       errors.forEach(error => console.error(error.message, error.cause));
@@ -179,7 +179,7 @@ export class EventDecodingService {
   }
 
   /**
-   * 获取事件签名
+   * Get the event signature
    */
   getEventSignature(eventParams: EventParameter[]): `0x${string}` {
     const signature = `${eventParams[0]?.name || 'Unknown'}(${eventParams
@@ -189,23 +189,23 @@ export class EventDecodingService {
   }
 
   /**
-   * 从合约源码中提取ABI定义
-   * @param sourceCode 合约的Solidity源码
-   * @returns 提取的ABI数组
+   * Extract ABI definitions from contract source code
+   * @param sourceCode The contract's Solidity source
+   * @returns The extracted ABI array
    */
   extractAbiFromSource(sourceCode: string): Abi | null {
     try {
-      // 查找pragma声明后的interface或contract定义
+      // Find interface or contract definitions after the pragma statement
       const abiMatch = sourceCode.match(/(interface|contract)\s+\w+\s*{[\s\S]*?(?=\})/g);
 
       if (!abiMatch) {
         throw new EventDecodingError('No ABI found in source code', undefined, undefined, 0);
       }
 
-      // 提取ABI项（event、function等）
+      // Extract ABI items (events, functions, etc.)
       const abiItems: AbiEvent[] = [];
 
-      // 匹配event定义
+      // Match event definitions
       const eventMatches =
         sourceCode.match(/event\s+\w+\([^)]+\)\s*(?:indexed\s*\w+[^;]*;|;)/g) ?? [];
       for (const eventDef of eventMatches) {
@@ -231,20 +231,20 @@ export class EventDecodingService {
   }
 
   /**
-   * 解析单个事件的ABI定义
-   * @param eventDefStr 事件定义字符串
-   * @returns 解析后的事件ABI对象
+   * Parse a single event's ABI definition
+   * @param eventDefStr The event definition string
+   * @returns The parsed event ABI object
    */
   parseEventAbi(eventDefStr: string): AbiEvent | null {
     try {
-      // 解析事件名称
+      // Parse the event name
       const nameMatch = eventDefStr.match(/event\s+(\w+)/);
       if (!nameMatch) {
         return null;
       }
       const eventName = nameMatch[1];
 
-      // 解析参数列表
+      // Parse the parameter list
       const paramsMatch = eventDefStr.match(/\(([^)]+)\)/);
       if (!paramsMatch) {
         return null;
@@ -258,7 +258,7 @@ export class EventDecodingService {
         internalType?: string;
       }> = [];
 
-      // 分割参数并解析
+      // Split the parameters and parse them
       if (paramsStr.trim()) {
         const params = paramsStr.split(',').map(p => p.trim());
         for (const param of params) {
@@ -290,21 +290,21 @@ export class EventDecodingService {
   }
 
   /**
-   * 注册自定义数据转换器
+   * Register a custom data converter
    */
   registerTransformer(abiType: string, transformer: EventDataTransformer): void {
     this.transformers.set(abiType, transformer);
   }
 
   /**
-   * 注册自定义数据验证器
+   * Register a custom data validator
    */
   registerValidator(abiType: string, validator: EventDataValidator): void {
     this.validators.set(abiType, validator);
   }
 
   /**
-   * 构建Viem兼容的ABI事件定义
+   * Build a viem-compatible ABI event definition
    */
   private buildAbiEventDefinition(eventParams: EventParameter[]): AbiEvent {
     return {
@@ -320,7 +320,7 @@ export class EventDecodingService {
   }
 
   /**
-   * 格式化解码后的参数
+   * Format decoded arguments
    */
   private async formatDecodedArgs(
     args: DecodedEventData,
@@ -333,19 +333,19 @@ export class EventDecodingService {
       const value = args[i];
 
       try {
-        // 验证数据
+        // Validate the data
         const validation = this.validateParameter(param, value);
         if (!validation.valid) {
           throw new Error(`Validation failed for parameter ${param.name}: ${validation.error}`);
         }
 
-        // 转换数据
+        // Convert the data
         const transformedValue = this.transformParameter(param, validation.sanitizedValue ?? value);
         formatted[param.name] = transformedValue;
       } catch (error) {
         const errorMessage = error instanceof Error ? error.message : String(error);
         console.warn(`Failed to format parameter ${param.name}: ${errorMessage}`);
-        formatted[param.name] = value; // 使用原始值作为后备
+        formatted[param.name] = value; // fall back to the raw value
       }
     }
 
@@ -353,33 +353,33 @@ export class EventDecodingService {
   }
 
   /**
-   * 验证参数值
+   * Validate a parameter value
    */
   private validateParameter(param: EventParameter, value: unknown): ValidationResult {
-    // 如果有自定义验证器，使用它
+    // Use the custom validator when present
     const customValidator = this.validators.get(param.type);
     if (customValidator) {
       return customValidator.validate(param, value);
     }
 
-    // 默认验证逻辑
+    // Default validation logic
     if (value === null || value === undefined) {
-      // 允许null/undefined，除非是必需的indexed参数
+      // Allow null/undefined unless it is a required indexed parameter
       if (param.indexed) {
         return { valid: false, error: 'Indexed parameters cannot be null or undefined' };
       }
       return { valid: true, sanitizedValue: null };
     }
 
-    // 根据类型进行验证
+    // Validate by type
     return this.validateByType(param.type, value);
   }
 
   /**
-   * 根据类型验证值
+   * Validate a value by type
    */
   private validateByType(type: string, value: unknown): ValidationResult {
-    // 地址类型验证
+    // Address type validation
     if (type === 'address') {
       if (typeof value !== 'string' || !/^0x[a-fA-F0-9]{40}$/.test(value)) {
         return { valid: false, error: 'Invalid address format' };
@@ -387,7 +387,7 @@ export class EventDecodingService {
       return { valid: true };
     }
 
-    // 数字类型验证
+    // Numeric type validation
     if (type.match(/^(u?)int\d+$/)) {
       try {
         const num = BigInt(value as string | number | bigint | boolean);
@@ -397,7 +397,7 @@ export class EventDecodingService {
       }
     }
 
-    // 布尔类型验证
+    // Boolean type validation
     if (type === 'bool') {
       if (typeof value === 'boolean') {
         return { valid: true };
@@ -411,7 +411,7 @@ export class EventDecodingService {
       return { valid: false, error: 'Invalid boolean value' };
     }
 
-    // 字节类型验证
+    // Bytes type validation
     if (type.match(/^bytes\d*$/)) {
       if (typeof value !== 'string' || !/^0x[a-fA-F0-9]*$/.test(value)) {
         return { valid: false, error: 'Invalid bytes format' };
@@ -419,7 +419,7 @@ export class EventDecodingService {
       return { valid: true };
     }
 
-    // 字符串类型验证
+    // String type validation
     if (type === 'string') {
       if (typeof value !== 'string') {
         return { valid: false, error: 'Invalid string value' };
@@ -427,7 +427,7 @@ export class EventDecodingService {
       return { valid: true };
     }
 
-    // 数组类型验证
+    // Array type validation
     if (type.includes('[]')) {
       if (!Array.isArray(value)) {
         return { valid: false, error: 'Invalid array value' };
@@ -435,7 +435,7 @@ export class EventDecodingService {
       return { valid: true, sanitizedValue: value };
     }
 
-    // 结构体类型验证
+    // Struct type validation
     if (type === 'tuple') {
       if (typeof value !== 'object' || value === null) {
         return { valid: false, error: 'Invalid tuple value' };
@@ -443,62 +443,62 @@ export class EventDecodingService {
       return { valid: true };
     }
 
-    // 未知类型，默认通过
+    // Unknown type: pass by default
     return { valid: true };
   }
 
   /**
-   * 转换参数值
+   * Convert a parameter value
    */
   private transformParameter(param: EventParameter, value: unknown): unknown {
-    // 如果有自定义转换器，使用它
+    // Use the custom converter when present
     const customTransformer = this.transformers.get(param.type);
     if (customTransformer) {
       return customTransformer.transform(param, value);
     }
 
-    // 默认转换逻辑
+    // Default conversion logic
     return this.transformByType(param.type, value);
   }
 
   /**
-   * 根据类型转换值
+   * Convert a value by type
    */
   private transformByType(type: string, value: unknown): unknown {
-    // 大数字转换为字符串存储
+    // Big numbers are stored as strings
     if (type.match(/^(u?)int\d+$/)) {
       return String(value);
     }
 
-    // 地址类型保持原样
+    // Address types stay as-is
     if (type === 'address') {
       return typeof value === 'string' ? value.toLowerCase() : String(value).toLowerCase();
     }
 
-    // 字节类型保持原样
+    // Bytes types stay as-is
     if (type.match(/^bytes\d*$/)) {
       return value;
     }
 
-    // 数组类型转换为JSON字符串
+    // Arrays are converted to JSON strings
     if (type.includes('[]')) {
       return JSON.stringify(value);
     }
 
-    // 结构体类型转换为JSON字符串
+    // Structs are converted to JSON strings
     if (type === 'tuple') {
       return JSON.stringify(value);
     }
 
-    // 其他类型保持原样
+    // Other types stay as-is
     return value;
   }
 
   /**
-   * 初始化默认处理器
+   * Initialize default handlers
    */
   private initializeDefaultHandlers(): void {
-    // 注册默认转换器
+    // Register default converters
     this.registerTransformer('uint256', {
       transform: (param, value) => {
         if (typeof value === 'bigint' || typeof value === 'number' || typeof value === 'string') {
@@ -529,7 +529,7 @@ export class EventDecodingService {
       reverseTransform: (param, value) => value,
     });
 
-    // 注册默认验证器
+    // Register default validators
     this.registerValidator('address', {
       validate: (param, value) => {
         if (typeof value !== 'string' || !/^0x[a-fA-F0-9]{40}$/.test(value)) {
@@ -556,6 +556,6 @@ export class EventDecodingService {
 }
 
 /**
- * 导出单例实例
+ * Export a singleton instance
  */
 export const eventDecodingService = new EventDecodingService();

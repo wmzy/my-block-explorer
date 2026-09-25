@@ -90,9 +90,9 @@ const logoText = css`
   color: var(--haze-color-text);
 `;
 
-// Page links beside the logo: the cached-contract directory and the
-// charts page. Flex with a small gap keeps the group readable at any
-// member count.
+// Page links beside the logo: the chain's blocks/transactions lists, the
+// pending pool, the cached-contract directory and the charts page. Flex
+// with a small gap keeps the group readable at any member count.
 const navLinks = css`
   display: flex;
   align-items: center;
@@ -111,6 +111,28 @@ const navLink = css`
   &:hover {
     color: var(--haze-color-primary);
     background: var(--haze-color-primary-subtle);
+  }
+`;
+
+// Admin-group variant of the page-link button: one size step smaller and
+// muted, so the trailing SQL console reads as a secondary admin escape
+// rather than a peer destination.
+const navLinkMuted = css`
+  font-size: var(--haze-text-xs);
+  color: var(--haze-color-text-muted);
+`;
+
+// Vertical rule separating the admin group from the page links. Purely
+// decorative (aria-hidden at the call site); collapsed on the wrapped
+// mobile nav, where a rule between wrapping rows reads as noise.
+const navDivider = css`
+  width: 1px;
+  align-self: stretch;
+  margin: var(--haze-space-1) var(--haze-space-2);
+  background: var(--haze-color-border);
+
+  @media (max-width: 768px) {
+    display: none;
   }
 `;
 
@@ -1276,10 +1298,24 @@ export default function TopNavigation({
           </div>
 
           {/* In-app page links beside the logo, same navigation as the
-              logo above: the node's pending pool, the cached-contract
-              directory and the daily charts derived from live RPC
-              sampling. */}
+              logo above: the block list, the transaction list, the node's
+              pending pool, the cached-contract directory and the daily
+              charts derived from live RPC sampling. */}
           <div className={navLinks}>
+            <button
+              type="button"
+              className={navLink}
+              onClick={() => goTo(`/chain/${currentChainId}/blocks`)}
+            >
+              Blocks
+            </button>
+            <button
+              type="button"
+              className={navLink}
+              onClick={() => goTo(`/chain/${currentChainId}/transactions`)}
+            >
+              Transactions
+            </button>
             <button
               type="button"
               className={navLink}
@@ -1301,12 +1337,15 @@ export default function TopNavigation({
             >
               Charts
             </button>
-            {/* SQL console: admin-gated read-only queries against the
+            {/* Admin group, visually separated from the page links: the
+                SQL console runs admin-gated read-only queries against the
                 explorer's own DuckDB. Not chain-scoped (it queries the
                 main database), so it links to the bare /sql path. */}
+            <span className={navDivider} data-testid="nav-admin-divider" aria-hidden="true" />
             <button
               type="button"
-              className={navLink}
+              className={cx(navLink, navLinkMuted)}
+              aria-label="SQL console (admin)"
               onClick={() => goTo('/sql')}
             >
               SQL

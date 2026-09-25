@@ -1,10 +1,10 @@
 /**
- * 简单的内存缓存实现
+ * Simple in-memory cache
  */
 
 export type CacheOptions = {
-  ttl: number; // 生存时间（毫秒）
-  maxSize?: number; // 最大缓存条目数
+  ttl: number; // time to live (ms)
+  maxSize?: number; // maximum number of entries
 };
 
 type CacheEntry<T> = {
@@ -15,7 +15,7 @@ type CacheEntry<T> = {
 };
 
 /**
- * LRU缓存实现
+ * LRU cache implementation
  */
 export class LRUCache<K, V> {
   private cache = new Map<K, CacheEntry<V>>();
@@ -28,7 +28,7 @@ export class LRUCache<K, V> {
   }
 
   /**
-   * 获取缓存值
+   * Get a cached value
    */
   get(key: K): V | undefined {
     const entry = this.cache.get(key);
@@ -37,13 +37,13 @@ export class LRUCache<K, V> {
       return undefined;
     }
 
-    // 检查是否过期
+    // Check whether the entry expired
     if (Date.now() > entry.expiresAt) {
       this.cache.delete(key);
       return undefined;
     }
 
-    // 更新访问统计
+    // Update access statistics
     entry.accessCount++;
     entry.lastAccessed = Date.now();
 
@@ -51,13 +51,13 @@ export class LRUCache<K, V> {
   }
 
   /**
-   * 设置缓存值
+   * Set a cached value
    */
   set(key: K, value: V, ttl?: number): void {
     const now = Date.now();
     const expiresAt = now + (ttl ?? this.defaultTtl);
 
-    // 如果缓存已满，删除最少使用的条目
+    // When full, evict the least-used entry
     if (this.cache.size >= this.maxSize && !this.cache.has(key)) {
       this.evictLeastUsed();
     }
@@ -71,34 +71,34 @@ export class LRUCache<K, V> {
   }
 
   /**
-   * 删除缓存条目
+   * Delete a cache entry
    */
   delete(key: K): boolean {
     return this.cache.delete(key);
   }
 
   /**
-   * 清空缓存
+   * Clear the cache
    */
   clear(): void {
     this.cache.clear();
   }
 
   /**
-   * 获取缓存大小
+   * Get the cache size
    */
   size(): number {
     return this.cache.size;
   }
 
   /**
-   * 检查是否存在
+   * Check whether a key exists
    */
   has(key: K): boolean {
     const entry = this.cache.get(key);
     if (!entry) return false;
 
-    // 检查是否过期
+    // Check whether the entry expired
     if (Date.now() > entry.expiresAt) {
       this.cache.delete(key);
       return false;
@@ -108,7 +108,7 @@ export class LRUCache<K, V> {
   }
 
   /**
-   * 获取或设置缓存值
+   * Get a value or populate it
    */
   async getOrSet<T extends V>(key: K, factory: () => Promise<T>, ttl?: number): Promise<T> {
     const cached = this.get(key);
@@ -122,7 +122,7 @@ export class LRUCache<K, V> {
   }
 
   /**
-   * 清理过期条目
+   * Clean up expired entries
    */
   cleanup(): void {
     const now = Date.now();
@@ -134,7 +134,7 @@ export class LRUCache<K, V> {
   }
 
   /**
-   * 获取缓存统计
+   * Get cache statistics
    */
   getStats(): {
     size: number;
@@ -154,14 +154,14 @@ export class LRUCache<K, V> {
   }
 
   /**
-   * 驱逐最少使用的条目
+   * Evict the least-used entry
    */
   private evictLeastUsed(): void {
     let leastUsedKey: K | undefined;
     let leastUsedScore = Infinity;
 
     for (const [key, entry] of this.cache.entries()) {
-      // 计算使用分数（访问次数 + 最近访问时间权重）
+      // Score usage (access count + recency weight)
       const score = entry.accessCount + (Date.now() - entry.lastAccessed) / 1000;
 
       if (score < leastUsedScore) {
@@ -177,7 +177,7 @@ export class LRUCache<K, V> {
 }
 
 /**
- * 缓存管理器
+ * Cache manager
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyCache = LRUCache<any, any>;
@@ -186,12 +186,12 @@ export class CacheManager {
   private caches = new Map<string, AnyCache>();
 
   /**
-   * 获取或创建缓存实例
+   * Get or create a cache instance
    */
   getCache<K, V>(name: string, options?: CacheOptions): LRUCache<K, V> {
     if (!this.caches.has(name)) {
       const defaultOptions: CacheOptions = {
-        ttl: 5 * 60 * 1000, // 5分钟默认TTL
+        ttl: 5 * 60 * 1000, // 5-minute default TTL
         maxSize: 1000,
       };
       this.caches.set(name, new LRUCache({ ...defaultOptions, ...options }));
@@ -200,7 +200,7 @@ export class CacheManager {
   }
 
   /**
-   * 清理所有缓存的过期条目
+   * Clean up expired entries in all caches
    */
   cleanupAll(): void {
     for (const cache of this.caches.values()) {
@@ -209,7 +209,7 @@ export class CacheManager {
   }
 
   /**
-   * 获取所有缓存统计
+   * Get statistics for all caches
    */
   getAllStats(): Record<string, unknown> {
     const stats: Record<string, unknown> = {};
@@ -220,7 +220,7 @@ export class CacheManager {
   }
 
   /**
-   * 清空所有缓存
+   * Clear all caches
    */
   clearAll(): void {
     for (const cache of this.caches.values()) {
@@ -229,31 +229,31 @@ export class CacheManager {
   }
 }
 
-// 全局缓存管理器实例
+// Global cache manager instance
 export const cacheManager = new CacheManager();
 
-// 预定义的缓存实例
+// Predefined cache instances
 export const blockCache = cacheManager.getCache('blocks', {
-  ttl: 30 * 1000, // 30秒
+  ttl: 30 * 1000, // 30 seconds
   maxSize: 500,
 });
 
 export const transactionCache = cacheManager.getCache('transactions', {
-  ttl: 60 * 1000, // 1分钟
+  ttl: 60 * 1000, // 1 minute
   maxSize: 1000,
 });
 
 export const addressCache = cacheManager.getCache('addresses', {
-  ttl: 2 * 60 * 1000, // 2分钟
+  ttl: 2 * 60 * 1000, // 2 minutes
   maxSize: 500,
 });
 
 export const searchCache = cacheManager.getCache('search', {
-  ttl: 5 * 60 * 1000, // 5分钟
+  ttl: 5 * 60 * 1000, // 5 minutes
   maxSize: 200,
 });
 
-// 定期清理过期缓存
+// Periodically clean up expired cache entries
 setInterval(() => {
   cacheManager.cleanupAll();
-}, 60 * 1000); // 每分钟清理一次
+}, 60 * 1000); // clean up once per minute

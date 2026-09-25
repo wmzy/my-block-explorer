@@ -176,6 +176,18 @@ const fromBlockInputStyle = css`
   }
 `;
 
+// Include-traces toggle beside the start controls: a native checkbox —
+// the walk-level opt-in must read as a plain binary, not a button.
+const tracesToggleStyle = css`
+  display: inline-flex;
+  align-items: center;
+  gap: var(--haze-space-1, 4px);
+  font-size: var(--haze-text-xs, 12px);
+  color: var(--haze-color-text-muted, #6b7280);
+  cursor: pointer;
+  user-select: none;
+`;
+
 const actionsRowStyle = css`
   display: flex;
   align-items: center;
@@ -271,6 +283,9 @@ export function DeepScan({ chainId, address, txPayload }: DeepScanProps) {
   // at the chain head' after that 400) — informational, never an error.
   const [catchupNotice, setCatchupNotice] = useState<string | null>(null);
   const [fromBlockInput, setFromBlockInput] = useState('');
+  // Traces opt-in (default unchecked): an unchecked box keeps the POST
+  // body byte-identical to the pre-traces contract.
+  const [includeTraces, setIncludeTraces] = useState(false);
 
   // The catch-up notices are transitional: once the live read observes
   // the walk active again, the pending/running status line takes over
@@ -321,6 +336,7 @@ export function DeepScan({ chainId, address, txPayload }: DeepScanProps) {
         startScanJob(chainId, address, {
           ...(parsedFrom === 'earliest' ? {} : { fromBlock: parsedFrom }),
           ...(force ? { force: true } : {}),
+          ...(includeTraces ? { includeTraces: true } : {}),
         }),
       'Starting the deep scan failed.',
     );
@@ -394,6 +410,17 @@ export function DeepScan({ chainId, address, txPayload }: DeepScanProps) {
           >
             Start deep scan
           </Button>
+          <label className={tracesToggleStyle}>
+            <input
+              type="checkbox"
+              checked={includeTraces}
+              onChange={e => setIncludeTraces(e.target.checked)}
+              disabled={action !== null}
+              data-testid="deep-scan-include-traces"
+            />
+            Record internal transactions (slower — traces each block the
+            walk stops on)
+          </label>
           {!fromBlockValid && (
             <span className={mutedStyle}>Start block must be a non-negative integer.</span>
           )}
@@ -422,6 +449,11 @@ export function DeepScan({ chainId, address, txPayload }: DeepScanProps) {
           <li>
             Non-genesis starts can never claim complete coverage — activity
             before the start block stays unverifiable.
+          </li>
+          <li>
+            Record internal transactions captures internal calls only in
+            blocks where this address changed — internal calls inside
+            unrelated transactions in non-scanned blocks are not recorded.
           </li>
           <li>
             Needs an archive-capable RPC: public non-archive nodes reject
@@ -476,6 +508,16 @@ export function DeepScan({ chainId, address, txPayload }: DeepScanProps) {
       <p className={metaLineStyle} data-testid="deep-scan-txs">
         Transactions found: {job.txsFound.toLocaleString()}
       </p>
+      {/* Traces meta rides ONLY a job that asked for recording; an
+          unrequested walk renders nothing (no zero-line noise). A probes
+          refusal is honest, lowercase, and states the walk continued. */}
+      {job.tracesRequested && (
+        <p className={metaLineStyle} data-testid="deep-scan-traces">
+          {job.tracesSupported === false
+            ? 'traces unavailable on this RPC — the walk continued without them'
+            : `Internal transactions recorded: ${job.tracesRecorded.toLocaleString()}`}
+        </p>
+      )}
       <p className={metaLineStyle} data-testid="deep-scan-eta">
         {eta === null
           ? 'Remaining time: no honest estimate yet (needs a measured walking rate)'

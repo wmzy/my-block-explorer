@@ -4,7 +4,7 @@ import { rpcManager } from './RpcManager';
 import type { Address, Transaction as ViemTransaction, TransactionReceipt } from 'viem';
 
 /**
- * 交易数据类型
+ * Transaction data types
  */
 export type Transaction = {
   chainId: number;

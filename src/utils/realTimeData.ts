@@ -113,7 +113,7 @@ export const createRpcClient = async (chainId: number): Promise<PublicClient> =>
 };
 
 /**
- * 获取地址实时数据
+ * Get real-time data for an address
  */
 export const getRealTimeAddressData = async (chainId: number, address: string) => {
   const client = await createRpcClient(chainId);
@@ -133,7 +133,7 @@ export const getRealTimeAddressData = async (chainId: number, address: string) =
 };
 
 /**
- * 获取合约代码（如果需要）
+ * Get contract code (when needed)
  */
 export const getContractCode = async (chainId: number, address: string) => {
   const client = await createRpcClient(chainId);
@@ -141,7 +141,7 @@ export const getContractCode = async (chainId: number, address: string) => {
 };
 
 /**
- * 批量获取多个地址的余额
+ * Get balances for multiple addresses in batch
  */
 export const getBatchBalances = async (chainId: number, addresses: string[]) => {
   const client = await createRpcClient(chainId);
@@ -158,7 +158,7 @@ export const getBatchBalances = async (chainId: number, addresses: string[]) => 
 };
 
 /**
- * 检查地址是否为合约
+ * Check whether an address is a contract
  */
 export const isContractAddress = async (chainId: number, address: string): Promise<boolean> => {
   const client = await createRpcClient(chainId);

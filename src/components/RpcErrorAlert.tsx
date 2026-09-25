@@ -113,22 +113,22 @@ export default function RpcErrorAlert({
       <div className={iconStyles}>⚠️</div>
 
       <div className={contentStyles}>
-        <h4>RPC 连接错误</h4>
+        <h4>RPC connection error</h4>
         <p>
-          无法连接到链 ID
-          {error.chainId}
+          Unable to connect to an RPC node for chain ID
           {' '}
-          的 RPC 节点。
+          {error.chainId}
+          .
         </p>
         <p>
-          <strong>错误信息：</strong>
+          <strong>Error:</strong>
           {error.error}
         </p>
 
         <div className="suggestion">
           💡
           {' '}
-          <strong>建议：</strong>
+          <strong>Suggestion:</strong>
           {error.suggestion}
         </div>
 
@@ -137,15 +137,15 @@ export default function RpcErrorAlert({
             className={`${buttonStyles} primary`}
             onClick={onConfigureRpc}
           >
-            配置 RPC 节点
+            Configure RPC
           </button>
           <button className={`${buttonStyles} secondary`} onClick={onDismiss}>
-            暂时忽略
+            Dismiss
           </button>
         </div>
       </div>
 
-      <button className={closeButtonStyles} onClick={onDismiss} title="关闭">
+      <button className={closeButtonStyles} onClick={onDismiss} title="Close">
         ×
       </button>
     </div>

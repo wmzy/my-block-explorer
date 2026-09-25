@@ -1,4 +1,4 @@
-// RPC错误处理和用户反馈工具
+// RPC error handling and user feedback utilities
 
 export type RpcErrorDetails = {
   error: string;
@@ -24,148 +24,148 @@ export function analyzeRpcError(
   const errorMessage = (error as { message?: string }).message ?? String(error);
   const { blockNumber, contractAddress, rpcUrl, chainId } = context;
 
-  // 分析不同类型的RPC错误
+  // Classify known RPC error types
   if (errorMessage.includes('no backends available for method')) {
     return {
-      error: 'RPC节点不支持此方法或历史数据查询',
+      error: 'RPC node does not support this method or historical data queries',
       blockNumber,
       contractAddress,
       rpcUrl,
       chainId,
-      suggestion: '该RPC节点可能不支持历史区块的状态查询。建议更换支持完整历史数据的RPC节点。',
+      suggestion: 'This RPC node may not support state queries for historical blocks. Switch to an RPC node with full historical data.',
       castCommand: blockNumber
         ? `cast code ${contractAddress} --block ${blockNumber} --rpc-url ${rpcUrl}`
         : `cast code ${contractAddress} --rpc-url ${rpcUrl}`,
       retryable: false,
       troubleshooting: [
-        '1. 检查RPC节点是否支持历史数据查询',
-        '2. 尝试使用Archive Node（归档节点）',
-        '3. 联系RPC供应商确认历史数据可用性',
-        '4. 考虑使用Alchemy、Infura或QuickNode等提供完整历史数据的服务',
+        '1. Check whether the RPC node supports historical data queries',
+        '2. Try using an archive node',
+        '3. Contact the RPC provider to confirm historical data availability',
+        '4. Consider a service with full historical data such as Alchemy, Infura, or QuickNode',
       ],
     };
   }
 
   if (errorMessage.includes('503') || errorMessage.includes('Service Unavailable')) {
     return {
-      error: 'RPC服务暂时不可用',
+      error: 'RPC service temporarily unavailable',
       blockNumber,
       contractAddress,
       rpcUrl,
       chainId,
-      suggestion: 'RPC服务器暂时不可用，这通常是临时问题。建议稍后重试。',
+      suggestion: 'The RPC server is temporarily unavailable; this is usually transient. Try again later.',
       castCommand: blockNumber
         ? `cast code ${contractAddress} --block ${blockNumber} --rpc-url ${rpcUrl}`
         : `cast code ${contractAddress} --rpc-url ${rpcUrl}`,
       retryable: true,
       troubleshooting: [
-        '1. 等待5-10分钟后重试',
-        '2. 检查RPC供应商的状态页面',
-        '3. 尝试使用备用RPC端点',
-        '4. 如果问题持续，联系RPC供应商支持',
+        '1. Wait 5-10 minutes and retry',
+        '2. Check the RPC provider status page',
+        '3. Try a backup RPC endpoint',
+        '4. If the problem persists, contact RPC provider support',
       ],
     };
   }
 
   if (errorMessage.includes('429') || errorMessage.includes('rate limit')) {
     return {
-      error: '请求频率超过限制',
+      error: 'Rate limit exceeded',
       blockNumber,
       contractAddress,
       rpcUrl,
       chainId,
-      suggestion: '请求过于频繁，触发了RPC节点的速率限制。建议降低请求频率或升级RPC服务计划。',
+      suggestion: 'Requests are too frequent and hit the RPC node rate limit. Lower the request rate or upgrade the RPC service plan.',
       castCommand: blockNumber
         ? `cast code ${contractAddress} --block ${blockNumber} --rpc-url ${rpcUrl}`
         : `cast code ${contractAddress} --rpc-url ${rpcUrl}`,
       retryable: true,
       troubleshooting: [
-        '1. 等待速率限制重置（通常1分钟）',
-        '2. 升级到更高级别的RPC服务计划',
-        '3. 使用多个RPC端点进行负载均衡',
-        '4. 实施请求缓存以减少重复查询',
+        '1. Wait for the rate limit to reset (usually 1 minute)',
+        '2. Upgrade to a higher RPC service tier',
+        '3. Load-balance across multiple RPC endpoints',
+        '4. Cache requests to avoid repeated queries',
       ],
     };
   }
 
   if (errorMessage.includes('timeout') || errorMessage.includes('TIMEOUT')) {
     return {
-      error: 'RPC请求超时',
+      error: 'RPC request timed out',
       blockNumber,
       contractAddress,
       rpcUrl,
       chainId,
-      suggestion: 'RPC请求超时，可能是网络问题或RPC节点响应缓慢。',
+      suggestion: 'The RPC request timed out, possibly due to network issues or a slow RPC node.',
       castCommand: blockNumber
         ? `cast code ${contractAddress} --block ${blockNumber} --rpc-url ${rpcUrl}`
         : `cast code ${contractAddress} --rpc-url ${rpcUrl}`,
       retryable: true,
       troubleshooting: [
-        '1. 检查网络连接',
-        '2. 增加请求超时时间',
-        '3. 尝试使用地理位置更近的RPC端点',
-        '4. 如果查询历史数据，考虑缩小查询范围',
+        '1. Check the network connection',
+        '2. Increase the request timeout',
+        '3. Try a geographically closer RPC endpoint',
+        '4. When querying historical data, consider narrowing the range',
       ],
     };
   }
 
   if (errorMessage.includes('missing trie node') || errorMessage.includes('state not available')) {
     return {
-      error: '历史状态数据不可用',
+      error: 'Historical state data unavailable',
       blockNumber,
       contractAddress,
       rpcUrl,
       chainId,
-      suggestion: 'RPC节点缺少请求区块的状态数据。这通常发生在轻节点或不完整的归档节点上。',
+      suggestion: 'The RPC node is missing state data for the requested block. This typically happens on light nodes or incomplete archive nodes.',
       castCommand: blockNumber
         ? `cast code ${contractAddress} --block ${blockNumber} --rpc-url ${rpcUrl}`
         : `cast code ${contractAddress} --rpc-url ${rpcUrl}`,
       retryable: false,
       troubleshooting: [
-        '1. 使用完整的Archive Node（归档节点）',
-        '2. 尝试查询更近期的区块',
-        '3. 联系RPC供应商确认历史数据覆盖范围',
-        '4. 考虑使用专门的历史数据服务',
+        '1. Use a full archive node',
+        '2. Try querying a more recent block',
+        '3. Contact the RPC provider to confirm historical data coverage',
+        '4. Consider a dedicated historical data service',
       ],
     };
   }
 
   if (errorMessage.includes('connection refused') || errorMessage.includes('ECONNREFUSED')) {
     return {
-      error: '无法连接到RPC节点',
+      error: 'Unable to connect to the RPC node',
       blockNumber,
       contractAddress,
       rpcUrl,
       chainId,
-      suggestion: 'RPC节点拒绝连接，请检查URL是否正确或节点是否在线。',
+      suggestion: 'The RPC node refused the connection; check that the URL is correct and the node is online.',
       castCommand: `cast chain-id --rpc-url ${rpcUrl}`,
       retryable: true,
       troubleshooting: [
-        '1. 验证RPC URL是否正确',
-        '2. 检查网络防火墙设置',
-        '3. 确认RPC节点是否在线',
-        '4. 尝试使用不同的网络环境',
+        '1. Verify the RPC URL is correct',
+        '2. Check network firewall settings',
+        '3. Confirm the RPC node is online',
+        '4. Try a different network environment',
       ],
     };
   }
 
-  // 通用错误处理
+  // Generic error handling
   return {
     error: errorMessage,
     blockNumber,
     contractAddress,
     rpcUrl,
     chainId,
-    suggestion: '遇到了未知的RPC错误。建议检查RPC节点状态或尝试其他RPC端点。',
+    suggestion: 'An unknown RPC error occurred. Check the RPC node status or try another endpoint.',
     castCommand: blockNumber
       ? `cast code ${contractAddress} --block ${blockNumber} --rpc-url ${rpcUrl}`
       : `cast code ${contractAddress} --rpc-url ${rpcUrl}`,
     retryable: true,
     troubleshooting: [
-      '1. 检查RPC节点状态',
-      '2. 验证请求参数是否正确',
-      '3. 尝试使用其他RPC端点',
-      '4. 联系RPC供应商技术支持',
+      '1. Check the RPC node status',
+      '2. Verify the request parameters',
+      '3. Try a different RPC endpoint',
+      '4. Contact RPC provider technical support',
     ],
   };
 }
@@ -183,24 +183,24 @@ export function formatRpcErrorForUser(errorDetails: RpcErrorDetails): string {
     troubleshooting,
   } = errorDetails;
 
-  let message = `🚨 RPC错误详情:\n\n`;
-  message += `错误: ${error}\n`;
+  let message = `🚨 RPC error details:\n\n`;
+  message += `Error: ${error}\n`;
 
-  if (blockNumber) message += `区块: ${blockNumber}\n`;
-  if (contractAddress) message += `合约: ${contractAddress}\n`;
+  if (blockNumber) message += `Block: ${blockNumber}\n`;
+  if (contractAddress) message += `Contract: ${contractAddress}\n`;
   if (rpcUrl) message += `RPC: ${rpcUrl}\n`;
-  if (chainId) message += `链ID: ${chainId}\n`;
+  if (chainId) message += `Chain ID: ${chainId}\n`;
 
-  message += `\n💡 建议: ${suggestion}\n`;
+  message += `\n💡 Suggestion: ${suggestion}\n`;
 
   if (castCommand) {
-    message += `\n🔧 验证命令:\n\`\`\`bash\n${castCommand}\n\`\`\`\n`;
-    message += `使用此命令可以直接验证RPC节点是否正常工作。\n`;
+    message += `\n🔧 Verify command:\n\`\`\`bash\n${castCommand}\n\`\`\`\n`;
+    message += `Run this command to check directly whether the RPC node works.\n`;
   }
 
-  message += `\n🔄 可重试: ${retryable ? '是' : '否'}\n`;
+  message += `\n🔄 Retryable: ${retryable ? 'yes' : 'no'}\n`;
 
-  message += `\n🛠️ 故障排除步骤:\n`;
+  message += `\n🛠️ Troubleshooting steps:\n`;
   troubleshooting.forEach(step => {
     message += `${step}\n`;
   });

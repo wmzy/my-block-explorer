@@ -1,5 +1,5 @@
 import { css } from '@linaria/core';
-import { Fragment, useMemo, useState, useEffect } from 'react';
+import { Fragment, useMemo, useState, useEffect, useSyncExternalStore } from 'react';
 
 import { TypedLink, useMatched } from '@native-router/react';
 import { decodeEventLog, type Abi, type Hex } from 'viem';
@@ -9,7 +9,13 @@ import { CallTraceCard } from '@/views/Transactions/CallTrace';
 import { ProtocolRouterChip } from '@/views/Transactions/methodColumn';
 import { RawDataBlock } from '@/components/transactions/RawDataBlock';
 import { Badge } from '@/components/ui/Badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/Card';
 import { CopyableHash } from '@/components/ui/CopyableHash';
 import { linkStyle, monoStyle } from '@/components/ui/DataTable';
 import { ExternalLinks } from '@/components/ui/ExternalLinks';
@@ -18,6 +24,7 @@ import { InfoGrid, InfoItem } from '@/components/ui/InfoGrid';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { PageContainer, PageHeader, BackButton } from '@/components/ui/PageLayout';
 import { RawJsonCard, type RawJsonFetcher } from '@/components/ui/RawJson';
+import { UnitToggle } from '@/components/ui/UnitToggle';
 import { POPULAR_CHAINS, getChainInfo, getChainName, getChainSymbol } from '@/config/chains';
 import { getExternalTxLinks } from '@/config/externalTools';
 import { redirectReplace, navigateBack } from '@/views/Home/Landing';
@@ -35,6 +42,16 @@ import {
   decodeSafeExecTransaction,
   type DecodedSafeExecTransaction,
 } from '@/utils/safeDecode';
+import {
+  decodeHandleOps,
+  decodeUserOperationEvents,
+  entryPointVersionForAddress,
+  matchUserOpResults,
+  type DecodedUserOp,
+  type DecodedUserOperationEvent,
+  type UserOpEventResult,
+  type UserOpVersion,
+} from '@/utils/userOpDecode';
 import { createRpcClient } from '@/utils/realTimeData';
 import {
   decodeFunctionCall,
@@ -45,6 +62,7 @@ import {
   selectorOf,
 } from '@/utils/txDecode';
 import { formatGasPrice, formatNumber, formatTokenAmount, formatValue } from '@/utils/format';
+import { formatValueByUnit, getValueUnit, subscribeValueUnit } from '@/util/units';
 import { UsdValue } from '@/components/ui/UsdValue';
 
 const getTxTypeText = (type: number): string => {
@@ -553,6 +571,148 @@ function SafeMultisigCard({
   );
 }
 
+// Muted small print over the event-only rows of the ERC-4337 card: the
+// honesty note for a bundle whose calldata did not decode — every row
+// below is event-derived, not taken from the submitted ops.
+const userOpCaveatStyle = css`
+  margin: 0 0 var(--haze-space-4);
+  font-size: var(--haze-text-xs);
+  color: var(--haze-color-text-muted);
+`;
+
+// One ERC-4337 operation flattened for rendering: identity fields from
+// the calldata decode when it succeeded (or from the event otherwise),
+// joined to the receipt's outcome. A null success/gas triple means no
+// UserOperationEvent matched that op — stated, not fabricated.
+type UserOpRow = {
+  sender: string;
+  nonce: bigint;
+  paymaster: string | null;
+  success: boolean | null;
+  actualGasCost: bigint | null;
+  actualGasUsed: bigint | null;
+};
+
+// ERC-4337 bundle card: renders only when the called contract is a known
+// canonical EntryPoint AND the receipt carries at least one
+// UserOperationEvent (a plain deposit to the EntryPoint has no ops and
+// stays off the page). Rows prefer the decoded handleOps calldata joined
+// to the event outcomes by sender+nonce; when the calldata did not decode
+// (aggregated bundles, foreign shapes, truncated tails) the rows come
+// from the events alone under an explicit provenance note. Both decoders
+// are total — malformed input degrades to fewer/no rows, never an error.
+function AccountAbstractionCard({
+  chainId,
+  version,
+  events,
+  decodedOps,
+  results,
+}: {
+  chainId: number;
+  version: UserOpVersion;
+  /** Every UserOperationEvent found in the receipt (both ABI variants). */
+  events: DecodedUserOperationEvent[];
+  /** null when the handleOps calldata did not decode. */
+  decodedOps: DecodedUserOp[] | null;
+  /** Event outcomes aligned index-for-index with decodedOps. */
+  results: (UserOpEventResult | undefined)[];
+}) {
+  const rows: UserOpRow[] =
+    decodedOps !== null
+      ? decodedOps.map((op, index) => {
+          const result = results[index];
+          return {
+            sender: op.sender,
+            nonce: op.nonce,
+            paymaster: op.paymaster,
+            success: result?.success ?? null,
+            actualGasCost: result?.actualGasCost ?? null,
+            actualGasUsed: result?.actualGasUsed ?? null,
+          };
+        })
+      : events.map(event => ({
+          sender: event.sender,
+          nonce: event.nonce,
+          paymaster: event.paymaster,
+          success: event.success,
+          actualGasCost: event.actualGasCost,
+          actualGasUsed: event.actualGasUsed,
+        }));
+
+  const symbol = getChainSymbol(chainId);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Account Abstraction (ERC-4337)</CardTitle>
+        <CardDescription>
+          {`${rows.length} ${rows.length === 1 ? 'UserOperation' : 'UserOperations'} · EntryPoint ${version}`}
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {decodedOps === null && (
+          <p className={userOpCaveatStyle}>
+            calldata not decodable — fields below from UserOperationEvent
+          </p>
+        )}
+        {rows.map((row, index) => (
+          <div className={transferRowStyle} key={`${row.sender}-${row.nonce}-${index}`}>
+            <InfoGrid>
+              <InfoItem label="Sender">
+                <TypedLink
+                  to={`/chain/${chainId}/address/${row.sender}`}
+                  className={linkStyle}
+                >
+                  {row.sender}
+                </TypedLink>
+              </InfoItem>
+              <InfoItem label="Nonce">{formatNumber(row.nonce)}</InfoItem>
+              <InfoItem label="Paymaster">
+                {row.paymaster !== null ? (
+                  <TypedLink
+                    to={`/chain/${chainId}/address/${row.paymaster}`}
+                    className={linkStyle}
+                  >
+                    {row.paymaster}
+                  </TypedLink>
+                ) : (
+                  <span title="No paymaster — the account paid its own gas">—</span>
+                )}
+              </InfoItem>
+              <InfoItem label="Status">
+                {row.success === null ? (
+                  <span title="No UserOperationEvent matched this operation">—</span>
+                ) : row.success ? (
+                  <Badge variant="success" size="sm">
+                    ✓ Success
+                  </Badge>
+                ) : (
+                  <Badge variant="error" size="sm">
+                    ✗ Failed
+                  </Badge>
+                )}
+              </InfoItem>
+              <InfoItem label="Actual Gas Cost">
+                {row.actualGasCost !== null ? (
+                  // Exact wei rides the title, same contract as the Value row.
+                  <span title={`${row.actualGasCost} wei`}>
+                    {formatValue(row.actualGasCost, symbol)}
+                  </span>
+                ) : (
+                  '—'
+                )}
+              </InfoItem>
+              <InfoItem label="Actual Gas Used">
+                {row.actualGasUsed !== null ? formatNumber(row.actualGasUsed) : '—'}
+              </InfoItem>
+            </InfoGrid>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
 // The not-found card's cause list: relaxed spacing, one cause per line.
 const notFoundListStyle = css`
   margin: 12px 0 0;
@@ -665,6 +825,13 @@ function TxNotFoundCard({
     </Card>
   );
 }
+
+// Muted "≈ <native figure>" beside a non-native Value row: the human-
+// readable amount stays one glance away when the row shows raw units.
+const approxHintStyle = css`
+  color: var(--haze-color-text-muted);
+  font-size: var(--haze-text-sm);
+`;
 
 // Page header + cross-verification links on one row; wraps under the
 // header on narrow screens instead of overflowing.
@@ -971,6 +1138,33 @@ export default function TransactionDetail() {
     [safeExec],
   );
 
+  // ERC-4337 bundle detection. Two independent signals must agree: the
+  // called contract is a known canonical EntryPoint (address-based —
+  // cheap and false-positive-free), and the receipt carries at least one
+  // UserOperationEvent. Both decoders are total, so malformed calldata or
+  // logs degrade to null/fewer rows, never a page error.
+  const entryPointVersion = useMemo(
+    () => entryPointVersionForAddress(txInfo?.toAddress),
+    [txInfo],
+  );
+  const userOpEvents = useMemo(
+    () => (entryPointVersion !== null ? decodeUserOperationEvents(txInfo?.logs ?? []) : []),
+    [entryPointVersion, txInfo],
+  );
+  const decodedUserOps = useMemo(
+    () =>
+      entryPointVersion !== null && txInfo?.inputData
+        ? decodeHandleOps(txInfo.inputData, entryPointVersion)
+        : null,
+    [entryPointVersion, txInfo],
+  );
+  // Receipt outcomes joined to the decoded ops by sender+nonce: one
+  // entry per op, undefined where no event matched.
+  const userOpResults = useMemo(
+    () => (decodedUserOps !== null ? matchUserOpResults(txInfo?.logs ?? [], decodedUserOps) : []),
+    [decodedUserOps, txInfo],
+  );
+
   // Selectors worth an openchain lookup: the function selector when the
   // ABI is missing or does not match it, plus every log topic0 with no
   // decoded event name — resolved by the backend cache in ONE batched
@@ -1021,6 +1215,12 @@ export default function TransactionDetail() {
   // without any network, and an unavailable price renders nothing — the
   // native amount row is complete on its own.
   const nativePrice = useNativeUsdPrice(currentChainId);
+
+  // Value-unit preference (native / gwei / wei) for the Value and
+  // Transaction Fee rows: subscribed storage so the UnitToggle re-renders
+  // both rows in place, without a reload. The 'native' default renders
+  // exactly the pre-toggle figures.
+  const valueUnit = useSyncExternalStore(subscribeValueUnit, getValueUnit);
 
   // Mined-position facts. A pending tx has no block, so neither the
   // confirmation count nor a finality label exists yet.
@@ -1081,6 +1281,20 @@ export default function TransactionDetail() {
       </>
     );
   }
+
+  // Descriptor the Value / Transaction Fee rows format against: the same
+  // symbol source every native figure on the page uses, plus the chain's
+  // own decimals. The fallback covers hand-built chain descriptors (test
+  // fixtures, partial custom-chain shims) that arrive without a usable
+  // nativeCurrency figure — 18 is the EVM norm.
+  const nativeDecimals = chainInfo.nativeCurrency?.decimals;
+  const valueChain = { decimals: nativeDecimals ?? 18, symbol: getChainSymbol(currentChainId) };
+
+  // Total fee actually paid: gasUsed × effectiveGasPrice (EIP-1559
+  // receipts) or gasUsed × gasPrice (legacy). Absent until the receipt
+  // lands — a pending tx renders no row, the same honesty as Gas Used.
+  const feeRate = txInfo?.effectiveGasPrice ?? txInfo?.gasPrice;
+  const txFeeWei = txInfo?.gasUsed && feeRate ? BigInt(txInfo.gasUsed) * BigInt(feeRate) : null;
 
   return (
     <>
@@ -1182,8 +1396,15 @@ export default function TransactionDetail() {
                     {/* Exact wei rides the title so the 4-decimal floor
                         never looks like lost precision. */}
                     <span title={`${txInfo.value} wei`}>
-                      {formatValue(BigInt(txInfo.value), getChainSymbol(currentChainId))}
+                      {formatValueByUnit(BigInt(txInfo.value), valueChain, valueUnit).text}
                     </span>{' '}
+                    {/* Non-native units keep the human-readable native
+                        figure one muted glance away. */}
+                    {valueUnit !== 'native' && (
+                      <span className={approxHintStyle}>
+                        {`≈ ${formatValueByUnit(BigInt(txInfo.value), valueChain, 'native').text}`}
+                      </span>
+                    )}{' '}
                     {/* USD refinement: exact multiply on the wei amount,
                         cent rounding only at format time; nothing while
                         the price settles or when it is unavailable. */}
@@ -1194,9 +1415,22 @@ export default function TransactionDetail() {
                       />
                     )}
                   </InfoItem>
+                  <InfoItem label="Value Unit">
+                    <UnitToggle symbol={valueChain.symbol} />
+                  </InfoItem>
                   <InfoItem label="Gas Limit">{formatGas(txInfo.gasLimit)}</InfoItem>
                   {txInfo.gasUsed && (
                     <InfoItem label="Gas Used">{formatGas(txInfo.gasUsed)}</InfoItem>
+                  )}
+                  {txFeeWei !== null && (
+                    <InfoItem label="Transaction Fee">
+                      {/* Exact wei rides the title: the gwei readout
+                          truncates the sub-gwei remainder, the native
+                          figure the 4th decimal. */}
+                      <span title={`${txFeeWei} wei`}>
+                        {formatValueByUnit(txFeeWei, valueChain, valueUnit).text}
+                      </span>
+                    </InfoItem>
                   )}
                   {txInfo.gasPrice && (
                     <InfoItem label="Gas Price">{formatGasPrice(txInfo.gasPrice)} gwei</InfoItem>
@@ -1271,6 +1505,19 @@ export default function TransactionDetail() {
                 safeInnerSelector !== null ? signatureOutcomes[safeInnerSelector] : undefined
               }
             />
+
+            {/* ERC-4337 bundle: both gates (canonical EntryPoint target +
+                ≥1 UserOperationEvent) hold — every other tx renders the
+                byte-identical page it had before. */}
+            {entryPointVersion !== null && userOpEvents.length > 0 && (
+              <AccountAbstractionCard
+                chainId={currentChainId}
+                version={entryPointVersion}
+                events={userOpEvents}
+                decodedOps={decodedUserOps}
+                results={userOpResults}
+              />
+            )}
 
             {txInfo.status === 0 && (
               <RevertReasonCard

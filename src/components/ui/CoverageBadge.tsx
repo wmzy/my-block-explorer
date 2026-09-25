@@ -1,4 +1,5 @@
 import { css, cx } from '@linaria/core';
+import { TypedLink } from '@native-router/react';
 import { useId, useState } from 'react';
 import type { ReactNode } from 'react';
 // Per-component submodule import instead of the 'haze-ui' barrel, mirroring
@@ -102,8 +103,10 @@ const LEVEL_TAG_VARIANT: Record<
 // One distinct 10x10 glyph per level (color-independent):
 // live ● filled circle · cached-immutable ■ filled square ·
 // discovered ◍ ring · sampled ▲ triangle · partial ◐ half-filled circle ·
-// unavailable ✕ cross.
-const LEVEL_ICON: Record<CoverageLevel, ReactNode> = {
+// unavailable ✕ cross. Exported as the single source of the glyph shapes:
+// the /about/coverage legend renders these same svgs beside each level's
+// definition, so the legend and the chips cannot drift apart.
+export const COVERAGE_GLYPHS: Record<CoverageLevel, ReactNode> = {
   'live': (
     <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
       <circle cx="5" cy="5" r="4" fill="currentColor" />
@@ -199,6 +202,21 @@ const detailListStyle = css`
   max-width: 72ch;
 `;
 
+// Quiet link under the expanded detail list: the full level definitions
+// live on their own page, so the chip itself stays compact. Rendered only
+// inside the expanded detail — the collapsed chip DOM is byte-identical.
+const detailLinkStyle = css`
+  margin: var(--haze-space-1) 0 0 var(--haze-space-3);
+  color: var(--haze-color-text-muted);
+  font-size: var(--haze-text-xs);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+
+  &:hover {
+    color: var(--haze-color-text);
+  }
+`;
+
 export type CoverageBadgeProps = {
   level: CoverageLevel;
   /** Chip text, normally the aggregated summary label. */
@@ -226,7 +244,7 @@ export function CoverageBadge({ level, label, detail, className }: CoverageBadge
       <span className={chipRowStyle}>
         <HazeTag variant={LEVEL_TAG_VARIANT[level]} size="sm" className={tagStyle}>
           <span className={iconStyle} aria-hidden="true">
-            {LEVEL_ICON[level]}
+            {COVERAGE_GLYPHS[level]}
           </span>
           {label}
         </HazeTag>
@@ -246,11 +264,16 @@ export function CoverageBadge({ level, label, detail, className }: CoverageBadge
         )}
       </span>
       {open && hasDetail && (
-        <ul id={detailId} className={detailListStyle} data-testid="coverage-badge-detail">
-          {detail.map(line => (
-            <li key={line}>{line}</li>
-          ))}
-        </ul>
+        <>
+          <ul id={detailId} className={detailListStyle} data-testid="coverage-badge-detail">
+            {detail.map(line => (
+              <li key={line}>{line}</li>
+            ))}
+          </ul>
+          <TypedLink to="/about/coverage" className={detailLinkStyle}>
+            What do these levels mean?
+          </TypedLink>
+        </>
       )}
     </div>
   );

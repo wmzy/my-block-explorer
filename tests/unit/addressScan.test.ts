@@ -38,7 +38,8 @@ vi.mock('@/util/http', () => ({
 
 // Verbatim contract shape: every field present, coverage null (the
 // honest default — only a finished genesis-anchored walk may read
-// 'complete').
+// 'complete'). Traces fields reflect a walk that never asked for
+// internal-tx recording (the pre-traces legacy equivalent).
 const validJob: ScanJob = {
   status: 'running',
   fromBlock: 0,
@@ -50,11 +51,29 @@ const validJob: ScanJob = {
   errorMessage: null,
   coverage: null,
   updatedAt: '2026-09-24T00:00:00.000Z',
+  tracesRequested: false,
+  tracesSupported: null,
+  tracesRecorded: 0,
 };
 
 describe('parseScanJob', () => {
   it('accepts the verbatim contract shape', () => {
     expect(parseScanJob(validJob)).toEqual(validJob);
+  });
+
+  it('fills the additive traces fields with honest defaults when absent (legacy payloads)', () => {
+    const {
+      tracesRequested: _tracesRequested,
+      tracesSupported: _tracesSupported,
+      tracesRecorded: _tracesRecorded,
+      ...legacy
+    } = validJob;
+    expect(parseScanJob(legacy)).toEqual({
+      ...legacy,
+      tracesRequested: false,
+      tracesSupported: null,
+      tracesRecorded: 0,
+    });
   });
 
   it('accepts the complete genesis-anchored walk', () => {

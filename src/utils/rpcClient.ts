@@ -2,14 +2,14 @@ import { createPublicClient, http, type PublicClient } from 'viem';
 import { mainnet, polygon, arbitrum, optimism, base } from 'viem/chains';
 import type { Chain } from 'viem';
 
-// 支持的链配置
+// Supported chain configurations
 const SUPPORTED_CHAINS: Record<number, Chain> = {
   1: mainnet,
   137: polygon,
   42161: arbitrum,
   10: optimism,
   8453: base,
-  // Mantle 链配置
+  // Mantle chain configuration
   5000: {
     id: 5000,
     name: 'Mantle',
@@ -35,52 +35,52 @@ const SUPPORTED_CHAINS: Record<number, Chain> = {
   },
 };
 
-// RPC 客户端缓存
+// RPC client cache
 const clientCache = new Map<number, PublicClient>();
 
 /**
- * 获取指定链的 RPC 客户端
+ * Get the RPC client for a chain
  */
 export function getRpcClient(chainId: number): PublicClient {
-  // 检查缓存
+  // Check the cache
   if (clientCache.has(chainId)) {
     return clientCache.get(chainId)!;
   }
 
-  // 获取链配置
+  // Get the chain configuration
   const chain = SUPPORTED_CHAINS[chainId];
   if (!chain) {
     throw new Error(`Unsupported chain ID: ${chainId}`);
   }
 
-  // 创建客户端
+  // Create the client
   const client = createPublicClient({
     chain,
     transport: http(),
   });
 
-  // 缓存客户端
+  // Cache the client
   clientCache.set(chainId, client);
 
   return client;
 }
 
 /**
- * 检查链是否支持
+ * Check whether a chain is supported
  */
 export function isSupportedChain(chainId: number): boolean {
   return chainId in SUPPORTED_CHAINS;
 }
 
 /**
- * 获取支持的链列表
+ * Get the list of supported chains
  */
 export function getSupportedChains(): Chain[] {
   return Object.values(SUPPORTED_CHAINS);
 }
 
 /**
- * 重试机制的 RPC 调用
+ * RPC call with retries
  */
 export async function withRetry<T>(
   operation: () => Promise<T>,
@@ -100,7 +100,7 @@ export async function withRetry<T>(
         break;
       }
 
-      // 等待后重试
+      // Wait, then retry
       await new Promise(resolve => setTimeout(resolve, delay * (i + 1)));
     }
   }

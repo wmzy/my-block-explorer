@@ -19,8 +19,8 @@ import { eq } from 'drizzle-orm';
 import { createRetryableDbCall, RpcError, logError } from '../utils/errorHandler';
 
 /**
- * RPC客户端管理器
- * 负责创建和管理不同链的RPC客户端
+ * RPC client manager
+ * Creates and manages RPC clients for different chains
  */
 export class RpcManager {
   private clients = new Map<number, PublicClient>();
@@ -31,7 +31,7 @@ export class RpcManager {
     this.configsReady = this.loadUserConfigs();
   }
 
-  // 重新加载RPC配置
+  // Reload RPC configurations
   async reloadConfigs(): Promise<void> {
     this.userConfigs.clear();
     this.clients.clear();
@@ -39,7 +39,7 @@ export class RpcManager {
     await this.configsReady;
   }
 
-  // 加载用户RPC配置
+  // Load user RPC configurations
   private async loadUserConfigs(): Promise<void> {
     const loadConfigs = createRetryableDbCall(async () => {
       const configs = await db.select().from(userRpcConfigs);
@@ -119,7 +119,7 @@ export class RpcManager {
     await seedBuiltinLabels(db);
   }
 
-  // 获取RPC客户端
+  // Get an RPC client
   async getClient(chainId: number): Promise<PublicClient> {
     await this.configsReady;
 
@@ -144,15 +144,15 @@ export class RpcManager {
     return this.clients.get(chainId)!;
   }
 
-  // 创建RPC客户端
+  // Create an RPC client
   private async createClient(chainId: number): Promise<PublicClient> {
-    // 直接从viem获取链定义
+    // Get the chain definition straight from viem
     const viemChain = getChainInfo(chainId);
     if (!viemChain) {
       throw new Error(`Unsupported chain: ${chainId}`);
     }
 
-    // 获取有效的RPC URL（用户配置优先，否则viem默认）
+    // Get the effective RPC URL (user config first, otherwise the viem default)
     const userConfig = this.userConfigs.get(chainId);
     const rpcUrl = userConfig?.customRpcUrl ?? getDefaultRpcUrl(chainId);
 
@@ -167,13 +167,13 @@ export class RpcManager {
     });
   }
 
-  // 获取链名称
+  // Get the chain name
   getChainName(chainId: number): string {
     const chain = getChainInfo(chainId);
     return chain?.name ?? `Chain ${chainId}`;
   }
 
-  // 更新用户RPC配置
+  // Update a user RPC configuration
   async updateUserRpcConfig(config: UserRpcConfig): Promise<void> {
     try {
       await db
@@ -200,7 +200,7 @@ export class RpcManager {
     }
   }
 
-  // 删除用户RPC配置
+  // Delete a user RPC configuration
   async deleteUserRpcConfig(chainId: number): Promise<void> {
     try {
       await db.delete(userRpcConfigs).where(eq(userRpcConfigs.chainId, chainId));
@@ -213,17 +213,17 @@ export class RpcManager {
     }
   }
 
-  // 获取用户RPC配置
+  // Get a user RPC configuration
   getUserRpcConfig(chainId: number): UserRpcConfig | undefined {
     return this.userConfigs.get(chainId);
   }
 
-  // 获取所有用户RPC配置
+  // Get all user RPC configurations
   getAllUserRpcConfigs(): UserRpcConfig[] {
     return Array.from(this.userConfigs.values());
   }
 
-  // 测试RPC连接
+  // Test an RPC connection
   async testRpcConnection(
     chainId: number,
     rpcUrl?: string,
@@ -231,7 +231,7 @@ export class RpcManager {
     try {
       const startTime = Date.now();
 
-      // 创建临时客户端进行测试
+      // Create a temporary client for the test
       const viemChain = getChainInfo(chainId);
       if (!viemChain) {
         return { success: false, error: 'Unsupported chain' };
@@ -243,7 +243,7 @@ export class RpcManager {
         transport: http(testUrl, { timeout: 5000 }),
       });
 
-      // 简单的RPC调用测试
+      // Simple RPC call test
       await testClient.getBlockNumber();
 
       const latency = Date.now() - startTime;
@@ -256,12 +256,12 @@ export class RpcManager {
     }
   }
 
-  // 清理所有客户端连接
+  // Tear down all client connections
   cleanup(): void {
     this.clients.clear();
     this.userConfigs.clear();
   }
 }
 
-// 全局RPC管理器实例
+// Global RPC manager instance
 export const rpcManager = new RpcManager();

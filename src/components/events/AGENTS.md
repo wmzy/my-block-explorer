@@ -37,17 +37,13 @@ interface EventStatisticsProps {
 
 ## STYLING
 
-Uses Linaria with both patterns:
+Uses the Linaria `css` tag + `cx()` composition over haze-ui theme
+variables (no fixed colors — dark theme comes from the `--haze-*` tokens):
 
 ```typescript
-// css tag + cx() composition
 import { css, cx } from '@linaria/core';
-const tableStyle = css`...`;
-<div className={cx(tableStyle, className)}>
-
-// styled components
-import { styled } from '@linaria/react';
-const TableContainer = styled.div`...`;
+const tableContainer = css`...`;
+<div className={cx(tableContainer, className)}>
 ```
 
 CSS variables from haze-ui theme: `--haze-*`

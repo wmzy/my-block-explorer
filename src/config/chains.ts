@@ -1,12 +1,12 @@
-// 链配置定义
+// Chain configuration definitions
 import type { Chain } from 'viem';
 import * as chains from 'viem/chains';
 import { getCustomChain, toViemChain } from './customChains';
 
-// 支持viem的所有链
+// All chains supported by viem
 export const SUPPORTED_CHAINS: Chain[] = Object.values(chains);
 
-// 常用链列表（用于UI优先显示）
+// Popular chains (prioritized in the UI)
 export const POPULAR_CHAINS: Chain[] = [
   chains.mainnet,
   chains.polygon,
@@ -63,64 +63,64 @@ export function isBuiltInChainProtected(chainId: number): boolean {
   return candidates.some(chain => !isPlaceholderChain(chain));
 }
 
-// 根据chainId获取链信息：用户注册的自定义链（runtime registry，见
-// config/customChains.ts）优先，viem 静态注册表兜底。注册表必须赢：
-// 注册只能覆盖 viem 不认识的 id，或 viem 的本地开发占位链（31337 一族
-// —— 路由层对真实链 409），而占位链的默认 loopback URL 往往不是用户
-// 节点的实际地址，只有让注册项生效，登记的 RPC 才真正服务该链。
+// Resolve chain info by chainId: user-registered custom chains (the runtime
+// registry in config/customChains.ts) take priority, with the static viem
+// registry as fallback. The registry must win: a registration may only
+// override ids viem does not recognize, or viem's local dev placeholder
+// chains (the 31337 family — the router 409s real chains); a placeholder's default loopback URL is rarely the user's node, so honoring registrations is what makes the registered RPC actually serve that chain.
 export function getChainInfo(chainId: number): Chain | null {
   const custom = getCustomChain(chainId);
   if (custom) return toViemChain(custom);
   return getBuiltInChainInfo(chainId);
 }
 
-// 获取链名称
+// Get the chain name
 export function getChainName(chainId: number): string {
   const chain = getChainInfo(chainId);
   return chain?.name ?? `Chain ${chainId}`;
 }
 
-// 获取链的原生代币符号
+// Get the chain's native token symbol
 export function getChainSymbol(chainId: number): string {
   const chain = getChainInfo(chainId);
   return chain?.nativeCurrency.symbol ?? 'ETH';
 }
 
-// 获取链的区块浏览器URL
+// Get the chain's block explorer URL
 export function getChainExplorerUrl(chainId: number): string {
   const chain = getChainInfo(chainId);
   return chain?.blockExplorers?.default?.url ?? '';
 }
 
-// 获取默认RPC URL
+// Get the default RPC URL
 export function getDefaultRpcUrl(chainId: number): string {
   const chain = getChainInfo(chainId);
   return chain?.rpcUrls.default.http[0] ?? '';
 }
 
-// 获取所有支持的链ID
+// Get all supported chain IDs
 export function getSupportedChainIds(): number[] {
   return SUPPORTED_CHAINS.map(chain => chain.id);
 }
 
-// 检查链是否支持
+// Check whether a chain is supported
 export function isChainSupported(chainId: number): boolean {
   // Custom registrations sit on top of the viem id list; the O(1) registry
   // check short-circuits before the linear scan.
   return getCustomChain(chainId) !== undefined || getSupportedChainIds().includes(chainId);
 }
 
-// 用户RPC配置类型
+// User RPC configuration type
 export type UserRpcConfig = {
   chainId: number;
-  customRpcUrl?: string; // 用户自定义RPC
-  rpcBackups?: string[]; // 备用RPC端点
-  timeout?: number; // 超时设置
-  retryCount?: number; // 重试次数
-  rateLimit?: number; // 请求限制
+  customRpcUrl?: string; // User-defined RPC
+  rpcBackups?: string[]; // Backup RPC endpoints
+  timeout?: number; // Timeout setting
+  retryCount?: number; // Retry count
+  rateLimit?: number; // Request limit
 };
 
-// 获取有效的RPC URL（自定义优先，否则viem默认）
+// Get the effective RPC URL (custom first, otherwise the viem default)
 export function getEffectiveRpcUrl(chainId: number, userConfig?: UserRpcConfig): string {
   if (userConfig?.customRpcUrl) {
     return userConfig.customRpcUrl;
@@ -188,7 +188,7 @@ function classifyChainType(
     return 'testnet';
   }
 
-  // 检查链名称中是否包含测试网标识
+  // Check whether the chain name contains a testnet marker
   const name = candidates[0].name.toLowerCase();
   if (
     name.includes('test')
@@ -213,12 +213,12 @@ for (const [chainId, candidates] of chainsById) {
   chainIdToType.set(chainId, classifyChainType(chainId, candidates));
 }
 
-// 检查链是否为常用链
+// Check whether a chain is popular
 export function isPopularChain(chainId: number): boolean {
   return POPULAR_CHAIN_IDS.has(chainId);
 }
 
-// 获取链的类型（主网/测试网）
+// Get the chain type (mainnet/testnet)
 export function getChainType(chainId: number): 'mainnet' | 'testnet' | 'unknown' {
   return chainIdToType.get(chainId) ?? 'unknown';
 }
@@ -275,14 +275,14 @@ const SORTED_CHAINS: Chain[] = (() => {
   return unique.sort(compareByPopularityThenTypeThenName);
 })();
 
-// 按类型和受欢迎程度排序链
+// Sort chains by type and popularity
 export function getSortedChains(): Chain[] {
   // Copy per call: callers own the result and may mutate it without
   // poisoning the cached order.
   return SORTED_CHAINS.slice();
 }
 
-// 搜索链（按名称或Chain ID）
+// Search chains (by name or chain ID)
 export function searchChains(query: string): Chain[] {
   if (!query.trim()) return getSortedChains();
 
@@ -294,19 +294,19 @@ export function searchChains(query: string): Chain[] {
   const matches = SEARCH_ORDER.filter((entry) => {
     const { chain, lowerName, compactLowerName } = entry;
 
-    // 精确匹配Chain ID
+    // Exact chain ID match
     if (hasNumericQuery && chain.id === numericQuery) return true;
 
-    // 名称匹配
+    // Name match
     if (lowerName.includes(lowerQuery)) return true;
 
-    // Chain ID部分匹配
+    // Partial chain ID match
     if (chain.id.toString().includes(query)) return true;
 
-    // 代币符号匹配
+    // Token symbol match
     if (chain.nativeCurrency.symbol.toLowerCase().includes(lowerQuery)) return true;
 
-    // 别名匹配（如果有的话）
+    // Alias match (when present)
     if (compactLowerName.includes(compactQuery)) return true;
 
     return false;
@@ -317,13 +317,13 @@ export function searchChains(query: string): Chain[] {
   // SEARCH_ORDER because Array#sort is stable.
   return matches
     .sort((a, b) => {
-      // 1. 精确Chain ID匹配优先
+      // 1. Exact chain ID matches rank first
       if (hasNumericQuery) {
         if (a.chain.id === numericQuery && b.chain.id !== numericQuery) return -1;
         if (a.chain.id !== numericQuery && b.chain.id === numericQuery) return 1;
       }
 
-      // 2. 名称开头匹配优先
+      // 2. Name-prefix matches come next
       const aStartsWith = a.lowerName.startsWith(lowerQuery);
       const bStartsWith = b.lowerName.startsWith(lowerQuery);
       if (aStartsWith && !bStartsWith) return -1;
@@ -334,7 +334,7 @@ export function searchChains(query: string): Chain[] {
     .map(entry => entry.chain);
 }
 
-// 多链数据库配置
+// Multi-chain database configuration
 export interface ChainDatabaseConfig {
   chainId: number;
   chainName: string;
@@ -348,7 +348,7 @@ export interface ChainDatabaseConfig {
   rateLimitRpm: number;
 }
 
-// 默认数据库配置
+// Default database configuration
 export const DEFAULT_DATABASE_CONFIG: Partial<ChainDatabaseConfig> = {
   indexingEnabled: true,
   maxHistoricalBlocks: 10000,
@@ -358,7 +358,7 @@ export const DEFAULT_DATABASE_CONFIG: Partial<ChainDatabaseConfig> = {
   rateLimitRpm: 120,
 };
 
-// 生成链特定的数据库配置
+// Generate a chain-specific database configuration
 export function getChainDatabaseConfig(
   chainId: number,
   overrides?: Partial<ChainDatabaseConfig>,
@@ -366,7 +366,7 @@ export function getChainDatabaseConfig(
   const chainName = getChainName(chainId);
   const chainType = getChainType(chainId);
 
-  // 生成数据库文件路径
+  // Generate the database file path
   const safeChainName = chainName.toLowerCase().replace(/\s+/g, '-');
   const databasePath = `data/chains/${chainType}/${safeChainName}-${chainId}.db`;
 
@@ -386,7 +386,7 @@ export function getChainDatabaseConfig(
   };
 }
 
-// 获取多个链的数据库配置
+// Get database configurations for multiple chains
 export function getMultiChainDatabaseConfig(
   chainIds: number[],
   overrides?: Partial<ChainDatabaseConfig>,
@@ -394,13 +394,13 @@ export function getMultiChainDatabaseConfig(
   return chainIds.map(chainId => getChainDatabaseConfig(chainId, overrides));
 }
 
-// 多链支持的链配置（默认支持所有viem链）
+// Chain configuration for multi-chain support (all viem chains by default)
 export const MULTI_CHAIN_SUPPORTED_CHAINS = getSupportedChainIds();
 
-// 常用多链配置（用于快速启动）
+// Popular multi-chain configurations (for quick starts)
 export const POPULAR_MULTI_CHAINS = POPULAR_CHAINS.map(chain => chain.id);
 
-// 按类型分组的链
+// Chains grouped by type
 export const CHAINS_BY_TYPE = {
   mainnet: SUPPORTED_CHAINS.filter(chain => getChainType(chain.id) === 'mainnet').map(
     chain => chain.id,
@@ -410,38 +410,38 @@ export const CHAINS_BY_TYPE = {
   ),
 };
 
-// 获取特定类型的链
+// Get chains of a specific type
 export function getChainsByType(type: 'mainnet' | 'testnet'): number[] {
   return CHAINS_BY_TYPE[type] || [];
 }
 
-// 检查链是否启用了数据库隔离
+// Check whether a chain has database isolation enabled
 export function isChainDatabaseIsolationEnabled(chainId: number): boolean {
-  // �情况下所有支持的链都启用数据库隔离
+  // By default, all supported chains have database isolation enabled
   return isChainSupported(chainId);
 }
 
-// 获取链的数据目录
+// Get a chain's data directory
 export function getChainDataDirectory(chainId: number): string {
   const chainType = getChainType(chainId);
   return `data/chains/${chainType}`;
 }
 
-// 获取链的数据库文件名
+// Get a chain's database file name
 export function getChainDatabaseFileName(chainId: number): string {
   const chainName = getChainName(chainId);
   const safeChainName = chainName.toLowerCase().replace(/\s+/g, '-');
   return `${safeChainName}-${chainId}.db`;
 }
 
-// 获取链的完整数据库路径
+// Get a chain's full database path
 export function getChainDatabasePath(chainId: number): string {
   const dataDirectory = getChainDataDirectory(chainId);
   const fileName = getChainDatabaseFileName(chainId);
   return `${dataDirectory}/${fileName}`;
 }
 
-// 多链配置验证
+// Multi-chain configuration validation
 export function validateMultiChainConfig(chainIds: number[]): {
   valid: boolean;
   errors: string[];
@@ -470,9 +470,9 @@ export function validateMultiChainConfig(chainIds: number[]): {
   };
 }
 
-// 推荐的多链配置（基于流行度和性能）
+// Recommended multi-chain configurations (based on popularity and performance)
 export const RECOMMENDED_MULTI_CHAINS = [
-  // Layer 1 主网
+  // Layer 1 mainnets
   1, // Ethereum
   56, // BSC
   137, // Polygon
@@ -482,19 +482,19 @@ export const RECOMMENDED_MULTI_CHAINS = [
   8453, // Base
   10, // Optimism
 
-  // 其他主流链
+  // Other major chains
   43114, // Avalanche
   250, // Fantom
   42220, // Celo
   100, // Gnosis
 ];
 
-// 获取推荐的多链配置
+// Get the recommended multi-chain configuration
 export function getRecommendedMultiChainConfig(): ChainDatabaseConfig[] {
   return getMultiChainDatabaseConfig(RECOMMENDED_MULTI_CHAINS);
 }
 
-// 开发环境多链配置
+// Development multi-chain configuration
 export const DEVELOPMENT_CHAINS = [
   1, // Ethereum Mainnet
   11155111, // Sepolia Testnet
@@ -502,7 +502,7 @@ export const DEVELOPMENT_CHAINS = [
   80001, // Polygon Mumbai
 ];
 
-// 获取开发环境配置
+// Get the development configuration
 export function getDevelopmentMultiChainConfig(): ChainDatabaseConfig[] {
   return getMultiChainDatabaseConfig(DEVELOPMENT_CHAINS);
 }

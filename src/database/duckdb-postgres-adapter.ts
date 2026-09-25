@@ -8,8 +8,8 @@ import { createLogger } from '../server/logger';
 const logger = createLogger('duckdb-postgres-adapter');
 
 /**
- * DuckDB 到 postgres 的适配器
- * 使用最新的 @duckdb/node-api (Neo) 实现 postgres 的核心接口，让 Drizzle ORM 可以直接使用
+ * DuckDB-to-postgres adapter
+ * Implements the core postgres interface on top of @duckdb/node-api (Neo) so Drizzle ORM can use it directly
  */
 export class DuckDBPostgresAdapter {
   private instance: DuckDBInstance | null = null;
@@ -22,10 +22,10 @@ export class DuckDBPostgresAdapter {
   private static readonly CHECKPOINT_INTERVAL_MS = 60_000;
 
   constructor(connectionString: string) {
-    // 解析连接字符串，提取数据库路径
+    // Parse the connection string and extract the database path
     this.dbPath = this.parseConnectionString(connectionString);
 
-    // 确保数据目录存在
+    // Make sure the data directory exists
     const dataDir = join(process.cwd(), 'data');
     mkdir(dataDir, { recursive: true }).catch(err =>
       logger.warn({ err }, 'Failed to create data directory'),
@@ -33,11 +33,11 @@ export class DuckDBPostgresAdapter {
   }
 
   private parseConnectionString(connectionString: string): string {
-    // 支持格式：duckdb://path/to/database.db
+    // Supported format: duckdb://path/to/database.db
     if (connectionString.startsWith('duckdb://')) {
       return connectionString.replace('duckdb://', '');
     }
-    // 默认路径
+    // Default path
     return join(process.cwd(), 'data', 'blockchain.db');
   }
 
@@ -343,7 +343,7 @@ export class DuckDBPostgresAdapter {
     return conn;
   }
 
-  // 内部查询执行方法 - 提取公共逻辑
+  // Internal query execution - shared logic
   private async executeQuery(
     queryText: string,
     queryParams: unknown[],
@@ -369,7 +369,7 @@ export class DuckDBPostgresAdapter {
     }
   }
 
-  // 实现 postgres 的核心查询接口
+  // Implements postgres's core query interface
   async query(
     sql: string | TemplateStringsArray,
     ...params: unknown[]
@@ -409,7 +409,7 @@ export class DuckDBPostgresAdapter {
     }
   }
 
-  // 实现 postgres 的事务接口
+  // Implements postgres's transaction interface
   async begin<T>(callback: (sql: TransactionSql) => Promise<T>): Promise<T> {
     if (!this.instance) {
       throw new Error('Database not initialized');
@@ -424,7 +424,7 @@ export class DuckDBPostgresAdapter {
       transactionActive = true;
       logger.info('DuckDB Transaction: Transaction started');
 
-      // 创建事务 SQL 对象，使用同一个连接
+      // Create the transaction SQL object on the same connection
       const transactionSql: TransactionSql = {
         query: async (sql: string, ...params: unknown[]) => {
           const queryText = sql.toUpperCase().includes('DEFAULT')
@@ -464,7 +464,7 @@ export class DuckDBPostgresAdapter {
     }
   }
 
-  // 执行 SQL 语句
+  // Execute a SQL statement
   private async exec(sql: string): Promise<void> {
     if (!this.instance) {
       throw new Error('Database not initialized');
@@ -479,7 +479,7 @@ export class DuckDBPostgresAdapter {
     }
   }
 
-  // 错误适配 - 将 DuckDB 错误转换为 PostgreSQL 兼容格式
+  // Error adaptation - convert DuckDB errors to a PostgreSQL-compatible shape
   private adaptError(error: Error): Error & { code?: string } {
     const code = this.mapErrorCode(error.message);
     const adaptedError = new Error(`[${code}] ${error.message}`) as Error & {
@@ -492,11 +492,11 @@ export class DuckDBPostgresAdapter {
   }
 
   private mapErrorCode(message: string): string {
-    // 将 DuckDB 错误映射到 PostgreSQL 错误代码
+    // Map DuckDB errors to PostgreSQL error codes
     if (message.includes('unique constraint')) return '23505';
     if (message.includes('not null constraint')) return '23502';
     if (message.includes('foreign key constraint')) return '23503';
-    return '42000'; // 默认语法错误
+    return '42000'; // default syntax error
   }
 
   // DuckDB renders datetime columns as strings in several shapes: naive
@@ -515,7 +515,7 @@ export class DuckDBPostgresAdapter {
 
   private static readonly EXPLICIT_OFFSET = /(Z|[+-]\d{2}:?\d{2})$/;
 
-  // 结果适配 - 将 DuckDB 结果转换为 PostgreSQL 兼容格式
+  // Result adaptation - convert DuckDB results to a PostgreSQL-compatible shape
   private adaptResult(result: Record<string, unknown>[]): Record<string, unknown>[] {
     return result.map((row: Record<string, unknown>) => {
       const adaptedRow: Record<string, unknown> = { ...row };
@@ -563,7 +563,7 @@ export class DuckDBPostgresAdapter {
     });
   }
 
-  // 初始化数据库
+  // Initialize the database
   private async initialize(): Promise<void> {
     if (this.isInitialized) return;
 
@@ -587,7 +587,7 @@ export class DuckDBPostgresAdapter {
     }
   }
 
-  // 实现 postgres 的连接管理
+  // Implements postgres's connection management
   async end(): Promise<void> {
     this.stopPeriodicCheckpoint();
     if (this.instance) {
@@ -621,16 +621,16 @@ export class DuckDBPostgresAdapter {
     }
   }
 
-  // 实现 postgres 的监听器接口（可选）
+  // Implements postgres's listener interface (optional)
   on(_event: string, _callback: (...args: unknown[]) => void): void {
-    // DuckDB 不支持 LISTEN/NOTIFY，这里可以是空实现
+    // DuckDB has no LISTEN/NOTIFY; an empty implementation is fine here
   }
 
   off(_event: string, _callback?: (...args: unknown[]) => void): void {
-    // 空实现
+    // Empty implementation
   }
 
-  // 扩展查询 Promise 以兼容 postgres-js 接口
+  // Extend the query Promise for postgres-js interface compatibility
   extendQueryPromise(
     queryPromise: Promise<Record<string, unknown>[]>,
     query: string,
@@ -679,7 +679,7 @@ type PostgresQueryExtensions = {
   active: boolean;
 };
 
-// 创建适配器工厂函数，模拟 postgres 的使用方式
+// Adapter factory that mimics how postgres is instantiated
 export function createDuckDBAdapter(connectionString: string) {
   const adapter = new DuckDBPostgresAdapter(connectionString);
 

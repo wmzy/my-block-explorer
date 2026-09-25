@@ -114,12 +114,12 @@ const barStyle = css`
   align-items: center;
   gap: 16px;
   padding: 10px 16px;
-  background: var(--haze-surface, #f9fafb);
-  border: 1px solid var(--haze-border, #e5e7eb);
+  background: var(--haze-color-bg-subtle);
+  border: 1px solid var(--haze-color-border);
   border-radius: 8px;
   margin-bottom: 16px;
   font-size: 13px;
-  color: var(--haze-text-secondary, #6b7280);
+  color: var(--haze-color-text-secondary);
   flex-wrap: wrap;
 `;
 
@@ -132,20 +132,20 @@ const metricStyle = css`
 
 const metricValueStyle = css`
   font-weight: 600;
-  color: var(--haze-text, #111827);
+  color: var(--haze-color-text);
 `;
 
 // Denominator hint for the coverage metric: 100% means "all of the
 // configured ranges", never "complete contract history".
 const coverageScopeStyle = css`
   font-size: 11px;
-  color: var(--haze-text-secondary, #6b7280);
+  color: var(--haze-color-text-secondary);
 `;
 
 const separatorStyle = css`
   width: 1px;
   height: 16px;
-  background: var(--haze-border, #d1d5db);
+  background: var(--haze-color-border);
 `;
 
 const progressWrapperStyle = css`
@@ -159,14 +159,14 @@ const progressWrapperStyle = css`
 const progressTrackStyle = css`
   flex: 1;
   height: 4px;
-  background: var(--haze-border, #e5e7eb);
+  background: var(--haze-color-bg-muted);
   border-radius: 2px;
   overflow: hidden;
 `;
 
 const progressFillStyle = css`
   height: 100%;
-  background: linear-gradient(90deg, #3b82f6, #1d4ed8);
+  background: linear-gradient(90deg, var(--haze-color-primary), var(--haze-color-primary-active));
   border-radius: 2px;
   transition: width 0.3s ease;
 `;
@@ -185,14 +185,14 @@ const refreshBtnStyle = css`
   padding: 2px 6px;
   border-radius: 4px;
   font-size: 14px;
-  color: var(--haze-text-secondary, #6b7280);
+  color: var(--haze-color-text-secondary);
   &:hover {
-    background: var(--haze-border, #e5e7eb);
+    background: var(--haze-color-bg-muted);
   }
 `;
 
 const errorTextStyle = css`
-  color: #dc2626;
+  color: var(--haze-color-danger);
   font-size: 12px;
 `;
 
@@ -282,10 +282,10 @@ export const EventStatistics = ({
 
   const statusColor
     = stats?.status === 'indexing'
-      ? '#3b82f6'
+      ? 'var(--haze-color-info)'
       : stats?.status === 'error'
-        ? '#dc2626'
-        : '#10b981';
+        ? 'var(--haze-color-danger)'
+        : 'var(--haze-color-success)';
 
   return (
     <div className={cx(barStyle, className)}>

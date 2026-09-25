@@ -14,6 +14,9 @@
 //   already_caught_up when it already ends at the head; 404 no_scan_job)
 // - DELETE ""      → 204, idempotent, removes the job AND its findings
 // - GET ""         → 200 {job} | 404 {error:'no_scan_job'}
+// - GET "/internal-transactions?offset=&limit=" → 200 {transactions,
+//   total, offset, limit} — internal-tx rows recorded by includeTraces
+//   walks (an unknown address answers 200 with an empty list)
 // Writes are admin-gated (x-admin-token, opt-in tier); reads are open.
 //
 // Deliberately independent of services/addresses.ts: the tx-history
@@ -60,6 +63,14 @@ export type ScanJob = {
   errorMessage: string | null;
   coverage: 'complete' | null;
   updatedAt: string;
+  // Internal-tx recording (additive): tracesRequested mirrors the
+  // create-body flag; tracesSupported is null until the walk probed the
+  // RPC's trace capability; tracesRecorded counts persisted rows. These
+  // NEVER feed the coverage derivation above — recorded rows are a
+  // bonus artifact of the walk, not a coverage source.
+  tracesRequested: boolean;
+  tracesSupported: boolean | null;
+  tracesRecorded: number;
 };
 
 const nonNegativeInteger = (value: unknown): number | null =>
@@ -103,6 +114,11 @@ export function parseScanJob(payload: unknown): ScanJob | null {
     errorMessage: p.errorMessage,
     coverage: p.coverage,
     updatedAt: p.updatedAt,
+    // Additive traces fields tolerate legacy payloads (no key at all):
+    // not requested, capability unprobed, nothing recorded.
+    tracesRequested: p.tracesRequested === true,
+    tracesSupported: typeof p.tracesSupported === 'boolean' ? p.tracesSupported : null,
+    tracesRecorded: nonNegativeInteger(p.tracesRecorded) ?? 0,
   };
 }
 
@@ -193,6 +209,12 @@ export type StartScanOptions = {
   fromBlock?: number;
   /** Replace an existing job with different bounds (resets progress). */
   force?: boolean;
+  /**
+   * Record internal transactions while walking (slower — each block the
+   * walk stops on gets traced). Rides the POST body ONLY when true, so
+   * an unchecked toggle keeps the wire byte-identical to today.
+   */
+  includeTraces?: boolean;
 };
 
 /** POST the scan job (create). Rejects with ApiError; 400 scan_conflict when a job exists with different bounds and force was not set. */
@@ -201,10 +223,11 @@ export async function startScanJob(
   address: string,
   options: StartScanOptions = {},
 ): Promise<ScanJob> {
-  const body: { fromBlock: number | 'earliest'; force?: boolean } = {
+  const body: { fromBlock: number | 'earliest'; force?: boolean; includeTraces?: boolean } = {
     fromBlock: options.fromBlock ?? 'earliest',
   };
   if (options.force) body.force = true;
+  if (options.includeTraces) body.includeTraces = true;
   return jobFromEnvelope(
     await post<unknown>(
       `/api/chains/${chainId}/addresses/${address}/scan`,
@@ -253,6 +276,115 @@ export async function catchupScanJob(chainId: number, address: string): Promise<
 /** DELETE the job AND its persisted findings. Idempotent (204). */
 export function deleteScanJob(chainId: number, address: string): Promise<unknown> {
   return del<unknown>(`/api/chains/${chainId}/addresses/${address}/scan`, scanApi);
+}
+
+// One recorded internal transaction, field names verbatim from the pinned
+// contract. value is a wei decimal string; callType is the callTracer
+// vocabulary ('call'/'callcode'/'delegatecall'/'staticcall'); tracePath
+// is the depth-joined position inside the parent tx (e.g. '0' or '0.1').
+export type InternalTxRecord = {
+  transactionHash: string;
+  blockNumber: number;
+  from: string;
+  to: string;
+  value: string;
+  callType: string;
+  reverted: boolean;
+  tracePath: string;
+  timestamp: string;
+};
+
+// The internal-transactions list envelope (pinned contract): newest-first
+// rows (blockNumber desc, then tx index) with server-side pagination.
+export type InternalTxnsResult = {
+  transactions: InternalTxRecord[];
+  total: number;
+  offset: number;
+  limit: number;
+};
+
+// Wei travels as a bare decimal string — anything else (hex, number,
+// negative sign) is a malformed row, not a zero.
+const weiDecimalString = (value: unknown): string | null =>
+  typeof value === 'string' && /^\d+$/.test(value) ? value : null;
+
+const parseInternalTxRecord = (payload: unknown): InternalTxRecord | null => {
+  if (typeof payload !== 'object' || payload === null) return null;
+  const p = payload as Record<string, unknown>;
+  const blockNumber = nonNegativeInteger(p.blockNumber);
+  const value = weiDecimalString(p.value);
+  if (blockNumber === null || value === null) return null;
+  if (
+    typeof p.transactionHash !== 'string' || p.transactionHash === ''
+    || typeof p.from !== 'string'
+    || typeof p.to !== 'string'
+    || typeof p.callType !== 'string' || p.callType === ''
+    || typeof p.tracePath !== 'string' || p.tracePath === ''
+    || typeof p.timestamp !== 'string' || p.timestamp === ''
+    || typeof p.reverted !== 'boolean'
+  ) {
+    return null;
+  }
+  return {
+    transactionHash: p.transactionHash,
+    blockNumber,
+    from: p.from,
+    to: p.to,
+    value,
+    callType: p.callType,
+    reverted: p.reverted,
+    tracePath: p.tracePath,
+    timestamp: p.timestamp,
+  };
+};
+
+/**
+ * Narrow pure guard for the internal-transactions list response: every
+ * row field and the pagination envelope must match the contract or the
+ * whole payload rejects to null (same rule as parseScanJob — a
+ * malformed body never renders a partial lie).
+ */
+export function parseInternalTxnsResult(payload: unknown): InternalTxnsResult | null {
+  if (typeof payload !== 'object' || payload === null) return null;
+  const p = payload as Record<string, unknown>;
+  if (!Array.isArray(p.transactions)) return null;
+  const total = nonNegativeInteger(p.total);
+  const offset = nonNegativeInteger(p.offset);
+  const limit = nonNegativeInteger(p.limit);
+  if (total === null || offset === null || limit === null) return null;
+  const transactions: InternalTxRecord[] = [];
+  for (const row of p.transactions) {
+    const record = parseInternalTxRecord(row);
+    if (record === null) return null;
+    transactions.push(record);
+  }
+  return { transactions, total, offset, limit };
+}
+
+export type FetchInternalTxnsOptions = {
+  offset?: number;
+  limit?: number;
+  signal?: AbortSignal;
+};
+
+/**
+ * GET the internal transactions a deep scan recorded (the includeTraces
+ * walk's persisted findings). The backend answers 200 with an empty list
+ * for an unknown address, so a rejection means transport trouble; a body
+ * that fails the narrow parse settles as null so the view can honestly
+ * report nothing loadable instead of guessing.
+ */
+export async function fetchInternalTransactions(
+  chainId: number,
+  address: string,
+  options: FetchInternalTxnsOptions = {},
+): Promise<InternalTxnsResult | null> {
+  const body = await get<unknown>(
+    `/api/chains/${chainId}/addresses/${address}/scan/internal-transactions`,
+    { offset: options.offset, limit: options.limit },
+    withSignal(scanApi, options.signal),
+  );
+  return parseInternalTxnsResult(body);
 }
 
 // Live read of the job with active-only polling: the 3s cadence runs

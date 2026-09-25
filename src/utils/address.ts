@@ -1,9 +1,9 @@
 import { getAddress, isAddress } from 'viem';
 
 /**
- * 格式化以太坊地址为校验和格式 (EIP-55)
- * @param address 原始地址
- * @returns 校验和格式的地址，如果无效则返回原地址
+ * Format an Ethereum address as a checksum address (EIP-55)
+ * @param address The raw address
+ * @returns The checksummed address, or the input unchanged when invalid
  */
 export function formatAddress(address: string): `0x${string}` {
   try {
@@ -18,10 +18,10 @@ export function formatAddress(address: string): `0x${string}` {
 }
 
 /**
- * 比较两个以太坊地址是否相等（忽略大小写）
- * @param address1 地址1
- * @param address2 地址2
- * @returns 是否相等
+ * Compare two Ethereum addresses for equality (case-insensitive)
+ * @param address1 First address
+ * @param address2 Second address
+ * @returns Whether the addresses are equal
  */
 export function addressEquals(address1: string, address2: string): boolean {
   if (!address1 || !address2) return false;
@@ -34,9 +34,9 @@ export function addressEquals(address1: string, address2: string): boolean {
 }
 
 /**
- * 验证地址格式是否有效
- * @param address 地址
- * @returns 是否有效
+ * Validate an address format
+ * @param address The address
+ * @returns Whether the address is valid
  */
 export function isValidAddress(address: string): boolean {
   return isAddress(address);

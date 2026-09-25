@@ -61,6 +61,13 @@ vi.mock('@/util/http', async importOriginal => {
   };
 });
 
+// The view's on-chain proxy probe reaches the browser RPC client; the
+// factory mock keeps it out of jsdom (the probe's own behavior is covered
+// in contractPage.test.tsx).
+vi.mock('@/utils/realTimeData', () => ({
+  createRpcClient: vi.fn(),
+}));
+
 const mockReconnect = vi.fn(async (): Promise<{ url: string } | null> => null);
 vi.mock('@/hooks/ServiceDiscoveryContext', () => ({
   useServiceDiscovery: () => ({ reconnect: mockReconnect }),

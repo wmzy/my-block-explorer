@@ -33,11 +33,12 @@ vi.mock('@/services/RpcManager', () => ({
 
 import { and, eq } from 'drizzle-orm';
 import { db } from '@/database/drizzle';
-import { addressScanJobs, addressScanFindings } from '@/database/schema';
+import { addressScanJobs, addressScanFindings, addressScanInternalTxs } from '@/database/schema';
 import {
   catchupScanJob,
   createOrReplaceScanJob,
   deleteScanJob,
+  listInternalTransactions,
   pauseScanJob,
   reconcileInterruptedAddressScans,
   resumeScanJob,
@@ -70,6 +71,8 @@ type ClientSpec = {
   balances: (blockNumber: bigint) => bigint | Promise<bigint>;
   blocks?: Record<string, BlockSpec>;
   head?: bigint;
+  /** Scripts debug_traceTransaction: raw callTracer payload per tx hash, or a thrown provider error. */
+  trace?: (hash: string) => unknown;
 };
 
 const buildClient = (spec: ClientSpec): PublicClient =>
@@ -88,6 +91,16 @@ const buildClient = (spec: ClientSpec): PublicClient =>
     getTransaction: vi.fn(),
     getTransactionCount: vi.fn(async () => 1),
     getCode: vi.fn(async () => '0x'),
+    request: vi.fn(async ({ method, params }: { method: string; params: unknown[] }) => {
+      if (method !== 'debug_traceTransaction') {
+        throw new Error(`unexpected rpc method in test: ${method}`);
+      }
+      // No trace script = a provider without the debug namespace.
+      if (!spec.trace) {
+        throw new Error('the method debug_traceTransaction does not exist/is not available');
+      }
+      return spec.trace(params[0] as string);
+    }),
   }) as unknown as PublicClient;
 
 const getJob = async (chainId: number, address: string) => {
@@ -105,6 +118,25 @@ const getFindings = async (chainId: number, address: string) =>
     .where(
       and(eq(addressScanFindings.chainId, chainId), eq(addressScanFindings.address, address)),
     );
+
+const getInternalTxs = async (chainId: number, address: string) =>
+  db
+    .select()
+    .from(addressScanInternalTxs)
+    .where(
+      and(
+        eq(addressScanInternalTxs.chainId, chainId),
+        eq(addressScanInternalTxs.address, address),
+      ),
+    );
+
+// Every debug_traceTransaction the walk issued (any hash), in order.
+const traceCallHashes = (client: PublicClient): string[] => {
+  const fn = client.request as unknown as {
+    mock: { calls: Array<[{ method: string; params: unknown[] }]> };
+  };
+  return fn.mock.calls.map(args => String(args[0].params[0]));
+};
 
 const balanceCallBlocks = (client: PublicClient): bigint[] => {
   const fn = client.getBalance as unknown as {
@@ -125,6 +157,7 @@ describe('deep scan walk engine', () => {
       fromBlock: 0,
       toBlock: 200_000,
       force: false,
+      includeTraces: false,
     });
     expect(created.ok).toBe(true);
     if (!created.ok || created.result.outcome !== 'created') throw new Error('not created');
@@ -176,6 +209,7 @@ describe('deep scan walk engine', () => {
       fromBlock: 0,
       toBlock: 1000,
       force: false,
+      includeTraces: false,
     });
     if (!created.ok || created.result.outcome !== 'created') throw new Error('not created');
     await created.result.started;
@@ -210,6 +244,7 @@ describe('deep scan walk engine', () => {
       fromBlock: 0,
       toBlock: 200_000,
       force: false,
+      includeTraces: false,
     });
     if (!created.ok || created.result.outcome !== 'created') throw new Error('not created');
     await created.result.started;
@@ -245,6 +280,7 @@ describe('deep scan walk engine', () => {
       fromBlock: 0,
       toBlock: 200_000,
       force: false,
+      includeTraces: false,
     });
     if (!created.ok || created.result.outcome !== 'created') throw new Error('not created');
     await created.result.started;
@@ -402,6 +438,7 @@ describe('deep scan walk engine', () => {
       fromBlock: 0,
       toBlock: 200_000,
       force: false,
+      includeTraces: false,
     });
     if (!created.ok || created.result.outcome !== 'created') throw new Error('not created');
 
@@ -430,6 +467,7 @@ describe('deep scan walk engine', () => {
       fromBlock: 0,
       toBlock: 1000,
       force: false,
+      includeTraces: false,
     });
     expect(first.ok && first.result.outcome).toBe('created');
     if (first.ok && first.result.outcome === 'created') await first.result.started;
@@ -439,6 +477,7 @@ describe('deep scan walk engine', () => {
       fromBlock: 500,
       toBlock: 1000,
       force: false,
+      includeTraces: false,
     });
     expect(conflict.ok && conflict.result.outcome).toBe('conflict');
 
@@ -447,6 +486,7 @@ describe('deep scan walk engine', () => {
       fromBlock: 0,
       toBlock: 1000,
       force: false,
+      includeTraces: false,
     });
     expect(again.ok && again.result.outcome).toBe('idempotent');
 
@@ -462,6 +502,7 @@ describe('deep scan walk engine', () => {
       fromBlock: 500,
       toBlock: 1000,
       force: true,
+      includeTraces: false,
     });
     expect(replaced.ok && replaced.result.outcome).toBe('created');
     if (replaced.ok && replaced.result.outcome === 'created') await replaced.result.started;
@@ -494,6 +535,7 @@ describe('deep scan walk engine', () => {
       fromBlock: 0,
       toBlock: 4000,
       force: false,
+      includeTraces: false,
     });
     // Same bounds → idempotent outcome, but the errored job restarts.
     expect(retried.ok && retried.result.outcome).toBe('idempotent');
@@ -571,6 +613,7 @@ describe('deep scan walk engine', () => {
         fromBlock: 0,
         toBlock: 1000,
         force: false,
+        includeTraces: false,
       });
       if (!result.ok || result.result.outcome !== 'created') throw new Error('not created');
       created[label] = { started: result.result.started };
@@ -636,6 +679,350 @@ describe('deep scan walk engine', () => {
     expect((await getJob(1, strandedAddress))?.errorMessage).toBe(
       'Interrupted by server restart — resume to continue',
     );
+  });
+
+  it('records internal transactions of EVERY change-block tx when includeTraces is set', async () => {
+    const address = uniqueAddress();
+    const otherA = `0x${'11'.repeat(20)}`;
+    const otherB = `0x${'22'.repeat(20)}`;
+    const victim = `0x${'33'.repeat(20)}`;
+    const tx0 = `0x${'aa'.repeat(32)}`;
+    const tx1 = `0x${'bb'.repeat(32)}`;
+    const client = buildClient({
+      balances: bn => (bn < 100n ? 0n : 6n),
+      blocks: {
+        100: {
+          number: 100n,
+          timestamp: 1700000123n,
+          transactions: [
+            // tx0: top-level transfer into the scanned address (a finding).
+            { hash: tx0, from: otherA, to: address, value: 5n },
+            // tx1: never touches the address top-level — but its trace
+            // carries an internal call INTO the address, which is exactly
+            // why the walk traces the whole block, not just its own txs.
+            { hash: tx1, from: otherB, to: victim, value: 1n },
+          ],
+        },
+      },
+      trace: hash => {
+        if (hash === tx0) {
+          return {
+            type: 'CALL',
+            from: otherA,
+            to: address,
+            value: '0x5',
+            calls: [
+              { type: 'CALL', from: address, to: victim, value: '0x2' },
+              // No value reported → stored as honest 0n.
+              { type: 'DELEGATECALL', from: address, to: otherB },
+            ],
+          };
+        }
+        return {
+          type: 'CALL',
+          from: otherB,
+          to: victim,
+          value: '0x1',
+          calls: [
+            {
+              type: 'CALL',
+              from: victim,
+              to: address,
+              value: '0x1',
+              error: 'execution reverted',
+            },
+          ],
+        };
+      },
+    });
+    mocks.client = client;
+
+    const created = await createOrReplaceScanJob(1, address, {
+      fromBlock: 0,
+      toBlock: 1000,
+      force: false,
+      includeTraces: true,
+    });
+    if (!created.ok || created.result.outcome !== 'created') throw new Error('not created');
+    await created.result.started;
+
+    const row = await getJob(1, address);
+    expect(row?.status).toBe('complete');
+    expect(row?.tracesRequested).toBe(true);
+    expect(row?.tracesSupported).toBe(true);
+    // Only tx0 touches the address top-level; traces see more than the walk.
+    expect(row?.txsFound).toBe(1);
+    expect(row?.tracesRecorded).toBe(3);
+
+    const rows = await getInternalTxs(1, address);
+    expect(rows).toHaveLength(3);
+    const byKey = new Map(rows.map(r => [`${r.txHash}:${r.tracePath}`, r]));
+    expect(byKey.get(`${tx0}:0`)).toMatchObject({
+      blockNumber: 100n,
+      transactionIndex: 0,
+      fromAddress: address,
+      toAddress: victim,
+      value: 2n,
+      callType: 'call',
+      reverted: false,
+    });
+    expect(byKey.get(`${tx0}:1`)).toMatchObject({
+      value: 0n,
+      callType: 'delegatecall',
+      reverted: false,
+    });
+    expect(byKey.get(`${tx1}:0`)).toMatchObject({
+      transactionIndex: 1,
+      fromAddress: victim,
+      toAddress: address,
+      value: 1n,
+      callType: 'call',
+      reverted: true,
+    });
+    // Timestamps derive from the block timestamp, ISO-UTC on the wire.
+    for (const r of rows) {
+      expect(new Date(r.blockTimestamp).toISOString()).toBe(
+        new Date(1_700_000_123_000).toISOString(),
+      );
+    }
+  });
+
+  it('marks the provider unsupported once, stops tracing, and still completes honestly', async () => {
+    const address = uniqueAddress();
+    const client = buildClient({
+      balances: bn => (bn < 100n ? 0n : bn < 300n ? 5n : 9n),
+      blocks: {
+        100: {
+          number: 100n,
+          timestamp: 1700000100n,
+          transactions: [
+            { hash: `0x${'c1'.repeat(32)}`, from: `0x${'11'.repeat(20)}`, to: address, value: 5n },
+          ],
+        },
+        300: {
+          number: 300n,
+          timestamp: 1700000300n,
+          transactions: [
+            { hash: `0x${'c3'.repeat(32)}`, from: `0x${'22'.repeat(20)}`, to: address, value: 4n },
+          ],
+        },
+      },
+      trace: () => {
+        throw new Error('the method debug_traceTransaction does not exist/is not available');
+      },
+    });
+    mocks.client = client;
+
+    const created = await createOrReplaceScanJob(1, address, {
+      fromBlock: 0,
+      toBlock: 1000,
+      force: false,
+      includeTraces: true,
+    });
+    if (!created.ok || created.result.outcome !== 'created') throw new Error('not created');
+    await created.result.started;
+
+    const row = await getJob(1, address);
+    // Tracing must never fail the job: the walk completed.
+    expect(row?.status).toBe('complete');
+    expect(row?.tracesSupported).toBe(false);
+    expect(row?.tracesRecorded).toBe(0);
+    // Coverage honesty: 'complete' derives from the walk alone (genesis
+    // anchor), never from trace rows.
+    expect(toScanJobDto(row).coverage).toBe('complete');
+    // One probe at the FIRST change block; the second change block makes
+    // zero trace RPC calls after the unsupported verdict.
+    expect(traceCallHashes(client)).toHaveLength(1);
+    expect(await getInternalTxs(1, address)).toHaveLength(0);
+  });
+
+  it('never issues a trace RPC call when includeTraces is absent/false (pinned default)', async () => {
+    const address = uniqueAddress();
+    const client = buildClient({
+      balances: bn => (bn < 100n ? 0n : 5n),
+      blocks: {
+        100: {
+          number: 100n,
+          timestamp: 1700000100n,
+          transactions: [
+            { hash: `0x${'d1'.repeat(32)}`, from: `0x${'11'.repeat(20)}`, to: address, value: 5n },
+          ],
+        },
+      },
+      trace: () => {
+        throw new Error('trace must never be requested without the opt-in');
+      },
+    });
+    mocks.client = client;
+
+    const created = await createOrReplaceScanJob(1, address, {
+      fromBlock: 0,
+      toBlock: 1000,
+      force: false,
+      includeTraces: false,
+    });
+    if (!created.ok || created.result.outcome !== 'created') throw new Error('not created');
+    await created.result.started;
+
+    expect(traceCallHashes(client)).toEqual([]);
+    expect(await getInternalTxs(1, address)).toHaveLength(0);
+    const row = await getJob(1, address);
+    expect(row?.tracesRequested).toBe(false);
+    // The additive DTO fields are present even for non-traced jobs, with
+    // the pinned defaults (false / not-yet-probed null / 0).
+    expect(toScanJobDto(row)).toMatchObject({
+      tracesRequested: false,
+      tracesSupported: null,
+      tracesRecorded: 0,
+    });
+  });
+
+  it('re-traces a resumed block without duplicating rows (composite-PK onConflictDoNothing)', async () => {
+    const address = uniqueAddress();
+    const otherA = `0x${'11'.repeat(20)}`;
+    // Annotated: template expressions over .repeat() infer plain string,
+    // but the address-typed columns are `0x${string}`.
+    const victim: `0x${string}` = `0x${'55'.repeat(20)}`;
+    const txHash: `0x${string}` = `0x${'dd'.repeat(32)}`;
+    // A paused walk whose previous run crashed AFTER writing the trace
+    // row but BEFORE checkpointing the cursor past block 100 — the exact
+    // window the composite-PK dedupe defends.
+    await db.insert(addressScanJobs).values({
+      chainId: 1,
+      address,
+      fromBlock: 0n,
+      toBlock: 1000n,
+      cursorBlock: 99n,
+      status: 'paused',
+      txsFound: 0,
+      tracesRequested: true,
+      errorMessage: null,
+      updatedAt: new Date(),
+    });
+    await db.insert(addressScanInternalTxs).values({
+      chainId: 1,
+      address,
+      txHash,
+      tracePath: '0',
+      blockNumber: 100n,
+      transactionIndex: 0,
+      fromAddress: address,
+      toAddress: victim,
+      value: 2n,
+      callType: 'call',
+      reverted: false,
+      blockTimestamp: new Date(1_700_000_123_000),
+    });
+
+    const client = buildClient({
+      balances: bn => (bn < 100n ? 0n : 5n),
+      blocks: {
+        100: {
+          number: 100n,
+          timestamp: 1700000123n,
+          transactions: [{ hash: txHash, from: otherA, to: address, value: 5n }],
+        },
+      },
+      trace: () => ({
+        type: 'CALL',
+        from: otherA,
+        to: address,
+        value: '0x5',
+        calls: [{ type: 'CALL', from: address, to: victim, value: '0x2' }],
+      }),
+    });
+    mocks.client = client;
+
+    const resumed = await resumeScanJob(1, address);
+    expect(resumed.ok).toBe(true);
+    if (!resumed.ok) throw new Error('resume failed');
+    await resumed.started;
+
+    const rows = await getInternalTxs(1, address);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ txHash, tracePath: '0', value: 2n });
+    const row = await getJob(1, address);
+    expect(row?.status).toBe('complete');
+    expect(row?.tracesRecorded).toBe(1);
+  });
+
+  it('lists internal transactions newest-first (block desc, then tx index) with the pinned envelope', async () => {
+    const address = uniqueAddress();
+    const otherA = `0x${'66'.repeat(20)}`;
+    const victim = `0x${'77'.repeat(20)}`;
+    const tx100a = `0x${'0a'.repeat(32)}`;
+    const tx100b = `0x${'0b'.repeat(32)}`;
+    const tx300 = `0x${'3c'.repeat(32)}`;
+    const client = buildClient({
+      balances: bn => (bn < 100n ? 0n : bn < 300n ? 5n : 9n),
+      blocks: {
+        100: {
+          number: 100n,
+          timestamp: 1700000100n,
+          transactions: [
+            { hash: tx100a, from: otherA, to: address, value: 5n },
+            { hash: tx100b, from: otherA, to: address, value: 0n },
+          ],
+        },
+        300: {
+          number: 300n,
+          timestamp: 1700000300n,
+          transactions: [{ hash: tx300, from: otherA, to: address, value: 4n }],
+        },
+      },
+      trace: () => ({
+        type: 'CALL',
+        from: otherA,
+        to: address,
+        value: '0x1',
+        calls: [{ type: 'CALL', from: address, to: victim, value: '0x2' }],
+      }),
+    });
+    mocks.client = client;
+
+    const created = await createOrReplaceScanJob(1, address, {
+      fromBlock: 0,
+      toBlock: 1000,
+      force: false,
+      includeTraces: true,
+    });
+    if (!created.ok || created.result.outcome !== 'created') throw new Error('not created');
+    await created.result.started;
+
+    const page = await listInternalTransactions(1, address, { offset: 0, limit: 50 });
+    expect(page.total).toBe(3);
+    expect(page.offset).toBe(0);
+    expect(page.limit).toBe(50);
+    // Newest-first by block, then tx index within the block (the pinned
+    // DTO carries no transactionIndex — order proves the tiebreak).
+    expect(page.transactions.map(t => [t.blockNumber, t.transactionHash])).toEqual([
+      [300, tx300],
+      [100, tx100b],
+      [100, tx100a],
+    ]);
+    expect(page.transactions[0]).toMatchObject({
+      transactionHash: tx300,
+      from: address,
+      to: victim,
+      value: '2',
+      callType: 'call',
+      reverted: false,
+      tracePath: '0',
+    });
+    // Timestamp is ISO-8601 UTC off the block timestamp.
+    expect(page.transactions[0].timestamp).toBe(new Date(1_700_000_300_000).toISOString());
+
+    // Pagination windows over the same set.
+    const window1 = await listInternalTransactions(1, address, { offset: 1, limit: 1 });
+    expect(window1.transactions.map(t => t.blockNumber)).toEqual([100]);
+    expect(window1.total).toBe(3);
+    expect(window1.offset).toBe(1);
+    expect(window1.limit).toBe(1);
+
+    // Unknown address: an honest empty page, never an error.
+    expect(
+      await listInternalTransactions(1, `0x${'f'.repeat(40)}`, { offset: 0, limit: 50 }),
+    ).toEqual({ transactions: [], total: 0, offset: 0, limit: 50 });
   });
 });
 

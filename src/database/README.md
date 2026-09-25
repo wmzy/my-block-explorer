@@ -1,8 +1,8 @@
-# DuckDB + Drizzle ORM 集成方案
+# DuckDB + Drizzle ORM Integration
 
-本项目使用 DuckDB 作为数据库，通过自定义适配器与 Drizzle ORM 集成，实现类型安全的数据库操作。
+This project uses DuckDB as its database, integrated with Drizzle ORM through a custom adapter for type-safe database operations.
 
-## 架构概览
+## Architecture Overview
 
 ```
 ┌─────────────────┐    ┌──────────────────┐    ┌─────────────────┐
@@ -11,123 +11,123 @@
 └─────────────────┘    └──────────────────┘    └─────────────────┘
 ```
 
-### 核心文件
+### Core files
 
-- `drizzle.ts` - Drizzle ORM 配置
-- `duckdb-postgres-adapter.ts` - DuckDB 兼容适配器
-- `duckdb-types.ts` - 类型安全的 DuckDB 专用构造器
-- `schema.ts` - 数据库表结构定义
-- `migrate.ts` - 数据库迁移脚本
+- `drizzle.ts` - Drizzle ORM configuration
+- `duckdb-postgres-adapter.ts` - DuckDB-compatible adapter
+- `duckdb-types.ts` - Type-safe DuckDB-specific constructors
+- `schema.ts` - Database table definitions
+- `migrate.ts` - Database migration script
 
-## 设计原则
+## Design Principles
 
-### 1. Schema 层面的类型安全
+### 1. Type safety at the schema level
 
-**原则**：在 schema 定义时禁止使用不支持的类型和索引，而不是在运行时做不安全的替换。
+**Principle**: forbid unsupported types and indexes at schema definition time instead of making unsafe runtime replacements.
 
-**实践成果**：我们已成功通过自定义类型和重新设计表结构解决了 SERIAL 类型问题，消除了运行时 SQL 转换的需要。
+**Result**: custom types and redesigned table structures solved the SERIAL problem and eliminated runtime SQL conversion.
 
 ```typescript
-// ✅ 推荐：使用 DuckDB 专用类型构造器
+// ✅ Recommended: use the DuckDB-specific type constructors
 import { duckdbBigint, duckdbTimestamp, duckdbTable } from './duckdb-types';
 
 export const blocks = duckdbTable('blocks', {
   chainId: integer('chain_id').notNull(),
-  number: duckdbBigint('number').notNull(),           // VARCHAR(32) - 避免精度问题
+  number: duckdbBigint('number').notNull(),           // VARCHAR(32) - avoids precision loss
   hash: varchar('hash', { length: 66 }).notNull(),
-  timestamp: duckdbTimestamp('timestamp'),            // TIMESTAMP (无时区)
+  timestamp: duckdbTimestamp('timestamp'),            // TIMESTAMP (no timezone)
 }, (table) => [
   primaryKey({ columns: [table.chainId, table.number] }),
   unique().on(table.chainId, table.hash),
-  // 注意：索引在迁移脚本中手动创建
+  // Note: indexes are created manually in the migration script
 ]);
 
-// ❌ 避免：直接使用可能不兼容的类型
+// ❌ Avoid: directly using potentially incompatible types
 import { bigint, timestamp } from 'drizzle-orm/pg-core';
 export const blocks = pgTable('blocks', {
-  number: bigint('number', { mode: 'string' }), // 可能导致运行时错误
+  number: bigint('number', { mode: 'string' }), // may cause runtime errors
 });
 ```
 
-### 2. 明确的 API 设计
+### 2. Explicit API design
 
-所有 DuckDB 专用构造器都使用 `duckdb` 前缀，让开发者明确知道他们在使用 DuckDB 特性：
+All DuckDB-specific constructors carry the `duckdb` prefix, making it explicit that developers are using DuckDB features:
 
 ```typescript
-// DuckDB 专用类型构造器
+// DuckDB-specific type constructors
 export const duckdbBigint = (name: string) => varchar(name, { length: 32 });
 export const duckdbTimestamp = (name: string) => timestamp(name, { withTimezone: false });
 export const duckdbTimestampWithDefault = (name: string) => 
   timestamp(name, { withTimezone: false }).defaultNow();
 ```
 
-### 3. 零运行时转换
+### 3. Zero runtime conversion
 
-通过在 schema 层面使用 DuckDB 兼容的类型定义，我们已经完全消除了运行时 SQL 转换的需要。
+Using DuckDB-compatible type definitions at the schema level removes the need for runtime SQL conversion entirely.
 
-**重大突破**：通过创建自定义类型和重新设计表结构，我们已经彻底解决了所有 SERIAL 类型问题，包括 Drizzle 内部迁移表，实现了真正的零运行时转换。
+**Breakthrough**: custom types and redesigned table structures resolved every SERIAL problem — including Drizzle's internal migration tables — achieving true zero runtime conversion.
 
-**重要发现**：DuckDB 原生支持 PostgreSQL 风格的参数占位符（`$1, $2, ...`），不需要转换为 `?` 风格。
+**Key finding**: DuckDB natively supports PostgreSQL-style parameter placeholders (`$1, $2, ...`); no conversion to `?` style is needed.
 
-### 4. SERIAL 类型问题的解决方案
+### 4. Solution for the SERIAL problem
 
-我们通过以下方式彻底解决了 DuckDB 不支持 SERIAL 类型的问题：
+We fully solved DuckDB's lack of SERIAL support as follows:
 
-#### 4.1 Schema 设计层面的解决
+#### 4.1 Fix at the schema design level
 
-**问题**：DuckDB 不支持 PostgreSQL 的 `SERIAL` 和 `BIGSERIAL` 类型。
+**Problem**: DuckDB does not support PostgreSQL's `SERIAL` and `BIGSERIAL` types.
 
-**解决方案**：在 schema 定义中直接使用 DuckDB 兼容的类型：
+**Solution**: use DuckDB-compatible types directly in schema definitions:
 
 ```typescript
-// ❌ 避免使用（会导致 SQL 转换）
+// ❌ Avoid (forces SQL conversion)
 id: serial().primaryKey()
 
-// ✅ 推荐方案1：使用 integer 主键
+// ✅ Option 1: use an integer primary key
 id: integer().primaryKey()
 
-// ✅ 推荐方案2：使用复合主键（无需额外 ID）
+// ✅ Option 2: use a composite primary key (no extra ID needed)
 export const userRpcConfigs = duckdbTable("user_rpc_configs", {
-  chainId: integer().primaryKey(), // 使用业务字段作为主键
+  chainId: integer().primaryKey(), // business field as primary key
   name: varchar({ length: 255 }),
   url: varchar({ length: 500 }),
-  // ... 其他字段
+  // ... other fields
 });
 
-// ✅ 推荐方案3：使用复合主键
+// ✅ Option 3: use a composite primary key
 export const accessHistory = duckdbTable("access_history", {
   chainId: integer(),
   type: varchar({ length: 20 }),
   identifier: varchar({ length: 66 }),
-  // ... 其他字段
+  // ... other fields
 }, (table) => [
   primaryKey({ columns: [table.chainId, table.type, table.identifier] })
 ]);
 ```
 
-#### 4.2 迁移策略
+#### 4.2 Migration strategy
 
-当需要从使用 SERIAL 的设计迁移到 DuckDB 兼容设计时：
+When migrating from a SERIAL-based design to a DuckDB-compatible one:
 
-1. **重新设计主键策略**：
+1. **Redesign the primary key strategy**:
    ```typescript
-   // 旧设计（不兼容）
+   // Old design (incompatible)
    export const oldTable = pgTable("old_table", {
      id: serial().primaryKey(),
      chainId: integer(),
      data: varchar(),
    });
 
-   // 新设计（DuckDB 兼容）
+   // New design (DuckDB-compatible)
    export const newTable = duckdbTable("new_table", {
-     chainId: integer().primaryKey(), // 使用业务字段作为主键
+     chainId: integer().primaryKey(), // business field as primary key
      data: varchar(),
    });
    ```
 
-2. **生成兼容的迁移文件**：
+2. **Generate compatible migration files**:
    ```sql
-   -- 生成的迁移 SQL 直接使用 INTEGER，无需运行时转换
+   -- Generated migration SQL uses INTEGER directly; no runtime conversion
    CREATE TABLE "user_rpc_configs" (
      "chain_id" integer PRIMARY KEY NOT NULL,
      "name" varchar(255),
@@ -135,9 +135,9 @@ export const accessHistory = duckdbTable("access_history", {
    );
    ```
 
-3. **应用层适配**：
+3. **Adapt the application layer**:
    ```typescript
-   // API 层面使用 chainId 作为标识符
+   // The API layer uses chainId as the identifier
    app.delete("/api/rpc-configs/:chainId", async (c) => {
      const chainId = getValidatedChainId(c);
      await db.delete(userRpcConfigs)
@@ -145,90 +145,90 @@ export const accessHistory = duckdbTable("access_history", {
    });
    ```
 
-#### 4.3 优势
+#### 4.3 Benefits
 
-1. **零运行时开销**：完全不需要任何 SQL 字符串替换或转换
-2. **编译时类型安全**：在编译阶段就能发现不兼容的类型使用
-3. **最佳性能**：直接生成 DuckDB 原生 SQL，无中间转换
-4. **极简维护**：schema 即文档，清晰表达设计意图
-5. **适配器简化**：适配器代码更简洁，专注核心功能
+1. **Zero runtime overhead**: no SQL string replacement or conversion at all
+2. **Compile-time type safety**: incompatible type usage surfaces at compile time
+3. **Best performance**: native DuckDB SQL with no intermediate conversion
+4. **Minimal maintenance**: the schema is the documentation, stating intent clearly
+5. **Simpler adapter**: leaner adapter code focused on core duties
 
-通过这种方案，我们完美实现了 **"在 schema 定义时禁止使用不支持的类型"** 的设计原则，达到了真正的零转换架构。
+This approach fully realizes the design principle of **"forbidding unsupported types at schema definition time"** and achieves a genuinely zero-conversion architecture.
 
-## DuckDB vs PostgreSQL 差异
+## DuckDB vs PostgreSQL differences
 
-### 数据类型差异
+### Data type differences
 
-| 特性 | PostgreSQL | DuckDB | 我们的解决方案 |
+| Feature | PostgreSQL | DuckDB | Our solution |
 |------|------------|--------|----------------|
-| **大整数精度** | `BIGINT` 支持任意精度 | `BIGINT` 有精度限制 | `duckdbBigint` → `VARCHAR(32)` |
-| **时间戳时区** | `TIMESTAMP WITH TIMEZONE` | 时区支持有限 | `duckdbTimestamp` → `TIMESTAMP` (无时区) |
-| **序列类型** | `SERIAL`, `BIGSERIAL` | ❌ 不支持 | 使用 `integer().primaryKey()` 或手动管理 ID |
-| **布尔类型** | `BOOLEAN` | ✅ 支持 | 直接使用 |
-| **文本类型** | `TEXT`, `VARCHAR` | ✅ 支持 | 直接使用 |
+| **Big integer precision** | `BIGINT` arbitrary precision | `BIGINT` limited precision | `duckdbBigint` → `VARCHAR(32)` |
+| **Timestamp timezone** | `TIMESTAMP WITH TIMEZONE` | limited timezone support | `duckdbTimestamp` → `TIMESTAMP` (no timezone) |
+| **Serial types** | `SERIAL`, `BIGSERIAL` | ❌ unsupported | use `integer().primaryKey()` or manage IDs manually |
+| **Boolean type** | `BOOLEAN` | ✅ supported | use directly |
+| **Text types** | `TEXT`, `VARCHAR` | ✅ supported | use directly |
 
-### 索引差异
+### Index differences
 
-| 特性 | PostgreSQL | DuckDB | 我们的解决方案 |
+| Feature | PostgreSQL | DuckDB | Our solution |
 |------|------------|--------|----------------|
-| **索引类型** | `USING btree`, `USING hash` | ❌ 不支持指定类型 | 适配器移除 `USING btree` |
-| **复合索引** | ✅ 支持 | ✅ 支持 | 直接使用 |
-| **唯一索引** | ✅ 支持 | ✅ 支持 | 直接使用 |
-| **部分索引** | ✅ 支持 | ❌ 有限支持 | 避免使用 |
+| **Index types** | `USING btree`, `USING hash` | ❌ specifying types unsupported | the adapter strips `USING btree` |
+| **Composite indexes** | ✅ supported | ✅ supported | use directly |
+| **Unique indexes** | ✅ supported | ✅ supported | use directly |
+| **Partial indexes** | ✅ supported | ❌ limited support | avoid |
 
-### Schema 和命名空间
+### Schema and namespaces
 
-| 特性 | PostgreSQL | DuckDB | 我们的解决方案 |
+| Feature | PostgreSQL | DuckDB | Our solution |
 |------|------------|--------|----------------|
-| **Schema 支持** | ✅ 完整支持 | ✅ 支持 | 直接使用 |
-| **Schema 语法** | `CREATE SCHEMA name` | ✅ 支持 | 直接使用 |
-| **跨 Schema 查询** | `schema.table` | ✅ 支持 | 直接使用 |
+| **Schema support** | ✅ full support | ✅ supported | use directly |
+| **Schema syntax** | `CREATE SCHEMA name` | ✅ supported | use directly |
+| **Cross-schema queries** | `schema.table` | ✅ supported | use directly |
 
-### 函数和操作符差异
+### Function and operator differences
 
-| 特性 | PostgreSQL | DuckDB | 备注 |
+| Feature | PostgreSQL | DuckDB | Notes |
 |------|------------|--------|------|
-| **参数占位符** | `$1, $2, ...` | ✅ 支持 PostgreSQL 风格 | 无需转换 |
-| **now()** | ✅ 支持 | ✅ 支持 | |
-| **CURRENT_TIMESTAMP** | ✅ 支持 | ✅ 支持 | |
-| **字符串函数** | 丰富的函数集 | 基本函数支持 | 需要验证具体函数 |
-| **JSON 操作** | 强大的 JSON 支持 | 基本 JSON 支持 | 需要谨慎使用 |
+| **Parameter placeholders** | `$1, $2, ...` | ✅ PostgreSQL style supported | no conversion needed |
+| **now()** | ✅ supported | ✅ supported | |
+| **CURRENT_TIMESTAMP** | ✅ supported | ✅ supported | |
+| **String functions** | rich function set | basic functions | verify specific functions |
+| **JSON operations** | strong JSON support | basic JSON support | use with care |
 
-### 事务和并发
+### Transactions and concurrency
 
-| 特性 | PostgreSQL | DuckDB | 影响 |
+| Feature | PostgreSQL | DuckDB | Impact |
 |------|------------|--------|------|
-| **ACID 事务** | ✅ 完整支持 | ✅ 支持 | 无影响 |
-| **并发读写** | 高并发支持 | 有限并发支持 | 适合分析工作负载 |
-| **锁机制** | 细粒度锁 | 简化锁机制 | 适合单用户/少用户场景 |
+| **ACID transactions** | ✅ full support | ✅ supported | no impact |
+| **Concurrent reads/writes** | high concurrency | limited concurrency | fits analytical workloads |
+| **Locking** | fine-grained locks | simplified locking | fits single/few-user scenarios |
 
-## 类型映射表
+## Type mapping table
 
 ### JavaScript/TypeScript → DuckDB
 
 ```typescript
-// 字符串类型
+// String types
 string → VARCHAR(length) | TEXT
 
-// 数字类型
+// Numeric types
 number → INTEGER | DOUBLE
-bigint → VARCHAR(32)  // 避免精度问题
+bigint → VARCHAR(32)  // avoid precision loss
 
-// 布尔类型
+// Boolean types
 boolean → BOOLEAN
 
-// 日期时间
-Date → TIMESTAMP     // 无时区
+// Date and time
+Date → TIMESTAMP     // no timezone
 string (ISO) → TIMESTAMP
 
-// 大数字（区块链常用）
-string → VARCHAR(32) // 使用 duckdbBigint
+// Large numbers (common in blockchain)
+string → VARCHAR(32) // via duckdbBigint
 ```
 
-### Drizzle 类型 → DuckDB 类型
+### Drizzle types → DuckDB types
 
 ```typescript
-// 推荐的类型映射
+// Recommended type mapping
 integer(name)                    → INTEGER
 varchar(name, {length})          → VARCHAR(length)
 text(name)                      → TEXT
@@ -238,12 +238,12 @@ duckdbTimestamp(name)           → TIMESTAMP
 duckdbTimestampWithDefault(name) → TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ```
 
-## 最佳实践
+## Best practices
 
-### 1. 使用类型安全的构造器
+### 1. Use the type-safe constructors
 
 ```typescript
-// ✅ 推荐
+// ✅ Recommended
 import { 
   duckdbBigint, 
   duckdbTimestamp, 
@@ -251,80 +251,80 @@ import {
 } from './duckdb-types';
 
 export const transactions = duckdbTable('transactions', {
-  value: duckdbBigint('value'),           // 自动使用 VARCHAR(32)
-  timestamp: duckdbTimestamp('timestamp'), // 自动无时区
+  value: duckdbBigint('value'),           // automatically VARCHAR(32)
+  timestamp: duckdbTimestamp('timestamp'), // automatically timezone-free
 });
 ```
 
-### 2. 避免复杂的 SQL 特性
+### 2. Avoid advanced SQL features
 
 ```typescript
-// ✅ 推荐：简单直接的查询
+// ✅ Recommended: simple, straightforward queries
 const blocks = await db.select()
   .from(blocksTable)
   .where(eq(blocksTable.chainId, chainId))
   .limit(10);
 
-// ⚠️ 谨慎：复杂的 JSON 操作
-// DuckDB 的 JSON 支持可能与 PostgreSQL 不同
+// ⚠️ Careful: complex JSON operations
+// DuckDB's JSON support may differ from PostgreSQL
 ```
 
-### 3. 大数字处理
+### 3. Handling large numbers
 
 ```typescript
-// ✅ 推荐：使用字符串存储和处理大数字
-const blockNumber = '999999999999999999999'; // 字符串
+// ✅ Recommended: store and handle large numbers as strings
+const blockNumber = '999999999999999999999'; // string
 await db.insert(blocks).values({
-  number: blockNumber,  // 直接存储字符串
+  number: blockNumber,  // store the string directly
 });
 
-// 读取时也是字符串
+// Reads come back as strings too
 const result = await db.select().from(blocks);
 console.log(typeof result[0].number); // "string"
 ```
 
-### 4. 时间戳处理
+### 4. Handling timestamps
 
 ```typescript
-// ✅ 推荐：使用无时区时间戳
+// ✅ Recommended: use timezone-free timestamps
 const createdAt = duckdbTimestampWithDefault('created_at');
 
-// 应用层处理时区转换
-const now = new Date().toISOString(); // UTC 时间
+// Convert timezones in the application layer
+const now = new Date().toISOString(); // UTC time
 ```
 
-## 性能考虑
+## Performance considerations
 
-### DuckDB 的优势
+### DuckDB strengths
 
-- **列式存储**：适合分析查询
-- **内存优化**：高效的内存使用
-- **向量化执行**：快速聚合操作
-- **压缩存储**：节省存储空间
+- **Columnar storage**: great for analytical queries
+- **Memory optimization**: efficient memory usage
+- **Vectorized execution**: fast aggregations
+- **Compressed storage**: saves disk space
 
-### 使用场景
+### Use cases
 
-- ✅ **分析查询**：大量数据的聚合、统计
-- ✅ **批量插入**：区块链数据同步
-- ✅ **只读/少写**：区块浏览器场景
-- ⚠️ **高并发写入**：需要评估性能
-- ❌ **实时事务系统**：不适合
+- ✅ **Analytical queries**: aggregation and statistics over large datasets
+- ✅ **Bulk inserts**: blockchain data syncing
+- ✅ **Read-mostly**: block explorer workloads
+- ⚠️ **Highly concurrent writes**: benchmark first
+- ❌ **Real-time transactional systems**: not a fit
 
-## 迁移和部署
+## Migration and deployment
 
-### 开发环境
+### Development environment
 
 ```bash
-# 1. 生成迁移文件（当 schema 有变更时）
+# 1. Generate migration files (whenever the schema changes)
 npx drizzle-kit generate
 
-# 2. 清理数据库文件（如需要）
+# 2. Clean up database files (if needed)
 rm -f data/blockchain.db
 
-# 3. 运行迁移
+# 3. Run migrations
 npx tsx src/database/migrate.ts
 
-# 4. 验证表结构
+# 4. Verify table structure
 npx tsx -e "
 import { db } from './src/database/drizzle.js';
 const result = await db.execute('SHOW TABLES');
@@ -332,68 +332,68 @@ console.log('Tables:', result);
 "
 ```
 
-### 生产环境考虑
+### Production considerations
 
-1. **数据备份**：定期备份 `.db` 文件
-2. **文件权限**：确保应用有读写权限
-3. **磁盘空间**：监控数据库文件大小
-4. **性能监控**：监控查询性能
+1. **Backups**: back up the `.db` file regularly
+2. **File permissions**: ensure the app can read and write
+3. **Disk space**: monitor database file size
+4. **Performance monitoring**: watch query performance
 
-## 故障排除
+## Troubleshooting
 
-### 常见问题
+### Common issues
 
-1. **类型转换错误**
+1. **Type conversion errors**
    ```
    Error: Could not convert string 'xxx' to INT64
    ```
-   **解决**：使用 `duckdbBigint` 而非 `bigint`
+   **Fix**: use `duckdbBigint` instead of `bigint`
 
-2. **索引类型错误**
+2. **Index type errors**
    ```
    Error: Unknown index type: BTREE
    ```
-   **解决**：适配器会自动移除 `USING btree`
+   **Fix**: the adapter strips `USING btree` automatically
 
-3. **Schema 不存在**
+3. **Schema does not exist**
    ```
    Error: Schema with name 'drizzle' does not exist
    ```
-   **解决**：DuckDB 支持 schema，检查迁移脚本
+   **Fix**: DuckDB supports schemas; check the migration script
 
-### 调试技巧
+### Debugging tips
 
 ```typescript
-// 启用 SQL 日志
+// Enable SQL logging
 const db = drizzle(adapter, { 
   schema,
-  logger: true  // 显示生成的 SQL
+  logger: true  // log generated SQL
 });
 
-// 检查表结构
+// Inspect table structure
 await db.execute('DESCRIBE table_name');
 
-// 查看所有表
+// List all tables
 await db.execute('SHOW TABLES');
 ```
 
-## 总结
+## Summary
 
-通过类型安全的设计和最小化的运行时转换，我们实现了一个高效、可靠的 DuckDB + Drizzle ORM 集成方案。这个方案：
+With type-safe design and minimal runtime conversion, we built an efficient, reliable DuckDB + Drizzle ORM integration. It delivers:
 
-- ✅ **类型安全**：编译时捕获不兼容使用
-- ✅ **明确性**：API 名称明确表明 DuckDB 特性  
-- ✅ **可维护**：集中的类型定义和适配逻辑
-- ✅ **高性能**：避免运行时字符串操作
-- ✅ **可靠性**：减少隐式转换错误
-- ✅ **SERIAL 问题解决**：通过重新设计表结构彻底解决了 SERIAL 类型兼容性问题
+- ✅ **Type safety**: incompatible usage caught at compile time
+- ✅ **Explicitness**: API names state DuckDB specifics    
+- ✅ **Maintainability**: centralized type definitions and adapter logic
+- ✅ **Performance**: no runtime string manipulation
+- ✅ **Reliability**: fewer implicit conversion errors
+- ✅ **SERIAL solved**: table redesign removed the SERIAL compatibility problem entirely
 
-### 关键成就
+### Key achievements
 
-1. **彻底解决 SERIAL 类型问题**：通过使用业务字段作为主键或复合主键的设计，完全消除了对 SERIAL 类型的依赖
-2. **真正的零运行时转换**：所有 SQL 生成都是 DuckDB 原生兼容的，包括用户表和 Drizzle 内部迁移表，无需任何字符串替换
-3. **架构原则完美实现**：成功实现了"在 schema 定义时禁止使用不支持的类型"的设计目标
-4. **类型系统完善**：建立了完整的 DuckDB 兼容类型系统，确保编译时类型安全
-5. **适配器简化**：适配器现在专注于核心功能（连接管理、结果转换），无需处理 SQL 兼容性问题
+1. **SERIAL fully solved**: business-field and composite primary keys removed any dependence on SERIAL
+2. **True zero runtime conversion**: all generated SQL is natively DuckDB-compatible — user tables and Drizzle's internal migration tables alike — with no string replacement
+3. **Design principle realized**: the goal of forbidding unsupported types at schema definition time is met
+4. **Complete type system**: a full DuckDB-compatible type system guarantees compile-time type safety
+5. **Simpler adapter**: the adapter now focuses on core duties (connection management, result conversion) with no SQL compatibility work
 
-这个架构特别适合区块链数据分析和区块浏览器等场景，能够高效处理大量结构化数据的存储和查询需求。
+This architecture is a strong fit for blockchain analytics and block explorer workloads, efficiently storing and querying large volumes of structured data.

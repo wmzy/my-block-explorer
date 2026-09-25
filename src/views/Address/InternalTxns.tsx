@@ -27,6 +27,10 @@ import {
   type TraceTxOutcome,
 } from '@/utils/internalTxScan';
 import { addressSearchSchema, effectiveInternalTxDepth } from '@/views/Address/search';
+import {
+  fetchInternalTransactions,
+  type InternalTxnsResult,
+} from '@/services/addressScan';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { Collapsible } from '@/components/ui/Collapsible';
@@ -120,6 +124,38 @@ const depthCell = css`
 
 const retryRow = css`
   margin-top: var(--haze-space-3);
+`;
+
+// Deep-scan records (persisted findings, a different data source than
+// the on-demand tracing below): stacked ABOVE the browser-scan flow so
+// the recorded rows are never mistaken for live trace output.
+const recordsCard = css`
+  margin: 0 0 var(--haze-space-3);
+`;
+
+const recordsTitle = css`
+  margin: 0 0 var(--haze-space-1);
+  font-size: var(--haze-text-sm);
+  font-weight: 600;
+`;
+
+const recordsScope = css`
+  margin: 0 0 var(--haze-space-2);
+  color: var(--haze-color-text-muted);
+  font-size: var(--haze-text-xs);
+`;
+
+// "Showing X of Y" — a muted disclosure, no promised pager.
+const recordsDisclosure = css`
+  margin: var(--haze-space-2) 0 0;
+  color: var(--haze-color-text-muted);
+  font-size: var(--haze-text-xs);
+`;
+
+const recordsErrorLine = css`
+  margin: 0 0 var(--haze-space-2);
+  color: var(--haze-color-text-muted);
+  font-size: var(--haze-text-xs);
 `;
 
 const formatAddr = (a: string) => `${a.slice(0, 8)}...${a.slice(-6)}`;
@@ -330,6 +366,29 @@ export default function InternalTxns({
     void runScan();
   };
 
+  // Deep-scan records: one fetch per chain/address — persisted findings,
+  // so no polling and no coupling to the refresh signal below. Pending
+  // and empty (total 0) keep the section entirely absent, leaving the
+  // on-demand browser flow byte-identical to today; a fetch failure is
+  // one muted line, never a replacement of the browser flow.
+  const [records, setRecords] = useState<InternalTxnsResult | null>(null);
+  const [recordsFailed, setRecordsFailed] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    setRecords(null);
+    setRecordsFailed(false);
+    fetchInternalTransactions(chainId, address, { offset: 0, limit: 50 })
+      .then(result => {
+        if (!cancelled) setRecords(result);
+      })
+      .catch(() => {
+        if (!cancelled) setRecordsFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [chainId, address]);
+
   // Presets, plus the actual (clamped) depth when a shared deep link sits
   // between them — the select always shows the truth.
   const depthOptions = DEPTH_PRESETS.includes(traceDepth)
@@ -364,6 +423,83 @@ export default function InternalTxns({
           </select>
         </label>
       </div>
+
+      {recordsFailed && (
+        <p className={recordsErrorLine}>Deep-scan records are unavailable right now</p>
+      )}
+
+      {records !== null && records.total > 0 && (
+        <section className={recordsCard} data-testid="deep-scan-records">
+          <h4 className={recordsTitle}>Deep scan records</h4>
+          <p className={recordsScope}>
+            recorded while deep-scanning blocks where this address changed
+            — internal calls to this address inside unrelated transactions
+            in non-scanned blocks are not included
+          </p>
+          <DataTable>
+            <thead>
+              <tr>
+                <th>Tx</th>
+                <th>Type</th>
+                <th>From</th>
+                <th>To</th>
+                <th>Value</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {records.transactions.map(record => (
+                <tr key={`${record.transactionHash}-${record.tracePath}`}>
+                  <td>
+                    <TypedLink
+                      to={`/chain/${chainId}/tx/${record.transactionHash}`}
+                      className={linkStyle}
+                      title={record.transactionHash}
+                    >
+                      {formatHash(record.transactionHash)}
+                    </TypedLink>
+                  </td>
+                  <td>
+                    <Badge variant={badgeVariantForType(record.callType.toUpperCase())} size="sm">
+                      {record.callType}
+                    </Badge>
+                  </td>
+                  <td>
+                    <CopyableHash
+                      value={record.from}
+                      truncated={formatAddr(record.from)}
+                      href={`/chain/${chainId}/address/${record.from}`}
+                    />
+                  </td>
+                  <td>
+                    <CopyableHash
+                      value={record.to}
+                      truncated={formatAddr(record.to)}
+                      href={`/chain/${chainId}/address/${record.to}`}
+                    />
+                  </td>
+                  <td className={valueCell}>
+                    {record.value === '0' ? '—' : formatInternalValue(BigInt(record.value), chainId)}
+                  </td>
+                  <td>
+                    {record.reverted ? (
+                      <Badge variant="warning" size="sm">reverted</Badge>
+                    ) : (
+                      <span className={muted}>—</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </DataTable>
+          {records.total > records.transactions.length && (
+            <p className={recordsDisclosure}>
+              Showing {records.transactions.length.toLocaleString()} of{' '}
+              {records.total.toLocaleString()}
+            </p>
+          )}
+        </section>
+      )}
 
       {txLoading && <LoadingState message="Scanning recent chain history..." />}
 

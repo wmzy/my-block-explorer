@@ -10,6 +10,7 @@ import {
   getScanJobRow,
   hydrateFindings,
   isScanJobActive,
+  listInternalTransactions,
   pauseScanJob,
   resumeScanJob,
   toScanJobDto,
@@ -343,6 +344,7 @@ app.post('/chains/:chainId/addresses/:address/scan', requireAdminTokenIfConfigur
       fromBlock: validated.fromBlock,
       toBlock: validated.toBlock,
       force: validated.force,
+      includeTraces: validated.includeTraces,
     });
     if (!outcome.ok) {
       return c.json({ error: 'invalid_bounds', message: outcome.message }, 400);
@@ -378,6 +380,52 @@ app.get('/chains/:chainId/addresses/:address/scan', async (c) => {
   } catch (error) {
     logger.error({ err: error }, 'Get address scan API error');
     return c.json({ error: 'Failed to get address scan' }, 500);
+  }
+});
+
+// GET /chains/:chainId/addresses/:address/scan/internal-transactions —
+// the internal transactions a traced deep scan recorded, paginated
+// newest-first. An address with no rows (unknown, or a walk that never
+// opted into tracing, or a provider without debug_traceTransaction) is
+// an honest empty page, never an error. Open read like GET /scan: a
+// DuckDB page, not an RPC walk, so it draws no limiter bucket.
+app.get('/chains/:chainId/addresses/:address/scan/internal-transactions', async (c) => {
+  const chainId = getValidatedChainId(c.req.param('chainId'));
+  const address = getValidatedAddress(c.req.param('address'));
+
+  // Same fail-loud pagination philosophy as the transactions list
+  // (~parseInt + NaN check): non-numeric, negative offset, and
+  // non-positive limit are 400s instead of silent NaN arithmetic; the
+  // page cap is 100.
+  const rawOffset = c.req.query('offset');
+  const rawLimit = c.req.query('limit');
+  const parsedOffset = rawOffset === undefined || rawOffset === '' ? 0 : parseInt(rawOffset, 10);
+  const parsedLimit = rawLimit === undefined || rawLimit === '' ? 50 : parseInt(rawLimit, 10);
+
+  if (Number.isNaN(parsedOffset) || parsedOffset < 0) {
+    return c.json(
+      { error: 'invalid_offset', message: 'offset must be a non-negative integer' },
+      400,
+    );
+  }
+  if (Number.isNaN(parsedLimit) || parsedLimit < 1) {
+    return c.json(
+      { error: 'invalid_limit', message: 'limit must be a positive integer' },
+      400,
+    );
+  }
+  const limit = Math.min(parsedLimit, 100);
+
+  try {
+    const page = await listInternalTransactions(chainId, address, {
+      offset: parsedOffset,
+      limit,
+    });
+    c.header('X-Chain-Name', getChainName(chainId));
+    return c.json(page);
+  } catch (error) {
+    logger.error({ err: error }, 'List scan internal transactions API error');
+    return c.json({ error: 'Failed to list internal transactions' }, 500);
   }
 });
 

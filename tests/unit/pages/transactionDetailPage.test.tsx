@@ -7,7 +7,21 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter, View, createRoutes } from '@native-router/react';
-import { encodeErrorResult, encodeFunctionData, parseAbi, toEventSelector, type Abi, type Hex } from 'viem';
+import {
+  encodeAbiParameters,
+  encodeErrorResult,
+  encodeEventTopics,
+  encodeFunctionData,
+  getAddress,
+  parseAbi,
+  parseAbiParameters,
+  toEventSelector,
+  toHex,
+  zeroAddress,
+  type Abi,
+  type Address,
+  type Hex,
+} from 'viem';
 import '@testing-library/jest-dom';
 
 import TransactionDetail from '@/views/Transactions/Detail';
@@ -15,6 +29,7 @@ import { resetPricesForTests } from '@/services/prices';
 import { useContractSource } from '@/services/contracts';
 import { useTransactionByHash } from '@/services/chainRpc';
 import { createRpcClient } from '@/utils/realTimeData';
+import { VALUE_UNIT_STORAGE_KEY, setValueUnit } from '@/util/units';
 
 vi.mock('@/services/contracts', () => ({
   useContractSource: vi.fn(),
@@ -119,6 +134,98 @@ const transferLog = {
   logIndex: '0',
 };
 
+// --- Account Abstraction (ERC-4337) fixtures ---
+// Canonical EntryPoint addresses (eth-infinitism/account-abstraction) and
+// realistic viem-encoded bundles: v0.7 and v0.8 share the packed wire
+// tuple, while their UserOperationEvent ABIs differ (v0.8 leads with an
+// indexed userOpHash and moves the nonce into the data section).
+const ENTRY_POINT_V07 = '0x0000000071727De22E5E9d8BAf0edAc6f37da032';
+const ENTRY_POINT_V08 = '0x4337084D9E255Ff0702461CF8895CE9E3b5Ff108';
+const AA_ACCOUNT = getAddress('0x5555555555555555555555555555555555555555');
+const AA_ACCOUNT2 = getAddress('0x7777777777777777777777777777777777777777');
+const AA_PAYMASTER = getAddress('0x4444444444444444444444444444444444444444');
+
+const handleOpsAbi = parseAbi([
+  'function handleOps((address sender, uint256 nonce, bytes initCode, bytes callData, bytes32 accountGasLimits, uint256 preVerificationGas, bytes32 gasFees, bytes paymasterAndData, bytes signature)[] ops, address beneficiary)',
+]);
+
+// One packed v0.7/v0.8 wire op: verificationGasLimit 50k HIGH 128 bits |
+// callGasLimit 100k LOW; maxPriorityFee 2 gwei HIGH | maxFee 20 gwei LOW.
+const packedUserOp = (
+  sender: Address,
+  nonce: bigint,
+  paymasterAndData: Hex,
+): {
+  sender: Address;
+  nonce: bigint;
+  initCode: Hex;
+  callData: Hex;
+  accountGasLimits: Hex;
+  preVerificationGas: bigint;
+  gasFees: Hex;
+  paymasterAndData: Hex;
+  signature: Hex;
+} => ({
+  sender,
+  nonce,
+  initCode: '0x',
+  callData: `0x${'aa'.repeat(36)}`,
+  accountGasLimits: toHex(50000n << 128n | 100000n, { size: 32 }),
+  preVerificationGas: 21000n,
+  gasFees: toHex(2000000000n << 128n | 20000000000n, { size: 32 }),
+  paymasterAndData,
+  signature: `0x${'ab'.repeat(65)}`,
+});
+
+const userOpEventAbi = parseAbi([
+  'event UserOperationEvent(address indexed sender, address indexed paymaster, uint256 indexed nonce, bool success, uint256 actualGasCost, uint256 actualGasUsed)',
+]);
+
+type UserOpEventFixture = {
+  sender: Address;
+  nonce: bigint;
+  paymaster?: Address;
+  success: boolean;
+  actualGasCost: bigint;
+  actualGasUsed: bigint;
+};
+
+// Classic (v0.6/v0.7) UserOperationEvent receipt log.
+const userOpEventLog = (opts: UserOpEventFixture) => ({
+  address: ENTRY_POINT_V07,
+  topics: encodeEventTopics({
+    abi: userOpEventAbi,
+    eventName: 'UserOperationEvent',
+    args: { sender: opts.sender, paymaster: opts.paymaster ?? zeroAddress, nonce: opts.nonce },
+  }),
+  data: encodeAbiParameters(
+    parseAbiParameters('bool success, uint256 actualGasCost, uint256 actualGasUsed'),
+    [opts.success, opts.actualGasCost, opts.actualGasUsed],
+  ),
+  logIndex: '0',
+});
+
+// v0.8 UserOperationEvent: indexed userOpHash leads, nonce rides the data.
+const userOpEventV8Log = (opts: UserOpEventFixture) => ({
+  address: ENTRY_POINT_V08,
+  topics: encodeEventTopics({
+    abi: parseAbi([
+      'event UserOperationEvent(bytes32 indexed userOpHash, address indexed sender, address indexed paymaster, uint256 nonce, bool success, uint256 actualGasCost, uint256 actualGasUsed)',
+    ]),
+    eventName: 'UserOperationEvent',
+    args: {
+      userOpHash: `0x${'11'.repeat(32)}`,
+      sender: opts.sender,
+      paymaster: opts.paymaster ?? zeroAddress,
+    },
+  }),
+  data: encodeAbiParameters(
+    parseAbiParameters('uint256 nonce, bool success, uint256 actualGasCost, uint256 actualGasUsed'),
+    [opts.nonce, opts.success, opts.actualGasCost, opts.actualGasUsed],
+  ),
+  logIndex: '0',
+});
+
 // Hand-rolled ABI encoding of Error(string) — what `revert("…")` emits.
 const errorStringPayload = (reason: string): string => {
   const body = Array.from(new TextEncoder().encode(reason), b =>
@@ -182,6 +289,11 @@ function renderDetail(path = `/chain/1/tx/${TX_HASH}`) {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Unit-toggle state spans storage and in-memory subscribers: reset both
+  // so every test starts from the native default, whatever the toggle
+  // test below left behind.
+  localStorage.removeItem(VALUE_UNIT_STORAGE_KEY);
+  setValueUnit('native');
   vi.mocked(useTransactionByHash).mockReturnValue(hookResult(makeTx()));
   vi.mocked(useContractSource).mockReturnValue(hookResult(verifiedSourceResponse));
 });
@@ -567,5 +679,219 @@ describe('TransactionDetail page', () => {
       vi.unstubAllGlobals();
       resetPricesForTests();
     }
+  });
+
+  // --- Value-row unit toggle (native / gwei / wei) ---
+
+  it('switches the Value and Transaction Fee rows via the unit toggle and persists the choice', async () => {
+    vi.mocked(useTransactionByHash).mockReturnValue(
+      hookResult(makeTx({ value: '1000000000000000000' })),
+    );
+
+    renderDetail();
+
+    // Default (no stored preference): the native figures render exactly
+    // as without the toggle. 1 ETH value; 30000 gas × 20 gwei = 0.0006
+    // ETH fee (legacy gasPrice fixture).
+    expect(await screen.findByText('1.0000 ETH')).toBeInTheDocument();
+    expect(screen.getByText('0.0006 ETH')).toBeInTheDocument();
+
+    // The segmented control exposes one button per unit, the chain
+    // symbol first. Native buttons carry their own keyboard activation —
+    // a plain click is the full interaction.
+    fireEvent.click(screen.getByRole('button', { name: 'Gwei' }));
+
+    // 1 ETH = 10^9 gwei exactly; 0.0006 ETH = 600,000 gwei. The native
+    // figure stays reachable through the muted ≈ hint on the Value row.
+    expect(await screen.findByText('1,000,000,000 gwei')).toBeInTheDocument();
+    expect(screen.getByText('600,000 gwei')).toBeInTheDocument();
+    expect(screen.getByText('≈ 1.0000 ETH')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Gwei' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    // The choice persists for the next mount.
+    expect(localStorage.getItem(VALUE_UNIT_STORAGE_KEY)).toBe('gwei');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Wei' }));
+
+    expect(await screen.findByText('1,000,000,000,000,000,000 wei')).toBeInTheDocument();
+    expect(localStorage.getItem(VALUE_UNIT_STORAGE_KEY)).toBe('wei');
+  });
+
+  // --- Account Abstraction (ERC-4337) card ---
+
+  it('renders the ERC-4337 card for a decoded v0.7 bundle: ops joined to event outcomes', async () => {
+    // Two packed ops: the first pays its own gas and has a matching
+    // UserOperationEvent; the second carries a paymaster and no event.
+    vi.mocked(useTransactionByHash).mockReturnValue(
+      hookResult(
+        makeTx({
+          toAddress: ENTRY_POINT_V07,
+          inputData: encodeFunctionData({
+            abi: handleOpsAbi,
+            functionName: 'handleOps',
+            args: [
+              [
+                packedUserOp(AA_ACCOUNT, 1234567n, '0x'),
+                packedUserOp(AA_ACCOUNT2, 8n, `0x${AA_PAYMASTER.slice(2)}${'00'.repeat(32)}`),
+              ],
+              AA_ACCOUNT,
+            ],
+          }),
+          logs: [
+            userOpEventLog({
+              sender: AA_ACCOUNT,
+              nonce: 1234567n,
+              success: true,
+              actualGasCost: 400000000000000n,
+              actualGasUsed: 25000n,
+            }),
+          ],
+        }),
+      ),
+    );
+
+    renderDetail();
+
+    expect(
+      await screen.findByRole('heading', { name: 'Account Abstraction (ERC-4337)' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('2 UserOperations · EntryPoint v0.7')).toBeInTheDocument();
+    // First op: sender links into the address view, decoded calldata
+    // nonce on the row, receipt outcome joined by sender+nonce.
+    expect(screen.getByRole('link', { name: AA_ACCOUNT })).toHaveAttribute(
+      'href',
+      `/chain/1/address/${AA_ACCOUNT}`,
+    );
+    expect(screen.getByText('1,234,567')).toBeInTheDocument();
+    expect(screen.getByText('✓ Success')).toBeInTheDocument();
+    expect(screen.getByText('0.0004 ETH')).toBeInTheDocument();
+    expect(screen.getByTitle('400000000000000 wei')).toBeInTheDocument();
+    expect(screen.getByText('25,000')).toBeInTheDocument();
+    // Second op: paymaster extracted from the packed paymasterAndData; a
+    // missing event states the absence instead of guessing an outcome.
+    expect(screen.getByRole('link', { name: AA_PAYMASTER })).toHaveAttribute(
+      'href',
+      `/chain/1/address/${AA_PAYMASTER}`,
+    );
+    expect(screen.getByTitle('No UserOperationEvent matched this operation')).toBeInTheDocument();
+    // The calldata decoded — the fallback note must NOT render.
+    expect(screen.queryByText(/calldata not decodable/)).not.toBeInTheDocument();
+  });
+
+  it('falls back to event-derived rows with an honest note when the bundle calldata does not decode', async () => {
+    // Foreign calldata behind the EntryPoint target: only the
+    // UserOperationEvent carries the facts (aggregated bundles, or any
+    // handleOps shape the decoder honestly rejects).
+    vi.mocked(useTransactionByHash).mockReturnValue(
+      hookResult(
+        makeTx({
+          toAddress: ENTRY_POINT_V07,
+          inputData: '0xdeadbeef',
+          logs: [
+            userOpEventLog({
+              sender: AA_ACCOUNT,
+              nonce: 424242n,
+              paymaster: AA_PAYMASTER,
+              success: false,
+              actualGasCost: 150000000000000n,
+              actualGasUsed: 9000n,
+            }),
+          ],
+        }),
+      ),
+    );
+
+    renderDetail();
+
+    expect(
+      await screen.findByRole('heading', { name: 'Account Abstraction (ERC-4337)' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('1 UserOperation · EntryPoint v0.7')).toBeInTheDocument();
+    expect(
+      screen.getByText('calldata not decodable — fields below from UserOperationEvent'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('424,242')).toBeInTheDocument();
+    expect(screen.getByText('✗ Failed')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: AA_PAYMASTER })).toBeInTheDocument();
+    expect(screen.getByText('9,000')).toBeInTheDocument();
+  });
+
+  it('renders no ERC-4337 card for transactions outside the EntryPoint', async () => {
+    // Plain token call: neither detection gate holds, and the page stays
+    // byte-identical to the pre-4337 surface (no extra card).
+    vi.mocked(useTransactionByHash).mockReturnValue(hookResult(makeTx({ logs: [transferLog] })));
+
+    renderDetail();
+
+    expect((await screen.findAllByRole('heading', { name: 'Transaction Details' })).length).toBe(
+      2,
+    );
+    expect(
+      screen.queryByRole('heading', { name: 'Account Abstraction (ERC-4337)' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('renders no ERC-4337 card for an EntryPoint call without UserOperationEvents', async () => {
+    // A deposit/withdrawStake-style call to the EntryPoint: the address
+    // gate holds but no op ran, so the event gate keeps the card off.
+    vi.mocked(useTransactionByHash).mockReturnValue(
+      hookResult(
+        makeTx({
+          toAddress: ENTRY_POINT_V07,
+          inputData: encodeFunctionData({
+            abi: handleOpsAbi,
+            functionName: 'handleOps',
+            args: [[packedUserOp(AA_ACCOUNT, 1n, '0x')], AA_ACCOUNT],
+          }),
+          logs: [],
+        }),
+      ),
+    );
+
+    renderDetail();
+
+    expect((await screen.findAllByRole('heading', { name: 'Transaction Details' })).length).toBe(
+      2,
+    );
+    expect(
+      screen.queryByRole('heading', { name: 'Account Abstraction (ERC-4337)' }),
+    ).not.toBeInTheDocument();
+  });
+
+  it('labels a v0.8 EntryPoint bundle with its own event ABI (nonce in data, userOpHash in topics)', async () => {
+    vi.mocked(useTransactionByHash).mockReturnValue(
+      hookResult(
+        makeTx({
+          toAddress: ENTRY_POINT_V08,
+          // v0.7 and v0.8 share the packed wire tuple.
+          inputData: encodeFunctionData({
+            abi: handleOpsAbi,
+            functionName: 'handleOps',
+            args: [[packedUserOp(AA_ACCOUNT, 5n, '0x')], AA_ACCOUNT],
+          }),
+          logs: [
+            userOpEventV8Log({
+              sender: AA_ACCOUNT,
+              nonce: 5n,
+              success: true,
+              actualGasCost: 900000000000000n,
+              actualGasUsed: 44000n,
+            }),
+          ],
+        }),
+      ),
+    );
+
+    renderDetail();
+
+    expect(
+      await screen.findByRole('heading', { name: 'Account Abstraction (ERC-4337)' }),
+    ).toBeInTheDocument();
+    expect(screen.getByText('1 UserOperation · EntryPoint v0.8')).toBeInTheDocument();
+    expect(screen.getByText('✓ Success')).toBeInTheDocument();
+    expect(screen.getByText('0.0009 ETH')).toBeInTheDocument();
+    expect(screen.getByText('44,000')).toBeInTheDocument();
   });
 });

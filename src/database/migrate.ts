@@ -2,8 +2,8 @@ import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import { db } from './drizzle';
 
 /**
- * 数据库迁移脚本
- * 使用 Drizzle ORM 的标准迁移系统
+ * Database migration script
+ * Uses Drizzle ORM's standard migration system
  */
 async function runMigrations() {
   const duckdb = await db.$client.getDuckDB();
@@ -25,7 +25,7 @@ async function runMigrations() {
 
 export { runMigrations as migrate };
 
-// 如果直接运行此脚本，执行迁移
+// Run migrations when this script is executed directly
 if (import.meta.url === `file://${process.argv[1]}`) {
   console.log('🚀 Starting database migration...');
   runMigrations()

@@ -145,6 +145,50 @@ describe('TopNavigation', () => {
     expect(screen.getByText('⚙️ RPC')).toBeInTheDocument();
   });
 
+  it('lists the page links in order and navigates to the current chain section', () => {
+    renderTopNavigation({ currentChainId: 137 });
+
+    const entries: Array<[name: string, path: string]> = [
+      ['Blocks', '/chain/137/blocks'],
+      ['Transactions', '/chain/137/transactions'],
+      ['Pending', '/chain/137/pending'],
+      ['Contracts', '/chain/137/contracts'],
+      ['Charts', '/chain/137/charts'],
+    ];
+    const buttons = entries.map(([name]) => screen.getByRole('button', { name }));
+    // DOM order pins the nav sequence: Blocks, Transactions, Pending,
+    // Contracts, Charts. Siblings in one tree compare as exactly FOLLOWING.
+    for (let i = 1; i < buttons.length; i += 1) {
+      expect(buttons[i - 1].compareDocumentPosition(buttons[i])).toBe(
+        Node.DOCUMENT_POSITION_FOLLOWING,
+      );
+    }
+    // Each link stays on the viewing chain and hits the real route paths.
+    for (const [name, path] of entries) {
+      fireEvent.click(screen.getByRole('button', { name }));
+      expect(mockNavigate).toHaveBeenCalledWith(mockRouter, path);
+    }
+  });
+
+  it('keeps SQL as an admin-grouped link to the bare /sql console', () => {
+    renderTopNavigation({ currentChainId: 137 });
+
+    // The accessible name carries the admin context; navigation stays on
+    // the bare path — the console queries the main database, never a
+    // chain section, so the chain id must not leak into the target.
+    const sqlButton = screen.getByRole('button', { name: 'SQL console (admin)' });
+    fireEvent.click(sqlButton);
+    expect(mockNavigate).toHaveBeenCalledWith(mockRouter, '/sql');
+    expect(mockNavigate).not.toHaveBeenCalledWith(mockRouter, '/chain/137/sql');
+
+    // Visual admin grouping: a decorative divider between the page links
+    // and the SQL button. (The <768px collapse lives in the divider's CSS
+    // media query — not observable from jsdom's computed styles.)
+    const divider = screen.getByTestId('nav-admin-divider');
+    expect(divider).toHaveAttribute('aria-hidden', 'true');
+    expect(divider.compareDocumentPosition(sqlButton)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
   it('displays current chain information', () => {
     renderTopNavigation({ currentChainId: 1 });
 

@@ -142,29 +142,29 @@ export default function RpcFunctionError({
     switch (functionName) {
       case 'getContractCreationInfo':
         return [
-          '当前RPC节点可能不支持历史状态查询',
-          '建议配置支持archive模式的RPC节点',
-          '可以尝试使用Alchemy、Infura等专业服务商的RPC',
-          '某些免费RPC节点限制历史数据访问',
+          'The current RPC node may not support historical state queries',
+          'Consider configuring an archive-mode RPC node',
+          'Try an RPC from a provider such as Alchemy or Infura',
+          'Some free RPC nodes restrict access to historical data',
         ];
       case 'getEvents':
         return [
-          '当前RPC节点可能限制了事件查询的区块范围',
-          '建议减小查询的区块范围或配置更强大的RPC节点',
-          '某些RPC节点限制单次查询最多1000个区块',
-          '可以配置支持大范围查询的RPC节点',
+          'The current RPC node may limit the block range for event queries',
+          'Reduce the queried block range or configure a more capable RPC node',
+          'Some RPC nodes cap a single query at 1000 blocks',
+          'Configure an RPC node that supports wide-range queries',
         ];
       case 'getStorageAt':
         return [
-          '当前RPC节点可能不支持存储槽查询',
-          '代理合约检测需要支持eth_getStorageAt的RPC节点',
-          '建议使用完整节点或专业RPC服务',
+          'The current RPC node may not support storage slot queries',
+          'Proxy contract detection requires an RPC node that supports eth_getStorageAt',
+          'Use a full node or a professional RPC service',
         ];
       default:
         return [
-          '当前RPC节点可能存在功能限制',
-          '建议配置更稳定、功能完整的RPC节点',
-          '可以尝试使用多个RPC节点作为备选',
+          'The current RPC node may have capability limitations',
+          'Consider configuring a more stable, fully featured RPC node',
+          'Try keeping multiple RPC nodes as fallbacks',
         ];
     }
   };
@@ -172,11 +172,11 @@ export default function RpcFunctionError({
   const getFunctionDisplayName = (functionName: string) => {
     switch (functionName) {
       case 'getContractCreationInfo':
-        return '合约创建信息查询';
+        return 'Contract creation query';
       case 'getEvents':
-        return '事件日志查询';
+        return 'Event log query';
       case 'getStorageAt':
-        return '存储槽查询';
+        return 'Storage slot query';
       default:
         return functionName;
     }
@@ -186,7 +186,7 @@ export default function RpcFunctionError({
     <div className={errorBoxStyles}>
       <div className="error-header">
         <span className="icon">⚠️</span>
-        <h4 className="title">RPC 功能错误</h4>
+        <h4 className="title">RPC call failed</h4>
       </div>
 
       <div className="error-content">
@@ -194,7 +194,8 @@ export default function RpcFunctionError({
           <span className="function-name">
             {getFunctionDisplayName(functionName)}
           </span>
-          在
+          {' '}
+          failed on
           {' '}
           <span className="chain-info">
             {chainName}
@@ -203,18 +204,17 @@ export default function RpcFunctionError({
             {chainId}
             )
           </span>
-          {' '}
-          上执行失败。
+          .
         </p>
       </div>
 
       <div className="error-details">
-        错误详情:
+        Error details:
         {error}
       </div>
 
       <div className="suggestions">
-        <div className="suggestion-title">💡 可能的解决方案：</div>
+        <div className="suggestion-title">💡 Possible solutions:</div>
         <ul>
           {getSuggestions(functionName).map((suggestion, index) => (
             <li key={index}>{suggestion}</li>
@@ -224,15 +224,15 @@ export default function RpcFunctionError({
 
       <div className="actions">
         <button className={`${buttonStyles} primary`} onClick={onConfigureRpc}>
-          配置
+          Configure
           {' '}
           {chainName}
           {' '}
-          RPC 节点
+          RPC
         </button>
         {onRetry && (
           <button className={`${buttonStyles} secondary`} onClick={onRetry}>
-            重试
+            Retry
           </button>
         )}
       </div>

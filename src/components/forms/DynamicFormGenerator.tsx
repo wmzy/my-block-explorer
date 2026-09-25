@@ -605,7 +605,7 @@ const formStyles = css`
   max-width: 600px;
   margin: 0 auto;
   padding: 20px;
-  background: #f8f9fa;
+  background: var(--haze-color-bg-subtle);
   border-radius: 8px;
 
   .form-header {
@@ -616,7 +616,7 @@ const formStyles = css`
 
     h3 {
       margin: 0;
-      color: #333;
+      color: var(--haze-color-text);
     }
   }
 
@@ -628,8 +628,8 @@ const formStyles = css`
   .toggle-advanced,
   .reset-form {
     padding: 6px 12px;
-    background: #e9ecef;
-    border: 1px solid #dee2e6;
+    background: var(--haze-color-bg-muted);
+    border: 1px solid var(--haze-color-border);
     border-radius: 4px;
     cursor: pointer;
     font-size: 12px;
@@ -649,7 +649,7 @@ const formStyles = css`
     &.error input,
     &.error select,
     &.error textarea {
-      border-color: #dc3545;
+      border-color: var(--haze-color-danger);
     }
 
     label {
@@ -657,28 +657,28 @@ const formStyles = css`
       align-items: center;
       gap: 8px;
       font-weight: 500;
-      color: #495057;
+      color: var(--haze-color-text);
     }
 
     input,
     select,
     textarea {
       padding: 8px 12px;
-      border: 1px solid #ced4da;
+      border: 1px solid var(--haze-color-border);
       border-radius: 4px;
       font-size: 14px;
 
       &:focus {
         outline: none;
-        border-color: #80bdff;
-        box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+        border-color: var(--haze-color-primary);
+        box-shadow: 0 0 0 2px var(--haze-color-focus-ring);
       }
     }
   }
 
   .indexed-badge {
-    background: #007bff;
-    color: white;
+    background: var(--haze-color-primary);
+    color: var(--haze-color-text-inverse);
     padding: 2px 6px;
     border-radius: 3px;
     font-size: 10px;
@@ -686,7 +686,7 @@ const formStyles = css`
   }
 
   .required {
-    color: #dc3545;
+    color: var(--haze-color-danger);
   }
 
   .range-inputs,
@@ -700,7 +700,7 @@ const formStyles = css`
     }
 
     span {
-      color: #6c757d;
+      color: var(--haze-color-text-muted);
     }
   }
 
@@ -718,21 +718,21 @@ const formStyles = css`
   }
 
   .error-message {
-    color: #dc3545;
+    color: var(--haze-color-danger);
     font-size: 12px;
   }
 
   .form-footer {
     margin-top: 20px;
     padding-top: 20px;
-    border-top: 1px solid #dee2e6;
+    border-top: 1px solid var(--haze-color-border);
   }
 
   .submit-button {
     width: 100%;
     padding: 12px;
-    background: #007bff;
-    color: white;
+    background: var(--haze-color-primary);
+    color: var(--haze-color-text-inverse);
     border: none;
     border-radius: 4px;
     font-size: 16px;
@@ -740,18 +740,19 @@ const formStyles = css`
     cursor: pointer;
 
     &:hover:not(:disabled) {
-      background: #0056b3;
+      background: var(--haze-color-primary-hover);
     }
 
     &:disabled {
-      background: #6c757d;
+      background: var(--haze-color-bg-muted);
+      color: var(--haze-color-text-muted);
       cursor: not-allowed;
     }
   }
 
   .form-errors {
     margin-top: 8px;
-    color: #dc3545;
+    color: var(--haze-color-danger);
     font-size: 14px;
     text-align: center;
   }

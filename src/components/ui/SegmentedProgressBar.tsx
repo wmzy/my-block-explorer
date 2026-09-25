@@ -21,8 +21,8 @@ const containerStyle = css`
   align-items: center;
   gap: 8px;
   padding: 12px 16px;
-  background: var(--haze-surface, #f9fafb);
-  border: 1px solid var(--haze-border, #e5e7eb);
+  background: var(--haze-color-bg-muted);
+  border: 1px solid var(--haze-color-border);
   border-radius: 8px;
   margin-bottom: 16px;
 `;
@@ -30,7 +30,7 @@ const containerStyle = css`
 const trackStyle = css`
   flex: 1;
   height: 8px;
-  background: var(--haze-border, #e5e7eb);
+  background: var(--haze-color-border);
   border-radius: 4px;
   overflow: hidden;
   display: flex;
@@ -42,11 +42,11 @@ const segmentStyle = css`
   transition: width 0.3s ease;
 
   &[data-status='completed'] {
-    background: #22c55e;
+    background: var(--haze-color-success);
   }
 
   &[data-status='indexing'] {
-    background: linear-gradient(90deg, #3b82f6, #60a5fa);
+    background: var(--haze-color-primary);
     animation: pulse 1.5s ease-in-out infinite;
 
     @keyframes pulse {
@@ -61,15 +61,15 @@ const segmentStyle = css`
   }
 
   &[data-status='pending'] {
-    background: #9ca3af;
+    background: var(--haze-color-text-muted);
   }
 
   &[data-status='paused'] {
-    background: #eab308;
+    background: var(--haze-color-warning);
   }
 
   &[data-status='error'] {
-    background: #ef4444;
+    background: var(--haze-color-danger);
   }
 `;
 
@@ -83,8 +83,8 @@ const tooltipStyle = css`
     left: 50%;
     transform: translateX(-50%);
     padding: 4px 8px;
-    background: #1f2937;
-    color: white;
+    background: var(--haze-color-text);
+    color: var(--haze-color-text-inverse);
     font-size: 11px;
     white-space: nowrap;
     border-radius: 4px;
@@ -104,7 +104,7 @@ const legendStyle = css`
   display: flex;
   gap: 12px;
   font-size: 11px;
-  color: var(--haze-text-secondary, #6b7280);
+  color: var(--haze-color-text-muted);
   margin-top: 8px;
 `;
 
@@ -144,7 +144,7 @@ export function SegmentedProgressBar({ segments, className }: Props) {
   if (segments.length === 0) {
     return (
       <div className={cx(containerStyle, className)}>
-        <span style={{ color: 'var(--haze-text-secondary, #6b7280)', fontSize: '13px' }}>
+        <span style={{ color: 'var(--haze-color-text-muted)', fontSize: '13px' }}>
           No indexing ranges defined
         </span>
       </div>
@@ -178,23 +178,23 @@ export function SegmentedProgressBar({ segments, className }: Props) {
       </div>
       <div className={legendStyle}>
         <div className={legendItemStyle}>
-          <div className={statusDotStyle} style={{ background: '#22c55e' }} />
+          <div className={statusDotStyle} style={{ background: 'var(--haze-color-success)' }} />
           <span>Completed</span>
         </div>
         <div className={legendItemStyle}>
-          <div className={statusDotStyle} style={{ background: '#3b82f6' }} />
+          <div className={statusDotStyle} style={{ background: 'var(--haze-color-primary)' }} />
           <span>Indexing</span>
         </div>
         <div className={legendItemStyle}>
-          <div className={statusDotStyle} style={{ background: '#eab308' }} />
+          <div className={statusDotStyle} style={{ background: 'var(--haze-color-warning)' }} />
           <span>Paused</span>
         </div>
         <div className={legendItemStyle}>
-          <div className={statusDotStyle} style={{ background: '#ef4444' }} />
+          <div className={statusDotStyle} style={{ background: 'var(--haze-color-danger)' }} />
           <span>Error</span>
         </div>
         <div className={legendItemStyle}>
-          <div className={statusDotStyle} style={{ background: '#9ca3af' }} />
+          <div className={statusDotStyle} style={{ background: 'var(--haze-color-text-muted)' }} />
           <span>Pending</span>
         </div>
       </div>

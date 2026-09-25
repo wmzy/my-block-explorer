@@ -919,3 +919,77 @@ pnpm typecheck           # tsc --noEmit
   wiring of cross seams (ProtocolRouterChip→Detail, deepScan field→
   services/addresses.ts, reconcile call→api-app) + one pinned API
   contract doc for parallel backend/frontend slices.
+- **2026-09-25 PM gap-fix wave (3 waves, 9 tasks + integration, recursive
+  task splitting — parents spawned child tasks for pure-util/decoder and
+  backend/frontend slices)** — P0 consistency + P1 features, all verified:
+  tsc clean, eslint 0 errors, 157 files / 2304 tests green (`vitest
+  --changed`), live browser smoke on Polygon:
+  **P0** — nav gains Blocks/Transactions entries + SQL regrouped behind an
+  admin divider (muted, mobile-hidden divider); the events/forms component
+  family fully migrated off styled-components/@linaria/react to `css`+`cx`
+  + `--haze-*` (SegmentedProgressBar swept in integration; the
+  @linaria/react dependency was REMOVED — EventTable was its last
+  consumer); ALL Chinese UI/comment residue translated (live copy in
+  RpcFunctionError/RpcErrorAlert + 34 files incl. schema.ts comments);
+  ETH/Gwei/Wei unit switcher (`util/units.ts` + `UnitToggle`, key
+  `be:valueUnit`, useSyncExternalStore sync, BigInt-exact Intl formatting
+  — gwei/wei never coerce through Number; tx Detail Value + new
+  Transaction Fee rows honor it with a muted ≈native hint; default
+  rendering byte-identical, pinned).
+  **P1 proxy resolution** — `utils/proxyDetection.ts` (pure): EIP-1967
+  slots (keccak-proven in tests), EIP-1822 (= keccak256('PROXIABLE')
+  UPPERCASE, no -1n offset), EIP-1167 exact runtime-bytecode pattern;
+  Contract view probes ONLY unverified contracts without server-known
+  implementation (1167 bytecode → 1967 slot → 1822 → beacon slot +
+  implementation() static call), every step try/caught, honest "detected
+  on-chain — not verified source data" footnote, miss = no card;
+  verified pages byte-identical (createRpcClient-never-called pinned).
+  **P1 ERC-4337** — `utils/userOpDecode.ts` + tx Detail "Account
+  Abstraction (ERC-4337)" card. Canonical EntryPoints: v0.6
+  `0x5FF137D4b0FDCD49DcA30c7CF57E578a026d2789` / v0.7
+  `0x0000000071727De22E9d8BAf0edAc6f37da032` / v0.8
+  `0x4337084D9E255Ff0702461CF8895CE9E3b5Ff108` — the original task spec
+  carried a WRONG v0.6 address from memory; ground truth verified against
+  eth-infinitism (v0.7/v0.8 share the packed 9-field tuple
+  accountGasLimits/gasFees/paymasterAndData — NOT flat fields; v0.8's
+  UserOperationEvent ABI differs: leading indexed userOpHash). handleOps
+  decode carries a mandatory re-encode round-trip guard; card gated on
+  canonical EntryPoint to-address AND ≥1 UserOperationEvent; event-only
+  fallback renders honestly when calldata is undecodable.
+  **P1 coverage legend** — `/about/coverage` static route + shared
+  COVERAGE_GLYPHS export + "What do these levels mean?" link inside the
+  CoverageBadge ⓘ detail (collapsed chip DOM byte-pinned; useId is the
+  one documented-volatile attribute).
+  **P1 deep-scan internal txns** — migration 0014:
+  `address_scan_internal_txs` (composite PK chainId+address+txHash+
+  tracePath; three nullable ALTERs on address_scan_jobs — DuckDB
+  rejects ADD COLUMN NOT NULL). `includeTraces` on POST (absent =
+  byte-identical wire); `GET .../scan/internal-transactions` (limit cap
+  100, NaN→400, unknown address = 200 empty); the engine traces ALL txs
+  of each CHANGE block (callTracer, concurrency 4, depth≥1 frames whose
+  from/to match the address), `tracesSupported=false` honest degrade
+  never fatal; internal-txn rows NEVER feed `coverage:'complete'`;
+  DeepScan panel checkbox + traces meta; InternalTxns "Deep scan
+  records" section carries the scope note (change blocks only, not every
+  block).
+  **P1 token risk scan** — `utils/abiRiskScan.ts` exact-name heuristics
+  (mint/pausable/blacklist = warning; upgradeable/ownership/fee-controls
+  = info) + Token page "Contract functions (risk scan)" card gated on a
+  VERIFIED server ABI (proxy implementation ABI wins; custom-ABI pastes
+  never qualify), caveat rendered exactly once in every state.
+  **Conventions pinned this wave**: (1) vitest is transform-only → every
+  multi-agent wave MUST close with `pnpm typecheck` — all three error
+  clusters lived at agent-boundary type seams (viem getCode/getStorageAt
+  return undefined-able types; test fixture literals widen to string);
+  (2) NEVER run `pnpm dev` and `pnpm dev:server` together — the vite
+  hono bridge and the standalone server fight over the DuckDB
+  single-writer lock (bridge won; the standalone ran table-less and
+  "deleted corrupted WAL"). Browser-smoke topology: vite only + manual
+  api base `http://localhost:3000` (localStorage
+  `my-block-explorer-api-url`); (3) viem's polygon default polygon-rpc.com
+  is dead (public key revoked) — smoke via
+  polygon-bor-rpc.publicnode.com or the configured drpc; (4) Blockscan
+  verifies ~100% of established EIP-1967 proxies on Polygon mainnet, so a
+  "live unverified proxy" for probe-card smoke is nearly unfindable —
+  probe positive cases are unit-mock territory; live smoke covers the
+  gates (verified → no probe; unverified non-proxy → silent no-card).

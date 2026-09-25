@@ -5,11 +5,13 @@
 // error/resume, the genesis-anchored complete line), the scan_conflict
 // force-restart affordance, the settled-only catch-up affordance (202 →
 // optimistic notice + immediate refetch, already_caught_up as a friendly
-// notice, invalid_state verbatim, 404 vanish → refetch), and the poll
+// notice, invalid_state verbatim, 404 vanish → refetch), the poll
 // lifecycle (3s while pending/running, stopped when settled, nothing
-// after unmount). The ETA wrappers' sampler math (window threshold,
-// void-on-pause, void-on-regression) is pinned as pure functions the
-// same way the range manager's own sampler is.
+// after unmount), the includeTraces opt-in (unchecked wire stays
+// byte-identical) and the per-job traces meta line. The ETA wrappers'
+// sampler math (window threshold, void-on-pause, void-on-regression) is
+// pinned as pure functions the same way the range manager's own sampler
+// is.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, act, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
@@ -21,7 +23,7 @@ import {
   estimateScanEta,
   recordScanEtaSample,
 } from '@/views/Address/DeepScan';
-import type { ScanJob } from '@/services/addressScan';
+import { parseScanJob, type ScanJob } from '@/services/addressScan';
 
 const mocks = vi.hoisted(() => ({
   get: vi.fn(),
@@ -58,6 +60,9 @@ const runningJob: ScanJob = {
   errorMessage: null,
   coverage: null,
   updatedAt: '2026-09-24T00:00:00.000Z',
+  tracesRequested: false,
+  tracesSupported: null,
+  tracesRecorded: 0,
 };
 
 const envelope = (job: ScanJob | null) => (job === null ? null : { job });
@@ -290,6 +295,152 @@ describe('DeepScan panel rendering', () => {
     mocks.del.mockResolvedValue(undefined);
     fireEvent.click(screen.getByTestId('deep-scan-delete'));
     await waitFor(() => expect(mocks.del).toHaveBeenCalledWith(SCAN_URL, expect.anything()));
+  });
+});
+
+describe('DeepScan traces opt-in and per-job traces meta', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    clearAllCaches();
+    mocks.get.mockReset();
+    mocks.post.mockReset();
+    mocks.del.mockReset();
+  });
+
+  it('leaves includeTraces unchecked by default — the start body stays byte-identical to today', async () => {
+    mocks.get.mockResolvedValue(envelope(null));
+    renderPanel();
+    await settle();
+
+    expect(screen.getByTestId('deep-scan-include-traces')).not.toBeChecked();
+    // The intro explains the checkbox's honest scope.
+    expect(
+      screen.getByText(/only in blocks where this address changed/i),
+    ).toBeInTheDocument();
+
+    mocks.post.mockResolvedValue(envelope({ ...runningJob, status: 'pending' }));
+    fireEvent.click(screen.getByTestId('deep-scan-start'));
+    await waitFor(() =>
+      expect(mocks.post).toHaveBeenCalledWith(
+        SCAN_URL,
+        { fromBlock: 'earliest' },
+        expect.anything(),
+      ),
+    );
+  });
+
+  it('rides includeTraces: true only when the checkbox is checked', async () => {
+    mocks.get.mockResolvedValue(envelope(null));
+    renderPanel();
+    await settle();
+
+    fireEvent.click(screen.getByTestId('deep-scan-include-traces'));
+    expect(screen.getByTestId('deep-scan-include-traces')).toBeChecked();
+
+    mocks.post.mockResolvedValue(
+      envelope({ ...runningJob, status: 'pending', tracesRequested: true }),
+    );
+    fireEvent.click(screen.getByTestId('deep-scan-start'));
+    await waitFor(() =>
+      expect(mocks.post).toHaveBeenCalledWith(
+        SCAN_URL,
+        { fromBlock: 'earliest', includeTraces: true },
+        expect.anything(),
+      ),
+    );
+  });
+
+  it('renders the recorded count for a traces-requested job', async () => {
+    mocks.get.mockResolvedValue(
+      envelope({
+        ...runningJob,
+        tracesRequested: true,
+        tracesSupported: true,
+        tracesRecorded: 1_234,
+      }),
+    );
+    renderPanel();
+    await settle();
+
+    expect(screen.getByTestId('deep-scan-traces').textContent).toBe(
+      'Internal transactions recorded: 1,234',
+    );
+  });
+
+  it('renders the honest refusal verbatim when the RPC cannot trace', async () => {
+    mocks.get.mockResolvedValue(
+      envelope({
+        ...runningJob,
+        tracesRequested: true,
+        tracesSupported: false,
+        tracesRecorded: 0,
+      }),
+    );
+    renderPanel();
+    await settle();
+
+    expect(screen.getByTestId('deep-scan-traces').textContent).toBe(
+      'traces unavailable on this RPC — the walk continued without them',
+    );
+  });
+
+  it('renders no traces line for walks that never asked for recording', async () => {
+    mocks.get.mockResolvedValue(envelope(runningJob));
+    renderPanel();
+    await settle();
+
+    expect(screen.queryByTestId('deep-scan-traces')).not.toBeInTheDocument();
+  });
+});
+
+// The additive seam: legacy inline deepScan payloads (no traces keys at
+// all) must keep parsing with honest defaults so the payload-seeded path
+// never regresses.
+describe('parseScanJob traces fields (additive seam)', () => {
+  // The pre-traces wire shape, exactly as legacy rows serialized it.
+  const legacyWireJob = {
+    status: 'running',
+    fromBlock: 0,
+    toBlock: 20_000_000,
+    cursorBlock: 1_234_567,
+    blocksWalked: 1_234_568,
+    blocksTotal: 20_000_001,
+    txsFound: 42,
+    errorMessage: null,
+    coverage: null,
+    updatedAt: '2026-09-24T00:00:00.000Z',
+  };
+
+  it('defaults absent traces fields so legacy payloads keep parsing', () => {
+    const job = parseScanJob(legacyWireJob);
+    expect(job).not.toBeNull();
+    expect(job?.tracesRequested).toBe(false);
+    expect(job?.tracesSupported).toBeNull();
+    expect(job?.tracesRecorded).toBe(0);
+  });
+
+  it('keeps junk in the additive fields from rendering a lie', () => {
+    const job = parseScanJob({
+      ...legacyWireJob,
+      tracesRequested: 'yes',
+      tracesSupported: 'no',
+      tracesRecorded: -3,
+    });
+    expect(job?.tracesRequested).toBe(false);
+    expect(job?.tracesSupported).toBeNull();
+    expect(job?.tracesRecorded).toBe(0);
+  });
+
+  it('flows the fields through when the wire carries them', () => {
+    const job = parseScanJob({
+      ...legacyWireJob,
+      tracesRequested: true,
+      tracesSupported: true,
+      tracesRecorded: 7,
+    });
+    expect(job?.tracesRequested).toBe(true);
+    expect(job?.tracesSupported).toBe(true);
+    expect(job?.tracesRecorded).toBe(7);
   });
 });
 

@@ -1,6 +1,6 @@
 /**
- * 链特定事件表管理器
- * 为每个链管理独立的事件表，不支持跨链查询
+ * Chain-specific event table manager
+ * Manages per-chain event tables; cross-chain queries are not supported
  */
 
 import { eq, and, lt, or, sql } from 'drizzle-orm';
@@ -14,7 +14,7 @@ import type { AbiEvent } from 'viem';
 const logger = createLogger('chain-event-table-manager');
 
 /**
- * 链特定的事件表管理器
+ * Chain-specific event table manager
  */
 export class ChainEventTableManager {
   private chainDb: ChainDatabaseManager;
@@ -43,7 +43,7 @@ export class ChainEventTableManager {
   }
 
   /**
-   * 为ABI事件创建动态表
+   * Create a dynamic table for an ABI event
    */
   async createEventTable(
     contractAddress: string,
@@ -54,7 +54,7 @@ export class ChainEventTableManager {
     try {
       const tableName = this.generateTableName(contractAddress, eventSignature);
 
-      // 检查表是否已存在
+      // Check whether the table already exists
       if (this.createdTables.has(tableName)) {
         return tableName;
       }
@@ -65,17 +65,17 @@ export class ChainEventTableManager {
         inputs: eventParams,
       };
 
-      // 创建事件表
+      // Create the event table
       const createTableSQL = await this.schemaManager.getCreateEventTableSQL(tableName, eventAbi);
       await this.chainDb.exec(createTableSQL);
 
-      // 创建索引
+      // Create indexes
       const indexes = this.schemaManager.getEventTableIndexesSQL(tableName, eventAbi);
       for (const indexSql of indexes) {
         await this.chainDb.exec(indexSql);
       }
 
-      // 注册事件表
+      // Register the event table
       await this.registerEventTable(
         contractAddress,
         eventSignature,
@@ -84,7 +84,7 @@ export class ChainEventTableManager {
         eventAbi as unknown as EventAbiShape,
       );
 
-      // 缓存表名
+      // Cache the table name
       this.createdTables.add(tableName);
 
       logger.info(
@@ -99,17 +99,17 @@ export class ChainEventTableManager {
   }
 
   /**
-   * 生成表名（链内唯一）
+   * Generate a table name (unique within the chain)
    */
   private generateTableName(contractAddress: string, eventSignature: string): string {
-    // 截取合约地址的前8位
+    // Take the first 8 chars of the contract address
     const shortAddress = contractAddress.slice(2, 10);
-    // 截取事件签名的前8位
+    // Take the first 8 chars of the event signature
     const shortSignature = eventSignature.slice(2, 10);
 
     const tableName = `${this.config.tableNamePrefix}_${shortAddress}_${shortSignature}`;
 
-    // 确保表名长度不超过限制
+    // Keep the table name within the length limit
     if (tableName.length > this.config.maxTableNameLength) {
       return tableName.slice(0, this.config.maxTableNameLength);
     }
@@ -118,7 +118,7 @@ export class ChainEventTableManager {
   }
 
   /**
-   * 注册事件表到元数据表
+   * Register an event table in the metadata table
    */
   private async registerEventTable(
     contractAddress: string,
@@ -152,7 +152,7 @@ export class ChainEventTableManager {
   }
 
   /**
-   * 插入事件数据
+   * Insert event data
    */
   async insertEventData(tableName: string, eventData: Record<string, unknown>): Promise<void> {
     const columns = Object.keys(eventData);
@@ -168,7 +168,7 @@ export class ChainEventTableManager {
   }
 
   /**
-   * 批量插入事件数据
+   * Insert event data in batch
    */
   async insertEventDataBatch(
     tableName: string,
@@ -190,7 +190,7 @@ export class ChainEventTableManager {
   }
 
   /**
-   * 查询事件数据
+   * Query event data
    */
   async queryEvents(
     tableName: string,
@@ -212,7 +212,7 @@ export class ChainEventTableManager {
     const whereClauses: string[] = [];
     const params: unknown[] = [];
 
-    // 构建WHERE条件
+    // Build the WHERE clauses
     if (filters.eventName) {
       whereClauses.push('event_name = ?');
       params.push(filters.eventName);
@@ -238,7 +238,7 @@ export class ChainEventTableManager {
       params.push(filters.toTimestamp);
     }
 
-    // 处理自定义过滤条件
+    // Handle custom filter conditions
     Object.entries(filters).forEach(([key, value]) => {
       if (
         !['eventName', 'fromBlock', 'toBlock', 'fromTimestamp', 'toTimestamp'].includes(key) &&
@@ -251,12 +251,12 @@ export class ChainEventTableManager {
 
     const _whereClause = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
 
-    // 排序
+    // Sort
     const sortBy = options.sortBy ?? 'block_timestamp';
     const sortOrder = options.sort ?? 'desc';
     const orderClause = `ORDER BY ${sortBy} ${sortOrder}`;
 
-    // 分页
+    // Paginate
     const limit = Math.min(options.limit ?? 50, 1000);
     const _cursorClause = '';
     if (options.cursor) {
@@ -270,7 +270,7 @@ export class ChainEventTableManager {
 
     const finalWhereClause = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
 
-    // 查询数据
+    // Query the data
     const querySql = `
       SELECT * FROM ${tableName}
       ${finalWhereClause}
@@ -280,11 +280,11 @@ export class ChainEventTableManager {
 
     const events = await this.chainDb.query(querySql, params);
 
-    // 检查是否有更多数据
+    // Check whether more data exists
     const hasMore = events.length > limit;
     const returnedEvents = hasMore ? events.slice(0, -1) : events;
 
-    // 生成下一页游标
+    // Build the next-page cursor
     let nextCursor: string | undefined;
     if (hasMore && returnedEvents.length > 0) {
       const lastEvent = returnedEvents[returnedEvents.length - 1] as Record<string, unknown>;
@@ -300,7 +300,7 @@ export class ChainEventTableManager {
   }
 
   /**
-   * 获取事件统计信息
+   * Get event statistics
    */
   async getEventStatistics(
     tableName: string,
@@ -337,7 +337,7 @@ export class ChainEventTableManager {
       unique_addresses?: number;
     };
 
-    // 获取唯一地址数量（需要额外的查询）
+    // Count unique addresses (needs an extra query)
     let uniqueAddresses;
     if ((stats.total_events ?? 0) > 0) {
       const addressQuery = `
@@ -358,7 +358,7 @@ export class ChainEventTableManager {
   }
 
   /**
-   * 检查表是否存在
+   * Check whether a table exists
    */
   async tableExists(tableName: string): Promise<boolean> {
     try {
@@ -374,7 +374,7 @@ export class ChainEventTableManager {
   }
 
   /**
-   * 获取合约的事件表列表
+   * List a contract's event tables
    */
   async getContractEventTables(contractAddress: string): Promise<string[]> {
     try {
@@ -402,7 +402,7 @@ export class ChainEventTableManager {
   }
 
   /**
-   * 删除事件表
+   * Drop an event table
    */
   async dropEventTable(tableName: string): Promise<void> {
     try {
@@ -420,7 +420,7 @@ export class ChainEventTableManager {
   }
 
   /**
-   * 获取表结构信息
+   * Get table schema information
    */
   async getTableSchema(tableName: string): Promise<{
     columns: Array<{ name: string; type: string; nullable: boolean }>;
@@ -470,7 +470,7 @@ export class ChainEventTableManager {
   }
 
   /**
-   * 清理过期的事件表
+   * Clean up expired event tables
    */
   async cleanupOldTables(daysOld: number = 90): Promise<number> {
     const cutoffDate = new Date();
@@ -501,20 +501,20 @@ export class ChainEventTableManager {
   }
 
   /**
-   * 获取链ID
+   * Get the chain ID
    */
   getChainId(): number {
     return this.chainDb.getChainId();
   }
 
   /**
-   * 创建用于过滤的参数索引
+   * Create indexes on parameters used for filtering
    */
   async createFilteringIndexes(tableName: string, parameters: string[]): Promise<void> {
     try {
       logger.info({ tableName }, 'Creating filtering indexes for table');
 
-      // 为每个参数创建索引（如果它们是常用过滤字段）
+      // Index each parameter that is a common filter field
       for (const param of parameters) {
         if (this.shouldCreateIndex(param)) {
           const indexName = `idx_${param}`;
@@ -529,7 +529,7 @@ export class ChainEventTableManager {
         }
       }
 
-      // 创建复合索引以提高常见过滤组合的性能
+      // Create composite indexes for common filter combinations
       await this.createCompositeIndexes(tableName, parameters);
     } catch (error) {
       logger.error({ err: error, tableName }, 'Failed to create filtering indexes');
@@ -538,10 +538,10 @@ export class ChainEventTableManager {
   }
 
   /**
-   * 判断是否应该为参数创建索引
+   * Decide whether a parameter should be indexed
    */
   private shouldCreateIndex(paramName: string): boolean {
-    // 常见的过滤字段
+    // Common filter fields
     const indexableFields = [
       'from',
       'to',
@@ -561,10 +561,10 @@ export class ChainEventTableManager {
   }
 
   /**
-   * 创建复合索引以提高查询性能
+   * Create composite indexes to speed up queries
    */
   private async createCompositeIndexes(tableName: string, parameters: string[]): Promise<void> {
-    // 常见的复合索引组合
+    // Common composite index combinations
     const compositeIndexes = [
       { fields: ['from', 'block_timestamp'], name: 'idx_from_time' },
       { fields: ['to', 'block_timestamp'], name: 'idx_to_time' },
@@ -577,7 +577,7 @@ export class ChainEventTableManager {
     ];
 
     for (const index of compositeIndexes) {
-      // 检查所有字段都存在于参数中
+      // Check that all fields exist among the parameters
       if (index.fields.every(field => parameters.includes(field))) {
         try {
           await this.chainDb.exec(`
@@ -592,7 +592,7 @@ export class ChainEventTableManager {
   }
 
   /**
-   * 分析查询模式并建议新索引
+   * Analyze query patterns and suggest new indexes
    */
   async analyzeQueryPatterns(
     tableName: string,
@@ -604,13 +604,13 @@ export class ChainEventTableManager {
     const suggestions: string[] = [];
     const recommendedIndexes: Array<{ fields: string[]; reason: string }> = [];
 
-    // 分析最近的查询模式
+    // Analyze recent query patterns
     const queryPatterns = this._analyzeQueryPatterns(recentQueries);
 
-    // 生成索引建议
+    // Produce index suggestions
     for (const pattern of queryPatterns) {
       if (pattern.frequency > 5) {
-        // 如果查询频率超过阈值
+        // When query frequency exceeds the threshold
         recommendedIndexes.push({
           fields: pattern.fields,
           reason: `Frequently used ${pattern.frequency} times`,
@@ -628,7 +628,7 @@ export class ChainEventTableManager {
   }
 
   /**
-   * 分析查询模式
+   * Analyze query patterns
    */
   private _analyzeQueryPatterns(queries: Record<string, unknown>[]): Array<{
     fields: string[];
@@ -658,7 +658,7 @@ export class ChainEventTableManager {
   }
 
   /**
-   * 检查索引是否存在
+   * Check whether an index exists
    */
   private async indexExists(tableName: string, fields: string[]): Promise<boolean> {
     try {
@@ -691,7 +691,7 @@ export class ChainEventTableManager {
   }
 
   /**
-   * 获取表的索引使用统计
+   * Get index usage statistics for a table
    */
   async getIndexUsageStats(tableName: string): Promise<
     Array<{
@@ -703,16 +703,16 @@ export class ChainEventTableManager {
     }>
   > {
     try {
-      // 在真实实现中，这里会查询数据库的索引使用统计
-      // 目前返回模拟数据
+      // A real implementation would query the database for index usage statistics
+      // Return mock data for now
       const schema = await this.getTableSchema(tableName);
 
       return schema.indexes.map(index => ({
         indexName: index.name,
         fields: index.columns,
-        usageCount: Math.floor(Math.random() * 1000), // 模拟使用次数
-        lastUsed: new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000), // 模拟最后使用时间
-        efficiency: 0.8 + Math.random() * 0.2, // 模拟效率评分
+        usageCount: Math.floor(Math.random() * 1000), // mock usage count
+        lastUsed: new Date(Date.now() - Math.random() * 7 * 24 * 60 * 60 * 1000), // mock last-used time
+        efficiency: 0.8 + Math.random() * 0.2, // mock efficiency score
       }));
     } catch (error) {
       logger.warn({ err: error }, 'Failed to get index usage stats');
@@ -721,7 +721,7 @@ export class ChainEventTableManager {
   }
 
   /**
-   * 优化表索引
+   * Optimize table indexes
    */
   async optimizeIndexes(tableName: string): Promise<{
     optimizedIndexes: string[];
@@ -733,13 +733,13 @@ export class ChainEventTableManager {
     const createdIndexes: string[] = [];
 
     try {
-      // 获取当前索引使用统计
+      // Get current index usage statistics
       const indexStats = await this.getIndexUsageStats(tableName);
 
-      // 分析哪些索引需要优化
+      // Analyze which indexes need optimization
       for (const stat of indexStats) {
         if (stat.efficiency < 0.5 && stat.usageCount < 10) {
-          // 效率低且使用频率不高的索引
+          // Inefficient and rarely used indexes
           try {
             await this.chainDb.exec(`DROP INDEX IF EXISTS ${stat.indexName}`);
             droppedIndexes.push(stat.indexName);
@@ -748,12 +748,12 @@ export class ChainEventTableManager {
             logger.warn({ err: error, indexName: stat.indexName }, 'Failed to drop index');
           }
         } else if (stat.usageCount > 100 && stat.efficiency > 0.8) {
-          // 使用频繁且效率高的索引
+          // Frequently used, efficient indexes
           optimizedIndexes.push(stat.indexName);
         }
       }
 
-      // 重新创建需要的索引
+      // Recreate the indexes we keep
       const schema = await this.getTableSchema(tableName);
       const parameters = schema.columns.map(col => col.name);
 
@@ -770,7 +770,7 @@ export class ChainEventTableManager {
   }
 
   /**
-   * 获取索引建议
+   * Get index suggestions
    */
   async getIndexingRecommendations(tableName: string): Promise<{
     currentIndexes: string[];
@@ -791,10 +791,10 @@ export class ChainEventTableManager {
         priority: 'high' | 'medium' | 'low';
       }> = [];
 
-      // 基于字段类型和常用查询模式建议索引
+      // Suggest indexes from field types and common query patterns
       const parameters = schema.columns.map(col => col.name);
 
-      // 高优先级：地址和时间字段
+      // High priority: address and time fields
       const highPriorityFields = ['from', 'to', 'block_timestamp', 'transaction_hash'];
       for (const field of highPriorityFields) {
         if (parameters.includes(field) && !this.hasIndexForField(currentIndexes, field)) {
@@ -806,7 +806,7 @@ export class ChainEventTableManager {
         }
       }
 
-      // 中优先级：数值和事件类型字段
+      // Medium priority: numeric and event-type fields
       const mediumPriorityFields = ['value', 'event_name', 'block_number'];
       for (const field of mediumPriorityFields) {
         if (parameters.includes(field) && !this.hasIndexForField(currentIndexes, field)) {
@@ -818,7 +818,7 @@ export class ChainEventTableManager {
         }
       }
 
-      // 低优先级：其他字段
+      // Low priority: other fields
       const lowPriorityFields = parameters.filter(
         param => !highPriorityFields.includes(param) && !mediumPriorityFields.includes(param),
       );
@@ -891,7 +891,7 @@ export class ChainEventTableManager {
   }
 
   /**
-   * 检查是否已存在指定字段的索引
+   * Check whether an index already exists for the given fields
    */
   private hasIndexForField(indexes: string[], ...fields: string[]): boolean {
     return indexes.some(indexName =>
@@ -900,7 +900,7 @@ export class ChainEventTableManager {
   }
 
   /**
-   * 计算性能影响
+   * Estimate performance impact
    */
   private calculatePerformanceImpact(
     suggestions: Array<{
@@ -925,7 +925,7 @@ export class ChainEventTableManager {
   }
 
   /**
-   * 获取已创建的表列表
+   * List created tables
    */
   getCreatedTables(): string[] {
     return Array.from(this.createdTables);

@@ -43,7 +43,7 @@ export type ContractCallParams = {
 };
 
 /**
- * 解析合约 ABI，提取可调用的函数
+ * Parse a contract ABI and extract callable functions
  */
 export function parseContractFunctions(abi: string): {
   readFunctions: ContractFunction[];
@@ -71,7 +71,7 @@ export function parseContractFunctions(abi: string): {
 }
 
 /**
- * 调用只读合约函数
+ * Call a read-only contract function
  */
 export async function readContract(
   params: ContractCallParams & { abi?: string },
@@ -82,10 +82,10 @@ export async function readContract(
     let abi: Abi;
 
     if (params.abi) {
-      // 直接使用提供的 ABI
+      // Use the provided ABI directly
       abi = JSON.parse(params.abi) as Abi;
     } else {
-      // 从 API 获取合约 ABI
+      // Fetch the contract ABI from the API
       const contractSource = await fetchContractSource(params.chainId, params.contractAddress);
       if (!contractSource?.abi) {
         return {
@@ -120,7 +120,7 @@ export async function readContract(
 }
 
 /**
- * 模拟合约调用
+ * Simulate a contract call
  */
 export async function simulateContract(
   params: ContractCallParams & { abi?: string },
@@ -131,10 +131,10 @@ export async function simulateContract(
     let abi: Abi;
 
     if (params.abi) {
-      // 直接使用提供的 ABI
+      // Use the provided ABI directly
       abi = JSON.parse(params.abi) as Abi;
     } else {
-      // 从 API 获取合约 ABI
+      // Fetch the contract ABI from the API
       const contractSource = await fetchContractSource(params.chainId, params.contractAddress);
       if (!contractSource?.abi) {
         return {
@@ -171,7 +171,7 @@ export async function simulateContract(
 }
 
 /**
- * 估算合约调用的 Gas 费用
+ * Estimate gas for a contract call
  */
 export async function estimateContractGas(params: ContractCallParams): Promise<{
   gasLimit: bigint;
@@ -182,7 +182,7 @@ export async function estimateContractGas(params: ContractCallParams): Promise<{
   try {
     const client = getRpcClient(params.chainId);
 
-    // 获取合约 ABI
+    // Fetch the contract ABI
     const contractSource = await fetchContractSource(params.chainId, params.contractAddress);
     if (!contractSource?.abi) {
       return null;
@@ -201,7 +201,7 @@ export async function estimateContractGas(params: ContractCallParams): Promise<{
       });
     });
 
-    // 获取当前 gas 价格
+    // Get the current gas price
     const [gasPrice, feeData] = await Promise.all([
       client.getGasPrice().catch(() => null),
       client.estimateFeesPerGas().catch(() => null),
@@ -220,7 +220,7 @@ export async function estimateContractGas(params: ContractCallParams): Promise<{
 }
 
 /**
- * 获取合约源码（从后端API获取）
+ * Fetch contract source (from the backend API)
  */
 async function fetchContractSource(
   chainId: number,
@@ -247,7 +247,7 @@ async function fetchContractSource(
 }
 
 /**
- * 格式化合约调用结果
+ * Format a contract call result
  */
 function formatContractResult(result: unknown): unknown {
   if (typeof result === 'bigint') {
@@ -270,7 +270,7 @@ function formatContractResult(result: unknown): unknown {
 }
 
 /**
- * 格式化错误信息
+ * Format an error message
  */
 function formatError(error: unknown): string {
   if (typeof error === 'object' && error !== null) {
@@ -291,7 +291,7 @@ function formatError(error: unknown): string {
 }
 
 /**
- * 验证函数参数
+ * Validate function arguments
  */
 export function validateFunctionArgs(
   contractFunction: ContractFunction,
@@ -318,7 +318,7 @@ export function validateFunctionArgs(
 }
 
 /**
- * 验证单个参数
+ * Validate a single argument
  */
 function validateArgument(
   type: string,
@@ -330,22 +330,22 @@ function validateArgument(
   }
 
   try {
-    // 地址类型验证
+    // Address type validation
     if (type === 'address') {
       if (typeof value !== 'string' || !value.match(/^0x[a-fA-F0-9]{40}$/)) {
         return { valid: false, error: 'Invalid address format' };
       }
     }
 
-    // 数字类型验证
+    // Numeric type validation
     if (type.startsWith('uint') || type.startsWith('int')) {
       if (typeof value === 'string' || typeof value === 'number' || typeof value === 'bigint') {
         const _num = BigInt(value);
-        // 可以添加更多的范围检查
+        // More range checks could be added
       }
     }
 
-    // 字节类型验证
+    // Bytes type validation
     if (type.startsWith('bytes')) {
       if (typeof value !== 'string' || !value.startsWith('0x')) {
         return {
@@ -355,7 +355,7 @@ function validateArgument(
       }
     }
 
-    // 布尔类型验证
+    // Boolean type validation
     if (type === 'bool') {
       if (typeof value !== 'boolean' && value !== 'true' && value !== 'false') {
         return { valid: false, error: 'Invalid boolean value' };

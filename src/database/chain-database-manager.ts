@@ -76,8 +76,8 @@ export class ChainDatabaseManager {
 }
 
 /**
- * 多链数据库管理器
- * 管理所有链的数据库连接，提供链隔离的查询接口
+ * Multi-chain database manager
+ * Manages database connections for all chains, providing chain-isolated query access
  */
 export class MultiChainDatabaseManager {
   private static instance: MultiChainDatabaseManager;
@@ -90,7 +90,7 @@ export class MultiChainDatabaseManager {
   }
 
   /**
-   * 获取单例实例
+   * Get the singleton instance
    */
   static getInstance(supportedChainIds?: number[]): MultiChainDatabaseManager {
     if (!MultiChainDatabaseManager.instance) {
@@ -100,31 +100,31 @@ export class MultiChainDatabaseManager {
   }
 
   /**
-   * 获取指定链的数据库管理器
+   * Get the database manager for a specific chain
    */
   async getChainDatabase(chainId: number): Promise<ChainDatabaseManager> {
-    // 检查链是否支持
+    // Check whether the chain is supported
     if (this.supportedChains.length > 0 && !this.supportedChains.includes(chainId)) {
       throw new Error(`Chain ${chainId} is not supported`);
     }
 
-    // 检查缓存
+    // Check the cache
     if (this.chainManagers.has(chainId)) {
       return this.chainManagers.get(chainId)!;
     }
 
-    // 创建新的链数据库管理器
+    // Create a new chain database manager
     const chainManager = new ChainDatabaseManager(chainId);
     await chainManager.initialize();
 
-    // 缓存管理器
+    // Cache the manager
     this.chainManagers.set(chainId, chainManager);
 
     return chainManager;
   }
 
   /**
-   * 同步获取链数据库管理器（如果已初始化）
+   * Get a chain database manager synchronously (when already initialized)
    */
   getChainDatabaseSync(chainId: number): ChainDatabaseManager {
     const manager = this.chainManagers.get(chainId);
@@ -137,7 +137,7 @@ export class MultiChainDatabaseManager {
   }
 
   /**
-   * 初始化所有支持的链数据库
+   * Initialize databases for all supported chains
    */
   async initializeAllChains(): Promise<void> {
     logger.info({ count: this.supportedChains.length }, 'Initializing chain databases');
@@ -156,21 +156,21 @@ export class MultiChainDatabaseManager {
   }
 
   /**
-   * 获取已初始化的链列表
+   * List initialized chains
    */
   getInitializedChains(): number[] {
     return Array.from(this.chainManagers.keys());
   }
 
   /**
-   * 检查链是否已初始化
+   * Check whether a chain is initialized
    */
   isChainInitialized(chainId: number): boolean {
     return this.chainManagers.has(chainId);
   }
 
   /**
-   * 关闭指定链的数据库连接
+   * Close a specific chain's database connection
    */
   async closeChainDatabase(chainId: number): Promise<void> {
     const manager = this.chainManagers.get(chainId);
@@ -182,7 +182,7 @@ export class MultiChainDatabaseManager {
   }
 
   /**
-   * 关闭所有链的数据库连接
+   * Close all chain database connections
    */
   async closeAll(): Promise<void> {
     logger.info({ count: this.chainManagers.size }, 'Closing chain databases');
@@ -204,7 +204,7 @@ export class MultiChainDatabaseManager {
   }
 
   /**
-   * 获取链数据库统计信息
+   * Get chain database statistics
    */
   async getChainStats(chainId: number): Promise<{
     chainId: number;
@@ -230,7 +230,7 @@ export class MultiChainDatabaseManager {
   }
 
   /**
-   * 获取所有链的统计信息
+   * Get statistics for all chains
    */
   async getAllChainStats(): Promise<
     Array<{
@@ -247,5 +247,5 @@ export class MultiChainDatabaseManager {
   }
 }
 
-// 默认的链数据库管理器实例
+// Default multi-chain database manager instance
 export const multiChainDb = MultiChainDatabaseManager.getInstance();

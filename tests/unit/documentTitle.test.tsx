@@ -55,12 +55,22 @@ describe('deriveDocumentTitle', () => {
     expect(deriveDocumentTitle('/search', '?q=0xdead')).toBe('Search · Explorer');
   });
 
+  it('titles the static coverage explainer with the app name', () => {
+    expect(deriveDocumentTitle('/about/coverage', '')).toBe(
+      'Data Coverage — My Block Explorer',
+    );
+  });
+
   it('falls back to the app title for unchanined, unknown, or malformed routes', () => {
     expect(deriveDocumentTitle('/', '')).toBe('My Block Explorer');
     expect(deriveDocumentTitle('/chain/1/unknown-section', '')).toBe('My Block Explorer');
     expect(deriveDocumentTitle('/chain/abc', '')).toBe('My Block Explorer');
     // Detail routes without their param keep the fallback too.
     expect(deriveDocumentTitle('/chain/1/tx', '')).toBe('My Block Explorer');
+    // The /about family is exact-matched: deeper or sibling paths are
+    // unknown shapes.
+    expect(deriveDocumentTitle('/about', '')).toBe('My Block Explorer');
+    expect(deriveDocumentTitle('/about/coverage/extra', '')).toBe('My Block Explorer');
   });
 
   it('ignores trailing slashes when matching', () => {
@@ -120,6 +130,12 @@ describe('deriveMetaDescription', () => {
     // degrades (never the whole blurb) for an unparseable chainId.
     expect(deriveMetaDescription(`/chain/abc/tx/${TX_HASH}`, '')).toBe(
       `View transaction ${TX_HASH.slice(0, 10)}… on the chain — block, gas, status and decoded calls.`,
+    );
+  });
+
+  it('describes the static coverage explainer', () => {
+    expect(deriveMetaDescription('/about/coverage', '')).toBe(
+      'What the data-coverage levels — live, cached, discovered, sampled, partial and unavailable — mean in this explorer, and why its numbers can differ from full-indexer explorers.',
     );
   });
 

@@ -51,7 +51,7 @@ export class ContractInteractionService {
   }
 
   /**
-   * 解析合约 ABI，提取可调用的函数
+   * Parse a contract ABI and extract callable functions
    */
   async getContractFunctions(
     chainId: number,
@@ -99,7 +99,7 @@ export class ContractInteractionService {
   }
 
   /**
-   * 调用只读合约函数 (readContract) - 使用提供的ABI
+   * Call a read-only contract function (readContract) - with a provided ABI
    */
   async readContractWithABI(
     params: ContractCallParams & { abi: string },
@@ -141,7 +141,7 @@ export class ContractInteractionService {
   }
 
   /**
-   * 调用只读合约函数 (readContract)
+   * Call a read-only contract function (readContract)
    */
   async readContract(params: ContractCallParams): Promise<ContractCallResult> {
     try {
@@ -185,7 +185,7 @@ export class ContractInteractionService {
   }
 
   /**
-   * 模拟合约调用 (simulateContract) - 使用提供的ABI
+   * Simulate a contract call (simulateContract) - with a provided ABI
    */
   async simulateContractWithABI(
     params: ContractCallParams & { abi: string },
@@ -230,7 +230,7 @@ export class ContractInteractionService {
   }
 
   /**
-   * 模拟合约调用 (simulateContract)
+   * Simulate a contract call (simulateContract)
    */
   async simulateContract(params: ContractCallParams): Promise<ContractCallResult> {
     try {
@@ -277,7 +277,7 @@ export class ContractInteractionService {
   }
 
   /**
-   * 估算合约调用的 Gas 费用 - 使用提供的ABI
+   * Estimate gas for a contract call - with a provided ABI
    */
   async estimateContractGasWithABI(params: ContractCallParams & { abi: string }): Promise<{
     gasLimit: bigint;
@@ -307,7 +307,7 @@ export class ContractInteractionService {
 
       const gasLimit = await estimateGas();
 
-      // 获取当前 gas 价格
+      // Get the current gas price
       const [gasPrice, feeData] = await Promise.all([
         client.getGasPrice().catch(() => null),
         client.estimateFeesPerGas().catch(() => null),
@@ -326,7 +326,7 @@ export class ContractInteractionService {
   }
 
   /**
-   * 估算合约调用的 Gas 费用
+   * Estimate gas for a contract call
    */
   async estimateContractGas(params: ContractCallParams): Promise<{
     gasLimit: bigint;
@@ -360,7 +360,7 @@ export class ContractInteractionService {
 
       const gasLimit = await estimateGas();
 
-      // 获取当前 gas 价格
+      // Get the current gas price
       const [gasPrice, feeData] = await Promise.all([
         client.getGasPrice().catch(() => null),
         client.estimateFeesPerGas().catch(() => null),
@@ -379,14 +379,14 @@ export class ContractInteractionService {
   }
 
   /**
-   * 获取函数签名的输入参数类型
+   * Get the input parameter types of a function signature
    */
   getFunctionInputTypes(contractFunction: ContractFunction): string[] {
     return contractFunction.inputs.map(input => input.type);
   }
 
   /**
-   * 验证函数参数
+   * Validate function arguments
    */
   validateFunctionArgs(
     contractFunction: ContractFunction,
@@ -413,7 +413,7 @@ export class ContractInteractionService {
   }
 
   /**
-   * 验证单个参数
+   * Validate a single argument
    */
   private validateArgument(
     type: string,
@@ -425,27 +425,27 @@ export class ContractInteractionService {
     }
 
     try {
-      // 地址类型验证
+      // Address type validation
       if (type === 'address') {
         if (typeof value !== 'string' || !value.match(/^0x[a-fA-F0-9]{40}$/)) {
           return { valid: false, error: 'Invalid address format' };
         }
       }
 
-      // 数字类型验证
+      // Numeric type validation
       if (type.startsWith('uint') || type.startsWith('int')) {
         const _num = BigInt(value as string | number | bigint | boolean);
-        // 可以添加更多的范围检查
+        // More range checks could be added
       }
 
-      // 字节类型验证
+      // Bytes type validation
       if (type.startsWith('bytes')) {
         if (typeof value !== 'string' || !value.startsWith('0x')) {
           return { valid: false, error: 'Invalid bytes format, should start with 0x' };
         }
       }
 
-      // 布尔类型验证
+      // Boolean type validation
       if (type === 'bool') {
         if (typeof value !== 'boolean' && value !== 'true' && value !== 'false') {
           return { valid: false, error: 'Invalid boolean value' };
@@ -459,7 +459,7 @@ export class ContractInteractionService {
   }
 
   /**
-   * 格式化合约调用结果
+   * Format a contract call result
    */
   private formatContractResult(result: unknown): unknown {
     if (typeof result === 'bigint') {
@@ -482,7 +482,7 @@ export class ContractInteractionService {
   }
 
   /**
-   * 格式化错误信息
+   * Format an error message
    */
   private formatError(error: unknown): string {
     if (typeof error === 'object' && error !== null) {
@@ -503,5 +503,5 @@ export class ContractInteractionService {
   }
 }
 
-// 导出单例实例
+// Export a singleton instance
 export const contractInteractionService = new ContractInteractionService();

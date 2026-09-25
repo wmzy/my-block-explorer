@@ -1,6 +1,6 @@
 /**
- * 序列化工具
- * 处理BigInt等特殊类型的JSON序列化
+ * Serialization utilities
+ * JSON serialization for BigInt and other special types
  */
 
 import { createLogger } from '../server/logger';
@@ -8,20 +8,20 @@ import { createLogger } from '../server/logger';
 const logger = createLogger('serialization');
 
 /**
- * 自定义JSON序列化，处理BigInt类型和循环引用
+ * Custom JSON serialization handling BigInt and circular references
  */
 export function serializeForJson(obj: unknown): unknown {
   if (obj === null || obj === undefined) {
     return obj;
   }
 
-  // 使用WeakSet来跟踪已遍历的对象，避免循环引用
+  // Track visited objects with a WeakSet to avoid cycles
   const seen = new WeakSet();
 
   try {
     return JSON.parse(
       JSON.stringify(obj, (key, value) => {
-        // 跳过Socket、Parser等会导致循环引用的属性
+        // Skip properties like socket/parser that cause cycles
         if (
           key === 'socket'
           || key === 'parser'
@@ -34,24 +34,24 @@ export function serializeForJson(obj: unknown): unknown {
         }
 
         if (typeof value === 'object' && value !== null) {
-          // 检查循环引用
+          // Check for circular references
           if (seen.has(value)) {
             return '[Circular]';
           }
           seen.add(value);
         }
 
-        // 处理BigInt
+        // Handle BigInt
         if (typeof value === 'bigint') {
           return value.toString();
         }
 
-        // 处理Date
+        // Handle Date
         if (value instanceof Date) {
           return value.toISOString();
         }
 
-        // 处理Error
+        // Handle Error
         if (value instanceof Error) {
           return {
             name: value.name,
@@ -60,7 +60,7 @@ export function serializeForJson(obj: unknown): unknown {
           };
         }
 
-        // 跳过函数
+        // Skip functions
         if (typeof value === 'function') {
           return '[Function]';
         }
@@ -83,7 +83,7 @@ export function serializeForJson(obj: unknown): unknown {
 type JsonLike = object | string | number | boolean | null;
 
 /**
- * 安全的JSON响应序列化
+ * Safe JSON response serialization
  */
 export function safeJsonResponse(data: unknown): JsonLike {
   try {
@@ -103,7 +103,7 @@ export function safeJsonResponse(data: unknown): JsonLike {
 }
 
 /**
- * 格式化区块数据用于API响应
+ * Format block data for API responses
  */
 export function formatBlockForApi(
   block: Record<string, unknown> | null,
@@ -121,7 +121,7 @@ export function formatBlockForApi(
 }
 
 /**
- * 格式化交易数据用于API响应
+ * Format transaction data for API responses
  */
 export function formatTransactionForApi(
   transaction: Record<string, unknown> | null,
@@ -150,7 +150,7 @@ export function formatTransactionForApi(
 }
 
 /**
- * 格式化地址数据用于API响应
+ * Format address data for API responses
  */
 export function formatAddressForApi(
   address: Record<string, unknown> | null,
@@ -167,7 +167,7 @@ export function formatAddressForApi(
 }
 
 /**
- * 格式化统计数据用于API响应
+ * Format statistics data for API responses
  */
 export function formatStatsForApi(
   stats: Record<string, unknown> | null,

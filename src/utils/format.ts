@@ -1,9 +1,9 @@
-// 格式化工具函数
+// Formatting utilities
 
 import { formatEther, formatGwei, formatUnits } from 'viem';
 
 /**
- * 格式化以太币值
+ * Format an ether value
  */
 export function formatEth(value: bigint | string, decimals = 4): string {
   const ethValue = formatEther(BigInt(value));
@@ -22,7 +22,7 @@ export function formatValue(wei: bigint, symbol: string): string {
 }
 
 /**
- * 格式化Gas价格 (Gwei)
+ * Format a gas price (Gwei)
  */
 export function formatGasPrice(value: bigint | string): string {
   const gweiValue = formatGwei(BigInt(value));
@@ -30,7 +30,7 @@ export function formatGasPrice(value: bigint | string): string {
 }
 
 /**
- * 格式化代币数量
+ * Format a token amount
  */
 export function formatTokenAmount(
   value: bigint | string,
@@ -42,7 +42,7 @@ export function formatTokenAmount(
 }
 
 /**
- * 格式化地址 - 显示前后几位
+ * Format an address - show the first and last few characters
  */
 export function formatAddress(address: string, length = 6): string {
   if (!address || address.length < 10) return address;
@@ -50,7 +50,7 @@ export function formatAddress(address: string, length = 6): string {
 }
 
 /**
- * 格式化哈希值
+ * Format a hash
  */
 export function formatHash(hash: string, length = 8): string {
   if (!hash || hash.length < 10) return hash;
@@ -58,7 +58,7 @@ export function formatHash(hash: string, length = 8): string {
 }
 
 /**
- * 格式化数字 - 添加千分位分隔符
+ * Format a number - add thousands separators
  */
 export function formatNumber(value: number | string | bigint): string {
   const num = typeof value === 'bigint' ? Number(value) : Number(value);
@@ -66,14 +66,14 @@ export function formatNumber(value: number | string | bigint): string {
 }
 
 /**
- * 格式化百分比
+ * Format a percentage
  */
 export function formatPercentage(value: number, decimals = 2): string {
   return `${value.toFixed(decimals)}%`;
 }
 
 /**
- * 格式化文件大小
+ * Format a file size
  */
 export function formatFileSize(bytes: number): string {
   const sizes = ['Bytes', 'KB', 'MB', 'GB'];
@@ -83,7 +83,7 @@ export function formatFileSize(bytes: number): string {
 }
 
 /**
- * 格式化时间间隔
+ * Format a duration
  */
 export function formatDuration(seconds: number): string {
   if (seconds < 60) return `${seconds}s`;
@@ -99,7 +99,7 @@ export function formatDuration(seconds: number): string {
 }
 
 /**
- * 格式化相对时间 (例如: "2 minutes ago")
+ * Format a relative time (e.g. "2 minutes ago")
  */
 export function formatRelativeTime(timestamp: Date | string | number): string {
   const now = new Date();

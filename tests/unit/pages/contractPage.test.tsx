@@ -13,6 +13,12 @@ import { MemoryRouter, View, createRoutes, useSearchParams } from '@native-route
 import Contract from '@/views/Contract';
 import { post } from '@/util/http';
 import { ApiError } from '@/util/apiError';
+import { createRpcClient } from '@/utils/realTimeData';
+import {
+  EIP1967_BEACON_SLOT,
+  EIP1967_IMPLEMENTATION_SLOT,
+} from '@/utils/proxyDetection';
+import type { PublicClient } from 'viem';
 import {
   useContractCreation,
   useContractSource,
@@ -29,6 +35,14 @@ vi.mock('@/services/contracts', () => ({
   useContractSource: vi.fn(),
   useContractCreation: vi.fn(),
   useStorageLayout: vi.fn(),
+}));
+
+// The view's on-chain proxy probe reaches the browser RPC client (code +
+// storage slots + the beacon's implementation() static call). The factory
+// mock keeps the real module (and its RPC config loading) out of jsdom;
+// per-test mocks below shape the probe's answers.
+vi.mock('@/utils/realTimeData', () => ({
+  createRpcClient: vi.fn(),
 }));
 
 vi.mock('@/components/TopNavigation', async () => {
@@ -998,5 +1012,186 @@ describe('Contract view history-aware back', () => {
 
     expect(backSpy).toHaveBeenCalledTimes(1);
     backSpy.mockRestore();
+  });
+});
+
+describe('Contract view on-chain proxy detection', () => {
+  // Detection targets: a plain implementation and a beacon contract. Both
+  // are all-hex addresses whose viem checksum form is the identity (no
+  // letters to case-fold), so link href assertions stay literal.
+  const IMPL = '0x1110000000000000000000000000000000001111';
+  const BEACON = '0xbea000000000000000000000000000000000bea0';
+  // viem's checksum form of BEACON (letters do case-fold here): the
+  // resolver passes checksummed addresses to readContract.
+  const BEACON_CHECKSUM = '0xBea000000000000000000000000000000000BeA0';
+
+  // A 32-byte storage value holding `address` (left-padded with zeros).
+  const paddedSlotAddress = (address: string) =>
+    `0x${'0'.repeat(24)}${address.slice(2).toLowerCase()}`;
+  const ZERO_SLOT = `0x${'0'.repeat(64)}`;
+
+  // Non-proxy runtime bytecode (a plain solc prologue): every slot probe
+  // answers zero unless a test says otherwise.
+  const PLAIN_RUNTIME = '0x608060405234801561001157600080fd5b50';
+
+  // Minimal structural stand-in for the viem PublicClient the probe uses;
+  // each call is observable so tests can assert which probes fired.
+  const rpcClientMock = (behavior: {
+    code?: string;
+    storageBySlot?: Record<string, string>;
+    readContractResult?: string;
+  }) => {
+    const client = {
+      getCode: vi.fn(async () => behavior.code ?? '0x'),
+      getStorageAt: vi.fn(async ({ slot }: { slot: string }) =>
+        behavior.storageBySlot?.[slot] ?? ZERO_SLOT,
+      ),
+      readContract: vi.fn(async () => behavior.readContractResult ?? '0x'),
+    } as unknown as PublicClient;
+    vi.mocked(createRpcClient).mockResolvedValue(client);
+    return client;
+  };
+
+  beforeEach(() => {
+    vi.mocked(createRpcClient).mockReset();
+  });
+
+  it('probes unverified contracts and links the EIP-1967 slot implementation', async () => {
+    vi.mocked(useContractSource).mockReturnValue(mockHookResult(unverifiedSourceResponse));
+    const client = rpcClientMock({
+      code: PLAIN_RUNTIME,
+      storageBySlot: { [EIP1967_IMPLEMENTATION_SLOT]: paddedSlotAddress(IMPL) },
+    });
+    renderAt(`/chain/1/contract/${ADDRESS}`);
+
+    expect(await screen.findByRole('heading', { name: 'Proxy Detection' })).toBeInTheDocument();
+    expect(screen.getByText('EIP-1967 Proxy')).toBeInTheDocument();
+    const link = screen.getByRole('link', { name: IMPL });
+    expect(link).toHaveAttribute('href', `/chain/1/contract/${IMPL}`);
+    // The method row names the concrete slot (pinned from the shared
+    // constants, so a slot-constant regression fails here too).
+    expect(
+      screen.getByText(new RegExp(EIP1967_IMPLEMENTATION_SLOT.slice(2))),
+    ).toBeInTheDocument();
+    // The honest provenance footnote.
+    expect(
+      screen.getByText(/Detected on-chain via implementation storage slot — not verified source data/),
+    ).toBeInTheDocument();
+    // Only the first storage probe ran: the 1967 implementation slot hit,
+    // so the EIP-1822 and beacon slots were never read.
+    expect(client.getStorageAt).toHaveBeenCalledTimes(1);
+  });
+
+  it('answers EIP-1167 clones from bytecode alone without any storage probe', async () => {
+    vi.mocked(useContractSource).mockReturnValue(mockHookResult(unverifiedSourceResponse));
+    const cloneRuntime = `0x363d3d373d3d3d363d73${IMPL.slice(2)}5af43d82803e903d91602b57fd5bf3`;
+    const client = rpcClientMock({ code: cloneRuntime });
+    renderAt(`/chain/1/contract/${ADDRESS}`);
+
+    expect(await screen.findByRole('heading', { name: 'Proxy Detection' })).toBeInTheDocument();
+    expect(screen.getByText('Minimal (EIP-1167) Proxy')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: IMPL })).toHaveAttribute(
+      'href',
+      `/chain/1/contract/${IMPL}`,
+    );
+    expect(
+      screen.getByText(/Detected on-chain via runtime bytecode pattern — not verified source data/),
+    ).toBeInTheDocument();
+    expect(client.getStorageAt).not.toHaveBeenCalled();
+  });
+
+  it('static-calls the beacon for the real implementation', async () => {
+    vi.mocked(useContractSource).mockReturnValue(mockHookResult(unverifiedSourceResponse));
+    const client = rpcClientMock({
+      code: PLAIN_RUNTIME,
+      storageBySlot: { [EIP1967_BEACON_SLOT]: paddedSlotAddress(BEACON) },
+      readContractResult: IMPL,
+    });
+    renderAt(`/chain/1/contract/${ADDRESS}`);
+
+    expect(await screen.findByText('Beacon (EIP-1967) Proxy')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: IMPL })).toHaveAttribute(
+      'href',
+      `/chain/1/contract/${IMPL}`,
+    );
+    // The static call targeted the beacon (checksummed by the slot
+    // decoder), not the proxy itself.
+    expect(client.readContract).toHaveBeenCalledWith(
+      expect.objectContaining({ address: BEACON_CHECKSUM, functionName: 'implementation' }),
+    );
+  });
+
+  it('renders no card when every probe honestly answers nothing', async () => {
+    vi.mocked(useContractSource).mockReturnValue(mockHookResult(unverifiedSourceResponse));
+    // A live RPC answering "plain contract, zero slots": the probe ran
+    // (all three slots read) but has nothing honest to show.
+    const client = rpcClientMock({ code: PLAIN_RUNTIME });
+    renderAt(`/chain/1/contract/${ADDRESS}`);
+
+    expect(
+      await screen.findByRole('heading', { name: 'Contract Information' }),
+    ).toBeInTheDocument();
+    expect(client.getStorageAt).toHaveBeenCalledTimes(3);
+    expect(screen.queryByRole('heading', { name: 'Proxy Detection' })).not.toBeInTheDocument();
+  });
+
+  it('renders no card when no RPC client can be created', async () => {
+    vi.mocked(useContractSource).mockReturnValue(mockHookResult(unverifiedSourceResponse));
+    vi.mocked(createRpcClient).mockRejectedValueOnce(new Error('no rpc for chain'));
+    renderAt(`/chain/1/contract/${ADDRESS}`);
+
+    // No card, no error strip — the page simply stays on its
+    // server-provided content.
+    expect(
+      await screen.findByRole('heading', { name: 'Contract Information' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Proxy Detection' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/not verified source data/)).not.toBeInTheDocument();
+  });
+
+  it('never probes and renders unchanged when the server resolved the proxy', async () => {
+    // Server-resolved transparent proxy (the same payload shape as the
+    // proxy-rendering suite above): the implementation row comes from the
+    // server and the on-chain probe must not even create a client.
+    vi.mocked(useContractSource).mockReturnValue(
+      mockHookResult({
+        contractSource: {
+          ...verifiedSourceResponse.contractSource,
+          isProxy: true,
+          proxyType: 'transparent' as const,
+          implementationAddress: IMPL,
+          implementationContract: {
+            chainId: 1,
+            address: IMPL,
+            name: 'ImplementationV1',
+            sourceCode: 'pragma solidity ^0.8.20;',
+            abi: '[]',
+            verificationStatus: 'verified',
+            verificationSource: 'sourcify',
+            lastChecked: '2026-01-01T00:00:00Z',
+          },
+        },
+      }),
+    );
+    renderAt(`/chain/1/contract/${ADDRESS}`);
+
+    expect(await screen.findByText('Implementation', { selector: 'span.label' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: new RegExp(IMPL) })).toHaveAttribute(
+      'href',
+      `/chain/1/contract/${IMPL}`,
+    );
+    // Byte-identical DOM: no detection card, and the probe never fired.
+    expect(screen.queryByRole('heading', { name: 'Proxy Detection' })).not.toBeInTheDocument();
+    expect(vi.mocked(createRpcClient)).not.toHaveBeenCalled();
+  });
+
+  it('never probes plain verified contracts either (no layout shift)', async () => {
+    // beforeEach default: verified non-proxy source. The gate keys on the
+    // verification verdict, not just on missing implementation fields.
+    renderAt(`/chain/1/contract/${ADDRESS}`);
+
+    expect(await screen.findByText('TestToken')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Proxy Detection' })).not.toBeInTheDocument();
+    expect(vi.mocked(createRpcClient)).not.toHaveBeenCalled();
   });
 });

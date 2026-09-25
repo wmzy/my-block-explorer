@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { styled } from '@linaria/react';
+import { css, cx } from '@linaria/core';
 import { Address, formatEther, AbiEvent } from 'viem';
 import { EventFilterPanel, type EventFilterState } from './EventFilterPanel';
 import { get } from '@/util/http';
@@ -94,11 +94,12 @@ type ColumnConfig = {
   priority: number;
 };
 
-// Styled components
-const TableContainer = styled.div`
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+// Styles: Linaria `css` classes over haze theme tokens (dark-theme safe).
+// DOM structure is unchanged from the former styled layer.
+const tableContainer = css`
+  background: var(--haze-color-bg);
+  border-radius: var(--haze-radius-lg);
+  box-shadow: var(--haze-shadow-md);
   /* In-card touch scroller (DataTable mobile pattern): below the content
      floor the table keeps its natural width and scrolls here instead of
      clipping nowrap cells at phone widths. */
@@ -107,7 +108,7 @@ const TableContainer = styled.div`
   -webkit-overflow-scrolling: touch;
 `;
 
-const Table = styled.table`
+const tableStyle = css`
   width: 100%;
   /* Content defines the floor: the table never compresses its columns past
      their natural width — narrow viewports scroll the container above. */
@@ -116,135 +117,145 @@ const Table = styled.table`
   font-size: 14px;
 `;
 
-const TableHeader = styled.thead`
-  background: #f8fafc;
-  border-bottom: 1px solid #e2e8f0;
+const tableHeader = css`
+  background: var(--haze-color-bg-subtle);
+  border-bottom: 1px solid var(--haze-color-border);
 `;
 
-const TableHeaderCell = styled.th<{ sortable?: boolean }>`
+const tableHeaderCell = css`
   padding: 12px 16px;
   text-align: left;
   font-weight: 600;
-  color: #374151;
-  cursor: ${props => (props.sortable ? 'pointer' : 'default')};
+  color: var(--haze-color-text);
   user-select: none;
   position: relative;
 
   &:hover {
-    background: #f1f5f9;
+    background: var(--haze-color-bg-muted);
   }
 `;
 
-const SortIndicator = styled.span`
+// Sortable header cells add the pointer cursor; composed after tableHeaderCell.
+const tableHeaderCellSortable = css`
+  cursor: pointer;
+`;
+
+const sortIndicator = css`
   position: absolute;
   right: 8px;
   top: 50%;
   transform: translateY(-50%);
-  color: #6b7280;
+  color: var(--haze-color-text-muted);
   font-size: 12px;
 `;
 
-const TableBody = styled.tbody`
+const tableBody = css`
   & tr {
-    border-bottom: 1px solid #e2e8f0;
+    border-bottom: 1px solid var(--haze-color-border);
 
     &:hover {
-      background: #f9fafb;
+      background: var(--haze-color-bg-subtle);
     }
   }
 `;
 
-const TableCell = styled.td`
+const tableCell = css`
   padding: 12px 16px;
-  color: #374151;
+  color: var(--haze-color-text);
   vertical-align: top;
 `;
 
-const EventNameCell = styled(TableCell)`
-  font-family: 'Monaco', 'Menlo', monospace;
+const eventNameCell = css`
+  font-family: var(--haze-font-mono);
   font-weight: 600;
-  color: #4f46e5;
+  color: var(--haze-color-primary);
 `;
 
 // Muted marker for rows whose block is not finalized yet: the event may still
 // be reorged out until then.
-const UnfinalizedBadge = styled.span`
+const unfinalizedBadge = css`
   margin-left: 6px;
   padding: 1px 6px;
   border-radius: 4px;
   font-size: 10px;
   font-weight: 500;
   font-family: inherit;
-  color: #92400e;
-  background: #fef3c7;
+  color: var(--haze-color-warning);
+  background: var(--haze-color-warning-subtle);
   vertical-align: middle;
 `;
 
-const AddressCell = styled(TableCell)`
-  font-family: 'Monaco', 'Menlo', monospace;
+const addressCell = css`
+  font-family: var(--haze-font-mono);
   font-size: 12px;
 `;
 
-const TransactionHashCell = styled(TableCell)`
-  font-family: 'Monaco', 'Menlo', monospace;
+const transactionHashCell = css`
+  font-family: var(--haze-font-mono);
   font-size: 12px;
 `;
 
-const ValueCell = styled(TableCell)`
-  font-family: 'Monaco', 'Menlo', monospace;
+const valueCell = css`
+  font-family: var(--haze-font-mono);
   font-weight: 600;
-  color: #059669;
+  color: var(--haze-color-success);
 `;
 
-const TimestampCell = styled(TableCell)`
-  color: #6b7280;
+const timestampCell = css`
+  color: var(--haze-color-text-muted);
   font-size: 12px;
 `;
 
-const PaginationContainer = styled.div`
+const paginationContainer = css`
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 16px;
-  background: #f8fafc;
-  border-top: 1px solid #e2e8f0;
+  background: var(--haze-color-bg-subtle);
+  border-top: 1px solid var(--haze-color-border);
   /* Phone widths: page info and the controls row each fill a phone line —
      wrap instead of hiding Next/Export behind the table's side pan. */
   flex-wrap: wrap;
   gap: 8px;
 `;
 
-const PaginationInfo = styled.div`
-  color: #6b7280;
+const paginationInfo = css`
+  color: var(--haze-color-text-muted);
   font-size: 14px;
 `;
 
-const PaginationControls = styled.div`
+const paginationControls = css`
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
 `;
 
-const PaginationButton = styled.button<{ disabled?: boolean }>`
+const paginationButton = css`
   padding: 8px 12px;
-  border: 1px solid #d1d5db;
-  background: ${props => (props.disabled ? '#f9fafb' : 'white')};
-  color: ${props => (props.disabled ? '#9ca3af' : '#374151')};
+  border: 1px solid var(--haze-color-border);
+  background: var(--haze-color-bg);
+  color: var(--haze-color-text);
   border-radius: 4px;
-  cursor: ${props => (props.disabled ? 'not-allowed' : 'pointer')};
+  cursor: pointer;
   font-size: 14px;
   min-width: 36px;
 
   &:hover:not(:disabled) {
-    background: #f3f4f6;
-    border-color: #9ca3af;
+    background: var(--haze-color-bg-muted);
+    border-color: var(--haze-color-border-hover);
+  }
+
+  &:disabled {
+    background: var(--haze-color-bg-subtle);
+    color: var(--haze-color-text-muted);
+    cursor: not-allowed;
   }
 `;
 
-const PaginationInput = styled.input`
+const paginationInput = css`
   padding: 6px 8px;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--haze-color-border);
   border-radius: 4px;
   font-size: 14px;
   width: 60px;
@@ -252,80 +263,94 @@ const PaginationInput = styled.input`
 
   &:focus {
     outline: none;
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+    border-color: var(--haze-color-primary);
+    box-shadow: 0 0 0 2px var(--haze-color-focus-ring);
   }
 `;
 
-const ExportCsvButton = styled.a<{ $disabled?: boolean }>`
+// Disabled styling keys off the aria-disabled attribute the component already
+// renders, so the modifier never loses to the hover rule on order.
+const exportCsvButton = css`
   padding: 8px 12px;
   margin-left: 8px;
-  border: 1px solid ${props => (props.$disabled ? '#d1d5db' : '#3b82f6')};
-  background: ${props => (props.$disabled ? '#f3f4f6' : '#3b82f6')};
-  color: ${props => (props.$disabled ? '#9ca3af' : 'white')};
+  border: 1px solid var(--haze-color-primary);
+  background: var(--haze-color-primary);
+  color: var(--haze-color-text-inverse);
   border-radius: 4px;
-  cursor: ${props => (props.$disabled ? 'not-allowed' : 'pointer')};
+  cursor: pointer;
   font-size: 14px;
   text-decoration: none;
   white-space: nowrap;
 
   &:hover {
-    background: ${props => (props.$disabled ? '#f3f4f6' : '#2563eb')};
-    border-color: ${props => (props.$disabled ? '#d1d5db' : '#2563eb')};
+    background: var(--haze-color-primary-hover);
+    border-color: var(--haze-color-primary-hover);
+  }
+
+  &[aria-disabled='true'] {
+    border-color: var(--haze-color-border);
+    background: var(--haze-color-bg-muted);
+    color: var(--haze-color-text-muted);
+    cursor: not-allowed;
+  }
+
+  &:hover[aria-disabled='true'] {
+    background: var(--haze-color-bg-muted);
+    border-color: var(--haze-color-border);
   }
 `;
 
 // Inline preflight notice shown when the current filtered total exceeds the
 // export cap, replacing a click that would only land on the backend 400.
-const ExportLimitNotice = styled.span`
+const exportLimitNotice = css`
   margin-left: 12px;
   font-size: 12px;
-  color: #b45309;
+  color: var(--haze-color-warning);
   white-space: nowrap;
 `;
 
-const GoToPageContainer = styled.div`
+const goToPageContainer = css`
   display: flex;
   align-items: center;
   gap: 8px;
   margin-left: 16px;
 `;
 
-const GoToPageLabel = styled.span`
+const goToPageLabel = css`
   font-size: 14px;
-  color: #374151;
+  color: var(--haze-color-text);
 `;
 
-const PageInfo = styled.div`
+const pageInfo = css`
   font-size: 14px;
-  color: #6b7280;
+  color: var(--haze-color-text-muted);
   margin: 0 16px;
 `;
 
-const PaginationSeparator = styled.div`
+const paginationSeparator = css`
   width: 1px;
   height: 24px;
-  background: #d1d5db;
+  background: var(--haze-color-border);
   margin: 0 8px;
 `;
 
-const LoadingContainer = styled.div`
+const loadingContainer = css`
   display: flex;
   justify-content: center;
   align-items: center;
   padding: 48px;
-  color: #6b7280;
+  color: var(--haze-color-text-muted);
 `;
 
-const LoadingSpinner = styled.div`
+const loadingSpinner = css`
   width: 24px;
   height: 24px;
-  border: 2px solid #e5e7eb;
-  border-top: 2px solid #3b82f6;
+  border: 2px solid var(--haze-color-border);
+  border-top: 2px solid var(--haze-color-primary);
   border-radius: 50%;
-  animation: spin 1s linear infinite;
+  animation: event-table-spin 1s linear infinite;
 
-  @keyframes spin {
+  @keyframes event-table-spin {
     0% {
       transform: rotate(0deg);
     }
@@ -335,161 +360,173 @@ const LoadingSpinner = styled.div`
   }
 `;
 
-const ErrorContainer = styled.div`
+const errorContainer = css`
   display: flex;
   flex-direction: column;
   align-items: center;
   padding: 48px;
-  color: #dc2626;
+  color: var(--haze-color-danger);
   text-align: center;
 `;
 
-const ErrorMessage = styled.div`
+const errorMessage = css`
   margin-bottom: 16px;
   font-weight: 500;
 `;
 
-const RetryButton = styled.button`
+const retryButton = css`
   padding: 8px 16px;
-  background: #3b82f6;
-  color: white;
+  background: var(--haze-color-primary);
+  color: var(--haze-color-text-inverse);
   border: none;
   border-radius: 4px;
   cursor: pointer;
   font-size: 14px;
 
   &:hover {
-    background: #2563eb;
+    background: var(--haze-color-primary-hover);
   }
 `;
 
-const EmptyStateContainer = styled.div`
+const emptyStateContainer = css`
   display: flex;
   flex-direction: column;
   align-items: center;
   padding: 48px;
-  color: #6b7280;
+  color: var(--haze-color-text-muted);
   text-align: center;
 `;
 
-const EmptyStateIcon = styled.div`
+const emptyStateIcon = css`
   font-size: 48px;
   margin-bottom: 16px;
   opacity: 0.5;
 `;
 
-const EmptyStateTitle = styled.div`
+const emptyStateTitle = css`
   font-size: 18px;
   font-weight: 600;
   margin-bottom: 8px;
 `;
 
-const EmptyStateDescription = styled.div`
+const emptyStateDescription = css`
   font-size: 14px;
-  color: #9ca3af;
+  color: var(--haze-color-text-muted);
 `;
 
 // Enhanced sorting controls
-const SortControlsContainer = styled.div`
+const sortControlsContainer = css`
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 16px;
-  background: #f8fafc;
-  border-bottom: 1px solid #e2e8f0;
+  background: var(--haze-color-bg-subtle);
+  border-bottom: 1px solid var(--haze-color-border);
 `;
 
-const SortOptionsContainer = styled.div`
+const sortOptionsContainer = css`
   display: flex;
   align-items: center;
   gap: 12px;
 `;
 
-const SortLabel = styled.span`
+const sortLabel = css`
   font-size: 14px;
   font-weight: 500;
-  color: #374151;
+  color: var(--haze-color-text);
 `;
 
-const SortSelect = styled.select`
+const sortSelect = css`
   padding: 6px 8px;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--haze-color-border);
   border-radius: 4px;
   font-size: 14px;
-  background: white;
-  color: #374151;
+  background: var(--haze-color-bg);
+  color: var(--haze-color-text);
 
   &:focus {
     outline: none;
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+    border-color: var(--haze-color-primary);
+    box-shadow: 0 0 0 2px var(--haze-color-focus-ring);
   }
 `;
 
-const SortDirectionButton = styled.button<{ $active?: boolean }>`
+// The active state rides aria-pressed so it wins specificity over the base
+// hover rule regardless of class order.
+const sortDirectionButton = css`
   padding: 6px 8px;
-  border: 1px solid ${props => (props.$active ? '#3b82f6' : '#d1d5db')};
-  background: ${props => (props.$active ? '#eff6ff' : 'white')};
-  color: ${props => (props.$active ? '#1d4ed8' : '#374151')};
+  border: 1px solid var(--haze-color-border);
+  background: var(--haze-color-bg);
+  color: var(--haze-color-text);
   border-radius: 4px;
   cursor: pointer;
   font-size: 14px;
   margin-left: 4px;
 
   &:hover {
-    background: ${props => (props.$active ? '#dbeafe' : '#f3f4f6')};
+    background: var(--haze-color-bg-muted);
+  }
+
+  &[aria-pressed='true'] {
+    border-color: var(--haze-color-primary);
+    background: var(--haze-color-primary-subtle);
+    color: var(--haze-color-primary);
+  }
+
+  &:hover[aria-pressed='true'] {
+    background: var(--haze-color-primary-subtle);
   }
 `;
 
-const PageSizeControl = styled.div`
+const pageSizeControl = css`
   display: flex;
   align-items: center;
   gap: 8px;
 `;
 
-const PageSizeLabel = styled.span`
+const pageSizeLabel = css`
   font-size: 14px;
-  color: #374151;
+  color: var(--haze-color-text);
 `;
 
-const PageSizeSelect = styled.select`
+const pageSizeSelect = css`
   padding: 6px 8px;
-  border: 1px solid #d1d5db;
+  border: 1px solid var(--haze-color-border);
   border-radius: 4px;
   font-size: 14px;
-  background: white;
-  color: #374151;
+  background: var(--haze-color-bg);
+  color: var(--haze-color-text);
 
   &:focus {
     outline: none;
-    border-color: #3b82f6;
-    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1);
+    border-color: var(--haze-color-primary);
+    box-shadow: 0 0 0 2px var(--haze-color-focus-ring);
   }
 `;
 
-const MultiSortContainer = styled.div`
+const multiSortContainer = css`
   display: flex;
   align-items: center;
   gap: 8px;
   margin-top: 8px;
 `;
 
-const MultiSortTag = styled.div`
+const multiSortTag = css`
   display: inline-flex;
   align-items: center;
   gap: 4px;
   padding: 4px 8px;
-  background: #e0e7ff;
-  color: #3730a3;
+  background: var(--haze-color-primary-subtle);
+  color: var(--haze-color-primary);
   border-radius: 4px;
   font-size: 12px;
   font-weight: 500;
 `;
 
-const MultiSortRemove = styled.button`
+const multiSortRemove = css`
   background: none;
   border: none;
-  color: #3730a3;
+  color: var(--haze-color-primary);
   cursor: pointer;
   font-size: 14px;
   font-weight: bold;
@@ -502,51 +539,51 @@ const MultiSortRemove = styled.button`
   justify-content: center;
 
   &:hover {
-    background: #c7d2fe;
+    background: var(--haze-color-bg-muted);
   }
 `;
 
-const AddSortButton = styled.button`
+const addSortButton = css`
   padding: 4px 8px;
-  background: white;
-  border: 1px solid #d1d5db;
+  background: var(--haze-color-bg);
+  border: 1px solid var(--haze-color-border);
   border-radius: 4px;
-  color: #374151;
+  color: var(--haze-color-text);
   cursor: pointer;
   font-size: 12px;
 
   &:hover {
-    background: #f3f4f6;
+    background: var(--haze-color-bg-muted);
   }
 `;
 
-const PerformanceInfoContainer = styled.div`
+const performanceInfoContainer = css`
   position: absolute;
   top: 100%;
   right: 0;
-  background: white;
-  border: 1px solid #d1d5db;
+  background: var(--haze-color-bg);
+  border: 1px solid var(--haze-color-border);
   border-radius: 6px;
   padding: 12px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--haze-shadow-lg);
   z-index: 1000;
   min-width: 200px;
   font-size: 12px;
 `;
 
-const PerformanceHeader = styled.div`
+const performanceHeader = css`
   display: flex;
   justify-content: space-between;
   align-items: center;
   margin-bottom: 8px;
   font-weight: 600;
-  color: #374151;
+  color: var(--haze-color-text);
 `;
 
-const PerformanceCloseButton = styled.button`
+const performanceCloseButton = css`
   background: none;
   border: none;
-  color: #6b7280;
+  color: var(--haze-color-text-muted);
   cursor: pointer;
   font-size: 16px;
   padding: 0;
@@ -558,39 +595,56 @@ const PerformanceCloseButton = styled.button`
   justify-content: center;
 
   &:hover {
-    background: #f3f4f6;
-    color: #374151;
+    background: var(--haze-color-bg-muted);
+    color: var(--haze-color-text);
   }
 `;
 
-const PerformanceMetric = styled.div`
+const performanceMetric = css`
   display: flex;
   justify-content: space-between;
   margin-bottom: 4px;
-  color: #6b7280;
+  color: var(--haze-color-text-muted);
 `;
 
-const PerformanceMetricLabel = styled.span`
-  color: #374151;
+const performanceMetricLabel = css`
+  color: var(--haze-color-text);
 `;
 
-const PerformanceMetricValue = styled.span<{ highlight?: boolean }>`
-  color: ${props => (props.highlight ? '#059669' : '#374151')};
-  font-weight: ${props => (props.highlight ? '600' : 'normal')};
+// data-highlight marks the "good" metric values (fast sort, cache hit).
+const performanceMetricValue = css`
+  color: var(--haze-color-text);
+  font-weight: normal;
+
+  &[data-highlight] {
+    color: var(--haze-color-success);
+    font-weight: 600;
+  }
 `;
 
-const PerformanceToggleButton = styled.button<{ $active?: boolean }>`
+// Like sortDirectionButton, the active state rides aria-pressed.
+const performanceToggleButton = css`
   padding: 4px 8px;
-  background: ${props => (props.$active ? '#e0f2fe' : 'white')};
-  border: 1px solid ${props => (props.$active ? '#0ea5e9' : '#d1d5db')};
+  background: var(--haze-color-bg);
+  border: 1px solid var(--haze-color-border);
   border-radius: 4px;
-  color: ${props => (props.$active ? '#0369a1' : '#6b7280')};
+  color: var(--haze-color-text-muted);
   cursor: pointer;
   font-size: 11px;
   margin-left: 8px;
 
   &:hover {
-    background: ${props => (props.$active ? '#bae6fd' : '#f3f4f6')};
+    background: var(--haze-color-bg-muted);
+  }
+
+  &[aria-pressed='true'] {
+    background: var(--haze-color-info-subtle);
+    border-color: var(--haze-color-info);
+    color: var(--haze-color-info);
+  }
+
+  &:hover[aria-pressed='true'] {
+    background: var(--haze-color-info-subtle);
   }
 `;
 
@@ -1292,30 +1346,30 @@ export const EventTable: React.FC<EventTableProps> = ({
   // Render loading state
   if (loading && events.length === 0) {
     return (
-      <TableContainer className={className}>
-        <LoadingContainer>
-          <LoadingSpinner />
+      <div className={cx(tableContainer, className)}>
+        <div className={loadingContainer}>
+          <div className={loadingSpinner} />
           <span style={{ marginLeft: 12 }}>Loading events...</span>
-        </LoadingContainer>
-      </TableContainer>
+        </div>
+      </div>
     );
   }
 
   // Render error state
   if (error && events.length === 0) {
     return (
-      <TableContainer className={className}>
-        <ErrorContainer>
-          <ErrorMessage>Failed to load events</ErrorMessage>
-          <div style={{ color: '#9ca3af', marginBottom: 16 }}>{error}</div>
-          <RetryButton onClick={handleRetry}>Retry</RetryButton>
-        </ErrorContainer>
-      </TableContainer>
+      <div className={cx(tableContainer, className)}>
+        <div className={errorContainer}>
+          <div className={errorMessage}>Failed to load events</div>
+          <div style={{ color: 'var(--haze-color-text-muted)', marginBottom: 16 }}>{error}</div>
+          <button className={retryButton} onClick={handleRetry}>Retry</button>
+        </div>
+      </div>
     );
   }
 
   return (
-    <TableContainer className={className}>
+    <div className={cx(tableContainer, className)}>
       {enableDynamicFiltering && abiEvents.length > 0 && (
         <EventFilterPanel
           abiEvents={abiEvents}
@@ -1327,22 +1381,23 @@ export const EventTable: React.FC<EventTableProps> = ({
       )}
 
       {events.length === 0 && !loading ? (
-        <EmptyStateContainer>
-          <EmptyStateIcon>📋</EmptyStateIcon>
-          <EmptyStateTitle>No events found</EmptyStateTitle>
-          <EmptyStateDescription>
+        <div className={emptyStateContainer}>
+          <div className={emptyStateIcon}>📋</div>
+          <div className={emptyStateTitle}>No events found</div>
+          <div className={emptyStateDescription}>
             {hasActiveFilters
               ? 'No events match the current filters.'
               : 'No events indexed in this range yet.'}
-          </EmptyStateDescription>
-        </EmptyStateContainer>
+          </div>
+        </div>
       ) : (
         <>
           {/* Enhanced Sorting Controls */}
-          <SortControlsContainer>
-            <SortOptionsContainer>
-              <SortLabel>Sort:</SortLabel>
-              <SortSelect
+          <div className={sortControlsContainer}>
+            <div className={sortOptionsContainer}>
+              <span className={sortLabel}>Sort:</span>
+              <select
+                className={sortSelect}
                 value={currentSortField}
                 onChange={e => handleSortFieldChange(e.target.value)}
               >
@@ -1351,28 +1406,30 @@ export const EventTable: React.FC<EventTableProps> = ({
                     {option.label}
                   </option>
                 ))}
-              </SortSelect>
-              <SortDirectionButton
-                $active={sort.direction === 'desc'}
+              </select>
+              <button
+                className={sortDirectionButton}
+                aria-pressed={sort.direction === 'desc'}
                 onClick={() => handleSortDirectionChange(sort.direction === 'asc' ? 'desc' : 'asc')}
               >
                 {sort.direction === 'asc' ? '↑ Ascending' : '↓ Descending'}
-              </SortDirectionButton>
+              </button>
 
               {enableMultiSort && (
                 <>
-                  <AddSortButton onClick={addToMultiSort}>+ Add to multi-sort</AddSortButton>
-                  <AddSortButton onClick={() => setShowAdvancedSort(!showAdvancedSort)}>
+                  <button className={addSortButton} onClick={addToMultiSort}>+ Add to multi-sort</button>
+                  <button className={addSortButton} onClick={() => setShowAdvancedSort(!showAdvancedSort)}>
                     {showAdvancedSort ? 'Hide' : 'Show'} advanced sort
-                  </AddSortButton>
+                  </button>
                 </>
               )}
-            </SortOptionsContainer>
+            </div>
 
             {enableCustomPageSize && (
-              <PageSizeControl>
-                <PageSizeLabel>Rows per page:</PageSizeLabel>
-                <PageSizeSelect
+              <div className={pageSizeControl}>
+                <span className={pageSizeLabel}>Rows per page:</span>
+                <select
+                  className={pageSizeSelect}
                   value={pagination.limit}
                   onChange={e => handlePageSizeChange(Number(e.target.value))}
                 >
@@ -1381,246 +1438,251 @@ export const EventTable: React.FC<EventTableProps> = ({
                       {size}
                     </option>
                   ))}
-                </PageSizeSelect>
-              </PageSizeControl>
+                </select>
+              </div>
             )}
 
             {/* Performance Info Toggle and Display */}
             {shouldUseClientSideSort && sortingMetrics && (
               <div style={{ position: 'relative' }}>
-                <PerformanceToggleButton
-                  $active={showPerformanceInfo}
+                <button
+                  className={performanceToggleButton}
+                  aria-pressed={showPerformanceInfo}
                   onClick={() => setShowPerformanceInfo(!showPerformanceInfo)}
                 >
                   Perf: {sortingMetrics.sortTime.toFixed(1)}
                   ms
-                </PerformanceToggleButton>
+                </button>
 
                 {showPerformanceInfo && (
-                  <PerformanceInfoContainer>
-                    <PerformanceHeader>
+                  <div className={performanceInfoContainer}>
+                    <div className={performanceHeader}>
                       Sorting performance
-                      <PerformanceCloseButton onClick={() => setShowPerformanceInfo(false)}>
+                      <button className={performanceCloseButton} onClick={() => setShowPerformanceInfo(false)}>
                         ×
-                      </PerformanceCloseButton>
-                    </PerformanceHeader>
+                      </button>
+                    </div>
 
-                    <PerformanceMetric>
-                      <PerformanceMetricLabel>Rows:</PerformanceMetricLabel>
-                      <PerformanceMetricValue>
+                    <div className={performanceMetric}>
+                      <span className={performanceMetricLabel}>Rows:</span>
+                      <span className={performanceMetricValue}>
                         {Number(sortingMetrics.dataSize ?? 0).toLocaleString()}
-                      </PerformanceMetricValue>
-                    </PerformanceMetric>
+                      </span>
+                    </div>
 
-                    <PerformanceMetric>
-                      <PerformanceMetricLabel>Algorithm:</PerformanceMetricLabel>
-                      <PerformanceMetricValue>{sortingMetrics.algorithm}</PerformanceMetricValue>
-                    </PerformanceMetric>
+                    <div className={performanceMetric}>
+                      <span className={performanceMetricLabel}>Algorithm:</span>
+                      <span className={performanceMetricValue}>{sortingMetrics.algorithm}</span>
+                    </div>
 
-                    <PerformanceMetric>
-                      <PerformanceMetricLabel>Sort time:</PerformanceMetricLabel>
-                      <PerformanceMetricValue highlight={sortingMetrics.sortTime < 10}>
+                    <div className={performanceMetric}>
+                      <span className={performanceMetricLabel}>Sort time:</span>
+                      <span className={performanceMetricValue} data-highlight={sortingMetrics.sortTime < 10 || undefined}>
                         {sortingMetrics.sortTime.toFixed(2)} ms
-                      </PerformanceMetricValue>
-                    </PerformanceMetric>
+                      </span>
+                    </div>
 
-                    <PerformanceMetric>
-                      <PerformanceMetricLabel>Cache hit:</PerformanceMetricLabel>
-                      <PerformanceMetricValue highlight={sortingMetrics.cacheHit}>
+                    <div className={performanceMetric}>
+                      <span className={performanceMetricLabel}>Cache hit:</span>
+                      <span className={performanceMetricValue} data-highlight={sortingMetrics.cacheHit || undefined}>
                         {sortingMetrics.cacheHit ? 'Yes' : 'No'}
-                      </PerformanceMetricValue>
-                    </PerformanceMetric>
+                      </span>
+                    </div>
 
                     {sortingMetrics.avgMetrics && (
                       <>
-                        <PerformanceMetric>
-                          <PerformanceMetricLabel>Avg time:</PerformanceMetricLabel>
-                          <PerformanceMetricValue>
+                        <div className={performanceMetric}>
+                          <span className={performanceMetricLabel}>Avg time:</span>
+                          <span className={performanceMetricValue}>
                             {sortingMetrics.avgMetrics.avgExecutionTime.toFixed(2)} ms
-                          </PerformanceMetricValue>
-                        </PerformanceMetric>
+                          </span>
+                        </div>
 
-                        <PerformanceMetric>
-                          <PerformanceMetricLabel>Cache hit rate:</PerformanceMetricLabel>
-                          <PerformanceMetricValue>
+                        <div className={performanceMetric}>
+                          <span className={performanceMetricLabel}>Cache hit rate:</span>
+                          <span className={performanceMetricValue}>
                             {(sortingMetrics.avgMetrics.cacheHitRate * 100).toFixed(1)}%
-                          </PerformanceMetricValue>
-                        </PerformanceMetric>
+                          </span>
+                        </div>
                       </>
                     )}
 
-                    <PerformanceMetric>
-                      <PerformanceMetricLabel>Sort mode:</PerformanceMetricLabel>
-                      <PerformanceMetricValue highlight>Client-side</PerformanceMetricValue>
-                    </PerformanceMetric>
-                  </PerformanceInfoContainer>
+                    <div className={performanceMetric}>
+                      <span className={performanceMetricLabel}>Sort mode:</span>
+                      <span className={performanceMetricValue} data-highlight>Client-side</span>
+                    </div>
+                  </div>
                 )}
               </div>
             )}
-          </SortControlsContainer>
+          </div>
 
           {/* Advanced Multi-Sort Controls */}
           {showAdvancedSort && enableMultiSort && multiSort.length > 0 && (
-            <SortControlsContainer
-              style={{ background: '#f1f5f9', paddingTop: '8px', paddingBottom: '8px' }}
+            <div
+              className={sortControlsContainer}
+              style={{ background: 'var(--haze-color-bg-muted)', paddingTop: '8px', paddingBottom: '8px' }}
             >
               <div>
-                <SortLabel>Multi-sort:</SortLabel>
-                <MultiSortContainer>
+                <span className={sortLabel}>Multi-sort:</span>
+                <div className={multiSortContainer}>
                   {multiSort.map(sortConfig => {
                     const option = availableSortOptions.find(opt => opt.key === sortConfig.key);
                     return (
-                      <MultiSortTag key={sortConfig.key}>
+                      <div className={multiSortTag} key={sortConfig.key}>
                         {option?.label ?? sortConfig.key} (
                         {sortConfig.direction === 'asc' ? '↑' : '↓'})
-                        <MultiSortRemove onClick={() => removeFromMultiSort(sortConfig.key)}>
+                        <button className={multiSortRemove} onClick={() => removeFromMultiSort(sortConfig.key)}>
                           ×
-                        </MultiSortRemove>
-                      </MultiSortTag>
+                        </button>
+                      </div>
                     );
                   })}
-                  <AddSortButton onClick={clearMultiSort}>Clear all</AddSortButton>
-                  <AddSortButton onClick={applyMultiSort}>Apply multi-sort</AddSortButton>
-                </MultiSortContainer>
+                  <button className={addSortButton} onClick={clearMultiSort}>Clear all</button>
+                  <button className={addSortButton} onClick={applyMultiSort}>Apply multi-sort</button>
+                </div>
               </div>
-            </SortControlsContainer>
+            </div>
           )}
 
-          <Table>
-            <TableHeader>
+          <table className={tableStyle}>
+            <thead className={tableHeader}>
               <tr>
-                <TableHeaderCell sortable onClick={() => handleSort('block_number')}>
+                <th className={cx(tableHeaderCell, tableHeaderCellSortable)} onClick={() => handleSort('block_number')}>
                   Block
-                  <SortIndicator>
+                  <span className={sortIndicator}>
                     {sort.field === 'block_number' ? (sort.direction === 'asc' ? '↑' : '↓') : '↕'}
-                  </SortIndicator>
-                </TableHeaderCell>
-                <TableHeaderCell sortable onClick={() => handleSort('block_timestamp')}>
+                  </span>
+                </th>
+                <th className={cx(tableHeaderCell, tableHeaderCellSortable)} onClick={() => handleSort('block_timestamp')}>
                   Time
-                  <SortIndicator>
+                  <span className={sortIndicator}>
                     {sort.field === 'block_timestamp'
                       ? sort.direction === 'asc'
                         ? '↑'
                         : '↓'
                       : '↕'}
-                  </SortIndicator>
-                </TableHeaderCell>
-                <TableHeaderCell sortable onClick={() => handleSort('event_name')}>
+                  </span>
+                </th>
+                <th className={cx(tableHeaderCell, tableHeaderCellSortable)} onClick={() => handleSort('event_name')}>
                   Event
-                  <SortIndicator>
+                  <span className={sortIndicator}>
                     {sort.field === 'event_name' ? (sort.direction === 'asc' ? '↑' : '↓') : '↕'}
-                  </SortIndicator>
-                </TableHeaderCell>
-                <TableHeaderCell>From</TableHeaderCell>
-                <TableHeaderCell>To</TableHeaderCell>
-                <TableHeaderCell>Value</TableHeaderCell>
-                <TableHeaderCell>Tx Hash</TableHeaderCell>
+                  </span>
+                </th>
+                <th className={tableHeaderCell}>From</th>
+                <th className={tableHeaderCell}>To</th>
+                <th className={tableHeaderCell}>Value</th>
+                <th className={tableHeaderCell}>Tx Hash</th>
               </tr>
-            </TableHeader>
-            <TableBody>
+            </thead>
+            <tbody className={tableBody}>
               {events.map((event, index) => (
                 <tr key={`${event.transactionHash}-${index}`}>
-                  <TableCell>{event.blockNumber}</TableCell>
-                  <TimestampCell>{formatTimestamp(event.blockTimestamp)}</TimestampCell>
-                  <EventNameCell>
+                  <td className={tableCell}>{event.blockNumber}</td>
+                  <td className={cx(tableCell, timestampCell)}>{formatTimestamp(event.blockTimestamp)}</td>
+                  <td className={cx(tableCell, eventNameCell)}>
                     {event.eventName}
                     {event.isFinalized === false && (
-                      <UnfinalizedBadge>unfinalized</UnfinalizedBadge>
+                      <span className={unfinalizedBadge}>unfinalized</span>
                     )}
-                  </EventNameCell>
-                  <AddressCell>
+                  </td>
+                  <td className={cx(tableCell, addressCell)}>
                     {event.from ? (
                       <a
                         href={`/chain/${chainId}/address/${event.from}`}
-                        style={{ color: '#4f46e5', textDecoration: 'none' }}
+                        style={{ color: 'var(--haze-color-primary)', textDecoration: 'none' }}
                       >
                         {formatAddress(event.from)}
                       </a>
                     ) : (
                       'N/A'
                     )}
-                  </AddressCell>
-                  <AddressCell>
+                  </td>
+                  <td className={cx(tableCell, addressCell)}>
                     {event.to ? (
                       <a
                         href={`/chain/${chainId}/address/${event.to}`}
-                        style={{ color: '#4f46e5', textDecoration: 'none' }}
+                        style={{ color: 'var(--haze-color-primary)', textDecoration: 'none' }}
                       >
                         {formatAddress(event.to)}
                       </a>
                     ) : (
                       'N/A'
                     )}
-                  </AddressCell>
-                  <ValueCell>{formatValue(event.value)}</ValueCell>
-                  <TransactionHashCell>
+                  </td>
+                  <td className={cx(tableCell, valueCell)}>{formatValue(event.value)}</td>
+                  <td className={cx(tableCell, transactionHashCell)}>
                     <a
                       href={`/chain/${chainId}/tx/${event.transactionHash}`}
-                      style={{ color: '#4f46e5', textDecoration: 'none' }}
+                      style={{ color: 'var(--haze-color-primary)', textDecoration: 'none' }}
                     >
                       {formatTransactionHash(event.transactionHash)}
                     </a>
-                  </TransactionHashCell>
+                  </td>
                 </tr>
               ))}
-            </TableBody>
-          </Table>
+            </tbody>
+          </table>
 
           {/* Loading indicator for pagination */}
           {loading && events.length > 0 && (
-            <LoadingContainer>
-              <LoadingSpinner />
+            <div className={loadingContainer}>
+              <div className={loadingSpinner} />
               <span style={{ marginLeft: 12 }}>Loading more events...</span>
-            </LoadingContainer>
+            </div>
           )}
 
           {/* Error overlay for pagination errors */}
           {error && events.length > 0 && (
-            <ErrorContainer>
-              <ErrorMessage>Error loading more events</ErrorMessage>
-              <RetryButton onClick={handleRetry}>Retry</RetryButton>
-            </ErrorContainer>
+            <div className={errorContainer}>
+              <div className={errorMessage}>Error loading more events</div>
+              <button className={retryButton} onClick={handleRetry}>Retry</button>
+            </div>
           )}
 
           {/* Enhanced Pagination controls */}
-          <PaginationContainer>
+          <div className={paginationContainer}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-              <PaginationInfo>
+              <div className={paginationInfo}>
                 Showing {pagination.startIndex ?? 1}-{pagination.endIndex ?? events.length} of{' '}
                 {pagination.total} events
-              </PaginationInfo>
+              </div>
 
               {totalPages > 1 && (
-                <PageInfo>
+                <div className={pageInfo}>
                   Page {pagination.page} / {totalPages}
-                </PageInfo>
+                </div>
               )}
             </div>
 
-            <PaginationControls>
-              <PaginationButton
+            <div className={paginationControls}>
+              <button
+                className={paginationButton}
                 onClick={handleFirstPage}
                 disabled={pagination.page <= 1 || loading}
                 title="First page"
               >
                 ⇤
-              </PaginationButton>
+              </button>
 
-              <PaginationButton
+              <button
+                className={paginationButton}
                 onClick={handlePrevPage}
                 disabled={pagination.page <= 1 || loading}
                 title="Previous page"
               >
                 ←
-              </PaginationButton>
+              </button>
 
               {totalPages > 1 && (
                 <>
-                  <PaginationSeparator />
+                  <div className={paginationSeparator} />
 
-                  <GoToPageContainer>
-                    <GoToPageLabel>Go to:</GoToPageLabel>
-                    <PaginationInput
+                  <div className={goToPageContainer}>
+                    <span className={goToPageLabel}>Go to:</span>
+                    <input
+                      className={paginationInput}
                       type="number"
                       value={pageInput}
                       onChange={handlePageInputChange}
@@ -1629,31 +1691,33 @@ export const EventTable: React.FC<EventTableProps> = ({
                       min={1}
                       max={totalPages}
                     />
-                    <PaginationButton onClick={handleGoToPage} disabled={!pageInput || loading}>
+                    <button className={paginationButton} onClick={handleGoToPage} disabled={!pageInput || loading}>
                       Go
-                    </PaginationButton>
-                  </GoToPageContainer>
+                    </button>
+                  </div>
 
-                  <PaginationSeparator />
+                  <div className={paginationSeparator} />
                 </>
               )}
 
-              <PaginationButton
+              <button
+                className={paginationButton}
                 onClick={handleNextPage}
                 disabled={(!pagination.hasMore && pagination.page >= totalPages) || loading}
                 title="Next page"
               >
                 →
-              </PaginationButton>
+              </button>
 
               {totalPages > 1 && (
-                <PaginationButton
+                <button
+                  className={paginationButton}
                   onClick={handleLastPage}
                   disabled={pagination.page >= totalPages || loading}
                   title="Last page"
                 >
                   ⇥
-                </PaginationButton>
+                </button>
               )}
 
               {pagination.total > 0 && (
@@ -1662,32 +1726,32 @@ export const EventTable: React.FC<EventTableProps> = ({
                       refuse above the cap up front instead of letting the
                       click hit the backend 400. */}
                   {exportExceedsLimit && (
-                    <ExportLimitNotice>
+                    <span className={exportLimitNotice}>
                       Too many rows ({pagination.total.toLocaleString()}) — narrow the block
                       range or filters and export in chunks (limit 100,000 rows).
-                    </ExportLimitNotice>
+                    </span>
                   )}
                   {!backendConnected && (
-                    <ExportLimitNotice>
+                    <span className={exportLimitNotice}>
                       Backend not connected — export unavailable.
-                    </ExportLimitNotice>
+                    </span>
                   )}
-                  <ExportCsvButton
+                  <a
+                    className={exportCsvButton}
                     {...(exportExceedsLimit || !backendConnected
                       ? {}
                       : { href: exportHref, download: true })}
-                    $disabled={exportExceedsLimit || !backendConnected}
                     aria-disabled={exportExceedsLimit || !backendConnected ? true : undefined}
                   >
                     Export CSV
-                  </ExportCsvButton>
+                  </a>
                 </>
               )}
-            </PaginationControls>
-          </PaginationContainer>
+            </div>
+          </div>
         </>
       )}
-    </TableContainer>
+    </div>
   );
 };
 

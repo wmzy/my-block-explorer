@@ -1,9 +1,9 @@
 import { customType } from 'drizzle-orm/pg-core';
 
-// ✅ DuckDB 兼容的基础类型 - 直接重导出，确保兼容性
+// ✅ DuckDB-compatible base types - re-exported directly for compatibility
 export { integer, varchar, text, boolean } from 'drizzle-orm/pg-core';
 
-// ✅ DuckDB 兼容的 bigint - 使用 varchar 存储大数字以避免精度问题
+// ✅ DuckDB-compatible bigint - stores big numbers as varchar to avoid precision loss
 export const bignum = customType<{
   data: bigint;
   driverData: string;
@@ -37,9 +37,9 @@ export const address = customType<{
   dataType: () => `char(42)`,
 });
 
-// EVM 特定类型定义
+// EVM-specific type definitions
 
-// 交易哈希 - 32 字节，0x 前缀
+// Transaction hash - 32 bytes, 0x-prefixed
 export const txHash = customType<{
   data: `0x${string}`;
   driverData: string;
@@ -47,7 +47,7 @@ export const txHash = customType<{
   dataType: () => `char(66)`,
 });
 
-// 区块哈希 - 32 字节，0x 前缀
+// Block hash - 32 bytes, 0x-prefixed
 export const blockHash = customType<{
   data: `0x${string}`;
   driverData: string;
@@ -55,7 +55,7 @@ export const blockHash = customType<{
   dataType: () => `char(66)`,
 });
 
-// 通用哈希 - 32 字节，0x 前缀（用于 state root, receipts root 等）
+// Generic hash - 32 bytes, 0x-prefixed (state root, receipts root, etc.)
 export const hash32 = customType<{
   data: `0x${string}`;
   driverData: string;
@@ -63,7 +63,7 @@ export const hash32 = customType<{
   dataType: () => 'char(66)',
 });
 
-// 字节数据 - 可变长度的十六进制数据
+// Byte data - variable-length hex data
 export const hexData = customType<{
   data: `0x${string}`;
   driverData: string;
@@ -71,7 +71,7 @@ export const hexData = customType<{
   dataType: () => 'text',
 });
 
-// 交易类型 (0: Legacy, 1: EIP-2930, 2: EIP-1559, etc.)
+// Transaction type (0: Legacy, 1: EIP-2930, 2: EIP-1559, etc.)
 export const txType = customType<{
   data: number;
   driverData: number;
@@ -79,7 +79,7 @@ export const txType = customType<{
   dataType: () => 'integer',
 });
 
-// 交易状态 (0: 失败, 1: 成功)
+// Transaction status (0: failed, 1: success)
 export const txStatus = customType<{
   data: 0 | 1;
   driverData: number;
@@ -87,7 +87,7 @@ export const txStatus = customType<{
   dataType: () => 'integer',
 });
 
-// 日期时间类型
+// Datetime types
 export const datetime = customType<{
   data: Date;
   driverData: string;
@@ -97,11 +97,11 @@ export const datetime = customType<{
   fromDriver: (value: string) => new Date(value),
 });
 
-// ✅ DuckDB 兼容的表构造器
+// ✅ DuckDB-compatible table constructor
 export { pgTable as duckdbTable } from 'drizzle-orm/pg-core';
 
-// ✅ DuckDB 兼容的约束构造器
+// ✅ DuckDB-compatible constraint constructors
 export { primaryKey, unique } from 'drizzle-orm/pg-core';
 
-// ✅ DuckDB 兼容的索引构造器 - 不支持指定索引类型
+// ✅ DuckDB-compatible index constructor - specifying index types is unsupported
 export { index as duckdbIndex } from 'drizzle-orm/pg-core';

@@ -4,7 +4,7 @@ import { createLogger } from '../server/logger';
 const logger = createLogger('block-service');
 
 /**
- * 区块数据类型
+ * Block data types
  */
 export type Block = {
   chainId: number;

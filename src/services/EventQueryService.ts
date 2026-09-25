@@ -1,6 +1,6 @@
 /**
- * 事件查询服务
- * 负责合约事件的查询、过滤和分页，使用多链数据库隔离架构
+ * Event query service
+ * Queries, filters and paginates contract events on the multi-chain isolated-database architecture
  */
 
 import { createLogger } from '../server/logger';
@@ -18,7 +18,7 @@ import {
 } from '../types/events';
 
 /**
- * 事件查询选项
+ * Event query options
  */
 export interface EventQueryOptions {
   tableName: string;
@@ -32,8 +32,8 @@ export interface EventQueryOptions {
 }
 
 /**
- * 事件查询服务
- * 提供高性能的事件查询功能，支持复杂的过滤和分页
+ * Event query service
+ * High-performance event querying with rich filtering and pagination
  */
 export class EventQueryService {
   private chainId: number;
@@ -47,7 +47,7 @@ export class EventQueryService {
   }
 
   /**
-   * 查询事件列表
+   * Query the event list
    */
   async queryEvents(options: EventQueryOptions): Promise<PaginatedResult<Record<string, unknown>>> {
     const startTime = performance.now();
@@ -83,7 +83,7 @@ export class EventQueryService {
         sortBy: sort.field,
       };
 
-      // 执行查询
+      // Run the query
       const result = await this.eventTableManager.queryEvents(tableName, queryParams, {
         limit: pagination.limit,
         cursor: pagination.cursor,
@@ -91,11 +91,11 @@ export class EventQueryService {
         sortBy: sort.field,
       });
 
-      // 记录性能指标
+      // Record performance metrics
       const queryTime = performance.now() - startTime;
       performanceMonitor.recordQuery('event_query', queryTime, true);
 
-      // 如果需要总数，进行额外查询
+      // Issue an extra query when the total is requested
       let total = result.events.length;
       if (includeTotal && (pagination.cursor || pagination.offset)) {
         try {
@@ -111,7 +111,7 @@ export class EventQueryService {
         total,
         hasMore: result.hasMore,
         nextCursor: result.nextCursor,
-        prevCursor: undefined, // 可以根据需要实现
+        prevCursor: undefined, // can be implemented if needed
       };
     } catch (error) {
       const queryTime = performance.now() - startTime;
@@ -128,7 +128,7 @@ export class EventQueryService {
   }
 
   /**
-   * 获取事件统计信息
+   * Get event statistics
    */
   async getEventStatistics(tableName: string, timeRange?: string): Promise<EventStatistics> {
     const startTime = performance.now();
@@ -180,7 +180,7 @@ export class EventQueryService {
   }
 
   /**
-   * 按事件类型分组统计
+   * Group statistics by event type
    */
   async getEventsByType(tableName: string): Promise<Record<string, number>> {
     const startTime = performance.now();
@@ -221,7 +221,7 @@ export class EventQueryService {
   }
 
   /**
-   * 按时间范围统计
+   * Aggregate by time range
    */
   async getEventsByTimeRange(
     tableName: string,
@@ -281,7 +281,7 @@ export class EventQueryService {
   }
 
   /**
-   * 获取热门地址
+   * Get top addresses
    */
   async getTopAddresses(
     tableName: string,
@@ -340,7 +340,7 @@ export class EventQueryService {
   }
 
   /**
-   * 搜索事件
+   * Search events
    */
   async searchEvents(
     tableName: string,
@@ -351,7 +351,7 @@ export class EventQueryService {
     const performanceMonitor = multiChainPerformanceManager.getChainMonitor(this.chainId);
 
     try {
-      // 构建搜索查询
+      // Build the search query
       const searchQuery = `
         SELECT * FROM ${tableName}
         WHERE
@@ -401,7 +401,7 @@ export class EventQueryService {
   }
 
   /**
-   * 获取事件的详细信息
+   * Get event details
    */
   async getEventDetails(
     tableName: string,
@@ -441,7 +441,7 @@ export class EventQueryService {
   }
 
   /**
-   * 获取相似事件
+   * Get similar events
    */
   async getSimilarEvents(
     tableName: string,
@@ -488,7 +488,7 @@ export class EventQueryService {
   }
 
   /**
-   * 验证表是否存在
+   * Validate that a table exists
    */
   async validateTable(tableName: string): Promise<boolean> {
     try {
@@ -500,7 +500,7 @@ export class EventQueryService {
   }
 
   /**
-   * 获取表结构信息
+   * Get table schema information
    */
   async getTableSchema(tableName: string): Promise<{
     columns: Array<{ name: string; type: string; nullable: boolean }>;
@@ -520,21 +520,21 @@ export class EventQueryService {
   }
 
   /**
-   * 获取链ID
+   * Get the chain ID
    */
   getChainId(): number {
     return this.chainId;
   }
 
   /**
-   * 获取性能监控器
+   * Get the performance monitor
    */
   getPerformanceMonitor() {
     return multiChainPerformanceManager.getChainMonitor(this.chainId);
   }
 }
 
-// 导出单例管理器
+// Export the singleton manager
 class EventQueryServiceManager {
   private services: Map<number, EventQueryService> = new Map();
 

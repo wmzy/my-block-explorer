@@ -29,6 +29,7 @@ vi.mock('@/services/AddressScanService', async (importOriginal) => {
     getScanFindings: mocks.getScanFindings,
     hydrateFindings: mocks.hydrateFindings,
     isScanJobActive: mocks.isScanJobActive,
+    listInternalTransactions: mocks.listInternalTransactions,
     pauseScanJob: mocks.pauseScanJob,
     resumeScanJob: mocks.resumeScanJob,
     deleteScanJob: mocks.deleteScanJob,
@@ -52,6 +53,7 @@ const mocks = vi.hoisted(() => ({
   getScanFindings: vi.fn(),
   hydrateFindings: vi.fn(),
   isScanJobActive: vi.fn(),
+  listInternalTransactions: vi.fn(),
   pauseScanJob: vi.fn(),
   resumeScanJob: vi.fn(),
   deleteScanJob: vi.fn(),
@@ -68,6 +70,9 @@ const jobRow = (overrides: Partial<AddressScanJobRecord>): AddressScanJobRecord 
   cursorBlock: 499n,
   status: 'running',
   txsFound: 0,
+  tracesRequested: false,
+  tracesSupported: null,
+  tracesRecorded: 0,
   errorMessage: null,
   updatedAt: new Date('2026-09-24T00:00:00.000Z'),
   ...overrides,
@@ -95,6 +100,12 @@ beforeEach(() => {
   mocks.getScanFindings.mockResolvedValue([]);
   mocks.hydrateFindings.mockResolvedValue([]);
   mocks.isScanJobActive.mockReturnValue(false);
+  mocks.listInternalTransactions.mockResolvedValue({
+    transactions: [],
+    total: 0,
+    offset: 0,
+    limit: 50,
+  });
   mocks.deleteScanJob.mockResolvedValue(undefined);
 });
 
@@ -123,16 +134,61 @@ describe('POST /chains/:chainId/addresses/:address/scan', () => {
         'fromBlock',
         'status',
         'toBlock',
+        'tracesRecorded',
+        'tracesRequested',
+        'tracesSupported',
         'txsFound',
         'updatedAt',
       ].sort(),
     );
     expect(body).toMatchObject({ status: 'pending', fromBlock: 0, cursorBlock: -1, blocksWalked: 0 });
+    // Absent body → default bounds AND includeTraces false (the pinned
+    // byte-identical absent behavior).
     expect(mocks.createOrReplaceScanJob).toHaveBeenCalledWith(1, ROUTE_ADDRESS, {
       fromBlock: 'earliest',
       toBlock: 'latest',
       force: false,
+      includeTraces: false,
     });
+  });
+
+  it('passes includeTraces through to the service when the body opts in', async () => {
+    mocks.createOrReplaceScanJob.mockResolvedValue({
+      ok: true,
+      result: {
+        outcome: 'created',
+        job: jobRow({ status: 'pending', cursorBlock: -1n, tracesRequested: true }),
+        started: null,
+      },
+    });
+
+    const res = await app.request(scanPath(), {
+      method: 'POST',
+      body: JSON.stringify({ fromBlock: 0, toBlock: 1000, includeTraces: true }),
+      headers: { 'content-type': 'application/json' },
+    });
+    expect(res.status).toBe(202);
+    expect(mocks.createOrReplaceScanJob).toHaveBeenCalledWith(1, ROUTE_ADDRESS, {
+      fromBlock: 0,
+      toBlock: 1000,
+      force: false,
+      includeTraces: true,
+    });
+    const body = await res.json();
+    expect(body.tracesRequested).toBe(true);
+    expect(body.tracesSupported).toBeNull();
+    expect(body.tracesRecorded).toBe(0);
+  });
+
+  it('rejects non-boolean includeTraces with 400 invalid_bounds', async () => {
+    const res = await app.request(scanPath(), {
+      method: 'POST',
+      body: JSON.stringify({ includeTraces: 'yes' }),
+      headers: { 'content-type': 'application/json' },
+    });
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: 'invalid_bounds' });
+    expect(mocks.createOrReplaceScanJob).not.toHaveBeenCalled();
   });
 
   it('answers 200 with the existing job when bounds match (idempotent)', async () => {
@@ -232,6 +288,107 @@ describe('GET /chains/:chainId/addresses/:address/scan', () => {
   });
 });
 
+describe('GET /chains/:chainId/addresses/:address/scan/internal-transactions', () => {
+  const internalTxnsPath = (query = '') =>
+    `/chains/1/addresses/${ROUTE_ADDRESS}/scan/internal-transactions${query}`;
+
+  it('returns the service envelope as JSON with default pagination 0/50', async () => {
+    const page = {
+      transactions: [
+        {
+          transactionHash: `0x${'aa'.repeat(32)}`,
+          blockNumber: 700,
+          from: `0x${'2'.repeat(40)}`,
+          to: ROUTE_ADDRESS,
+          value: '5',
+          callType: 'call',
+          reverted: false,
+          tracePath: '0',
+          timestamp: '2026-09-24T00:00:00.000Z',
+        },
+      ],
+      total: 1,
+      offset: 0,
+      limit: 50,
+    };
+    mocks.listInternalTransactions.mockResolvedValue(page);
+
+    const res = await app.request(internalTxnsPath());
+    expect(res.status).toBe(200);
+    expect(res.headers.get('X-Chain-Name')).toBeTruthy();
+    expect(await res.json()).toEqual(page);
+    expect(mocks.listInternalTransactions).toHaveBeenCalledWith(1, ROUTE_ADDRESS, {
+      offset: 0,
+      limit: 50,
+    });
+  });
+
+  it('accepts explicit offset/limit and clamps limit at 100', async () => {
+    mocks.listInternalTransactions.mockResolvedValue({
+      transactions: [],
+      total: 0,
+      offset: 200,
+      limit: 100,
+    });
+
+    const res = await app.request(internalTxnsPath('?offset=200&limit=500'));
+    expect(res.status).toBe(200);
+    // The clamp is the route's job: the service never sees limit > 100.
+    expect(mocks.listInternalTransactions).toHaveBeenCalledWith(1, ROUTE_ADDRESS, {
+      offset: 200,
+      limit: 100,
+    });
+  });
+
+  it('rejects non-numeric offset with 400 invalid_offset', async () => {
+    const res = await app.request(internalTxnsPath('?offset=abc'));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toEqual({
+      error: 'invalid_offset',
+      message: 'offset must be a non-negative integer',
+    });
+    expect(mocks.listInternalTransactions).not.toHaveBeenCalled();
+  });
+
+  it('rejects negative offset with 400 invalid_offset', async () => {
+    const res = await app.request(internalTxnsPath('?offset=-1'));
+    expect(res.status).toBe(400);
+    expect(await res.json()).toMatchObject({ error: 'invalid_offset' });
+    expect(mocks.listInternalTransactions).not.toHaveBeenCalled();
+  });
+
+  it('rejects non-numeric and non-positive limit with 400 invalid_limit', async () => {
+    for (const query of ['?limit=abc', '?limit=0', '?limit=-5']) {
+      const res = await app.request(internalTxnsPath(query));
+      expect(res.status, query).toBe(400);
+      expect(await res.json()).toMatchObject({ error: 'invalid_limit' });
+    }
+    expect(mocks.listInternalTransactions).not.toHaveBeenCalled();
+  });
+
+  it('treats empty-string params as absent (defaults, not a 400)', async () => {
+    const res = await app.request(internalTxnsPath('?offset=&limit='));
+    expect(res.status).toBe(200);
+    expect(mocks.listInternalTransactions).toHaveBeenCalledWith(1, ROUTE_ADDRESS, {
+      offset: 0,
+      limit: 50,
+    });
+  });
+
+  it('wraps service failures in the shared 500 shape', async () => {
+    mocks.listInternalTransactions.mockRejectedValue(new Error('DuckDB down'));
+    const res = await app.request(internalTxnsPath());
+    expect(res.status).toBe(500);
+    expect(await res.json()).toEqual({ error: 'Failed to list internal transactions' });
+  });
+
+  it('stays an open read even with an admin token configured', async () => {
+    vi.stubEnv('ADMIN_TOKEN', 'secret-token');
+    const res = await app.request(internalTxnsPath());
+    expect(res.status).toBe(200);
+  });
+});
+
 describe('POST /scan/pause and /scan/resume', () => {
   it('pauses a running job with an active loop → 202', async () => {
     mocks.getScanJobRow.mockResolvedValue(jobRow({ status: 'running' }));
@@ -308,6 +465,9 @@ describe('POST /scan/catchup', () => {
         'fromBlock',
         'status',
         'toBlock',
+        'tracesRecorded',
+        'tracesRequested',
+        'tracesSupported',
         'txsFound',
         'updatedAt',
       ].sort(),

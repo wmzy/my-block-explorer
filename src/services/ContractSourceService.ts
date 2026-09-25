@@ -150,7 +150,7 @@ export type ContractCreationInfo = {
 };
 
 export class ContractSourceService {
-  // 获取合约创建信息
+  // Get contract creation info
   async getContractCreationInfo(
     chainId: number,
     address: Address,
@@ -158,7 +158,7 @@ export class ContractSourceService {
     logger.info({ address, chainId }, 'Starting contract creation search');
 
     try {
-      // 1. 先从数据库查找缓存的创建信息
+      // 1. First look up cached creation info in the database
       logger.info('Step 1: Checking database cache for creation info');
       try {
         const cachedInfo = await this.getCachedCreationInfo(chainId, address);
@@ -174,37 +174,37 @@ export class ContractSourceService {
         if (error instanceof Error && error.message.startsWith('CACHED_FAILURE:')) {
           const reason = error.message.replace('CACHED_FAILURE:', '');
           logger.info({ address, reason }, 'Found cached failed search');
-          return null; // 直接返回null，不重新搜索
+          return null; // return immediately without re-searching
         }
-        // 其他错误继续处理
+        // Other errors fall through
         logger.warn({ err: error, address }, 'Cache check failed');
       }
 
-      // 2. 如果缓存中没有，执行搜索
+      // 2. Cache miss: run the search
       logger.info({ address }, 'Step 2: Checking if address is a contract');
       const isContract = await this.isContractAddress(chainId, address);
       logger.info({ address, isContract }, 'Contract check result');
 
       if (!isContract) {
         logger.info({ address }, 'Address is not a contract');
-        // 缓存失败结果，避免重复检查
+        // Cache the failure to avoid repeated checks
         await this.cacheFailedSearch(chainId, address, 'not_a_contract');
         return null;
       }
 
-      // 3. 使用二分法查找合约创建的区块
+      // 3. Binary-search for the contract's creation block
       logger.info({ address }, 'Step 3: Starting binary search for creation block');
       const creationBlock = await this.findContractCreationBlock(chainId, address);
       logger.info({ address, creationBlock }, 'Binary search result');
 
       if (!creationBlock) {
         logger.info({ address }, 'Could not find creation block');
-        // 缓存失败结果
+        // Cache the failed result
         await this.cacheFailedSearch(chainId, address, 'creation_block_not_found');
         return null;
       }
 
-      // 4. 在创建区块中查找创建交易
+      // 4. Find the creation transaction within the creation block
       logger.info(
         { address, creationBlock },
         'Step 4: Searching for creation transaction in block',
@@ -218,7 +218,7 @@ export class ContractSourceService {
 
       if (!creationTx) {
         logger.info({ address, creationBlock }, 'Could not find creation transaction in block');
-        // 缓存失败结果
+        // Cache the failed result
         await this.cacheFailedSearch(chainId, address, 'creation_transaction_not_found');
         return null;
       }
@@ -228,7 +228,7 @@ export class ContractSourceService {
         'Successfully found creation info',
       );
 
-      // 5. 保存到数据库缓存
+      // 5. Persist to the database cache
       logger.info('Step 5: Caching creation info to database');
       await this.cacheCreationInfo(chainId, address, creationTx);
       logger.info('Creation info cached successfully');
@@ -240,7 +240,7 @@ export class ContractSourceService {
     }
   }
 
-  // 从数据库获取缓存的创建信息
+  // Load cached creation info from the database
   private async getCachedCreationInfo(
     chainId: number,
     address: Address,
@@ -260,7 +260,7 @@ export class ContractSourceService {
 
       const row = result[0];
 
-      // 检查是否是失败的搜索记录
+      // Check whether this is a cached failed search
       if (!row.creationTxHash) {
         // Failure rows expire after CREATION_FAILURE_CACHE_TTL_HOURS: a
         // contract queried seconds before deployment/verification must not
@@ -271,7 +271,7 @@ export class ContractSourceService {
             { address, reason: row.creationMethod ?? 'unknown', ageHours: ageHours.toFixed(1) },
             'Found fresh cached failed search',
           );
-          // 抛出特殊错误表示这是缓存的失败结果
+          // Throw a sentinel error marking a cached failure
           throw new Error(`CACHED_FAILURE:${row.creationMethod ?? 'unknown'}`);
         }
 
@@ -312,14 +312,14 @@ export class ContractSourceService {
     }
   }
 
-  // 缓存创建信息到数据库
+  // Cache creation info in the database
   private async cacheCreationInfo(
     chainId: number,
     address: Address,
     creationInfo: ContractCreationInfo,
   ): Promise<void> {
     try {
-      // 先检查是否已存在
+      // Check for an existing row first
       const existing = await db
         .select()
         .from(contractCreationInfo)
@@ -346,18 +346,18 @@ export class ContractSourceService {
       });
     } catch (error) {
       logger.warn({ err: error, address }, 'Failed to cache creation info');
-      // 不抛出错误，缓存失败不应该影响主要功能
+      // Do not throw: a caching failure must not break the main flow
     }
   }
 
-  // 缓存失败的搜索结果
+  // Cache a failed search result
   private async cacheFailedSearch(
     chainId: number,
     address: Address,
     reason: string,
   ): Promise<void> {
     try {
-      // 先检查是否已存在
+      // Check for an existing row first
       const existing = await db
         .select()
         .from(contractCreationInfo)
@@ -367,14 +367,14 @@ export class ContractSourceService {
         .limit(1);
 
       if (existing.length > 0) {
-        return; // 已存在记录，不重复插入
+        return; // row already exists; skip the insert
       }
 
-      // 插入失败记录（creationTxHash为null表示失败）
+      // Insert a failure row (null creationTxHash means the search failed)
       await db.insert(contractCreationInfo).values({
         chainId,
         address,
-        creationTxHash: null, // null表示搜索失败
+        creationTxHash: null, // null marks a failed search
         creationBlockNumber: null,
         creatorAddress: null,
         factoryAddress: null,
@@ -387,7 +387,7 @@ export class ContractSourceService {
     }
   }
 
-  // 使用二分法查找合约创建的区块号
+  // Binary-search for the contract's creation block number
   private async findContractCreationBlock(
     chainId: number,
     address: Address,
@@ -398,21 +398,21 @@ export class ContractSourceService {
     }
 
     try {
-      // 获取当前最新区块号
+      // Get the current latest block number
       const getLatestBlock = createRetryableRpcCall(async () => {
         return await client.getBlockNumber();
       }, chainId);
 
       const latestBlockNumber = await getLatestBlock();
 
-      // 动态调整搜索范围
-      // 基于测试结果，扩大初始搜索范围以覆盖更多历史区块
-      const searchRange = 20000000n; // 开始搜索最近2000万个区块
+      // Adjust the search range dynamically
+      // Based on testing, widen the initial range to cover more history
+      const searchRange = 20000000n; // search the most recent 20 million blocks first
       let left = latestBlockNumber > searchRange ? latestBlockNumber - searchRange : 0n;
       let right = latestBlockNumber;
       let creationBlock: number | null = null;
 
-      // 如果搜索范围仍然很大，先检查合约在最早区块是否存在
+      // If the range is still large, first check the contract at the earliest block
       if (left > 1000000n) {
         logger.info({ earlyBlock: Number(left) }, 'Checking if contract exists at early block');
         const earlyCode = createRetryableRpcCall(async () => {
@@ -431,9 +431,9 @@ export class ContractSourceService {
             { block: Number(left) },
             'Contract already exists at block, expanding search range',
           );
-          // 如果在搜索起点就存在，继续扩大搜索范围
-          // 基于RPC测试，我们知道10M以下的区块会失败，所以限制搜索范围
-          const maxSafeRange = 50000000n; // 最多搜索5000万个区块
+          // Present already at the search start: widen the range further
+          // RPC testing shows blocks below 10M fail, so cap the range
+          const maxSafeRange = 50000000n; // search at most 50 million blocks
           const expandedRange = Math.min(Number(maxSafeRange), Number(latestBlockNumber));
           left = latestBlockNumber - BigInt(expandedRange);
           logger.info(
@@ -448,7 +448,7 @@ export class ContractSourceService {
         'Starting binary search for contract creation',
       );
 
-      // 二分查找
+      // Binary search
       let iterations = 0;
       while (left <= right) {
         iterations++;
@@ -461,7 +461,7 @@ export class ContractSourceService {
         );
 
         try {
-          // 检查在 mid 区块时合约是否存在
+          // Check whether the contract exists at block mid
           const getCode = createRetryableRpcCall(async () => {
             return await client.getCode({
               address,
@@ -475,7 +475,7 @@ export class ContractSourceService {
           logger.info({ midNumber, hasCode }, 'Block check result');
 
           if (hasCode) {
-            // 合约存在，创建区块在 mid 或之前
+            // Contract exists: creation block is at or before mid
             creationBlock = midNumber;
             right = mid - 1n;
             logger.info(
@@ -483,7 +483,7 @@ export class ContractSourceService {
               'Contract exists at block, searching earlier',
             );
           } else {
-            // 合约不存在，创建区块在 mid 之后
+            // Contract absent: creation block is after mid
             left = mid + 1n;
             logger.info(
               { midNumber, left: left.toString(), right: right.toString() },
@@ -493,7 +493,7 @@ export class ContractSourceService {
         } catch (error) {
           logger.error({ err: error, midNumber }, 'Error checking block');
 
-          // 分析RPC错误并提供详细反馈
+          // Analyze the RPC error for detailed feedback
           const rpcClient = await rpcManager.getClient(chainId);
           const rpcUrl = rpcClient.transport?.url ?? 'unknown';
 
@@ -514,31 +514,31 @@ export class ContractSourceService {
             'RPC error analysis',
           );
 
-          // 如果是可重试的错误，记录但继续搜索
+          // Retryable errors are logged, but the search continues
           if (shouldRetryRpcError(errorDetails)) {
             logger.info('Error is retryable, continuing search');
           } else {
             logger.info('Error is not retryable, may affect search accuracy');
           }
 
-          // 无论如何，假设合约在此区块不存在，向右搜索
+          // Either way, assume absence at this block and search right
           logger.info(`Due to error, assuming contract doesn't exist and searching later`);
           left = mid + 1n;
         }
 
-        // 防止无限循环，但允许更大的搜索范围
+        // Guard against infinite loops while allowing wide ranges
         if (right - left > 50000000n) {
           logger.warn('Binary search range too large (>50M blocks), stopping');
           break;
         }
 
-        // 如果搜索了超过30次迭代，停止搜索
+        // Stop after more than 30 iterations
         if (iterations > 30) {
           logger.warn('Binary search iterations exceeded limit, stopping');
           break;
         }
 
-        // 检查是否还有搜索空间
+        // Check whether search space remains
         if (left > right) {
           logger.info(
             { left: left.toString(), right: right.toString() },
@@ -554,10 +554,10 @@ export class ContractSourceService {
       if (creationBlock !== null) {
         logger.info({ creationBlock }, 'Found contract creation block');
 
-        // 验证找到的创建区块是否正确
+        // Verify the found creation block is correct
         logger.info({ creationBlock }, 'Verifying creation block');
         try {
-          // 检查前一个区块合约是否不存在
+          // Check the contract is absent in the previous block
           const prevCode = createRetryableRpcCall(async () => {
             return await client.getCode({
               address,
@@ -588,7 +588,7 @@ export class ContractSourceService {
     }
   }
 
-  // 在指定区块中查找合约创建交易
+  // Find the contract creation transaction in a given block
   private async findContractCreationTransaction(
     chainId: number,
     contractAddress: Address,
@@ -600,7 +600,7 @@ export class ContractSourceService {
     }
 
     try {
-      // 获取区块信息
+      // Fetch the block
       const getBlock = createRetryableRpcCall(async () => {
         return await client.getBlock({
           blockNumber: BigInt(blockNumber),
@@ -619,7 +619,7 @@ export class ContractSourceService {
         'Searching transactions in block for contract creation',
       );
 
-      // 遍历区块中的所有交易
+      // Walk every transaction in the block
       for (let i = 0; i < block.transactions.length; i++) {
         const tx = block.transactions[i];
         if (typeof tx === 'string') continue;
@@ -636,11 +636,11 @@ export class ContractSourceService {
         );
 
         try {
-          // 检查是否为合约创建交易（to 为 null 或 undefined）
+          // Contract creation tx: to is null or undefined
           if (tx.to === null || tx.to === undefined) {
             logger.info({ txHash: tx.hash }, 'Found contract creation tx');
 
-            // 获取交易回执以确认合约地址
+            // Fetch the receipt to confirm the contract address
             const getReceipt = createRetryableRpcCall(async () => {
               return await client.getTransactionReceipt({ hash: tx.hash });
             }, chainId);
@@ -679,7 +679,7 @@ export class ContractSourceService {
               );
             }
           } else {
-            // 检查是否是通过工厂合约或其他方式创建的
+            // Check whether a factory contract or similar created it
             logger.info('Checking if tx creates contract via factory or internal transaction');
 
             const getReceipt = createRetryableRpcCall(async () => {
@@ -688,7 +688,7 @@ export class ContractSourceService {
 
             const receipt = await getReceipt();
 
-            // 方法1: 检查交易日志中是否有我们目标合约的相关事件
+            // Method 1: look for events related to our target contract in the tx logs
             const hasContractEvent = receipt.logs.some(log =>
               addressEquals(log.address || '', contractAddress),
             );
@@ -706,7 +706,7 @@ export class ContractSourceService {
               };
             }
 
-            // 方法2: 检查是否有CREATE2或CREATE操作码创建了这个合约
+            // Method 2: check whether a CREATE2 or CREATE opcode created this contract
             logger.info('Checking for internal contract creation via trace');
 
             try {
@@ -725,9 +725,9 @@ export class ContractSourceService {
                 params: [tx.hash, { tracer: 'callTracer' }],
               });
 
-              // 递归检查trace中的所有调用，查找合约创建
+              // Recursively inspect all calls in the trace for contract creation
               const findContractCreation = (call: CallTracerCall): boolean => {
-                // 检查当前调用是否创建了目标合约
+                // Check whether this call created the target contract
                 if (call.type === 'CREATE' || call.type === 'CREATE2') {
                   if (addressEquals(call.to ?? '', contractAddress)) {
                     logger.info(
@@ -738,7 +738,7 @@ export class ContractSourceService {
                   }
                 }
 
-                // 递归检查子调用
+                // Recurse into sub-calls
                 if (call.calls && Array.isArray(call.calls)) {
                   return call.calls.some(findContractCreation);
                 }
@@ -759,13 +759,13 @@ export class ContractSourceService {
               }
             } catch (traceError) {
               logger.info({ err: traceError }, 'debug_traceTransaction not supported or failed');
-              // 如果trace不支持，继续检查其他方法
+              // If traces are unsupported, fall through to other methods
             }
           }
         } catch (error) {
           logger.warn({ err: error, txHash: tx.hash }, 'Error processing transaction');
 
-          // 分析RPC错误
+          // Analyze the RPC error
           const rpcClient = await rpcManager.getClient(chainId);
           const rpcUrl = rpcClient.transport?.url ?? 'unknown';
 
@@ -999,7 +999,7 @@ export class ContractSourceService {
     return mapping[sourcifyType] || 'unknown';
   }
 
-  // 从 Sourcify v2 API 获取合约源码
+  // Fetch contract source from the Sourcify v2 API
   private async fetchFromSourcify(
     chainId: number,
     address: Address,
@@ -1105,7 +1105,7 @@ export class ContractSourceService {
     }
   }
 
-  // 从 Blockscan 获取合约源码
+  // Fetch contract source from Blockscan
   private async fetchFromBlockscan(
     chainId: number,
     address: Address,
@@ -1214,7 +1214,7 @@ export class ContractSourceService {
     }
   }
 
-  // 从 Explorer Etherscan-compatible API 获取 ABI
+  // Fetch the ABI from an Etherscan-compatible explorer API
   private async fetchAbiFromExplorer(chainId: number, address: Address): Promise<string> {
     try {
       const url = `https://api.routescan.io/v2/network/mainnet/evm/${chainId}/etherscan?module=contract&action=getsourcecode&address=${address}`;
@@ -1234,7 +1234,7 @@ export class ContractSourceService {
     return '[]';
   }
 
-  // 检查地址是否为合约
+  // Check whether an address is a contract
   private async isContractAddress(chainId: number, address: Address): Promise<boolean> {
     try {
       const client = await rpcManager.getClient(chainId);
@@ -1316,7 +1316,7 @@ export class ContractSourceService {
     }
   }
 
-  // 增强合约信息，检测代理并获取实现合约
+  // Enrich contract info: detect proxies and fetch the implementation
   private async enhanceWithProxyInfo(
     contract: ContractSource,
     proxyInfo?: {
@@ -1587,7 +1587,7 @@ export class ContractSourceService {
     }
   }
 
-  // 从数据库获取缓存的合约信息
+  // Load cached contract info from the database
   private async getFromDatabase(chainId: number, address: Address): Promise<ContractSource | null> {
     try {
       const rows = await db
@@ -1661,7 +1661,7 @@ export class ContractSourceService {
     }
   }
 
-  // 保存到数据库
+  // Persist to the database
   private async saveToDatabase(contractSource: ContractSource): Promise<void> {
     try {
       const implAddress: `0x${string}` | null = contractSource.implementationAddress
@@ -1772,7 +1772,7 @@ export class ContractSourceService {
     }
   }
 
-  // 检查缓存是否有效
+  // Check whether the cache entry is still valid
   private isCacheValid(contractSource: ContractSource): boolean {
     const now = new Date();
     const lastChecked = contractSource.lastChecked;
@@ -1817,7 +1817,7 @@ export class ContractSourceService {
     return isValid;
   }
 
-  // 解析 ABI 并提取函数信息
+  // Parse the ABI and extract function info
   async getContractFunctions(chainId: number, address: Address) {
     try {
       const contractSource = await this.getContractSource(chainId, address);
@@ -1855,19 +1855,19 @@ export class ContractSourceService {
     }
   }
 
-  // 生成函数签名
+  // Generate function signatures
   private generateFunctionSignature(func: AbiFunction): string {
     const inputs = func.inputs?.map(input => input.type).join(', ') ?? '';
     return `${func.name}(${inputs})`;
   }
 
-  // 生成事件签名
+  // Generate event signatures
   private generateEventSignature(event: AbiEvent): string {
     const inputs = event.inputs?.map(input => input.type).join(', ') ?? '';
     return `${event.name}(${inputs})`;
   }
 
-  // 获取合约统计信息
+  // Get contract statistics
   async getContractStats(chainId: number) {
     try {
       const rows = await db

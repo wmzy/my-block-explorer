@@ -1,15 +1,15 @@
-// API响应类型定义
+// API response type definitions
 
-// 成功响应：直接返回数据
+// Success response: data returned directly
 export type DataResponse<T> = T;
 
-// 列表响应：包含数据和分页信息
+// List response: data plus pagination info
 export type ListResponse<T> = {
   data: T[];
   pagination: PaginationInfo;
 };
 
-// 错误响应：简化结构
+// Error response: simplified shape
 export type ErrorResponse = {
   code: string;
   message: string;
@@ -25,7 +25,7 @@ export type PaginationInfo = {
   hasPrev: boolean;
 };
 
-// API请求参数类型
+// API request parameter types
 export type ApiPaginationParams = {
   page?: number;
   limit?: number;

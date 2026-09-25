@@ -62,7 +62,6 @@
     "@duckdb/node-bindings-darwin-arm64": "1.5.5-r.5",
     "@hono/node-server": "^2.1.1",
     "@linaria/core": "^8.2.0",
-    "@linaria/react": "^8.2.0",
     "@native-router/core": "^1.17.0",
     "@native-router/react": "^1.16.1",
     "drizzle-kit": "^0.31.10",

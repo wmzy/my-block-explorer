@@ -1,8 +1,13 @@
 // Route-table contract: the exact path set, the landing redirect, loader
 // wiring on the immutable contract routes, and that each path resolves to
 // the intended view module (catches path typos and swapped lazy imports
-// without rendering — per-view rendering is covered by the page tests).
+// without rendering — per-view rendering is covered by the page tests;
+// the sole render case is the static /about/coverage deep link, which has
+// no page test of its own).
 import { describe, it, expect } from 'vitest';
+import { render, screen } from '@testing-library/react';
+import { MemoryRouter, View } from '@native-router/react';
+import '@testing-library/jest-dom/vitest';
 
 import { routes } from '@/views';
 import { contractSourceLoader } from '@/services/dataloaders';
@@ -40,7 +45,12 @@ describe('route table', () => {
       '/chain/:chainId/contract/:address/events',
       '/search',
       '/sql',
+      '/about/coverage',
     ]);
+  });
+
+  it('keeps the static about route loader-free (pure copy page)', () => {
+    expect(byPath('/about/coverage').data).toBeUndefined();
   });
 
   it('renders the dynamic landing component on \'/\' (remembered-chain redirect)', async () => {
@@ -69,6 +79,7 @@ describe('route table', () => {
       ['/chain/:chainId/address/:address', 'Address'],
       ['/chain/:chainId/contract/:address', 'Contract'],
       ['/search', 'Search'],
+      ['/about/coverage', 'Coverage/Legend'],
     ];
 
     for (const [path] of expectations) {
@@ -78,5 +89,25 @@ describe('route table', () => {
         'function',
       );
     }
+  });
+});
+
+describe('/about/coverage deep link', () => {
+  it('renders the legend with all six levels and the indexer-comparison section', async () => {
+    render(
+      <MemoryRouter routes={routes} initialEntries={['/about/coverage']}>
+        <View />
+      </MemoryRouter>,
+    );
+
+    // The lazy view chunk resolves async; every level renders as a term
+    // (glyph + chip word) with its definition and example below it.
+    const terms = ['Live', 'Cached', 'Discovered', 'Sampled', 'Partial', 'Unavailable'];
+    for (const term of terms) {
+      expect(await screen.findByText(term)).toBeInTheDocument();
+    }
+    expect(
+      screen.getByText('Why numbers may differ from Etherscan/Blockscout'),
+    ).toBeInTheDocument();
   });
 });

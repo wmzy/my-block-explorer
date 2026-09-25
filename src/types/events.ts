@@ -1,28 +1,28 @@
 /**
- * ABI事件相关类型定义
- * 支持动态表结构生成和事件解码
+ * ABI event-related type definitions
+ * Supports dynamic table schema generation and event decoding
  */
 
 // ============================================
-// 块标签类型 (Block Tag Types)
+// Block tag types
 // ============================================
 
 /**
- * 特殊块标签的负数哨兵值
- * -1 = latest (最新块)
- * -2 = finalized (已最终确认块)
- * -3 = safe (安全块)
- * -4 = earliest (创世块)
+ * Negative sentinel values for special block tags
+ * -1 = latest (most recent block)
+ * -2 = finalized (finalized block)
+ * -3 = safe (safe block)
+ * -4 = earliest (genesis block)
  */
 export type BlockTagSentinel = -1 | -2 | -3 | -4;
 
 /**
- * 支持的块标签
+ * Supported block tags
  */
 export type BlockTag = 'latest' | 'finalized' | 'safe' | 'earliest';
 
 /**
- * 块标签哨兵值常量
+ * Block tag sentinel constants
  */
 export const BLOCK_TAG_SENTINELS: Record<BlockTag, BlockTagSentinel> = {
   latest: -1,
@@ -32,7 +32,7 @@ export const BLOCK_TAG_SENTINELS: Record<BlockTag, BlockTagSentinel> = {
 } as const;
 
 /**
- * 哨兵值到块标签的反向映射
+ * Reverse mapping from sentinels to block tags
  */
 export const SENTINEL_TO_TAG: Record<BlockTagSentinel, BlockTag> = {
   [-1]: 'latest',
@@ -42,23 +42,23 @@ export const SENTINEL_TO_TAG: Record<BlockTagSentinel, BlockTag> = {
 } as const;
 
 /**
- * API 输入支持的块值类型
- * 可以是数字（块号）或字符串标签
+ * Block value types accepted by the API
+ * Either a number (block number) or a string tag
  */
 export type BlockTagInput = number | BlockTag;
 
 // ============================================
-// 用于表创建的事件 ABI 形状（链内表管理）
+// Event ABI shape used for table creation (per-chain table management)
 // ============================================
 
-// 用于表创建的事件 ABI 形状（链内表管理）
+// Event ABI shape used for table creation (per-chain table management)
 export type EventAbiShape = {
   name: string;
   type: string;
   inputs: EventParameter[];
 };
 
-// 事件参数基础类型
+// Base event parameter type
 export type EventParameter = {
   name: string;
   type: string;
@@ -66,17 +66,17 @@ export type EventParameter = {
   internalType?: string;
 };
 
-// 解码后的事件数据
+// Decoded event data
 export type DecodedEventData = Record<string, unknown>;
 
-// 解码后的事件日志（Viem兼容）
+// Decoded event log (viem-compatible)
 export type DecodedEventLog = {
   eventName: string;
   args: Record<string, unknown>;
   eventSignature?: string;
 };
 
-// 解码后的事件参数
+// Decoded event parameter
 export type DecodedEventParameter = {
   name: string;
   type: string;
@@ -85,9 +85,9 @@ export type DecodedEventParameter = {
   indexed: boolean;
 };
 
-// 存储格式化后的事件数据（链内无chainId字段）
+// Formatted event data as stored (no chainId field within a chain)
 export type FormattedEventData = {
-  // 通用字段
+  // Common fields
   txHash: `0x${string}`;
   blockNumber: bigint;
   transactionIndex: number;
@@ -97,18 +97,18 @@ export type FormattedEventData = {
   blockTimestamp: number;
   indexedAt: Date;
 
-  // 解码后的参数数据
+  // Decoded argument data
   [paramName: string]: unknown;
 };
 
-// 动态表结构定义
+// Dynamic table schema definitions
 export type DynamicTableSchema = {
   tableName: string;
   columns: TableColumn[];
   indexes: TableIndex[];
 };
 
-// 表列定义
+// Table column definitions
 export type TableColumn = {
   name: string;
   type: ColumnType;
@@ -118,7 +118,7 @@ export type TableColumn = {
   defaultValue?: unknown;
 };
 
-// 列类型枚举
+// Column type enum
 export enum ColumnType {
   INTEGER = 'integer',
   BIGNUM = 'bignum',
@@ -133,7 +133,7 @@ export enum ColumnType {
   DATETIME = 'datetime',
 }
 
-// 表索引定义
+// Table index definitions
 export type TableIndex = {
   name: string;
   columns: string[];
@@ -141,7 +141,7 @@ export type TableIndex = {
   type?: 'btree' | 'hash';
 };
 
-// 事件查询过滤器（链内查询，无chainId）
+// Event query filter (per-chain query; no chainId)
 export type EventFilters = {
   contractAddress?: `0x${string}`;
   fromBlock?: bigint | number;
@@ -149,11 +149,11 @@ export type EventFilters = {
   fromTimestamp?: number;
   toTimestamp?: number;
   topics?: (`0x${string}` | null)[];
-  // 动态参数过滤
+  // Dynamic argument filters
   [paramName: string]: unknown;
 };
 
-// 分页参数
+// Pagination parameters
 export type PaginationParams = {
   limit: number;
   offset?: number;
@@ -161,7 +161,7 @@ export type PaginationParams = {
   direction?: 'asc' | 'desc';
 };
 
-// 分页结果
+// Paginated result
 export type PaginatedResult<T> = {
   data: T[];
   total: number;
@@ -170,46 +170,46 @@ export type PaginatedResult<T> = {
   prevCursor?: string;
 };
 
-// 事件索引配置
+// Event indexing configuration
 export type EventIndexingConfig = {
-  // 表配置
+  // Table configuration
   tableNamePrefix: string;
   maxTableNameLength: number;
 
-  // 性能配置
+  // Performance configuration
   batchSize: number;
   maxConcurrency: number;
 
-  // 存储配置
+  // Storage configuration
   compressionEnabled: boolean;
   partitioningEnabled: boolean;
   retentionDays: number;
 
-  // 索引配置
+  // Indexing configuration
   autoCreateIndexes: boolean;
   indexThreshold: number;
 
-  // 监控配置
+  // Monitoring configuration
   metricsEnabled: boolean;
   errorTracking: boolean;
 };
 
-// ABI类型到数据库类型的映射配置
+// ABI type to database type mapping configuration
 export type TypeMappingConfig = {
-  // 基础类型映射
+  // Base type mapping
   basicTypes: Record<string, ColumnType>;
 
-  // 数组类型映射
+  // Array type mapping
   arrayTypes: Record<string, ColumnType>;
 
-  // 结构体类型映射
+  // Struct type mapping
   structTypes: Record<string, ColumnType>;
 
-  // 自定义类型映射
+  // Custom type mapping
   customTypes: Record<string, ColumnType>;
 };
 
-// 事件索引错误
+// Event indexing error
 export class EventIndexingError extends Error {
   constructor(
     message: string,
@@ -223,7 +223,7 @@ export class EventIndexingError extends Error {
   }
 }
 
-// 事件解码错误
+// Event decoding error
 export class EventDecodingError extends Error {
   constructor(
     message: string,
@@ -237,7 +237,7 @@ export class EventDecodingError extends Error {
   }
 }
 
-// 表创建错误
+// Table creation error
 export class TableCreationError extends Error {
   constructor(
     message: string,
@@ -249,7 +249,7 @@ export class TableCreationError extends Error {
   }
 }
 
-// 事件索引状态
+// Event indexing status
 export type EventIndexingStatus = {
   contractAddress: `0x${string}`;
   chainId: number;
@@ -261,9 +261,9 @@ export type EventIndexingStatus = {
   errors: EventIndexingError[];
 };
 
-// 多链相关类型定义
+// Multi-chain type definitions
 
-// 链特定配置
+// Chain-specific configuration
 export type ChainSpecificConfig = {
   chainId: number;
   chainName: string;
@@ -274,7 +274,7 @@ export type ChainSpecificConfig = {
   eventBatchSize: number;
 };
 
-// 多链事件索引状态
+// Multi-chain event indexing status
 export type MultiChainIndexingStatus = {
   chainId: number;
   chainName: string;
@@ -287,16 +287,16 @@ export type MultiChainIndexingStatus = {
   errors: EventIndexingError[];
 };
 
-// 跨链事件查询（用于API聚合，不支持直接跨链查询）
+// Cross-chain event query (for API aggregation; direct cross-chain queries are unsupported)
 export type CrossChainEventQuery = {
   chainIds: number[];
   filters: Omit<EventFilters, 'contractAddress'> & {
-    contractAddresses?: Record<number, `0x${string}`[]>; // 按链分组的合约地址
+    contractAddresses?: Record<number, `0x${string}`[]>; // contract addresses grouped by chain
   };
   pagination: PaginationParams;
 };
 
-// 跨链事件结果
+// Cross-chain event result
 export type CrossChainEventResult = {
   chainId: number;
   chainName: string;
@@ -306,7 +306,7 @@ export type CrossChainEventResult = {
   errors?: string[];
 };
 
-// 链数据库状态
+// Chain database status
 export type ChainDatabaseStatus = {
   chainId: number;
   chainName: string;
@@ -321,27 +321,27 @@ export type ChainDatabaseStatus = {
   indexingActive: boolean;
 };
 
-// 多链配置
+// Multi-chain configuration
 export type MultiChainConfig = {
-  // 支持的链列表
+  // Supported chain list
   supportedChains: number[];
 
-  // 默认配置
+  // Default configuration
   defaultConfig: Partial<ChainSpecificConfig>;
 
-  // 性能配置
+  // Performance configuration
   maxConcurrentChains: number;
   chainConnectionTimeout: number;
 
-  // 存储配置
+  // Storage configuration
   baseDataDirectory: string;
   databaseFilePattern: string; // e.g., "{chainType}/{chainName}-{chainId}.db"
 
-  // 索引配置
+  // Indexing configuration
   indexingConfig: EventIndexingConfig;
 };
 
-// 链事件表注册信息
+// Chain event table registration info
 export type ChainEventTableRegistry = {
   chainId: number;
   contractAddress: `0x${string}`;
@@ -356,7 +356,7 @@ export type ChainEventTableRegistry = {
   eventCount: number;
 };
 
-// 多链统计信息
+// Multi-chain statistics
 export type MultiChainStatistics = {
   totalChains: number;
   activeChains: number;
@@ -373,7 +373,7 @@ export type MultiChainStatistics = {
   }>;
 };
 
-// 事件索引任务
+// Event indexing task
 export type EventIndexingTask = {
   taskId: string;
   chainId: number;
@@ -390,23 +390,23 @@ export type EventIndexingTask = {
   estimatedTimeRemaining?: number;
 };
 
-// 多链事件流管理器
+// Multi-chain event stream manager
 export type MultiChainEventStreamManager = {
-  // 注册链事件流
+  // Register a chain event stream
   registerChain(chainId: number, config: ChainSpecificConfig): void;
 
-  // 启动/停止链的事件流
+  // Start/stop a chain's event stream
   startChainStream(chainId: number): Promise<void>;
   stopChainStream(chainId: number): Promise<void>;
 
-  // 获取流状态
+  // Get stream status
   getStreamStatus(chainId: number): StreamStatus;
 
-  // 处理跨链事件
+  // Handle cross-chain events
   handleCrossChainEvents(events: CrossChainEventResult[]): Promise<void>;
 };
 
-// 流状态
+// Stream status
 export type StreamStatus = {
   chainId: number;
   isActive: boolean;
@@ -417,7 +417,7 @@ export type StreamStatus = {
   errors: string[];
 };
 
-// 数据库迁移信息
+// Database migration info
 export type ChainMigrationInfo = {
   chainId: number;
   version: string;
@@ -427,7 +427,7 @@ export type ChainMigrationInfo = {
   description: string;
 };
 
-// 多链错误类型
+// Multi-chain error types
 export class MultiChainError extends Error {
   constructor(
     message: string,
@@ -440,7 +440,7 @@ export class MultiChainError extends Error {
   }
 }
 
-// 链配置错误
+// Chain configuration error
 export class ChainConfigError extends MultiChainError {
   constructor(
     message: string,
@@ -453,7 +453,7 @@ export class ChainConfigError extends MultiChainError {
   }
 }
 
-// 链数据库错误
+// Chain database error
 export class ChainDatabaseError extends MultiChainError {
   constructor(
     message: string,
@@ -466,7 +466,7 @@ export class ChainDatabaseError extends MultiChainError {
   }
 }
 
-// 事件统计信息
+// Event statistics
 export type EventStatistics = {
   totalEvents: number;
   eventsByType: Record<string, number>;
@@ -482,25 +482,25 @@ export type EventStatistics = {
   lastIndexedAt?: string;
 };
 
-// 事件数据验证器
+// Event data validator
 export type EventDataValidator = {
   validate(param: EventParameter, value: unknown): ValidationResult;
 };
 
-// 验证结果
+// Validation result
 export type ValidationResult = {
   valid: boolean;
   error?: string;
   sanitizedValue?: unknown;
 };
 
-// 事件数据转换器
+// Event data converter
 export type EventDataTransformer = {
   transform(param: EventParameter, value: unknown): unknown;
   reverseTransform(param: EventParameter, value: unknown): unknown;
 };
 
-// 存储策略接口
+// Storage strategy interface
 export type StorageStrategy = {
   shouldStoreAsJson(param: EventParameter): boolean;
   getColumnType(param: EventParameter): ColumnType;
@@ -508,7 +508,7 @@ export type StorageStrategy = {
   parseValue(param: EventParameter, value: unknown): unknown;
 };
 
-// 批处理操作
+// Batch operations
 export type BatchOperation<T> = {
   items: T[];
   batchSize: number;
@@ -518,7 +518,7 @@ export type BatchOperation<T> = {
   onError?: (error: Error, item: T) => void;
 };
 
-// 事件流处理器
+// Event stream processor
 export type EventStreamProcessor = {
   process(events: DecodedEvent[]): Promise<void>;
   onEvent?: (event: DecodedEvent) => void;
@@ -526,36 +526,36 @@ export type EventStreamProcessor = {
   onComplete?: (stats: EventStatistics) => void;
 };
 
-// 解码后的事件
+// Decoded event
 export type DecodedEvent = {
-  // 基础信息
+  // Basic info
   chainId: number;
   contractAddress: `0x${string}`;
   eventName: string;
   eventSignature: `0x${string}`;
 
-  // 交易信息
+  // Transaction info
   txHash: `0x${string}`;
   blockNumber: bigint;
   blockHash: `0x${string}`;
   transactionIndex: number;
   logIndex: number;
 
-  // 时间信息 — null when the block timestamp could not be fetched; never a
+  // Timestamp info — null when the block timestamp could not be fetched; never a
   // fabricated placeholder.
   blockTimestamp: number | null;
 
-  // 解码数据
+  // Decoded data
   args: DecodedEventData;
   rawTopics: readonly `0x${string}`[];
   rawData: `0x${string}`;
 
-  // 处理信息
+  // Processing info
   indexedAt: Date;
   processingErrors?: string[];
 };
 
-// 默认配置
+// Default configuration
 export const DEFAULT_EVENT_INDEXING_CONFIG: EventIndexingConfig = {
   tableNamePrefix: 'events',
   maxTableNameLength: 63,
@@ -570,7 +570,7 @@ export const DEFAULT_EVENT_INDEXING_CONFIG: EventIndexingConfig = {
   errorTracking: true,
 };
 
-// 默认类型映射
+// Default type mapping
 export const DEFAULT_TYPE_MAPPING: TypeMappingConfig = {
   basicTypes: {
     uint8: ColumnType.BIGNUM,

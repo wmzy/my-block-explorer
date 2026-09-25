@@ -1,7 +1,7 @@
 import { invalidateRpcClients } from './realTimeData';
 import { del, get, post } from '@/util/http';
 
-// RPC配置管理服务
+// RPC configuration management service
 export type RpcConfig = {
   id: string;
   chainId: number;
@@ -21,13 +21,13 @@ export type RpcTestResult = {
   maxEventRange?: number;
 };
 
-// 获取所有RPC配置
+// Get all RPC configurations
 export async function getRpcConfigs(): Promise<RpcConfig[]> {
   const data = await get<{ configs?: RpcConfig[] }>('/api/rpc-configs');
   return data.configs ?? [];
 }
 
-// 保存RPC配置
+// Save an RPC configuration
 export async function saveRpcConfig(config: {
   chainId: number;
   name: string;
@@ -44,14 +44,14 @@ export async function saveRpcConfig(config: {
   invalidateRpcClients();
 }
 
-// 删除RPC配置
+// Delete an RPC configuration
 export async function deleteRpcConfig(chainId: number): Promise<void> {
   await del(`/api/rpc-configs/${chainId}`);
 
   invalidateRpcClients();
 }
 
-// 测试RPC连接
+// Test an RPC connection
 export async function testRpcConnection(
   url: string,
   expectedChainId: number,
@@ -59,7 +59,7 @@ export async function testRpcConnection(
   const startTime = Date.now();
 
   try {
-    // 1. 测试基本连接
+    // 1. Test basic connectivity
     const chainIdResponse = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -98,7 +98,7 @@ export async function testRpcConnection(
       };
     }
 
-    // 2. 测试历史数据支持
+    // 2. Test historical data support
     const blockNumberResponse = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -118,7 +118,7 @@ export async function testRpcConnection(
       if (!blockNumberData.error) {
         const currentBlock = parseInt(blockNumberData.result, 16);
 
-        // 测试历史区块查询
+        // Test a historical block query
         const testBlock = Math.max(1, currentBlock - 1000);
         const historicalResponse = await fetch(url, {
           method: 'POST',
@@ -136,7 +136,7 @@ export async function testRpcConnection(
           supportsHistory = !historicalData.error && historicalData.result;
         }
 
-        // 测试事件查询范围
+        // Test event query ranges
         if (supportsHistory) {
           const testRanges = [10000, 5000, 2000, 1000, 500];
           for (const range of testRanges) {
@@ -154,7 +154,7 @@ export async function testRpcConnection(
                       toBlock: `0x${currentBlock.toString(16)}`,
                       topics: [
                         '0x0000000000000000000000000000000000000000000000000000000000000000',
-                      ], // 不存在的topic
+                      ], // nonexistent topic
                     },
                   ],
                   id: 4,

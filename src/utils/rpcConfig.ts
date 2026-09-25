@@ -2,7 +2,7 @@ import type { RpcConfig, RpcStatus } from '../types/rpc';
 
 const RPC_CONFIG_KEY = 'my-block-explorer-rpc-configs';
 
-// 默认RPC配置
+// Default RPC configurations
 const DEFAULT_RPC_CONFIGS: RpcConfig[] = [
   // Ethereum
   {
@@ -111,14 +111,14 @@ const DEFAULT_RPC_CONFIGS: RpcConfig[] = [
 ];
 
 /**
- * 获取所有RPC配置
+ * Get all RPC configurations
  */
 export function getRpcConfigs(): RpcConfig[] {
   try {
     const stored = localStorage.getItem(RPC_CONFIG_KEY);
     if (stored) {
       const configs = JSON.parse(stored) as RpcConfig[];
-      // 合并默认配置和用户配置
+      // Merge default and user configurations
       const defaultConfigs = DEFAULT_RPC_CONFIGS.filter(
         defaultConfig =>
           !configs.some(
@@ -135,7 +135,7 @@ export function getRpcConfigs(): RpcConfig[] {
 }
 
 /**
- * 保存RPC配置
+ * Save an RPC configuration
  */
 export function saveRpcConfig(config: RpcConfig): void {
   try {
@@ -150,7 +150,7 @@ export function saveRpcConfig(config: RpcConfig): void {
       configs.push(config);
     }
 
-    // 只保存用户自定义的配置
+    // Persist only user-custom configurations
     const customConfigs = configs.filter(c => c.isCustom);
     localStorage.setItem(RPC_CONFIG_KEY, JSON.stringify(customConfigs));
   } catch (error) {
@@ -159,7 +159,7 @@ export function saveRpcConfig(config: RpcConfig): void {
 }
 
 /**
- * 删除RPC配置
+ * Delete an RPC configuration
  */
 export function deleteRpcConfig(chainId: number, url: string): void {
   try {
@@ -176,14 +176,14 @@ export function deleteRpcConfig(chainId: number, url: string): void {
 }
 
 /**
- * 获取指定链的RPC配置
+ * Get RPC configurations for a chain
  */
 export function getRpcConfigsForChain(chainId: number): RpcConfig[] {
   return getRpcConfigs().filter(config => config.chainId === chainId);
 }
 
 /**
- * 获取指定链的默认RPC配置
+ * Get the default RPC configuration for a chain
  */
 export function getDefaultRpcConfig(chainId: number): RpcConfig | null {
   const configs = getRpcConfigsForChain(chainId);
@@ -191,7 +191,7 @@ export function getDefaultRpcConfig(chainId: number): RpcConfig | null {
 }
 
 /**
- * 测试RPC连接
+ * Test an RPC connection
  */
 export async function testRpcConnection(config: RpcConfig): Promise<RpcStatus> {
   const startTime = Date.now();
@@ -208,7 +208,7 @@ export async function testRpcConnection(config: RpcConfig): Promise<RpcStatus> {
         params: [],
         id: 1,
       }),
-      signal: AbortSignal.timeout(10000), // 10秒超时
+      signal: AbortSignal.timeout(10000), // 10-second timeout
     });
 
     const latency = Date.now() - startTime;
@@ -265,7 +265,7 @@ export async function testRpcConnection(config: RpcConfig): Promise<RpcStatus> {
 }
 
 /**
- * 批量测试RPC连接
+ * Test multiple RPC connections
  */
 export async function testMultipleRpcConnections(
   configs: RpcConfig[],

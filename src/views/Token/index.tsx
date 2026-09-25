@@ -59,6 +59,8 @@ import {
 } from '@/views/Address/tokenOverview';
 import TokenTransfers, { TRANSFER_LIMIT } from '@/views/Address/TokenTransfers';
 import { getChainInfo, getChainName } from '@/config/chains';
+import { useContractSource } from '@/services/contracts';
+import { scanAbiRisks, type AbiRiskFlag } from '@/utils/abiRiskScan';
 import { aggregateMintBurn, formatSharePct, rankHolderShares } from './tokenMath';
 
 // Top-10 ranking, per the discovered-holders surface contract (the address
@@ -187,6 +189,99 @@ const nextStepLinks = css`
   }
 `;
 
+// --- Contract functions (risk scan) card ---
+
+// Severity glyphs (color-independent, the CoverageBadge idiom): an
+// exclamation mark for 'warning', a lowercase-i mark for 'info' — the two
+// severities stay distinguishable without color; the palette below only
+// reinforces the shape. Deliberately NOT the coverage vocabulary's shapes
+// (those glyphs mean data-sourcing levels, not risk severities).
+const ABI_RISK_GLYPHS: Record<AbiRiskFlag['severity'], ReactNode> = {
+  warning: (
+    <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+      <rect x="4.1" y="0.8" width="1.8" height="5.2" rx="0.9" fill="currentColor" />
+      <circle cx="5" cy="8.5" r="1.1" fill="currentColor" />
+    </svg>
+  ),
+  info: (
+    <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+      <circle cx="5" cy="2.1" r="1.1" fill="currentColor" />
+      <rect x="4.1" y="4.1" width="1.8" height="5" rx="0.9" fill="currentColor" />
+    </svg>
+  ),
+};
+
+// Flag chips wrap under the title on narrow screens (chips carry short
+// labels, but a long flag list still needs the row to break).
+const riskChipRow = css`
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--haze-space-2);
+`;
+
+// One flag chip = a quiet toggle: severity-tinted (subtle background +
+// matching text token), color-independent glyph, expands its own detail.
+const riskChip = css`
+  display: inline-flex;
+  align-items: center;
+  gap: var(--haze-space-1);
+  border: none;
+  border-radius: var(--haze-radius-md);
+  padding: 2px 10px;
+  font-family: var(--haze-font-sans);
+  font-size: var(--haze-text-xs);
+  font-weight: var(--haze-weight-medium);
+  cursor: pointer;
+`;
+
+const riskChipWarning = css`
+  background: var(--haze-color-warning-subtle);
+  color: var(--haze-color-warning);
+`;
+
+const riskChipInfo = css`
+  background: var(--haze-color-info-subtle);
+  color: var(--haze-color-info);
+`;
+
+const riskChipGlyph = css`
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+`;
+
+// Expanded per-flag detail (the CoverageBadge detail-list convention):
+// the flag's detail sentence plus its exact matching signatures.
+const riskDetailList = css`
+  margin: var(--haze-space-2) 0 0;
+  padding: var(--haze-space-2) var(--haze-space-3);
+  border: 1px solid var(--haze-color-border);
+  border-radius: var(--haze-radius-md);
+  background: var(--haze-color-bg-subtle);
+  color: var(--haze-color-text-muted);
+  font-size: var(--haze-text-xs);
+  display: flex;
+  flex-direction: column;
+  gap: var(--haze-space-1);
+  /* Long honesty sentences wrap at a readable measure instead of
+     stretching the page grid. */
+  max-width: 72ch;
+`;
+
+const riskDetailHeading = css`
+  color: var(--haze-color-text);
+  font-weight: var(--haze-weight-medium);
+`;
+
+// Matching signatures in mono, one per line — they are identifiers, not
+// prose (the truncated-hash convention's font).
+const riskEvidenceList = css`
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-family: var(--haze-font-mono);
+`;
+
 // --- Price History card (browser-side DefiLlama /chart series) ---
 
 // Sparkline box: uniformly scaled viewBox like the Charts page line
@@ -302,6 +397,11 @@ const priceChartSkeleton = css`
 `;
 
 const formatAddr = (a: string) => (a ? `${a.slice(0, 8)}...${a.slice(-6)}` : 'N/A');
+
+// Unknown-envelope narrowing for the source endpoint's JSON payload (the
+// service types it as a bare Record<string, unknown> — no `any` needed).
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null;
 
 /**
  * Dedicated not-a-token state (RouterError's not_a_contract precedent, as
@@ -610,6 +710,89 @@ function PriceHistoryCard({
   );
 }
 
+/**
+ * Contract functions (risk scan): the static vocabulary scan of this
+ * token's VERIFIED ABI (see scanAbiRisks). One severity-tinted chip per
+ * flag — glyph shapes carry the severity without color — and each chip
+ * toggles its own expanded detail listing the exact matching signatures.
+ * The mandatory caveat renders exactly once, in every state: presence of
+ * a signature in an ABI is not reachability, and none of this is an
+ * audit.
+ */
+function AbiRiskScanCard({ flags }: { flags: readonly AbiRiskFlag[] }) {
+  // Expanded flag ids (independent toggles — several chips can be open).
+  const [openIds, setOpenIds] = useState<ReadonlySet<string>>(() => new Set());
+  const toggle = (id: string) => {
+    setOpenIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  return (
+    <Card className={cardMargin}>
+      <CardHeader>
+        <CardTitle>Contract functions (risk scan)</CardTitle>
+      </CardHeader>
+      <CardContent>
+        {flags.length === 0 ? (
+          <p className={caveat}>
+            No mint, pause, blacklist, upgrade, ownership or fee-control functions
+            found in the verified ABI.
+          </p>
+        ) : (
+          <div className={riskChipRow}>
+            {flags.map(flag => (
+              <button
+                key={flag.id}
+                type="button"
+                className={cx(
+                  riskChip,
+                  flag.severity === 'warning' ? riskChipWarning : riskChipInfo,
+                )}
+                aria-expanded={openIds.has(flag.id)}
+                data-testid={`abi-risk-flag-${flag.id}`}
+                data-severity={flag.severity}
+                onClick={() => toggle(flag.id)}
+              >
+                <span className={riskChipGlyph} aria-hidden="true">
+                  {ABI_RISK_GLYPHS[flag.severity]}
+                </span>
+                {flag.label}
+              </button>
+            ))}
+          </div>
+        )}
+        {flags
+          .filter(flag => openIds.has(flag.id))
+          .map(flag => (
+            <div
+              key={flag.id}
+              className={riskDetailList}
+              data-testid={`abi-risk-detail-${flag.id}`}
+            >
+              <span className={riskDetailHeading}>{flag.label}</span>
+              <span> {flag.detail}</span>
+              <ul className={riskEvidenceList}>
+                {flag.evidence.map(signature => (
+                  <li key={signature}>{signature}</li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        <p className={caveat}>
+          Static scan of the verified ABI — function presence, not an audit; presence ≠ reachable.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function TokenPage() {
   const { params, router } = useMatched();
 
@@ -690,6 +873,49 @@ export default function TokenPage() {
   const mintBurn = useMemo(
     () => (isToken ? aggregateMintBurn(scanRows, address, isErc20) : null),
     [isToken, scanRows, address, isErc20],
+  );
+
+  // --- Static ABI risk scan (verified source only) ---
+  // The server's source/verification answer, on the shared immutable
+  // cache (the Contract page's own query — zero extra network when the
+  // user arrives from there). Parked on the disabled key (chainId 0)
+  // until the token verdict lands.
+  const sourceQuery = useContractSource(isToken ? currentChainId : 0, address);
+
+  // The scan gate: ONLY a verified server ABI qualifies — an unverified
+  // answer, a missing envelope or an unparseable ABI string all render
+  // NO card (null below). A custom ABI pasted on the Contract page is a
+  // local annotation that never reaches this page: nothing here reads
+  // localStorage, so the card's trust story stays server-verified only.
+  // Proxy tokens execute in the implementation, so a backend-resolved
+  // verified implementation ABI is the scanned surface (the events-
+  // indexing precedent); otherwise the contract's own — each ABI only
+  // under its own verification status.
+  const verifiedAbi = useMemo(() => {
+    if (!isToken) return null;
+    const envelope: unknown = sourceQuery.data;
+    if (!isRecord(envelope)) return null;
+    const source = envelope.contractSource;
+    if (!isRecord(source)) return null;
+    const impl = isRecord(source.implementationContract)
+      ? source.implementationContract
+      : null;
+    if (
+      impl !== null &&
+      impl.verificationStatus === 'verified' &&
+      typeof impl.abi === 'string'
+    ) {
+      return impl.abi;
+    }
+    return source.verificationStatus === 'verified' && typeof source.abi === 'string'
+      ? source.abi
+      : null;
+  }, [isToken, sourceQuery.data]);
+
+  // Null = nothing verified to scan (no card); [] = scanned clean.
+  const riskFlags = useMemo(
+    () => (verifiedAbi !== null ? scanAbiRisks(verifiedAbi) : null),
+    [verifiedAbi],
   );
 
   const handleChainChange = (newChainId: number) => {
@@ -918,6 +1144,12 @@ export default function TokenPage() {
             </InfoGrid>
           </CardContent>
         </Card>
+
+        {/* Static ABI risk scan: renders ONLY when the server's VERIFIED
+            ABI parsed (unverified / missing / unparseable answers render
+            nothing — a pasted custom ABI never qualifies on this page).
+            Sits below the overview so the token facts lead. */}
+        {riskFlags !== null && <AbiRiskScanCard flags={riskFlags} />}
 
         {/* Price history: the same browser-side DefiLlama layer as the
             spot rows above, as a daily sparkline through the Charts

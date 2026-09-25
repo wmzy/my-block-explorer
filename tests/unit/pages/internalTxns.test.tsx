@@ -6,8 +6,10 @@
 // not-supported-by-this-RPC info state with retry, per-tx failures listed
 // collapsed, source-list (loading/error/empty) states, the refresh
 // signal re-trace, the URL-driven trace depth (?itDepth= deep links,
-// preset control writes, silent clamping) and the live trace progress
-// counter over the standing coverage line.
+// preset control writes, silent clamping), the live trace progress
+// counter over the standing coverage line, and the deep-scan records
+// section (persisted findings above the browser flow — rows with the
+// verbatim scope note, absent on empty, one muted line on failure).
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter, createRoutes, useSearchParams } from '@native-router/react';
@@ -19,10 +21,21 @@ import {
   MAX_INTERNAL_TX_DEPTH,
   MIN_INTERNAL_TX_DEPTH,
 } from '@/utils/internalTxScan';
+import type { InternalTxRecord, InternalTxnsResult } from '@/services/addressScan';
 import { createRpcClient } from '@/utils/realTimeData';
 
 vi.mock('@/utils/realTimeData', () => ({
   createRpcClient: vi.fn(),
+}));
+
+const mocks = vi.hoisted(() => ({
+  fetchInternalTransactions: vi.fn(),
+}));
+
+// Only the service edge is replaced: the tab's records plumbing (fetch
+// on mount, absent-when-empty, non-fatal failure) stays real.
+vi.mock('@/services/addressScan', () => ({
+  fetchInternalTransactions: (...args: unknown[]) => mocks.fetchInternalTransactions(...args),
 }));
 
 const VIEWED = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
@@ -122,6 +135,9 @@ describe('InternalTxns', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(createRpcClient).mockResolvedValue({ request: requestMock } as never);
+    // No recorded findings by default: the records section stays absent
+    // so every pre-existing browser-flow pin runs byte-identical.
+    mocks.fetchInternalTransactions.mockReset().mockResolvedValue(null);
   });
 
   it('traces on mount, renders rows and the honest bounds label', async () => {
@@ -458,6 +474,122 @@ describe('InternalTxns', () => {
     expect(await screen.findByText('Traced 1 of 2 transactions…')).toBeInTheDocument();
 
     releaseSecond?.();
+    expect(await screen.findByTestId('internal-txns-summary')).toBeInTheDocument();
+  });
+});
+
+// Deep-scan records: persisted internal-tx findings fetched once per
+// chain/address and stacked ABOVE the browser tracing flow. The three
+// contract states — rows with the honest scope note, absent on empty,
+// non-fatal failure line — never replace the existing flow.
+describe('InternalTxns deep-scan records', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(createRpcClient).mockResolvedValue({ request: requestMock } as never);
+    mocks.fetchInternalTransactions.mockReset().mockResolvedValue(null);
+  });
+
+  const record = (partial: Partial<InternalTxRecord> = {}): InternalTxRecord => ({
+    transactionHash: TX_A,
+    blockNumber: 19_000_000,
+    from: SENDER,
+    to: VIEWED,
+    value: '500000000000000000', // 0.5 ETH
+    callType: 'call',
+    reverted: false,
+    tracePath: '0.1',
+    timestamp: '2026-09-20T12:00:00.000Z',
+    ...partial,
+  });
+
+  const recordsBody = (
+    transactions: InternalTxRecord[],
+    total = transactions.length,
+  ): InternalTxnsResult => ({ transactions, total, offset: 0, limit: 50 });
+
+  it('renders the records section above the browser flow with rows and the verbatim scope note', async () => {
+    // The browser flow traces but finds nothing: its table stays empty, so
+    // every row assertion below is unambiguously the records section's.
+    requestMock.mockResolvedValue({
+      type: 'CALL',
+      from: SENDER,
+      to: TARGET,
+      value: '0x0',
+      input: '0x',
+      calls: [],
+    });
+    mocks.fetchInternalTransactions.mockResolvedValue(
+      recordsBody(
+        [
+          record(),
+          record({
+            transactionHash: TX_B,
+            from: VIEWED,
+            to: TARGET,
+            callType: 'staticcall',
+            reverted: true,
+            value: '0',
+          }),
+        ],
+        120,
+      ),
+    );
+    renderTab();
+
+    const section = await screen.findByTestId('deep-scan-records');
+    expect(screen.getByText('Deep scan records')).toBeInTheDocument();
+    // The honest scope note, verbatim from the assignment.
+    expect(section).toHaveTextContent(
+      'recorded while deep-scanning blocks where this address changed — internal calls to this address inside unrelated transactions in non-scanned blocks are not included',
+    );
+
+    // Rows: tx hash links, value formatting, callType chips, reverted marker.
+    expect(screen.getByText('0xaaaaaaaa...aaaaaaaa')).toBeInTheDocument();
+    expect(screen.getByText('0xbbbbbbbb...bbbbbbbb')).toBeInTheDocument();
+    expect(screen.getByText('0.5000 ETH')).toBeInTheDocument();
+    expect(screen.getByText('call')).toBeInTheDocument();
+    expect(screen.getByText('staticcall')).toBeInTheDocument();
+    expect(screen.getByText('reverted')).toBeInTheDocument();
+    // Honest disclosure when the fetch holds fewer rows than the total.
+    expect(section).toHaveTextContent('Showing 2 of 120');
+
+    // The fetch rode the pinned query (first page) against this address.
+    expect(mocks.fetchInternalTransactions).toHaveBeenCalledWith(1, VIEWED, {
+      offset: 0,
+      limit: 50,
+    });
+
+    // The browser flow still renders below (its own summary line).
+    expect(await screen.findByTestId('internal-txns-summary')).toBeInTheDocument();
+  });
+
+  it('keeps the section absent on an empty result — the browser flow stays byte-identical', async () => {
+    requestMock.mockResolvedValue(traceWithInternalPayout());
+    mocks.fetchInternalTransactions.mockResolvedValue(recordsBody([]));
+    renderTab();
+
+    expect(await screen.findByTestId('internal-txns-summary')).toBeInTheDocument();
+    await waitFor(() =>
+      expect(mocks.fetchInternalTransactions).toHaveBeenCalledWith(1, VIEWED, {
+        offset: 0,
+        limit: 50,
+      }),
+    );
+    expect(screen.queryByTestId('deep-scan-records')).not.toBeInTheDocument();
+    expect(
+      screen.queryByText('Deep-scan records are unavailable right now'),
+    ).not.toBeInTheDocument();
+  });
+
+  it('downgrades a fetch failure to one muted line and keeps the browser flow', async () => {
+    requestMock.mockResolvedValue(traceWithInternalPayout());
+    mocks.fetchInternalTransactions.mockRejectedValue(new Error('HTTP 502'));
+    renderTab();
+
+    expect(
+      await screen.findByText('Deep-scan records are unavailable right now'),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId('deep-scan-records')).not.toBeInTheDocument();
     expect(await screen.findByTestId('internal-txns-summary')).toBeInTheDocument();
   });
 });
