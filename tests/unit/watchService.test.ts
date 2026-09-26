@@ -185,6 +185,9 @@ describe('toSubscriptionView — subscription row shaping', () => {
       address: ADDRESS.toUpperCase(),
       label: 'Cold wallet',
       lastProcessedBlock: 19_000_000n,
+      webhookUrl: null,
+      webhookStatus: null,
+      webhookLastAt: null,
       createdAt: new Date('2026-09-23T09:00:00.000Z'),
       updatedAt: new Date('2026-09-23T09:30:00.000Z'),
     });
@@ -193,9 +196,29 @@ describe('toSubscriptionView — subscription row shaping', () => {
       address: ADDRESS,
       label: 'Cold wallet',
       lastProcessedBlock: '19000000',
+      webhookUrl: null,
+      webhookStatus: null,
+      webhookLastAt: null,
       createdAt: '2026-09-23T09:00:00.000Z',
       updatedAt: '2026-09-23T09:30:00.000Z',
     });
+  });
+
+  it('surfaces the webhook delivery fields (url, status, ISO last-at)', () => {
+    const view = toSubscriptionView({
+      chainId: 1,
+      address: ADDRESS,
+      label: null,
+      lastProcessedBlock: null,
+      webhookUrl: 'https://discord.com/api/webhooks/123/token',
+      webhookStatus: 'failed: HTTP 429',
+      webhookLastAt: new Date('2026-09-25T08:00:00.000Z'),
+      createdAt: new Date('2026-09-23T09:00:00.000Z'),
+      updatedAt: new Date('2026-09-25T08:00:00.000Z'),
+    });
+    expect(view.webhookUrl).toBe('https://discord.com/api/webhooks/123/token');
+    expect(view.webhookStatus).toBe('failed: HTTP 429');
+    expect(view.webhookLastAt).toBe('2026-09-25T08:00:00.000Z');
   });
 
   it('keeps a non-baselined cursor honest (null) and tolerates null timestamps', () => {
@@ -204,6 +227,9 @@ describe('toSubscriptionView — subscription row shaping', () => {
       address: ADDRESS,
       label: null,
       lastProcessedBlock: null,
+      webhookUrl: null,
+      webhookStatus: null,
+      webhookLastAt: null,
       createdAt: null,
       updatedAt: null,
     });

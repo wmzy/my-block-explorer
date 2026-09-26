@@ -1036,8 +1036,9 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
         <h3>Backup &amp; restore</h3>
         <p>
           Export your address labels, custom chains and this browser's
-          preferences (watchlist, theme, IPFS gateway, custom ABIs) to one
-          JSON file, and restore them here or on another machine.
+          preferences (watchlist, theme, IPFS gateway, custom ABIs, private
+          notes) to one JSON file, and restore them here or on another
+          machine.
         </p>
         <div className={`${buttonStyles} btn-group`}>
           <button

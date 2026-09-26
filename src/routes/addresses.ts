@@ -34,6 +34,17 @@ import {
 
 const app = new Hono();
 
+// Wei-denominated value filter params: exactly a non-negative integer
+// decimal string parses (BigInt-exact on the wire); anything else —
+// negative, NaN, fractional, scientific — is undefined here and a loud
+// 400 at the call site (never a silent fallthrough).
+const WEI_VALUE_RE = /^\d+$/;
+const parseWeiFilterParam = (raw: string | undefined): bigint | undefined => {
+  if (raw === undefined) return undefined;
+  if (!WEI_VALUE_RE.test(raw)) return undefined;
+  return BigInt(raw);
+};
+
 app.get('/chains/:chainId/addresses/:address', async (c) => {
   const chainId = getValidatedChainId(c.req.param('chainId'));
   const address = getValidatedAddress(c.req.param('address'));
@@ -140,6 +151,83 @@ app.get('/chains/:chainId/addresses/:address/transactions', addressTransactionsR
   // byte-identical for existing consumers.
   const includeBalanceHistory = c.req.query('balanceHistory') === '1';
 
+  // Optional narrowing filters (?fromAddress / ?toAddress / ?minValue /
+  // ?maxValue), applied server-side over the SAME cached discovered set
+  // for the current window — never a new scan, never a coverage claim.
+  // Empty-string params read as absent (the limit/page convention).
+  // Addresses validate through the same two-tier getValidatedAddress as
+  // the path param; wei values must be non-negative integer decimals
+  // (BigInt-exact — 'NaN', fractions, negatives are loud 400s, not
+  // silent fallthroughs).
+  const echoParam = (raw: string | undefined): string | undefined =>
+    raw !== undefined && raw !== '' ? raw : undefined;
+  const rawFromAddress = echoParam(c.req.query('fromAddress'));
+  const rawToAddress = echoParam(c.req.query('toAddress'));
+  const rawMinValue = echoParam(c.req.query('minValue'));
+  const rawMaxValue = echoParam(c.req.query('maxValue'));
+
+  let fromAddressFilter: string | undefined;
+  if (rawFromAddress !== undefined) {
+    try {
+      fromAddressFilter = getValidatedAddress(rawFromAddress);
+    } catch {
+      return c.json(
+        {
+          error: 'invalid_address',
+          message: 'fromAddress must be a valid hex address',
+        },
+        400,
+      );
+    }
+  }
+  let toAddressFilter: string | undefined;
+  if (rawToAddress !== undefined) {
+    try {
+      toAddressFilter = getValidatedAddress(rawToAddress);
+    } catch {
+      return c.json(
+        {
+          error: 'invalid_address',
+          message: 'toAddress must be a valid hex address',
+        },
+        400,
+      );
+    }
+  }
+  const parsedMinValue = parseWeiFilterParam(rawMinValue);
+  const parsedMaxValue = parseWeiFilterParam(rawMaxValue);
+  if (rawMinValue !== undefined && parsedMinValue === undefined) {
+    return c.json(
+      {
+        error: 'invalid_value',
+        message: 'minValue must be a non-negative integer wei amount',
+      },
+      400,
+    );
+  }
+  if (rawMaxValue !== undefined && parsedMaxValue === undefined) {
+    return c.json(
+      {
+        error: 'invalid_value',
+        message: 'maxValue must be a non-negative integer wei amount',
+      },
+      400,
+    );
+  }
+
+  // The service only sees a filters object when at least one filter is
+  // present — the unfiltered call shape (and response) stays untouched.
+  const txFilters =
+    fromAddressFilter === undefined && toAddressFilter === undefined
+    && parsedMinValue === undefined && parsedMaxValue === undefined
+      ? undefined
+      : {
+          ...(fromAddressFilter !== undefined ? { fromAddress: fromAddressFilter } : {}),
+          ...(toAddressFilter !== undefined ? { toAddress: toAddressFilter } : {}),
+          ...(parsedMinValue !== undefined ? { minValue: parsedMinValue } : {}),
+          ...(parsedMaxValue !== undefined ? { maxValue: parsedMaxValue } : {}),
+        };
+
   try {
     // Additive deep-scan contract: the `deepScan` field appears ONLY when
     // a scan job row exists (no row → legacy response byte-identical).
@@ -176,6 +264,7 @@ app.get('/chains/:chainId/addresses/:address/transactions', addressTransactionsR
       {
         includeBalancePoints: includeBalanceHistory,
         ...(deepScanFindings ? { deepScanFindings } : {}),
+        ...(txFilters ? { filters: txFilters } : {}),
       },
     );
     c.header('X-Data-Source', result.method);
@@ -209,6 +298,20 @@ app.get('/chains/:chainId/addresses/:address/transactions', addressTransactionsR
             // count includes the anchor (discovered txs + 1 when non-empty).
             balancePoints: result.balancePoints ?? [],
             balancePointsCount: result.balancePoints?.length ?? 0,
+          }
+        : {}),
+      // Echo of the filters applied, exactly as received — present ONLY
+      // when at least one filter param was sent (unfiltered responses
+      // stay byte-identical). `total`/pagination above already describe
+      // the filtered view; filters never claim completeness.
+      ...(txFilters
+        ? {
+            filtersApplied: {
+              ...(rawFromAddress !== undefined ? { fromAddress: rawFromAddress } : {}),
+              ...(rawToAddress !== undefined ? { toAddress: rawToAddress } : {}),
+              ...(rawMinValue !== undefined ? { minValue: rawMinValue } : {}),
+              ...(rawMaxValue !== undefined ? { maxValue: rawMaxValue } : {}),
+            },
           }
         : {}),
       ...(scanJobDto ? { deepScan: scanJobDto } : {}),

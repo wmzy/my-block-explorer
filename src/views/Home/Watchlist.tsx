@@ -20,13 +20,14 @@
 //   guard local and testable);
 // - only the first MAX_TXS_SCANNED transactions of a block are examined;
 // - a failed fetch skips that block silently (no retry, no error surface).
-import { css } from '@linaria/core';
+import { css, cx } from '@linaria/core';
 import { useEffect, useRef, useState } from 'react';
 import { TypedLink } from '@native-router/react';
 import { Input } from 'haze-ui';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
-import { formatAddress, formatHash, formatNumber } from '@/utils/format';
+import { formatAddress, formatHash, formatNumber, formatRelativeTime } from '@/utils/format';
+import { isDiscordWebhookUrl } from '@/utils/webhooks';
 import { createRpcClient } from '@/utils/realTimeData';
 import {
   addWatchlistEntry,
@@ -201,6 +202,38 @@ const labelField = css`
   @media (max-width: 768px) {
     flex: 1 1 auto;
   }
+`;
+
+const webhookField = css`
+  flex: 1 1 14rem;
+  min-width: 0;
+
+  @media (max-width: 768px) {
+    flex: 1 1 auto;
+  }
+`;
+
+const discordHint = css`
+  margin-top: var(--haze-space-2);
+  font-size: var(--haze-text-xs);
+  color: var(--haze-color-primary, #5865f2);
+`;
+
+const entryMain = css`
+  display: flex;
+  flex-direction: column;
+  gap: var(--haze-space-1);
+  min-width: 0;
+`;
+
+const webhookMeta = css`
+  font-size: var(--haze-text-xs);
+  color: var(--haze-color-text-muted);
+  overflow-wrap: anywhere;
+`;
+
+const webhookStatusFailed = css`
+  color: var(--haze-color-danger, #d33);
 `;
 
 const cursorMeta = css`
@@ -500,6 +533,7 @@ function ServerWatchPanelConnected({ chainId }: { chainId: number }) {
   const subs = useWatchSubscriptions(chainId);
   const [addressInput, setAddressInput] = useState('');
   const [labelInput, setLabelInput] = useState('');
+  const [webhookInput, setWebhookInput] = useState('');
   const [addError, setAddError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [removeError, setRemoveError] = useState<string | null>(null);
@@ -541,13 +575,38 @@ function ServerWatchPanelConnected({ chainId }: { chainId: number }) {
     setBusy(true);
     setAddError(null);
     try {
-      await saveWatchSubscription(chainId, trimmed, labelInput.trim() === '' ? null : labelInput.trim());
+      // Empty webhook field = leave the stored webhook unchanged (the
+      // server treats an absent key as unchanged — a label-only re-put
+      // must not drop a configured webhook). Clearing is its own
+      // per-row action below.
+      await saveWatchSubscription(
+        chainId,
+        trimmed,
+        labelInput.trim() === '' ? null : labelInput.trim(),
+        webhookInput.trim() === '' ? undefined : webhookInput.trim(),
+      );
       setAddressInput('');
       setLabelInput('');
+      setWebhookInput('');
       void subs.refetch();
       setEventsReload(n => n + 1);
     } catch (error) {
       setAddError(describeServerError(error, 'Failed to save the subscription.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Per-row webhook clear: the API's "empty string = clear" channel.
+  // The label rides along unchanged so the row keeps its annotation.
+  const handleClearWebhook = async (address: string, label: string | null) => {
+    setBusy(true);
+    setRemoveError(null);
+    try {
+      await saveWatchSubscription(chainId, address, label, '');
+      void subs.refetch();
+    } catch (error) {
+      setRemoveError(describeServerError(error, 'Failed to clear the webhook.'));
     } finally {
       setBusy(false);
     }
@@ -619,6 +678,12 @@ function ServerWatchPanelConnected({ chainId }: { chainId: number }) {
             value={labelInput}
             onChange={e => setLabelInput(e.target.value)}
           />
+          <Input
+            className={webhookField}
+            placeholder="Webhook URL (optional, Discord supported)"
+            value={webhookInput}
+            onChange={e => setWebhookInput(e.target.value)}
+          />
           <Button
             variant="outline"
             disabled={!addressInput.trim() || busy}
@@ -627,6 +692,11 @@ function ServerWatchPanelConnected({ chainId }: { chainId: number }) {
             Watch
           </Button>
         </form>
+        {isDiscordWebhookUrl(webhookInput.trim()) && (
+          <div className={discordHint}>
+            Discord webhook detected — sends an embed
+          </div>
+        )}
         {addError !== null && <div className={serverErrorRow}>{addError}</div>}
         {subs.error !== undefined && (
           <div className={serverErrorRow}>
@@ -639,17 +709,48 @@ function ServerWatchPanelConnected({ chainId }: { chainId: number }) {
           <div className={entryList}>
             {subscriptionRows.map(row => (
               <div key={row.address} className={entryRow}>
-                <TypedLink to={`/chain/${chainId}/address/${row.address}`} title={row.address}>
-                  {row.label !== null && row.label !== ''
-                    ? `${row.label} · ${formatAddress(row.address)}`
-                    : formatAddress(row.address)}
-                </TypedLink>
+                <div className={entryMain}>
+                  <TypedLink to={`/chain/${chainId}/address/${row.address}`} title={row.address}>
+                    {row.label !== null && row.label !== ''
+                      ? `${row.label} · ${formatAddress(row.address)}`
+                      : formatAddress(row.address)}
+                  </TypedLink>
+                  {row.webhookUrl !== null && (
+                    <span
+                      className={cx(
+                        webhookMeta,
+                        row.webhookStatus !== null
+                        && row.webhookStatus !== 'ok'
+                        && webhookStatusFailed,
+                      )}
+                      title={row.webhookUrl}
+                    >
+                      webhook{' '}
+                      {row.webhookStatus === null
+                        ? 'pending'
+                        : row.webhookStatus === 'ok'
+                          ? 'ok'
+                          : row.webhookStatus}
+                      {row.webhookLastAt !== null && ` · last ${formatRelativeTime(row.webhookLastAt)}`}
+                    </span>
+                  )}
+                </div>
                 <span className={rowActions}>
                   <span className={cursorMeta}>
                     {row.lastProcessedBlock !== null
                       ? `through block ${formatNumber(row.lastProcessedBlock)}`
                       : 'starting at the next block'}
                   </span>
+                  {row.webhookUrl !== null && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={busy}
+                      onClick={() => void handleClearWebhook(row.address, row.label)}
+                    >
+                      Clear webhook
+                    </Button>
+                  )}
                   <Button
                     variant="outline"
                     size="sm"
@@ -690,7 +791,11 @@ function ServerWatchPanelConnected({ chainId }: { chainId: number }) {
           Watching runs while your local backend runs; browser notifications
           arrive while an explorer tab is open. Gaps wider than 200 blocks
           are skipped and reported. Watching starts at the moment you
-          subscribe — it never walks history.
+          subscribe — it never walks history. Webhook delivery also runs
+          from the backend while it runs: each watched event is POSTed once
+          (5s timeout, one retry), and each row shows the recorded outcome
+          of its latest delivery — it does not retry until you re-put the
+          subscription.
         </div>
       </CardContent>
     </Card>

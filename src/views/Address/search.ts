@@ -3,6 +3,7 @@ import {
   clampInternalTxDepth,
   DEFAULT_INTERNAL_TX_DEPTH,
 } from '@/utils/internalTxScan';
+import { checkAddressValidity } from './addressValidity';
 
 // The address page's URL-driven state, shared by every writer on the page
 // (the view for the tx tab and the active-tab switch, TokenTransfers for
@@ -66,6 +67,18 @@ export const addressSearchSchema = z.object({
   ttStandard: transferStandardSchema.optional().catch(undefined),
   itDepth: z.coerce.number().int().positive().optional().catch(undefined),
   tab: activityTabSchema.optional().catch(undefined),
+  // Tx-tab advanced filters (?tfFrom= / ?tfTo= / ?tfMin= / ?tfMax=):
+  // raw strings — addresses stay strings (never coerced) and wei amounts
+  // stay exact beyond 2^53 (BigInt on the server). Same
+  // optional().catch(undefined) discipline as ?tab=: never a `.catch(...)`
+  // default (it would collapse "explicit default" with "absent" and
+  // deadlock the filter bar's open/state machine). Malformed values
+  // SURVIVE the parse as strings — effectiveTxFilters is the layer that
+  // drops invalid ones, so the bar can show what a shared link carried.
+  tfFrom: z.string().optional().catch(undefined),
+  tfTo: z.string().optional().catch(undefined),
+  tfMin: z.string().optional().catch(undefined),
+  tfMax: z.string().optional().catch(undefined),
 });
 
 // Effective internal-tx trace depth for the internal tab. An explicit
@@ -95,6 +108,57 @@ export const effectiveActivityTab = (
 export const effectiveTransferStandard = (
   ttStandard: TransferStandardId | undefined,
 ): TransferStandardId | undefined => ttStandard;
+
+// Effective tx-tab advanced filters: the values safe to SEND (and to
+// show as active). Absent means absent; an explicit value survives only
+// when it is valid — addresses pass the same two-tier shape/checksum
+// verdict as the server's getValidatedAddress (the frontend twin in
+// ./addressValidity), wei amounts must be non-negative integer decimals.
+// Invalid values degrade to undefined here (never to a default), so a
+// malformed hand-crafted link can never fire a doomed request. Values
+// pass through verbatim (no normalization): the backend compares
+// case-insensitively. Pure so the absent-vs-explicit-vs-invalid
+// degradation contract is testable.
+export type EffectiveTxFilters = {
+  fromAddress?: string;
+  toAddress?: string;
+  minValue?: string;
+  maxValue?: string;
+};
+
+const TF_WEI_RE = /^\d+$/;
+
+const validFilterAddress = (raw: string | undefined): string | undefined => {
+  if (raw === undefined || raw === '') return undefined;
+  return checkAddressValidity(raw).valid ? raw : undefined;
+};
+
+const validFilterWei = (raw: string | undefined): string | undefined => {
+  if (raw === undefined || raw === '') return undefined;
+  return TF_WEI_RE.test(raw) ? raw : undefined;
+};
+
+export const effectiveTxFilters = (search: {
+  tfFrom?: string;
+  tfTo?: string;
+  tfMin?: string;
+  tfMax?: string;
+}): EffectiveTxFilters => ({
+  ...(validFilterAddress(search.tfFrom) !== undefined
+    ? { fromAddress: search.tfFrom }
+    : {}),
+  ...(validFilterAddress(search.tfTo) !== undefined ? { toAddress: search.tfTo } : {}),
+  ...(validFilterWei(search.tfMin) !== undefined ? { minValue: search.tfMin } : {}),
+  ...(validFilterWei(search.tfMax) !== undefined ? { maxValue: search.tfMax } : {}),
+});
+
+// Whether any effective filter is active — gates the honest
+// filtered-empty state and the active-filter count.
+export const hasActiveTxFilters = (filters: EffectiveTxFilters): boolean =>
+  filters.fromAddress !== undefined
+  || filters.toAddress !== undefined
+  || filters.minValue !== undefined
+  || filters.maxValue !== undefined;
 
 // True when the token-transfers payload has settled (data present, not
 // loading, no error) with zero rows at this page offset on a page past

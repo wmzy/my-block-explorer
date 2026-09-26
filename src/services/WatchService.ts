@@ -35,6 +35,16 @@ import type { Log } from 'viem';
 import { db, watchSubscriptions, type WatchSubscriptionRecord } from '../database/init';
 import { rpcManager } from './RpcManager';
 import { getDefaultRpcUrl } from '../config/chains';
+import { getExternalTxLinks } from '../config/externalTools';
+import {
+  buildDiscordMessage,
+  buildWebhookPayload,
+  fetchWebhookSender,
+  isDiscordWebhookUrl,
+  sendWebhookWithRetry,
+  shortWebhookReason,
+  type WebhookSender,
+} from '../utils/webhooks';
 import { createLogger } from '../server/logger';
 
 const logger = createLogger('watch-service');
@@ -63,6 +73,11 @@ export const WATCH_GETLOGS_CONCURRENCY = 5;
 // Default/cap for GET /chains/:chainId/watch/events?limit=.
 export const WATCH_EVENTS_DEFAULT_LIMIT = 25;
 export const WATCH_EVENTS_MAX_LIMIT = 100;
+
+// Webhook delivered-id memory: replayed ranges (at-least-once cursor
+// semantics) must not double-POST; the most recent ids are remembered
+// and the oldest evicted past this cap.
+export const WATCH_WEBHOOK_DEDUPE_CAPACITY = 1_000;
 
 // One feed event — the wire shape shared by the ring buffer (GET
 // /watch/events), the SSE `watch` frames (routes/stream.ts) and the
@@ -220,12 +235,19 @@ export class WatchEventRing {
 
 // API row shape for a subscription (routes/watch.ts GET/PUT). Dates and
 // bigints become strings on the wire; nulls stay null — a cursor that has
-// not baselined yet is honest about watching-not-started.
+// not baselined yet is honest about watching-not-started, a null
+// webhookStatus about never-delivered-yet (or a freshly re-put URL).
 export type WatchSubscriptionView = {
   chainId: number;
   address: string;
   label: string | null;
   lastProcessedBlock: string | null;
+  /** Delivery endpoint; null = no webhook configured. */
+  webhookUrl: string | null;
+  /** 'ok' | 'failed: <short reason>' | null (no delivery yet / URL just changed). */
+  webhookStatus: string | null;
+  /** ISO time of the last delivery attempt; null before the first. */
+  webhookLastAt: string | null;
   createdAt: string | null;
   updatedAt: string | null;
 };
@@ -240,6 +262,10 @@ export function toSubscriptionView(row: WatchSubscriptionRecord): WatchSubscript
       row.lastProcessedBlock !== null && row.lastProcessedBlock !== undefined
         ? row.lastProcessedBlock.toString()
         : null,
+    webhookUrl: row.webhookUrl ?? null,
+    webhookStatus: row.webhookStatus ?? null,
+    webhookLastAt:
+      row.webhookLastAt instanceof Date ? row.webhookLastAt.toISOString() : null,
     createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : null,
     updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : null,
   };
@@ -251,6 +277,16 @@ export type WatchUpsertResult =
   | { ok: true; subscription: WatchSubscriptionView }
   | { ok: false; error: 'rpc_unavailable' | 'watch_full'; message: string };
 
+// Log-safe webhook identity: Discord (and similar) webhook URLs embed
+// auth tokens in the path — logs carry the HOST only, never the URL.
+const webhookHostForLog = (url: string): string => {
+  try {
+    return new URL(url).host;
+  } catch {
+    return '(invalid url)';
+  }
+};
+
 export class WatchService {
   private rings = new Map<number, WatchEventRing>();
   private listeners = new Map<number, Set<(event: WatchFeedEvent) => void>>();
@@ -259,6 +295,17 @@ export class WatchService {
   // Chains currently in the "no working RPC client" skip state — used to
   // log the outage once per episode instead of every 4s tick.
   private rpcMissingChains = new Set<number>();
+  // Webhook delivery seam: the fetch sender by default, a fake in tests.
+  private readonly webhookSender: WebhookSender;
+  // Already-POSTed event ids (the chain:txHash:logIndex dedupe basis —
+  // the same basis the SSE consumers use). At-least-once publishing plus
+  // a failed cursor write replays a range; this keeps the replay from
+  // double-notifying the webhook endpoint. Bounded, oldest evicted.
+  private readonly deliveredWebhookIds = new Set<string>();
+
+  constructor(options: { webhookSender?: WebhookSender } = {}) {
+    this.webhookSender = options.webhookSender ?? fetchWebhookSender;
+  }
 
   /** Start the tick interval (idempotent; the interval never keeps the process alive). */
   start(): void {
@@ -324,11 +371,19 @@ export class WatchService {
    * re-put only replaces the label and NEVER resets the cursor. Rejects
    * honestly (no working RPC for the chain / per-chain cap) instead of
    * storing a row no tick could ever serve.
+   *
+   * Webhook URL semantics (routes/watch.ts parses the body the same
+   * way): undefined = absent = UNCHANGED — the PUT is an upsert keyed
+   * by address, so a label-only re-put must not silently drop the
+   * configured webhook; a non-empty string sets it (delivery status
+   * bookkeeping resets — status belongs to the URL that produced it);
+   * null = explicit clear (also resets the status columns).
    */
   async upsertSubscription(
     chainId: number,
     address: `0x${string}`,
     label: string | null,
+    webhookUrl: string | null | undefined = undefined,
   ): Promise<WatchUpsertResult> {
     // Gate 1: the chain must have a usable RPC config — otherwise the
     // subscription could never be served. This names the missing config
@@ -373,16 +428,26 @@ export class WatchService {
         address,
         label,
         lastProcessedBlock: null,
+        webhookUrl: webhookUrl ?? null,
         createdAt: now,
         updatedAt: now,
       })
-      // Conflict path updates ONLY the label: the cursor (and createdAt)
-      // belong to the subscription's history, not to this edit.
+      // Conflict path updates ONLY the label (and, when the PUT carried
+      // a webhookUrl — set, cleared, or unchanged-by-absence): the
+      // cursor (and createdAt) belong to the subscription's history,
+      // not to this edit. A webhook change resets the delivery status
+      // columns: they describe deliveries to the CURRENT url.
       .onConflictDoUpdate({
         target: [watchSubscriptions.chainId, watchSubscriptions.address],
-        set: { label, updatedAt: now },
+        set:
+          webhookUrl !== undefined
+            ? { label, webhookUrl, webhookStatus: null, webhookLastAt: null, updatedAt: now }
+            : { label, updatedAt: now },
       });
 
+    // The effective webhook fields for the response: the PUT's value
+    // when it carried one, else the stored row's (absent = unchanged).
+    const webhookChanged = webhookUrl !== undefined;
     return {
       ok: true,
       subscription: {
@@ -392,6 +457,13 @@ export class WatchService {
         lastProcessedBlock:
           existing?.lastProcessedBlock !== null && existing?.lastProcessedBlock !== undefined
             ? existing.lastProcessedBlock.toString()
+            : null,
+        webhookUrl: webhookChanged ? webhookUrl : (existing?.webhookUrl ?? null),
+        webhookStatus: webhookChanged ? null : (existing?.webhookStatus ?? null),
+        webhookLastAt: webhookChanged
+          ? null
+          : existing?.webhookLastAt instanceof Date
+            ? existing.webhookLastAt.toISOString()
             : null,
         createdAt:
           existing?.createdAt instanceof Date ? existing.createdAt.toISOString() : now.toISOString(),
@@ -528,12 +600,103 @@ export class WatchService {
     // this range next tick (at-least-once) instead of losing events.
     this.publish(chainId, events);
 
+    // Webhook delivery rides the same at-least-once window — after the
+    // feed publish, before the cursor moves: a crash mid-delivery
+    // replays the range and the delivered-id set dedupes the POSTs. The
+    // guard keeps a subscription WITHOUT a webhook on today's exact
+    // write pattern (one cursor update, nothing else).
+    if (sub.webhookUrl) {
+      await this.deliverWebhooks(chainId, sub, logs);
+    }
+
     await db
       .update(watchSubscriptions)
       .set({ lastProcessedBlock: head, updatedAt: new Date() })
       .where(
         and(eq(watchSubscriptions.chainId, chainId), eq(watchSubscriptions.address, sub.address)),
       );
+  }
+
+  // Per-event webhook delivery for one swept subscription. Sends the
+  // generic payload (or Discord's embed shape) for every NEW log —
+  // deduped on the chain:txHash:logIndex id — then records the honest
+  // aggregate outcome on the row: 'ok' when every attempt delivered,
+  // 'failed: <reason>' when ANY attempt stayed failed after its one
+  // retry (one lost event must not be painted over by a later 'ok'),
+  // webhookLastAt marking the last attempt. NEVER throws per event: a
+  // delivery failure (or even a crashing sender) is caught, recorded
+  // and logged; the tick loop stays uncrashable. A status-write failure
+  // does propagate to the sweep's catch — the range replays next tick,
+  // with the POSTs already deduped.
+  private async deliverWebhooks(
+    chainId: number,
+    sub: WatchSubscriptionRecord,
+    logs: Log[],
+  ): Promise<void> {
+    const url = sub.webhookUrl;
+    if (url === null || url === undefined || url === '') return;
+
+    const discord = isDiscordWebhookUrl(url);
+    let failure: string | null = null;
+    let attempted = false;
+    let lastAttemptAt = new Date();
+
+    for (const log of logs) {
+      const payload = buildWebhookPayload(chainId, sub.address, log);
+      if (this.deliveredWebhookIds.has(payload.id)) continue;
+      this.rememberDeliveredWebhookId(payload.id);
+
+      const body = discord
+        ? buildDiscordMessage(
+            payload,
+            payload.transactionHash !== null
+              ? (getExternalTxLinks(chainId, payload.transactionHash)[0]?.url ?? null)
+              : null,
+          )
+        : payload;
+      attempted = true;
+      lastAttemptAt = new Date();
+      try {
+        const result = await sendWebhookWithRetry(url, body, this.webhookSender);
+        if (result.ok) continue;
+        failure = result.reason;
+        logger.warn(
+          { chainId, address: sub.address, host: webhookHostForLog(url), reason: result.reason },
+          'Watch webhook delivery failed after its retry; status recorded on the subscription',
+        );
+      } catch (err) {
+        // The sender contract is never-throw; this guards a broken
+        // sender implementation all the same — record, don't crash.
+        failure = shortWebhookReason(err instanceof Error ? err.message : 'delivery crashed');
+        logger.warn(
+          { err, chainId, address: sub.address, host: webhookHostForLog(url) },
+          'Watch webhook delivery threw (sender contract violated); recorded and skipped',
+        );
+      }
+    }
+
+    if (!attempted) return;
+    await db
+      .update(watchSubscriptions)
+      .set({
+        webhookStatus: failure !== null ? `failed: ${failure}` : 'ok',
+        webhookLastAt: lastAttemptAt,
+        updatedAt: lastAttemptAt,
+      })
+      .where(
+        and(eq(watchSubscriptions.chainId, chainId), eq(watchSubscriptions.address, sub.address)),
+      );
+  }
+
+  // Bounded memory of already-delivered webhook ids: insertion-ordered,
+  // oldest evicted past the cap (a replayed range's duplicates drop out
+  // eventually; the recent window is what matters for replay dedupe).
+  private rememberDeliveredWebhookId(id: string): void {
+    this.deliveredWebhookIds.add(id);
+    if (this.deliveredWebhookIds.size > WATCH_WEBHOOK_DEDUPE_CAPACITY) {
+      const oldest = this.deliveredWebhookIds.values().next().value;
+      if (oldest !== undefined) this.deliveredWebhookIds.delete(oldest);
+    }
   }
 
   // Ring + listener fan-out for one chain's freshly produced events, in

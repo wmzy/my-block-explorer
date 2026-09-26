@@ -26,6 +26,7 @@ import { describeBlockProducer } from '@/utils/blockRpcData';
 import { formatRelativeTime } from '@/utils/format';
 import { parseBlockNumberParam } from '@/utils/chainParam';
 import { createRpcClient } from '@/utils/realTimeData';
+import { computeBlockNav } from './nav';
 
 // Gas quantities are on-chain integers serialized as strings: format them
 // BigInt-safe (parseInt would silently lose precision past 2^53).
@@ -199,6 +200,81 @@ const headerRow = css`
   flex-wrap: wrap;
 `;
 
+// Prev/next controls in the header row: pill-styled to sit beside the
+// finality/testnet badges and the external links.
+const blockNavStyle = css`
+  display: inline-flex;
+  align-items: center;
+  gap: var(--haze-space-2);
+`;
+
+// One class serves both states — the enabled step renders a TypedLink
+// (an <a>), the disabled boundary a native <button disabled> — so the two
+// stay pixel-identical next to each other. Native button/link semantics
+// keep the pair keyboard-accessible without extra effort.
+const blockNavButtonStyle = css`
+  display: inline-flex;
+  align-items: center;
+  gap: var(--haze-space-1);
+  padding: var(--haze-space-1) var(--haze-space-3);
+  font-size: var(--haze-text-xs);
+  font-family: var(--haze-font-mono);
+  color: var(--haze-color-text-muted);
+  background: var(--haze-color-bg-muted);
+  border: 1px solid transparent;
+  border-radius: var(--haze-radius-full);
+  text-decoration: none;
+  transition: all 0.15s ease;
+  cursor: pointer;
+
+  &:hover:not(:disabled) {
+    color: var(--haze-color-text);
+    background: color-mix(in srgb, var(--haze-color-primary) 10%, transparent);
+    border-color: color-mix(in srgb, var(--haze-color-primary) 30%, transparent);
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.55;
+  }
+`;
+
+// Chevron glyphs for the prev/next steps (inline SVG, not emoji, per
+// project style — same props pattern as TopNavigation's ThemeIcon).
+// Decorative: the controls' accessible names come from their text.
+const navIconProps = {
+  'viewBox': '0 0 24 24',
+  'fill': 'none',
+  'stroke': 'currentColor',
+  'strokeWidth': 2,
+  'strokeLinecap': 'round',
+  'strokeLinejoin': 'round',
+  'aria-hidden': true,
+  'focusable': 'false',
+} as const;
+
+const navIconStyle = css`
+  width: 12px;
+  height: 12px;
+  flex: none;
+`;
+
+function ChevronLeftIcon() {
+  return (
+    <svg {...navIconProps} className={navIconStyle}>
+      <path d="M15 18l-6-6 6-6" />
+    </svg>
+  );
+}
+
+function ChevronRightIcon() {
+  return (
+    <svg {...navIconProps} className={navIconStyle}>
+      <path d="M9 6l6 6-6 6" />
+    </svg>
+  );
+}
+
 // The found-block page stacks the details card and the Raw JSON appendix
 // with the same vertical rhythm as the tx detail page's card stack.
 const detailStackStyle = css`
@@ -342,6 +418,17 @@ export default function BlockDetail() {
   const finalityLabel =
     parsedBlockNumber === null ? undefined : finalityLabelFor(finalityHeads, parsedBlockNumber);
 
+  // Prev/next header navigation, derived from the URL param (available in
+  // every state — loading, found, future) against the head the view's
+  // EXISTING probe already observed — no new probe is added. The head probe
+  // only runs on the error path, so a normally loaded block has no observed
+  // head: computeBlockNav then hands back a candidate next flagged
+  // nextUnknown, and the link says so honestly instead of being disabled on
+  // a guess (landing on a not-yet-mined number is itself an honest page).
+  const navHead = latestBlock !== undefined ? Number(latestBlock) : null;
+  const blockNav =
+    parsedBlockNumber === null ? undefined : computeBlockNav(parsedBlockNumber, navHead);
+
   // Parent-hash link target: block N's parent is N-1. The genesis block
   // has no parent to visit (its parent hash is the zero placeholder), so
   // its row stays copy-only.
@@ -427,6 +514,54 @@ export default function BlockDetail() {
             <Badge variant="warning" size="sm">
               Testnet
             </Badge>
+          )}
+          {/* Prev/next steps beside the badges: a disabled boundary renders
+              a real <button disabled> (title names the boundary: "Genesis
+              block" / "Chain head"); an unknown head keeps the next link
+              clickable but labeled honestly — the target page itself says
+              when the block does not exist yet. */}
+          {blockNav !== undefined && (
+            <nav className={blockNavStyle} aria-label="Block navigation">
+              {blockNav.prev !== null ? (
+                <TypedLink
+                  to={`/chain/${currentChainId}/block/${blockNav.prev}`}
+                  className={blockNavButtonStyle}
+                  title="Previous block"
+                >
+                  <ChevronLeftIcon />
+                  Prev
+                </TypedLink>
+              ) : (
+                <button
+                  type="button"
+                  disabled
+                  className={blockNavButtonStyle}
+                  title="Genesis block"
+                >
+                  <ChevronLeftIcon />
+                  Prev
+                </button>
+              )}
+              {blockNav.next !== null ? (
+                <TypedLink
+                  to={`/chain/${currentChainId}/block/${blockNav.next}`}
+                  className={blockNavButtonStyle}
+                  title={
+                    blockNav.nextUnknown
+                      ? 'Chain head unknown — the next block may not exist yet'
+                      : 'Next block'
+                  }
+                >
+                  Next
+                  <ChevronRightIcon />
+                </TypedLink>
+              ) : (
+                <button type="button" disabled className={blockNavButtonStyle} title="Chain head">
+                  Next
+                  <ChevronRightIcon />
+                </button>
+              )}
+            </nav>
           )}
           {/* Cross-verification in an external explorer from the page head —
               only a decimal block number makes a valid external URL. */}

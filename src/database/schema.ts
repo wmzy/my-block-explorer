@@ -461,6 +461,17 @@ export const watchSubscriptions = duckdbTable(
     address: varchar({ length: 42 }).notNull(),
     label: varchar({ length: 100 }),
     lastProcessedBlock: bignum(),
+    // Optional per-event webhook delivery (services/WatchService.ts →
+    // utils/webhooks.ts): each NEW log event is POSTed once to this URL.
+    // Nullable-on-purpose (DuckDB cannot ADD COLUMN with constraints —
+    // migration 0015): null = no webhook. When the URL is re-put or
+    // cleared, the two status columns reset — they describe deliveries
+    // to the CURRENT url only.
+    webhookUrl: text(),
+    // 'ok' | 'failed: <short reason>' | null (nothing delivered yet).
+    webhookStatus: text(),
+    // Server clock of the last delivery attempt (ISO-moment Date).
+    webhookLastAt: datetime(),
     createdAt: datetime().default(sql`now()`),
     updatedAt: datetime().default(sql`now()`),
   },

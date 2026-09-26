@@ -450,7 +450,7 @@ describe('Address view', () => {
   it('shows address overview with balance', async () => {
     renderPage();
 
-    await screen.findByText('Overview');
+    await screen.findByRole('heading', { name: 'Overview' });
     expect(screen.getByText(mocks.testAddress)).toBeInTheDocument();
     expect(screen.getByText(/1\.5 ETH/)).toBeInTheDocument();
   });
@@ -458,7 +458,7 @@ describe('Address view', () => {
   it('labels the nonce honestly as Outgoing Transactions (Nonce), never a total count', async () => {
     renderPage();
 
-    await screen.findByText('Overview');
+    await screen.findByRole('heading', { name: 'Overview' });
     // The RPC nonce counts outgoing transactions only — the label must say
     // so instead of the old lying 'Transaction Count'.
     expect(screen.getByText('Outgoing Transactions (Nonce)')).toBeInTheDocument();
@@ -810,7 +810,7 @@ describe('Address view', () => {
 
     renderPage();
 
-    await screen.findByText('Overview');
+    await screen.findByRole('heading', { name: 'Overview' });
     expect(screen.queryByText('View Contract Details →')).not.toBeInTheDocument();
   });
 
@@ -1423,7 +1423,7 @@ describe('Overview summary stats row', () => {
     renderPage();
     // Wait for the page itself (the Overview card) before pinning the
     // strip's absence — an unmounted page proves nothing.
-    await screen.findByText('Overview');
+    await screen.findByRole('heading', { name: 'Overview' });
     expect(screen.queryByTestId('summary-stats-row')).not.toBeInTheDocument();
     expect(screen.queryByText('Total In')).not.toBeInTheDocument();
     expect(screen.queryByText('First Seen')).not.toBeInTheDocument();
@@ -1450,7 +1450,7 @@ describe('Overview summary stats row', () => {
       },
     };
     renderPage();
-    await screen.findByText('Overview');
+    await screen.findByRole('heading', { name: 'Overview' });
     fireEvent.click(screen.getByTestId('coverage-badge-toggle'));
     expect(screen.getByTestId('coverage-badge-detail')).toHaveTextContent(
       'complete (deep scan)',

@@ -23,6 +23,7 @@ import labelsRoutes from './routes/labels';
 import verifyRoutes from './routes/verify';
 import approvalsRoutes from './routes/approvals';
 import sqlRoutes from './routes/sql';
+import opsRoutes from './routes/ops';
 import watchRoutes from './routes/watch';
 import streamRoutes from './routes/stream';
 import debugRoutes from './routes/debug';
@@ -103,6 +104,13 @@ app.route('/api', approvalsRoutes);
 // admin tier inside the sub-app — unlike the opt-in gates, it fails closed
 // when ADMIN_TOKEN is unset, because this surface executes raw SQL.
 app.route('/api', sqlRoutes);
+// Ops summary: the /ops operator dashboard's read-only snapshot (storage
+// sizes, indexing/watch/deep-scan counts, rate-limiter totals). Gated by
+// the OPT-IN admin tier inside the sub-app — unlike the SQL console's
+// strict gate it executes no raw SQL, so a zero-config local session stays
+// open; each section degrades independently to {error:'unavailable'}
+// instead of failing the whole endpoint.
+app.route('/api', opsRoutes);
 // Watch subscriptions: server-side address watching (WatchService tick +
 // getLogs per subscription, ring buffer + SSE `watch` frames). Mounting
 // the module also starts the watcher (it self-starts at module scope and

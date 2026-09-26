@@ -11,7 +11,7 @@
 // An EOA / non-token contract landing here is a fact, not a failure
 // (RouterError's not_a_contract precedent, as an in-page card): the view
 // self-guards, so the route needs NO loader — see NotATokenContractState.
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { css, cx } from '@linaria/core';
 import { TypedLink, useMatched, useSearch } from '@native-router/react';
 import { navigate } from '@native-router/core';
@@ -28,6 +28,7 @@ import { LoadingState } from '@/components/ui/LoadingState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Badge } from '@/components/ui/Badge';
 import { CopyableHash } from '@/components/ui/CopyableHash';
+import { EnsInline } from '@/components/ui/EnsInline';
 import { UsdValue, formatUsd } from '@/components/ui/UsdValue';
 import { useContractCode } from '@/services/addressRealTime';
 import { useTokenOverviewProbe } from '@/services/tokenMetadata';
@@ -60,8 +61,11 @@ import {
 import TokenTransfers, { TRANSFER_LIMIT } from '@/views/Address/TokenTransfers';
 import { getChainInfo, getChainName } from '@/config/chains';
 import { useContractSource } from '@/services/contracts';
+import { recordViewedToken } from '@/services/tokenDirectory';
 import { scanAbiRisks, type AbiRiskFlag } from '@/utils/abiRiskScan';
 import { aggregateMintBurn, formatSharePct, rankHolderShares } from './tokenMath';
+import { deriveNftItems } from './nftItems';
+import NftGrid from './NftGrid';
 
 // Top-10 ranking, per the discovered-holders surface contract (the address
 // page's card shows the top 5; the dedicated page widens it).
@@ -833,6 +837,23 @@ export default function TokenPage() {
   const isToken = classification !== null;
   const isErc20 = classification?.isErc20 === true;
 
+  // Token-directory recorder (services/tokenDirectory): opening a token
+  // page adds the token to this browser's viewed list — display hints are
+  // the resolved overview when it landed. Primitive deps only, so the
+  // write fires once per visit and once more if the overview resolves
+  // richer hints; re-visits dedupe by address (firstSeen kept). Guarded
+  // to settled tokens — a not-a-token landing must not pollute the
+  // directory.
+  const readsSymbol = classification?.symbol ?? null;
+  const readsName = classification?.name ?? null;
+  useEffect(() => {
+    if (!isToken || !validity.valid || chainInfo === null) return;
+    recordViewedToken(currentChainId, address, {
+      symbol: readsSymbol ?? undefined,
+      name: readsName ?? undefined,
+    });
+  }, [currentChainId, address, validity.valid, chainInfo, isToken, readsSymbol, readsName]);
+
   // Scan window (?ttWindow=) through the ADDRESS page's shared schema:
   // the piggyback query below keys identically to the transfers section's
   // page-1 token-mode query, so one scan feeds both (the address page's
@@ -873,6 +894,16 @@ export default function TokenPage() {
   const mintBurn = useMemo(
     () => (isToken ? aggregateMintBurn(scanRows, address, isErc20) : null),
     [isToken, scanRows, address, isErc20],
+  );
+
+  // Distinct NFT items the SAME rows evidence (721 topic shapes, 1155
+  // single/batch families) for the Items grid below — zero extra scans.
+  // A proven-ERC-20 contract derives nothing (the section is skipped
+  // entirely, per the discovery contract); for a standard-unknown token
+  // the derivation decides from the row shapes alone.
+  const nftItems = useMemo(
+    () => (isErc20 ? [] : deriveNftItems(scanRows, address)),
+    [isErc20, scanRows, address],
   );
 
   // --- Static ABI risk scan (verified source only) ---
@@ -1163,6 +1194,16 @@ export default function TokenPage() {
           spotPrice={tokenPrice}
         />
 
+        {/* Items grid: distinct NFT items the scan rows evidenced, with
+            lazy per-item metadata (honest none/unavailable states, see
+            NftGrid). Renders ONLY when the derivation yielded items —
+            non-NFT tokens (and empty scans) stay byte-identical, no
+            empty-state card — and never for a proven ERC-20, whose
+            shared-signature rows are amounts, not ids. */}
+        {!isErc20 && nftItems.length > 0 && (
+          <NftGrid chainId={currentChainId} contract={address} items={nftItems} />
+        )}
+
         {/* Holders: ERC-20 semantics only (an unknown-standard token
             renders no holder rows instead of guessing meaning for ids);
             shares divide by the DISCOVERED supply, never totalSupply. */}
@@ -1185,11 +1226,12 @@ export default function TokenPage() {
                   {holders.shares.map((holder, index) => (
                     <div key={holder.address} className={holderRankRow}>
                       <span className={rankNumber}>{index + 1}</span>
-                      <CopyableHash
-                        value={holder.address}
-                        truncated={formatAddr(holder.address)}
-                        href={`/chain/${currentChainId}/address/${holder.address}`}
-                      />
+                      {/* ENS inline (deferred wave-1 item): the holder's
+                          address link upgrades in place to a verified
+                          ENS name when one resolves — bounded to the
+                          displayed top-N rows (TOP_HOLDER_COUNT), the
+                          transactions-list fan-out convention. */}
+                      <EnsInline address={holder.address} chainId={currentChainId} />
                       <div className={shareTrack}>
                         {holder.shareBps !== null && (
                           <div

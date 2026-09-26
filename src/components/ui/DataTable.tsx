@@ -1,5 +1,6 @@
 import { css, cx } from '@linaria/core';
 import { Button } from './Button';
+import { cloneElement, isValidElement } from 'react';
 import type { ReactNode } from 'react';
 
 const tableContainer = css`
@@ -95,15 +96,64 @@ export const monoStyle = css`
   font-size: var(--haze-text-xs);
 `;
 
+// --- Screen-reader table structure (additive a11y pass) ---
+//
+// Column-header cells gain scope="col" unconditionally: every current
+// DataTable consumer renders thead>tr>th, and scope is universally
+// correct for that shape with zero visual impact. The rewrite walks ONLY
+// the thead subtree — a th inside tbody would be a ROW header, and
+// scope="col" there would be wrong, so tbody passes through untouched
+// (element identity preserved, no cloning). Clones keep keys, classNames
+// and children; only the scope attribute is added.
+type ScopedElement = { children?: ReactNode; scope?: string };
+
+const tagColumnCells = (node: ReactNode): ReactNode => {
+  if (Array.isArray(node)) return node.map(tagColumnCells);
+  if (!isValidElement<ScopedElement>(node)) return node;
+  if (node.type === 'th') {
+    return cloneElement(node, { scope: 'col' });
+  }
+  // Structural descent stops at <tr> — anything deeper inside a thead is
+  // not a column header, so it keeps its own attributes.
+  if (node.type === 'tr') {
+    return cloneElement(node, undefined, tagColumnCells(node.props.children));
+  }
+  return node;
+};
+
+const withColumnScopes = (node: ReactNode): ReactNode => {
+  if (Array.isArray(node)) return node.map(withColumnScopes);
+  if (!isValidElement<ScopedElement>(node)) return node;
+  if (node.type === 'thead') {
+    return cloneElement(node, undefined, tagColumnCells(node.props.children));
+  }
+  return node;
+};
+
 type DataTableProps = {
   children: ReactNode;
   className?: string;
+  /**
+   * Accessible table name (aria-label). Omitted from the DOM entirely
+   * when absent — callers that pass nothing render markup identical to
+   * the pre-a11y table in every other respect.
+   */
+  ariaLabel?: string;
+  /**
+   * Screen-reader-only <caption> naming the table's context, rendered as
+   * the table's first child (its required position). Absent → no caption
+   * element at all. Uses the global .sr-only utility from theme.css.
+   */
+  caption?: string;
 };
 
-export function DataTable({ children, className }: DataTableProps) {
+export function DataTable({ children, className, ariaLabel, caption }: DataTableProps) {
   return (
     <div className={cx(tableContainer, className)}>
-      <table className={tableStyle}>{children}</table>
+      <table className={tableStyle} aria-label={ariaLabel}>
+        {caption !== undefined && <caption className="sr-only">{caption}</caption>}
+        {withColumnScopes(children)}
+      </table>
     </div>
   );
 }
@@ -129,6 +179,11 @@ export function Pagination({
   prevLabel = 'Prev',
   nextLabel = 'Next',
 }: PaginationProps) {
+  // A11y audit (this pass): both pager buttons carry VISIBLE text labels
+  // (defaults 'Prev'/'Next'; call sites use 'Newer'/'Older') and no
+  // icon-only variant exists, so no aria-labels are needed — the visible
+  // text is the accessible name. There are no sort controls here to
+  // audit; if one is ever added icon-only it must ship an aria-label.
   return (
     <div className={paginationStyle}>
       <span className={pageInfoStyle}>{pageInfo ?? `Page ${page}`}</span>

@@ -25,7 +25,14 @@ const app = new Hono();
 
 // STRICT tier for the whole sub-app (see file header): every SQL-console
 // endpoint fails closed without ADMIN_TOKEN.
-app.use('*', requireAdminToken);
+//
+// The pattern MUST be the sub-app's own path prefix, never '*': Hono
+// hoists a mounted sub-app's use('*') to <base>/* on the PARENT, where it
+// swallows every sibling route mounted AFTER this one (watch, the SSE
+// stream, ops — they all 403'd in zero-config sessions, and unknown /api
+// paths answered 403 instead of 404). /sql/* matches both endpoints below
+// (there is no bare /sql route).
+app.use('/sql/*', requireAdminToken);
 
 // Raw DuckDB access reuses the single shared instance (db.$client is the
 // adapter's postgres-style `sql`, whose getDuckDB() returns the one

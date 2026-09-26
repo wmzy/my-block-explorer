@@ -1,9 +1,10 @@
-// Local-data backup format v1 — the "your data is yours" portability
+// Local-data backup format v2 — the "your data is yours" portability
 // layer. One JSON file (explorer-backup.json) carries everything the user
 // authored or chose in this explorer: the server-side address labels and
 // custom chains (fetched from the backend at export, replayed through the
 // same write APIs at restore) plus this browser's localStorage
-// preferences (watchlist, theme, IPFS gateway, per-contract custom ABIs).
+// preferences (watchlist, theme, IPFS gateway, per-contract custom ABIs,
+// and since v2 the per-address private notes).
 //
 // This module is the PURE layer: serialize (parts → file), parse
 // (file → validated parts with typed errors — a malformed or
@@ -17,13 +18,29 @@
 // lossless and a hand-edited file dies at parse time instead of
 // half-restoring: address shape (util/watchlist.ts regex), theme values
 // (themePreference.ts), the custom-abi key spelling views/Contract
-// writes, and the label/note caps the write API (routes/labels.ts)
-// enforces when the plan is replayed.
+// writes, the private-note key grammar (util/privateNotes.ts), and the
+// label/note caps the write API (routes/labels.ts) enforces when the
+// plan is replayed.
 import { IPFS_GATEWAY_STORAGE_KEY } from '@/services/nftMetadata';
 import { THEME_STORAGE_KEY } from '@/themePreference';
 import { WATCHLIST_STORAGE_KEY, WATCHLIST_MAX_ENTRIES } from '@/util/watchlist';
+import {
+  checksummedAddressOrNull,
+  privateNoteStorageKey,
+  PRIVATE_NOTE_MAX_CHARS,
+} from '@/util/privateNotes';
 
-export const BACKUP_VERSION = 1;
+// v2 (additive): browser.privateNotes joins the browser section. The
+// version bump lets a v2-aware reader REQUIRE the new section's shape
+// while v1 files stay importable — see SUPPORTED_BACKUP_VERSIONS.
+export const BACKUP_VERSION = 2;
+
+// Every format version this explorer restores. A v1 file predates
+// privateNotes and restores with an empty note list; anything older or
+// newer is rejected whole (the unknown_version contract below). Old v1
+// READERS ignore keys they do not know, but they pin version === 1 —
+// which is exactly why the bump must be additive HERE, not silent.
+const SUPPORTED_BACKUP_VERSIONS: readonly number[] = [1, 2];
 
 // Label/note caps mirrored from the write API (routes/labels.ts): the
 // restore PUTs every planned label, so a file that already violates the
@@ -64,6 +81,15 @@ export type BackupCustomChainRow = {
 export type BackupCustomAbi = { key: string; abi: string };
 
 /**
+ * One browser-local private note. Structured (NOT a raw storage key, the
+ * way custom ABIs are): the restore rebuilds the key through
+ * privateNoteStorageKey — chain id + a two-tier-validated, checksummed
+ * address — so a hostile file has no key field to smuggle through and
+ * every planned write lands inside the pinned `be:privateNote:` pattern.
+ */
+export type BackupPrivateNote = { chainId: number; address: string; note: string };
+
+/**
  * Browser-local preferences. `null` means "not exported" (the key was
  * absent in the source browser) and restores to nothing — distinct from
  * an empty value, which would overwrite.
@@ -73,11 +99,13 @@ export type BackupBrowserParts = {
   theme: string | null;
   ipfsGateway: string | null;
   customAbis: BackupCustomAbi[];
+  /** Browser-local private notes (v2+; v1 files parse with []). */
+  privateNotes: BackupPrivateNote[];
 };
 
-/** The v1 backup file (what gets serialized to disk). */
+/** The v2 backup file (what gets serialized to disk). */
 export type BackupFile = {
-  version: 1;
+  version: 2;
   exportedAt: string;
   labels: BackupLabelRow[];
   customChains: BackupCustomChainRow[];
@@ -175,16 +203,20 @@ export function parseBackup(json: string): ParsedBackup {
   }
   if (!isPlainObject(raw)) return malformed('The backup must be a JSON object.');
 
-  if (raw.version !== BACKUP_VERSION) {
+  if (typeof raw.version !== 'number' || !SUPPORTED_BACKUP_VERSIONS.includes(raw.version)) {
     const found = raw.version === undefined ? 'missing' : `got ${JSON.stringify(raw.version) ?? 'an unknown value'}`;
     return {
       ok: false,
       error: {
         kind: 'unknown_version',
-        message: `Unsupported backup format version (${found}) — this explorer restores version ${BACKUP_VERSION} files.`,
+        message: `Unsupported backup format version (${found}) — this explorer restores version ${SUPPORTED_BACKUP_VERSIONS.join(' and ')} files.`,
       },
     };
   }
+  // Parsed files normalize to the CURRENT version: a v1 input has no
+  // privateNotes section, so its validated form IS a v2 file with an
+  // empty list (re-serializing it upgrades the file losslessly).
+  const sourceVersion = raw.version;
 
   const { exportedAt } = raw;
   if (typeof exportedAt !== 'string' || exportedAt.length === 0) {
@@ -272,6 +304,53 @@ export function parseBackup(json: string): ParsedBackup {
     parsedAbis.push({ key: row.key, abi: row.abi });
   }
 
+  // Private notes: required as an array in v2, absent-by-definition in v1
+  // (a v1 file carrying a bogus privateNotes section is STILL a v1 file —
+  // v1 readers ignore unknown keys, and so do we; the section restores to
+  // nothing rather than half-trusting hand-added v1 data).
+  const privateNotes: BackupPrivateNote[] = [];
+  if (sourceVersion >= 2) {
+    if (!Array.isArray(browser.privateNotes)) {
+      return malformed('browser.privateNotes must be an array.');
+    }
+    const noteRows: unknown[] = browser.privateNotes;
+    const seenNotes = new Set<string>();
+    for (let i = 0; i < noteRows.length; i++) {
+      const row = noteRows[i];
+      if (!isPlainObject(row)) {
+        return malformed(`browser.privateNotes[${i}] must be a {chainId, address, note} object.`);
+      }
+      const { chainId, address, note } = row;
+      if (typeof chainId !== 'number' || !Number.isInteger(chainId) || chainId <= 0) {
+        return malformed(`browser.privateNotes[${i}].chainId must be a positive integer.`);
+      }
+      if (typeof address !== 'string' || typeof note !== 'string') {
+        return malformed(`browser.privateNotes[${i}] must carry string address and note fields.`);
+      }
+      // Two-tier validation + checksum normalization: the planned write
+      // key is built from THIS value, so a wrong-checksum or non-hex
+      // address dies here instead of smuggling an off-pattern key.
+      const checksummed = checksummedAddressOrNull(address);
+      if (checksummed === null) {
+        return malformed(
+          `browser.privateNotes[${i}].address must be a valid address (0x + 40 hex chars, correct EIP-55 checksum when mixed-case).`,
+        );
+      }
+      const trimmed = note.trim();
+      if (trimmed.length < 1 || trimmed.length > PRIVATE_NOTE_MAX_CHARS) {
+        return malformed(
+          `browser.privateNotes[${i}].note must be 1-${PRIVATE_NOTE_MAX_CHARS} characters after trimming.`,
+        );
+      }
+      const dedupeKey = `${chainId}:${checksummed.toLowerCase()}`;
+      if (seenNotes.has(dedupeKey)) {
+        return malformed(`browser.privateNotes[${i}] duplicates an earlier note for the same address.`);
+      }
+      seenNotes.add(dedupeKey);
+      privateNotes.push({ chainId, address: checksummed, note: trimmed });
+    }
+  }
+
   let notes: string[] | undefined;
   if (raw.notes !== undefined) {
     if (!Array.isArray(raw.notes) || raw.notes.some(n => typeof n !== 'string')) {
@@ -287,7 +366,13 @@ export function parseBackup(json: string): ParsedBackup {
       exportedAt,
       labels,
       customChains,
-      browser: { watchlist: parsedWatchlist, theme, ipfsGateway, customAbis: parsedAbis },
+      browser: {
+        watchlist: parsedWatchlist,
+        theme,
+        ipfsGateway,
+        customAbis: parsedAbis,
+        privateNotes,
+      },
       ...(notes !== undefined ? { notes } : {}),
     },
   };
@@ -342,11 +427,19 @@ export function planRestore(
     storageWrites.push({ key, value, overwrites: current !== null });
   };
 
-  const { watchlist, theme, ipfsGateway, customAbis } = file.browser;
+  const { watchlist, theme, ipfsGateway, customAbis, privateNotes } = file.browser;
   if (watchlist !== null) planWrite(WATCHLIST_STORAGE_KEY, JSON.stringify(watchlist));
   if (theme !== null) planWrite(THEME_STORAGE_KEY, theme);
   if (ipfsGateway !== null) planWrite(IPFS_GATEWAY_STORAGE_KEY, ipfsGateway);
   for (const { key, abi } of customAbis) planWrite(key, abi);
+  // Private notes rebuild their key through the store's own builder —
+  // parseBackup already checksummed the address, so every planned write
+  // is pinned inside the `be:privateNote:<chainId>:<checksummed address>`
+  // grammar and can never reach an arbitrary localStorage key.
+  for (const { chainId, address, note } of privateNotes) {
+    const key = privateNoteStorageKey(chainId, address);
+    if (key !== null) planWrite(key, note);
+  }
 
   return {
     storageWrites,

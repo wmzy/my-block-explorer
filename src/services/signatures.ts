@@ -11,16 +11,27 @@
 // page's set — never refetch an already-known selector within the session.
 // Resolved and notFound outcomes are facts and memoize; an upstream
 // failure resolves as { unavailable: true } WITHOUT memoizing, so a later
-// view retries instead of pinning the outage. The fetch never rejects:
-// signature names are an enhancement layered over raw hex and must never
-// surface an error state or block a render.
+// view retries instead of pinning the outage. fetchSignatures never
+// rejects: signature names are an enhancement layered over raw hex and
+// must never surface an error state or block a render. The strict twin
+// (fetchSignaturesStrict + useSignatureLookup below) exists for the one
+// surface whose whole purpose IS the lookup — the /signatures tool page —
+// and lets transport failures surface as first-class errors so the view
+// can attribute backend-offline precisely.
 import { api, get, withSignal } from '@/util/http';
 import { bindQueryFn, createQueryCache, createQueryHook } from '@/util/useQuery';
 
 export type SignatureKind = 'function' | 'event';
 
+/** The found member of SignatureOutcome, named for the surfaced-lookup hook below. */
+export type ResolvedSignatures = {
+  kind: SignatureKind;
+  signatures: string[];
+  source: 'openchain';
+};
+
 export type SignatureOutcome =
-  | { kind: SignatureKind; signatures: string[]; source: 'openchain' }
+  | ResolvedSignatures
   | { kind: SignatureKind; signatures: []; notFound: true }
   | { unavailable: true };
 
@@ -50,23 +61,40 @@ export const signaturesCache = createQueryCache<Record<string, SignatureOutcome>
 
 // The query key is the sorted comma-joined digest of the selector set;
 // ',' never occurs inside a selector, so it round-trips through split().
-export async function fetchSignatures(
-  joined: string,
-  signal?: AbortSignal,
-): Promise<Record<string, SignatureOutcome>> {
-  const selectors = joined.split(',').filter(selector => selector !== '');
+
+// Split a digest's selectors into memo hits and requestable misses.
+// Malformed digest entries land in neither — they have nothing to ask
+// the API for and simply stay absent, so callers render them as unknown.
+const partitionSelectors = (joined: string): {
+  outcomes: Record<string, SignatureOutcome>;
+  misses: string[];
+} => {
   const outcomes: Record<string, SignatureOutcome> = {};
   const misses: string[] = [];
-  for (const selector of selectors) {
+  for (const selector of joined.split(',')) {
+    if (selector === '') continue;
     const cached = selectorOutcomeCache.get(selector);
     if (cached !== undefined) {
       outcomes[selector] = cached;
     } else if (isRequestable(selector)) {
       misses.push(selector);
     }
-    // A malformed digest entry has nothing to ask the API for and simply
-    // stays absent — callers render it as unknown.
   }
+  return { outcomes, misses };
+};
+
+// The lookup core shared by the two fetch functions below: memo hits,
+// requestable misses, one batched GET, and the response→outcome mapping.
+// Transport failures (backend offline, degraded discovery, HTTP errors)
+// THROW here — the wrappers decide how a throw surfaces. A backend that
+// answers while its openchain upstream fails resolves those selectors as
+// { unavailable: true } WITHOUT memoizing, so a later call retries
+// instead of pinning the outage.
+export async function fetchSignaturesStrict(
+  joined: string,
+  signal?: AbortSignal,
+): Promise<Record<string, SignatureOutcome>> {
+  const { outcomes, misses } = partitionSelectors(joined);
   if (misses.length === 0) return outcomes;
 
   const params: Record<string, string> = {};
@@ -75,33 +103,43 @@ export async function fetchSignatures(
   if (functions.length > 0) params.function = functions.join(',');
   if (events.length > 0) params.event = events.join(',');
 
-  try {
-    const response = await get<SignaturesResponse>(
-      '/api/signatures',
-      params,
-      withSignal(api, signal),
-    );
-    for (const selector of [...functions, ...events]) {
-      const outcome = response.results?.[selector];
-      if (outcome !== undefined && !('unavailable' in outcome)) {
-        // Found and notFound are durable facts about immutable data —
-        // memoize per selector so any other selector set reuses them.
-        selectorOutcomeCache.set(selector, outcome);
-        outcomes[selector] = outcome;
-      } else {
-        // Absent from the response body or explicitly unavailable: honest
-        // unknown for this call, left un-memoized so it can be retried.
-        outcomes[selector] = { unavailable: true };
-      }
-    }
-  } catch {
-    // Backend offline / degraded discovery / HTTP failure — every miss
-    // resolves unavailable; the raw-hex UI this layer enhances stays up.
-    for (const selector of misses) {
+  const response = await get<SignaturesResponse>(
+    '/api/signatures',
+    params,
+    withSignal(api, signal),
+  );
+  for (const selector of [...functions, ...events]) {
+    const outcome = response.results?.[selector];
+    if (outcome !== undefined && !('unavailable' in outcome)) {
+      // Found and notFound are durable facts about immutable data —
+      // memoize per selector so any other selector set reuses them.
+      selectorOutcomeCache.set(selector, outcome);
+      outcomes[selector] = outcome;
+    } else {
+      // Absent from the response body or explicitly unavailable: honest
+      // unknown for this call, left un-memoized so it can be retried.
       outcomes[selector] = { unavailable: true };
     }
   }
   return outcomes;
+}
+
+export async function fetchSignatures(
+  joined: string,
+  signal?: AbortSignal,
+): Promise<Record<string, SignatureOutcome>> {
+  try {
+    return await fetchSignaturesStrict(joined, signal);
+  } catch {
+    // Backend offline / degraded discovery / HTTP failure — every miss
+    // resolves unavailable; the raw-hex UI this layer enhances stays up.
+    // Memoized facts stay visible; only the misses degrade.
+    const { outcomes, misses } = partitionSelectors(joined);
+    for (const selector of misses) {
+      outcomes[selector] = { unavailable: true };
+    }
+    return outcomes;
+  }
 }
 
 const querySignatures = bindQueryFn(fetchSignatures, signaturesCache);
@@ -169,4 +207,66 @@ export function useSignaturesBatched(
   const chunk2 = useSignatures(chunks[2] ?? []);
   const chunk3 = useSignatures(chunks[3] ?? []);
   return { ...chunk0, ...chunk1, ...chunk2, ...chunk3 };
+}
+
+// ---------------------------------------------------------------------------
+// /signatures tool page lookup
+//
+// Unlike the enhancement hooks above, the tool page's whole purpose is the
+// lookup, so failures surface as first-class states instead of raw-hex
+// fallbacks:
+// - 'error': the backend itself was unreachable (no API base, dead network
+//   path) or answered with an HTTP error — the view renders the standard
+//   offline/error attribution from the surfaced Error object.
+// - 'unavailable': the backend answered but its openchain upstream failed —
+//   a retryable temporary state, distinct from both a miss and an outage.
+// - 'ok': a settled registry fact (found candidates or an honest notFound).
+//
+// The strict query shares the digest cache with the enhancement layer, so
+// a selector resolved on any table answers here without a request (and
+// vice versa); refetch deletes the args' cache entry first, so Retry
+// genuinely re-asks.
+// ---------------------------------------------------------------------------
+
+const querySignaturesStrict = bindQueryFn(fetchSignaturesStrict, signaturesCache);
+
+const useSignaturesStrictQuery = createQueryHook({ queryFn: querySignaturesStrict });
+
+/** One surfaced lookup's state for the /signatures page (see block above). */
+export type SignatureLookup =
+  | { status: 'idle' }
+  | { status: 'loading' }
+  | { status: 'found'; outcome: ResolvedSignatures }
+  | { status: 'miss' }
+  | { status: 'unavailable' }
+  | { status: 'error'; error: unknown };
+
+const idleLookup = { status: 'idle' } as const;
+
+/**
+ * Resolve one selector/topic0 for the /signatures tool page. `selector`
+ * undefined (no valid query to run) resolves idle without any request.
+ * A settled registry fact discriminates found (candidates) from miss
+ * (honest no-match) so views branch without outcome-shape gymnastics.
+ */
+export function useSignatureLookup(
+  selector: string | undefined,
+): SignatureLookup & { refetch: () => void | Promise<unknown> } {
+  // The '' digest answers from the query cache without any request, so
+  // the idle case costs nothing — and the hook is called unconditionally,
+  // keeping the rules of hooks intact.
+  const query = useSignaturesStrictQuery([selector ?? '']);
+  if (selector === undefined) return { ...idleLookup, refetch: query.refetch };
+  if (query.error !== undefined) {
+    return { status: 'error', error: query.error, refetch: query.refetch };
+  }
+  // Per-key presence is the settle guard (Contracts/List pattern): after
+  // an argument switch the store may still hold the previous digest's
+  // data, whose keys never include the new selector — that renders as
+  // loading, never as someone else's outcome.
+  const outcome = query.data?.[selector];
+  if (outcome === undefined) return { status: 'loading', refetch: query.refetch };
+  if ('unavailable' in outcome) return { status: 'unavailable', refetch: query.refetch };
+  if ('notFound' in outcome) return { status: 'miss', refetch: query.refetch };
+  return { status: 'found', outcome, refetch: query.refetch };
 }

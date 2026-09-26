@@ -160,6 +160,52 @@ export function mergeDiscoveredTransactions(
   return merged;
 }
 
+// Server-side filters for the transactions endpoint (?fromAddress /
+// ?toAddress / ?minValue / ?maxValue). Applied AFTER discovery, over the
+// SAME cached discovered list for the current window — a filter never
+// triggers a new scan and never widens coverage; it can only narrow what
+// the window already discovered. Value bounds are BigInt (wei), never
+// Number, so comparisons stay exact past 2^53.
+export type AddressTxFilters = {
+  fromAddress?: string;
+  toAddress?: string;
+  minValue?: bigint;
+  maxValue?: bigint;
+};
+
+// Pure filter application over a discovered list — the unit the
+// transactions endpoint applies between the (cached) canonical list and
+// request-time pagination. Address matching lowercases both ends
+// (mirroring scanBlockForAddressTransactions); value bounds are
+// inclusive. A toAddress filter can never match a contract creation's
+// null `to` (stored as '') — creation txs stay out of to-filtered views,
+// which is the honest reading of the filter.
+export const applyDiscoveredTxFilters = (
+  transactions: readonly DiscoveredTransaction[],
+  filters: AddressTxFilters | undefined,
+): DiscoveredTransaction[] => {
+  if (filters === undefined) return [...transactions];
+  const { fromAddress, toAddress, minValue, maxValue } = filters;
+  if (
+    fromAddress === undefined && toAddress === undefined
+    && minValue === undefined && maxValue === undefined
+  ) {
+    return [...transactions];
+  }
+  const from = fromAddress?.toLowerCase();
+  const to = toAddress?.toLowerCase();
+  return transactions.filter(tx => {
+    if (from !== undefined && tx.fromAddress.toLowerCase() !== from) return false;
+    if (to !== undefined && tx.toAddress.toLowerCase() !== to) return false;
+    if (minValue !== undefined || maxValue !== undefined) {
+      const value = BigInt(tx.value);
+      if (minValue !== undefined && value < minValue) return false;
+      if (maxValue !== undefined && value > maxValue) return false;
+    }
+    return true;
+  });
+};
+
 const SCAN_THRESHOLD = 64n;
 const MAX_RPC_CALLS = 200;
 const BATCH_CONCURRENCY = 8;
@@ -585,6 +631,11 @@ const createAddressService = (deps: AddressServiceDeps) => {
         // and `total` is the merged count — the additive deep-scan
         // contract of the transactions endpoint.
         deepScanFindings?: readonly DiscoveredTransaction[];
+        // Narrowing filters applied over the (cached) discovered list.
+        // Deliberately NOT part of the cache key: filtering reuses the
+        // SAME canonical discovery for the window — no new scan, no
+        // coverage change; `total` reports the FILTERED count.
+        filters?: AddressTxFilters;
       },
     ): Promise<AddressTransactionsResult> => {
       // An explicit window is clamped into [1, MAX]; undefined stays
@@ -624,13 +675,17 @@ const createAddressService = (deps: AddressServiceDeps) => {
           options?.deepScanFindings && mergedFull.length > 0 && cached.coverage === 'none'
             ? 'partial'
             : cached.coverage;
+        // Filters narrow the merged list before pagination: `total` and
+        // the served slice describe the FILTERED view of the same cached
+        // discovery (balancePoints follow the served set for coherence).
+        const filteredFull = applyDiscoveredTxFilters(mergedFull, options?.filters);
         return {
           ...cached,
           coverage: coverageFloor,
-          transactions: mergedFull.slice(offset, offset + limit),
-          total: mergedFull.length,
+          transactions: filteredFull.slice(offset, offset + limit),
+          total: filteredFull.length,
           ...(options?.includeBalancePoints
-            ? { balancePoints: computeDiscoveredBalancePoints(mergedFull, address) }
+            ? { balancePoints: computeDiscoveredBalancePoints(filteredFull, address) }
             : {}),
         };
       }
@@ -737,13 +792,17 @@ const createAddressService = (deps: AddressServiceDeps) => {
           options?.deepScanFindings && mergedFull.length > 0 && result.coverage === 'none'
             ? 'partial'
             : result.coverage;
+        // Same narrowing as the cached path: the canonical cache entry
+        // stays unfiltered (a different filter reuses it), only the
+        // served page and its totals describe the filtered view.
+        const filteredFull = applyDiscoveredTxFilters(mergedFull, options?.filters);
         return {
           ...result,
           coverage: coverageFloor,
-          transactions: mergedFull.slice(offset, offset + limit),
-          total: mergedFull.length,
+          transactions: filteredFull.slice(offset, offset + limit),
+          total: filteredFull.length,
           ...(options?.includeBalancePoints
-            ? { balancePoints: computeDiscoveredBalancePoints(mergedFull, address) }
+            ? { balancePoints: computeDiscoveredBalancePoints(filteredFull, address) }
             : {}),
         };
       } catch (error) {

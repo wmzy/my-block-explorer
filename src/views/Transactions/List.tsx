@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/Button';
 import { CopyableHash } from '@/components/ui/CopyableHash';
 import { DataTable, Pagination, linkStyle, monoStyle } from '@/components/ui/DataTable';
 import { EmptyState, ErrorState } from '@/components/ui/ErrorState';
+import { EnsInline, shortAddress } from '@/components/ui/EnsInline';
 import { TableSkeleton } from '@/components/ui/LoadingState';
 import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
 import { getChainInfo, getChainName, getChainSymbol } from '@/config/chains';
@@ -32,6 +33,12 @@ import {
 } from '@/views/Transactions/methodColumn';
 
 const LIMIT = 20;
+
+// ENS enrichment applies to at most this many rows of the current page
+// (by row index), bounding the reverse-resolution fan-out no matter how
+// large a page future callers render. The session-level ensNameCache
+// dedupes repeat addresses, so this is a ceiling, not a request count.
+const ENS_ROW_LIMIT = 25;
 
 // Header row: the page title on the left, the Refresh control on the right
 // (re-anchors the walk at the live chain head). At the established 768px
@@ -140,11 +147,6 @@ export function isDroppedBlockParam(
 const formatHash = (hash: string): string => {
   if (!hash || hash.length < 16) return hash;
   return `${hash.slice(0, 10)}...${hash.slice(-8)}`;
-};
-
-const formatAddr = (addr: string): string => {
-  if (!addr || addr.length < 10) return addr || 'N/A';
-  return `${addr.slice(0, 8)}...${addr.slice(-6)}`;
 };
 
 // status: 1 → success, 0 → failed, -1 → pending (no receipt yet, NOT failed).
@@ -361,6 +363,14 @@ export default function TransactionsList() {
     void redirectReplace(router, `/chain/${newChainId}/transactions`).catch(() => undefined);
   };
 
+  // Page title, hoisted so the header and the table's accessible caption
+  // share one wording — the screen-reader name of the table is exactly
+  // the context the visible header announces.
+  const listTitle =
+    blockParam !== undefined
+      ? `Transactions · anchored at Block #${formatNumber(blockParam)}`
+      : 'Transactions';
+
   if (!chainInfo) {
     return (
       <>
@@ -380,11 +390,7 @@ export default function TransactionsList() {
       <PageContainer>
         <div className={listToolbar}>
           <PageHeader
-            title={
-              blockParam !== undefined
-                ? `Transactions · anchored at Block #${formatNumber(blockParam)}`
-                : 'Transactions'
-            }
+            title={listTitle}
             chainInfo={`${getChainName(currentChainId)} • Chain ID: ${currentChainId}`}
           />
           <div className={toolbarActions}>
@@ -439,7 +445,12 @@ export default function TransactionsList() {
         )}
 
         {transactions.length > 0 && (
-          <DataTable>
+          /* aria-label reuses the hoisted page title: the table announces
+             itself with exactly the context the visible header carries.
+             An aria-label (not a caption) on purpose — the header already
+             renders the same words as visible text one section up, and a
+             caption would duplicate that string in the DOM. */
+          <DataTable ariaLabel={listTitle}>
             <thead>
               <tr>
                 <th>Txn Hash</th>
@@ -453,7 +464,7 @@ export default function TransactionsList() {
               </tr>
             </thead>
             <tbody>
-              {transactions.map(tx => (
+              {transactions.map((tx, index) => (
                 <tr key={tx.hash}>
                   <td>
                     <CopyableHash
@@ -480,19 +491,33 @@ export default function TransactionsList() {
                     )}
                   </td>
                   <td>{tx.timestamp ? formatRelativeTime(tx.timestamp) : 'N/A'}</td>
+                  {/* From/To: the address link upgrades in place to a verified
+                      ENS name when one resolves (full address stays one hover
+                      away via the title); rows past the ENS bound render the
+                      same link unenriched. */}
                   <td>
-                    <CopyableHash
-                      value={tx.fromAddress}
-                      truncated={formatAddr(tx.fromAddress)}
-                      href={`/chain/${currentChainId}/address/${tx.fromAddress}`}
+                    <EnsInline
+                      address={tx.fromAddress}
+                      chainId={currentChainId}
+                      enabled={index < ENS_ROW_LIMIT}
                     />
                   </td>
                   <td>
-                    <CopyableHash
-                      value={tx.toAddress}
-                      truncated={formatAddr(tx.toAddress)}
-                      href={`/chain/${currentChainId}/address/${tx.toAddress}`}
-                    />
+                    {tx.toAddress ? (
+                      <EnsInline
+                        address={tx.toAddress}
+                        chainId={currentChainId}
+                        enabled={index < ENS_ROW_LIMIT}
+                      />
+                    ) : (
+                      // Contract-creation row (no recipient): today's plain
+                      // rendering, no ENS surface for an empty address.
+                      <CopyableHash
+                        value={tx.toAddress}
+                        truncated={shortAddress(tx.toAddress)}
+                        href={`/chain/${currentChainId}/address/${tx.toAddress}`}
+                      />
+                    )}
                   </td>
                   <td className={monoStyle}>{formatValue(BigInt(tx.value), symbol)}</td>
                   <td>

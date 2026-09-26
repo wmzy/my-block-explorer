@@ -57,6 +57,12 @@ vi.mock('@/services/signatures', () => ({
   useSignaturesBatched: (...args: unknown[]) => mockUseSignaturesBatched(...args),
 }));
 
+// From/To cells resolve ENS inline; stubbed to the unresolved state so no
+// test here touches the query layer or the network.
+vi.mock('@/services/ens', () => ({
+  useEnsName: () => ({ data: null, loading: false }),
+}));
+
 // The minimal row shape the Method column consumes (the RPC transaction
 // stub the list renders).
 type TxStub = {

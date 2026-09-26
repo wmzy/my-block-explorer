@@ -68,6 +68,12 @@ vi.mock('@/services/homeFeed', () => ({
   useLatestBlocksFeed: (...args: unknown[]) => mockUseLatestBlocksFeed(...args),
 }));
 
+// From/To cells resolve ENS inline; stubbed to the unresolved state so no
+// test here touches the query layer or the network.
+vi.mock('@/services/ens', () => ({
+  useEnsName: () => ({ data: null, loading: false }),
+}));
+
 const makeTx = (blockNumber: number) => ({
   hash: `0xtx${blockNumber}`,
   blockNumber: String(blockNumber),

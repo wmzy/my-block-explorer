@@ -9,7 +9,10 @@ import {
 } from '@native-router/react';
 import { ConnectionStatus } from '@/components/ServiceSetup';
 import { contractSourceLoader } from '@/services/dataloaders';
-import { getChainName } from '@/config/chains';
+import {
+  deriveDocumentTitle,
+  deriveMetaDescription,
+} from '@/utils/metaDescribe';
 
 import RouterError from './RouterError';
 import NotFound from './NotFound';
@@ -54,6 +57,13 @@ const routes = createRoutes({
       // ?offset=.
       path: '/chain/:chainId/contracts',
       component: () => import('./Contracts/List'),
+    },
+    {
+      // Token directory: curated known tokens plus tokens opened in this
+      // browser (localStorage), priced where DefiLlama resolves. An honest
+      // directory — header copy never claims a complete registry.
+      path: '/chain/:chainId/tokens',
+      component: () => import('./Tokens/List'),
     },
     {
       // Token lens over a contract address (self-guarding view: EOA /
@@ -110,6 +120,21 @@ const routes = createRoutes({
       component: () => import('./Sql'),
     },
     {
+      // Local ops overview for the operator: storage sizes, indexing/watch/
+      // rate-limit status and backup guidance. Not chain-scoped (reads the
+      // main DuckDB + the data/ directory), like the SQL console; its API
+      // uses the opt-in admin tier so zero-config local sessions work.
+      path: '/ops',
+      component: () => import('./Ops'),
+    },
+    {
+      // Signature lookup tool: resolve function selectors / event topic0
+      // hashes (and name fragments where the backend supports it) through
+      // the openchain-backed /api/signatures. Not chain-scoped.
+      path: '/signatures',
+      component: () => import('./Signatures'),
+    },
+    {
       // Static explainer for the data-coverage vocabulary the CoverageBadge
       // chips carry (linked from the badge's expanded detail): pure copy,
       // no loader, and deliberately not chain-scoped — the levels describe
@@ -148,137 +173,13 @@ const routerBaseUrl = import.meta.env.BASE_URL.startsWith('/')
   ? import.meta.env.BASE_URL.slice(0, -1)
   : '';
 
-const FALLBACK_TITLE = 'My Block Explorer';
-
-// 10 chars = the 0x prefix + 8 nibbles: enough to identify a hash in a tab
-// title while staying narrow.
-const shortHash = (value: string): string => `${value.slice(0, 10)}…`;
-
-// Tab title per route, derived from the bare location (no router context
-// needed — one pure function per URL shape, unit-testable without a
-// harness). Unknown shapes keep the static index.html title.
-export function deriveDocumentTitle(pathname: string, search: string): string {
-  const segments = pathname.split('/').filter(Boolean);
-
-  if (segments[0] === 'search') {
-    // The /search route carries its viewing chain in ?chain= (the context
-    // the header search forwards); without it the generic suffix stands.
-    const chainParam = new URLSearchParams(search).get('chain');
-    const chainId = chainParam !== null ? Number.parseInt(chainParam, 10) : Number.NaN;
-    return Number.isFinite(chainId)
-      ? `Search · ${getChainName(chainId)}`
-      : 'Search · Explorer';
-  }
-
-  // Static coverage explainer: exact shape only — deeper /about/* paths are
-  // unknown shapes and keep the fallback.
-  if (segments[0] === 'about' && segments[1] === 'coverage' && segments.length === 2) {
-    return `Data Coverage — ${FALLBACK_TITLE}`;
-  }
-
-  if (segments[0] !== 'chain' || segments.length < 2) return FALLBACK_TITLE;
-
-  const chainId = Number.parseInt(segments[1], 10);
-  if (!Number.isFinite(chainId)) return FALLBACK_TITLE;
-  const chainName = getChainName(chainId);
-
-  switch (segments[2]) {
-    case undefined:
-      return `${chainName} Explorer`;
-    case 'blocks':
-      return `${chainName} Blocks`;
-    case 'transactions':
-      return `${chainName} Transactions`;
-    case 'pending':
-      return `Pending Transactions · ${chainName}`;
-    case 'contracts':
-      return `${chainName} Contracts`;
-    case 'charts':
-      return `${chainName} Charts`;
-    case 'block':
-      return segments[3] ? `Block #${segments[3]} · ${chainName}` : FALLBACK_TITLE;
-    case 'tx':
-      return segments[3] ? `Tx ${shortHash(segments[3])} · ${chainName}` : FALLBACK_TITLE;
-    case 'address':
-      return segments[3] ? `Address ${shortHash(segments[3])} · ${chainName}` : FALLBACK_TITLE;
-    case 'token':
-      return segments[3] ? `Token ${shortHash(segments[3])} · ${chainName}` : FALLBACK_TITLE;
-    case 'contract':
-      // The /events subpath shares the plain contract title.
-      return segments[3] ? `Contract ${shortHash(segments[3])} · ${chainName}` : FALLBACK_TITLE;
-    default:
-      return FALLBACK_TITLE;
-  }
-}
-
-// Share blurb for routes the title cannot describe alone (og:description /
-// twitter card source). Same bare-location derivation as the title: each
-// route family names its entity and chain; unknown shapes fall back to the
-// generic explorer blurb. A malformed chainId still keeps the family's
-// blurb with "the chain" in the noun slot — the family (tx/address/…) is
-// recognizable from the path alone, so a shared link keeps a meaningful
-// description instead of the generic fallback.
-const FALLBACK_DESCRIPTION =
-  'A modern blockchain explorer for Ethereum and compatible networks — blocks, transactions, addresses and contracts.';
-
-export function deriveMetaDescription(pathname: string, search: string): string {
-  const segments = pathname.split('/').filter(Boolean);
-
-  if (segments[0] === 'search') {
-    const chainParam = new URLSearchParams(search).get('chain');
-    const chainId = chainParam !== null ? Number.parseInt(chainParam, 10) : Number.NaN;
-    return Number.isFinite(chainId)
-      ? `Search blocks, transactions, addresses and contracts on ${getChainName(chainId)}.`
-      : 'Search blocks, transactions, addresses and contracts across chains.';
-  }
-
-  if (segments[0] === 'about' && segments[1] === 'coverage' && segments.length === 2) {
-    return 'What the data-coverage levels — live, cached, discovered, sampled, partial and unavailable — mean in this explorer, and why its numbers can differ from full-indexer explorers.';
-  }
-
-  if (segments[0] !== 'chain' || segments.length < 2) return FALLBACK_DESCRIPTION;
-
-  const chainId = Number.parseInt(segments[1], 10);
-  const chainNoun = Number.isFinite(chainId) ? getChainName(chainId) : 'the chain';
-
-  switch (segments[2]) {
-    case undefined:
-      return `Explore ${chainNoun}: latest blocks, transactions, gas and chain stats.`;
-    case 'blocks':
-      return `Browse the latest blocks on ${chainNoun}.`;
-    case 'transactions':
-      return `Browse the latest transactions on ${chainNoun}.`;
-    case 'pending':
-      return `Pending (unconfirmed) transactions in this node's transaction pool on ${chainNoun}.`;
-    case 'contracts':
-      return `Browse the explorer's cached contracts on ${chainNoun}.`;
-    case 'charts':
-      return `Daily chain charts for ${chainNoun} — blocks per day, block time, gas usage and gas prices (sampled from RPC).`;
-    case 'block':
-      return segments[3]
-        ? `View block #${segments[3]} on ${chainNoun} — transactions, gas used and more.`
-        : FALLBACK_DESCRIPTION;
-    case 'tx':
-      return segments[3]
-        ? `View transaction ${shortHash(segments[3])} on ${chainNoun} — block, gas, status and decoded calls.`
-        : FALLBACK_DESCRIPTION;
-    case 'address':
-      return segments[3]
-        ? `View address ${shortHash(segments[3])} on ${chainNoun} — balance, nonce, transactions and token holdings.`
-        : FALLBACK_DESCRIPTION;
-    case 'token':
-      return segments[3]
-        ? `View token ${shortHash(segments[3])} on ${chainNoun} — overview, transfers, holders and mint/burn totals.`
-        : FALLBACK_DESCRIPTION;
-    case 'contract':
-      // The /events subpath shares the plain contract blurb.
-      return segments[3]
-        ? `View contract ${shortHash(segments[3])} on ${chainNoun} — source, ABI, events and interaction.`
-        : FALLBACK_DESCRIPTION;
-    default:
-      return FALLBACK_DESCRIPTION;
-  }
-}
+// Title/description derivations live in '@/utils/metaDescribe' — extracted
+// verbatim so the server-side og-meta middleware (src/middleware/og-meta.ts,
+// which serves the statically built SPA to JS-less requests) can derive the
+// exact same strings without importing React or the router. Re-exported
+// here to keep this module the single import site for existing consumers
+// (DocumentTitle below and the tests).
+export { deriveDocumentTitle, deriveMetaDescription };
 
 // Idempotent meta-tag maintenance: finds the existing tag by its
 // property/name attribute, creates it once when missing, then keeps the

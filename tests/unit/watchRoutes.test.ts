@@ -102,8 +102,9 @@ describe('PUT /chains/:chainId/watch/:address — validation', () => {
     });
     expect(res.status).toBe(200);
     await expect(res.json()).resolves.toEqual({ subscription: SUBSCRIPTION_VIEW });
-    // Storage key is lowercased even for checksummed input.
-    expect(serviceMocks.upsertSubscription).toHaveBeenCalledWith(1, WATCH_ADDRESS, null);
+    // Storage key is lowercased even for checksummed input. The absent
+    // webhookUrl travels as undefined = "unchanged" (4th arg).
+    expect(serviceMocks.upsertSubscription).toHaveBeenCalledWith(1, WATCH_ADDRESS, null, undefined);
   });
 
   it('trims the label and clears it on empty/null', async () => {
@@ -113,13 +114,13 @@ describe('PUT /chains/:chainId/watch/:address — validation', () => {
     });
     const res = await put({ label: '  Hot wallet  ' });
     expect(res.status).toBe(200);
-    expect(serviceMocks.upsertSubscription).toHaveBeenCalledWith(1, WATCH_ADDRESS, 'Hot wallet');
+    expect(serviceMocks.upsertSubscription).toHaveBeenCalledWith(1, WATCH_ADDRESS, 'Hot wallet', undefined);
 
     await put({ label: null });
-    expect(serviceMocks.upsertSubscription).toHaveBeenLastCalledWith(1, WATCH_ADDRESS, null);
+    expect(serviceMocks.upsertSubscription).toHaveBeenLastCalledWith(1, WATCH_ADDRESS, null, undefined);
 
     await put({});
-    expect(serviceMocks.upsertSubscription).toHaveBeenLastCalledWith(1, WATCH_ADDRESS, null);
+    expect(serviceMocks.upsertSubscription).toHaveBeenLastCalledWith(1, WATCH_ADDRESS, null, undefined);
   });
 
   it.each([
@@ -140,6 +141,55 @@ describe('PUT /chains/:chainId/watch/:address — validation', () => {
       body: JSON.stringify({}),
     });
     expect(res.status).toBe(400);
+    expect(serviceMocks.upsertSubscription).not.toHaveBeenCalled();
+  });
+
+  it('accepts a valid http(s) webhookUrl, trimmed, and passes it through', async () => {
+    serviceMocks.upsertSubscription.mockResolvedValue({
+      ok: true,
+      subscription: SUBSCRIPTION_VIEW,
+    });
+    const res = await put({
+      webhookUrl: '  https://discord.com/api/webhooks/123/token  ',
+    });
+    expect(res.status).toBe(200);
+    expect(serviceMocks.upsertSubscription).toHaveBeenCalledWith(
+      1,
+      WATCH_ADDRESS,
+      null,
+      'https://discord.com/api/webhooks/123/token',
+    );
+
+    await put({ webhookUrl: 'http://127.0.0.1:9090/hook' });
+    expect(serviceMocks.upsertSubscription).toHaveBeenLastCalledWith(
+      1,
+      WATCH_ADDRESS,
+      null,
+      'http://127.0.0.1:9090/hook',
+    );
+  });
+
+  it('treats an empty string (or null) webhookUrl as an explicit clear', async () => {
+    serviceMocks.upsertSubscription.mockResolvedValue({
+      ok: true,
+      subscription: SUBSCRIPTION_VIEW,
+    });
+    await put({ webhookUrl: '   ' });
+    expect(serviceMocks.upsertSubscription).toHaveBeenLastCalledWith(1, WATCH_ADDRESS, null, null);
+
+    await put({ webhookUrl: null });
+    expect(serviceMocks.upsertSubscription).toHaveBeenLastCalledWith(1, WATCH_ADDRESS, null, null);
+  });
+
+  it.each([
+    ['non-http scheme', 'ftp://example.com/hook'],
+    ['not a URL', 'not a url'],
+    ['over 512 chars', `https://example.com/${'a'.repeat(600)}`],
+    ['number', 42],
+  ])('rejects %s webhookUrl with 400 invalid_webhook_url', async (_name, webhookUrl) => {
+    const res = await put({ webhookUrl });
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({ error: 'invalid_webhook_url' });
     expect(serviceMocks.upsertSubscription).not.toHaveBeenCalled();
   });
 

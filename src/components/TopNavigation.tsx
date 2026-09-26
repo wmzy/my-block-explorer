@@ -1333,6 +1333,13 @@ export default function TopNavigation({
             <button
               type="button"
               className={navLink}
+              onClick={() => goTo(`/chain/${currentChainId}/tokens`)}
+            >
+              Tokens
+            </button>
+            <button
+              type="button"
+              className={navLink}
               onClick={() => goTo(`/chain/${currentChainId}/charts`)}
             >
               Charts
@@ -1349,6 +1356,17 @@ export default function TopNavigation({
               onClick={() => goTo('/sql')}
             >
               SQL
+            </button>
+            {/* Ops joins the admin group: an operator-facing read-only
+                dashboard (storage, indexing, watch, rate limits) — same
+                non-chain-scoped, secondary-tier treatment as SQL. */}
+            <button
+              type="button"
+              className={cx(navLink, navLinkMuted)}
+              aria-label="Ops overview (admin)"
+              onClick={() => goTo('/ops')}
+            >
+              Ops
             </button>
           </div>
 

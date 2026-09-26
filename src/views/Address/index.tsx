@@ -32,8 +32,11 @@ import { checkAddressValidity } from '@/views/Address/addressValidity';
 import {
   addressSearchSchema,
   effectiveActivityTab,
+  effectiveTxFilters,
+  hasActiveTxFilters,
   type ActivityTabId,
 } from '@/views/Address/search';
+import { TxFilterBar } from '@/views/Address/TxFilterBar';
 import { deriveAddressCoverage } from '@/views/Address/coverage';
 import { DeepScan } from '@/views/Address/DeepScan';
 import { scanJobFromTxPayload } from '@/services/addressScan';
@@ -71,6 +74,19 @@ import NftHoldings from '@/views/Address/NftHoldings';
 import InternalTxns from '@/views/Address/InternalTxns';
 import { CrossChainStrip } from '@/views/Address/CrossChainStrip';
 import { ApprovalSection } from '@/views/Address/approvals';
+import { aggregateNftHoldings } from '@/views/Address/nftHoldings';
+import {
+  ACTIVITY_ANCHOR_ID,
+  APPROVALS_ANCHOR_ID,
+  KNOWN_TOKENS_ANCHOR_ID,
+  NFT_HOLDINGS_ANCHOR_ID,
+  OVERVIEW_ANCHOR_ID,
+  TOKEN_HOLDINGS_ANCHOR_ID,
+  deriveAddressSectionAnchors,
+  type SectionAnchor,
+} from '@/views/Address/sectionAnchors';
+import { knownTokensForChain } from '@/config/knownTokens';
+import { useKnownTokenBalances } from '@/services/knownTokenBalances';
 import { createRpcClient } from '@/utils/realTimeData';
 import { useEnsName } from '@/services/ens';
 import { formatRelativeTime } from '@/utils/format';
@@ -88,6 +104,8 @@ import { CoverageBadge } from '@/components/ui/CoverageBadge';
 import { Button } from '@/components/ui/Button';
 import { CopyableHash } from '@/components/ui/CopyableHash';
 import { ExternalLinks } from '@/components/ui/ExternalLinks';
+import { PrivateNoteChip } from '@/components/ui/PrivateNoteChip';
+import { AddressQr } from '@/components/ui/AddressQr';
 
 const headerRow = css`
   display: flex;
@@ -116,6 +134,71 @@ const coverageBadgeRow = css`
   margin: 0 0 var(--haze-space-4);
 `;
 
+// --- In-page section anchor chips (sticky row under the page header) ---
+
+// Sticky offset math assumes the top navigation's fixed 60px bar (its
+// desktop shape); the row itself is ~44px, so jumped-to sections keep
+// 116px of clearance (60 nav + row + breathing room) via scroll-margin.
+const anchorTarget = css`
+  scroll-margin-top: 116px;
+`;
+
+// The sticky chip row itself. The page background (--haze-color-bg on the
+// themed root) masks the content scrolling beneath the stuck row.
+// Hidden below the top nav's own 768px wrap breakpoint: there the nav is
+// taller than the 60px bar this row's sticky offset (and the targets'
+// scroll-margin) assume, and at phone widths (375px) the full chip set
+// would wrap past two rows — a deterministic hide, not a measured guess.
+const anchorNavRow = css`
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--haze-space-2);
+  position: sticky;
+  top: 60px;
+  z-index: 90;
+  background: var(--haze-color-bg);
+  padding: var(--haze-space-2) 0;
+  margin: 0 0 var(--haze-space-4);
+
+  @media (max-width: 767px) {
+    display: none;
+  }
+`;
+
+// One anchor chip: a real <a href="#…"> (focusable, Enter-activated),
+// pill-shaped like the section family it navigates within.
+const anchorChip = css`
+  display: inline-flex;
+  align-items: center;
+  padding: var(--haze-space-1) var(--haze-space-3);
+  border: 1px solid var(--haze-color-border);
+  border-radius: var(--haze-radius-full, 999px);
+  background: var(--haze-color-bg-subtle);
+  color: var(--haze-color-text-muted);
+  text-decoration: none;
+  font-size: var(--haze-text-xs);
+  font-weight: var(--haze-weight-semibold);
+  white-space: nowrap;
+
+  &:hover {
+    color: var(--haze-color-text);
+    border-color: var(--haze-color-primary);
+    text-decoration: none;
+  }
+`;
+
+// Anchor wrapper for one row INSIDE the Overview InfoGrid: the wrapped
+// InfoItem is always :last-child of this wrapper, so its own bottom
+// border switches off — the wrapper draws the identical separator in its
+// place and the grid keeps its exact row rhythm. Renders only when the
+// section itself renders (the page's presence mirrors), so the id always
+// resolves to real content.
+const anchorGridRow = css`
+  border-bottom: 1px solid var(--haze-color-bg-muted);
+  scroll-margin-top: 116px;
+`;
+
 // ENS names carry no length ceiling, and the page title is one: without a
 // break opportunity a long name pushes the whole page into horizontal
 // scroll. `anywhere` only kicks in for names that actually overflow —
@@ -135,6 +218,16 @@ const ensHeaderRow = css`
   flex-wrap: wrap;
   word-break: break-all;
   margin: calc(-1 * var(--haze-space-4)) 0 var(--haze-space-5);
+`;
+
+// Page title + header actions: the QR affordance sits right of the title,
+// in the same header family as the back button above it. The title keeps
+// its own margins (PageHeader), so the action only aligns to the top.
+const addressTitleRow = css`
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--haze-space-3);
 `;
 
 const transactionsCard = css`
@@ -1177,6 +1270,44 @@ export function SummaryStatsRow({
   );
 }
 
+// Sticky chip row of in-page section anchors (derivation in
+// ./sectionAnchors — the view only supplies what it knows). Chips are
+// native <a href="#…"> links: focusable, keyboard-activated, announced
+// with their labels. The click is intercepted ONLY to scroll smoothly
+// while honoring the sticky-offset scroll-margin (native fragment jumps
+// are instant, and writing a hash would push router-owned URLs into
+// history); reduced-motion users get the instant jump. jsdom has no
+// scrollIntoView, so the call is guarded for unit tests.
+function SectionAnchorNav({ anchors }: { anchors: SectionAnchor[] }) {
+  return (
+    <nav className={anchorNavRow} aria-label="Jump to sections">
+      {anchors.map(anchor => (
+        <a
+          key={anchor.id}
+          href={`#${anchor.id}`}
+          className={anchorChip}
+          onClick={event => {
+            event.preventDefault();
+            const target = document.getElementById(anchor.id);
+            if (target === null) return;
+            const reducedMotion = window.matchMedia(
+              '(prefers-reduced-motion: reduce)',
+            ).matches;
+            if (typeof target.scrollIntoView === 'function') {
+              target.scrollIntoView({
+                behavior: reducedMotion ? 'auto' : 'smooth',
+                block: 'start',
+              });
+            }
+          }}
+        >
+          {anchor.label}
+        </a>
+      ))}
+    </nav>
+  );
+}
+
 export default function Address() {
   const { params, router } = useMatched();
 
@@ -1220,6 +1351,10 @@ export default function Address() {
     tab: tabParam,
     ttPage: ttPageParam,
     ttWindow: ttWindowParam,
+    tfFrom: tfFromParam,
+    tfTo: tfToParam,
+    tfMin: tfMinParam,
+    tfMax: tfMaxParam,
   } = useSearch(addressSearchSchema);
   const txPage = Math.max(1, Math.floor(txPageParam));
   const setTxPage = (next: number) => {
@@ -1227,6 +1362,73 @@ export default function Address() {
       ...prev,
       page: String(Math.max(1, Math.floor(next))),
     }));
+  };
+
+  // Advanced tx filters (?tfFrom= / ?tfTo= / ?tfMin= / ?tfMax=): the URL
+  // carries the RAW strings (shareable, back/forward); effectiveTxFilters
+  // degrades malformed ones to absent so a hand-crafted link never fires a
+  // doomed request. Raw presence (not validity) decides whether the filter
+  // bar renders open — the bar shows what the link carried and its field
+  // errors explain why it is not being sent.
+  const txUrlFilterValues = {
+    from: tfFromParam ?? '',
+    to: tfToParam ?? '',
+    min: tfMinParam ?? '',
+    max: tfMaxParam ?? '',
+  };
+  const txUrlFilterParamCount = [tfFromParam, tfToParam, tfMinParam, tfMaxParam]
+    .filter(param => param !== undefined).length;
+  const txFilters = effectiveTxFilters({
+    tfFrom: tfFromParam,
+    tfTo: tfToParam,
+    tfMin: tfMinParam,
+    tfMax: tfMaxParam,
+  });
+  const hasTxFilters = hasActiveTxFilters(txFilters);
+
+  // The bar starts open iff the deep link carries tf params, and re-opens
+  // whenever they appear in the URL (back/forward into a filtered view).
+  // Closing is the user's call and survives until the URL changes again —
+  // never auto-closed, so mid-edit state is not yanked away.
+  const [txFilterBarOpen, setTxFilterBarOpen] = useState(txUrlFilterParamCount > 0);
+  useEffect(() => {
+    if (txUrlFilterParamCount > 0) setTxFilterBarOpen(true);
+  }, [txUrlFilterParamCount]);
+
+  // Apply writes all four params in one history entry and RESETS the page
+  // (the filtered set can only shrink, so deeper pages may no longer
+  // exist); empty fields delete their key (absence IS the unfiltered
+  // state — the ?ttStandard= discipline). Clear drops every tf param but
+  // keeps the page: the unfiltered set is a superset, so the page stays
+  // valid (beyond-data convergence covers any staleness).
+  const applyTxFilters = (next: {
+    from: string;
+    to: string;
+    min: string;
+    max: string;
+  }) => {
+    void setSearch(prev => {
+      const merged: Record<string, string | string[]> = { ...prev, page: '1' };
+      if (next.from === '') delete merged.tfFrom;
+      else merged.tfFrom = next.from;
+      if (next.to === '') delete merged.tfTo;
+      else merged.tfTo = next.to;
+      if (next.min === '') delete merged.tfMin;
+      else merged.tfMin = next.min;
+      if (next.max === '') delete merged.tfMax;
+      else merged.tfMax = next.max;
+      return merged;
+    });
+  };
+  const clearTxFilters = () => {
+    void setSearch(prev => {
+      const merged: Record<string, string | string[]> = { ...prev };
+      delete merged.tfFrom;
+      delete merged.tfTo;
+      delete merged.tfMin;
+      delete merged.tfMax;
+      return merged;
+    });
   };
 
   // Recent-activity tab (segmented control in the card header) rides the
@@ -1270,6 +1472,9 @@ export default function Address() {
     txLimit,
     (txPage - 1) * txLimit,
     txSearchWindow,
+    // Filters ride in the query args (fresh cache key per filter set) —
+    // the backend narrows the SAME cached discovered set, never a scan.
+    txFilters,
   );
 
   // Settled tx payload + the deepest page the discovered total can fill.
@@ -1515,6 +1720,38 @@ export default function Address() {
     [tokenIsErc20, tokenHoldersTransfers, address],
   );
 
+  // --- Section-anchor presence mirrors (./sectionAnchors derivation) ---
+  //
+  // Known Tokens presence mirrors the component's own gate EXACTLY (same
+  // shared-cache hook + cross-args guard — the labelCoverageQuery pattern:
+  // ONE cache entry, zero extra requests): a curated list for the chain
+  // AND a settled same-key payload. In-flight/error checks render nothing
+  // in the component, so they anchor nothing here either.
+  const knownTokensCurated = knownTokensForChain(currentChainId);
+  const knownTokensOwner = address.trim().toLowerCase();
+  const knownTokensQuery = useKnownTokenBalances(currentChainId, knownTokensOwner);
+  const knownTokensData =
+    knownTokensQuery.data?.chainId === currentChainId &&
+    knownTokensQuery.data.address === knownTokensOwner
+      ? knownTokensQuery.data
+      : undefined;
+  const knownTokensPresent =
+    knownTokensCurated.length > 0 && knownTokensData !== undefined;
+
+  // NFT-holdings presence mirrors NftHoldings' own gate over the SAME
+  // inputs (same transfers rows, same shared metadata cache → the same
+  // aggregation): nothing renders while the scan is still empty-handed
+  // or when the window holds no NFT rows. `holdingsScanning` is the
+  // exact expression the component's loading prop receives below.
+  const holdingsScanning = holdingsQuery.loading && !holdingsQuery.data;
+  const nftHoldingsAggregated = useMemo(
+    () => aggregateNftHoldings(holdingsTransfers, address, classifyShared),
+    [holdingsTransfers, address, classifyShared],
+  );
+  const nftHoldingsPresent =
+    !(holdingsScanning && holdingsTransfers.length === 0) &&
+    nftHoldingsAggregated.holdings.length > 0;
+
   // Old error semantics: the persistent error only surfaces when the code
   // fallback failed too; the realtime error surfaces on its own.
   const persistentError =
@@ -1655,10 +1892,15 @@ export default function Address() {
   // a floor, not a full-indexer count. Only authoritative 'complete'
   // coverage may read as an exact total; anything else (partial/none, or
   // a legacy cached payload without coverage tags) renders "at least N".
-  // Pagination math itself stays on `total` unchanged.
-  const txCountPhrase = txCoverage === 'complete'
-    ? `${txTotal.toLocaleString()} transactions`
-    : `At least ${txTotal.toLocaleString()} transactions discovered`;
+  // Pagination math itself stays on `total` unchanged. Under active
+  // filters `total` is the FILTERED count of the discovered set — the
+  // "at least" floor belongs to discovery, not to the narrowing, so the
+  // phrase says "matching" instead.
+  const txCountPhrase = hasTxFilters
+    ? `${txTotal.toLocaleString()} matching discovered transactions`
+    : txCoverage === 'complete'
+      ? `${txTotal.toLocaleString()} transactions`
+      : `At least ${txTotal.toLocaleString()} transactions discovered`;
 
   // Page-level coverage aggregate (PM review: one honest chip near the
   // header instead of stacked caveat paragraphs). Pure derivation in
@@ -1695,6 +1937,19 @@ export default function Address() {
     },
   });
 
+  // In-page section-anchor chips (./sectionAnchors): Overview, Token
+  // Holdings and Approvals render for every valid address; NFT/Known
+  // Tokens ride the presence mirrors above; the activity chip carries the
+  // ACTIVE tab's label (the other tabs' content is not in the DOM). The
+  // derivation returns [] when nothing is left to jump between.
+  const sectionAnchors = deriveAddressSectionAnchors(activityTab, {
+    overview: true,
+    approvals: true,
+    tokenHoldings: true,
+    nftHoldings: nftHoldingsPresent,
+    knownTokens: knownTokensPresent,
+  });
+
   return (
     <>
       <TopNavigation currentChainId={currentChainId} onChainChange={handleChainChange} />
@@ -1705,11 +1960,16 @@ export default function Address() {
           }}
         />
 
-        <PageHeader
-          title={ensName ?? 'Address Details'}
-          chainInfo={`${getChainName(currentChainId)} • Chain ID: ${currentChainId}`}
-          className={addressHeaderStyle}
-        />
+        <div className={addressTitleRow}>
+          <PageHeader
+            title={ensName ?? 'Address Details'}
+            chainInfo={`${getChainName(currentChainId)} • Chain ID: ${currentChainId}`}
+            className={addressHeaderStyle}
+          />
+          {/* Header action family (beside the back button): QR of the
+              checksummed address for wallet hand-off. */}
+          <AddressQr address={address} />
+        </div>
 
         {ensName && (
           <div className={ensHeaderRow}>
@@ -1741,6 +2001,11 @@ export default function Address() {
 
         {!isInitialLoading && (
           <>
+            {/* Sticky in-page anchor chips (derivation in
+                ./sectionAnchors): the row renders only when there is
+                something to jump between, and only here — before this
+                point the sections it links to are not in the DOM yet. */}
+            {sectionAnchors.length > 0 && <SectionAnchorNav anchors={sectionAnchors} />}
             {/* Offline attribution for the indexed fields: the persistent
                 channel is down, so verification/contract-name/creator rows
                 are absent BY CAUSE — say so, while the RPC-derived rows
@@ -1755,243 +2020,285 @@ export default function Address() {
                 </Alert>
               </div>
             )}
-            <Card>
-              <CardHeader>
-                <CardTitle>Overview</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {/* Summary stats over the balance-history page's discovered
+            {/* anchor target: the Overview card (unstyled wrapper — the
+                card's own margins collapse straight through it). */}
+            <div id={OVERVIEW_ANCHOR_ID} className={anchorTarget}>
+              <Card>
+                <CardHeader>
+                  <CardTitle>Overview</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {/* Summary stats over the balance-history page's discovered
                     rows (the same cached response the chart below renders —
                     limit 50, timestamps backend-aligned): renders only when
                     that set is non-empty (clean absence otherwise); dates
                     fall back to honest block numbers when no timestamp
                     resolves. */}
-                <SummaryStatsRow
-                  chainId={currentChainId}
-                  address={address}
-                  rows={summaryStatsRows}
-                  symbol={getChainSymbol(currentChainId)}
-                  decimals={chainInfo.nativeCurrency?.decimals ?? 18}
-                  discoveredTotal={balanceHistoryPage?.total}
-                />
-                <InfoGrid>
-                  <InfoItem label="Address">{address}</InfoItem>
+                  <SummaryStatsRow
+                    chainId={currentChainId}
+                    address={address}
+                    rows={summaryStatsRows}
+                    symbol={getChainSymbol(currentChainId)}
+                    decimals={chainInfo.nativeCurrency?.decimals ?? 18}
+                    discoveredTotal={balanceHistoryPage?.total}
+                  />
+                  <InfoGrid>
+                    <InfoItem label="Address">{address}</InfoItem>
 
-                  {/* Personal annotation (backend-persisted, per chain):
+                    {/* Personal annotation (backend-persisted, per chain):
                       chip + edit when set, "+ add label" when not. Always
                       offered — this is a single-user tool. */}
-                  <InfoItem label="Label">
-                    <AddressLabelRow chainId={currentChainId} address={address} />
-                  </InfoItem>
+                    <InfoItem label="Label">
+                      <AddressLabelRow chainId={currentChainId} address={address} />
+                    </InfoItem>
 
-                  <InfoItem label="Balance">
-                    {realTimeQuery.data
-                      ? `${realTimeQuery.data.balance} ${getChainSymbol(currentChainId)}`
-                      : realTimeQuery.loading
-                        ? 'Loading...'
-                        : realTimeQuery.error
-                          ? 'Error loading balance'
-                          : 'N/A'}
-                  </InfoItem>
+                    {/* Browser-only annotation (localStorage, per chain):
+                      same single-user invitation as the Label row, but the
+                      data never leaves this browser — the editor's caveat
+                      says so at the moment of typing. */}
+                    <InfoItem label="Private Note">
+                      <PrivateNoteChip chainId={currentChainId} address={address} />
+                    </InfoItem>
 
-                  {/* Discovered-holdings section: aggregated NET values from
+                    <InfoItem label="Balance">
+                      {realTimeQuery.data
+                        ? `${realTimeQuery.data.balance} ${getChainSymbol(currentChainId)}`
+                        : realTimeQuery.loading
+                          ? 'Loading...'
+                          : realTimeQuery.error
+                            ? 'Error loading balance'
+                            : 'N/A'}
+                    </InfoItem>
+
+                    {/* Discovered-holdings section: aggregated NET values from
                       the scanned transfers — approximations, honestly
                       labeled below the list. Before the first scan the
                       section offers the scan as a one-click affordance. */}
-                  <InfoItem label="Token Holdings (discovered)">
-                    {!transfersScanned ? (
-                      <>
-                        <span className={holdingsHint}>
-                          Token transfers have not been scanned for this address.
-                        </span>
-                        <Button
-                          variant="secondary"
-                          size="sm"
-                          onClick={() => selectActivityTab('transfers')}
-                        >
-                          Scan Token Transfers
-                        </Button>
-                      </>
-                    ) : holdingsQuery.loading && !holdingsQuery.data ? (
-                      'Scanning token transfers...'
-                    ) : holdingsQuery.error ? (
-                      'Scan failed — see the Token Transfers tab.'
-                    ) : holdings.length === 0 ? (
-                      'No non-zero token holdings in the discovered transfers.'
-                    ) : (
-                      <>
-                        <HoldingsList
-                          chainId={currentChainId}
-                          address={address}
-                          holdings={holdings}
-                          metas={tokenMetas}
-                        />
-                        {/* Estimated USD total over the rows that priced:
+                    <InfoItem label="Token Holdings (discovered)">
+                      {/* anchor target: the row always renders (every branch
+                        of the conditional below is a present state, even
+                        the not-scanned hint), so the chip always
+                        resolves. The div is layout-neutral — block
+                        content already lives in this value cell. */}
+                      <div id={TOKEN_HOLDINGS_ANCHOR_ID} className={anchorTarget}>
+                        {!transfersScanned ? (
+                          <>
+                            <span className={holdingsHint}>
+                              Token transfers have not been scanned for this address.
+                            </span>
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              onClick={() => selectActivityTab('transfers')}
+                            >
+                              Scan Token Transfers
+                            </Button>
+                          </>
+                        ) : holdingsQuery.loading && !holdingsQuery.data ? (
+                          'Scanning token transfers...'
+                        ) : holdingsQuery.error ? (
+                          'Scan failed — see the Token Transfers tab.'
+                        ) : holdings.length === 0 ? (
+                          'No non-zero token holdings in the discovered transfers.'
+                        ) : (
+                          <>
+                            <HoldingsList
+                              chainId={currentChainId}
+                              address={address}
+                              holdings={holdings}
+                              metas={tokenMetas}
+                            />
+                            {/* Estimated USD total over the rows that priced:
                             renders nothing until at least one price
                             landed (never a $0.00 placeholder). */}
-                        {holdingsUsdEstimate !== null && (
-                          <p className={holdingsEstimateStyle}>
-                            Estimated value{' '}
-                            <UsdValue
-                              usd={holdingsUsdEstimate.totalUsd}
-                              price={{
-                                usd: holdingsUsdEstimate.totalUsd,
-                                fetchedAt: holdingsUsdEstimate.fetchedAt,
-                              }}
-                            />
-                          </p>
+                            {holdingsUsdEstimate !== null && (
+                              <p className={holdingsEstimateStyle}>
+                                Estimated value{' '}
+                                <UsdValue
+                                  usd={holdingsUsdEstimate.totalUsd}
+                                  price={{
+                                    usd: holdingsUsdEstimate.totalUsd,
+                                    fetchedAt: holdingsUsdEstimate.fetchedAt,
+                                  }}
+                                />
+                              </p>
+                            )}
+                            <p className={holdingsCaveat}>
+                              Based on discovered transfers — may be incomplete
+                              {holdingsUsdEstimate !== null &&
+                                holdingsUsdEstimate.pricedTokens <
+                                  holdingsUsdEstimate.erc20Tokens
+                                ? ' · valued at market price where available'
+                                : ''}
+                            </p>
+                          </>
                         )}
-                        <p className={holdingsCaveat}>
-                          Based on discovered transfers — may be incomplete
-                          {holdingsUsdEstimate !== null &&
-                            holdingsUsdEstimate.pricedTokens <
-                              holdingsUsdEstimate.erc20Tokens
-                            ? ' · valued at market price where available'
-                            : ''}
-                        </p>
-                      </>
-                    )}
-                  </InfoItem>
+                      </div>
+                    </InfoItem>
 
-                  {/* Known Tokens (curated list, live balances): one cheap
+                    {/* Known Tokens (curated list, live balances): one cheap
                       Multicall3 batch over the per-chain known-token list —
                       fires for every address (EOA and contract alike), so
                       holdings exist on this page even before any transfer
                       scan; silent absence while in flight or on RPC
-                      failure. */}
-                  <KnownTokens chainId={currentChainId} address={address} />
+                      failure. anchor target: the bordered wrapper renders
+                      only when the presence mirror above says the section
+                      does (same shared-cache state), so the chip never
+                      points at an empty row. */}
+                    {knownTokensPresent ? (
+                      <div id={KNOWN_TOKENS_ANCHOR_ID} className={anchorGridRow}>
+                        <KnownTokens chainId={currentChainId} address={address} />
+                      </div>
+                    ) : (
+                      <KnownTokens chainId={currentChainId} address={address} />
+                    )}
 
-                  {/* NFT holdings from the SAME first-page transfers scan
+                    {/* NFT holdings from the SAME first-page transfers scan
                       (no refetch): renders nothing when the window holds no
-                      NFT rows — clean absence, never an empty-state card. */}
-                  <NftHoldings
-                    transfers={holdingsTransfers}
-                    address={address}
-                    chainId={currentChainId}
-                    loading={holdingsQuery.loading && !holdingsQuery.data}
-                  />
+                      NFT rows — clean absence, never an empty-state card.
+                      anchor target: same presence-mirror discipline as
+                      Known Tokens above (the mirror reuses this exact
+                      transfers array and loading flag). */}
+                    {nftHoldingsPresent ? (
+                      <div id={NFT_HOLDINGS_ANCHOR_ID} className={anchorGridRow}>
+                        <NftHoldings
+                          transfers={holdingsTransfers}
+                          address={address}
+                          chainId={currentChainId}
+                          loading={holdingsScanning}
+                        />
+                      </div>
+                    ) : (
+                      <NftHoldings
+                        transfers={holdingsTransfers}
+                        address={address}
+                        chainId={currentChainId}
+                        loading={holdingsScanning}
+                      />
+                    )}
 
-                  {/* The RPC nonce counts OUTGOING transactions only —
+                    {/* The RPC nonce counts OUTGOING transactions only —
                       never label it a total transaction count. The inline
                       marker points at the partial-discovery semantics the
                       Transactions tab's banners explain. */}
-                  <InfoItem label="Outgoing Transactions (Nonce)">
-                    {realTimeQuery.data ? (
-                      <>
-                        {realTimeQuery.data.transactionCount.toLocaleString()}
-                        <button
-                          type="button"
-                          className={nonceHint}
-                          title="Transaction history is partially discovered — see the Transactions tab"
-                          aria-label="About transaction history coverage"
-                          onClick={() => selectActivityTab('transactions')}
-                        >
-                          ⓘ
-                        </button>
-                      </>
-                    ) : realTimeQuery.loading
-                      ? 'Loading...'
-                      : realTimeQuery.error
-                        ? 'Error loading count'
-                        : 'N/A'}
-                  </InfoItem>
-
-                  <InfoItem label="Type">
-                    {addressType === 'delegated-eoa' ? (
-                      <span
-                        title={`EIP-7702 delegation — code is executed by ${
-                          delegationTarget(code) ?? 'its delegate contract'
-                        }`}
-                      >
-                        Delegated EOA (EIP-7702)
-                      </span>
-                    ) : addressType === 'contract' ? (
-                      'Contract'
-                    ) : addressType === 'eoa' ? (
-                      'Externally Owned Account (EOA)'
-                    ) : infoQuery.loading || codeQuery.loading ? (
-                      'Loading...'
-                    ) : (
-                      'Unknown'
-                    )}
-                  </InfoItem>
-
-                  {persistent?.isContract && persistent.contractName && (
-                    <InfoItem label="Contract Name">{persistent.contractName}</InfoItem>
-                  )}
-
-                  {persistent?.isContract && persistent.verificationStatus && (
-                    <InfoItem label="Verification Status">
-                      {persistent.verificationStatus === 'verified' && 'Verified'}
-                      {persistent.verificationStatus === 'partial' && 'Partially Verified'}
-                      {persistent.verificationStatus === 'unverified' && 'Unverified'}
-                    </InfoItem>
-                  )}
-
-                  {showsContractLink && (
-                    <InfoItem label="Contract">
-                      <TypedLink
-                        to={`/chain/${currentChainId}/contract/${address}`}
-                        className={linkStyle}
-                      >
-                        View Contract Details →
-                      </TypedLink>
-                    </InfoItem>
-                  )}
-
-                  {persistent?.contractCreationBlock && (
-                    <InfoItem label="Created at Block">
-                      {persistent.contractCreationBlock.toLocaleString()}
-                    </InfoItem>
-                  )}
-
-                  {persistent?.contractCreator && (
-                    <InfoItem label="Contract Creator">
-                      <TypedLink
-                        to={`/chain/${currentChainId}/address/${persistent.contractCreator}`}
-                        className={linkStyle}
-                      >
-                        {formatAddr(persistent.contractCreator)}
-                      </TypedLink>
-                    </InfoItem>
-                  )}
-
-                  {persistent?.isProxy && (
-                    <>
-                      <InfoItem label="Proxy Type">
-                        {persistent.proxyType ?? 'Standard Proxy'}
-                      </InfoItem>
-                      {persistent.implementationAddress && (
-                        <InfoItem label="Implementation">
-                          <TypedLink
-                            to={`/chain/${currentChainId}/contract/${persistent.implementationAddress}`}
-                            className={linkStyle}
+                    <InfoItem label="Outgoing Transactions (Nonce)">
+                      {realTimeQuery.data ? (
+                        <>
+                          {realTimeQuery.data.transactionCount.toLocaleString()}
+                          <button
+                            type="button"
+                            className={nonceHint}
+                            title="Transaction history is partially discovered — see the Transactions tab"
+                            aria-label="About transaction history coverage"
+                            onClick={() => selectActivityTab('transactions')}
                           >
-                            {formatAddr(persistent.implementationAddress)}
-                          </TypedLink>
-                        </InfoItem>
+                            ⓘ
+                          </button>
+                        </>
+                      ) : realTimeQuery.loading
+                        ? 'Loading...'
+                        : realTimeQuery.error
+                          ? 'Error loading count'
+                          : 'N/A'}
+                    </InfoItem>
+
+                    <InfoItem label="Type">
+                      {addressType === 'delegated-eoa' ? (
+                        <span
+                          title={`EIP-7702 delegation — code is executed by ${
+                            delegationTarget(code) ?? 'its delegate contract'
+                          }`}
+                        >
+                          Delegated EOA (EIP-7702)
+                        </span>
+                      ) : addressType === 'contract' ? (
+                        'Contract'
+                      ) : addressType === 'eoa' ? (
+                        'Externally Owned Account (EOA)'
+                      ) : infoQuery.loading || codeQuery.loading ? (
+                        'Loading...'
+                      ) : (
+                        'Unknown'
                       )}
-                    </>
-                  )}
-
-                  {realTimeQuery.data && (
-                    <InfoItem label="Latest Block">
-                      {realTimeQuery.data.latestBlock.toLocaleString()}
                     </InfoItem>
-                  )}
 
-                  {realTimeQuery.data && (
-                    <InfoItem label="Last Updated">
-                      Updated {formatRelativeTime(realTimeQuery.data.lastUpdatedAt)}
+                    {persistent?.isContract && persistent.contractName && (
+                      <InfoItem label="Contract Name">{persistent.contractName}</InfoItem>
+                    )}
+
+                    {persistent?.isContract && persistent.verificationStatus && (
+                      <InfoItem label="Verification Status">
+                        {persistent.verificationStatus === 'verified' && 'Verified'}
+                        {persistent.verificationStatus === 'partial' && 'Partially Verified'}
+                        {persistent.verificationStatus === 'unverified' && 'Unverified'}
+                      </InfoItem>
+                    )}
+
+                    {showsContractLink && (
+                      <InfoItem label="Contract">
+                        <TypedLink
+                          to={`/chain/${currentChainId}/contract/${address}`}
+                          className={linkStyle}
+                        >
+                          View Contract Details →
+                        </TypedLink>
+                      </InfoItem>
+                    )}
+
+                    {persistent?.contractCreationBlock && (
+                      <InfoItem label="Created at Block">
+                        {persistent.contractCreationBlock.toLocaleString()}
+                      </InfoItem>
+                    )}
+
+                    {persistent?.contractCreator && (
+                      <InfoItem label="Contract Creator">
+                        <TypedLink
+                          to={`/chain/${currentChainId}/address/${persistent.contractCreator}`}
+                          className={linkStyle}
+                        >
+                          {formatAddr(persistent.contractCreator)}
+                        </TypedLink>
+                      </InfoItem>
+                    )}
+
+                    {persistent?.isProxy && (
+                      <>
+                        <InfoItem label="Proxy Type">
+                          {persistent.proxyType ?? 'Standard Proxy'}
+                        </InfoItem>
+                        {persistent.implementationAddress && (
+                          <InfoItem label="Implementation">
+                            <TypedLink
+                              to={`/chain/${currentChainId}/contract/${persistent.implementationAddress}`}
+                              className={linkStyle}
+                            >
+                              {formatAddr(persistent.implementationAddress)}
+                            </TypedLink>
+                          </InfoItem>
+                        )}
+                      </>
+                    )}
+
+                    {realTimeQuery.data && (
+                      <InfoItem label="Latest Block">
+                        {realTimeQuery.data.latestBlock.toLocaleString()}
+                      </InfoItem>
+                    )}
+
+                    {realTimeQuery.data && (
+                      <InfoItem label="Last Updated">
+                        Updated {formatRelativeTime(realTimeQuery.data.lastUpdatedAt)}
+                      </InfoItem>
+                    )}
+
+                    <InfoItem label="External Tools">
+                      <ExternalLinks links={externalToolLinks} />
                     </InfoItem>
-                  )}
-
-                  <InfoItem label="External Tools">
-                    <ExternalLinks links={externalToolLinks} />
-                  </InfoItem>
-                </InfoGrid>
-              </CardContent>
-            </Card>
+                  </InfoGrid>
+                </CardContent>
+              </Card>
+            </div>
 
             {/* Cross-chain presence (bounded probe): collapsed one-line
                 summary under the Overview card — balance+code reads on a
@@ -2002,8 +2309,12 @@ export default function Address() {
             {/* Token approvals (read-only erc20 approve scan): self-contained
                 — own fetch/loading/error/caveat states; renders null when it
                 has nothing useful to show, so it composes cleanly into the
-                token area beside the discovered-holdings rows above. */}
-            <ApprovalSection chainId={currentChainId} address={address} />
+                token area beside the discovered-holdings rows above.
+                anchor target: renders for every valid address (only gated
+                keys render null), so the chip always resolves. */}
+            <div id={APPROVALS_ANCHOR_ID} className={anchorTarget}>
+              <ApprovalSection chainId={currentChainId} address={address} />
+            </div>
 
             {/* Balance-over-time chart: rides the same cached discovered-tx
                 scan as the Transactions tab (?window= shared) and anchors to
@@ -2133,358 +2444,395 @@ export default function Address() {
               </Card>
             )}
 
-            <Card className={transactionsCard}>
-              <CardHeader>
-                <div className={headerRow}>
-                  <div className={segmentedTabs} role="group" aria-label="Recent activity">
-                    {activityTabs.map(tab => (
-                      <button
-                        key={tab.id}
-                        type="button"
-                        className={tabButton}
-                        aria-pressed={activityTab === tab.id}
-                        onClick={() => selectActivityTab(tab.id)}
-                      >
-                        {tab.label}
-                      </button>
-                    ))}
-                  </div>
-                  {/* CSV export (tx tab only): anchor download carrying the
+            {/* Recent-activity card (anchor target: the id is shared by
+                all three tabs — the chip's label is the ACTIVE tab's, and
+                only that tab's content is in the DOM to jump to). The
+                wrapper is unstyled; the card's margin-top collapses
+                straight through it. */}
+            <div id={ACTIVITY_ANCHOR_ID} className={anchorTarget}>
+              <Card className={transactionsCard}>
+                <CardHeader>
+                  <div className={headerRow}>
+                    <div className={segmentedTabs} role="group" aria-label="Recent activity">
+                      {activityTabs.map(tab => (
+                        <button
+                          key={tab.id}
+                          type="button"
+                          className={tabButton}
+                          aria-pressed={activityTab === tab.id}
+                          onClick={() => selectActivityTab(tab.id)}
+                        >
+                          {tab.label}
+                        </button>
+                      ))}
+                    </div>
+                    {/* CSV export (tx tab only): anchor download carrying the
                       CURRENT window param — what the list below shows is
                       what lands in the file. Disabled-with-reason while the
                       list is unsettled or the backend is unreachable. */}
-                  {activityTab === 'transactions' && (
-                    <a
-                      className={cx(
-                        exportCsvLink,
-                        txExportDisabledReason !== undefined && exportCsvLinkDisabled,
-                      )}
-                      {...(txExportDisabledReason === undefined
-                        ? { href: txExportHref, download: true }
-                        : {})}
-                      aria-disabled={
-                        txExportDisabledReason !== undefined ? true : undefined
-                      }
-                      title={
-                        txExportDisabledReason
-                        ?? 'Download the discovered transactions as CSV'
-                      }
-                      data-testid="tx-export-csv"
-                    >
-                      Export CSV
-                    </a>
-                  )}
-                  {/* Refresh honesty: the button refetches what the ACTIVE
+                    {activityTab === 'transactions' && (
+                      <a
+                        className={cx(
+                          exportCsvLink,
+                          txExportDisabledReason !== undefined && exportCsvLinkDisabled,
+                        )}
+                        {...(txExportDisabledReason === undefined
+                          ? { href: txExportHref, download: true }
+                          : {})}
+                        aria-disabled={
+                          txExportDisabledReason !== undefined ? true : undefined
+                        }
+                        title={
+                          txExportDisabledReason
+                          ?? 'Download the discovered transactions as CSV'
+                        }
+                        data-testid="tx-export-csv"
+                      >
+                        Export CSV
+                      </a>
+                    )}
+                    {/* Refresh honesty: the button refetches what the ACTIVE
                       tab shows — the tx history + the realtime balance read
                       that owns 'Last updated', the token-transfer scan
                       (through the refresh signal the transfers component
                       consumes), or the internal tab's traces (its own
                       refresh signal — the tx rows it re-reads come from the
                       shared cache). */}
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => {
-                      if (activityTab === 'transactions') {
-                        void txQuery.refetch();
-                        void realTimeQuery.refetch();
-                      } else if (activityTab === 'transfers') {
-                        setTransfersRefreshing(true);
-                        setTransfersRefreshSignal(signal => signal + 1);
-                      } else {
-                        setInternalRefreshing(true);
-                        setInternalRefreshSignal(signal => signal + 1);
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => {
+                        if (activityTab === 'transactions') {
+                          void txQuery.refetch();
+                          void realTimeQuery.refetch();
+                        } else if (activityTab === 'transfers') {
+                          setTransfersRefreshing(true);
+                          setTransfersRefreshSignal(signal => signal + 1);
+                        } else {
+                          setInternalRefreshing(true);
+                          setInternalRefreshSignal(signal => signal + 1);
+                        }
+                      }}
+                      loading={
+                        activityTab === 'transactions'
+                          ? txQuery.fetching || realTimeQuery.fetching
+                          : activityTab === 'transfers'
+                            ? transfersRefreshing
+                            : internalRefreshing
                       }
-                    }}
-                    loading={
-                      activityTab === 'transactions'
-                        ? txQuery.fetching || realTimeQuery.fetching
-                        : activityTab === 'transfers'
-                          ? transfersRefreshing
-                          : internalRefreshing
-                    }
-                  >
-                    Refresh
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent>
-                {activityTab === 'transfers' ? (
-                  <TokenTransfers
-                    chainId={currentChainId}
-                    address={address}
-                    /* The events-indexing CTA is a contract-only
+                    >
+                      Refresh
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {activityTab === 'transfers' ? (
+                    <TokenTransfers
+                      chainId={currentChainId}
+                      address={address}
+                      /* The events-indexing CTA is a contract-only
                        affordance: a delegated EOA (or an unsettled
                        classification) renders no contract CTA. */
-                    isContract={addressType === 'contract'}
-                    refreshSignal={transfersRefreshSignal}
-                    onRefreshed={() => setTransfersRefreshing(false)}
-                  />
-                ) : activityTab === 'internal' ? (
-                  <InternalTxns
-                    chainId={currentChainId}
-                    address={address}
-                    /* The tx tab's OWN window rides along — no refetch
+                      isContract={addressType === 'contract'}
+                      refreshSignal={transfersRefreshSignal}
+                      onRefreshed={() => setTransfersRefreshing(false)}
+                    />
+                  ) : activityTab === 'internal' ? (
+                    <InternalTxns
+                      chainId={currentChainId}
+                      address={address}
+                      /* The tx tab's OWN window rides along — no refetch
                        here; the traces read the rows the shared query
                        already settled (same key, cached). */
-                    transactions={transactions}
-                    txLoading={txQuery.loading}
-                    txError={txQuery.error?.message}
-                    txPage={txPage}
-                    refreshSignal={internalRefreshSignal}
-                    onRefreshed={() => setInternalRefreshing(false)}
-                  />
-                ) : (
-                  <>
-                    {/* Indexing-scope notice (tx tab only): internal txs stay
+                      transactions={transactions}
+                      txLoading={txQuery.loading}
+                      txError={txQuery.error?.message}
+                      txPage={txPage}
+                      refreshSignal={internalRefreshSignal}
+                      onRefreshed={() => setInternalRefreshing(false)}
+                    />
+                  ) : (
+                    <>
+                      {/* Indexing-scope notice (tx tab only): internal txs stay
                     outside the heuristic's reach at every coverage level —
                     the Internal Txns tab traces them on demand instead.
                     Token transfers moved to their own tab with its own
                     coverage banners; the coverage badge above carries the
                     full per-source wording (incl. the ERC-20/721/1155
                     enumeration). */}
-                    <p className={tokenNotice}>
-                      This list covers external transactions only — internal
-                      transfers are traced in the Internal Txns tab, token
-                      transfers in the Token Transfers tab.
-                    </p>
+                      <p className={tokenNotice}>
+                        This list covers external transactions only — internal
+                        transfers are traced in the Internal Txns tab, token
+                        transfers in the Token Transfers tab.
+                      </p>
 
-                    {/* Deep Scan panel (tx tab only): the persistent
+                      {/* Advanced filters (tx tab only): From/To addresses
+                        and Min/Max wei amounts, URL-driven (?tfFrom= etc.)
+                        so filtered views are shareable. The backend narrows
+                        the SAME cached discovered set — the bar's standing
+                        scope line keeps that honest. */}
+                      <TxFilterBar
+                        open={txFilterBarOpen}
+                        onToggle={() => setTxFilterBarOpen(prev => !prev)}
+                        values={txUrlFilterValues}
+                        urlParamCount={txUrlFilterParamCount}
+                        onApply={applyTxFilters}
+                        onClear={clearTxFilters}
+                      />
+
+                      {/* Deep Scan panel (tx tab only): the persistent
                         discovery job that can upgrade this list's coverage
                         from discovered to provably complete. Reads the
                         job riding this very payload (additive deepScan
                         field, parsed defensively) while its own live GET
                         settles; unmounting on tab switch also stops the
                         panel's poll cadence. */}
-                    <DeepScan
-                      chainId={currentChainId}
-                      address={address}
-                      txPayload={txData}
-                    />
+                      <DeepScan
+                        chainId={currentChainId}
+                        address={address}
+                        txPayload={txData}
+                      />
 
-                    {txQuery.loading && (
-                      <LoadingState message="Scanning recent chain history..." />
-                    )}
+                      {txQuery.loading && (
+                        <LoadingState message="Scanning recent chain history..." />
+                      )}
 
-                    {txQuery.error && <ErrorState message={txQuery.error.message} />}
+                      {txQuery.error && <ErrorState message={txQuery.error.message} />}
 
-                    {!txQuery.loading && !txQuery.error && txCoverage === 'none' && txReason === 'search-failed' && (
-                      <>
-                        <Alert variant="danger">
-                          Transaction search failed (timeout). History is temporarily
-                          unavailable - this is NOT an empty result.
-                        </Alert>
-                        <div className={bannerLinks}>
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            loading={txQuery.fetching}
-                            onClick={() => {
-                              void txQuery.refetch();
-                            }}
-                          >
-                            Retry search
-                          </Button>
-                        </div>
-                      </>
-                    )}
+                      {!txQuery.loading && !txQuery.error && txCoverage === 'none' && txReason === 'search-failed' && (
+                        <>
+                          <Alert variant="danger">
+                            Transaction search failed (timeout). History is temporarily
+                            unavailable - this is NOT an empty result.
+                          </Alert>
+                          <div className={bannerLinks}>
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              loading={txQuery.fetching}
+                              onClick={() => {
+                                void txQuery.refetch();
+                              }}
+                            >
+                              Retry search
+                            </Button>
+                          </div>
+                        </>
+                      )}
 
-                    {!txQuery.loading && !txQuery.error && txCoverage === 'none' && txReason === 'zero-balance' && (
-                      <>
-                        <Alert variant="warning">
-                          {realTimeQuery.data
-                            ? `This address has sent ${realTimeQuery.data.transactionCount.toLocaleString()} transactions (nonce).`
-                            : 'This address has sent an unknown number of transactions (nonce unavailable).'}
-                          {' '}Incoming activity cannot be scanned because the
-                          balance-history heuristic needs non-zero balance; token
-                          activity is never scanned.
-                        </Alert>
-                        <div className={bannerLinks}>
-                          <ExternalLinks links={externalToolLinks} />
-                        </div>
-                      </>
-                    )}
+                      {!txQuery.loading && !txQuery.error && txCoverage === 'none' && txReason === 'zero-balance' && (
+                        <>
+                          <Alert variant="warning">
+                            {realTimeQuery.data
+                              ? `This address has sent ${realTimeQuery.data.transactionCount.toLocaleString()} transactions (nonce).`
+                              : 'This address has sent an unknown number of transactions (nonce unavailable).'}
+                            {' '}Incoming activity cannot be scanned because the
+                            balance-history heuristic needs non-zero balance; token
+                            activity is never scanned.
+                          </Alert>
+                          <div className={bannerLinks}>
+                            <ExternalLinks links={externalToolLinks} />
+                          </div>
+                        </>
+                      )}
 
-                    {/* nonce=0: outgoing history is provably empty, but incoming
+                      {/* nonce=0: outgoing history is provably empty, but incoming
                     activity stays invisible to the heuristic — never read
                     this as a trusted "no transactions at all". */}
-                    {!txQuery.loading && !txQuery.error
-                      && txCoverage === 'partial'
-                      && txReason === 'no-outgoing-transactions' && (
-                      <>
-                        <Alert variant="warning">
-                          No OUTGOING transactions found. Incoming transactions
-                          are undetectable without a full indexer — check an
-                          external explorer.
-                        </Alert>
-                        <div className={bannerLinks}>
-                          <ExternalLinks links={externalToolLinks} />
-                        </div>
-                      </>
-                    )}
+                      {!txQuery.loading && !txQuery.error
+                        && txCoverage === 'partial'
+                        && txReason === 'no-outgoing-transactions' && (
+                        <>
+                          <Alert variant="warning">
+                            No OUTGOING transactions found. Incoming transactions
+                            are undetectable without a full indexer — check an
+                            external explorer.
+                          </Alert>
+                          <div className={bannerLinks}>
+                            <ExternalLinks links={externalToolLinks} />
+                          </div>
+                        </>
+                      )}
 
-                    {/* Generic partial banner: only for a SEARCH that ran and
+                      {/* Generic partial banner: only for a SEARCH that ran and
                     covered a window. The no-outgoing-transactions case has
                     its own banner above — the search never ran there, so
                     "search deeper" would be a no-op (backend early-returns
                     on nonce=0 regardless of window). */}
-                    {!txQuery.loading && !txQuery.error && txCoverage === 'partial'
-                      && txReason !== 'no-outgoing-transactions' && (
-                      <>
-                        <Alert variant="warning">
-                          Partial history - transactions are discovered heuristically
-                          (native-token transfers {searchWindowLabel}). Token
-                          transfers and contract interactions may be missing.
-                        </Alert>
-                        <div className={bannerLinks}>
-                          <ExternalLinks links={externalToolLinks} />
-                          {/* Escalation: quadruple the searched window. Disabled
+                      {!txQuery.loading && !txQuery.error && txCoverage === 'partial'
+                        && txReason !== 'no-outgoing-transactions' && (
+                        <>
+                          <Alert variant="warning">
+                            Partial history - transactions are discovered heuristically
+                            (native-token transfers {searchWindowLabel}). Token
+                            transfers and contract interactions may be missing.
+                          </Alert>
+                          <div className={bannerLinks}>
+                            <ExternalLinks links={externalToolLinks} />
+                            {/* Escalation: quadruple the searched window. Disabled
                           with a title once the RPC budget cap is reached —
                           the button stays visible (still partial) so the
                           limitation stays explained. */}
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            disabled={searchWindowAtCap}
-                            title={
-                              searchWindowAtCap
-                                ? 'maximum RPC budget reached'
-                                : undefined
-                            }
-                            loading={txQuery.fetching}
-                            onClick={() => {
+                            <Button
+                              variant="secondary"
+                              size="sm"
+                              disabled={searchWindowAtCap}
+                              title={
+                                searchWindowAtCap
+                                  ? 'maximum RPC budget reached'
+                                  : undefined
+                              }
+                              loading={txQuery.fetching}
+                              onClick={() => {
                               // The widened window rides in the URL (pushed
                               // history entry like ?page=): it survives
                               // pagination, sharing and back/forward.
-                              void setSearch(prev => ({
-                                ...prev,
-                                window: String(nextSearchWindow),
-                              }));
-                            }}
-                          >
-                            Search deeper
-                          </Button>
-                        </div>
-                      </>
-                    )}
+                                void setSearch(prev => ({
+                                  ...prev,
+                                  window: String(nextSearchWindow),
+                                }));
+                              }}
+                            >
+                              Search deeper
+                            </Button>
+                          </div>
+                        </>
+                      )}
 
-                    {/* Trusted empty ONLY for authoritative coverage ('complete'):
+                      {/* Trusted empty ONLY for authoritative coverage ('complete'):
                     the backend asserts the full history is known. Anything
                     else that looks empty must not read as "no history". */}
-                    {!txQuery.loading && !txQuery.error
-                      && transactions.length === 0 && txTotal === 0
-                      && txCoverage === 'complete' && (
-                      <Alert variant="info">No transactions found</Alert>
-                    )}
+                      {!txQuery.loading && !txQuery.error
+                        && transactions.length === 0 && txTotal === 0
+                        && txCoverage === 'complete' && (
+                        <Alert variant="info">No transactions found</Alert>
+                      )}
 
-                    {/* Pre-coverage cached payload (no coverage/method tags):
+                      {/* Pre-coverage cached payload (no coverage/method tags):
                     the empty list is unverified, so say so instead of
                     implying a trusted empty result. */}
-                    {!txQuery.loading && !txQuery.error
-                      && transactions.length === 0 && txTotal === 0
-                      && txCoverage === undefined && (
-                      <>
-                        <Alert variant="warning">
-                          Transaction data source unknown — history may be
-                          incomplete. Verify on an external explorer.
-                        </Alert>
-                        <div className={bannerLinks}>
-                          <ExternalLinks links={externalToolLinks} />
-                        </div>
-                      </>
-                    )}
+                      {!txQuery.loading && !txQuery.error
+                        && transactions.length === 0 && txTotal === 0
+                        && txCoverage === undefined && (
+                        <>
+                          <Alert variant="warning">
+                            Transaction data source unknown — history may be
+                            incomplete. Verify on an external explorer.
+                          </Alert>
+                          <div className={bannerLinks}>
+                            <ExternalLinks links={externalToolLinks} />
+                          </div>
+                        </>
+                      )}
 
-                    {(transactions.length > 0 || txTotal > 0) && (
-                      <>
-                        <DataTable>
-                          <thead>
-                            <tr>
-                              <th>Txn Hash</th>
-                              <th>Block</th>
-                              <th>Age</th>
-                              <th>Direction</th>
-                              <th>From</th>
-                              <th>To</th>
-                              <th>Value</th>
-                              <th>Status</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {transactions.map(tx => {
-                              const dir = getDirection(tx);
-                              return (
-                                <tr key={tx.hash}>
-                                  <td>
-                                    <CopyableHash
-                                      value={tx.hash}
-                                      truncated={formatHash(tx.hash)}
-                                      href={`/chain/${currentChainId}/tx/${tx.hash}`}
-                                    />
-                                  </td>
-                                  <td>
-                                    <TypedLink
-                                      to={`/chain/${currentChainId}/block/${tx.blockNumber}`}
-                                      className={linkStyle}
-                                    >
-                                      {formatBlockNumber(tx.blockNumber)}
-                                    </TypedLink>
-                                  </td>
-                                  <td>{tx.timestamp ? formatRelativeTime(tx.timestamp) : 'N/A'}</td>
-                                  <td>
-                                    <Badge variant={directionVariant[dir]} size="sm">
-                                      {directionLabel[dir]}
-                                    </Badge>
-                                  </td>
-                                  <td>
-                                    <CopyableHash
-                                      value={tx.fromAddress}
-                                      truncated={formatAddr(tx.fromAddress)}
-                                      href={`/chain/${currentChainId}/address/${tx.fromAddress}`}
-                                    />
-                                  </td>
-                                  <td>
-                                    <CopyableHash
-                                      value={tx.toAddress}
-                                      truncated={formatAddr(tx.toAddress)}
-                                      href={`/chain/${currentChainId}/address/${tx.toAddress}`}
-                                    />
-                                  </td>
-                                  <td className={valueCell}>{formatTxValue(tx.value)}</td>
-                                  <td>
-                                    <TxStatusBadge
-                                      status={tx.status}
-                                      hasBlock={tx.blockNumber !== undefined}
-                                    />
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                            {/* Page slid past the data (total > 0 but this page
+                      {/* Filtered-empty is NOT an error and NOT "no history":
+                    the discovered set for this window simply holds no row
+                    matching the active filters. The coverage banners above
+                    keep their caveat (the window is still a partial
+                    discovery), so this states only what happened. */}
+                      {!txQuery.loading && !txQuery.error && hasTxFilters
+                        && transactions.length === 0 && txTotal === 0 && (
+                        <div data-testid="tx-filter-empty">
+                          <Alert variant="info">
+                            No discovered transactions in this window match the
+                            current filters. Filters narrow the discovered set —
+                            they never widen coverage.
+                          </Alert>
+                        </div>
+                      )}
+
+                      {(transactions.length > 0 || txTotal > 0) && (
+                        <>
+                          <DataTable>
+                            <thead>
+                              <tr>
+                                <th>Txn Hash</th>
+                                <th>Block</th>
+                                <th>Age</th>
+                                <th>Direction</th>
+                                <th>From</th>
+                                <th>To</th>
+                                <th>Value</th>
+                                <th>Status</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {transactions.map(tx => {
+                                const dir = getDirection(tx);
+                                return (
+                                  <tr key={tx.hash}>
+                                    <td>
+                                      <CopyableHash
+                                        value={tx.hash}
+                                        truncated={formatHash(tx.hash)}
+                                        href={`/chain/${currentChainId}/tx/${tx.hash}`}
+                                      />
+                                    </td>
+                                    <td>
+                                      <TypedLink
+                                        to={`/chain/${currentChainId}/block/${tx.blockNumber}`}
+                                        className={linkStyle}
+                                      >
+                                        {formatBlockNumber(tx.blockNumber)}
+                                      </TypedLink>
+                                    </td>
+                                    <td>{tx.timestamp ? formatRelativeTime(tx.timestamp) : 'N/A'}</td>
+                                    <td>
+                                      <Badge variant={directionVariant[dir]} size="sm">
+                                        {directionLabel[dir]}
+                                      </Badge>
+                                    </td>
+                                    <td>
+                                      <CopyableHash
+                                        value={tx.fromAddress}
+                                        truncated={formatAddr(tx.fromAddress)}
+                                        href={`/chain/${currentChainId}/address/${tx.fromAddress}`}
+                                      />
+                                    </td>
+                                    <td>
+                                      <CopyableHash
+                                        value={tx.toAddress}
+                                        truncated={formatAddr(tx.toAddress)}
+                                        href={`/chain/${currentChainId}/address/${tx.toAddress}`}
+                                      />
+                                    </td>
+                                    <td className={valueCell}>{formatTxValue(tx.value)}</td>
+                                    <td>
+                                      <TxStatusBadge
+                                        status={tx.status}
+                                        hasBlock={tx.blockNumber !== undefined}
+                                      />
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                              {/* Page slid past the data (total > 0 but this page
                             is empty — e.g. a widened search shrank the
                             discovered set): never read as "no history". */}
-                            {transactions.length === 0 && (
-                              <tr>
-                                <td className={emptyPageCell} colSpan={8}>
-                                  No transactions on this page
-                                </td>
-                              </tr>
-                            )}
-                          </tbody>
-                        </DataTable>
-                        <Pagination
-                          page={txPage}
-                          pageInfo={`Page ${txPage} of ${txTotalPages} • ${txCountPhrase}`}
-                          hasPrev={txPage > 1}
-                          hasNext={txPage < txTotalPages}
-                          onPrev={() => setTxPage(txPage - 1)}
-                          onNext={() => setTxPage(txPage + 1)}
-                        />
-                      </>
-                    )}
-                  </>
-                )}
-              </CardContent>
-            </Card>
+                              {transactions.length === 0 && (
+                                <tr>
+                                  <td className={emptyPageCell} colSpan={8}>
+                                    No transactions on this page
+                                  </td>
+                                </tr>
+                              )}
+                            </tbody>
+                          </DataTable>
+                          <Pagination
+                            page={txPage}
+                            pageInfo={`Page ${txPage} of ${txTotalPages} • ${txCountPhrase}`}
+                            hasPrev={txPage > 1}
+                            hasNext={txPage < txTotalPages}
+                            onPrev={() => setTxPage(txPage - 1)}
+                            onNext={() => setTxPage(txPage + 1)}
+                          />
+                        </>
+                      )}
+                    </>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
           </>
         )}
       </PageContainer>

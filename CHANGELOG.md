@@ -9,6 +9,22 @@ process.
 
 ## Unreleased
 
+- **Tokens directory** — `/chain/:id/tokens` page: curated known tokens plus tokens opened in this browser (localStorage), one Multicall3 enrichment batch, DefiLlama prices, Curated/Viewed provenance chips, "not a complete registry" caveat.
+- **Block prev/next navigation** — block detail pages link to their neighbors with honest genesis/head boundaries (disabled with reasons; unknown head stays clickable, labeled).
+- **Event raw logs** — every indexed event row in the Events table expands to its raw log (topics, data hex, log index, emitter) with copy affordances; unknown topic0 hashes link to the signature lookup.
+- **Signature lookup page** — `/signatures` resolves 4-byte selectors and 32-byte event topic0 hashes via the openchain-backed cache; `?q=` is shareable (name fragments degrade honestly — the registry is exact-hash only).
+- **ENS in transaction lists** — verified ENS names replace From/To addresses on the first 25 rows of tx list pages; the full checksummed address stays one hover away.
+- **Address tx advanced filters** — `fromAddress`/`toAddress`/`minValue`/`maxValue` (wei) filter the discovered transaction set server-side with no new scan; filters ride the URL (`?tfFrom=` family) and the response echoes `filtersApplied`; unfiltered responses byte-identical.
+- **Watch webhooks** — watch subscriptions accept an optional webhook URL (Discord embeds detected automatically); per-event POSTs with one retry, delivery status recorded on the subscription row (migration 0015).
+- **Ops dashboard** — `/ops` page + `GET /api/ops/summary` (opt-in admin): storage sizes (main/per-chain/solc cache), indexing + deep-scan status, watch subscriptions, rate-limit totals, and backup guidance — every section degrades independently.
+- **Mempool analysis** — the Pending page summarizes fee caps/tips (BigInt-exact quartiles) and flags replaceable same-nonce conflicts with likely winners; `?group=1` groups conflicts.
+- **NFT items grid** — token pages for NFT contracts show up to 24 items discovered from scanned transfers, with per-tile metadata honesty states; ERC-1155 amounts are net mint/burn aggregates.
+- **Private notes & address QR** — per-chain browser-local notes (280 chars, never sent to the server) and a QR modal for addresses; explorer-backup v2 carries notes (v1 files still importable).
+- **OG meta prerender** — `SERVE_STATIC_DIR` lets the Hono server serve the built SPA and inject og:title/og:description/twitter:card meta for shareable links without JS (static-frontend serving is new; API-only and dev modes unchanged).
+- **Accessibility & IA** — anchor chip navigation on long address pages; DataTable column scopes, optional captions/labels, accessible names on icon-only controls.
+- **Fixed: admin gate swallowing watch/SSE routes** — a Hono mount-order quirk let the SQL console's fail-closed gate intercept every route mounted after it, so watch subscriptions, the live block stream and unknown `/api` paths answered 403 in zero-config sessions (no `ADMIN_TOKEN` set). Sub-app gates are now scoped to their own path prefixes, pinned by a mount-isolation regression test.
+- **Fixed: QR dialog never opening** — haze-ui's Dialog treats a plain boolean `open` prop as an initial value only; the address QR now drives it with a react-use-control Control, and the test-suite's Dialog mock is control-aware so the value-prop bug class can no longer hide behind mock infidelity.
+
 - **Address deep scan** — persistent, resumable per-address transaction-discovery jobs (`POST/GET …/addresses/:a/scan` + pause/resume/delete): a forward balance-checkpoint walk (adaptive 50k batches halving on provider range errors, binary-searched change blocks) that persists findings in DuckDB, checkpoints progress every segment, reconciles interrupted jobs at startup, and upgrades address coverage to `complete` **only** for genesis-anchored finished walks — the first sanctioned complete path. The address page's transactions tab gains the Deep Scan panel (live progress, honest ETA, pause/resume).
 - **Entity search** — free-text `/api/search` matches curated known-token symbols and your address labels (`tokenHits`, ≤5, label-wins dedup; the field is dropped, not emptied, on a failed labels read).
 - **Approval history** — the approvals response carries the swept raw approval events (`history`, newest-first cap 200 + `historyTruncated`), rendered as a collapsible timeline; the approvals section also gains the missing inline Retry.

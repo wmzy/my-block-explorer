@@ -32,11 +32,25 @@ vi.mock('haze-ui', () => ({
       'data-testid': 'search-button',
       ...props,
     }),
-  Dialog: (props: MockProps) =>
-    props.open
+  // Control-aware Dialog mock: the REAL haze-ui Dialog drives its open
+  // state through react-use-control's useControl(open, false), which
+  // treats a plain VALUE prop as the initial value only (later flips are
+  // ignored) and a Control prop as live state (control.state = [value,
+  // setter]). Reading the current value either way keeps this mock's
+  // open/close contract faithful to the real component — a plain
+  // `props.open` truthiness check rendered Control-driven dialogs as
+  // always-open (a Control object is always truthy) and masked the exact
+  // value-prop bug the AddressQr regression test pins.
+  Dialog: (props: MockProps) => {
+    const openProp = props.open as { state?: [unknown, unknown] } | boolean | undefined;
+    const isOpen =
+      typeof openProp === 'object' && openProp !== null && Array.isArray(openProp.state)
+        ? Boolean(openProp.state[0])
+        : Boolean(openProp);
+    return isOpen
       ? React.createElement(
           'div',
-          { 'data-testid': 'dialog', 'role': 'dialog', 'aria-modal': 'true' },
+          { 'data-testid': 'dialog', 'role': 'dialog', 'aria-modal': 'true', 'data-state': 'open' },
           [
             React.createElement(
               'div',
@@ -51,7 +65,8 @@ vi.mock('haze-ui', () => ({
             props.children,
           ],
         )
-      : null,
+      : null;
+  },
   Skeleton: (props: MockProps) => mockComponent('div', props, { 'data-testid': 'skeleton' }),
   Badge: (props: MockProps) =>
     mockComponent('span', props, { 'data-testid': 'badge', 'data-variant': props.variant }),

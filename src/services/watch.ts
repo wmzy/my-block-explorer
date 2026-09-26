@@ -27,6 +27,12 @@ export type WatchSubscriptionView = {
   label: string | null;
   /** decimal string; null until the first tick baselined the row */
   lastProcessedBlock: string | null;
+  /** delivery endpoint; null = no webhook configured */
+  webhookUrl: string | null;
+  /** 'ok' | 'failed: <reason>' | null (nothing delivered yet) */
+  webhookStatus: string | null;
+  /** ISO time of the last delivery attempt; null before the first */
+  webhookLastAt: string | null;
   createdAt: string | null;
   updatedAt: string | null;
 };
@@ -39,13 +45,17 @@ type SubscriptionBody = {
   address?: unknown;
   label?: unknown;
   lastProcessedBlock?: unknown;
+  webhookUrl?: unknown;
+  webhookStatus?: unknown;
+  webhookLastAt?: unknown;
   createdAt?: unknown;
   updatedAt?: unknown;
 };
 
 // Shape guard for one subscription row: the fields the panel renders,
 // with the wire types. Anything else is a thrown ApiError instead of
-// fabricated data (labels.ts precedent).
+// fabricated data (labels.ts precedent). The webhook fields predate
+// nothing — an older backend simply omits them and they parse as null.
 const parseSubscription = (
   body: SubscriptionBody,
 ): WatchSubscriptionView => {
@@ -60,6 +70,9 @@ const parseSubscription = (
     address: body.address.toLowerCase(),
     label: typeof body.label === 'string' ? body.label : null,
     lastProcessedBlock: typeof body.lastProcessedBlock === 'string' ? body.lastProcessedBlock : null,
+    webhookUrl: typeof body.webhookUrl === 'string' && body.webhookUrl !== '' ? body.webhookUrl : null,
+    webhookStatus: typeof body.webhookStatus === 'string' ? body.webhookStatus : null,
+    webhookLastAt: typeof body.webhookLastAt === 'string' ? body.webhookLastAt : null,
     createdAt: typeof body.createdAt === 'string' ? body.createdAt : null,
     updatedAt: typeof body.updatedAt === 'string' ? body.updatedAt : null,
   };
@@ -84,25 +97,35 @@ export async function fetchWatchSubscriptions(
 }
 
 /**
- * Upsert one subscription (an omitted/empty label clears it). A fresh
- * row starts watching at the current head. Rejects with ApiError; 403 =
- * admin token missing/invalid, 400 = the route's honest refusal (no RPC
- * config for the chain / per-chain cap / invalid label).
+ * Upsert one subscription (an omitted/empty label clears it; a fresh
+ * row starts watching at the current head). Webhook URL semantics
+ * mirror the route: undefined = leave the stored webhook unchanged (the
+ * key is omitted from the body), '' or null = clear, a string = set
+ * (the server validates http(s) + 512 and answers 400
+ * invalid_webhook_url otherwise). Rejects with ApiError; 403 = admin
+ * token missing/invalid, 400 = the route's honest refusal (no RPC
+ * config for the chain / per-chain cap / invalid label / invalid
+ * webhook URL).
  */
 export async function saveWatchSubscription(
   chainId: number,
   address: string,
   label: string | null,
+  webhookUrl?: string | null,
 ): Promise<WatchSubscriptionView> {
   const lower = address.toLowerCase();
-  const body = await put<{ subscription?: unknown }>(
+  const body: Record<string, unknown> = { label };
+  if (webhookUrl !== undefined) {
+    body.webhookUrl = webhookUrl;
+  }
+  const res = await put<{ subscription?: unknown }>(
     `/api/chains/${chainId}/watch/${lower}`,
-    { label },
+    body,
   );
-  if (typeof body?.subscription !== 'object' || body.subscription === null) {
+  if (typeof res?.subscription !== 'object' || res.subscription === null) {
     throw new ApiError('Malformed watch subscription response', 0);
   }
-  return parseSubscription(body.subscription);
+  return parseSubscription(res.subscription);
 }
 
 /**

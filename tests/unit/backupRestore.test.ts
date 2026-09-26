@@ -8,6 +8,7 @@
 // Transport and the two write services are stubbed at their module
 // boundaries; the localStorage-visible behavior is real.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { getAddress } from 'viem';
 import { ApiError } from '@/util/apiError';
 import type { RestorePlan } from '@/util/localBackup';
 
@@ -52,6 +53,8 @@ describe('collectBackupParts — honest degradation', () => {
     localStorage.setItem('be:theme', 'dark');
     localStorage.setItem('be:ipfsGateway', 'https://pin.mydomain.dev');
     localStorage.setItem('custom-abi:1:0x1234567890abcdef1234567890abcdef12345678', '[]');
+    const noteKey = 'be:privateNote:137:0xabcdef0123456789012345678901234567890123';
+    localStorage.setItem(noteKey, 'polygon hot wallet');
     mockGet.mockRejectedValue(new ApiError('Network error', 0));
 
     const parts = await collectBackupParts();
@@ -60,13 +63,34 @@ describe('collectBackupParts — honest degradation', () => {
     expect(parts.customChains).toEqual([]);
     expect(parts.notes).toEqual(['server data skipped — backend unreachable']);
     // The browser-local parts survive verbatim — null only for keys
-    // this browser never set.
+    // this browser never set. Private notes scan in like custom ABIs,
+    // their address checksum-normalized from the stored key.
     expect(parts.browser).toEqual({
       watchlist: ['0x1234567890abcdef1234567890abcdef12345678'],
       theme: 'dark',
       ipfsGateway: 'https://pin.mydomain.dev',
       customAbis: [{ key: 'custom-abi:1:0x1234567890abcdef1234567890abcdef12345678', abi: '[]' }],
+      privateNotes: [
+        { chainId: 137, address: getAddress('0xabcdef0123456789012345678901234567890123'), note: 'polygon hot wallet' },
+      ],
     });
+  });
+
+  it('skips corrupted private-note entries with an attribution line instead of exporting them broken', async () => {
+    mockGet.mockResolvedValueOnce({ labels: [] });
+    mockGet.mockResolvedValueOnce({ chains: [] });
+    // A grammar-matching key holding an over-cap (hand-corrupted) value.
+    localStorage.setItem('be:privateNote:1:0x1234567890abcdef1234567890abcdef12345678', 'x'.repeat(281));
+    // A grammar-matching key with a WRONG EIP-55 checksum spelling (the
+    // regex sees 40 hex chars; the two-tier check refuses it).
+    localStorage.setItem('be:privateNote:1:0x1234567890AbCdEf1234567890abCdEf12345678', 'x');
+
+    const parts = await collectBackupParts();
+
+    expect(parts.browser.privateNotes).toEqual([]);
+    expect(parts.notes).toEqual([
+      '2 private note(s) skipped — the stored entry is corrupted (unreadable key or over-length value)',
+    ]);
   });
 
   it('attributes a 403 label read to the admin gate', async () => {

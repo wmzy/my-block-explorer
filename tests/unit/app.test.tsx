@@ -36,6 +36,7 @@ describe('route table', () => {
       '/chain/:chainId/transactions',
       '/chain/:chainId/pending',
       '/chain/:chainId/contracts',
+      '/chain/:chainId/tokens',
       '/chain/:chainId/token/:address',
       '/chain/:chainId/charts',
       '/chain/:chainId/block/:blockNumber',
@@ -45,6 +46,8 @@ describe('route table', () => {
       '/chain/:chainId/contract/:address/events',
       '/search',
       '/sql',
+      '/ops',
+      '/signatures',
       '/about/coverage',
     ]);
   });
@@ -80,6 +83,9 @@ describe('route table', () => {
       ['/chain/:chainId/contract/:address', 'Contract'],
       ['/search', 'Search'],
       ['/about/coverage', 'Coverage/Legend'],
+      ['/chain/:chainId/tokens', 'Tokens/List'],
+      ['/ops', 'Ops'],
+      ['/signatures', 'Signatures'],
     ];
 
     for (const [path] of expectations) {

@@ -34,6 +34,22 @@ const app = new Hono();
 // so every entry point agrees on the cap.
 const LABEL_MAX_LENGTH = 100;
 
+// Webhook URL budget (the route's half of the contract; the sender side
+// lives in utils/webhooks.ts).
+const WEBHOOK_URL_MAX_LENGTH = 512;
+
+// http(s) only — an ftp:/javascript: scheme would never be a webhook
+// endpoint, and browsers refuse to POST cross-origin anyway.
+const isValidHttpWebhookUrl = (candidate: string): boolean => {
+  if (candidate.length > WEBHOOK_URL_MAX_LENGTH) return false;
+  try {
+    const parsed = new URL(candidate);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+};
+
 // 5 writes per minute per client (burst 5): the add/remove gestures of
 // one operator, while a script cycling addresses cannot.
 const watchWriteLimiter = createRateLimiter({
@@ -64,30 +80,73 @@ const parseChainAndAddress = (
   }
 };
 
-// PUT body validation: { label?: string | null }. Absent body, absent
-// label and null all mean "no label" (cleared on the conflict path);
-// a label over the cap is a 400, not a silent truncation. Unknown extra
-// keys are ignored (forward compatibility).
+// PUT body validation: { label?: string | null, webhookUrl?: string | null }.
+// Label: absent body, absent label and null all mean "no label" (cleared
+// on the conflict path); a label over the cap is a 400, not a silent
+// truncation. Webhook URL: ABSENT means UNCHANGED (the PUT is an
+// upsert-by-address, so a label-only re-put must not silently drop a
+// configured webhook); null or an empty string means CLEAR; a non-empty
+// value must be an http(s) URL of at most 512 chars — anything else is
+// a 400 'invalid_webhook_url', never a silent store of a dead endpoint.
+// Unknown extra keys are ignored (forward compatibility).
+//
+// Trust note (deliberate, documented): there is NO SSRF filtering on
+// webhook URLs. This is a single-user, locally-run explorer — the
+// operator points the webhook at their own Discord/HTTP endpoint, and
+// the write is already behind the admin-token gate. Anyone who can PUT
+// a webhook URL can also just run the process.
 const parseWatchBody = (
   body: unknown,
-): { label: string | null } | { error: string; message: string } => {
-  if (body === undefined || body === null) return { label: null };
+):
+  | { label: string | null; webhookUrl: string | null | undefined }
+  | { error: string; message: string } => {
+  if (body === undefined || body === null) return { label: null, webhookUrl: undefined };
   if (typeof body !== 'object' || Array.isArray(body)) {
     return { error: 'invalid_label', message: 'Request body must be a JSON object' };
   }
-  const { label } = body as Record<string, unknown>;
-  if (label === undefined || label === null) return { label: null };
-  if (typeof label !== 'string') {
+  const { label, webhookUrl } = body as Record<string, unknown>;
+
+  let parsedLabel: string | null;
+  if (label === undefined || label === null) {
+    parsedLabel = null;
+  } else if (typeof label !== 'string') {
     return { error: 'invalid_label', message: 'label must be a string when present' };
+  } else {
+    const trimmed = label.trim();
+    if (trimmed.length > LABEL_MAX_LENGTH) {
+      return {
+        error: 'invalid_label',
+        message: `label must be at most ${LABEL_MAX_LENGTH} characters`,
+      };
+    }
+    parsedLabel = trimmed === '' ? null : trimmed;
   }
-  const trimmed = label.trim();
-  if (trimmed.length > LABEL_MAX_LENGTH) {
+
+  let parsedWebhookUrl: string | null | undefined;
+  if (webhookUrl === undefined) {
+    parsedWebhookUrl = undefined; // absent = unchanged
+  } else if (webhookUrl === null) {
+    parsedWebhookUrl = null; // explicit clear
+  } else if (typeof webhookUrl !== 'string') {
     return {
-      error: 'invalid_label',
-      message: `label must be at most ${LABEL_MAX_LENGTH} characters`,
+      error: 'invalid_webhook_url',
+      message: 'webhookUrl must be a string when present',
     };
+  } else {
+    const trimmed = webhookUrl.trim();
+    if (trimmed === '') {
+      parsedWebhookUrl = null; // empty string = clear
+    } else if (!isValidHttpWebhookUrl(trimmed)) {
+      return {
+        error: 'invalid_webhook_url',
+        message: `webhookUrl must be an http(s) URL of at most ${WEBHOOK_URL_MAX_LENGTH} characters`,
+      };
+    } else {
+      parsedWebhookUrl = trimmed;
+    }
   }
-  return { label: trimmed === '' ? null : trimmed };
+
+  return { label: parsedLabel, webhookUrl: parsedWebhookUrl };
 };
 
 // GET /chains/:chainId/watch — list this chain's subscriptions.
@@ -140,6 +199,7 @@ app.put(
         parsed.chainId,
         parsed.address,
         parsedBody.label,
+        parsedBody.webhookUrl,
       );
       if (!result.ok) {
         return c.json({ error: result.error, message: result.message }, 400);

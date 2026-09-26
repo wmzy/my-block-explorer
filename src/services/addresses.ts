@@ -26,6 +26,19 @@ export type AddressTransactionPage = {
   searchWindowBlocks?: number;
   window?: number;
   /**
+   * Echo of the server-side narrowing filters this response applied,
+   * exactly as received — present ONLY when at least one filter param
+   * was sent. `total` (and the served page) already describe the
+   * FILTERED view of the same cached discovered set: filters narrow,
+   * they never widen coverage or trigger a new scan.
+   */
+  filtersApplied?: {
+    fromAddress?: string;
+    toAddress?: string;
+    minValue?: string;
+    maxValue?: string;
+  };
+  /**
    * Deep-scan job state when one exists for this address (absent on
    * legacy payloads — the backend drops the key when no job row exists).
    * Shape: the /scan job DTO; parsed defensively by the Deep Scan panel
@@ -87,25 +100,44 @@ export function fetchAddressInfo(
   );
 }
 
+// Server-side narrowing filters forwarded as query params. String-typed
+// twin of the backend's AddressTxFilters: wei amounts stay exact decimal
+// strings (BigInt-exact on the server, never Number). The backend applies
+// them over the SAME cached discovered set for the window — no new scan.
+export type AddressTxFilters = {
+  fromAddress?: string;
+  toAddress?: string;
+  minValue?: string;
+  maxValue?: string;
+};
+
 export function fetchAddressTransactions(
   chainId: number,
   address: string,
   limit: number,
   offset: number,
   searchWindow?: number,
+  filters?: AddressTxFilters,
   signal?: AbortSignal,
 ): Promise<AddressTransactionPage | undefined> {
   if (!(chainId > 0) || address.length === 0) return Promise.resolve(undefined);
   // Backend route paginates by `page` (derives offset itself) and ignores
   // an `offset` query param — translate or every page returns page 1.
   // `window` widens the heuristic binary-search range (blocks, clamped
-  // server-side); omitted → backend default window.
+  // server-side); omitted → backend default window. Filter entries with
+  // undefined values are dropped by `get`, so absent filters stay out of
+  // the URL and the request is byte-identical to the pre-filter call.
   // This endpoint is deliberately long-running (the server scans balance
   // changes under its own 30s budget — the view shows a scanning banner);
   // the default 10s per-attempt timeout would abort healthy scans.
   return get<AddressTransactionPage>(
     `/api/chains/${chainId}/addresses/${address}/transactions`,
-    { limit, page: Math.floor(offset / limit) + 1, window: searchWindow },
+    {
+      limit,
+      page: Math.floor(offset / limit) + 1,
+      window: searchWindow,
+      ...(filters ?? {}),
+    },
     withSignal(longRunningApi, signal),
   );
 }
@@ -115,11 +147,14 @@ export const addressInfoCache = createQueryCache<AddressInfoResponse | undefined
   string,
 ]>('addresses-info');
 
-// The window rides in the cache key: a widened ?window= must resolve to a
-// fresh entry, never a stale narrow-window cached result.
+// The window AND the filters ride in the cache key: a widened ?window=
+// or a different active filter must resolve to a fresh entry, never a
+// stale narrow/unfiltered cached result. The filters element is optional
+// so existing 5-arg callers (BalanceHistory's own fetch is separate)
+// keep compiling unchanged; a missing element hashes like undefined.
 export const addressTransactionsCache = createQueryCache<
   AddressTransactionPage | undefined,
-  [number, string, number, number, number | undefined]
+  [number, string, number, number, number | undefined, AddressTxFilters?]
 >('addresses-transactions');
 
 const queryAddressInfo = bindQueryFn(fetchAddressInfo, addressInfoCache);
@@ -145,6 +180,7 @@ export function useAddressTransactions(
   limit: number,
   offset: number,
   searchWindow?: number,
+  filters?: AddressTxFilters,
 ) {
   return useAddressTransactionsQuery([
     chainId,
@@ -152,5 +188,6 @@ export function useAddressTransactions(
     limit,
     offset,
     searchWindow,
+    filters,
   ]);
 }

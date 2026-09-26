@@ -252,7 +252,9 @@ export default function BlocksList() {
         {!loading && !error && blocks.length === 0 && <EmptyState message="No blocks found" />}
 
         {blocks.length > 0 && (
-          <DataTable>
+          /* caption mirrors the page header title: the table announces
+             itself to screen readers as the "Blocks" list it visibly is. */
+          <DataTable caption="Blocks">
             <thead>
               <tr>
                 <th>Block</th>

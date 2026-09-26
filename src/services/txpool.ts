@@ -48,6 +48,8 @@ export type PoolEntry = {
   gasPrice?: bigint;
   /** EIP-1559 fee cap; undefined for legacy txs. */
   maxFeePerGas?: bigint;
+  /** EIP-1559 priority fee (tip); undefined for legacy txs and 1559 txs that did not report one. */
+  maxPriorityFeePerGas?: bigint;
   nonce: number;
   /** Outer map key the tx sits under (the pending account). */
   account: string;
@@ -154,6 +156,11 @@ const normalizeEntry = (
   if (gasPrice !== null) entry.gasPrice = gasPrice;
   const maxFeePerGas = parseQuantity(tx.maxFeePerGas);
   if (maxFeePerGas !== null) entry.maxFeePerGas = maxFeePerGas;
+  // Parsed independently of the cap: a 1559 tx that omits the tip keeps
+  // cap statistics working while tip statistics skip it (honest absence —
+  // a tip of 0 must come from the node, never from a missing field).
+  const maxPriorityFeePerGas = parseQuantity(tx.maxPriorityFeePerGas);
+  if (maxPriorityFeePerGas !== null) entry.maxPriorityFeePerGas = maxPriorityFeePerGas;
   return entry;
 };
 

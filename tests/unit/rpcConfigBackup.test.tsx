@@ -14,7 +14,7 @@ import '@testing-library/jest-dom';
 import { useControl } from 'react-use-control';
 import RpcConfig from '@/components/RpcConfig';
 import { toast } from 'sonner';
-import { serializeBackup, type BackupParts, type RestorePlan } from '@/util/localBackup';
+import { BACKUP_VERSION, serializeBackup, type BackupParts, type RestorePlan } from '@/util/localBackup';
 
 const { mockGetRpcConfigs, mockCollectBackupParts, mockExportBackupFile, mockExecuteRestore } =
   vi.hoisted(() => ({
@@ -76,6 +76,7 @@ const PARTS: BackupParts = {
     customAbis: [
       { key: 'custom-abi:1:0x1234567890abcdef1234567890abcdef12345678', abi: '[]' },
     ],
+    privateNotes: [],
   },
 };
 
@@ -159,7 +160,10 @@ describe('RpcConfig backup section — import', () => {
   it('rejects a wrong-version file with the unknown-version error', async () => {
     render(<OpenRpcConfig />);
 
-    const future = { ...serializeBackup(PARTS), version: 2 };
+    // One past the highest supported version — pinned relative to the
+    // exporter so a future bump keeps this test a genuine reject case
+    // (a hardcoded 2 stopped being unsupported when v2 shipped).
+    const future = { ...serializeBackup(PARTS), version: BACKUP_VERSION + 1 };
     await chooseFile(backupFileInput(), JSON.stringify(future));
 
     const message = await screen.findByTestId('backup-message');

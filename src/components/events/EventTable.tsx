@@ -3,8 +3,9 @@
  * Integrates with events API endpoints for real-time data display
  */
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { css, cx } from '@linaria/core';
+import { TypedLink } from '@native-router/react';
 import { Address, formatEther, AbiEvent } from 'viem';
 import { EventFilterPanel, type EventFilterState } from './EventFilterPanel';
 import { get } from '@/util/http';
@@ -23,6 +24,19 @@ type EventData = {
   from?: string;
   to?: string;
   value?: string;
+  // Raw log fields carried straight from the indexed contract_events row.
+  // All nullable: rows written before a field existed (or rows supplied
+  // via initialEvents) legitimately lack them, and the raw-log disclosure
+  // degrades honestly instead of erroring.
+  logIndex?: number | null;
+  // The emitting contract of the log (indexing fetches logs by contract
+  // address, so this is normally the table's own contractAddress)
+  contractAddress?: string | null;
+  topic0?: string | null;
+  topic1?: string | null;
+  topic2?: string | null;
+  topic3?: string | null;
+  data?: string | null;
   [key: string]: unknown;
 };
 
@@ -204,6 +218,213 @@ const valueCell = css`
 const timestampCell = css`
   color: var(--haze-color-text-muted);
   font-size: 12px;
+`;
+
+// ─── Raw-log disclosure ──────────────────────────────────────────────────────
+// Leading cell with the chevron toggle, plus the expandable detail row that
+// renders the verbatim indexed log fields (topics, data hex, log identity).
+
+const rawLogToggleCell = css`
+  width: 40px;
+  padding: 12px 4px;
+  text-align: center;
+`;
+
+// Native button: keyboard operable out of the box (Enter/Space), and
+// aria-expanded carries the disclosure state.
+const rawLogToggleButton = css`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: var(--haze-radius-sm);
+  background: transparent;
+  color: var(--haze-color-text-secondary);
+  cursor: pointer;
+
+  &:hover {
+    background: var(--haze-color-bg-muted);
+    color: var(--haze-color-text);
+  }
+
+  &:focus-visible {
+    outline: 2px solid var(--haze-color-primary);
+    outline-offset: 1px;
+  }
+`;
+
+const rawLogChevron = css`
+  width: 14px;
+  height: 14px;
+  transform: rotate(-90deg);
+  transition: transform 0.15s ease;
+`;
+
+const rawLogChevronExpanded = css`
+  transform: rotate(0deg);
+`;
+
+const rawLogRowCell = css`
+  padding: 12px 16px;
+  background: var(--haze-color-bg-subtle);
+  border-bottom: 1px solid var(--haze-color-border);
+`;
+
+const rawLogDisclosure = css`
+  display: flex;
+  flex-direction: column;
+  gap: var(--haze-space-3);
+  min-width: 0;
+`;
+
+const rawLogMetaRow = css`
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 20px;
+  font-family: var(--haze-font-mono);
+  font-size: 12px;
+`;
+
+const rawLogMetaItem = css`
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+`;
+
+const rawLogMetaLabel = css`
+  color: var(--haze-color-text-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+`;
+
+const rawLogLink = css`
+  color: var(--haze-color-primary);
+  text-decoration: none;
+
+  &:hover {
+    text-decoration: underline;
+  }
+`;
+
+const rawLogHexValue = css`
+  font-family: var(--haze-font-mono);
+  font-size: 12px;
+  color: var(--haze-color-text);
+  word-break: break-all;
+`;
+
+// Muted placeholder for a raw field the stored row does not carry — a
+// stated absence, never a fabricated value.
+const notStoredValue = css`
+  color: var(--haze-color-text-muted);
+  font-style: italic;
+`;
+
+const rawLogSectionLabel = css`
+  font-size: 11px;
+  color: var(--haze-color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+`;
+
+const rawLogTopicRow = css`
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+`;
+
+const rawLogTopicLabel = css`
+  font-family: var(--haze-font-mono);
+  font-size: 12px;
+  color: var(--haze-color-text-muted);
+  flex-shrink: 0;
+  min-width: 48px;
+`;
+
+// Resolved event name chip next to topic0 when the row decoded successfully.
+const rawLogChip = css`
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 500;
+  font-family: inherit;
+  color: var(--haze-color-primary);
+  background: var(--haze-color-bg-muted);
+  border: 1px solid var(--haze-color-border);
+  flex-shrink: 0;
+`;
+
+// Unknown topic0: link out to the signature lookup page instead of a chip.
+const rawLogLookupChip = css`
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 500;
+  text-decoration: none;
+  color: var(--haze-color-primary);
+  background: var(--haze-color-bg);
+  border: 1px solid var(--haze-color-border);
+  flex-shrink: 0;
+
+  &:hover {
+    background: var(--haze-color-bg-muted);
+    text-decoration: underline;
+  }
+`;
+
+const rawLogDataRow = css`
+  display: flex;
+  align-items: flex-start;
+  gap: var(--haze-space-3);
+  min-width: 0;
+`;
+
+// Scrollable mono pre (RawJson preStyle pattern): the unbroken data hex
+// scrolls inside the box instead of stretching the table sideways.
+const rawLogPre = css`
+  margin: 0;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 640px;
+  max-height: 200px;
+  overflow: auto;
+  border: 1px solid var(--haze-color-border);
+  border-radius: var(--haze-radius-sm);
+  background: var(--haze-color-bg);
+  padding: var(--haze-space-2) var(--haze-space-3);
+  font-family: var(--haze-font-mono);
+  font-size: 12px;
+  line-height: var(--haze-leading-relaxed);
+  white-space: pre;
+`;
+
+const rawLogCopyButton = css`
+  border: 1px solid var(--haze-color-border);
+  border-radius: var(--haze-radius-sm);
+  background: var(--haze-color-bg);
+  padding: var(--haze-space-1) var(--haze-space-3);
+  font-size: 12px;
+  cursor: pointer;
+  flex-shrink: 0;
+
+  &:hover {
+    background: var(--haze-color-bg-muted);
+  }
+`;
+
+// Honest degrade: the row predates raw-log storage (or was supplied without
+// raw fields) — a stated absence, never an error state.
+const rawLogNote = css`
+  margin: 0;
+  font-size: 13px;
+  color: var(--haze-color-text-muted);
+  font-style: italic;
 `;
 
 const paginationContainer = css`
@@ -722,10 +943,22 @@ const clientSideSort = (
     ];
   }
 
-  // Generate cache key based on sort configurations
+  // Generate cache key based on sort configurations AND the data itself.
+  // Size+configs alone would make the module-global sorter cache return a
+  // stale ordering for a refetched page whose row count and sort did not
+  // change — e.g. a refreshKey bump that swapped in new events would keep
+  // rendering the previous page's rows. Row identity plus the fields that
+  // legitimately mutate on refetch (timestamp backfill, finality
+  // promotion) keys the cache to the actual content.
   const cacheKey = `sort_${JSON.stringify({
     dataSize: data.length,
     configs: finalSortConfigs.map(c => ({ k: c.key, d: c.direction, t: c.type })),
+    rows: data.map(
+      row =>
+        `${row.transactionHash}-${row.logIndex ?? ''}-${row.blockNumber}-${
+          row.blockTimestamp ?? ''
+        }-${row.isFinalized ?? ''}`,
+    ),
   })}`;
 
   // Use optimized sorting
@@ -756,6 +989,148 @@ const argFiltersQueryParam = (abiFilters?: Record<string, string>): string | und
   );
   return Object.keys(active).length > 0 ? JSON.stringify(active) : undefined;
 };
+
+// Per-field copy button with the codebase's label-swap feedback pattern
+// (RawJson/SourceCodeViewer): the button itself reports the honest outcome
+// of the clipboard call, never a guess.
+function CopyButton({ text, label }: { text: string; label: string }) {
+  const [result, setResult] = useState<'idle' | 'ok' | 'fail'>('idle');
+  const timerRef = useRef<number | undefined>(undefined);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current !== undefined) window.clearTimeout(timerRef.current);
+    };
+  }, []);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setResult('ok');
+    } catch {
+      setResult('fail');
+    }
+    if (timerRef.current !== undefined) window.clearTimeout(timerRef.current);
+    timerRef.current = window.setTimeout(() => setResult('idle'), 2000);
+  };
+
+  return (
+    <button type="button" className={rawLogCopyButton} onClick={() => void handleCopy()}>
+      {result === 'ok' ? 'Copied ✓' : result === 'fail' ? 'Copy failed' : label}
+    </button>
+  );
+}
+
+// The raw-log disclosure body rendered inside a row's expandable detail row.
+// Every field comes straight from the indexed contract_events row and is
+// nullable: a row whose raw fields are all absent (written before raw-log
+// storage, or supplied via initialEvents) degrades to the honest "not
+// stored" note — never an error and never a fabricated value.
+function RawLogDisclosure({
+  event,
+  chainId,
+  emitterFallback,
+}: {
+  event: EventData;
+  chainId: number;
+  // The table's own contract: the emitting address fallback for rows that
+  // do not carry their own contractAddress field.
+  emitterFallback: string;
+}) {
+  const topics = [event.topic0, event.topic1, event.topic2, event.topic3].flatMap((value, index) =>
+    typeof value === 'string' && value !== '' ? [{ label: `topic${index}`, value }] : [],
+  );
+  const data = typeof event.data === 'string' && event.data !== '' ? event.data : null;
+  // The indexer records 'Unknown' when a log did not decode against the ABI —
+  // exactly the rows whose topic0 benefits from a signature lookup.
+  const eventName = typeof event.eventName === 'string' ? event.eventName : '';
+  const decodedNameKnown = eventName !== '' && eventName !== 'Unknown';
+  const emitter =
+    typeof event.contractAddress === 'string' && event.contractAddress !== ''
+      ? event.contractAddress
+      : emitterFallback;
+
+  if (topics.length === 0 && data === null) {
+    return <p className={rawLogNote}>Raw log not stored for this row</p>;
+  }
+
+  return (
+    <div className={rawLogDisclosure} data-testid="raw-log-disclosure">
+      <div className={rawLogMetaRow}>
+        <span className={rawLogMetaItem}>
+          <span className={rawLogMetaLabel}>Block</span>{' '}
+          <TypedLink to={`/chain/${chainId}/block/${event.blockNumber}`} className={rawLogLink}>
+            {String(event.blockNumber)}
+          </TypedLink>
+        </span>
+        <span className={rawLogMetaItem}>
+          <span className={rawLogMetaLabel}>Tx</span>{' '}
+          <TypedLink
+            to={`/chain/${chainId}/tx/${event.transactionHash}`}
+            className={rawLogLink}
+            title={event.transactionHash}
+          >
+            {formatTransactionHash(event.transactionHash)}
+          </TypedLink>
+        </span>
+        <span className={rawLogMetaItem}>
+          <span className={rawLogMetaLabel}>Log index</span>{' '}
+          {typeof event.logIndex === 'number' ? (
+            event.logIndex
+          ) : (
+            <span className={notStoredValue}>not stored</span>
+          )}
+        </span>
+        <span className={rawLogMetaItem}>
+          <span className={rawLogMetaLabel}>Address</span>{' '}
+          <span className={rawLogHexValue}>{emitter}</span>
+          <CopyButton text={emitter} label="Copy address" />
+        </span>
+      </div>
+
+      <div>
+        <div className={rawLogSectionLabel}>Topics</div>
+        {topics.length > 0 ? (
+          topics.map(topic => (
+            <div key={topic.label} className={rawLogTopicRow}>
+              <span className={rawLogTopicLabel}>{topic.label}</span>
+              <span className={rawLogHexValue}>{topic.value}</span>
+              {topic.label === 'topic0' &&
+                (decodedNameKnown ? (
+                  <span className={rawLogChip}>{eventName}</span>
+                ) : (
+                  <TypedLink
+                    to="/signatures"
+                    search={{ q: topic.value }}
+                    className={rawLogLookupChip}
+                    title={`Look up signature for ${topic.value}`}
+                  >
+                    Look up topic0
+                  </TypedLink>
+                ))}
+            </div>
+          ))
+        ) : (
+          <span className={notStoredValue}>not stored</span>
+        )}
+      </div>
+
+      <div>
+        <div className={rawLogSectionLabel}>Data</div>
+        {data !== null ? (
+          <div className={rawLogDataRow}>
+            <pre className={rawLogPre} data-testid="raw-log-data">
+              {data}
+            </pre>
+            <CopyButton text={data} label="Copy data" />
+          </div>
+        ) : (
+          <span className={notStoredValue}>not stored</span>
+        )}
+      </div>
+    </div>
+  );
+}
 
 // Default sort options
 const defaultSortOptions: SortOption[] = [
@@ -878,6 +1253,23 @@ export const EventTable: React.FC<EventTableProps> = ({
 
   // Enhanced filtering state
   const [dynamicFilters, setDynamicFilters] = useState<EventFilterState>({});
+
+  // Raw-log disclosure: which rows are expanded. Detail rows render only
+  // while their key is in the set (lazy), and keys survive sort/pagination
+  // re-orders because they are the row identity (tx hash + log index).
+  const [expandedRawLogs, setExpandedRawLogs] = useState<ReadonlySet<string>>(new Set());
+
+  const toggleRawLog = useCallback((key: string) => {
+    setExpandedRawLogs(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  }, []);
 
   // Determine if we should use client-side sorting
   // Use pagination.total (server-reported count) instead of allEvents.length (loaded data)
@@ -1548,6 +1940,7 @@ export const EventTable: React.FC<EventTableProps> = ({
           <table className={tableStyle}>
             <thead className={tableHeader}>
               <tr>
+                <th scope="col" className={tableHeaderCell} aria-label="Raw log" />
                 <th className={cx(tableHeaderCell, tableHeaderCellSortable)} onClick={() => handleSort('block_number')}>
                   Block
                   <span className={sortIndicator}>
@@ -1577,51 +1970,100 @@ export const EventTable: React.FC<EventTableProps> = ({
               </tr>
             </thead>
             <tbody className={tableBody}>
-              {events.map((event, index) => (
-                <tr key={`${event.transactionHash}-${index}`}>
-                  <td className={tableCell}>{event.blockNumber}</td>
-                  <td className={cx(tableCell, timestampCell)}>{formatTimestamp(event.blockTimestamp)}</td>
-                  <td className={cx(tableCell, eventNameCell)}>
-                    {event.eventName}
-                    {event.isFinalized === false && (
-                      <span className={unfinalizedBadge}>unfinalized</span>
+              {events.map((event, index) => {
+                // Row identity for the disclosure: tx hash + log index is the
+                // primary key of the indexed row (index only as a fallback for
+                // rows supplied without a logIndex).
+                const rowKey = `${event.transactionHash}-${event.logIndex ?? index}`;
+                const isExpanded = expandedRawLogs.has(rowKey);
+                const toggleLabel = `Raw log for block ${event.blockNumber}${
+                  typeof event.logIndex === 'number' ? `, log index ${event.logIndex}` : ''
+                }`;
+
+                return (
+                  <React.Fragment key={rowKey}>
+                    <tr>
+                      <td className={rawLogToggleCell}>
+                        <button
+                          type="button"
+                          className={rawLogToggleButton}
+                          aria-expanded={isExpanded}
+                          aria-label={toggleLabel}
+                          title={toggleLabel}
+                          onClick={() => toggleRawLog(rowKey)}
+                        >
+                          <svg
+                            className={cx(rawLogChevron, isExpanded && rawLogChevronExpanded)}
+                            viewBox="0 0 20 20"
+                            fill="currentColor"
+                            aria-hidden="true"
+                          >
+                            <path
+                              fillRule="evenodd"
+                              d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
+                              clipRule="evenodd"
+                            />
+                          </svg>
+                        </button>
+                      </td>
+                      <td className={tableCell}>{event.blockNumber}</td>
+                      <td className={cx(tableCell, timestampCell)}>{formatTimestamp(event.blockTimestamp)}</td>
+                      <td className={cx(tableCell, eventNameCell)}>
+                        {event.eventName}
+                        {event.isFinalized === false && (
+                          <span className={unfinalizedBadge}>unfinalized</span>
+                        )}
+                      </td>
+                      <td className={cx(tableCell, addressCell)}>
+                        {event.from ? (
+                          <a
+                            href={`/chain/${chainId}/address/${event.from}`}
+                            style={{ color: 'var(--haze-color-primary)', textDecoration: 'none' }}
+                          >
+                            {formatAddress(event.from)}
+                          </a>
+                        ) : (
+                          'N/A'
+                        )}
+                      </td>
+                      <td className={cx(tableCell, addressCell)}>
+                        {event.to ? (
+                          <a
+                            href={`/chain/${chainId}/address/${event.to}`}
+                            style={{ color: 'var(--haze-color-primary)', textDecoration: 'none' }}
+                          >
+                            {formatAddress(event.to)}
+                          </a>
+                        ) : (
+                          'N/A'
+                        )}
+                      </td>
+                      <td className={cx(tableCell, valueCell)}>{formatValue(event.value)}</td>
+                      <td className={cx(tableCell, transactionHashCell)}>
+                        <a
+                          href={`/chain/${chainId}/tx/${event.transactionHash}`}
+                          style={{ color: 'var(--haze-color-primary)', textDecoration: 'none' }}
+                        >
+                          {formatTransactionHash(event.transactionHash)}
+                        </a>
+                      </td>
+                    </tr>
+                    {/* Lazy disclosure: the detail row only mounts while the
+                        row is expanded. */}
+                    {isExpanded && (
+                      <tr>
+                        <td colSpan={8} className={rawLogRowCell}>
+                          <RawLogDisclosure
+                            event={event}
+                            chainId={chainId}
+                            emitterFallback={contractAddress}
+                          />
+                        </td>
+                      </tr>
                     )}
-                  </td>
-                  <td className={cx(tableCell, addressCell)}>
-                    {event.from ? (
-                      <a
-                        href={`/chain/${chainId}/address/${event.from}`}
-                        style={{ color: 'var(--haze-color-primary)', textDecoration: 'none' }}
-                      >
-                        {formatAddress(event.from)}
-                      </a>
-                    ) : (
-                      'N/A'
-                    )}
-                  </td>
-                  <td className={cx(tableCell, addressCell)}>
-                    {event.to ? (
-                      <a
-                        href={`/chain/${chainId}/address/${event.to}`}
-                        style={{ color: 'var(--haze-color-primary)', textDecoration: 'none' }}
-                      >
-                        {formatAddress(event.to)}
-                      </a>
-                    ) : (
-                      'N/A'
-                    )}
-                  </td>
-                  <td className={cx(tableCell, valueCell)}>{formatValue(event.value)}</td>
-                  <td className={cx(tableCell, transactionHashCell)}>
-                    <a
-                      href={`/chain/${chainId}/tx/${event.transactionHash}`}
-                      style={{ color: 'var(--haze-color-primary)', textDecoration: 'none' }}
-                    >
-                      {formatTransactionHash(event.transactionHash)}
-                    </a>
-                  </td>
-                </tr>
-              ))}
+                  </React.Fragment>
+                );
+              })}
             </tbody>
           </table>
 

@@ -993,3 +993,68 @@ pnpm typecheck           # tsc --noEmit
   "live unverified proxy" for probe-card smoke is nearly unfindable —
   probe positive cases are unit-mock territory; live smoke covers the
   gates (verified → no probe; unverified non-proxy → silent no-card).
+- **2026-09-25 PM gap wave #2 (4 waves, 13 tasks + integration)** — the PM
+  review's facade-gap/differentiator/polish list landed: **P0 facade** —
+  block detail prev/next nav (`views/Blocks/nav.ts` pure helper; genesis/
+  head boundaries disabled with honest titles, unknown head stays clickable
+  labeled); Tokens directory `/chain/:id/tokens` (curated knownTokens ∪
+  localStorage `be:viewedTokens:` recorder on Token page visits, cap 50;
+  ONE Multicall3 enrichment batch; Curated/Viewed provenance chips; "not a
+  complete registry" caveat in every state); event raw-log disclosure in
+  EventTable (backend already returned topics/data/logIndex — pinned by
+  test; unknown topic0 links `/signatures?q=`; en-route fix: EventTable's
+  clientSideSort cache key ignored data identity, serving stale rows after
+  same-size refetch); ENS inline in the tx list
+  (`components/ui/EnsInline.tsx`, first 25 rows bounded, title always
+  carries the checksummed address). **P1 local-first** — address tx
+  advanced filters (additive `fromAddress`/`toAddress`/`minValue`/
+  `maxValue` wei over the SAME cached discovered set — no new scan;
+  `filtersApplied` echo; URL-ridden `?tfFrom=` family; unfiltered
+  byte-identical, pinned); watch webhooks (migration 0015: nullable
+  webhook_url/status/last_at; per-event POST with chain:txHash:logIndex
+  dedupe, 5s timeout + one retry, Discord-embed mode for discord.com URLs,
+  status recorded on the row, never fatal to the tick; no SSRF filtering by
+  design — single-user local tool); `/ops` operator dashboard
+  (`GET /api/ops/summary` opt-in admin 6/min·3, allSettled per-section
+  degrade: storage/indexing/watch/rateLimit/deepScan + Backup & Durability
+  card; `getRateLimitStats()` additive read-only export in rate-limit.ts);
+  mempool analysis (pure `utils/mempoolAnalysis.ts`: (from,nonce) conflict
+  groups + likely winner, BigInt-exact cap/tip quartiles, `?group=1`
+  grouped view, "this node's snapshot" caveat). **P1/P2** — NFT items grid
+  on the Token page (pure derivation from the same token-mode transfer
+  rows: 721 4-topic ids, 1155 BigInt net mint/burn with burned markers,
+  cap 24 + mandatory caveat; nftMetadata honesty states per tile; holders
+  rows now render EnsInline); private notes (`be:privateNote:{chainId}:`
+  checksummed, 280-char reject-never-truncate, "never sent to the server"
+  copy) + address QR (qrcode dep, SVG renderer, haze-ui Dialog) +
+  explorer-backup v2 (privateNotes section, v1 files still importable,
+  writes pattern-pinned to the `be:privateNote:` grammar);
+  `/signatures` lookup page (strict selector/topic0 classifier — the
+  backend is exact-hash only so name search degrades honestly with an
+  explanatory state; reuses the signatures service digest cache);
+  OG meta prerender (deriveDocumentTitle/deriveMetaDescription extracted
+  verbatim to `utils/metaDescribe.ts`; NEW `createStaticFrontendHandler`
+  composable stack in `middleware/og-meta.ts` — Hono previously NEVER
+  served the frontend; behind SERVE_STATIC_DIR env opt-in the server now
+  serves the SPA + injects og:title/og:description/twitter:card for
+  derivable paths, idempotent with the client's DocumentTitle maintainer —
+  dev/vite byte-identical by construction). **Wave 4** — Address page
+  anchor-nav chip row (per-tab pure derivation) + DataTable a11y
+  (scope="col", optional caption/ariaLabel, icon-button accessible names).
+  **Conventions**: sibling agents can and do coordinate via hub (webhook
+  column names were confirmed peer-to-peer before the ops SQL was written);
+  the route-table contract test (tests/unit/app.test.tsx) must be updated
+  by Main in the SAME change that wires new routes. **Integration-phase
+  finds (pinned by tests/comments)**: (1) Hono hoists a mounted sub-app's
+  `app.use('*', gate)` to `<base>/*` on the PARENT, swallowing every
+  sibling route mounted after it — the SQL console's strict gate had been
+  403'ing watch/SSE (and unknown /api paths) in every zero-config session
+  since it landed; sub-app gates MUST scope their own path prefix
+  (`/sql/*`, `/ops/*`; tests/unit/mountGateIsolation.test.ts composes the
+  real sub-apps to pin it). (2) haze-ui Dialog's `open` prop is
+  Control-or-INITIAL-value (react-use-control seeds useState from a plain
+  boolean and ignores later flips) — value-driven dialogs never re-open;
+  pass a useControl Control (AddressQr now does; the tests/setup.ts Dialog
+  mock is control-aware so the mock can never mask the value-prop bug
+  again — content-visibility assertions alone were blind to it because
+  the real Dialog renders children even while closed)

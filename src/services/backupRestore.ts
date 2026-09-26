@@ -18,6 +18,11 @@ import { getIpfsGateway, IPFS_GATEWAY_STORAGE_KEY } from '@/services/nftMetadata
 import { saveAddressLabel } from '@/services/labels';
 import { addCustomChain } from '@/services/customChains';
 import {
+  parsePrivateNoteKey,
+  parseStoredPrivateNote,
+  PRIVATE_NOTE_KEY_RE,
+} from '@/util/privateNotes';
+import {
   CUSTOM_ABI_KEY_RE,
   parseBackupChainRow,
   parseBackupLabelRow,
@@ -142,7 +147,9 @@ export async function collectBackupParts(): Promise<BackupParts> {
     }
   }
 
-  const browser = collectBrowserParts();
+  // The shared notes array: a corrupted-note skip line lands here before
+  // the spread below runs, so it reaches the file with the other skips.
+  const browser = collectBrowserParts(notes);
   return { labels, customChains, browser, ...(notes.length > 0 ? { notes } : {}) };
 }
 
@@ -150,29 +157,52 @@ export async function collectBackupParts(): Promise<BackupParts> {
  * Browser-local preferences. `null` (= not exported) is keyed off the
  * raw stored key, while the VALUE comes from the app's own validated
  * readers — a hand-corrupted localStorage entry exports as what the app
- * would actually use, never the corruption itself.
+ * would actually use, never the corruption itself. Private notes are a
+ * key scan like custom ABIs (they accrue per visited address); entries
+ * whose stored value the app's reader would reject are skipped with a
+ * note line instead of exported broken.
  */
-function collectBrowserParts(): BackupBrowserParts {
+function collectBrowserParts(notes: string[]): BackupBrowserParts {
   const customAbis: BackupBrowserParts['customAbis'] = [];
+  const privateNotes: BackupBrowserParts['privateNotes'] = [];
+  let corruptedNotes = 0;
   try {
     // Key scan (not a known list): custom ABIs accrue per visited
-    // contract, so the key pattern is the inventory.
+    // contract and private notes per visited address, so the key
+    // pattern is the inventory.
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (key === null || !CUSTOM_ABI_KEY_RE.test(key)) continue;
-      const abi = localStorage.getItem(key);
-      if (abi !== null) customAbis.push({ key, abi });
+      if (key === null) continue;
+      if (CUSTOM_ABI_KEY_RE.test(key)) {
+        const abi = localStorage.getItem(key);
+        if (abi !== null) customAbis.push({ key, abi });
+        continue;
+      }
+      if (!PRIVATE_NOTE_KEY_RE.test(key)) continue;
+      const parsedKey = parsePrivateNoteKey(key);
+      const note = parsedKey === null ? null : parseStoredPrivateNote(localStorage.getItem(key));
+      if (parsedKey === null || note === null) {
+        corruptedNotes += 1;
+        continue;
+      }
+      privateNotes.push({ chainId: parsedKey.chainId, address: parsedKey.address, note });
     }
   }
   catch {
-    // Storage unavailable (private mode) — custom ABIs are simply not
-    // part of this export.
+    // Storage unavailable (private mode) — custom ABIs and private
+    // notes are simply not part of this export.
+  }
+  if (corruptedNotes > 0) {
+    notes.push(
+      `${corruptedNotes} private note(s) skipped — the stored entry is corrupted (unreadable key or over-length value)`,
+    );
   }
   return {
     watchlist: readStored(WATCHLIST_STORAGE_KEY) === null ? null : readWatchlist(),
     theme: readStored(THEME_STORAGE_KEY) === null ? null : readThemePreference(),
     ipfsGateway: readStored(IPFS_GATEWAY_STORAGE_KEY) === null ? null : getIpfsGateway(),
     customAbis,
+    privateNotes,
   };
 }
 
