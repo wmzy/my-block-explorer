@@ -161,7 +161,7 @@ Details a developer will run into:
 - **Range bounds are concrete numbers.** A bound may be submitted as a number or a block tag (`latest`, `finalized`, `safe`, `earliest`), but tags are resolved to concrete block numbers once, at range creation — stored rows never carry tag sentinels, and legacy rows that still do are resolved defensively when indexing starts.
 - **Creation-block honesty.** Contract-creation lookups return "unknown" rather than fabricating a boundary. Quick mode `all` starts at the creation block when known, from genesis when unknown; quick mode `first` fails with *"Contract creation block unknown — enter a start block manually"* instead of guessing.
 - **Quick-create modes** (`POST …/events/ranges/quick`): `all`, `recent`, `first`, `continue`, and `catchup` — the last creates a range from the furthest block any existing range reached up to the current head (`400 "No previous range found. Cannot catch up."` when no ranges exist).
-- **Cache TTLs** for persisted fetches: verified contract source 30 days; proxy contracts 24 h; unverified source 3 days; contract-creation lookup failure 24 h; storage-layout `NOT_FOUND` 24 h.
+- **Cache TTLs** for persisted fetches: verified contract source 30 days; verified-proxy 24 h; unverified/partial source 1 h (including unverified proxies — unverified beats the proxy tier); contract-creation lookup failure 24 h; storage-layout `NOT_FOUND` 24 h.
 - **Address API returns persistent data only** — no balance or transaction count (the UI reads those live from RPC). Transaction history is heuristic (balance-change binary search) and the response reports `coverage` (`complete`/`partial`/`none`); unknown coverage renders a "source unknown" banner instead of pretending the history is complete.
 - **Search** responses may carry `degraded: true` + `degradedReasons` when an upstream lookup failed — the UI offers a retry rather than "no results". The global `GET /api/search` resolves tx-hash/block-number queries **on the chain given by `?chainId=`**; only a search without any chain hint returns `needsChain` + the network picker. ENS names are **not** resolved server-side; the browser resolves them against a mainnet RPC (history entries are recorded only after a successful resolution). `search_history` ids are int32-safe (epoch-seconds based).
 - **Event statistics** show an "Indexing coverage" metric — the union of walked blocks across ranges (overlaps merge; paused/errored ranges count the blocks their checkpoint reached, since those events stay queryable), explicitly scoped to "your configured block ranges", not the contract's lifetime. CSV export has a hard 100,000-row cap (`400` above it), the UI disables the export button preflight when the filtered total exceeds it, and the CSV carries an `is_finalized` column.
@@ -173,6 +173,7 @@ Details a developer will run into:
 - [Deployment](docs/DEPLOYMENT.md)
 - [API reference](docs/API.md)
 - [Architecture](docs/ARCHITECTURE.md) — the system as shipped (routing, chain switching, search dispatch, auto-discovery), followed by the original design-time document
+- [Contributing](docs/CONTRIBUTING.md) · [architecture decision records](docs/adr/)
 - [Docs index](docs/README.md) · [historical archive](docs/archive/)
 
 ## License

@@ -1,6 +1,6 @@
 # Block Explorer - Project Knowledge Base
 
-**Generated:** 2026-09-19 (updated after the product-review fix wave) **Branch:** 001-abi
+**Generated:** 2026-09-19 (updated after the 2026-09-26/27 gap wave #4) **Branch:** 001-abi
 
 ## OVERVIEW
 
@@ -45,11 +45,11 @@ block-explorer/
 | Task                 | Location                                                                        | Notes                                               |
 | -------------------- | ------------------------------------------------------------------------------- | --------------------------------------------------- |
 | Add new API endpoint | `src/routes/*.ts` → `src/api-app.ts`                                            | Register in api-app.ts                              |
-| Modify DB schema     | `src/database/schema.ts`                                                        | Run `npm run db:generate`                           |
+| Modify DB schema     | `src/database/schema.ts`                                                        | Run `pnpm db:generate`                           |
 | Add new chain        | `src/config/chains.ts`                                                          | Viem chains auto-supported                          |
 | RPC client creation  | `src/utils/realTimeData.ts` (frontend), `src/services/RpcManager.ts` (backend)  | Both cache per chainId                              |
 | Event indexing       | `src/services/EventIndexingService.ts`                                           | Manual range-based; one serial job per range (no global queue); `reconcileInterruptedRanges()` runs at startup |
-| Contract source/ABI  | `src/services/ContractSourceService.ts`                                         | DB → Sourcify/Etherspan fallback, immutable         |
+| Contract source/ABI  | `src/services/ContractSourceService.ts`                                         | DB → Sourcify/Blockscan fallback, immutable         |
 | Storage layout       | `src/services/StorageLayoutService.ts`                                          | DB → storage-layout-fetcher, immutable              |
 | UI components        | `src/components/ui/`                                                            | Haze UI wrappers + Linaria                          |
 | Frontend data hooks  | `src/services/{blocks,transactions,addresses,contracts,search,stats}.ts`         | react-toolroom query layer (`src/util/useQuery.ts`) |
@@ -1095,3 +1095,73 @@ pnpm typecheck           # tsc --noEmit
   BROWSER-side viem (utils/contractInteraction.ts), it never POSTs to
   the backend /simulate route — the two stateOverride surfaces are
   parallel, not stacked
+- **2026-09-26/27 PM-review gap wave #4 (10 slices, 3 waves + integration)** —
+  the full PM gap/improvement list landed via 10 concurrent task agents
+  (each permitted recursive child-task splitting), all verified: tsc clean,
+  eslint 0 errors, `vitest --changed` 104 files / 1426 tests green, live
+  browser smoke on mainnet through the vite bridge:
+  **Dev-chain reset lifecycle (P0)** — `DELETE /api/chains/:chainId/cached-data`
+  (opt-in admin, 5/min·2) clears the chain's `contract_sources` + storage-layout
+  rows (per-chain event DB files documented untouched — open handles);
+  `services/chainReset.ts` keeps a per-chain high-water head mark
+  (`be:lastHead:{chainId}`, only ever advances — sub-threshold dips are
+  reorgs), ≥5-block regression ⇒ dismissible `ChainResetBanner` on Home
+  (dismiss keyed by the regressed-FROM head so a fresh regression re-arms;
+  Clear → toast with honest counted numbers + re-baseline).
+  **Command palette + Tools hub (P1)** — `components/CommandPalette.tsx`
+  mounted once in App: Ctrl/Cmd+K, combobox ARIA, ↑/↓/Enter/Esc, actions
+  for every page + theme toggle; chain actions fall back to
+  readRememberedChainId (Landing's key — no second key); hidden <768px.
+  `/tools` hub card grid (15 cards incl. informational Backup & restore —
+  never a dead link; admin chips on SQL/Ops; `buildToolCards` pure).
+  Nav gained Tools + palette trigger.
+  **Troubleshooting + issue templates + ops diagnostics (P1)** —
+  `/help/troubleshooting` static page (backend-banner modes, provider
+  quirks, dev-chain resets, health checklist); `.github/ISSUE_TEMPLATE/`
+  bug/feature forms (bug asks for /api/health + Ops copy-diagnostics
+  payloads); Ops gained a Copy-diagnostics button (`buildOpsDiagnostics`
+  pure — sections travel verbatim incl. `{error:'unavailable'}` shapes).
+  **Block internal txns (P2)** — Block Detail "Internal Transactions
+  (traced)" card: lazy on first expand, callTracer over the block's txs
+  (concurrency 4, cap 50 + truncation disclosure), reuses
+  internalTxScan/traceFormat conventions; zero-tx blocks trace nothing;
+  unsupported-RPC card + retry.
+  **Method filter (P2)** — fifth address-tx filter `?tfMethod=` /
+  server `method=` (`0x[0-9a-fA-F]{8}`, `400 invalid_method`,
+  lowercase-exact over the same cached discovered set); rows gained an
+  additive `selector` field (`null` for transfers/creations, absent on
+  legacy payloads — honestly excluded, never guessed in); filter-bar
+  Method field + distinct-selector chips labeled via useSignaturesBatched.
+  **Gas inclusion estimates (P2)** — `estimateTierInclusion` (BigInt-exact,
+  p = fraction of sampled blocks whose paid tip ≤ tier tip; p=0/empty ⇒
+  nothing rendered): GasPanel tiers show "~N blocks (est.)" + one
+  "never a promise" caveat line.
+  **Slot/epoch (P3)** — `utils/slotEpoch.ts` pure derivation, mainnet-only
+  schedule map (genesis 1606824023, 12s, 32/slotsPerEpoch — cross-checked
+  against merge slot 4700013 ↔ ts 1663224179 via Etherscan/consensus-specs);
+  Block Detail renders "Slot / Epoch" only where derivable (timestamp-
+  derived caveat in the title).
+  **Onboarding education** — GettingStarted restructured into a 3-step walk
+  (step 3 = coverage honesty + /about/coverage link; show/dismiss semantics
+  byte-identical); RpcConfig modal footer gained the persistent
+  "Coverage levels explained" link.
+  **OpenAPI** — `GET /api/openapi.json` (open, max-age 3600, relative
+  `/api` server, version via src/version.ts): hand-maintained 3.1 spec,
+  52 paths/61 ops; found 6 endpoints missing from docs/API.md — all
+  documented in the same change (signatures section, tx export CSV, scan
+  internal-transactions, transfers mode=, cached-data, method=).
+  **Contributor readiness** — docs/CONTRIBUTING.md + docs/adr/0001–0008
+  (data separation, honesty model, local positioning, DuckDB adapter,
+  frontend stack, verification sources, browser capability surface,
+  route-mount discipline); KB stale spots fixed en route (README cache-TTL
+  row now matches the code's 1h unverified tier; WHERE-TO-LOOK
+  "Etherspan"→"Blockscan"; npm→pnpm wording).
+  **Integration finds (pinned)**: (1) viem's tx.to is `0x${string} | null` —
+  comparing against `''` is dead code under tsc (AddressScanService
+  hydration selector derivation fixed to null-only); (2) tsc/eslint
+  disagree on widening assertions inside `vi.hoisted` state objects —
+  declare a typed const inside the factory instead of `as` (both tools
+  green); (3) the RpcConfig footer TypedLink means EVERY RpcConfig test
+  harness now needs a MemoryRouter (three test files wrap with the
+  coverage route registered); (4) slot/epoch DOM smoke: the InfoGrid
+  labels don't use dt/th/.label — probe body text, not semantic tags

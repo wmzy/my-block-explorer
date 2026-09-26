@@ -25,8 +25,10 @@ import { finalityLabelFor, useFinalityHeads } from '@/services/blocks';
 import { describeBlockProducer } from '@/utils/blockRpcData';
 import { formatRelativeTime } from '@/utils/format';
 import { parseBlockNumberParam } from '@/utils/chainParam';
+import { deriveSlotEpochFromIso } from '@/utils/slotEpoch';
 import { createRpcClient } from '@/utils/realTimeData';
 import { computeBlockNav } from './nav';
+import InternalTxnsSection from './InternalTxnsSection';
 
 // Gas quantities are on-chain integers serialized as strings: format them
 // BigInt-safe (parseInt would silently lose precision past 2^53).
@@ -452,6 +454,13 @@ export default function BlockDetail() {
     ? blobCountFromGas(blockInfo.blobGasUsed)
     : undefined;
   const withdrawals = blockInfo?.withdrawals;
+  // Slot/epoch (Blockscout parity): pure timestamp→consensus-grid math
+  // that only resolves on chains with a known schedule (mainnet) and a
+  // parseable timestamp — anything else collapses to undefined and the
+  // row is skipped entirely rather than rendered from a guess.
+  const slotEpoch = blockInfo
+    ? deriveSlotEpochFromIso(currentChainId, blockInfo.timestamp)
+    : undefined;
 
   // Raw JSON appendix sources: both eth_getBlockByNumber shapes — full
   // transaction objects and the bare header — fetched verbatim in the
@@ -642,6 +651,17 @@ export default function BlockDetail() {
                   <InfoItem label="Timestamp">
                     {`${new Date(blockInfo.timestamp).toLocaleString()} (${formatRelativeTime(blockInfo.timestamp)})`}
                   </InfoItem>
+                  {slotEpoch !== undefined && (
+                    // Consensus slot/epoch derived from the timestamp; the
+                    // hint stays honest about the derivation's precision —
+                    // proposers set block timestamps, so edge timestamps
+                    // can land one slot off the true consensus slot.
+                    <InfoItem label="Slot / Epoch">
+                      <span title="Derived from the block timestamp — may be off by one slot">
+                        {`${slotEpoch.slot.toLocaleString()} · epoch ${slotEpoch.epoch.toLocaleString()}`}
+                      </span>
+                    </InfoItem>
+                  )}
                   <InfoItem label="Miner">
                     {producer?.kind === 'validator' ? (
                       <CopyableHash
@@ -723,6 +743,16 @@ export default function BlockDetail() {
                 )}
               </CardContent>
             </Card>
+
+            {/* Internal Transactions (traced): on-demand callTracer sweep
+                over this block's transactions (Blockscout parity) —
+                collapsed by default, traced on first expand only, all RPC
+                in the browser (never proxied through the backend). */}
+            <InternalTxnsSection
+              chainId={currentChainId}
+              blockHash={blockInfo.hash}
+              transactionCount={blockInfo.transactionCount}
+            />
 
             {/* Raw JSON appendix: verbatim eth_getBlockByNumber payloads
                 for this block, collapsed by default and fetched on first

@@ -8,6 +8,7 @@ import {
   type RoutePaths,
 } from '@native-router/react';
 import { ConnectionStatus } from '@/components/ServiceSetup';
+import CommandPalette from '@/components/CommandPalette';
 import { contractSourceLoader } from '@/services/dataloaders';
 import {
   deriveDocumentTitle,
@@ -143,6 +144,21 @@ const routes = createRoutes({
       component: () => import('./Signatures'),
     },
     {
+      // Tools hub: one page listing every tool the explorer ships (the
+      // discoverability answer for surfaces that live behind no topbar
+      // entry). Not chain-scoped — chain tools link through the remembered
+      // chain, same as the command palette's fallback.
+      path: '/tools',
+      component: () => import('./Tools'),
+    },
+    {
+      // Static troubleshooting guide: RPC provider quirks (getLogs range
+      // caps, missing archive state, private txpool), dev-chain resets,
+      // the health checklist. Pure copy, not chain-scoped.
+      path: '/help/troubleshooting',
+      component: () => import('./Help/Troubleshooting'),
+    },
+    {
       // Static explainer for the data-coverage vocabulary the CoverageBadge
       // chips carry (linked from the badge's expanded detail): pure copy,
       // no loader, and deliberately not chain-scoped — the levels describe
@@ -257,6 +273,11 @@ export default function App() {
       <DocumentTitle />
       <View />
       <ConnectionStatus />
+      {/* Global command palette (Ctrl/Cmd+K). Self-manages its keydown
+          listener and renders nothing until opened; chain-scoped actions
+          fall back to the remembered chain when no chain prop is in
+          scope here (App sits above the per-view chain context). */}
+      <CommandPalette />
     </Router>
   );
 }

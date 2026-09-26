@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import { MemoryRouter, createRoutes } from '@native-router/react';
 import { useControl } from 'react-use-control';
 import RpcConfig from '@/components/RpcConfig';
 import { toast } from 'sonner';
@@ -66,10 +67,20 @@ const BACKEND_UNCONNECTED = new ApiError(
 
 // RpcConfig takes a Control<boolean> for its open state; a tiny harness
 // supplies one created from a plain `true` initial value (the one-prop
-// ControlOrValue form), mirroring how views drive the modal.
+// ControlOrValue form), mirroring how views drive the modal. The harness
+// also mounts a memory router: the dialog's footer link is a TypedLink,
+// and its route is registered so the footer-link test navigates for real.
+const BlankPage = () => null;
 function OpenRpcConfig() {
   const [, , control] = useControl<boolean>(true);
-  return <RpcConfig open={control} chainId={1} />;
+  return (
+    <MemoryRouter
+      routes={createRoutes([{ path: '/about/coverage', component: () => BlankPage }])}
+      initialEntries={['/about/coverage']}
+    >
+      <RpcConfig open={control} chainId={1} />
+    </MemoryRouter>
+  );
 }
 
 // Drives the custom-RPC form through Test & save.
@@ -283,5 +294,30 @@ describe('RpcConfig admin gating', () => {
     });
     // No gate on reads, so no notice appears.
     expect(screen.queryByText(/Saving requires an admin token/)).not.toBeInTheDocument();
+  });
+});
+
+describe('RpcConfig coverage legend link', () => {
+  // Persistent discoverability: the settings modal is the one surface
+  // reachable from every page, so it carries a quiet footer link to the
+  // coverage legend alongside the badge's ⓘ detail.
+  beforeEach(() => {
+    mockGetRpcConfigs.mockReset().mockResolvedValue([]);
+    mockSaveRpcConfig.mockReset().mockResolvedValue(undefined);
+    mockDeleteRpcConfig.mockReset().mockResolvedValue(undefined);
+    mockTestRpcConnection.mockReset().mockResolvedValue(PASSING_TEST_RESULT);
+    mockHttpGet.mockReset().mockResolvedValue(undefined);
+    clearAdminToken();
+  });
+
+  it('links the coverage legend from a muted footer, closing the modal on navigate', () => {
+    render(<OpenRpcConfig />);
+
+    const link = screen.getByRole('link', { name: 'Coverage levels explained' });
+    expect(link).toHaveAttribute('href', '/about/coverage');
+
+    // Navigating away must not leave the dialog parked over the legend.
+    fireEvent.click(link);
+    expect(screen.queryByTestId('dialog')).not.toBeInTheDocument();
   });
 });

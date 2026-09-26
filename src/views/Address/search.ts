@@ -67,9 +67,9 @@ export const addressSearchSchema = z.object({
   ttStandard: transferStandardSchema.optional().catch(undefined),
   itDepth: z.coerce.number().int().positive().optional().catch(undefined),
   tab: activityTabSchema.optional().catch(undefined),
-  // Tx-tab advanced filters (?tfFrom= / ?tfTo= / ?tfMin= / ?tfMax=):
-  // raw strings — addresses stay strings (never coerced) and wei amounts
-  // stay exact beyond 2^53 (BigInt on the server). Same
+  // Tx-tab advanced filters (?tfFrom= / ?tfTo= / ?tfMin= / ?tfMax= /
+  // ?tfMethod=): raw strings — addresses stay strings (never coerced)
+  // and wei amounts stay exact beyond 2^53 (BigInt on the server). Same
   // optional().catch(undefined) discipline as ?tab=: never a `.catch(...)`
   // default (it would collapse "explicit default" with "absent" and
   // deadlock the filter bar's open/state machine). Malformed values
@@ -79,6 +79,10 @@ export const addressSearchSchema = z.object({
   tfTo: z.string().optional().catch(undefined),
   tfMin: z.string().optional().catch(undefined),
   tfMax: z.string().optional().catch(undefined),
+  // ?tfMethod= method (function-selector) filter: same raw-string
+  // discipline — malformed values survive the parse and
+  // effectiveTxFilters drops them (a selector is '0x' + 8 hex chars).
+  tfMethod: z.string().optional().catch(undefined),
 });
 
 // Effective internal-tx trace depth for the internal tab. An explicit
@@ -113,7 +117,8 @@ export const effectiveTransferStandard = (
 // show as active). Absent means absent; an explicit value survives only
 // when it is valid — addresses pass the same two-tier shape/checksum
 // verdict as the server's getValidatedAddress (the frontend twin in
-// ./addressValidity), wei amounts must be non-negative integer decimals.
+// ./addressValidity), wei amounts must be non-negative integer decimals,
+// and a method selector must be '0x' + 8 hex chars (case-insensitive).
 // Invalid values degrade to undefined here (never to a default), so a
 // malformed hand-crafted link can never fire a doomed request. Values
 // pass through verbatim (no normalization): the backend compares
@@ -124,9 +129,13 @@ export type EffectiveTxFilters = {
   toAddress?: string;
   minValue?: string;
   maxValue?: string;
+  method?: string;
 };
 
 const TF_WEI_RE = /^\d+$/;
+// '0x' + 8 hex chars, case-insensitive (the backend compares
+// lowercase-exact; a valid mixed-case hex selector survives verbatim).
+const TF_SELECTOR_RE = /^0x[0-9a-fA-F]{8}$/;
 
 const validFilterAddress = (raw: string | undefined): string | undefined => {
   if (raw === undefined || raw === '') return undefined;
@@ -138,11 +147,17 @@ const validFilterWei = (raw: string | undefined): string | undefined => {
   return TF_WEI_RE.test(raw) ? raw : undefined;
 };
 
+const validFilterSelector = (raw: string | undefined): string | undefined => {
+  if (raw === undefined || raw === '') return undefined;
+  return TF_SELECTOR_RE.test(raw) ? raw : undefined;
+};
+
 export const effectiveTxFilters = (search: {
   tfFrom?: string;
   tfTo?: string;
   tfMin?: string;
   tfMax?: string;
+  tfMethod?: string;
 }): EffectiveTxFilters => ({
   ...(validFilterAddress(search.tfFrom) !== undefined
     ? { fromAddress: search.tfFrom }
@@ -150,6 +165,9 @@ export const effectiveTxFilters = (search: {
   ...(validFilterAddress(search.tfTo) !== undefined ? { toAddress: search.tfTo } : {}),
   ...(validFilterWei(search.tfMin) !== undefined ? { minValue: search.tfMin } : {}),
   ...(validFilterWei(search.tfMax) !== undefined ? { maxValue: search.tfMax } : {}),
+  ...(validFilterSelector(search.tfMethod) !== undefined
+    ? { method: search.tfMethod }
+    : {}),
 });
 
 // Whether any effective filter is active — gates the honest
@@ -158,7 +176,8 @@ export const hasActiveTxFilters = (filters: EffectiveTxFilters): boolean =>
   filters.fromAddress !== undefined
   || filters.toAddress !== undefined
   || filters.minValue !== undefined
-  || filters.maxValue !== undefined;
+  || filters.maxValue !== undefined
+  || filters.method !== undefined;
 
 // True when the token-transfers payload has settled (data present, not
 // loading, no error) with zero rows at this page offset on a page past

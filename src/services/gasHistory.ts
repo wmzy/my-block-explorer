@@ -17,6 +17,10 @@
 //   method not implemented vs. pre-EIP-1559 chain). Partial data is real:
 //   a node that returns base fees but no rewards keeps the sparkline and
 //   shows tier rows as explicitly absent.
+// - Per-tier inclusion estimates ("~N blocks (est.)") are derived from the
+//   same sampled blocks the tier tips average over, in exact wei — and
+//   when the sample gives a tier no basis at all, the estimate is simply
+//   absent (undefined), never a guess dressed up as a number.
 import { createRpcClient } from '@/utils/realTimeData';
 import { formatNumber } from '@/utils/format';
 
@@ -47,6 +51,27 @@ export type GasTiers = {
   fast: number;
 };
 
+/**
+ * Per-tier estimated blocks-to-inclusion ("~N blocks (est.)"). Every value
+ * is `undefined` when the sample gives that tier no basis — an estimate is
+ * never fabricated — and the whole object is null when the node returned
+ * no usable reward data (mirroring `tiers: null`).
+ */
+export type GasTierInclusionEstimates = {
+  /**
+   * How many of the newest sampled blocks actually carried a full reward
+   * percentile triple — the sample both the tier tips and these estimates
+   * derive from, disclosed next to the estimate.
+   */
+  sampleBlocks: number;
+  /** Estimated blocks until inclusion at the slow tip, or undefined. */
+  slow: number | undefined;
+  /** Estimated blocks until inclusion at the standard tip, or undefined. */
+  standard: number | undefined;
+  /** Estimated blocks until inclusion at the fast tip, or undefined. */
+  fast: number | undefined;
+};
+
 export type GasHistorySnapshot = {
   chainId: number;
   /** Base fees in gwei, oldest → newest, one entry per block in the window. */
@@ -64,6 +89,12 @@ export type GasHistorySnapshot = {
    * blocks), or null when the node returned no usable reward data.
    */
   tiers: GasTiers | null;
+  /**
+   * Per-tier estimated blocks-to-inclusion from the same sampled window
+   * the tier tips average over (see `estimateTierInclusion`), or null when
+   * the node returned no usable reward data — absent, never zero.
+   */
+  tierInclusionBlocks: GasTierInclusionEstimates | null;
 };
 
 // Why the panel cannot render, in terms the UI can show verbatim.
@@ -127,6 +158,25 @@ export function gasWindowLabel(oldestBlock: number, newestBlock: number): string
 }
 
 /**
+ * The newest `sampleBlocks` reward entries that carry a full percentile
+ * triple — the sample basis the tier averages AND the inclusion estimates
+ * share. Entries without one (empty rewards arrays, shorter than the
+ * requested percentiles) are skipped, never padded; null when nothing
+ * usable remains.
+ */
+function usableRewardSample(
+  rewards: readonly (readonly bigint[])[] | undefined,
+  sampleBlocks: number,
+): readonly (readonly bigint[])[] | null {
+  if (!rewards || rewards.length === 0) return null;
+  const start = Math.max(0, rewards.length - sampleBlocks);
+  const sample = rewards.slice(start).filter(
+    entry => !!entry && entry.length >= TIER_PERCENTILE_COUNT,
+  );
+  return sample.length > 0 ? sample : null;
+}
+
+/**
  * Slow/Standard/Fast tiers from eth_feeHistory rewards: the 25/50/75th
  * percentile values averaged over the newest `sampleBlocks` blocks. Entries
  * without a full percentile triple (empty rewards arrays, shorter than
@@ -136,20 +186,80 @@ export function extractTiers(
   rewards: readonly (readonly bigint[])[] | undefined,
   sampleBlocks = TIER_SAMPLE_BLOCKS,
 ): GasTiers | null {
-  if (!rewards || rewards.length === 0) return null;
-  const start = Math.max(0, rewards.length - sampleBlocks);
+  const sample = usableRewardSample(rewards, sampleBlocks);
+  if (!sample) return null;
   const sums = [0n, 0n, 0n];
-  let blocks = 0;
-  for (const entry of rewards.slice(start)) {
-    if (!entry || entry.length < TIER_PERCENTILE_COUNT) continue;
-    blocks += 1;
+  for (const entry of sample) {
     for (let i = 0; i < TIER_PERCENTILE_COUNT; i += 1) {
       sums[i] += entry[i];
     }
   }
-  if (blocks === 0) return null;
+  const blocks = sample.length;
   const average = (total: bigint) => weiToGwei(total) / blocks;
   return { slow: average(sums[0]), standard: average(sums[1]), fast: average(sums[2]) };
+}
+
+// --- inclusion estimates ---
+
+/**
+ * Expected blocks until inclusion for a tip, from a sample of per-block
+ * paid tips (wei): p = fraction of sampled blocks whose paid tip was at or
+ * under `tipWei`, expected blocks ≈ ceil(1/p) for 0 < p < 1 (geometric
+ * waiting time), and a sample that was fully covered lands in "~1 block".
+ * `p <=` is exact wei comparison — an equal paid tip counts as included.
+ * An empty sample or p = 0 gives no basis at all and returns undefined:
+ * the caller renders nothing rather than a guess.
+ */
+export function estimateInclusionBlocks(
+  paidTips: readonly bigint[],
+  tipWei: bigint,
+): number | undefined {
+  if (paidTips.length === 0) return undefined;
+  let included = 0;
+  for (const paid of paidTips) {
+    if (paid <= tipWei) included += 1;
+  }
+  if (included === 0) return undefined;
+  const sampleSize = paidTips.length;
+  if (included === sampleSize) return 1;
+  // ceil(sampleSize / included) in exact integer arithmetic.
+  return Math.floor((sampleSize + included - 1) / included);
+}
+
+/**
+ * Per-tier inclusion estimates from the same reward sample the tier tips
+ * average over (the newest `sampleBlocks` blocks with a full percentile
+ * triple). Each block's "paid tip" for the estimate is its 50th-percentile
+ * reward — the median priority fee actually paid in that block, the single
+ * most representative observed tip. A tier tip (the column average)
+ * includes a block when the block's median paid tip was at or under it.
+ *
+ * Wei-exactness: the tier tips are recomputed here from the exact wei sums
+ * (floor-divided by the sample size), never converted from the gwei floats
+ * the panel displays. For integer paid tips, `paid <= floor(sum/n)` is
+ * identical to `paid <= sum/n`, so the comparison matches the true
+ * fractional average without a single wei passing through a float.
+ */
+export function estimateTierInclusion(
+  rewards: readonly (readonly bigint[])[] | undefined,
+  sampleBlocks = TIER_SAMPLE_BLOCKS,
+): GasTierInclusionEstimates | null {
+  const sample = usableRewardSample(rewards, sampleBlocks);
+  if (!sample) return null;
+  const sums = [0n, 0n, 0n];
+  for (const entry of sample) {
+    for (let i = 0; i < TIER_PERCENTILE_COUNT; i += 1) {
+      sums[i] += entry[i];
+    }
+  }
+  const blocks = BigInt(sample.length);
+  const paidTips = sample.map(entry => entry[1]);
+  return {
+    sampleBlocks: sample.length,
+    slow: estimateInclusionBlocks(paidTips, sums[0] / blocks),
+    standard: estimateInclusionBlocks(paidTips, sums[1] / blocks),
+    fast: estimateInclusionBlocks(paidTips, sums[2] / blocks),
+  };
 }
 
 /**
@@ -227,6 +337,7 @@ export function buildGasHistory(
       currentBaseFeeGwei: series[series.length - 1] ?? 0,
       averageBaseFeeGwei: sum / series.length,
       tiers: extractTiers(feeHistory.reward),
+      tierInclusionBlocks: estimateTierInclusion(feeHistory.reward),
     },
   };
 }

@@ -1,15 +1,18 @@
-// First-run onboarding card for the three run modes (see
-// docs/INSTALLATION.md "Three ways to run it"). Mounted by the Landing
-// view at '/': while no backend was discovered and the user has not
-// dismissed the guide, Landing holds its chain redirect so the card is
-// actually readable; dismissal (or a backend connecting mid-session)
+// First-run onboarding card: a compact three-step walkthrough (pick a
+// network → explore → read the data honestly) plus the three run modes
+// (see docs/INSTALLATION.md "Three ways to run it"). Mounted by the
+// Landing view at '/': while no backend was discovered and the user has
+// not dismissed the guide, Landing holds its chain redirect so the card
+// is actually readable; dismissal (or a backend connecting mid-session)
 // releases the redirect. The card itself is presentational — visibility
 // lives in the pure helpers below so the matrix is unit-testable.
 import { css } from '@linaria/core';
 import { useCallback, useState } from 'react';
+import { TypedLink } from '@native-router/react';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent } from '@/components/ui/Card';
 import type { DiscoveryStatus } from '@/hooks/useAutoDiscovery';
+import { getPreferredChainId, readRememberedChainId } from './Landing';
 
 // localStorage flag: '1' means the user dismissed the guide for good.
 export const ONBOARDING_DISMISSED_KEY = 'be:onboardingDismissed';
@@ -70,6 +73,24 @@ export function writeOnboardingDismissed(
     // session only, via the caller's component state.
   }
 }
+
+// Step 2's chain destinations: the remembered chain when one is valid,
+// else the preferred entry chain — the exact resolution the '/' landing
+// redirect performs (readRememberedChainId already rejects malformed and
+// unsupported ids), so the card can never point at a chain the app
+// itself would not open. Injecting the remembered id keeps the rule
+// unit-testable without touching localStorage.
+export function resolveGuideChainPaths(
+  remembered: number | undefined = readRememberedChainId(),
+): { blocks: string; contracts: string } {
+  const chainId = remembered ?? getPreferredChainId();
+  return { blocks: `/chain/${chainId}/blocks`, contracts: `/chain/${chainId}/contracts` };
+}
+
+// Note on the ./Landing import above: Landing imports this card, so the
+// two modules form a cycle. It is safe by construction — both sides only
+// touch each other's exports at render time, and the borrowed helpers
+// are hoisted function declarations, never module-eval-time values.
 
 type GettingStartedProps = {
   /** Persist the dismissal flag and hide the card. */
@@ -164,6 +185,80 @@ const closeStyle = css`
   }
 `;
 
+// Three-step walkthrough: the numbers come from a CSS counter on the
+// ordered list, so the markup stays a plain <ol>/<li> pair for assistive
+// tech while each step reads as a numbered row.
+const stepsStyle = css`
+  display: flex;
+  flex-direction: column;
+  gap: var(--haze-space-3);
+  list-style: none;
+  counter-reset: step;
+  margin: 0 0 var(--haze-space-6) 0;
+  padding: 0;
+`;
+
+const stepItemStyle = css`
+  display: flex;
+  align-items: flex-start;
+  gap: var(--haze-space-3);
+  padding: var(--haze-space-3) var(--haze-space-4);
+  background: var(--haze-color-bg-subtle);
+  border: 1px solid var(--haze-color-border);
+  border-radius: var(--haze-radius-md);
+  counter-increment: step;
+
+  &::before {
+    content: counter(step);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 22px;
+    height: 22px;
+    margin-top: 1px;
+    border-radius: var(--haze-radius-full);
+    background: var(--haze-color-primary-subtle);
+    color: var(--haze-color-primary);
+    font-size: var(--haze-text-xs);
+    font-weight: var(--haze-weight-semibold);
+  }
+`;
+
+const stepBodyStyle = css`
+  display: flex;
+  flex-direction: column;
+  gap: var(--haze-space-1);
+  min-width: 0;
+`;
+
+const stepTitleStyle = css`
+  font-size: var(--haze-text-sm);
+  font-weight: var(--haze-weight-semibold);
+  color: var(--haze-color-text);
+`;
+
+const stepTextStyle = css`
+  font-size: var(--haze-text-sm);
+  color: var(--haze-color-text-secondary);
+  line-height: var(--haze-leading-relaxed);
+  margin: 0;
+`;
+
+const stepLinkStyle = css`
+  color: var(--haze-color-primary);
+  font-size: var(--haze-text-sm);
+`;
+
+// Section heading above the run-mode list — one size step under the card
+// title, same muted color family as the mode descriptions.
+const sectionHeadingStyle = css`
+  font-size: var(--haze-text-base, 16px);
+  font-weight: var(--haze-weight-semibold);
+  color: var(--haze-color-text);
+  margin: 0 0 var(--haze-space-3) 0;
+`;
+
 const modesStyle = css`
   display: flex;
   flex-direction: column;
@@ -235,6 +330,10 @@ const docsStyle = css`
 
 export function GettingStarted({ onDismiss }: GettingStartedProps) {
   const [copied, setCopied] = useState(false);
+  // Step 2 resolves once per render through the shared landing rule —
+  // remembered chain when valid, preferred entry chain otherwise. Never
+  // a guessed chain id.
+  const { blocks: blocksPath, contracts: contractsPath } = resolveGuideChainPaths();
 
   // Copy pattern shared with SetupRequiredScreen: async clipboard write,
   // transient "Copied!" feedback, silent degradation when the clipboard
@@ -256,7 +355,7 @@ export function GettingStarted({ onDismiss }: GettingStartedProps) {
           <CardContent className={cardContentStyle}>
             <div className={headerRowStyle}>
               <div>
-                <h1 className={titleStyle}>Three ways to run this explorer</h1>
+                <h1 className={titleStyle}>Get started in three steps</h1>
                 <p className={subtitleStyle}>
                   No local backend detected yet — the explorer is already browsing your
                   chain through its public RPC. A local backend adds the indexed
@@ -275,6 +374,49 @@ export function GettingStarted({ onDismiss }: GettingStartedProps) {
               </button>
             </div>
 
+            <ol className={stepsStyle}>
+              <li className={stepItemStyle}>
+                <div className={stepBodyStyle}>
+                  <span className={stepTitleStyle}>Pick a network</span>
+                  <p className={stepTextStyle}>
+                    Use the chain selector in the top bar — your last choice is
+                    remembered for the next visit, and custom chains are added from
+                    the same menu.
+                  </p>
+                </div>
+              </li>
+              <li className={stepItemStyle}>
+                <div className={stepBodyStyle}>
+                  <span className={stepTitleStyle}>Explore</span>
+                  <p className={stepTextStyle}>
+                    Browse the{' '}
+                    <TypedLink to={blocksPath} className={stepLinkStyle}>
+                      latest blocks
+                    </TypedLink>{' '}
+                    or the{' '}
+                    <TypedLink to={contractsPath} className={stepLinkStyle}>
+                      contracts directory
+                    </TypedLink>{' '}
+                    on your chain.
+                  </p>
+                </div>
+              </li>
+              <li className={stepItemStyle}>
+                <div className={stepBodyStyle}>
+                  <span className={stepTitleStyle}>Read the data honestly</span>
+                  <p className={stepTextStyle}>
+                    This explorer separates live RPC data from cached, discovered and
+                    sampled data — every page says which is which with a coverage
+                    chip. Check the chip before you trust a number.
+                  </p>
+                  <TypedLink to="/about/coverage" className={stepLinkStyle}>
+                    What do the coverage levels mean?
+                  </TypedLink>
+                </div>
+              </li>
+            </ol>
+
+            <h2 className={sectionHeadingStyle}>Three ways to run this explorer</h2>
             <ul className={modesStyle}>
               {RUN_MODES.map(mode => (
                 <li key={mode.name} className={modeItemStyle}>

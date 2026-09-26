@@ -1,10 +1,11 @@
 // Server-side narrowing filters of the address transactions pipeline:
 // the pure applyDiscoveredTxFilters unit over a fixture discovered set
-// (from/to/min/max/combined, BigInt boundaries, contract-creation `to`),
-// its wiring through getAddressTransactions (fresh scan AND cached
-// re-read — filters reuse the SAME canonical discovery, never a new
-// scan), and the guarantee that the unfiltered call shape stays
-// byte-identical for existing consumers.
+// (from/to/min/max/method/combined, BigInt boundaries, contract-creation
+// `to`, selector states null-vs-carried-vs-legacy-absent), its wiring
+// through getAddressTransactions (fresh scan AND cached re-read —
+// filters reuse the SAME canonical discovery, never a new scan), the
+// scan's additive row-selector derivation, and the guarantee that the
+// unfiltered call shape stays byte-identical for existing consumers.
 import { describe, it, expect, vi } from 'vitest';
 import {
   applyDiscoveredTxFilters,
@@ -16,6 +17,10 @@ const A = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const B = '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 const C = '0xcccccccccccccccccccccccccccccccccccccccc';
 const HUGE = 2n ** 70n;
+// Canonical 4-byte selectors for the method filter (ERC-20 transfer /
+// approve).
+const SEL_TRANSFER = '0xa9059cbb';
+const SEL_APPROVE = '0x095ea7b3';
 
 const tx = (fields: Partial<DiscoveredTransaction>): DiscoveredTransaction => ({
   hash: `0xhash-${fields.blockNumber ?? 0n}`,
@@ -29,12 +34,21 @@ const tx = (fields: Partial<DiscoveredTransaction>): DiscoveredTransaction => ({
 
 // Newest-first (service order). Five discovered rows exercising every
 // filter dimension: incoming/outgoing/self/creation/other-party, tiny
-// and beyond-2^64 wei values.
+// and beyond-2^64 wei values — and every selector state: a carried
+// selector (transfer / approve), a plain transfer (null), a creation
+// (null, input is init code), and a legacy row with NO selector key at
+// all (undefined — rows discovered before the field existed).
 const FIXTURE: DiscoveredTransaction[] = [
-  tx({ blockNumber: 100n, fromAddress: A, toAddress: B, value: '1000' }),
-  tx({ blockNumber: 80n, fromAddress: B, toAddress: A, value: '2000000000000000000' }),
-  tx({ blockNumber: 60n, fromAddress: A, toAddress: A, value: '5' }),
-  tx({ blockNumber: 40n, fromAddress: A, toAddress: '', value: '0' }),
+  tx({ blockNumber: 100n, fromAddress: A, toAddress: B, value: '1000', selector: SEL_TRANSFER }),
+  tx({
+    blockNumber: 80n,
+    fromAddress: B,
+    toAddress: A,
+    value: '2000000000000000000',
+    selector: SEL_APPROVE,
+  }),
+  tx({ blockNumber: 60n, fromAddress: A, toAddress: A, value: '5', selector: null }),
+  tx({ blockNumber: 40n, fromAddress: A, toAddress: '', value: '0', selector: null }),
   tx({ blockNumber: 20n, fromAddress: C, toAddress: A, value: HUGE.toString() }),
 ];
 
@@ -103,6 +117,37 @@ describe('applyDiscoveredTxFilters (pure)', () => {
     ).toEqual(['80', '20']);
   });
 
+  it('a method filter keeps only rows carrying that exact selector', () => {
+    expect(hashes(applyDiscoveredTxFilters(FIXTURE, { method: SEL_TRANSFER })))
+      .toEqual(['100']);
+    expect(hashes(applyDiscoveredTxFilters(FIXTURE, { method: SEL_APPROVE })))
+      .toEqual(['80']);
+  });
+
+  it('legacy rows without a selector key (undefined) never match a method filter', () => {
+    // Row 20 carries no selector at all (pre-field cached payload) —
+    // excluded rather than guessed into a match.
+    const rows = applyDiscoveredTxFilters(FIXTURE, { method: '0xdeadbeef' });
+    expect(rows).toEqual([]);
+  });
+
+  it('matches the method filter case-insensitively (filter lowercased both ends)', () => {
+    expect(hashes(applyDiscoveredTxFilters(FIXTURE, { method: SEL_TRANSFER.toUpperCase() })))
+      .toEqual(['100']);
+    expect(
+      hashes(applyDiscoveredTxFilters(FIXTURE, { method: SEL_APPROVE.toUpperCase() })),
+    ).toEqual(['80']);
+  });
+
+  it('a method filter intersects with the other dimensions', () => {
+    expect(
+      hashes(applyDiscoveredTxFilters(FIXTURE, { method: SEL_APPROVE, toAddress: B })),
+    ).toEqual([]);
+    expect(
+      hashes(applyDiscoveredTxFilters(FIXTURE, { method: SEL_TRANSFER, fromAddress: A })),
+    ).toEqual(['100']);
+  });
+
   it('an over-narrow combination yields an honest empty list', () => {
     expect(applyDiscoveredTxFilters(FIXTURE, { fromAddress: C, toAddress: B })).toEqual([]);
     expect(applyDiscoveredTxFilters(FIXTURE, { minValue: 5n, maxValue: 5n, fromAddress: B }))
@@ -141,6 +186,16 @@ const makeDiscoveryService = () => {
               // '' encodes a contract creation's null `to`.
               to: row.toAddress === '' ? null : row.toAddress,
               value: BigInt(row.value),
+              // Calldata for rows the fixture arms with a selector
+              // (selector + ABI-ish args); '0x' for plain transfers. The
+              // creation row carries init bytes — the derivation must
+              // never read them as a selector.
+              input:
+                typeof row.selector === 'string'
+                  ? `${row.selector}00000000000000000000000000000001`
+                  : row.toAddress === ''
+                    ? '0x6080604052'
+                    : '0x',
             }))
         : [],
     })),
@@ -170,6 +225,54 @@ describe('getAddressTransactions — filters wiring', () => {
     // discovery is still partial, with the same window report.
     expect(result.coverage).toBe('partial');
     expect(result.searchWindowBlocks).toBeDefined();
+  });
+
+  it('derives row selectors on the scan: transfers and creations carry null', async () => {
+    const { service } = makeDiscoveryService();
+
+    const result = await service.getAddressTransactions(109, A, 20, 0);
+
+    // Newest first: the two calldata rows carry their validated
+    // lowercase selectors; the plain transfer, the creation (init bytes
+    // are never a selector) and the fixture's input-less row carry null.
+    expect(result.transactions.map(row => row.selector)).toEqual([
+      SEL_TRANSFER,
+      SEL_APPROVE,
+      null,
+      null,
+      null,
+    ]);
+  });
+
+  it('applies a method filter over the SAME cached discovery — no new scan', async () => {
+    const { service, client } = makeDiscoveryService();
+
+    await service.getAddressTransactions(110, A, 20, 0);
+    const scanCallsAfterFirst = client.getBlock.mock.calls.length;
+
+    const filtered = await service.getAddressTransactions(110, A, 20, 0, undefined, {
+      filters: { method: SEL_APPROVE },
+    });
+
+    // No additional block fetches: the filter narrowed the cached list.
+    expect(client.getBlock.mock.calls.length).toBe(scanCallsAfterFirst);
+    expect(hashes(filtered.transactions)).toEqual(['80']);
+    expect(filtered.total).toBe(1);
+    // Coverage semantics untouched: filtering never claims completeness.
+    expect(filtered.coverage).toBe('partial');
+  });
+
+  it('a method filter matching nothing is an honest empty page, not an error', async () => {
+    const { service } = makeDiscoveryService();
+
+    const result = await service.getAddressTransactions(111, A, 20, 0, undefined, {
+      filters: { method: '0xdeadbeef' },
+    });
+
+    expect(result.transactions).toEqual([]);
+    expect(result.total).toBe(0);
+    expect(result.coverage).toBe('partial');
+    expect(result.reason).toBeUndefined();
   });
 
   it('applies value filters with BigInt exactness past 2^64', async () => {

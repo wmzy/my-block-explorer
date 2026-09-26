@@ -37,6 +37,7 @@ export type AddressTransactionPage = {
     toAddress?: string;
     minValue?: string;
     maxValue?: string;
+    method?: string;
   };
   /**
    * Deep-scan job state when one exists for this address (absent on
@@ -102,13 +103,16 @@ export function fetchAddressInfo(
 
 // Server-side narrowing filters forwarded as query params. String-typed
 // twin of the backend's AddressTxFilters: wei amounts stay exact decimal
-// strings (BigInt-exact on the server, never Number). The backend applies
-// them over the SAME cached discovered set for the window — no new scan.
+// strings (BigInt-exact on the server, never Number); `method` is a
+// 0x-prefixed 4-byte selector compared lowercase-exact server-side. The
+// backend applies them over the SAME cached discovered set for the
+// window — no new scan.
 export type AddressTxFilters = {
   fromAddress?: string;
   toAddress?: string;
   minValue?: string;
   maxValue?: string;
+  method?: string;
 };
 
 export function fetchAddressTransactions(

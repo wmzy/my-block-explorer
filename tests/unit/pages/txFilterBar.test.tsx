@@ -1,16 +1,36 @@
 // Observable behavior of the tx-tab advanced filter bar: open/close
-// toggle, URL-seeded fields, the inline two-tier address / wei
-// validation states, and the Apply gate — an invalid draft must never
-// reach onApply (the URL write behind it is what fires the request, so
-// no request can ever leave the browser with a malformed filter).
+// toggle, URL-seeded fields, the inline two-tier address / wei /
+// method-selector validation states, the selector chips offered from the
+// loaded page's own rows, and the Apply gate — an invalid draft must
+// never reach onApply (the URL write behind it is what fires the
+// request, so no request can ever leave the browser with a malformed
+// filter).
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { getAddress } from 'viem';
-import { TxFilterBar, validateTxFilterValues } from '@/views/Address/TxFilterBar';
+import {
+  TxFilterBar,
+  validateTxFilterValues,
+  distinctRowSelectors,
+  selectorChipLabel,
+} from '@/views/Address/TxFilterBar';
+import type { SignatureOutcome } from '@/services/signatures';
+
+// Chip labels come from the shared openchain batch hook; mocked so chip
+// rendering is deterministic (the hook's own batching/memo behavior has
+// dedicated coverage in signaturesFrontend.test.ts).
+const mockUseSignaturesBatched = vi.fn<
+  (selectors: readonly string[]) => Record<string, SignatureOutcome>
+>(() => ({}));
+vi.mock('@/services/signatures', () => ({
+  useSignaturesBatched: (...args: unknown[]) => mockUseSignaturesBatched(...(args as [readonly string[]])),
+}));
 
 const VALID_FROM = '0x1111111111111111111111111111111111111111';
 const VALID_TO = '0x2222222222222222222222222222222222222222';
+const SEL_TRANSFER = '0xa9059cbb';
+const SEL_APPROVE = '0x095ea7b3';
 
 // A real checksum form, flipped at one letter the checksum keeps
 // lowercase — the tier-2 (checksum) fixture.
@@ -28,7 +48,7 @@ const BAD_CHECKSUM = (() => {
   return CHECKSUMMED;
 })();
 
-const EMPTY_VALUES = { from: '', to: '', min: '', max: '' };
+const EMPTY_VALUES = { from: '', to: '', min: '', max: '', method: '' };
 
 type Harness = {
   onApply: ReturnType<typeof vi.fn>;
@@ -52,6 +72,7 @@ const renderBar = (
       urlParamCount={props.urlParamCount ?? 0}
       onApply={onApply}
       onClear={onClear}
+      selectorOptions={props.selectorOptions}
     />,
   );
   // Re-render helper that keeps the same handler instances (assertions
@@ -65,6 +86,7 @@ const renderBar = (
         urlParamCount={next.urlParamCount ?? props.urlParamCount ?? 0}
         onApply={onApply}
         onClear={onClear}
+        selectorOptions={next.selectorOptions ?? props.selectorOptions}
       />,
     );
   return { onApply, onClear, onToggle, rerender: rerenderWith, unmount };
@@ -86,6 +108,7 @@ describe('validateTxFilterValues (pure)', () => {
         to: VALID_TO.toLowerCase(),
         min: '0',
         max: '1000000000000000000000',
+        method: SEL_TRANSFER,
       }),
     ).toEqual({});
   });
@@ -107,6 +130,56 @@ describe('validateTxFilterValues (pure)', () => {
       expect(validateTxFilterValues({ ...EMPTY_VALUES, max: bad }).max)
         .toMatch(/wei/i);
     }
+  });
+
+  it('flags malformed method selectors (0x + 8 hex is the only valid shape)', () => {
+    for (const bad of ['a9059cbb', '0xa905', '0xa9059cbb00', '0xzz059cbb', '0XA9059CBB']) {
+      expect(validateTxFilterValues({ ...EMPTY_VALUES, method: bad }).method)
+        .toMatch(/selector/i);
+    }
+    // Mixed-case hex with the 0x prefix is legal (compared case-blind).
+    expect(validateTxFilterValues({ ...EMPTY_VALUES, method: '0xA9059CBB' }).method)
+      .toBeUndefined();
+  });
+});
+
+describe('distinctRowSelectors / selectorChipLabel (pure)', () => {
+  it('collects distinct row selectors in first-seen order, skipping null/absent/empty', () => {
+    expect(
+      distinctRowSelectors([
+        { selector: SEL_TRANSFER },
+        { selector: null },
+        {},
+        { selector: SEL_TRANSFER },
+        { selector: SEL_APPROVE },
+        { selector: '' },
+      ]),
+    ).toEqual([SEL_TRANSFER, SEL_APPROVE]);
+    expect(distinctRowSelectors([])).toEqual([]);
+  });
+
+  it('labels a chip with the resolved base name, falling back to the raw selector', () => {
+    const resolved: SignatureOutcome = {
+      kind: 'function',
+      signatures: ['transfer(address,uint256)', 'transfer(address,uint256,bytes)'],
+      source: 'openchain',
+    };
+    expect(selectorChipLabel(SEL_TRANSFER, resolved)).toBe('transfer');
+    // Pending (undefined), notFound and unavailable all keep the raw
+    // selector — never a fabricated name.
+    expect(selectorChipLabel(SEL_TRANSFER, undefined)).toBe(SEL_TRANSFER);
+    expect(
+      selectorChipLabel(SEL_TRANSFER, { kind: 'function', signatures: [], notFound: true }),
+    ).toBe(SEL_TRANSFER);
+    expect(selectorChipLabel(SEL_TRANSFER, { unavailable: true })).toBe(SEL_TRANSFER);
+    // A candidate without parentheses renders verbatim.
+    expect(
+      selectorChipLabel(SEL_APPROVE, {
+        kind: 'function',
+        signatures: ['weird_signature'],
+        source: 'openchain',
+      }),
+    ).toBe('weird_signature');
   });
 });
 
@@ -144,16 +217,21 @@ describe('TxFilterBar', () => {
   });
 
   it('seeds its fields from the URL values and re-seeds on URL change', () => {
-    const values = { from: VALID_FROM, to: VALID_TO, min: '7', max: '' };
+    const values = { from: VALID_FROM, to: VALID_TO, min: '7', max: '', method: SEL_TRANSFER };
     const { rerender } = renderBar({ open: true, values });
 
     expect(screen.getByTestId('tx-filter-from')).toHaveValue(VALID_FROM);
     expect(screen.getByTestId('tx-filter-min')).toHaveValue('7');
+    expect(screen.getByTestId('tx-filter-method')).toHaveValue(SEL_TRANSFER);
 
     // Back/forward to a different filter set re-seeds the draft.
-    rerender({ values: { from: '', to: VALID_FROM, min: '', max: '9' }, urlParamCount: 2 });
+    rerender({
+      values: { from: '', to: VALID_FROM, min: '', max: '9', method: '' },
+      urlParamCount: 2,
+    });
     expect(screen.getByTestId('tx-filter-from')).toHaveValue('');
     expect(screen.getByTestId('tx-filter-max')).toHaveValue('9');
+    expect(screen.getByTestId('tx-filter-method')).toHaveValue('');
   });
 
   it('shows the URL param count badge only when params are present', () => {
@@ -198,6 +276,76 @@ describe('TxFilterBar', () => {
     }
   });
 
+  it('an invalid method draft renders a field error and Apply never fires onApply', () => {
+    const { onApply } = renderBar({ open: true });
+
+    typeInto('tx-filter-method', 'not-a-selector');
+    expect(screen.getByTestId('tx-filter-method-error')).toHaveTextContent(/selector/i);
+    expect(screen.getByTestId('tx-filter-apply')).toBeDisabled();
+    // The helper hint is replaced by the error, and vice versa on fix.
+    expect(screen.queryByText('4-byte selector, e.g. 0xa9059cbb')).not.toBeInTheDocument();
+
+    typeInto('tx-filter-method', SEL_TRANSFER);
+    expect(screen.queryByTestId('tx-filter-method-error')).not.toBeInTheDocument();
+    expect(screen.getByText('4-byte selector, e.g. 0xa9059cbb')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('tx-filter-apply'));
+    expect(onApply).toHaveBeenCalledWith({
+      ...EMPTY_VALUES,
+      method: SEL_TRANSFER,
+    });
+  });
+
+  it('renders one chip per distinct loaded-row selector, labeled by the decode and titled with the raw selector', () => {
+    mockUseSignaturesBatched.mockImplementation(() => ({
+      [SEL_TRANSFER]: {
+        kind: 'function',
+        signatures: ['transfer(address,uint256)'],
+        source: 'openchain',
+      } satisfies SignatureOutcome,
+      // SEL_APPROVE stays unresolved (pending) — its raw selector is
+      // the label.
+    }));
+
+    renderBar({ open: true, selectorOptions: [SEL_TRANSFER, SEL_APPROVE] });
+
+    const chips = screen.getByTestId('tx-filter-method-chips');
+    expect(screen.getByTestId(`tx-filter-method-chip-${SEL_TRANSFER}`)).toHaveTextContent(
+      'transfer',
+    );
+    expect(screen.getByTestId(`tx-filter-method-chip-${SEL_APPROVE}`)).toHaveTextContent(
+      SEL_APPROVE,
+    );
+    // Raw selector as the title on every chip, resolved or not.
+    expect(screen.getByTestId(`tx-filter-method-chip-${SEL_TRANSFER}`)).toHaveAttribute(
+      'title',
+      SEL_TRANSFER,
+    );
+    expect(screen.getByTestId(`tx-filter-method-chip-${SEL_APPROVE}`)).toHaveAttribute(
+      'title',
+      SEL_APPROVE,
+    );
+    expect(chips).toBeInTheDocument();
+  });
+
+  it('renders no chip row when the loaded rows offer no selectors', () => {
+    const first = renderBar({ open: true, selectorOptions: [] });
+    expect(screen.queryByTestId('tx-filter-method-chips')).not.toBeInTheDocument();
+    first.unmount();
+
+    // And none when the prop is absent (no page data yet).
+    renderBar({ open: true });
+    expect(screen.queryByTestId('tx-filter-method-chips')).not.toBeInTheDocument();
+  });
+
+  it('clicking a chip fills the Method field with that selector', () => {
+    mockUseSignaturesBatched.mockImplementation(() => ({}));
+    renderBar({ open: true, selectorOptions: [SEL_TRANSFER] });
+
+    fireEvent.click(screen.getByTestId(`tx-filter-method-chip-${SEL_TRANSFER}`));
+    expect(screen.getByTestId('tx-filter-method')).toHaveValue(SEL_TRANSFER);
+  });
+
   it('a fully valid draft applies with the exact field values', () => {
     const { onApply } = renderBar({ open: true });
 
@@ -205,6 +353,7 @@ describe('TxFilterBar', () => {
     typeInto('tx-filter-to', VALID_TO);
     typeInto('tx-filter-min', '0');
     typeInto('tx-filter-max', '1000000000000000000000');
+    typeInto('tx-filter-method', SEL_TRANSFER);
     fireEvent.click(screen.getByTestId('tx-filter-apply'));
 
     expect(onApply).toHaveBeenCalledTimes(1);
@@ -213,11 +362,15 @@ describe('TxFilterBar', () => {
       to: VALID_TO,
       min: '0',
       max: '1000000000000000000000',
+      method: SEL_TRANSFER,
     });
   });
 
   it('empty fields are valid — applying an all-empty draft is a clear-by-apply', () => {
-    const { onApply } = renderBar({ open: true, values: { from: VALID_FROM, to: '', min: '', max: '' } });
+    const { onApply } = renderBar({
+      open: true,
+      values: { from: VALID_FROM, to: '', min: '', max: '', method: '' },
+    });
 
     // Wipe the seeded from value: still valid (absent), Apply fires.
     typeInto('tx-filter-from', '');
@@ -229,7 +382,7 @@ describe('TxFilterBar', () => {
   it('Clear resets the draft fields and fires onClear', () => {
     const { onClear } = renderBar({
       open: true,
-      values: { from: VALID_FROM, to: VALID_TO, min: '7', max: '9' },
+      values: { from: VALID_FROM, to: VALID_TO, min: '7', max: '9', method: SEL_APPROVE },
     });
 
     fireEvent.click(screen.getByTestId('tx-filter-clear'));
@@ -239,5 +392,6 @@ describe('TxFilterBar', () => {
     expect(screen.getByTestId('tx-filter-to')).toHaveValue('');
     expect(screen.getByTestId('tx-filter-min')).toHaveValue('');
     expect(screen.getByTestId('tx-filter-max')).toHaveValue('');
+    expect(screen.getByTestId('tx-filter-method')).toHaveValue('');
   });
 });

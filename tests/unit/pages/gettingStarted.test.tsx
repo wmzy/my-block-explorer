@@ -16,16 +16,21 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { MemoryRouter, View, createRoutes } from '@native-router/react';
-import Landing from '@/views/Home/Landing';
+// Deliberately imported BEFORE Landing: GettingStarted and Landing form
+// a module cycle (the card borrows the remembered-chain resolution), and
+// this order pins the "card module evaluates first" direction so a load
+// order that breaks hoisted-function borrowing fails here, not in prod.
 import {
   GettingStarted,
   GETTING_STARTED_COMMAND,
   ONBOARDING_DISMISSED_KEY,
   backendConnectedFromStatus,
   readOnboardingDismissed,
+  resolveGuideChainPaths,
   shouldShowGettingStarted,
   writeOnboardingDismissed,
 } from '@/views/Home/GettingStarted';
+import Landing from '@/views/Home/Landing';
 
 // Discovery state is module-mutable so each case can pin the status the
 // Landing view observes without remounting the context provider.
@@ -35,10 +40,15 @@ vi.mock('@/hooks/ServiceDiscoveryContext', () => ({
   useServiceDiscovery: () => ({ status: discovery.status }),
 }));
 
-// Same chain-config fixture shape as homePage.test.tsx: mainnet only.
+// Same chain-config fixture shape as homePage.test.tsx: mainnet only,
+// plus Polygon so the step-link tests can tell a remembered chain apart
+// from the preferred fallback (mainnet stays preferred either way).
 vi.mock('@/config/chains', () => ({
-  isChainSupported: (chainId: number) => chainId === 1,
-  getSortedChains: () => [{ id: 1, name: 'Ethereum' }],
+  isChainSupported: (chainId: number) => chainId === 1 || chainId === 137,
+  getSortedChains: () => [
+    { id: 1, name: 'Ethereum' },
+    { id: 137, name: 'Polygon' },
+  ],
 }));
 
 // jsdom ships no navigator.clipboard; copy tests stub the async API
@@ -139,9 +149,88 @@ describe('onboarding dismissal storage helpers', () => {
   });
 });
 
+describe('resolveGuideChainPaths', () => {
+  it('derives both step-2 destinations from one chain id', () => {
+    expect(resolveGuideChainPaths(137)).toEqual({
+      blocks: '/chain/137/blocks',
+      contracts: '/chain/137/contracts',
+    });
+  });
+
+  it('falls back to the preferred entry chain when nothing valid is remembered', () => {
+    // Same resolution the '/' landing redirect performs: mainnet when
+    // supported, so the card never guesses a chain the app would not
+    // itself open.
+    expect(resolveGuideChainPaths(undefined)).toEqual({
+      blocks: '/chain/1/blocks',
+      contracts: '/chain/1/contracts',
+    });
+  });
+});
+
 describe('GettingStarted card', () => {
+  // The card's step links are TypedLinks, so bare renders need a router
+  // context (the same MemoryRouter style as the Landing mount below).
+  const BlankPage = () => null;
   const renderCard = (onDismiss = vi.fn()) =>
-    render(<GettingStarted onDismiss={onDismiss} />);
+    render(
+      <MemoryRouter
+        routes={createRoutes([{ path: '/', component: () => BlankPage }])}
+        initialEntries={['/']}
+      >
+        <GettingStarted onDismiss={onDismiss} />
+      </MemoryRouter>,
+    );
+
+  it('walks through the three steps in order', () => {
+    renderCard();
+
+    const steps = [
+      'Pick a network',
+      'Explore',
+      'Read the data honestly',
+    ];
+    for (const step of steps) {
+      expect(screen.getByText(step)).toBeInTheDocument();
+    }
+    // The walkthrough leads the card; the run modes follow as their own
+    // section rather than being replaced.
+    expect(
+      screen.getByRole('heading', { name: 'Three ways to run this explorer' }),
+    ).toBeInTheDocument();
+  });
+
+  it('teaches the coverage vocabulary with a legend link in step 3', () => {
+    renderCard();
+
+    const legend = screen.getByRole('link', { name: 'What do the coverage levels mean?' });
+    expect(legend).toHaveAttribute('href', '/about/coverage');
+    // The honest split the whole app is built around, stated in the card.
+    expect(screen.getByText(/live RPC data from cached, discovered and/i)).toBeInTheDocument();
+  });
+
+  it('links step 2 at the remembered chain, never a guess', () => {
+    localStorage.setItem('be:lastChainId', '137');
+    renderCard();
+
+    expect(screen.getByRole('link', { name: 'latest blocks' })).toHaveAttribute(
+      'href',
+      '/chain/137/blocks',
+    );
+    expect(screen.getByRole('link', { name: 'contracts directory' })).toHaveAttribute(
+      'href',
+      '/chain/137/contracts',
+    );
+  });
+
+  it('falls back to the preferred entry chain when nothing valid is remembered', () => {
+    // Nothing remembered at all.
+    renderCard();
+    expect(screen.getByRole('link', { name: 'latest blocks' })).toHaveAttribute(
+      'href',
+      '/chain/1/blocks',
+    );
+  });
 
   it('names all three run modes', () => {
     renderCard();

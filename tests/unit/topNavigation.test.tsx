@@ -33,6 +33,17 @@ vi.mock('../../src/components/RpcConfig', () => ({
   ),
 }));
 
+// The topbar only consumes the palette's open control (openCommandPalette)
+// — mocking the module keeps this file's focus on the topbar and avoids
+// pulling the palette's action graph (remembered-chain reader, theme
+// helpers) into these tests.
+const { mockOpenCommandPalette } = vi.hoisted(() => ({
+  mockOpenCommandPalette: vi.fn(),
+}));
+vi.mock('../../src/components/CommandPalette', () => ({
+  openCommandPalette: mockOpenCommandPalette,
+}));
+
 // Mock the shared http layer so the hash-search call (the only network
 // path left in the component — history is localStorage-only now) is
 // observable without a network. withSignal is a pass-through: the
@@ -1172,5 +1183,48 @@ describe('ChainSelector', () => {
       'Search chain name, ID, or symbol...',
     );
     expect(reopened).not.toHaveAttribute('aria-activedescendant');
+  });
+});
+
+// --- Tools hub entry + command palette trigger ---
+
+describe('tools entry and palette trigger', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    localStorage.removeItem(SEARCH_HISTORY_STORAGE_KEY);
+    mockIsBackendUnreachable.mockImplementation(
+      (e: unknown) => e instanceof ApiError && e.status === 0,
+    );
+  });
+
+  it('adds a Tools nav entry after Charts that navigates to the hub', () => {
+    renderTopNavigation({ currentChainId: 1 });
+
+    const tools = screen.getByRole('button', { name: 'Tools' });
+    expect(tools).toBeInTheDocument();
+
+    // DOM order: the hub entry sits after Charts and before the admin
+    // group's SQL console.
+    const charts = screen.getByRole('button', { name: 'Charts' });
+    const sql = screen.getByRole('button', { name: 'SQL console (admin)' });
+    expect(charts.compareDocumentPosition(tools)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(tools.compareDocumentPosition(sql)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+
+    fireEvent.click(tools);
+    expect(mockNavigate).toHaveBeenCalledWith(mockRouter, '/tools');
+    // The hub is global, never chain-scoped — exactly one call, no chain prefix.
+    expect(mockNavigate).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders the palette trigger with its accessible name and opens the palette through the control', () => {
+    renderTopNavigation({ currentChainId: 1 });
+
+    const trigger = screen.getByRole('button', { name: 'Command palette (Ctrl+K)' });
+    expect(trigger).toHaveAttribute('title', 'Command palette (Ctrl+K)');
+
+    fireEvent.click(trigger);
+    expect(mockOpenCommandPalette).toHaveBeenCalledTimes(1);
+    // The trigger never navigates on its own — the palette owns routing.
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 });

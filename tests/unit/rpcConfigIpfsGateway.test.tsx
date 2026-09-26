@@ -9,6 +9,7 @@ import React from 'react';
 import { render, screen, fireEvent } from '@testing-library/react';
 import '@testing-library/jest-dom';
 import { useControl } from 'react-use-control';
+import { MemoryRouter, createRoutes } from '@native-router/react';
 import RpcConfig from '@/components/RpcConfig';
 import { toast } from 'sonner';
 import {
@@ -44,10 +45,20 @@ vi.mock('@/config/chains', () => ({
   getChainName: () => 'Ethereum',
 }));
 
-// RpcConfig takes a Control<boolean> for its open state.
+// RpcConfig takes a Control<boolean> for its open state. Wrapped in a
+// MemoryRouter with the coverage route registered because the modal's
+// footer now carries a TypedLink to /about/coverage (needs router context).
+const BlankPage = () => null;
 function OpenRpcConfig() {
   const [, , control] = useControl<boolean>(true);
-  return <RpcConfig open={control} chainId={1} />;
+  return (
+    <MemoryRouter
+      routes={createRoutes([{ path: '/about/coverage', component: () => BlankPage }])}
+      initialEntries={['/about/coverage']}
+    >
+      <RpcConfig open={control} chainId={1} />
+    </MemoryRouter>
+  );
 }
 
 const LABEL = 'IPFS gateway (stored in this browser)';

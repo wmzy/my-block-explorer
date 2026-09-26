@@ -1,10 +1,11 @@
 // Route-level contract of the address transactions endpoint's optional
 // narrowing filters: param validation (400 invalid_address /
-// invalid_value), forwarding to the service as BigInt-exact bounds, the
-// as-received filtersApplied echo, the filtered total driving pagination
-// honestly — and the byte-identical pin: an unfiltered request must
-// neither carry filters into the service call nor add a filtersApplied
-// key to the response.
+// invalid_value / invalid_method), forwarding to the service as
+// BigInt-exact bounds and a lowercased method selector, the
+// as-received filtersApplied echo, the additive row-selector wire
+// field, the filtered total driving pagination honestly — and the
+// byte-identical pin: an unfiltered request must neither carry filters
+// into the service call nor add a filtersApplied key to the response.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Hono } from 'hono';
 import { getAddress } from 'viem';
@@ -112,6 +113,61 @@ describe('GET /chains/:chainId/addresses/:address/transactions — filters', () 
     ]]);
   });
 
+  it('forwards a valid method selector lowercased (comparison is lowercase-exact)', async () => {
+    const res = await requestTx('?method=0xA9059CBB');
+
+    expect(res.status).toBe(200);
+    expect(serviceCalls()).toEqual([[
+      1,
+      ROUTE_ADDRESS,
+      20,
+      0,
+      undefined,
+      {
+        includeBalancePoints: false,
+        filters: { method: '0xa9059cbb' },
+      },
+    ]]);
+  });
+
+  it('echoes filtersApplied with the method exactly as received (case preserved)', async () => {
+    const res = await requestTx('?method=0xA9059CBB&minValue=7');
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.filtersApplied).toEqual({
+      method: '0xA9059CBB',
+      minValue: '7',
+    });
+  });
+
+  it('rejects a malformed method selector with 400 invalid_method (no service call)', async () => {
+    // No 0x prefix, too short, too long, non-hex, and 0X-prefix all fail
+    // the same '0x' + 8-hex rule.
+    for (const bad of ['a9059cbb', '0xa905', '0xa9059cbb00', '0xzz059cbb', '0XA9059CBB']) {
+      const res = await requestTx(`?method=${bad}`);
+      expect(res.status).toBe(400);
+      expect((await res.json()).error).toBe('invalid_method');
+    }
+    expect(serviceCalls()).toHaveLength(0);
+  });
+
+  it('serves the additive row selector field through the wire payload', async () => {
+    vi.mocked(addressService.getAddressTransactions).mockResolvedValue(
+      mockTxResult([
+        { ...discoveredRow(100, '1000'), selector: '0xa9059cbb' },
+        { ...discoveredRow(90, '0'), selector: null },
+      ]),
+    );
+
+    const res = await requestTx('');
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.transactions.map((tx: { selector?: string | null }) => tx.selector))
+      .toEqual(['0xa9059cbb', null]);
+  });
+
   it('echoes filtersApplied exactly as received (case preserved)', async () => {
     const res = await requestTx(
       `?fromAddress=${FROM_FILTER.toLowerCase()}&minValue=7`,
@@ -164,7 +220,7 @@ describe('GET /chains/:chainId/addresses/:address/transactions — filters', () 
   });
 
   it('treats empty-string filter params as absent (no filters, no echo)', async () => {
-    const res = await requestTx('?fromAddress=&toAddress=&minValue=&maxValue=');
+    const res = await requestTx('?fromAddress=&toAddress=&minValue=&maxValue=&method=');
 
     expect(res.status).toBe(200);
     expect(serviceCalls()).toEqual([[

@@ -45,6 +45,11 @@ const parseWeiFilterParam = (raw: string | undefined): bigint | undefined => {
   return BigInt(raw);
 };
 
+// Method (function-selector) filter param: exactly '0x' + 8 hex chars
+// (case-insensitive hex — the comparison lowercases both ends). Anything
+// else is a loud 400 at the call site, never a silent fallthrough.
+const METHOD_SELECTOR_RE = /^0x[0-9a-fA-F]{8}$/;
+
 app.get('/chains/:chainId/addresses/:address', async (c) => {
   const chainId = getValidatedChainId(c.req.param('chainId'));
   const address = getValidatedAddress(c.req.param('address'));
@@ -152,19 +157,22 @@ app.get('/chains/:chainId/addresses/:address/transactions', addressTransactionsR
   const includeBalanceHistory = c.req.query('balanceHistory') === '1';
 
   // Optional narrowing filters (?fromAddress / ?toAddress / ?minValue /
-  // ?maxValue), applied server-side over the SAME cached discovered set
-  // for the current window — never a new scan, never a coverage claim.
-  // Empty-string params read as absent (the limit/page convention).
-  // Addresses validate through the same two-tier getValidatedAddress as
-  // the path param; wei values must be non-negative integer decimals
-  // (BigInt-exact — 'NaN', fractions, negatives are loud 400s, not
-  // silent fallthroughs).
+  // ?maxValue / ?method), applied server-side over the SAME cached
+  // discovered set for the current window — never a new scan, never a
+  // coverage claim. Empty-string params read as absent (the limit/page
+  // convention). Addresses validate through the same two-tier
+  // getValidatedAddress as the path param; wei values must be
+  // non-negative integer decimals (BigInt-exact — 'NaN', fractions,
+  // negatives are loud 400s, not silent fallthroughs); the method filter
+  // must be a 0x-prefixed 4-byte selector (hex case-insensitive,
+  // compared lowercase-exact against the rows' own selectors).
   const echoParam = (raw: string | undefined): string | undefined =>
     raw !== undefined && raw !== '' ? raw : undefined;
   const rawFromAddress = echoParam(c.req.query('fromAddress'));
   const rawToAddress = echoParam(c.req.query('toAddress'));
   const rawMinValue = echoParam(c.req.query('minValue'));
   const rawMaxValue = echoParam(c.req.query('maxValue'));
+  const rawMethod = echoParam(c.req.query('method'));
 
   let fromAddressFilter: string | undefined;
   if (rawFromAddress !== undefined) {
@@ -214,18 +222,32 @@ app.get('/chains/:chainId/addresses/:address/transactions', addressTransactionsR
       400,
     );
   }
+  // Method filter: validated as a 4-byte selector, forwarded lowercase
+  // (the service compares lowercase-exact against row selectors).
+  if (rawMethod !== undefined && !METHOD_SELECTOR_RE.test(rawMethod)) {
+    return c.json(
+      {
+        error: 'invalid_method',
+        message: 'method must be a 0x-prefixed 4-byte selector (0x + 8 hex characters)',
+      },
+      400,
+    );
+  }
+  const methodFilter = rawMethod !== undefined ? rawMethod.toLowerCase() : undefined;
 
   // The service only sees a filters object when at least one filter is
   // present — the unfiltered call shape (and response) stays untouched.
   const txFilters =
     fromAddressFilter === undefined && toAddressFilter === undefined
     && parsedMinValue === undefined && parsedMaxValue === undefined
+    && methodFilter === undefined
       ? undefined
       : {
           ...(fromAddressFilter !== undefined ? { fromAddress: fromAddressFilter } : {}),
           ...(toAddressFilter !== undefined ? { toAddress: toAddressFilter } : {}),
           ...(parsedMinValue !== undefined ? { minValue: parsedMinValue } : {}),
           ...(parsedMaxValue !== undefined ? { maxValue: parsedMaxValue } : {}),
+          ...(methodFilter !== undefined ? { method: methodFilter } : {}),
         };
 
   try {
@@ -311,6 +333,7 @@ app.get('/chains/:chainId/addresses/:address/transactions', addressTransactionsR
               ...(rawToAddress !== undefined ? { toAddress: rawToAddress } : {}),
               ...(rawMinValue !== undefined ? { minValue: rawMinValue } : {}),
               ...(rawMaxValue !== undefined ? { maxValue: rawMaxValue } : {}),
+              ...(rawMethod !== undefined ? { method: rawMethod } : {}),
             },
           }
         : {}),

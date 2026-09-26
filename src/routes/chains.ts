@@ -20,6 +20,8 @@ import { registerCustomChain, removeCustomChain } from '../config/customChains';
 import { requireAdminTokenIfConfigured } from '../middleware/admin-token';
 import { createRateLimiter } from '../middleware/rate-limit';
 import { isAllowedCorsOrigin } from '../middleware/cors-origins';
+import { getValidatedChainId } from '../server/validation';
+import { chainCacheService } from '../services/ChainCacheService';
 
 const logger = createLogger('custom-chain-routes');
 
@@ -380,5 +382,51 @@ app.delete('/chains/custom/:chainId', requireAdminTokenIfConfigured, async (c) =
     return c.json({ error: 'Failed to delete custom chain' }, 500);
   }
 });
+
+// Clear a chain's cached-immutable data (dev-chain reset recovery —
+// anvil/hardhat keeps the chain id but rewinds the head, so the cached
+// contract sources / storage layouts for that id describe contracts that
+// may no longer exist). Opt-in admin gate (clearing DuckDB caches is
+// non-destructive: immutable rows refetch on demand) plus a tight
+// limiter, matching the register/delete budget above. Scope is exactly
+// the two immutable fetch caches; per-chain event DB files are NOT
+// touched (open DuckDB handles — event data and indexing ranges have
+// their own management on the Events page) and the response says so.
+const chainCacheClearRateLimiter = createRateLimiter({
+  name: 'chain-cache-clear',
+  requestsPerMinute: 5,
+  burst: 2,
+});
+
+app.delete(
+  '/chains/:chainId/cached-data',
+  requireAdminTokenIfConfigured,
+  chainCacheClearRateLimiter,
+  async (c) => {
+    // Invalid and unsupported ids answer 400 through the shared
+    // validator (same convention as every /chains/:chainId route).
+    const chainId = getValidatedChainId(c.req.param('chainId'));
+
+    try {
+      const cleared = await chainCacheService.clearChainCachedData(chainId);
+
+      return c.json({
+        cleared,
+        scope: {
+          cleared: ['contract sources', 'storage layouts'],
+          untouched:
+            'per-chain event index database files, indexing ranges, labels, watches and everything else — only the two immutable fetch caches above were deleted; they refetch on demand',
+        },
+      });
+    }
+    catch (error) {
+      logger.error(
+        { err: error, chainId },
+        'Failed to clear chain cached data',
+      );
+      return c.json({ error: 'Failed to clear chain cached data' }, 500);
+    }
+  },
+);
 
 export default app;

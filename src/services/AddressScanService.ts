@@ -70,6 +70,7 @@ import {
   scanBlockForAddressTransactions,
   type DiscoveredTransaction,
 } from './AddressService';
+import { selectorOf } from '../utils/txDecode';
 import { createLogger } from '../server/logger';
 // Trace reuse: the same pure normalizer the frontend Call Trace card and
 // internal-tx tab use (utils/traceFormat) — never a reimplementation.
@@ -685,6 +686,10 @@ export const hydrateFindings = async (
       toAddress: tx.to ?? '',
       value: tx.value.toString(),
       timestamp: new Date(Number(block.timestamp) * 1000).toISOString(),
+      // Same selector derivation as scanBlockForAddressTransactions: a
+      // creation's input is init code, never a selector (viem types tx.to
+      // as 0x-string | null — null is the creation case).
+      selector: tx.to == null ? null : selectorOf(tx.input),
     };
     rememberHydratedTransactions([hydrated]);
     out.push(hydrated);

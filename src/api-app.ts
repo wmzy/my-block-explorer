@@ -22,6 +22,7 @@ import signaturesRoutes from './routes/signatures';
 import labelsRoutes from './routes/labels';
 import verifyRoutes from './routes/verify';
 import approvalsRoutes from './routes/approvals';
+import openapiRoutes from './routes/openapi';
 import sqlRoutes from './routes/sql';
 import opsRoutes from './routes/ops';
 import watchRoutes from './routes/watch';
@@ -99,6 +100,11 @@ app.route('/api', signaturesRoutes);
 app.route('/api', labelsRoutes);
 app.route('/api', verifyRoutes);
 app.route('/api', approvalsRoutes);
+// OpenAPI description of the API surface: GET /api/openapi.json serving a
+// hand-maintained 3.1 spec (docs/API.md + the route files stay the source
+// of truth — the spec says so itself). Open by design: it documents paths,
+// it leaks no secrets, and it carries no admin gate.
+app.route('/api', openapiRoutes);
 // SQL console: admin-only read-only queries against this explorer's own
 // DuckDB (POST /api/sql/query + GET /api/sql/tables). Gated by the STRICT
 // admin tier inside the sub-app — unlike the opt-in gates, it fails closed

@@ -15,7 +15,7 @@
 import { css } from '@linaria/core';
 import { navigate } from '@native-router/core';
 import { useRouter } from '@native-router/react';
-import { Alert } from 'haze-ui';
+import { Alert, useToast } from 'haze-ui';
 
 import TopNavigation from '@/components/TopNavigation';
 import { Button } from '@/components/ui/Button';
@@ -24,7 +24,7 @@ import { DataTable } from '@/components/ui/DataTable';
 import { BackendOfflineState } from '@/components/ui/ErrorState';
 import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
 import { readRememberedChainId } from '@/views/Home/Landing';
-import { useOpsSummary, type OpsSummary } from '@/services/opsSummary';
+import { useOpsSummary, type OpsMeta, type OpsSummary } from '@/services/opsSummary';
 import { ApiError } from '@/util/apiError';
 import { isBackendUnreachable } from '@/util/http';
 import { formatDuration, formatFileSize, formatNumber } from '@/utils/format';
@@ -76,6 +76,58 @@ export function formatStatusCounts(statuses: Record<string, number>): string {
 // (unparseable file name) renders as just the raw stem.
 export function formatChainLabel(name: string, chainId: number | null): string {
   return chainId === null ? name : `${name} (${formatNumber(chainId)})`;
+}
+
+// --- Copy-diagnostics builder (exported for the view tests) ---
+
+// The five summary sections that can degrade independently. The builder
+// below includes every one of them verbatim — degraded sections travel as
+// their honest {error:'unavailable'} shape, never silently dropped — plus
+// a `sections` verdict map so a bug-report reader sees at a glance which
+// parts of the snapshot are trustworthy.
+export type DiagnosticSection = 'storage' | 'indexing' | 'watch' | 'rateLimit' | 'deepScan';
+
+export type OpsDiagnostics = {
+  /** Client clock when Copy was clicked — correlates the snapshot with a report. */
+  readonly generatedAt: string;
+  /** The backend version, single-sourced from the summary's meta (bug reports ask for it). */
+  readonly appVersion: string;
+  /** The summary's own meta verbatim (version, uptime, snapshot timestamp). */
+  readonly backend: OpsMeta;
+  /** Per-section verdict: 'ok' or the degraded marker the backend actually sent. */
+  readonly sections: Record<DiagnosticSection, 'ok' | 'unavailable'>;
+  readonly storage: OpsSummary['storage'];
+  readonly indexing: OpsSummary['indexing'];
+  readonly watch: OpsSummary['watch'];
+  readonly rateLimit: OpsSummary['rateLimit'];
+  readonly deepScan: OpsSummary['deepScan'];
+};
+
+// Pure: builds the clipboard payload from an already-fetched summary.
+// `now` is injectable so tests pin generatedAt deterministically.
+export function buildOpsDiagnostics(
+  payload: OpsSummary,
+  now: () => Date = () => new Date(),
+): OpsDiagnostics {
+  const degraded = (section: OpsSummary[DiagnosticSection]): 'ok' | 'unavailable' =>
+    'error' in section ? 'unavailable' : 'ok';
+  return {
+    generatedAt: now().toISOString(),
+    appVersion: payload.meta.version,
+    backend: payload.meta,
+    sections: {
+      storage: degraded(payload.storage),
+      indexing: degraded(payload.indexing),
+      watch: degraded(payload.watch),
+      rateLimit: degraded(payload.rateLimit),
+      deepScan: degraded(payload.deepScan),
+    },
+    storage: payload.storage,
+    indexing: payload.indexing,
+    watch: payload.watch,
+    rateLimit: payload.rateLimit,
+    deepScan: payload.deepScan,
+  };
 }
 
 // --- Styles ---
@@ -574,6 +626,7 @@ function BackupCard() {
 
 export default function Ops() {
   const router = useRouter();
+  const toast = useToast();
   // Not chain-scoped, but the topbar still is (its links and search route
   // into /chain/:chainId pages): the remembered chain provides that context,
   // same fallback order as the other chain-less pages (SQL console, Search).
@@ -584,6 +637,22 @@ export default function Ops() {
 
   const summary = useOpsSummary();
   const retry = () => void summary.refetch();
+
+  // One-click diagnostics for bug reports: the already-fetched summary,
+  // serialized whole (per-section verdicts included) to the clipboard.
+  // Same toast contract as CopyableHash — success and failure both say so.
+  const copyDiagnostics = async () => {
+    if (summary.data === undefined) return;
+    try {
+      await navigator.clipboard.writeText(
+        JSON.stringify(buildOpsDiagnostics(summary.data), null, 2),
+      );
+      toast('Diagnostics copied to clipboard', { variant: 'success', duration: 2000 });
+    }
+    catch {
+      toast('Failed to copy diagnostics', { variant: 'danger', duration: 2000 });
+    }
+  };
 
   const gate = opsAdminGateFromError(summary.error);
 
@@ -643,6 +712,13 @@ export default function Ops() {
                       loading={summary.fetching}
                     >
                       Refresh
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => void copyDiagnostics()}
+                    >
+                      Copy diagnostics
                     </Button>
                     <span className={refreshHint}>
                       {summary.fetching ? 'Refreshing…' : 'Auto-refresh: 30s while visible'}

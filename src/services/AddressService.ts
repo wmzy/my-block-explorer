@@ -3,6 +3,7 @@ import { eq, and } from 'drizzle-orm';
 import { rpcManager } from './RpcManager';
 import { contractSourceService } from './ContractSourceService';
 import type { Address, PublicClient } from 'viem';
+import { selectorOf } from '../utils/txDecode';
 import { createLogger } from '../server/logger';
 
 const logger = createLogger('address-service');
@@ -48,6 +49,15 @@ export type DiscoveredTransaction = {
   toAddress: string;
   value: string;
   timestamp: string;
+  // Additive row field (PM-review P2, 2026-09-26): the calldata's 4-byte
+  // function selector — '0x' + 8 lowercase hex — or null when the row
+  // carries no selector at all (plain value transfer, contract creation
+  // whose input is init code, or calldata without a valid 4-byte hex
+  // prefix). Optional because rows discovered before this field (legacy
+  // cached payloads) carry no key: undefined honestly reads "not
+  // carried", and the method filter excludes such rows rather than
+  // guessing a match (the logStandard precedent).
+  selector?: string | null;
 };
 
 // Coverage semantics for getAddressTransactions: discovery is a heuristic
@@ -161,16 +171,21 @@ export function mergeDiscoveredTransactions(
 }
 
 // Server-side filters for the transactions endpoint (?fromAddress /
-// ?toAddress / ?minValue / ?maxValue). Applied AFTER discovery, over the
-// SAME cached discovered list for the current window — a filter never
-// triggers a new scan and never widens coverage; it can only narrow what
-// the window already discovered. Value bounds are BigInt (wei), never
-// Number, so comparisons stay exact past 2^53.
+// ?toAddress / ?minValue / ?maxValue / ?method). Applied AFTER discovery,
+// over the SAME cached discovered list for the current window — a filter
+// never triggers a new scan and never widens coverage; it can only narrow
+// what the window already discovered. Value bounds are BigInt (wei), never
+// Number, so comparisons stay exact past 2^53. The method filter is a
+// lowercase selector compared for exact equality: rows without that
+// selector — plain transfers and creations (null) and legacy rows that
+// carry no selector key at all (undefined) — are excluded, never guessed
+// into a match.
 export type AddressTxFilters = {
   fromAddress?: string;
   toAddress?: string;
   minValue?: bigint;
   maxValue?: bigint;
+  method?: string;
 };
 
 // Pure filter application over a discovered list — the unit the
@@ -179,21 +194,25 @@ export type AddressTxFilters = {
 // (mirroring scanBlockForAddressTransactions); value bounds are
 // inclusive. A toAddress filter can never match a contract creation's
 // null `to` (stored as '') — creation txs stay out of to-filtered views,
-// which is the honest reading of the filter.
+// which is the honest reading of the filter. The method filter requires
+// the row to carry the exact selector: creation/transfer rows (null) and
+// legacy selector-less rows (undefined) never match.
 export const applyDiscoveredTxFilters = (
   transactions: readonly DiscoveredTransaction[],
   filters: AddressTxFilters | undefined,
 ): DiscoveredTransaction[] => {
   if (filters === undefined) return [...transactions];
-  const { fromAddress, toAddress, minValue, maxValue } = filters;
+  const { fromAddress, toAddress, minValue, maxValue, method } = filters;
   if (
     fromAddress === undefined && toAddress === undefined
     && minValue === undefined && maxValue === undefined
+    && method === undefined
   ) {
     return [...transactions];
   }
   const from = fromAddress?.toLowerCase();
   const to = toAddress?.toLowerCase();
+  const methodSelector = method?.toLowerCase();
   return transactions.filter(tx => {
     if (from !== undefined && tx.fromAddress.toLowerCase() !== from) return false;
     if (to !== undefined && tx.toAddress.toLowerCase() !== to) return false;
@@ -201,6 +220,9 @@ export const applyDiscoveredTxFilters = (
       const value = BigInt(tx.value);
       if (minValue !== undefined && value < minValue) return false;
       if (maxValue !== undefined && value > maxValue) return false;
+    }
+    if (methodSelector !== undefined && tx.selector?.toLowerCase() !== methodSelector) {
+      return false;
     }
     return true;
   });
@@ -274,7 +296,15 @@ export const scanBlockForAddressTransactions = (
   block: {
     number?: bigint | null;
     timestamp: bigint;
-    transactions: readonly (string | { hash: string; from: string; to?: string | null; value: bigint })[];
+    transactions: readonly (string | {
+      hash: string;
+      from: string;
+      to?: string | null;
+      value: bigint;
+      // viem's full transaction shape carries the calldata; optional so
+      // hand-built test blocks (and legacy fixtures) keep compiling.
+      input?: string | null;
+    })[];
   },
   address: Address,
 ): DiscoveredTransaction[] => {
@@ -285,6 +315,15 @@ export const scanBlockForAddressTransactions = (
     const from = tx.from?.toLowerCase();
     const to = tx.to?.toLowerCase();
     if (from === lowerAddr || to === lowerAddr) {
+      // Method selector: a contract creation (null `to`) runs init code,
+      // not a method call — its first 4 bytes are never a selector; a
+      // plain transfer ('0x'/absent input) has none. Everything else
+      // yields the validated 4-byte prefix (lowercase), null when the
+      // input carries no valid selector.
+      const selector =
+        tx.to == null || tx.to === ''
+          ? null
+          : selectorOf(tx.input ?? undefined);
       results.push({
         hash: tx.hash,
         blockNumber: block.number ?? 0n,
@@ -292,6 +331,7 @@ export const scanBlockForAddressTransactions = (
         toAddress: tx.to ?? '',
         value: tx.value.toString(),
         timestamp: new Date(Number(block.timestamp) * 1000).toISOString(),
+        selector,
       });
     }
   }

@@ -10,7 +10,11 @@ import { MemoryRouter, View, createRoutes } from '@native-router/react';
 import '@testing-library/jest-dom';
 import Home from '@/views/Home';
 import { resetPricesForTests } from '@/services/prices';
-import type { GasHistoryResult } from '@/services/gasHistory';
+import type {
+  GasHistoryResult,
+  GasTierInclusionEstimates,
+  GasTiers,
+} from '@/services/gasHistory';
 
 vi.mock('@/components/TopNavigation', () => ({
   default: () => <div data-testid="top-navigation" />,
@@ -55,7 +59,8 @@ vi.mock('@/services/gasHistory', async importOriginal => {
 
 // A settled ok window: 120 blocks from #21,236,800 with a 10→12.5 gwei ramp.
 const okSnapshot = (overrides: {
-  tiers?: { slow: number; standard: number; fast: number } | null;
+  tiers?: GasTiers | null;
+  inclusion?: GasTierInclusionEstimates | null;
   oldestBlock?: number;
   chainId?: number;
 }): GasHistoryResult => ({
@@ -72,6 +77,12 @@ const okSnapshot = (overrides: {
       overrides.tiers === undefined
         ? { slow: 0.8, standard: 1.5, fast: 3.2 }
         : overrides.tiers,
+    tierInclusionBlocks:
+      overrides.inclusion !== undefined
+        ? overrides.inclusion
+        : overrides.tiers === null
+          ? null
+          : { sampleBlocks: 10, slow: 5, standard: 2, fast: 1 },
   },
 });
 

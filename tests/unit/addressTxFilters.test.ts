@@ -1,10 +1,10 @@
 // URL-driven state of the tx-tab advanced filters: the shared schema's
-// parse semantics for ?tfFrom=/?tfTo=/?tfMin=/?tfMax= plus the pure
-// effectiveTxFilters derivation the view consumes (absent vs explicit vs
-// invalid-degraded) and the active-count gate for the honest
-// filtered-empty state. The explicit-vs-absent distinction is load-bearing
-// (the ?tab= lesson): a .catch(default) would collapse it and deadlock
-// the filter bar's open/apply state machine.
+// parse semantics for ?tfFrom=/?tfTo=/?tfMin=/?tfMax=/?tfMethod= plus
+// the pure effectiveTxFilters derivation the view consumes (absent vs
+// explicit vs invalid-degraded) and the active-count gate for the honest
+// filtered-empty state. The explicit-vs-absent distinction is
+// load-bearing (the ?tab= lesson): a .catch(default) would collapse it
+// and deadlock the filter bar's open/apply state machine.
 import { describe, it, expect } from 'vitest';
 import { getAddress } from 'viem';
 import {
@@ -58,13 +58,21 @@ describe('addressSearchSchema — tf params', () => {
     expect(parsed.tfTo).toBeUndefined();
     expect(parsed.tfMin).toBeUndefined();
     expect(parsed.tfMax).toBeUndefined();
+    expect(parsed.tfMethod).toBeUndefined();
   });
 
   it('keeps malformed values as strings (validation is the derivation)', () => {
-    const parsed = parse('?tfFrom=garbage&tfMin=-5');
+    const parsed = parse('?tfFrom=garbage&tfMin=-5&tfMethod=not-a-selector');
 
     expect(parsed.tfFrom).toBe('garbage');
     expect(parsed.tfMin).toBe('-5');
+    expect(parsed.tfMethod).toBe('not-a-selector');
+  });
+
+  it('parses a method selector deep link as a raw string (mixed case survives)', () => {
+    const parsed = parse('?tfMethod=0xA9059CBB');
+
+    expect(parsed.tfMethod).toBe('0xA9059CBB');
   });
 
   it('parses an empty param as the empty string (present, not absent)', () => {
@@ -144,6 +152,31 @@ describe('effectiveTxFilters', () => {
     expect(filters).toEqual({ fromAddress: VALID_FROM, minValue: '7' });
     expect(hasActiveTxFilters(filters)).toBe(true);
   });
+
+  it('keeps a valid method selector verbatim (mixed-case hex is legal)', () => {
+    expect(effectiveTxFilters({ tfMethod: '0xa9059cbb' })).toEqual({
+      method: '0xa9059cbb',
+    });
+    expect(effectiveTxFilters({ tfMethod: '0xA9059CBB' })).toEqual({
+      method: '0xA9059CBB',
+    });
+  });
+
+  it('degrades a malformed method selector to absent', () => {
+    for (const bad of ['a9059cbb', '0xa905', '0xa9059cbb00', '0xzz059cbb', '0XA9059CBB', '']) {
+      expect(effectiveTxFilters({ tfMethod: bad })).toEqual({});
+    }
+  });
+
+  it('rides alongside the other filters in one shareable link', () => {
+    const filters = effectiveTxFilters({
+      tfFrom: VALID_FROM,
+      tfMethod: '0xa9059cbb',
+    });
+
+    expect(filters).toEqual({ fromAddress: VALID_FROM, method: '0xa9059cbb' });
+    expect(hasActiveTxFilters(filters)).toBe(true);
+  });
 });
 
 describe('hasActiveTxFilters', () => {
@@ -153,5 +186,46 @@ describe('hasActiveTxFilters', () => {
     expect(hasActiveTxFilters({ minValue: '0' })).toBe(true);
     expect(hasActiveTxFilters({ maxValue: '1' })).toBe(true);
     expect(hasActiveTxFilters({ toAddress: VALID_TO })).toBe(true);
+    expect(hasActiveTxFilters({ method: '0xa9059cbb' })).toBe(true);
+  });
+});
+
+// The full URL round-trip the view performs: query string → schema
+// parse → effectiveTxFilters → the filters object handed to the query
+// layer (whose fetch spreads it into the request's query params, so the
+// backend receives ?method= exactly as derived here).
+describe('tfMethod URL round-trip', () => {
+  it('a method deep link applies the filter end-to-end', () => {
+    const parsed = addressSearchSchema.parse(
+      Object.fromEntries(new URLSearchParams('?tfMethod=0xa9059cbb&tab=transactions')),
+    );
+    const filters = effectiveTxFilters({
+      tfFrom: parsed.tfFrom,
+      tfTo: parsed.tfTo,
+      tfMin: parsed.tfMin,
+      tfMax: parsed.tfMax,
+      tfMethod: parsed.tfMethod,
+    });
+
+    expect(filters).toEqual({ method: '0xa9059cbb' });
+    expect(hasActiveTxFilters(filters)).toBe(true);
+    // The other tabs' keys ride along untouched (the ONE-schema rule).
+    expect(parsed.tab).toBe('transactions');
+  });
+
+  it('a malformed method deep link degrades to the unfiltered request', () => {
+    const parsed = addressSearchSchema.parse(
+      Object.fromEntries(new URLSearchParams('?tfMethod=0xnope')),
+    );
+    const filters = effectiveTxFilters({
+      tfFrom: parsed.tfFrom,
+      tfTo: parsed.tfTo,
+      tfMin: parsed.tfMin,
+      tfMax: parsed.tfMax,
+      tfMethod: parsed.tfMethod,
+    });
+
+    expect(filters).toEqual({});
+    expect(hasActiveTxFilters(filters)).toBe(false);
   });
 });

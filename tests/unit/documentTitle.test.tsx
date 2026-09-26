@@ -61,6 +61,16 @@ describe('deriveDocumentTitle', () => {
     );
   });
 
+  it('titles the tools hub and troubleshooting guide with the app name', () => {
+    expect(deriveDocumentTitle('/tools', '')).toBe('Tools — My Block Explorer');
+    expect(deriveDocumentTitle('/help/troubleshooting', '')).toBe(
+      'Troubleshooting — My Block Explorer',
+    );
+    // Exact shapes only — deeper paths are unknown and keep the fallback.
+    expect(deriveDocumentTitle('/tools/extra', '')).toBe('My Block Explorer');
+    expect(deriveDocumentTitle('/help', '')).toBe('My Block Explorer');
+  });
+
   it('falls back to the app title for unchanined, unknown, or malformed routes', () => {
     expect(deriveDocumentTitle('/', '')).toBe('My Block Explorer');
     expect(deriveDocumentTitle('/chain/1/unknown-section', '')).toBe('My Block Explorer');

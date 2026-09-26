@@ -1,16 +1,19 @@
 // Collapsible advanced-filter bar for the address Transactions tab
-// (PM gap wave 2026-09-25). Four filters — From / To (addresses) and
-// Min / Max value (wei) — that ride the URL (?tfFrom= / ?tfTo= /
-// ?tfMin= / ?tfMax=) so filtered views are shareable. Honesty contract:
-// the filters narrow the DISCOVERED set of the selected window on the
-// server (same cached scan, never a new one), so the standing scope line
-// stays visible while the bar is open and invalid input never leaves the
-// browser (field errors gate Apply — no request can be fired with a
-// malformed filter).
+// (PM gap wave 2026-09-25; method filter added 2026-09-26). Five
+// filters — From / To (addresses), Min / Max value (wei), and Method
+// (4-byte selector) — that ride the URL (?tfFrom= / ?tfTo= / ?tfMin= /
+// ?tfMax= / ?tfMethod=) so filtered views are shareable. Honesty
+// contract: the filters narrow the DISCOVERED set of the selected window
+// on the server (same cached scan, never a new one), so the standing
+// scope line stays visible while the bar is open and invalid input never
+// leaves the browser (field errors gate Apply — no request can be fired
+// with a malformed filter).
 import { css, cx } from '@linaria/core';
 import { useEffect, useState } from 'react';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
+import { useSignaturesBatched } from '@/services/signatures';
+import type { SignatureOutcome } from '@/services/signatures';
 import { checkAddressValidity } from './addressValidity';
 
 // Raw filter field values ('' = field empty = filter absent). The URL is
@@ -20,17 +23,22 @@ export type TxFilterValues = {
   to: string;
   min: string;
   max: string;
+  method: string;
 };
 
-export type TxFilterFieldErrors = Partial<Record<'from' | 'to' | 'min' | 'max', string>>;
+export type TxFilterFieldErrors = Partial<
+  Record<'from' | 'to' | 'min' | 'max' | 'method', string>
+>;
 
 // Field validation, mirroring the server's param rules exactly (the
-// frontend twin of the route's getValidatedAddress / wei parsing): an
-// address passes the same two-tier shape/checksum verdict, a wei amount
-// must be a non-negative integer decimal (BigInt-exact — no fractions,
-// no signs, no scientific notation). Empty fields are always valid
+// frontend twin of the route's getValidatedAddress / wei parsing / method
+// regex): an address passes the same two-tier shape/checksum verdict, a
+// wei amount must be a non-negative integer decimal (BigInt-exact — no
+// fractions, no signs, no scientific notation), and a method selector is
+// '0x' + 8 hex chars (case-insensitive). Empty fields are always valid
 // (absent, not invalid). Pure so the gate is testable.
 const WEI_AMOUNT_RE = /^\d+$/;
+const SELECTOR_RE = /^0x[0-9a-fA-F]{8}$/;
 
 const addressFieldError = (raw: string): string | undefined => {
   const verdict = checkAddressValidity(raw);
@@ -56,7 +64,47 @@ export const validateTxFilterValues = (values: TxFilterValues): TxFilterFieldErr
   if (values.max !== '' && !WEI_AMOUNT_RE.test(values.max)) {
     errors.max = 'Invalid amount — wei must be a non-negative whole number';
   }
+  if (values.method !== '' && !SELECTOR_RE.test(values.method)) {
+    errors.method = 'Invalid selector — expected 0x followed by 8 hex characters';
+  }
   return errors;
+};
+
+// Pure: the DISTINCT method selectors present on the currently loaded tx
+// rows (the tx tab's page data), in first-seen row order. Rows without a
+// selector (plain transfers, creations, legacy selector-less payloads)
+// contribute nothing — a chip is only offered for a method the page can
+// actually prove. Exported for unit tests.
+export const distinctRowSelectors = (
+  rows: readonly { selector?: string | null }[],
+): string[] => {
+  const seen = new Set<string>();
+  const ordered: string[] = [];
+  for (const row of rows) {
+    if (typeof row.selector !== 'string' || row.selector === '') continue;
+    const selector = row.selector.toLowerCase();
+    if (!seen.has(selector)) {
+      seen.add(selector);
+      ordered.push(selector);
+    }
+  }
+  return ordered;
+};
+
+// Pure: one chip's label. A resolved openchain outcome renders the
+// candidate's base name ('transfer(address,uint256)' → 'transfer'); every
+// other outcome (pending, notFound, upstream unavailable) keeps the raw
+// selector — the honest unresolved display, never a fabricated name.
+export const selectorChipLabel = (
+  selector: string,
+  outcome: SignatureOutcome | undefined,
+): string => {
+  if (outcome !== undefined && 'signatures' in outcome && outcome.signatures.length > 0) {
+    const first = outcome.signatures[0];
+    const parenIndex = first.indexOf('(');
+    return parenIndex > 0 ? first.slice(0, parenIndex) : first;
+  }
+  return selector;
 };
 
 export type TxFilterBarProps = {
@@ -78,6 +126,10 @@ export type TxFilterBarProps = {
   onApply: (next: TxFilterValues) => void;
   // Clear: drop every tf param from the URL and reset the draft.
   onClear: () => void;
+  // Distinct method selectors present on the currently loaded tx rows
+  // (the tx tab's page data), offered as one-click chips beneath the
+  // Method field. Absent/empty → no chips (nothing loaded to offer).
+  selectorOptions?: readonly string[];
 };
 
 const containerStyle = css`
@@ -181,6 +233,34 @@ const fieldHintStyle = css`
   color: var(--haze-color-text-muted);
 `;
 
+// One-click selector chips beneath the Method field: mono text (the
+// decoded name or raw selector), compact geometry like the Method
+// column's chips, honest about being a shortcut into the field.
+const chipRowStyle = css`
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--haze-space-1);
+`;
+
+const chipStyle = css`
+  padding: 0 var(--haze-space-2);
+  border: 1px solid var(--haze-color-border);
+  border-radius: var(--haze-radius-sm);
+  background: var(--haze-color-bg-subtle);
+  font-size: var(--haze-text-xs);
+  line-height: 20px;
+  font-family: var(--haze-font-mono);
+  color: var(--haze-color-text);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 150ms ease, background-color 150ms ease;
+
+  &:hover {
+    border-color: var(--haze-color-primary);
+    background: var(--haze-color-primary-subtle);
+  }
+`;
+
 const scopeLineStyle = css`
   margin: var(--haze-space-3) 0 0;
   font-size: var(--haze-text-xs);
@@ -200,14 +280,22 @@ export function TxFilterBar({
   urlParamCount,
   onApply,
   onClear,
+  selectorOptions,
 }: TxFilterBarProps) {
   // Local draft while typing; re-seeded whenever the URL values change
   // (back/forward navigation between filter sets, or the Apply echo).
   const [draft, setDraft] = useState<TxFilterValues>(values);
-  const { from, to, min, max } = values;
+  const { from, to, min, max, method } = values;
   useEffect(() => {
-    setDraft({ from, to, min, max });
-  }, [from, to, min, max]);
+    setDraft({ from, to, min, max, method });
+  }, [from, to, min, max, method]);
+
+  // Chip labels: the same batched openchain decode the tx-list Method
+  // column uses (session-memoized — paging back over a seen page costs
+  // no requests). While pending/unresolved the raw selector IS the
+  // label, so chips render immediately and never block.
+  const chips = selectorOptions ?? [];
+  const signatureOutcomes = useSignaturesBatched(chips);
 
   // Live validation: field errors render as the user types, so Apply's
   // gate is never a surprise.
@@ -226,7 +314,7 @@ export function TxFilterBar({
   };
 
   const handleClear = () => {
-    setDraft({ from: '', to: '', min: '', max: '' });
+    setDraft({ from: '', to: '', min: '', max: '', method: '' });
     onClear();
   };
 
@@ -300,6 +388,53 @@ export function TxFilterBar({
     </div>
   );
 
+  const methodField = (
+    <div className={fieldGroupStyle}>
+      <label htmlFor="tx-filter-method" className={labelStyle}>
+        Method (selector)
+      </label>
+      <input
+        id="tx-filter-method"
+        type="text"
+        className={cx(inputStyle, errors.method !== undefined && inputErrorStyle)}
+        value={draft.method}
+        onChange={e => setField('method')(e.target.value)}
+        placeholder="0x…"
+        spellCheck={false}
+        autoComplete="off"
+        aria-invalid={errors.method !== undefined ? true : undefined}
+        data-testid="tx-filter-method"
+      />
+      {errors.method !== undefined ? (
+        <p className={fieldErrorStyle} data-testid="tx-filter-method-error">
+          {errors.method}
+        </p>
+      ) : (
+        <p className={fieldHintStyle}>4-byte selector, e.g. 0xa9059cbb</p>
+      )}
+      {/* One-click shortcuts from the LOADED page's own rows: each chip
+          is a selector this window's discovered set actually carries
+          (decoded via the shared openchain batch — the tx-list Method
+          column's source), so the offer can never exceed the evidence. */}
+      {chips.length > 0 && (
+        <div className={chipRowStyle} data-testid="tx-filter-method-chips">
+          {chips.map(selector => (
+            <button
+              type="button"
+              key={selector}
+              className={chipStyle}
+              title={selector}
+              onClick={() => setField('method')(selector)}
+              data-testid={`tx-filter-method-chip-${selector}`}
+            >
+              {selectorChipLabel(selector, signatureOutcomes[selector])}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div className={containerStyle} data-testid="tx-filter-bar">
       <div
@@ -337,6 +472,7 @@ export function TxFilterBar({
             {addressInput('to', 'To', 'tx-filter-to')}
             {valueInput('min', 'Min value', 'tx-filter-min')}
             {valueInput('max', 'Max value', 'tx-filter-max')}
+            {methodField}
           </div>
           {/* Standing honesty line: a filter narrows the discovered set
               of the current window — it is never a fresh scan and never

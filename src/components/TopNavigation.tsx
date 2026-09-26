@@ -5,6 +5,7 @@ import { css, cx } from '@linaria/core';
 import { Input, Button } from 'haze-ui';
 import { useControl } from 'react-use-control';
 import RpcConfig from './RpcConfig';
+import { openCommandPalette } from './CommandPalette';
 import { AddCustomChainForm } from './AddCustomChainForm';
 import {
   getChainInfo,
@@ -249,6 +250,41 @@ const themeToggle = css`
 `;
 
 const themeToggleIcon = css`
+  width: 16px;
+  height: 16px;
+  display: block;
+`;
+
+// Command-palette trigger: same icon-button size/shape family as the
+// theme toggle so the two read as one row of controls. Hidden below
+// 768px with the palette itself — the Tools page is the touch fallback,
+// so the trigger must not promise a dialog touch users cannot get.
+const paletteTrigger = css`
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  flex-shrink: 0;
+  background: var(--haze-color-bg);
+  border: 1px solid var(--haze-color-border);
+  border-radius: var(--haze-radius-md);
+  cursor: pointer;
+  color: var(--haze-color-text-secondary);
+
+  &:hover {
+    border-color: var(--haze-color-border-hover);
+    color: var(--haze-color-text);
+  }
+
+  @media (max-width: 767px) {
+    display: none;
+  }
+`;
+
+const paletteTriggerIcon = css`
   width: 16px;
   height: 16px;
   display: block;
@@ -1351,6 +1387,17 @@ export default function TopNavigation({
             >
               Charts
             </button>
+            {/* Tools hub: every tool on one page (SQL console, Ops,
+                Signatures, Coverage legend, Broadcast…) — also the
+                command palette's touch fallback. Not chain-scoped, so it
+                links the bare /tools path like the admin group below. */}
+            <button
+              type="button"
+              className={navLink}
+              onClick={() => goTo('/tools')}
+            >
+              Tools
+            </button>
             {/* Admin group, visually separated from the page links: the
                 SQL console runs admin-gated read-only queries against the
                 explorer's own DuckDB. Not chain-scoped (it queries the
@@ -1518,6 +1565,31 @@ export default function TopNavigation({
           </div>
 
           <div className={rightControls}>
+            {/* Command-palette trigger (Ctrl/Cmd+K): opens the global
+                palette mounted in App. The accessible name carries the
+                shortcut; the glyph is decorative. */}
+            <button
+              type="button"
+              className={paletteTrigger}
+              aria-label="Command palette (Ctrl+K)"
+              title="Command palette (Ctrl+K)"
+              onClick={openCommandPalette}
+            >
+              <svg
+                className={paletteTriggerIcon}
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <circle cx="11" cy="11" r="7" />
+                <path d="M21 21l-4.35-4.35" />
+              </svg>
+            </button>
             <ThemeToggle />
             <Button variant="outline" size="md" onClick={() => setShowRpcConfig(true)}>
               ⚙️ RPC

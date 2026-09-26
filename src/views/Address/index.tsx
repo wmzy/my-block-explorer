@@ -36,7 +36,7 @@ import {
   hasActiveTxFilters,
   type ActivityTabId,
 } from '@/views/Address/search';
-import { TxFilterBar } from '@/views/Address/TxFilterBar';
+import { TxFilterBar, distinctRowSelectors } from '@/views/Address/TxFilterBar';
 import { deriveAddressCoverage } from '@/views/Address/coverage';
 import { DeepScan } from '@/views/Address/DeepScan';
 import { scanJobFromTxPayload } from '@/services/addressScan';
@@ -452,6 +452,12 @@ type TxRecord = {
   value: string;
   status: number | null;
   timestamp?: string;
+  // Additive backend row field: the calldata's 4-byte function selector
+  // ('0x' + 8 lowercase hex) or null for plain transfers / creations.
+  // Absent on legacy cached payloads — undefined reads "not carried",
+  // and the method filter (and the chips) skip such rows rather than
+  // guessing (the logStandard precedent).
+  selector?: string | null;
 };
 
 // The address-info endpoint is typed by its service (AddressInfoResponse):
@@ -1355,6 +1361,7 @@ export default function Address() {
     tfTo: tfToParam,
     tfMin: tfMinParam,
     tfMax: tfMaxParam,
+    tfMethod: tfMethodParam,
   } = useSearch(addressSearchSchema);
   const txPage = Math.max(1, Math.floor(txPageParam));
   const setTxPage = (next: number) => {
@@ -1364,25 +1371,33 @@ export default function Address() {
     }));
   };
 
-  // Advanced tx filters (?tfFrom= / ?tfTo= / ?tfMin= / ?tfMax=): the URL
-  // carries the RAW strings (shareable, back/forward); effectiveTxFilters
-  // degrades malformed ones to absent so a hand-crafted link never fires a
-  // doomed request. Raw presence (not validity) decides whether the filter
-  // bar renders open — the bar shows what the link carried and its field
-  // errors explain why it is not being sent.
+  // Advanced tx filters (?tfFrom= / ?tfTo= / ?tfMin= / ?tfMax= /
+  // ?tfMethod=): the URL carries the RAW strings (shareable,
+  // back/forward); effectiveTxFilters degrades malformed ones to absent
+  // so a hand-crafted link never fires a doomed request. Raw presence
+  // (not validity) decides whether the filter bar renders open — the
+  // bar shows what the link carried and its field errors explain why it
+  // is not being sent.
   const txUrlFilterValues = {
     from: tfFromParam ?? '',
     to: tfToParam ?? '',
     min: tfMinParam ?? '',
     max: tfMaxParam ?? '',
+    method: tfMethodParam ?? '',
   };
-  const txUrlFilterParamCount = [tfFromParam, tfToParam, tfMinParam, tfMaxParam]
-    .filter(param => param !== undefined).length;
+  const txUrlFilterParamCount = [
+    tfFromParam,
+    tfToParam,
+    tfMinParam,
+    tfMaxParam,
+    tfMethodParam,
+  ].filter(param => param !== undefined).length;
   const txFilters = effectiveTxFilters({
     tfFrom: tfFromParam,
     tfTo: tfToParam,
     tfMin: tfMinParam,
     tfMax: tfMaxParam,
+    tfMethod: tfMethodParam,
   });
   const hasTxFilters = hasActiveTxFilters(txFilters);
 
@@ -1395,7 +1410,7 @@ export default function Address() {
     if (txUrlFilterParamCount > 0) setTxFilterBarOpen(true);
   }, [txUrlFilterParamCount]);
 
-  // Apply writes all four params in one history entry and RESETS the page
+  // Apply writes all five params in one history entry and RESETS the page
   // (the filtered set can only shrink, so deeper pages may no longer
   // exist); empty fields delete their key (absence IS the unfiltered
   // state — the ?ttStandard= discipline). Clear drops every tf param but
@@ -1406,6 +1421,7 @@ export default function Address() {
     to: string;
     min: string;
     max: string;
+    method: string;
   }) => {
     void setSearch(prev => {
       const merged: Record<string, string | string[]> = { ...prev, page: '1' };
@@ -1417,6 +1433,8 @@ export default function Address() {
       else merged.tfMin = next.min;
       if (next.max === '') delete merged.tfMax;
       else merged.tfMax = next.max;
+      if (next.method === '') delete merged.tfMethod;
+      else merged.tfMethod = next.method;
       return merged;
     });
   };
@@ -1427,6 +1445,7 @@ export default function Address() {
       delete merged.tfTo;
       delete merged.tfMin;
       delete merged.tfMax;
+      delete merged.tfMethod;
       return merged;
     });
   };
@@ -1866,6 +1885,13 @@ export default function Address() {
   }
 
   const transactions = txData?.transactions ?? [];
+
+  // Method-filter chips: the DISTINCT selectors the currently loaded page
+  // actually carries (rows without a selector — transfers, creations,
+  // legacy payloads — contribute nothing). Pure derivation in TxFilterBar
+  // so the evidence rule ("a chip is offered only for a method this
+  // window's discovered set proves") is unit-testable.
+  const txRowSelectorOptions = distinctRowSelectors(transactions);
 
   // Coverage banners are driven by the contract fields only (coverage /
   // reason); the backend's `method` tag is diagnostics, never UI state.
@@ -2566,11 +2592,13 @@ export default function Address() {
                         transfers in the Token Transfers tab.
                       </p>
 
-                      {/* Advanced filters (tx tab only): From/To addresses
-                        and Min/Max wei amounts, URL-driven (?tfFrom= etc.)
-                        so filtered views are shareable. The backend narrows
-                        the SAME cached discovered set — the bar's standing
-                        scope line keeps that honest. */}
+                      {/* Advanced filters (tx tab only): From/To addresses,
+                        Min/Max wei amounts and the Method selector,
+                        URL-driven (?tfFrom= etc.) so filtered views are
+                        shareable. The backend narrows the SAME cached
+                        discovered set — the bar's standing scope line keeps
+                        that honest. The Method field's chips offer only
+                        selectors the loaded page itself carries. */}
                       <TxFilterBar
                         open={txFilterBarOpen}
                         onToggle={() => setTxFilterBarOpen(prev => !prev)}
@@ -2578,6 +2606,7 @@ export default function Address() {
                         urlParamCount={txUrlFilterParamCount}
                         onApply={applyTxFilters}
                         onClear={clearTxFilters}
+                        selectorOptions={txRowSelectorOptions}
                       />
 
                       {/* Deep Scan panel (tx tab only): the persistent

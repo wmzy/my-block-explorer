@@ -32,6 +32,7 @@ import { gasTransferCostUsd, useNativeUsdPrice } from '@/services/prices';
 import { UsdValue } from '@/components/ui/UsdValue';
 import { redirectReplace, rememberChainId } from './Landing';
 import { UnsupportedChainState } from './UnsupportedChainState';
+import { ChainResetBanner } from '@/components/ChainResetBanner';
 import Watchlist from './Watchlist';
 
 // --- styles ---
@@ -311,6 +312,17 @@ const gasTierUsdStyle = css`
   color: var(--haze-color-text-muted);
 `;
 
+// Per-tier inclusion estimate ("~N blocks (est.)"): muted like the USD
+// figure so the gwei value stays the row's anchor; nowrap keeps the chip
+// on one line when the column is squeezed.
+const gasTierEstimateStyle = css`
+  font-family: var(--haze-font-body, inherit);
+  font-weight: var(--haze-weight-regular);
+  font-size: var(--haze-text-xs);
+  color: var(--haze-color-text-muted);
+  white-space: nowrap;
+`;
+
 const gasTierNote = css`
   font-size: var(--haze-text-xs);
   color: var(--haze-color-text-muted);
@@ -551,6 +563,14 @@ function GasPanel({ feed, chainId }: { feed: GasFeedState; chainId: number }) {
     const line = buildSparklinePath(snapshot.baseFeeGwei);
     const area = line.length > 0 ? `${line} L240,48 L0,48 Z` : '';
     const tiers = snapshot.tiers;
+    const estimates = snapshot.tierInclusionBlocks;
+    // The caveat line discloses the estimate basis once; it only makes
+    // sense when at least one tier actually shows an estimate.
+    const hasEstimate =
+      estimates !== null &&
+      (estimates.slow !== undefined ||
+        estimates.standard !== undefined ||
+        estimates.fast !== undefined);
     return (
       <div data-testid="gas-panel" className={gasPanelCard}>
         <Card>
@@ -591,38 +611,63 @@ function GasPanel({ feed, chainId }: { feed: GasFeedState; chainId: number }) {
                 </div>
               </div>
               <div className={gasTierColumn}>
-                {(['slow', 'standard', 'fast'] as const).map(tier => (
-                  <div key={tier} className={gasTierRow}>
-                    <span className={gasTierLabel}>{GAS_TIER_LABELS[tier]}</span>
-                    <span className={gasTierValue}>
-                      {tiers ? `${formatGwei(tiers[tier])} gwei` : '—'}
-                    </span>
-                    {/* Per-tier USD for a plain 21,000-gas transfer (base
-                        fee + this tier's tip): a SIBLING of the gwei value
-                        so the tier figure's text stays exactly "N gwei";
-                        renders only when the native coin priced. */}
-                    {tiers && nativePrice != null && (
-                      <span
-                        className={gasTierUsdStyle}
-                        title={`≈ cost of a plain ${TRANSFER_GAS_UNITS.toLocaleString()}-gas transfer at this tier (base fee + tip)`}
-                      >
-                        <UsdValue
-                          usd={gasTransferCostUsd(
-                            TRANSFER_GAS_UNITS,
-                            snapshot.currentBaseFeeGwei + tiers[tier],
-                            nativePrice,
-                          )}
-                          price={nativePrice}
-                        />
+                {(['slow', 'standard', 'fast'] as const).map(tier => {
+                  const estimate = estimates?.[tier];
+                  return (
+                    <div key={tier} className={gasTierRow}>
+                      <span className={gasTierLabel}>{GAS_TIER_LABELS[tier]}</span>
+                      <span className={gasTierValue}>
+                        {tiers ? `${formatGwei(tiers[tier])} gwei` : '—'}
                       </span>
-                    )}
-                  </div>
-                ))}
+                      {/* Per-tier USD for a plain 21,000-gas transfer (base
+                          fee + this tier's tip): a SIBLING of the gwei value
+                          so the tier figure's text stays exactly "N gwei";
+                          renders only when the native coin priced. */}
+                      {tiers && nativePrice != null && (
+                        <span
+                          className={gasTierUsdStyle}
+                          title={`≈ cost of a plain ${TRANSFER_GAS_UNITS.toLocaleString()}-gas transfer at this tier (base fee + tip)`}
+                        >
+                          <UsdValue
+                            usd={gasTransferCostUsd(
+                              TRANSFER_GAS_UNITS,
+                              snapshot.currentBaseFeeGwei + tiers[tier],
+                              nativePrice,
+                            )}
+                            price={nativePrice}
+                          />
+                        </span>
+                      )}
+                      {/* Inclusion estimate for this tier's tip, from the
+                          sampled blocks' paid tips: strictly additive to
+                          healthy tiers — an undefined estimate (no basis in
+                          the sample) renders nothing, never a guess. */}
+                      {tiers && estimate !== undefined && (
+                        <span
+                          className={gasTierEstimateStyle}
+                          data-testid={`gas-inclusion-${tier}`}
+                          title={`Estimated blocks until a transaction paying this tier's tip is included, from the sampled blocks' paid tips — an estimate, not a promise`}
+                        >
+                          ~{estimate} block{estimate === 1 ? '' : 's'} (est.)
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
                 <div className={gasTierNote}>
                   {tiers
                     ? 'Priority fees · 25/50/75th pct rewards'
                     : 'Priority fees not returned by this RPC'}
                 </div>
+                {/* One-time caveat under the tiers: the block estimates are
+                    derived from the sampled blocks' paid tips and never a
+                    promise. Shown once for the whole panel, only when at
+                    least one tier actually has an estimate to disclose. */}
+                {tiers && hasEstimate && (
+                  <div className={gasTierNote} data-testid="gas-inclusion-note">
+                    {`Inclusion estimates from the paid tips of the last ${estimates?.sampleBlocks} sampled blocks — never a promise`}
+                  </div>
+                )}
               </div>
             </div>
           </CardContent>
@@ -806,6 +851,12 @@ export default function Home() {
     <>
       <TopNavigation currentChainId={currentChainId} onChainChange={handleChainChange} />
       <PageContainer>
+        {/* Dev-chain reset detection: compares the live head against this
+            browser's last-seen head for the chain (be:lastHead:{id}); a
+            ≥5-block regression offers clearing the chain's cached-immutable
+            entries (services/chainReset.ts). Renders nothing when healthy. */}
+        <ChainResetBanner chainId={currentChainId} head={latestBlockNumber} />
+
         <div className={hero}>
           <h1 className={titleStyle}>{chainInfo.name} Explorer</h1>
           <p className={subtitleStyle}>

@@ -49,6 +49,8 @@ describe('route table', () => {
       '/sql',
       '/ops',
       '/signatures',
+      '/tools',
+      '/help/troubleshooting',
       '/about/coverage',
     ]);
   });
@@ -88,6 +90,8 @@ describe('route table', () => {
       ['/chain/:chainId/tokens', 'Tokens/List'],
       ['/ops', 'Ops'],
       ['/signatures', 'Signatures'],
+      ['/tools', 'Tools'],
+      ['/help/troubleshooting', 'Help/Troubleshooting'],
     ];
 
     for (const [path] of expectations) {

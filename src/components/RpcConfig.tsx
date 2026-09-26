@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useId, useRef } from 'react';
 import { css } from '@linaria/core';
 import { Dialog } from 'haze-ui';
+import { TypedLink } from '@native-router/react';
 import { useControl, type Control } from 'react-use-control';
 import { toast } from 'sonner';
 import { ApiError } from '../util/apiError';
@@ -313,6 +314,28 @@ const backupPanelStyles = css`
   .note {
     margin-top: 6px;
     color: #664d03;
+  }
+`;
+
+// Quiet footer link to the coverage legend: reference material, not a
+// setting — muted like the preset descriptions (same #6c757d family this
+// file already uses), the file's link blue only on hover. This keeps the
+// coverage vocabulary discoverable from the settings surface on every
+// page, beyond the badge's ⓘ detail.
+const coverageFooterStyles = css`
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid #e9ecef;
+  text-align: center;
+  font-size: 13px;
+
+  a {
+    color: #6c757d;
+
+    &:hover {
+      color: #007bff;
+      text-decoration: underline;
+    }
   }
 `;
 
@@ -1218,6 +1241,17 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
             </ul>
           </div>
         )}
+      </div>
+
+      {/* Persistent discoverability for the coverage-honesty vocabulary:
+          the badge's ⓘ detail teaches it where a badge appears, this
+          footer keeps the legend reachable from the settings surface on
+          every page. Closing the modal on navigate leaves the legend
+          readable instead of a dialog parked over it. */}
+      <div className={coverageFooterStyles}>
+        <TypedLink to="/about/coverage" onClick={handleClose}>
+          Coverage levels explained
+        </TypedLink>
       </div>
     </Dialog>
   );

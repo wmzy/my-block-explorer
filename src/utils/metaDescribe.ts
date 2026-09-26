@@ -39,6 +39,14 @@ export function deriveDocumentTitle(pathname: string, search: string): string {
     return `Data Coverage — ${FALLBACK_TITLE}`;
   }
 
+  // Tools hub and troubleshooting guide: exact-shape static pages.
+  if (segments[0] === 'tools' && segments.length === 1) {
+    return `Tools — ${FALLBACK_TITLE}`;
+  }
+  if (segments[0] === 'help' && segments[1] === 'troubleshooting' && segments.length === 2) {
+    return `Troubleshooting — ${FALLBACK_TITLE}`;
+  }
+
   if (segments[0] !== 'chain' || segments.length < 2) return FALLBACK_TITLE;
 
   const chainId = Number.parseInt(segments[1], 10);
@@ -97,6 +105,13 @@ export function deriveMetaDescription(pathname: string, search: string): string 
 
   if (segments[0] === 'about' && segments[1] === 'coverage' && segments.length === 2) {
     return 'What the data-coverage levels — live, cached, discovered, sampled, partial and unavailable — mean in this explorer, and why its numbers can differ from full-indexer explorers.';
+  }
+
+  if (segments[0] === 'tools' && segments.length === 1) {
+    return 'Every tool this explorer ships on one page — chain pages, search, signatures, the SQL console, the ops dashboard and where to find backup & restore.';
+  }
+  if (segments[0] === 'help' && segments[1] === 'troubleshooting' && segments.length === 2) {
+    return 'Troubleshooting guide: backend-offline banner, RPC provider quirks (getLogs range caps, missing archive state, private txpool), dev-chain resets and the health checklist.';
   }
 
   if (segments[0] !== 'chain' || segments.length < 2) return FALLBACK_DESCRIPTION;
