@@ -833,6 +833,31 @@ const approxHintStyle = css`
   font-size: var(--haze-text-sm);
 `;
 
+// EIP-4844 value-cell stack (raw-data preview pattern): the count as the
+// one-glance figure, then one versioned hash per line in the value
+// column's mono/break-all voice. A full Collapsible would overweight a
+// right-aligned value cell; real blob txs carry at most a handful of
+// hashes, so the list stays short.
+const blobHashListStyle = css`
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--haze-space-1);
+
+  /* Mirrors the InfoItem value cell's own narrow-screen flip. */
+  @media (max-width: 768px) {
+    align-items: flex-start;
+  }
+`;
+
+// Muted honesty note under the Blobscan link: names the destination as an
+// external site and states why the link is needed at all — the explorer's
+// RPC serves only the versioned hashes, never the blob payloads.
+const blobSidecarNoteStyle = css`
+  font-size: var(--haze-text-xs);
+  color: var(--haze-color-text-muted);
+`;
+
 // Page header + cross-verification links on one row; wraps under the
 // header on narrow screens instead of overflowing.
 const headerLinksRow = css`
@@ -1450,10 +1475,50 @@ export default function TransactionDetail() {
                       {formatGasPrice(txInfo.maxFeePerBlobGas)} gwei
                     </InfoItem>
                   )}
-                  {txInfo.blobVersionedHashes && txInfo.blobVersionedHashes.length > 0 && (
-                    <InfoItem label="Blob Versioned Hashes">
-                      {txInfo.blobVersionedHashes.join(', ')}
-                    </InfoItem>
+                  {/* EIP-4844 sidecar visibility, type 3 only: the
+                      versioned-hash list when the RPC surfaced it, plus
+                      the one external affordance for the payloads
+                      themselves. Other tx types render neither row even
+                      if a quirky RPC attached blob fields. */}
+                  {txInfo.type === 3 && (
+                    <>
+                      <InfoItem label="Blob Versioned Hashes">
+                        {txInfo.blobVersionedHashes !== undefined &&
+                          txInfo.blobVersionedHashes.length > 0 ? (
+                              <span className={blobHashListStyle}>
+                                {/* Count first (the one-glance figure), one
+                                hash per line below. */}
+                                <span>
+                                  {`${txInfo.blobVersionedHashes.length} ${
+                                    txInfo.blobVersionedHashes.length === 1 ? 'blob' : 'blobs'
+                                  }`}
+                                </span>
+                                {txInfo.blobVersionedHashes.map(hash => (
+                                  <span key={hash}>{hash}</span>
+                                ))}
+                              </span>
+                            ) : (
+                              'Not returned by this RPC'
+                            )}
+                      </InfoItem>
+                      <InfoItem label="Blob Payloads">
+                        <span className={blobHashListStyle}>
+                          <a
+                            className={linkStyle}
+                            href={`https://blobscan.com/tx/${txHash}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            View blobs on Blobscan
+                            <span className={topicLinkArrowStyle}>↗</span>
+                          </a>
+                          <span className={blobSidecarNoteStyle}>
+                            External site, not part of this explorer — blob
+                            payloads are not served by this RPC.
+                          </span>
+                        </span>
+                      </InfoItem>
+                    </>
                   )}
                   {txInfo.effectiveGasPrice && (
                     <InfoItem label="Effective Gas Price">

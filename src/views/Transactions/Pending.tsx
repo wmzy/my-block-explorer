@@ -27,7 +27,7 @@
 import { Fragment, useMemo } from 'react';
 import { css } from '@linaria/core';
 import { navigate } from '@native-router/core';
-import { useMatched, useSearch, useSetSearch } from '@native-router/react';
+import { TypedLink, useMatched, useSearch, useSetSearch } from '@native-router/react';
 import { formatUnits } from 'viem';
 import { z } from 'zod';
 
@@ -36,7 +36,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { CopyableHash } from '@/components/ui/CopyableHash';
-import { DataTable, monoStyle } from '@/components/ui/DataTable';
+import { DataTable, linkStyle, monoStyle } from '@/components/ui/DataTable';
 import { EmptyState, ErrorState } from '@/components/ui/ErrorState';
 import { TableSkeleton } from '@/components/ui/LoadingState';
 import { BackButton, PageContainer, PageHeader } from '@/components/ui/PageLayout';
@@ -87,6 +87,14 @@ const countsRow = css`
 
 const truncatedNote = css`
   color: var(--haze-color-text-secondary);
+`;
+
+// Quiet discoverability link under the page header (see the JSX below):
+// sits inside the header's own bottom margin so it reads as a footnote
+// to the title, not a section of the page.
+const broadcastLinkNote = css`
+  margin: calc(-1 * var(--haze-space-4)) 0 var(--haze-space-5);
+  font-size: var(--haze-text-sm);
 `;
 
 // Analysis strip under the counts: the derived summary line plus the
@@ -268,6 +276,15 @@ export default function PendingTransactionsPage() {
           title="Pending Transactions"
           chainInfo={`${getChainName(currentChainId)} • Chain ID: ${currentChainId}`}
         />
+
+        {/* Discoverability for the broadcast tool: one quiet link pulled
+            into the header's bottom margin (muted note family — it must
+            not compete with the table below). */}
+        <p className={broadcastLinkNote}>
+          <TypedLink to={`/chain/${currentChainId}/broadcast`} className={linkStyle}>
+            Broadcast a signed transaction →
+          </TypedLink>
+        </p>
 
         <PendingBody chainId={currentChainId} />
       </PageContainer>

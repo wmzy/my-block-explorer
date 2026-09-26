@@ -1058,3 +1058,40 @@ pnpm typecheck           # tsc --noEmit
   mock is control-aware so the mock can never mask the value-prop bug
   again — content-visibility assertions alone were blind to it because
   the real Dialog renders children even while closed)
+- **2026-09-26 PM gap wave #3 (5 slices, 2 waves + integration)** — the PM
+  review's P0/P1 implementation round (all verified: tsc clean, eslint 0
+  errors, 67 changed files / 878 tests green, live browser smoke on
+  mainnet): **Broadcast** — `/chain/:chainId/broadcast` route + nav entry:
+  paste a signed raw tx, local pre-flight decode
+  (`utils/rawTxDecode.ts`, ASYNC by necessity — viem 2.56.5
+  parseTransaction does NOT recover `from` and recovery is async-only via
+  @noble dynamic import, which pnpm isolation forbids importing directly;
+  total, never throws), hard wrong-chain warning disables the button,
+  amber notes for pre-EIP-155 replayable + unrecoverable-sender payloads,
+  `sendRawTransaction` from 'viem/actions' on the browser RPC client
+  (works RPC-only, no backend, nothing stored), verbatim RPC rejection
+  card, post-failure textarea preserved; Pending page links to it.
+  **State overrides (foundry parity)** — `utils/stateOverride.ts` pure
+  validator (hex-quantity/even-byte/32-byte-slot rules, caps 10 addrs /
+  32 slots, field-path sentences) shared by BOTH sides: backend
+  `simulate` + `estimate-gas` routes accept optional `stateOverride`
+  (absent → byte-identical; invalid → 400 invalid_state_override +
+  details; threaded through ContractInteractionService into viem
+  `simulateContract`/`estimateContractGas` which carry it natively) AND
+  the browser-side Interact write forms (`views/Contract/
+  stateOverrideInput.ts` parser + Collapsible "State overrides
+  (advanced)", parse-on-submit, inline field errors; overrides ride the
+  form→onCall→simulateContract seam — wallet sends structurally never
+  see them). **Blob payloads** — type-3 tx detail rows for
+  blobVersionedHashes (RpcTransaction already carried them) + one
+  Blobscan external link with honesty note; type gate is the NUMERIC
+  normalized `type === 3`. **En-route fix** — write-simulate result cards
+  rendered literal `undefined` when viem left request.gas unset
+  (Object.entries includes undefined-valued keys); ContractInteract now
+  omits the gasUsed key entirely. **Conventions pinned**: pinned
+  cross-agent type contracts + Main-owned shared files (utils barrel,
+  route table, app.test.tsx) let 4 slices run concurrently with one
+  typecheck seam at integration; Interact's simulate path is
+  BROWSER-side viem (utils/contractInteraction.ts), it never POSTs to
+  the backend /simulate route — the two stateOverride surfaces are
+  parallel, not stacked

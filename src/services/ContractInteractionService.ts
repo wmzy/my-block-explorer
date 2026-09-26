@@ -2,7 +2,13 @@ import { rpcManager } from './RpcManager';
 import { createRetryableRpcCall } from '../utils/errorHandler';
 import { ContractSourceService } from './ContractSourceService';
 import { createLogger } from '../server/logger';
-import type { Abi, Address } from 'viem';
+import type {
+  Abi,
+  Address,
+  StateMapping as ViemStateMapping,
+  StateOverride as ViemStateOverride,
+} from 'viem';
+import type { StateOverride } from '../utils/stateOverride';
 
 const logger = createLogger('contract-interaction-service');
 
@@ -41,6 +47,36 @@ export type ContractCallParams = {
   args: unknown[];
   value?: bigint;
   from?: string;
+};
+
+// Converts one parsed state/stateDiff map into viem's {slot, value}[]
+// mapping form.
+const toViemStateMapping = (map: Record<`0x${string}`, `0x${string}`>): ViemStateMapping =>
+  Object.entries(map).map(([slot, slotValue]) => ({
+    slot: slot as `0x${string}`,
+    value: slotValue,
+  }));
+
+// Converts the parsed hex-string wire form (src/utils/stateOverride.ts)
+// into the array-of-overrides shape viem's simulateContract /
+// estimateContractGas accept. Numeric coercion lives here and only here:
+// balance becomes bigint, nonce a number. Returns undefined untouched so
+// requests without an override are byte-identical to before.
+//
+// The cast is needed because viem types StateOverride as a OneOf union on
+// state/stateDiff that cannot express "both keys present, one undefined";
+// a request genuinely carrying both is forwarded verbatim so the node's
+// own conflict error surfaces instead of us silently dropping half of it.
+const toViemStateOverride = (override: StateOverride | undefined): ViemStateOverride | undefined => {
+  if (!override) return undefined;
+  return Object.entries(override).map(([address, entry]) => ({
+    address: address as Address,
+    balance: entry.balance !== undefined ? BigInt(entry.balance) : undefined,
+    nonce: entry.nonce !== undefined ? Number(BigInt(entry.nonce)) : undefined,
+    code: entry.code,
+    state: entry.state !== undefined ? toViemStateMapping(entry.state) : undefined,
+    stateDiff: entry.stateDiff !== undefined ? toViemStateMapping(entry.stateDiff) : undefined,
+  })) as ViemStateOverride;
 };
 
 export class ContractInteractionService {
@@ -188,7 +224,7 @@ export class ContractInteractionService {
    * Simulate a contract call (simulateContract) - with a provided ABI
    */
   async simulateContractWithABI(
-    params: ContractCallParams & { abi: string },
+    params: ContractCallParams & { abi: string; stateOverride?: StateOverride },
   ): Promise<ContractCallResult> {
     try {
       const client = await rpcManager.getClient(params.chainId);
@@ -201,6 +237,7 @@ export class ContractInteractionService {
       }
 
       const abi = JSON.parse(params.abi);
+      const stateOverride = toViemStateOverride(params.stateOverride);
 
       const simulateCall = createRetryableRpcCall(async () => {
         return await client.simulateContract({
@@ -210,6 +247,7 @@ export class ContractInteractionService {
           args: params.args,
           value: params.value,
           account: params.from as `0x${string}` | undefined,
+          stateOverride,
         });
       }, params.chainId);
 
@@ -279,7 +317,9 @@ export class ContractInteractionService {
   /**
    * Estimate gas for a contract call - with a provided ABI
    */
-  async estimateContractGasWithABI(params: ContractCallParams & { abi: string }): Promise<{
+  async estimateContractGasWithABI(
+    params: ContractCallParams & { abi: string; stateOverride?: StateOverride },
+  ): Promise<{
     gasLimit: bigint;
     gasPrice?: bigint;
     maxFeePerGas?: bigint;
@@ -293,6 +333,7 @@ export class ContractInteractionService {
       }
 
       const abi = JSON.parse(params.abi);
+      const stateOverride = toViemStateOverride(params.stateOverride);
 
       const estimateGas = createRetryableRpcCall(async () => {
         return await client.estimateContractGas({
@@ -302,6 +343,7 @@ export class ContractInteractionService {
           args: params.args,
           value: params.value,
           account: params.from as `0x${string}` | undefined,
+          stateOverride,
         });
       }, params.chainId);
 

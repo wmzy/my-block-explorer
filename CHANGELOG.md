@@ -9,6 +9,11 @@ process.
 
 ## Unreleased
 
+- **Broadcast raw transactions** — `/chain/:id/broadcast` page (nav: Broadcast): paste a signed raw transaction, get a local pre-flight decode (type, chain ID, recovered sender, value, fees, data preview), a hard wrong-chain warning naming both chains that disables the button, an amber note for pre-EIP-155 replayable payloads, then broadcast through the RPC this explorer uses for the chain — browser-side only (works in RPC-only mode), nothing stored, RPC rejections rendered verbatim. The Pending page links to it.
+- **State overrides in Interact (advanced)** — write-function forms accept an eth_call state-override map (balance/nonce/code/state/stateDiff per address; caps 10 addresses / 32 slots; field-path errors mirrored client and server). Applied to the simulated eth_call only — never attached to wallet sends, never broadcast, never persisted. The REST `simulate` + `estimate-gas` endpoints accept the same optional `stateOverride` body field (invalid → `400 {error:'invalid_state_override', details:[…]}`).
+- **Blob payloads on transaction pages** — type-3 transaction detail lists the blob versioned hashes and links Blobscan for the payloads (external site, labeled as such; honest "Not returned by this RPC" when the node omits them).
+- **Fixed: literal `undefined` in simulate results** — write-simulation result cards rendered `undefined` beside the value whenever the node left the gas estimate unset; the field is now omitted.
+
 - **Tokens directory** — `/chain/:id/tokens` page: curated known tokens plus tokens opened in this browser (localStorage), one Multicall3 enrichment batch, DefiLlama prices, Curated/Viewed provenance chips, "not a complete registry" caveat.
 - **Block prev/next navigation** — block detail pages link to their neighbors with honest genesis/head boundaries (disabled with reasons; unknown head stays clickable, labeled).
 - **Event raw logs** — every indexed event row in the Events table expands to its raw log (topics, data hex, log index, emitter) with copy affordances; unknown topic0 hashes link to the signature lookup.

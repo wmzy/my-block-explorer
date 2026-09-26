@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, type ReactNode } from 'react';
 import { css } from '@linaria/core';
-import type { Abi } from 'viem';
+import type { Abi, StateOverride as ViemStateOverride } from 'viem';
 import {
   parseContractFunctionsUnified,
   filterFunctions,
@@ -582,6 +582,10 @@ export function ContractInteract({
     rawArgs: string[],
     value?: string,
     from?: string,
+    // Validated eth_call state override from the form's advanced editor
+    // (foundry parity). Undefined keeps the JSON-RPC request exactly as it
+    // was before the feature existed.
+    stateOverride?: ViemStateOverride,
     // Per-form ABI override (the revoke form's standard fragment when the
     // verified ABI lacks the signature); undefined rides the panel target.
     callAbi?: string,
@@ -617,6 +621,7 @@ export function ContractInteract({
         value: value ? BigInt(value) : undefined,
         from,
         abi: targetABI,
+        stateOverride,
       });
 
       if (result.success) {
@@ -624,7 +629,10 @@ export function ContractInteract({
           ...prev,
           [key]: {
             result: result.result,
-            gasUsed: result.gasUsed?.toString(),
+            // Omit the key entirely when absent: Object.entries-based
+            // formatting renders `undefined` as literal text otherwise
+            // (viem leaves request.gas unset on some simulation paths).
+            ...(result.gasUsed !== undefined ? { gasUsed: result.gasUsed.toString() } : {}),
           },
         }));
       } else {
@@ -709,8 +717,16 @@ export function ContractInteract({
               <FunctionCallForm
                 key={`revoke-${revokeSelection.call.kind}-${revokeSelection.call.signature}`}
                 func={revokeFunc}
-                onCall={(func, args, rawArgs, value, from) =>
-                  void simulateWriteFunction(func, args, rawArgs, value, from, revokeCallAbi)}
+                onCall={(func, args, rawArgs, value, from, stateOverride) =>
+                  void simulateWriteFunction(
+                    func,
+                    args,
+                    rawArgs,
+                    value,
+                    from,
+                    stateOverride,
+                    revokeCallAbi,
+                  )}
                 results={results}
                 errors={errors}
                 loadingStates={loadingStates}
@@ -882,7 +898,12 @@ export function ContractInteract({
             <FunctionCallForm
               key={`${func.source}-${func.interactionType}-${index}`}
               func={func}
-              onCall={func.interactionType === 'read' ? callReadFunction : simulateWriteFunction}
+              onCall={
+                func.interactionType === 'read'
+                  ? callReadFunction
+                  : (func, args, rawArgs, value, from, stateOverride) =>
+                      void simulateWriteFunction(func, args, rawArgs, value, from, stateOverride)
+              }
               results={results}
               errors={errors}
               loadingStates={loadingStates}

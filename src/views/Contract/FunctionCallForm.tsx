@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { css } from '@linaria/core';
-import { numberToHex, parseEther, type Abi } from 'viem';
+import { numberToHex, parseEther, type Abi, type StateOverride as ViemStateOverride } from 'viem';
 import { getChainInfo, getChainName, getChainSymbol, getDefaultRpcUrl } from '@/config/chains';
 import { Collapsible } from '@/components/ui/Collapsible';
 import { CopyableHash } from '@/components/ui/CopyableHash';
@@ -19,6 +19,7 @@ import {
   type EIP1193Provider,
 } from '@/util/wallet';
 import { describeRevertedCall, parseFunctionArgs, ADDRESS_PATTERN } from './paramParsing';
+import { parseStateOverrideInput, toViemStateOverride } from './stateOverrideInput';
 import { argsKey } from './types';
 
 const functionNameReadStyles = css`
@@ -65,6 +66,29 @@ const fieldErrorStyles = css`
   margin-top: 4px;
   font-size: 12px;
   color: #c62828;
+`;
+
+// Foundry-style state-override map: mono textarea (same palette as the
+// argument inputs) with room for a few lines of JSON.
+const stateOverrideTextareaStyles = css`
+  display: block;
+  width: 100%;
+  min-height: 72px;
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  resize: vertical;
+`;
+
+// Honesty note inside the override disclosure: the map shapes the
+// simulated eth_call only — the broadcast path can never carry it.
+const stateOverrideNoteStyles = css`
+  margin-top: 6px;
+  font-size: 12px;
+  color: #888;
 `;
 
 const weiHintStyles = css`
@@ -291,6 +315,8 @@ export function FunctionCallForm({
     rawArgs: string[],
     value?: string,
     from?: string,
+    /** Validated eth_call state override (foundry parity); write forms only. */
+    stateOverride?: ViemStateOverride,
   ) => void;
   results: Record<string, unknown>;
   errors: Record<string, string>;
@@ -321,6 +347,10 @@ export function FunctionCallForm({
   const [valueError, setValueError] = useState('');
   const [from, setFrom] = useState('');
   const [fromError, setFromError] = useState('');
+  // Foundry-style state overrides: raw textarea text parsed on submit (not
+  // per keystroke), with the same field-level blocking as the arguments.
+  const [stateOverrideText, setStateOverrideText] = useState('');
+  const [stateOverrideErrors, setStateOverrideErrors] = useState<string[]>([]);
 
   // Re-prefill when the prefill PAYLOAD changes (e.g. the route carries a
   // different ?revoke= intent into the same mounted form): the serialized
@@ -527,11 +557,26 @@ export function FunctionCallForm({
     }
     setFromError(newFromError);
 
-    if (!isValid || newValueError !== '' || newFromError !== '') {
+    // State overrides parse on submit (not per keystroke): a bad JSON map
+    // blocks the simulate exactly like a bad argument above, with the
+    // parser's field-path sentences rendered under the textarea.
+    const stateOverride = parseStateOverrideInput(stateOverrideText);
+    setStateOverrideErrors(stateOverride.ok ? [] : stateOverride.errors);
+
+    if (!isValid || newValueError !== '' || newFromError !== '' || !stateOverride.ok) {
       return;
     }
 
-    onCall(func, values, args, wei, fromTrimmed || undefined);
+    onCall(
+      func,
+      values,
+      args,
+      wei,
+      fromTrimmed || undefined,
+      stateOverride.value === undefined
+        ? undefined
+        : toViemStateOverride(stateOverride.value),
+    );
   };
 
   const getResultKey = () => {
@@ -653,6 +698,42 @@ export function FunctionCallForm({
                 />
               </label>
               {fromError && <div className={fieldErrorStyles}>{fromError}</div>}
+            </div>
+
+            {/* Foundry-style state overrides: collapsed by default, the
+                JSON map parses on submit and invalid input blocks the
+                simulate with field-path sentences under the textarea. */}
+            <div className={inputGroupStyles}>
+              <Collapsible title="State overrides (advanced)">
+                <label className={labelStyles}>
+                  Override map (JSON)
+                  <textarea
+                    value={stateOverrideText}
+                    onChange={e => {
+                      setStateOverrideText(e.target.value);
+                      if (stateOverrideErrors.length > 0) {
+                        setStateOverrideErrors([]);
+                      }
+                    }}
+                    placeholder='{"0x0000000000000000000000000000000000000000":{"balance":"0x1"}}'
+                    spellCheck={false}
+                    className={stateOverrideTextareaStyles}
+                  />
+                </label>
+                {stateOverrideErrors.length > 0 && (
+                  <div role="alert" className={fieldErrorStyles}>
+                    {stateOverrideErrors.map(message => (
+                      <div key={message}>{message}</div>
+                    ))}
+                  </div>
+                )}
+                {/* Honesty note: the override shapes the simulated eth_call
+                    only — the wallet broadcast path never sees it. */}
+                <div className={stateOverrideNoteStyles}>
+                  Applies to the simulated eth_call only — never attached to
+                  wallet sends, never broadcast, never persisted.
+                </div>
+              </Collapsible>
             </div>
           </>
         )}

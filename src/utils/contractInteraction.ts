@@ -1,6 +1,6 @@
 import { getRpcClient, withRetry } from './rpcClient';
 import { get } from '@/util/http';
-import type { Abi, AbiParameter, Address } from 'viem';
+import type { Abi, AbiParameter, Address, StateOverride } from 'viem';
 
 export type ContractFunction = {
   name: string;
@@ -123,7 +123,7 @@ export async function readContract(
  * Simulate a contract call
  */
 export async function simulateContract(
-  params: ContractCallParams & { abi?: string },
+  params: ContractCallParams & { abi?: string; stateOverride?: StateOverride },
 ): Promise<ContractCallResult> {
   try {
     const client = getRpcClient(params.chainId);
@@ -153,6 +153,10 @@ export async function simulateContract(
         args: params.args,
         value: params.value,
         account: params.from as Address | undefined,
+        // Absent → the key is not spread at all: viem's serializer drops
+        // undefined overrides, keeping the eth_call request byte-identical
+        // to the pre-override wire format.
+        ...(params.stateOverride !== undefined ? { stateOverride: params.stateOverride } : {}),
       });
     });
 

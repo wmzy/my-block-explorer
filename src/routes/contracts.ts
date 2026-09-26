@@ -7,6 +7,7 @@ import { contractInteractionService } from '../services/ContractInteractionServi
 import { getChainName } from '../config/chains';
 import { getValidatedChainId, getValidatedAddress } from '../server/validation';
 import { safeJsonResponse } from '../utils/serialization';
+import { parseStateOverride, type StateOverride } from '../utils/stateOverride';
 import { requireAdminTokenIfConfigured } from '../middleware/admin-token';
 import { createRateLimiter } from '../middleware/rate-limit';
 import {
@@ -46,6 +47,23 @@ const parseContractsOffsetParam = (raw: string | undefined): number | null => {
   const parsed = parseInt(raw, 10);
   if (Number.isNaN(parsed)) return null;
   return Math.min(Math.max(parsed, 0), CONTRACT_DIRECTORY_MAX_OFFSET);
+};
+
+// Parses the optional eth_call-style stateOverride body field shared by
+// the simulate and estimate-gas endpoints (foundry parity). Absent →
+// undefined; present but invalid → the 400 body; an empty map {} is
+// accepted and treated exactly like absent so the RPC request stays
+// byte-identical to the pre-override behavior.
+const parseBodyStateOverride = (
+  raw: unknown,
+): { error: { error: string; details: string[] }; status: 400 } | { value: StateOverride | undefined } => {
+  if (raw === undefined) return { value: undefined };
+  const parsed = parseStateOverride(raw);
+  if (!parsed.ok) {
+    return { error: { error: 'invalid_state_override', details: parsed.details }, status: 400 };
+  }
+  const hasEntries = Object.keys(parsed.value).length > 0;
+  return { value: hasEntries ? parsed.value : undefined };
 };
 
 // Every contract_sources row this explorer has cached for the chain —
@@ -332,7 +350,7 @@ app.post('/chains/:chainId/contracts/:address/simulate', contractSimulateRateLim
 
   try {
     const body = await c.req.json();
-    const { functionName, args = [], value, from } = body;
+    const { functionName, args = [], value, from, stateOverride: stateOverrideRaw } = body;
 
     if (!functionName || typeof functionName !== 'string') {
       return c.json({ error: 'Function name is required' }, 400);
@@ -340,6 +358,11 @@ app.post('/chains/:chainId/contracts/:address/simulate', contractSimulateRateLim
 
     if (!Array.isArray(args)) {
       return c.json({ error: 'Arguments must be an array' }, 400);
+    }
+
+    const override = parseBodyStateOverride(stateOverrideRaw);
+    if ('error' in override) {
+      return c.json(override.error, override.status);
     }
 
     const contractSource = await contractSourceService.getContractSource(chainId, address);
@@ -362,6 +385,7 @@ app.post('/chains/:chainId/contracts/:address/simulate', contractSimulateRateLim
       value: value ? BigInt(value) : undefined,
       from,
       abi: targetABI,
+      stateOverride: override.value,
     });
 
     c.header('X-Chain-Name', getChainName(chainId));
@@ -394,7 +418,7 @@ app.post('/chains/:chainId/contracts/:address/estimate-gas', async c => {
 
   try {
     const body = await c.req.json();
-    const { functionName, args = [], value, from } = body;
+    const { functionName, args = [], value, from, stateOverride: stateOverrideRaw } = body;
 
     if (!functionName || typeof functionName !== 'string') {
       return c.json({ error: 'Function name is required' }, 400);
@@ -402,6 +426,11 @@ app.post('/chains/:chainId/contracts/:address/estimate-gas', async c => {
 
     if (!Array.isArray(args)) {
       return c.json({ error: 'Arguments must be an array' }, 400);
+    }
+
+    const override = parseBodyStateOverride(stateOverrideRaw);
+    if ('error' in override) {
+      return c.json(override.error, override.status);
     }
 
     const contractSource = await contractSourceService.getContractSource(chainId, address);
@@ -424,6 +453,7 @@ app.post('/chains/:chainId/contracts/:address/estimate-gas', async c => {
       value: value ? BigInt(value) : undefined,
       from,
       abi: targetABI,
+      stateOverride: override.value,
     });
 
     c.header('X-Chain-Name', getChainName(chainId));

@@ -78,6 +78,7 @@ describe('FunctionCallForm composite arguments', () => {
       [`["${ADDR_A}","${ADDR_B}"]`],
       undefined,
       undefined,
+      undefined,
     );
 
     fireEvent.change(field, { target: { value: `${ADDR_A},${ADDR_B}` } });
@@ -87,6 +88,7 @@ describe('FunctionCallForm composite arguments', () => {
       func,
       [[ADDR_A, ADDR_B]],
       [`${ADDR_A},${ADDR_B}`],
+      undefined,
       undefined,
       undefined,
     );
@@ -117,6 +119,7 @@ describe('FunctionCallForm composite arguments', () => {
       func,
       [['5', ADDR_A]],
       [`5,${ADDR_A}`],
+      undefined,
       undefined,
       undefined,
     );
@@ -190,7 +193,7 @@ describe('FunctionCallForm trailing-optional rule', () => {
     });
     fireEvent.click(screen.getByRole('button', { name: 'Query' }));
 
-    expect(onCall).toHaveBeenCalledWith(func, [ADDR_A], [ADDR_A, ''], undefined, undefined);
+    expect(onCall).toHaveBeenCalledWith(func, [ADDR_A], [ADDR_A, ''], undefined, undefined, undefined);
   });
 
   it('hints the omission on inputs that may be left empty', () => {
@@ -260,7 +263,7 @@ describe('FunctionCallForm from-address validation', () => {
     fireEvent.change(fromField(), { target: { value: `  ${ADDR_A}  ` } });
     fireEvent.click(screen.getByRole('button', { name: 'Simulate' }));
 
-    expect(onCall).toHaveBeenCalledWith(func, [], [], undefined, ADDR_A);
+    expect(onCall).toHaveBeenCalledWith(func, [], [], undefined, ADDR_A, undefined);
   });
 
   it('keeps From optional — empty submits as undefined', () => {
@@ -268,7 +271,7 @@ describe('FunctionCallForm from-address validation', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Simulate' }));
 
-    expect(onCall).toHaveBeenCalledWith(func, [], [], undefined, undefined);
+    expect(onCall).toHaveBeenCalledWith(func, [], [], undefined, undefined, undefined);
   });
 });
 

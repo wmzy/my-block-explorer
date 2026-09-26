@@ -1326,6 +1326,13 @@ export default function TopNavigation({
             <button
               type="button"
               className={navLink}
+              onClick={() => goTo(`/chain/${currentChainId}/broadcast`)}
+            >
+              Broadcast
+            </button>
+            <button
+              type="button"
+              className={navLink}
               onClick={() => goTo(`/chain/${currentChainId}/contracts`)}
             >
               Contracts

@@ -52,6 +52,14 @@ const routes = createRoutes({
       component: () => import('./Transactions/Pending'),
     },
     {
+      // Broadcast a locally signed raw transaction through the RPC this
+      // explorer uses for the chain — pure browser RPC (no backend, no
+      // persistence), gated by a local pre-flight decode so a wrong-chain
+      // signature is caught before it ever reaches the node.
+      path: '/chain/:chainId/broadcast',
+      component: () => import('./Broadcast'),
+    },
+    {
       // Cached-contract directory (the explorer's own contract_sources
       // rows): a plain list fetch, so no loader; the view owns ?q= and
       // ?offset=.

@@ -143,7 +143,7 @@ describe('FunctionCallForm initialArgs prefill', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Simulate' }));
 
-    expect(onCall).toHaveBeenCalledWith(approveWrite, [SPENDER, '0'], [SPENDER, '0'], undefined, undefined);
+    expect(onCall).toHaveBeenCalledWith(approveWrite, [SPENDER, '0'], [SPENDER, '0'], undefined, undefined, undefined);
   });
 
   it('keeps the user free to edit everything after the prefill', () => {
@@ -152,7 +152,7 @@ describe('FunctionCallForm initialArgs prefill', () => {
     fireEvent.change(screen.getByLabelText('value (uint256)'), { target: { value: '5' } });
     fireEvent.click(screen.getByRole('button', { name: 'Simulate' }));
 
-    expect(onCall).toHaveBeenCalledWith(approveWrite, [SPENDER, '5'], [SPENDER, '5'], undefined, undefined);
+    expect(onCall).toHaveBeenCalledWith(approveWrite, [SPENDER, '5'], [SPENDER, '5'], undefined, undefined, undefined);
   });
 
   it('pads a short prefill with empty inputs (trailing-empty-omit semantics intact)', () => {
