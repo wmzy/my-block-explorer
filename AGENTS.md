@@ -50,7 +50,7 @@ block-explorer/
 | RPC client creation  | `src/utils/realTimeData.ts` (frontend), `src/services/RpcManager.ts` (backend)  | Both cache per chainId                              |
 | Event indexing       | `src/services/EventIndexingService.ts`                                           | Manual range-based; one serial job per range (no global queue); `reconcileInterruptedRanges()` runs at startup |
 | Contract source/ABI  | `src/services/ContractSourceService.ts`                                         | DB → Sourcify/Blockscan fallback, immutable         |
-| Storage layout       | `src/services/StorageLayoutService.ts`                                          | DB → storage-layout-fetcher, immutable              |
+| Storage layout       | `src/services/StorageLayoutService.ts`                                          | DB → storage-layout-fetcher, immutable; UI = column explorer `src/components/storage/` (values read browser-side via `src/services/storageValues.ts`)              |
 | UI components        | `src/components/ui/`                                                            | Haze UI wrappers + Linaria                          |
 | Frontend data hooks  | `src/services/{blocks,transactions,addresses,contracts,search,stats}.ts`         | react-toolroom query layer (`src/util/useQuery.ts`) |
 | Address realtime     | `src/services/addressRealTime.ts` + `services/addresses.ts`                     | RPC channel + persistent channel composed in view   |
@@ -1165,3 +1165,62 @@ pnpm typecheck           # tsc --noEmit
   harness now needs a MemoryRouter (three test files wrap with the
   coverage route registered); (4) slot/epoch DOM smoke: the InfoGrid
   labels don't use dt/th/.label — probe body text, not semantic tags
+- **2026-09-27 Storage explorer rebuild (column drill-down, 3 task agents + integration)** —
+  the Contract Storage tab rebuilt as a Finder-style column explorer
+  (source of the interaction pattern: the sibling `storage-explorer-fe`
+  project's `StorageLayoutView` — absorbed, not copied; its
+  createPortal/appendChild machinery replaced by plain React state).
+  All verified: tsc clean, eslint 0 errors, `vitest --changed` 13 files /
+  308 tests green, live browser smoke on mainnet (WETH verified layout +
+  USDC evmole layout + proxy footnote).
+  **Architecture** — slot VALUES now read browser-side (`services/
+  storageValues.ts`: per-(chain,address) store, FIFO concurrency 6,
+  in-flight dedupe, `useSlotValue` via useSyncExternalStore with
+  identity-stable snapshots, injectable reader for tests) through
+  `createRpcClient` — the old per-slot backend HTTP (`hooks/useStorageAt`
+  + its N+1) is deleted; the backend `/storage/:slot` route STAYS
+  (documented public API). Pure model: `utils/storageSlots.ts` (slot
+  math, mapping-key encode/validate — dynamic string/bytes keys hash
+  h(k)=keccak256(raw) per solidity docs, int keys two's-complement via
+  BigInt.asUintN(256,…), bytesN keys right-padded; `parseSlotNumber`
+  tolerates decimal/'0x'hex/64-nibble-zero-padded-hex slot strings),
+  `utils/storageSlotCode.ts` (symbolic slot exprs + `buildViemReadSnippet`
+  + `buildCastStorageCommand`), `components/storage/columnModel.ts`
+  (Segment path model m/k/i/a + `resolveColumns` + `?sv=` URL codec +
+  `clampRange`; column i = segments.slice(0,i+1); error column stops
+  resolution). UI family: StorageExplorer/StorageColumn/
+  StorageMemberRow/StorageLeafValue (old 9-file family deleted).
+  **UX contracts pinned** — mapping rows: key input + inline validation,
+  leaf values resolve INLINE (no column), composite values push m+k
+  segments; MAPPING SHELL columns (single-mapping struct produced by m/k)
+  push ONLY k (root never counts as a shell); 'a' range segments sit
+  immediately after the opening segment and never duplicate the array
+  column; dynamic arrays read length from the MEMBER slot (derived from
+  the parent column's row, works for URL-restored paths); per-column
+  header: slot hex copy + viem snippet copy + cast command copy + ⟳ +
+  ✕ (root has no ✕); `?sv=` rides replace:true, cleared at root,
+  %2F-encoded slashes decode fine; ≤768px columns stack vertically;
+  proxy footnote "Values read from <proxy>" drives valueAddress.
+  **evmole augmentation** (integration find) — evmole layouts mark every
+  type `inplace` with the real shape only in the LABEL ('string',
+  'mapping(a => b)', 'T[]') and LIE about numberOfBytes (always '32');
+  `augmentLayoutTypes` (columnModel) canonicalizes entries from label
+  grammar (recursive keyFor synthesis incl. storage-member type refs the
+  map never lists) so strings decode, mappings drill, arrays paginate
+  identically to verified layouts; memberless 'struct X' labels classify
+  'unknown', never crash. Verified live: USDC impl layout renders
+  "USD Coin"/"USDC"/decimals 6 and drills mappings.
+  **Integration finds (all regression-pinned)**: (1) short bytes/string
+  slice direction — data occupies the HIGH-order bytes; take
+  slice(word,0,length), never 32-length (WETH name showed NUL padding);
+  (2) struct-row mapping drills must push m+k; (3) shell re-drill must
+  NOT re-push m (path label doubled allowance.allowance); (4) slot
+  strings from some sources are 64-nibble zero-padded hex WITHOUT 0x —
+  BigInt() threw and killed the whole tab through RouterError (USDC);
+  (5) tests glob caps at 200 — `tests/unit/storagePanel.test.tsx` was
+  invisible to the wave plan and had to be migrated by hand (its
+  proxy-value assertion now rides the "Values read from" footnote);
+  (6) vitest terse error frames can MISLEAD — a bad `columns[0].rows`
+  access (rows lives on `.node`) masqueraded as resolver corruption;
+  cross-check suspicious failures with a standalone tsx script before
+  believing them.

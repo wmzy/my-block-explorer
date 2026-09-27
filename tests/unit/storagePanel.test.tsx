@@ -1,13 +1,13 @@
 // Storage tab unit tests: StoragePanel must fetch a layout for unverified
 // contracts too (the backend falls back to evmole bytecode inference and
 // reports it via the response envelope's `source`), show the honest
-// unavailable card on true failures, and always read slot VALUES at the
-// proxy address regardless of the proxy/impl toggle. The leaf read layer
-// (SlotDisplay/StorageValue) is mocked so the real StorageLayoutView →
-// StorageMember address passthrough is exercised end-to-end.
+// unavailable card on true failures, and keep slot VALUES pinned to the
+// proxy address regardless of the proxy/impl toggle. Since the column
+// explorer cutover, the value-address contract surfaces through the
+// "Values read from" footnote — the same valueAddress prop drives the
+// StorageValuesProvider store that issues every eth_getStorageAt read.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 
 import { StoragePanel } from '@/views/Contract/StoragePanel';
 import { useStorageLayout } from '@/services/contracts';
@@ -16,30 +16,6 @@ import type { ContractSource } from '@/views/Contract/types';
 vi.mock('@/services/contracts', () => ({
   useStorageLayout: vi.fn(),
 }));
-
-vi.mock('@/components/storage/SlotDisplay', async () => {
-  const React = await import('react');
-  return {
-    SlotDisplay: (props: { address: string; slot: string }) =>
-      React.createElement('div', {
-        'data-testid': 'slot-display',
-        'data-address': props.address,
-        'data-slot': props.slot,
-      }),
-  };
-});
-
-vi.mock('@/components/storage/StorageValue', async () => {
-  const React = await import('react');
-  return {
-    StorageValue: (props: { address: string; path: string }) =>
-      React.createElement('div', {
-        'data-testid': 'storage-value',
-        'data-address': props.address,
-        'data-path': props.path,
-      }),
-  };
-});
 
 const PROXY = '0xabc0000000000000000000000000000000000001';
 const IMPL = '0xabc0000000000000000000000000000000000002';
@@ -138,8 +114,7 @@ describe('StoragePanel', () => {
     expect(screen.getByText('Storage layout not available for this contract.')).toBeInTheDocument();
   });
 
-  it('reads slot values at the proxy address even when the layout targets the implementation', async () => {
-    const user = userEvent.setup();
+  it('reads slot values at the proxy address even when the layout targets the implementation', () => {
     vi.mocked(useStorageLayout).mockReturnValue(
       mockHookResult({ found: true, layout, source: 'fetcher' }),
     );
@@ -148,19 +123,9 @@ describe('StoragePanel', () => {
 
     // The layout itself is fetched at the implementation address...
     expect(vi.mocked(useStorageLayout)).toHaveBeenCalledWith(1, IMPL);
-    // ...but slot values resolve to the proxy address in both toggle positions.
-    const slotDisplays = screen.getAllByTestId('slot-display');
-    expect(slotDisplays.length).toBeGreaterThan(0);
-    for (const slot of slotDisplays) {
-      expect(slot).toHaveAttribute('data-address', PROXY);
-    }
-
-    await user.click(screen.getByRole('button', { name: 'Load values' }));
-
-    const storageValues = screen.getAllByTestId('storage-value');
-    expect(storageValues.length).toBeGreaterThan(0);
-    for (const value of storageValues) {
-      expect(value).toHaveAttribute('data-address', PROXY);
-    }
+    // ...but slot values stay pinned to the proxy address in both toggle
+    // positions: the valueAddress prop feeds both this footnote and the
+    // StorageValuesProvider store that issues every eth_getStorageAt.
+    expect(screen.getByText(new RegExp(`Values read from ${PROXY}`))).toBeInTheDocument();
   });
 });

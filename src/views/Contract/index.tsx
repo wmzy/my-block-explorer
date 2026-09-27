@@ -650,6 +650,10 @@ const contractSearchSchema = z.object({
   // a plain string here — decodeRevokeIntent validates the shape and any
   // junk degrades to "no intent" (the Interact panel renders as usual).
   revoke: z.string().optional().catch(undefined),
+  // Encoded storage-explorer drill path (columnModel's encodeStoragePath):
+  // a plain string here — decodeStoragePath validates the shape and any
+  // junk degrades to the root column. Written only by the Storage tab.
+  sv: z.string().optional().catch(undefined),
 });
 
 const PROXY_TYPE_LABELS: Record<string, string> = {
@@ -735,8 +739,9 @@ const resolveProxyImplementation = async (
         // getStorageAt types as `0x${string} | undefined`; an unset slot
         // reads as undefined on some providers — the zero-value sentinel is
         // the honest equivalent (slotValueToAddress nulls it).
-        const value = (await client.getStorageAt({ address: address as Address, slot }))
-          ?? `0x${'0'.repeat(64)}`;
+        const value =
+          (await client.getStorageAt({ address: address as Address, slot })) ??
+          `0x${'0'.repeat(64)}`;
         return slotValueToAddress(value);
       } catch {
         return null;
@@ -983,7 +988,7 @@ const VERIFICATION_SOURCE_META: Record<string, { label: string; title: string }>
 export default function Contract() {
   const { params, router, location } = useMatched();
   const setSearch = useSetSearch(contractSearchSchema);
-  const { tab: tabParam, revoke: revokeParam } = useSearch(contractSearchSchema);
+  const { tab: tabParam, revoke: revokeParam, sv: svParam } = useSearch(contractSearchSchema);
 
   // Decoded ?revoke= intent (null when absent or malformed) — flows into
   // the Interact tab's pre-filled revoke form.
@@ -1027,6 +1032,25 @@ export default function Contract() {
     void setSearch(prev => ({ ...prev, tab }));
   };
 
+  // Storage-explorer drill path (?sv=) writes: replace (column navigation
+  // is view state, not a history entry) and only while the Storage tab is
+  // the active one — StoragePanel unmounts on tab switches so its
+  // callbacks cannot fire afterwards; the activeTab check is a defensive
+  // second gate. Root clears the param instead of serializing it.
+  const handleStoragePathChange = (sv: string | undefined) => {
+    if (activeTab !== 'storage') return;
+    void setSearch(
+      prev => {
+        if (sv === undefined) {
+          const { sv: _removed, ...rest } = prev;
+          return rest;
+        }
+        return { ...prev, sv };
+      },
+      { replace: true },
+    );
+  };
+
   const currentChainId = Number(chainId ?? 1);
 
   // Raw pasted ABI (exactly the string that was applied), lazily restored
@@ -1050,7 +1074,7 @@ export default function Contract() {
 
   const contractSource = sourceResponse?.contractSource as ContractSource | undefined;
   const creationInfo = creationResponse?.found
-    ? (creationResponse?.creation as ContractCreationInfo | undefined) ?? null
+    ? ((creationResponse?.creation as ContractCreationInfo | undefined) ?? null)
     : null;
   const loading = sourceLoading;
   const error = sourceError?.message ?? null;
@@ -1071,7 +1095,7 @@ export default function Contract() {
   // implementation's layout; everything else → the contract itself).
   const storageLayoutAddress =
     contractTarget === 'impl'
-      ? ((contractSource?.implementationAddress) ?? address ?? '')
+      ? (contractSource?.implementationAddress ?? address ?? '')
       : (address ?? '');
   const storageLayoutQuery = useStorageLayout(
     storageVisited ? currentChainId : 0,
@@ -1300,8 +1324,7 @@ export default function Contract() {
       loading: storageLayoutQuery.loading,
       failed: storageLayoutQuery.error !== undefined,
       found:
-        storageLayoutQuery.data?.found === true &&
-        storageLayoutQuery.data?.layout !== undefined,
+        storageLayoutQuery.data?.found === true && storageLayoutQuery.data?.layout !== undefined,
       inferred: storageLayoutQuery.data?.source === 'evmole',
     },
   });
@@ -1727,8 +1750,8 @@ export default function Contract() {
             {customAbiShadowed && !shadowNoticeDismissed && (
               <div role="status" className={shadowNoticeStyles}>
                 <span>
-                  This contract is now verified server-side — your pasted custom ABI is no
-                  longer used.
+                  This contract is now verified server-side — your pasted custom ABI is no longer
+                  used.
                 </span>
                 <div className={shadowNoticeActionsStyles}>
                   <button
@@ -1755,8 +1778,8 @@ export default function Contract() {
                 Interact is the exception: it merges every facet's ABI. */}
             {isDiamond && (
               <div role="status" className={diamondNoticeStyles}>
-                Diamond proxy — {diamondFacets.length} facets. Source, ABI, Events and Storage
-                below show facet[0] only; Interact merges every facet&apos;s ABI.
+                Diamond proxy — {diamondFacets.length} facets. Source, ABI, Events and Storage below
+                show facet[0] only; Interact merges every facet&apos;s ABI.
               </div>
             )}
 
@@ -1968,6 +1991,8 @@ export default function Contract() {
                 address={address as `0x${string}`}
                 contractSource={contractSource}
                 contractTarget={contractTarget}
+                initialStoragePath={svParam}
+                onStoragePathChange={handleStoragePathChange}
               />
             )}
 

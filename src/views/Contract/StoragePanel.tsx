@@ -1,22 +1,29 @@
 import { useStorageLayout } from '@/services/contracts';
-import { StorageLayoutView } from '@/components/storage';
+import { StorageExplorer } from '@/components/storage';
 import { cardStyles, errorStyles, loadingStyles } from './styles';
 import type { ContractSource } from './types';
 
 // Storage tab: the proxy/impl toggle decides which address the layout is
 // read for; the hook returns the raw {found, layout, source} envelope, and
 // `source` distinguishes verified/fetched layouts from evmole bytecode
-// inference on unverified contracts.
+// inference on unverified contracts. The drill-down path mirrors into the
+// ?sv= search param: this panel forwards the decoded param in and the
+// explorer's writes out (the setSearch call itself lives in the view,
+// where the search schema instance exists).
 export function StoragePanel({
   chainId,
   address,
   contractSource,
   contractTarget,
+  initialStoragePath,
+  onStoragePathChange,
 }: {
   chainId: number;
   address: `0x${string}`;
   contractSource: ContractSource | null;
   contractTarget: 'proxy' | 'impl';
+  initialStoragePath?: string;
+  onStoragePathChange?: (sv: string | undefined) => void;
 }) {
   const layoutAddress =
     contractTarget === 'impl' ? (contractSource?.implementationAddress ?? address) : address;
@@ -69,11 +76,13 @@ export function StoragePanel({
           Inferred from bytecode (unverified contract)
         </div>
       )}
-      <StorageLayoutView
+      <StorageExplorer
         chainId={chainId}
-        address={layoutAddress}
-        valueAddress={valueAddress}
+        address={valueAddress}
+        layoutAddress={layoutAddress}
         layout={layout}
+        initialPath={initialStoragePath}
+        onPathChange={onStoragePathChange}
       />
     </div>
   );
