@@ -522,10 +522,7 @@ export class DuckDBPostgresAdapter {
       for (const [key, value] of Object.entries(adaptedRow)) {
         if (typeof value === 'bigint') {
           adaptedRow[key] = value.toString();
-        } else if (
-          typeof value === 'string'
-          && DuckDBPostgresAdapter.DATETIME_STRING.test(value)
-        ) {
+        } else if (typeof value === 'string' && DuckDBPostgresAdapter.DATETIME_STRING.test(value)) {
           adaptedRow[key] = new Date(
             DuckDBPostgresAdapter.EXPLICIT_OFFSET.test(value)
               ? value

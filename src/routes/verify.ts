@@ -18,10 +18,7 @@ import {
   SourcifyUnreachableError,
   validateVerificationFiles,
 } from '../services/ContractVerifyService';
-import {
-  compileVerifyService,
-  CompileVerifyHttpError,
-} from '../services/CompileVerifyService';
+import { compileVerifyService, CompileVerifyHttpError } from '../services/CompileVerifyService';
 import { contractSourceService } from '../services/ContractSourceService';
 import { safeJsonResponse } from '../utils/serialization';
 
@@ -63,9 +60,7 @@ app.post(
     } catch {
       body = null;
     }
-    const validation = validateVerificationFiles(
-      isRecordLike(body) ? body.files : undefined,
-    );
+    const validation = validateVerificationFiles(isRecordLike(body) ? body.files : undefined);
     if (!validation.ok) {
       return c.json({ error: 'invalid_files', message: validation.message }, 400);
     }
@@ -78,10 +73,7 @@ app.post(
         return c.json({ error: 'sourcify_unreachable', message: error.message }, 502);
       }
       logger.error({ err: error, chainId, address }, 'Contract verification submission failed');
-      return c.json(
-        { error: 'verification_failed', message: 'Contract verification failed' },
-        500,
-      );
+      return c.json({ error: 'verification_failed', message: 'Contract verification failed' }, 500);
     }
 
     if (!outcome.ok) {
@@ -212,9 +204,7 @@ app.post(
       safeJsonResponse({
         verified: true,
         verificationSource: 'manual',
-        ...(fresh
-          ? { verificationStatus: fresh.verificationStatus, contractSource: fresh }
-          : {}),
+        ...(fresh ? { verificationStatus: fresh.verificationStatus, contractSource: fresh } : {}),
       }),
     );
   },
@@ -339,10 +329,7 @@ app.post(
         );
       }
       logger.error({ err: error, chainId, address }, 'Compile verification failed');
-      return c.json(
-        { error: 'verification_failed', message: 'Compile verification failed' },
-        500,
-      );
+      return c.json({ error: 'verification_failed', message: 'Compile verification failed' }, 500);
     }
 
     if (!outcome.ok) {
@@ -391,9 +378,7 @@ app.post(
         compilerVersion: outcome.compilerVersion,
         comparison: outcome.comparison,
         warnings: outcome.warnings,
-        ...(fresh
-          ? { verificationStatus: fresh.verificationStatus, contractSource: fresh }
-          : {}),
+        ...(fresh ? { verificationStatus: fresh.verificationStatus, contractSource: fresh } : {}),
       }),
     );
   },

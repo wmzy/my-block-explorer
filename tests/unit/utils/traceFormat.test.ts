@@ -29,7 +29,8 @@ const nestedRaw = {
   value: '0xde0b6b3a7640000', // 1 ETH
   gas: '0x8ac6f0',
   gasUsed: '0x186a0', // 100000
-  input: '0xa9059cbb00000000000000000000000033333333333333333333333333333333333333330000000000000000000000000000000000000000000000000000000000000001',
+  input:
+    '0xa9059cbb00000000000000000000000033333333333333333333333333333333333333330000000000000000000000000000000000000000000000000000000000000001',
   output: '0x',
   calls: [
     {
@@ -191,7 +192,9 @@ describe('isTraceUnsupportedError', () => {
     ).toBe(true);
     expect(isTraceUnsupportedError(new Error('Method not found'))).toBe(true);
     expect(
-      isTraceUnsupportedError(new Error('debug_traceTransaction is not supported on this endpoint')),
+      isTraceUnsupportedError(
+        new Error('debug_traceTransaction is not supported on this endpoint'),
+      ),
     ).toBe(true);
     expect(isTraceUnsupportedError(new Error('tracing not enabled: unimplemented'))).toBe(true);
     // JSON-RPC code -32601 with an unhelpful message still classifies.

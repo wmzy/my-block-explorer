@@ -56,9 +56,7 @@ describe('deriveDocumentTitle', () => {
   });
 
   it('titles the static coverage explainer with the app name', () => {
-    expect(deriveDocumentTitle('/about/coverage', '')).toBe(
-      'Data Coverage — My Block Explorer',
-    );
+    expect(deriveDocumentTitle('/about/coverage', '')).toBe('Data Coverage — My Block Explorer');
   });
 
   it('titles the tools hub and troubleshooting guide with the app name', () => {
@@ -197,9 +195,7 @@ function renderTitleHarness(initial: string, navTarget?: string) {
 // living document.head).
 const shareTags = () => ({
   ogTitle: document.head.querySelector<HTMLMetaElement>('meta[property="og:title"]'),
-  ogDescription: document.head.querySelector<HTMLMetaElement>(
-    'meta[property="og:description"]',
-  ),
+  ogDescription: document.head.querySelector<HTMLMetaElement>('meta[property="og:description"]'),
   ogType: document.head.querySelector<HTMLMetaElement>('meta[property="og:type"]'),
   twitterCard: document.head.querySelector<HTMLMetaElement>('meta[name="twitter:card"]'),
 });

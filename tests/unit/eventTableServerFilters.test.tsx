@@ -143,9 +143,7 @@ describe('EventTable server-side filtering and export', () => {
 
     await waitFor(() => {
       const url = vi.mocked(get).mock.calls.at(-1)?.[0] ?? '';
-      expect(url).toContain(
-        `argFilters=${encodeURIComponent('{"owner":"0xabc"}')}`,
-      );
+      expect(url).toContain(`argFilters=${encodeURIComponent('{"owner":"0xabc"}')}`);
     });
 
     // The export link carries the same filters; the browser filename comes
@@ -160,9 +158,7 @@ describe('EventTable server-side filtering and export', () => {
     mockGet(1);
     renderTable();
 
-    expect(
-      await screen.findByText('Filtering runs on the full indexed set'),
-    ).toBeInTheDocument();
+    expect(await screen.findByText('Filtering runs on the full indexed set')).toBeInTheDocument();
   });
 
   it('shows an unfinalized badge only on rows the chain has not finalized', async () => {

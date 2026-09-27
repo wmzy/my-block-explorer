@@ -5,9 +5,9 @@ describe('api-error utilities', () => {
   let dateNowSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
-    dateNowSpy = vi.spyOn(Date.prototype, 'toISOString').mockReturnValue(
-      '2025-03-17T12:00:00.000Z',
-    );
+    dateNowSpy = vi
+      .spyOn(Date.prototype, 'toISOString')
+      .mockReturnValue('2025-03-17T12:00:00.000Z');
   });
 
   afterEach(() => {
@@ -36,12 +36,7 @@ describe('api-error utilities', () => {
 
     it('handles optional details', () => {
       const details = { availableEndpoints: ['/api', '/api/health'] };
-      const result = createApiError(
-        404,
-        'Not Found',
-        'Endpoint not found',
-        details,
-      );
+      const result = createApiError(404, 'Not Found', 'Endpoint not found', details);
 
       expect(result).toEqual({
         error: 'Not Found',

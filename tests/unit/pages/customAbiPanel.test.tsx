@@ -9,9 +9,7 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { CustomAbiPanel } from '@/views/Contract/CustomAbiPanel';
 
 const renderPanel = (props: Partial<Parameters<typeof CustomAbiPanel>[0]> = {}) =>
-  render(
-    <CustomAbiPanel storedRaw="" onApply={vi.fn()} onClear={vi.fn()} {...props} />,
-  );
+  render(<CustomAbiPanel storedRaw="" onApply={vi.fn()} onClear={vi.fn()} {...props} />);
 
 const paste = (raw: string) => {
   fireEvent.change(screen.getByLabelText('Custom ABI JSON'), { target: { value: raw } });
@@ -86,16 +84,16 @@ describe('CustomAbiPanel storage note', () => {
   it('says the ABI persists across sessions', () => {
     renderPanel();
 
-    expect(
-      screen.getByText(/persists across sessions/, { exact: false }),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/persists across sessions/, { exact: false })).toBeInTheDocument();
   });
 
   it('states plainly that pasting neither verifies nor shares the contract', () => {
     renderPanel();
 
     expect(
-      screen.getByText(/Pasting an ABI does not verify the contract and is not shared with other users/),
+      screen.getByText(
+        /Pasting an ABI does not verify the contract and is not shared with other users/,
+      ),
     ).toBeInTheDocument();
   });
 });

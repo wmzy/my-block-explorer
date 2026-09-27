@@ -48,13 +48,8 @@ export const DynamicEventFilterForm: React.FC<DynamicEventFilterFormProps> = ({
   disabled = false,
   className = '',
 }) => {
-  type FilterValue
-    = | string
-      | number
-      | boolean
-      | null
-      | undefined
-      | { from?: unknown; to?: unknown; like?: unknown };
+  type FilterValue =
+    string | number | boolean | null | undefined | { from?: unknown; to?: unknown; like?: unknown };
   type Filters = Record<string, FilterValue>;
 
   const countActiveFilters = useCallback((filters: Filters): number => {
@@ -63,8 +58,7 @@ export const DynamicEventFilterForm: React.FC<DynamicEventFilterFormProps> = ({
       if (value !== null && value !== undefined && value !== '' && value !== false) {
         if (typeof value === 'object' && ('from' in value || 'to' in value || 'like' in value)) {
           count++;
-        }
-        else if (key !== 'eventName' || value !== '') {
+        } else if (key !== 'eventName' || value !== '') {
           count++;
         }
       }
@@ -251,11 +245,7 @@ export const DynamicEventFilterForm: React.FC<DynamicEventFilterFormProps> = ({
         <h3>Event Filters</h3>
         <div className="filter-actions">
           <span className="filter-count">
-            {state.filterCount}
-            {' '}
-            {state.filterCount === 1 ? 'filter' : 'filters'}
-            {' '}
-            active
+            {state.filterCount} {state.filterCount === 1 ? 'filter' : 'filters'} active
           </span>
           <button
             type="button"
@@ -275,7 +265,7 @@ export const DynamicEventFilterForm: React.FC<DynamicEventFilterFormProps> = ({
           <select
             id="event-type-select"
             value={state.selectedEvent?.name ?? ''}
-            onChange={(e) => {
+            onChange={e => {
               const event = abiEvents.find(evt => evt.name === e.target.value) ?? null;
               handleEventChange(event);
             }}

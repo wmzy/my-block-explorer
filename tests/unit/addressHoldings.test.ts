@@ -45,9 +45,7 @@ describe('aggregateTokenHoldings erc20', () => {
       ],
       classify({ [TOKEN_A]: 'erc20' }),
     );
-    expect(result).toEqual([
-      { kind: 'erc20', token: TOKEN_A, net: 80n, transferCount: 3 },
-    ]);
+    expect(result).toEqual([{ kind: 'erc20', token: TOKEN_A, net: 80n, transferCount: 3 }]);
   });
 
   it('drops holdings whose net cancels to zero', () => {
@@ -69,9 +67,7 @@ describe('aggregateTokenHoldings erc20', () => {
       ],
       classify({ [TOKEN_A]: 'erc20' }),
     );
-    expect(result).toEqual([
-      { kind: 'erc20', token: TOKEN_A, net: 100n, transferCount: 1 },
-    ]);
+    expect(result).toEqual([{ kind: 'erc20', token: TOKEN_A, net: 100n, transferCount: 1 }]);
   });
 
   it('keeps values beyond 2^53 exact', () => {
@@ -107,9 +103,7 @@ describe('aggregateTokenHoldings erc721', () => {
       ],
       classify({ [TOKEN_A]: 'erc721' }),
     );
-    expect(result).toEqual([
-      { kind: 'erc721', token: TOKEN_A, heldIds: ['7'], transferCount: 6 },
-    ]);
+    expect(result).toEqual([{ kind: 'erc721', token: TOKEN_A, heldIds: ['7'], transferCount: 6 }]);
   });
 
   it('drops holdings when every id cancels out', () => {
@@ -155,7 +149,13 @@ describe('aggregateTokenHoldings erc1155', () => {
         // Missing tokenIds/amounts: id falls back to '?', amount to value.
         row({ standard: 'erc1155-single', value: '20', direction: 'in' }),
         // Empty arrays: same fallbacks, direction out.
-        row({ standard: 'erc1155-single', tokenIds: [], amounts: [], value: '5', direction: 'out' }),
+        row({
+          standard: 'erc1155-single',
+          tokenIds: [],
+          amounts: [],
+          value: '5',
+          direction: 'out',
+        }),
       ],
       classify({}),
     );
@@ -237,15 +237,10 @@ describe('aggregateTokenHoldings erc1155', () => {
 describe('aggregateTokenHoldings unclassified', () => {
   it('routes unknown-classified tokens with erc20 net semantics', () => {
     const result = aggregateTokenHoldings(
-      [
-        row({ value: '1000', direction: 'in' }),
-        row({ value: '250', direction: 'out' }),
-      ],
+      [row({ value: '1000', direction: 'in' }), row({ value: '250', direction: 'out' })],
       classify({}),
     );
-    expect(result).toEqual([
-      { kind: 'unclassified', token: TOKEN_A, net: 750n, transferCount: 2 },
-    ]);
+    expect(result).toEqual([{ kind: 'unclassified', token: TOKEN_A, net: 750n, transferCount: 2 }]);
   });
 
   it('drops unknown-classified holdings that cancel to zero', () => {
@@ -258,15 +253,10 @@ describe('aggregateTokenHoldings unclassified', () => {
 
   it('skips rows with unparseable values', () => {
     const result = aggregateTokenHoldings(
-      [
-        row({ value: '100', direction: 'in' }),
-        row({ value: 'xyz', direction: 'in' }),
-      ],
+      [row({ value: '100', direction: 'in' }), row({ value: 'xyz', direction: 'in' })],
       classify({}),
     );
-    expect(result).toEqual([
-      { kind: 'unclassified', token: TOKEN_A, net: 100n, transferCount: 1 },
-    ]);
+    expect(result).toEqual([{ kind: 'unclassified', token: TOKEN_A, net: 100n, transferCount: 1 }]);
   });
 
   it('splits mixed classifications across buckets in one run', () => {
@@ -293,9 +283,7 @@ describe('aggregateTokenHoldings grouping and ordering', () => {
       ],
       classify({ [TOKEN_A]: 'erc20' }),
     );
-    expect(result).toEqual([
-      { kind: 'erc20', token: TOKEN_UPPER_A, net: 6n, transferCount: 2 },
-    ]);
+    expect(result).toEqual([{ kind: 'erc20', token: TOKEN_UPPER_A, net: 6n, transferCount: 2 }]);
   });
 
   it('sorts by transferCount desc, then lowercase token asc', () => {
@@ -315,7 +303,7 @@ describe('aggregateTokenHoldings grouping and ordering', () => {
       ],
       classify({ [TOKEN_A]: 'erc20', [TOKEN_Z]: 'erc20', [TOKEN_B]: 'erc20' }),
     );
-    expect(result.map((h) => h.token)).toEqual([TOKEN_B, TOKEN_A, TOKEN_Z]);
+    expect(result.map(h => h.token)).toEqual([TOKEN_B, TOKEN_A, TOKEN_Z]);
   });
 
   it('orders erc1155 entries of one token by |net| desc then id asc', () => {
@@ -328,7 +316,7 @@ describe('aggregateTokenHoldings grouping and ordering', () => {
       ],
       classify({}),
     );
-    expect(result.map((h) => (h.kind === 'erc1155' ? h.tokenId : null))).toEqual([
+    expect(result.map(h => (h.kind === 'erc1155' ? h.tokenId : null))).toEqual([
       '3',
       '1',
       '2',

@@ -167,7 +167,8 @@ const revokeTitleStyles = css`
 
 const revokeSummaryStyles = css`
   word-break: break-word;
-  font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
+  font-family:
+    'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
   font-size: 12px;
 `;
 
@@ -687,59 +688,55 @@ export function ContractInteract({
           ? 'ERC-1155'
           : '';
   const revokeArea: ReactNode =
-    revoke === null
-      ? null
-      : revokeSelection === null || revokeFunc === null
-        ? (
-            <div className={cardStyles} data-testid="revoke-unavailable">
-              <h2>Revoke approval</h2>
-              <div>
-                This revoke link does not describe a revocable approval, so nothing was
-                pre-filled. Re-scan the address page&apos;s Approvals card and use its
-                Revoke action, or manage approvals on revoke.cash.
-              </div>
-            </div>
-          )
-        : (
-            <div className={revokeCardStyles} data-testid="revoke-intent-card">
-              <div className={revokeTitleStyles}>Revoke {kindLabel} approval</div>
-              <div className={revokeSummaryStyles}>{revokeSelection.call.summary}</div>
-              {revokeSelection.source === 'standard-fragment' ? (
-                <div role="status" className={revokeNoteStyles} data-testid="revoke-standard-abi-note">
-                  Using the standard {kindLabel} ABI — not this contract&apos;s verified ABI. A
-                  non-standard token could behave differently; verify before sending.
-                </div>
-              ) : (
-                <div role="status" className={revokeNoteStyles} data-testid="revoke-verified-abi-note">
-                  Function taken from this contract&apos;s verified ABI.
-                </div>
-              )}
-              <FunctionCallForm
-                key={`revoke-${revokeSelection.call.kind}-${revokeSelection.call.signature}`}
-                func={revokeFunc}
-                onCall={(func, args, rawArgs, value, from, stateOverride) =>
-                  void simulateWriteFunction(
-                    func,
-                    args,
-                    rawArgs,
-                    value,
-                    from,
-                    stateOverride,
-                    revokeCallAbi,
-                  )}
-                results={results}
-                errors={errors}
-                loadingStates={loadingStates}
-                chainId={chainId}
-                blockNumber={globalBlockNumber}
-                contractAddress={contractAddress}
-                walletProvider={walletProvider}
-                abi={revokeDecodeAbi}
-                initialArgs={revokeSelection.call.args}
-                defaultExpanded
-              />
-            </div>
-          );
+    revoke === null ? null : revokeSelection === null || revokeFunc === null ? (
+      <div className={cardStyles} data-testid="revoke-unavailable">
+        <h2>Revoke approval</h2>
+        <div>
+          This revoke link does not describe a revocable approval, so nothing was pre-filled.
+          Re-scan the address page&apos;s Approvals card and use its Revoke action, or manage
+          approvals on revoke.cash.
+        </div>
+      </div>
+    ) : (
+      <div className={revokeCardStyles} data-testid="revoke-intent-card">
+        <div className={revokeTitleStyles}>Revoke {kindLabel} approval</div>
+        <div className={revokeSummaryStyles}>{revokeSelection.call.summary}</div>
+        {revokeSelection.source === 'standard-fragment' ? (
+          <div role="status" className={revokeNoteStyles} data-testid="revoke-standard-abi-note">
+            Using the standard {kindLabel} ABI — not this contract&apos;s verified ABI. A
+            non-standard token could behave differently; verify before sending.
+          </div>
+        ) : (
+          <div role="status" className={revokeNoteStyles} data-testid="revoke-verified-abi-note">
+            Function taken from this contract&apos;s verified ABI.
+          </div>
+        )}
+        <FunctionCallForm
+          key={`revoke-${revokeSelection.call.kind}-${revokeSelection.call.signature}`}
+          func={revokeFunc}
+          onCall={(func, args, rawArgs, value, from, stateOverride) =>
+            void simulateWriteFunction(
+              func,
+              args,
+              rawArgs,
+              value,
+              from,
+              stateOverride,
+              revokeCallAbi,
+            )}
+          results={results}
+          errors={errors}
+          loadingStates={loadingStates}
+          chainId={chainId}
+          blockNumber={globalBlockNumber}
+          contractAddress={contractAddress}
+          walletProvider={walletProvider}
+          abi={revokeDecodeAbi}
+          initialArgs={revokeSelection.call.args}
+          defaultExpanded
+        />
+      </div>
+    );
 
   // An abiOverride alone is a fully usable ABI: only the total absence of a
   // target ABI (no server source, no paste) locks the panel — except for
@@ -760,8 +757,8 @@ export function ContractInteract({
         <div className={cardStyles}>
           <h2>{title}</h2>
           <div>
-            Contract ABI not available — only the revoke action above is offered
-            here. Paste an ABI below the tab bar to unlock the full Interact surface.
+            Contract ABI not available — only the revoke action above is offered here. Paste an ABI
+            below the tab bar to unlock the full Interact surface.
           </div>
         </div>
       </>
@@ -819,8 +816,8 @@ export function ContractInteract({
         <div role="status" className={facetNoteStyles}>
           {facetMerge.unavailable.length > 0 && (
             <div>
-              ABI unavailable for {facetMerge.unavailable.join(', ')} — those facets'
-              functions are not offered.
+              ABI unavailable for {facetMerge.unavailable.join(', ')} — those facets' functions
+              are not offered.
             </div>
           )}
           {facetMerge.skippedSignatures.length > 0 && (

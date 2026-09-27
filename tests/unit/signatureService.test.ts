@@ -39,17 +39,18 @@ const ev = (selector: string): SelectorLookup => ({ kind: 'event', selector });
 // Narrows an outcome to its resolved form for assertions; unavailable and
 // absent outcomes collapse to an empty list, which every expectation below
 // would catch as a mismatch.
-const signaturesOf = (
-  outcome: SignatureLookupOutcome | undefined,
-): string[] => (outcome !== undefined && 'signatures' in outcome ? outcome.signatures : []);
+const signaturesOf = (outcome: SignatureLookupOutcome | undefined): string[] =>
+  outcome !== undefined && 'signatures' in outcome ? outcome.signatures : [];
 
 // A minimal openchain-shaped payload: names carry the candidate list in
 // popularity order; absent selectors mean "no match". Entry shapes are
 // deliberately unknown — malformed-candidate handling is under test.
-const openchainPayload = (overrides: {
-  function?: Record<string, unknown[]>;
-  event?: Record<string, unknown[]>;
-} = {}) => ({
+const openchainPayload = (
+  overrides: {
+    function?: Record<string, unknown[]>;
+    event?: Record<string, unknown[]>;
+  } = {},
+) => ({
   ok: true,
   result: {
     function: overrides.function ?? {},
@@ -144,7 +145,9 @@ describe('SignatureService - database-first resolution', () => {
       },
     ]);
     fetchMock.mockResolvedValue(
-      okResponse(openchainPayload({ function: { [FN_SELECTOR]: [{ name: 'transfer(address,uint256)' }] } })),
+      okResponse(
+        openchainPayload({ function: { [FN_SELECTOR]: [{ name: 'transfer(address,uint256)' }] } }),
+      ),
     );
     const captured = insertCapture();
 
@@ -168,7 +171,9 @@ describe('SignatureService - database-first resolution', () => {
       { kind: 'function', selector: FN_SELECTOR, signature: 'not json', fetchedAt: hoursAgo(1) },
     ]);
     fetchMock.mockResolvedValue(
-      okResponse(openchainPayload({ function: { [FN_SELECTOR]: [{ name: 'transfer(address,uint256)' }] } })),
+      okResponse(
+        openchainPayload({ function: { [FN_SELECTOR]: [{ name: 'transfer(address,uint256)' }] } }),
+      ),
     );
     const captured = insertCapture();
 
@@ -215,8 +220,16 @@ describe('SignatureService - openchain fetch and persistence', () => {
 
     // Found candidates persist with their full ordered list.
     expect(captured[0]).toMatchObject([
-      { kind: 'function', selector: FN_SELECTOR, signature: JSON.stringify(['transfer(address,uint256)', 'foo(bytes32)']) },
-      { kind: 'event', selector: EVENT_TOPIC0, signature: JSON.stringify(['Swap(address,uint256,uint256)']) },
+      {
+        kind: 'function',
+        selector: FN_SELECTOR,
+        signature: JSON.stringify(['transfer(address,uint256)', 'foo(bytes32)']),
+      },
+      {
+        kind: 'event',
+        selector: EVENT_TOPIC0,
+        signature: JSON.stringify(['Swap(address,uint256,uint256)']),
+      },
     ]);
   });
 
@@ -269,7 +282,12 @@ describe('SignatureService - openchain fetch and persistence', () => {
       okResponse(
         openchainPayload({
           function: {
-            [FN_SELECTOR]: [{ name: 'transfer(address,uint256)' }, { noName: true }, { name: 42 }, 'junk'],
+            [FN_SELECTOR]: [
+              { name: 'transfer(address,uint256)' },
+              { noName: true },
+              { name: 42 },
+              'junk',
+            ],
           },
         }),
       ),
@@ -282,7 +300,9 @@ describe('SignatureService - openchain fetch and persistence', () => {
 
   it('shares one upstream round trip between concurrent lookups of the same selector', async () => {
     fetchMock.mockResolvedValue(
-      okResponse(openchainPayload({ function: { [FN_SELECTOR]: [{ name: 'transfer(address,uint256)' }] } })),
+      okResponse(
+        openchainPayload({ function: { [FN_SELECTOR]: [{ name: 'transfer(address,uint256)' }] } }),
+      ),
     );
 
     const [a, b] = await Promise.all([
@@ -312,7 +332,9 @@ describe('SignatureService - openchain fetch and persistence', () => {
       throw new Error('duckdb read failed');
     });
     fetchMock.mockResolvedValue(
-      okResponse(openchainPayload({ function: { [FN_SELECTOR]: [{ name: 'transfer(address,uint256)' }] } })),
+      okResponse(
+        openchainPayload({ function: { [FN_SELECTOR]: [{ name: 'transfer(address,uint256)' }] } }),
+      ),
     );
 
     const results = await signatureService.lookup([fn(FN_SELECTOR)]);

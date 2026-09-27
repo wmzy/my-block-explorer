@@ -57,8 +57,7 @@ export async function seedBuiltinLabels(db: LabelSeedDb): Promise<void> {
         target: [addressLabels.chainId, addressLabels.address],
       });
     logger.info({ count: BUILTIN_LABELS.length }, 'Seeded built-in address labels');
-  }
-  catch (error) {
+  } catch (error) {
     logger.error({ err: error }, 'Built-in label seeding failed (continuing without seeds)');
   }
 }

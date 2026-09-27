@@ -1,10 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { createLogger } from '../server/logger';
-import {
-  getValidatedChainId,
-  getValidatedAddress,
-} from '../server/validation';
+import { getValidatedChainId, getValidatedAddress } from '../server/validation';
 import { tokenTransferService } from '../services/TokenTransferService';
 import { createRateLimiter } from '../middleware/rate-limit';
 import { safeJsonResponse } from '../utils/serialization';
@@ -34,8 +31,12 @@ const SCAN_MODES = ['token', 'participant'] as const;
 // read-only: no auth gate, no DuckDB writes — symbol/decimals enrichment
 // happens in the frontend. Each miss triggers a chunked public-RPC scan,
 // so the endpoint is rate-limited per client.
-const transfersRateLimiter = createRateLimiter({ name: 'token-transfers', requestsPerMinute: 10, burst: 3 });
-app.get('/chains/:chainId/addresses/:address/transfers', transfersRateLimiter, async (c) => {
+const transfersRateLimiter = createRateLimiter({
+  name: 'token-transfers',
+  requestsPerMinute: 10,
+  burst: 3,
+});
+app.get('/chains/:chainId/addresses/:address/transfers', transfersRateLimiter, async c => {
   const chainId = getValidatedChainId(c.req.param('chainId'));
   const address = getValidatedAddress(c.req.param('address'));
 
@@ -81,8 +82,7 @@ app.get('/chains/:chainId/addresses/:address/transfers', transfersRateLimiter, a
     });
 
     return c.json(responseData);
-  }
-  catch (error) {
+  } catch (error) {
     logger.error({ err: error }, 'Token transfers API error');
     return c.json({ error: 'Failed to get token transfers' }, 500);
   }

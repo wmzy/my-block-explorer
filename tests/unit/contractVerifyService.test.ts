@@ -6,10 +6,7 @@
 // fetch is mocked — no network, no database.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
-import {
-  contractVerifyService,
-  SourcifyUnreachableError,
-} from '@/services/ContractVerifyService';
+import { contractVerifyService, SourcifyUnreachableError } from '@/services/ContractVerifyService';
 
 const CHAIN_ID = 11155111;
 const ADDRESS = '0x1f9840a85d5af5bf1d1762f925bdaddc4201f984';
@@ -173,9 +170,7 @@ describe('ContractVerifyService - wire protocol', () => {
     // The init is always passed by the service; the fetch signature keeps
     // it optional, so the tuple is asserted for property access.
     const [submitUrl, submitInit] = fetchMock.mock.calls[0] as [string, RequestInit];
-    expect(submitUrl).toBe(
-      `https://sourcify.dev/server/v2/verify/metadata/${CHAIN_ID}/${ADDRESS}`,
-    );
+    expect(submitUrl).toBe(`https://sourcify.dev/server/v2/verify/metadata/${CHAIN_ID}/${ADDRESS}`);
     expect(submitInit.method).toBe('POST');
     const sent = JSON.parse(String(submitInit.body)) as {
       metadata: { compiler: { version: string } };

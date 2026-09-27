@@ -72,7 +72,9 @@ const WELL_KNOWN_EVENTS: Record<string, { name: string; event: AbiEvent }> = {
   },
   [getEventSelector('Approval(address,address,uint256)')]: {
     name: 'Approval',
-    event: parseAbiItem('event Approval(address indexed owner, address indexed spender, uint256 value)'),
+    event: parseAbiItem(
+      'event Approval(address indexed owner, address indexed spender, uint256 value)',
+    ),
   },
   [getEventSelector('OwnershipTransferred(address,address)')]: {
     name: 'OwnershipTransferred',
@@ -218,8 +220,8 @@ export function buildDiscordMessage(
   }
   return {
     content:
-      `Watched address ${payload.address} emitted ${payload.eventName ?? 'an event'}`
-      + ` in block ${payload.blockNumber} (chain ${payload.chainId})`,
+      `Watched address ${payload.address} emitted ${payload.eventName ?? 'an event'}` +
+      ` in block ${payload.blockNumber} (chain ${payload.chainId})`,
     embeds: [embed],
   };
 }

@@ -15,20 +15,17 @@ const logger = createLogger('stats-routes');
 const RPC_TIMEOUT_MS = 3000;
 
 const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T | null> =>
-  Promise.race([
-    promise,
-    new Promise<null>(resolve => setTimeout(() => resolve(null), ms)),
-  ]);
+  Promise.race([promise, new Promise<null>(resolve => setTimeout(() => resolve(null), ms))]);
 
 const app = new Hono();
 
-app.get('/stats/overview', async (c) => {
+app.get('/stats/overview', async c => {
   try {
     const popularChainIds = POPULAR_CHAINS.map(chain => chain.id);
     const chainStats = [];
 
     const results = await Promise.all(
-      popularChainIds.map(async (chainId) => {
+      popularChainIds.map(async chainId => {
         try {
           const [blockStats, txStats, rpcBlockNumber] = await Promise.all([
             blockService.getBlockStats(chainId).catch(() => ({
@@ -44,9 +41,7 @@ app.get('/stats/overview', async (c) => {
               successRate: 0,
             })),
             withTimeout(
-              rpcManager
-                .getClient(chainId)
-                .then(client => client.getBlockNumber()),
+              rpcManager.getClient(chainId).then(client => client.getBlockNumber()),
               RPC_TIMEOUT_MS,
             ).catch(() => null),
           ]);
@@ -64,12 +59,8 @@ app.get('/stats/overview', async (c) => {
             successRate: txStats.successRate,
             rpcConnected: rpcBlockNumber !== null,
           };
-        }
-        catch (error) {
-          logger.warn(
-            { err: error, chainId },
-            'Failed to get stats for chain',
-          );
+        } catch (error) {
+          logger.warn({ err: error, chainId }, 'Failed to get stats for chain');
           return {
             chainId,
             chainName: getChainName(chainId),
@@ -91,10 +82,7 @@ app.get('/stats/overview', async (c) => {
 
     const connectedChains = chainStats.filter(ch => ch.rpcConnected).length;
     const indexedChains = chainStats.filter(ch => ch.isIndexed).length;
-    const totalIndexedBlocks = chainStats.reduce(
-      (sum, ch) => sum + ch.indexedBlocks,
-      0,
-    );
+    const totalIndexedBlocks = chainStats.reduce((sum, ch) => sum + ch.indexedBlocks, 0);
     const totalIndexedTransactions = chainStats.reduce(
       (sum, ch) => sum + ch.indexedTransactions,
       0,
@@ -112,8 +100,7 @@ app.get('/stats/overview', async (c) => {
       chains: chainStats,
       timestamp: new Date().toISOString(),
     });
-  }
-  catch (error) {
+  } catch (error) {
     logger.error({ err: error }, 'Stats overview API error');
     return c.json({ error: 'Failed to get stats overview' }, 500);
   }

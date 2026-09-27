@@ -102,19 +102,7 @@ const v6Calldata = encodeFunctionData({
         paymasterAndDataFull,
         signatureA,
       ],
-      [
-        SENDER_B,
-        0n,
-        '0x',
-        '0xdeadbeef',
-        85000n,
-        91000n,
-        21000n,
-        2n,
-        1n,
-        '0x',
-        signatureB,
-      ],
+      [SENDER_B, 0n, '0x', '0xdeadbeef', 85000n, 91000n, 21000n, 2n, 1n, '0x', signatureB],
     ],
     BENEFICIARY,
   ],
@@ -125,8 +113,28 @@ const v7Calldata = encodeFunctionData({
   functionName: 'handleOps',
   args: [
     [
-      [SENDER_A, 42n, '0x', transferCalldata, packedAccountGasLimits, 55000n, packedGasFees, PAYMASTER, signatureA],
-      [SENDER_B, 9n, initCodeA, '0x', packedAccountGasLimitsSmall, 21000n, packedGasFees, '0x', signatureB],
+      [
+        SENDER_A,
+        42n,
+        '0x',
+        transferCalldata,
+        packedAccountGasLimits,
+        55000n,
+        packedGasFees,
+        PAYMASTER,
+        signatureA,
+      ],
+      [
+        SENDER_B,
+        9n,
+        initCodeA,
+        '0x',
+        packedAccountGasLimitsSmall,
+        21000n,
+        packedGasFees,
+        '0x',
+        signatureB,
+      ],
     ],
     BENEFICIARY,
   ],
@@ -207,12 +215,17 @@ describe('userOperationEventTopic0 constants', () => {
 
   it('v0.8 topic0 is keccak256 of the v0.8 event signature', () => {
     expect(userOperationEventV8Topic0).toBe(
-      keccak256(toBytes('UserOperationEvent(bytes32,address,address,uint256,bool,uint256,uint256)')),
+      keccak256(
+        toBytes('UserOperationEvent(bytes32,address,address,uint256,bool,uint256,uint256)'),
+      ),
     );
   });
 
   it('USER_OPERATION_EVENT_TOPICS bundles both variants', () => {
-    expect(USER_OPERATION_EVENT_TOPICS).toEqual([userOperationEventTopic0, userOperationEventV8Topic0]);
+    expect(USER_OPERATION_EVENT_TOPICS).toEqual([
+      userOperationEventTopic0,
+      userOperationEventV8Topic0,
+    ]);
   });
 });
 
@@ -220,7 +233,9 @@ describe('entryPointVersionForAddress', () => {
   it('matches all three canonical EntryPoints case-insensitively', () => {
     for (const version of ['v0.6', 'v0.7', 'v0.8'] as const) {
       expect(entryPointVersionForAddress(ENTRY_POINT_ADDRESSES[version])).toBe(version);
-      expect(entryPointVersionForAddress(ENTRY_POINT_ADDRESSES[version].toLowerCase())).toBe(version);
+      expect(entryPointVersionForAddress(ENTRY_POINT_ADDRESSES[version].toLowerCase())).toBe(
+        version,
+      );
     }
   });
 
@@ -319,8 +334,18 @@ describe('decodeHandleOps guard rails', () => {
 
 describe('decodeUserOperationEvents', () => {
   it('decodes classic events, ignores unrelated topics, and skips malformed logs', () => {
-    const successLog = makeClassicLog({ sender: SENDER_A, paymaster: PAYMASTER, nonce: 5n }, true, 1000n, 500n);
-    const failedLog = makeClassicLog({ sender: SENDER_B, paymaster: ZERO_ADDRESS, nonce: 6n }, false, 2000n, 600n);
+    const successLog = makeClassicLog(
+      { sender: SENDER_A, paymaster: PAYMASTER, nonce: 5n },
+      true,
+      1000n,
+      500n,
+    );
+    const failedLog = makeClassicLog(
+      { sender: SENDER_B, paymaster: ZERO_ADDRESS, nonce: 6n },
+      false,
+      2000n,
+      600n,
+    );
     const unrelatedLog = {
       topics: topicsOf({
         abi: erc20Abi,
@@ -334,7 +359,14 @@ describe('decodeUserOperationEvents', () => {
     const noTopicsLog = { data: successLog.data };
 
     expect(
-      decodeUserOperationEvents([successLog, failedLog, unrelatedLog, shortTopicsLog, badDataLog, noTopicsLog]),
+      decodeUserOperationEvents([
+        successLog,
+        failedLog,
+        unrelatedLog,
+        shortTopicsLog,
+        badDataLog,
+        noTopicsLog,
+      ]),
     ).toEqual([
       {
         sender: SENDER_A,
@@ -359,9 +391,19 @@ describe('decodeUserOperationEvents', () => {
 
   it('decodes v0.8 events: nonce from data, sender from topics[2]', () => {
     const userOpHash = keccak256(toBytes('user-op-hash-a'));
-    const v8Log = makeV8Log({ userOpHash, sender: SENDER_A, paymaster: PAYMASTER }, 99n, false, 700n, 21n);
+    const v8Log = makeV8Log(
+      { userOpHash, sender: SENDER_A, paymaster: PAYMASTER },
+      99n,
+      false,
+      700n,
+      21n,
+    );
     const v8ZeroPaymasterLog = makeV8Log(
-      { userOpHash: keccak256(toBytes('user-op-hash-b')), sender: SENDER_B, paymaster: ZERO_ADDRESS },
+      {
+        userOpHash: keccak256(toBytes('user-op-hash-b')),
+        sender: SENDER_B,
+        paymaster: ZERO_ADDRESS,
+      },
       100n,
       true,
       1n,
@@ -409,8 +451,18 @@ describe('matchUserOpResults', () => {
       initCodePresent: false,
       gasLimits: { call: 4n, verification: 5n, pre: 6n },
     };
-    const firstEvent = makeClassicLog({ sender: SENDER_A, paymaster: PAYMASTER, nonce: 5n }, true, 100n, 10n);
-    const duplicateEvent = makeClassicLog({ sender: SENDER_A, paymaster: PAYMASTER, nonce: 5n }, false, 200n, 20n);
+    const firstEvent = makeClassicLog(
+      { sender: SENDER_A, paymaster: PAYMASTER, nonce: 5n },
+      true,
+      100n,
+      10n,
+    );
+    const duplicateEvent = makeClassicLog(
+      { sender: SENDER_A, paymaster: PAYMASTER, nonce: 5n },
+      false,
+      200n,
+      20n,
+    );
 
     expect(matchUserOpResults([firstEvent, duplicateEvent], [opA, opB])).toEqual([
       { success: false, actualGasCost: 200n, actualGasUsed: 20n },

@@ -40,20 +40,26 @@ describe('revokeIntent codec - roundtrip', () => {
 
   it('canonicalizes on both ends: uppercase addresses and leading-zero token ids', () => {
     // Mixed-case address input → lowercase canonical form out.
-    expect(
-      decodeRevokeIntent(`1.erc721.${TOKEN_CHECKSUMMED}.${SPENDER}.0077`),
-    ).toEqual({ kind: 'erc721', token: TOKEN, spender: SPENDER, tokenId: '77' });
+    expect(decodeRevokeIntent(`1.erc721.${TOKEN_CHECKSUMMED}.${SPENDER}.0077`)).toEqual({
+      kind: 'erc721',
+      token: TOKEN,
+      spender: SPENDER,
+      tokenId: '77',
+    });
     // The encoder canonicalizes too, so roundtrips are byte-stable.
     expect(
-      encodeRevokeIntent({ kind: 'erc721', token: TOKEN_CHECKSUMMED, spender: SPENDER, tokenId: '0077' }),
+      encodeRevokeIntent({
+        kind: 'erc721',
+        token: TOKEN_CHECKSUMMED,
+        spender: SPENDER,
+        tokenId: '0077',
+      }),
     ).toBe(`1.erc721.${TOKEN}.${SPENDER}.77`);
   });
 
   it('rejects invalid intents at encode time with null (callers omit the link)', () => {
     expect(encodeRevokeIntent({ kind: 'erc20', token: '0xnope', spender: SPENDER })).toBeNull();
-    expect(
-      encodeRevokeIntent({ kind: 'erc721', token: TOKEN, spender: SPENDER }),
-    ).toBeNull(); // missing tokenId
+    expect(encodeRevokeIntent({ kind: 'erc721', token: TOKEN, spender: SPENDER })).toBeNull(); // missing tokenId
     expect(
       encodeRevokeIntent({ kind: 'erc721', token: TOKEN, spender: SPENDER, tokenId: '7x7' }),
     ).toBeNull();
@@ -136,7 +142,11 @@ describe('buildRevokeCall - per-kind standard call', () => {
 
 describe('resolveRevokeTarget - function selection preference', () => {
   // Structural candidates as parseContractFunctionsUnified would emit.
-  const fn = (name: string, inputs: readonly { type: string }[], interactionType: 'read' | 'write') => ({
+  const fn = (
+    name: string,
+    inputs: readonly { type: string }[],
+    interactionType: 'read' | 'write',
+  ) => ({
     name,
     inputs,
     interactionType,
@@ -171,10 +181,9 @@ describe('resolveRevokeTarget - function selection preference', () => {
       resolveRevokeTarget(erc20, [fn('approve', [{ type: 'address' }], 'write')])?.source,
     ).toBe('standard-fragment');
     expect(
-      resolveRevokeTarget(
-        erc20,
-        [fn('approve', [{ type: 'address' }, { type: 'uint256' }, { type: 'bytes' }], 'write')],
-      )?.source,
+      resolveRevokeTarget(erc20, [
+        fn('approve', [{ type: 'address' }, { type: 'uint256' }, { type: 'bytes' }], 'write'),
+      ])?.source,
     ).toBe('standard-fragment');
   });
 

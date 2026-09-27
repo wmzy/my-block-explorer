@@ -80,8 +80,7 @@ export function AddCustomChainForm({
     }
 
     const decimalsTrimmed = decimals.trim();
-    const decimalsValue
-      = decimalsTrimmed === '' ? undefined : Number(decimalsTrimmed);
+    const decimalsValue = decimalsTrimmed === '' ? undefined : Number(decimalsTrimmed);
     if (decimalsValue !== undefined && !Number.isInteger(decimalsValue)) {
       setError('Decimals must be a whole number (typically 18).');
       return;
@@ -97,21 +96,17 @@ export function AddCustomChainForm({
         decimals: decimalsValue,
       });
       onAdded(chain);
-    }
-    catch (e) {
+    } catch (e) {
       if (e instanceof ApiError && e.status === 403) {
         setError(
           'This server requires an admin token for chain registration — set it in the ⚙ RPC panel, then retry.',
         );
-      }
-      else if (e instanceof ApiError) {
+      } else if (e instanceof ApiError) {
         setError(e.message);
-      }
-      else {
+      } else {
         setError('Adding the chain failed.');
       }
-    }
-    finally {
+    } finally {
       setSubmitting(false);
     }
   };

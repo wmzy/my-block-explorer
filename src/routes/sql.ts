@@ -49,9 +49,28 @@ app.use('/sql/*', requireAdminToken);
 // session mutations (PRAGMA/SET/RESET/USE), and statement-indirection
 // escapes (CALL/PREPARE/EXECUTE).
 const FORBIDDEN_WORDS = [
-  'INSERT', 'UPDATE', 'DELETE', 'INTO', 'CREATE', 'DROP', 'ALTER',
-  'TRUNCATE', 'COPY', 'ATTACH', 'DETACH', 'PRAGMA', 'INSTALL', 'LOAD',
-  'EXPORT', 'IMPORT', 'CALL', 'EXECUTE', 'PREPARE', 'SET', 'RESET', 'USE',
+  'INSERT',
+  'UPDATE',
+  'DELETE',
+  'INTO',
+  'CREATE',
+  'DROP',
+  'ALTER',
+  'TRUNCATE',
+  'COPY',
+  'ATTACH',
+  'DETACH',
+  'PRAGMA',
+  'INSTALL',
+  'LOAD',
+  'EXPORT',
+  'IMPORT',
+  'CALL',
+  'EXECUTE',
+  'PREPARE',
+  'SET',
+  'RESET',
+  'USE',
 ] as const;
 
 const forbiddenWordPatterns = FORBIDDEN_WORDS.map(word => ({
@@ -105,12 +124,7 @@ export const MAX_RESULT_ROWS = 500;
 
 // JSON-safe cell value: what the API returns after normalization.
 export type SqlJsonValue =
-  | null
-  | boolean
-  | number
-  | string
-  | SqlJsonValue[]
-  | { [key: string]: SqlJsonValue };
+  null | boolean | number | string | SqlJsonValue[] | { [key: string]: SqlJsonValue };
 
 const bytesToHex = (bytes: Uint8Array): string => {
   let out = '0x';
@@ -187,16 +201,11 @@ app.post('/sql/query', sqlQueryRateLimiter, async c => {
       // Read one row past the cap so `truncated` is a measured fact.
       // runAndReadUntil stops after the chunk covering row 501 — it never
       // materializes a whole giant result just to cap it.
-      const result: DuckDBResultReader = await conn.runAndReadUntil(
-        query,
-        MAX_RESULT_ROWS + 1,
-      );
+      const result: DuckDBResultReader = await conn.runAndReadUntil(query, MAX_RESULT_ROWS + 1);
       const columns = result.deduplicatedColumnNames();
       const allRows = result.getRowsJS();
       const truncated = allRows.length > MAX_RESULT_ROWS;
-      const rows = allRows
-        .slice(0, MAX_RESULT_ROWS)
-        .map(row => row.map(normalizeSqlCell));
+      const rows = allRows.slice(0, MAX_RESULT_ROWS).map(row => row.map(normalizeSqlCell));
       return c.json({ columns, rows, rowCount: rows.length, truncated });
     } finally {
       conn.disconnectSync();

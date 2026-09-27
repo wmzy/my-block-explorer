@@ -272,7 +272,11 @@ describe('aggregateDailyGas', () => {
 
   it('averages a full day and marks it complete', () => {
     const point = aggregateDailyGas(0, 100, 103, [
-      { oldestBlock: 100, baseFeePerGas: [wei(10), wei(20), wei(30)], reward: [[wei(1)], [wei(2)], [wei(3)]] },
+      {
+        oldestBlock: 100,
+        baseFeePerGas: [wei(10), wei(20), wei(30)],
+        reward: [[wei(1)], [wei(2)], [wei(3)]],
+      },
     ]);
     expect(point).not.toBeNull();
     expect(point?.coveredBlocks).toBe(3);
@@ -285,8 +289,16 @@ describe('aggregateDailyGas', () => {
 
   it('merges chunked windows and clips blocks outside the day span', () => {
     const point = aggregateDailyGas(0, 100, 104, [
-      { oldestBlock: 99, baseFeePerGas: [wei(1), wei(10), wei(10)], reward: [[wei(1)], [wei(1)], [wei(1)]] },
-      { oldestBlock: 102, baseFeePerGas: [wei(30), wei(40), wei(999)], reward: [[wei(4)], [wei(4)], [wei(4)]] },
+      {
+        oldestBlock: 99,
+        baseFeePerGas: [wei(1), wei(10), wei(10)],
+        reward: [[wei(1)], [wei(1)], [wei(1)]],
+      },
+      {
+        oldestBlock: 102,
+        baseFeePerGas: [wei(30), wei(40), wei(999)],
+        reward: [[wei(4)], [wei(4)], [wei(4)]],
+      },
     ]);
     // Block 99 is before the span; block 104 is past the exclusive end.
     expect(point?.coveredBlocks).toBe(4);
@@ -361,13 +373,13 @@ describe('gasCoverageLabel', () => {
       gasCoveredBlocks: 9_000,
       gasExpectedBlocks: 10_000,
     });
-    expect(label).toBe(
-      'fee windows cover 9,000 of 10,000 charted blocks (90.0%) · #100–#189',
-    );
+    expect(label).toBe('fee windows cover 9,000 of 10,000 charted blocks (90.0%) · #100–#189');
   });
 
   it('returns null with nothing charted', () => {
-    expect(gasCoverageLabel({ gasDaily: [], gasCoveredBlocks: 0, gasExpectedBlocks: 0 })).toBeNull();
+    expect(
+      gasCoverageLabel({ gasDaily: [], gasCoveredBlocks: 0, gasExpectedBlocks: 0 }),
+    ).toBeNull();
   });
 });
 
@@ -653,7 +665,11 @@ describe('fetchChartStats', () => {
     }
     const firstTxDay = snapshot.txPerDay[0];
     const firstSpanStart = expectedBoundary(snapshot.gridDayStarts[0]);
-    const firstSamples = sampledTxPositions(firstSpanStart, firstSpanStart + 7200, TX_SAMPLES_PER_DAY);
+    const firstSamples = sampledTxPositions(
+      firstSpanStart,
+      firstSpanStart + 7200,
+      TX_SAMPLES_PER_DAY,
+    );
     expect(firstTxDay.transactions).toBe(
       Math.round(
         (firstSamples.reduce((total, block) => total + txCountOf(block), 0) * 7200) /
@@ -750,9 +766,7 @@ describe('fetchChartStats', () => {
     expect(thinned?.samples).toBe(13);
     const answered = spanOf(thinDayStart).slice(3);
     expect(thinned?.transactions).toBe(
-      Math.round(
-        (answered.reduce((total, block) => total + txCountOf(block), 0) * 7200) / 13,
-      ),
+      Math.round((answered.reduce((total, block) => total + txCountOf(block), 0) * 7200) / 13),
     );
     // Every sample was still attempted — flakiness spends the budget, it
     // does not shortcut it.

@@ -143,9 +143,7 @@ export type ParseBackupError =
   | { kind: 'malformed'; message: string };
 
 /** parseBackup result: validated parts, or a typed error — never both, never neither. */
-export type ParsedBackup =
-  | { ok: true; file: BackupFile }
-  | { ok: false; error: ParseBackupError };
+export type ParsedBackup = { ok: true; file: BackupFile } | { ok: false; error: ParseBackupError };
 
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -165,7 +163,11 @@ export function parseBackupLabelRow(row: unknown): BackupLabelRow | null {
   const { chainId, address, label, note, source, updatedAt } = row;
   if (typeof chainId !== 'number' || !Number.isInteger(chainId) || chainId <= 0) return null;
   if (typeof address !== 'string' || !HEX_ADDRESS_RE.test(address)) return null;
-  if (typeof label !== 'string' || label.trim().length < 1 || label.trim().length > LABEL_MAX_LENGTH) {
+  if (
+    typeof label !== 'string' ||
+    label.trim().length < 1 ||
+    label.trim().length > LABEL_MAX_LENGTH
+  ) {
     return null;
   }
   if (note !== null && typeof note !== 'string') return null;
@@ -197,14 +199,16 @@ export function parseBackup(json: string): ParsedBackup {
   let raw: unknown;
   try {
     raw = JSON.parse(json);
-  }
-  catch {
+  } catch {
     return { ok: false, error: { kind: 'not_json', message: 'The file is not valid JSON.' } };
   }
   if (!isPlainObject(raw)) return malformed('The backup must be a JSON object.');
 
   if (typeof raw.version !== 'number' || !SUPPORTED_BACKUP_VERSIONS.includes(raw.version)) {
-    const found = raw.version === undefined ? 'missing' : `got ${JSON.stringify(raw.version) ?? 'an unknown value'}`;
+    const found =
+      raw.version === undefined
+        ? 'missing'
+        : `got ${JSON.stringify(raw.version) ?? 'an unknown value'}`;
     return {
       ok: false,
       error: {
@@ -285,10 +289,10 @@ export function parseBackup(json: string): ParsedBackup {
   for (let i = 0; i < abiRows.length; i++) {
     const row = abiRows[i];
     if (
-      !isPlainObject(row)
-      || typeof row.key !== 'string'
-      || typeof row.abi !== 'string'
-      || row.abi.length === 0
+      !isPlainObject(row) ||
+      typeof row.key !== 'string' ||
+      typeof row.abi !== 'string' ||
+      row.abi.length === 0
     ) {
       return malformed(`browser.customAbis[${i}] must be an {key, abi} object.`);
     }
@@ -344,7 +348,9 @@ export function parseBackup(json: string): ParsedBackup {
       }
       const dedupeKey = `${chainId}:${checksummed.toLowerCase()}`;
       if (seenNotes.has(dedupeKey)) {
-        return malformed(`browser.privateNotes[${i}] duplicates an earlier note for the same address.`);
+        return malformed(
+          `browser.privateNotes[${i}] duplicates an earlier note for the same address.`,
+        );
       }
       seenNotes.add(dedupeKey);
       privateNotes.push({ chainId, address: checksummed, note: trimmed });

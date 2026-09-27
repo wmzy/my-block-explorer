@@ -770,10 +770,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
   // and a stale pre-pause rate would be a lie.
   const rangeEtaText = (range: IndexingRange): string | null => {
     if (range.status !== 'indexing') return null;
-    const eta = estimateRangeEta(
-      etaTrackersRef.current.get(range.rangeId)?.samples ?? [],
-      range,
-    );
+    const eta = estimateRangeEta(etaTrackersRef.current.get(range.rangeId)?.samples ?? [], range);
     return eta === null ? null : `~${formatEtaDuration(eta.remainingMs)} remaining (est.)`;
   };
   // Data-staleness banner: how far the furthest indexed block trails the
@@ -783,85 +780,93 @@ export const IndexingRangeManager: React.FC<Props> = ({
   // 'Indexed through block 0'.
   const maxCurrentBlock = furthestIndexedBlock(ranges);
   const stalenessGap =
-    headBlock > 0 && maxCurrentBlock !== null
-      ? Math.max(0, headBlock - maxCurrentBlock)
-      : null;
-  const handleAddRange = useCallback(async (confirmOverlap = false) => {
-    const validBlockTags = ['latest', 'finalized', 'safe', 'earliest'];
-    const fromBlockValue = formState.fromBlock.toLowerCase();
-    const toBlockValue = formState.toBlock.toLowerCase();
+    headBlock > 0 && maxCurrentBlock !== null ? Math.max(0, headBlock - maxCurrentBlock) : null;
+  const handleAddRange = useCallback(
+    async (confirmOverlap = false) => {
+      const validBlockTags = ['latest', 'finalized', 'safe', 'earliest'];
+      const fromBlockValue = formState.fromBlock.toLowerCase();
+      const toBlockValue = formState.toBlock.toLowerCase();
 
-    const isFromTag = validBlockTags.includes(fromBlockValue);
-    const isToTag = validBlockTags.includes(toBlockValue);
+      const isFromTag = validBlockTags.includes(fromBlockValue);
+      const isToTag = validBlockTags.includes(toBlockValue);
 
-    const fromBlock = isFromTag ? fromBlockValue : parseInt(formState.fromBlock);
-    const toBlock = isToTag ? toBlockValue : parseInt(formState.toBlock);
+      const fromBlock = isFromTag ? fromBlockValue : parseInt(formState.fromBlock);
+      const toBlock = isToTag ? toBlockValue : parseInt(formState.toBlock);
 
-    if (!isFromTag && isNaN(fromBlock as number)) {
-      toast.error('Please enter valid block numbers or tags (latest, finalized, safe, earliest)');
-      return;
-    }
-    if (!isToTag && isNaN(toBlock as number)) {
-      toast.error('Please enter valid block numbers or tags (latest, finalized, safe, earliest)');
-      return;
-    }
-    if (!isFromTag && !isToTag && (fromBlock as number) >= (toBlock as number)) {
-      toast.error('From block must be less than to block');
-      return;
-    }
-    if (!isFromTag && hasKnownCreationBlock && (fromBlock as number) < creationBlockNumber) {
-      toast.error(
-        `From block cannot be before contract creation block (${creationBlockNumber})`,
-      );
-      return;
-    }
-    // Client-side overlap precheck against the already-loaded list: the
-    // first submit only reveals the warning and relabels the submit button
-    // to 'Create anyway'; the second click (confirmOverlap) runs the POST.
-    // Tagged bounds ('latest', …) cannot be resolved to a stable integer
-    // client-side, so they skip the gate and rely on the server-side
-    // post-hoc overlap warning.
-    if (!isFromTag && !isToTag && !confirmOverlap) {
-      const overlapping = findFirstOverlap(ranges, fromBlock as number, toBlock as number);
-      if (overlapping) {
-        setOverlapGate({ source: 'manual', range: overlapping });
+      if (!isFromTag && isNaN(fromBlock as number)) {
+        toast.error('Please enter valid block numbers or tags (latest, finalized, safe, earliest)');
         return;
       }
-    }
-    setActionLoading(-1);
-    try {
-      const data = await post<{
-        overlaps?: Overlap[];
-        message?: string;
-        error?: string;
-        truncatedToBlock?: number;
-      }>(`/api/chains/${chainId}/contracts/${contractAddress}/events/ranges`, {
-        fromBlock: isFromTag ? fromBlockValue : fromBlock,
-        toBlock: isToTag ? toBlockValue : toBlock,
-        direction: formState.direction,
-      });
-      setFormState(defaultFormState);
-      setShowAddForm(false);
-      // Surface a clamped toBlock as an inline notice (cleared when the
-      // next add resolves — with null when that one was not truncated).
-      setTruncatedNotice(
-        typeof data.truncatedToBlock === 'number' ? data.truncatedToBlock : null,
-      );
-      await fetchRanges();
-      if (data.overlaps && data.overlaps.length > 0) {
-        setOverlaps(data.overlaps);
+      if (!isToTag && isNaN(toBlock as number)) {
+        toast.error('Please enter valid block numbers or tags (latest, finalized, safe, earliest)');
+        return;
       }
-      onRefresh?.();
-    } catch (error) {
-      console.error('Failed to add range:', error);
-      toast.error(describeMutationError(error, 'Failed to add range'));
-    } finally {
-      setActionLoading(null);
-      // The submit resolved — drop any armed confirmation so the form
-      // returns to its one-click baseline.
-      setOverlapGate(null);
-    }
-  }, [chainId, contractAddress, formState, ranges, creationBlockNumber, hasKnownCreationBlock, fetchRanges, onRefresh]);
+      if (!isFromTag && !isToTag && (fromBlock as number) >= (toBlock as number)) {
+        toast.error('From block must be less than to block');
+        return;
+      }
+      if (!isFromTag && hasKnownCreationBlock && (fromBlock as number) < creationBlockNumber) {
+        toast.error(`From block cannot be before contract creation block (${creationBlockNumber})`);
+        return;
+      }
+      // Client-side overlap precheck against the already-loaded list: the
+      // first submit only reveals the warning and relabels the submit button
+      // to 'Create anyway'; the second click (confirmOverlap) runs the POST.
+      // Tagged bounds ('latest', …) cannot be resolved to a stable integer
+      // client-side, so they skip the gate and rely on the server-side
+      // post-hoc overlap warning.
+      if (!isFromTag && !isToTag && !confirmOverlap) {
+        const overlapping = findFirstOverlap(ranges, fromBlock as number, toBlock as number);
+        if (overlapping) {
+          setOverlapGate({ source: 'manual', range: overlapping });
+          return;
+        }
+      }
+      setActionLoading(-1);
+      try {
+        const data = await post<{
+          overlaps?: Overlap[];
+          message?: string;
+          error?: string;
+          truncatedToBlock?: number;
+        }>(`/api/chains/${chainId}/contracts/${contractAddress}/events/ranges`, {
+          fromBlock: isFromTag ? fromBlockValue : fromBlock,
+          toBlock: isToTag ? toBlockValue : toBlock,
+          direction: formState.direction,
+        });
+        setFormState(defaultFormState);
+        setShowAddForm(false);
+        // Surface a clamped toBlock as an inline notice (cleared when the
+        // next add resolves — with null when that one was not truncated).
+        setTruncatedNotice(
+          typeof data.truncatedToBlock === 'number' ? data.truncatedToBlock : null,
+        );
+        await fetchRanges();
+        if (data.overlaps && data.overlaps.length > 0) {
+          setOverlaps(data.overlaps);
+        }
+        onRefresh?.();
+      } catch (error) {
+        console.error('Failed to add range:', error);
+        toast.error(describeMutationError(error, 'Failed to add range'));
+      } finally {
+        setActionLoading(null);
+        // The submit resolved — drop any armed confirmation so the form
+        // returns to its one-click baseline.
+        setOverlapGate(null);
+      }
+    },
+    [
+      chainId,
+      contractAddress,
+      formState,
+      ranges,
+      creationBlockNumber,
+      hasKnownCreationBlock,
+      fetchRanges,
+      onRefresh,
+    ],
+  );
   // Shared runner for every quick-create entry point (the quick form's
   // Create button, Catch up to head, and the empty-state one-clicks): POST
   // /ranges/quick — the backend creates the range AND auto-starts it in
@@ -910,8 +915,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
         if (
           mode === 'all' &&
           error instanceof ApiError &&
-          (error.details as { reason?: string } | undefined)?.reason ===
-          'full-history-unconfirmed'
+          (error.details as { reason?: string } | undefined)?.reason === 'full-history-unconfirmed'
         ) {
           const details = error.details as { spanBlocks?: number } | undefined;
           setFullHistoryGate({ spanBlocks: details?.spanBlocks ?? 0 });
@@ -938,45 +942,44 @@ export const IndexingRangeManager: React.FC<Props> = ({
       fullHistoryConfirmed,
     ],
   );
-  const handleQuickCreate = useCallback(async (confirmOverlap = false) => {
-    const { mode, blockCount } = quickFormState;
-    const needsBlockCount = ['recent', 'first', 'continue'].includes(mode);
-    const blockCountNum = needsBlockCount ? parseInt(blockCount) : 0;
+  const handleQuickCreate = useCallback(
+    async (confirmOverlap = false) => {
+      const { mode, blockCount } = quickFormState;
+      const needsBlockCount = ['recent', 'first', 'continue'].includes(mode);
+      const blockCountNum = needsBlockCount ? parseInt(blockCount) : 0;
 
-    if (needsBlockCount && (isNaN(blockCountNum) || blockCountNum <= 0)) {
-      toast.error('Please enter a valid block count');
-      return;
-    }
-
-    // Same client-side overlap precheck as the manual form, mirroring the
-    // backend's quick-mode bounds (see quickModeBounds). Exempt or
-    // non-computable modes return null and POST directly.
-    if (!confirmOverlap) {
-      const bounds = quickModeBounds(
-        mode,
-        needsBlockCount ? blockCountNum : undefined,
-        creationBlockNumber,
-        headBlock,
-      );
-      const overlapping = bounds ? findFirstOverlap(ranges, bounds.from, bounds.to) : null;
-      if (overlapping) {
-        setOverlapGate({ source: 'quick', range: overlapping });
+      if (needsBlockCount && (isNaN(blockCountNum) || blockCountNum <= 0)) {
+        toast.error('Please enter a valid block count');
         return;
       }
-    }
 
-    const created = await runQuickCreate(
-      mode,
-      needsBlockCount ? blockCountNum : undefined,
-      -2,
-    );
-    // runQuickCreate never throws (it catches internally), so the gate
-    // always clears once the submit resolves.
-    setOverlapGate(null);
-    if (created) {
-      setQuickFormState(defaultQuickFormState);
-    }
-  }, [quickFormState, ranges, creationBlockNumber, headBlock, runQuickCreate]);
+      // Same client-side overlap precheck as the manual form, mirroring the
+      // backend's quick-mode bounds (see quickModeBounds). Exempt or
+      // non-computable modes return null and POST directly.
+      if (!confirmOverlap) {
+        const bounds = quickModeBounds(
+          mode,
+          needsBlockCount ? blockCountNum : undefined,
+          creationBlockNumber,
+          headBlock,
+        );
+        const overlapping = bounds ? findFirstOverlap(ranges, bounds.from, bounds.to) : null;
+        if (overlapping) {
+          setOverlapGate({ source: 'quick', range: overlapping });
+          return;
+        }
+      }
+
+      const created = await runQuickCreate(mode, needsBlockCount ? blockCountNum : undefined, -2);
+      // runQuickCreate never throws (it catches internally), so the gate
+      // always clears once the submit resolves.
+      setOverlapGate(null);
+      if (created) {
+        setQuickFormState(defaultQuickFormState);
+      }
+    },
+    [quickFormState, ranges, creationBlockNumber, headBlock, runQuickCreate],
+  );
   // One-click catch-up: the backend quick mode 'catchup' creates a range
   // from the furthest existing toBlock (inclusive) to the current head and
   // auto-starts it like every quick mode.
@@ -1132,8 +1135,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
     const canPause = range.status === 'indexing';
     const canResume = range.status === 'paused' || range.status === 'error';
     const canDelete = range.status !== 'indexing';
-    const resumeLabel =
-      range.status === 'error' ? 'Resume (continues from checkpoint)' : 'Resume';
+    const resumeLabel = range.status === 'error' ? 'Resume (continues from checkpoint)' : 'Resume';
     return (
       <div style={{ display: 'flex', gap: '8px' }}>
         {canStart && (
@@ -1365,8 +1367,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
                         the estimate is still forming. */}
                     {CHECKPOINTED_RANGE_STATUSES.has(range.status) && range.currentBlock && (
                       <>
-                        Progress: {calculateProgress(range)}
-                        %
+                        Progress: {calculateProgress(range)}%
                         {range.direction === 'forward'
                           ? `(${formatBlock(range.currentBlock)} / ${formatBlock(range.toBlock)})`
                           : `(${formatBlock(range.fromBlock)} / ${formatBlock(range.currentBlock)})`}
@@ -1377,7 +1378,9 @@ export const IndexingRangeManager: React.FC<Props> = ({
                       <span>{range.totalEventsIndexed.toLocaleString()} events indexed</span>
                     )}
                     {range.errorMessage && (
-                      <span style={{ color: 'var(--haze-color-danger)' }}>{range.errorMessage}</span>
+                      <span style={{ color: 'var(--haze-color-danger)' }}>
+                        {range.errorMessage}
+                      </span>
                     )}
                   </div>
                 </div>
@@ -1391,7 +1394,12 @@ export const IndexingRangeManager: React.FC<Props> = ({
         <>
           <div className={quickActionsStyles}>
             <span
-              style={{ fontSize: '12px', color: 'var(--haze-color-info)', fontWeight: 500, marginRight: '8px' }}
+              style={{
+                fontSize: '12px',
+                color: 'var(--haze-color-info)',
+                fontWeight: 500,
+                marginRight: '8px',
+              }}
             >
               Quick Create:
             </span>
@@ -1425,9 +1433,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
                 resetFullHistoryGate();
               }}
               disabled={actionLoading !== null || !hasKnownCreationBlock}
-              title={
-                hasKnownCreationBlock ? undefined : 'Contract creation block unknown'
-              }
+              title={hasKnownCreationBlock ? undefined : 'Contract creation block unknown'}
             >
               First Blocks
             </button>
@@ -1481,7 +1487,9 @@ export const IndexingRangeManager: React.FC<Props> = ({
               <input
                 type="text"
                 placeholder={
-                  hasKnownCreationBlock ? creationBlockNumber.toString() : 'start block (or earliest)'
+                  hasKnownCreationBlock
+                    ? creationBlockNumber.toString()
+                    : 'start block (or earliest)'
                 }
                 value={formState.fromBlock}
                 onChange={e => {

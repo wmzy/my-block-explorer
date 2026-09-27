@@ -43,7 +43,9 @@ const OTHER_AUXDATA =
 
 const RUNTIME = '60806040523480156100115760006000fdff';
 
-const standardInput = (sources: Record<string, string> = { 'Storage.sol': 'contract Storage {}' }) => ({
+const standardInput = (
+  sources: Record<string, string> = { 'Storage.sol': 'contract Storage {}' },
+) => ({
   language: 'Solidity',
   sources: Object.fromEntries(Object.entries(sources).map(([k, v]) => [k, { content: v }])),
   settings: {
@@ -131,7 +133,9 @@ describe('verifyByCompilation — match tiers', () => {
 
   it('answers mismatch with the first differing byte offset and no save payload', async () => {
     const { service } = createHarness({
-      compileReturn: compileOutput(`0x60806040523480156100115760006000fdfe${auxdataBlock(AUXDATA)}`),
+      compileReturn: compileOutput(
+        `0x60806040523480156100115760006000fdfe${auxdataBlock(AUXDATA)}`,
+      ),
     });
     const outcome = await service.verifyByCompilation(CHAIN_ID, ADDRESS, {
       compilerVersion: LONG_VERSION,
@@ -187,7 +191,9 @@ describe('verifyByCompilation — input and contract resolution', () => {
         compilerVersion: undefined,
         standardJsonInput: standardInput(),
       }),
-    ).rejects.toSatisfy((error: unknown) => error instanceof CompileVerifyHttpError && error.code === 'invalid_input');
+    ).rejects.toSatisfy(
+      (error: unknown) => error instanceof CompileVerifyHttpError && error.code === 'invalid_input',
+    );
     await expect(
       service.verifyByCompilation(CHAIN_ID, ADDRESS, {
         compilerVersion: 42,
@@ -199,7 +205,9 @@ describe('verifyByCompilation — input and contract resolution', () => {
         compilerVersion: LONG_VERSION,
         standardJsonInput: { language: 'Yul' },
       }),
-    ).rejects.toSatisfy((error: unknown) => error instanceof CompileVerifyHttpError && error.code === 'invalid_input');
+    ).rejects.toSatisfy(
+      (error: unknown) => error instanceof CompileVerifyHttpError && error.code === 'invalid_input',
+    );
   });
 
   it('rejects versions that are not in the official list', async () => {
@@ -252,9 +260,7 @@ describe('verifyByCompilation — honest domain outcomes', () => {
   it('passes compiler errors through verbatim as a 200-tier compile_error', async () => {
     const { service } = createHarness({
       compileReturn: {
-        errors: [
-          { severity: 'error', formattedMessage: 'ParserError: Expected pragma...' },
-        ],
+        errors: [{ severity: 'error', formattedMessage: 'ParserError: Expected pragma...' }],
       },
     });
     const outcome = await service.verifyByCompilation(CHAIN_ID, ADDRESS, {

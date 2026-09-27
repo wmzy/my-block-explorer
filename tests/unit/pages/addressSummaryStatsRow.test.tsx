@@ -10,10 +10,7 @@ import { render, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 // SummaryStatsRow (and the page module it lives in) — vitest hoists the
 // vi.mock registrations below above this import.
-import {
-  SummaryStatsRow,
-  resetBlockTimestampCacheForTests,
-} from '@/views/Address/index';
+import { SummaryStatsRow, resetBlockTimestampCacheForTests } from '@/views/Address/index';
 
 const rpcMocks = vi.hoisted(() => ({
   createRpcClient: vi.fn(),
@@ -99,10 +96,7 @@ describe('SummaryStatsRow', () => {
   it('falls back to block numbers while pending, then resolves dates via one cached getBlock per boundary', async () => {
     const getBlock = vi.fn().mockResolvedValue({ timestamp: 1_700_000_000n });
     rpcMocks.createRpcClient.mockResolvedValue({ getBlock });
-    const rows = [
-      row({ blockNumber: '100', value: '1' }),
-      row({ blockNumber: '200', value: '2' }),
-    ];
+    const rows = [row({ blockNumber: '100', value: '1' }), row({ blockNumber: '200', value: '2' })];
     const { rerender } = render(<SummaryStatsRow {...props} rows={rows} />);
     // No row timestamps: honest block fallback immediately.
     expect(screen.getByText('First Seen').nextElementSibling).toHaveTextContent('Block 100');
@@ -129,9 +123,7 @@ describe('SummaryStatsRow', () => {
 
   it('keeps the block-number fallback when the boundary lookup fails', async () => {
     rpcMocks.createRpcClient.mockRejectedValue(new Error('rpc down'));
-    render(
-      <SummaryStatsRow {...props} rows={[row({ blockNumber: '300', value: '1' })]} />,
-    );
+    render(<SummaryStatsRow {...props} rows={[row({ blockNumber: '300', value: '1' })]} />);
     // Give the failure path its async turns; the fallback must persist.
     await waitFor(
       () => {

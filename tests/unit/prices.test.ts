@@ -88,16 +88,12 @@ describe('fetchUsdPrices', () => {
   });
 
   it('resolves snapshots from the coins payload, keyed by id', async () => {
-    fetchMock.mockResolvedValue(
-      llamaResponse({ [ETH]: { price: 2740.68, symbol: 'ETH' } }),
-    );
+    fetchMock.mockResolvedValue(llamaResponse({ [ETH]: { price: 2740.68, symbol: 'ETH' } }));
 
     const result = await fetchUsdPrices([ETH]);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(String(fetchMock.mock.calls[0][0])).toBe(
-      `https://coins.llama.fi/prices/current/${ETH}`,
-    );
+    expect(String(fetchMock.mock.calls[0][0])).toBe(`https://coins.llama.fi/prices/current/${ETH}`);
     expect(result.get(ETH)?.usd).toBe(2740.68);
   });
 
@@ -164,10 +160,7 @@ describe('fetchUsdPrices', () => {
   it('shares one request between concurrent calls for the same subject', async () => {
     fetchMock.mockResolvedValue(llamaResponse({ [ETH]: { price: 2 } }));
 
-    const [a, b] = await Promise.all([
-      fetchUsdPrices([ETH]),
-      fetchUsdPrices([ETH]),
-    ]);
+    const [a, b] = await Promise.all([fetchUsdPrices([ETH]), fetchUsdPrices([ETH])]);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(a.get(ETH)?.usd).toBe(2);
@@ -304,16 +297,16 @@ describe('useTokenUsdPrices', () => {
       }),
     );
 
-    const { result } = renderHook(() =>
-      useTokenUsdPrices(1, [TOKEN_A.toUpperCase(), TOKEN_B]),
-    );
+    const { result } = renderHook(() => useTokenUsdPrices(1, [TOKEN_A.toUpperCase(), TOKEN_B]));
 
     await waitFor(() => {
       expect(result.current).toBeDefined();
     });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(
-      String(fetchMock.mock.calls[0][0]).endsWith(`/current/ethereum:${TOKEN_A},ethereum:${TOKEN_B}`),
+      String(fetchMock.mock.calls[0][0]).endsWith(
+        `/current/ethereum:${TOKEN_A},ethereum:${TOKEN_B}`,
+      ),
     ).toBe(true);
     expect(result.current?.get(TOKEN_A)?.usd).toBe(1.5);
     expect(result.current?.has(TOKEN_B)).toBe(false);
@@ -322,9 +315,7 @@ describe('useTokenUsdPrices', () => {
   it('drops invalid addresses from the request without failing the batch', async () => {
     fetchMock.mockResolvedValue(llamaResponse({}));
 
-    const { result } = renderHook(() =>
-      useTokenUsdPrices(1, ['not-an-address', TOKEN_A]),
-    );
+    const { result } = renderHook(() => useTokenUsdPrices(1, ['not-an-address', TOKEN_A]));
 
     await waitFor(() => {
       expect(result.current).toBeDefined();

@@ -82,9 +82,9 @@ export class ZeroConfigManager {
     const nodeVersion = process.version;
     const majorVersion = parseInt(nodeVersion.slice(1).split('.')[0]);
 
-    if (majorVersion < 22) {
+    if (majorVersion < 26) {
       throw new Error(
-        `Node.js version ${nodeVersion} is not supported. Please upgrade to Node.js 22 or later.`,
+        `Node.js version ${nodeVersion} is not supported. Please upgrade to Node.js 26 or later.`,
       );
     }
 

@@ -63,8 +63,7 @@ export type SourcifyVerifyOutcome =
 // narrowed Record so the route can hand it straight to submitVerification
 // without re-asserting the shape.
 export type VerificationFilesValidation =
-  | { ok: true; files: Record<string, string> }
-  | { ok: false; message: string };
+  { ok: true; files: Record<string, string> } | { ok: false; message: string };
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
@@ -73,11 +72,12 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 // content strings, with metadata.json present, at most MAX_VERIFY_FILES
 // entries and MAX_VERIFY_TOTAL_BYTES of content. Shared by the route (400
 // invalid_files) and the service (defense in depth for other callers).
-export function validateVerificationFiles(
-  files: unknown,
-): VerificationFilesValidation {
+export function validateVerificationFiles(files: unknown): VerificationFilesValidation {
   if (!isRecord(files) || Array.isArray(files)) {
-    return { ok: false, message: 'files must be an object mapping file names to their string contents' };
+    return {
+      ok: false,
+      message: 'files must be an object mapping file names to their string contents',
+    };
   }
   if (Object.keys(files).length === 0) {
     return { ok: false, message: 'files must not be empty' };
@@ -287,7 +287,9 @@ export class ContractVerifyService {
       );
     }
     const detail = message !== '' ? message : String(error);
-    return new SourcifyUnreachableError(`Could not reach the Sourcify server while ${phase}: ${detail}`);
+    return new SourcifyUnreachableError(
+      `Could not reach the Sourcify server while ${phase}: ${detail}`,
+    );
   }
 
   // Fixed upstream host: the base URL comes from the environment only,

@@ -25,15 +25,15 @@ services/
 
 ## WHERE TO LOOK
 
-| Task                        | Service                    | Key Function             |
-| --------------------------- | -------------------------- | ------------------------ |
+| Task                        | Service                    | Key Function                                                             |
+| --------------------------- | -------------------------- | ------------------------------------------------------------------------ |
 | Index contract events       | EventIndexingService       | `addIndexingRange()`, `createRange{All,Recent,First,Continue,Catchup}()` |
-| Get contract source/ABI     | ContractSourceService      | `getContractSource()`    |
-| Validate event filters      | EventValidationService     | `validateEventFilters()` |
-| Query indexed events        | EventQueryService          | `getContractEvents()`    |
-| Read contract function      | ContractInteractionService | `readContract()`         |
-| Get RPC client              | RpcManager                 | `getClient(chainId)`     |
-| Search blocks/txs/addresses | SearchService              | `search()`               |
+| Get contract source/ABI     | ContractSourceService      | `getContractSource()`                                                    |
+| Validate event filters      | EventValidationService     | `validateEventFilters()`                                                 |
+| Query indexed events        | EventQueryService          | `getContractEvents()`                                                    |
+| Read contract function      | ContractInteractionService | `readContract()`                                                         |
+| Get RPC client              | RpcManager                 | `getClient(chainId)`                                                     |
+| Search blocks/txs/addresses | SearchService              | `search()`                                                               |
 
 ## KEY PATTERNS
 

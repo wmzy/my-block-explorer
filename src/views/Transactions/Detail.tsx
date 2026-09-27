@@ -9,13 +9,7 @@ import { CallTraceCard } from '@/views/Transactions/CallTrace';
 import { ProtocolRouterChip } from '@/views/Transactions/methodColumn';
 import { RawDataBlock } from '@/components/transactions/RawDataBlock';
 import { Badge } from '@/components/ui/Badge';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/Card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import { CopyableHash } from '@/components/ui/CopyableHash';
 import { linkStyle, monoStyle } from '@/components/ui/DataTable';
 import { ExternalLinks } from '@/components/ui/ExternalLinks';
@@ -38,10 +32,7 @@ import { useLatestBlocksFeed } from '@/services/homeFeed';
 import { useSignatures, type SignatureOutcome } from '@/services/signatures';
 import type { DecodedTokenTransfer } from '@/utils/tokenTransferDecode';
 import type { RpcLogEntry, RpcTxAuthorization } from '@/utils/blockRpcData';
-import {
-  decodeSafeExecTransaction,
-  type DecodedSafeExecTransaction,
-} from '@/utils/safeDecode';
+import { decodeSafeExecTransaction, type DecodedSafeExecTransaction } from '@/utils/safeDecode';
 import {
   decodeHandleOps,
   decodeUserOperationEvents,
@@ -416,8 +407,8 @@ function RevertReasonCard({
             state right before this transaction ran, so an earlier tx in the
             same block can change the replay's outcome. */}
         <p className={replayCaveatStyle}>
-          Replayed against end-of-block state — transactions earlier in the same block may alter
-          the result.
+          Replayed against end-of-block state — transactions earlier in the same block may alter the
+          result.
         </p>
       </CardContent>
     </Card>
@@ -659,10 +650,7 @@ function AccountAbstractionCard({
           <div className={transferRowStyle} key={`${row.sender}-${row.nonce}-${index}`}>
             <InfoGrid>
               <InfoItem label="Sender">
-                <TypedLink
-                  to={`/chain/${chainId}/address/${row.sender}`}
-                  className={linkStyle}
-                >
+                <TypedLink to={`/chain/${chainId}/address/${row.sender}`} className={linkStyle}>
                   {row.sender}
                 </TypedLink>
               </InfoItem>
@@ -971,7 +959,10 @@ function TransferAmount({
   }
   if (transfer.kind === 'erc721') {
     return (
-      <span className={transferAmountStyle}>{`Token ID ${transfer.tokenId}${symbol ? ` ${symbol}` : ''}`}</span>
+      <span
+        className={transferAmountStyle}
+      >{`Token ID ${transfer.tokenId}${symbol ? ` ${symbol}` : ''}`}
+      </span>
     );
   }
   if (transfer.kind === 'erc1155_single') {
@@ -1007,7 +998,8 @@ function TokenTransfersCard({
     for (const transfer of transfers) {
       const key = transfer.token.toLowerCase();
       if (!byAddress.has(key)) {
-        const kind = transfer.kind === 'erc20' ? 'erc20' : transfer.kind === 'erc721' ? 'erc721' : 'erc1155';
+        const kind =
+          transfer.kind === 'erc20' ? 'erc20' : transfer.kind === 'erc721' ? 'erc721' : 'erc1155';
         byAddress.set(key, { address: transfer.token, kind });
       }
     }
@@ -1084,7 +1076,10 @@ function AuthorizationsCard({
       </CardHeader>
       <CardContent>
         {authorizations.map((authorization, index) => (
-          <div className={transferRowStyle} key={`${authorization.address}-${authorization.nonce}-${index}`}>
+          <div
+            className={transferRowStyle}
+            key={`${authorization.address}-${authorization.nonce}-${index}`}
+          >
             <InfoGrid>
               {authorization.authority ? (
                 <InfoItem label="Authority">
@@ -1168,10 +1163,7 @@ export default function TransactionDetail() {
   // cheap and false-positive-free), and the receipt carries at least one
   // UserOperationEvent. Both decoders are total, so malformed calldata or
   // logs degrade to null/fewer rows, never a page error.
-  const entryPointVersion = useMemo(
-    () => entryPointVersionForAddress(txInfo?.toAddress),
-    [txInfo],
-  );
+  const entryPointVersion = useMemo(() => entryPointVersionForAddress(txInfo?.toAddress), [txInfo]);
   const userOpEvents = useMemo(
     () => (entryPointVersion !== null ? decodeUserOperationEvents(txInfo?.logs ?? []) : []),
     [entryPointVersion, txInfo],
@@ -1278,9 +1270,7 @@ export default function TransactionDetail() {
         label: 'Receipt',
         load: requestRaw('eth_getTransactionReceipt'),
         note:
-          txBlockNumber === null
-            ? 'No receipt yet — the transaction is still pending'
-            : undefined,
+          txBlockNumber === null ? 'No receipt yet — the transaction is still pending' : undefined,
       },
     ];
   }, [currentChainId, txHash, txBlockNumber]);
@@ -1513,8 +1503,8 @@ export default function TransactionDetail() {
                             <span className={topicLinkArrowStyle}>↗</span>
                           </a>
                           <span className={blobSidecarNoteStyle}>
-                            External site, not part of this explorer — blob
-                            payloads are not served by this RPC.
+                            External site, not part of this explorer — blob payloads are not served
+                            by this RPC.
                           </span>
                         </span>
                       </InfoItem>
@@ -1598,10 +1588,7 @@ export default function TransactionDetail() {
             )}
 
             {txInfo.tokenTransfers && txInfo.tokenTransfers.length > 0 && (
-              <TokenTransfersCard
-                chainId={currentChainId}
-                transfers={txInfo.tokenTransfers}
-              />
+              <TokenTransfersCard chainId={currentChainId} transfers={txInfo.tokenTransfers} />
             )}
 
             {txInfo.logs.length > 0 && (

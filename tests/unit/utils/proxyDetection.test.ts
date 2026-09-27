@@ -21,9 +21,7 @@ const MINIMAL_PROXY_PREFIX = '363d3d373d3d3d363d73';
 const MINIMAL_PROXY_SUFFIX = '5af43d82803e903d91602b57fd5bf3';
 
 const buildMinimalProxyRuntime = (impl: string) =>
-  asHex(
-    `${MINIMAL_PROXY_PREFIX}${impl.slice(2).toLowerCase()}${MINIMAL_PROXY_SUFFIX}`,
-  );
+  asHex(`${MINIMAL_PROXY_PREFIX}${impl.slice(2).toLowerCase()}${MINIMAL_PROXY_SUFFIX}`);
 
 const deriveEip1967Slot = (label: string) =>
   toHex(BigInt(keccak256(toBytes(label))) - 1n, { size: 32 });
@@ -31,9 +29,7 @@ const deriveEip1967Slot = (label: string) =>
 describe('proxyDetection', () => {
   describe('storage slot constants', () => {
     it('pins EIP-1967 implementation slot to keccak256(label) - 1', () => {
-      expect(EIP1967_IMPLEMENTATION_SLOT).toBe(
-        deriveEip1967Slot('eip1967.proxy.implementation'),
-      );
+      expect(EIP1967_IMPLEMENTATION_SLOT).toBe(deriveEip1967Slot('eip1967.proxy.implementation'));
     });
 
     it('pins EIP-1967 admin slot to keccak256(label) - 1', () => {

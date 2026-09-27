@@ -160,7 +160,9 @@ describe('Token Transfers card', () => {
     // From/To links with the same text — require at least one with the
     // transfer-row href); token link into the contract view.
     const fromLinks = screen.getAllByRole('link', { name: new RegExp(FROM.slice(0, 8)) });
-    expect(fromLinks.some(link => link.getAttribute('href') === `/chain/1/address/${FROM}`)).toBe(true);
+    expect(fromLinks.some(link => link.getAttribute('href') === `/chain/1/address/${FROM}`)).toBe(
+      true,
+    );
     expect(screen.getByRole('link', { name: new RegExp(USDT.slice(0, 8)) })).toHaveAttribute(
       'href',
       `/chain/1/contract/${USDT}`,
@@ -181,9 +183,7 @@ describe('Token Transfers card', () => {
 
   it('renders ERC-721 tokenId and ERC-1155 id×amount rows', async () => {
     vi.mocked(useTransactionByHash).mockReturnValue(
-      hookResult(
-        makeTx({ tokenTransfers: [nftTransfer, erc1155Single, erc1155Batch] }),
-      ),
+      hookResult(makeTx({ tokenTransfers: [nftTransfer, erc1155Single, erc1155Batch] })),
     );
     vi.mocked(useTokenMetadata).mockReturnValue(new Map());
 
@@ -218,7 +218,9 @@ describe('EIP-7702 Authorizations card', () => {
       hookResult(
         makeTx({
           type: 4,
-          authorizationList: [{ chainId: '1', address: DELEGATE, nonce: '7', authority: AUTHORITY }],
+          authorizationList: [
+            { chainId: '1', address: DELEGATE, nonce: '7', authority: AUTHORITY },
+          ],
         }),
       ),
     );
@@ -226,7 +228,9 @@ describe('EIP-7702 Authorizations card', () => {
 
     renderDetail();
 
-    expect(await screen.findByRole('heading', { name: 'EIP-7702 Authorizations' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: 'EIP-7702 Authorizations' }),
+    ).toBeInTheDocument();
     expect(screen.getByRole('link', { name: new RegExp(AUTHORITY.slice(0, 8)) })).toHaveAttribute(
       'href',
       `/chain/1/address/${AUTHORITY}`,
@@ -250,7 +254,9 @@ describe('EIP-7702 Authorizations card', () => {
 
     renderDetail();
 
-    expect(await screen.findByRole('heading', { name: 'EIP-7702 Authorizations' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: 'EIP-7702 Authorizations' }),
+    ).toBeInTheDocument();
     expect(screen.getByText('Not reported by node')).toBeInTheDocument();
   });
 });

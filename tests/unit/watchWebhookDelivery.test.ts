@@ -22,10 +22,8 @@ vi.mock('@/database/drizzle', () => ({
       from: () => {
         const query = {
           where: async () => state.rows,
-          then: (
-            resolve: (value: unknown) => unknown,
-            reject: (reason: unknown) => unknown,
-          ) => Promise.resolve(state.rows).then(resolve, reject),
+          then: (resolve: (value: unknown) => unknown, reject: (reason: unknown) => unknown) =>
+            Promise.resolve(state.rows).then(resolve, reject),
         };
         return query;
       },

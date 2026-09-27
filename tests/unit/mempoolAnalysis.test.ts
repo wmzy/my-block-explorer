@@ -6,11 +6,7 @@
 // and the render plan the grouped view consumes.
 import { describe, it, expect } from 'vitest';
 
-import {
-  analyzeMempool,
-  effectiveGasCap,
-  effectiveTip,
-} from '@/utils/mempoolAnalysis';
+import { analyzeMempool, effectiveGasCap, effectiveTip } from '@/utils/mempoolAnalysis';
 import type { PoolEntry } from '@/services/txpool';
 
 const GWEI = 1_000_000_000n;
@@ -181,8 +177,18 @@ describe('analyzeMempool — winner selection', () => {
 
     // Identical caps and tips also fall back to snapshot order.
     const tied = analyzeMempool([
-      entry({ hash: hashOf('t1'), nonce: 2, maxFeePerGas: 5n * GWEI, maxPriorityFeePerGas: 1n * GWEI }),
-      entry({ hash: hashOf('t2'), nonce: 2, maxFeePerGas: 5n * GWEI, maxPriorityFeePerGas: 1n * GWEI }),
+      entry({
+        hash: hashOf('t1'),
+        nonce: 2,
+        maxFeePerGas: 5n * GWEI,
+        maxPriorityFeePerGas: 1n * GWEI,
+      }),
+      entry({
+        hash: hashOf('t2'),
+        nonce: 2,
+        maxFeePerGas: 5n * GWEI,
+        maxPriorityFeePerGas: 1n * GWEI,
+      }),
     ]);
     expect(tied.groups[0].winnerHash).toBe(hashOf('t1'));
   });
@@ -243,11 +249,7 @@ describe('analyzeMempool — percentiles (BigInt-exact index picks)', () => {
       max: 30n * GWEI,
     });
     // The listing itself keeps the snapshot order untouched.
-    expect(analysis.entries.map(e => e.hash)).toEqual([
-      hashOf('mid'),
-      hashOf('lo'),
-      hashOf('hi'),
-    ]);
+    expect(analysis.entries.map(e => e.hash)).toEqual([hashOf('mid'), hashOf('lo'), hashOf('hi')]);
   });
 
   it('picks exact indexes for n = 5 and stays exact past 2^53', () => {
@@ -330,9 +332,10 @@ describe('analyzeMempool — render plan', () => {
     // winner-first (win caps 9 > lose's 1).
     const groupUnit = analysis.renderPlan[1];
     expect(groupUnit.kind).toBe('group');
-    expect(
-      groupUnit.kind === 'group' && groupUnit.group.members.map(m => m.hash),
-    ).toEqual([hashOf('win'), hashOf('lose')]);
+    expect(groupUnit.kind === 'group' && groupUnit.group.members.map(m => m.hash)).toEqual([
+      hashOf('win'),
+      hashOf('lose'),
+    ]);
     expect(analysis.renderPlan[2].kind === 'solo' && analysis.renderPlan[2].entry.hash).toBe(
       hashOf('solo2'),
     );

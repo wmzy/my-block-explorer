@@ -227,9 +227,7 @@ export function ScanningScreen({ ports }: ScanningScreenProps) {
   const first = ports[0] ?? 0;
   const last = ports[ports.length - 1] ?? 0;
   const statusText =
-    ports.length > 1
-      ? `Checking ports ${first}–${last} in parallel`
-      : `Checking port ${first}`;
+    ports.length > 1 ? `Checking ports ${first}–${last} in parallel` : `Checking port ${first}`;
 
   return (
     <div className={containerStyle}>

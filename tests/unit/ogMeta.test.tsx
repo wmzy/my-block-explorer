@@ -16,12 +16,7 @@ import { join } from 'node:path';
 import { Hono } from 'hono';
 import { serveStatic } from '@hono/node-server/serve-static';
 import { render, cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
-import {
-  MemoryRouter,
-  View,
-  createRoutes,
-  useRouter,
-} from '@native-router/react';
+import { MemoryRouter, View, createRoutes, useRouter } from '@native-router/react';
 import { navigate } from '@native-router/core';
 
 import {
@@ -95,19 +90,12 @@ afterEach(async () => {
   tempDir = '';
 });
 
-const countOccurrences = (html: string, needle: string): number =>
-  html.split(needle).length - 1;
+const countOccurrences = (html: string, needle: string): number => html.split(needle).length - 1;
 
 // Reads the content attribute off the first <meta> tag carrying the given
 // name/property key, whatever the attribute order inside the tag.
-const metaContent = (
-  html: string,
-  attribute: 'name' | 'property',
-  key: string,
-): string | null => {
-  const tag = html.match(
-    new RegExp(`<meta\\b[^>]*\\s${attribute}=["']${key}["'][^>]*>`, 'i'),
-  );
+const metaContent = (html: string, attribute: 'name' | 'property', key: string): string | null => {
+  const tag = html.match(new RegExp(`<meta\\b[^>]*\\s${attribute}=["']${key}["'][^>]*>`, 'i'));
   if (!tag) return null;
   const content = tag[0].match(/\scontent\s*=\s*"([^"]*)"/i);
   return content?.[1] ?? null;
@@ -125,9 +113,7 @@ describe('injectShareMeta (pure)', () => {
     expect(out).not.toContain('My Block Explorer</title>');
     expect(countOccurrences(out, '<title>')).toBe(1);
 
-    expect(metaContent(out, 'property', 'og:title')).toBe(
-      `Tx ${TX_HASH.slice(0, 10)}… · Ethereum`,
-    );
+    expect(metaContent(out, 'property', 'og:title')).toBe(`Tx ${TX_HASH.slice(0, 10)}… · Ethereum`);
     expect(metaContent(out, 'property', 'og:description')).toBe(
       `View transaction ${TX_HASH.slice(0, 10)}… on Ethereum — block, gas, status and decoded calls.`,
     );
@@ -142,7 +128,11 @@ describe('injectShareMeta (pure)', () => {
   });
 
   it('replaces existing placeholder tags in place instead of duplicating them', () => {
-    const out = injectShareMeta(PLACEHOLDER_HTML, 'Polygon Explorer', 'Explore Polygon: latest blocks, transactions, gas and chain stats.');
+    const out = injectShareMeta(
+      PLACEHOLDER_HTML,
+      'Polygon Explorer',
+      'Explore Polygon: latest blocks, transactions, gas and chain stats.',
+    );
 
     expect(out).not.toContain('PLACEHOLDER');
     expect(metaContent(out, 'property', 'og:title')).toBe('Polygon Explorer');
@@ -188,9 +178,7 @@ describe('og-meta middleware', () => {
     // The exact strings the client-side DocumentTitle would compute.
     expect(body).toContain(`<title>${deriveDocumentTitle(path, '')}</title>`);
     expect(metaContent(body, 'property', 'og:title')).toBe(deriveDocumentTitle(path, ''));
-    expect(metaContent(body, 'property', 'og:description')).toBe(
-      deriveMetaDescription(path, ''),
-    );
+    expect(metaContent(body, 'property', 'og:description')).toBe(deriveMetaDescription(path, ''));
     expect(metaContent(body, 'name', 'twitter:card')).toBe('summary');
   });
 
@@ -350,9 +338,7 @@ describe('static frontend handler (composed, as wired in server.ts)', () => {
     const path = `/chain/1/tx/${TX_HASH}`;
 
     const injected = await request(path, { headers: { accept: HTML_ACCEPT } });
-    expect(await injected.text()).toContain(
-      `<title>${deriveDocumentTitle(path, '')}</title>`,
-    );
+    expect(await injected.text()).toContain(`<title>${deriveDocumentTitle(path, '')}</title>`);
 
     const plain = await request('/', { headers: { accept: HTML_ACCEPT } });
     expect(await plain.text()).toBe(MINIMAL_HTML);
@@ -426,11 +412,13 @@ describe('DocumentTitle × server-injected tags', () => {
     // Same shared derivation → identical strings, stable content.
     expect(document.title).toBe(serverTitle);
     expect(document.head.querySelectorAll('meta[property="og:title"]')).toHaveLength(1);
-    expect(document.head.querySelector<HTMLMetaElement>('meta[property="og:title"]')?.content).toBe(serverTitle);
-    expect(document.head.querySelectorAll('meta[property="og:description"]')).toHaveLength(1);
-    expect(document.head.querySelector<HTMLMetaElement>('meta[property="og:description"]')?.content).toBe(
-      serverDescription,
+    expect(document.head.querySelector<HTMLMetaElement>('meta[property="og:title"]')?.content).toBe(
+      serverTitle,
     );
+    expect(document.head.querySelectorAll('meta[property="og:description"]')).toHaveLength(1);
+    expect(
+      document.head.querySelector<HTMLMetaElement>('meta[property="og:description"]')?.content,
+    ).toBe(serverDescription);
     expect(document.head.querySelectorAll('meta[property="og:type"]')).toHaveLength(1);
     expect(document.head.querySelectorAll('meta[name="twitter:card"]')).toHaveLength(1);
   });
@@ -450,9 +438,9 @@ describe('DocumentTitle × server-injected tags', () => {
       'Polygon Explorer',
     );
     expect(document.head.querySelectorAll('meta[property="og:description"]')).toHaveLength(1);
-    expect(document.head.querySelector<HTMLMetaElement>('meta[property="og:description"]')?.content).toBe(
-      'Explore Polygon: latest blocks, transactions, gas and chain stats.',
-    );
+    expect(
+      document.head.querySelector<HTMLMetaElement>('meta[property="og:description"]')?.content,
+    ).toBe('Explore Polygon: latest blocks, transactions, gas and chain stats.');
     expect(document.head.querySelectorAll('meta[name="twitter:card"]')).toHaveLength(1);
   });
 });

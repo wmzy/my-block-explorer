@@ -14,16 +14,14 @@ type UseData<T> = {
   (opts: { optional: true }): T | undefined;
 };
 
-export function createDataLoader<T, K extends unknown[], Ctx extends LoaderCtx = LoaderCtx>(
-  spec: {
-    fetch: (...args: [...K, signal?: AbortSignal]) => Promise<T>;
-    cache: EntityCache<T, K>;
-    // The single place a key is defined (keyOf's return is compile-checked
-    // against K / the fetch parameter tuple).
-    keyOf: (ctx: Ctx) => K;
-    staleTime?: number;
-  },
-): [DataLoader<T>, UseData<T>, QueryFn<T, K>] {
+export function createDataLoader<T, K extends unknown[], Ctx extends LoaderCtx = LoaderCtx>(spec: {
+  fetch: (...args: [...K, signal?: AbortSignal]) => Promise<T>;
+  cache: EntityCache<T, K>;
+  // The single place a key is defined (keyOf's return is compile-checked
+  // against K / the fetch parameter tuple).
+  keyOf: (ctx: Ctx) => K;
+  staleTime?: number;
+}): [DataLoader<T>, UseData<T>, QueryFn<T, K>] {
   const { fetch, cache, keyOf, staleTime } = spec;
 
   const loader = withCache(
@@ -39,12 +37,10 @@ export function createDataLoader<T, K extends unknown[], Ctx extends LoaderCtx =
     const value = useRouteData<T>();
     const matched = useMatched();
     if (import.meta.env.DEV) {
-      const declared: unknown = (
-        matched as ReturnType<typeof useMatched> | undefined
-      )?.matched[matched.index]?.route.data;
-      const ok =
-        declared === loader ||
-        (opts?.optional === true && declared === undefined);
+      const declared: unknown = (matched as ReturnType<typeof useMatched> | undefined)?.matched[
+        matched.index
+      ]?.route.data;
+      const ok = declared === loader || (opts?.optional === true && declared === undefined);
       if (!ok) {
         throw new Error(
           '[createDataLoader] useXxxData does not match the route data declaration (route.data !== the loader that created it). ' +

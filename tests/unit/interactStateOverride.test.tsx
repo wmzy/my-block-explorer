@@ -14,15 +14,9 @@ import { MemoryRouter, createRoutes } from '@native-router/react';
 import { FunctionCallForm } from '@/views/Contract/FunctionCallForm';
 import { simulateContract } from '@/utils/contractInteraction';
 import { getRpcClient } from '@/utils/rpcClient';
-import {
-  parseStateOverrideInput,
-  toViemStateOverride,
-} from '@/views/Contract/stateOverrideInput';
+import { parseStateOverrideInput, toViemStateOverride } from '@/views/Contract/stateOverrideInput';
 import type { EIP1193Provider } from '@/util/wallet';
-import type {
-  ContractFunctionInput,
-  EnhancedContractFunction,
-} from '@/utils/contractInteraction';
+import type { ContractFunctionInput, EnhancedContractFunction } from '@/utils/contractInteraction';
 
 const ADDR = '0x1111111111111111111111111111111111111111';
 const SENDER = '0x3333333333333333333333333333333333333333';
@@ -32,8 +26,7 @@ const SLOT = '0x0000000000000000000000000000000000000000000000000000000000000001
 const VALUE = '0x0000000000000000000000000000000000000000000000000000000000000042';
 
 const VALID_OVERRIDE_TEXT =
-  `{"${ADDR}":{"balance":"0xde0b6b3a7640000",` +
-  `"state":{"${SLOT}":"${VALUE}"}}}`;
+  `{"${ADDR}":{"balance":"0xde0b6b3a7640000",` + `"state":{"${SLOT}":"${VALUE}"}}}`;
 const VALID_OVERRIDE_VIEM = [
   {
     address: ADDR,
@@ -52,10 +45,7 @@ vi.mock('@/utils/rpcClient', async importOriginal => {
 
 type TestFunction = EnhancedContractFunction;
 
-const makeWriteFunc = (
-  inputs: ContractFunctionInput[] = [],
-  name = 'deposit',
-): TestFunction => ({
+const makeWriteFunc = (inputs: ContractFunctionInput[] = [], name = 'deposit'): TestFunction => ({
   name,
   type: 'function',
   inputs,
@@ -130,8 +120,7 @@ function renderForm(func: TestFunction, withWallet = false) {
   return { onCall, wallet };
 }
 
-const disclosureHeader = () =>
-  screen.getByRole('button', { name: 'State overrides (advanced)' });
+const disclosureHeader = () => screen.getByRole('button', { name: 'State overrides (advanced)' });
 
 const openDisclosure = () => fireEvent.click(disclosureHeader());
 
@@ -215,7 +204,9 @@ describe('FunctionCallForm state-override disclosure', () => {
     clickSimulate();
 
     expect(
-      await screen.findByText(`${ADDR}.balance: must be a hex quantity like 0x1 (no leading zeros)`),
+      await screen.findByText(
+        `${ADDR}.balance: must be a hex quantity like 0x1 (no leading zeros)`,
+      ),
     ).toBeInTheDocument();
     expect(onCall).not.toHaveBeenCalled();
 
@@ -258,9 +249,9 @@ describe('simulateContract request composition', () => {
 
   beforeEach(() => {
     simulateSpy.mockClear();
-    vi.mocked(getRpcClient).mockReturnValue(
-      { simulateContract: simulateSpy } as unknown as ReturnType<typeof getRpcClient>,
-    );
+    vi.mocked(getRpcClient).mockReturnValue({
+      simulateContract: simulateSpy,
+    } as unknown as ReturnType<typeof getRpcClient>);
   });
 
   it('omits the stateOverride key entirely when none is given (byte-identical wire)', async () => {

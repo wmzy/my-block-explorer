@@ -11,6 +11,7 @@
 所有数据访问统一通过后端API，后端负责与RPC节点通信，前端不直接暴露RPC配置。
 
 #### 配置驱动的RPC客户端
+
 ```typescript
 // src/server/services/RpcClientManager.ts
 import { createPublicClient, http } from 'viem';
@@ -43,7 +44,7 @@ export class RpcClientManager {
     // 获取有效的RPC URL（用户配置优先，否则viem默认）
     const rpcUrl = await this.configService.getEffectiveRpcUrl(chainId);
     const userConfig = await this.configService.getUserRpcConfig(chainId);
-    
+
     return createPublicClient({
       chain: viemChain,
       transport: http(rpcUrl, {
@@ -56,6 +57,7 @@ export class RpcClientManager {
 ```
 
 #### 实时数据获取（通过API）
+
 ```typescript
 // src/client/api/realTimeApi.ts
 export class RealTimeApi {
@@ -66,12 +68,16 @@ export class RealTimeApi {
   }
 
   async getLatestBlock(chainId: number) {
-    const response = await fetch(`${this.baseUrl}/api/chains/${chainId}/blocks/latest`);
+    const response = await fetch(
+      `${this.baseUrl}/api/chains/${chainId}/blocks/latest`,
+    );
     return await response.json();
   }
 
   async getBalance(chainId: number, address: string) {
-    const response = await fetch(`${this.baseUrl}/api/chains/${chainId}/addresses/${address}/balance`);
+    const response = await fetch(
+      `${this.baseUrl}/api/chains/${chainId}/addresses/${address}/balance`,
+    );
     return await response.json();
   }
 
@@ -81,7 +87,9 @@ export class RealTimeApi {
   }
 
   async getTransactionStatus(chainId: number, hash: string) {
-    const response = await fetch(`${this.baseUrl}/api/chains/${chainId}/transactions/${hash}`);
+    const response = await fetch(
+      `${this.baseUrl}/api/chains/${chainId}/transactions/${hash}`,
+    );
     return await response.json();
   }
 }
@@ -94,6 +102,7 @@ export class RealTimeApi {
 所有配置信息存储在本地DuckDB中，用户可通过界面进行管理。
 
 #### 配置数据表结构
+
 ```sql
 -- 用户RPC配置表（可选配置，不配置则使用viem默认）
 CREATE TABLE user_rpc_configs (
@@ -129,6 +138,7 @@ CREATE TABLE rpc_performance (
 ```
 
 #### 配置服务
+
 ```typescript
 // src/server/services/ConfigService.ts
 import { Database } from 'duckdb-async';
@@ -161,7 +171,7 @@ export class ConfigService {
   async getUserRpcConfig(chainId: number): Promise<UserRpcConfig | null> {
     const row = await this.db.get(
       'SELECT * FROM user_rpc_configs WHERE chain_id = ?',
-      [chainId]
+      [chainId],
     );
 
     if (!row) return null;
@@ -172,36 +182,41 @@ export class ConfigService {
       rpcBackupUrls: JSON.parse(row.rpc_backup_urls || '[]'),
       timeout: row.timeout_ms,
       retryCount: row.retry_count,
-      rateLimit: row.rate_limit
+      rateLimit: row.rate_limit,
     };
   }
 
   // 保存用户RPC配置
   async saveUserRpcConfig(config: UserRpcConfig): Promise<void> {
-    await this.db.run(`
+    await this.db.run(
+      `
       INSERT OR REPLACE INTO user_rpc_configs (
         chain_id, custom_rpc_url, rpc_backup_urls, 
         timeout_ms, retry_count, rate_limit, updated_at
       ) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-    `, [
-      config.chainId,
-      config.customRpcUrl,
-      JSON.stringify(config.rpcBackupUrls || []),
-      config.timeout,
-      config.retryCount,
-      config.rateLimit
-    ]);
+    `,
+      [
+        config.chainId,
+        config.customRpcUrl,
+        JSON.stringify(config.rpcBackupUrls || []),
+        config.timeout,
+        config.retryCount,
+        config.rateLimit,
+      ],
+    );
   }
 
   // 删除用户RPC配置（回退到viem默认）
   async deleteUserRpcConfig(chainId: number): Promise<void> {
-    await this.db.run('DELETE FROM user_rpc_configs WHERE chain_id = ?', [chainId]);
+    await this.db.run('DELETE FROM user_rpc_configs WHERE chain_id = ?', [
+      chainId,
+    ]);
   }
 
   // 获取有效的RPC URL
   async getEffectiveRpcUrl(chainId: number): Promise<string> {
     const userConfig = await this.getUserRpcConfig(chainId);
-    
+
     if (userConfig?.customRpcUrl) {
       return userConfig.customRpcUrl;
     }
@@ -226,16 +241,24 @@ export class ConfigService {
   async getAppConfig(key: string): Promise<any> {
     const row = await this.db.get(
       'SELECT value FROM app_configs WHERE key = ?',
-      [key]
+      [key],
     );
     return row ? JSON.parse(row.value) : null;
   }
 
-  async setAppConfig(key: string, value: any, description?: string, category = 'general'): Promise<void> {
-    await this.db.run(`
+  async setAppConfig(
+    key: string,
+    value: any,
+    description?: string,
+    category = 'general',
+  ): Promise<void> {
+    await this.db.run(
+      `
       INSERT OR REPLACE INTO app_configs (key, value, description, category, updated_at)
       VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-    `, [key, JSON.stringify(value), description, category]);
+    `,
+      [key, JSON.stringify(value), description, category],
+    );
   }
 }
 ```
@@ -266,21 +289,21 @@ export const SettingsPage = () => {
   return (
     <div className="settings-page">
       <h1>系统设置</h1>
-      
+
       <div className="settings-tabs">
-        <button 
+        <button
           className={activeTab === 'chains' ? 'active' : ''}
           onClick={() => setActiveTab('chains')}
         >
           链配置
         </button>
-        <button 
+        <button
           className={activeTab === 'rpc' ? 'active' : ''}
           onClick={() => setActiveTab('rpc')}
         >
           RPC设置
         </button>
-        <button 
+        <button
           className={activeTab === 'general' ? 'active' : ''}
           onClick={() => setActiveTab('general')}
         >
@@ -339,10 +362,10 @@ export const ChainConfigPanel = ({ chains, onUpdate }: ChainConfigPanelProps) =>
     <div className="chain-config-panel">
       <div className="panel-header">
         <h2>支持的区块链</h2>
-        <button onClick={() => setEditingChain({ 
-          chainId: 0, name: '', symbol: '', rpcUrl: '', 
-          rpcBackupUrls: [], explorerUrl: '', blockTime: 12, 
-          enabled: true, timeout: 10000, retryCount: 3, rateLimit: 100 
+        <button onClick={() => setEditingChain({
+          chainId: 0, name: '', symbol: '', rpcUrl: '',
+          rpcBackupUrls: [], explorerUrl: '', blockTime: 12,
+          enabled: true, timeout: 10000, retryCount: 3, rateLimit: 100
         })}>
           添加新链
         </button>
@@ -366,7 +389,7 @@ export const ChainConfigPanel = ({ chains, onUpdate }: ChainConfigPanelProps) =>
                   <button onClick={() => setEditingChain(chain)}>编辑</button>
                 </div>
               </div>
-              
+
               <div className="chain-details">
                 <div>链ID: {chain.chainId}</div>
                 <div>RPC: {chain.rpcUrl}</div>
@@ -420,19 +443,19 @@ export const RpcConfigPanel = () => {
 
   const testRpcEndpoint = async (chainId: number, rpcUrl: string) => {
     setTestingRpc(rpcUrl);
-    
+
     try {
       const response = await fetch('/api/admin/rpc/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ chainId, rpcUrl })
       });
-      
+
       const result = await response.json();
-      
+
       // 更新性能数据
       loadRpcPerformance();
-      
+
       alert(`测试结果:\n响应时间: ${result.responseTime}ms\n状态: ${result.success ? '成功' : '失败'}`);
     } catch (error) {
       alert('测试失败: ' + error.message);
@@ -464,7 +487,7 @@ export const RpcConfigPanel = () => {
   return (
     <div className="rpc-config-panel">
       <h2>RPC端点管理</h2>
-      
+
       <div className="rpc-explanation">
         <p>💡 配置私有RPC端点以获得更快的响应速度和更高的请求限制</p>
         <p>🔒 所有配置保存在本地，确保您的API密钥安全</p>
@@ -519,7 +542,7 @@ export const RpcConfigPanel = () => {
               获取API Key
             </button>
           </div>
-          
+
           <div className="setup-card">
             <h4>Infura</h4>
             <p>可靠的区块链开发平台</p>
@@ -527,7 +550,7 @@ export const RpcConfigPanel = () => {
               获取API Key
             </button>
           </div>
-          
+
           <div className="setup-card">
             <h4>QuickNode</h4>
             <p>全球化的区块链基础设施</p>
@@ -553,27 +576,27 @@ graph TD
     A[用户请求数据] --> B{检查内存缓存}
     B -->|Cache Hit| C[返回缓存数据<br/>X-Data-Source: cache]
     B -->|Cache Miss| D{检查本地数据库}
-    
+
     D -->|DB Hit| E[更新内存缓存]
     E --> F[返回数据库数据<br/>X-Data-Source: database]
-    
+
     D -->|DB Miss| G[访问以太坊RPC]
     G --> H{RPC调用成功?}
-    
+
     H -->|成功| I[异步存储到数据库]
     I --> J[更新内存缓存]
     J --> K[返回RPC数据<br/>X-Data-Source: rpc]
-    
+
     H -->|失败| L[记录访问历史]
     L --> M[返回错误响应<br/>404 Not Found]
-    
+
     C --> N[记录访问日志]
     F --> N
     K --> N
     M --> N
-    
+
     N --> O[更新访问统计]
-    
+
     style A fill:#e3f2fd
     style C fill:#c8e6c9
     style F fill:#c8e6c9
@@ -582,87 +605,88 @@ graph TD
 ```
 
 #### 按需索引流程
+
 ```typescript
 // src/server/services/OnDemandIndexService.ts
 export class OnDemandIndexService {
   private db: DatabaseConnection;
   private ethereumClient: EthereumClient;
   private cache: Map<string, { data: any; expires: number }> = new Map();
-  
+
   // 检查数据是否已缓存或存储
   async getBlockData(blockNumber: number, includeTransactions = false): Promise<Block | null> {
     const cacheKey = \`block:\${blockNumber}:\${includeTransactions}\`;
-    
+
     // 1. 检查内存缓存
     const cached = this.getFromCache(cacheKey);
     if (cached) {
       return cached;
     }
-    
+
     // 2. 检查本地数据库
     const stored = await this.getStoredBlock(blockNumber, includeTransactions);
     if (stored) {
       this.setCache(cacheKey, stored, 3600); // 缓存1小时
       return stored;
     }
-    
+
     // 3. 实时从RPC获取（用户访问时同步）
     try {
       const block = await this.fetchBlockFromRPC(blockNumber, includeTransactions);
-      
+
       // 异步存储到本地数据库（不阻塞响应）
       this.storeBlockAsync(block);
-      
+
       // 缓存
       this.setCache(cacheKey, block, 300); // 缓存5分钟
-      
+
       return block;
     } catch (error) {
       console.error(\`Failed to fetch block \${blockNumber}:\`, error);
       return null;
     }
   }
-  
+
   // 按需获取地址交易历史
   async getAddressTransactions(
-    address: string, 
-    page = 1, 
+    address: string,
+    page = 1,
     limit = 20
   ): Promise<{ transactions: Transaction[]; total: number }> {
     const cacheKey = \`addr:\${address}:page:\${page}:limit:\${limit}\`;
-    
+
     // 检查缓存
     const cached = this.getFromCache(cacheKey);
     if (cached) {
       return cached;
     }
-    
+
     // 检查本地存储
     const stored = await this.getStoredAddressTransactions(address, page, limit);
-    
+
     if (stored.transactions.length > 0) {
       this.setCache(cacheKey, stored, 600); // 缓存10分钟
       return stored;
     }
-    
+
     // 实时获取（仅在用户访问时）
     try {
       // 使用第三方API或扫描获取地址交易
       const transactions = await this.fetchAddressTransactionsFromAPI(address, page, limit);
-      
+
       // 异步存储相关的区块和交易
       this.indexAddressDataAsync(address, transactions);
-      
+
       const result = { transactions, total: transactions.length };
       this.setCache(cacheKey, result, 300); // 缓存5分钟
-      
+
       return result;
     } catch (error) {
       console.error(\`Failed to fetch address transactions \${address}:\`, error);
       return { transactions: [], total: 0 };
     }
   }
-  
+
   // 按需索引地址交易历史
   async indexAddressTransactions(address: string, fromBlock?: number): Promise<void> {
     const isIndexed = await this.isAddressIndexed(address);
@@ -670,25 +694,25 @@ export class OnDemandIndexService {
       await this.updateLastQueried(address);
       return;
     }
-    
+
     try {
       // 使用第三方API或者扫描方式获取地址相关交易
       const transactions = await this.getAddressTransactions(address, fromBlock);
-      
+
       // 索引相关的区块和交易
       for (const tx of transactions) {
         await this.indexBlock(tx.blockNumber);
       }
-      
+
       // 记录地址索引信息
       await this.recordAddressIndex(address, transactions);
-      
+
     } catch (error) {
       console.error(\`Failed to index address \${address}:\`, error);
       throw error;
     }
   }
-  
+
   // 异步存储区块数据（不阻塞用户响应）
   private async storeBlockAsync(block: Block): Promise<void> {
     setImmediate(async () => {
@@ -710,17 +734,17 @@ export class OnDemandIndexService {
           block.transactionCount,
           block.size
         ]);
-        
+
         // 记录访问历史
         await this.recordAccess('block', block.number.toString());
-        
+
         console.log(\`✅ Block \${block.number} stored asynchronously\`);
       } catch (error) {
         console.error(\`❌ Failed to store block \${block.number}:\`, error);
       }
     });
   }
-  
+
   // 异步索引地址数据
   private async indexAddressDataAsync(address: string, transactions: Transaction[]): Promise<void> {
     setImmediate(async () => {
@@ -729,17 +753,17 @@ export class OnDemandIndexService {
         for (const tx of transactions) {
           await this.storeTransactionAsync(tx);
         }
-        
+
         // 记录地址索引
         await this.recordAddressAccess(address);
-        
+
         console.log(\`✅ Address \${address} data indexed asynchronously\`);
       } catch (error) {
         console.error(\`❌ Failed to index address \${address}:\`, error);
       }
     });
   }
-  
+
   // 简单内存缓存管理
   private getFromCache(key: string): any | null {
     const cached = this.cache.get(key);
@@ -749,19 +773,19 @@ export class OnDemandIndexService {
     }
     return cached.data;
   }
-  
+
   private setCache(key: string, data: any, ttlSeconds: number): void {
     this.cache.set(key, {
       data,
       expires: Date.now() + ttlSeconds * 1000
     });
-    
+
     // 定期清理过期缓存
     if (this.cache.size > 1000) {
       this.cleanupCache();
     }
   }
-  
+
   private cleanupCache(): void {
     const now = Date.now();
     for (const [key, value] of this.cache.entries()) {
@@ -770,12 +794,12 @@ export class OnDemandIndexService {
       }
     }
   }
-  
+
   // 记录用户访问行为
   private async recordAccess(type: string, identifier: string): Promise<void> {
     await this.db.run(\`
       INSERT OR REPLACE INTO access_history (type, identifier, accessed_at, access_count)
-      VALUES (?, ?, CURRENT_TIMESTAMP, 
+      VALUES (?, ?, CURRENT_TIMESTAMP,
         COALESCE((SELECT access_count FROM access_history WHERE type = ? AND identifier = ?), 0) + 1
       )
     \`, [type, identifier, type, identifier]);
@@ -786,18 +810,19 @@ export class OnDemandIndexService {
 ### 3. 智能缓存策略
 
 #### 内存缓存（服务端）
+
 ```typescript
 // src/server/services/CacheService.ts
 export class SimpleCacheService {
   private cache = new Map<string, { data: any; expires: number }>();
-  
+
   set(key: string, data: any, ttlSeconds = 300): void {
     this.cache.set(key, {
       data,
-      expires: Date.now() + ttlSeconds * 1000
+      expires: Date.now() + ttlSeconds * 1000,
     });
   }
-  
+
   get(key: string): any | null {
     const cached = this.cache.get(key);
     if (!cached || cached.expires < Date.now()) {
@@ -806,7 +831,7 @@ export class SimpleCacheService {
     }
     return cached.data;
   }
-  
+
   // 定期清理过期缓存
   cleanup(): void {
     const now = Date.now();
@@ -820,39 +845,37 @@ export class SimpleCacheService {
 ```
 
 #### 浏览器缓存（前端）
+
 ```typescript
 // src/client/lib/browserCache.ts
 export class BrowserCache {
   private static CACHE_PREFIX = 'block-explorer:';
-  
+
   static set(key: string, data: any, ttlMinutes = 5): void {
     const item = {
       data,
-      expires: Date.now() + ttlMinutes * 60 * 1000
+      expires: Date.now() + ttlMinutes * 60 * 1000,
     };
-    localStorage.setItem(
-      this.CACHE_PREFIX + key, 
-      JSON.stringify(item)
-    );
+    localStorage.setItem(this.CACHE_PREFIX + key, JSON.stringify(item));
   }
-  
+
   static get(key: string): any | null {
     try {
       const cached = localStorage.getItem(this.CACHE_PREFIX + key);
       if (!cached) return null;
-      
+
       const item = JSON.parse(cached);
       if (item.expires < Date.now()) {
         localStorage.removeItem(this.CACHE_PREFIX + key);
         return null;
       }
-      
+
       return item.data;
     } catch {
       return null;
     }
   }
-  
+
   static clear(): void {
     const keys = Object.keys(localStorage);
     keys.forEach(key => {
@@ -877,54 +900,54 @@ const hybrid = new Hono();
 // 获取区块信息（优先本地，fallback到RPC）
 hybrid.get('/blocks/:number', async (c) => {
   const blockNumber = parseInt(c.req.param('number'));
-  
+
   // 首先检查本地是否有缓存
   let block = cacheService.get(\`block:\${blockNumber}\`);
   if (block) {
     return c.json({ success: true, data: block, source: 'cache' });
   }
-  
+
   // 检查本地数据库
   block = await blockService.getLocalBlock(blockNumber);
   if (block) {
     cacheService.set(\`block:\${blockNumber}\`, block, 3600); // 缓存1小时
     return c.json({ success: true, data: block, source: 'local' });
   }
-  
+
   // 如果是最新的几个区块，建议前端直接RPC调用
   const latestBlock = await ethereumClient.getLatestBlockNumber();
   if (blockNumber > Number(latestBlock) - 10) {
-    return c.json({ 
-      success: true, 
-      data: null, 
+    return c.json({
+      success: true,
+      data: null,
       source: 'rpc_recommended',
       message: 'Please use direct RPC for latest blocks'
     });
   }
-  
+
   // 按需索引历史区块
   await onDemandIndexService.indexBlock(blockNumber);
   block = await blockService.getLocalBlock(blockNumber);
-  
+
   return c.json({ success: true, data: block, source: 'indexed' });
 });
 
 // 获取地址信息（混合策略）
 hybrid.get('/addresses/:address', async (c) => {
   const address = c.req.param('address');
-  
+
   // 实时数据通过响应头建议前端直接RPC获取
   c.header('X-RPC-Suggested', 'balance,txCount');
-  
+
   // 返回历史数据和统计信息
   const addressInfo = await addressService.getAddressInfo(address);
-  
+
   return c.json({
     success: true,
     data: {
       ...addressInfo,
       // 不包含实时余额，建议前端RPC获取
-      balance: null, 
+      balance: null,
       transactionCount: null,
       meta: {
         suggestedRPCFields: ['balance', 'transactionCount']
@@ -941,7 +964,7 @@ hybrid.get('/addresses/:address', async (c) => {
 export class HybridApiClient {
   private apiClient: ApiClient;
   private rpcClient: PublicClient;
-  
+
   constructor() {
     this.apiClient = new ApiClient();
     this.rpcClient = createPublicClient({
@@ -949,30 +972,30 @@ export class HybridApiClient {
       transport: http(import.meta.env.VITE_ETHEREUM_RPC_URL),
     });
   }
-  
+
   async getBlock(blockNumber: number): Promise<Block> {
     // 优先尝试本地API
     const response = await this.apiClient.get(\`/blocks/\${blockNumber}\`);
-    
+
     if (response.source === 'rpc_recommended') {
       // API建议直接RPC调用
       return await this.getBlockFromRPC(blockNumber);
     }
-    
+
     return response.data;
   }
-  
+
   async getAddressInfo(address: string): Promise<AddressInfo> {
     // 获取历史数据
     const apiResponse = await this.apiClient.get(\`/addresses/\${address}\`);
     const addressInfo = apiResponse.data;
-    
+
     // 获取实时数据
     const [balance, txCount] = await Promise.all([
       this.rpcClient.getBalance({ address: address as \`0x\${string}\` }),
       this.rpcClient.getTransactionCount({ address: address as \`0x\${string}\` }),
     ]);
-    
+
     return {
       ...addressInfo,
       balance: balance.toString(),
@@ -983,13 +1006,13 @@ export class HybridApiClient {
       }
     };
   }
-  
+
   private async getBlockFromRPC(blockNumber: number): Promise<Block> {
-    const block = await this.rpcClient.getBlock({ 
+    const block = await this.rpcClient.getBlock({
       blockNumber: BigInt(blockNumber),
-      includeTransactions: false 
+      includeTransactions: false
     });
-    
+
     return {
       number: Number(block.number),
       hash: block.hash,
@@ -1009,12 +1032,15 @@ export class HybridApiClient {
 ## 性能优化策略
 
 ### 1. 懒加载和预加载
+
 ```typescript
 // 懒加载历史数据
-const lazyLoadTransactions = useMemo(() => 
-  debounce(async (address: string) => {
-    await onDemandIndexService.indexAddressTransactions(address);
-  }, 500), []
+const lazyLoadTransactions = useMemo(
+  () =>
+    debounce(async (address: string) => {
+      await onDemandIndexService.indexAddressTransactions(address);
+    }, 500),
+  [],
 );
 
 // 预加载热点数据
@@ -1027,10 +1053,11 @@ const preloadPopularAddresses = async () => {
 ```
 
 ### 2. 数据库优化
+
 ```sql
 -- 只为热点查询创建索引
-CREATE INDEX IF NOT EXISTS idx_hot_addresses 
-ON transactions(from_address, to_address) 
+CREATE INDEX IF NOT EXISTS idx_hot_addresses
+ON transactions(from_address, to_address)
 WHERE from_address IN (SELECT address FROM indexed_addresses WHERE last_queried > datetime('now', '-1 day'));
 
 -- 按查询频率优化
@@ -1038,12 +1065,13 @@ ANALYZE; -- 让DuckDB优化查询计划
 ```
 
 ### 3. 网络优化
+
 ```typescript
 // 批量RPC调用
 const batchRPCCalls = async (calls: any[]) => {
   const results = await Promise.allSettled(calls);
-  return results.map(result => 
-    result.status === 'fulfilled' ? result.value : null
+  return results.map(result =>
+    result.status === 'fulfilled' ? result.value : null,
   );
 };
 
@@ -1051,9 +1079,12 @@ const batchRPCCalls = async (calls: any[]) => {
 const dedupRequests = new Map<string, Promise<any>>();
 const deduplicatedFetch = (url: string) => {
   if (!dedupRequests.has(url)) {
-    dedupRequests.set(url, fetch(url).finally(() => {
-      dedupRequests.delete(url);
-    }));
+    dedupRequests.set(
+      url,
+      fetch(url).finally(() => {
+        dedupRequests.delete(url);
+      }),
+    );
   }
   return dedupRequests.get(url)!;
 };
@@ -1062,17 +1093,20 @@ const deduplicatedFetch = (url: string) => {
 ## 成本控制
 
 ### RPC调用优化
+
 - **批量调用**：合并多个RPC请求
 - **缓存策略**：避免重复调用
 - **fallback机制**：主RPC失败时使用备用节点
 - **速率限制**：控制调用频率
 
 ### 存储优化
+
 - **按需索引**：只索引用户实际查询的数据
 - **数据清理**：定期清理旧的搜索历史
 - **压缩存储**：DuckDB自动压缩，减少存储空间
 
 ### 网络优化
+
 - **CDN部署**：静态资源使用CDN
 - **代码分割**：按需加载前端代码
 - **资源压缩**：Gzip/Brotli压缩
@@ -1080,13 +1114,14 @@ const deduplicatedFetch = (url: string) => {
 ## 监控指标
 
 ### 数据源使用统计
+
 ```typescript
 // 记录数据源使用情况
 const dataSourceMetrics = {
   rpcCalls: 0,
   localQueries: 0,
   cacheHits: 0,
-  indexingOperations: 0
+  indexingOperations: 0,
 };
 
 // 定期报告
@@ -1097,6 +1132,7 @@ setInterval(() => {
 ```
 
 ### 性能指标
+
 - **RPC调用次数和延迟**
 - **本地查询性能**
 - **缓存命中率**
@@ -1104,6 +1140,7 @@ setInterval(() => {
 - **数据库大小增长**
 
 这种混合策略确保了：
+
 1. **实时性**：重要数据直接从RPC获取
 2. **效率**：历史数据本地快速查询
 3. **成本控制**：避免不必要的RPC调用和存储

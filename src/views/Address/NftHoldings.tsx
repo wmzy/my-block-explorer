@@ -202,19 +202,18 @@ function NftItemThumb({ src, alt }: { src: string | null; alt: string }) {
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
           <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" stroke="currentColor" />
           <circle cx="5.5" cy="6.5" r="1.2" fill="currentColor" />
-          <path d="M2.5 12.2 6.5 8.2l3 3 2-2 2.9 2.9" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" />
+          <path
+            d="M2.5 12.2 6.5 8.2l3 3 2-2 2.9 2.9"
+            stroke="currentColor"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
         </svg>
       </span>
     );
   }
   return (
-    <img
-      className={nftThumb}
-      src={src}
-      alt={alt}
-      loading="lazy"
-      onError={() => setFailed(true)}
-    />
+    <img className={nftThumb} src={src} alt={alt} loading="lazy" onError={() => setFailed(true)} />
   );
 }
 
@@ -420,8 +419,8 @@ export default function NftHoldings({ transfers, address, chainId, loading }: Nf
         ))}
         {preview.totalOwnedItems > preview.items.length && (
           <p className={nftNote}>
-            showing first {NFT_METADATA_PREVIEW_LIMIT} of{' '}
-            {preview.totalOwnedItems.toLocaleString()} held items
+            showing first {NFT_METADATA_PREVIEW_LIMIT} of {preview.totalOwnedItems.toLocaleString()}{' '}
+            held items
           </p>
         )}
         {aggregated.unclassifiedTransfers > 0 && (

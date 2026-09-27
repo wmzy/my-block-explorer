@@ -82,9 +82,7 @@ const diamondSource: ContractSource = {
 };
 
 const mockFacetAbi = (abi: string | null) =>
-  vi
-    .mocked(fetchContractAbi)
-    .mockResolvedValue(abi === null ? undefined : ({ abi }));
+  vi.mocked(fetchContractAbi).mockResolvedValue(abi === null ? undefined : { abi });
 
 beforeEach(() => {
   vi.mocked(readContract).mockReset();
@@ -174,9 +172,7 @@ describe('ContractInteract diamond facet merge', () => {
     // Shared signature appears exactly once.
     expect(screen.getAllByText('shared')).toHaveLength(1);
     // The banner names the diamond merge.
-    expect(
-      screen.getByText(/the function list merges every facet\u2019s ABI/),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/the function list merges every facet\u2019s ABI/)).toBeInTheDocument();
     // The conflict note names the dropped duplicate.
     expect(screen.getByRole('status')).toHaveTextContent(
       'Shared function signatures kept from the first facet: shared().',

@@ -26,8 +26,7 @@ export type WatchlistAddRejection =
   | 'full'; // at the cap
 
 export type WatchlistAddResult =
-  | { ok: true; entries: string[] }
-  | { ok: false; reason: WatchlistAddRejection; entries: string[] };
+  { ok: true; entries: string[] } | { ok: false; reason: WatchlistAddRejection; entries: string[] };
 
 // Storage is best-effort (searchHistory precedent): a corrupt payload or
 // a full/private-mode localStorage must never break the page — reads

@@ -64,11 +64,16 @@ const nonEmpty = (value: unknown): string | undefined => {
 // a hand-corrupted row degrades to null (dropped on read), never crashes.
 const toEntry = (value: unknown): ViewedTokenEntry | null => {
   if (typeof value !== 'object' || value === null) return null;
-  const record = value as { address?: unknown; symbol?: unknown; name?: unknown; firstSeen?: unknown };
+  const record = value as {
+    address?: unknown;
+    symbol?: unknown;
+    name?: unknown;
+    firstSeen?: unknown;
+  };
   if (
-    typeof record.address !== 'string'
-    || !HEX_ADDRESS_RE.test(record.address)
-    || typeof record.firstSeen !== 'string'
+    typeof record.address !== 'string' ||
+    !HEX_ADDRESS_RE.test(record.address) ||
+    typeof record.firstSeen !== 'string'
   ) {
     return null;
   }
@@ -138,7 +143,7 @@ export function mergeViewedEntries(
   cap: number = VIEWED_TOKENS_MAX_ENTRIES,
 ): ViewedTokenEntry[] {
   const lower = next.address.toLowerCase();
-  const prior = existing.find((entry) => entry.address.toLowerCase() === lower);
+  const prior = existing.find(entry => entry.address.toLowerCase() === lower);
   const symbol = next.symbol ?? prior?.symbol;
   const name = next.name ?? prior?.name;
   const merged: ViewedTokenEntry = {
@@ -147,10 +152,7 @@ export function mergeViewedEntries(
     ...(name !== undefined ? { name } : {}),
     firstSeen: prior?.firstSeen ?? next.firstSeen,
   };
-  return [
-    merged,
-    ...existing.filter((entry) => entry.address.toLowerCase() !== lower),
-  ].slice(0, cap);
+  return [merged, ...existing.filter(entry => entry.address.toLowerCase() !== lower)].slice(0, cap);
 }
 
 /**
@@ -218,11 +220,9 @@ export function mergeDirectory(
   known: readonly KnownToken[],
   viewed: readonly ViewedTokenEntry[],
 ): TokenDirectoryRow[] {
-  const viewedByLower = new Map(
-    viewed.map((entry) => [entry.address.toLowerCase(), entry]),
-  );
-  const curatedLowers = new Set(known.map((token) => token.address.toLowerCase()));
-  const rows: TokenDirectoryRow[] = known.map((token) => ({
+  const viewedByLower = new Map(viewed.map(entry => [entry.address.toLowerCase(), entry]));
+  const curatedLowers = new Set(known.map(token => token.address.toLowerCase()));
+  const rows: TokenDirectoryRow[] = known.map(token => ({
     address: token.address,
     symbol: token.symbol,
     name: viewedByLower.get(token.address.toLowerCase())?.name ?? null,
@@ -253,9 +253,9 @@ export function filterByQuery<
   if (needle === '') return [...rows];
   return rows.filter(
     (row): boolean =>
-      row.address.toLowerCase().includes(needle)
-      || (row.symbol?.toLowerCase().includes(needle) ?? false)
-      || (row.name?.toLowerCase().includes(needle) ?? false),
+      row.address.toLowerCase().includes(needle) ||
+      (row.symbol?.toLowerCase().includes(needle) ?? false) ||
+      (row.name?.toLowerCase().includes(needle) ?? false),
   );
 }
 
@@ -315,9 +315,7 @@ const readMulticallBigint = (outcome: unknown): bigint | null => {
     return null;
   }
   const record: { status?: unknown; result?: unknown } = outcome;
-  return record.status === 'success' && typeof record.result === 'bigint'
-    ? record.result
-    : null;
+  return record.status === 'success' && typeof record.result === 'bigint' ? record.result : null;
 };
 
 /**
@@ -327,9 +325,7 @@ const readMulticallBigint = (outcome: unknown): bigint | null => {
  * settle that raced an argument switch (Contracts/List settle guard).
  */
 export function tokenDirectoryAddressesKey(addresses: readonly string[]): string {
-  return [...new Set(addresses.map((address) => address.toLowerCase()))]
-    .sort()
-    .join(',');
+  return [...new Set(addresses.map(address => address.toLowerCase()))].sort().join(',');
 }
 
 /**
@@ -390,15 +386,11 @@ export async function fetchTokenDirectoryReads(
 
 // Directory reads are effectively immutable (a token's interface and
 // supply change, if ever, on the scale of the 5min default cache window).
-export const tokenDirectoryReadsCache = createQueryCache<
-  TokenDirectoryPage,
-  [number, string]
->('token-directory-reads');
-
-const queryTokenDirectoryReads = bindQueryFn(
-  fetchTokenDirectoryReads,
-  tokenDirectoryReadsCache,
+export const tokenDirectoryReadsCache = createQueryCache<TokenDirectoryPage, [number, string]>(
+  'token-directory-reads',
 );
+
+const queryTokenDirectoryReads = bindQueryFn(fetchTokenDirectoryReads, tokenDirectoryReadsCache);
 
 const useTokenDirectoryReadsQuery = createQueryHook({
   queryFn: queryTokenDirectoryReads,
@@ -409,10 +401,7 @@ const useTokenDirectoryReadsQuery = createQueryHook({
  * address-set digest, so a directory that grew (a token page recorded a
  * new visit) re-keys honestly instead of serving the previous set's reads.
  */
-export function useTokenDirectoryReads(
-  chainId: number,
-  addresses: readonly string[],
-) {
+export function useTokenDirectoryReads(chainId: number, addresses: readonly string[]) {
   return useTokenDirectoryReadsQuery([chainId, tokenDirectoryAddressesKey(addresses)]);
 }
 
@@ -422,8 +411,6 @@ export function useTokenDirectoryReads(
  * makes for the address page's overview card. No reads yet, a reverted
  * probe or a transport failure all render no claim (the view shows '—').
  */
-export function directoryStandardLabel(
-  reads: TokenDirectoryReads | undefined,
-): 'ERC-20' | null {
+export function directoryStandardLabel(reads: TokenDirectoryReads | undefined): 'ERC-20' | null {
   return classifyTokenOverview(reads)?.isErc20 === true ? 'ERC-20' : null;
 }

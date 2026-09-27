@@ -69,7 +69,7 @@ for basic functionality.
 ### Technology Stack
 
 - **Frontend**: React 19 + Vite 7 + Linaria CSS-in-JS + TypeScript 5.9+
-- **Backend**: Hono framework + Node.js 22 + DuckDB via custom adapter
+- **Backend**: Hono framework + Node.js 26 + DuckDB via custom adapter
 - **Database**: DuckDB with PostgreSQL-compatible adapter through Drizzle ORM
 - **Blockchain**: Viem 2.34+ for multi-chain support
 - **Testing**: Vitest with jsdom environment and v8 coverage provider

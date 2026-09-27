@@ -41,14 +41,11 @@ const parseChainAndAddress = (
     const chainId = getValidatedChainId(chainIdStr);
     const address = getValidatedAddress(addressStr).toLowerCase() as `0x${string}`;
     return { chainId, address };
-  }
-  catch (error) {
+  } catch (error) {
     return {
       error: 'invalid_request',
       message:
-        error instanceof HTTPException
-          ? error.message
-          : 'Chain ID and address must be valid',
+        error instanceof HTTPException ? error.message : 'Chain ID and address must be valid',
     };
   }
 };
@@ -110,10 +107,7 @@ app.get('/chains/:chainId/labels/:address', async c => {
   try {
     const row = await findLabelRow(parsed.chainId, parsed.address);
     if (row === null) {
-      return c.json(
-        { error: 'label_not_found', message: 'No label set for this address' },
-        404,
-      );
+      return c.json({ error: 'label_not_found', message: 'No label set for this address' }, 404);
     }
     c.header('Cache-Control', 'no-store');
     // source tells the client whether the row is a bundled seed
@@ -123,8 +117,7 @@ app.get('/chains/:chainId/labels/:address', async c => {
     // here: anything but 'builtin' reads as 'user'.
     const source = row.source === 'builtin' ? 'builtin' : 'user';
     return c.json({ label: row.label, note: row.note, source });
-  }
-  catch (error) {
+  } catch (error) {
     logger.error({ err: error }, 'Label lookup failed');
     return c.json({ error: 'internal_error', message: 'Label lookup failed' }, 500);
   }
@@ -188,8 +181,7 @@ app.get('/labels', requireAdminTokenIfConfigured, listRateLimiter, async c => {
         updatedAt: toIsoTimestamp(row.updatedAt),
       })),
     });
-  }
-  catch (error) {
+  } catch (error) {
     logger.error({ err: error }, 'Label list failed');
     return c.json({ error: 'internal_error', message: 'Failed to list labels' }, 500);
   }
@@ -205,12 +197,8 @@ app.put('/chains/:chainId/labels/:address', requireAdminTokenIfConfigured, async
   let body: unknown;
   try {
     body = await c.req.json();
-  }
-  catch {
-    return c.json(
-      { error: 'invalid_label', message: 'Request body must be valid JSON' },
-      400,
-    );
+  } catch {
+    return c.json({ error: 'invalid_label', message: 'Request body must be valid JSON' }, 400);
   }
   const parsedBody = parseLabelBody(body);
   if ('error' in parsedBody) return c.json(parsedBody, 400);
@@ -232,8 +220,7 @@ app.put('/chains/:chainId/labels/:address', requireAdminTokenIfConfigured, async
       });
     c.header('Cache-Control', 'no-store');
     return c.json({ label, note, source: 'user' });
-  }
-  catch (error) {
+  } catch (error) {
     logger.error({ err: error }, 'Label upsert failed');
     return c.json({ error: 'internal_error', message: 'Failed to save label' }, 500);
   }
@@ -248,10 +235,7 @@ app.delete('/chains/:chainId/labels/:address', requireAdminTokenIfConfigured, as
   try {
     const existing = await findLabelRow(parsed.chainId, parsed.address);
     if (existing === null) {
-      return c.json(
-        { error: 'label_not_found', message: 'No label set for this address' },
-        404,
-      );
+      return c.json({ error: 'label_not_found', message: 'No label set for this address' }, 404);
     }
     await db
       .delete(addressLabels)
@@ -259,8 +243,7 @@ app.delete('/chains/:chainId/labels/:address', requireAdminTokenIfConfigured, as
         and(eq(addressLabels.chainId, parsed.chainId), eq(addressLabels.address, parsed.address)),
       );
     return c.body(null, 204);
-  }
-  catch (error) {
+  } catch (error) {
     logger.error({ err: error }, 'Label delete failed');
     return c.json({ error: 'internal_error', message: 'Failed to delete label' }, 500);
   }

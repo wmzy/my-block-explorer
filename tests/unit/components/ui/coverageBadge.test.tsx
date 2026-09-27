@@ -59,8 +59,7 @@ describe('worstCoverage', () => {
   });
 
   it('folds a source list down to its single worst level', () => {
-    const fold = (levels: CoverageLevel[]) =>
-      levels.reduce(worstCoverage, 'live' as CoverageLevel);
+    const fold = (levels: CoverageLevel[]) => levels.reduce(worstCoverage, 'live' as CoverageLevel);
     expect(fold(['live', 'cached-immutable', 'live'])).toBe('cached-immutable');
     expect(fold(['discovered', 'partial', 'unavailable'])).toBe('unavailable');
     expect(fold(['sampled', 'discovered'])).toBe('sampled');
@@ -112,9 +111,7 @@ describe('aggregateCoverage', () => {
 describe('CoverageBadge rendering', () => {
   it('renders every level with its label text and a distinct marker attribute', () => {
     for (const level of ALL_LEVELS) {
-      const { unmount } = render(
-        <CoverageBadge level={level} label={`Data coverage: ${level}`} />,
-      );
+      const { unmount } = render(<CoverageBadge level={level} label={`Data coverage: ${level}`} />);
       const badge = screen.getByTestId('coverage-badge');
       // The level rides on the DOM so styling/tests can branch on it.
       expect(badge).toHaveAttribute('data-level', level);
@@ -131,9 +128,7 @@ describe('CoverageBadge rendering', () => {
     expect(screen.queryByTestId('coverage-badge-toggle')).not.toBeInTheDocument();
     unmount();
 
-    render(
-      <CoverageBadge level="live" label="Data coverage: live" detail={[]} />,
-    );
+    render(<CoverageBadge level="live" label="Data coverage: live" detail={[]} />);
     expect(screen.queryByTestId('coverage-badge-toggle')).not.toBeInTheDocument();
   });
 
@@ -201,12 +196,12 @@ describe('CoverageBadge rendering', () => {
     // useId value, which React seeds per root — it shifts with how many
     // roots rendered earlier in the file, so exactly that attribute value
     // is normalized; every other byte is pinned.
-    render(
-      <CoverageBadge level="partial" label="Data coverage: partial" detail={['One line']} />,
-    );
+    render(<CoverageBadge level="partial" label="Data coverage: partial" detail={['One line']} />);
     const collapsed = screen.getByTestId('coverage-badge').outerHTML;
     expect(collapsed).toMatch(/aria-controls="[^"]+"/);
     const pinned = collapsed.replace(/aria-controls="[^"]+"/, 'aria-controls="<useId>"');
-    expect(pinned).toMatchInlineSnapshot(`"<div class="mocked-css-0" data-testid="coverage-badge" data-level="partial"><span class="mocked-css-1"><span data-slot="tag" class="haze-Tag__base haze-Tag__warning haze-Tag__sm mocked-css-2"><span class="mocked-css-3" aria-hidden="true"><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><circle cx="5" cy="5" r="4" fill="none" stroke="currentColor" stroke-width="1.4"></circle><path d="M5 1a4 4 0 0 0 0 8Z" fill="currentColor"></path></svg></span>Data coverage: partial</span><button type="button" class="mocked-css-4" aria-expanded="false" aria-controls="<useId>" aria-label="Show data coverage details" title="What this coverage means, per data source" data-testid="coverage-badge-toggle">ⓘ</button></span></div>"`);
+    expect(pinned).toMatchInlineSnapshot(
+      `"<div class="mocked-css-0" data-testid="coverage-badge" data-level="partial"><span class="mocked-css-1"><span data-slot="tag" class="haze-Tag__base haze-Tag__warning haze-Tag__sm mocked-css-2"><span class="mocked-css-3" aria-hidden="true"><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><circle cx="5" cy="5" r="4" fill="none" stroke="currentColor" stroke-width="1.4"></circle><path d="M5 1a4 4 0 0 0 0 8Z" fill="currentColor"></path></svg></span>Data coverage: partial</span><button type="button" class="mocked-css-4" aria-expanded="false" aria-controls="<useId>" aria-label="Show data coverage details" title="What this coverage means, per data source" data-testid="coverage-badge-toggle">ⓘ</button></span></div>"`,
+    );
   });
 });

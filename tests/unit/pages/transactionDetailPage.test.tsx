@@ -72,7 +72,8 @@ vi.mock('@/config/chains', () => ({
     if (chainId === 1) return { id: 1, name: 'Ethereum', nativeCurrency: { symbol: 'ETH' } };
     return null;
   },
-  getChainName: (chainId: number) => (chainId === 1 ? 'Ethereum' : chainId === 137 ? 'Polygon' : `Chain ${chainId}`),
+  getChainName: (chainId: number) =>
+    chainId === 1 ? 'Ethereum' : chainId === 137 ? 'Polygon' : `Chain ${chainId}`,
   getChainSymbol: () => 'ETH',
   // Consumed by the Landing helpers behind UnsupportedChainState.
   isChainSupported: (chainId: number) => chainId === 1,
@@ -170,9 +171,9 @@ const packedUserOp = (
   nonce,
   initCode: '0x',
   callData: `0x${'aa'.repeat(36)}`,
-  accountGasLimits: toHex(50000n << 128n | 100000n, { size: 32 }),
+  accountGasLimits: toHex((50000n << 128n) | 100000n, { size: 32 }),
   preVerificationGas: 21000n,
-  gasFees: toHex(2000000000n << 128n | 20000000000n, { size: 32 }),
+  gasFees: toHex((2000000000n << 128n) | 20000000000n, { size: 32 }),
   paymasterAndData,
   signature: `0x${'ab'.repeat(65)}`,
 });
@@ -706,10 +707,7 @@ describe('TransactionDetail page', () => {
     expect(await screen.findByText('1,000,000,000 gwei')).toBeInTheDocument();
     expect(screen.getByText('600,000 gwei')).toBeInTheDocument();
     expect(screen.getByText('≈ 1.0000 ETH')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Gwei' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
+    expect(screen.getByRole('button', { name: 'Gwei' })).toHaveAttribute('aria-pressed', 'true');
     // The choice persists for the next mount.
     expect(localStorage.getItem(VALUE_UNIT_STORAGE_KEY)).toBe('gwei');
 
@@ -825,9 +823,7 @@ describe('TransactionDetail page', () => {
 
     renderDetail();
 
-    expect((await screen.findAllByRole('heading', { name: 'Transaction Details' })).length).toBe(
-      2,
-    );
+    expect((await screen.findAllByRole('heading', { name: 'Transaction Details' })).length).toBe(2);
     expect(
       screen.queryByRole('heading', { name: 'Account Abstraction (ERC-4337)' }),
     ).not.toBeInTheDocument();
@@ -852,9 +848,7 @@ describe('TransactionDetail page', () => {
 
     renderDetail();
 
-    expect((await screen.findAllByRole('heading', { name: 'Transaction Details' })).length).toBe(
-      2,
-    );
+    expect((await screen.findAllByRole('heading', { name: 'Transaction Details' })).length).toBe(2);
     expect(
       screen.queryByRole('heading', { name: 'Account Abstraction (ERC-4337)' }),
     ).not.toBeInTheDocument();

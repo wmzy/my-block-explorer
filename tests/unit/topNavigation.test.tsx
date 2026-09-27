@@ -6,10 +6,7 @@ import { ApiError } from '@/util/apiError';
 import { ServiceDiscoveryContext } from '@/hooks/ServiceDiscoveryContext';
 import type { ServiceInfo } from '@/hooks/useAutoDiscovery';
 import { THEME_STORAGE_KEY } from '@/themePreference';
-import {
-  recordSearchHistoryEntry,
-  SEARCH_HISTORY_STORAGE_KEY,
-} from '@/services/searchHistory';
+import { recordSearchHistoryEntry, SEARCH_HISTORY_STORAGE_KEY } from '@/services/searchHistory';
 
 // Mock @native-router: TopNavigation reads the router via useRouter and
 // navigates through the core navigate(router, to) free function. Stubbing
@@ -69,16 +66,14 @@ vi.mock('../../src/util/http', () => ({
 // probes add getBlockNumber/getTransaction/getBlock on top of the ENS
 // default).
 const { mockCreateRpcClient, mockGetEnsAddress } = vi.hoisted(() => {
-  const getEnsAddress = vi.fn(
-    (): Promise<string | null> =>
-      Promise.resolve('0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'),
+  const getEnsAddress = vi.fn((): Promise<string | null> =>
+    Promise.resolve('0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'),
   );
   const defaultClient: Record<string, unknown> = { getEnsAddress };
   return {
     mockGetEnsAddress: getEnsAddress,
-    mockCreateRpcClient: vi.fn(
-      (_chainId: number): Promise<Record<string, unknown>> =>
-        Promise.resolve(defaultClient),
+    mockCreateRpcClient: vi.fn((_chainId: number): Promise<Record<string, unknown>> =>
+      Promise.resolve(defaultClient),
     ),
   };
 });
@@ -355,9 +350,7 @@ describe('TopNavigation', () => {
     );
     renderTopNavigation({ currentChainId: 1 });
 
-    fireEvent.focus(
-      screen.getByPlaceholderText('Search address, tx hash, or block number...'),
-    );
+    fireEvent.focus(screen.getByPlaceholderText('Search address, tx hash, or block number...'));
 
     // The entry renders with the chain it was recorded on; no history
     // endpoint is consulted (that endpoint leaked every visitor's
@@ -421,9 +414,7 @@ describe('TopNavigation', () => {
     );
     renderTopNavigation();
 
-    fireEvent.focus(
-      screen.getByPlaceholderText('Search address, tx hash, or block number...'),
-    );
+    fireEvent.focus(screen.getByPlaceholderText('Search address, tx hash, or block number...'));
     expect(await screen.findByText('0xabc')).toBeInTheDocument();
 
     fireEvent.click(screen.getByText('Clear'));
@@ -442,9 +433,7 @@ describe('TopNavigation', () => {
     );
     renderTopNavigation();
 
-    fireEvent.focus(
-      screen.getByPlaceholderText('Search address, tx hash, or block number...'),
-    );
+    fireEvent.focus(screen.getByPlaceholderText('Search address, tx hash, or block number...'));
     expect(await screen.findByText('0xabc')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Remove 0xabc from history' }));
@@ -463,9 +452,7 @@ describe('TopNavigation', () => {
     );
     renderTopNavigation({ currentChainId: 1 });
 
-    fireEvent.focus(
-      screen.getByPlaceholderText('Search address, tx hash, or block number...'),
-    );
+    fireEvent.focus(screen.getByPlaceholderText('Search address, tx hash, or block number...'));
     fireEvent.click(await screen.findByText(address));
 
     // Not the currently selected chain (1) — the entry's own chain (5000).
@@ -476,15 +463,10 @@ describe('TopNavigation', () => {
 
   it('re-runs a legacy chain-less history entry on the currently selected chain', async () => {
     const address = '0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045';
-    localStorage.setItem(
-      SEARCH_HISTORY_STORAGE_KEY,
-      JSON.stringify([{ query: address }]),
-    );
+    localStorage.setItem(SEARCH_HISTORY_STORAGE_KEY, JSON.stringify([{ query: address }]));
     renderTopNavigation({ currentChainId: 5000 });
 
-    fireEvent.focus(
-      screen.getByPlaceholderText('Search address, tx hash, or block number...'),
-    );
+    fireEvent.focus(screen.getByPlaceholderText('Search address, tx hash, or block number...'));
     // The badge names where a click runs the entry now (the selected
     // chain) — for a legacy entry that is the honest label. The selector
     // shows the same chain name, so the badge is matched as the history
@@ -528,9 +510,7 @@ describe('TopNavigation', () => {
     await waitFor(() => {
       expect(mockCreateRpcClient).toHaveBeenCalledWith(1);
     });
-    expect(
-      await screen.findByText(/Resolved vitalik\.eth → .* on Ethereum/),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/Resolved vitalik\.eth → .* on Ethereum/)).toBeInTheDocument();
     expect(mockNavigate).not.toHaveBeenCalled();
 
     // Primary action opens the resolution chain (Ethereum), never the
@@ -641,9 +621,7 @@ describe('TopNavigation', () => {
     fireEvent.change(searchInput, { target: { value: 'vitalik.eth' } });
     fireEvent.click(screen.getByText('Search'));
 
-    expect(
-      await screen.findByText(/ENS resolution failed for "vitalik\.eth"/),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/ENS resolution failed for "vitalik\.eth"/)).toBeInTheDocument();
     expect(mockNavigate).not.toHaveBeenCalled();
 
     // Retrying re-runs the resolution; this time it resolves into the
@@ -883,9 +861,7 @@ describe('TopNavigation', () => {
     fireEvent.click(screen.getByText('Search'));
 
     expect(
-      await screen.findByText(
-        /Block not found on Ethereum — it may exist on another network/,
-      ),
+      await screen.findByText(/Block not found on Ethereum — it may exist on another network/),
     ).toBeInTheDocument();
     expect(mockNavigate).not.toHaveBeenCalled();
     // A number that missed here is chain-relative like a hash: the escape
@@ -1076,9 +1052,7 @@ describe('ChainSelector', () => {
     renderTopNavigation({ onChainChange });
 
     fireEvent.click(screen.getByRole('button', { name: /Ethereum/ }));
-    const filterInput = await screen.findByPlaceholderText(
-      'Search chain name, ID, or symbol...',
-    );
+    const filterInput = await screen.findByPlaceholderText('Search chain name, ID, or symbol...');
 
     // The old blind pick: Enter with a filter that matches chains used to
     // select the first hit. With nothing highlighted it must do nothing.
@@ -1097,9 +1071,7 @@ describe('ChainSelector', () => {
     renderTopNavigation({ currentChainId: 1, onChainChange });
 
     fireEvent.click(screen.getByRole('button', { name: /Ethereum/ }));
-    const filterInput = await screen.findByPlaceholderText(
-      'Search chain name, ID, or symbol...',
-    );
+    const filterInput = await screen.findByPlaceholderText('Search chain name, ID, or symbol...');
 
     // Full list order: Ethereum (1), Polygon (137), Mantle (5000).
     fireEvent.keyDown(filterInput, { key: 'ArrowDown' });
@@ -1117,9 +1089,7 @@ describe('ChainSelector', () => {
     renderTopNavigation({ currentChainId: 1, onChainChange });
 
     fireEvent.click(screen.getByRole('button', { name: /Ethereum/ }));
-    const filterInput = await screen.findByPlaceholderText(
-      'Search chain name, ID, or symbol...',
-    );
+    const filterInput = await screen.findByPlaceholderText('Search chain name, ID, or symbol...');
 
     fireEvent.keyDown(filterInput, { key: 'ArrowUp' });
     fireEvent.keyDown(filterInput, { key: 'Enter' });
@@ -1127,9 +1097,7 @@ describe('ChainSelector', () => {
 
     // Wrapping: ArrowUp from the first lands on the last again.
     fireEvent.click(screen.getByRole('button', { name: /Ethereum/ }));
-    const reopened = await screen.findByPlaceholderText(
-      'Search chain name, ID, or symbol...',
-    );
+    const reopened = await screen.findByPlaceholderText('Search chain name, ID, or symbol...');
     fireEvent.keyDown(reopened, { key: 'ArrowDown' });
     expect(reopened).toHaveAttribute('aria-activedescendant', 'chain-option-1');
     fireEvent.keyDown(reopened, { key: 'ArrowUp' });
@@ -1141,9 +1109,7 @@ describe('ChainSelector', () => {
     renderTopNavigation({ currentChainId: 1, onChainChange });
 
     fireEvent.click(screen.getByRole('button', { name: /Ethereum/ }));
-    const filterInput = await screen.findByPlaceholderText(
-      'Search chain name, ID, or symbol...',
-    );
+    const filterInput = await screen.findByPlaceholderText('Search chain name, ID, or symbol...');
 
     // Highlight the first option, then rebuild the list with a filter:
     // the highlight must clear instead of silently pointing elsewhere.
@@ -1166,9 +1132,7 @@ describe('ChainSelector', () => {
 
     const trigger = screen.getByRole('button', { name: /Ethereum/ });
     fireEvent.click(trigger);
-    const filterInput = await screen.findByPlaceholderText(
-      'Search chain name, ID, or symbol...',
-    );
+    const filterInput = await screen.findByPlaceholderText('Search chain name, ID, or symbol...');
 
     fireEvent.keyDown(filterInput, { key: 'ArrowDown' });
     fireEvent.keyDown(filterInput, { key: 'Escape' });
@@ -1179,9 +1143,7 @@ describe('ChainSelector', () => {
 
     // Reopening starts fresh: no highlight survives the close.
     fireEvent.click(trigger);
-    const reopened = await screen.findByPlaceholderText(
-      'Search chain name, ID, or symbol...',
-    );
+    const reopened = await screen.findByPlaceholderText('Search chain name, ID, or symbol...');
     expect(reopened).not.toHaveAttribute('aria-activedescendant');
   });
 });

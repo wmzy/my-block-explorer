@@ -1,9 +1,6 @@
 import { HTTPException } from 'hono/http-exception';
 import { getAddress } from 'viem';
-import {
-  isValidTransactionHash,
-  isValidBlockNumber,
-} from '../utils/validation';
+import { isValidTransactionHash, isValidBlockNumber } from '../utils/validation';
 import { isChainSupported } from '../config/chains';
 
 // 0x-prefixed, 40 hex characters — the address shape everything below
@@ -61,8 +58,7 @@ export function getValidatedBlockNumber(blockNumber: string | number): number | 
     return 'latest';
   }
 
-  const num
-    = typeof blockNumber === 'string' ? parseInt(blockNumber, 10) : blockNumber;
+  const num = typeof blockNumber === 'string' ? parseInt(blockNumber, 10) : blockNumber;
 
   if (!isValidBlockNumber(num)) {
     throw new HTTPException(400, { message: 'Invalid block number' });

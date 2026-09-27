@@ -178,7 +178,9 @@ describe('buildPoolSnapshot', () => {
 describe('isTxPoolUnsupportedError', () => {
   it('recognizes the txpool_* refusal phrasings', () => {
     expect(isTxPoolUnsupportedError(new Error('Method not found'))).toBe(true);
-    expect(isTxPoolUnsupportedError('the method txpool_content does not exist/is not available')).toBe(true);
+    expect(
+      isTxPoolUnsupportedError('the method txpool_content does not exist/is not available'),
+    ).toBe(true);
     expect(isTxPoolUnsupportedError(new Error('txpool_content is not supported'))).toBe(true);
   });
 

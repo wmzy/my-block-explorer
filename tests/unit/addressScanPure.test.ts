@@ -43,9 +43,7 @@ describe('validateScanJobBody', () => {
       force: false,
       includeTraces: false,
     });
-    expect(validateScanJobBody(undefined)).toEqual(
-      validateScanJobBody({}),
-    );
+    expect(validateScanJobBody(undefined)).toEqual(validateScanJobBody({}));
   });
 
   it('accepts explicit non-negative integer bounds and boolean force', () => {
@@ -301,9 +299,7 @@ describe('toScanJobDto', () => {
   });
 
   it('derives complete coverage only for the genesis-anchored finish', () => {
-    expect(toScanJobDto(row({ status: 'complete', cursorBlock: 1000n })).coverage).toBe(
-      'complete',
-    );
+    expect(toScanJobDto(row({ status: 'complete', cursorBlock: 1000n })).coverage).toBe('complete');
     expect(
       toScanJobDto(row({ status: 'complete', cursorBlock: 1000n, fromBlock: 50n, toBlock: 1000n }))
         .coverage,
@@ -469,10 +465,7 @@ describe('mergeDiscoveredTransactions', () => {
   });
 
   it('sorts by blockNumber descending regardless of input order', () => {
-    const merged = mergeDiscoveredTransactions(
-      [tx('0x2', 10)],
-      [tx('0x9', 900), tx('0x1', 3)],
-    );
+    const merged = mergeDiscoveredTransactions([tx('0x2', 10)], [tx('0x9', 900), tx('0x1', 3)]);
     expect(merged.map(t => t.hash)).toEqual(['0x9', '0x2', '0x1']);
   });
 

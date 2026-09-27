@@ -140,7 +140,12 @@ export function aggregateNftHoldings(
       // holding signal and must not even create the group.
       const slots: readonly { tokenId: string; amount: string }[] =
         transfer.standard === 'erc1155-single'
-          ? [{ tokenId: transfer.tokenIds?.[0] ?? '?', amount: transfer.amounts?.[0] ?? transfer.value }]
+          ? [
+              {
+                tokenId: transfer.tokenIds?.[0] ?? '?',
+                amount: transfer.amounts?.[0] ?? transfer.value,
+              },
+            ]
           : (transfer.tokenIds ?? []).map((tokenId, i) => ({
               tokenId,
               amount: transfer.amounts?.[i] ?? '',
@@ -175,10 +180,7 @@ export function aggregateNftHoldings(
     // Self-transfers hit both party branches and net to zero naturally —
     // each branch contributes its own sign, no special-casing.
     const id = transfer.value; // the token id for ERC-721 Transfer logs
-    group.counts.set(
-      id,
-      (group.counts.get(id) ?? 0) + (isRecipient ? 1 : 0) - (isSender ? 1 : 0),
-    );
+    group.counts.set(id, (group.counts.get(id) ?? 0) + (isRecipient ? 1 : 0) - (isSender ? 1 : 0));
   }
 
   const holdings: NftContractHolding[] = [];
@@ -232,8 +234,18 @@ function groupOf(
   if (group === undefined) {
     group =
       bucket === 'erc721'
-        ? { standard: 'erc721', contract: transfer.token, counts: new Map(), lastActivityBlock: transfer.blockNumber }
-        : { standard: 'erc1155', contract: transfer.token, nets: new Map(), lastActivityBlock: transfer.blockNumber };
+        ? {
+            standard: 'erc721',
+            contract: transfer.token,
+            counts: new Map(),
+            lastActivityBlock: transfer.blockNumber,
+          }
+        : {
+            standard: 'erc1155',
+            contract: transfer.token,
+            nets: new Map(),
+            lastActivityBlock: transfer.blockNumber,
+          };
     groups.set(key, group);
   } else {
     group.lastActivityBlock = Math.max(group.lastActivityBlock, transfer.blockNumber);

@@ -45,8 +45,7 @@ const ERC721_APPROVAL_TOPIC = APPROVAL_TOPIC;
 // by tsc — pad wants a 0x-template — and not flagged by eslint.)
 const topicAddress = (address: Address): Hex => pad(address.toLowerCase() as Address, { size: 32 });
 
-const txHashOf = (block: number): Hex =>
-  `0x${block.toString(16).padStart(64, '0')}`;
+const txHashOf = (block: number): Hex => `0x${block.toString(16).padStart(64, '0')}`;
 
 const erc20Log = (
   token: Address,
@@ -204,11 +203,11 @@ const makeHarness = (options: HarnessOptions = {}) => {
 
   const client: ApprovalScanClient = {
     getBlockNumber: async () => 10_000n,
-    getLogs: async (args) => {
+    getLogs: async args => {
       getLogsCalls.push(args);
       const topic0 = encodeEventTopics({ abi: [args.event], eventName: args.event.name })[0];
       return (options.logs ?? []).filter(
-        (log) =>
+        log =>
           log.topics[0] === topic0 &&
           (args.args?.owner === undefined || log.topics[1] === topicAddress(args.args.owner)) &&
           log.blockNumber !== null &&
@@ -216,9 +215,9 @@ const makeHarness = (options: HarnessOptions = {}) => {
           log.blockNumber <= args.toBlock,
       );
     },
-    multicall: async (args) => {
+    multicall: async args => {
       multicallCalls.push({ contracts: args.contracts });
-      return args.contracts.map((contract) => {
+      return args.contracts.map(contract => {
         if (contract.functionName === 'allowance') {
           const spender = String(contract.args[1] ?? '').toLowerCase();
           const value = options.allowances?.get(`${contract.address.toLowerCase()}:${spender}`);
@@ -233,7 +232,9 @@ const makeHarness = (options: HarnessOptions = {}) => {
         }
         // isApprovedForAll
         const operator = String(contract.args[1] ?? '').toLowerCase();
-        const value = options.operatorApproved?.get(`${contract.address.toLowerCase()}:${operator}`);
+        const value = options.operatorApproved?.get(
+          `${contract.address.toLowerCase()}:${operator}`,
+        );
         if (value === null) return { status: 'failure', error: new Error('reverted') };
         return { status: 'success', result: value ?? true };
       });
@@ -376,11 +377,11 @@ describe('ApprovalScanService - NFT kinds', () => {
     expect(result.pairCount).toBe(4);
     expect(result.truncated).toBe(false);
     // Both event families were queried (two queries per chunk).
-    const eventNames = new Set(getLogsCalls.map((call) => call.event.name));
+    const eventNames = new Set(getLogsCalls.map(call => call.event.name));
     expect(eventNames).toEqual(new Set(['Approval', 'ApprovalForAll']));
     // One mixed batch carrying all three read shapes, newest pair first.
     expect(multicallCalls).toHaveLength(1);
-    expect(multicallCalls[0]?.contracts.map((contract) => contract.functionName)).toEqual([
+    expect(multicallCalls[0]?.contracts.map(contract => contract.functionName)).toEqual([
       'getApproved',
       'isApprovedForAll',
       'getApproved',

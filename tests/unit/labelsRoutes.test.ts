@@ -69,7 +69,8 @@ vi.mock('@/database/drizzle', async () => {
             };
             return b;
           },
-          then: (res: unknown, rej: unknown) => Promise.resolve([]).then(res as never, rej as never),
+          then: (res: unknown, rej: unknown) =>
+            Promise.resolve([]).then(res as never, rej as never),
         };
         return b;
       },

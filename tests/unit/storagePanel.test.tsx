@@ -92,7 +92,9 @@ describe('StoragePanel', () => {
     renderPanel({ ...proxySource, isProxy: undefined, implementationAddress: undefined }, 'proxy');
 
     expect(screen.getByText('owner')).toBeInTheDocument();
-    expect(screen.queryByText('Inferred from bytecode (unverified contract)')).not.toBeInTheDocument();
+    expect(
+      screen.queryByText('Inferred from bytecode (unverified contract)'),
+    ).not.toBeInTheDocument();
   });
 
   it('shows the error card when the layout fetch fails', () => {

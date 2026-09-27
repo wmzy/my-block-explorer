@@ -126,17 +126,26 @@ describe('GET /signatures - response mapping', () => {
   it('maps service outcomes into a selector-keyed results object', async () => {
     mocks.lookup.mockResolvedValue(
       new Map([
-        [FN_SELECTOR, { kind: 'function', signatures: ['transfer(address,uint256)'], source: 'openchain' }],
+        [
+          FN_SELECTOR,
+          { kind: 'function', signatures: ['transfer(address,uint256)'], source: 'openchain' },
+        ],
         [EVENT_TOPIC0, { kind: 'event', signatures: [], notFound: true }],
         ['0xdeadbeef', { unavailable: true }],
       ]),
     );
 
-    const res = await request(`/signatures?function=${FN_SELECTOR}&event=${EVENT_TOPIC0}&function=0xdeadbeef`);
+    const res = await request(
+      `/signatures?function=${FN_SELECTOR}&event=${EVENT_TOPIC0}&function=0xdeadbeef`,
+    );
 
     expect(res.status).toBe(200);
     expect((await res.json()).results).toEqual({
-      [FN_SELECTOR]: { kind: 'function', signatures: ['transfer(address,uint256)'], source: 'openchain' },
+      [FN_SELECTOR]: {
+        kind: 'function',
+        signatures: ['transfer(address,uint256)'],
+        source: 'openchain',
+      },
       [EVENT_TOPIC0]: { kind: 'event', signatures: [], notFound: true },
       '0xdeadbeef': { unavailable: true },
     });

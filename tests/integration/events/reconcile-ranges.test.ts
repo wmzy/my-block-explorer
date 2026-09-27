@@ -62,9 +62,7 @@ describe('reconcileInterruptedRanges', () => {
       .from(indexingRanges)
       .where(eq(indexingRanges.rangeId, stranded));
     expect(flipped[0].status).toBe('error');
-    expect(flipped[0].errorMessage).toBe(
-      'Interrupted by server restart — resume to continue',
-    );
+    expect(flipped[0].errorMessage).toBe('Interrupted by server restart — resume to continue');
 
     // Second run finds no 'indexing' rows: statuses (and message) unchanged.
     await reconcileInterruptedRanges();

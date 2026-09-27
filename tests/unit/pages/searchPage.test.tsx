@@ -24,8 +24,13 @@ vi.mock('@/components/TopNavigation', () => ({
   ),
 }));
 
-const { mockFetchSearch, mockFetchChainSearch, mockResolveEnsAddress,
-  mockRecordHistory, mockReadRememberedChainId } = vi.hoisted(() => ({
+const {
+  mockFetchSearch,
+  mockFetchChainSearch,
+  mockResolveEnsAddress,
+  mockRecordHistory,
+  mockReadRememberedChainId,
+} = vi.hoisted(() => ({
   mockFetchSearch: vi.fn(),
   mockFetchChainSearch: vi.fn(),
   mockResolveEnsAddress: vi.fn(),
@@ -38,7 +43,7 @@ vi.mock('@/services/search', () => ({
   fetchChainSearch: mockFetchChainSearch,
 }));
 
-vi.mock('@/services/ensForward', async (importOriginal) => {
+vi.mock('@/services/ensForward', async importOriginal => {
   // Only the RPC-backed resolution is stubbed; the pure destination
   // decision stays the real one.
   const actual = await importOriginal<typeof import('@/services/ensForward')>();
@@ -86,7 +91,12 @@ const BlockPage = () => <div data-testid="block-page">block-page</div>;
 const NavButton = ({ to }: { to: string }) => {
   const router = useRouter();
   return (
-    <button type="button" onClick={() => { void navigate(router, to); }}>
+    <button
+      type="button"
+      onClick={() => {
+        void navigate(router, to);
+      }}
+    >
       {`go:${to}`}
     </button>
   );
@@ -159,9 +169,7 @@ describe('Search view', () => {
     mockFetchSearch.mockResolvedValue(needsChainResponse);
 
     renderSearch('/search');
-    const input = await screen.findByPlaceholderText(
-      'Enter address, tx hash, or block number...',
-    );
+    const input = await screen.findByPlaceholderText('Enter address, tx hash, or block number...');
     fireEvent.change(input, { target: { value: TX_HASH } });
     fireEvent.click(screen.getByText('Search'));
 
@@ -180,9 +188,7 @@ describe('Search view', () => {
     // The banner names the resolution provenance (Ethereum) and offers
     // the destination choice: Ethereum primary, the chain the search ran
     // on (Polygon) as the secondary. Nothing has opened yet — no history.
-    expect(
-      await screen.findByText(/Resolved vitalik\.eth → .* on Ethereum/),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/Resolved vitalik\.eth → .* on Ethereum/)).toBeInTheDocument();
     expect(screen.getByText('Open on Ethereum')).toBeInTheDocument();
     expect(screen.getByText('on Polygon')).toBeInTheDocument();
     expect(mockRecordHistory).not.toHaveBeenCalled();
@@ -375,7 +381,8 @@ describe('Search view', () => {
     mockFetchSearch.mockImplementation(async (q: string, chainId?: number) =>
       chainId === 137
         ? { found: false, type: 'transaction', query: q, searchedChainId: 137 }
-        : needsChainResponse);
+        : needsChainResponse,
+    );
 
     renderSearch(`/search?q=${TX_HASH}&chain=137`, [`/search?q=${TX_HASH}`]);
 

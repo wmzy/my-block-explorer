@@ -42,10 +42,7 @@ export type AddressCoverageInputs = {
   readonly labels: { readonly loading: boolean; readonly failed: boolean };
 };
 
-const realtimeSource = ({
-  loading,
-  failed,
-}: AddressCoverageInputs['realtime']): CoverageSource => {
+const realtimeSource = ({ loading, failed }: AddressCoverageInputs['realtime']): CoverageSource => {
   if (failed) {
     return {
       level: 'unavailable',
@@ -61,10 +58,7 @@ const realtimeSource = ({
   };
 };
 
-const indexedSource = ({
-  loading,
-  failed,
-}: AddressCoverageInputs['indexed']): CoverageSource => {
+const indexedSource = ({ loading, failed }: AddressCoverageInputs['indexed']): CoverageSource => {
   if (failed) {
     return {
       level: 'unavailable',
@@ -75,7 +69,8 @@ const indexedSource = ({
   if (loading) {
     return {
       level: 'partial',
-      detail: 'Indexed details (verification status, contract name, creation info): loading from the explorer index…',
+      detail:
+        'Indexed details (verification status, contract name, creation info): loading from the explorer index…',
     };
   }
   return {
@@ -161,7 +156,10 @@ const txHistorySource = ({
           'Transaction history: not scannable — the balance-history heuristic needs a non-zero balance, so incoming activity is invisible to it',
       };
     }
-    return { level: 'unavailable', detail: 'Transaction history: no coverage from the discovery scan' };
+    return {
+      level: 'unavailable',
+      detail: 'Transaction history: no coverage from the discovery scan',
+    };
   }
   // Settled payload without coverage tags (a legacy pre-coverage cache
   // entry): the source is unknown, so the history may be incomplete.
@@ -186,7 +184,8 @@ const transfersScanSource = ({
   if (!scanned) {
     return {
       level: 'partial',
-      detail: 'Token transfers: not scanned yet — opt in from the Overview card or the Token Transfers tab',
+      detail:
+        'Token transfers: not scanned yet — opt in from the Overview card or the Token Transfers tab',
     };
   }
   if (loading) {
@@ -223,10 +222,7 @@ const holdingsSource = (scan: AddressCoverageInputs['transfersScan']): CoverageS
   };
 };
 
-const labelsSource = ({
-  loading,
-  failed,
-}: AddressCoverageInputs['labels']): CoverageSource => {
+const labelsSource = ({ loading, failed }: AddressCoverageInputs['labels']): CoverageSource => {
   if (failed) {
     return {
       level: 'unavailable',

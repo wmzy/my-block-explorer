@@ -19,7 +19,13 @@ const collectors = vi.hoisted(() => ({
   storage: {
     mainDbBytes: 1234,
     perChainDbFiles: [
-      { chainType: 'mainnet', name: 'ethereum', chainId: 1, bytes: 99, mtime: '2026-09-25T00:00:00.000Z' },
+      {
+        chainType: 'mainnet',
+        name: 'ethereum',
+        chainId: 1,
+        bytes: 99,
+        mtime: '2026-09-25T00:00:00.000Z',
+      },
     ],
     solcCache: { files: 0, bytes: 0 },
   },
@@ -175,9 +181,7 @@ describe('GET /api/ops/summary — section assembly', () => {
 describe('rate limiting — 6/min, burst 3', () => {
   it('allows the burst then answers 429 with Retry-After', async () => {
     delete process.env.ADMIN_TOKEN;
-    const responses = await Promise.all(
-      Array.from({ length: 4 }, () => getSummary()),
-    );
+    const responses = await Promise.all(Array.from({ length: 4 }, () => getSummary()));
     expect(responses.slice(0, 3).map(r => r.status)).toEqual([200, 200, 200]);
     expect(responses[3].status).toBe(429);
     expect(responses[3].headers.get('Retry-After')).toMatch(/^\d+$/);

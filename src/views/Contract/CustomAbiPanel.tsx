@@ -8,10 +8,7 @@ import type { ContractABI } from './types';
 // and panels consume (functions/events/errors split, plus the raw string
 // kept for viem-based decoding). Returns null for unparseable input so
 // callers can treat it as "no ABI".
-export function parseAbiString(
-  abiString: string,
-  verificationStatus: string,
-): ContractABI | null {
+export function parseAbiString(abiString: string, verificationStatus: string): ContractABI | null {
   try {
     const abi = JSON.parse(abiString) as Abi;
     const functions = abi.filter((item): item is AbiFunction => item.type === 'function');
@@ -56,8 +53,7 @@ export function parseAbiString(
 }
 
 type AbiValidation =
-  | { ok: true; entries: number; ignored: number }
-  | { ok: false; message: string };
+  { ok: true; entries: number; ignored: number } | { ok: false; message: string };
 
 const ABI_SHAPE_ERROR = 'ABI must be a JSON array of entries with a string "type" field';
 
@@ -333,10 +329,10 @@ export function CustomAbiPanel({
         </p>
       ) : (
         <p className={panelNoteStyles}>
-          No ABI is available for this contract from verification services. Paste a contract ABI
-          (a JSON array) to unlock the ABI, Events and Interact views. It is saved in this
-          browser for this chain and address and persists across sessions. Pasting an ABI does
-          not verify the contract and is not shared with other users.
+          No ABI is available for this contract from verification services. Paste a contract ABI (a
+          JSON array) to unlock the ABI, Events and Interact views. It is saved in this browser for
+          this chain and address and persists across sessions. Pasting an ABI does not verify the
+          contract and is not shared with other users.
         </p>
       )}
       <textarea

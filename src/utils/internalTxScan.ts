@@ -64,10 +64,7 @@ export const MAX_INTERNAL_TX_DEPTH = 200;
  * Pure so the clamp contract (9 → 10, 201 → 200) is testable.
  */
 export const clampInternalTxDepth = (depth: number): number =>
-  Math.min(
-    MAX_INTERNAL_TX_DEPTH,
-    Math.max(MIN_INTERNAL_TX_DEPTH, Math.floor(depth)),
-  );
+  Math.min(MAX_INTERNAL_TX_DEPTH, Math.max(MIN_INTERNAL_TX_DEPTH, Math.floor(depth)));
 
 export type InternalTxScope<T> = {
   /** The transactions to trace: the first `depth` of the discovered list, in discovered order. */
@@ -116,10 +113,7 @@ const sameAddress = (a: string | null, b: string): boolean =>
  * Value-carrying frames count regardless of participants; any frame the
  * viewed address sends or receives counts regardless of value.
  */
-export function isInternalTxRow(
-  node: CallTraceNode,
-  viewedAddress: string,
-): boolean {
+export function isInternalTxRow(node: CallTraceNode, viewedAddress: string): boolean {
   if (node.value !== null && node.value > 0n) return true;
   return sameAddress(node.from, viewedAddress) || sameAddress(node.to, viewedAddress);
 }

@@ -116,9 +116,7 @@ export function computeBalancePoints(
   const sorted = txs
     .map(tx => parseTx(tx, lowerAddr))
     .filter((tx): tx is ParsedTx => tx !== null)
-    .sort((a, b) =>
-      a.blockNumber > b.blockNumber ? -1 : a.blockNumber < b.blockNumber ? 1 : 0,
-    );
+    .sort((a, b) => (a.blockNumber > b.blockNumber ? -1 : a.blockNumber < b.blockNumber ? 1 : 0));
 
   const totalDelta = sorted.reduce((sum, tx) => sum + tx.delta, 0n);
 
@@ -134,9 +132,7 @@ export function computeBalancePoints(
       };
     }
     return {
-      points: [
-        { blockNumber: '', timestamp: undefined, value: currentBalance, kind: 'live' },
-      ],
+      points: [{ blockNumber: '', timestamp: undefined, value: currentBalance, kind: 'live' }],
       anchored: true,
       hasResidualGap: false,
       preHistoryBalance: null,
@@ -265,8 +261,7 @@ export function buildBalanceChartGeometry(
   const times = points.map(p => (p.timestamp !== undefined ? Date.parse(p.timestamp) : NaN));
   const finiteTimes = times.filter(t => Number.isFinite(t));
   const useTime =
-    finiteTimes.length === points.length &&
-    Math.min(...finiteTimes) < Math.max(...finiteTimes);
+    finiteTimes.length === points.length && Math.min(...finiteTimes) < Math.max(...finiteTimes);
   const tMin = useTime ? Math.min(...finiteTimes) : 0;
   const tSpan = useTime ? Math.max(...finiteTimes) - tMin : 1;
 
@@ -300,9 +295,7 @@ export function buildBalanceChartGeometry(
 
   const line =
     xs.length > 1
-      ? xs
-          .map((x, i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(2)},${ys[i].toFixed(2)}`)
-          .join(' ')
+      ? xs.map((x, i) => `${i === 0 ? 'M' : 'L'}${x.toFixed(2)},${ys[i].toFixed(2)}`).join(' ')
       : '';
   const area =
     xs.length > 1

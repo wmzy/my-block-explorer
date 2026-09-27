@@ -54,10 +54,7 @@ import { checkAddressValidity } from '@/views/Address/addressValidity';
 import { InvalidAddressError } from '@/views/Address';
 import { isEip7702Designator } from '@/views/Address/addressType';
 import { addressSearchSchema } from '@/views/Address/search';
-import {
-  classifyTokenOverview,
-  formatTokenSupply,
-} from '@/views/Address/tokenOverview';
+import { classifyTokenOverview, formatTokenSupply } from '@/views/Address/tokenOverview';
 import TokenTransfers, { TRANSFER_LIMIT } from '@/views/Address/TokenTransfers';
 import { getChainInfo, getChainName } from '@/config/chains';
 import { useContractSource } from '@/services/contracts';
@@ -445,17 +442,11 @@ export function NotATokenContractState({
           <InfoItem label="Address">{address}</InfoItem>
           <InfoItem label="Next step">
             <span className={nextStepLinks}>
-              <TypedLink
-                to={`/chain/${chainId}/address/${address}`}
-                className={linkStyle}
-              >
+              <TypedLink to={`/chain/${chainId}/address/${address}`} className={linkStyle}>
                 View as address →
               </TypedLink>
               {showsContractLink && (
-                <TypedLink
-                  to={`/chain/${chainId}/contract/${address}`}
-                  className={linkStyle}
-                >
+                <TypedLink to={`/chain/${chainId}/contract/${address}`} className={linkStyle}>
                   View contract page →
                 </TypedLink>
               )}
@@ -483,10 +474,7 @@ export function TokenOverviewCardLink({
   className?: string;
 }) {
   return (
-    <TypedLink
-      to={`/chain/${chainId}/token/${address}`}
-      className={cx(linkStyle, className)}
-    >
+    <TypedLink to={`/chain/${chainId}/token/${address}`} className={cx(linkStyle, className)}>
       View token page →
     </TypedLink>
   );
@@ -509,10 +497,7 @@ function TokenPageShell({
       <TopNavigation currentChainId={chainId} onChainChange={onChainChange} />
       <PageContainer>
         <BackButton onClick={onBack} />
-        <PageHeader
-          title="Token"
-          chainInfo={`${getChainName(chainId)} • Chain ID: ${chainId}`}
-        />
+        <PageHeader title="Token" chainInfo={`${getChainName(chainId)} • Chain ID: ${chainId}`} />
         {children}
       </PageContainer>
     </>
@@ -551,8 +536,7 @@ function PriceHistoryChart({
     [points, start, windowDays],
   );
   const segments = useMemo(
-    () =>
-      buildLineSegments(series, PRICE_CHART_WIDTH, PRICE_CHART_HEIGHT, PRICE_CHART_PAD),
+    () => buildLineSegments(series, PRICE_CHART_WIDTH, PRICE_CHART_HEIGHT, PRICE_CHART_PAD),
     [series],
   );
   const markers = useMemo(
@@ -675,12 +659,8 @@ function PriceHistoryCard({
           <CardTitle>Price History</CardTitle>
           <span className={priceHeaderSide}>
             <span title={sourceTitle}>via DefiLlama</span>
-            <span
-              className={windowToggleGroup}
-              role="group"
-              aria-label="Price history window"
-            >
-              {([30, 7] as const).map((option) => (
+            <span className={windowToggleGroup} role="group" aria-label="Price history window">
+              {([30, 7] as const).map(option => (
                 <button
                   key={option}
                   type="button"
@@ -746,8 +726,8 @@ function AbiRiskScanCard({ flags }: { flags: readonly AbiRiskFlag[] }) {
       <CardContent>
         {flags.length === 0 ? (
           <p className={caveat}>
-            No mint, pause, blacklist, upgrade, ownership or fee-control functions
-            found in the verified ABI.
+            No mint, pause, blacklist, upgrade, ownership or fee-control functions found in the
+            verified ABI.
           </p>
         ) : (
           <div className={riskChipRow}>
@@ -881,14 +861,10 @@ export default function TokenPage() {
       : undefined;
   // Memoized rows feed the two aggregations below (the raw expression is
   // a fresh array each render, which would churn their deps).
-  const scanRows = useMemo(
-    () => holdersData?.transfers ?? [],
-    [holdersData],
-  );
+  const scanRows = useMemo(() => holdersData?.transfers ?? [], [holdersData]);
 
   const holders = useMemo(
-    () =>
-      isToken ? rankHolderShares(scanRows, address, isErc20, TOP_HOLDER_COUNT) : null,
+    () => (isToken ? rankHolderShares(scanRows, address, isErc20, TOP_HOLDER_COUNT) : null),
     [isToken, scanRows, address, isErc20],
   );
   const mintBurn = useMemo(
@@ -928,14 +904,8 @@ export default function TokenPage() {
     if (!isRecord(envelope)) return null;
     const source = envelope.contractSource;
     if (!isRecord(source)) return null;
-    const impl = isRecord(source.implementationContract)
-      ? source.implementationContract
-      : null;
-    if (
-      impl !== null &&
-      impl.verificationStatus === 'verified' &&
-      typeof impl.abi === 'string'
-    ) {
+    const impl = isRecord(source.implementationContract) ? source.implementationContract : null;
+    if (impl !== null && impl.verificationStatus === 'verified' && typeof impl.abi === 'string') {
       return impl.abi;
     }
     return source.verificationStatus === 'verified' && typeof source.abi === 'string'
@@ -950,9 +920,7 @@ export default function TokenPage() {
   );
 
   const handleChainChange = (newChainId: number) => {
-    void redirectReplace(router, `/chain/${newChainId}/token/${address}`).catch(
-      () => undefined,
-    );
+    void redirectReplace(router, `/chain/${newChainId}/token/${address}`).catch(() => undefined);
   };
   const backToExplorer = () => {
     void navigate(router, `/chain/${currentChainId}`).catch(() => undefined);
@@ -1041,16 +1009,10 @@ export default function TokenPage() {
       >
         <ErrorState message="Could not read the token interface from the RPC — this is not a verdict on the address. Try again, or use the address and contract views." />
         <div className={headerLinks}>
-          <TypedLink
-            to={`/chain/${currentChainId}/address/${address}`}
-            className={linkStyle}
-          >
+          <TypedLink to={`/chain/${currentChainId}/address/${address}`} className={linkStyle}>
             View as address →
           </TypedLink>
-          <TypedLink
-            to={`/chain/${currentChainId}/contract/${address}`}
-            className={linkStyle}
-          >
+          <TypedLink to={`/chain/${currentChainId}/contract/${address}`} className={linkStyle}>
             View contract page →
           </TypedLink>
         </div>
@@ -1079,9 +1041,7 @@ export default function TokenPage() {
 
   const { name, symbol, decimals, totalSupply } = classification;
   const title =
-    name !== null && symbol !== null
-      ? `${name} (${symbol})`
-      : name ?? symbol ?? 'Token';
+    name !== null && symbol !== null ? `${name} (${symbol})` : (name ?? symbol ?? 'Token');
   // The param passed the two-tier guard, so checksumming is safe for
   // display; the raw param stays canonical in the URL.
   const displayAddress = getAddress(address);
@@ -1108,16 +1068,10 @@ export default function TokenPage() {
         </div>
 
         <div className={headerLinks}>
-          <TypedLink
-            to={`/chain/${currentChainId}/contract/${address}`}
-            className={linkStyle}
-          >
+          <TypedLink to={`/chain/${currentChainId}/contract/${address}`} className={linkStyle}>
             View contract page →
           </TypedLink>
-          <TypedLink
-            to={`/chain/${currentChainId}/address/${address}`}
-            className={linkStyle}
-          >
+          <TypedLink to={`/chain/${currentChainId}/address/${address}`} className={linkStyle}>
             View as address →
           </TypedLink>
         </div>
@@ -1165,10 +1119,7 @@ export default function TokenPage() {
                 <InfoItem label="Total Supply">
                   {formatTokenSupply(totalSupply, decimals)}
                   {decimals === null && (
-                    <span className={mutedValue}>
-                      {' '}
-                      (raw base units — decimals unknown)
-                    </span>
+                    <span className={mutedValue}> (raw base units — decimals unknown)</span>
                   )}
                 </InfoItem>
               )}
@@ -1188,11 +1139,7 @@ export default function TokenPage() {
             for a token — unavailable collapses it to one muted line
             carrying the reason (honest, never an error card); the spot
             snapshot from the overview card doubles as the live marker. */}
-        <PriceHistoryCard
-          chainId={currentChainId}
-          address={address}
-          spotPrice={tokenPrice}
-        />
+        <PriceHistoryCard chainId={currentChainId} address={address} spotPrice={tokenPrice} />
 
         {/* Items grid: distinct NFT items the scan rows evidenced, with
             lazy per-item metadata (honest none/unavailable states, see
@@ -1270,9 +1217,7 @@ export default function TokenPage() {
             </CardHeader>
             <CardContent>
               <InfoGrid>
-                <InfoItem label="Mint events">
-                  {mintBurn.mintCount.toLocaleString()}
-                </InfoItem>
+                <InfoItem label="Mint events">{mintBurn.mintCount.toLocaleString()}</InfoItem>
                 <InfoItem label="Minted">
                   {mintBurn.minted !== null ? (
                     `${formatNet(mintBurn.minted)}${symbolSuffix}`
@@ -1285,9 +1230,7 @@ export default function TokenPage() {
                     </span>
                   )}
                 </InfoItem>
-                <InfoItem label="Burn events">
-                  {mintBurn.burnCount.toLocaleString()}
-                </InfoItem>
+                <InfoItem label="Burn events">{mintBurn.burnCount.toLocaleString()}</InfoItem>
                 <InfoItem label="Burned">
                   {mintBurn.burned !== null ? (
                     `${formatNet(mintBurn.burned)}${symbolSuffix}`

@@ -70,27 +70,28 @@ const createSearchService = (deps: SearchServiceDeps) => {
       }
 
       return suggestions;
-    }
-    catch {
+    } catch {
       return ['Enter a valid block number or block hash'];
     }
   };
 
   const getTransactionSuggestions = async (chainId: number): Promise<string[]> => {
     try {
-      const { transactions: recentTxs } = await transactionService.getLatestTransactions(chainId, 3);
+      const { transactions: recentTxs } = await transactionService.getLatestTransactions(
+        chainId,
+        3,
+      );
       const suggestions = ['Enter a valid transaction hash (0x-prefixed, 64 hex chars)'];
 
       if (recentTxs.length > 0) {
         suggestions.push('Recent transactions:');
-        recentTxs.forEach((tx) => {
+        recentTxs.forEach(tx => {
           suggestions.push(`${tx.hash}`);
         });
       }
 
       return suggestions;
-    }
-    catch {
+    } catch {
       return ['Enter a valid transaction hash (0x-prefixed, 64 hex chars)'];
     }
   };
@@ -102,8 +103,7 @@ const createSearchService = (deps: SearchServiceDeps) => {
       if (/^\d+$/.test(query)) {
         const blockNumber = BigInt(query);
         block = await blockService.getBlockByNumber(chainId, blockNumber);
-      }
-      else if (/^0x[a-fA-F0-9]{64}$/.test(query)) {
+      } else if (/^0x[a-fA-F0-9]{64}$/.test(query)) {
         block = await blockService.getBlockByHash(chainId, query);
       }
 
@@ -125,8 +125,7 @@ const createSearchService = (deps: SearchServiceDeps) => {
         suggestions: await getBlockSuggestions(chainId),
         suggestionsChainId: chainId,
       };
-    }
-    catch (error) {
+    } catch (error) {
       return {
         type: 'block',
         query,
@@ -174,8 +173,7 @@ const createSearchService = (deps: SearchServiceDeps) => {
         suggestions: await getTransactionSuggestions(chainId),
         suggestionsChainId: chainId,
       };
-    }
-    catch (error) {
+    } catch (error) {
       return {
         type: 'transaction',
         query,
@@ -211,8 +209,7 @@ const createSearchService = (deps: SearchServiceDeps) => {
         found: true,
         data: addressInfo,
       };
-    }
-    catch (error) {
+    } catch (error) {
       return {
         type: 'address',
         query,
@@ -341,8 +338,7 @@ const createSearchService = (deps: SearchServiceDeps) => {
           default:
             return await searchAll(chainId, sanitizedQuery);
         }
-      }
-      catch (error) {
+      } catch (error) {
         logger.error({ err: error, query: trimmedQuery }, 'Search failed');
         return {
           type: 'unknown',
@@ -458,9 +454,10 @@ export async function listCachedContracts(options: {
   const { chainId, limit, offset } = options;
   const q = options.q?.trim() ?? '';
 
-  const filter = q !== ''
-    ? and(eq(contractSources.chainId, chainId), contractMatchFilter(q))
-    : eq(contractSources.chainId, chainId);
+  const filter =
+    q !== ''
+      ? and(eq(contractSources.chainId, chainId), contractMatchFilter(q))
+      : eq(contractSources.chainId, chainId);
 
   const rows = await db
     .select({
@@ -480,10 +477,7 @@ export async function listCachedContracts(options: {
     .limit(limit)
     .offset(offset);
 
-  const countResult = await db
-    .select({ value: count() })
-    .from(contractSources)
-    .where(filter);
+  const countResult = await db.select({ value: count() }).from(contractSources).where(filter);
 
   return {
     contracts: rows.map(row => ({
@@ -545,8 +539,7 @@ export async function searchLocalContractHits(
       name: row.contractName ?? null,
       isVerified: row.isVerified ?? false,
     }));
-  }
-  catch (error) {
+  } catch (error) {
     logger.warn({ err: error, query: q }, 'Local contract cache lookup failed');
     return null;
   }
@@ -670,11 +663,12 @@ export async function searchTokenEntityHits(
   // Curated known tokens for the scope: one chain's list when scoped,
   // every curated chain otherwise (integer keys iterate ascending, so
   // unscoped order is deterministic).
-  const knownEntries: KnownTokenEntry[] = chainId !== undefined
-    ? knownTokensForChain(chainId).map(token => ({ chainId, ...token }))
-    : Object.entries(KNOWN_TOKENS).flatMap(
-        ([id, list]) => list.map(token => ({ chainId: Number(id), ...token })),
-      );
+  const knownEntries: KnownTokenEntry[] =
+    chainId !== undefined
+      ? knownTokensForChain(chainId).map(token => ({ chainId, ...token }))
+      : Object.entries(KNOWN_TOKENS).flatMap(([id, list]) =>
+          list.map(token => ({ chainId: Number(id), ...token })),
+        );
 
   try {
     const labelRows = await db
@@ -694,8 +688,7 @@ export async function searchTokenEntityHits(
       .limit(TOKEN_ENTITY_LABEL_READ_LIMIT);
 
     return matchTokenEntityHits(q, knownEntries, labelRows, limit);
-  }
-  catch (error) {
+  } catch (error) {
     logger.warn({ err: error, query: q }, 'Address label lookup failed');
     return null;
   }

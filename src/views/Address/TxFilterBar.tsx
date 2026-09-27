@@ -26,9 +26,7 @@ export type TxFilterValues = {
   method: string;
 };
 
-export type TxFilterFieldErrors = Partial<
-  Record<'from' | 'to' | 'min' | 'max' | 'method', string>
->;
+export type TxFilterFieldErrors = Partial<Record<'from' | 'to' | 'min' | 'max' | 'method', string>>;
 
 // Field validation, mirroring the server's param rules exactly (the
 // frontend twin of the route's getValidatedAddress / wei parsing / method
@@ -75,9 +73,7 @@ export const validateTxFilterValues = (values: TxFilterValues): TxFilterFieldErr
 // selector (plain transfers, creations, legacy selector-less payloads)
 // contribute nothing — a chip is only offered for a method the page can
 // actually prove. Exported for unit tests.
-export const distinctRowSelectors = (
-  rows: readonly { selector?: string | null }[],
-): string[] => {
+export const distinctRowSelectors = (rows: readonly { selector?: string | null }[]): string[] => {
   const seen = new Set<string>();
   const ordered: string[] = [];
   for (const row of rows) {
@@ -253,7 +249,9 @@ const chipStyle = css`
   color: var(--haze-color-text);
   cursor: pointer;
   white-space: nowrap;
-  transition: border-color 150ms ease, background-color 150ms ease;
+  transition:
+    border-color 150ms ease,
+    background-color 150ms ease;
 
   &:hover {
     border-color: var(--haze-color-primary);
@@ -325,11 +323,7 @@ export function TxFilterBar({
     }
   };
 
-  const addressInput = (
-    field: 'from' | 'to',
-    label: string,
-    testId: string,
-  ) => (
+  const addressInput = (field: 'from' | 'to', label: string, testId: string) => (
     <div className={fieldGroupStyle}>
       <label htmlFor={`tx-filter-${field}`} className={labelStyle}>
         {label}
@@ -354,11 +348,7 @@ export function TxFilterBar({
     </div>
   );
 
-  const valueInput = (
-    field: 'min' | 'max',
-    label: string,
-    testId: string,
-  ) => (
+  const valueInput = (field: 'min' | 'max', label: string, testId: string) => (
     <div className={fieldGroupStyle}>
       <label htmlFor={`tx-filter-${field}`} className={labelStyle}>
         {label}
@@ -449,7 +439,9 @@ export function TxFilterBar({
         Filters
         {urlParamCount > 0 && (
           <span data-testid="tx-filter-count">
-            <Badge variant="info" size="sm">{urlParamCount}</Badge>
+            <Badge variant="info" size="sm">
+              {urlParamCount}
+            </Badge>
           </span>
         )}
         <svg
@@ -478,8 +470,8 @@ export function TxFilterBar({
               of the current window — it is never a fresh scan and never
               widens coverage. */}
           <p className={scopeLineStyle} data-testid="tx-filter-scope">
-            Filters apply within the discovered transactions of the selected
-            window — not a new scan.
+            Filters apply within the discovered transactions of the selected window — not a new
+            scan.
           </p>
           <div className={actionsRowStyle}>
             <Button

@@ -99,10 +99,7 @@ export type GasHistorySnapshot = {
 
 // Why the panel cannot render, in terms the UI can show verbatim.
 export type GasUnavailableReason =
-  | 'unsupported-chain'
-  | 'method-not-supported'
-  | 'no-base-fee-data'
-  | 'fetch-failed';
+  'unsupported-chain' | 'method-not-supported' | 'no-base-fee-data' | 'fetch-failed';
 
 // Both variants carry the chain they were fetched for: the query layer's
 // result store keeps the last settle across an args switch, so the view
@@ -170,9 +167,9 @@ function usableRewardSample(
 ): readonly (readonly bigint[])[] | null {
   if (!rewards || rewards.length === 0) return null;
   const start = Math.max(0, rewards.length - sampleBlocks);
-  const sample = rewards.slice(start).filter(
-    entry => !!entry && entry.length >= TIER_PERCENTILE_COUNT,
-  );
+  const sample = rewards
+    .slice(start)
+    .filter(entry => !!entry && entry.length >= TIER_PERCENTILE_COUNT);
   return sample.length > 0 ? sample : null;
 }
 
@@ -315,8 +312,7 @@ export function buildGasHistory(
   const raw = feeHistory.baseFeePerGas;
   // eth_feeHistory appends the derived next-block base fee; drop exactly
   // that one speculative entry when the node followed the spec.
-  const windowed =
-    raw.length === requestedBlockCount + 1 ? raw.slice(0, -1) : raw;
+  const windowed = raw.length === requestedBlockCount + 1 ? raw.slice(0, -1) : raw;
   const series = windowed.map(weiToGwei);
   // An all-zero window is the pre-EIP-1559 response shape, not a real
   // 0-gwei market — refuse to fabricate a flat "free gas" panel.

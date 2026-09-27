@@ -171,12 +171,11 @@ export function PrivateNoteChip({ chainId, address }: { chainId: number; address
     const saveDisabled = tooLong || empty || storageHint !== null;
     // The title explains a disabled Save (hover/focus reachable); the
     // inline error paragraphs below repeat the two data problems.
-    const saveDisabledReason
-      = tooLong
-        ? `Note must be at most ${PRIVATE_NOTE_MAX_CHARS} characters (currently ${rawLength})`
-        : empty
-          ? 'Note is empty — Remove clears the saved note instead'
-          : (storageHint ?? undefined);
+    const saveDisabledReason = tooLong
+      ? `Note must be at most ${PRIVATE_NOTE_MAX_CHARS} characters (currently ${rawLength})`
+      : empty
+        ? 'Note is empty — Remove clears the saved note instead'
+        : (storageHint ?? undefined);
     return (
       <div className={noteEditor} data-testid="private-note-editor">
         <textarea
@@ -260,9 +259,8 @@ export function PrivateNoteChip({ chainId, address }: { chainId: number; address
     );
   }
 
-  const collapsed = note.length > COLLAPSED_MAX_CHARS
-    ? `${note.slice(0, COLLAPSED_MAX_CHARS)}…`
-    : note;
+  const collapsed =
+    note.length > COLLAPSED_MAX_CHARS ? `${note.slice(0, COLLAPSED_MAX_CHARS)}…` : note;
 
   return (
     <>

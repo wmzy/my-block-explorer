@@ -81,10 +81,6 @@ const useContractDirectoryQuery = createQueryHook({
  * is the page offset. Feed the values straight from the URL (?q=/?offset=)
  * so deep links and back/forward hit the cache keys the view created.
  */
-export function useContractDirectory(
-  chainId: number,
-  q: string | undefined,
-  offset: number,
-) {
+export function useContractDirectory(chainId: number, q: string | undefined, offset: number) {
   return useContractDirectoryQuery([chainId, q ?? '', offset]);
 }

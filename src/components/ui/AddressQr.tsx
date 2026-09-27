@@ -171,7 +171,13 @@ export function AddressQr({ address }: { address: string }) {
         className={dialogStyle}
       >
         <div className={qrPlate} data-testid="address-qr-plate">
-          {svg !== null && <div role="img" aria-label={`QR code for ${payload}`} dangerouslySetInnerHTML={{ __html: svg }} />}
+          {svg !== null && (
+            <div
+              role="img"
+              aria-label={`QR code for ${payload}`}
+              dangerouslySetInnerHTML={{ __html: svg }}
+            />
+          )}
         </div>
         {error !== null && (
           <p className={qrError} data-testid="address-qr-error" role="alert">

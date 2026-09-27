@@ -49,9 +49,13 @@ const item1155 = (tokenId: string, amount: bigint, burned = false): NftItem => (
 });
 
 // Resolves the mocked hook with an outcome map for the given items.
-const settleMetadata = (items: readonly NftItem[], outcomeFor: (tokenId: string) => NftMetadataOutcome) => {
+const settleMetadata = (
+  items: readonly NftItem[],
+  outcomeFor: (tokenId: string) => NftMetadataOutcome,
+) => {
   const map = new Map<string, NftMetadataOutcome>();
-  for (const item of items) map.set(nftMetadataKey(CONTRACT, item.tokenId), outcomeFor(item.tokenId));
+  for (const item of items)
+    map.set(nftMetadataKey(CONTRACT, item.tokenId), outcomeFor(item.tokenId));
   mockUseNftMetadata.mockReturnValue(map);
 };
 
@@ -113,13 +117,24 @@ describe('NftGrid metadata honesty states', () => {
 
   it('renders an unavailable chip plus a per-tile retry that re-resolves one item', async () => {
     const items = [item721('7'), item721('8')];
-    settleMetadata(items, tokenId => (tokenId === '7' ? { status: 'ok', name: 'Resolved', image: null, description: null } : { status: 'unavailable' }));
+    settleMetadata(items, tokenId =>
+      tokenId === '7'
+        ? { status: 'ok', name: 'Resolved', image: null, description: null }
+        : { status: 'unavailable' },
+    );
     mockFetchBatch.mockResolvedValue(
-      new Map([[nftMetadataKey(CONTRACT, '8'), { status: 'ok', name: 'After retry', image: null, description: null }]]),
+      new Map([
+        [
+          nftMetadataKey(CONTRACT, '8'),
+          { status: 'ok', name: 'After retry', image: null, description: null },
+        ],
+      ]),
     );
     render(<NftGrid chainId={CHAIN_ID} contract={CONTRACT} items={items} />);
 
-    expect(screen.getByTestId('nft-tile-chip-unavailable')).toHaveTextContent('metadata unavailable');
+    expect(screen.getByTestId('nft-tile-chip-unavailable')).toHaveTextContent(
+      'metadata unavailable',
+    );
     fireEvent.click(screen.getByTestId('nft-tile-retry'));
 
     await waitFor(() => {

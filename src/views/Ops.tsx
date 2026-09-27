@@ -42,9 +42,7 @@ export type OpsAdminGate = 'unconfigured' | 'unauthorized';
 
 export function opsAdminGateFromError(error: unknown): OpsAdminGate | null {
   if (!(error instanceof ApiError) || error.status !== 403) return null;
-  return /Set ADMIN_TOKEN on the server/i.test(error.message)
-    ? 'unconfigured'
-    : 'unauthorized';
+  return /Set ADMIN_TOKEN on the server/i.test(error.message) ? 'unconfigured' : 'unauthorized';
 }
 
 // The backend's 429 body message carries the wait ("…retry after 3s."),
@@ -60,12 +58,24 @@ export function opsRateLimitWaitSeconds(error: unknown): number | null {
 // "8 completed, 2 error, 1 indexing" — stable status order (the states the
 // indexer/scan-writer actually use, then anything unknown alphabetically),
 // never fabricated: only statuses with a non-zero count are listed.
-const KNOWN_STATUSES = ['indexing', 'paused', 'pending', 'completed', 'error', 'running', 'complete'] as const;
+const KNOWN_STATUSES = [
+  'indexing',
+  'paused',
+  'pending',
+  'completed',
+  'error',
+  'running',
+  'complete',
+] as const;
 
 export function formatStatusCounts(statuses: Record<string, number>): string {
   const known = KNOWN_STATUSES.filter(status => (statuses[status] ?? 0) > 0);
   const extras = Object.keys(statuses)
-    .filter(status => (statuses[status] ?? 0) > 0 && !KNOWN_STATUSES.includes(status as (typeof KNOWN_STATUSES)[number]))
+    .filter(
+      status =>
+        (statuses[status] ?? 0) > 0 &&
+        !KNOWN_STATUSES.includes(status as (typeof KNOWN_STATUSES)[number]),
+    )
     .sort();
   const entries = [...known, ...extras];
   if (entries.length === 0) return 'none';
@@ -274,8 +284,8 @@ function AdminGateCard({ gate }: { gate: OpsAdminGate }) {
               : 'The ops summary is open in zero-config local sessions, so this 403 did not come from its own gate — something stricter is answering for this backend. Storing the operator\u2019s ADMIN_TOKEN in this browser (⚙️ RPC → Admin token) and retrying is the fastest way forward.'}
           </p>
           <p className={gateText}>
-            The token is stored in this browser only and is sent as the x-admin-token
-            header on every ops request.
+            The token is stored in this browser only and is sent as the x-admin-token header on
+            every ops request.
           </p>
         </div>
       </Alert>
@@ -294,8 +304,7 @@ function SummaryErrorNotice({ error, onRetry }: { error: unknown; onRetry: () =>
     const wait = opsRateLimitWaitSeconds(error);
     return (
       <Alert variant="warning">
-        Rate limited — the ops summary allows 6 requests per minute.
-        {' '}
+        Rate limited — the ops summary allows 6 requests per minute.{' '}
         {wait !== null ? `Retry in ${wait}s.` : error.message}
       </Alert>
     );
@@ -307,21 +316,15 @@ function SummaryErrorNotice({ error, onRetry }: { error: unknown; onRetry: () =>
   );
 }
 
-function StorageCard({
-  summary,
-  onRetry,
-}: {
-  summary: OpsSummary;
-  onRetry: () => void;
-}) {
+function StorageCard({ summary, onRetry }: { summary: OpsSummary; onRetry: () => void }) {
   const storage = summary.storage;
   return (
     <Card>
       <CardHeader>
         <CardTitle>Storage</CardTitle>
         <CardDescription>
-          DuckDB files under data/ — the main database, per-chain event
-          databases and the solc compiler cache.
+          DuckDB files under data/ — the main database, per-chain event databases and the solc
+          compiler cache.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -336,23 +339,23 @@ function StorageCard({
               <div className={metaItem}>
                 <dt className={metaLabel}>Main database</dt>
                 <dd className={metaValue}>
-                  {storage.mainDbBytes === null ? 'size unknown' : formatFileSize(storage.mainDbBytes)}
+                  {storage.mainDbBytes === null
+                    ? 'size unknown'
+                    : formatFileSize(storage.mainDbBytes)}
                 </dd>
               </div>
               <div className={metaItem}>
                 <dt className={metaLabel}>Per-chain event DBs</dt>
                 <dd className={metaValue}>
-                  {formatNumber(storage.perChainDbFiles.length)}
-                  {' '}
-                  file{storage.perChainDbFiles.length === 1 ? '' : 's'}
+                  {formatNumber(storage.perChainDbFiles.length)} file
+                  {storage.perChainDbFiles.length === 1 ? '' : 's'}
                 </dd>
               </div>
               <div className={metaItem}>
                 <dt className={metaLabel}>Solc cache</dt>
                 <dd className={metaValue}>
-                  {formatNumber(storage.solcCache.files)}
-                  {' '}
-                  file{storage.solcCache.files === 1 ? '' : 's'}
+                  {formatNumber(storage.solcCache.files)} file
+                  {storage.solcCache.files === 1 ? '' : 's'}
                   {', '}
                   {formatFileSize(storage.solcCache.bytes)}
                 </dd>
@@ -401,22 +404,15 @@ function StorageCard({
   );
 }
 
-function IndexingCard({
-  summary,
-  onRetry,
-}: {
-  summary: OpsSummary;
-  onRetry: () => void;
-}) {
+function IndexingCard({ summary, onRetry }: { summary: OpsSummary; onRetry: () => void }) {
   const indexing = summary.indexing;
   return (
     <Card>
       <CardHeader>
         <CardTitle>Event indexing</CardTitle>
         <CardDescription>
-          Indexing ranges per chain by status, from the main database — the
-          scope is the ranges this operator configured, not contract
-          lifetimes.
+          Indexing ranges per chain by status, from the main database — the scope is the ranges this
+          operator configured, not contract lifetimes.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -427,8 +423,7 @@ function IndexingCard({
           />
         ) : indexing.chains.length === 0 ? (
           <p className={emptyNote}>
-            No indexing ranges configured yet — create them from a contract&apos;s
-            Events tab.
+            No indexing ranges configured yet — create them from a contract&apos;s Events tab.
           </p>
         ) : (
           <ul className={sectionList}>
@@ -436,9 +431,7 @@ function IndexingCard({
               <li key={chain.chainId} className={sectionRow}>
                 <span className={mono}>chain {formatNumber(chain.chainId)}</span>
                 <span>
-                  {formatNumber(chain.total)}
-                  {' '}
-                  range{chain.total === 1 ? '' : 's'}
+                  {formatNumber(chain.total)} range{chain.total === 1 ? '' : 's'}
                   {': '}
                   {formatStatusCounts(chain.statuses)}
                 </span>
@@ -451,21 +444,15 @@ function IndexingCard({
   );
 }
 
-function WatchCard({
-  summary,
-  onRetry,
-}: {
-  summary: OpsSummary;
-  onRetry: () => void;
-}) {
+function WatchCard({ summary, onRetry }: { summary: OpsSummary; onRetry: () => void }) {
   const watch = summary.watch;
   return (
     <Card>
       <CardHeader>
         <CardTitle>Watch subscriptions</CardTitle>
         <CardDescription>
-          Server-side address watching (watch_subscriptions table, read
-          directly), with each subscription&apos;s webhook delivery flag.
+          Server-side address watching (watch_subscriptions table, read directly), with each
+          subscription&apos;s webhook delivery flag.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -479,18 +466,13 @@ function WatchCard({
         ) : (
           <ul className={sectionList}>
             {watch.subscriptions.map(sub => (
-              <li
-                key={`${sub.chainId}:${sub.address}`}
-                className={sectionRow}
-              >
+              <li key={`${sub.chainId}:${sub.address}`} className={sectionRow}>
                 <span className={mono}>
                   chain {formatNumber(sub.chainId)}
                   {' · '}
                   {sub.address}
                 </span>
-                <span>
-                  {sub.webhookConfigured ? 'webhook configured' : 'no webhook'}
-                </span>
+                <span>{sub.webhookConfigured ? 'webhook configured' : 'no webhook'}</span>
               </li>
             ))}
           </ul>
@@ -500,30 +482,20 @@ function WatchCard({
   );
 }
 
-function RateLimitCard({
-  summary,
-  onRetry,
-}: {
-  summary: OpsSummary;
-  onRetry: () => void;
-}) {
+function RateLimitCard({ summary, onRetry }: { summary: OpsSummary; onRetry: () => void }) {
   const rateLimit = summary.rateLimit;
   return (
     <Card>
       <CardHeader>
         <CardTitle>Rate limiting</CardTitle>
         <CardDescription>
-          In-process token-bucket totals since the backend started,
-          aggregated per bucket — no per-client data exists in this
-          snapshot.
+          In-process token-bucket totals since the backend started, aggregated per bucket — no
+          per-client data exists in this snapshot.
         </CardDescription>
       </CardHeader>
       <CardContent>
         {'error' in rateLimit ? (
-          <UnavailableSection
-            hint="Rate-limit status unavailable."
-            onRetry={onRetry}
-          />
+          <UnavailableSection hint="Rate-limit status unavailable." onRetry={onRetry} />
         ) : rateLimit.buckets.length === 0 ? (
           <p className={emptyNote}>No rate limiters registered.</p>
         ) : (
@@ -542,9 +514,7 @@ function RateLimitCard({
                 <tr key={bucket.name}>
                   <td className={mono}>{bucket.name}</td>
                   <td className={mono}>{formatNumber(bucket.capacity)}</td>
-                  <td className={mono}>
-                    {formatNumber(bucket.requestsPerMinute)}/min
-                  </td>
+                  <td className={mono}>{formatNumber(bucket.requestsPerMinute)}/min</td>
                   <td className={mono}>{formatNumber(bucket.hits)}</td>
                   <td className={mono}>{formatNumber(bucket.rejected)}</td>
                 </tr>
@@ -557,21 +527,15 @@ function RateLimitCard({
   );
 }
 
-function DeepScanCard({
-  summary,
-  onRetry,
-}: {
-  summary: OpsSummary;
-  onRetry: () => void;
-}) {
+function DeepScanCard({ summary, onRetry }: { summary: OpsSummary; onRetry: () => void }) {
   const deepScan = summary.deepScan;
   return (
     <Card>
       <CardHeader>
         <CardTitle>Address deep scans</CardTitle>
         <CardDescription>
-          Persistent, resumable transaction-discovery walks (address_scan_jobs
-          table), counted by status.
+          Persistent, resumable transaction-discovery walks (address_scan_jobs table), counted by
+          status.
         </CardDescription>
       </CardHeader>
       <CardContent>
@@ -585,9 +549,7 @@ function DeepScanCard({
         ) : (
           <p className={sectionRow}>
             <span>
-              {formatNumber(deepScan.total)}
-              {' '}
-              job{deepScan.total === 1 ? '' : 's'}
+              {formatNumber(deepScan.total)} job{deepScan.total === 1 ? '' : 's'}
               {': '}
             </span>
             <span>{formatStatusCounts(deepScan.byStatus)}</span>
@@ -608,16 +570,14 @@ function BackupCard() {
       <CardHeader>
         <CardTitle>Backup &amp; durability</CardTitle>
         <CardDescription>
-          Server data and browser-local data are different things and back up
-          differently.
+          Server data and browser-local data are different things and back up differently.
         </CardDescription>
       </CardHeader>
       <CardContent>
         <p className={gateText}>
-          Event indexes are hours of compute: stop the server and copy the
-          data/ directory for a cold backup. Browser-local data (labels,
-          watchlist, theme, custom ABIs, private notes) exports from Settings
-          → Backup &amp; restore.
+          Event indexes are hours of compute: stop the server and copy the data/ directory for a
+          cold backup. Browser-local data (labels, watchlist, theme, custom ABIs, private notes)
+          exports from Settings → Backup &amp; restore.
         </p>
       </CardContent>
     </Card>
@@ -648,8 +608,7 @@ export default function Ops() {
         JSON.stringify(buildOpsDiagnostics(summary.data), null, 2),
       );
       toast('Diagnostics copied to clipboard', { variant: 'success', duration: 2000 });
-    }
-    catch {
+    } catch {
       toast('Failed to copy diagnostics', { variant: 'danger', duration: 2000 });
     }
   };
@@ -683,8 +642,8 @@ export default function Ops() {
                 <CardHeader>
                   <CardTitle>Backend</CardTitle>
                   <CardDescription>
-                    This snapshot came from the backend itself; it auto-refreshes
-                    every 30 seconds while this tab is visible.
+                    This snapshot came from the backend itself; it auto-refreshes every 30 seconds
+                    while this tab is visible.
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
@@ -705,19 +664,10 @@ export default function Ops() {
                     </div>
                   </dl>
                   <div className={refreshRow}>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={retry}
-                      loading={summary.fetching}
-                    >
+                    <Button variant="outline" size="sm" onClick={retry} loading={summary.fetching}>
                       Refresh
                     </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => void copyDiagnostics()}
-                    >
+                    <Button variant="outline" size="sm" onClick={() => void copyDiagnostics()}>
                       Copy diagnostics
                     </Button>
                     <span className={refreshHint}>

@@ -19,7 +19,7 @@ vi.mock('@/services/AddressService', () => ({
 }));
 vi.mock('@/services/RpcManager', () => ({ rpcManager: {} }));
 vi.mock('@/services/ContractSourceService', () => ({ contractSourceService: {} }));
-vi.mock('@/services/AddressScanService', async (importOriginal) => {
+vi.mock('@/services/AddressScanService', async importOriginal => {
   const actual = await importOriginal<typeof import('@/services/AddressScanService')>();
   return {
     ...actual,
@@ -89,8 +89,7 @@ const txResult = (
   ...overrides,
 });
 
-const scanPath = (suffix = '') =>
-  `/chains/1/addresses/${ROUTE_ADDRESS}/scan${suffix}`;
+const scanPath = (suffix = '') => `/chains/1/addresses/${ROUTE_ADDRESS}/scan${suffix}`;
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -117,7 +116,11 @@ describe('POST /chains/:chainId/addresses/:address/scan', () => {
   it('creates a job and answers 202 with the pinned job body (default bounds)', async () => {
     mocks.createOrReplaceScanJob.mockResolvedValue({
       ok: true,
-      result: { outcome: 'created', job: jobRow({ status: 'pending', cursorBlock: -1n }), started: null },
+      result: {
+        outcome: 'created',
+        job: jobRow({ status: 'pending', cursorBlock: -1n }),
+        started: null,
+      },
     });
 
     const res = await app.request(scanPath(), { method: 'POST' });
@@ -141,7 +144,12 @@ describe('POST /chains/:chainId/addresses/:address/scan', () => {
         'updatedAt',
       ].sort(),
     );
-    expect(body).toMatchObject({ status: 'pending', fromBlock: 0, cursorBlock: -1, blocksWalked: 0 });
+    expect(body).toMatchObject({
+      status: 'pending',
+      fromBlock: 0,
+      cursorBlock: -1,
+      blocksWalked: 0,
+    });
     // Absent body → default bounds AND includeTraces false (the pinned
     // byte-identical absent behavior).
     expect(mocks.createOrReplaceScanJob).toHaveBeenCalledWith(1, ROUTE_ADDRESS, {
@@ -543,7 +551,11 @@ describe('POST /scan/catchup', () => {
   it('shares the address-scan-write bucket: throttled once the burst is spent', async () => {
     mocks.createOrReplaceScanJob.mockResolvedValue({
       ok: true,
-      result: { outcome: 'created', job: jobRow({ status: 'pending', cursorBlock: -1n }), started: null },
+      result: {
+        outcome: 'created',
+        job: jobRow({ status: 'pending', cursorBlock: -1n }),
+        started: null,
+      },
     });
 
     const first = await app.request(scanPath(), { method: 'POST' });
@@ -579,7 +591,11 @@ describe('admin opt-in gating on scan writes', () => {
     vi.stubEnv('ADMIN_TOKEN', 'secret-token');
     mocks.createOrReplaceScanJob.mockResolvedValue({
       ok: true,
-      result: { outcome: 'created', job: jobRow({ status: 'pending', cursorBlock: -1n }), started: null },
+      result: {
+        outcome: 'created',
+        job: jobRow({ status: 'pending', cursorBlock: -1n }),
+        started: null,
+      },
     });
   });
 
@@ -628,7 +644,11 @@ describe('address-scan-write limiter (3/min, burst 2)', () => {
   it('lets the burst through and throttles the third write within the window', async () => {
     mocks.createOrReplaceScanJob.mockResolvedValue({
       ok: true,
-      result: { outcome: 'created', job: jobRow({ status: 'pending', cursorBlock: -1n }), started: null },
+      result: {
+        outcome: 'created',
+        job: jobRow({ status: 'pending', cursorBlock: -1n }),
+        started: null,
+      },
     });
     mocks.resumeScanJob.mockResolvedValue({
       ok: true,
@@ -701,9 +721,7 @@ describe('GET transactions — additive deepScan contract', () => {
       },
     ];
     mocks.hydrateFindings.mockResolvedValue(hydrated);
-    mocks.getAddressTransactions.mockResolvedValue(
-      txResult({ total: 1, coverage: 'partial' }),
-    );
+    mocks.getAddressTransactions.mockResolvedValue(txResult({ total: 1, coverage: 'partial' }));
 
     const res = await app.request(txPath());
     expect(res.status).toBe(200);

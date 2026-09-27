@@ -30,7 +30,12 @@ describe('computeDiscoveredBalancePoints (pure)', () => {
     const points = computeDiscoveredBalancePoints(
       [
         discovered({ blockNumber: 300n, value: '3000000000000000000' }),
-        discovered({ blockNumber: 100n, value: '1000000000000000000', toAddress: OTHER, fromAddress: TEST_ADDRESS }),
+        discovered({
+          blockNumber: 100n,
+          value: '1000000000000000000',
+          toAddress: OTHER,
+          fromAddress: TEST_ADDRESS,
+        }),
         discovered({ blockNumber: 200n, value: '2000000000000000000' }),
       ],
       TEST_ADDRESS,
@@ -38,9 +43,21 @@ describe('computeDiscoveredBalancePoints (pure)', () => {
 
     expect(points).toEqual([
       { blockNumber: '100', timestamp: '2026-01-01T00:00:00.000Z', cumulativeValue: '0' },
-      { blockNumber: '100', timestamp: '2026-01-01T00:00:00.000Z', cumulativeValue: '-1000000000000000000' },
-      { blockNumber: '200', timestamp: '2026-01-01T00:00:00.000Z', cumulativeValue: '1000000000000000000' },
-      { blockNumber: '300', timestamp: '2026-01-01T00:00:00.000Z', cumulativeValue: '4000000000000000000' },
+      {
+        blockNumber: '100',
+        timestamp: '2026-01-01T00:00:00.000Z',
+        cumulativeValue: '-1000000000000000000',
+      },
+      {
+        blockNumber: '200',
+        timestamp: '2026-01-01T00:00:00.000Z',
+        cumulativeValue: '1000000000000000000',
+      },
+      {
+        blockNumber: '300',
+        timestamp: '2026-01-01T00:00:00.000Z',
+        cumulativeValue: '4000000000000000000',
+      },
     ]);
   });
 
@@ -61,7 +78,14 @@ describe('computeDiscoveredBalancePoints (pure)', () => {
 
   it('nets self-transfers to zero', () => {
     const points = computeDiscoveredBalancePoints(
-      [discovered({ blockNumber: 10n, fromAddress: TEST_ADDRESS, toAddress: TEST_ADDRESS, value: '42' })],
+      [
+        discovered({
+          blockNumber: 10n,
+          fromAddress: TEST_ADDRESS,
+          toAddress: TEST_ADDRESS,
+          value: '42',
+        }),
+      ],
       TEST_ADDRESS,
     );
 
@@ -72,17 +96,22 @@ describe('computeDiscoveredBalancePoints (pure)', () => {
     const huge = 2n ** 70n;
     const points = computeDiscoveredBalancePoints(
       [
-        discovered({ blockNumber: 10n, value: huge.toString(), toAddress: TEST_ADDRESS.toUpperCase() }),
-        discovered({ blockNumber: 20n, value: (huge + 1n).toString(), fromAddress: TEST_ADDRESS.toLowerCase(), toAddress: OTHER }),
+        discovered({
+          blockNumber: 10n,
+          value: huge.toString(),
+          toAddress: TEST_ADDRESS.toUpperCase(),
+        }),
+        discovered({
+          blockNumber: 20n,
+          value: (huge + 1n).toString(),
+          fromAddress: TEST_ADDRESS.toLowerCase(),
+          toAddress: OTHER,
+        }),
       ],
       TEST_ADDRESS,
     );
 
-    expect(points.map(p => p.cumulativeValue)).toEqual([
-      '0',
-      huge.toString(),
-      '-1',
-    ]);
+    expect(points.map(p => p.cumulativeValue)).toEqual(['0', huge.toString(), '-1']);
   });
 
   it('returns an empty series for an empty discovery', () => {
@@ -121,11 +150,15 @@ const makeDiscoveryService = () => {
   };
   const service = createAddressService({
     db: undefined as unknown as Parameters<typeof createAddressService>[0]['db'],
-    indexedAddresses: undefined as unknown as Parameters<typeof createAddressService>[0]['indexedAddresses'],
+    indexedAddresses: undefined as unknown as Parameters<
+      typeof createAddressService
+    >[0]['indexedAddresses'],
     rpcManager: { getClient: vi.fn().mockResolvedValue(client) } as unknown as Parameters<
       typeof createAddressService
     >[0]['rpcManager'],
-    contractSourceService: undefined as unknown as Parameters<typeof createAddressService>[0]['contractSourceService'],
+    contractSourceService: undefined as unknown as Parameters<
+      typeof createAddressService
+    >[0]['contractSourceService'],
   });
   return { service, client };
 };
@@ -136,14 +169,9 @@ describe('getAddressTransactions — balancePoints opt-in', () => {
 
     // Page of 2 from a 3-tx discovery: the series must still cover all 3
     // (+ the anchor) — the chart never depends on which page it fetched.
-    const result = await service.getAddressTransactions(
-      1,
-      TEST_ADDRESS,
-      2,
-      0,
-      undefined,
-      { includeBalancePoints: true },
-    );
+    const result = await service.getAddressTransactions(1, TEST_ADDRESS, 2, 0, undefined, {
+      includeBalancePoints: true,
+    });
 
     expect(result.transactions).toHaveLength(2);
     expect(result.balancePoints).toHaveLength(4);
@@ -175,14 +203,9 @@ describe('getAddressTransactions — balancePoints opt-in', () => {
     await service.getAddressTransactions(1, TEST_ADDRESS);
     const firstScanBlocks = client.getBlock.mock.calls.length;
 
-    const cached = await service.getAddressTransactions(
-      1,
-      TEST_ADDRESS,
-      20,
-      0,
-      undefined,
-      { includeBalancePoints: true },
-    );
+    const cached = await service.getAddressTransactions(1, TEST_ADDRESS, 20, 0, undefined, {
+      includeBalancePoints: true,
+    });
 
     expect(client.getBlock.mock.calls.length).toBe(firstScanBlocks);
     expect(cached.balancePoints).toHaveLength(4);
@@ -197,11 +220,15 @@ describe('getAddressTransactions — balancePoints opt-in', () => {
     };
     const service = createAddressService({
       db: undefined as unknown as Parameters<typeof createAddressService>[0]['db'],
-      indexedAddresses: undefined as unknown as Parameters<typeof createAddressService>[0]['indexedAddresses'],
+      indexedAddresses: undefined as unknown as Parameters<
+        typeof createAddressService
+      >[0]['indexedAddresses'],
       rpcManager: { getClient: vi.fn().mockResolvedValue(client) } as unknown as Parameters<
         typeof createAddressService
       >[0]['rpcManager'],
-      contractSourceService: undefined as unknown as Parameters<typeof createAddressService>[0]['contractSourceService'],
+      contractSourceService: undefined as unknown as Parameters<
+        typeof createAddressService
+      >[0]['contractSourceService'],
     });
 
     const result = await service.getAddressTransactions(1, TEST_ADDRESS, 20, 0, undefined, {

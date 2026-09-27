@@ -8,7 +8,7 @@ import { isAllowedCorsOrigin } from './cors-origins';
 // cross-origin read and preflighted writes. The origin policy itself lives
 // in cors-origins.ts, shared with the Vite dev server config.
 export const corsMiddleware = cors({
-  origin: (origin) => {
+  origin: origin => {
     if (!origin) return null;
     return isAllowedCorsOrigin(origin) ? origin : null;
   },

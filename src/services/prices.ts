@@ -118,17 +118,14 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 // Ids travel inside a URL path segment: anything empty or containing
 // separators/whitespace is rejected before it can corrupt the request.
-const validId = (id: string): boolean =>
-  id.length > 0 && !/[,/\s]/.test(id);
+const validId = (id: string): boolean => id.length > 0 && !/[,/\s]/.test(id);
 
 // Narrows one API coin record to a usable price. Zero/negative or
 // non-finite numbers are treated as no price — never displayed.
 const readPrice = (coin: unknown): number | null => {
   if (!isRecord(coin)) return null;
   const price = coin.price;
-  return typeof price === 'number' && Number.isFinite(price) && price > 0
-    ? price
-    : null;
+  return typeof price === 'number' && Number.isFinite(price) && price > 0 ? price : null;
 };
 
 // One HTTP GET for up to MAX_IDS_PER_REQUEST ids. Resolves every id —
@@ -166,8 +163,7 @@ const runChunk = async (
   const fetchedAt = Date.now();
   for (const id of chunk) {
     const usd = coins === null ? null : readPrice(coins[id]);
-    const snapshot: UsdPriceSnapshot | null =
-      usd === null ? null : { usd, fetchedAt };
+    const snapshot: UsdPriceSnapshot | null = usd === null ? null : { usd, fetchedAt };
     settled.set(id, snapshot);
     priceCache.set(id, { snapshot, expires: fetchedAt + PRICE_TTL_MS });
   }
@@ -178,9 +174,7 @@ const runChunk = async (
 // never-rejecting promise per id in the in-flight map first so callers
 // arriving mid-flight join the same resolution (tokenMetadata's
 // launchTokenBatch pattern).
-const launchChunks = (
-  ids: readonly string[],
-): Map<string, Promise<UsdPriceSnapshot | null>> => {
+const launchChunks = (ids: readonly string[]): Map<string, Promise<UsdPriceSnapshot | null>> => {
   const promises = new Map<string, Promise<UsdPriceSnapshot | null>>();
   const chunks: string[][] = [];
   for (let index = 0; index < ids.length; index += MAX_IDS_PER_REQUEST) {
@@ -194,7 +188,7 @@ const launchChunks = (
     }> = [];
     for (const id of chunk) {
       let resolveId: (snapshot: UsdPriceSnapshot | null) => void = () => {};
-      const promise = new Promise<UsdPriceSnapshot | null>((resolve) => {
+      const promise = new Promise<UsdPriceSnapshot | null>(resolve => {
         resolveId = resolve;
       });
       promises.set(id, promise);
@@ -281,12 +275,10 @@ export async function fetchUsdPrices(
  * without a usable price — including an unmapped chain, which never
  * fetches at all.
  */
-export function useNativeUsdPrice(
-  chainId: number,
-): UsdPriceSnapshot | null | undefined {
+export function useNativeUsdPrice(chainId: number): UsdPriceSnapshot | null | undefined {
   const id = nativePriceId(chainId);
-  const [snapshot, setSnapshot] = useState<UsdPriceSnapshot | null | undefined>(
-    () => (id === null ? null : undefined),
+  const [snapshot, setSnapshot] = useState<UsdPriceSnapshot | null | undefined>(() =>
+    id === null ? null : undefined,
   );
 
   useEffect(() => {
@@ -299,7 +291,7 @@ export function useNativeUsdPrice(
     // price.
     setSnapshot(undefined);
     let cancelled = false;
-    void fetchUsdPrices([id]).then((fetched) => {
+    void fetchUsdPrices([id]).then(fetched => {
       if (!cancelled) setSnapshot(fetched.get(id) ?? null);
     });
     return () => {
@@ -320,8 +312,8 @@ export function useTokenUsdPrice(
   address: string,
 ): UsdPriceSnapshot | null | undefined {
   const id = tokenPriceId(chainId, address);
-  const [snapshot, setSnapshot] = useState<UsdPriceSnapshot | null | undefined>(
-    () => (id === null ? null : undefined),
+  const [snapshot, setSnapshot] = useState<UsdPriceSnapshot | null | undefined>(() =>
+    id === null ? null : undefined,
   );
 
   useEffect(() => {
@@ -331,7 +323,7 @@ export function useTokenUsdPrice(
     }
     setSnapshot(undefined);
     let cancelled = false;
-    void fetchUsdPrices([id]).then((fetched) => {
+    void fetchUsdPrices([id]).then(fetched => {
       if (!cancelled) setSnapshot(fetched.get(id) ?? null);
     });
     return () => {
@@ -358,13 +350,13 @@ export function useTokenUsdPrices(
   addresses: readonly string[],
 ): Map<string, UsdPriceSnapshot> | undefined {
   const digest = `${chainId}|${[...addresses]
-    .map((address) => address.toLowerCase())
+    .map(address => address.toLowerCase())
     .sort()
     .join(',')}`;
 
-  const [prices, setPrices] = useState<
-    Map<string, UsdPriceSnapshot> | undefined
-  >(() => (digest.endsWith('|') ? EMPTY_PRICE_MAP : undefined));
+  const [prices, setPrices] = useState<Map<string, UsdPriceSnapshot> | undefined>(() =>
+    digest.endsWith('|') ? EMPTY_PRICE_MAP : undefined,
+  );
 
   useEffect(() => {
     if (digest.endsWith('|')) return;
@@ -373,11 +365,11 @@ export function useTokenUsdPrices(
     const lowers = digest
       .slice(digest.indexOf('|') + 1)
       .split(',')
-      .filter((entry) => entry !== '');
+      .filter(entry => entry !== '');
     const requests = lowers
-      .map((lower) => ({ lower, id: tokenPriceId(chainId, lower) }))
+      .map(lower => ({ lower, id: tokenPriceId(chainId, lower) }))
       .filter((entry): entry is { lower: string; id: string } => entry.id !== null);
-    void fetchUsdPrices(requests.map((entry) => entry.id)).then((fetched) => {
+    void fetchUsdPrices(requests.map(entry => entry.id)).then(fetched => {
       if (cancelled) return;
       const usable = new Map<string, UsdPriceSnapshot>();
       for (const { lower, id } of requests) {
@@ -405,10 +397,7 @@ export function useTokenUsdPrices(
  * every realistic tx value (< 2^53 wei); rounding happens only at format
  * time in the renderer, never here.
  */
-export function nativeAmountToUsd(
-  wei: bigint,
-  price: UsdPriceSnapshot,
-): number {
+export function nativeAmountToUsd(wei: bigint, price: UsdPriceSnapshot): number {
   return (Number(wei) / 1e18) * price.usd;
 }
 
@@ -469,10 +458,12 @@ export type PriceHistoryOk = {
   windowDays: PriceHistoryWindow;
 };
 
-export type PriceHistoryOutcome = PriceHistoryOk | {
-  status: 'unavailable';
-  reason: PriceHistoryReason;
-};
+export type PriceHistoryOutcome =
+  | PriceHistoryOk
+  | {
+    status: 'unavailable';
+    reason: PriceHistoryReason;
+  };
 
 // A daily series moves slowly: a settled result (or settled-unavailable
 // verdict) is trusted far longer than a spot price before refetching.
@@ -503,8 +494,7 @@ const historyKey = (
   windowDays: PriceHistoryWindow,
 ): string => `${chainId}|${tokenAddress ?? ''}|${windowDays}`;
 
-const normalizeWindow = (windowDays: number): PriceHistoryWindow =>
-  windowDays === 7 ? 7 : 30;
+const normalizeWindow = (windowDays: number): PriceHistoryWindow => (windowDays === 7 ? 7 : 30);
 
 /**
  * Pure: the /chart request URL for one coin id and window —
@@ -524,10 +514,7 @@ export function priceHistoryUrl(
 // non-finite/negative timestamps and zero/negative/non-finite prices are
 // dropped — never displayed, never interpolated over. Points before the
 // window start (searchWidth can pull pre-window neighbors) go too.
-const readPoint = (
-  entry: unknown,
-  windowStart: number,
-): PricePoint | null => {
+const readPoint = (entry: unknown, windowStart: number): PricePoint | null => {
   if (!isRecord(entry)) return null;
   const { timestamp, price } = entry;
   if (
@@ -566,9 +553,7 @@ export function shapePriceHistory(
     const point = readPoint(entry, windowStartEpochSeconds);
     if (point !== null) byTimestamp.set(point.timestamp, point);
   }
-  const points = [...byTimestamp.values()].sort(
-    (a, b) => a.timestamp - b.timestamp,
-  );
+  const points = [...byTimestamp.values()].sort((a, b) => a.timestamp - b.timestamp);
   let min = Infinity;
   let max = -Infinity;
   for (const { price } of points) {
@@ -579,20 +564,16 @@ export function shapePriceHistory(
 }
 
 const readSymbol = (coin: Record<string, unknown>): string | null =>
-  typeof coin.symbol === 'string' && coin.symbol.length > 0
-    ? coin.symbol
-    : null;
+  typeof coin.symbol === 'string' && coin.symbol.length > 0 ? coin.symbol : null;
 
 const readConfidence = (coin: Record<string, unknown>): number | null => {
   const { confidence } = coin;
-  return (
-    typeof confidence === 'number' &&
+  return typeof confidence === 'number' &&
     Number.isFinite(confidence) &&
     confidence >= 0 &&
     confidence <= 1
-      ? confidence
-      : null
-  );
+    ? confidence
+    : null;
 };
 
 // One /chart GET for a single coin id. Classifies every failure mode
@@ -611,10 +592,9 @@ const runHistoryRequest = async (
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     try {
-      const response = await fetch(
-        priceHistoryUrl(coinId, windowDays, nowEpochSeconds),
-        { signal: controller.signal },
-      );
+      const response = await fetch(priceHistoryUrl(coinId, windowDays, nowEpochSeconds), {
+        signal: controller.signal,
+      });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       parsed = await response.json();
     } finally {
@@ -635,8 +615,7 @@ const runHistoryRequest = async (
     // wrapper without our key is the API's definitive "unknown coin".
     return {
       status: 'unavailable',
-      reason:
-        coins === null ? 'malformed response' : 'no usable points in the window',
+      reason: coins === null ? 'malformed response' : 'no usable points in the window',
     };
   }
   if (!Array.isArray(coin.prices)) {
@@ -684,9 +663,7 @@ export async function fetchPriceHistory(
   if (existing !== undefined) return existing;
 
   const coinId =
-    tokenAddress === undefined
-      ? nativePriceId(chainId)
-      : tokenPriceId(chainId, tokenAddress);
+    tokenAddress === undefined ? nativePriceId(chainId) : tokenPriceId(chainId, tokenAddress);
 
   const settle = (outcome: PriceHistoryOutcome): PriceHistoryOutcome => {
     priceHistoryCache.set(key, { outcome, expires: Date.now() + PRICE_HISTORY_TTL_MS });
@@ -715,9 +692,7 @@ export async function fetchPriceHistory(
 // fast path for already-known series (e.g. toggling the window back).
 const peekHistory = (key: string): PriceHistoryOutcome | undefined => {
   const entry = priceHistoryCache.get(key);
-  return entry !== undefined && entry.expires > Date.now()
-    ? entry.outcome
-    : undefined;
+  return entry !== undefined && entry.expires > Date.now() ? entry.outcome : undefined;
 };
 
 /**
@@ -734,9 +709,7 @@ export function usePriceHistory(
   windowDays: PriceHistoryWindow = 30,
 ): PriceHistoryOutcome | undefined {
   const key = historyKey(chainId, tokenAddress, normalizeWindow(windowDays));
-  const [outcome, setOutcome] = useState<PriceHistoryOutcome | undefined>(() =>
-    peekHistory(key),
-  );
+  const [outcome, setOutcome] = useState<PriceHistoryOutcome | undefined>(() => peekHistory(key));
 
   useEffect(() => {
     // Same-key cache hit: settle synchronously, zero network.
@@ -744,7 +717,7 @@ export function usePriceHistory(
     setOutcome(cached);
     if (cached !== undefined) return;
     let cancelled = false;
-    void fetchPriceHistory(chainId, tokenAddress, windowDays).then((settled) => {
+    void fetchPriceHistory(chainId, tokenAddress, windowDays).then(settled => {
       if (!cancelled) setOutcome(settled);
     });
     return () => {

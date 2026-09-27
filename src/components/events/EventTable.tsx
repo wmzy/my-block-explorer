@@ -984,9 +984,7 @@ const paginateData = (data: EventData[], page: number, limit: number): EventData
 // param consumed by the events API; undefined when nothing is set.
 const argFiltersQueryParam = (abiFilters?: Record<string, string>): string | undefined => {
   if (!abiFilters) return undefined;
-  const active = Object.fromEntries(
-    Object.entries(abiFilters).filter(([, value]) => value !== ''),
-  );
+  const active = Object.fromEntries(Object.entries(abiFilters).filter(([, value]) => value !== ''));
   return Object.keys(active).length > 0 ? JSON.stringify(active) : undefined;
 };
 
@@ -1658,14 +1656,7 @@ export const EventTable: React.FC<EventTableProps> = ({
       setEvents(allEvents);
       setSortingMetrics(null);
     }
-  }, [
-    allEvents,
-    sort,
-    multiSort,
-    pagination.page,
-    pagination.limit,
-    shouldUseClientSideSort,
-  ]);
+  }, [allEvents, sort, multiSort, pagination.page, pagination.limit, shouldUseClientSideSort]);
 
   const handleRetry = () => {
     setError(null);
@@ -1754,7 +1745,9 @@ export const EventTable: React.FC<EventTableProps> = ({
         <div className={errorContainer}>
           <div className={errorMessage}>Failed to load events</div>
           <div style={{ color: 'var(--haze-color-text-muted)', marginBottom: 16 }}>{error}</div>
-          <button className={retryButton} onClick={handleRetry}>Retry</button>
+          <button className={retryButton} onClick={handleRetry}>
+            Retry
+          </button>
         </div>
       </div>
     );
@@ -1809,8 +1802,13 @@ export const EventTable: React.FC<EventTableProps> = ({
 
               {enableMultiSort && (
                 <>
-                  <button className={addSortButton} onClick={addToMultiSort}>+ Add to multi-sort</button>
-                  <button className={addSortButton} onClick={() => setShowAdvancedSort(!showAdvancedSort)}>
+                  <button className={addSortButton} onClick={addToMultiSort}>
+                    + Add to multi-sort
+                  </button>
+                  <button
+                    className={addSortButton}
+                    onClick={() => setShowAdvancedSort(!showAdvancedSort)}
+                  >
                     {showAdvancedSort ? 'Hide' : 'Show'} advanced sort
                   </button>
                 </>
@@ -1850,7 +1848,10 @@ export const EventTable: React.FC<EventTableProps> = ({
                   <div className={performanceInfoContainer}>
                     <div className={performanceHeader}>
                       Sorting performance
-                      <button className={performanceCloseButton} onClick={() => setShowPerformanceInfo(false)}>
+                      <button
+                        className={performanceCloseButton}
+                        onClick={() => setShowPerformanceInfo(false)}
+                      >
                         ×
                       </button>
                     </div>
@@ -1869,14 +1870,20 @@ export const EventTable: React.FC<EventTableProps> = ({
 
                     <div className={performanceMetric}>
                       <span className={performanceMetricLabel}>Sort time:</span>
-                      <span className={performanceMetricValue} data-highlight={sortingMetrics.sortTime < 10 || undefined}>
+                      <span
+                        className={performanceMetricValue}
+                        data-highlight={sortingMetrics.sortTime < 10 || undefined}
+                      >
                         {sortingMetrics.sortTime.toFixed(2)} ms
                       </span>
                     </div>
 
                     <div className={performanceMetric}>
                       <span className={performanceMetricLabel}>Cache hit:</span>
-                      <span className={performanceMetricValue} data-highlight={sortingMetrics.cacheHit || undefined}>
+                      <span
+                        className={performanceMetricValue}
+                        data-highlight={sortingMetrics.cacheHit || undefined}
+                      >
                         {sortingMetrics.cacheHit ? 'Yes' : 'No'}
                       </span>
                     </div>
@@ -1901,7 +1908,9 @@ export const EventTable: React.FC<EventTableProps> = ({
 
                     <div className={performanceMetric}>
                       <span className={performanceMetricLabel}>Sort mode:</span>
-                      <span className={performanceMetricValue} data-highlight>Client-side</span>
+                      <span className={performanceMetricValue} data-highlight>
+                        Client-side
+                      </span>
                     </div>
                   </div>
                 )}
@@ -1913,7 +1922,11 @@ export const EventTable: React.FC<EventTableProps> = ({
           {showAdvancedSort && enableMultiSort && multiSort.length > 0 && (
             <div
               className={sortControlsContainer}
-              style={{ background: 'var(--haze-color-bg-muted)', paddingTop: '8px', paddingBottom: '8px' }}
+              style={{
+                background: 'var(--haze-color-bg-muted)',
+                paddingTop: '8px',
+                paddingBottom: '8px',
+              }}
             >
               <div>
                 <span className={sortLabel}>Multi-sort:</span>
@@ -1924,14 +1937,21 @@ export const EventTable: React.FC<EventTableProps> = ({
                       <div className={multiSortTag} key={sortConfig.key}>
                         {option?.label ?? sortConfig.key} (
                         {sortConfig.direction === 'asc' ? '↑' : '↓'})
-                        <button className={multiSortRemove} onClick={() => removeFromMultiSort(sortConfig.key)}>
+                        <button
+                          className={multiSortRemove}
+                          onClick={() => removeFromMultiSort(sortConfig.key)}
+                        >
                           ×
                         </button>
                       </div>
                     );
                   })}
-                  <button className={addSortButton} onClick={clearMultiSort}>Clear all</button>
-                  <button className={addSortButton} onClick={applyMultiSort}>Apply multi-sort</button>
+                  <button className={addSortButton} onClick={clearMultiSort}>
+                    Clear all
+                  </button>
+                  <button className={addSortButton} onClick={applyMultiSort}>
+                    Apply multi-sort
+                  </button>
                 </div>
               </div>
             </div>
@@ -1941,13 +1961,19 @@ export const EventTable: React.FC<EventTableProps> = ({
             <thead className={tableHeader}>
               <tr>
                 <th scope="col" className={tableHeaderCell} aria-label="Raw log" />
-                <th className={cx(tableHeaderCell, tableHeaderCellSortable)} onClick={() => handleSort('block_number')}>
+                <th
+                  className={cx(tableHeaderCell, tableHeaderCellSortable)}
+                  onClick={() => handleSort('block_number')}
+                >
                   Block
                   <span className={sortIndicator}>
                     {sort.field === 'block_number' ? (sort.direction === 'asc' ? '↑' : '↓') : '↕'}
                   </span>
                 </th>
-                <th className={cx(tableHeaderCell, tableHeaderCellSortable)} onClick={() => handleSort('block_timestamp')}>
+                <th
+                  className={cx(tableHeaderCell, tableHeaderCellSortable)}
+                  onClick={() => handleSort('block_timestamp')}
+                >
                   Time
                   <span className={sortIndicator}>
                     {sort.field === 'block_timestamp'
@@ -1957,7 +1983,10 @@ export const EventTable: React.FC<EventTableProps> = ({
                       : '↕'}
                   </span>
                 </th>
-                <th className={cx(tableHeaderCell, tableHeaderCellSortable)} onClick={() => handleSort('event_name')}>
+                <th
+                  className={cx(tableHeaderCell, tableHeaderCellSortable)}
+                  onClick={() => handleSort('event_name')}
+                >
                   Event
                   <span className={sortIndicator}>
                     {sort.field === 'event_name' ? (sort.direction === 'asc' ? '↑' : '↓') : '↕'}
@@ -2007,7 +2036,9 @@ export const EventTable: React.FC<EventTableProps> = ({
                         </button>
                       </td>
                       <td className={tableCell}>{event.blockNumber}</td>
-                      <td className={cx(tableCell, timestampCell)}>{formatTimestamp(event.blockTimestamp)}</td>
+                      <td className={cx(tableCell, timestampCell)}>
+                        {formatTimestamp(event.blockTimestamp)}
+                      </td>
                       <td className={cx(tableCell, eventNameCell)}>
                         {event.eventName}
                         {event.isFinalized === false && (
@@ -2079,7 +2110,9 @@ export const EventTable: React.FC<EventTableProps> = ({
           {error && events.length > 0 && (
             <div className={errorContainer}>
               <div className={errorMessage}>Error loading more events</div>
-              <button className={retryButton} onClick={handleRetry}>Retry</button>
+              <button className={retryButton} onClick={handleRetry}>
+                Retry
+              </button>
             </div>
           )}
 
@@ -2133,7 +2166,11 @@ export const EventTable: React.FC<EventTableProps> = ({
                       min={1}
                       max={totalPages}
                     />
-                    <button className={paginationButton} onClick={handleGoToPage} disabled={!pageInput || loading}>
+                    <button
+                      className={paginationButton}
+                      onClick={handleGoToPage}
+                      disabled={!pageInput || loading}
+                    >
                       Go
                     </button>
                   </div>
@@ -2169,8 +2206,8 @@ export const EventTable: React.FC<EventTableProps> = ({
                       click hit the backend 400. */}
                   {exportExceedsLimit && (
                     <span className={exportLimitNotice}>
-                      Too many rows ({pagination.total.toLocaleString()}) — narrow the block
-                      range or filters and export in chunks (limit 100,000 rows).
+                      Too many rows ({pagination.total.toLocaleString()}) — narrow the block range
+                      or filters and export in chunks (limit 100,000 rows).
                     </span>
                   )}
                   {!backendConnected && (

@@ -14,6 +14,7 @@
 ### 1.1 基于事件的表结构设计
 
 每个ABI事件应该对应独立的表结构，遵循以下命名规范：
+
 ```sql
 -- 表名格式: events_{chain_id}_{contract_address}_{event_signature}
 events_1_0x1234_abcd5678_Transfer
@@ -23,6 +24,7 @@ events_137_0xabcd_efgh1234_Approval
 ### 1.2 通用字段设计
 
 所有事件表都应该包含的基础字段：
+
 ```typescript
 const commonEventFields = {
   // 链标识
@@ -52,29 +54,29 @@ const commonEventFields = {
 // ABI类型到数据库类型的映射
 const abiTypeToDbType = {
   // 基础类型
-  'uint8': bignum(),
-  'uint16': bignum(),
-  'uint32': bignum(),
-  'uint64': bignum(),
-  'uint128': bignum(),
-  'uint256': bignum(),
-  'int8': bignum(),
-  'int16': bignum(),
-  'int32': bignum(),
-  'int64': bignum(),
-  'int128': bignum(),
-  'int256': bignum(),
-  'bool': boolean(),
-  'address': address(),
-  'string': text(),
+  uint8: bignum(),
+  uint16: bignum(),
+  uint32: bignum(),
+  uint64: bignum(),
+  uint128: bignum(),
+  uint256: bignum(),
+  int8: bignum(),
+  int16: bignum(),
+  int32: bignum(),
+  int64: bignum(),
+  int128: bignum(),
+  int256: bignum(),
+  bool: boolean(),
+  address: address(),
+  string: text(),
 
   // 字节类型
-  'bytes': hexData(),
-  'bytes1': hexData(),
-  'bytes4': hexData(),
-  'bytes8': hexData(),
-  'bytes16': hexData(),
-  'bytes32': hexData(),
+  bytes: hexData(),
+  bytes1: hexData(),
+  bytes4: hexData(),
+  bytes8: hexData(),
+  bytes16: hexData(),
+  bytes32: hexData(),
 
   // 定长数组 - 存储为JSON
   'uint8[]': text(),
@@ -114,9 +116,13 @@ class EventDecodingService {
   async createEventTable(
     chainId: number,
     contractAddress: string,
-    abiEvent: ABIEvent
+    abiEvent: ABIEvent,
   ): Promise<void> {
-    const tableName = this.generateTableName(chainId, contractAddress, abiEvent);
+    const tableName = this.generateTableName(
+      chainId,
+      contractAddress,
+      abiEvent,
+    );
     const tableSchema = this.generateTableSchema(abiEvent);
 
     // 使用DuckDB的动态DDL
@@ -142,10 +148,7 @@ class EventDecodingService {
   /**
    * 解码事件日志
    */
-  async decodeEventLog(
-    log: Log,
-    abiEvent: ABIEvent
-  ): Promise<DecodedEvent> {
+  async decodeEventLog(log: Log, abiEvent: ABIEvent): Promise<DecodedEvent> {
     try {
       // 使用Viem的解码功能
       const decodedLog = decodeEventLog({
@@ -170,7 +173,7 @@ class EventDecodingService {
     } catch (error) {
       console.error('Event decoding failed:', error);
       throw new EventDecodingError(
-        `Failed to decode event ${abiEvent.name}: ${error.message}`
+        `Failed to decode event ${abiEvent.name}: ${error.message}`,
       );
     }
   }
@@ -210,9 +213,7 @@ function flattenStructValue(value: any, structDef: StructParameter): string {
 
 ```typescript
 function handleArrayValue(value: any[], elementType: string): string {
-  const formattedArray = value.map(item =>
-    formatTypedValue(item, elementType)
-  );
+  const formattedArray = value.map(item => formatTypedValue(item, elementType));
 
   return JSON.stringify(formattedArray);
 }
@@ -225,18 +226,18 @@ function handleArrayValue(value: any[], elementType: string): string {
 
 ### 3.1 完整的类型映射表
 
-| ABI类型 | 数据库类型 | 存储格式 | 示例 |
-|---------|------------|----------|------|
-| uint8-uint256 | bignum | 字符串 | "12345678901234567890" |
-| int8-int256 | bignum | 字符串 | "-12345678901234567890" |
-| address | address | char(42) | "0x1234567890123456789012345678901234567890" |
-| bool | boolean | integer | 1/0 |
-| string | text | UTF-8字符串 | "Hello World" |
-| bytes | hexData | text | "0x1234567890abcdef" |
-| bytes32 | hash32 | char(66) | "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef" |
-| address[] | text | JSON数组 | '["0x1234...","0x5678..."]' |
-| uint256[] | text | JSON数组 | '["123","456"]' |
-| tuple | text | JSON对象 | '{"field1":"123","field2":"0x1234..."}' |
+| ABI类型       | 数据库类型 | 存储格式    | 示例                                                                 |
+| ------------- | ---------- | ----------- | -------------------------------------------------------------------- |
+| uint8-uint256 | bignum     | 字符串      | "12345678901234567890"                                               |
+| int8-int256   | bignum     | 字符串      | "-12345678901234567890"                                              |
+| address       | address    | char(42)    | "0x1234567890123456789012345678901234567890"                         |
+| bool          | boolean    | integer     | 1/0                                                                  |
+| string        | text       | UTF-8字符串 | "Hello World"                                                        |
+| bytes         | hexData    | text        | "0x1234567890abcdef"                                                 |
+| bytes32       | hash32     | char(66)    | "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef" |
+| address[]     | text       | JSON数组    | '["0x1234...","0x5678..."]'                                          |
+| uint256[]     | text       | JSON数组    | '["123","456"]'                                                      |
+| tuple         | text       | JSON对象    | '{"field1":"123","field2":"0x1234..."}'                              |
 
 ### 3.2 存储格式选择
 
@@ -245,6 +246,7 @@ function handleArrayValue(value: any[], elementType: string): string {
 **优势对比：**
 
 结构化字段：
+
 - ✅ 查询性能更好，支持索引
 - ✅ 类型安全
 - ✅ 支持SQL聚合函数
@@ -252,22 +254,39 @@ function handleArrayValue(value: any[], elementType: string): string {
 - ❌ 空间开销较大
 
 JSON字段：
+
 - ✅ 灵活性高，易于扩展
 - ✅ 存储紧凑
 - ❌ 查询性能稍差
 - ❌ 需要应用层类型验证
 
 **推荐策略：**
+
 ```typescript
-function determineStorageType(abiType: string, isIndexed: boolean): 'structured' | 'json' {
+function determineStorageType(
+  abiType: string,
+  isIndexed: boolean,
+): 'structured' | 'json' {
   // indexed参数必须结构化存储
   if (isIndexed) return 'structured';
 
   // 基础类型使用结构化存储
   const structuredTypes = [
-    'uint8', 'uint16', 'uint32', 'uint64', 'uint128', 'uint256',
-    'int8', 'int16', 'int32', 'int64', 'int128', 'int256',
-    'bool', 'address', 'bytes32'
+    'uint8',
+    'uint16',
+    'uint32',
+    'uint64',
+    'uint128',
+    'uint256',
+    'int8',
+    'int16',
+    'int32',
+    'int64',
+    'int128',
+    'int256',
+    'bool',
+    'address',
+    'bytes32',
   ];
 
   if (structuredTypes.includes(abiType)) return 'structured';
@@ -301,7 +320,10 @@ CREATE INDEX idx_events_tx_logs ON events_table(tx_hash, log_index);
 
 ```typescript
 class IndexManager {
-  async createEventIndexes(tableName: string, abiEvent: ABIEvent): Promise<void> {
+  async createEventIndexes(
+    tableName: string,
+    abiEvent: ABIEvent,
+  ): Promise<void> {
     const indexes = this.generateIndexDefinitions(tableName, abiEvent);
 
     for (const index of indexes) {
@@ -309,7 +331,10 @@ class IndexManager {
     }
   }
 
-  private generateIndexDefinitions(tableName: string, abiEvent: ABIEvent): string[] {
+  private generateIndexDefinitions(
+    tableName: string,
+    abiEvent: ABIEvent,
+  ): string[] {
     const indexes = [
       // 基础索引
       `CREATE INDEX IF NOT EXISTS idx_${tableName}_block_number ON ${tableName}(block_number)`,
@@ -323,7 +348,7 @@ class IndexManager {
       .forEach(input => {
         const columnName = this.sanitizeColumnName(input.name);
         indexes.push(
-          `CREATE INDEX IF NOT EXISTS idx_${tableName}_${columnName} ON ${tableName}(${columnName})`
+          `CREATE INDEX IF NOT EXISTS idx_${tableName}_${columnName} ON ${tableName}(${columnName})`,
         );
       });
 
@@ -346,7 +371,7 @@ class EventQueryService {
   async getEventsPaginated(
     tableName: string,
     filters: EventFilters,
-    pagination: { limit: number; offset?: number; cursor?: string }
+    pagination: { limit: number; offset?: number; cursor?: string },
   ): Promise<PaginatedEvents> {
     let query = `
       SELECT * FROM ${tableName}
@@ -386,9 +411,10 @@ class EventQueryService {
     return {
       events: results.slice(0, pagination.limit),
       hasMore: results.length > pagination.limit,
-      nextCursor: results.length > pagination.limit
-        ? results[pagination.limit - 1].block_number
-        : null,
+      nextCursor:
+        results.length > pagination.limit
+          ? results[pagination.limit - 1].block_number
+          : null,
     };
   }
 }
@@ -448,24 +474,30 @@ export class ABIEventIndexingService {
     private eventDecoder: EventDecodingService,
     private tableManager: DynamicTableManager,
     private indexManager: IndexManager,
-    private queryService: EventQueryService
+    private queryService: EventQueryService,
   ) {}
 
   async indexContractEvents(
     chainId: number,
     contractAddress: string,
-    abi: ABIEvent[]
+    abi: ABIEvent[],
   ): Promise<void> {
     // 1. 创建事件表
     await Promise.all(
-      abi.filter(item => item.type === 'event')
-        .map(event => this.tableManager.createEventTable(chainId, contractAddress, event))
+      abi
+        .filter(item => item.type === 'event')
+        .map(event =>
+          this.tableManager.createEventTable(chainId, contractAddress, event),
+        ),
     );
 
     // 2. 创建索引
     await Promise.all(
-      abi.filter(item => item.type === 'event')
-        .map(event => this.indexManager.createEventIndexes(chainId, contractAddress, event))
+      abi
+        .filter(item => item.type === 'event')
+        .map(event =>
+          this.indexManager.createEventIndexes(chainId, contractAddress, event),
+        ),
     );
 
     // 3. 开始索引历史事件
@@ -483,7 +515,7 @@ class EventIndexingError extends Error {
     public readonly chainId: number,
     public readonly contractAddress: string,
     public readonly eventName?: string,
-    public readonly cause?: Error
+    public readonly cause?: Error,
   ) {
     super(message);
     this.name = 'EventIndexingError';
@@ -505,21 +537,21 @@ interface EventIndexingMetrics {
 ```typescript
 interface EventIndexingConfig {
   // 批处理配置
-  batchSize: number;           // 1000
-  maxConcurrency: number;      // 5
+  batchSize: number; // 1000
+  maxConcurrency: number; // 5
 
   // 存储配置
   compressionEnabled: boolean; // true
   partitioningEnabled: boolean; // true
-  retentionDays: number;       // 365
+  retentionDays: number; // 365
 
   // 性能配置
-  indexThreshold: number;      // 10000 events before creating index
+  indexThreshold: number; // 10000 events before creating index
   compressionThreshold: number; // 100000 events before compression
 
   // 监控配置
-  metricsEnabled: boolean;     // true
-  errorTracking: boolean;      // true
+  metricsEnabled: boolean; // true
+  errorTracking: boolean; // true
 }
 ```
 
@@ -533,4 +565,5 @@ interface EventIndexingConfig {
 4. **全面的性能优化**：索引、压缩、分页等优化手段
 5. **可扩展的架构**：支持未来功能扩展和维护
 
-该策略充分利用了DuckDB的性能优势和Drizzle ORM的类型安全特性，为区块链浏览器提供了强大的事件索引和查询能力。
+该策略充分利用了DuckDB的性能优势和Drizzle
+ORM的类型安全特性，为区块链浏览器提供了强大的事件索引和查询能力。

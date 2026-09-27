@@ -460,13 +460,11 @@ describe('ContractSourceService - cache TTL policy', () => {
       const { isCacheValid } = internals(service);
 
       expect(
-        isCacheValid(
-          makeSource({ lastChecked: hoursAgo(VERIFIED_CACHE_TTL_HOURS - 1) }),
-        ),
+        isCacheValid(makeSource({ lastChecked: hoursAgo(VERIFIED_CACHE_TTL_HOURS - 1) })),
       ).toBe(true);
-      expect(isCacheValid(makeSource({ lastChecked: hoursAgo(VERIFIED_CACHE_TTL_HOURS + 1) }))).toBe(
-        false,
-      );
+      expect(
+        isCacheValid(makeSource({ lastChecked: hoursAgo(VERIFIED_CACHE_TTL_HOURS + 1) })),
+      ).toBe(false);
     });
 
     it('expires a proxy source after 24 hours even when verified', () => {
@@ -775,9 +773,11 @@ describe('ContractSourceService - not-a-contract gate & facet persistence', () =
     });
 
     it('persists the facet list into the cache row', async () => {
-      await (service as unknown as {
-        saveToDatabase: (s: ContractSource) => Promise<void>;
-      }).saveToDatabase({
+      await (
+        service as unknown as {
+          saveToDatabase: (s: ContractSource) => Promise<void>;
+        }
+      ).saveToDatabase({
         chainId,
         address: diamondAddress,
         sourceCode: '// diamond proxy',
@@ -792,9 +792,7 @@ describe('ContractSourceService - not-a-contract gate & facet persistence', () =
       });
 
       expect(insertValues).toHaveLength(1);
-      expect(insertValues[0]?.implementationAddresses).toBe(
-        JSON.stringify([D0, D1, D2]),
-      );
+      expect(insertValues[0]?.implementationAddresses).toBe(JSON.stringify([D0, D1, D2]));
       expect(insertValues[0]?.proxy).toBe('diamond');
     });
 
@@ -987,9 +985,7 @@ describe('ContractSourceService - manual (local-trust) verification', () => {
       // detectProxy would hit the RPC manager; the remote result is a
       // plain non-proxy contract, so stub the probe to not-proxy.
       vi.spyOn(service as any, 'detectProxy').mockResolvedValue({ isProxy: false });
-      selectQueue.push([
-        manualRow({ lastUpdated: new Date(Date.now() - 2 * 60 * 60 * 1000) }),
-      ]);
+      selectQueue.push([manualRow({ lastUpdated: new Date(Date.now() - 2 * 60 * 60 * 1000) })]);
 
       const result = await service.getContractSource(chainId, contractAddress);
 
@@ -1003,9 +999,7 @@ describe('ContractSourceService - manual (local-trust) verification', () => {
     });
 
     it('keeps the manual mark on a remote miss and refreshes its TTL window', async () => {
-      selectQueue.push([
-        manualRow({ lastUpdated: new Date(Date.now() - 2 * 60 * 60 * 1000) }),
-      ]);
+      selectQueue.push([manualRow({ lastUpdated: new Date(Date.now() - 2 * 60 * 60 * 1000) })]);
 
       const result = await service.getContractSource(chainId, contractAddress);
 

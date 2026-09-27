@@ -68,7 +68,12 @@ const erc1155SingleLog = (from: Hex, to: Hex, id: bigint, value: bigint) => ({
   data: encodeAbiParameters(parseAbiParameters('uint256, uint256'), [id, value]),
 });
 
-const erc1155BatchLog = (from: Hex, to: Hex, ids: readonly bigint[], values: readonly bigint[]) => ({
+const erc1155BatchLog = (
+  from: Hex,
+  to: Hex,
+  ids: readonly bigint[],
+  values: readonly bigint[],
+) => ({
   address: TOKEN.toLowerCase(),
   topics: topicsOf({
     abi: erc1155BatchAbi,
@@ -104,7 +109,13 @@ describe('decodeTokenTransfersFromLogs', () => {
     const tokenId = 2n ** 128n + 1n; // deliberately beyond Number.MAX_SAFE_INTEGER
     const decoded = decodeTokenTransfersFromLogs([erc721Log(SENDER, RECIPIENT, tokenId)]);
     expect(decoded).toEqual([
-      { kind: 'erc721', token: TOKEN, from: SENDER, to: RECIPIENT, tokenId: '340282366920938463463374607431768211457' },
+      {
+        kind: 'erc721',
+        token: TOKEN,
+        from: SENDER,
+        to: RECIPIENT,
+        tokenId: '340282366920938463463374607431768211457',
+      },
     ]);
   });
 
@@ -120,7 +131,14 @@ describe('decodeTokenTransfersFromLogs', () => {
       erc1155BatchLog(SENDER, RECIPIENT, [7n, 9n], [10n, 20n]),
     ]);
     expect(decoded).toEqual([
-      { kind: 'erc1155_batch', token: TOKEN, from: SENDER, to: RECIPIENT, ids: ['7', '9'], amounts: ['10', '20'] },
+      {
+        kind: 'erc1155_batch',
+        token: TOKEN,
+        from: SENDER,
+        to: RECIPIENT,
+        ids: ['7', '9'],
+        amounts: ['10', '20'],
+      },
     ]);
   });
 
@@ -153,9 +171,21 @@ describe('decodeTokenTransfersFromLogs', () => {
       erc20Log(SENDER, RECIPIENT, ERC20_VALUE),
       { address: TOKEN, topics: validTopics, data: truncatedData },
       { address: TOKEN, topics: validTopics, data: nonHexData },
-      { address: TOKEN, topics: shortAddressTopic, data: encodeAbiParameters([{ type: 'uint256' }], [1n]) },
-      { address: TOKEN, topics: wrongTopicCount, data: encodeAbiParameters([{ type: 'uint256' }], [1n]) },
-      { address: TOKEN, topics: erc1155BatchLog(SENDER, RECIPIENT, [7n], [10n]).topics, data: lyingBatchData },
+      {
+        address: TOKEN,
+        topics: shortAddressTopic,
+        data: encodeAbiParameters([{ type: 'uint256' }], [1n]),
+      },
+      {
+        address: TOKEN,
+        topics: wrongTopicCount,
+        data: encodeAbiParameters([{ type: 'uint256' }], [1n]),
+      },
+      {
+        address: TOKEN,
+        topics: erc1155BatchLog(SENDER, RECIPIENT, [7n], [10n]).topics,
+        data: lyingBatchData,
+      },
       erc1155SingleLog(SENDER, RECIPIENT, 7n, 10n),
     ]);
 
@@ -173,7 +203,7 @@ describe('decodeTokenTransfersFromLogs', () => {
       erc1155SingleLog(SENDER, RECIPIENT, 4n, 5n),
       { address: TOKEN, topics: [`0x${'ee'.repeat(32)}`], data: '0x' }, // ignored tail
     ]);
-    expect(decoded.map((transfer) => transfer.kind)).toEqual([
+    expect(decoded.map(transfer => transfer.kind)).toEqual([
       'erc20',
       'erc1155_batch',
       'erc721',
@@ -192,8 +222,12 @@ describe('transferStandardFromTopics', () => {
   });
 
   it('classifies both ERC-1155 selector shapes as erc1155', () => {
-    expect(transferStandardFromTopics(erc1155SingleLog(SENDER, RECIPIENT, 4n, 5n).topics)).toBe('erc1155');
-    expect(transferStandardFromTopics(erc1155BatchLog(SENDER, RECIPIENT, [1n], [2n]).topics)).toBe('erc1155');
+    expect(transferStandardFromTopics(erc1155SingleLog(SENDER, RECIPIENT, 4n, 5n).topics)).toBe(
+      'erc1155',
+    );
+    expect(transferStandardFromTopics(erc1155BatchLog(SENDER, RECIPIENT, [1n], [2n]).topics)).toBe(
+      'erc1155',
+    );
   });
 
   it('returns undefined for unknown topic0 values and topicless logs', () => {

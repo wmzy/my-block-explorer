@@ -46,10 +46,10 @@ export async function fetchEnsName(
   }
 }
 
-export const ensNameCache = createQueryCache<string | null | undefined, [
-  string | undefined,
-  number | undefined,
-]>('ens-name');
+export const ensNameCache = createQueryCache<
+  string | null | undefined,
+  [string | undefined, number | undefined]
+>('ens-name');
 
 const queryEnsName = bindQueryFn(fetchEnsName, ensNameCache);
 
@@ -57,7 +57,10 @@ const useEnsNameQuery = createQueryHook({ queryFn: queryEnsName });
 
 // Consumers see only the two honest states: a resolved name or null (also
 // while loading and for gated keys — no placeholder name ever shows).
-export function useEnsName(address: string | undefined, chainId?: number): {
+export function useEnsName(
+  address: string | undefined,
+  chainId?: number,
+): {
   data: string | null;
   loading: boolean;
 } {

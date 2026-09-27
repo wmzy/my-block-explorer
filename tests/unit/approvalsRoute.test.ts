@@ -45,14 +45,16 @@ type HistoryEventFixture = {
   value: string | null;
 };
 
-const resultOf = (overrides: Partial<{
-  coverage: 'complete' | 'partial' | 'scan-failed';
-  pairCount: number;
-  truncated: boolean;
-  reason: 'allowance-read-failed';
-  history: HistoryEventFixture[];
-  historyTruncated: boolean;
-}> = {}) => ({
+const resultOf = (
+  overrides: Partial<{
+    coverage: 'complete' | 'partial' | 'scan-failed';
+    pairCount: number;
+    truncated: boolean;
+    reason: 'allowance-read-failed';
+    history: HistoryEventFixture[];
+    historyTruncated: boolean;
+  }> = {},
+) => ({
   approvals: [
     {
       token: '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
@@ -202,9 +204,7 @@ describe('GET approvals - response envelope', () => {
         value: null,
       }),
     ];
-    mocks.getApprovals.mockResolvedValue(
-      resultOf({ history: events, historyTruncated: true }),
-    );
+    mocks.getApprovals.mockResolvedValue(resultOf({ history: events, historyTruncated: true }));
 
     const res = await request(`/chains/1/addresses/${ADDRESS}/approvals`);
 

@@ -9,15 +9,12 @@ import { formatTransactionForApi, safeJsonResponse } from '../utils/serializatio
 
 const app = new Hono();
 
-app.get('/chains/:chainId/transactions/:hash', async (c) => {
+app.get('/chains/:chainId/transactions/:hash', async c => {
   const chainId = getValidatedChainId(c.req.param('chainId'));
   const hash = c.req.param('hash');
 
   try {
-    const transaction = await transactionService.getTransactionByHash(
-      chainId,
-      hash,
-    );
+    const transaction = await transactionService.getTransactionByHash(chainId, hash);
 
     if (!transaction) {
       return c.json({ error: 'Transaction not found' }, 404);
@@ -34,8 +31,7 @@ app.get('/chains/:chainId/transactions/:hash', async (c) => {
     });
 
     return c.json(responseData);
-  }
-  catch (error) {
+  } catch (error) {
     logger.error({ err: error }, 'Transaction API error');
     return c.json({ error: 'Failed to get transaction' }, 500);
   }
@@ -66,7 +62,7 @@ const parseLimitParam = (raw: string | undefined): number | null => {
   return Math.min(parsed, MAX_TRANSACTION_LIMIT);
 };
 
-app.get('/chains/:chainId/transactions', async (c) => {
+app.get('/chains/:chainId/transactions', async c => {
   const chainId = getValidatedChainId(c.req.param('chainId'));
   const limit = parseLimitParam(c.req.query('limit'));
   const offset = parseOffsetParam(c.req.query('offset'));
@@ -109,8 +105,7 @@ app.get('/chains/:chainId/transactions', async (c) => {
     });
 
     return c.json(responseData);
-  }
-  catch (error) {
+  } catch (error) {
     logger.error({ err: error }, 'Transactions API error');
     return c.json({ error: 'Failed to get transactions' }, 500);
   }

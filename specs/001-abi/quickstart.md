@@ -1,7 +1,6 @@
 # 合约事件索引功能 - 快速开始指南
 
-**创建日期**: 2025-10-15
-**版本**: 1.0
+**创建日期**: 2025-10-15 **版本**: 1.0
 
 ## 功能概述
 
@@ -110,19 +109,22 @@ npm run db:studio
 // 1. 获取合约ABI
 const abi = await fetchContractABI(
   1, // Ethereum mainnet
-  '0xdAC17F958D2ee523a2206206994597C13D831ec7' // USDT合约地址
+  '0xdAC17F958D2ee523a2206206994597C13D831ec7', // USDT合约地址
 );
 
 // 2. 初始化事件索引
-const response = await fetch('/api/chains/1/contracts/0xdAC17F958D2ee523a2206206994597C13D831ec7/events/initialize', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    abi: abi,
-    fromBlock: 18500000,  // 可选：指定起始区块
-    batchSize: 1000       // 可选：批处理大小
-  })
-});
+const response = await fetch(
+  '/api/chains/1/contracts/0xdAC17F958D2ee523a2206206994597C13D831ec7/events/initialize',
+  {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      abi: abi,
+      fromBlock: 18500000, // 可选：指定起始区块
+      batchSize: 1000, // 可选：批处理大小
+    }),
+  },
+);
 
 const { indexingId, supportedEvents } = await response.json();
 console.log(`开始索引事件: ${supportedEvents.join(', ')}`);
@@ -133,7 +135,7 @@ console.log(`开始索引事件: ${supportedEvents.join(', ')}`);
 ```typescript
 // 检查索引状态
 const statusResponse = await fetch(
-  '/api/chains/1/contracts/0xdAC17F958D2ee523a2206206994597C13D831ec7/events/indexing-status'
+  '/api/chains/1/contracts/0xdAC17F958D2ee523a2206206994597C13D831ec7/events/indexing-status',
 );
 
 const status = await statusResponse.json();
@@ -146,7 +148,7 @@ console.log(`已索引事件: ${status.indexedEvents}/${status.totalEvents}`);
 ```typescript
 // 基础事件查询
 const eventsResponse = await fetch(
-  '/api/chains/1/contracts/0xdAC17F958D2ee523a2206206994597C13D831ec7/events?eventName=Transfer&limit=10'
+  '/api/chains/1/contracts/0xdAC17F958D2ee523a2206206994597C13D831ec7/events?eventName=Transfer&limit=10',
 );
 
 const { events, pagination } = await eventsResponse.json();
@@ -154,24 +156,24 @@ console.log(`找到 ${events.length} 个Transfer事件`);
 
 // 高级搜索
 const searchResponse = await fetch(
-  '/api/chains/1/contracts/0xdAC17F958D2ee523a2206206994597C13D831ec7/events/search', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    filters: {
-      eventName: 'Transfer',
-      fromTimestamp: '2025-10-01T00:00:00Z',
-      toTimestamp: '2025-10-15T23:59:59Z',
-      customFilters: {
-        'from': '0x742d35cc6464c73c8e0b5a2c3a4a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a'
-      }
-    },
-    sort: [
-      { field: 'blockTimestamp', direction: 'desc' }
-    ],
-    limit: 50
-  })
-});
+  '/api/chains/1/contracts/0xdAC17F958D2ee523a2206206994597C13D831ec7/events/search',
+  {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      filters: {
+        eventName: 'Transfer',
+        fromTimestamp: '2025-10-01T00:00:00Z',
+        toTimestamp: '2025-10-15T23:59:59Z',
+        customFilters: {
+          from: '0x742d35cc6464c73c8e0b5a2c3a4a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a',
+        },
+      },
+      sort: [{ field: 'blockTimestamp', direction: 'desc' }],
+      limit: 50,
+    }),
+  },
+);
 
 const searchResults = await searchResponse.json();
 ```
@@ -181,16 +183,18 @@ const searchResults = await searchResponse.json();
 ```typescript
 // 事件统计
 const statsResponse = await fetch(
-  '/api/chains/1/contracts/0xdAC17F958D2ee523a2206206994597C13D831ec7/events/statistics?timeRange=30d'
+  '/api/chains/1/contracts/0xdAC17F958D2ee523a2206206994597C13D831ec7/events/statistics?timeRange=30d',
 );
 
 const stats = await statsResponse.json();
 console.log(`30天内总计 ${stats.totalEvents} 个事件`);
-console.log(`最活跃的事件类型: ${Object.entries(stats.eventCounts).sort((a, b) => b[1] - a[1])[0][0]}`);
+console.log(
+  `最活跃的事件类型: ${Object.entries(stats.eventCounts).sort((a, b) => b[1] - a[1])[0][0]}`,
+);
 
 // 图表数据
 const chartResponse = await fetch(
-  '/api/chains/1/contracts/0xdAC17F958D2ee523a2206206994597C13D831ec7/events/chart?interval=1d&timeRange=7d'
+  '/api/chains/1/contracts/0xdAC17F958D2ee523a2206206994597C13D831ec7/events/chart?interval=1d&timeRange=7d',
 );
 
 const chartData = await chartResponse.json();
@@ -310,7 +314,7 @@ const indexingConfig = {
   retentionDays: 365,
 
   // 性能监控
-  metricsEnabled: true
+  metricsEnabled: true,
 };
 ```
 
@@ -330,12 +334,12 @@ const queryConfig = {
   resultCache: {
     enabled: true,
     ttl: 60000, // 1分钟
-    maxSize: 1000
+    maxSize: 1000,
   },
 
   // 性能配置
   enableCompression: true,
-  enableProfiling: false
+  enableProfiling: false,
 };
 ```
 
@@ -385,6 +389,7 @@ npm run test:api
 ### Q: 如何处理大型合约的索引？
 
 **A**: 对于具有大量历史事件的合约：
+
 1. 使用较小的批处理大小 (500-1000)
 2. 分阶段进行历史索引
 3. 考虑使用并行处理
@@ -393,6 +398,7 @@ npm run test:api
 ### Q: 如何优化查询性能？
 
 **A**: 查询性能优化建议：
+
 1. 使用时间范围限制查询范围
 2. 合理使用分页，避免大结果集
 3. 利用缓存机制减少重复查询
@@ -401,6 +407,7 @@ npm run test:api
 ### Q: 如何处理EVM重组？
 
 **A**: 系统自动处理重组：
+
 1. 实时监控区块重组
 2. 自动修正受影响的事件数据
 3. 通知用户数据变更
@@ -409,6 +416,7 @@ npm run test:api
 ### Q: 如何扩展到新链？
 
 **A**: 多链支持配置：
+
 1. 在链配置中添加新链信息
 2. 配置相应的RPC端点
 3. 确保链ID的唯一性

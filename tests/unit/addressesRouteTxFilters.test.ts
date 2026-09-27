@@ -42,11 +42,7 @@ const CHECKSUMMED = getAddress('0x5aaeb6053f3e94c9b9a09f33669495e3474963fe');
 const BAD_CHECKSUM = (() => {
   for (let i = 2; i < CHECKSUMMED.length; i++) {
     if (/[a-f]/.test(CHECKSUMMED[i])) {
-      return (
-        CHECKSUMMED.slice(0, i)
-        + CHECKSUMMED[i].toUpperCase()
-        + CHECKSUMMED.slice(i + 1)
-      );
+      return CHECKSUMMED.slice(0, i) + CHECKSUMMED[i].toUpperCase() + CHECKSUMMED.slice(i + 1);
     }
   }
   return CHECKSUMMED;
@@ -55,10 +51,7 @@ const BAD_CHECKSUM = (() => {
 const app = new Hono();
 app.route('/', addressesRoutes);
 
-const discoveredRow = (
-  blockNumber: number,
-  value: string,
-): DiscoveredTransaction => ({
+const discoveredRow = (blockNumber: number, value: string): DiscoveredTransaction => ({
   hash: `0xrow${blockNumber}`,
   blockNumber: BigInt(blockNumber),
   fromAddress: FROM_FILTER,
@@ -90,44 +83,48 @@ describe('GET /chains/:chainId/addresses/:address/transactions — filters', () 
 
   it('forwards validated filters as BigInt-exact bounds', async () => {
     const res = await requestTx(
-      `?fromAddress=${FROM_FILTER}&toAddress=${TO_FILTER}`
-      + '&minValue=10000000000000000000&maxValue=0',
+      `?fromAddress=${FROM_FILTER}&toAddress=${TO_FILTER}` +
+      '&minValue=10000000000000000000&maxValue=0',
     );
 
     expect(res.status).toBe(200);
-    expect(serviceCalls()).toEqual([[
-      1,
-      ROUTE_ADDRESS,
-      20,
-      0,
-      undefined,
-      {
-        includeBalancePoints: false,
-        filters: {
-          fromAddress: FROM_FILTER,
-          toAddress: TO_FILTER,
-          minValue: 10_000_000_000_000_000_000n,
-          maxValue: 0n,
+    expect(serviceCalls()).toEqual([
+      [
+        1,
+        ROUTE_ADDRESS,
+        20,
+        0,
+        undefined,
+        {
+          includeBalancePoints: false,
+          filters: {
+            fromAddress: FROM_FILTER,
+            toAddress: TO_FILTER,
+            minValue: 10_000_000_000_000_000_000n,
+            maxValue: 0n,
+          },
         },
-      },
-    ]]);
+      ],
+    ]);
   });
 
   it('forwards a valid method selector lowercased (comparison is lowercase-exact)', async () => {
     const res = await requestTx('?method=0xA9059CBB');
 
     expect(res.status).toBe(200);
-    expect(serviceCalls()).toEqual([[
-      1,
-      ROUTE_ADDRESS,
-      20,
-      0,
-      undefined,
-      {
-        includeBalancePoints: false,
-        filters: { method: '0xa9059cbb' },
-      },
-    ]]);
+    expect(serviceCalls()).toEqual([
+      [
+        1,
+        ROUTE_ADDRESS,
+        20,
+        0,
+        undefined,
+        {
+          includeBalancePoints: false,
+          filters: { method: '0xa9059cbb' },
+        },
+      ],
+    ]);
   });
 
   it('echoes filtersApplied with the method exactly as received (case preserved)', async () => {
@@ -164,14 +161,14 @@ describe('GET /chains/:chainId/addresses/:address/transactions — filters', () 
 
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.transactions.map((tx: { selector?: string | null }) => tx.selector))
-      .toEqual(['0xa9059cbb', null]);
+    expect(body.transactions.map((tx: { selector?: string | null }) => tx.selector)).toEqual([
+      '0xa9059cbb',
+      null,
+    ]);
   });
 
   it('echoes filtersApplied exactly as received (case preserved)', async () => {
-    const res = await requestTx(
-      `?fromAddress=${FROM_FILTER.toLowerCase()}&minValue=7`,
-    );
+    const res = await requestTx(`?fromAddress=${FROM_FILTER.toLowerCase()}&minValue=7`);
 
     expect(res.status).toBe(200);
     const body = await res.json();
@@ -223,14 +220,9 @@ describe('GET /chains/:chainId/addresses/:address/transactions — filters', () 
     const res = await requestTx('?fromAddress=&toAddress=&minValue=&maxValue=&method=');
 
     expect(res.status).toBe(200);
-    expect(serviceCalls()).toEqual([[
-      1,
-      ROUTE_ADDRESS,
-      20,
-      0,
-      undefined,
-      { includeBalancePoints: false },
-    ]]);
+    expect(serviceCalls()).toEqual([
+      [1, ROUTE_ADDRESS, 20, 0, undefined, { includeBalancePoints: false }],
+    ]);
     const body = await res.json();
     expect('filtersApplied' in body).toBe(false);
   });
@@ -240,14 +232,9 @@ describe('GET /chains/:chainId/addresses/:address/transactions — filters', () 
 
     expect(res.status).toBe(200);
     // The service call shape is exactly the pre-filter one.
-    expect(serviceCalls()).toEqual([[
-      1,
-      ROUTE_ADDRESS,
-      20,
-      0,
-      undefined,
-      { includeBalancePoints: false },
-    ]]);
+    expect(serviceCalls()).toEqual([
+      [1, ROUTE_ADDRESS, 20, 0, undefined, { includeBalancePoints: false }],
+    ]);
     const body = await res.json();
     expect('filtersApplied' in body).toBe(false);
     // Coverage semantics ride along untouched for unfiltered consumers.

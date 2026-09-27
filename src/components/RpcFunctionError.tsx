@@ -43,8 +43,7 @@ const errorBoxStyles = css`
     .function-name {
       font-weight: 500;
       font-family:
-        "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas,
-        "Courier New", monospace;
+        'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
       background: #fed7d7;
       padding: 2px 6px;
       border-radius: 4px;
@@ -64,8 +63,7 @@ const errorBoxStyles = css`
     font-size: 13px;
     color: #7f1d1d;
     font-family:
-      "SF Mono", Monaco, "Cascadia Code", "Roboto Mono", Consolas,
-      "Courier New", monospace;
+      'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
   }
 
   .suggestions {
@@ -191,18 +189,10 @@ export default function RpcFunctionError({
 
       <div className="error-content">
         <p>
-          <span className="function-name">
-            {getFunctionDisplayName(functionName)}
-          </span>
-          {' '}
-          failed on
-          {' '}
+          <span className="function-name">{getFunctionDisplayName(functionName)}</span> failed on{' '}
           <span className="chain-info">
-            {chainName}
-            {' '}
-            (Chain ID:
-            {chainId}
-            )
+            {chainName} (Chain ID:
+            {chainId})
           </span>
           .
         </p>
@@ -224,11 +214,7 @@ export default function RpcFunctionError({
 
       <div className="actions">
         <button className={`${buttonStyles} primary`} onClick={onConfigureRpc}>
-          Configure
-          {' '}
-          {chainName}
-          {' '}
-          RPC
+          Configure {chainName} RPC
         </button>
         {onRetry && (
           <button className={`${buttonStyles} secondary`} onClick={onRetry}>

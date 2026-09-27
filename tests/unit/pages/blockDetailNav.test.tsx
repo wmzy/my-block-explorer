@@ -113,10 +113,7 @@ describe('BlockDetail header prev/next navigation', () => {
 
     expect(await screen.findByText('Block Details')).toBeInTheDocument();
     // Both steps are links to the neighboring numbers.
-    expect(screen.getByRole('link', { name: 'Prev' })).toHaveAttribute(
-      'href',
-      '/chain/1/block/99',
-    );
+    expect(screen.getByRole('link', { name: 'Prev' })).toHaveAttribute('href', '/chain/1/block/99');
     // No head was observed (the probe only runs on the error path), so the
     // next link stays clickable but its label names the uncertainty.
     expect(screen.getByRole('link', { name: 'Next' })).toHaveAttribute(

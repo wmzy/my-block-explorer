@@ -11,12 +11,22 @@ import { css } from '@linaria/core';
 import { TypedLink, useSearch, useSetSearch } from '@native-router/react';
 import { erc20Abi, formatUnits } from 'viem';
 import { Alert } from 'haze-ui';
-import { useTokenTransfers, requestTokenTransfersRefresh, type TokenTransfer, type TransferScanMode } from '@/services/tokenTransfers';
+import {
+  useTokenTransfers,
+  requestTokenTransfersRefresh,
+  type TokenTransfer,
+  type TransferScanMode,
+} from '@/services/tokenTransfers';
 import { useTokenOverview } from '@/services/tokenMetadata';
 import { classifyTokenOverview } from '@/views/Address/tokenOverview';
 import { createRpcClient } from '@/utils/realTimeData';
 import { checkAddressValidity } from '@/views/Address/addressValidity';
-import { addressSearchSchema, effectiveTransferStandard, shouldPinTransfersPage, type TransferStandardId } from '@/views/Address/search';
+import {
+  addressSearchSchema,
+  effectiveTransferStandard,
+  shouldPinTransfersPage,
+  type TransferStandardId,
+} from '@/views/Address/search';
 import { getExternalToolLinks } from '@/config/externalTools';
 import { formatRelativeTime } from '@/utils/format';
 import { DataTable, Pagination, linkStyle } from '@/components/ui/DataTable';
@@ -155,10 +165,16 @@ async function loadTokenMeta(chainId: number, token: string): Promise<TokenMeta>
     // is the ERC-721 signal, not a failure of the whole lookup.
     const symbol = await client
       .readContract({ address, abi: erc20Abi, functionName: 'symbol' })
-      .then(s => String(s), () => undefined);
+      .then(
+        s => String(s),
+        () => undefined,
+      );
     const decimals = await client
       .readContract({ address, abi: erc20Abi, functionName: 'decimals' })
-      .then(d => Number(d), () => undefined);
+      .then(
+        d => Number(d),
+        () => undefined,
+      );
     return { symbol, decimals };
   } catch {
     return {};
@@ -201,8 +217,7 @@ function useTokenMeta(chainId: number, token: string): TokenMeta | undefined {
     }
     let cancelled = false;
     // Deduped across rows mounting in the same tick for one token.
-    const pending =
-      tokenMetaPending.get(key) ?? startTokenMetaLoad(chainId, token, key);
+    const pending = tokenMetaPending.get(key) ?? startTokenMetaLoad(chainId, token, key);
     pending.then(resolved => {
       if (!cancelled) setMeta(resolved);
     });
@@ -228,17 +243,15 @@ export function useTokenMetas(
   // ',' never appears in a token address, so the joined key round-trips
   // through split() below without ambiguity.
   const tokensKey = tokens.join(',');
-  const [metas, setMetas] = useState<Record<string, TokenMeta | undefined>>(
-    () => {
-      const seeded: Record<string, TokenMeta | undefined> = {};
-      for (const token of tokens) {
-        if (!token) continue;
-        const lower = token.toLowerCase();
-        seeded[lower] = tokenMetaCache.get(`${chainId}:${lower}`);
-      }
-      return seeded;
-    },
-  );
+  const [metas, setMetas] = useState<Record<string, TokenMeta | undefined>>(() => {
+    const seeded: Record<string, TokenMeta | undefined> = {};
+    for (const token of tokens) {
+      if (!token) continue;
+      const lower = token.toLowerCase();
+      seeded[lower] = tokenMetaCache.get(`${chainId}:${lower}`);
+    }
+    return seeded;
+  });
   useEffect(() => {
     if (tokensKey === '') {
       // Empty request: never a network call, and a previously non-empty
@@ -255,15 +268,12 @@ export function useTokenMetas(
       const key = `${chainId}:${lower}`;
       const cached = tokenMetaCache.get(key);
       if (cached) {
-        setMetas(prev =>
-          prev[lower] === cached ? prev : { ...prev, [lower]: cached },
-        );
+        setMetas(prev => (prev[lower] === cached ? prev : { ...prev, [lower]: cached }));
         continue;
       }
       // Same dedup as useTokenMeta: concurrent consumers of one token
       // share the in-flight load.
-      const pending =
-        tokenMetaPending.get(key) ?? startTokenMetaLoad(chainId, token, key);
+      const pending = tokenMetaPending.get(key) ?? startTokenMetaLoad(chainId, token, key);
       pending.then(resolved => {
         if (state.cancelled) return;
         setMetas(prev => ({ ...prev, [lower]: resolved }));
@@ -276,7 +286,13 @@ export function useTokenMetas(
   return metas;
 }
 
-function StandardPill({ transfer, meta }: { transfer: TokenTransfer; meta: TokenMeta | undefined }) {
+function StandardPill({
+  transfer,
+  meta,
+}: {
+  transfer: TokenTransfer;
+  meta: TokenMeta | undefined;
+}) {
   let label: string;
   if (transfer.standard === 'erc1155-single') label = 'ERC-1155';
   else if (transfer.standard === 'erc1155-batch') label = 'ERC-1155 Batch';
@@ -301,11 +317,7 @@ function AmountCell({ transfer, meta }: { transfer: TokenTransfer; meta: TokenMe
         {id !== undefined ? `ID ${id}` : 'ID ?'} ×{' '}
         {/* Thousands separators shorten the display; the title keeps the
             full raw value when they changed anything. */}
-        {amount !== rawAmount ? (
-          <span title={rawAmount}>{amount}</span>
-        ) : (
-          amount
-        )}
+        {amount !== rawAmount ? <span title={rawAmount}>{amount}</span> : amount}
       </td>
     );
   }
@@ -346,8 +358,7 @@ function AmountCell({ transfer, meta }: { transfer: TokenTransfer; meta: TokenMe
   // the shortened token address — never a guessed decimals amount.
   return (
     <td className={valueCell}>
-      <span>{transfer.value}</span>{' '}
-      <span className={mutedValue}>{formatAddr(transfer.token)}</span>
+      <span>{transfer.value}</span> <span className={mutedValue}>{formatAddr(transfer.token)}</span>
     </td>
   );
 }
@@ -356,10 +367,7 @@ function TransferRow({ chainId, transfer }: { chainId: number; transfer: TokenTr
   // Only the shared-signature standard needs metadata; passing '' for the
   // ERC-1155 rows keeps the hook unconditional (rules of hooks) while
   // skipping their enrichment entirely.
-  const meta = useTokenMeta(
-    chainId,
-    transfer.standard === 'erc20-or-erc721' ? transfer.token : '',
-  );
+  const meta = useTokenMeta(chainId, transfer.standard === 'erc20-or-erc721' ? transfer.token : '');
   return (
     <tr>
       <td>
@@ -370,10 +378,7 @@ function TransferRow({ chainId, transfer }: { chainId: number; transfer: TokenTr
         />
       </td>
       <td>
-        <TypedLink
-          to={`/chain/${chainId}/block/${transfer.blockNumber}`}
-          className={linkStyle}
-        >
+        <TypedLink to={`/chain/${chainId}/block/${transfer.blockNumber}`} className={linkStyle}>
           {transfer.blockNumber.toLocaleString()}
         </TypedLink>
       </td>
@@ -386,13 +391,12 @@ function TransferRow({ chainId, transfer }: { chainId: number; transfer: TokenTr
       <td>
         {transfer.direction === 'none' ? (
           <span title="The viewed token contract emitted this log; it is neither sender nor recipient">
-            <Badge variant="default" size="sm">—</Badge>
+            <Badge variant="default" size="sm">
+              —
+            </Badge>
           </span>
         ) : (
-          <Badge
-            variant={transfer.direction === 'in' ? 'success' : 'error'}
-            size="sm"
-          >
+          <Badge variant={transfer.direction === 'in' ? 'success' : 'error'} size="sm">
             {transfer.direction === 'in' ? 'IN' : 'OUT'}
           </Badge>
         )}
@@ -456,7 +460,11 @@ export default function TokenTransfers({
   // also pins ?tab=transfers — this component only renders on that tab,
   // so its URL writes must keep the deep link landing there.
   const setSearch = useSetSearch(addressSearchSchema);
-  const { ttPage: ttPageParam, ttWindow: ttWindowParam, ttStandard: ttStandardParam } = useSearch(addressSearchSchema);
+  const {
+    ttPage: ttPageParam,
+    ttWindow: ttWindowParam,
+    ttStandard: ttStandardParam,
+  } = useSearch(addressSearchSchema);
   const page = Math.max(1, Math.floor(ttPageParam));
   const setPage = (next: number) => {
     void setSearch(prev => ({
@@ -506,9 +514,7 @@ export default function TokenTransfers({
   // Local state, deliberately NOT a URL param: mode is a view choice, and
   // the window/refresh/page params below stay shared by both modes.
   const [participantView, setParticipantView] = useState(false);
-  const scanMode: TransferScanMode = isTokenContract && !participantView
-    ? 'token'
-    : 'participant';
+  const scanMode: TransferScanMode = isTokenContract && !participantView ? 'token' : 'participant';
   const switchMode = (next: TransferScanMode) => {
     if (next === scanMode) return;
     setParticipantView(next === 'participant');
@@ -530,8 +536,8 @@ export default function TokenTransfers({
   // the other list's rows under the newly selected label. Payloads
   // without a mode tag (legacy caches) stay trusted, matching the
   // optional-scannedAt convention.
-  const data
-    = query.data !== undefined && (query.data.mode === undefined || query.data.mode === scanMode)
+  const data =
+    query.data !== undefined && (query.data.mode === undefined || query.data.mode === scanMode)
       ? query.data
       : undefined;
 
@@ -543,9 +549,10 @@ export default function TokenTransfers({
   // trip the ?ttPage= reset. Rows without log-shape evidence
   // (pre-logStandard payloads, nonstandard topic counts) are hidden
   // under an active chip — never guessed into a bucket.
-  const visibleTransfers = standardFilter === undefined
-    ? transfers
-    : transfers.filter(transfer => transfer.logStandard === standardFilter);
+  const visibleTransfers =
+    standardFilter === undefined
+      ? transfers
+      : transfers.filter(transfer => transfer.logStandard === standardFilter);
   const coverage = data?.coverage;
   const windowBlocks = data?.windowBlocks;
   // First-scan time (server cache hit) — absent on legacy payloads
@@ -583,11 +590,9 @@ export default function TokenTransfers({
   // "Search deeper" escalation (mirrors the tx tab): quadruple the
   // effective window the RESPONSE reported (post-clamp truth, not the
   // requested value), capped at the RPC budget ceiling.
-  const searchWindowAtCap =
-    windowBlocks !== undefined && windowBlocks >= MAX_WINDOW_BLOCKS;
-  const nextSearchWindow = windowBlocks !== undefined
-    ? Math.min(windowBlocks * 4, MAX_WINDOW_BLOCKS)
-    : MAX_WINDOW_BLOCKS;
+  const searchWindowAtCap = windowBlocks !== undefined && windowBlocks >= MAX_WINDOW_BLOCKS;
+  const nextSearchWindow =
+    windowBlocks !== undefined ? Math.min(windowBlocks * 4, MAX_WINDOW_BLOCKS) : MAX_WINDOW_BLOCKS;
 
   // Explicit Retry: bypass BOTH caches — refetch() drops the frontend
   // entry, the latch sends ?refresh=1 so the backend re-scans instead of
@@ -621,11 +626,7 @@ export default function TokenTransfers({
           also HOLD other tokens. Non-token addresses render no toggle and
           keep the participant scan, unchanged. */}
       {isTokenContract && (
-        <div
-          className={modeToggle}
-          role="group"
-          aria-label="Token transfers scan mode"
-        >
+        <div className={modeToggle} role="group" aria-label="Token transfers scan mode">
           <Button
             variant={scanMode === 'token' ? 'primary' : 'secondary'}
             size="sm"
@@ -651,11 +652,7 @@ export default function TokenTransfers({
           scan shape (and the ?ttPage= convergence) never changes with the
           filter. ?ttStandard= rides the URL — shareable, refresh-stable,
           back/forward steps between filters. */}
-      <div
-        className={standardFilterRow}
-        role="group"
-        aria-label="Token transfers standard filter"
-      >
+      <div className={standardFilterRow} role="group" aria-label="Token transfers standard filter">
         {STANDARD_FILTERS.map(filter => (
           <Button
             key={filter.label}
@@ -686,8 +683,8 @@ export default function TokenTransfers({
           // so the tab shows a neutral note instead of repeating the
           // guidance or surfacing the scan's 400 as a data problem.
           <p className={invalidAddressNote}>
-            Token transfers cannot be scanned for this address — see the
-            address notice on this page.
+            Token transfers cannot be scanned for this address — see the address notice on this
+            page.
           </p>
         ) : (
           <ErrorState
@@ -708,12 +705,7 @@ export default function TokenTransfers({
               : `Partial coverage — the scan budget ran out after the last ${windowLabel ?? 'capped'} blocks; older token transfers may be missing.`}
           </Alert>
           <div className={bannerLinks}>
-            <Button
-              variant="secondary"
-              size="sm"
-              loading={query.fetching}
-              onClick={retryFresh}
-            >
+            <Button variant="secondary" size="sm" loading={query.fetching} onClick={retryFresh}>
               Retry
             </Button>
             {/* Escalation: quadruple the scanned window. Disabled with a
@@ -723,11 +715,7 @@ export default function TokenTransfers({
               variant="secondary"
               size="sm"
               disabled={searchWindowAtCap}
-              title={
-                searchWindowAtCap
-                  ? 'maximum RPC budget reached'
-                  : undefined
-              }
+              title={searchWindowAtCap ? 'maximum RPC budget reached' : undefined}
               loading={query.fetching}
               onClick={() => {
                 // refresh=1 so the widened request never re-serves the
@@ -756,21 +744,24 @@ export default function TokenTransfers({
       )}
 
       {/* Trusted empty ONLY for authoritative coverage on the first page. */}
-      {!query.loading && !query.error && transfers.length === 0 && coverage === 'complete' && page === 1 && (
-        <Alert variant="info">No token transfers found</Alert>
-      )}
+      {!query.loading &&
+        !query.error &&
+        transfers.length === 0 &&
+        coverage === 'complete' &&
+        page === 1 && <Alert variant="info">No token transfers found</Alert>}
 
       {/* Pre-coverage cached payload (no coverage tag): an empty list is
           unverified, so "coverage unknown" reads differently from a
           complete scan that found nothing — never a trusted empty. */}
-      {!query.loading && !query.error
-        && data !== undefined && transfers.length === 0
-        && coverage === undefined && (
+      {!query.loading &&
+        !query.error &&
+        data !== undefined &&
+        transfers.length === 0 &&
+        coverage === undefined && (
         <>
           <Alert variant="warning">
-            Token transfer data source unknown — scan coverage for this
-            address is unknown, so this is not proof that none exist.
-            Verify on an external explorer.
+            Token transfer data source unknown — scan coverage for this address is unknown, so
+            this is not proof that none exist. Verify on an external explorer.
           </Alert>
           <div className={bannerLinks}>
             <ExternalLinks links={externalToolLinks} />
@@ -784,10 +775,7 @@ export default function TokenTransfers({
           back empty and the address is a known contract. */}
       {!query.loading && !query.error && transfers.length === 0 && isContract === true && (
         <div className={bannerLinks}>
-          <TypedLink
-            to={`/chain/${chainId}/contract/${address}/events`}
-            className={linkStyle}
-          >
+          <TypedLink to={`/chain/${chainId}/contract/${address}/events`} className={linkStyle}>
             Index this contract's events for full history →
           </TypedLink>
         </div>
@@ -823,7 +811,11 @@ export default function TokenTransfers({
                 </thead>
                 <tbody>
                   {visibleTransfers.map(transfer => (
-                    <TransferRow key={`${transfer.txHash}-${transfer.logIndex}`} chainId={chainId} transfer={transfer} />
+                    <TransferRow
+                      key={`${transfer.txHash}-${transfer.logIndex}`}
+                      chainId={chainId}
+                      transfer={transfer}
+                    />
                   ))}
                   {transfers.length === 0 && (
                     <tr>
@@ -837,9 +829,7 @@ export default function TokenTransfers({
               {/* Same explanation as the Age header tooltip, stated once
                   in full: the eth_getLogs scan contract carries no
                   timestamps. */}
-              <p className={timestampLegend}>
-                Timestamps are not available for scan results.
-              </p>
+              <p className={timestampLegend}>Timestamps are not available for scan results.</p>
             </>
           )}
           <Pagination

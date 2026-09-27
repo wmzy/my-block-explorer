@@ -14,8 +14,7 @@ export function DegradedModeBanner({ onOpenSetup, onDismiss }: DegradedModeBanne
   return (
     <div className={bannerStyle} role="status" aria-live="polite">
       <span className={bannerMessageStyle}>
-        Backend not found — indexed data (contracts, events, search suggestions)
-        unavailable.
+        Backend not found — indexed data (contracts, events, search suggestions) unavailable.
       </span>
       <Button variant="secondary" size="sm" onClick={onOpenSetup}>
         Open setup

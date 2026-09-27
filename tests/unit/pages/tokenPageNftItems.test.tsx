@@ -225,7 +225,11 @@ describe('TokenPage Items (discovered) section', () => {
 
   it('stays absent for a standard-unknown token with no NFT-shaped rows', async () => {
     mocks.transfers = [
-      erc20Row('100', '0x1111111111111111111111111111111111111111', '0x2222222222222222222222222222222222222222'),
+      erc20Row(
+        '100',
+        '0x1111111111111111111111111111111111111111',
+        '0x2222222222222222222222222222222222222222',
+      ),
     ];
     renderPage();
 

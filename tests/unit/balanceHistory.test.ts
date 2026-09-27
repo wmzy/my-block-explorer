@@ -68,7 +68,12 @@ describe('computeBalancePoints — anchoring and reconciliation', () => {
       [
         tx({ blockNumber: '300', value: (3n * WEI).toString(), toAddress: ADDR }),
         tx({ blockNumber: '100', value: WEI.toString(), toAddress: ADDR }),
-        tx({ blockNumber: '200', value: (2n * WEI).toString(), fromAddress: ADDR, toAddress: OTHER }),
+        tx({
+          blockNumber: '200',
+          value: (2n * WEI).toString(),
+          fromAddress: ADDR,
+          toAddress: OTHER,
+        }),
       ],
       2n * WEI,
       ADDR,
@@ -104,11 +109,11 @@ describe('computeBalancePoints — anchoring and reconciliation', () => {
   });
 
   it('keeps a negative residual (gas-dominated history) exact, never clamped', () => {
-    const series = computeBalancePoints([tx({ blockNumber: '10' })], 9n * WEI / 10n, ADDR);
+    const series = computeBalancePoints([tx({ blockNumber: '10' })], (9n * WEI) / 10n, ADDR);
 
     expect(series.hasResidualGap).toBe(true);
     expect(series.preHistoryBalance).toBe(-WEI / 10n);
-    expect(series.points.map(p => p.value)).toEqual([0n, -WEI / 10n, 9n * WEI / 10n]);
+    expect(series.points.map(p => p.value)).toEqual([0n, -WEI / 10n, (9n * WEI) / 10n]);
   });
 
   it('nets self-transfers to zero delta', () => {
@@ -139,17 +144,10 @@ describe('computeBalancePoints — exactness and robustness', () => {
 
     expect(series.totalDelta).toBe(2n * huge + 12_345n);
     // residual 7n ≠ 0 → the unknown-history step is present.
-    expect(series.points.map(p => p.value)).toEqual([
-      0n,
-      7n,
-      huge + 7n,
-      2n * huge + 12_345n + 7n,
-    ]);
+    expect(series.points.map(p => p.value)).toEqual([0n, 7n, huge + 7n, 2n * huge + 12_345n + 7n]);
     // Exactness is claimed down to the wei digit.
     expect(series.points[1].value.toString()).toBe('7');
-    expect(series.points[3].value.toString()).toBe(
-      (2n * huge + 12_345n + 7n).toString(),
-    );
+    expect(series.points[3].value.toString()).toBe((2n * huge + 12_345n + 7n).toString());
   });
 
   it('keeps same-block txs in their given (response) order, reversed for the walk', () => {
@@ -201,9 +199,9 @@ describe('computeBalancePoints — exactness and robustness', () => {
 
 describe('formatNativeAmount', () => {
   it('trims trailing fractional zeros and keeps small values exact', () => {
-    expect(formatNativeAmount(15n * WEI / 10n, 18)).toBe('1.5');
+    expect(formatNativeAmount((15n * WEI) / 10n, 18)).toBe('1.5');
     expect(formatNativeAmount(1n, 18)).toBe('0.000000000000000001');
-    expect(formatNativeAmount(-15n * WEI / 10n, 18)).toBe('-1.5');
+    expect(formatNativeAmount((-15n * WEI) / 10n, 18)).toBe('-1.5');
     expect(formatNativeAmount(0n, 18)).toBe('0');
     // A 6-decimal chain currency formats with its own decimals.
     expect(formatNativeAmount(1_234_567n, 6)).toBe('1.234567');

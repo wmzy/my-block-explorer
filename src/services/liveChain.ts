@@ -78,14 +78,15 @@ const isLiveBlockPayload = (value: unknown): value is LiveBlockPayload => {
   if (typeof value !== 'object' || value === null) return false;
   const v = value as Record<string, unknown>;
   return (
-    typeof v.number === 'string' && /^\d+$/.test(v.number)
-    && typeof v.hash === 'string'
-    && typeof v.parentHash === 'string'
-    && typeof v.timestamp === 'string'
-    && typeof v.miner === 'string'
-    && typeof v.transactionCount === 'number'
-    && typeof v.gasUsed === 'string'
-    && typeof v.gasLimit === 'string'
+    typeof v.number === 'string' &&
+    /^\d+$/.test(v.number) &&
+    typeof v.hash === 'string' &&
+    typeof v.parentHash === 'string' &&
+    typeof v.timestamp === 'string' &&
+    typeof v.miner === 'string' &&
+    typeof v.transactionCount === 'number' &&
+    typeof v.gasUsed === 'string' &&
+    typeof v.gasLimit === 'string'
   );
 };
 
@@ -98,15 +99,15 @@ const isLiveWatchEvent = (value: unknown): value is LiveWatchEvent => {
   if (typeof value !== 'object' || value === null) return false;
   const v = value as Record<string, unknown>;
   return (
-    (v.kind === 'log' || v.kind === 'gap')
-    && typeof v.chainId === 'number'
-    && typeof v.address === 'string'
-    && typeof v.blockNumber === 'string'
-    && (v.txHash === null || typeof v.txHash === 'string')
-    && (v.logIndex === null || typeof v.logIndex === 'number')
-    && (v.topic0 === null || typeof v.topic0 === 'string')
-    && (v.message === null || typeof v.message === 'string')
-    && typeof v.at === 'string'
+    (v.kind === 'log' || v.kind === 'gap') &&
+    typeof v.chainId === 'number' &&
+    typeof v.address === 'string' &&
+    typeof v.blockNumber === 'string' &&
+    (v.txHash === null || typeof v.txHash === 'string') &&
+    (v.logIndex === null || typeof v.logIndex === 'number') &&
+    (v.topic0 === null || typeof v.topic0 === 'string') &&
+    (v.message === null || typeof v.message === 'string') &&
+    typeof v.at === 'string'
   );
 };
 
@@ -137,8 +138,7 @@ const liveStreamUrl = (chainId: number): string =>
 // guard mirrors util/http.ts: with no discovered backend the URL would go
 // same-origin and (in dev) hit the vite bridge, whose response buffering
 // breaks SSE — better to stay honestly on polling than to hang a request.
-const streamPossible = (): boolean =>
-  getApiBase() !== '' && typeof EventSource !== 'undefined';
+const streamPossible = (): boolean => getApiBase() !== '' && typeof EventSource !== 'undefined';
 
 const broadcastState = (entry: LiveStreamEntry): void => {
   for (const listener of entry.stateListeners) listener(entry.state);
@@ -158,10 +158,10 @@ const handleBlockEvent = (entry: LiveStreamEntry, data: unknown): void => {
 
   entry.state = {
     mode: 'live',
-    blocks: [
-      data,
-      ...entry.state.blocks.filter(b => b.number !== data.number),
-    ].slice(0, LIVE_BLOCK_WINDOW),
+    blocks: [data, ...entry.state.blocks.filter(b => b.number !== data.number)].slice(
+      0,
+      LIVE_BLOCK_WINDOW,
+    ),
   };
   broadcastState(entry);
   for (const listener of entry.blockListeners) listener(data);
@@ -363,26 +363,17 @@ export function useLiveBlockEvents(
 ): void {
   const onBlockRef = useRef(onBlock);
   onBlockRef.current = onBlock;
-  useEffect(
-    () => subscribeLiveBlockEvents(chainId, block => onBlockRef.current(block)),
-    [chainId],
-  );
+  useEffect(() => subscribeLiveBlockEvents(chainId, block => onBlockRef.current(block)), [chainId]);
 }
 
 /**
  * Watch-event callback hook (latest-ref semantics, same shared
  * EventSource as the block hooks — see subscribeWatchEvents).
  */
-export function useWatchEvents(
-  chainId: number,
-  onEvent: (event: LiveWatchEvent) => void,
-): void {
+export function useWatchEvents(chainId: number, onEvent: (event: LiveWatchEvent) => void): void {
   const onEventRef = useRef(onEvent);
   onEventRef.current = onEvent;
-  useEffect(
-    () => subscribeWatchEvents(chainId, event => onEventRef.current(event)),
-    [chainId],
-  );
+  useEffect(() => subscribeWatchEvents(chainId, event => onEventRef.current(event)), [chainId]);
 }
 
 /** A pushed block, in the RpcBlock shape the Home list renders. */

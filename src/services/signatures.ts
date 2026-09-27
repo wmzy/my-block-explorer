@@ -65,7 +65,9 @@ export const signaturesCache = createQueryCache<Record<string, SignatureOutcome>
 // Split a digest's selectors into memo hits and requestable misses.
 // Malformed digest entries land in neither — they have nothing to ask
 // the API for and simply stay absent, so callers render them as unknown.
-const partitionSelectors = (joined: string): {
+const partitionSelectors = (
+  joined: string,
+): {
   outcomes: Record<string, SignatureOutcome>;
   misses: string[];
 } => {

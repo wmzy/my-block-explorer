@@ -43,11 +43,8 @@ describe('filterNonZeroKnownTokenBalances', () => {
   });
 
   it('preserves input order — ordering is a separate step', () => {
-    const result = filterNonZeroKnownTokenBalances([
-      row(token('b'), 2n),
-      row(token('a'), 9n),
-    ]);
-    expect(result.map((r) => r.address)).toEqual([token('b'), token('a')]);
+    const result = filterNonZeroKnownTokenBalances([row(token('b'), 2n), row(token('a'), 9n)]);
+    expect(result.map(r => r.address)).toEqual([token('b'), token('a')]);
   });
 
   it('returns an empty list for an empty input (structural absence)', () => {
@@ -67,7 +64,7 @@ describe('orderKnownTokenRows', () => {
       rows,
       usdOfPrices({ [token('cheap')]: 2, [token('expensive')]: 500 }),
     );
-    expect(result.map((r) => r.address)).toEqual([
+    expect(result.map(r => r.address)).toEqual([
       token('expensive'), // $500
       token('cheap'), // $2
       token('unpriced-large'), // no price: balance desc
@@ -78,29 +75,28 @@ describe('orderKnownTokenRows', () => {
   it('orders unpriced rows by raw balance descending', () => {
     const rows = [row(token('a'), 10n), row(token('b'), 900n), row(token('c'), 100n)];
     const result = orderKnownTokenRows(rows, () => null);
-    expect(result.map((r) => r.address)).toEqual([token('b'), token('c'), token('a')]);
+    expect(result.map(r => r.address)).toEqual([token('b'), token('c'), token('a')]);
   });
 
   it('falls back to balance order while prices settle, then resorts once they land', () => {
     const rows = [row(token('a'), 50n), row(token('b'), 5n)];
     const unpriced = orderKnownTokenRows(rows, () => null);
-    expect(unpriced.map((r) => r.address)).toEqual([token('a'), token('b')]);
+    expect(unpriced.map(r => r.address)).toEqual([token('a'), token('b')]);
     const priced = orderKnownTokenRows(rows, usdOfPrices({ [token('b')]: 999 }));
-    expect(priced.map((r) => r.address)).toEqual([token('b'), token('a')]);
+    expect(priced.map(r => r.address)).toEqual([token('b'), token('a')]);
   });
 
   it('keeps input order for full ties (priced equal, or equal balances)', () => {
-    const rows = [
-      row(token('first'), 7n),
-      row(token('second'), 7n),
-      row(token('third'), 7n),
-    ];
-    const result = orderKnownTokenRows(rows, usdOfPrices({
-      [token('first')]: 1,
-      [token('second')]: 1,
-      [token('third')]: 1,
-    }));
-    expect(result.map((r) => r.address)).toEqual([token('first'), token('second'), token('third')]);
+    const rows = [row(token('first'), 7n), row(token('second'), 7n), row(token('third'), 7n)];
+    const result = orderKnownTokenRows(
+      rows,
+      usdOfPrices({
+        [token('first')]: 1,
+        [token('second')]: 1,
+        [token('third')]: 1,
+      }),
+    );
+    expect(result.map(r => r.address)).toEqual([token('first'), token('second'), token('third')]);
   });
 
   it('returns an empty list for an empty input (structural absence)', () => {

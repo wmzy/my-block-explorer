@@ -69,17 +69,15 @@ export async function fetchAddressLabel(
       withSignal(api, signal),
     );
     return parseLabelResponse(body, chainId, lower);
-  }
-  catch (error) {
+  } catch (error) {
     if (error instanceof ApiError && error.status === 404) return undefined;
     throw error;
   }
 }
 
-export const addressLabelCache = createQueryCache<AddressLabelResult | undefined, [
-  number,
-  string,
-]>('address-label');
+export const addressLabelCache = createQueryCache<AddressLabelResult | undefined, [number, string]>(
+  'address-label',
+);
 
 const queryAddressLabel = bindQueryFn(fetchAddressLabel, addressLabelCache);
 
@@ -127,7 +125,5 @@ export function labelMatchesTarget(
   chainId: number,
   address: string,
 ): boolean {
-  return (
-    result?.chainId === chainId && result.address === address.toLowerCase()
-  );
+  return result?.chainId === chainId && result.address === address.toLowerCase();
 }

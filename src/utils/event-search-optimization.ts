@@ -136,8 +136,7 @@ export class EventSearchOptimizer {
             memoryUsage: this.estimateMemoryUsage(filteredEvents),
             algorithm: 'client-side',
           };
-        }
-        else {
+        } else {
           // For large datasets, we'd typically delegate to server-side filtering
           // For now, we'll still use client-side but with optimizations
           filteredEvents = await this.optimizedClientSideFilter(events, filters);
@@ -176,8 +175,8 @@ export class EventSearchOptimizer {
 
       // Step 4: Cache result
       if (
-        this.options.enableCache
-        && filteredEvents.length < this.options.clientSideThreshold * 2
+        this.options.enableCache &&
+        filteredEvents.length < this.options.clientSideThreshold * 2
       ) {
         const cacheKey = this.generateCacheKey(filters, pagination);
         this.setCachedResult(cacheKey, paginatedEvents, filteredEvents.length, filters, pagination);
@@ -198,8 +197,7 @@ export class EventSearchOptimizer {
         total: filteredEvents.length,
         metrics: [...metrics, totalMetric],
       };
-    }
-    catch (error) {
+    } catch (error) {
       const errorMetric: SearchPerformanceMetrics = {
         operation: 'api',
         executionTime: performance.now() - startTime,
@@ -450,7 +448,7 @@ export class EventSearchOptimizer {
       }
     > = {};
 
-    this.performanceMetrics.forEach((metric) => {
+    this.performanceMetrics.forEach(metric => {
       if (!operationBreakdown[metric.operation]) {
         operationBreakdown[metric.operation] = {
           count: 0,
@@ -510,11 +508,9 @@ export class EventSearchOptimizer {
 
     if (totalEvents <= this.options.clientSideThreshold) {
       strategy = 'client-side';
-    }
-    else if (Object.keys(filters).length === 0 && pagination.limit >= 1000) {
+    } else if (Object.keys(filters).length === 0 && pagination.limit >= 1000) {
       strategy = 'server-side';
-    }
-    else {
+    } else {
       strategy = 'hybrid';
     }
 
@@ -529,9 +525,9 @@ export class EventSearchOptimizer {
 
     // Remove redundant filters
     if (
-      optimizedFilters.fromBlock !== undefined
-      && optimizedFilters.toBlock !== undefined
-      && Number(optimizedFilters.fromBlock) > Number(optimizedFilters.toBlock)
+      optimizedFilters.fromBlock !== undefined &&
+      optimizedFilters.toBlock !== undefined &&
+      Number(optimizedFilters.fromBlock) > Number(optimizedFilters.toBlock)
     ) {
       delete optimizedFilters.fromBlock;
       delete optimizedFilters.toBlock;

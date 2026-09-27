@@ -16,12 +16,14 @@ import type { TokenTransfer } from '@/services/tokenTransfers';
 import { parseDecimalInteger } from '@/views/Address/holdings';
 
 /** Settled per-probe reads; null = that call reverted or returned nothing. */
-export type TokenOverviewReadsInput = {
-  name: string | null;
-  symbol: string | null;
-  decimals: number | null;
-  totalSupply: bigint | null;
-} | undefined;
+export type TokenOverviewReadsInput =
+  | {
+    name: string | null;
+    symbol: string | null;
+    decimals: number | null;
+    totalSupply: bigint | null;
+  }
+  | undefined;
 
 /** Classified token-ness of the contract; fields stay exactly as read. */
 export type TokenClassification = {
@@ -38,9 +40,7 @@ export type TokenClassification = {
  * unsettled (still loading or transport-level failure) or when no probe
  * responded — a plain contract, rendered as nothing, never as an error.
  */
-export function classifyTokenOverview(
-  reads: TokenOverviewReadsInput,
-): TokenClassification | null {
+export function classifyTokenOverview(reads: TokenOverviewReadsInput): TokenClassification | null {
   if (reads === undefined) return null;
   if (reads.decimals !== null && reads.totalSupply !== null) {
     return { isErc20: true, ...reads };

@@ -182,18 +182,13 @@ const ok = (outcome: ProbeOutcome): outcome is Extract<ProbeOutcome, { status: '
 const isDetected = (outcome: ProbeOutcome): boolean =>
   ok(outcome) && (outcome.isContract || outcome.balance > 0n);
 
-export function CrossChainStrip({
-  chainId,
-  address,
-}: {
-  chainId: number;
-  address: string;
-}) {
+export function CrossChainStrip({ chainId, address }: { chainId: number; address: string }) {
   // null = probing (or no candidates yet); [] would mean "settled, zero
   // candidate chains" (clean absence).
   const [outcomes, setOutcomes] = useState<ProbeOutcome[] | null>(null);
   const [expanded, setExpanded] = useState(false);
-  const [spotByChain, setSpotByChain] = useState<ReadonlyMap<number, UsdPriceSnapshot>>(EMPTY_PRICES);
+  const [spotByChain, setSpotByChain] =
+    useState<ReadonlyMap<number, UsdPriceSnapshot>>(EMPTY_PRICES);
 
   useEffect(() => {
     let cancelled = false;
@@ -318,8 +313,7 @@ export function CrossChainStrip({
       {expanded && (
         <div>
           <p className={framingLineStyle}>
-            Detected presence on other networks (bounded probe — not a complete
-            cross-chain history)
+            Detected presence on other networks (bounded probe — not a complete cross-chain history)
           </p>
           <ul className={chipRowStyle}>
             {ordered.map(outcome => (

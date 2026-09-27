@@ -59,7 +59,10 @@ const renderSearch = (initial: string) =>
     <MemoryRouter
       routes={createRoutes([
         { path: '/search', component: () => Search },
-        { path: '/chain/:chainId/contract/:address', component: () => () => <div>contract-page</div> },
+        {
+          path: '/chain/:chainId/contract/:address',
+          component: () => () => <div>contract-page</div>,
+        },
       ])}
       initialEntries={[initial]}
     >
@@ -101,8 +104,8 @@ describe('Search view local contracts section', () => {
     // The remote miss card renders too, BELOW the local section.
     expect(screen.getByText(/No results found for "uni"/)).toBeInTheDocument();
     expect(
-      container.innerHTML.indexOf('Local contracts')
-      < container.innerHTML.indexOf('No results found'),
+      container.innerHTML.indexOf('Local contracts') <
+        container.innerHTML.indexOf('No results found'),
     ).toBe(true);
   });
 

@@ -81,12 +81,13 @@ const buildClient = (spec: ClientSpec): PublicClient =>
     getBalance: vi.fn(async ({ blockNumber }: { blockNumber: bigint }) =>
       spec.balances(blockNumber),
     ),
-    getBlock: vi.fn(async ({ blockNumber }: { blockNumber: bigint }) =>
-      spec.blocks?.[blockNumber.toString()] ?? {
-        number: blockNumber,
-        timestamp: 1700000000n,
-        transactions: [],
-      },
+    getBlock: vi.fn(
+      async ({ blockNumber }: { blockNumber: bigint }) =>
+        spec.blocks?.[blockNumber.toString()] ?? {
+          number: blockNumber,
+          timestamp: 1700000000n,
+          transactions: [],
+        },
     ),
     getTransaction: vi.fn(),
     getTransactionCount: vi.fn(async () => 1),
@@ -115,19 +116,14 @@ const getFindings = async (chainId: number, address: string) =>
   db
     .select()
     .from(addressScanFindings)
-    .where(
-      and(eq(addressScanFindings.chainId, chainId), eq(addressScanFindings.address, address)),
-    );
+    .where(and(eq(addressScanFindings.chainId, chainId), eq(addressScanFindings.address, address)));
 
 const getInternalTxs = async (chainId: number, address: string) =>
   db
     .select()
     .from(addressScanInternalTxs)
     .where(
-      and(
-        eq(addressScanInternalTxs.chainId, chainId),
-        eq(addressScanInternalTxs.address, address),
-      ),
+      and(eq(addressScanInternalTxs.chainId, chainId), eq(addressScanInternalTxs.address, address)),
     );
 
 // Every debug_traceTransaction the walk issued (any hash), in order.
@@ -175,13 +171,7 @@ describe('deep scan walk engine', () => {
     // Checkpoint efficiency: the baseline at block -1 is definitionally
     // 0 (no read), then one read per segment: 49999, 99999, 149999,
     // 199999, and the final 1-block segment to 200000.
-    expect(balanceCallBlocks(client)).toEqual([
-      49_999n,
-      99_999n,
-      149_999n,
-      199_999n,
-      200_000n,
-    ]);
+    expect(balanceCallBlocks(client)).toEqual([49_999n, 99_999n, 149_999n, 199_999n, 200_000n]);
   });
 
   it('finds the first change block, persists findings, and advances the cursor onto it', async () => {
@@ -229,8 +219,7 @@ describe('deep scan walk engine', () => {
 
   it('surfaces provider archive errors verbatim as status error, never silently complete', async () => {
     const address = uniqueAddress();
-    const providerMessage =
-      'historical state not available for block 99999 (try an archive node)';
+    const providerMessage = 'historical state not available for block 99999 (try an archive node)';
     const client = buildClient({
       balances: bn => {
         if (bn >= 50_000n) throw new Error(providerMessage);
@@ -670,9 +659,7 @@ describe('deep scan walk engine', () => {
 
     const stranded = await getJob(1, strandedAddress);
     expect(stranded?.status).toBe('error');
-    expect(stranded?.errorMessage).toBe(
-      'Interrupted by server restart — resume to continue',
-    );
+    expect(stranded?.errorMessage).toBe('Interrupted by server restart — resume to continue');
     // Other statuses untouched; second run is a no-op.
     await reconcileInterruptedAddressScans();
     expect((await getJob(1, pausedAddress))?.status).toBe('paused');
@@ -1045,14 +1032,9 @@ describe('getAddressTransactions deep-scan merge (service level)', () => {
     };
 
     // First call: fresh search path (heuristic skip) + merge.
-    const fresh = await addressService.getAddressTransactions(
-      1,
-      address,
-      20,
-      0,
-      undefined,
-      { deepScanFindings: [finding] },
-    );
+    const fresh = await addressService.getAddressTransactions(1, address, 20, 0, undefined, {
+      deepScanFindings: [finding],
+    });
     expect(fresh.transactions.map(tx => tx.hash)).toEqual([finding.hash]);
     expect(fresh.total).toBe(1);
     expect(fresh.reason).toBe('zero-balance');
@@ -1064,14 +1046,9 @@ describe('getAddressTransactions deep-scan merge (service level)', () => {
     // Second call: the cached canonical result serves with the SAME
     // merge semantics (cache stays heuristic-only; findings merge at
     // read time).
-    const cached = await addressService.getAddressTransactions(
-      1,
-      address,
-      20,
-      0,
-      undefined,
-      { deepScanFindings: [finding] },
-    );
+    const cached = await addressService.getAddressTransactions(1, address, 20, 0, undefined, {
+      deepScanFindings: [finding],
+    });
     expect(cached.transactions.map(tx => tx.hash)).toEqual([finding.hash]);
     expect(cached.total).toBe(1);
     expect(cached.coverage).toBe('partial');

@@ -15,7 +15,12 @@ import { useControl } from 'react-use-control';
 import { MemoryRouter, createRoutes } from '@native-router/react';
 import RpcConfig from '@/components/RpcConfig';
 import { toast } from 'sonner';
-import { BACKUP_VERSION, serializeBackup, type BackupParts, type RestorePlan } from '@/util/localBackup';
+import {
+  BACKUP_VERSION,
+  serializeBackup,
+  type BackupParts,
+  type RestorePlan,
+} from '@/util/localBackup';
 
 const { mockGetRpcConfigs, mockCollectBackupParts, mockExportBackupFile, mockExecuteRestore } =
   vi.hoisted(() => ({
@@ -84,9 +89,7 @@ const PARTS: BackupParts = {
     watchlist: ['0x1234567890abcdef1234567890abcdef12345678'],
     theme: 'dark',
     ipfsGateway: 'https://pin.mydomain.dev',
-    customAbis: [
-      { key: 'custom-abi:1:0x1234567890abcdef1234567890abcdef12345678', abi: '[]' },
-    ],
+    customAbis: [{ key: 'custom-abi:1:0x1234567890abcdef1234567890abcdef12345678', abi: '[]' }],
     privateNotes: [],
   },
 };
@@ -137,7 +140,8 @@ describe('RpcConfig backup section — structure & export', () => {
     expect(toast.success).toHaveBeenCalledWith('Backup exported to explorer-backup.json.');
     // Back to idle once the download lands.
     await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Export backup' })).toBeEnabled());
+      expect(screen.getByRole('button', { name: 'Export backup' })).toBeEnabled(),
+    );
   });
 
   it('surfaces the export notes (honest attribution) in the toast', async () => {

@@ -95,7 +95,9 @@ describe('EventTable raw-log disclosure', () => {
     ]);
     renderTable();
 
-    const toggle = await screen.findByRole('button', { name: 'Raw log for block 123, log index 4' });
+    const toggle = await screen.findByRole('button', {
+      name: 'Raw log for block 123, log index 4',
+    });
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
     // Lazy: the collapsed row carries no disclosure content in the DOM.
     expect(screen.queryByTestId('raw-log-disclosure')).toBeNull();
@@ -128,7 +130,9 @@ describe('EventTable raw-log disclosure', () => {
     ]);
     renderTable();
 
-    const toggle = await screen.findByRole('button', { name: 'Raw log for block 123, log index 4' });
+    const toggle = await screen.findByRole('button', {
+      name: 'Raw log for block 123, log index 4',
+    });
     fireEvent.click(toggle);
     const disclosure = await screen.findByTestId('raw-log-disclosure');
 
@@ -174,7 +178,9 @@ describe('EventTable raw-log disclosure', () => {
     ]);
     renderTable();
 
-    const toggle = await screen.findByRole('button', { name: 'Raw log for block 124, log index 7' });
+    const toggle = await screen.findByRole('button', {
+      name: 'Raw log for block 124, log index 7',
+    });
     fireEvent.click(toggle);
     await screen.findByTestId('raw-log-disclosure');
 
@@ -196,7 +202,9 @@ describe('EventTable raw-log disclosure', () => {
     ]);
     renderTable();
 
-    const toggle = await screen.findByRole('button', { name: 'Raw log for block 125, log index 9' });
+    const toggle = await screen.findByRole('button', {
+      name: 'Raw log for block 125, log index 9',
+    });
     fireEvent.click(toggle);
 
     // Stated absence, never an error — and no topic/data sections at all.
@@ -225,7 +233,9 @@ describe('EventTable raw-log disclosure', () => {
     ]);
     renderTable();
 
-    const toggle = await screen.findByRole('button', { name: 'Raw log for block 123, log index 4' });
+    const toggle = await screen.findByRole('button', {
+      name: 'Raw log for block 123, log index 4',
+    });
     fireEvent.click(toggle);
     await screen.findByTestId('raw-log-disclosure');
 
@@ -258,7 +268,9 @@ describe('EventTable raw-log disclosure', () => {
     ]);
     renderTable();
 
-    const toggle = await screen.findByRole('button', { name: 'Raw log for block 123, log index 4' });
+    const toggle = await screen.findByRole('button', {
+      name: 'Raw log for block 123, log index 4',
+    });
     fireEvent.click(toggle);
     await screen.findByTestId('raw-log-disclosure');
 
@@ -287,7 +299,9 @@ describe('EventTable raw-log disclosure', () => {
     renderTable();
     const user = userEvent.setup();
 
-    const toggle = await screen.findByRole('button', { name: 'Raw log for block 123, log index 4' });
+    const toggle = await screen.findByRole('button', {
+      name: 'Raw log for block 123, log index 4',
+    });
     toggle.focus();
     await user.keyboard('{Enter}');
     await screen.findByTestId('raw-log-disclosure');
@@ -317,7 +331,9 @@ describe('EventTable raw-log disclosure', () => {
     ]);
     renderTable();
 
-    const toggle = await screen.findByRole('button', { name: 'Raw log for block 126, log index 2' });
+    const toggle = await screen.findByRole('button', {
+      name: 'Raw log for block 126, log index 2',
+    });
     fireEvent.click(toggle);
     await screen.findByTestId('raw-log-disclosure');
 

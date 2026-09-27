@@ -46,7 +46,7 @@ const rowSummary = (rows: InternalTxRow[]) =>
   rows.map(
     row =>
       `${row.type}@${row.depth}:${
-        row.to === VIEWED ? 'viewed' : row.to === OTHER ? 'other' : row.to ?? '?'
+        row.to === VIEWED ? 'viewed' : row.to === OTHER ? 'other' : (row.to ?? '?')
       }`,
   );
 
@@ -61,9 +61,9 @@ describe('isInternalTxRow', () => {
   });
 
   it('drops zero-value frames unrelated to the address', () => {
-    expect(
-      isInternalTxRow(node({ type: 'STATICCALL', from: SENDER, to: OTHER }), VIEWED),
-    ).toBe(false);
+    expect(isInternalTxRow(node({ type: 'STATICCALL', from: SENDER, to: OTHER }), VIEWED)).toBe(
+      false,
+    );
   });
 
   it('treats an explicit zero value as non-carrying (null is absence, 0n is a no-op)', () => {
@@ -95,9 +95,7 @@ describe('flattenInternalTxTree', () => {
           to: VIEWED,
           value: 5n * 10n ** 17n,
           depth: 1,
-          calls: [
-            node({ type: 'STATICCALL', from: VIEWED, to: OTHER, depth: 2 }),
-          ],
+          calls: [node({ type: 'STATICCALL', from: VIEWED, to: OTHER, depth: 2 })],
         }),
         node({ type: 'DELEGATECALL', from: TARGET, to: OTHER, value: 1n, depth: 1 }),
       ],
@@ -186,11 +184,12 @@ describe('flattenInternalTxTree', () => {
 });
 
 describe('aggregateInternalTxns', () => {
-  const traced = (
-    hash: string,
-    rows: InternalTxRow[],
-    truncated = false,
-  ): TraceTxOutcome => ({ hash, status: 'traced', rows, truncated });
+  const traced = (hash: string, rows: InternalTxRow[], truncated = false): TraceTxOutcome => ({
+    hash,
+    status: 'traced',
+    rows,
+    truncated,
+  });
 
   it('concatenates rows in discovered-tx order, not completion order', () => {
     const rowA: InternalTxRow = {
@@ -216,9 +215,7 @@ describe('aggregateInternalTxns', () => {
     ]);
     expect(aggregate.rows.map(row => row.txHash)).toEqual(['0xa', '0xb']);
     expect(aggregate.tracedCount).toBe(2);
-    expect(aggregate.failedTxs).toEqual([
-      { hash: '0xerr', message: 'boom', unsupported: false },
-    ]);
+    expect(aggregate.failedTxs).toEqual([{ hash: '0xerr', message: 'boom', unsupported: false }]);
     expect(aggregate.unsupported).toBe(false);
   });
 
@@ -253,7 +250,9 @@ describe('aggregateInternalTxns', () => {
     };
     expect(aggregateInternalTxns([traced('0xa', [row], true)]).truncated).toBe(true);
 
-    const many = Array.from({ length: 5 }, (_, i) => traced(`0x${i}`, [{ ...row, txHash: `0x${i}` }]));
+    const many = Array.from({ length: 5 }, (_, i) =>
+      traced(`0x${i}`, [{ ...row, txHash: `0x${i}` }]),
+    );
     expect(aggregateInternalTxns(many, { maxTotalRows: 3 }).rows).toHaveLength(3);
     expect(aggregateInternalTxns(many, { maxTotalRows: 3 }).truncated).toBe(true);
   });
@@ -278,12 +277,10 @@ describe('labels', () => {
         truncated: false,
       },
     ]);
-    expect(internalTxSummary(aggregate)).toBe(
-      '1 internal transfer across 1 traced transaction',
+    expect(internalTxSummary(aggregate)).toBe('1 internal transfer across 1 traced transaction');
+    expect(internalTxSummary(aggregateInternalTxns([]))).toBe(
+      '0 internal transfers across 0 traced transactions',
     );
-    expect(
-      internalTxSummary(aggregateInternalTxns([])),
-    ).toBe('0 internal transfers across 0 traced transactions');
   });
 
   it('tracedScopeLabel reads "first N" only on page 1; deeper pages name the page', () => {

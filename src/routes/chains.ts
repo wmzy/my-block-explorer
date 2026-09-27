@@ -35,8 +35,7 @@ function redactUrl(url: string): string {
   try {
     const { protocol, host } = new URL(url);
     return `${protocol}//${host}/…`;
-  }
-  catch {
+  } catch {
     return '…';
   }
 }
@@ -50,8 +49,7 @@ function isLoopbackRemote(c: Context): boolean {
     if (!address) return false;
     const normalized = address.toLowerCase().replace(/^::ffff:/, '');
     return normalized === '::1' || /^127(?:\.\d{1,3}){3}$/.test(normalized);
-  }
-  catch {
+  } catch {
     return false;
   }
 }
@@ -92,8 +90,7 @@ async function probeRpcChainId(rpcUrl: string): Promise<ProbeResult> {
     let body: unknown;
     try {
       body = await res.json();
-    }
-    catch {
+    } catch {
       return {
         ok: false,
         code: 'rpc_invalid_response',
@@ -123,16 +120,14 @@ async function probeRpcChainId(rpcUrl: string): Promise<ProbeResult> {
     }
 
     return { ok: true, chainId };
-  }
-  catch (error) {
+  } catch (error) {
     const reason = error instanceof Error ? error.message : 'network error';
     return {
       ok: false,
       code: 'rpc_unreachable',
       message: `Could not reach the RPC endpoint: ${reason}`,
     };
-  }
-  finally {
+  } finally {
     clearTimeout(timer);
   }
 }
@@ -141,7 +136,7 @@ async function probeRpcChainId(rpcUrl: string): Promise<ProbeResult> {
 // and the unsupported-chain gate need it without an admin token), with
 // the full URL only going to readers the CORS policy already trusts —
 // same visibility rule as GET /rpc-configs.
-app.get('/chains/custom', async (c) => {
+app.get('/chains/custom', async c => {
   try {
     const rows = await db.select().from(customChains);
 
@@ -158,8 +153,7 @@ app.get('/chains/custom', async (c) => {
         urlRedacted: !seesFullUrl,
       })),
     });
-  }
-  catch (error) {
+  } catch (error) {
     logger.error({ err: error }, 'Failed to list custom chains');
     return c.json({ error: 'Failed to list custom chains' }, 500);
   }
@@ -176,12 +170,11 @@ const registerRateLimiter = createRateLimiter({
   burst: 2,
 });
 
-app.post('/chains/custom', requireAdminTokenIfConfigured, registerRateLimiter, async (c) => {
+app.post('/chains/custom', requireAdminTokenIfConfigured, registerRateLimiter, async c => {
   let body: unknown;
   try {
     body = await c.req.json();
-  }
-  catch {
+  } catch {
     return c.json(
       {
         error: 'Invalid JSON body',
@@ -209,8 +202,7 @@ app.post('/chains/custom', requireAdminTokenIfConfigured, registerRateLimiter, a
   let parsedUrl: URL;
   try {
     parsedUrl = new URL(rpcUrl);
-  }
-  catch {
+  } catch {
     return c.json(
       {
         error: 'Invalid URL',
@@ -233,10 +225,13 @@ app.post('/chains/custom', requireAdminTokenIfConfigured, registerRateLimiter, a
   }
 
   if (
-    (name !== undefined && (typeof name !== 'string' || name.trim() === ''))
-    || (symbol !== undefined && (typeof symbol !== 'string' || symbol.trim() === ''))
-    || (decimals !== undefined
-      && (typeof decimals !== 'number' || !Number.isInteger(decimals) || decimals < 0 || decimals > 256))
+    (name !== undefined && (typeof name !== 'string' || name.trim() === '')) ||
+    (symbol !== undefined && (typeof symbol !== 'string' || symbol.trim() === '')) ||
+    (decimals !== undefined &&
+      (typeof decimals !== 'number' ||
+        !Number.isInteger(decimals) ||
+        decimals < 0 ||
+        decimals > 256))
   ) {
     return c.json(
       {
@@ -266,8 +261,8 @@ app.post('/chains/custom', requireAdminTokenIfConfigured, registerRateLimiter, a
       {
         error: 'chain_already_known',
         message:
-          `The RPC reports chain ID ${probe.chainId}, which this explorer already knows as "${known?.name ?? String(probe.chainId)}". `
-          + 'Use the RPC override (⚙ RPC panel) for a known chain.',
+          `The RPC reports chain ID ${probe.chainId}, which this explorer already knows as "${known?.name ?? String(probe.chainId)}". ` +
+          'Use the RPC override (⚙ RPC panel) for a known chain.',
         existingName: known?.name ?? String(probe.chainId),
         hint: 'Use the RPC override (⚙ RPC panel) for a known chain',
       },
@@ -325,12 +320,8 @@ app.post('/chains/custom', requireAdminTokenIfConfigured, registerRateLimiter, a
       },
       201,
     );
-  }
-  catch (error) {
-    logger.error(
-      { err: error, chainId: probe.chainId },
-      'Failed to register custom chain',
-    );
+  } catch (error) {
+    logger.error({ err: error, chainId: probe.chainId }, 'Failed to register custom chain');
     return c.json({ error: 'Failed to register custom chain' }, 500);
   }
 });
@@ -340,7 +331,7 @@ app.post('/chains/custom', requireAdminTokenIfConfigured, registerRateLimiter, a
 // re-reads the table and drops both the client and the registry entry
 // (removeCustomChain below is the belt to its braces: a failed reload
 // must not leave a stale registration behind).
-app.delete('/chains/custom/:chainId', requireAdminTokenIfConfigured, async (c) => {
+app.delete('/chains/custom/:chainId', requireAdminTokenIfConfigured, async c => {
   try {
     const param = c.req.param('chainId');
     const chainId = Number.parseInt(param, 10);
@@ -376,8 +367,7 @@ app.delete('/chains/custom/:chainId', requireAdminTokenIfConfigured, async (c) =
     await rpcManager.reloadConfigs();
 
     return c.body(null, 204);
-  }
-  catch (error) {
+  } catch (error) {
     logger.error({ err: error }, 'Failed to delete custom chain');
     return c.json({ error: 'Failed to delete custom chain' }, 500);
   }
@@ -402,7 +392,7 @@ app.delete(
   '/chains/:chainId/cached-data',
   requireAdminTokenIfConfigured,
   chainCacheClearRateLimiter,
-  async (c) => {
+  async c => {
     // Invalid and unsupported ids answer 400 through the shared
     // validator (same convention as every /chains/:chainId route).
     const chainId = getValidatedChainId(c.req.param('chainId'));
@@ -418,12 +408,8 @@ app.delete(
             'per-chain event index database files, indexing ranges, labels, watches and everything else — only the two immutable fetch caches above were deleted; they refetch on demand',
         },
       });
-    }
-    catch (error) {
-      logger.error(
-        { err: error, chainId },
-        'Failed to clear chain cached data',
-      );
+    } catch (error) {
+      logger.error({ err: error, chainId }, 'Failed to clear chain cached data');
       return c.json({ error: 'Failed to clear chain cached data' }, 500);
     }
   },

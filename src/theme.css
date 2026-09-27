@@ -214,9 +214,9 @@ pre code {
 
 :root[data-theme='light'] .haze-colors__lightTheme.haze-colors__lightTheme {
   --haze-color-primary: var(--haze-blue-9);
-  --haze-color-primary-hover: oklch(from var(--haze-color-primary) calc(l - .045) c h);
-  --haze-color-primary-active: oklch(from var(--haze-color-primary) calc(l - .09) c h);
-  --haze-color-primary-subtle: oklch(from var(--haze-color-primary) .945 calc(c * .2) h);
+  --haze-color-primary-hover: oklch(from var(--haze-color-primary) calc(l - 0.045) c h);
+  --haze-color-primary-active: oklch(from var(--haze-color-primary) calc(l - 0.09) c h);
+  --haze-color-primary-subtle: oklch(from var(--haze-color-primary) 0.945 calc(c * 0.2) h);
   --haze-color-bg: var(--haze-gray-1);
   --haze-color-bg-subtle: var(--haze-gray-2);
   --haze-color-bg-muted: var(--haze-gray-3);
@@ -225,10 +225,10 @@ pre code {
   --haze-color-text-muted: var(--haze-gray-9);
   --haze-color-text-inverse: oklch(100% 0 0);
   --haze-color-border: var(--haze-gray-4);
-  --haze-color-border-hover: oklch(from var(--haze-color-border) calc(l - .09) c h);
+  --haze-color-border-hover: oklch(from var(--haze-color-border) calc(l - 0.09) c h);
   --haze-color-success: var(--haze-green-9);
   --haze-color-warning: var(--haze-amber-9);
   --haze-color-danger: var(--haze-red-9);
   --haze-color-info: var(--haze-blue-10);
-  --haze-color-focus-ring: oklch(from var(--haze-color-primary) l c h / .4);
+  --haze-color-focus-ring: oklch(from var(--haze-color-primary) l c h / 0.4);
 }

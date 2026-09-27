@@ -95,8 +95,12 @@ export function parseScanJob(payload: unknown): ScanJob | null {
   const blocksTotal = nonNegativeInteger(p.blocksTotal);
   const txsFound = nonNegativeInteger(p.txsFound);
   if (
-    fromBlock === null || toBlock === null || cursorBlock === null
-    || blocksWalked === null || blocksTotal === null || txsFound === null
+    fromBlock === null ||
+    toBlock === null ||
+    cursorBlock === null ||
+    blocksWalked === null ||
+    blocksTotal === null ||
+    txsFound === null
   ) {
     return null;
   }
@@ -142,29 +146,24 @@ export function scanJobFromTxPayload(payload: unknown): ScanJob | null {
 // branch on scan_conflict verbatim instead of sniffing message copy.
 // Piping mapError REPLACES the base mapper (fetch-fun semantics), so this
 // replicates the base branches it replaces.
-const scanApi: ApiClient = api.pipe(
-  ff.mapError,
-  (e: unknown): unknown => {
-    if (e instanceof ff.HTTPError) {
-      const body: Record<string, unknown> =
-        typeof e.data === 'object' && e.data !== null
-          ? (e.data as Record<string, unknown>)
-          : {};
-      const message = typeof body.message === 'string' ? body.message : undefined;
-      const errorText = typeof body.error === 'string' ? body.error : undefined;
-      const code = typeof body.code === 'string' ? body.code : errorText;
-      return new ApiError(
-        message ?? errorText ?? `HTTP ${e.status}`,
-        e.status,
-        code,
-        'details' in body ? body.details : undefined,
-      );
-    }
-    if (e instanceof ff.TimeoutError) return new ApiError('Request timeout', 408);
-    if (e instanceof ff.NetworkError) return new ApiError(e.message, 0);
-    return e;
-  },
-);
+const scanApi: ApiClient = api.pipe(ff.mapError, (e: unknown): unknown => {
+  if (e instanceof ff.HTTPError) {
+    const body: Record<string, unknown> =
+      typeof e.data === 'object' && e.data !== null ? (e.data as Record<string, unknown>) : {};
+    const message = typeof body.message === 'string' ? body.message : undefined;
+    const errorText = typeof body.error === 'string' ? body.error : undefined;
+    const code = typeof body.code === 'string' ? body.code : errorText;
+    return new ApiError(
+      message ?? errorText ?? `HTTP ${e.status}`,
+      e.status,
+      code,
+      'details' in body ? body.details : undefined,
+    );
+  }
+  if (e instanceof ff.TimeoutError) return new ApiError('Request timeout', 408);
+  if (e instanceof ff.NetworkError) return new ApiError(e.message, 0);
+  return e;
+});
 
 // 200/202 bodies are the job DTO itself — FLAT, the shape every scan
 // route's own tests pin (`c.json(toScanJobDto(row))`); the {job}-wrapped
@@ -197,8 +196,7 @@ export async function fetchScanJob(
       withSignal(scanApi, signal),
     );
     return jobFromEnvelope(body);
-  }
-  catch (error) {
+  } catch (error) {
     if (error instanceof ApiError && error.status === 404) return null;
     throw error;
   }
@@ -229,11 +227,7 @@ export async function startScanJob(
   if (options.force) body.force = true;
   if (options.includeTraces) body.includeTraces = true;
   return jobFromEnvelope(
-    await post<unknown>(
-      `/api/chains/${chainId}/addresses/${address}/scan`,
-      body,
-      scanApi,
-    ),
+    await post<unknown>(`/api/chains/${chainId}/addresses/${address}/scan`, body, scanApi),
   );
 }
 
@@ -266,8 +260,7 @@ export async function catchupScanJob(chainId: number, address: string): Promise<
     return jobFromEnvelope(
       await post<unknown>(`/api/chains/${chainId}/addresses/${address}/scan/catchup`, {}, scanApi),
     );
-  }
-  catch (error) {
+  } catch (error) {
     if (error instanceof ApiError && error.status === 404) return null;
     throw error;
   }
@@ -315,13 +308,17 @@ const parseInternalTxRecord = (payload: unknown): InternalTxRecord | null => {
   const value = weiDecimalString(p.value);
   if (blockNumber === null || value === null) return null;
   if (
-    typeof p.transactionHash !== 'string' || p.transactionHash === ''
-    || typeof p.from !== 'string'
-    || typeof p.to !== 'string'
-    || typeof p.callType !== 'string' || p.callType === ''
-    || typeof p.tracePath !== 'string' || p.tracePath === ''
-    || typeof p.timestamp !== 'string' || p.timestamp === ''
-    || typeof p.reverted !== 'boolean'
+    typeof p.transactionHash !== 'string' ||
+    p.transactionHash === '' ||
+    typeof p.from !== 'string' ||
+    typeof p.to !== 'string' ||
+    typeof p.callType !== 'string' ||
+    p.callType === '' ||
+    typeof p.tracePath !== 'string' ||
+    p.tracePath === '' ||
+    typeof p.timestamp !== 'string' ||
+    p.timestamp === '' ||
+    typeof p.reverted !== 'boolean'
   ) {
     return null;
   }

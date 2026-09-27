@@ -8,11 +8,7 @@ import { render, screen, within } from '@testing-library/react';
 import { MemoryRouter, View, createRoutes } from '@native-router/react';
 import '@testing-library/jest-dom';
 import Home from '@/views/Home';
-import type {
-  GasHistoryResult,
-  GasTierInclusionEstimates,
-  GasTiers,
-} from '@/services/gasHistory';
+import type { GasHistoryResult, GasTierInclusionEstimates, GasTiers } from '@/services/gasHistory';
 
 vi.mock('@/components/TopNavigation', () => ({
   default: () => <div data-testid="top-navigation" />,
@@ -69,7 +65,8 @@ const okResult = (
     newestBlock: 21_236_919,
     currentBaseFeeGwei: 12.5,
     averageBaseFeeGwei: 11.25,
-    tiers: overrides.tiers === undefined ? { slow: 0.8, standard: 1.5, fast: 3.2 } : overrides.tiers,
+    tiers:
+      overrides.tiers === undefined ? { slow: 0.8, standard: 1.5, fast: 3.2 } : overrides.tiers,
     tierInclusionBlocks:
       overrides.inclusion === undefined
         ? { sampleBlocks: 10, slow: 5, standard: 2, fast: 1 }

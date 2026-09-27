@@ -15,9 +15,7 @@ import { renderHook, act } from '@testing-library/react';
 import { useAutoDiscovery } from '@/hooks/useAutoDiscovery';
 import { getApiBase, setApiBase, getStoredManualBase } from '@/util/apiBase';
 
-const PORT_URLS = [8201, 8202, 8203, 8204, 8205].map(
-  port => `http://localhost:${port}/api/health`,
-);
+const PORT_URLS = [8201, 8202, 8203, 8204, 8205].map(port => `http://localhost:${port}/api/health`);
 const MANUAL_BASE = 'http://192.168.1.50:9000';
 const MANUAL_URL = `${MANUAL_BASE}/api/health`;
 

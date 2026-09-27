@@ -12,12 +12,7 @@ import { bindQueryFn, createQueryCache, createQueryHook } from '@/util/useQuery'
 // src/routes/sql.ts): bigint already stringified, Dates already ISO UTC,
 // binary already 0x-hex.
 export type SqlCellValue =
-  | null
-  | boolean
-  | number
-  | string
-  | SqlCellValue[]
-  | { [key: string]: SqlCellValue };
+  null | boolean | number | string | SqlCellValue[] | { [key: string]: SqlCellValue };
 
 // POST /api/sql/query response. `truncated` is a fact, not a guess: the
 // backend reads one row past the cap before reporting it.
@@ -32,9 +27,7 @@ export type SqlQueryResult = {
 // lazy schema browser).
 export type SqlTableSchema = { table: string; columns: string[] };
 
-export async function fetchSqlTables(
-  signal?: AbortSignal,
-): Promise<SqlTableSchema[] | undefined> {
+export async function fetchSqlTables(signal?: AbortSignal): Promise<SqlTableSchema[] | undefined> {
   const body = await get<{ tables: SqlTableSchema[] }>(
     '/api/sql/tables',
     undefined,

@@ -87,15 +87,14 @@ export function classifySignatureQuery(raw: string): SignatureQueryClassificatio
     return {
       kind: 'invalid',
       reason:
-        `"${query}" is ${body.length} hex characters after 0x — a function selector is exactly 8 and an event topic0 exactly 64. `
-        + 'Lengths are strict: zero-padding or truncating a value would name a different selector, so enter the exact-width form.',
+        `"${query}" is ${body.length} hex characters after 0x — a function selector is exactly 8 and an event topic0 exactly 64. ` +
+        'Lengths are strict: zero-padding or truncating a value would name a different selector, so enter the exact-width form.',
     };
   }
   if (HEX_BODY_RE.test(query)) {
     return {
       kind: 'invalid',
-      reason:
-        `"${query}" looks like a hex value without its 0x prefix — add it (and mind the exact 8-or-64 length) to look the value up.`,
+      reason: `"${query}" looks like a hex value without its 0x prefix — add it (and mind the exact 8-or-64 length) to look the value up.`,
     };
   }
   if (NAME_FRAGMENT_RE.test(query)) {
@@ -103,8 +102,7 @@ export function classifySignatureQuery(raw: string): SignatureQueryClassificatio
   }
   return {
     kind: 'invalid',
-    reason:
-      `"${query}" is neither a 0x-prefixed selector/topic0 nor signature syntax (letters, digits, _ [ ] , ( )).`,
+    reason: `"${query}" is neither a 0x-prefixed selector/topic0 nor signature syntax (letters, digits, _ [ ] , ( )).`,
   };
 }
 
@@ -354,12 +352,10 @@ function LookupSection({
         </EmptyState>
       ) : lookup.status === 'found' ? (
         <FoundSignatureRows outcome={lookup.outcome} />
-      ) : (
-        // idle is statically reachable through the shared lookup union but
-        // never reaches a rendered section (sections only mount once a
-        // selector is classified); it renders nothing rather than guessing.
-        null
-      )}
+      ) : // idle is statically reachable through the shared lookup union but
+      // never reaches a rendered section (sections only mount once a
+      // selector is classified); it renders nothing rather than guessing.
+        null}
     </section>
   );
 }
@@ -393,10 +389,13 @@ export default function SignaturesView() {
     (next: string) => {
       if ((qParam ?? '') === next) return;
       lastPushedQRef.current = next;
-      void setSearch(prev => {
-        const { q: _oldQ, ...rest } = prev;
-        return next === '' ? rest : { ...rest, q: next };
-      }, { replace: true });
+      void setSearch(
+        prev => {
+          const { q: _oldQ, ...rest } = prev;
+          return next === '' ? rest : { ...rest, q: next };
+        },
+        { replace: true },
+      );
     },
     [qParam, setSearch],
   );
@@ -421,7 +420,8 @@ export default function SignaturesView() {
   const trimmedQ = (qParam ?? '').trim();
   const classification = trimmedQ === '' ? null : classifySignatureQuery(trimmedQ);
   const lookupSelector =
-    classification !== null && (classification.kind === 'selector' || classification.kind === 'topic0')
+    classification !== null &&
+    (classification.kind === 'selector' || classification.kind === 'topic0')
       ? classification.normalized
       : undefined;
   const lookup = useSignatureLookup(lookupSelector);
@@ -488,14 +488,14 @@ export default function SignaturesView() {
         </div>
 
         <p className={sourceNote}>
-          Sourced from the openchain signature registry (public submissions — a miss is not proof
-          no signature exists). Lookups are not recorded in search history.
+          Sourced from the openchain signature registry (public submissions — a miss is not proof no
+          signature exists). Lookups are not recorded in search history.
         </p>
 
         {classification === null && (
           <p className={idleHint}>
-            Enter a function selector or an event topic0 to resolve it. The events table’s
-            “Look up topic0” chips link here pre-filled.
+            Enter a function selector or an event topic0 to resolve it. The events table’s “Look up
+            topic0” chips link here pre-filled.
           </p>
         )}
 
@@ -505,9 +505,9 @@ export default function SignaturesView() {
 
         {classification?.kind === 'name' && (
           <p className={guidanceCard}>
-            Name search needs an exact signature — enter a 4-byte selector or 32-byte topic0.
-            This explorer’s backend resolves exact selectors only; it cannot search the registry
-            by name fragment.
+            Name search needs an exact signature — enter a 4-byte selector or 32-byte topic0. This
+            explorer’s backend resolves exact selectors only; it cannot search the registry by name
+            fragment.
           </p>
         )}
 

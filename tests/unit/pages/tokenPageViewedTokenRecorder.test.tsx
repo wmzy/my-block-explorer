@@ -21,7 +21,12 @@ const TEST_CHECKSUMMED = getAddress(TEST_ADDRESS);
 type RecorderMocks = {
   contractCode: string | undefined;
   reads:
-    | { name: string | null; symbol: string | null; decimals: number | null; totalSupply: bigint | null }
+    | {
+      name: string | null;
+      symbol: string | null;
+      decimals: number | null;
+      totalSupply: bigint | null;
+    }
     | undefined;
   settled: boolean;
 };
@@ -63,19 +68,9 @@ vi.mock('@/services/addressRealTime', () => ({
 }));
 
 vi.mock('@/services/tokenMetadata', () => ({
-  useTokenOverviewProbe: (
-    _chainId: number,
-    _token: string,
-    enabled: boolean,
-  ) =>
-    enabled
-      ? { reads: mocks.reads, settled: mocks.settled }
-      : { reads: undefined, settled: false },
-  useTokenOverview: (
-    _chainId: number,
-    _token: string,
-    enabled: boolean,
-  ) => {
+  useTokenOverviewProbe: (_chainId: number, _token: string, enabled: boolean) =>
+    enabled ? { reads: mocks.reads, settled: mocks.settled } : { reads: undefined, settled: false },
+  useTokenOverview: (_chainId: number, _token: string, enabled: boolean) => {
     if (!enabled) return undefined;
     return mocks.reads;
   },

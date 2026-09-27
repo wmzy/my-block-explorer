@@ -26,11 +26,7 @@ const ERC20_FUNCTIONS: FnEntry[] = [
   fn('balanceOf', [{ type: 'address' }], 'view'),
   fn('transfer', [{ type: 'address' }, { type: 'uint256' }]),
   fn('approve', [{ type: 'address' }, { type: 'uint256' }]),
-  fn('transferFrom', [
-    { type: 'address' },
-    { type: 'address' },
-    { type: 'uint256' },
-  ]),
+  fn('transferFrom', [{ type: 'address' }, { type: 'address' }, { type: 'uint256' }]),
   fn('allowance', [{ type: 'address' }, { type: 'address' }], 'view'),
 ];
 
@@ -71,8 +67,8 @@ describe('scanAbiRisks', () => {
 
     it('flags exactly [mint, pausable] in that order, both warnings', () => {
       const flags = scanAbiRisks(mintablePausable);
-      expect(flags?.map((flag) => flag.id)).toEqual(['mint', 'pausable']);
-      expect(flags?.map((flag) => flag.severity)).toEqual(['warning', 'warning']);
+      expect(flags?.map(flag => flag.id)).toEqual(['mint', 'pausable']);
+      expect(flags?.map(flag => flag.severity)).toEqual(['warning', 'warning']);
       expect(flags?.[0]?.label).toBe('Mint');
       expect(flags?.[0]?.detail).toBe('Mint function present — supply can change');
       expect(flags?.[1]?.label).toBe('Pausable');
@@ -86,9 +82,13 @@ describe('scanAbiRisks', () => {
 
     it('requires BOTH pause and unpause for the pausable flag', () => {
       const pauseOnly = scanAbiRisks(
-        abiJson(...ERC20_FUNCTIONS, fn('mint', [{ type: 'address' }, { type: 'uint256' }]), fn('pause')),
+        abiJson(
+          ...ERC20_FUNCTIONS,
+          fn('mint', [{ type: 'address' }, { type: 'uint256' }]),
+          fn('pause'),
+        ),
       );
-      expect(pauseOnly?.map((flag) => flag.id)).toEqual(['mint']);
+      expect(pauseOnly?.map(flag => flag.id)).toEqual(['mint']);
     });
   });
 
@@ -128,7 +128,7 @@ describe('scanAbiRisks', () => {
   describe('ownership', () => {
     it('counts a zero-input view owner() function', () => {
       const flags = scanAbiRisks(abiJson(...ERC20_FUNCTIONS, fn('owner', [], 'view')));
-      expect(flags?.map((flag) => flag.id)).toEqual(['ownership']);
+      expect(flags?.map(flag => flag.id)).toEqual(['ownership']);
       expect(flags?.[0]?.severity).toBe('info');
       expect(flags?.[0]?.evidence).toEqual(['owner()']);
     });
@@ -159,7 +159,7 @@ describe('scanAbiRisks', () => {
       const flags = scanAbiRisks(
         abiJson(...ERC20_FUNCTIONS, fn('transferOwnership', [{ type: 'address' }])),
       );
-      expect(flags?.map((flag) => flag.id)).toEqual(['ownership']);
+      expect(flags?.map(flag => flag.id)).toEqual(['ownership']);
       expect(flags?.[0]?.evidence).toEqual(['transferOwnership(address)']);
     });
   });
@@ -211,7 +211,7 @@ describe('scanAbiRisks', () => {
           { type: 'function', name: 'mint', inputs: [{ type: 'address' }, { type: 'uint256' }] },
         ),
       );
-      expect(flags?.map((flag) => flag.id)).toEqual(['mint']);
+      expect(flags?.map(flag => flag.id)).toEqual(['mint']);
       expect(flags?.[0]?.evidence).toEqual(['mint(address,uint256)']);
     });
   });

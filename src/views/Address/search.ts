@@ -1,8 +1,5 @@
 import { z } from 'zod';
-import {
-  clampInternalTxDepth,
-  DEFAULT_INTERNAL_TX_DEPTH,
-} from '@/utils/internalTxScan';
+import { clampInternalTxDepth, DEFAULT_INTERNAL_TX_DEPTH } from '@/utils/internalTxScan';
 import { checkAddressValidity } from './addressValidity';
 
 // The address page's URL-driven state, shared by every writer on the page
@@ -159,25 +156,21 @@ export const effectiveTxFilters = (search: {
   tfMax?: string;
   tfMethod?: string;
 }): EffectiveTxFilters => ({
-  ...(validFilterAddress(search.tfFrom) !== undefined
-    ? { fromAddress: search.tfFrom }
-    : {}),
+  ...(validFilterAddress(search.tfFrom) !== undefined ? { fromAddress: search.tfFrom } : {}),
   ...(validFilterAddress(search.tfTo) !== undefined ? { toAddress: search.tfTo } : {}),
   ...(validFilterWei(search.tfMin) !== undefined ? { minValue: search.tfMin } : {}),
   ...(validFilterWei(search.tfMax) !== undefined ? { maxValue: search.tfMax } : {}),
-  ...(validFilterSelector(search.tfMethod) !== undefined
-    ? { method: search.tfMethod }
-    : {}),
+  ...(validFilterSelector(search.tfMethod) !== undefined ? { method: search.tfMethod } : {}),
 });
 
 // Whether any effective filter is active — gates the honest
 // filtered-empty state and the active-filter count.
 export const hasActiveTxFilters = (filters: EffectiveTxFilters): boolean =>
-  filters.fromAddress !== undefined
-  || filters.toAddress !== undefined
-  || filters.minValue !== undefined
-  || filters.maxValue !== undefined
-  || filters.method !== undefined;
+  filters.fromAddress !== undefined ||
+  filters.toAddress !== undefined ||
+  filters.minValue !== undefined ||
+  filters.maxValue !== undefined ||
+  filters.method !== undefined;
 
 // True when the token-transfers payload has settled (data present, not
 // loading, no error) with zero rows at this page offset on a page past
@@ -188,5 +181,4 @@ export const shouldPinTransfersPage = (
   state: { hasData: boolean; loading: boolean; hasError: boolean },
   rows: number,
   page: number,
-): boolean =>
-  state.hasData && !state.loading && !state.hasError && rows === 0 && page > 1;
+): boolean => state.hasData && !state.loading && !state.hasError && rows === 0 && page > 1;

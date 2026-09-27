@@ -14,16 +14,9 @@ import Contract from '@/views/Contract';
 import { post } from '@/util/http';
 import { ApiError } from '@/util/apiError';
 import { createRpcClient } from '@/utils/realTimeData';
-import {
-  EIP1967_BEACON_SLOT,
-  EIP1967_IMPLEMENTATION_SLOT,
-} from '@/utils/proxyDetection';
+import { EIP1967_BEACON_SLOT, EIP1967_IMPLEMENTATION_SLOT } from '@/utils/proxyDetection';
 import type { PublicClient } from 'viem';
-import {
-  useContractCreation,
-  useContractSource,
-  useStorageLayout,
-} from '@/services/contracts';
+import { useContractCreation, useContractSource, useStorageLayout } from '@/services/contracts';
 
 // jsdom implements neither Element.scrollIntoView nor :focus scrolling; the
 // custom ABI panel's focus signal calls both.
@@ -250,7 +243,9 @@ describe('Contract view', () => {
   it('renders the header, contract info card and tab bar on the source tab', async () => {
     renderAt(`/chain/1/contract/${ADDRESS}`);
 
-    expect(await screen.findByRole('heading', { name: 'Contract Source Code' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('heading', { name: 'Contract Source Code' }),
+    ).toBeInTheDocument();
     expect(screen.getByText(/Ethereum/)).toBeInTheDocument();
     expect(screen.getByText(ADDRESS)).toBeInTheDocument();
     expect(screen.getByText('TestToken')).toBeInTheDocument();
@@ -433,9 +428,7 @@ describe('Contract view custom ABI shadowed by a server ABI', () => {
     // The server ABI drives the tabs (the paste does not shadow it back),
     // and the paste-ABI panel is not offered while a server ABI exists.
     expect(screen.getByRole('button', { name: 'Events (1)' })).toBeInTheDocument();
-    expect(
-      screen.queryByRole('heading', { name: 'Use custom ABI' }),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Use custom ABI' })).not.toBeInTheDocument();
 
     // Keep only dismisses for this session: the banner stays hidden across
     // tab switches while the stored paste remains untouched.
@@ -485,9 +478,7 @@ describe('Contract view locked tabs and force refresh', () => {
     expect(
       await screen.findByRole('heading', { name: 'Paste an ABI to unlock this tab' }),
     ).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: 'Open custom ABI panel' }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Open custom ABI panel' })).toBeInTheDocument();
 
     // The pointer focuses the panel's textarea (the panel sits below the
     // tab bar).
@@ -509,9 +500,7 @@ describe('Contract view locked tabs and force refresh', () => {
 
     await user.click(await screen.findByRole('button', { name: '↻ Force Refresh' }));
 
-    expect(await screen.findByRole('status')).toHaveTextContent(
-      'Cache cleared — reloading source',
-    );
+    expect(await screen.findByRole('status')).toHaveTextContent('Cache cleared — reloading source');
   });
 
   it('explains the admin-token requirement when the clear-cache call answers 403', async () => {
@@ -556,9 +545,7 @@ describe('Contract view Events tab visibility', () => {
     expect(screen.getByText(/current ABI has no event definitions/)).toBeInTheDocument();
     // A usable server ABI means no custom ABI panel is rendered, so the
     // hint has no focus-jump button to offer.
-    expect(
-      screen.queryByRole('button', { name: 'Open custom ABI panel' }),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Open custom ABI panel' })).not.toBeInTheDocument();
     expect(screen.getByTestId('indexing-range-manager')).toBeInTheDocument();
     expect(screen.getByTestId('event-statistics')).toBeInTheDocument();
     expect(screen.getByTestId('event-table')).toBeInTheDocument();
@@ -688,9 +675,7 @@ describe('Contract view unverified guidance', () => {
     renderAt(`/chain/1/contract/${ADDRESS}`);
 
     await screen.findByText('TestToken');
-    expect(
-      screen.queryByRole('link', { name: /Verify at Sourcify ↗/ }),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Verify at Sourcify ↗/ })).not.toBeInTheDocument();
   });
 });
 
@@ -703,7 +688,9 @@ describe('Contract view backend-offline attribution', () => {
 
     // Not the raw message: the offline state names the cause, the start
     // command, and the setup entry points.
-    expect(await screen.findByText(/Backend offline — indexed data unavailable/)).toBeInTheDocument();
+    expect(
+      await screen.findByText(/Backend offline — indexed data unavailable/),
+    ).toBeInTheDocument();
     expect(screen.getByText(/npx my-block-explorer --port 8201/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Retry connection/ })).toBeInTheDocument();
     expect(screen.queryByText(/Error:/)).not.toBeInTheDocument();
@@ -950,10 +937,7 @@ describe('Contract view creation gas honesty', () => {
 
     // A deployment cannot cost 0 gas: the zero answers as data missing.
     const gasValue = await screen.findByText('Unknown');
-    expect(gasValue).toHaveAttribute(
-      'title',
-      'Creation gas not recorded by the indexer',
-    );
+    expect(gasValue).toHaveAttribute('title', 'Creation gas not recorded by the indexer');
     expect(screen.queryByText(/0 gas/)).not.toBeInTheDocument();
   });
 
@@ -979,7 +963,10 @@ describe('Contract view verification source provenance', () => {
   it('labels the Blockscan source cache as third-party', async () => {
     vi.mocked(useContractSource).mockReturnValue(
       mockHookResult({
-        contractSource: { ...verifiedSourceResponse.contractSource, verificationSource: 'blockscan' },
+        contractSource: {
+          ...verifiedSourceResponse.contractSource,
+          verificationSource: 'blockscan',
+        },
       }),
     );
     renderAt(`/chain/1/contract/${ADDRESS}`);
@@ -1055,8 +1042,8 @@ describe('Contract view on-chain proxy detection', () => {
   }) => {
     const client = {
       getCode: vi.fn(async () => behavior.code ?? '0x'),
-      getStorageAt: vi.fn(async ({ slot }: { slot: string }) =>
-        behavior.storageBySlot?.[slot] ?? ZERO_SLOT,
+      getStorageAt: vi.fn(
+        async ({ slot }: { slot: string }) => behavior.storageBySlot?.[slot] ?? ZERO_SLOT,
       ),
       readContract: vi.fn(async () => behavior.readContractResult ?? '0x'),
     } as unknown as PublicClient;
@@ -1082,12 +1069,12 @@ describe('Contract view on-chain proxy detection', () => {
     expect(link).toHaveAttribute('href', `/chain/1/contract/${IMPL}`);
     // The method row names the concrete slot (pinned from the shared
     // constants, so a slot-constant regression fails here too).
-    expect(
-      screen.getByText(new RegExp(EIP1967_IMPLEMENTATION_SLOT.slice(2))),
-    ).toBeInTheDocument();
+    expect(screen.getByText(new RegExp(EIP1967_IMPLEMENTATION_SLOT.slice(2)))).toBeInTheDocument();
     // The honest provenance footnote.
     expect(
-      screen.getByText(/Detected on-chain via implementation storage slot — not verified source data/),
+      screen.getByText(
+        /Detected on-chain via implementation storage slot — not verified source data/,
+      ),
     ).toBeInTheDocument();
     // Only the first storage probe ran: the 1967 implementation slot hit,
     // so the EIP-1822 and beacon slots were never read.
@@ -1187,7 +1174,9 @@ describe('Contract view on-chain proxy detection', () => {
     );
     renderAt(`/chain/1/contract/${ADDRESS}`);
 
-    expect(await screen.findByText('Implementation', { selector: 'span.label' })).toBeInTheDocument();
+    expect(
+      await screen.findByText('Implementation', { selector: 'span.label' }),
+    ).toBeInTheDocument();
     expect(screen.getByRole('link', { name: new RegExp(IMPL) })).toHaveAttribute(
       'href',
       `/chain/1/contract/${IMPL}`,

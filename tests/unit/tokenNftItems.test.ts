@@ -44,12 +44,7 @@ const single = (id: string, amount: string, from = ZERO, to = ALICE): TokenTrans
     to,
   });
 
-const batch = (
-  ids: string[],
-  amounts: string[],
-  from = ZERO,
-  to = ALICE,
-): TokenTransfer =>
+const batch = (ids: string[], amounts: string[], from = ZERO, to = ALICE): TokenTransfer =>
   row({
     standard: 'erc1155-batch',
     logStandard: 'erc1155',
@@ -126,13 +121,8 @@ describe('deriveNftItems erc1155 netting', () => {
   });
 
   it('subtracts burns and floors a negative net at 0 with the burned marker', () => {
-    const items = deriveNftItems(
-      [single('5', '5'), single('5', '7', ALICE, ZERO)],
-      TOKEN,
-    );
-    expect(items).toEqual([
-      { standard: 'erc1155', tokenId: '5', amount: 0n, burned: true },
-    ]);
+    const items = deriveNftItems([single('5', '5'), single('5', '7', ALICE, ZERO)], TOKEN);
+    expect(items).toEqual([{ standard: 'erc1155', tokenId: '5', amount: 0n, burned: true }]);
   });
 
   it('floors once at the end: mint 5, burn 7, mint 3 nets to +1, not 0', () => {
@@ -140,16 +130,12 @@ describe('deriveNftItems erc1155 netting', () => {
       [single('5', '5'), single('5', '7', ALICE, ZERO), single('5', '3')],
       TOKEN,
     );
-    expect(items).toEqual([
-      { standard: 'erc1155', tokenId: '5', amount: 1n, burned: false },
-    ]);
+    expect(items).toEqual([{ standard: 'erc1155', tokenId: '5', amount: 1n, burned: false }]);
   });
 
   it('lists an id seen only in plain transfers with a zero net, unmarked', () => {
     const items = deriveNftItems([single('5', '4', ALICE, BOB)], TOKEN);
-    expect(items).toEqual([
-      { standard: 'erc1155', tokenId: '5', amount: 0n, burned: false },
-    ]);
+    expect(items).toEqual([{ standard: 'erc1155', tokenId: '5', amount: 0n, burned: false }]);
   });
 
   it('falls back to value for single rows missing amounts, skips malformed pairs', () => {
@@ -191,9 +177,7 @@ describe('deriveNftItems mixed shapes and the cap', () => {
       [row({ logStandard: 'erc721', value: '5' }), single('5', '100')],
       TOKEN,
     );
-    expect(items).toEqual([
-      { standard: 'erc721', tokenId: '5', amount: 1n, burned: false },
-    ]);
+    expect(items).toEqual([{ standard: 'erc721', tokenId: '5', amount: 1n, burned: false }]);
   });
 
   it('caps at 24 distinct items by first-seen order, still netting capped ids', () => {

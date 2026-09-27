@@ -65,7 +65,17 @@ describe('buildWebhookPayload — generic shape', () => {
     const at = new Date('2026-09-25T10:00:00.000Z');
     const payload = buildWebhookPayload(1, ADDRESS.toUpperCase(), transferLog(), at);
     expect(Object.keys(payload).sort()).toEqual(
-      ['address', 'args', 'blockNumber', 'chainId', 'detectedAt', 'eventName', 'id', 'logIndex', 'transactionHash'].sort(),
+      [
+        'address',
+        'args',
+        'blockNumber',
+        'chainId',
+        'detectedAt',
+        'eventName',
+        'id',
+        'logIndex',
+        'transactionHash',
+      ].sort(),
     );
     expect(payload.id).toBe(`1:${TX_HASH}:7`);
     expect(payload.chainId).toBe(1);
@@ -137,7 +147,12 @@ describe('isDiscordWebhookUrl — Discord detection', () => {
 });
 
 describe('buildDiscordMessage — Discord embed shape', () => {
-  const payload = buildWebhookPayload(1, ADDRESS, transferLog(), new Date('2026-09-25T10:00:00.000Z'));
+  const payload = buildWebhookPayload(
+    1,
+    ADDRESS,
+    transferLog(),
+    new Date('2026-09-25T10:00:00.000Z'),
+  );
 
   it('sends a one-line content summary plus a titled, linked embed', () => {
     const message = buildDiscordMessage(payload, 'https://etherscan.io/tx/0xabc');
@@ -152,11 +167,7 @@ describe('buildDiscordMessage — Discord embed shape', () => {
   });
 
   it('omits the embed url when there is no tx hash to link to', () => {
-    const pending = buildWebhookPayload(
-      1,
-      ADDRESS,
-      transferLog({ transactionHash: null }),
-    );
+    const pending = buildWebhookPayload(1, ADDRESS, transferLog({ transactionHash: null }));
     const message = buildDiscordMessage(pending, null);
     expect(message.embeds[0].url).toBeUndefined();
     expect(message.embeds[0].title).toBe('Transfer');

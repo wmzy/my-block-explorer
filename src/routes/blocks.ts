@@ -4,15 +4,12 @@ import { blockService } from '../services/BlockService';
 import { getChainName } from '../config/chains';
 
 const logger = createLogger('blocks-routes');
-import {
-  getValidatedChainId,
-  getValidatedBlockNumber,
-} from '../server/validation';
+import { getValidatedChainId, getValidatedBlockNumber } from '../server/validation';
 import { formatBlockForApi, safeJsonResponse } from '../utils/serialization';
 
 const app = new Hono();
 
-app.get('/chains/:chainId/blocks/latest', async (c) => {
+app.get('/chains/:chainId/blocks/latest', async c => {
   const chainId = getValidatedChainId(c.req.param('chainId'));
 
   try {
@@ -28,22 +25,18 @@ app.get('/chains/:chainId/blocks/latest', async (c) => {
     });
 
     return c.json(responseData);
-  }
-  catch (error) {
+  } catch (error) {
     logger.error({ err: error }, 'Latest block API error');
     return c.json({ error: 'Failed to get latest block' }, 500);
   }
 });
 
-app.get('/chains/:chainId/blocks/:blockNumber', async (c) => {
+app.get('/chains/:chainId/blocks/:blockNumber', async c => {
   const chainId = getValidatedChainId(c.req.param('chainId'));
   const blockNumber = getValidatedBlockNumber(c.req.param('blockNumber'));
 
   try {
-    const block = await blockService.getBlockByNumber(
-      chainId,
-      BigInt(blockNumber),
-    );
+    const block = await blockService.getBlockByNumber(chainId, BigInt(blockNumber));
 
     if (!block) {
       return c.json({ error: 'Block not found' }, 404);
@@ -60,14 +53,13 @@ app.get('/chains/:chainId/blocks/:blockNumber', async (c) => {
     });
 
     return c.json(responseData);
-  }
-  catch (error) {
+  } catch (error) {
     logger.error({ err: error }, 'Block API error');
     return c.json({ error: 'Failed to get block' }, 500);
   }
 });
 
-app.get('/chains/:chainId/blocks', async (c) => {
+app.get('/chains/:chainId/blocks', async c => {
   const chainId = getValidatedChainId(c.req.param('chainId'));
   const limit = parseInt(c.req.query('limit') ?? '20');
   const offset = parseInt(c.req.query('offset') ?? '0');
@@ -86,8 +78,7 @@ app.get('/chains/:chainId/blocks', async (c) => {
     });
 
     return c.json(responseData);
-  }
-  catch (error) {
+  } catch (error) {
     logger.error({ err: error }, 'Blocks list API error');
     return c.json({ error: 'Failed to get blocks' }, 500);
   }

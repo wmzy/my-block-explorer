@@ -116,13 +116,7 @@ export type ContractSource = {
   // cache); 'manual' marks locally-pasted trust, 'local-compile' a real
   // local recompile match (CompileVerifyService), 'unknown'/'none' missing
   // provenance.
-  verificationSource:
-    | 'sourcify'
-    | 'blockscan'
-    | 'manual'
-    | 'local-compile'
-    | 'unknown'
-    | 'none';
+  verificationSource: 'sourcify' | 'blockscan' | 'manual' | 'local-compile' | 'unknown' | 'none';
   verifiedAt?: Date;
   lastChecked: Date;
   isProxy?: boolean;
@@ -952,9 +946,7 @@ export class ContractSourceService {
       ...(input.optimizationEnabled !== undefined
         ? { optimizationEnabled: input.optimizationEnabled }
         : {}),
-      ...(input.optimizationRuns !== undefined
-        ? { optimizationRuns: input.optimizationRuns }
-        : {}),
+      ...(input.optimizationRuns !== undefined ? { optimizationRuns: input.optimizationRuns } : {}),
       sourceCode: input.sourceCode,
       sourceFiles: input.sourceFiles,
       abi: input.abi,
@@ -1150,15 +1142,13 @@ export class ContractSourceService {
         );
         if (solFiles.length > 0) {
           sourceCode = solFiles
-            .map(
-              ([name, src]) => `// File: ${name}\n${(src).content ?? ''}`,
-            )
+            .map(([name, src]) => `// File: ${name}\n${src.content ?? ''}`)
             .join('\n\n');
         }
         if (solFiles.length > 1) {
           sourceFiles = solFiles.map(([name, src]) => ({
             filename: name,
-            content: (src).content ?? '',
+            content: src.content ?? '',
           }));
         }
       }
@@ -1169,7 +1159,7 @@ export class ContractSourceService {
       if (!compilerVersion) {
         if (sourceData.sources) {
           for (const [, src] of Object.entries(sourceData.sources)) {
-            const content = (src).content ?? '';
+            const content = src.content ?? '';
             const pragmaMatch = content.match(/pragma\s+solidity\s+\^?(\d+\.\d+\.\d+)/);
             if (pragmaMatch) {
               compilerVersion = pragmaMatch[1];
@@ -1428,7 +1418,9 @@ export class ContractSourceService {
         });
 
         if (
-          implementationData && implementationData !== '0x0000000000000000000000000000000000000000000000000000000000000000'
+          implementationData &&
+          implementationData !==
+          '0x0000000000000000000000000000000000000000000000000000000000000000'
         ) {
           // Extract the address (last 20 bytes)
           const implementationAddress = `0x${implementationData.slice(-40)}`;
@@ -1643,11 +1635,7 @@ export class ContractSourceService {
         verificationStatus: row.isVerified ? 'verified' : 'unverified',
         verificationSource:
           (row.verificationSource as
-          | 'sourcify'
-          | 'blockscan'
-          | 'manual'
-          | 'local-compile'
-          | 'unknown') ?? 'unknown',
+            'sourcify' | 'blockscan' | 'manual' | 'local-compile' | 'unknown') ?? 'unknown',
         verifiedAt: row.verificationDate ?? undefined,
         lastChecked: row.lastUpdated ?? new Date(),
         isProxy: row.proxy ? true : false,
@@ -1765,7 +1753,10 @@ export class ContractSourceService {
         .update(contractSources)
         .set({ lastUpdated: new Date() })
         .where(
-          and(eq(contractSources.chainId, chainId), eq(contractSources.address, formatAddress(address))),
+          and(
+            eq(contractSources.chainId, chainId),
+            eq(contractSources.address, formatAddress(address)),
+          ),
         );
     } catch (error) {
       logger.error({ err: error, chainId, address }, 'Failed to refresh manual mark timestamp');

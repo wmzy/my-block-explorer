@@ -67,10 +67,7 @@ describe('seedBuiltinLabels', () => {
     }
     // Never-overwrite guarantee rides on the same PK the route upserts
     // against: (chainId, address).
-    expect(inserts[0]?.conflict?.target).toEqual([
-      addressLabels.chainId,
-      addressLabels.address,
-    ]);
+    expect(inserts[0]?.conflict?.target).toEqual([addressLabels.chainId, addressLabels.address]);
   });
 
   it('maps absent notes to null (the column is NOT NULL-incompatible text, not undefined)', async () => {

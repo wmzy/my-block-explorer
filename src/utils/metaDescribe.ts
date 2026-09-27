@@ -28,9 +28,7 @@ export function deriveDocumentTitle(pathname: string, search: string): string {
     // the header search forwards); without it the generic suffix stands.
     const chainParam = new URLSearchParams(search).get('chain');
     const chainId = chainParam !== null ? Number.parseInt(chainParam, 10) : Number.NaN;
-    return Number.isFinite(chainId)
-      ? `Search · ${getChainName(chainId)}`
-      : 'Search · Explorer';
+    return Number.isFinite(chainId) ? `Search · ${getChainName(chainId)}` : 'Search · Explorer';
   }
 
   // Static coverage explainer: exact shape only — deeper /about/* paths are

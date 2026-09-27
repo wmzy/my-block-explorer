@@ -211,7 +211,12 @@ function TileImage({ src, alt }: { src: string | null; alt: string }) {
         <svg width="24" height="24" viewBox="0 0 16 16" fill="none" aria-hidden="true">
           <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" stroke="currentColor" />
           <circle cx="5.5" cy="6.5" r="1.2" fill="currentColor" />
-          <path d="M2.5 12.2 6.5 8.2l3 3 2-2 2.9 2.9" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" />
+          <path
+            d="M2.5 12.2 6.5 8.2l3 3 2-2 2.9 2.9"
+            stroke="currentColor"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
         </svg>
       </span>
     );
@@ -256,11 +261,13 @@ function NftTile({ item, contract, outcome, onRetry, retrying }: NftTileProps) {
     if (write !== undefined) {
       // The confirmation appears only on a real copy; a clipboard
       // denial simply stays quiet (never a false "copied").
-      void write.then(() => {
-        setCopied(true);
-        if (copyTimer.current !== null) window.clearTimeout(copyTimer.current);
-        copyTimer.current = window.setTimeout(() => setCopied(false), 1500);
-      }).catch(() => undefined);
+      void write
+        .then(() => {
+          setCopied(true);
+          if (copyTimer.current !== null) window.clearTimeout(copyTimer.current);
+          copyTimer.current = window.setTimeout(() => setCopied(false), 1500);
+        })
+        .catch(() => undefined);
     }
   };
 
@@ -368,9 +375,7 @@ export default function NftGrid({ chainId, contract, items }: NftGridProps) {
 
   // Per-tile retry results override the hook's batch map for their tile
   // only; one retry in flight at a time keeps the fan-out honest.
-  const [retries, setRetries] = useState<ReadonlyMap<string, NftMetadataOutcome>>(
-    () => new Map(),
-  );
+  const [retries, setRetries] = useState<ReadonlyMap<string, NftMetadataOutcome>>(() => new Map());
   const [retryingKey, setRetryingKey] = useState<string | null>(null);
 
   const retry = useCallback(
@@ -417,8 +422,8 @@ export default function NftGrid({ chainId, contract, items }: NftGridProps) {
           })}
         </div>
         <p className={caveat} data-testid="nft-items-caveat">
-          Showing up to {NFT_ITEMS_LIMIT} items discovered from scanned transfers — not the
-          full collection supply.
+          Showing up to {NFT_ITEMS_LIMIT} items discovered from scanned transfers — not the full
+          collection supply.
         </p>
       </CardContent>
     </Card>

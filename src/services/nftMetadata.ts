@@ -99,11 +99,7 @@ const CIDV1_PATTERN = /^baf[a-z0-9]{10,}$/;
  * neither an ipfs form nor an unambiguous bare CID resolves to null.
  */
 export function resolveIpfsUri(uri: string, gateway: string): string | null {
-  if (
-    uri.startsWith('http://') ||
-    uri.startsWith('https://') ||
-    uri.startsWith('data:')
-  ) {
+  if (uri.startsWith('http://') || uri.startsWith('https://') || uri.startsWith('data:')) {
     return uri;
   }
 
@@ -204,8 +200,8 @@ export function pickNftMetadataFields(json: unknown): NftMetadataFields | null {
     return null;
   }
   const record = json;
-  const image = IMAGE_FIELDS.map((field) => record[field]).find(
-    (value) => typeof value === 'string' && value.trim() !== '',
+  const image = IMAGE_FIELDS.map(field => record[field]).find(
+    value => typeof value === 'string' && value.trim() !== '',
   );
   return {
     name: readTrimmedField(record.name),
@@ -268,7 +264,7 @@ type RpcClient = Awaited<ReturnType<typeof createRpcClient>>;
  */
 const makeDefaultReadUri = (chainId: number): NftUriReader => {
   let clientPromise: Promise<RpcClient> | undefined;
-  return async (call) => {
+  return async call => {
     clientPromise ??= createRpcClient(chainId);
     const client = await clientPromise;
     // Branch per function so viem infers each readContract's return type
@@ -297,8 +293,7 @@ const makeDefaultReadUri = (chainId: number): NftUriReader => {
  */
 const defaultFetchJson = async (url: string): Promise<unknown> => {
   const init: RequestInit =
-    typeof AbortSignal !== 'undefined' &&
-    typeof AbortSignal.timeout === 'function'
+    typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
       ? { signal: AbortSignal.timeout(NFT_METADATA_FETCH_TIMEOUT_MS) }
       : {};
   const res = await fetch(url, init);
@@ -323,11 +318,8 @@ const metadataCache = new Map<string, CacheEntry>();
 // one item share a single resolution; the entry is deleted on settle.
 const inflight = new Map<string, Promise<NftMetadataOutcome>>();
 
-const outcomeCacheKey = (
-  gateway: string,
-  chainId: number,
-  itemKey: string,
-): string => `${gateway}|${chainId}:${itemKey}`;
+const outcomeCacheKey = (gateway: string, chainId: number, itemKey: string): string =>
+  `${gateway}|${chainId}:${itemKey}`;
 
 /** Test-only hook to clear module state between test cases. */
 export function resetNftMetadataCacheForTests(): void {
@@ -370,10 +362,7 @@ const resolveOne = async (
   // keep http(s) as-is, and treat data:/unresolvable URIs as definitive
   // 'none' (this browser layer does not decode inline payloads).
   const url = resolveIpfsUri(substituted, gateway);
-  if (
-    url === null ||
-    (!url.startsWith('http://') && !url.startsWith('https://'))
-  ) {
+  if (url === null || (!url.startsWith('http://') && !url.startsWith('https://'))) {
     return NONE_OUTCOME;
   }
 
@@ -391,8 +380,7 @@ const resolveOne = async (
     status: 'ok',
     name: fields.name,
     description: fields.description,
-    image:
-      fields.image === null ? null : resolveIpfsUri(fields.image, gateway),
+    image: fields.image === null ? null : resolveIpfsUri(fields.image, gateway),
   };
 };
 
@@ -404,7 +392,7 @@ const launchOne = (
   work: () => Promise<NftMetadataOutcome>,
 ): Promise<NftMetadataOutcome> => {
   const promise = work()
-    .then((outcome) => {
+    .then(outcome => {
       if (outcome.status !== 'unavailable') {
         metadataCache.set(entryKey, {
           outcome,
@@ -451,8 +439,7 @@ export async function fetchNftMetadataBatch(
   const readUri = deps?.readUri ?? makeDefaultReadUri(chainId);
   const fetchJson = deps?.fetchJson ?? defaultFetchJson;
 
-  const pending: Array<{ itemKey: string; promise: Promise<NftMetadataOutcome> }> =
-    [];
+  const pending: Array<{ itemKey: string; promise: Promise<NftMetadataOutcome> }> = [];
   for (const [itemKey, item] of unique) {
     const entryKey = outcomeCacheKey(gateway, chainId, itemKey);
     const cached = metadataCache.get(entryKey);
@@ -467,9 +454,7 @@ export async function fetchNftMetadataBatch(
     }
     pending.push({
       itemKey,
-      promise: launchOne(entryKey, () =>
-        resolveOne(item, gateway, readUri, fetchJson),
-      ),
+      promise: launchOne(entryKey, () => resolveOne(item, gateway, readUri, fetchJson)),
     });
   }
 
@@ -488,7 +473,7 @@ export async function fetchNftMetadataBatch(
 const nftItemsKey = (items: readonly NftMetadataItem[]): string =>
   [...items]
     .map(
-      (item) =>
+      item =>
         `${nftMetadataKey(item.contract, item.tokenId)}:${item.standard === 'erc1155' ? 1 : 0}`,
     )
     .sort()
@@ -501,8 +486,8 @@ const nftItemsKey = (items: readonly NftMetadataItem[]): string =>
 const itemsFromKey = (key: string): NftMetadataItem[] =>
   key
     .split('|')
-    .filter((entry) => entry !== '')
-    .map((entry) => {
+    .filter(entry => entry !== '')
+    .map(entry => {
       const flagSeparator = entry.lastIndexOf(':');
       const idSeparator = entry.indexOf(':');
       return {
@@ -530,9 +515,9 @@ export function useNftMetadata(
   // cache is gateway-keyed so the miss is natural.
   const gateway = getIpfsGateway();
 
-  const [metadata, setMetadata] = useState<
-    Map<string, NftMetadataOutcome> | undefined
-  >(() => (key === '' ? EMPTY_NFT_METADATA_MAP : undefined));
+  const [metadata, setMetadata] = useState<Map<string, NftMetadataOutcome> | undefined>(() =>
+    key === '' ? EMPTY_NFT_METADATA_MAP : undefined,
+  );
 
   useEffect(() => {
     if (key === '') return;
@@ -540,7 +525,7 @@ export function useNftMetadata(
     // previous map so consumers see the honest loading state.
     setMetadata(undefined);
     let cancelled = false;
-    void fetchNftMetadataBatch(chainId, itemsFromKey(key)).then((fetched) => {
+    void fetchNftMetadataBatch(chainId, itemsFromKey(key)).then(fetched => {
       if (!cancelled) setMetadata(fetched);
     });
     return () => {

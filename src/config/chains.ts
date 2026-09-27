@@ -38,13 +38,12 @@ function isLoopbackHttpUrl(url: string): boolean {
     const parsed = new URL(url);
     if (parsed.protocol !== 'http:') return false;
     return (
-      parsed.hostname === '127.0.0.1'
-      || parsed.hostname === 'localhost'
-      || parsed.hostname === '[::1]'
-      || parsed.hostname === '::1'
+      parsed.hostname === '127.0.0.1' ||
+      parsed.hostname === 'localhost' ||
+      parsed.hostname === '[::1]' ||
+      parsed.hostname === '::1'
     );
-  }
-  catch {
+  } catch {
     return false;
   }
 }
@@ -191,13 +190,13 @@ function classifyChainType(
   // Check whether the chain name contains a testnet marker
   const name = candidates[0].name.toLowerCase();
   if (
-    name.includes('test')
-    || name.includes('sepolia')
-    || name.includes('goerli')
-    || name.includes('holesky')
-    || name.includes('mumbai')
-    || name.includes('fuji')
-    || name.includes('chiado')
+    name.includes('test') ||
+    name.includes('sepolia') ||
+    name.includes('goerli') ||
+    name.includes('holesky') ||
+    name.includes('mumbai') ||
+    name.includes('fuji') ||
+    name.includes('chiado')
   ) {
     return 'testnet';
   }
@@ -291,7 +290,7 @@ export function searchChains(query: string): Chain[] {
   const numericQuery = parseInt(query);
   const hasNumericQuery = !isNaN(numericQuery);
 
-  const matches = SEARCH_ORDER.filter((entry) => {
+  const matches = SEARCH_ORDER.filter(entry => {
     const { chain, lowerName, compactLowerName } = entry;
 
     // Exact chain ID match
@@ -452,11 +451,10 @@ export function validateMultiChainConfig(chainIds: number[]): {
   const unsupportedChains: number[] = [];
   const errors: string[] = [];
 
-  chainIds.forEach((chainId) => {
+  chainIds.forEach(chainId => {
     if (isChainSupported(chainId)) {
       supportedChains.push(chainId);
-    }
-    else {
+    } else {
       unsupportedChains.push(chainId);
       errors.push(`Chain ${chainId} is not supported`);
     }

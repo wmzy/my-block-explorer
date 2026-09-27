@@ -1,80 +1,249 @@
 # Changelog
 
-Versions are published by [semantic-release](https://semantic-release.gitbook.io/)
-from conventional commit messages — the git tags and npm dist-tags are
-authoritative. This file is maintained by hand: entries for 0.0.0–1.2.0 were
-reconstructed after the fact from `git log` and the npm publish timestamps, so
-individual lines summarize commit subjects rather than a curated release notes
-process.
+Versions are published by
+[semantic-release](https://semantic-release.gitbook.io/) from conventional
+commit messages — the git tags and npm dist-tags are authoritative. This file is
+maintained by hand: entries for 0.0.0–1.2.0 were reconstructed after the fact
+from `git log` and the npm publish timestamps, so individual lines summarize
+commit subjects rather than a curated release notes process.
 
 ## Unreleased
 
-- **Storage explorer rebuild (column drill-down)** — the Contract page's Storage tab is now a Finder-style column explorer: drilling a struct member, mapping key, or array opens a new column to the right (path breadcrumb + base slot in every header; close truncates the path). Slot VALUES are read browser-side via the chain's RPC client (per-column requests deduped through a bounded-concurrency store — no more one backend HTTP call per slot, and values work in RPC-only mode). Dynamic arrays read their live length and page through ranges (fixed arrays ≥ the span cap paginate too); mapping rows take typed keys with inline validation, leaf values resolve inline, composite values open columns. Every column header — including the root — copies its slot hex, a runnable viem snippet with the symbolic slot derivation, or the `cast storage` command, and every member row carries its own viem-snippet copy (no drilling needed to grab read code for a leaf). The drill path rides the URL as `?sv=` (deep-linkable, junk degrades to root) and stacks vertically at ≤768px. evmole-inferred layouts (unverified contracts) are augmented from their type labels so strings decode, mappings drill, and arrays paginate the same as verified layouts. Copy buttons go through a clipboard helper with a legacy `execCommand` fallback, so copies still work where the async Clipboard API is unavailable or denied (plain-http LAN access, withheld permission).
-- **Broadcast raw transactions** — `/chain/:id/broadcast` page (nav: Broadcast): paste a signed raw transaction, get a local pre-flight decode (type, chain ID, recovered sender, value, fees, data preview), a hard wrong-chain warning naming both chains that disables the button, an amber note for pre-EIP-155 replayable payloads, then broadcast through the RPC this explorer uses for the chain — browser-side only (works in RPC-only mode), nothing stored, RPC rejections rendered verbatim. The Pending page links to it.
-- **State overrides in Interact (advanced)** — write-function forms accept an eth_call state-override map (balance/nonce/code/state/stateDiff per address; caps 10 addresses / 32 slots; field-path errors mirrored client and server). Applied to the simulated eth_call only — never attached to wallet sends, never broadcast, never persisted. The REST `simulate` + `estimate-gas` endpoints accept the same optional `stateOverride` body field (invalid → `400 {error:'invalid_state_override', details:[…]}`).
-- **Blob payloads on transaction pages** — type-3 transaction detail lists the blob versioned hashes and links Blobscan for the payloads (external site, labeled as such; honest "Not returned by this RPC" when the node omits them).
-- **Fixed: literal `undefined` in simulate results** — write-simulation result cards rendered `undefined` beside the value whenever the node left the gas estimate unset; the field is now omitted.
-- **Dev-chain reset lifecycle** — `DELETE /api/chains/:chainId/cached-data` (opt-in admin) clears the chain's cached contract sources and storage layouts; a per-chain high-water head mark detects ≥5-block chain resets (dev chains re-deployed from genesis) and shows a dismissible banner on Home with a one-click clear that reports what was actually removed.
-- **Command palette & Tools hub** — Ctrl/Cmd+K palette (combobox ARIA, keyboard-navigable) jumping to every page, chain, and theme toggle; `/tools` hub card grid (15 tools incl. informational cards — no dead links; SQL/Ops carry admin chips).
-- **Troubleshooting, issue templates & ops diagnostics** — `/help/troubleshooting` static guide (backend-banner modes, provider quirks, dev-chain resets, health checklist); GitHub issue templates; the Ops dashboard gained Copy-diagnostics (all sections verbatim, unavailable ones honestly labeled).
-- **Block internal transactions** — block detail gains a lazy "Internal Transactions (traced)" card (callTracer over the block's txs, concurrency 4, cap 50 with truncation disclosure); zero-tx blocks trace nothing; unsupported RPCs get an honest card.
-- **Address tx method filter** — fifth filter `?tfMethod=` (4-byte selector, server-side `method=` param) over the same cached discovered set; rows carry an additive `selector` field (null for transfers/creations); selector chips resolve via the openchain batch.
-- **Gas inclusion estimates** — GasPanel tiers show "~N blocks (est.)" from sampled blocks whose paid tip stayed within the tier tip (BigInt-exact; p=0 renders nothing), with a "never a promise" caveat.
-- **Slot / Epoch on block detail** — mainnet-only derivation from the merge schedule (timestamp-based, labeled as derived); other chains render nothing.
-- **Onboarding education** — GettingStarted restructured into a 3-step walk whose final step explains coverage honesty and links the coverage legend; the RPC/settings modal footer carries a persistent legend link.
-- **OpenAPI** — `GET /api/openapi.json` (open, cached 1h): hand-maintained 3.1 spec, 52 paths / 61 operations; six endpoints found missing from docs/API.md during the audit were documented in the same change.
-- **Contributor readiness** — docs/CONTRIBUTING.md + docs/adr/0001–0008 (data separation, honesty model, local positioning, DuckDB adapter, frontend stack, verification sources, browser capability surface, route-mount discipline).
+- **Toolchain upgrade (TypeScript 6, Node 26 floor)** — dependencies bumped
+  across the board, notably TypeScript 5.9 → 6.0 and `@types/node` 25 → 26.
+  The Node.js floor rises from 22 to 26 everywhere it's pinned: `engines.node`,
+  the zero-config startup version check, the tsup build target, the Docker
+  images (`node:26-slim`), and every CI/release workflow. `tsconfig.json` drops
+  the `baseUrl` option (deprecated in TypeScript 6 — `paths` resolves relative
+  to the tsconfig without it). A stale peer-resolved link in `node_modules`
+  (left over from the pre-upgrade install) had silently disabled the
+  `@stylistic` lint rules; the relink re-enabled them and the resulting ~600
+  mechanical style violations were autofixed in the same change.
+- **Storage explorer rebuild (column drill-down)** — the Contract page's Storage
+  tab is now a Finder-style column explorer: drilling a struct member, mapping
+  key, or array opens a new column to the right (path breadcrumb + base slot in
+  every header; close truncates the path). Slot VALUES are read browser-side via
+  the chain's RPC client (per-column requests deduped through a
+  bounded-concurrency store — no more one backend HTTP call per slot, and values
+  work in RPC-only mode). Dynamic arrays read their live length and page through
+  ranges (fixed arrays ≥ the span cap paginate too); mapping rows take typed
+  keys with inline validation, leaf values resolve inline, composite values open
+  columns. Every column header — including the root — copies its slot hex, a
+  runnable viem snippet with the symbolic slot derivation, or the `cast storage`
+  command, and every member row carries its own viem-snippet copy (no drilling
+  needed to grab read code for a leaf). The drill path rides the URL as `?sv=`
+  (deep-linkable, junk degrades to root) and stacks vertically at ≤768px.
+  evmole-inferred layouts (unverified contracts) are augmented from their type
+  labels so strings decode, mappings drill, and arrays paginate the same as
+  verified layouts. Copy buttons go through a clipboard helper with a legacy
+  `execCommand` fallback, so copies still work where the async Clipboard API is
+  unavailable or denied (plain-http LAN access, withheld permission).
+- **Broadcast raw transactions** — `/chain/:id/broadcast` page (nav: Broadcast):
+  paste a signed raw transaction, get a local pre-flight decode (type, chain ID,
+  recovered sender, value, fees, data preview), a hard wrong-chain warning
+  naming both chains that disables the button, an amber note for pre-EIP-155
+  replayable payloads, then broadcast through the RPC this explorer uses for the
+  chain — browser-side only (works in RPC-only mode), nothing stored, RPC
+  rejections rendered verbatim. The Pending page links to it.
+- **State overrides in Interact (advanced)** — write-function forms accept an
+  eth_call state-override map (balance/nonce/code/state/stateDiff per address;
+  caps 10 addresses / 32 slots; field-path errors mirrored client and server).
+  Applied to the simulated eth_call only — never attached to wallet sends, never
+  broadcast, never persisted. The REST `simulate` + `estimate-gas` endpoints
+  accept the same optional `stateOverride` body field (invalid →
+  `400 {error:'invalid_state_override', details:[…]}`).
+- **Blob payloads on transaction pages** — type-3 transaction detail lists the
+  blob versioned hashes and links Blobscan for the payloads (external site,
+  labeled as such; honest "Not returned by this RPC" when the node omits them).
+- **Fixed: literal `undefined` in simulate results** — write-simulation result
+  cards rendered `undefined` beside the value whenever the node left the gas
+  estimate unset; the field is now omitted.
+- **Dev-chain reset lifecycle** — `DELETE /api/chains/:chainId/cached-data`
+  (opt-in admin) clears the chain's cached contract sources and storage layouts;
+  a per-chain high-water head mark detects ≥5-block chain resets (dev chains
+  re-deployed from genesis) and shows a dismissible banner on Home with a
+  one-click clear that reports what was actually removed.
+- **Command palette & Tools hub** — Ctrl/Cmd+K palette (combobox ARIA,
+  keyboard-navigable) jumping to every page, chain, and theme toggle; `/tools`
+  hub card grid (15 tools incl. informational cards — no dead links; SQL/Ops
+  carry admin chips).
+- **Troubleshooting, issue templates & ops diagnostics** —
+  `/help/troubleshooting` static guide (backend-banner modes, provider quirks,
+  dev-chain resets, health checklist); GitHub issue templates; the Ops dashboard
+  gained Copy-diagnostics (all sections verbatim, unavailable ones honestly
+  labeled).
+- **Block internal transactions** — block detail gains a lazy "Internal
+  Transactions (traced)" card (callTracer over the block's txs, concurrency 4,
+  cap 50 with truncation disclosure); zero-tx blocks trace nothing; unsupported
+  RPCs get an honest card.
+- **Address tx method filter** — fifth filter `?tfMethod=` (4-byte selector,
+  server-side `method=` param) over the same cached discovered set; rows carry
+  an additive `selector` field (null for transfers/creations); selector chips
+  resolve via the openchain batch.
+- **Gas inclusion estimates** — GasPanel tiers show "~N blocks (est.)" from
+  sampled blocks whose paid tip stayed within the tier tip (BigInt-exact; p=0
+  renders nothing), with a "never a promise" caveat.
+- **Slot / Epoch on block detail** — mainnet-only derivation from the merge
+  schedule (timestamp-based, labeled as derived); other chains render nothing.
+- **Onboarding education** — GettingStarted restructured into a 3-step walk
+  whose final step explains coverage honesty and links the coverage legend; the
+  RPC/settings modal footer carries a persistent legend link.
+- **OpenAPI** — `GET /api/openapi.json` (open, cached 1h): hand-maintained 3.1
+  spec, 52 paths / 61 operations; six endpoints found missing from docs/API.md
+  during the audit were documented in the same change.
+- **Contributor readiness** — docs/CONTRIBUTING.md + docs/adr/0001–0008 (data
+  separation, honesty model, local positioning, DuckDB adapter, frontend stack,
+  verification sources, browser capability surface, route-mount discipline).
 
 ## 1.3.0 — 2026-09-26
 
-- **Tokens directory** — `/chain/:id/tokens` page: curated known tokens plus tokens opened in this browser (localStorage), one Multicall3 enrichment batch, DefiLlama prices, Curated/Viewed provenance chips, "not a complete registry" caveat.
-- **Block prev/next navigation** — block detail pages link to their neighbors with honest genesis/head boundaries (disabled with reasons; unknown head stays clickable, labeled).
-- **Event raw logs** — every indexed event row in the Events table expands to its raw log (topics, data hex, log index, emitter) with copy affordances; unknown topic0 hashes link to the signature lookup.
-- **Signature lookup page** — `/signatures` resolves 4-byte selectors and 32-byte event topic0 hashes via the openchain-backed cache; `?q=` is shareable (name fragments degrade honestly — the registry is exact-hash only).
-- **ENS in transaction lists** — verified ENS names replace From/To addresses on the first 25 rows of tx list pages; the full checksummed address stays one hover away.
-- **Address tx advanced filters** — `fromAddress`/`toAddress`/`minValue`/`maxValue` (wei) filter the discovered transaction set server-side with no new scan; filters ride the URL (`?tfFrom=` family) and the response echoes `filtersApplied`; unfiltered responses byte-identical.
-- **Watch webhooks** — watch subscriptions accept an optional webhook URL (Discord embeds detected automatically); per-event POSTs with one retry, delivery status recorded on the subscription row (migration 0015).
-- **Ops dashboard** — `/ops` page + `GET /api/ops/summary` (opt-in admin): storage sizes (main/per-chain/solc cache), indexing + deep-scan status, watch subscriptions, rate-limit totals, and backup guidance — every section degrades independently.
-- **Mempool analysis** — the Pending page summarizes fee caps/tips (BigInt-exact quartiles) and flags replaceable same-nonce conflicts with likely winners; `?group=1` groups conflicts.
-- **NFT items grid** — token pages for NFT contracts show up to 24 items discovered from scanned transfers, with per-tile metadata honesty states; ERC-1155 amounts are net mint/burn aggregates.
-- **Private notes & address QR** — per-chain browser-local notes (280 chars, never sent to the server) and a QR modal for addresses; explorer-backup v2 carries notes (v1 files still importable).
-- **OG meta prerender** — `SERVE_STATIC_DIR` lets the Hono server serve the built SPA and inject og:title/og:description/twitter:card meta for shareable links without JS (static-frontend serving is new; API-only and dev modes unchanged).
-- **Accessibility & IA** — anchor chip navigation on long address pages; DataTable column scopes, optional captions/labels, accessible names on icon-only controls.
-- **Fixed: admin gate swallowing watch/SSE routes** — a Hono mount-order quirk let the SQL console's fail-closed gate intercept every route mounted after it, so watch subscriptions, the live block stream and unknown `/api` paths answered 403 in zero-config sessions (no `ADMIN_TOKEN` set). Sub-app gates are now scoped to their own path prefixes, pinned by a mount-isolation regression test.
-- **Fixed: QR dialog never opening** — haze-ui's Dialog treats a plain boolean `open` prop as an initial value only; the address QR now drives it with a react-use-control Control, and the test-suite's Dialog mock is control-aware so the value-prop bug class can no longer hide behind mock infidelity.
+- **Tokens directory** — `/chain/:id/tokens` page: curated known tokens plus
+  tokens opened in this browser (localStorage), one Multicall3 enrichment batch,
+  DefiLlama prices, Curated/Viewed provenance chips, "not a complete registry"
+  caveat.
+- **Block prev/next navigation** — block detail pages link to their neighbors
+  with honest genesis/head boundaries (disabled with reasons; unknown head stays
+  clickable, labeled).
+- **Event raw logs** — every indexed event row in the Events table expands to
+  its raw log (topics, data hex, log index, emitter) with copy affordances;
+  unknown topic0 hashes link to the signature lookup.
+- **Signature lookup page** — `/signatures` resolves 4-byte selectors and
+  32-byte event topic0 hashes via the openchain-backed cache; `?q=` is shareable
+  (name fragments degrade honestly — the registry is exact-hash only).
+- **ENS in transaction lists** — verified ENS names replace From/To addresses on
+  the first 25 rows of tx list pages; the full checksummed address stays one
+  hover away.
+- **Address tx advanced filters** —
+  `fromAddress`/`toAddress`/`minValue`/`maxValue` (wei) filter the discovered
+  transaction set server-side with no new scan; filters ride the URL (`?tfFrom=`
+  family) and the response echoes `filtersApplied`; unfiltered responses
+  byte-identical.
+- **Watch webhooks** — watch subscriptions accept an optional webhook URL
+  (Discord embeds detected automatically); per-event POSTs with one retry,
+  delivery status recorded on the subscription row (migration 0015).
+- **Ops dashboard** — `/ops` page + `GET /api/ops/summary` (opt-in admin):
+  storage sizes (main/per-chain/solc cache), indexing + deep-scan status, watch
+  subscriptions, rate-limit totals, and backup guidance — every section degrades
+  independently.
+- **Mempool analysis** — the Pending page summarizes fee caps/tips (BigInt-exact
+  quartiles) and flags replaceable same-nonce conflicts with likely winners;
+  `?group=1` groups conflicts.
+- **NFT items grid** — token pages for NFT contracts show up to 24 items
+  discovered from scanned transfers, with per-tile metadata honesty states;
+  ERC-1155 amounts are net mint/burn aggregates.
+- **Private notes & address QR** — per-chain browser-local notes (280 chars,
+  never sent to the server) and a QR modal for addresses; explorer-backup v2
+  carries notes (v1 files still importable).
+- **OG meta prerender** — `SERVE_STATIC_DIR` lets the Hono server serve the
+  built SPA and inject og:title/og:description/twitter:card meta for shareable
+  links without JS (static-frontend serving is new; API-only and dev modes
+  unchanged).
+- **Accessibility & IA** — anchor chip navigation on long address pages;
+  DataTable column scopes, optional captions/labels, accessible names on
+  icon-only controls.
+- **Fixed: admin gate swallowing watch/SSE routes** — a Hono mount-order quirk
+  let the SQL console's fail-closed gate intercept every route mounted after it,
+  so watch subscriptions, the live block stream and unknown `/api` paths
+  answered 403 in zero-config sessions (no `ADMIN_TOKEN` set). Sub-app gates are
+  now scoped to their own path prefixes, pinned by a mount-isolation regression
+  test.
+- **Fixed: QR dialog never opening** — haze-ui's Dialog treats a plain boolean
+  `open` prop as an initial value only; the address QR now drives it with a
+  react-use-control Control, and the test-suite's Dialog mock is control-aware
+  so the value-prop bug class can no longer hide behind mock infidelity.
 
-- **Address deep scan** — persistent, resumable per-address transaction-discovery jobs (`POST/GET …/addresses/:a/scan` + pause/resume/delete): a forward balance-checkpoint walk (adaptive 50k batches halving on provider range errors, binary-searched change blocks) that persists findings in DuckDB, checkpoints progress every segment, reconciles interrupted jobs at startup, and upgrades address coverage to `complete` **only** for genesis-anchored finished walks — the first sanctioned complete path. The address page's transactions tab gains the Deep Scan panel (live progress, honest ETA, pause/resume).
-- **Entity search** — free-text `/api/search` matches curated known-token symbols and your address labels (`tokenHits`, ≤5, label-wins dedup; the field is dropped, not emptied, on a failed labels read).
-- **Approval history** — the approvals response carries the swept raw approval events (`history`, newest-first cap 200 + `historyTruncated`), rendered as a collapsible timeline; the approvals section also gains the missing inline Retry.
-- **Token standard filter** — transfer rows carry `logStandard` (the standard the log shape alone proves) and the Token Transfers tab gains All/ERC-20/721/1155 chips riding `?ttStandard=`. En-route bug fix: 4-topic ERC-721 Transfer rows were silently dropped by every scan (missing `value`); the token id is now read from the indexed topic.
-- **Safe multisig decode** — `execTransaction` calls render a structured card (inner call target/value/operation, inner selector resolved, ≈N-signature estimate) with selector-based-detection honesty copy; the decoder re-encodes round-trip as a guard against viem's lenient tail-truncated bytes decoding.
-- **Protocol method labels** — curated Uniswap router family (62 corroborated addresses across 8 chains, per-entry source citations + on-chain liveness checks; chains without official deployments ship empty) chip the tx-list Method column and tx detail.
-- **Local data portability** — `GET /api/labels` (opt-in admin) + a settings-modal Backup & restore section exporting/importing `explorer-backup.json` (labels, custom chains, watchlist/theme/IPFS gateway/custom ABIs; localStorage keys pattern-pinned so a hostile file cannot write arbitrary keys).
-- **Admin SQL console** — `/sql` page + `POST /api/sql/query` / `GET /api/sql/tables` over the explorer's own DuckDB: strict fail-closed admin tier, single SELECT/WITH statement guard, 22 forbidden word tokens, 500-row measured cap, JSON-normalized cells.
-- **Cleanup** — vestigial `search_history` table dropped (migration 0012; the parallel per-chain `chain-schema.ts` definition removed too); deep-scan tables are migration 0013; the `@/utils` barrel now re-exports all util modules (8 name collisions resolved explicitly).
-- **Deep scan catch-up** — `POST …/scan/catchup` extends a settled walk's `toBlock` to the current chain head (cursor + findings preserved, no re-walk); the Deep Scan panel offers "Catch up to latest" and scopes the complete claim to "… up to block N". En-route fix: the panel's job parser only accepted `{job}`-wrapped envelopes while every scan route returns the flat DTO — the panel was broken against the real backend behind mocked tests.
-
+- **Address deep scan** — persistent, resumable per-address
+  transaction-discovery jobs (`POST/GET …/addresses/:a/scan` +
+  pause/resume/delete): a forward balance-checkpoint walk (adaptive 50k batches
+  halving on provider range errors, binary-searched change blocks) that persists
+  findings in DuckDB, checkpoints progress every segment, reconciles interrupted
+  jobs at startup, and upgrades address coverage to `complete` **only** for
+  genesis-anchored finished walks — the first sanctioned complete path. The
+  address page's transactions tab gains the Deep Scan panel (live progress,
+  honest ETA, pause/resume).
+- **Entity search** — free-text `/api/search` matches curated known-token
+  symbols and your address labels (`tokenHits`, ≤5, label-wins dedup; the field
+  is dropped, not emptied, on a failed labels read).
+- **Approval history** — the approvals response carries the swept raw approval
+  events (`history`, newest-first cap 200 + `historyTruncated`), rendered as a
+  collapsible timeline; the approvals section also gains the missing inline
+  Retry.
+- **Token standard filter** — transfer rows carry `logStandard` (the standard
+  the log shape alone proves) and the Token Transfers tab gains
+  All/ERC-20/721/1155 chips riding `?ttStandard=`. En-route bug fix: 4-topic
+  ERC-721 Transfer rows were silently dropped by every scan (missing `value`);
+  the token id is now read from the indexed topic.
+- **Safe multisig decode** — `execTransaction` calls render a structured card
+  (inner call target/value/operation, inner selector resolved, ≈N-signature
+  estimate) with selector-based-detection honesty copy; the decoder re-encodes
+  round-trip as a guard against viem's lenient tail-truncated bytes decoding.
+- **Protocol method labels** — curated Uniswap router family (62 corroborated
+  addresses across 8 chains, per-entry source citations + on-chain liveness
+  checks; chains without official deployments ship empty) chip the tx-list
+  Method column and tx detail.
+- **Local data portability** — `GET /api/labels` (opt-in admin) + a
+  settings-modal Backup & restore section exporting/importing
+  `explorer-backup.json` (labels, custom chains, watchlist/theme/IPFS
+  gateway/custom ABIs; localStorage keys pattern-pinned so a hostile file cannot
+  write arbitrary keys).
+- **Admin SQL console** — `/sql` page + `POST /api/sql/query` /
+  `GET /api/sql/tables` over the explorer's own DuckDB: strict fail-closed admin
+  tier, single SELECT/WITH statement guard, 22 forbidden word tokens, 500-row
+  measured cap, JSON-normalized cells.
+- **Cleanup** — vestigial `search_history` table dropped (migration 0012; the
+  parallel per-chain `chain-schema.ts` definition removed too); deep-scan tables
+  are migration 0013; the `@/utils` barrel now re-exports all util modules (8
+  name collisions resolved explicitly).
+- **Deep scan catch-up** — `POST …/scan/catchup` extends a settled walk's
+  `toBlock` to the current chain head (cursor + findings preserved, no re-walk);
+  the Deep Scan panel offers "Catch up to latest" and scopes the complete claim
+  to "… up to block N". En-route fix: the panel's job parser only accepted
+  `{job}`-wrapped envelopes while every scan route returns the flat DTO — the
+  panel was broken against the real backend behind mocked tests.
 
 ## 1.2.0 — 2026-09-19
 
-- Honest degradation across offline state, search, ENS, the contract form and cache tiers; ENS reverse names roundtrip-verified (spoofed reverse records render as no name).
-- Reorg reconciliation (unfinalized rows receipt-verified, reorged-out rows deleted), chain-scoped search (`?chainId=`), RPC endpoint redaction for untrusted origins.
-- Token transfers tab on the address page, block finality badges, URL-driven pagination for lists and search windows.
-- Degraded-mode explorer: parallel localhost port scan, per-browser search history, address search window.
-- Two-tier admin gate (`requireAdminToken` fail-closed vs. `requireAdminTokenIfConfigured`), shared CORS allowlist consumed by both the API and the Vite dev server, async range indexing and pending-tx polling.
-- Indexing queue removed (one serial job per range); admin auth util; search-degradation and cache-invalidation tests.
+- Honest degradation across offline state, search, ENS, the contract form and
+  cache tiers; ENS reverse names roundtrip-verified (spoofed reverse records
+  render as no name).
+- Reorg reconciliation (unfinalized rows receipt-verified, reorged-out rows
+  deleted), chain-scoped search (`?chainId=`), RPC endpoint redaction for
+  untrusted origins.
+- Token transfers tab on the address page, block finality badges, URL-driven
+  pagination for lists and search windows.
+- Degraded-mode explorer: parallel localhost port scan, per-browser search
+  history, address search window.
+- Two-tier admin gate (`requireAdminToken` fail-closed vs.
+  `requireAdminTokenIfConfigured`), shared CORS allowlist consumed by both the
+  API and the Vite dev server, async range indexing and pending-tx polling.
+- Indexing queue removed (one serial job per range); admin auth util;
+  search-degradation and cache-invalidation tests.
 
 ## 1.1.0 — 2026-09-17
 
-- Admin-token gating for core-workflow writes; async event indexing with decoded-argument filters; custom ABI upload and transaction decode.
-- Frontend migrated to the painless-template architecture: `@native-router/react` (flat typed route table), react-toolroom query layer, fetch-fun HTTP chain, Linaria + haze-ui styling.
-- Dynamic chain landing, transaction pagination and search fixes; external links; event-filter fixes; database schema refactor.
+- Admin-token gating for core-workflow writes; async event indexing with
+  decoded-argument filters; custom ABI upload and transaction decode.
+- Frontend migrated to the painless-template architecture:
+  `@native-router/react` (flat typed route table), react-toolroom query layer,
+  fetch-fun HTTP chain, Linaria + haze-ui styling.
+- Dynamic chain landing, transaction pagination and search fixes; external
+  links; event-filter fixes; database schema refactor.
 
 ## 1.0.0 — 2026-04-07
 
-- First semantic-release tag. Contract storage-layout viewer, contract-source and verify-refresh fixes, `verification_source` tracking, DuckDB WAL recovery and graceful shutdown.
-- Block-number search; GitHub Pages SPA deploy (base URL, home page, CORS, service status); "open in IDE"; CI release pipeline.
+- First semantic-release tag. Contract storage-layout viewer, contract-source
+  and verify-refresh fixes, `verification_source` tracking, DuckDB WAL recovery
+  and graceful shutdown.
+- Block-number search; GitHub Pages SPA deploy (base URL, home page, CORS,
+  service status); "open in IDE"; CI release pipeline.
 
 ## 0.0.0 — 2026-03-22
 
-- Initial npm publish (pre-semantic-release). Multi-chain explorer core: all viem chains supported with popular-chain pinning, top navigation with global search and chain switching, complete backend service suite with tests, DuckDB + Drizzle ORM storage with type-safe schema, contract event indexing with ABI-based filtering/sorting/pagination, multi-chain contract verification, proxy contract detection and switching UI, client-side contract interaction, contract data caching, address data separation (persistent DB cache + live RPC reads).
+- Initial npm publish (pre-semantic-release). Multi-chain explorer core: all
+  viem chains supported with popular-chain pinning, top navigation with global
+  search and chain switching, complete backend service suite with tests,
+  DuckDB + Drizzle ORM storage with type-safe schema, contract event indexing
+  with ABI-based filtering/sorting/pagination, multi-chain contract
+  verification, proxy contract detection and switching UI, client-side contract
+  interaction, contract data caching, address data separation (persistent DB
+  cache + live RPC reads).

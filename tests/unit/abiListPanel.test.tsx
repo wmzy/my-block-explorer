@@ -121,7 +121,9 @@ describe('AbiListPanel list view', () => {
     expect(
       screen.queryByRole('checkbox', { name: 'name() returns (string)' }),
     ).not.toBeInTheDocument();
-    expect(screen.queryByRole('checkbox', { name: 'error Unauthorized()' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('checkbox', { name: 'error Unauthorized()' }),
+    ).not.toBeInTheDocument();
   });
 
   it('selects across categories through the chips and copies selection plus all errors', async () => {
@@ -213,7 +215,9 @@ describe('AbiListPanel raw view and provenance', () => {
     const viewer = screen.getByTestId('source-viewer');
     expect(viewer.textContent).toBe(RAW_JSON);
     // List surface is unmounted while the raw view is active.
-    expect(screen.queryByRole('checkbox', { name: 'name() returns (string)' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('checkbox', { name: 'name() returns (string)' }),
+    ).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Raw JSON' })).toHaveAttribute(
       'aria-pressed',
       'true',
@@ -238,11 +242,7 @@ describe('AbiListPanel raw view and provenance', () => {
     expect(screen.queryByText('Custom ABI (this browser)')).not.toBeInTheDocument();
 
     rerender(
-      <AbiListPanel
-        abi={FIXTURE}
-        rawJson={RAW_JSON}
-        provenanceLabel="Custom ABI (this browser)"
-      />,
+      <AbiListPanel abi={FIXTURE} rawJson={RAW_JSON} provenanceLabel="Custom ABI (this browser)" />,
     );
     expect(screen.getByText('Custom ABI (this browser)')).toBeInTheDocument();
   });

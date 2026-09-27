@@ -32,13 +32,7 @@ import { Alert } from 'haze-ui';
 import TopNavigation from '@/components/TopNavigation';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/Card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import { CopyableHash } from '@/components/ui/CopyableHash';
 import { linkStyle, monoStyle } from '@/components/ui/DataTable';
 import { InfoGrid, InfoItem } from '@/components/ui/InfoGrid';
@@ -151,9 +145,7 @@ const warningsStack = css`
 // --- Components ---
 
 type BroadcastState =
-  | { status: 'idle' }
-  | { status: 'pending' }
-  | { status: 'failed'; message: string };
+  { status: 'idle' } | { status: 'pending' } | { status: 'failed'; message: string };
 
 export default function BroadcastTransactionPage() {
   const { params, router } = useMatched();
@@ -304,10 +296,9 @@ function BroadcastBody({ chainId }: { chainId: number }) {
         <CardHeader>
           <CardTitle>Signed raw transaction</CardTitle>
           <CardDescription>
-            Broadcasting sends the bytes below through the RPC endpoint this explorer
-            uses for {currentChainName} — the explorer itself stores nothing about
-            it. The decoded preview is computed locally in your browser, so the RPC
-            cannot forge what you see.
+            Broadcasting sends the bytes below through the RPC endpoint this explorer uses for{' '}
+            {currentChainName} — the explorer itself stores nothing about it. The decoded preview is
+            computed locally in your browser, so the RPC cannot forge what you see.
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -332,10 +323,7 @@ function BroadcastBody({ chainId }: { chainId: number }) {
             {/* Resets the failure state only — the pasted bytes are never
                 auto-cleared; they are the only copy of the transaction. */}
             {broadcast.status === 'failed' && (
-              <Button
-                variant="secondary"
-                onClick={() => setBroadcast({ status: 'idle' })}
-              >
+              <Button variant="secondary" onClick={() => setBroadcast({ status: 'idle' })}>
                 Clear failure
               </Button>
             )}
@@ -344,8 +332,8 @@ function BroadcastBody({ chainId }: { chainId: number }) {
           {decode !== null && !decode.ok && (
             <div className={noticeBox}>
               <Alert variant="danger">
-                Could not decode the pasted input as a signed transaction — nothing
-                was sent. {decode.error}
+                Could not decode the pasted input as a signed transaction — nothing was sent.{' '}
+                {decode.error}
               </Alert>
             </div>
           )}
@@ -354,9 +342,8 @@ function BroadcastBody({ chainId }: { chainId: number }) {
             <div className={noticeBox}>
               <Alert variant="danger">
                 <p className={failureLead}>
-                  The transaction was not accepted. The text below is the RPC
-                  endpoint's own message, shown verbatim — this explorer added
-                  nothing to it.
+                  The transaction was not accepted. The text below is the RPC endpoint's own
+                  message, shown verbatim — this explorer added nothing to it.
                 </p>
                 <code className={cx(monoStyle, rpcMessageStyle)}>
                   {classifyBroadcastRejection(broadcast.message)}
@@ -372,8 +359,8 @@ function BroadcastBody({ chainId }: { chainId: number }) {
           <CardHeader>
             <CardTitle>Decoded locally — not yet seen by the RPC</CardTitle>
             <CardDescription>
-              Everything below was derived in your browser from the pasted bytes
-              alone. Nothing has been sent anywhere until you press Broadcast.
+              Everything below was derived in your browser from the pasted bytes alone. Nothing has
+              been sent anywhere until you press Broadcast.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -382,25 +369,24 @@ function BroadcastBody({ chainId }: { chainId: number }) {
                 {mismatchInfo !== null && (
                   <Alert variant="danger">
                     <strong>Wrong network.</strong> This transaction is signed for{' '}
-                    {mismatchInfo.txChainName} (chain ID {mismatchInfo.txChainId}),
-                    but you are viewing {currentChainName} (chain ID {chainId}).
-                    Broadcasting it here cannot reach the signing chain — the
-                    button is disabled for that reason.
+                    {mismatchInfo.txChainName} (chain ID {mismatchInfo.txChainId}), but you are
+                    viewing {currentChainName} (chain ID {chainId}). Broadcasting it here cannot
+                    reach the signing chain — the button is disabled for that reason.
                   </Alert>
                 )}
                 {tx.chainId === null && (
                   <Alert variant="warning">
-                    <strong>Legacy pre-EIP-155 transaction.</strong> It carries no
-                    chain ID, so it is in principle replayable on any chain that
-                    still accepts pre-EIP-155 transactions. Broadcasting stays
-                    enabled — that judgement is yours, not the explorer's.
+                    <strong>Legacy pre-EIP-155 transaction.</strong> It carries no chain ID, so it
+                    is in principle replayable on any chain that still accepts pre-EIP-155
+                    transactions. Broadcasting stays enabled — that judgement is yours, not the
+                    explorer's.
                   </Alert>
                 )}
                 {tx.from === null && (
                   <Alert variant="warning">
-                    <strong>Sender could not be recovered.</strong> The signature
-                    did not yield a sender address, so this preview cannot
-                    attribute the transaction to anyone — treat it with care.
+                    <strong>Sender could not be recovered.</strong> The signature did not yield a
+                    sender address, so this preview cannot attribute the transaction to anyone —
+                    treat it with care.
                   </Alert>
                 )}
               </div>
@@ -462,14 +448,10 @@ function BroadcastBody({ chainId }: { chainId: number }) {
               <InfoItem label="Nonce">{formatNumber(tx.nonce)}</InfoItem>
               <InfoItem label="Gas Limit">{formatNumber(tx.gas)}</InfoItem>
               {tx.gasPrice !== undefined && (
-                <InfoItem label="Gas Price">
-                  {formatGasPrice(tx.gasPrice)} gwei
-                </InfoItem>
+                <InfoItem label="Gas Price">{formatGasPrice(tx.gasPrice)} gwei</InfoItem>
               )}
               {tx.maxFeePerGas !== undefined && (
-                <InfoItem label="Max Fee Per Gas">
-                  {formatGasPrice(tx.maxFeePerGas)} gwei
-                </InfoItem>
+                <InfoItem label="Max Fee Per Gas">{formatGasPrice(tx.maxFeePerGas)} gwei</InfoItem>
               )}
               {tx.maxPriorityFeePerGas !== undefined && (
                 <InfoItem label="Max Priority Fee Per Gas">
@@ -504,9 +486,7 @@ function BroadcastBody({ chainId }: { chainId: number }) {
               )}
               <InfoItem label="Input Data">
                 {tx.dataByteLength === 0 ? (
-                  <span title="The transaction carries no input data">
-                    Empty (0 bytes)
-                  </span>
+                  <span title="The transaction carries no input data">Empty (0 bytes)</span>
                 ) : (
                   <span className={monoStyle} title={`${tx.dataByteLength} bytes`}>
                     {`${formatNumber(BigInt(tx.dataByteLength))} bytes · ${tx.dataPreview}`}

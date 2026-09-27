@@ -72,7 +72,9 @@ export const ENTRY_POINT_ADDRESSES: Record<UserOpVersion, Address> = {
 const ENTRY_POINT_VERSIONS = ['v0.6', 'v0.7', 'v0.8'] as const satisfies readonly UserOpVersion[];
 
 const ENTRY_POINT_VERSION_BY_ADDRESS = new Map<string, UserOpVersion>(
-  ENTRY_POINT_VERSIONS.map((version) => [ENTRY_POINT_ADDRESSES[version].toLowerCase(), version] as const),
+  ENTRY_POINT_VERSIONS.map(
+    version => [ENTRY_POINT_ADDRESSES[version].toLowerCase(), version] as const,
+  ),
 );
 
 /** Resolves which EntryPoint version an address belongs to (case-insensitive). */
@@ -163,7 +165,7 @@ function decodeV6OpsTail(tail: Hex): DecodedUserOp[] | null {
   // tail-truncated dynamic data, so only a byte-exact round trip is sound.
   if (encodeAbiParameters(V6_OPS_PARAMS, decoded).toLowerCase() !== tail.toLowerCase()) return null;
   const [ops] = decoded;
-  return ops.map((op) => ({
+  return ops.map(op => ({
     sender: getAddress(op[0]),
     nonce: op[1],
     paymaster: paymasterFrom(op[9]),
@@ -177,9 +179,10 @@ function decodeV6OpsTail(tail: Hex): DecodedUserOp[] | null {
 /** Decodes a v0.7/v0.8 packed-tuple handleOps tail. Returns null on any mismatch. */
 function decodePackedOpsTail(tail: Hex): DecodedUserOp[] | null {
   const decoded = decodeAbiParameters(PACKED_OPS_PARAMS, tail);
-  if (encodeAbiParameters(PACKED_OPS_PARAMS, decoded).toLowerCase() !== tail.toLowerCase()) return null;
+  if (encodeAbiParameters(PACKED_OPS_PARAMS, decoded).toLowerCase() !== tail.toLowerCase())
+    return null;
   const [ops] = decoded;
-  return ops.map((op) => {
+  return ops.map(op => {
     // accountGasLimits: high 128 bits = verificationGasLimit, low = callGasLimit.
     const accountGasLimits = BigInt(op[4]);
     return {
@@ -306,5 +309,5 @@ export function matchUserOpResults(
       actualGasUsed: event.actualGasUsed,
     });
   }
-  return decodedOps.map((op) => resultsByOpKey.get(`${op.sender.toLowerCase()}:${op.nonce}`));
+  return decodedOps.map(op => resultsByOpKey.get(`${op.sender.toLowerCase()}:${op.nonce}`));
 }

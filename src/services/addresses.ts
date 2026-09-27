@@ -18,11 +18,7 @@ export type AddressTransactionPage = {
   total: number;
   method?: string;
   coverage?: 'complete' | 'partial' | 'none';
-  reason?:
-    | 'no-transactions'
-    | 'no-outgoing-transactions'
-    | 'zero-balance'
-    | 'search-failed';
+  reason?: 'no-transactions' | 'no-outgoing-transactions' | 'zero-balance' | 'search-failed';
   searchWindowBlocks?: number;
   window?: number;
   /**
@@ -146,10 +142,9 @@ export function fetchAddressTransactions(
   );
 }
 
-export const addressInfoCache = createQueryCache<AddressInfoResponse | undefined, [
-  number,
-  string,
-]>('addresses-info');
+export const addressInfoCache = createQueryCache<AddressInfoResponse | undefined, [number, string]>(
+  'addresses-info',
+);
 
 // The window AND the filters ride in the cache key: a widened ?window=
 // or a different active filter must resolve to a fresh entry, never a
@@ -162,10 +157,7 @@ export const addressTransactionsCache = createQueryCache<
 >('addresses-transactions');
 
 const queryAddressInfo = bindQueryFn(fetchAddressInfo, addressInfoCache);
-const queryAddressTransactions = bindQueryFn(
-  fetchAddressTransactions,
-  addressTransactionsCache,
-);
+const queryAddressTransactions = bindQueryFn(fetchAddressTransactions, addressTransactionsCache);
 
 const useAddressInfoQuery = createQueryHook({ queryFn: queryAddressInfo });
 const useAddressTransactionsQuery = createQueryHook({
@@ -186,12 +178,5 @@ export function useAddressTransactions(
   searchWindow?: number,
   filters?: AddressTxFilters,
 ) {
-  return useAddressTransactionsQuery([
-    chainId,
-    address,
-    limit,
-    offset,
-    searchWindow,
-    filters,
-  ]);
+  return useAddressTransactionsQuery([chainId, address, limit, offset, searchWindow, filters]);
 }

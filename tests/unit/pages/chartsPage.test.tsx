@@ -91,7 +91,10 @@ const okSnapshot = (options: FixtureOptions = {}): ChartsSnapshot => {
     endBlockExclusive: 21_000_000 + (index + 1) * 7185,
     coveredBlocks: options.partialGas && index % 3 === 0 ? 5_000 : point.blocks,
     firstCoveredBlock: 21_000_000 + index * 7185,
-    lastCoveredBlock: 21_000_000 + index * 7185 + (options.partialGas && index % 3 === 0 ? 4_999 : point.blocks - 1),
+    lastCoveredBlock:
+      21_000_000 +
+      index * 7185 +
+      (options.partialGas && index % 3 === 0 ? 4_999 : point.blocks - 1),
     avgBaseFeeGwei: 12 + index * 0.1,
     avgPriorityFeeGwei: options.gasReason === undefined && index % 10 === 9 ? null : 1.2,
     complete: !(options.partialGas && index % 3 === 0),
@@ -303,9 +306,7 @@ describe('Charts page', () => {
 
     const txCard = await screen.findByTestId('charts-tx-day');
     expect(within(txCard).getByText(/days rest on fewer than 16 sampled blocks/)).toBeVisible();
-    expect(
-      within(txCard).getByText(/extrapolated from the blocks that answered/),
-    ).toBeVisible();
+    expect(within(txCard).getByText(/extrapolated from the blocks that answered/)).toBeVisible();
   });
 
   it('renders the honest page-level unavailable state per reason', async () => {
@@ -357,7 +358,9 @@ describe('Charts page', () => {
     renderCharts('/chain/1/charts');
 
     expect(
-      await screen.findByText(/Showing 12 complete days — this chain has less than the 30-day window/),
+      await screen.findByText(
+        /Showing 12 complete days — this chain has less than the 30-day window/,
+      ),
     ).toBeVisible();
   });
 

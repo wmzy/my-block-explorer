@@ -57,7 +57,13 @@ describe('custom-chain registry', () => {
   });
 
   it('registers and lists chains sorted by id', () => {
-    registerCustomChain({ chainId: 1337, name: 'Ganache', symbol: 'GO', decimals: 18, rpcUrl: 'http://x' });
+    registerCustomChain({
+      chainId: 1337,
+      name: 'Ganache',
+      symbol: 'GO',
+      decimals: 18,
+      rpcUrl: 'http://x',
+    });
     registerCustomChain(anvil());
 
     expect(listCustomChainIds()).toEqual([1337, ANVIL_ID]);
@@ -123,7 +129,13 @@ describe('chains.ts override layer', () => {
 
   it('an id unknown to viem resolves only once registered', () => {
     expect(getChainInfo(UNKNOWN_ID)).toBeNull();
-    registerCustomChain({ chainId: UNKNOWN_ID, name: 'Private', symbol: 'PVT', decimals: 18, rpcUrl: 'http://10.0.0.2:8545' });
+    registerCustomChain({
+      chainId: UNKNOWN_ID,
+      name: 'Private',
+      symbol: 'PVT',
+      decimals: 18,
+      rpcUrl: 'http://10.0.0.2:8545',
+    });
 
     expect(getChainName(UNKNOWN_ID)).toBe('Private');
     expect(getDefaultRpcUrl(UNKNOWN_ID)).toBe('http://10.0.0.2:8545');

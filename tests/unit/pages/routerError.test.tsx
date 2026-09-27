@@ -153,19 +153,15 @@ describe('RouterError view', () => {
         initialEntries={['/']}
       >
         <RouterError
-          error={new ApiError(
-            'Address 0x4bcc… is not a contract on chain 137',
-            404,
-            'not_a_contract',
-          )}
+          error={
+            new ApiError('Address 0x4bcc… is not a contract on chain 137', 404, 'not_a_contract')
+          }
         />
       </MemoryRouter>,
     );
 
     expect(screen.getByRole('heading', { name: /This address is not a contract/i }));
-    expect(
-      screen.getByRole('link', { name: /View as address/i }),
-    ).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /View as address/i })).toHaveAttribute(
       'href',
       '/chain/137/address/0x4bcc950dba937772a68cdbe7847c0de5c2fdeec5',
     );
@@ -181,9 +177,7 @@ describe('RouterError view', () => {
         routes={createRoutes([{ path: '/', component: () => NullView }])}
         initialEntries={['/']}
       >
-        <RouterError
-          error={new ApiError('Address is not a contract', 404, 'not_a_contract')}
-        />
+        <RouterError error={new ApiError('Address is not a contract', 404, 'not_a_contract')} />
       </MemoryRouter>,
     );
 
@@ -200,9 +194,7 @@ describe('RouterError view', () => {
         routes={createRoutes([{ path: '/', component: () => NullView }])}
         initialEntries={['/']}
       >
-        <RouterError
-          error={new ApiError('Backend not connected — indexed data unavailable', 0)}
-        />
+        <RouterError error={new ApiError('Backend not connected — indexed data unavailable', 0)} />
       </MemoryRouter>,
     );
 

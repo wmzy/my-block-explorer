@@ -173,7 +173,10 @@ describe('reconcileReorgedEvents', () => {
     const total = REORG_RECONCILE_ROW_CAP + 100;
     // One tx carrying every log index: every inspected row verifies.
     const tx = txHashOf(1);
-    receipts.set(tx, Array.from({ length: total }, (_, i) => i));
+    receipts.set(
+      tx,
+      Array.from({ length: total }, (_, i) => i),
+    );
 
     for (let i = 0; i < total; i++) {
       await insertEvent({ transactionHash: tx, logIndex: i, blockNumber: BigInt(i + 1) });

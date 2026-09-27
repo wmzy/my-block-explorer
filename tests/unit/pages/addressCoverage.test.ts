@@ -36,8 +36,12 @@ describe('deriveAddressCoverage', () => {
   it('lists one detail line per source in fixed order', () => {
     expect(lines(settled)).toEqual([
       'Balance & nonce: read live from the chain RPC at the latest block',
-      expect.stringContaining('Indexed details (verification status, contract name, creation info): cached'),
-      expect.stringContaining('Transaction history: external transactions discovered heuristically within the last 10,000,000 blocks'),
+      expect.stringContaining(
+        'Indexed details (verification status, contract name, creation info): cached',
+      ),
+      expect.stringContaining(
+        'Transaction history: external transactions discovered heuristically within the last 10,000,000 blocks',
+      ),
       'Token transfers: discovered by an on-demand log scan over a capped block window (ERC-20/721/1155)',
       'Holdings & NFTs: NET aggregates over the discovered transfers — approximations, never a full-indexer holdings list',
       expect.stringContaining('Labels: your personal annotations'),

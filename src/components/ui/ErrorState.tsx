@@ -18,12 +18,7 @@ type ErrorStateProps = {
   className?: string;
 };
 
-export function ErrorState({
-  message,
-  onRetry,
-  retryLabel = 'Retry',
-  className,
-}: ErrorStateProps) {
+export function ErrorState({ message, onRetry, retryLabel = 'Retry', className }: ErrorStateProps) {
   return (
     <div className={cx(errorContainer, className)}>
       <Alert variant="danger">
@@ -46,11 +41,7 @@ type EmptyStateProps = {
   children?: ReactNode;
 };
 
-export function EmptyState({
-  message = 'No data found',
-  className,
-  children,
-}: EmptyStateProps) {
+export function EmptyState({ message = 'No data found', className, children }: EmptyStateProps) {
   return (
     <div className={cx(errorContainer, className)}>
       <Alert variant="info">
@@ -114,15 +105,15 @@ export function BackendOfflineState({
         <div className={offlineBodyStyles}>
           <strong>Backend offline — indexed data unavailable.</strong>
           <p className={offlineTextStyles}>
-            Contract source, ABI and event data come from this explorer&apos;s
-            indexing backend, not from the chain RPC — blocks and transactions
-            pages keep working without it. Start the backend in a terminal:
+            Contract source, ABI and event data come from this explorer&apos;s indexing backend, not
+            from the chain RPC — blocks and transactions pages keep working without it. Start the
+            backend in a terminal:
           </p>
           <code className={offlineCodeStyles}>npx my-block-explorer --port 8201</code>
           <p className={offlineTextStyles}>
-            To point the app at a running backend, open the setup panel from the
-            banner at the top of the page (reload the page if you dismissed it)
-            or the connection badge in the bottom-left corner.
+            To point the app at a running backend, open the setup panel from the banner at the top
+            of the page (reload the page if you dismissed it) or the connection badge in the
+            bottom-left corner.
           </p>
           {onRetryConnection && (
             <div className={errorActions}>

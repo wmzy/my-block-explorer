@@ -143,7 +143,14 @@ describe('FunctionCallForm initialArgs prefill', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Simulate' }));
 
-    expect(onCall).toHaveBeenCalledWith(approveWrite, [SPENDER, '0'], [SPENDER, '0'], undefined, undefined, undefined);
+    expect(onCall).toHaveBeenCalledWith(
+      approveWrite,
+      [SPENDER, '0'],
+      [SPENDER, '0'],
+      undefined,
+      undefined,
+      undefined,
+    );
   });
 
   it('keeps the user free to edit everything after the prefill', () => {
@@ -152,7 +159,14 @@ describe('FunctionCallForm initialArgs prefill', () => {
     fireEvent.change(screen.getByLabelText('value (uint256)'), { target: { value: '5' } });
     fireEvent.click(screen.getByRole('button', { name: 'Simulate' }));
 
-    expect(onCall).toHaveBeenCalledWith(approveWrite, [SPENDER, '5'], [SPENDER, '5'], undefined, undefined, undefined);
+    expect(onCall).toHaveBeenCalledWith(
+      approveWrite,
+      [SPENDER, '5'],
+      [SPENDER, '5'],
+      undefined,
+      undefined,
+      undefined,
+    );
   });
 
   it('pads a short prefill with empty inputs', () => {
@@ -302,10 +316,10 @@ describe('ContractInteract revoke intent - function selection', () => {
     renderInteract({ contractSource: null, revoke: erc20Intent });
 
     expect(await screen.findByTestId('revoke-standard-abi-note')).toBeInTheDocument();
-    expect(within(screen.getByTestId('revoke-intent-card')).getByLabelText('spender (address)')).toHaveValue(SPENDER);
     expect(
-      screen.getByText(/only the revoke action above is offered here/),
-    ).toBeInTheDocument();
+      within(screen.getByTestId('revoke-intent-card')).getByLabelText('spender (address)'),
+    ).toHaveValue(SPENDER);
+    expect(screen.getByText(/only the revoke action above is offered here/)).toBeInTheDocument();
   });
 
   it('renders an honest unavailable state for an intent that cannot map to a call', async () => {

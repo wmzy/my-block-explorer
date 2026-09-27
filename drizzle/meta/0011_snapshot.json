@@ -53,11 +53,7 @@
       "compositePrimaryKeys": {
         "access_history_chain_id_type_identifier_pk": {
           "name": "access_history_chain_id_type_identifier_pk",
-          "columns": [
-            "chain_id",
-            "type",
-            "identifier"
-          ]
+          "columns": ["chain_id", "type", "identifier"]
         }
       },
       "uniqueConstraints": {},
@@ -120,10 +116,7 @@
       "compositePrimaryKeys": {
         "address_labels_chain_id_address_pk": {
           "name": "address_labels_chain_id_address_pk",
-          "columns": [
-            "chain_id",
-            "address"
-          ]
+          "columns": ["chain_id", "address"]
         }
       },
       "uniqueConstraints": {},
@@ -256,20 +249,14 @@
       "compositePrimaryKeys": {
         "blocks_chain_id_number_pk": {
           "name": "blocks_chain_id_number_pk",
-          "columns": [
-            "chain_id",
-            "number"
-          ]
+          "columns": ["chain_id", "number"]
         }
       },
       "uniqueConstraints": {
         "blocks_chainId_hash_unique": {
           "name": "blocks_chainId_hash_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "chain_id",
-            "hash"
-          ]
+          "columns": ["chain_id", "hash"]
         }
       },
       "policies": {},
@@ -341,10 +328,7 @@
       "compositePrimaryKeys": {
         "contract_creation_info_chain_id_address_pk": {
           "name": "contract_creation_info_chain_id_address_pk",
-          "columns": [
-            "chain_id",
-            "address"
-          ]
+          "columns": ["chain_id", "address"]
         }
       },
       "uniqueConstraints": {},
@@ -466,11 +450,7 @@
       "compositePrimaryKeys": {
         "contract_events_chain_id_transaction_hash_log_index_pk": {
           "name": "contract_events_chain_id_transaction_hash_log_index_pk",
-          "columns": [
-            "chain_id",
-            "transaction_hash",
-            "log_index"
-          ]
+          "columns": ["chain_id", "transaction_hash", "log_index"]
         }
       },
       "uniqueConstraints": {},
@@ -617,10 +597,7 @@
       "compositePrimaryKeys": {
         "contract_sources_chain_id_address_pk": {
           "name": "contract_sources_chain_id_address_pk",
-          "columns": [
-            "chain_id",
-            "address"
-          ]
+          "columns": ["chain_id", "address"]
         }
       },
       "uniqueConstraints": {},
@@ -765,11 +742,7 @@
       "compositePrimaryKeys": {
         "event_table_registry_chain_id_contract_address_event_signature_pk": {
           "name": "event_table_registry_chain_id_contract_address_event_signature_pk",
-          "columns": [
-            "chain_id",
-            "contract_address",
-            "event_signature"
-          ]
+          "columns": ["chain_id", "contract_address", "event_signature"]
         }
       },
       "uniqueConstraints": {},
@@ -812,10 +785,7 @@
       "compositePrimaryKeys": {
         "index_status_chain_id_index_type_pk": {
           "name": "index_status_chain_id_index_type_pk",
-          "columns": [
-            "chain_id",
-            "index_type"
-          ]
+          "columns": ["chain_id", "index_type"]
         }
       },
       "uniqueConstraints": {},
@@ -877,10 +847,7 @@
       "compositePrimaryKeys": {
         "indexed_addresses_chain_id_address_pk": {
           "name": "indexed_addresses_chain_id_address_pk",
-          "columns": [
-            "chain_id",
-            "address"
-          ]
+          "columns": ["chain_id", "address"]
         }
       },
       "uniqueConstraints": {},
@@ -955,10 +922,7 @@
       "compositePrimaryKeys": {
         "indexing_progress_chain_id_address_pk": {
           "name": "indexing_progress_chain_id_address_pk",
-          "columns": [
-            "chain_id",
-            "address"
-          ]
+          "columns": ["chain_id", "address"]
         }
       },
       "uniqueConstraints": {},
@@ -1060,11 +1024,7 @@
       "compositePrimaryKeys": {
         "indexing_ranges_chain_id_address_range_id_pk": {
           "name": "indexing_ranges_chain_id_address_range_id_pk",
-          "columns": [
-            "chain_id",
-            "address",
-            "range_id"
-          ]
+          "columns": ["chain_id", "address", "range_id"]
         }
       },
       "uniqueConstraints": {},
@@ -1164,10 +1124,7 @@
       "compositePrimaryKeys": {
         "signature_cache_kind_selector_pk": {
           "name": "signature_cache_kind_selector_pk",
-          "columns": [
-            "kind",
-            "selector"
-          ]
+          "columns": ["kind", "selector"]
         }
       },
       "uniqueConstraints": {},
@@ -1236,10 +1193,7 @@
       "compositePrimaryKeys": {
         "storage_layouts_chain_id_address_pk": {
           "name": "storage_layouts_chain_id_address_pk",
-          "columns": [
-            "chain_id",
-            "address"
-          ]
+          "columns": ["chain_id", "address"]
         }
       },
       "uniqueConstraints": {},
@@ -1392,21 +1346,14 @@
       "compositePrimaryKeys": {
         "transactions_chain_id_hash_pk": {
           "name": "transactions_chain_id_hash_pk",
-          "columns": [
-            "chain_id",
-            "hash"
-          ]
+          "columns": ["chain_id", "hash"]
         }
       },
       "uniqueConstraints": {
         "transactions_chainId_blockNumber_transactionIndex_unique": {
           "name": "transactions_chainId_blockNumber_transactionIndex_unique",
           "nullsNotDistinct": false,
-          "columns": [
-            "chain_id",
-            "block_number",
-            "transaction_index"
-          ]
+          "columns": ["chain_id", "block_number", "transaction_index"]
         }
       },
       "policies": {},
@@ -1558,10 +1505,7 @@
       "compositePrimaryKeys": {
         "watch_subscriptions_chain_id_address_pk": {
           "name": "watch_subscriptions_chain_id_address_pk",
-          "columns": [
-            "chain_id",
-            "address"
-          ]
+          "columns": ["chain_id", "address"]
         }
       },
       "uniqueConstraints": {},

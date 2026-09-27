@@ -175,7 +175,10 @@ export function StorageExplorer(props: StorageExplorerProps) {
   // entry is 'inplace'); one memoized pass canonicalizes them so the
   // resolver + rows treat verified and inferred layouts identically.
   const effectiveLayout = useMemo(() => augmentLayoutTypes(layout), [layout]);
-  const columns = useMemo(() => resolveColumns(effectiveLayout, segments), [effectiveLayout, segments]);
+  const columns = useMemo(
+    () => resolveColumns(effectiveLayout, segments),
+    [effectiveLayout, segments],
+  );
   const typeLookup = useMemo(() => {
     const types = effectiveLayout.types;
     return (typeKey: string): StorageType | null => types?.[typeKey] ?? null;
@@ -278,7 +281,12 @@ export function StorageExplorer(props: StorageExplorerProps) {
                   // first so the resolver can pick the mapping row.
                   drillFrom(
                     index,
-                    isMappingShell(column) ? [{ t: 'k', key }] : [{ t: 'm', label }, { t: 'k', key }],
+                    isMappingShell(column)
+                      ? [{ t: 'k', key }]
+                      : [
+                          { t: 'm', label },
+                          { t: 'k', key },
+                        ],
                   )}
                 onOpenIndex={elementIndex => drillFrom(index, [{ t: 'i', index: elementIndex }])}
                 onOpenElementMappingKey={(elementIndex, key) =>

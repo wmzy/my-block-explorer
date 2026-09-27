@@ -44,7 +44,7 @@ describe('corsMiddleware allowlist', () => {
       'https://localhost',
       'http://127.0.0.1:8201',
       'https://127.0.0.1:4443',
-    ])('echoes %s in Access-Control-Allow-Origin', async (origin) => {
+    ])('echoes %s in Access-Control-Allow-Origin', async origin => {
       const response = await get(origin);
 
       expect(response.status).toBe(200);
@@ -69,7 +69,7 @@ describe('corsMiddleware allowlist', () => {
       'http://localhost.evil.example',
       'http://fake-localhost:3000',
       'https://104.18.0.1',
-    ])('sets no Access-Control-Allow-Origin for %s', async (origin) => {
+    ])('sets no Access-Control-Allow-Origin for %s', async origin => {
       const response = await get(origin);
 
       expect(response.status).toBe(200); // server still answers; browsers block the read
@@ -99,10 +99,12 @@ describe('corsMiddleware allowlist', () => {
     it('allows origins listed in CORS_ALLOWED_ORIGINS (comma-separated)', async () => {
       vi.stubEnv('CORS_ALLOWED_ORIGINS', 'https://explorer.example , https://stats.example:8443');
 
-      expect((await get('https://explorer.example')).headers.get('Access-Control-Allow-Origin'))
-        .toBe('https://explorer.example');
-      expect((await get('https://stats.example:8443')).headers.get('Access-Control-Allow-Origin'))
-        .toBe('https://stats.example:8443');
+      expect(
+        (await get('https://explorer.example')).headers.get('Access-Control-Allow-Origin'),
+      ).toBe('https://explorer.example');
+      expect(
+        (await get('https://stats.example:8443')).headers.get('Access-Control-Allow-Origin'),
+      ).toBe('https://stats.example:8443');
     });
 
     it('allows FRONTEND_URL, tolerating a trailing slash', async () => {
@@ -110,14 +112,17 @@ describe('corsMiddleware allowlist', () => {
 
       const response = await get('https://my-explorer.example');
 
-      expect(response.headers.get('Access-Control-Allow-Origin')).toBe('https://my-explorer.example');
+      expect(response.headers.get('Access-Control-Allow-Origin')).toBe(
+        'https://my-explorer.example',
+      );
     });
 
     it('does not leak env-configured access to unrelated origins', async () => {
       vi.stubEnv('CORS_ALLOWED_ORIGINS', 'https://explorer.example');
 
-      expect((await get('https://other.example')).headers.get('Access-Control-Allow-Origin'))
-        .toBeNull();
+      expect(
+        (await get('https://other.example')).headers.get('Access-Control-Allow-Origin'),
+      ).toBeNull();
     });
   });
 

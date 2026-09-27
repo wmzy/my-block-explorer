@@ -124,8 +124,12 @@ describe('bucket partitioning', () => {
   it('keeps limiter names in separate buckets', async () => {
     const app = new Hono();
     // Burst 1 each: the second request must 429 within one name.
-    app.get('/a', createRateLimiter({ name: 'limiter-a', requestsPerMinute: 60, burst: 1 }), c => c.json({ ok: true }));
-    app.get('/b', createRateLimiter({ name: 'limiter-b', requestsPerMinute: 60, burst: 1 }), c => c.json({ ok: true }));
+    app.get('/a', createRateLimiter({ name: 'limiter-a', requestsPerMinute: 60, burst: 1 }), c =>
+      c.json({ ok: true }),
+    );
+    app.get('/b', createRateLimiter({ name: 'limiter-b', requestsPerMinute: 60, burst: 1 }), c =>
+      c.json({ ok: true }),
+    );
 
     expect((await app.request('/a')).status).toBe(200);
     expect((await app.request('/a')).status).toBe(429);

@@ -450,9 +450,7 @@ export default function BlockDetail() {
   const burntFees = blockInfo?.baseFeePerGas
     ? computeBurntFees(blockInfo.baseFeePerGas, blockInfo.gasUsed)
     : undefined;
-  const blobCount = blockInfo?.blobGasUsed
-    ? blobCountFromGas(blockInfo.blobGasUsed)
-    : undefined;
+  const blobCount = blockInfo?.blobGasUsed ? blobCountFromGas(blockInfo.blobGasUsed) : undefined;
   const withdrawals = blockInfo?.withdrawals;
   // Slot/epoch (Blockscout parity): pure timestamp→consensus-grid math
   // that only resolves on chains with a known schedule (mainnet) and a
@@ -611,8 +609,8 @@ export default function BlockDetail() {
             </div>
             {pollExhausted && (
               <p className={pollStoppedNote}>
-                Automatic checking stopped after 5 minutes of waiting — use “Check again” to
-                keep probing.
+                Automatic checking stopped after 5 minutes of waiting — use “Check again” to keep
+                probing.
               </p>
             )}
           </EmptyState>
@@ -692,7 +690,9 @@ export default function BlockDetail() {
                     </InfoItem>
                   )}
                   {blockInfo.excessBlobGas && (
-                    <InfoItem label="Excess Blob Gas">{formatGas(blockInfo.excessBlobGas)}</InfoItem>
+                    <InfoItem label="Excess Blob Gas">
+                      {formatGas(blockInfo.excessBlobGas)}
+                    </InfoItem>
                   )}
                   <InfoItem label="Transaction Count">
                     <TypedLink

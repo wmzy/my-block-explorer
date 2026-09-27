@@ -14,11 +14,7 @@ import Contract from '@/views/Contract';
 import { ManualVerifyPanel } from '@/views/Contract/ManualVerifyPanel';
 import { post, del } from '@/util/http';
 import { ApiError } from '@/util/apiError';
-import {
-  useContractCreation,
-  useContractSource,
-  useStorageLayout,
-} from '@/services/contracts';
+import { useContractCreation, useContractSource, useStorageLayout } from '@/services/contracts';
 
 // jsdom implements neither Element.scrollIntoView nor :focus scrolling.
 beforeAll(() => {
@@ -132,9 +128,7 @@ describe('Contract view - manual trust affordance', () => {
     await user.click(await screen.findByRole('button', { name: 'Verify in this page' }));
 
     expect(await screen.findByRole('button', { name: 'Verify via Sourcify' })).toBeVisible();
-    expect(
-      await screen.findByRole('button', { name: 'Mark as trusted locally' }),
-    ).toBeVisible();
+    expect(await screen.findByRole('button', { name: 'Mark as trusted locally' })).toBeVisible();
   });
 
   it('shows the Manual (local trust) badge and manage cell for a manual mark', async () => {
@@ -143,26 +137,20 @@ describe('Contract view - manual trust affordance', () => {
 
     expect(await screen.findByText('Manual (local trust)')).toBeVisible();
     // The unverified-only Sourcify affordance must not render.
-    expect(
-      screen.queryByRole('button', { name: 'Verify in this page' }),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Verify in this page' })).not.toBeInTheDocument();
 
     await userEvent
       .setup()
       .click(await screen.findByRole('button', { name: 'Manage local trust mark' }));
 
-    expect(
-      await screen.findByRole('button', { name: 'Remove local trust mark' }),
-    ).toBeVisible();
+    expect(await screen.findByRole('button', { name: 'Remove local trust mark' })).toBeVisible();
     expect(screen.getByText(/not cryptographic verification/)).toBeInTheDocument();
   });
 });
 
 describe('ManualVerifyPanel', () => {
   const renderPanel = (marked = false) =>
-    render(
-      <ManualVerifyPanel chainId={1} address={ADDRESS} marked={marked} onChanged={vi.fn()} />,
-    );
+    render(<ManualVerifyPanel chainId={1} address={ADDRESS} marked={marked} onChanged={vi.fn()} />);
 
   // Paste semantics (fireEvent.change, the repo's textarea convention):
   // userEvent.type would interpret [/{ as keyboard key descriptors.
@@ -205,7 +193,9 @@ describe('ManualVerifyPanel', () => {
     const onChanged = vi.fn();
     const user = userEvent.setup();
     vi.mocked(post).mockResolvedValue({ verified: true, verificationSource: 'manual' });
-    render(<ManualVerifyPanel chainId={1} address={ADDRESS} marked={false} onChanged={onChanged} />);
+    render(
+      <ManualVerifyPanel chainId={1} address={ADDRESS} marked={false} onChanged={onChanged} />,
+    );
 
     pasteAbi(VALID_ABI);
     fireEvent.change(screen.getByLabelText('Contract name (optional)'), {

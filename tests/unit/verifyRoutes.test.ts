@@ -259,7 +259,9 @@ describe('outcome mapping', () => {
 
   it('maps the typed upstream failure to 502 sourcify_unreachable', async () => {
     submitSpy.mockRejectedValue(
-      new SourcifyUnreachableError('Could not reach the Sourcify server while submitting: fetch failed'),
+      new SourcifyUnreachableError(
+        'Could not reach the Sourcify server while submitting: fetch failed',
+      ),
     );
 
     const res = await postJson(PATH, { files: validFiles() });
@@ -281,7 +283,8 @@ describe('outcome mapping', () => {
   });
 });
 
-const validAbi = () => '[{"type":"function","name":"get","inputs":[],"outputs":[{"type":"uint256"}]}]';
+const validAbi = () =>
+  '[{"type":"function","name":"get","inputs":[],"outputs":[{"type":"uint256"}]}]';
 
 describe('POST .../verify/manual - validation', () => {
   it('rejects a missing abi with 400 missing_fields', async () => {

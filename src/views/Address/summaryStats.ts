@@ -82,19 +82,14 @@ export function computeAddressSummaryStats(
 // Locale-pinned digit grouping: the display stays identical across host
 // locales AND stable for totals whose integer part exceeds 2^53 (where
 // Number.prototype.toLocaleString would flip to exponential notation).
-const groupDigits = (digits: string): string =>
-  digits.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+const groupDigits = (digits: string): string => digits.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 
 // Native-token total display over the chain's OWN decimals (never a
 // hardcoded 18 — repo-verified pitfall on non-18 chains). Same display
 // contract as the tx surfaces' formatValue, decimals-generic: zero
 // renders exactly; dust below the 4-decimal floor renders "<0.0001"
 // instead of a misleading "0.0000"; anything larger renders 4 decimals.
-export function formatNativeTotal(
-  value: bigint,
-  decimals: number,
-  symbol: string,
-): string {
+export function formatNativeTotal(value: bigint, decimals: number, symbol: string): string {
   if (value === 0n) return `0 ${symbol}`;
   const dustFloor = 10n ** BigInt(Math.max(decimals - 4, 0));
   if (value < dustFloor) return `<0.0001 ${symbol}`;

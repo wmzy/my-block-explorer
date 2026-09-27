@@ -103,40 +103,26 @@ const closeButtonStyles = css`
   }
 `;
 
-export default function RpcErrorAlert({
-  error,
-  onConfigureRpc,
-  onDismiss,
-}: Props) {
+export default function RpcErrorAlert({ error, onConfigureRpc, onDismiss }: Props) {
   return (
     <div className={alertStyles}>
       <div className={iconStyles}>⚠️</div>
 
       <div className={contentStyles}>
         <h4>RPC connection error</h4>
-        <p>
-          Unable to connect to an RPC node for chain ID
-          {' '}
-          {error.chainId}
-          .
-        </p>
+        <p>Unable to connect to an RPC node for chain ID {error.chainId}.</p>
         <p>
           <strong>Error:</strong>
           {error.error}
         </p>
 
         <div className="suggestion">
-          💡
-          {' '}
-          <strong>Suggestion:</strong>
+          💡 <strong>Suggestion:</strong>
           {error.suggestion}
         </div>
 
         <div className={actionsStyles}>
-          <button
-            className={`${buttonStyles} primary`}
-            onClick={onConfigureRpc}
-          >
+          <button className={`${buttonStyles} primary`} onClick={onConfigureRpc}>
             Configure RPC
           </button>
           <button className={`${buttonStyles} secondary`} onClick={onDismiss}>

@@ -68,15 +68,12 @@ export const realTimeAddressCache = createQueryCache<
   [number, string]
 >('address-realtime');
 
-export const contractCodeCache = createQueryCache<ContractCode | undefined, [
-  number,
-  string,
-]>('address-contract-code', IMMUTABLE_CACHE_TIME);
-
-const queryRealTimeAddressData = bindQueryFn(
-  fetchRealTimeAddressData,
-  realTimeAddressCache,
+export const contractCodeCache = createQueryCache<ContractCode | undefined, [number, string]>(
+  'address-contract-code',
+  IMMUTABLE_CACHE_TIME,
 );
+
+const queryRealTimeAddressData = bindQueryFn(fetchRealTimeAddressData, realTimeAddressCache);
 const queryContractCode = bindQueryFn(fetchContractCode, contractCodeCache);
 
 const useRealTimeAddressDataQuery = createQueryHook({

@@ -8,7 +8,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { useState, type ReactNode } from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { MemoryRouter, View, createRoutes, useMatched, useSearchParams } from '@native-router/react';
+import {
+  MemoryRouter,
+  View,
+  createRoutes,
+  useMatched,
+  useSearchParams,
+} from '@native-router/react';
 import { navigate } from '@native-router/core';
 import { getAddress } from 'viem';
 import '@testing-library/jest-dom/vitest';
@@ -168,11 +174,7 @@ vi.mock('@/services/tokenMetadata', () => ({
   // useTokenOverview the Token Overview card uses); the stand-in resolves
   // per the detection knob so the token / plain-contract / EOA paths are
   // testable without RPC.
-  useTokenOverview: (
-    _chainId: number,
-    _token: string,
-    enabled: boolean,
-  ) => {
+  useTokenOverview: (_chainId: number, _token: string, enabled: boolean) => {
     if (!enabled || mocks.detection === 'none') return undefined;
     if (mocks.detection === 'token') {
       return { name: 'Mock Token', symbol: 'MCK', decimals: 18, totalSupply: 1_000n };
@@ -209,11 +211,7 @@ vi.mock('@/components/ui/Badge', () => ({
 
 function TokenTransfersHost() {
   return (
-    <TokenTransfers
-      chainId={mocks.chainId}
-      address={mocks.holder}
-      isContract={mocks.isContract}
-    />
+    <TokenTransfers chainId={mocks.chainId} address={mocks.holder} isContract={mocks.isContract} />
   );
 }
 
@@ -236,9 +234,7 @@ function RefreshSignalHost() {
   );
 }
 
-const routes = createRoutes([
-  { path: '/', component: () => Promise.resolve(TokenTransfersHost) },
-]);
+const routes = createRoutes([{ path: '/', component: () => Promise.resolve(TokenTransfersHost) }]);
 
 const signalRoutes = createRoutes([
   { path: '/', component: () => Promise.resolve(RefreshSignalHost) },
@@ -281,8 +277,7 @@ function SearchProbe() {
 // the fresh shape) — this helper models the missing tags honestly so the
 // view's unknown-coverage branch is testable.
 type LegacyPageInput = Omit<TokenTransferPage, 'coverage' | 'windowBlocks'>;
-const legacyPage = (page: LegacyPageInput): TokenTransferPage =>
-  page as TokenTransferPage;
+const legacyPage = (page: LegacyPageInput): TokenTransferPage => page as TokenTransferPage;
 
 const renderTab = (path = '/') =>
   render(
@@ -511,9 +506,7 @@ describe('TokenTransfers tab', () => {
     renderTab();
 
     const cta = await screen.findByText('Index this contract\'s events for full history →');
-    expect(cta.closest('a')?.getAttribute('href')).toBe(
-      `/chain/1/contract/${mocks.holder}/events`,
-    );
+    expect(cta.closest('a')?.getAttribute('href')).toBe(`/chain/1/contract/${mocks.holder}/events`);
   });
 
   it('offers the events-indexing CTA on a budget-limited empty scan too', async () => {
@@ -523,9 +516,7 @@ describe('TokenTransfers tab', () => {
     renderTab();
 
     expect(await screen.findByText(/Scan budget exhausted/)).toBeInTheDocument();
-    expect(
-      screen.getByText('Index this contract\'s events for full history →'),
-    ).toBeInTheDocument();
+    expect(screen.getByText('Index this contract\'s events for full history →')).toBeInTheDocument();
   });
 
   it('shows no events-indexing CTA for non-contract addresses', async () => {
@@ -633,8 +624,7 @@ describe('TokenTransfers tab', () => {
 
     renderTab('/?ttPage=3');
 
-    await waitFor(() =>
-      expect(screen.getByTestId('search-probe')).toHaveTextContent('ttPage=1'));
+    await waitFor(() => expect(screen.getByTestId('search-probe')).toHaveTextContent('ttPage=1'));
     // Page 1 with no rows renders the trusted empty state — never the
     // beyond-data row a shareable empty page would show.
     expect(mocks.queryArgs[2]).toBe('0');
@@ -700,9 +690,7 @@ describe('TokenTransfers tab', () => {
 
     renderTab();
 
-    expect(
-      await screen.findByText(/Token transfer data source unknown/),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/Token transfer data source unknown/)).toBeInTheDocument();
     expect(screen.getByText(/not proof that none exist/)).toBeInTheDocument();
     expect(screen.queryByText('No token transfers found')).not.toBeInTheDocument();
     expect(screen.queryByText(/Partial coverage/)).not.toBeInTheDocument();
@@ -817,8 +805,12 @@ describe('TokenTransfers tab - scan mode', () => {
     renderTab();
 
     expect(await screen.findByRole('columnheader', { name: 'Amount' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Transfers of this token' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Transfers involving this address' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Transfers of this token' }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Transfers involving this address' }),
+    ).not.toBeInTheDocument();
     expect(mocks.queryArgs[5]).toBe('participant');
   });
 
@@ -830,7 +822,9 @@ describe('TokenTransfers tab - scan mode', () => {
     renderTab();
 
     expect(await screen.findByRole('columnheader', { name: 'Amount' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Transfers of this token' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('button', { name: 'Transfers of this token' }),
+    ).not.toBeInTheDocument();
     expect(mocks.queryArgs[5]).toBe('participant');
   });
 
@@ -955,14 +949,15 @@ describe('TokenTransfers tab - standard filter chips', () => {
     // Back to All: the key is dropped (never a serialized "all" value).
     fireEvent.click(screen.getByRole('button', { name: 'All' }));
     await waitFor(() =>
-      expect(screen.getByTestId('search-probe').textContent).not.toContain('ttStandard='));
+      expect(screen.getByTestId('search-probe').textContent).not.toContain('ttStandard='),
+    );
     expect(await screen.findAllByRole('row')).toHaveLength(1 + mocks.transfers.length);
   });
 
   it('hides rows without log-shape evidence under an active chip instead of guessing', async () => {
     // Legacy pre-logStandard payload: rows carry no evidence, so an
     // active filter honestly hides them all (they come back on All).
-    const legacyRows = mocks.transfers.map((row) => {
+    const legacyRows = mocks.transfers.map(row => {
       const legacy = { ...row };
       delete legacy.logStandard;
       return legacy;
@@ -1004,7 +999,7 @@ describe('TokenTransfers tab - standard filter chips', () => {
   it('renders the per-page empty state without touching ?ttPage when the filter empties the page', async () => {
     // Raw page HAS rows (so the beyond-data convergence must never fire),
     // none of them ERC-721-shaped.
-    const non721Rows = mocks.transfers.filter((row) => row.logStandard !== 'erc721');
+    const non721Rows = mocks.transfers.filter(row => row.logStandard !== 'erc721');
     mocks.page = {
       transfers: non721Rows,
       nextCursor: String(non721Rows.length),

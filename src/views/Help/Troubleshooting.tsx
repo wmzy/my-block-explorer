@@ -80,7 +80,8 @@ const HEALTH_FIELDS: readonly HealthField[] = [
   },
   {
     field: 'timestamp',
-    meaning: 'The server\u2019s clock at answer time \u2014 a quick skew check for log correlation.',
+    meaning:
+      'The server\u2019s clock at answer time \u2014 a quick skew check for log correlation.',
   },
 ];
 
@@ -202,21 +203,23 @@ export default function Troubleshooting() {
         <CardContent>
           <CardTitle as="h2">The &ldquo;Backend not found&rdquo; banner</CardTitle>
           <p className={paragraphStyle}>
-            The banner means the frontend probed <span className={inlineMonoStyle}>localhost:8201&ndash;8205</span> for
-            a local API server and none answered. Nothing is broken: RPC-backed pages (blocks, transactions, live
-            balances, charts) keep working straight from the chain&rsquo;s RPC in your browser. What stays gated is
-            everything that lives in the backend&rsquo;s DuckDB &mdash; search, contract caches, event indexing,
-            labels.
+            The banner means the frontend probed{' '}
+            <span className={inlineMonoStyle}>localhost:8201&ndash;8205</span> for a local API
+            server and none answered. Nothing is broken: RPC-backed pages (blocks, transactions,
+            live balances, charts) keep working straight from the chain&rsquo;s RPC in your browser.
+            What stays gated is everything that lives in the backend&rsquo;s DuckDB &mdash; search,
+            contract caches, event indexing, labels.
           </p>
           <p className={paragraphStyle}>
-            The same frontend supports three run modes &mdash; pick one per visit, nothing is locked in:
+            The same frontend supports three run modes &mdash; pick one per visit, nothing is locked
+            in:
           </p>
           <ul className={quirkListStyle}>
             <li className={quirkItemStyle}>
               <span className={quirkSymptomStyle}>RPC-only &mdash; no backend</span>
               <p className={quirkExplanationStyle}>
-                Browse live data with nothing installed and nothing stored. The banner is dismissible and the
-                RPC-backed pages keep working around it.
+                Browse live data with nothing installed and nothing stored. The banner is
+                dismissible and the RPC-backed pages keep working around it.
               </p>
             </li>
             <li className={quirkItemStyle}>
@@ -224,16 +227,19 @@ export default function Troubleshooting() {
               <p className={quirkExplanationStyle}>
                 Start the backend and it is auto-discovered on any of the probed ports:
                 <code className={commandStyle}>{NPX_COMMAND}</code>
-                The banner&rsquo;s <em>Open setup</em> panel carries this command, a manual backend URL field (for
-                shared deployments) and a retry that keeps re-probing.
+                The banner&rsquo;s <em>Open setup</em> panel carries this command, a manual backend
+                URL field (for shared deployments) and a retry that keeps re-probing.
               </p>
             </li>
             <li className={quirkItemStyle}>
-              <span className={quirkSymptomStyle}>Shared deployment &mdash; one backend, many browsers</span>
+              <span className={quirkSymptomStyle}>
+                Shared deployment &mdash; one backend, many browsers
+              </span>
               <p className={quirkExplanationStyle}>
-                Run the API where others can reach it and enter its URL manually once. The knobs that matter
-                (<span className={inlineMonoStyle}>ADMIN_TOKEN</span>, the CORS origin allowlist,{' '}
-                <span className={inlineMonoStyle}>HOST</span>) are documented in docs/DEPLOYMENT.md.
+                Run the API where others can reach it and enter its URL manually once. The knobs
+                that matter (<span className={inlineMonoStyle}>ADMIN_TOKEN</span>, the CORS origin
+                allowlist, <span className={inlineMonoStyle}>HOST</span>) are documented in
+                docs/DEPLOYMENT.md.
               </p>
             </li>
           </ul>
@@ -244,9 +250,9 @@ export default function Troubleshooting() {
         <CardContent>
           <CardTitle as="h2">RPC provider quirks</CardTitle>
           <p className={paragraphStyle}>
-            Public RPC endpoints are shared infrastructure and every provider draws its limits differently. These are
-            the symptoms this explorer&rsquo;s error paths surface, what it already does about them, and the fix that
-            remains on your side.
+            Public RPC endpoints are shared infrastructure and every provider draws its limits
+            differently. These are the symptoms this explorer&rsquo;s error paths surface, what it
+            already does about them, and the fix that remains on your side.
           </p>
           <ul className={quirkListStyle}>
             {RPC_QUIRKS.map(({ symptom, explanation }) => (
@@ -263,16 +269,17 @@ export default function Troubleshooting() {
         <CardContent>
           <CardTitle as="h2">Local dev chains (anvil, Hardhat)</CardTitle>
           <p className={paragraphStyle}>
-            Resetting anvil or a Hardhat node wipes the chain&rsquo;s history but keeps the same chain id &mdash; so
-            everything this explorer cached-immutable from the previous incarnation (verified sources, storage
-            layouts) may now be stale. The Home page&rsquo;s chain-reset banner detects the head going backwards and
-            offers one-click clearing of that chain&rsquo;s cached data.
+            Resetting anvil or a Hardhat node wipes the chain&rsquo;s history but keeps the same
+            chain id &mdash; so everything this explorer cached-immutable from the previous
+            incarnation (verified sources, storage layouts) may now be stale. The Home page&rsquo;s
+            chain-reset banner detects the head going backwards and offers one-click clearing of
+            that chain&rsquo;s cached data.
           </p>
           <p className={paragraphStyle}>
-            Chains viem does not ship (private geth, new L2s; anvil&rsquo;s 31337 is built in) resolve once
-            registered: use the chain selector (top right) &rarr; <em>Add custom chain</em>, or the{' '}
-            <em>Connect this chain via RPC</em> card on the chain&rsquo;s own page. The registered RPC then serves
-            every page on that chain.
+            Chains viem does not ship (private geth, new L2s; anvil&rsquo;s 31337 is built in)
+            resolve once registered: use the chain selector (top right) &rarr;{' '}
+            <em>Add custom chain</em>, or the <em>Connect this chain via RPC</em> card on the
+            chain&rsquo;s own page. The registered RPC then serves every page on that chain.
           </p>
         </CardContent>
       </Card>
@@ -281,10 +288,10 @@ export default function Troubleshooting() {
         <CardContent>
           <CardTitle as="h2">Reading the coverage badges</CardTitle>
           <p className={paragraphStyle}>
-            When numbers look wrong, the page&rsquo;s coverage badge says which case you are in: live, cached,
-            discovered, sampled, partial or unavailable. A smaller number here usually means a smaller scan window
-            or a coarser sample &mdash; not data missing from the chain. The full vocabulary, with a concrete
-            example per level, lives on the{' '}
+            When numbers look wrong, the page&rsquo;s coverage badge says which case you are in:
+            live, cached, discovered, sampled, partial or unavailable. A smaller number here usually
+            means a smaller scan window or a coarser sample &mdash; not data missing from the chain.
+            The full vocabulary, with a concrete example per level, lives on the{' '}
             <TypedLink to="/about/coverage" className={linkStyle}>
               data coverage page
             </TypedLink>
@@ -297,7 +304,8 @@ export default function Troubleshooting() {
         <CardContent>
           <CardTitle as="h2">Health checklist</CardTitle>
           <p className={paragraphStyle}>
-            <code className={inlineMonoStyle}>curl http://localhost:8201/api/health</code> answers with five fields:
+            <code className={inlineMonoStyle}>curl http://localhost:8201/api/health</code> answers
+            with five fields:
           </p>
           <ul className={healthListStyle}>
             {HEALTH_FIELDS.map(({ field, meaning }) => (
@@ -314,11 +322,13 @@ export default function Troubleshooting() {
         <CardContent>
           <CardTitle as="h2">Still broken? Report it</CardTitle>
           <p className={paragraphStyle}>
-            The Ops dashboard&rsquo;s <em>Copy diagnostics</em> button builds a JSON snapshot of the backend
-            summary (version, storage sizes, per-section status) for pasting into a bug report; add the{' '}
-            <span className={inlineMonoStyle}>/api/health</span> payload next to it. The repository&rsquo;s issue
-            templates (<span className={inlineMonoStyle}>.github/ISSUE_TEMPLATE</span>) ask for exactly these two
-            payloads plus the run mode and RPC provider class, so a report filed that way starts reproducible.
+            The Ops dashboard&rsquo;s <em>Copy diagnostics</em> button builds a JSON snapshot of the
+            backend summary (version, storage sizes, per-section status) for pasting into a bug
+            report; add the <span className={inlineMonoStyle}>/api/health</span> payload next to it.
+            The repository&rsquo;s issue templates (
+            <span className={inlineMonoStyle}>.github/ISSUE_TEMPLATE</span>) ask for exactly these
+            two payloads plus the run mode and RPC provider class, so a report filed that way starts
+            reproducible.
           </p>
         </CardContent>
       </Card>

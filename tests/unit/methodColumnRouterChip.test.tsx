@@ -79,15 +79,15 @@ describe('TxMethodCell protocol chip', () => {
   it('renders an uncurated row exactly as before: name, "+N more", openchain chip, no protocol chip', () => {
     const twoCandidates: SignatureOutcome = {
       kind: 'function',
-      signatures: [
-        'transfer(address,uint256)',
-        'transfer(bytes4)',
-      ],
+      signatures: ['transfer(address,uint256)', 'transfer(bytes4)'],
       source: 'openchain',
     };
     const { container } = render(
       <TxMethodCell
-        tx={{ inputData: '0xa9059cbb0000000000000000000000000000000000000000000000000000000000000020', toAddress: UNRELATED_CONTRACT }}
+        tx={{
+          inputData: '0xa9059cbb0000000000000000000000000000000000000000000000000000000000000020',
+          toAddress: UNRELATED_CONTRACT,
+        }}
         outcomes={{ '0xa9059cbb': twoCandidates }}
         chainId={1}
       />,
@@ -103,16 +103,18 @@ describe('TxMethodCell protocol chip', () => {
 
   it('keeps the plain em-dash for a no-calldata row even when the to-address is a curated router', () => {
     render(
-      <TxMethodCell tx={{ inputData: '0x', toAddress: MAINNET_V2_ROUTER }} outcomes={{}} chainId={1} />,
+      <TxMethodCell
+        tx={{ inputData: '0x', toAddress: MAINNET_V2_ROUTER }}
+        outcomes={{}}
+        chainId={1}
+      />,
     );
     expect(screen.queryByText(/Uniswap/)).not.toBeInTheDocument();
     expect(screen.getByText('—')).toBeInTheDocument();
   });
 
   it('never chips a contract-creation row (no to-address)', () => {
-    render(
-      <TxMethodCell tx={{ inputData: SWAP_CALL, toAddress: '' }} outcomes={{}} chainId={1} />,
-    );
+    render(<TxMethodCell tx={{ inputData: SWAP_CALL, toAddress: '' }} outcomes={{}} chainId={1} />);
     expect(screen.queryByText(/Uniswap/)).not.toBeInTheDocument();
     expect(screen.getByText('Contract Creation')).toBeInTheDocument();
   });
@@ -121,7 +123,12 @@ describe('TxMethodCell protocol chip', () => {
 describe('MethodCell routerLabel prop', () => {
   it('renders the chip for the selector display when a label is passed', () => {
     render(
-      <MethodCell inputData={SWAP_CALL} toAddress={MAINNET_V2_ROUTER} outcome={undefined} routerLabel="Uniswap V2" />,
+      <MethodCell
+        inputData={SWAP_CALL}
+        toAddress={MAINNET_V2_ROUTER}
+        outcome={undefined}
+        routerLabel="Uniswap V2"
+      />,
     );
     expect(screen.getByText('Uniswap V2')).toBeInTheDocument();
     expect(screen.getByText(`${SWAP_SELECTOR.slice(0, 8)}…`)).toBeInTheDocument();

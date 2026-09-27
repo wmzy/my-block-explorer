@@ -166,7 +166,13 @@ describe('POST /chains/custom — validation', () => {
   });
 
   it('rejects mistyped optional fields with 400 invalid_fields', async () => {
-    for (const bad of [{ name: 42 }, { symbol: 42 }, { decimals: 'lots' }, { decimals: -1 }, { decimals: 1.5 }]) {
+    for (const bad of [
+      { name: 42 },
+      { symbol: 42 },
+      { decimals: 'lots' },
+      { decimals: -1 },
+      { decimals: 1.5 },
+    ]) {
       const res = await post({ rpcUrl: 'http://127.0.0.1:8545', ...bad });
       expect(res.status).toBe(400);
       await expect(res.json()).resolves.toMatchObject({ code: 'invalid_fields' });
@@ -265,8 +271,14 @@ describe('POST /chains/custom — success', () => {
       decimals: 18,
       rpcUrl: 'http://127.0.0.1:8545',
     });
-    expect(dbState.upsert?.values).toMatchObject({ chainId: 31337, rpcUrl: 'http://127.0.0.1:8545' });
-    expect(dbState.upsert?.set).toMatchObject({ name: 'Chain 31337', rpcUrl: 'http://127.0.0.1:8545' });
+    expect(dbState.upsert?.values).toMatchObject({
+      chainId: 31337,
+      rpcUrl: 'http://127.0.0.1:8545',
+    });
+    expect(dbState.upsert?.set).toMatchObject({
+      name: 'Chain 31337',
+      rpcUrl: 'http://127.0.0.1:8545',
+    });
     expect(dbState.reloadConfigs).toHaveBeenCalledTimes(1);
     // Backend-side resolution: the registration is live immediately.
     expect(getChainInfo(31337)?.nativeCurrency.symbol).toBe('ETH');
@@ -457,8 +469,7 @@ describe('probe against a real HTTP server', () => {
       });
       // The registration serves: lookups resolve to this endpoint.
       expect(getChainInfo(31337)?.rpcUrls.default.http).toEqual([rpcUrl]);
-    }
-    finally {
+    } finally {
       server.close();
     }
   });

@@ -48,8 +48,7 @@ async function example1_initializeIndexing() {
 
     console.log('✅ 事件索引初始化成功');
     console.log(`📊 已创建 ${ERC20_ABI.length} 个事件表`);
-  }
-  catch (error) {
+  } catch (error) {
     console.error('❌ 初始化失败:', error);
   }
 }
@@ -61,10 +60,7 @@ async function example2_checkIndexingStatus() {
   console.log('\n=== 示例2：查询索引状态 ===');
 
   try {
-    const status = await eventIndexingService.getIndexingStatus(
-      CHAIN_ID,
-      USDT_CONTRACT_ADDRESS,
-    );
+    const status = await eventIndexingService.getIndexingStatus(CHAIN_ID, USDT_CONTRACT_ADDRESS);
 
     if (status) {
       console.log('📈 索引状态信息:');
@@ -75,12 +71,10 @@ async function example2_checkIndexingStatus() {
       console.log(`  - 总索引事件数: ${status.totalEventsIndexed}`);
       console.log(`  - 索引状态: ${status.indexingActive ? '进行中' : '已完成'}`);
       console.log(`  - 最后更新时间: ${status.lastIndexedAt}`);
-    }
-    else {
+    } else {
       console.log('⚠️ 未找到索引状态，请先初始化');
     }
-  }
-  catch (error) {
+  } catch (error) {
     console.error('❌ 查询失败:', error);
   }
 }
@@ -121,8 +115,7 @@ async function example3_queryTransferEvents() {
       console.log(`    - 金额: ${event.args.value}`);
       console.log(`    - 时间: ${new Date(event.blockTimestamp * 1000).toLocaleString()}`);
     });
-  }
-  catch (error) {
+  } catch (error) {
     console.error('❌ 查询失败:', error);
   }
 }
@@ -147,8 +140,7 @@ async function example4_getEventStatistics() {
     console.log(`  - 平均每区块事件数: ${statistics.averageEventsPerBlock.toFixed(2)}`);
     console.log(`  - 涉及唯一地址数: ${statistics.uniqueAddresses}`);
     console.log(`  - 存储大小: ${(statistics.storageSize / 1024).toFixed(2)} KB`);
-  }
-  catch (error) {
+  } catch (error) {
     console.error('❌ 获取统计失败:', error);
   }
 }
@@ -166,18 +158,15 @@ async function example5_getEventChartData() {
       toTimestamp: Math.floor(Date.now() / 1000),
     };
 
-    const chartData = await eventQueryService.getEventHistoryChartData(
-      tableName,
-      filters,
-      'hour',
-    );
+    const chartData = await eventQueryService.getEventHistoryChartData(tableName, filters, 'hour');
 
     console.log('📈 事件历史图表数据 (按小时):');
     chartData.forEach((data, index) => {
-      console.log(`  ${index + 1}. 时间: ${new Date(data.timestamp).toLocaleString()}, 事件数: ${data.count}`);
+      console.log(
+        `  ${index + 1}. 时间: ${new Date(data.timestamp).toLocaleString()}, 事件数: ${data.count}`,
+      );
     });
-  }
-  catch (error) {
+  } catch (error) {
     console.error('❌ 获取图表数据失败:', error);
   }
 }
@@ -200,13 +189,11 @@ async function example6_searchEvents() {
       offset: 0,
     };
 
-    const result = await eventQueryService.searchEvents(
-      searchTerm,
-      filters,
-      pagination,
-    );
+    const result = await eventQueryService.searchEvents(searchTerm, filters, pagination);
 
-    console.log(`🔍 搜索 "${searchTerm}" 找到 ${result.data.length} 个事件 (总数: ${result.total})`);
+    console.log(
+      `🔍 搜索 "${searchTerm}" 找到 ${result.data.length} 个事件 (总数: ${result.total})`,
+    );
 
     result.data.forEach((event, index) => {
       console.log(`  搜索结果 ${index + 1}:`);
@@ -215,8 +202,7 @@ async function example6_searchEvents() {
       console.log(`    - 合约地址: ${event.contractAddress}`);
       console.log(`    - 区块号: ${event.blockNumber}`);
     });
-  }
-  catch (error) {
+  } catch (error) {
     console.error('❌ 搜索失败:', error);
   }
 }
@@ -247,10 +233,7 @@ async function example7_batchProcessLogs() {
       // 可以添加更多模拟日志...
     ];
 
-    const processedEvents = await eventIndexingService.processEventBatch(
-      mockLogs,
-      CHAIN_ID,
-    );
+    const processedEvents = await eventIndexingService.processEventBatch(mockLogs, CHAIN_ID);
 
     console.log(`📦 批处理完成，处理了 ${processedEvents.length} 个事件`);
 
@@ -260,8 +243,7 @@ async function example7_batchProcessLogs() {
       console.log(`    - 交易哈希: ${event.txHash}`);
       console.log(`    - 解码参数:`, event.args);
     });
-  }
-  catch (error) {
+  } catch (error) {
     console.error('❌ 批处理失败:', error);
   }
 }
@@ -322,8 +304,7 @@ async function example8_customDecoder() {
 
     console.log('✅ 自定义解码器配置完成');
     console.log('📝 已注册自定义转换器和验证器');
-  }
-  catch (error) {
+  } catch (error) {
     console.error('❌ 自定义解码器配置失败:', error);
   }
 }
@@ -349,7 +330,7 @@ async function runAllExamples() {
 
 // 如果直接运行此文件，执行所有示例
 if (require.main === module) {
-  runAllExamples().catch((error) => {
+  runAllExamples().catch(error => {
     console.error('💥 运行示例时出错:', error);
     process.exit(1);
   });

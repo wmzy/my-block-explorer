@@ -34,7 +34,7 @@ const bindings = new WeakMap<
 >();
 
 function snapshotValues(cache: CacheProvider<unknown, unknown[]>) {
-  return new Map((cache.snapshot?.() ?? []).map((e) => [e.key, e.value]));
+  return new Map((cache.snapshot?.() ?? []).map(e => [e.key, e.value]));
 }
 
 // Explicit rebinding: resets seen to the snapshot baseline at call time.
@@ -49,12 +49,8 @@ export function bindCacheRefresh<T, K extends unknown[]>(
 
 // clear/delete emit indistinguishable events, so an explicit whole-entity
 // clear resets the seen generation here.
-export function resetRefreshSeen<T, K extends unknown[]>(
-  cache: CacheProvider<T, K>,
-) {
-  const binding = bindings.get(
-    cache as unknown as CacheProvider<unknown, unknown[]>,
-  );
+export function resetRefreshSeen<T, K extends unknown[]>(cache: CacheProvider<T, K>) {
+  const binding = bindings.get(cache as unknown as CacheProvider<unknown, unknown[]>);
   if (binding) binding.seen = new Map();
 }
 
@@ -64,11 +60,7 @@ function bindRefresh(cache: CacheProvider<unknown, unknown[]>, router: unknown) 
     // DEV warning (once per cache): when several routers use one cache, the
     // refresh target silently switches to the last router that used it
     // (micro-frontend / multi-Router / concurrent test scenarios).
-    if (
-      import.meta.env.DEV &&
-        binding.router !== router &&
-        !binding.warned
-    ) {
+    if (import.meta.env.DEV && binding.router !== router && !binding.warned) {
       binding.warned = true;
       console.warn(
         '[loaderCache] One cache is used by multiple routers: the refresh target has switched to the router that used it last. ' +
@@ -80,7 +72,7 @@ function bindRefresh(cache: CacheProvider<unknown, unknown[]>, router: unknown) 
   }
   binding = { router, scheduled: false, seen: snapshotValues(cache) };
   bindings.set(cache, binding);
-  cache.subscribe?.((e) => {
+  cache.subscribe?.(e => {
     const cur = bindings.get(cache);
     if (!cur) return;
     // Trigger is "an already-seen key changed its value": miss / in-flight /
@@ -103,9 +95,7 @@ function bindRefresh(cache: CacheProvider<unknown, unknown[]>, router: unknown) 
     queueMicrotask(() => {
       cur.scheduled = false;
       // Promise.resolve tolerates test doubles returning void.
-      void Promise.resolve(
-        refresh(cur.router as Parameters<typeof refresh>[0]),
-      ).catch(noop);
+      void Promise.resolve(refresh(cur.router as Parameters<typeof refresh>[0])).catch(noop);
     });
   });
 }

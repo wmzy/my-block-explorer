@@ -102,7 +102,7 @@ describe('ErrorHandler', () => {
     it('应该识别网络错误为可重试', () => {
       const networkErrors = [{ code: 'ECONNRESET' }, { code: 'ENOTFOUND' }, { code: 'ETIMEDOUT' }];
 
-      networkErrors.forEach((error) => {
+      networkErrors.forEach(error => {
         expect(isRetryableError(error)).toBe(true);
       });
     });
@@ -110,7 +110,7 @@ describe('ErrorHandler', () => {
     it('应该识别5xx HTTP状态码为可重试', () => {
       const serverErrors = [{ status: 500 }, { status: 502 }, { status: 503 }, { status: 504 }];
 
-      serverErrors.forEach((error) => {
+      serverErrors.forEach(error => {
         expect(isRetryableError(error)).toBe(true);
       });
     });
@@ -122,7 +122,7 @@ describe('ErrorHandler', () => {
         new RpcError('Unknown error', -32000),
       ];
 
-      retryableRpcErrors.forEach((error) => {
+      retryableRpcErrors.forEach(error => {
         expect(isRetryableError(error)).toBe(true);
       });
     });
@@ -136,7 +136,7 @@ describe('ErrorHandler', () => {
         new ValidationError('Invalid input'),
       ];
 
-      nonRetryableErrors.forEach((error) => {
+      nonRetryableErrors.forEach(error => {
         expect(isRetryableError(error)).toBe(false);
       });
     });

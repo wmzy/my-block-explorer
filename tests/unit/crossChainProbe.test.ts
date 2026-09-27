@@ -42,13 +42,16 @@ vi.mock('@/config/customChains', () => ({
 
 // Registry fixtures shared with the hoisted mock factory below: the
 // array is mutated per case, the factory's closure reads it lazily.
-const customChainFixtures = vi.hoisted(() => [] as {
-  chainId: number;
-  name: string;
-  symbol: string;
-  decimals: number;
-  rpcUrl: string;
-}[]);
+const customChainFixtures = vi.hoisted(
+  () =>
+    [] as {
+      chainId: number;
+      name: string;
+      symbol: string;
+      decimals: number;
+      rpcUrl: string;
+    }[],
+);
 
 const ADDRESS = getAddress(`0x${'ab'.repeat(20)}`);
 
@@ -110,9 +113,10 @@ describe('selectProbeChains', () => {
   it('keeps the popular head at the configured size regardless of customs', () => {
     expect(PROBE_POPULAR_CHAIN_COUNT).toBe(5);
     // Viewing a chain outside the popular list leaves the head untouched.
-    expect(selectProbeChains(99999, []).slice(0, PROBE_POPULAR_CHAIN_COUNT)).toEqual(
-      [1, ...POPULAR_HEAD_EXCLUDING_MAINNET.slice(0, 4)],
-    );
+    expect(selectProbeChains(99999, []).slice(0, PROBE_POPULAR_CHAIN_COUNT)).toEqual([
+      1,
+      ...POPULAR_HEAD_EXCLUDING_MAINNET.slice(0, 4),
+    ]);
   });
 });
 
@@ -333,19 +337,13 @@ describe('orderProbeResults', () => {
 
   it('tiebreaks equal USD values (and all-unknown sets) by chainId', () => {
     const outcomes = [okOutcome(137, 9n), okOutcome(10, 1n), okOutcome(56, 4n)];
-    expect(
-      orderProbeResults(outcomes, () => null).map(o => o.chainId),
-    ).toEqual([10, 56, 137]);
-    expect(
-      orderProbeResults(outcomes, () => 7).map(o => o.chainId),
-    ).toEqual([10, 56, 137]);
+    expect(orderProbeResults(outcomes, () => null).map(o => o.chainId)).toEqual([10, 56, 137]);
+    expect(orderProbeResults(outcomes, () => 7).map(o => o.chainId)).toEqual([10, 56, 137]);
   });
 
   it('treats a non-finite USD value as unknown, never as a sortable number', () => {
     const outcomes = [okOutcome(137, 1n), okOutcome(56, 1n)];
-    const ordered = orderProbeResults(outcomes, chainId =>
-      chainId === 137 ? Number.NaN : null,
-    );
+    const ordered = orderProbeResults(outcomes, chainId => (chainId === 137 ? Number.NaN : null));
     expect(ordered.map(outcome => outcome.chainId)).toEqual([56, 137]);
   });
 

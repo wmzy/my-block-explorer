@@ -26,8 +26,7 @@ export type ClearedChainCacheCounts = {
 // DuckDB surfaces count(*) through the adapter as a string in some shapes
 // (see EventIndexingService's notes); normalize once so the response is
 // always a real number.
-const rowsToCount = (rows: Array<{ count: unknown }>): number =>
-  Number(rows[0]?.count ?? 0);
+const rowsToCount = (rows: Array<{ count: unknown }>): number => Number(rows[0]?.count ?? 0);
 
 export class ChainCacheService {
   /**
@@ -46,9 +45,7 @@ export class ChainCacheService {
         .where(eq(contractSources.chainId, chainId));
       const contractSourcesCleared = rowsToCount(sourceCountRows);
 
-      await db
-        .delete(contractSources)
-        .where(eq(contractSources.chainId, chainId));
+      await db.delete(contractSources).where(eq(contractSources.chainId, chainId));
 
       const layoutCountRows = await db
         .select({ count: sql<number>`count(*)` })
@@ -56,9 +53,7 @@ export class ChainCacheService {
         .where(eq(storageLayouts.chainId, chainId));
       const storageLayoutsCleared = rowsToCount(layoutCountRows);
 
-      await db
-        .delete(storageLayouts)
-        .where(eq(storageLayouts.chainId, chainId));
+      await db.delete(storageLayouts).where(eq(storageLayouts.chainId, chainId));
 
       logger.info(
         {
@@ -73,12 +68,8 @@ export class ChainCacheService {
         contractSources: contractSourcesCleared,
         storageLayouts: storageLayoutsCleared,
       };
-    }
-    catch (error) {
-      logger.error(
-        { err: error, chainId },
-        'Failed to clear chain-scoped immutable caches',
-      );
+    } catch (error) {
+      logger.error({ err: error, chainId }, 'Failed to clear chain-scoped immutable caches');
       throw error;
     }
   }

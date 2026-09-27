@@ -74,9 +74,7 @@ describe('gasWindowLabel', () => {
   });
 
   it('groups block numbers with separators', () => {
-    expect(gasWindowLabel(1_000_000, 1_000_119)).toBe(
-      'last 120 blocks · #1,000,000–#1,000,119',
-    );
+    expect(gasWindowLabel(1_000_000, 1_000_119)).toBe('last 120 blocks · #1,000,000–#1,000,119');
   });
 
   it('refuses an inverted range instead of a negative count', () => {
@@ -180,12 +178,10 @@ describe('buildGasHistory', () => {
 
 // Parses "M0.00,4.00 L120.00,24.00 …" into [x, y] number pairs.
 const pathPoints = (path: string): [number, number][] =>
-  path
-    .split(' ')
-    .map(segment => {
-      const [x, y] = segment.slice(1).split(',');
-      return [Number(x), Number(y)] as [number, number];
-    });
+  path.split(' ').map(segment => {
+    const [x, y] = segment.slice(1).split(',');
+    return [Number(x), Number(y)] as [number, number];
+  });
 
 describe('buildSparklinePath', () => {
   it('returns an empty path for an empty series', () => {
@@ -335,9 +331,12 @@ describe('useGasHistory', () => {
   it('resets to the first-load state on a chain switch and settles the new chain', async () => {
     const eth = feeHistoryFor(100n, 10n * GWEI);
     const polygon = feeHistoryFor(500n, 100n * GWEI);
-    vi.mocked(createRpcClient).mockImplementation(async (chainId: number) => ({
-      getFeeHistory: vi.fn().mockResolvedValue(chainId === 1 ? eth : polygon),
-    }) as never);
+    vi.mocked(createRpcClient).mockImplementation(
+      async (chainId: number) =>
+        ({
+          getFeeHistory: vi.fn().mockResolvedValue(chainId === 1 ? eth : polygon),
+        }) as never,
+    );
 
     const { result, rerender } = renderHook(({ chainId }) => useGasHistory(chainId), {
       initialProps: { chainId: 1 },

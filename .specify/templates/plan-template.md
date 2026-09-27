@@ -19,7 +19,7 @@ research]
   the iteration process.
 -->
 
-**Language/Version**: TypeScript 5.9+ (Frontend), Node.js 22 (Backend) **Primary
+**Language/Version**: TypeScript 6+ (Frontend), Node.js 26 (Backend) **Primary
 Dependencies**: React 19, Hono framework, DuckDB via custom adapter, Drizzle
 ORM, Viem 2.34+ **Storage**: DuckDB with PostgreSQL-compatible adapter through
 Drizzle ORM **Testing**: Vitest with jsdom environment and v8 coverage provider

@@ -111,7 +111,7 @@ describe('GET /rpc-configs full-URL visibility', () => {
 
   it.each(['127.0.0.1', '::1', '::ffff:127.0.0.1'])(
     'serves the full URL to an Origin-less loopback caller (%s)',
-    async (address) => {
+    async address => {
       const res = await get(undefined, socketEnv(address));
 
       expect(res.status).toBe(200);
@@ -142,7 +142,13 @@ describe('GET /rpc-configs full-URL visibility', () => {
 
   it('reports urlRedacted: false for a row with no URL to protect', async () => {
     mocks.rows.length = 0;
-    mocks.rows.push({ chainId: 1, name: 'Empty', url: null, supportsHistory: null, maxEventRange: null });
+    mocks.rows.push({
+      chainId: 1,
+      name: 'Empty',
+      url: null,
+      supportsHistory: null,
+      maxEventRange: null,
+    });
 
     const res = await get(undefined, socketEnv('203.0.113.7'));
 

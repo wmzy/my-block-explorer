@@ -258,9 +258,7 @@ const daysNote = css`
 // --- small pure helpers ---
 
 const meanOf = (values: readonly number[]): number | null =>
-  values.length === 0
-    ? null
-    : values.reduce((total, value) => total + value, 0) / values.length;
+  values.length === 0 ? null : values.reduce((total, value) => total + value, 0) / values.length;
 
 // Compact y-tick text: block counts and gas figures are wide enough in
 // full grouping form to overflow the label gutter.
@@ -344,19 +342,18 @@ function DayChart({
         </text>
       ))}
       {mode === 'bars'
-        ? buildBars(series[0]?.values ?? [], VIEW_WIDTH, VIEW_HEIGHT, 8).map(
-            (bar, index) =>
-              bar === null ? null : (
-                <rect
-                  key={index}
-                  data-testid="chart-bar"
-                  className={barPrimary}
-                  x={bar.x}
-                  y={bar.y}
-                  width={bar.w}
-                  height={bar.h}
-                />
-              ),
+        ? buildBars(series[0]?.values ?? [], VIEW_WIDTH, VIEW_HEIGHT, 8).map((bar, index) =>
+            bar === null ? null : (
+              <rect
+                key={index}
+                data-testid="chart-bar"
+                className={barPrimary}
+                x={bar.x}
+                y={bar.y}
+                width={bar.w}
+                height={bar.h}
+              />
+            ),
           )
         : series.map((spec, specIndex) => {
             const lineClass = spec.tone === 'primary' ? linePrimary : lineSecondary;
@@ -374,13 +371,7 @@ function DayChart({
                   />
                 ))}
                 {points.map((point, pointIndex) => (
-                  <circle
-                    key={pointIndex}
-                    className={dotClass}
-                    cx={point.x}
-                    cy={point.y}
-                    r={2}
-                  />
+                  <circle key={pointIndex} className={dotClass} cx={point.x} cy={point.y} r={2} />
                 ))}
               </g>
             );
@@ -398,9 +389,7 @@ function ChartLegend({
     <div className={legendRow}>
       {items.map(item => (
         <span key={item.label} className={legendItem}>
-          <span
-            className={cx(legendSwatch, item.tone === 'secondary' && legendSwatchSecondary)}
-          />
+          <span className={cx(legendSwatch, item.tone === 'secondary' && legendSwatchSecondary)} />
           {item.label}
         </span>
       ))}
@@ -612,8 +601,7 @@ export default function ChartsPage() {
       <TopNavigation currentChainId={currentChainId} onChainChange={handleChainChange} />
       <PageContainer>
         <BackButton
-          onClick={() =>
-            void navigate(router, `/chain/${currentChainId}`).catch(() => undefined)}
+          onClick={() => void navigate(router, `/chain/${currentChainId}`).catch(() => undefined)}
         />
 
         <PageHeader
@@ -700,7 +688,8 @@ function ChartsCards({
     [snapshot],
   );
   const gasUsedByDay = useMemo(
-    () => new Map(snapshot.boundaryHeaders.map(header => [header.dayStart, Number(header.gasUsed)])),
+    () =>
+      new Map(snapshot.boundaryHeaders.map(header => [header.dayStart, Number(header.gasUsed)])),
     [snapshot],
   );
   const blocksSeries: GappedSeries = grid.map(day => blocksByDay.get(day) ?? null);

@@ -116,7 +116,9 @@ function expandOf(type: StorageType | null): StructRow['expand'] {
       if (FIXED_ARRAY_LABEL_PATTERN.test(type.label)) return 'array';
       // Memberless struct labels (evmole) have nothing to drill into.
       if (type.label.startsWith('struct ')) {
-        return 'members' in type && Array.isArray(type.members) && type.members.length > 0 ? 'struct' : 'unknown';
+        return 'members' in type && Array.isArray(type.members) && type.members.length > 0
+          ? 'struct'
+          : 'unknown';
       }
       return 'leaf';
   }
@@ -135,7 +137,10 @@ function structRows(
     const type = types?.[member.type] ?? null;
     return {
       label: member.label,
-      slot: baseSlot === null ? normalizeSlot(member.slot) : slotAdd(baseSlot, parseSlotNumber(member.slot)),
+      slot:
+        baseSlot === null
+          ? normalizeSlot(member.slot)
+          : slotAdd(baseSlot, parseSlotNumber(member.slot)),
       expr:
         baseExpr === null
           ? slotLiteralExpr(member.slot, member.label)
@@ -574,7 +579,7 @@ const FIXED_ARRAY_LABEL_WITH_BASE_PATTERN = /^(.+)\[(\d+)\]$/;
 function entryFromLabel(
   label: string,
   keyFor: (label: string) => string,
-): Partial<StorageType> & { encoding: StorageType['encoding'] } | null {
+): (Partial<StorageType> & { encoding: StorageType['encoding'] }) | null {
   const t = label.trim();
   if (t === 'string' || t === 'bytes') {
     return { encoding: 'bytes', label: t, numberOfBytes: '32' };

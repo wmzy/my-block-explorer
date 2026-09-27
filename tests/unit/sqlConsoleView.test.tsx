@@ -8,11 +8,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter, View, createRoutes } from '@native-router/react';
 import '@testing-library/jest-dom/vitest';
-import SqlConsole, {
-  SQL_HISTORY_KEY,
-  pushSqlHistory,
-  readSqlHistory,
-} from '@/views/Sql';
+import SqlConsole, { SQL_HISTORY_KEY, pushSqlHistory, readSqlHistory } from '@/views/Sql';
 import { ApiError } from '@/util/apiError';
 
 const { mockRunSqlQuery, mockUseSqlTables } = vi.hoisted(() => ({
@@ -90,9 +86,7 @@ describe('run + render', () => {
 
     await runQuery('SELECT * FROM blocks LIMIT 2');
 
-    await waitFor(() =>
-      expect(screen.getByRole('table')).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByRole('table')).toBeInTheDocument());
     expect(mockRunSqlQuery).toHaveBeenCalledWith('SELECT * FROM blocks LIMIT 2');
     expect(screen.getByRole('columnheader', { name: 'block_number' })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: 'hash' })).toBeInTheDocument();
@@ -260,9 +254,7 @@ describe('admin gate honest states', () => {
   });
 
   it('locks the console when only the run (not the sidebar) reports the gate', async () => {
-    mockRunSqlQuery.mockRejectedValue(
-      new ApiError('Invalid admin token.', 403),
-    );
+    mockRunSqlQuery.mockRejectedValue(new ApiError('Invalid admin token.', 403));
     await renderConsole();
     await runQuery('SELECT 1');
 

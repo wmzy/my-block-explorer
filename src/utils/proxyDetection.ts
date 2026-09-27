@@ -67,8 +67,7 @@ export function decodeMinimalProxy(code: Hex): Address | null {
  * other compiler versions/builds honestly return false — misses are
  * acceptable, false positives are not.
  */
-export const BEACON_PROXY_BYTECODE_PREFIX =
-  '0x60806040526040523615600b5760e01c8063';
+export const BEACON_PROXY_BYTECODE_PREFIX = '0x60806040526040523615600b5760e01c8063';
 
 /**
  * Case-insensitive startsWith match of the canonical BeaconProxy dispatcher

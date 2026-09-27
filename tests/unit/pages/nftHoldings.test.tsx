@@ -111,9 +111,7 @@ function Host() {
   );
 }
 
-const routes = createRoutes([
-  { path: '/', component: () => Promise.resolve(Host) },
-]);
+const routes = createRoutes([{ path: '/', component: () => Promise.resolve(Host) }]);
 
 const renderSection = () =>
   render(
@@ -128,9 +126,7 @@ const renderSection = () =>
 const waitForMetaReads = (token: string) =>
   waitFor(() => {
     const calls = mocks.readCalls.filter(call => call.startsWith(`${token}:`));
-    expect(calls).toEqual(
-      expect.arrayContaining([`${token}:symbol`, `${token}:decimals`]),
-    );
+    expect(calls).toEqual(expect.arrayContaining([`${token}:symbol`, `${token}:decimals`]));
   });
 
 const CAVEAT = 'Discovered from the scanned transfer window — may be incomplete.';
@@ -279,9 +275,7 @@ describe('NftHoldings section', () => {
 
     expect(await screen.findByText('1 token id')).toBeInTheDocument();
     expect(
-      screen.getByText(
-        '1 transfer with unresolved token standard (ERC-20 vs ERC-721) excluded.',
-      ),
+      screen.getByText('1 transfer with unresolved token standard (ERC-20 vs ERC-721) excluded.'),
     ).toBeInTheDocument();
   });
 

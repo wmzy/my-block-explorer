@@ -312,9 +312,7 @@ export function SourcifyVerifyPanel({
           metadata.json is required — add it (and the sources it references) before submitting.
         </p>
       )}
-      {tooMany && (
-        <p className={hintStyles}>Too many files — the limit is {MAX_FILES}.</p>
-      )}
+      {tooMany && <p className={hintStyles}>Too many files — the limit is {MAX_FILES}.</p>}
       {tooBig && (
         <p className={hintStyles}>
           Selected files total {formatBytes(totalBytes)} — the limit is 2 MB.

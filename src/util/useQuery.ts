@@ -35,7 +35,7 @@ const identity = <T>(r: T) => r;
 // wide slots while branded values keep precise types.
 export type EntityCache<T, K extends unknown[]> = CacheProvider<T, K> & {
   mutation<Args extends unknown[], Resp>(
-    spec: (...args: Args) => MutationSpec<T, K, Args, Resp>
+    spec: (...args: Args) => MutationSpec<T, K, Args, Resp>,
   ): BoundMutation<Args, Resp>;
 };
 
@@ -125,9 +125,7 @@ export function bindQueryFn<T, K extends unknown[]>(
 }
 
 // Unbound fails fast — more locatable than an error deep inside the chain.
-export function getCache<T, K extends unknown[]>(
-  queryFn: QueryFn<T, K>,
-): EntityCache<T, K> {
+export function getCache<T, K extends unknown[]>(queryFn: QueryFn<T, K>): EntityCache<T, K> {
   const cache = boundCaches.get(queryFn);
   if (!cache) {
     throw new Error(
@@ -176,11 +174,7 @@ export type QueryHookConfig<T, K extends unknown[]> = {
 // it stays `T | undefined`.
 type SceneData<C, T> = T | (C extends { initData: unknown } ? never : undefined);
 
-export function createQueryHook<
-  T,
-  K extends unknown[],
-  C extends QueryHookConfig<T, K>,
->(
+export function createQueryHook<T, K extends unknown[], C extends QueryHookConfig<T, K>>(
   config: C & { queryFn: QueryFn<T, K> },
 ): (args: K) => QueryResult<SceneData<C, T>> {
   const { queryFn, staleTime = DEFAULT_STALE_TIME, initData, keepPrevious } = config;

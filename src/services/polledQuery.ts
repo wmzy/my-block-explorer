@@ -66,10 +66,7 @@ export function createPolledQueryHook<T, K extends unknown[]>(config: {
     // Same widening createQueryHook performs: the runtime signature is
     // [...K, signal?] and the cache slot widens with it.
     const runArgs = args as unknown as [...K, signal?: AbortSignal];
-    const provider = cache as unknown as CacheProvider<
-      T,
-      [...K, signal?: AbortSignal]
-    >;
+    const provider = cache as unknown as CacheProvider<T, [...K, signal?: AbortSignal]>;
 
     const injectable = useInjectable(queryFn, { name: queryFn.name || 'query' });
     const stale = useCache(injectable, provider, staleTime);

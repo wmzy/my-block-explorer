@@ -555,8 +555,12 @@ describe('augmentLayoutTypes', () => {
     expect(augmented.types?.string.encoding).toBe('bytes');
     expect(augmented.types?.['mapping(address => bool)'].encoding).toBe('mapping');
     const mapping = augmented.types?.['mapping(address => bool)'];
-    expect(mapping && 'key' in mapping ? augmented.types?.[mapping.key]?.label : null).toBe('address');
-    expect(mapping && 'value' in mapping ? augmented.types?.[mapping.value]?.label : null).toBe('bool');
+    expect(mapping && 'key' in mapping ? augmented.types?.[mapping.key]?.label : null).toBe(
+      'address',
+    );
+    expect(mapping && 'value' in mapping ? augmented.types?.[mapping.value]?.label : null).toBe(
+      'bool',
+    );
   });
 
   it('makes evmole mappings drillable and strings decodable through the resolver', () => {

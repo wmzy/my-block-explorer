@@ -157,7 +157,10 @@ describe('GET /chains/:chainId/contracts', () => {
   });
 
   it('keeps null names null and reads a null isVerified as false', async () => {
-    mocks.state.results = [[makeRow({ contractName: null, isVerified: null, verificationSource: null })], COUNT];
+    mocks.state.results = [
+      [makeRow({ contractName: null, isVerified: null, verificationSource: null })],
+      COUNT,
+    ];
 
     const body = await (await app.request('/chains/1/contracts')).json();
     expect(body.contracts[0].name).toBeNull();

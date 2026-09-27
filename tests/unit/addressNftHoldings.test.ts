@@ -95,11 +95,7 @@ describe('aggregateNftHoldings erc721 set math', () => {
 
   it('re-buys back to held (in, out, in nets positive)', () => {
     const result = aggregateNftHoldings(
-      [
-        row({ value: '5' }),
-        row({ value: '5', from: HOLDER, to: OTHER }),
-        row({ value: '5' }),
-      ],
+      [row({ value: '5' }), row({ value: '5', from: HOLDER, to: OTHER }), row({ value: '5' })],
       HOLDER,
       classify({ [TOKEN_A]: 'erc721' }),
     );
@@ -158,8 +154,7 @@ describe('aggregateNftHoldings erc721 set math', () => {
 });
 
 describe('aggregateNftHoldings erc1155 amount deltas', () => {
-  const single = (fields: Partial<TokenTransfer>) =>
-    row({ standard: 'erc1155-single', ...fields });
+  const single = (fields: Partial<TokenTransfer>) => row({ standard: 'erc1155-single', ...fields });
 
   it('nets single-log amounts BigInt-exactly across rows', () => {
     const result = aggregateNftHoldings(
@@ -305,7 +300,13 @@ describe('aggregateNftHoldings classification and party filter', () => {
     const result = aggregateNftHoldings(
       [
         row({ from: OTHER, to: '0x9999999999999999999999999999999999999999' }),
-        row({ standard: 'erc1155-single', tokenIds: ['1'], amounts: ['5'], from: OTHER, to: OTHER }),
+        row({
+          standard: 'erc1155-single',
+          tokenIds: ['1'],
+          amounts: ['5'],
+          from: OTHER,
+          to: OTHER,
+        }),
       ],
       HOLDER,
       classify({ [TOKEN_A]: 'erc721' }),
@@ -338,11 +339,7 @@ describe('aggregateNftHoldings ordering', () => {
       HOLDER,
       classify({ [TOKEN_A]: 'erc721', [TOKEN_B]: 'erc721', [TOKEN_C]: 'erc721' }),
     );
-    expect(result.holdings.map(holding => holding.contract)).toEqual([
-      TOKEN_B,
-      TOKEN_A,
-      TOKEN_C,
-    ]);
+    expect(result.holdings.map(holding => holding.contract)).toEqual([TOKEN_B, TOKEN_A, TOKEN_C]);
     expect(result.holdings.map(holding => holding.heldCount)).toEqual([2, 1, 1]);
   });
 
@@ -355,10 +352,7 @@ describe('aggregateNftHoldings ordering', () => {
       HOLDER,
       classify({ [TOKEN_A]: 'erc721' }),
     );
-    expect(result.holdings.map(holding => holding.standard)).toEqual([
-      'erc721',
-      'erc1155',
-    ]);
+    expect(result.holdings.map(holding => holding.standard)).toEqual(['erc721', 'erc1155']);
   });
 
   it('reports lastActivityBlock as the latest contributing row per contract', () => {

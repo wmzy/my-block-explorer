@@ -3,7 +3,12 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { OptimizedSorter, optimizedSort, sortingPerformanceMonitor, SortingPerformanceMonitor } from '@/utils/sorting-optimization';
+import {
+  OptimizedSorter,
+  optimizedSort,
+  sortingPerformanceMonitor,
+  SortingPerformanceMonitor,
+} from '@/utils/sorting-optimization';
 
 describe('OptimizedSorter', () => {
   let sorter: OptimizedSorter;
@@ -65,19 +70,11 @@ describe('OptimizedSorter', () => {
     });
 
     it('should sort by text field', () => {
-      const data = [
-        { name: 'Charlie' },
-        { name: 'Alice' },
-        { name: 'Bob' },
-      ];
+      const data = [{ name: 'Charlie' }, { name: 'Alice' }, { name: 'Bob' }];
       const sortConfigs = [{ key: 'name', direction: 'asc' as const, type: 'text' as const }];
 
       const result = sorter.sort(data, sortConfigs);
-      expect(result.sortedData).toEqual([
-        { name: 'Alice' },
-        { name: 'Bob' },
-        { name: 'Charlie' },
-      ]);
+      expect(result.sortedData).toEqual([{ name: 'Alice' }, { name: 'Bob' }, { name: 'Charlie' }]);
     });
 
     it('should handle null and undefined values', () => {
@@ -127,7 +124,9 @@ describe('OptimizedSorter', () => {
         { user: { profile: { age: 25 } }, name: 'B' },
         { user: { profile: { age: 35 } }, name: 'C' },
       ];
-      const sortConfigs = [{ key: 'user.profile.age', direction: 'asc' as const, type: 'numeric' as const }];
+      const sortConfigs = [
+        { key: 'user.profile.age', direction: 'asc' as const, type: 'numeric' as const },
+      ];
 
       const result = sorter.sort(data, sortConfigs);
       expect(result.sortedData).toEqual([
@@ -217,7 +216,9 @@ describe('OptimizedSorter', () => {
         { timestamp: '2023-01-01T00:00:00Z' },
         { timestamp: '2023-01-02T00:00:00Z' },
       ];
-      const sortConfigs = [{ key: 'timestamp', direction: 'asc' as const, type: 'timestamp' as const }];
+      const sortConfigs = [
+        { key: 'timestamp', direction: 'asc' as const, type: 'timestamp' as const },
+      ];
 
       const result = sorter.sort(data, sortConfigs);
       expect(result.sortedData[0].timestamp).toBe('2023-01-01T00:00:00Z');
@@ -268,11 +269,7 @@ describe('optimizedSort convenience function', () => {
     const sortConfigs = [{ key: 'id', direction: 'asc' as const, type: 'numeric' as const }];
 
     const result = optimizedSort(data, sortConfigs);
-    expect(result.sortedData).toEqual([
-      { id: 1 },
-      { id: 2 },
-      { id: 3 },
-    ]);
+    expect(result.sortedData).toEqual([{ id: 1 }, { id: 2 }, { id: 3 }]);
     expect(result.metrics).toBeDefined();
   });
 });
@@ -286,9 +283,27 @@ describe('SortingPerformanceMonitor', () => {
 
   it('should record and average metrics', () => {
     const metrics = [
-      { algorithmUsed: 'standard', executionTime: 10, dataSize: 100, memoryUsage: 1000, cacheHit: false },
-      { algorithmUsed: 'optimized', executionTime: 20, dataSize: 200, memoryUsage: 2000, cacheHit: true },
-      { algorithmUsed: 'standard', executionTime: 15, dataSize: 150, memoryUsage: 1500, cacheHit: false },
+      {
+        algorithmUsed: 'standard',
+        executionTime: 10,
+        dataSize: 100,
+        memoryUsage: 1000,
+        cacheHit: false,
+      },
+      {
+        algorithmUsed: 'optimized',
+        executionTime: 20,
+        dataSize: 200,
+        memoryUsage: 2000,
+        cacheHit: true,
+      },
+      {
+        algorithmUsed: 'standard',
+        executionTime: 15,
+        dataSize: 150,
+        memoryUsage: 1500,
+        cacheHit: false,
+      },
     ];
 
     metrics.forEach(metric => monitor.recordMetrics(metric));
@@ -303,9 +318,27 @@ describe('SortingPerformanceMonitor', () => {
 
   it('should group metrics by algorithm', () => {
     const metrics = [
-      { algorithmUsed: 'standard', executionTime: 10, dataSize: 100, memoryUsage: 1000, cacheHit: false },
-      { algorithmUsed: 'standard', executionTime: 15, dataSize: 150, memoryUsage: 1500, cacheHit: false },
-      { algorithmUsed: 'optimized', executionTime: 20, dataSize: 200, memoryUsage: 2000, cacheHit: true },
+      {
+        algorithmUsed: 'standard',
+        executionTime: 10,
+        dataSize: 100,
+        memoryUsage: 1000,
+        cacheHit: false,
+      },
+      {
+        algorithmUsed: 'standard',
+        executionTime: 15,
+        dataSize: 150,
+        memoryUsage: 1500,
+        cacheHit: false,
+      },
+      {
+        algorithmUsed: 'optimized',
+        executionTime: 20,
+        dataSize: 200,
+        memoryUsage: 2000,
+        cacheHit: true,
+      },
     ];
 
     metrics.forEach(metric => monitor.recordMetrics(metric));

@@ -6,11 +6,7 @@
 // normalizes them to the fetch's key tuple.
 import { createDataLoader } from '@/util/dataLoader';
 
-import {
-  contractSourceCache,
-  fetchContractSource,
-  IMMUTABLE_CACHE_TIME,
-} from './contracts';
+import { contractSourceCache, fetchContractSource, IMMUTABLE_CACHE_TIME } from './contracts';
 
 type ChainAddressParams = { params: { chainId: string; address: string } };
 

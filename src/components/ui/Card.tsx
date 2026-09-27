@@ -51,14 +51,8 @@ export type CardTitleProps = {
   as?: 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6';
 };
 
-export function CardTitle({
-  children,
-  className,
-  as: Component = 'h3',
-}: CardTitleProps) {
-  return (
-    <Component className={cx(cardTitleStyle, className)}>{children}</Component>
-  );
+export function CardTitle({ children, className, as: Component = 'h3' }: CardTitleProps) {
+  return <Component className={cx(cardTitleStyle, className)}>{children}</Component>;
 }
 
 const cardDescriptionStyle = css`

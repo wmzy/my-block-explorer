@@ -69,12 +69,9 @@ vi.mock('@/services/txpool', () => ({
   usePendingTransactions: (...args: unknown[]) => mockUsePendingTransactions(...args),
 }));
 
-const HASH_A =
-  '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1';
-const HASH_B =
-  '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb2';
-const HASH_C =
-  '0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc3';
+const HASH_A = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa1';
+const HASH_B = '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb2';
+const HASH_C = '0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc3';
 const ADDR_1 = '0x1111111111111111111111111111111111111111';
 const ADDR_2 = '0x2222222222222222222222222222222222222222';
 
@@ -214,7 +211,11 @@ describe('Pending transactions page', () => {
   it('shows the truncation note with full counts when the cap bit', async () => {
     // 250 entries in the pool, only the first 200 served.
     const many = Array.from({ length: 250 }, (_, i) =>
-      entry({ hash: `0x${String(i).padStart(4, '0')}${'ab'.repeat(30)}`, nonce: i, accountNonce: i }),
+      entry({
+        hash: `0x${String(i).padStart(4, '0')}${'ab'.repeat(30)}`,
+        nonce: i,
+        accountNonce: i,
+      }),
     );
     mockUsePendingTransactions.mockReturnValue({
       data: {
@@ -357,9 +358,7 @@ describe('formatPoolValue', () => {
 
 describe('gasPriceCellLabel', () => {
   it('shows the 1559 fee cap with ≤, the legacy gas price flat, absence as em dash', () => {
-    expect(gasPriceCellLabel(entry({ hash: HASH_A, maxFeePerGas: 25n * GWEI }))).toBe(
-      '≤ 25 gwei',
-    );
+    expect(gasPriceCellLabel(entry({ hash: HASH_A, maxFeePerGas: 25n * GWEI }))).toBe('≤ 25 gwei');
     expect(gasPriceCellLabel(entry({ hash: HASH_B, gasPrice: 2n * GWEI }))).toBe('2 gwei');
     expect(gasPriceCellLabel(entry({ hash: HASH_C }))).toBe('—');
   });

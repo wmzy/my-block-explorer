@@ -1,18 +1,20 @@
 // Pure ERC-20/721/1155 Transfer-event log decoding. No network, no React —
 // every function is deterministic and unit-testable in isolation. Decoding
 // is best-effort: a malformed log is skipped, never thrown.
-import {
-  decodeAbiParameters,
-  getAddress,
-  parseAbiParameters,
-  type Hex,
-} from 'viem';
+import { decodeAbiParameters, getAddress, parseAbiParameters, type Hex } from 'viem';
 
 export type DecodedTokenTransfer =
   | { kind: 'erc20'; token: string; from: string; to: string; value: string }
   | { kind: 'erc721'; token: string; from: string; to: string; tokenId: string }
   | { kind: 'erc1155_single'; token: string; from: string; to: string; id: string; amount: string }
-  | { kind: 'erc1155_batch'; token: string; from: string; to: string; ids: string[]; amounts: string[] };
+  | {
+    kind: 'erc1155_batch';
+    token: string;
+    from: string;
+    to: string;
+    ids: string[];
+    amounts: string[];
+  };
 
 /** Token standard families a Transfer log's topic shape can evidence. */
 export type TokenStandardId = 'erc20' | 'erc721' | 'erc1155';
@@ -46,9 +48,7 @@ const UINT256_WORD_PAIR = /^0x[0-9a-fA-F]{128}$/;
  * else (unknown topic0, nonstandard topic count, no topics) returns
  * undefined — the standard is then honestly unknown, never guessed.
  */
-export function transferStandardFromTopics(
-  topics: readonly string[],
-): TokenStandardId | undefined {
+export function transferStandardFromTopics(topics: readonly string[]): TokenStandardId | undefined {
   const topic0 = topics[0]?.toLowerCase();
   if (topic0 === undefined) return undefined;
   if (topic0 === TRANSFER_TOPIC0) {
@@ -57,8 +57,8 @@ export function transferStandardFromTopics(
     return undefined;
   }
   if (
-    (topic0 === TRANSFER_SINGLE_TOPIC0 || topic0 === TRANSFER_BATCH_TOPIC0)
-    && topics.length === 4
+    (topic0 === TRANSFER_SINGLE_TOPIC0 || topic0 === TRANSFER_BATCH_TOPIC0) &&
+    topics.length === 4
   ) {
     return 'erc1155';
   }
@@ -147,8 +147,8 @@ function decodeTransferLog(log: TransferLog): DecodedTokenTransfer | null {
       token: getAddress(log.address),
       from: topicAddress(log.topics[2]),
       to: topicAddress(log.topics[3]),
-      ids: ids.map((id) => id.toString()),
-      amounts: amounts.map((amount) => amount.toString()),
+      ids: ids.map(id => id.toString()),
+      amounts: amounts.map(amount => amount.toString()),
     };
   }
 

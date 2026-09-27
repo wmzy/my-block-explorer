@@ -268,8 +268,12 @@ const approvalsSkeleton = css`
   background-size: 200% 100%;
   animation: approvals-shimmer 1.2s ease-in-out infinite;
   @keyframes approvals-shimmer {
-    0% { background-position: 200% 0; }
-    100% { background-position: -200% 0; }
+    0% {
+      background-position: 200% 0;
+    }
+    100% {
+      background-position: -200% 0;
+    }
   }
 `;
 
@@ -375,7 +379,9 @@ function ApprovalRow({
           {KIND_LABELS[kind]}
         </span>
       </td>
-      <td title={kind === 'erc1155' ? `Operator ${approval.spender}` : `Spender ${approval.spender}`}>
+      <td
+        title={kind === 'erc1155' ? `Operator ${approval.spender}` : `Spender ${approval.spender}`}
+      >
         {shortAddress(approval.spender)}
       </td>
       <td>{kind === 'erc721' ? `#${approval.tokenId}` : '—'}</td>
@@ -476,10 +482,7 @@ function ApprovalHistoryRow({
         </TypedLink>
       </td>
       <td title={event.token}>
-        <TypedLink
-          to={`/chain/${chainId}/token/${event.token}`}
-          className={linkStyle}
-        >
+        <TypedLink to={`/chain/${chainId}/token/${event.token}`} className={linkStyle}>
           {symbol ?? shortAddress(event.token)}
         </TypedLink>
       </td>
@@ -533,7 +536,7 @@ function ApprovalHistory({
               </tr>
             </thead>
             <tbody>
-              {history.map((event) => {
+              {history.map(event => {
                 const meta = metas?.get(event.token);
                 return (
                   <ApprovalHistoryRow
@@ -550,8 +553,8 @@ function ApprovalHistory({
         </div>
         <ul className={approvalsCaveats} data-testid="approval-history-caveats">
           <li>
-            Raw approval events from the same scanned window — this is not a
-            complete approval history.
+            Raw approval events from the same scanned window — this is not a complete approval
+            history.
           </li>
           {historyTruncated && (
             <li data-testid="approval-history-truncated">
@@ -559,8 +562,8 @@ function ApprovalHistory({
             </li>
           )}
           <li>
-            Values are as granted at the time, not current allowances;
-            ERC-20 revocations appear with a value of 0.
+            Values are as granted at the time, not current allowances; ERC-20 revocations appear
+            with a value of 0.
           </li>
         </ul>
       </Collapsible>
@@ -615,10 +618,7 @@ export function ApprovalSection({ chainId, address }: ApprovalSectionProps): Rea
   // The secondary escape hatch: revoke.cash manages approvals for the
   // checksummed address outside this explorer. (The primary action is
   // each row's in-product Revoke link above.)
-  const revokeUrl = useCallback(
-    () => `https://revoke.cash/address/${getAddress(owner)}`,
-    [owner],
-  );
+  const revokeUrl = useCallback(() => `https://revoke.cash/address/${getAddress(owner)}`, [owner]);
 
   // Gated keys (defensive — the mount passes a route-validated address):
   // nothing useful to say, render nothing.
@@ -627,9 +627,8 @@ export function ApprovalSection({ chainId, address }: ApprovalSectionProps): Rea
   let body: ReactNode;
   if (data !== undefined) {
     const rows = data.approvals;
-    const scannedLabel = data.scannedAt !== undefined
-      ? new Date(data.scannedAt).toLocaleString()
-      : null;
+    const scannedLabel =
+      data.scannedAt !== undefined ? new Date(data.scannedAt).toLocaleString() : null;
 
     if (data.reason === 'allowance-read-failed' && rows.length === 0) {
       // Discovery succeeded, current-value reads did not: the honest
@@ -637,8 +636,7 @@ export function ApprovalSection({ chainId, address }: ApprovalSectionProps): Rea
       body = (
         <div className={approvalsNote} data-testid="approvals-degraded">
           Discovered {formatNumber(data.pairCount)} approval
-          {data.pairCount === 1 ? '' : 's'}, but current allowances could not
-          be read from this RPC.
+          {data.pairCount === 1 ? '' : 's'}, but current allowances could not be read from this RPC.
         </div>
       );
     } else if (rows.length === 0) {
@@ -667,7 +665,7 @@ export function ApprovalSection({ chainId, address }: ApprovalSectionProps): Rea
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row) => {
+                {rows.map(row => {
                   const meta = metas?.get(row.token);
                   return (
                     <ApprovalRow
@@ -683,36 +681,26 @@ export function ApprovalSection({ chainId, address }: ApprovalSectionProps): Rea
             </table>
           </div>
           <ul className={approvalsCaveats} data-testid="approvals-caveats">
+            <li>Discovered from the scanned window; current values read at the latest block.</li>
             <li>
-              Discovered from the scanned window; current values read at the
-              latest block.
-            </li>
-            <li>
-              Approval logs searched over the most recent{' '}
-              {formatNumber(data.windowBlocks)} blocks.
+              Approval logs searched over the most recent {formatNumber(data.windowBlocks)} blocks.
             </li>
             {data.truncated && (
-              <li>
-                Showing the first 100 of {formatNumber(data.pairCount)}{' '}
-                discovered approvals.
-              </li>
+              <li>Showing the first 100 of {formatNumber(data.pairCount)} discovered approvals.</li>
             )}
             {data.coverage === 'partial' && (
               <li>
-                The scan stopped before covering the whole window — older
-                approvals may be missing.
+                The scan stopped before covering the whole window — older approvals may be missing.
               </li>
             )}
             {data.coverage === 'scan-failed' && (
               <li>
-                The scan aborted partway — approvals older than the failure
-                point may be missing.
+                The scan aborted partway — approvals older than the failure point may be missing.
               </li>
             )}
             <li>
-              Approvals whose current read says no longer live are omitted
-              (a zero ERC-20 allowance, a revoked ERC-721 token approval or
-              ERC-1155 operator).
+              Approvals whose current read says no longer live are omitted (a zero ERC-20 allowance,
+              a revoked ERC-721 token approval or ERC-1155 operator).
             </li>
           </ul>
         </>

@@ -14,12 +14,7 @@ import 'haze-ui/css/tag.css';
 // the worst level across sources so a page never looks better than its
 // weakest source.
 export type CoverageLevel =
-  | 'live'
-  | 'cached-immutable'
-  | 'discovered'
-  | 'sampled'
-  | 'partial'
-  | 'unavailable';
+  'live' | 'cached-immutable' | 'discovered' | 'sampled' | 'partial' | 'unavailable';
 
 // Human word for each level, used to compose the aggregate chip label.
 export const COVERAGE_WORDS: Record<CoverageLevel, string> = {
@@ -67,8 +62,7 @@ export type CoverageSummary = {
 // Fold sources into one badge summary: the worst level wins, the detail
 // keeps every source's line in the caller's order. An empty source list
 // promises nothing, so it can only honestly read as unavailable.
-const coverageLabel = (level: CoverageLevel): string =>
-  `Data coverage: ${COVERAGE_WORDS[level]}`;
+const coverageLabel = (level: CoverageLevel): string => `Data coverage: ${COVERAGE_WORDS[level]}`;
 
 export function aggregateCoverage(sources: readonly CoverageSource[]): CoverageSummary {
   if (sources.length === 0) {
@@ -236,11 +230,7 @@ export function CoverageBadge({ level, label, detail, className }: CoverageBadge
   const hasDetail = detail !== undefined && detail.length > 0;
 
   return (
-    <div
-      className={cx(rootStyle, className)}
-      data-testid="coverage-badge"
-      data-level={level}
-    >
+    <div className={cx(rootStyle, className)} data-testid="coverage-badge" data-level={level}>
       <span className={chipRowStyle}>
         <HazeTag variant={LEVEL_TAG_VARIANT[level]} size="sm" className={tagStyle}>
           <span className={iconStyle} aria-hidden="true">

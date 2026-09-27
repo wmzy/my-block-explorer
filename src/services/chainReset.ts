@@ -36,10 +36,7 @@ export type StoredChainHead = { blockNumber: number; updatedAt: number };
  * a small dip below it is a reorg (false) — only the threshold crossing
  * says "reset".
  */
-export function detectChainReset(
-  stored: StoredChainHead | null,
-  current: number | null,
-): boolean {
+export function detectChainReset(stored: StoredChainHead | null, current: number | null): boolean {
   if (stored === null || current === null) return false;
   return stored.blockNumber - current >= CHAIN_RESET_THRESHOLD_BLOCKS;
 }
@@ -61,17 +58,16 @@ export function readStoredHead(chainId: number): StoredChainHead | null {
     if (typeof parsed !== 'object' || parsed === null) return null;
     const { blockNumber, updatedAt } = parsed as Record<string, unknown>;
     if (
-      typeof blockNumber !== 'number'
-      || !Number.isFinite(blockNumber)
-      || blockNumber < 0
-      || typeof updatedAt !== 'number'
-      || !Number.isFinite(updatedAt)
+      typeof blockNumber !== 'number' ||
+      !Number.isFinite(blockNumber) ||
+      blockNumber < 0 ||
+      typeof updatedAt !== 'number' ||
+      !Number.isFinite(updatedAt)
     ) {
       return null;
     }
     return { blockNumber, updatedAt };
-  }
-  catch {
+  } catch {
     return null;
   }
 }
@@ -83,8 +79,7 @@ export function storeHead(chainId: number, blockNumber: number): void {
       lastHeadStorageKey(chainId),
       JSON.stringify({ blockNumber, updatedAt: Date.now() }),
     );
-  }
-  catch {
+  } catch {
     // Quota/private mode — the baseline lasts only for this session.
   }
 }
@@ -101,8 +96,7 @@ export function dismissalStorageKey(chainId: number, storedBlockNumber: number):
 export function isResetDismissed(chainId: number, storedBlockNumber: number): boolean {
   try {
     return localStorage.getItem(dismissalStorageKey(chainId, storedBlockNumber)) !== null;
-  }
-  catch {
+  } catch {
     return false;
   }
 }
@@ -110,8 +104,7 @@ export function isResetDismissed(chainId: number, storedBlockNumber: number): bo
 export function dismissChainReset(chainId: number, storedBlockNumber: number): void {
   try {
     localStorage.setItem(dismissalStorageKey(chainId, storedBlockNumber), '1');
-  }
-  catch {
+  } catch {
     // Best-effort: this session's banner state still hides the notice.
   }
 }
@@ -141,18 +134,15 @@ export type ClearedChainCacheData = {
  */
 export async function clearChainCachedData(chainId: number): Promise<ClearedChainCacheData> {
   const body = await del<unknown>(`/api/chains/${chainId}/cached-data`);
-  const cleared
-    = typeof body === 'object' && body !== null
+  const cleared =
+    typeof body === 'object' && body !== null
       ? (body as Record<string, unknown>).cleared
       : undefined;
   if (typeof cleared !== 'object' || cleared === null) {
     throw new Error('The cache-clear endpoint answered without a cleared-counts object.');
   }
   const { contractSources, storageLayouts } = cleared as Record<string, unknown>;
-  if (
-    typeof contractSources !== 'number'
-    || typeof storageLayouts !== 'number'
-  ) {
+  if (typeof contractSources !== 'number' || typeof storageLayouts !== 'number') {
     throw new Error('The cache-clear endpoint answered without honest numeric counts.');
   }
   return { contractSources, storageLayouts };

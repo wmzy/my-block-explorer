@@ -264,8 +264,7 @@ export function toSubscriptionView(row: WatchSubscriptionRecord): WatchSubscript
         : null,
     webhookUrl: row.webhookUrl ?? null,
     webhookStatus: row.webhookStatus ?? null,
-    webhookLastAt:
-      row.webhookLastAt instanceof Date ? row.webhookLastAt.toISOString() : null,
+    webhookLastAt: row.webhookLastAt instanceof Date ? row.webhookLastAt.toISOString() : null,
     createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : null,
     updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : null,
   };
@@ -336,10 +335,7 @@ export class WatchService {
    * connection subscription). Events are delivered synchronously, in the
    * order they were produced. Returns the unsubscribe function.
    */
-  subscribeChainEvents(
-    chainId: number,
-    listener: (event: WatchFeedEvent) => void,
-  ): () => void {
+  subscribeChainEvents(chainId: number, listener: (event: WatchFeedEvent) => void): () => void {
     let set = this.listeners.get(chainId);
     if (set === undefined) {
       set = new Set();
@@ -359,9 +355,7 @@ export class WatchService {
 
   /** All subscriptions on a chain, oldest-first (stable order for the UI). */
   async listSubscriptions(chainId: number): Promise<WatchSubscriptionView[]> {
-    const rows = await this
-      .selectRows()
-      .where(eq(watchSubscriptions.chainId, chainId));
+    const rows = await this.selectRows().where(eq(watchSubscriptions.chainId, chainId));
     return rows.map(toSubscriptionView);
   }
 
@@ -394,8 +388,7 @@ export class WatchService {
       return {
         ok: false,
         error: 'rpc_unavailable',
-        message:
-          `Chain ${chainId} has no RPC URL configured — set one (⚙ RPC panel or POST /api/rpc-configs) before subscribing`,
+        message: `Chain ${chainId} has no RPC URL configured — set one (⚙ RPC panel or POST /api/rpc-configs) before subscribing`,
       };
     }
     try {
@@ -404,8 +397,7 @@ export class WatchService {
       return {
         ok: false,
         error: 'rpc_unavailable',
-        message:
-          `No RPC client available for chain ${chainId} — set a working RPC URL (⚙ RPC panel or POST /api/rpc-configs) before subscribing`,
+        message: `No RPC client available for chain ${chainId} — set a working RPC URL (⚙ RPC panel or POST /api/rpc-configs) before subscribing`,
       };
     }
 
@@ -415,8 +407,7 @@ export class WatchService {
       return {
         ok: false,
         error: 'watch_full',
-        message:
-          `Watch limit reached for chain ${chainId} (${WATCH_MAX_SUBSCRIPTIONS_PER_CHAIN} addresses) — remove one before adding another`,
+        message: `Watch limit reached for chain ${chainId} (${WATCH_MAX_SUBSCRIPTIONS_PER_CHAIN} addresses) — remove one before adding another`,
       };
     }
 
@@ -466,7 +457,9 @@ export class WatchService {
             ? existing.webhookLastAt.toISOString()
             : null,
         createdAt:
-          existing?.createdAt instanceof Date ? existing.createdAt.toISOString() : now.toISOString(),
+          existing?.createdAt instanceof Date
+            ? existing.createdAt.toISOString()
+            : now.toISOString(),
         updatedAt: now.toISOString(),
       },
     };
@@ -477,9 +470,9 @@ export class WatchService {
    * route answers 404 — idempotence would hide typos in the client's key).
    */
   async removeSubscription(chainId: number, address: `0x${string}`): Promise<boolean> {
-    const rows = await this
-      .selectRows()
-      .where(and(eq(watchSubscriptions.chainId, chainId), eq(watchSubscriptions.address, address)));
+    const rows = await this.selectRows().where(
+      and(eq(watchSubscriptions.chainId, chainId), eq(watchSubscriptions.address, address)),
+    );
     if (rows.length === 0) return false;
     await db
       .delete(watchSubscriptions)

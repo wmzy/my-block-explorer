@@ -78,11 +78,7 @@ export function fetchSearch(
   signal?: AbortSignal,
 ): Promise<SearchResult | undefined> {
   if (query.length === 0) return Promise.resolve(undefined);
-  return get<SearchResult>(
-    '/api/search',
-    { q: query, chainId },
-    withSignal(api, signal),
-  );
+  return get<SearchResult>('/api/search', { q: query, chainId }, withSignal(api, signal));
 }
 
 export function fetchChainSearch(
@@ -91,9 +87,5 @@ export function fetchChainSearch(
   signal?: AbortSignal,
 ): Promise<SearchResult | undefined> {
   if (!(chainId > 0) || query.length === 0) return Promise.resolve(undefined);
-  return get<SearchResult>(
-    `/api/chains/${chainId}/search`,
-    { q: query },
-    withSignal(api, signal),
-  );
+  return get<SearchResult>(`/api/chains/${chainId}/search`, { q: query }, withSignal(api, signal));
 }

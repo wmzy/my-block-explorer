@@ -6,10 +6,7 @@
 import { describe, it, expect } from 'vitest';
 
 import { parseStateOverride, type StateOverride } from '@/utils/stateOverride';
-import {
-  parseStateOverrideInput,
-  toViemStateOverride,
-} from '@/views/Contract/stateOverrideInput';
+import { parseStateOverrideInput, toViemStateOverride } from '@/views/Contract/stateOverrideInput';
 
 const ADDR = '0x1111111111111111111111111111111111111111';
 const ADDR_2 = '0x2222222222222222222222222222222222222222';
@@ -66,8 +63,7 @@ describe('parseStateOverrideInput valid maps', () => {
 
   it('parses stateDiff and multiple addresses', () => {
     const text =
-      `{"${ADDR}":{"stateDiff":{"${SLOT}":"${VALUE}"}},` +
-      `"${ADDR_2}":{"nonce":"0x0"}}`;
+      `{"${ADDR}":{"stateDiff":{"${SLOT}":"${VALUE}"}},` + `"${ADDR_2}":{"nonce":"0x0"}}`;
     const result = parseStateOverrideInput(text);
     expect(result).toEqual({
       ok: true,
@@ -117,9 +113,7 @@ describe('parseStateOverrideInput invalid shapes', () => {
     const result = parseStateOverrideInput(`{"${ADDR}":{"who":"0x1"}}`);
     expect(result).toEqual({
       ok: false,
-      errors: [
-        `${ADDR}.who: unknown field (expected balance, nonce, code, state, or stateDiff)`,
-      ],
+      errors: [`${ADDR}.who: unknown field (expected balance, nonce, code, state, or stateDiff)`],
     });
   });
 

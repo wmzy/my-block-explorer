@@ -16,14 +16,14 @@ export const SEARCH_HISTORY_MAX_ENTRIES = 10;
 export type SearchHistoryEntry = { query: string; chainId?: number };
 
 const hasUsableChainId = (value: { chainId?: unknown }): boolean =>
-  value.chainId === undefined
-  || (typeof value.chainId === 'number' && Number.isInteger(value.chainId));
+  value.chainId === undefined ||
+  (typeof value.chainId === 'number' && Number.isInteger(value.chainId));
 
 const isEntry = (value: unknown): value is SearchHistoryEntry =>
-  typeof value === 'object'
-  && value !== null
-  && typeof (value as { query?: unknown }).query === 'string'
-  && hasUsableChainId(value);
+  typeof value === 'object' &&
+  value !== null &&
+  typeof (value as { query?: unknown }).query === 'string' &&
+  hasUsableChainId(value);
 
 // Storage is best-effort: a corrupt payload or a full/private-mode
 // localStorage must never break searching — reads degrade to [] and writes
@@ -31,8 +31,7 @@ const isEntry = (value: unknown): value is SearchHistoryEntry =>
 const persist = (entries: SearchHistoryEntry[]): SearchHistoryEntry[] => {
   try {
     localStorage.setItem(SEARCH_HISTORY_STORAGE_KEY, JSON.stringify(entries));
-  }
-  catch {
+  } catch {
     // Quota/private mode — history silently stops persisting.
   }
   return entries;
@@ -45,11 +44,8 @@ export function readSearchHistory(): SearchHistoryEntry[] {
     if (raw === null) return [];
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter(isEntry)
-      .slice(0, SEARCH_HISTORY_MAX_ENTRIES);
-  }
-  catch {
+    return parsed.filter(isEntry).slice(0, SEARCH_HISTORY_MAX_ENTRIES);
+  } catch {
     return [];
   }
 }
@@ -63,10 +59,7 @@ export function readSearchHistory(): SearchHistoryEntry[] {
  * last searched. A legacy same-query entry without a chain is superseded
  * the same way. The list stays capped.
  */
-export function recordSearchHistoryEntry(
-  query: string,
-  chainId: number,
-): SearchHistoryEntry[] {
+export function recordSearchHistoryEntry(query: string, chainId: number): SearchHistoryEntry[] {
   const trimmed = query.trim();
   if (!trimmed) return readSearchHistory();
 
@@ -75,14 +68,9 @@ export function recordSearchHistoryEntry(
 }
 
 /** Remove a single entry (per-item removal in the history dropdown). */
-export function removeSearchHistoryEntry(
-  query: string,
-  chainId?: number,
-): SearchHistoryEntry[] {
+export function removeSearchHistoryEntry(query: string, chainId?: number): SearchHistoryEntry[] {
   return persist(
-    readSearchHistory().filter(
-      entry => !(entry.query === query && entry.chainId === chainId),
-    ),
+    readSearchHistory().filter(entry => !(entry.query === query && entry.chainId === chainId)),
   );
 }
 

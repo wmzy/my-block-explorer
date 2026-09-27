@@ -52,9 +52,7 @@ export function DiscoveryGate({
   // error), the app is up for the rest of the session. Later re-scans
   // (retry, reconnect) must never yank the user back to the full-screen
   // scanning gate.
-  const [settled, setSettled] = useState(
-    () => status !== 'idle' && status !== 'discovering',
-  );
+  const [settled, setSettled] = useState(() => status !== 'idle' && status !== 'discovering');
   useEffect(() => {
     if (status !== 'idle' && status !== 'discovering') setSettled(true);
   }, [status]);
@@ -80,9 +78,7 @@ export function DiscoveryGate({
   const switchedKey = switchedFromManual
     ? `${switchedFromManual.configured}→${switchedFromManual.using}`
     : null;
-  const [dismissedSwitchedKey, setDismissedSwitchedKey] = useState<string | null>(
-    null,
-  );
+  const [dismissedSwitchedKey, setDismissedSwitchedKey] = useState<string | null>(null);
 
   if (!settled) {
     return <ScanningScreen ports={DEFAULT_PORTS} />;

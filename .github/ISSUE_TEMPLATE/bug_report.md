@@ -4,11 +4,15 @@ about: Something renders wrong, errors out, or shows data you cannot trust
 labels: bug
 ---
 
-**Explorer version** — the `version` field from `/api/health`, or the version chip in the top bar:
+**Explorer version** — the `version` field from `/api/health`, or the version
+chip in the top bar:
 
-**Run mode** (keep one): RPC-only (no backend) · Local backend (`npx my-block-explorer --port 8201`) · Shared deployment
+**Run mode** (keep one): RPC-only (no backend) · Local backend
+(`npx my-block-explorer --port 8201`) · Shared deployment
 
-**Chain + RPC provider class** — chain name or id, and whether the chain rides viem's default public endpoint, a provider API key (Alchemy/Infura/…), or a self-run node (anvil/Hardhat/geth):
+**Chain + RPC provider class** — chain name or id, and whether the chain rides
+viem's default public endpoint, a provider API key (Alchemy/Infura/…), or a
+self-run node (anvil/Hardhat/geth):
 
 **Browser** (e.g. Firefox 141 on Linux):
 

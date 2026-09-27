@@ -1,16 +1,7 @@
-import {
-  decodeEventLog,
-  parseAbi,
-  type AbiEvent,
-  type Address,
-  type Hex,
-} from 'viem';
+import { decodeEventLog, parseAbi, type AbiEvent, type Address, type Hex } from 'viem';
 import { rpcManager } from './RpcManager';
 import { createLogger } from '../server/logger';
-import {
-  transferStandardFromTopics,
-  type TokenStandardId,
-} from '../utils/tokenTransferDecode';
+import { transferStandardFromTopics, type TokenStandardId } from '../utils/tokenTransferDecode';
 
 const logger = createLogger('token-transfer-service');
 
@@ -306,8 +297,8 @@ const decodeTransferLog = (
     });
     const { from, to, ids, values } = (decoded.args ?? {}) as DecodedTransferArgs;
     if (!from || !to || !ids || !values) return null;
-    const tokenIds = ids.map((id) => id.toString());
-    const amounts = values.map((amount) => amount.toString());
+    const tokenIds = ids.map(id => id.toString());
+    const amounts = values.map(amount => amount.toString());
     // A batch moves several token IDs at once; summing the heterogeneous
     // amounts is meaningless, so `value` carries the count of token IDs.
     return {
@@ -393,7 +384,12 @@ const createTokenTransferService = (deps: TokenTransferServiceDeps) => {
     // reporting it (freshness = scan age, not serve age).
     const scannedAt = new Date(now()).toISOString();
     transfersCache.delete(key);
-    transfersCache.set(key, { expiresAt: now() + TRANSFERS_CACHE_TTL_MS, transfers, coverage, scannedAt });
+    transfersCache.set(key, {
+      expiresAt: now() + TRANSFERS_CACHE_TTL_MS,
+      transfers,
+      coverage,
+      scannedAt,
+    });
     while (transfersCache.size > TRANSFERS_CACHE_MAX_ENTRIES) {
       const oldest = transfersCache.keys().next().value;
       if (oldest === undefined) break;
@@ -434,9 +430,8 @@ const createTokenTransferService = (deps: TokenTransferServiceDeps) => {
 
     while (!covered) {
       if (calls >= maxScanCalls || now() - startedAt >= scanTimeoutMs) break;
-      const lower = upper - BigInt(chunkSize) + 1n > oldest
-        ? upper - BigInt(chunkSize) + 1n
-        : oldest;
+      const lower =
+        upper - BigInt(chunkSize) + 1n > oldest ? upper - BigInt(chunkSize) + 1n : oldest;
       // Per-iteration snapshots: the getLogs closures below must not
       // capture loop-mutated bindings (eslint no-loop-func), and the call
       // budget is counted before dispatch so in-flight calls are included.
@@ -465,8 +460,8 @@ const createTokenTransferService = (deps: TokenTransferServiceDeps) => {
               // balance moves), and is neither sender nor recipient in
               // most (mints, burns, user-to-user). 'out' wins ties,
               // matching participant mode's self-transfer convention.
-              const resolved: TokenTransfer['direction']
-                = transfer.from === addressLower
+              const resolved: TokenTransfer['direction'] =
+                transfer.from === addressLower
                   ? 'out'
                   : transfer.to === addressLower
                     ? 'in'
@@ -548,17 +543,28 @@ const createTokenTransferService = (deps: TokenTransferServiceDeps) => {
       mode: TransferScanMode = 'participant',
     ): Promise<TokenTransfersResult> => {
       // Explicit windows clamp into [1, MAX]; undefined uses the default.
-      const effectiveWindow = windowBlocks === undefined
-        ? DEFAULT_WINDOW_BLOCKS
-        : Math.min(Math.max(Math.trunc(windowBlocks), MIN_WINDOW_BLOCKS), MAX_WINDOW_BLOCKS);
+      const effectiveWindow =
+        windowBlocks === undefined
+          ? DEFAULT_WINDOW_BLOCKS
+          : Math.min(Math.max(Math.trunc(windowBlocks), MIN_WINDOW_BLOCKS), MAX_WINDOW_BLOCKS);
       const cacheKey = `${chainId}:${address.toLowerCase()}:${effectiveWindow}:${mode}`;
 
       // Cache-bypass refresh: skip the read entirely (even a fresh
       // 'partial' entry) so an explicit Retry always re-scans.
       const cached = refresh ? null : readTransfersCache(cacheKey);
       if (cached) {
-        logger.info(`Serving cached transfer scan for ${address} on chain ${chainId} (${mode} mode)`);
-        return sliceResult(cached.transfers, cached.coverage, effectiveWindow, cursor, limit, cached.scannedAt, mode);
+        logger.info(
+          `Serving cached transfer scan for ${address} on chain ${chainId} (${mode} mode)`,
+        );
+        return sliceResult(
+          cached.transfers,
+          cached.coverage,
+          effectiveWindow,
+          cursor,
+          limit,
+          cached.scannedAt,
+          mode,
+        );
       }
 
       const client = await rpcManager.getClient(chainId);
@@ -580,7 +586,15 @@ const createTokenTransferService = (deps: TokenTransferServiceDeps) => {
       });
 
       const scannedAt = writeTransfersCache(cacheKey, outcome.transfers, outcome.coverage);
-      return sliceResult(outcome.transfers, outcome.coverage, effectiveWindow, cursor, limit, scannedAt, mode);
+      return sliceResult(
+        outcome.transfers,
+        outcome.coverage,
+        effectiveWindow,
+        cursor,
+        limit,
+        scannedAt,
+        mode,
+      );
     },
 
     /** Drop all cached scan results (test isolation). */

@@ -114,13 +114,28 @@ describe('PUT /chains/:chainId/watch/:address — validation', () => {
     });
     const res = await put({ label: '  Hot wallet  ' });
     expect(res.status).toBe(200);
-    expect(serviceMocks.upsertSubscription).toHaveBeenCalledWith(1, WATCH_ADDRESS, 'Hot wallet', undefined);
+    expect(serviceMocks.upsertSubscription).toHaveBeenCalledWith(
+      1,
+      WATCH_ADDRESS,
+      'Hot wallet',
+      undefined,
+    );
 
     await put({ label: null });
-    expect(serviceMocks.upsertSubscription).toHaveBeenLastCalledWith(1, WATCH_ADDRESS, null, undefined);
+    expect(serviceMocks.upsertSubscription).toHaveBeenLastCalledWith(
+      1,
+      WATCH_ADDRESS,
+      null,
+      undefined,
+    );
 
     await put({});
-    expect(serviceMocks.upsertSubscription).toHaveBeenLastCalledWith(1, WATCH_ADDRESS, null, undefined);
+    expect(serviceMocks.upsertSubscription).toHaveBeenLastCalledWith(
+      1,
+      WATCH_ADDRESS,
+      null,
+      undefined,
+    );
   });
 
   it.each([

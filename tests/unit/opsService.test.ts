@@ -108,11 +108,7 @@ describe('deriveChainFileMeta — documented pattern data/chains/{type}/{name}-{
 describe('countByStatus', () => {
   it('counts raw rows (no count field) one each', () => {
     expect(
-      countByStatus([
-        { status: 'pending' },
-        { status: 'error' },
-        { status: 'pending' },
-      ]),
+      countByStatus([{ status: 'pending' }, { status: 'error' }, { status: 'pending' }]),
     ).toEqual({ pending: 2, error: 1 });
   });
 
@@ -218,10 +214,17 @@ describe('collectStorageSummary — real fs over a temp tree', () => {
     expect(summary.perChainDbFiles).toEqual([
       expect.objectContaining({ chainType: 'mainnet', name: 'ethereum', chainId: 1, bytes: 4 }),
       expect.objectContaining({ chainType: 'mainnet', name: 'polygon', chainId: 137, bytes: 6 }),
-      expect.objectContaining({ chainType: 'testnet', name: 'sepolia', chainId: 11155111, bytes: 2 }),
+      expect.objectContaining({
+        chainType: 'testnet',
+        name: 'sepolia',
+        chainId: 11155111,
+        bytes: 2,
+      }),
     ]);
     expect(
-      summary.perChainDbFiles.every(file => typeof file.mtime === 'string' && file.mtime.endsWith('Z')),
+      summary.perChainDbFiles.every(
+        file => typeof file.mtime === 'string' && file.mtime.endsWith('Z'),
+      ),
     ).toBe(true);
     expect(summary.solcCache).toEqual({ files: 1, bytes: 6 });
   });

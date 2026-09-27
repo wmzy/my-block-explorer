@@ -35,20 +35,19 @@ function referenceChainType(chainId: number): ReferenceChainType {
   }
 
   const testnetIds = [
-    80001, 97, 421611, 421613, 421614, 84531, 84532, 420, 69, 43113, 4002,
-    44787, 62320, 10200,
+    80001, 97, 421611, 421613, 421614, 84531, 84532, 420, 69, 43113, 4002, 44787, 62320, 10200,
   ];
   if (testnetIds.includes(chainId)) return 'testnet';
 
   const name = candidates[0].name.toLowerCase();
   if (
-    name.includes('test')
-    || name.includes('sepolia')
-    || name.includes('goerli')
-    || name.includes('holesky')
-    || name.includes('mumbai')
-    || name.includes('fuji')
-    || name.includes('chiado')
+    name.includes('test') ||
+    name.includes('sepolia') ||
+    name.includes('goerli') ||
+    name.includes('holesky') ||
+    name.includes('mumbai') ||
+    name.includes('fuji') ||
+    name.includes('chiado')
   ) {
     return 'testnet';
   }
@@ -62,7 +61,7 @@ function referenceIsPopular(chainId: number): boolean {
 
 function referenceSortedChains(): Chain[] {
   const seen = new Set<number>();
-  const unique = SUPPORTED_CHAINS.filter((chain) => {
+  const unique = SUPPORTED_CHAINS.filter(chain => {
     if (seen.has(chain.id)) return false;
     seen.add(chain.id);
     return true;
@@ -89,7 +88,7 @@ function referenceSearchChains(query: string): Chain[] {
   const lowerQuery = query.toLowerCase();
   const numericQuery = parseInt(query);
 
-  const results = SUPPORTED_CHAINS.filter((chain) => {
+  const results = SUPPORTED_CHAINS.filter(chain => {
     if (!isNaN(numericQuery) && chain.id === numericQuery) return true;
     if (chain.name.toLowerCase().includes(lowerQuery)) return true;
     if (chain.id.toString().includes(query)) return true;

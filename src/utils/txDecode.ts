@@ -122,7 +122,8 @@ export function describeRevertData(data: string, abi?: Abi): RevertDescription |
         // Same re-prefixing as the Error(string) branch above.
         `0x${data.slice(10)}`,
       );
-      if (typeof code === 'bigint') return { kind: 'panic', code, description: panicDescription(code) };
+      if (typeof code === 'bigint')
+        return { kind: 'panic', code, description: panicDescription(code) };
     } catch {
       // Truncated/corrupt Panic(uint256) payload — fall through to unknown.
     }
@@ -160,7 +161,9 @@ export function formatRevertDescription(description: RevertDescription): string 
       return `Panic ${codeHex}: ${description.description}`;
     }
     case 'custom':
-      return description.argsText !== '' ? `${description.name}(${description.argsText})` : description.name;
+      return description.argsText !== ''
+        ? `${description.name}(${description.argsText})`
+        : description.name;
     case 'unknown':
       return description.data;
   }
@@ -214,7 +217,9 @@ function formatErrorArgs(args: unknown): string {
   // a name-keyed object is accepted defensively and flattened by value.
   if (Array.isArray(args)) return args.map(formatErrorArg).join(', ');
   if (typeof args === 'object') {
-    return Object.values(args as Record<string, unknown>).map(formatErrorArg).join(', ');
+    return Object.values(args as Record<string, unknown>)
+      .map(formatErrorArg)
+      .join(', ');
   }
   return formatErrorArg(args);
 }

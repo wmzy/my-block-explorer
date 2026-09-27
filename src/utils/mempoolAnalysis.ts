@@ -85,8 +85,7 @@ export type ConflictGroup = {
 
 /** One renderable unit: an unopposed entry, or a conflict group block. */
 export type MempoolRenderUnit =
-  | { kind: 'solo'; entry: AnalyzedPoolEntry }
-  | { kind: 'group'; group: ConflictGroup };
+  { kind: 'solo'; entry: AnalyzedPoolEntry } | { kind: 'group'; group: ConflictGroup };
 
 /** Everything the Pending view derives from one pool snapshot. */
 export type MempoolAnalysis = {
@@ -242,10 +241,7 @@ export function analyzeMempool(entries: PoolEntry[]): MempoolAnalysis {
     total: analyzed.length,
     distinctAccounts: accounts.size,
     conflictGroupCount: groups.length,
-    replaceableCount: analyzed.reduce(
-      (sum, entry) => (entry.conflict !== null ? sum + 1 : sum),
-      0,
-    ),
+    replaceableCount: analyzed.reduce((sum, entry) => (entry.conflict !== null ? sum + 1 : sum), 0),
     eip1559Count,
     legacyCount,
     noFeeDataCount,

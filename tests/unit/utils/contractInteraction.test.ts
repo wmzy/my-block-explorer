@@ -103,7 +103,9 @@ describe('parseContractFunctionsUnified overload dedupe', () => {
     // not crash the dedupe (impl has transfer(address,uint256), so the
     // zero-arg proxy overload is a distinct entry and is kept).
     const functions = parseContractFunctionsUnified(
-      JSON.stringify([{ type: 'function', name: 'transfer', outputs: [], stateMutability: 'view' }]),
+      JSON.stringify([
+        { type: 'function', name: 'transfer', outputs: [], stateMutability: 'view' },
+      ]),
       abi(
         fn('transfer', [
           { name: 'to', type: 'address' },

@@ -44,8 +44,8 @@ describe('realTimeData', () => {
     };
 
     vi.mocked(createPublicClient).mockReturnValue(mockClient);
-    vi.mocked(formatUnits).mockImplementation(
-      (wei, decimals = 18) => (Number(wei) / 10 ** decimals).toString(),
+    vi.mocked(formatUnits).mockImplementation((wei, decimals = 18) =>
+      (Number(wei) / 10 ** decimals).toString(),
     );
     invalidateRpcClients();
   });
@@ -369,8 +369,7 @@ describe('realTimeData', () => {
         expect(typeof warning).toBe('string');
         expect(warning).toContain('HTTP 403');
         expect(warning).toContain('Forbidden');
-      }
-      finally {
+      } finally {
         warnSpy.mockRestore();
         vi.stubGlobal('fetch', defaultFetch);
         invalidateRpcClients();

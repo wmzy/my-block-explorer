@@ -78,7 +78,7 @@ export async function fetchKnownTokenBalances(
   if (tokens.length === 0) return undefined;
 
   const owner = address.trim().toLowerCase();
-  const contracts: ContractFunctionParameters[] = tokens.map((token) => ({
+  const contracts: ContractFunctionParameters[] = tokens.map(token => ({
     address: token.address,
     abi: balanceOfAbi,
     functionName: 'balanceOf',
@@ -113,10 +113,7 @@ export const knownTokenBalancesCache = createQueryCache<
   [number, string]
 >('known-token-balances');
 
-const queryKnownTokenBalances = bindQueryFn(
-  fetchKnownTokenBalances,
-  knownTokenBalancesCache,
-);
+const queryKnownTokenBalances = bindQueryFn(fetchKnownTokenBalances, knownTokenBalancesCache);
 
 const useKnownTokenBalancesQuery = createQueryHook({
   queryFn: queryKnownTokenBalances,
@@ -139,7 +136,7 @@ export function useKnownTokenBalances(chainId: number, address: string) {
 export function filterNonZeroKnownTokenBalances(
   rows: readonly KnownTokenBalance[],
 ): KnownTokenBalance[] {
-  return rows.filter((row) => row.balance > 0n);
+  return rows.filter(row => row.balance > 0n);
 }
 
 /**
@@ -168,7 +165,7 @@ export function orderKnownTokenRows(
     }
     return a.index - b.index;
   });
-  return stamped.map((entry) => entry.row);
+  return stamped.map(entry => entry.row);
 }
 
 /** Display cap for the Known Tokens section. */

@@ -79,10 +79,7 @@ export function UsdValue({
   if (!Number.isFinite(usd)) return null;
 
   return (
-    <span
-      className={usdValueStyle}
-      title={`Price via DefiLlama · updated ${ageText(age)}`}
-    >
+    <span className={usdValueStyle} title={`Price via DefiLlama · updated ${ageText(age)}`}>
       {formatUsd(usd)}
     </span>
   );

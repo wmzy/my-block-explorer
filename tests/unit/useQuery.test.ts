@@ -17,11 +17,11 @@ import {
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((res) => (resolve = res));
+  const promise = new Promise<T>(res => (resolve = res));
   return { promise, resolve };
 }
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 describe('createQueryHook (scenario hook)', () => {
   it('loading → data: initData served first, then data/loading/stale settle', async () => {
@@ -227,10 +227,9 @@ describe('createQueryHook (scenario hook)', () => {
       initData: [] as string[],
     });
 
-    const { result, rerender } = renderHook(
-      ({ key }: { key: string }) => useQ([key]),
-      { initialProps: { key: 'a' } },
-    );
+    const { result, rerender } = renderHook(({ key }: { key: string }) => useQ([key]), {
+      initialProps: { key: 'a' },
+    });
 
     expect(result.current.loading).toBe(true);
     await act(async () => {
@@ -255,8 +254,8 @@ describe('createQueryHook (scenario hook)', () => {
   });
 
   it('hash normalization: object args with different key order hit the same cache entry', async () => {
-    const fn: (args: Record<string, unknown>) => Promise<string[]> = vi.fn(
-      () => Promise.resolve(['v1']),
+    const fn: (args: Record<string, unknown>) => Promise<string[]> = vi.fn(() =>
+      Promise.resolve(['v1']),
     );
     const cache = createQueryCache<string[], [Record<string, unknown>]>('hash-normalize');
     const useQ = createQueryHook({
@@ -264,19 +263,17 @@ describe('createQueryHook (scenario hook)', () => {
       initData: [] as string[],
     });
 
-    const first = renderHook(
-      ({ args }) => useQ([args]),
-      { initialProps: { args: { page: 1, tab: 'feed' } } },
-    );
+    const first = renderHook(({ args }) => useQ([args]), {
+      initialProps: { args: { page: 1, tab: 'feed' } },
+    });
     await waitFor(() => expect(first.result.current.data).toEqual(['v1']));
     first.unmount();
 
     // Reversed key order + a fresh object literal: structurally normalized
     // to the same cache key (JSON.stringify would produce two keys).
-    const second = renderHook(
-      ({ args }) => useQ([args]),
-      { initialProps: { args: { tab: 'feed', page: 1 } } },
-    );
+    const second = renderHook(({ args }) => useQ([args]), {
+      initialProps: { args: { tab: 'feed', page: 1 } },
+    });
     await waitFor(() => expect(second.result.current.data).toEqual(['v1']));
     expect(fn).toHaveBeenCalledTimes(1);
     second.unmount();
@@ -284,10 +281,7 @@ describe('createQueryHook (scenario hook)', () => {
 
   it('stale hit: old value served first and marked stale while a background refresh runs', async () => {
     const pending = deferred<string[]>();
-    const fn = vi
-      .fn()
-      .mockResolvedValueOnce(['old'])
-      .mockReturnValueOnce(pending.promise);
+    const fn = vi.fn().mockResolvedValueOnce(['old']).mockReturnValueOnce(pending.promise);
     const cache = createQueryCache<string[], []>('stale-swr');
     const useQ = createQueryHook({
       queryFn: bindQueryFn(fn, cache),

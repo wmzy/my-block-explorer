@@ -17,7 +17,11 @@ import { parseChainIdParam } from '@/utils/chainParam';
 import { PageContainer } from '@/components/ui/PageLayout';
 import { Button } from '@/components/ui/Button';
 import { ErrorState } from '@/components/ui/ErrorState';
-import { useLatestBlocksFeed, useLatestTransactionsFeed, HOME_FEED_ITEMS } from '@/services/homeFeed';
+import {
+  useLatestBlocksFeed,
+  useLatestTransactionsFeed,
+  HOME_FEED_ITEMS,
+} from '@/services/homeFeed';
 import { useLiveBlocks, mergeLiveBlocks } from '@/services/liveChain';
 import {
   buildSparklinePath,
@@ -706,8 +710,7 @@ function GasPanel({ feed, chainId }: { feed: GasFeedState; chainId: number }) {
 
   // Settled without usable data (or the defensive never-throws escape hatch
   // of a hook-level error): the explicit unavailable state.
-  const reason: GasUnavailableReason =
-    own?.status === 'unavailable' ? own.reason : 'fetch-failed';
+  const reason: GasUnavailableReason = own?.status === 'unavailable' ? own.reason : 'fetch-failed';
   return (
     <div data-testid="gas-panel" className={gasPanelCard}>
       <Card>
@@ -761,18 +764,17 @@ export default function Home() {
   // On 'polling' (no stream, stream error, browser without EventSource)
   // the polled feed alone is rendered.
   const polledBlocks = blocksFeed.data?.blocks ?? [];
-  const blocks = live.mode === 'live'
-    ? mergeLiveBlocks(polledBlocks, live.blocks, HOME_FEED_ITEMS)
-    : polledBlocks;
+  const blocks =
+    live.mode === 'live'
+      ? mergeLiveBlocks(polledBlocks, live.blocks, HOME_FEED_ITEMS)
+      : polledBlocks;
   // Newest head across both channels: the stream leads when connected,
   // but a catch-up poll that momentarily ran ahead still wins honestly.
-  const liveHead = live.mode === 'live' && live.blocks[0] !== undefined
-    ? BigInt(live.blocks[0].number)
-    : null;
+  const liveHead =
+    live.mode === 'live' && live.blocks[0] !== undefined ? BigInt(live.blocks[0].number) : null;
   const polledHead = blocksFeed.data?.latestBlockNumber ?? null;
-  const latestBlockNumber = liveHead !== null && (polledHead === null || liveHead > polledHead)
-    ? liveHead
-    : polledHead;
+  const latestBlockNumber =
+    liveHead !== null && (polledHead === null || liveHead > polledHead) ? liveHead : polledHead;
   const gasPrice = blocksFeed.data?.gasPrice ?? null;
   const transactions = transactionsFeed.data ?? [];
   // True while either feed is still on its FIRST fetch (polledQuery's
@@ -942,56 +944,55 @@ export default function Home() {
                     as soon as the blocks feed lands, regardless of the
                     transactions column's state. */}
                 {blocksFeed.loading && <FeedSkeletonRows rows={HOME_FEED_SKELETON_ROWS} />}
-                {!blocksFeed.loading && blocks.map(block => {
-                  // Bor-style PoS chains report the zero address as miner;
-                  // classify once so only a real producer gets a link.
-                  const producer = describeBlockProducer(block.miner);
-                  return (
-                    <div key={block.number} className={listItem}>
-                      <div className={listIcon}>Bk</div>
-                      <div className={listBody}>
-                        <div className={listRow}>
-                          <TypedLink
-                            to={`/chain/${currentChainId}/block/${block.number}`}
-                            className={listPrimary}
-                          >
-                            {formatNumber(block.number)}
-                          </TypedLink>
-                          <span className={listMeta}>
-                            {formatRelativeTime(block.timestamp)}
-                          </span>
-                        </div>
-                        <div className={listRow}>
-                          <span className={listSecondary}>
-                            {producer.kind === 'validator' ? (
-                              <>
-                                Miner{' '}
-                                <TypedLink
-                                  to={`/chain/${currentChainId}/address/${producer.address}`}
-                                  className={listPrimary}
-                                  style={{ fontWeight: 'normal' }}
-                                >
-                                  {formatAddress(producer.address, 4)}
-                                </TypedLink>
-                              </>
-                            ) : (
-                              // Honest placeholder instead of a link to the
-                              // meaningless zero-address page.
-                              'Validator not exposed by this chain’s RPC'
-                            )}
-                          </span>
-                          <span className={listValue}>{block.transactionCount} txns</span>
-                        </div>
-                        {block.baseFeePerGas && (
-                          <div className={listSecondary}>
-                            Base fee: {formatFixed(BigInt(block.baseFeePerGas), 9, 4)} Gwei · Size:{' '}
-                            {formatNumber(block.sizeBytes ?? 0)} B
+                {!blocksFeed.loading &&
+                  blocks.map(block => {
+                    // Bor-style PoS chains report the zero address as miner;
+                    // classify once so only a real producer gets a link.
+                    const producer = describeBlockProducer(block.miner);
+                    return (
+                      <div key={block.number} className={listItem}>
+                        <div className={listIcon}>Bk</div>
+                        <div className={listBody}>
+                          <div className={listRow}>
+                            <TypedLink
+                              to={`/chain/${currentChainId}/block/${block.number}`}
+                              className={listPrimary}
+                            >
+                              {formatNumber(block.number)}
+                            </TypedLink>
+                            <span className={listMeta}>{formatRelativeTime(block.timestamp)}</span>
                           </div>
-                        )}
+                          <div className={listRow}>
+                            <span className={listSecondary}>
+                              {producer.kind === 'validator' ? (
+                                <>
+                                  Miner{' '}
+                                  <TypedLink
+                                    to={`/chain/${currentChainId}/address/${producer.address}`}
+                                    className={listPrimary}
+                                    style={{ fontWeight: 'normal' }}
+                                  >
+                                    {formatAddress(producer.address, 4)}
+                                  </TypedLink>
+                                </>
+                              ) : (
+                                // Honest placeholder instead of a link to the
+                                // meaningless zero-address page.
+                                'Validator not exposed by this chain’s RPC'
+                              )}
+                            </span>
+                            <span className={listValue}>{block.transactionCount} txns</span>
+                          </div>
+                          {block.baseFeePerGas && (
+                            <div className={listSecondary}>
+                              Base fee: {formatFixed(BigInt(block.baseFeePerGas), 9, 4)} Gwei ·
+                              Size: {formatNumber(block.sizeBytes ?? 0)} B
+                            </div>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
                 <TypedLink to={`/chain/${currentChainId}/blocks`} className={viewAllLink}>
                   View all blocks →
                 </TypedLink>
@@ -1009,62 +1010,67 @@ export default function Home() {
                 {/* Independent of the blocks column: skeleton rows only
                     while THIS feed's first fetch runs. */}
                 {transactionsFeed.loading && <FeedSkeletonRows rows={HOME_FEED_SKELETON_ROWS} />}
-                {!transactionsFeed.loading && transactions.map(tx => (
-                  <div key={tx.hash} className={listItem}>
-                    <div className={listIcon}>Tx</div>
-                    <div className={listBody}>
-                      <div className={listRow}>
-                        <TypedLink
-                          to={`/chain/${currentChainId}/tx/${tx.hash}`}
-                          className={listPrimary}
-                        >
-                          {formatHash(tx.hash, 6)}
-                        </TypedLink>
-                        <span className={listMeta}>
-                          {tx.timestamp
-                            ? formatRelativeTime(tx.timestamp)
-                            : tx.blockNumber === null
-                              ? 'Pending'
-                              : `Block ${formatNumber(tx.blockNumber)}`}
-                        </span>
-                      </div>
-                      <div className={listRow}>
-                        <span className={listSecondary}>
-                          From{' '}
+                {!transactionsFeed.loading &&
+                  transactions.map(tx => (
+                    <div key={tx.hash} className={listItem}>
+                      <div className={listIcon}>Tx</div>
+                      <div className={listBody}>
+                        <div className={listRow}>
                           <TypedLink
-                            to={`/chain/${currentChainId}/address/${tx.fromAddress}`}
+                            to={`/chain/${currentChainId}/tx/${tx.hash}`}
                             className={listPrimary}
-                            style={{ fontWeight: 'normal' }}
                           >
-                            {formatAddress(tx.fromAddress, 4)}
+                            {formatHash(tx.hash, 6)}
                           </TypedLink>
-                          {tx.toAddress && (
-                            <>
-                              {' → '}
-                              <TypedLink
-                                to={`/chain/${currentChainId}/address/${tx.toAddress}`}
-                                className={listPrimary}
-                                style={{ fontWeight: 'normal' }}
-                              >
-                                {formatAddress(tx.toAddress, 4)}
-                              </TypedLink>
-                            </>
-                          )}
-                        </span>
-                      </div>
-                      <div className={listRow}>
-                        <span className={listValue}>{formatValue(BigInt(tx.value), symbol)}</span>
-                        {tx.gasUsed && tx.effectiveGasPrice && (
-                          <span className={listSecondary}>
-                            Fee:{' '}
-                            {formatFixed(BigInt(tx.gasUsed) * BigInt(tx.effectiveGasPrice), 18, 6)}{' '}
-                            {symbol}
+                          <span className={listMeta}>
+                            {tx.timestamp
+                              ? formatRelativeTime(tx.timestamp)
+                              : tx.blockNumber === null
+                                ? 'Pending'
+                                : `Block ${formatNumber(tx.blockNumber)}`}
                           </span>
-                        )}
+                        </div>
+                        <div className={listRow}>
+                          <span className={listSecondary}>
+                            From{' '}
+                            <TypedLink
+                              to={`/chain/${currentChainId}/address/${tx.fromAddress}`}
+                              className={listPrimary}
+                              style={{ fontWeight: 'normal' }}
+                            >
+                              {formatAddress(tx.fromAddress, 4)}
+                            </TypedLink>
+                            {tx.toAddress && (
+                              <>
+                                {' → '}
+                                <TypedLink
+                                  to={`/chain/${currentChainId}/address/${tx.toAddress}`}
+                                  className={listPrimary}
+                                  style={{ fontWeight: 'normal' }}
+                                >
+                                  {formatAddress(tx.toAddress, 4)}
+                                </TypedLink>
+                              </>
+                            )}
+                          </span>
+                        </div>
+                        <div className={listRow}>
+                          <span className={listValue}>{formatValue(BigInt(tx.value), symbol)}</span>
+                          {tx.gasUsed && tx.effectiveGasPrice && (
+                            <span className={listSecondary}>
+                              Fee:{' '}
+                              {formatFixed(
+                                BigInt(tx.gasUsed) * BigInt(tx.effectiveGasPrice),
+                                18,
+                                6,
+                              )}{' '}
+                              {symbol}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
                 {!transactionsFeed.loading && transactions.length === 0 && (
                   <div className={listSecondary} style={{ padding: '20px 0', textAlign: 'center' }}>
                     No transactions in recent blocks

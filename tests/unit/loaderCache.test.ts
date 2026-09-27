@@ -11,7 +11,7 @@ import { render, renderHook, screen, waitFor } from '@testing-library/react';
 import { Component, createElement, type ComponentType, type ReactNode } from 'react';
 import { MemoryRouter, View, type Route } from '@native-router/react';
 
-vi.mock('@native-router/core', async (importOriginal) => ({
+vi.mock('@native-router/core', async importOriginal => ({
   ...(await importOriginal<typeof import('@native-router/core')>()),
   refresh: vi.fn(),
 }));
@@ -26,7 +26,7 @@ const refreshMock = vi.mocked(refresh);
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((res) => (resolve = res));
+  const promise = new Promise<T>(res => (resolve = res));
   return { promise, resolve };
 }
 
@@ -48,9 +48,11 @@ describe('withCache', () => {
     const fn = vi.fn();
     const cached = { v: 'cached' };
     entryCache.set(args, cached);
-    const loader = withCache(entryCache, ({ params }: { params: { slug?: string } }): [string] => [
-      params.slug ?? '',
-    ], fn);
+    const loader = withCache(
+      entryCache,
+      ({ params }: { params: { slug?: string } }): [string] => [params.slug ?? ''],
+      fn,
+    );
 
     await expect(loader(ctx)).resolves.toBe(cached);
     expect(fn).not.toHaveBeenCalled();
@@ -99,9 +101,11 @@ describe('withCache', () => {
     const entryCache = createQueryCache<{ v: string }, [string]>('miss');
     const pending = deferred<{ v: string }>();
     const fn = vi.fn().mockReturnValue(pending.promise);
-    const loader = withCache(entryCache, ({ params }: { params: { slug?: string } }): [string] => [
-      params.slug ?? '',
-    ], fn);
+    const loader = withCache(
+      entryCache,
+      ({ params }: { params: { slug?: string } }): [string] => [params.slug ?? ''],
+      fn,
+    );
 
     const promise = loader(ctx);
     expect(fn).toHaveBeenCalledTimes(1);
@@ -114,42 +118,41 @@ describe('withCache', () => {
       ({ params }: { params: { slug?: string } }): [string] => [params.slug ?? ''],
       vi.fn().mockRejectedValue(new Error('404')),
     );
-    await expect(
-      failing({ params: { slug: 'other' }, router: fakeRouter }),
-    ).rejects.toThrow('404');
+    await expect(failing({ params: { slug: 'other' }, router: fakeRouter })).rejects.toThrow('404');
   });
 
   it('concurrent miss: same-key calls share one in-flight request, fn runs once', async () => {
     const entryCache = createQueryCache<{ v: string }, [string]>('concurrent-miss');
     const pending = deferred<{ v: string }>();
     const fn = vi.fn().mockReturnValue(pending.promise);
-    const loader = withCache(entryCache, ({ params }: { params: { slug?: string } }): [string] => [
-      params.slug ?? '',
-    ], fn);
+    const loader = withCache(
+      entryCache,
+      ({ params }: { params: { slug?: string } }): [string] => [params.slug ?? ''],
+      fn,
+    );
 
     const first = loader(ctx);
     const second = loader(ctx);
     pending.resolve({ v: 'one' });
-    await expect(Promise.all([first, second])).resolves.toEqual([
-      { v: 'one' },
-      { v: 'one' },
-    ]);
+    await expect(Promise.all([first, second])).resolves.toEqual([{ v: 'one' }, { v: 'one' }]);
     expect(fn).toHaveBeenCalledTimes(1);
   });
 
   it('refetch chain: delete alone never refreshes, the following set with a new value does; clear starts a new generation', async () => {
     const entryCache = createQueryCache<{ v: string }, [string]>('refetch-chain');
     const fn = vi.fn(async (_ctx: { params?: unknown }) => ({ v: 'again' }));
-    const loader = withCache(entryCache, ({ params }: { params: { slug?: string } }): [string] => [
-      params.slug ?? '',
-    ], fn);
+    const loader = withCache(
+      entryCache,
+      ({ params }: { params: { slug?: string } }): [string] => [params.slug ?? ''],
+      fn,
+    );
     entryCache.set(args, { v: 'v1' });
     await loader(ctx); // establishes the binding and seeds seen = {key: v1}
     expect(refreshMock).not.toHaveBeenCalled();
 
     // refetch first half: entry delete — a delete event never refreshes.
     entryCache.delete(args);
-    await new Promise((r) => setTimeout(r, 0));
+    await new Promise(r => setTimeout(r, 0));
     expect(refreshMock).not.toHaveBeenCalled();
 
     // refetch second half: settle writes a new value — an already-seen key
@@ -162,9 +165,9 @@ describe('withCache', () => {
     // treated as a brand-new key and does not refresh (a logout-and-navigate
     // must not fire a refresh that supersedes the in-flight navigation).
     entryCache.clear();
-    await new Promise((r) => setTimeout(r, 0));
+    await new Promise(r => setTimeout(r, 0));
     entryCache.set(args, { v: 'v3' });
-    await new Promise((r) => setTimeout(r, 0));
+    await new Promise(r => setTimeout(r, 0));
     expect(refreshMock).toHaveBeenCalledTimes(1);
   });
 });
@@ -255,7 +258,8 @@ describe('createDataLoader: DEV identity check', () => {
       {
         path: '/page/:slug',
         data: triple.loader,
-        component: () => Promise.resolve(() => createElement(PageView, { useData: triple.useData })),
+        component: () =>
+          Promise.resolve(() => createElement(PageView, { useData: triple.useData })),
       },
     ];
     renderApp('/page/a', routes);
@@ -271,9 +275,7 @@ describe('createDataLoader: DEV identity check', () => {
         path: '/mismatch',
         data: triple.loader,
         component: () =>
-          Promise.resolve(() =>
-            createElement('b', null, `other:${String(other.useData().v)}`),
-          ),
+          Promise.resolve(() => createElement('b', null, `other:${String(other.useData().v)}`)),
       },
     ];
     renderApp('/mismatch', routes);
@@ -288,7 +290,8 @@ describe('createDataLoader: DEV identity check', () => {
       {
         path: '/wrapped',
         data: (loaderCtx: Parameters<Triple['loader']>[0]) => triple.loader(loaderCtx),
-        component: () => Promise.resolve(() => createElement(PageView, { useData: triple.useData })),
+        component: () =>
+          Promise.resolve(() => createElement(PageView, { useData: triple.useData })),
       },
     ];
     renderApp('/wrapped', routes);
@@ -315,7 +318,8 @@ describe('createDataLoader: DEV identity check', () => {
     const routes = [
       {
         path: '/plain-strict',
-        component: () => Promise.resolve(() => createElement(PageView, { useData: triple.useData })),
+        component: () =>
+          Promise.resolve(() => createElement(PageView, { useData: triple.useData })),
       },
     ];
     renderApp('/plain-strict', routes);

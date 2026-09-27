@@ -10,10 +10,7 @@ import {
 import { ConnectionStatus } from '@/components/ServiceSetup';
 import CommandPalette from '@/components/CommandPalette';
 import { contractSourceLoader } from '@/services/dataloaders';
-import {
-  deriveDocumentTitle,
-  deriveMetaDescription,
-} from '@/utils/metaDescribe';
+import { deriveDocumentTitle, deriveMetaDescription } from '@/utils/metaDescribe';
 
 import RouterError from './RouterError';
 import NotFound from './NotFound';
@@ -211,11 +208,7 @@ export { deriveDocumentTitle, deriveMetaDescription };
 // duplicate tag. (Static crawlers that never execute JS still see only the
 // index.html head; these tags serve JS-executing clients and link
 // unfurlers that do.)
-const setMetaContent = (
-  attribute: 'name' | 'property',
-  key: string,
-  content: string,
-): void => {
+const setMetaContent = (attribute: 'name' | 'property', key: string, content: string): void => {
   const tag =
     document.head.querySelector<HTMLMetaElement>(`meta[${attribute}="${key}"]`) ??
     document.createElement('meta');
@@ -247,11 +240,7 @@ export function DocumentTitle() {
       const title = deriveDocumentTitle(localPath, search);
       document.title = title;
       setMetaContent('property', 'og:title', title);
-      setMetaContent(
-        'property',
-        'og:description',
-        deriveMetaDescription(localPath, search),
-      );
+      setMetaContent('property', 'og:description', deriveMetaDescription(localPath, search));
       setMetaContent('property', 'og:type', 'website');
       setMetaContent('name', 'twitter:card', 'summary');
     };
@@ -267,7 +256,7 @@ export default function App() {
     <Router
       routes={routes}
       baseUrl={routerBaseUrl}
-      errorHandler={(error) => <RouterError error={error} />}
+      errorHandler={error => <RouterError error={error} />}
       notFound={NotFound}
     >
       <DocumentTitle />

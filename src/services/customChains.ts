@@ -34,8 +34,7 @@ type CustomChainsResponse = { chains?: unknown };
 // field; anything else is dropped rather than fabricated into a chain.
 const parseCustomChainRow = (row: unknown): CustomChainView | null => {
   if (typeof row !== 'object' || row === null) return null;
-  const { chainId, name, symbol, decimals, rpcUrl, urlRedacted } =
-    row as Record<string, unknown>;
+  const { chainId, name, symbol, decimals, rpcUrl, urlRedacted } = row as Record<string, unknown>;
   if (typeof chainId !== 'number' || !Number.isInteger(chainId) || chainId <= 0) {
     return null;
   }
@@ -141,10 +140,7 @@ export async function addCustomChain(input: {
 
   const view = parseCustomChainRow(created);
   if (!view) {
-    throw new ApiError(
-      'The backend registered the chain but returned a malformed body.',
-      0,
-    );
+    throw new ApiError('The backend registered the chain but returned a malformed body.', 0);
   }
 
   const entry = toRegistryEntry(view);

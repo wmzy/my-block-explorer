@@ -56,7 +56,9 @@ const parseContractsOffsetParam = (raw: string | undefined): number | null => {
 // byte-identical to the pre-override behavior.
 const parseBodyStateOverride = (
   raw: unknown,
-): { error: { error: string; details: string[] }; status: 400 } | { value: StateOverride | undefined } => {
+):
+  | { error: { error: string; details: string[] }; status: 400 }
+  | { value: StateOverride | undefined } => {
   if (raw === undefined) return { value: undefined };
   const parsed = parseStateOverride(raw);
   if (!parsed.ok) {
@@ -187,19 +189,23 @@ app.get('/chains/:chainId/contracts/:address/source', async c => {
 // immutable data is simply re-fetched on the next read), so a zero-config
 // self-hosted session keeps Force Refresh working. With ADMIN_TOKEN set,
 // the x-admin-token header is enforced as usual.
-app.post('/chains/:chainId/contracts/:address/clear-cache', requireAdminTokenIfConfigured, async c => {
-  const chainId = getValidatedChainId(c.req.param('chainId'));
-  const address = getValidatedAddress(c.req.param('address'));
+app.post(
+  '/chains/:chainId/contracts/:address/clear-cache',
+  requireAdminTokenIfConfigured,
+  async c => {
+    const chainId = getValidatedChainId(c.req.param('chainId'));
+    const address = getValidatedAddress(c.req.param('address'));
 
-  try {
-    await contractSourceService.clearCache(chainId, address);
+    try {
+      await contractSourceService.clearCache(chainId, address);
 
-    return c.json({ success: true, message: 'Cache cleared' });
-  } catch (error) {
-    logger.error({ err: error }, 'Clear contract cache API error');
-    return c.json({ error: 'Failed to clear contract cache' }, 500);
-  }
-});
+      return c.json({ success: true, message: 'Cache cleared' });
+    } catch (error) {
+      logger.error({ err: error }, 'Clear contract cache API error');
+      return c.json({ error: 'Failed to clear contract cache' }, 500);
+    }
+  },
+);
 
 app.get('/chains/:chainId/contracts/:address/abi', async c => {
   const chainId = getValidatedChainId(c.req.param('chainId'));
@@ -285,7 +291,11 @@ app.get('/chains/:chainId/contracts/:address/functions', async c => {
 // Contract read/simulate proxy public RPC calls per request; each endpoint
 // gets its own generous bucket (independent quotas) so read polling cannot
 // starve simulate submissions and vice versa.
-const contractReadRateLimiter = createRateLimiter({ name: 'contracts-read', requestsPerMinute: 60, burst: 20 });
+const contractReadRateLimiter = createRateLimiter({
+  name: 'contracts-read',
+  requestsPerMinute: 60,
+  burst: 20,
+});
 app.post('/chains/:chainId/contracts/:address/read', contractReadRateLimiter, async c => {
   const chainId = getValidatedChainId(c.req.param('chainId'));
   const address = getValidatedAddress(c.req.param('address'));
@@ -343,7 +353,11 @@ app.post('/chains/:chainId/contracts/:address/read', contractReadRateLimiter, as
   }
 });
 
-const contractSimulateRateLimiter = createRateLimiter({ name: 'contracts-simulate', requestsPerMinute: 60, burst: 20 });
+const contractSimulateRateLimiter = createRateLimiter({
+  name: 'contracts-simulate',
+  requestsPerMinute: 60,
+  burst: 20,
+});
 app.post('/chains/:chainId/contracts/:address/simulate', contractSimulateRateLimiter, async c => {
   const chainId = getValidatedChainId(c.req.param('chainId'));
   const address = getValidatedAddress(c.req.param('address'));
@@ -540,57 +554,61 @@ app.get('/chains/:chainId/contracts/:address/ides', async c => {
 // Writes contract sources to disk and spawns a local IDE process, so this
 // is strictly admin-gated when ADMIN_TOKEN is configured (the frontend http
 // layer injects the x-admin-token header automatically).
-app.post('/chains/:chainId/contracts/:address/open-in-ide', requireAdminTokenIfConfigured, async c => {
-  const chainId = getValidatedChainId(c.req.param('chainId'));
-  const address = getValidatedAddress(c.req.param('address'));
+app.post(
+  '/chains/:chainId/contracts/:address/open-in-ide',
+  requireAdminTokenIfConfigured,
+  async c => {
+    const chainId = getValidatedChainId(c.req.param('chainId'));
+    const address = getValidatedAddress(c.req.param('address'));
 
-  try {
-    const body = await c.req.json();
-    const ide = body.ide as IdeId;
+    try {
+      const body = await c.req.json();
+      const ide = body.ide as IdeId;
 
-    const validIdes: IdeId[] = ['vscode', 'cursor', 'zed', 'webstorm', 'sublime'];
-    if (!ide || !validIdes.includes(ide)) {
-      return c.json(
-        { error: 'Unsupported IDE. Must be one of: vscode, cursor, zed, webstorm, sublime' },
-        400,
+      const validIdes: IdeId[] = ['vscode', 'cursor', 'zed', 'webstorm', 'sublime'];
+      if (!ide || !validIdes.includes(ide)) {
+        return c.json(
+          { error: 'Unsupported IDE. Must be one of: vscode, cursor, zed, webstorm, sublime' },
+          400,
+        );
+      }
+
+      const installedIdes = detectInstalledIdes();
+      if (!installedIdes.includes(ide)) {
+        return c.json({ error: `${ide} is not installed or not in PATH` }, 400);
+      }
+
+      const contractSource = await contractSourceService.getContractSource(chainId, address);
+      if (!contractSource) {
+        return c.json({ error: 'Contract not found or not a contract address' }, 404);
+      }
+
+      const targetSource = contractSource.implementationContract ?? contractSource;
+      const contractName = targetSource.name ?? `contract-${address.slice(0, 8)}`;
+
+      const result = await openInIde(
+        ide,
+        contractName,
+        address,
+        chainId,
+        targetSource.sourceCode,
+        targetSource.sourceFiles,
+        targetSource.compilerVersion,
+        targetSource.optimizationEnabled,
+        targetSource.optimizationRuns,
       );
+
+      return c.json({
+        success: true,
+        directory: result.directory,
+        ide,
+        timestamp: new Date().toISOString(),
+      });
+    } catch (error) {
+      logger.error({ err: error }, 'Open in IDE API error');
+      return c.json({ error: 'Failed to open contract in IDE' }, 500);
     }
-
-    const installedIdes = detectInstalledIdes();
-    if (!installedIdes.includes(ide)) {
-      return c.json({ error: `${ide} is not installed or not in PATH` }, 400);
-    }
-
-    const contractSource = await contractSourceService.getContractSource(chainId, address);
-    if (!contractSource) {
-      return c.json({ error: 'Contract not found or not a contract address' }, 404);
-    }
-
-    const targetSource = contractSource.implementationContract ?? contractSource;
-    const contractName = targetSource.name ?? `contract-${address.slice(0, 8)}`;
-
-    const result = await openInIde(
-      ide,
-      contractName,
-      address,
-      chainId,
-      targetSource.sourceCode,
-      targetSource.sourceFiles,
-      targetSource.compilerVersion,
-      targetSource.optimizationEnabled,
-      targetSource.optimizationRuns,
-    );
-
-    return c.json({
-      success: true,
-      directory: result.directory,
-      ide,
-      timestamp: new Date().toISOString(),
-    });
-  } catch (error) {
-    logger.error({ err: error }, 'Open in IDE API error');
-    return c.json({ error: 'Failed to open contract in IDE' }, 500);
-  }
-});
+  },
+);
 
 export default app;

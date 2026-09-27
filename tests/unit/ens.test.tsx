@@ -162,7 +162,9 @@ describe('resolveEnsAddress', () => {
 
   it('resolves against mainnet — where the ENS registry lives', async () => {
     mockedCreateRpcClient.mockResolvedValue(
-      clientWithGetEnsAddress(vi.fn().mockResolvedValue('0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045')),
+      clientWithGetEnsAddress(
+        vi.fn().mockResolvedValue('0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045'),
+      ),
     );
 
     const outcome = await resolveEnsAddress('vitalik.eth');
@@ -184,7 +186,9 @@ describe('resolveEnsAddress', () => {
   });
 
   it('a null answer settles as not-found (definitive)', async () => {
-    mockedCreateRpcClient.mockResolvedValue(clientWithGetEnsAddress(vi.fn().mockResolvedValue(null)));
+    mockedCreateRpcClient.mockResolvedValue(
+      clientWithGetEnsAddress(vi.fn().mockResolvedValue(null)),
+    );
 
     expect(await resolveEnsAddress('nosuchname.eth')).toEqual({ status: 'not-found' });
   });

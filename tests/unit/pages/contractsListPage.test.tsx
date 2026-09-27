@@ -78,55 +78,55 @@ const mockUseContractDirectory = vi.fn<(...args: unknown[]) => DirectoryHookResu
 
 vi.mock('@/services/contractDirectory', async importOriginal => {
   const actual = await importOriginal<typeof import('@/services/contractDirectory')>();
-  return { ...actual, useContractDirectory: (...args: unknown[]) => mockUseContractDirectory(...args) };
+  return {
+    ...actual,
+    useContractDirectory: (...args: unknown[]) => mockUseContractDirectory(...args),
+  };
 });
 
 const ADDR_A = '0xabc0000000000000000000000000000000000001';
 const ADDR_B = '0xdef0000000000000000000000000000000000002';
 
-const row = (overrides: Partial<DirectoryHookResult['data']> = {}) =>
-  ({
-    chainId: 1,
-    chainName: 'Ethereum',
-    contracts: [
-      {
-        chainId: 1,
-        address: ADDR_A,
-        name: 'Uniswap V2',
-        isVerified: true,
-        verificationSource: 'sourcify',
-        updatedAt: '2026-09-01T00:00:00.000Z',
-      },
-      {
-        chainId: 1,
-        address: ADDR_B,
-        name: null,
-        isVerified: false,
-        verificationSource: null,
-        updatedAt: null,
-      },
-    ],
-    total: 2,
-    q: null,
-    offset: 0,
-    ...overrides,
-  });
+const row = (overrides: Partial<DirectoryHookResult['data']> = {}) => ({
+  chainId: 1,
+  chainName: 'Ethereum',
+  contracts: [
+    {
+      chainId: 1,
+      address: ADDR_A,
+      name: 'Uniswap V2',
+      isVerified: true,
+      verificationSource: 'sourcify',
+      updatedAt: '2026-09-01T00:00:00.000Z',
+    },
+    {
+      chainId: 1,
+      address: ADDR_B,
+      name: null,
+      isVerified: false,
+      verificationSource: null,
+      updatedAt: null,
+    },
+  ],
+  total: 2,
+  q: null,
+  offset: 0,
+  ...overrides,
+});
 
 // Settles whatever args the view asks for: the payload echoes the request
 // (chainId/q/offset), so the view's settle guard passes for the rendered
 // page — the shape the real hook produces once its fetch resolves.
 const mockEchoSettle = (overrides: Partial<DirectoryHookResult['data']> = {}) => {
-  mockUseContractDirectory.mockImplementation(
-    (chainId: unknown, q: unknown, offset: unknown) => ({
-      data: row({
-        chainId: chainId as number,
-        q: (q as string | undefined) ?? null,
-        offset: offset as number,
-        ...overrides,
-      }),
-      loading: false,
+  mockUseContractDirectory.mockImplementation((chainId: unknown, q: unknown, offset: unknown) => ({
+    data: row({
+      chainId: chainId as number,
+      q: (q as string | undefined) ?? null,
+      offset: offset as number,
+      ...overrides,
     }),
-  );
+    loading: false,
+  }));
 };
 
 // Exposes the current search string so ?q=/?offset= writes are observable
@@ -232,16 +232,12 @@ describe('Contracts directory page', () => {
     expect(mockUseContractDirectory).toHaveBeenLastCalledWith(1, undefined, 0);
 
     fireEvent.click(screen.getByText('Next'));
-    await waitFor(() =>
-      expect(screen.getByTestId('search-probe').textContent).toBe('offset=50'),
-    );
+    await waitFor(() => expect(screen.getByTestId('search-probe').textContent).toBe('offset=50'));
     expect(mockUseContractDirectory).toHaveBeenLastCalledWith(1, undefined, 50);
     expect(screen.getByText(/Page 2/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByText('Prev'));
-    await waitFor(() =>
-      expect(screen.getByTestId('search-probe').textContent).toBe('offset=0'),
-    );
+    await waitFor(() => expect(screen.getByTestId('search-probe').textContent).toBe('offset=0'));
     expect(mockUseContractDirectory).toHaveBeenLastCalledWith(1, undefined, 0);
   });
 

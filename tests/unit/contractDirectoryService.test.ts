@@ -16,10 +16,7 @@ vi.mock('@/util/http', () => ({
   withSignal: (o: unknown, signal?: AbortSignal) => ({ ...(o as object), signal }),
 }));
 
-import {
-  fetchContractDirectory,
-  CONTRACT_DIRECTORY_PAGE_SIZE,
-} from '@/services/contractDirectory';
+import { fetchContractDirectory, CONTRACT_DIRECTORY_PAGE_SIZE } from '@/services/contractDirectory';
 
 beforeEach(() => {
   vi.clearAllMocks();

@@ -75,20 +75,14 @@ const CHAIN = 31337;
 // the Param (the only chunk with both `value` and `encoder`) keeps the
 // scoping assertion independent of the glue ordering.
 function predicateParts(condition: unknown): { column: unknown; value: unknown } {
-  const chunks
-    = (condition as { queryChunks?: ReadonlyArray<unknown> } | null)?.queryChunks ?? [];
+  const chunks = (condition as { queryChunks?: ReadonlyArray<unknown> } | null)?.queryChunks ?? [];
   let column: unknown = null;
   let value: unknown = undefined;
   for (const chunk of chunks) {
     if (chunk === contractSources.chainId || chunk === storageLayouts.chainId) {
       column = chunk;
     }
-    if (
-      typeof chunk === 'object'
-      && chunk !== null
-      && 'value' in chunk
-      && 'encoder' in chunk
-    ) {
+    if (typeof chunk === 'object' && chunk !== null && 'value' in chunk && 'encoder' in chunk) {
       value = (chunk as { value: unknown }).value;
     }
   }

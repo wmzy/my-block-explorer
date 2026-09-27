@@ -138,10 +138,12 @@ describe('abiList formatAbiSignature', () => {
   });
 
   it('prefixes events and errors, renders singleton entries naturally', () => {
-    expect(formatAbiSignature({ type: 'event', name: 'Transfer', inputs: [{ type: 'address' }] })).toBe(
-      'event Transfer(address)',
+    expect(
+      formatAbiSignature({ type: 'event', name: 'Transfer', inputs: [{ type: 'address' }] }),
+    ).toBe('event Transfer(address)');
+    expect(formatAbiSignature({ type: 'error', name: 'Unauthorized' })).toBe(
+      'error Unauthorized()',
     );
-    expect(formatAbiSignature({ type: 'error', name: 'Unauthorized' })).toBe('error Unauthorized()');
     expect(formatAbiSignature({ type: 'constructor', inputs: [{ type: 'address' }] })).toBe(
       'constructor(address)',
     );
@@ -163,10 +165,7 @@ describe('abiList buildAbiCopy', () => {
   ];
 
   it('merges the selection (original ABI order) plus every error, pretty-printed', () => {
-    const copy = buildAbiCopy(
-      new Set(['function:name()', 'event:Transfer()']),
-      entries,
-    );
+    const copy = buildAbiCopy(new Set(['function:name()', 'event:Transfer()']), entries);
     expect(JSON.parse(copy)).toEqual([
       { type: 'error', name: 'Unauthorized' },
       { type: 'function', name: 'name', inputs: [], stateMutability: 'view' },

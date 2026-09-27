@@ -59,9 +59,7 @@ describe('openapi document shape', () => {
   });
 
   it('uses the relative /api server form so it resolves on any host/port', () => {
-    expect(openApiDocument.servers).toEqual([
-      expect.objectContaining({ url: '/api' }),
-    ]);
+    expect(openApiDocument.servers).toEqual([expect.objectContaining({ url: '/api' })]);
   });
 
   it('every path starts with "/" and uses OpenAPI braces, not Hono colons', () => {
@@ -82,7 +80,7 @@ describe('openapi operations', () => {
     expect(ops.length).toBeGreaterThanOrEqual(55);
     for (const { path, method, op } of ops) {
       expect(typeof op.summary, `${method} ${path}`).toBe('string');
-      expect((op.summary).length, `${method} ${path}`).toBeGreaterThan(0);
+      expect(op.summary.length, `${method} ${path}`).toBeGreaterThan(0);
     }
   });
 

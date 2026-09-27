@@ -89,9 +89,7 @@ describe('classifySignatureQuery - invalid forms with guidance', () => {
   it('rejects redundant-zero padded forms instead of guessing the last nibbles', () => {
     // 16 hex characters: neither an 8-char selector nor a 64-char topic0 —
     // padding a selector to another width would name a different value.
-    expect(invalidReason(`0x00000000${SELECTOR.slice(2)}`)).toContain(
-      '16 hex characters after 0x',
-    );
+    expect(invalidReason(`0x00000000${SELECTOR.slice(2)}`)).toContain('16 hex characters after 0x');
   });
 
   it('rejects non-hex bodies behind a 0x prefix', () => {

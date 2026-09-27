@@ -56,24 +56,16 @@ const createIndexHtmlCache = (indexHtmlPath: string) => {
 };
 
 const escapeHtml = (value: string): string =>
-  value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+  value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-const escapeRegExp = (value: string): string =>
-  value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const escapeRegExp = (value: string): string => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 // Maintains the <title> element: replaces the first one in place (browsers
 // and crawlers honor the first), inserts one after <head> when absent.
 const upsertTitleElement = (html: string, title: string): string => {
   const escaped = escapeHtml(title);
   if (/<title\b[^>]*>[\s\S]*?<\/title\s*>/i.test(html)) {
-    return html.replace(
-      /<title\b[^>]*>[\s\S]*?<\/title\s*>/i,
-      `<title>${escaped}</title>`,
-    );
+    return html.replace(/<title\b[^>]*>[\s\S]*?<\/title\s*>/i, `<title>${escaped}</title>`);
   }
   if (/<head\b[^>]*>/i.test(html)) {
     return html.replace(/<head\b[^>]*>/i, match => `${match}\n    <title>${escaped}</title>`);
@@ -94,19 +86,13 @@ const upsertMetaTag = (
   content: string,
 ): string => {
   const escaped = escapeHtml(content);
-  const keyPattern = new RegExp(
-    `${attribute}\\s*=\\s*["']${escapeRegExp(key)}["']`,
-    'i',
-  );
+  const keyPattern = new RegExp(`${attribute}\\s*=\\s*["']${escapeRegExp(key)}["']`, 'i');
   let matched = false;
   const replaced = html.replace(/<meta\b[^>]*>/gi, tag => {
     if (matched || !keyPattern.test(tag)) return tag;
     matched = true;
     if (/\scontent\s*=\s*(?:"[^"]*"|'[^']*')/i.test(tag)) {
-      return tag.replace(
-        /\scontent\s*=\s*(?:"[^"]*"|'[^']*')/i,
-        ` content="${escaped}"`,
-      );
+      return tag.replace(/\scontent\s*=\s*(?:"[^"]*"|'[^']*')/i, ` content="${escaped}"`);
     }
     return tag.replace(/\s*\/?>\s*$/, ` content="${escaped}">`);
   });
@@ -138,10 +124,8 @@ export function injectShareMeta(html: string, title: string, description: string
 // not. Only exact text/html media types count (with or without q params) —
 // a bare */* (curl) deliberately does not opt in.
 const isHtmlNavigation = (accept: string | undefined): boolean =>
-  (accept
-    ?.split(',')
-    .some(part => part.split(';')[0]?.trim().toLowerCase() === 'text/html')) ??
-    false;
+  accept?.split(',').some(part => part.split(';')[0]?.trim().toLowerCase() === 'text/html') ??
+  false;
 
 // Guards shared by both middlewares: document navigations only, never the
 // API subtree (exact /api included — an API base URL must never leak HTML).

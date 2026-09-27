@@ -49,7 +49,10 @@ describe('computeIndexingCoverage', () => {
   it('counts only the covered share when ranges do not span the full distance', () => {
     // Completed [0,100] (101 blocks) + pending [1000,2000] contributes nothing;
     // span is [0,2000] = 2001 blocks.
-    const result = computeIndexingCoverage([range(0, 100, 'completed'), range(1000, 2000, 'pending')]);
+    const result = computeIndexingCoverage([
+      range(0, 100, 'completed'),
+      range(1000, 2000, 'pending'),
+    ]);
     expect(result.coveredBlocks).toBe(101);
     expect(result.spanBlocks).toBe(2001);
     expect(result.coverage).toBeCloseTo((101 / 2001) * 100, 5);
@@ -127,10 +130,7 @@ describe('computeIndexingCoverage', () => {
 describe('EventStatistics coverage metric', () => {
   const ADDRESS = '0x1234567890123456789012345678901234567890';
 
-  const mockEndpoints = (
-    ranges: unknown[],
-    status: 'idle' | 'indexing' = 'idle',
-  ) => {
+  const mockEndpoints = (ranges: unknown[], status: 'idle' | 'indexing' = 'idle') => {
     vi.mocked(get).mockImplementation(async (url: string) => {
       if (url.endsWith('/events/ranges')) return { ranges };
       return {
@@ -157,14 +157,9 @@ describe('EventStatistics coverage metric', () => {
   it('renders union coverage from the ranges endpoint, replacing the linear Blocks metric', async () => {
     // Completed [0,99] (100 blocks) + forward indexing [100,299] walked to
     // 199 (100 blocks) over a [0,299] span = 200/300 = 66.7%.
-    mockEndpoints([
-      range(0, 99, 'completed'),
-      range(100, 299, 'indexing', { currentBlock: 199 }),
-    ]);
+    mockEndpoints([range(0, 99, 'completed'), range(100, 299, 'indexing', { currentBlock: 199 })]);
 
-    render(
-      <EventStatistics chainId={1} contractAddress={ADDRESS as `0x${string}`} />,
-    );
+    render(<EventStatistics chainId={1} contractAddress={ADDRESS as `0x${string}`} />);
 
     expect(await screen.findByText(/Indexing coverage/)).toBeInTheDocument();
     expect(screen.getByText(/66\.7%/)).toBeInTheDocument();
@@ -177,14 +172,9 @@ describe('EventStatistics coverage metric', () => {
   it('renders walked paused/error coverage alongside completed ranges', async () => {
     // Completed [0,99] (100) + paused [100,299] walked to 199 (100) over a
     // [0,299] span = 66.7% — a paused range contributes its walked blocks.
-    mockEndpoints([
-      range(0, 99, 'completed'),
-      range(100, 299, 'paused', { currentBlock: 199 }),
-    ]);
+    mockEndpoints([range(0, 99, 'completed'), range(100, 299, 'paused', { currentBlock: 199 })]);
 
-    render(
-      <EventStatistics chainId={1} contractAddress={ADDRESS as `0x${string}`} />,
-    );
+    render(<EventStatistics chainId={1} contractAddress={ADDRESS as `0x${string}`} />);
 
     expect(await screen.findByText(/66\.7%/)).toBeInTheDocument();
   });
@@ -193,9 +183,7 @@ describe('EventStatistics coverage metric', () => {
     vi.useFakeTimers();
     mockEndpoints([range(0, 1000, 'indexing', { currentBlock: 250 })], 'indexing');
 
-    render(
-      <EventStatistics chainId={1} contractAddress={ADDRESS as `0x${string}`} />,
-    );
+    render(<EventStatistics chainId={1} contractAddress={ADDRESS as `0x${string}`} />);
 
     // Settle the initial fetch under fake timers, then watch one tick land
     // exactly at 3s (the old 5s cadence would still be silent).
@@ -218,9 +206,7 @@ describe('EventStatistics coverage metric', () => {
     vi.useFakeTimers();
     mockEndpoints([range(0, 1000, 'indexing', { currentBlock: 250 })], 'idle');
 
-    render(
-      <EventStatistics chainId={1} contractAddress={ADDRESS as `0x${string}`} />,
-    );
+    render(<EventStatistics chainId={1} contractAddress={ADDRESS as `0x${string}`} />);
 
     await act(async () => {});
     vi.mocked(get).mockClear();

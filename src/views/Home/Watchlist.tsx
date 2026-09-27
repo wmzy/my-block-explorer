@@ -61,8 +61,7 @@ const MAX_MATCHES_KEPT = 5;
 
 const ADD_REJECTION_COPY = {
   format: 'Not a valid address — expected 0x followed by 40 hex characters.',
-  checksum:
-    'Address checksum mismatch — use the all-lowercase form or copy a checksummed address.',
+  checksum: 'Address checksum mismatch — use the all-lowercase form or copy a checksummed address.',
   duplicate: 'Already on the watchlist.',
   full: `Watchlist is full (${WATCHLIST_MAX_ENTRIES} addresses).`,
 } as const;
@@ -91,7 +90,11 @@ export function findWatchedMatches(
   for (const tx of transactions) {
     const from = tx.from.toLowerCase();
     const to = tx.to?.toLowerCase();
-    const hit = watchedLower.has(from) ? from : to !== undefined && watchedLower.has(to) ? to : undefined;
+    const hit = watchedLower.has(from)
+      ? from
+      : to !== undefined && watchedLower.has(to)
+        ? to
+        : undefined;
     if (hit !== undefined) {
       matches.push({ address: hit, txHash: tx.hash });
       if (matches.length >= cap) break;
@@ -262,13 +265,7 @@ const gapRow = css`
 
 // --- component: browser watchlist (section 1) ---
 
-export default function Watchlist({
-  chainId,
-  live,
-}: {
-  chainId: number;
-  live: boolean;
-}) {
+export default function Watchlist({ chainId, live }: { chainId: number; live: boolean }) {
   const [entries, setEntries] = useState<string[]>(() => readWatchlist());
   const [input, setInput] = useState('');
   const [addError, setAddError] = useState<string | null>(null);
@@ -376,8 +373,7 @@ export default function Watchlist({
   };
 
   const permissionCopy: Record<'unsupported' | NotificationPermission, string> = {
-    unsupported:
-      'Browser notifications are not supported here — matches still appear below.',
+    unsupported: 'Browser notifications are not supported here — matches still appear below.',
     default: 'Matches also appear below.',
     granted: 'Notifications on.',
     denied:
@@ -413,17 +409,10 @@ export default function Watchlist({
             <div className={entryList}>
               {entries.map(entry => (
                 <div key={entry.toLowerCase()} className={entryRow}>
-                  <TypedLink
-                    to={`/chain/${chainId}/address/${entry}`}
-                    title={entry}
-                  >
+                  <TypedLink to={`/chain/${chainId}/address/${entry}`} title={entry}>
                     {formatAddress(entry)}
                   </TypedLink>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleRemove(entry)}
-                  >
+                  <Button variant="outline" size="sm" onClick={() => handleRemove(entry)}>
                     Remove
                   </Button>
                 </div>
@@ -443,10 +432,7 @@ export default function Watchlist({
           {matches.length > 0 && (
             <div>
               {matches.map(match => (
-                <div
-                  key={`${match.chainId}-${match.txHash}-${match.address}`}
-                  className={matchRow}
-                >
+                <div key={`${match.chainId}-${match.txHash}-${match.address}`} className={matchRow}>
                   <TypedLink to={`/chain/${match.chainId}/address/${match.address}`}>
                     {formatAddress(match.address)}
                   </TypedLink>{' '}
@@ -460,11 +446,11 @@ export default function Watchlist({
           )}
 
           <div className={note}>
-            Addresses are checked against live blocks while this page is
-            open — not a background service. Matching looks at the from/to
-            of each transaction in the newest blocks (first {MAX_TXS_SCANNED}{' '}
-            per block).
-            {!live && ' Live stream not connected — matching is inactive while the list updates by polling.'}
+            Addresses are checked against live blocks while this page is open — not a background
+            service. Matching looks at the from/to of each transaction in the newest blocks (first{' '}
+            {MAX_TXS_SCANNED} per block).
+            {!live &&
+              ' Live stream not connected — matching is inactive while the list updates by polling.'}
           </div>
         </CardContent>
       </Card>
@@ -483,8 +469,7 @@ export default function Watchlist({
 // full are the SERVER's verdicts here and surface with its messages.
 const SERVER_ADD_REJECTION_COPY = {
   format: 'Not a valid address — expected 0x followed by 40 hex characters.',
-  checksum:
-    'Address checksum mismatch — use the all-lowercase form or copy a checksummed address.',
+  checksum: 'Address checksum mismatch — use the all-lowercase form or copy a checksummed address.',
 } as const;
 
 // Same guidance the Contract view's gated writes give (403 = the browser
@@ -517,10 +502,9 @@ function ServerWatchPanel({ chainId }: { chainId: number }) {
         </CardHeader>
         <CardContent>
           <div className={offlineCard}>
-            Server-side watching needs the local backend, which is not
-            connected. The browser watchlist above keeps working against
-            RPC directly — start the backend (or fix its address in ⚙ RPC
-            settings) to subscribe addresses the backend watches for you.
+            Server-side watching needs the local backend, which is not connected. The browser
+            watchlist above keeps working against RPC directly — start the backend (or fix its
+            address in ⚙ RPC settings) to subscribe addresses the backend watches for you.
           </div>
         </CardContent>
       </Card>
@@ -639,10 +623,9 @@ function ServerWatchPanelConnected({ chainId }: { chainId: number }) {
         </CardHeader>
         <CardContent>
           <div className={offlineCard}>
-            The backend became unreachable — server-side watching is
-            unavailable until it comes back (the browser watchlist above is
-            unaffected). Check the backend process or its address in ⚙ RPC
-            settings.
+            The backend became unreachable — server-side watching is unavailable until it comes back
+            (the browser watchlist above is unaffected). Check the backend process or its address in
+            ⚙ RPC settings.
           </div>
         </CardContent>
       </Card>
@@ -693,9 +676,7 @@ function ServerWatchPanelConnected({ chainId }: { chainId: number }) {
           </Button>
         </form>
         {isDiscordWebhookUrl(webhookInput.trim()) && (
-          <div className={discordHint}>
-            Discord webhook detected — sends an embed
-          </div>
+          <div className={discordHint}>Discord webhook detected — sends an embed</div>
         )}
         {addError !== null && <div className={serverErrorRow}>{addError}</div>}
         {subs.error !== undefined && (
@@ -719,9 +700,9 @@ function ServerWatchPanelConnected({ chainId }: { chainId: number }) {
                     <span
                       className={cx(
                         webhookMeta,
-                        row.webhookStatus !== null
-                        && row.webhookStatus !== 'ok'
-                        && webhookStatusFailed,
+                        row.webhookStatus !== null &&
+                        row.webhookStatus !== 'ok' &&
+                        webhookStatusFailed,
                       )}
                       title={row.webhookUrl}
                     >
@@ -731,7 +712,8 @@ function ServerWatchPanelConnected({ chainId }: { chainId: number }) {
                         : row.webhookStatus === 'ok'
                           ? 'ok'
                           : row.webhookStatus}
-                      {row.webhookLastAt !== null && ` · last ${formatRelativeTime(row.webhookLastAt)}`}
+                      {row.webhookLastAt !== null &&
+                        ` · last ${formatRelativeTime(row.webhookLastAt)}`}
                     </span>
                   )}
                 </div>
@@ -788,14 +770,12 @@ function ServerWatchPanelConnected({ chainId }: { chainId: number }) {
         )}
 
         <div className={note}>
-          Watching runs while your local backend runs; browser notifications
-          arrive while an explorer tab is open. Gaps wider than 200 blocks
-          are skipped and reported. Watching starts at the moment you
-          subscribe — it never walks history. Webhook delivery also runs
-          from the backend while it runs: each watched event is POSTed once
-          (5s timeout, one retry), and each row shows the recorded outcome
-          of its latest delivery — it does not retry until you re-put the
-          subscription.
+          Watching runs while your local backend runs; browser notifications arrive while an
+          explorer tab is open. Gaps wider than 200 blocks are skipped and reported. Watching starts
+          at the moment you subscribe — it never walks history. Webhook delivery also runs from the
+          backend while it runs: each watched event is POSTed once (5s timeout, one retry), and each
+          row shows the recorded outcome of its latest delivery — it does not retry until you re-put
+          the subscription.
         </div>
       </CardContent>
     </Card>

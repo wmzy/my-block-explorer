@@ -93,13 +93,10 @@ export class SignatureService {
    * collide). Never throws: upstream and database failures surface as
    * { unavailable: true } outcomes.
    */
-  async lookup(
-    requests: readonly SelectorLookup[],
-  ): Promise<Map<string, SignatureLookupOutcome>> {
+  async lookup(requests: readonly SelectorLookup[]): Promise<Map<string, SignatureLookupOutcome>> {
     const settled = await Promise.all(
       requests.map(
-        async request =>
-          [request.selector, await this.resolveSelector(request)] as const,
+        async request => [request.selector, await this.resolveSelector(request)] as const,
       ),
     );
     return new Map(settled);

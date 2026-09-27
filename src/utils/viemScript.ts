@@ -19,10 +19,7 @@
 // form uses (paramParsing.parseFunctionArgs), so the script is buildable
 // exactly when the form's submit would encode successfully.
 
-import {
-  parseFunctionArgs,
-  type ParamComponent,
-} from '@/views/Contract/paramParsing';
+import { parseFunctionArgs, type ParamComponent } from '@/views/Contract/paramParsing';
 import { type CastableFunction, toAbiFunction } from './castCommand';
 
 export type { CastableFunction } from './castCommand';
@@ -188,7 +185,9 @@ export function buildViemScript({
   if (errors !== undefined && errors.length > 0) {
     lines.push(`${functionEntry},`);
     // Comment lines carry no trailing comma — only real entries do.
-    lines.push('    // Contract error entries (verbatim) so a revert decodes to its name and args.');
+    lines.push(
+      '    // Contract error entries (verbatim) so a revert decodes to its name and args.',
+    );
     errors.forEach((error, index) => {
       const suffix = index === errors.length - 1 ? '' : ',';
       lines.push(`${formatAbiEntry(error)}${suffix}`);
@@ -210,18 +209,15 @@ export function buildViemScript({
   if (parsed.values.length > 0) {
     lines.push('  args: [');
     lines.push(
-      effectiveInputs.map((input, index) => `    ${literalizeArg(input, parsed.values[index])}`).join(',\n'),
+      effectiveInputs
+        .map((input, index) => `    ${literalizeArg(input, parsed.values[index])}`)
+        .join(',\n'),
     );
     lines.push('  ],');
   }
   // Only a payable write carries value, and only when the form parsed a
   // wei amount — mirrored from the submit path's own value gate.
-  if (
-    !isRead &&
-    func.stateMutability === 'payable' &&
-    valueWei !== undefined &&
-    valueWei !== ''
-  ) {
+  if (!isRead && func.stateMutability === 'payable' && valueWei !== undefined && valueWei !== '') {
     lines.push(`  value: ${valueWei}n,`);
   }
   lines.push('});');

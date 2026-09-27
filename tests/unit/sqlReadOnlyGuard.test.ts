@@ -12,20 +12,14 @@ describe('isReadOnlyQuery — accepted queries', () => {
     ['lowercase select', 'select * from blocks'],
     ['mixed case', 'SeLeCt * FrOm blocks'],
     ['with CTE', 'WITH recent AS (SELECT * FROM transactions LIMIT 10) SELECT * FROM recent'],
-    [
-      'nested CTE',
-      'WITH a AS (WITH b AS (SELECT 1 AS x) SELECT * FROM b) SELECT * FROM a',
-    ],
+    ['nested CTE', 'WITH a AS (WITH b AS (SELECT 1 AS x) SELECT * FROM b) SELECT * FROM a'],
     ['parenthesized select', '(SELECT 1)'],
     ['double parenthesized select', '((SELECT 1))'],
     ['subquery in FROM', 'SELECT * FROM (SELECT block_number FROM blocks) sub'],
     ['one optional trailing semicolon', 'SELECT 1;'],
     ['trailing semicolon after whitespace trim', '  SELECT 1 ;  '],
     ['leading whitespace and newlines', '\n  SELECT\n   1'],
-    [
-      'union of parenthesized selects',
-      '(SELECT 1 AS x) UNION ALL (SELECT 2 AS x)',
-    ],
+    ['union of parenthesized selects', '(SELECT 1 AS x) UNION ALL (SELECT 2 AS x)'],
     ['table functions are reads too', 'SELECT * FROM read_parquet(\'x.parquet\')'],
   ])('accepts %s', (_name, query) => {
     expect(isReadOnlyQuery(query)).toBe(true);
@@ -107,9 +101,7 @@ describe('isReadOnlyQuery — rejected queries', () => {
     expect(readOnlyQueryRejection('SELECT 1; SELECT 2')).toMatch(/single statement/i);
     expect(readOnlyQueryRejection('EXPLAIN SELECT 1')).toMatch(/SELECT or WITH/i);
     expect(readOnlyQueryRejection('DELETE FROM t')).toMatch(/SELECT or WITH/i);
-    expect(readOnlyQueryRejection('SELECT * FROM t WHERE x = 1 AND y = 2 -- SET')).toMatch(
-      /"SET"/,
-    );
+    expect(readOnlyQueryRejection('SELECT * FROM t WHERE x = 1 AND y = 2 -- SET')).toMatch(/"SET"/);
     expect(readOnlyQueryRejection('')).toMatch(/empty/i);
   });
 });

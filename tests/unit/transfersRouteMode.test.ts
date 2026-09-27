@@ -63,7 +63,13 @@ describe('GET transfers - mode param', () => {
 
     expect(res.status).toBe(200);
     expect(mocks.getTokenTransfers).toHaveBeenCalledWith(
-      1, CHECKSUMMED, 0, 25, undefined, false, 'participant',
+      1,
+      CHECKSUMMED,
+      0,
+      25,
+      undefined,
+      false,
+      'participant',
     );
     expect(((await res.json()) as { mode: string }).mode).toBe('participant');
   });
@@ -75,7 +81,13 @@ describe('GET transfers - mode param', () => {
 
     expect(res.status).toBe(200);
     expect(mocks.getTokenTransfers).toHaveBeenCalledWith(
-      1, CHECKSUMMED, 0, 25, undefined, false, 'token',
+      1,
+      CHECKSUMMED,
+      0,
+      25,
+      undefined,
+      false,
+      'token',
     );
     expect(((await res.json()) as { mode: string }).mode).toBe('token');
   });
@@ -85,7 +97,13 @@ describe('GET transfers - mode param', () => {
 
     expect(res.status).toBe(200);
     expect(mocks.getTokenTransfers).toHaveBeenCalledWith(
-      1, CHECKSUMMED, 0, 25, undefined, false, 'participant',
+      1,
+      CHECKSUMMED,
+      0,
+      25,
+      undefined,
+      false,
+      'participant',
     );
   });
 });

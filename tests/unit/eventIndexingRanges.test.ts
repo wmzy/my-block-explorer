@@ -131,7 +131,9 @@ const EMPTY_ABI = [] as Abi;
 const makeClient = (tip: bigint) => ({
   getBlockNumber: vi.fn(async () => tip),
   getBlock: vi.fn(async () => ({ number: tip })),
-  getLogs: vi.fn(async (_args: { address: `0x${string}`; fromBlock: bigint; toBlock: bigint }) => []),
+  getLogs: vi.fn(
+    async (_args: { address: `0x${string}`; fromBlock: bigint; toBlock: bigint }) => [],
+  ),
 });
 
 const rangeRow = (overrides: Record<string, unknown> = {}) => ({
@@ -275,9 +277,7 @@ describe('updateIndexingRange materializes bounds', () => {
 
 describe('startIndexingRange resolves legacy sentinel rows', () => {
   it('never calls getLogs with negative bounds for a sentinel row', async () => {
-    dbState.rawRangeRows.push(
-      rangeRow({ fromBlock: -4n, toBlock: -1n, currentBlock: null }),
-    );
+    dbState.rawRangeRows.push(rangeRow({ fromBlock: -4n, toBlock: -1n, currentBlock: null }));
     const client = makeClient(12_345n);
     mocks.getClient.mockReset().mockResolvedValue(client);
 

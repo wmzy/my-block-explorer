@@ -35,8 +35,7 @@ const foundOutcome = {
 
 const notFoundOutcome = { kind: 'event', signatures: [], notFound: true } as const;
 
-const response = (results: Record<string, unknown>) =>
-  mocks.get.mockResolvedValue({ results });
+const response = (results: Record<string, unknown>) => mocks.get.mockResolvedValue({ results });
 
 beforeEach(() => {
   vi.clearAllMocks();

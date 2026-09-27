@@ -51,8 +51,7 @@ const sourceAbiSource = ({
   if (verificationStatus === 'partial') {
     return {
       level: 'cached-immutable',
-      detail:
-        'Source & ABI: partially verified — cached artifacts (immutable once indexed)',
+      detail: 'Source & ABI: partially verified — cached artifacts (immutable once indexed)',
     };
   }
   if (verificationStatus === 'unverified') {

@@ -47,9 +47,12 @@ describe('key grammar', () => {
     expect(privateNoteStorageKey(1, BODY)).toBe(`${PRIVATE_NOTE_KEY_PREFIX}1:${CHECKSUMMED}`);
     // All-lowercase (checksum-less convention) and the checksummed form
     // land on the SAME key; chains are part of the namespace.
-    expect(privateNoteStorageKey(1, BODY.toLowerCase()))
-      .toBe(privateNoteStorageKey(1, CHECKSUMMED));
-    expect(privateNoteStorageKey(137, CHECKSUMMED)).toBe(`${PRIVATE_NOTE_KEY_PREFIX}137:${CHECKSUMMED}`);
+    expect(privateNoteStorageKey(1, BODY.toLowerCase())).toBe(
+      privateNoteStorageKey(1, CHECKSUMMED),
+    );
+    expect(privateNoteStorageKey(137, CHECKSUMMED)).toBe(
+      `${PRIVATE_NOTE_KEY_PREFIX}137:${CHECKSUMMED}`,
+    );
   });
 
   it('returns null (no key, no write) for malformed addresses and chain ids', () => {
@@ -63,11 +66,15 @@ describe('key grammar', () => {
   });
 
   it('splits scanned keys back into parts, rejecting off-grammar keys', () => {
-    expect(parsePrivateNoteKey(`${PRIVATE_NOTE_KEY_PREFIX}1:${CHECKSUMMED}`))
-      .toEqual({ chainId: 1, address: CHECKSUMMED });
+    expect(parsePrivateNoteKey(`${PRIVATE_NOTE_KEY_PREFIX}1:${CHECKSUMMED}`)).toEqual({
+      chainId: 1,
+      address: CHECKSUMMED,
+    });
     // Lowercase hand-edited key normalizes to the checksummed address.
-    expect(parsePrivateNoteKey(`${PRIVATE_NOTE_KEY_PREFIX}1:${BODY.toLowerCase()}`))
-      .toEqual({ chainId: 1, address: CHECKSUMMED });
+    expect(parsePrivateNoteKey(`${PRIVATE_NOTE_KEY_PREFIX}1:${BODY.toLowerCase()}`)).toEqual({
+      chainId: 1,
+      address: CHECKSUMMED,
+    });
     for (const foreign of [
       'be:theme',
       `be:privateNote:1:${'z'.repeat(40)}`,
@@ -85,13 +92,20 @@ describe('savePrivateNote', () => {
     const storage = memoryStorage();
     const result = savePrivateNote(1, CHECKSUMMED, '  treasury of the DAO  ', storage);
     expect(result).toEqual({ ok: true, note: 'treasury of the DAO' });
-    expect(storage.map.get(`${PRIVATE_NOTE_KEY_PREFIX}1:${CHECKSUMMED}`)).toBe('treasury of the DAO');
+    expect(storage.map.get(`${PRIVATE_NOTE_KEY_PREFIX}1:${CHECKSUMMED}`)).toBe(
+      'treasury of the DAO',
+    );
     expect(readPrivateNote(1, CHECKSUMMED, storage)).toBe('treasury of the DAO');
   });
 
   it('works against the real (jsdom) localStorage too', () => {
-    expect(savePrivateNote(137, OTHER, 'staking rewards wallet')).toEqual({ ok: true, note: 'staking rewards wallet' });
-    expect(localStorage.getItem(`${PRIVATE_NOTE_KEY_PREFIX}137:${OTHER}`)).toBe('staking rewards wallet');
+    expect(savePrivateNote(137, OTHER, 'staking rewards wallet')).toEqual({
+      ok: true,
+      note: 'staking rewards wallet',
+    });
+    expect(localStorage.getItem(`${PRIVATE_NOTE_KEY_PREFIX}137:${OTHER}`)).toBe(
+      'staking rewards wallet',
+    );
   });
 
   it('rejects over-cap input WITHOUT writing — never silently truncates', () => {
@@ -103,21 +117,34 @@ describe('savePrivateNote', () => {
     expect(storage.map.has(`${PRIVATE_NOTE_KEY_PREFIX}1:${OTHER}`)).toBe(false);
     // The cap counts the stored (trimmed) text, but raw length is what
     // the editor shows — whitespace padding cannot smuggle past it.
-    expect(savePrivateNote(1, OTHER, ` ${'x'.repeat(PRIVATE_NOTE_MAX_CHARS)} `, storage))
-      .toEqual({ ok: true, note: 'x'.repeat(PRIVATE_NOTE_MAX_CHARS) });
+    expect(savePrivateNote(1, OTHER, ` ${'x'.repeat(PRIVATE_NOTE_MAX_CHARS)} `, storage)).toEqual({
+      ok: true,
+      note: 'x'.repeat(PRIVATE_NOTE_MAX_CHARS),
+    });
   });
 
   it('rejects empty/whitespace-only notes without touching storage', () => {
     const storage = memoryStorage();
     expect(savePrivateNote(1, CHECKSUMMED, '', storage)).toEqual({ ok: false, reason: 'empty' });
-    expect(savePrivateNote(1, CHECKSUMMED, '   \n\t ', storage)).toEqual({ ok: false, reason: 'empty' });
+    expect(savePrivateNote(1, CHECKSUMMED, '   \n\t ', storage)).toEqual({
+      ok: false,
+      reason: 'empty',
+    });
     expect(storage.map.size).toBe(0);
   });
 
   it('performs NO write for a malformed address (both tiers)', () => {
     const storage = memoryStorage();
-    for (const bad of ['not-an-address', '0x12', `0x${'h'.repeat(40)}`, '0x1234567890AbCdEf1234567890abCdEf12345678']) {
-      expect(savePrivateNote(1, bad, 'note', storage)).toEqual({ ok: false, reason: 'malformed-address' });
+    for (const bad of [
+      'not-an-address',
+      '0x12',
+      `0x${'h'.repeat(40)}`,
+      '0x1234567890AbCdEf1234567890abCdEf12345678',
+    ]) {
+      expect(savePrivateNote(1, bad, 'note', storage)).toEqual({
+        ok: false,
+        reason: 'malformed-address',
+      });
     }
     expect(storage.map.size).toBe(0);
     expect(localStorage.length).toBe(0);
@@ -131,7 +158,10 @@ describe('savePrivateNote', () => {
       },
       removeItem: () => undefined,
     };
-    expect(savePrivateNote(1, CHECKSUMMED, 'note', throwing)).toEqual({ ok: false, reason: 'storage-unavailable' });
+    expect(savePrivateNote(1, CHECKSUMMED, 'note', throwing)).toEqual({
+      ok: false,
+      reason: 'storage-unavailable',
+    });
   });
 });
 
@@ -142,7 +172,10 @@ describe('readPrivateNote', () => {
     // Hand-corrupted values degrade to null, never crash the page.
     storage.map.set(`${PRIVATE_NOTE_KEY_PREFIX}1:${CHECKSUMMED}`, '');
     expect(readPrivateNote(1, CHECKSUMMED, storage)).toBeNull();
-    storage.map.set(`${PRIVATE_NOTE_KEY_PREFIX}1:${CHECKSUMMED}`, 'x'.repeat(PRIVATE_NOTE_MAX_CHARS + 1));
+    storage.map.set(
+      `${PRIVATE_NOTE_KEY_PREFIX}1:${CHECKSUMMED}`,
+      'x'.repeat(PRIVATE_NOTE_MAX_CHARS + 1),
+    );
     expect(readPrivateNote(1, CHECKSUMMED, storage)).toBeNull();
     storage.map.set(`${PRIVATE_NOTE_KEY_PREFIX}1:${CHECKSUMMED}`, 'real note');
     expect(readPrivateNote(1, CHECKSUMMED, storage)).toBe('real note');
@@ -153,7 +186,9 @@ describe('readPrivateNote', () => {
   it('parseStoredPrivateNote is the pure payload guard', () => {
     expect(parseStoredPrivateNote(null)).toBeNull();
     expect(parseStoredPrivateNote('')).toBeNull();
-    expect(parseStoredPrivateNote('x'.repeat(PRIVATE_NOTE_MAX_CHARS))).toBe('x'.repeat(PRIVATE_NOTE_MAX_CHARS));
+    expect(parseStoredPrivateNote('x'.repeat(PRIVATE_NOTE_MAX_CHARS))).toBe(
+      'x'.repeat(PRIVATE_NOTE_MAX_CHARS),
+    );
     expect(parseStoredPrivateNote('x'.repeat(PRIVATE_NOTE_MAX_CHARS + 1))).toBeNull();
   });
 });
@@ -174,7 +209,11 @@ describe('clearPrivateNote', () => {
 describe('written keys always match the pinned pattern', () => {
   it('every key the store can produce is inside the be:privateNote: grammar', () => {
     const storage = memoryStorage();
-    for (const [chainId, address] of [[1, CHECKSUMMED], [137, OTHER], [31337, BODY.toLowerCase()]] as const) {
+    for (const [chainId, address] of [
+      [1, CHECKSUMMED],
+      [137, OTHER],
+      [31337, BODY.toLowerCase()],
+    ] as const) {
       savePrivateNote(chainId, address, 'n', storage);
     }
     expect(storage.map.size).toBe(3);

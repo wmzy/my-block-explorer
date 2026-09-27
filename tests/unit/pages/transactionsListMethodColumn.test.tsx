@@ -145,7 +145,10 @@ describe('pageMethodSelectors - what a page resolves', () => {
 
   it('calldata without a valid 4-byte hex selector is skipped', () => {
     expect(
-      pageMethodSelectors([makeTx({ inputData: '0x1234' }), makeTx({ inputData: '0xzz059cbbdeadbeef' })]),
+      pageMethodSelectors([
+        makeTx({ inputData: '0x1234' }),
+        makeTx({ inputData: '0xzz059cbbdeadbeef' }),
+      ]),
     ).toEqual([]);
   });
 });

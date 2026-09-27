@@ -63,9 +63,7 @@ const mocks = vi.hoisted<TokenPageMocks>(() => {
   // Token-mode scan rows (the viewed contract as log emitter, direction
   // 'none'): mint 1000 to Alice, Alice→Bob 400, Alice→Carol 50, Bob burns
   // 100. Discovered nets: Alice +550, Bob +300, Carol +50 (supply 900).
-  const transferRow = (
-    fields: Partial<TokenTransfer>,
-  ): TokenTransfer => ({
+  const transferRow = (fields: Partial<TokenTransfer>): TokenTransfer => ({
     txHash: `0x${'00'.repeat(32)}`,
     blockNumber: 18_000_000,
     logIndex: 0,
@@ -167,21 +165,11 @@ vi.mock('@/services/tokenMetadata', () => ({
   // The page's settle-aware detection hook. Honors `enabled` exactly like
   // the real hook (disabled → unsettled, zero network) so the guard
   // branches see realistic probe states.
-  useTokenOverviewProbe: (
-    _chainId: number,
-    _token: string,
-    enabled: boolean,
-  ) =>
-    enabled
-      ? { reads: mocks.reads, settled: mocks.settled }
-      : { reads: undefined, settled: false },
+  useTokenOverviewProbe: (_chainId: number, _token: string, enabled: boolean) =>
+    enabled ? { reads: mocks.reads, settled: mocks.settled } : { reads: undefined, settled: false },
   // The REAL TokenTransfers component rides the same module-cached
   // detection; the knob mirrors the page's so both agree.
-  useTokenOverview: (
-    _chainId: number,
-    _token: string,
-    enabled: boolean,
-  ) => {
+  useTokenOverview: (_chainId: number, _token: string, enabled: boolean) => {
     if (!enabled || mocks.detection === 'none') return undefined;
     if (mocks.detection === 'token') return mocks.reads;
     return { name: null, symbol: null, decimals: null, totalSupply: null };
@@ -331,13 +319,9 @@ describe('Token page', () => {
     expect(screen.getByText(formatAddr(display))).toBeInTheDocument();
 
     const contractLink = screen.getByText('View contract page →').closest('a');
-    expect(contractLink?.getAttribute('href')).toBe(
-      `/chain/1/contract/${mocks.testAddress}`,
-    );
+    expect(contractLink?.getAttribute('href')).toBe(`/chain/1/contract/${mocks.testAddress}`);
     const addressLink = screen.getByText('View as address →').closest('a');
-    expect(addressLink?.getAttribute('href')).toBe(
-      `/chain/1/address/${mocks.testAddress}`,
-    );
+    expect(addressLink?.getAttribute('href')).toBe(`/chain/1/address/${mocks.testAddress}`);
   });
 
   it('renders the overview grid with the existing honesty semantics', async () => {
@@ -352,9 +336,7 @@ describe('Token page', () => {
     expect(screen.getByText('1234500')).toBeInTheDocument();
     // 'ERC-20' is claimed only when decimals AND totalSupply responded —
     // the overview badge is the success-variant one.
-    expect(
-      screen.getAllByText('ERC-20').some(el => el.dataset.variant === 'success'),
-    ).toBe(true);
+    expect(screen.getAllByText('ERC-20').some(el => el.dataset.variant === 'success')).toBe(true);
   });
 
   it('reuses the token-mode scan: every service call carries mode=token at the page-1 key', async () => {
@@ -417,8 +399,7 @@ describe('Token page', () => {
 
     // The mandatory incompleteness caveat (holders + mint/burn).
     expect(
-      (await screen.findAllByText(/discovered from scanned window — may be incomplete/i))
-        .length,
+      (await screen.findAllByText(/discovered from scanned window — may be incomplete/i)).length,
     ).toBe(2);
 
     // The transfers section is the REAL TokenTransfers component: row
@@ -434,16 +415,10 @@ describe('Token page', () => {
 
     renderPage();
 
-    expect(
-      await screen.findByText('This address is not a token contract'),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(/externally owned account|EOA/),
-    ).toBeInTheDocument();
+    expect(await screen.findByText('This address is not a token contract')).toBeInTheDocument();
+    expect(screen.getByText(/externally owned account|EOA/)).toBeInTheDocument();
     const addressLink = screen.getByText('View as address →').closest('a');
-    expect(addressLink?.getAttribute('href')).toBe(
-      `/chain/1/address/${mocks.testAddress}`,
-    );
+    expect(addressLink?.getAttribute('href')).toBe(`/chain/1/address/${mocks.testAddress}`);
     // No contract view exists for an EOA — the link stays absent.
     expect(screen.queryByText('View contract page →')).not.toBeInTheDocument();
     expect(screen.queryByText('Token Overview')).not.toBeInTheDocument();
@@ -457,9 +432,7 @@ describe('Token page', () => {
 
     renderPage();
 
-    expect(
-      await screen.findByText('This address is not a token contract'),
-    ).toBeInTheDocument();
+    expect(await screen.findByText('This address is not a token contract')).toBeInTheDocument();
     expect(screen.getByText(/none of the standard token probes/)).toBeInTheDocument();
     expect(screen.getByText('View as address →')).toBeInTheDocument();
     expect(screen.getByText('View contract page →')).toBeInTheDocument();
@@ -470,9 +443,7 @@ describe('Token page', () => {
 
     renderPage();
 
-    expect(
-      await screen.findByText('This address is not a token contract'),
-    ).toBeInTheDocument();
+    expect(await screen.findByText('This address is not a token contract')).toBeInTheDocument();
     expect(screen.getByText(/EIP-7702 delegated account/)).toBeInTheDocument();
     expect(screen.queryByText('View contract page →')).not.toBeInTheDocument();
   });
@@ -483,12 +454,8 @@ describe('Token page', () => {
 
     renderPage();
 
-    expect(
-      await screen.findByText(/Could not read the token interface/),
-    ).toBeInTheDocument();
-    expect(
-      screen.queryByText('This address is not a token contract'),
-    ).not.toBeInTheDocument();
+    expect(await screen.findByText(/Could not read the token interface/)).toBeInTheDocument();
+    expect(screen.queryByText('This address is not a token contract')).not.toBeInTheDocument();
   });
 
   it('surfaces the checksum tier for an invalid-checksum address (never a valid page)', async () => {
@@ -529,9 +496,7 @@ describe('Token page', () => {
     renderPage();
 
     expect(await screen.findByText(/Could not read on-chain code/)).toBeInTheDocument();
-    expect(
-      screen.queryByText('This address is not a token contract'),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText('This address is not a token contract')).not.toBeInTheDocument();
   });
 
   it('shows the reading state while the token probes are unsettled', async () => {
@@ -553,9 +518,9 @@ describe('Token page', () => {
       await screen.findByText('Token (standard unknown — possibly ERC-721)'),
     ).toBeInTheDocument();
     expect(
-      screen.getAllByText('Token (standard unknown — possibly ERC-721)').some(
-        el => el.dataset.variant === 'warning',
-      ),
+      screen
+        .getAllByText('Token (standard unknown — possibly ERC-721)')
+        .some(el => el.dataset.variant === 'warning'),
     ).toBe(true);
     // Holder balances are ERC-20 semantics — no holders card at all.
     expect(screen.queryByText('Top Holders (discovered)')).not.toBeInTheDocument();
@@ -579,7 +544,10 @@ describe('Token page', () => {
     // quote-free to stay inside the single-quote lint rule).
     expect(src).toContain('@/views/Address/TokenTransfers');
     expect(src).toContain('@/views/Address/tokenOverview');
-    const math = readFileSync(resolve(__dirname, '../../..', 'src/views/Token/tokenMath.ts'), 'utf8');
+    const math = readFileSync(
+      resolve(__dirname, '../../..', 'src/views/Token/tokenMath.ts'),
+      'utf8',
+    );
     expect(math).toContain('computeDiscoveredHolders');
   });
 
@@ -626,9 +594,7 @@ describe('Token page', () => {
     renderPage();
 
     await screen.findByText('Token Overview');
-    expect(
-      screen.queryByText('Contract functions (risk scan)'),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText('Contract functions (risk scan)')).not.toBeInTheDocument();
     expect(screen.queryByText(RISK_CAVEAT)).not.toBeInTheDocument();
   });
 
@@ -640,9 +606,7 @@ describe('Token page', () => {
     renderPage();
 
     await screen.findByText('Token Overview');
-    expect(
-      screen.queryByText('Contract functions (risk scan)'),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText('Contract functions (risk scan)')).not.toBeInTheDocument();
   });
 
   it('renders the scanned-clean line for a verified standard ERC-20 ABI', async () => {

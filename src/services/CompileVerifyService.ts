@@ -793,7 +793,9 @@ export class CompileVerifyService {
       output = JSON.parse(compiler.compile(JSON.stringify(compileInput)));
     } catch (error) {
       const reason = error instanceof Error ? error.message : 'unknown error';
-      throw compileFailed(`The solc ${versionEntry.longVersion} build crashed while compiling: ${reason}`);
+      throw compileFailed(
+        `The solc ${versionEntry.longVersion} build crashed while compiling: ${reason}`,
+      );
     }
 
     const diagnostics = isRecord(output) && Array.isArray(output.errors) ? output.errors : [];

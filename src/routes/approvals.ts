@@ -1,10 +1,7 @@
 import { Hono } from 'hono';
 import { z } from 'zod';
 import { createLogger } from '../server/logger';
-import {
-  getValidatedChainId,
-  getValidatedAddress,
-} from '../server/validation';
+import { getValidatedChainId, getValidatedAddress } from '../server/validation';
 import { approvalScanService } from '../services/ApprovalScanService';
 import { createRateLimiter } from '../middleware/rate-limit';
 import { safeJsonResponse } from '../utils/serialization';
@@ -33,8 +30,12 @@ const refreshSchema = z.literal('1').optional().catch(undefined);
 // per client with the same 10/min burst-3 configuration family as the
 // address-tx and token-transfers scan routes (its own bucket name, so
 // opening this section never eats the tx list's allowance).
-const approvalsRateLimiter = createRateLimiter({ name: 'address-approvals', requestsPerMinute: 10, burst: 3 });
-app.get('/chains/:chainId/addresses/:address/approvals', approvalsRateLimiter, async (c) => {
+const approvalsRateLimiter = createRateLimiter({
+  name: 'address-approvals',
+  requestsPerMinute: 10,
+  burst: 3,
+});
+app.get('/chains/:chainId/addresses/:address/approvals', approvalsRateLimiter, async c => {
   const chainId = getValidatedChainId(c.req.param('chainId'));
   const address = getValidatedAddress(c.req.param('address'));
 
@@ -42,12 +43,7 @@ app.get('/chains/:chainId/addresses/:address/approvals', approvalsRateLimiter, a
   const refresh = refreshSchema.parse(c.req.query('refresh')) === '1';
 
   try {
-    const result = await approvalScanService.getApprovals(
-      chainId,
-      address,
-      windowBlocks,
-      refresh,
-    );
+    const result = await approvalScanService.getApprovals(chainId, address, windowBlocks, refresh);
 
     // Honesty fields are the contract the view renders: coverage is
     // window-scoped (never full-history), pairCount is the pre-cap
@@ -75,8 +71,7 @@ app.get('/chains/:chainId/addresses/:address/approvals', approvalsRateLimiter, a
     });
 
     return c.json(responseData);
-  }
-  catch (error) {
+  } catch (error) {
     logger.error({ err: error }, 'Approvals API error');
     return c.json({ error: 'Failed to get approvals' }, 500);
   }

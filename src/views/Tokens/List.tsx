@@ -145,10 +145,13 @@ export default function TokensList() {
       const next = qInput.trim();
       if ((qParam ?? '') === next) return;
       lastPushedQRef.current = next;
-      void setSearch(prev => {
-        const { q: _oldQ, ...rest } = prev;
-        return next === '' ? rest : { ...rest, q: next };
-      }, { replace: true });
+      void setSearch(
+        prev => {
+          const { q: _oldQ, ...rest } = prev;
+          return next === '' ? rest : { ...rest, q: next };
+        },
+        { replace: true },
+      );
     }, FILTER_DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [qInput, qParam, setSearch]);
@@ -169,16 +172,13 @@ export default function TokensList() {
     () => (chainInfo !== null ? directoryRowsForChain(currentChainId) : []),
     [chainInfo, currentChainId],
   );
-  const addresses = useMemo(() => rows.map((row) => row.address), [rows]);
+  const addresses = useMemo(() => rows.map(row => row.address), [rows]);
   const addressesKey = useMemo(() => tokenDirectoryAddressesKey(addresses), [addresses]);
 
   // Enrichment runs for the rendered chain even when unsupported (the
   // disabled key chainId 0 settles an empty page without a request); the
   // unsupported branch below renders before any table does.
-  const readsQuery = useTokenDirectoryReads(
-    chainInfo !== null ? currentChainId : 0,
-    addresses,
-  );
+  const readsQuery = useTokenDirectoryReads(chainInfo !== null ? currentChainId : 0, addresses);
 
   // Settle guard (Contracts/List pattern): only a payload whose own echo
   // matches the rendered (chain, address set) is trusted — anything else
@@ -186,24 +186,20 @@ export default function TokensList() {
   // outranks the pending look (the error state explains the wait).
   const readsData = readsQuery.data;
   const pageMatchesArgs =
-    readsData?.chainId === currentChainId
-    && readsData?.addressesKey === addressesKey;
+    readsData?.chainId === currentChainId && readsData?.addressesKey === addressesKey;
   const reads = pageMatchesArgs ? readsData.reads : undefined;
 
   // Prices for the whole directory in one DefiLlama spot batch; unknown
   // chain/token settles an empty map without any network (the price cell
   // then renders blank — USD is strictly an enhancement).
-  const prices = useTokenUsdPrices(
-    chainInfo !== null ? currentChainId : 0,
-    addresses,
-  );
+  const prices = useTokenUsdPrices(chainInfo !== null ? currentChainId : 0, addresses);
 
   // Display rows: runtime reads replace the display hints (chain truth),
   // the ERC-20 claim appears only when decimals AND totalSupply responded
   // (the address-page overview rule), and the price snapshot rides along.
   const displayRows = useMemo<DisplayRow[]>(
     () =>
-      rows.map((row) => {
+      rows.map(row => {
         const rowReads = reads?.get(row.address.toLowerCase());
         const price = prices?.get(row.address.toLowerCase()) ?? null;
         return {
@@ -218,20 +214,16 @@ export default function TokensList() {
     [rows, reads, prices],
   );
 
-  const visibleRows = useMemo(
-    () => filterByQuery(displayRows, qParam),
-    [displayRows, qParam],
-  );
+  const visibleRows = useMemo(() => filterByQuery(displayRows, qParam), [displayRows, qParam]);
 
   const showSkeleton =
-    readsQuery.error === undefined
-    && (readsQuery.loading || (readsData !== undefined && !pageMatchesArgs));
+    readsQuery.error === undefined &&
+    (readsQuery.loading || (readsData !== undefined && !pageMatchesArgs));
 
   // The table paints only on a settle whose echo matches the rendered
   // directory — during a re-key (storage grew, chain switched) the pending
   // look renders the skeleton, never hint-only rows posing as enriched.
-  const rowsVisible =
-    !showSkeleton && readsQuery.error === undefined && visibleRows.length > 0;
+  const rowsVisible = !showSkeleton && readsQuery.error === undefined && visibleRows.length > 0;
 
   // Chain switches replace the current entry (Transactions/List pattern);
   // a ?q= filter legitimately survives — another chain may hold the same
@@ -272,12 +264,7 @@ export default function TokensList() {
                 onChange={e => setQInput(e.target.value)}
               />
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={refresh}
-              disabled={readsQuery.fetching}
-            >
+            <Button variant="outline" size="sm" onClick={refresh} disabled={readsQuery.fetching}>
               {readsQuery.fetching ? 'Refreshing…' : '↻ Refresh'}
             </Button>
           </div>
@@ -322,7 +309,7 @@ export default function TokensList() {
               </tr>
             </thead>
             <tbody>
-              {visibleRows.map((row) => {
+              {visibleRows.map(row => {
                 const tokenHref = `/chain/${currentChainId}/token/${row.address}`;
                 // Never a fabricated label: runtime symbol/name first,
                 // then the display hints, then the bare address.
@@ -358,10 +345,7 @@ export default function TokensList() {
                       ) : null}
                     </td>
                     <td>
-                      <Badge
-                        variant={row.provenance === 'curated' ? 'info' : 'default'}
-                        size="sm"
-                      >
+                      <Badge variant={row.provenance === 'curated' ? 'info' : 'default'} size="sm">
                         {row.provenance === 'curated' ? 'Curated' : 'Viewed'}
                       </Badge>
                     </td>

@@ -13,14 +13,19 @@ import { clearAdminToken, getAdminToken, setAdminToken } from '@/util/adminAuth'
 // service layer and the http helper are stubbed so the 403/notice/refetch
 // interplay, the token verification outcomes, and the localStorage-backed
 // token wiring are directly observable.
-const { mockGetRpcConfigs, mockSaveRpcConfig, mockDeleteRpcConfig, mockTestRpcConnection, mockHttpGet } =
-  vi.hoisted(() => ({
-    mockGetRpcConfigs: vi.fn(),
-    mockSaveRpcConfig: vi.fn(),
-    mockDeleteRpcConfig: vi.fn(),
-    mockTestRpcConnection: vi.fn(),
-    mockHttpGet: vi.fn(),
-  }));
+const {
+  mockGetRpcConfigs,
+  mockSaveRpcConfig,
+  mockDeleteRpcConfig,
+  mockTestRpcConnection,
+  mockHttpGet,
+} = vi.hoisted(() => ({
+  mockGetRpcConfigs: vi.fn(),
+  mockSaveRpcConfig: vi.fn(),
+  mockDeleteRpcConfig: vi.fn(),
+  mockTestRpcConnection: vi.fn(),
+  mockHttpGet: vi.fn(),
+}));
 
 vi.mock('@/utils/rpcConfigService', () => ({
   getRpcConfigs: mockGetRpcConfigs,
@@ -60,10 +65,7 @@ const PASSING_TEST_RESULT = {
 
 // The transport's degraded-mode fast reject (see util/http's
 // backendUnconnected): status 0 with the diagnosis as the message.
-const BACKEND_UNCONNECTED = new ApiError(
-  'Backend not connected — indexed data unavailable',
-  0,
-);
+const BACKEND_UNCONNECTED = new ApiError('Backend not connected — indexed data unavailable', 0);
 
 // RpcConfig takes a Control<boolean> for its open state; a tiny harness
 // supplies one created from a plain `true` initial value (the one-prop

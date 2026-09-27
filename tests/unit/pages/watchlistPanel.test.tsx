@@ -61,7 +61,10 @@ const blockWithTxs = (from: string, to: string | null) => ({
 const renderPanel = async (live = true) => {
   const Panel = () => <Watchlist chainId={1} live={live} />;
   const view = render(
-    <MemoryRouter routes={createRoutes([{ path: '/', component: () => Panel }])} initialEntries={['/']}>
+    <MemoryRouter
+      routes={createRoutes([{ path: '/', component: () => Panel }])}
+      initialEntries={['/']}
+    >
       <View />
     </MemoryRouter>,
   );
@@ -103,7 +106,9 @@ describe('Watchlist panel - entries', () => {
 
     expect(screen.getByTitle(WATCHED)).toBeInTheDocument();
     expect(
-      screen.getByText(/checked against live blocks while this page is open — not a background service/),
+      screen.getByText(
+        /checked against live blocks while this page is open — not a background service/,
+      ),
     ).toBeInTheDocument();
   });
 
@@ -270,11 +275,7 @@ describe('findWatchedMatches (pure)', () => {
 
   it('is case-insensitive and skips contract creations', () => {
     expect(
-      findWatchedMatches(
-        [{ hash: '0x1', from: WATCHED.toUpperCase(), to: null }],
-        watched,
-        5,
-      ),
+      findWatchedMatches([{ hash: '0x1', from: WATCHED.toUpperCase(), to: null }], watched, 5),
     ).toEqual([{ address: WATCHED.toLowerCase(), txHash: '0x1' }]);
   });
 });

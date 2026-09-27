@@ -251,9 +251,7 @@ describe('Address label row', () => {
     );
     // The edit affordance renders for seeds exactly as for user labels.
     expect(screen.getByTestId('label-edit')).toBeInTheDocument();
-    expect(screen.getByTestId('label-chip')).toHaveTextContent(
-      'Uniswap V3: SwapRouter02',
-    );
+    expect(screen.getByTestId('label-chip')).toHaveTextContent('Uniswap V3: SwapRouter02');
   });
 
   it('happy path: edit → save (trimmed) → refetch → chip appears', async () => {
@@ -303,9 +301,7 @@ describe('Address label row', () => {
     fireEvent.click(screen.getByTestId('label-save'));
 
     const hint = await screen.findByTestId('label-editor-hint');
-    expect(hint).toHaveTextContent(
-      'Set the admin token in ⚙ RPC settings to edit labels',
-    );
+    expect(hint).toHaveTextContent('Set the admin token in ⚙ RPC settings to edit labels');
     // Editor (and the typed value) survive for a retry after settings.
     expect(screen.getByTestId('label-input')).toBeInTheDocument();
     expect(screen.getByTestId('label-input')).toHaveValue('Nope');
@@ -334,10 +330,7 @@ describe('Address label row', () => {
     fireEvent.click(await screen.findByTestId('label-add'));
     const save = screen.getByTestId('label-save');
     expect(save).toBeDisabled();
-    expect(save).toHaveAttribute(
-      'title',
-      'Label must be 1-64 characters after trimming',
-    );
+    expect(save).toHaveAttribute('title', 'Label must be 1-64 characters after trimming');
     expect(mocks.saveLabel).not.toHaveBeenCalled();
   });
 
@@ -353,9 +346,7 @@ describe('Address label row', () => {
 
     fireEvent.click(await screen.findByTestId('label-edit'));
     fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
-    await waitFor(() =>
-      expect(mocks.deleteLabel).toHaveBeenCalledWith(1, mocks.testAddress),
-    );
+    await waitFor(() => expect(mocks.deleteLabel).toHaveBeenCalledWith(1, mocks.testAddress));
     await waitFor(() => expect(mocks.labelQuery.refetch).toHaveBeenCalled());
   });
 });
@@ -394,10 +385,7 @@ describe('Export CSV toolbar affordance (transactions tab)', () => {
     renderPage();
     const link = await screen.findByTestId('tx-export-csv');
     expect(link).toHaveAttribute('aria-disabled', 'true');
-    expect(link).toHaveAttribute(
-      'title',
-      'The transaction list failed — export follows the list',
-    );
+    expect(link).toHaveAttribute('title', 'The transaction list failed — export follows the list');
   });
 
   it('is disabled when no backend is connected (no broken relative link)', async () => {

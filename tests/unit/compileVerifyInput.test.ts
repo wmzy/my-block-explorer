@@ -92,9 +92,9 @@ describe('normalizeStandardJsonInput', () => {
         sources: { 'A.sol': { content: 42 } },
       }).ok,
     ).toBe(true);
-    expect(
-      !normalizeStandardJsonInput({ ...validInput(), sources: { 'A.sol': 'text' } }).ok,
-    ).toBe(true);
+    expect(!normalizeStandardJsonInput({ ...validInput(), sources: { 'A.sol': 'text' } }).ok).toBe(
+      true,
+    );
   });
 
   it('rejects sources above the 4 MB cap with the honest total', () => {
@@ -135,10 +135,29 @@ describe('buildCompileInput', () => {
 describe('parseSolcVersionList', () => {
   const rawList = {
     builds: [
-      { path: 'soljson-v0.8.35+commit.aaa.js', version: '0.8.35', longVersion: '0.8.35+commit.aaa', sha256: '0x1' },
-      { path: 'soljson-v0.8.35+commit.bbb.js', version: '0.8.35', longVersion: '0.8.35+commit.bbb', sha256: '0x2' },
-      { path: 'soljson-v0.8.37+commit.f4.js', version: '0.8.37', longVersion: '0.8.37+commit.f4', sha256: '0x3' },
-      { path: 'soljson-v0.8.38-nightly.1+commit.n.js', version: '0.8.38-nightly.1', longVersion: '0.8.38-nightly.1+commit.n' },
+      {
+        path: 'soljson-v0.8.35+commit.aaa.js',
+        version: '0.8.35',
+        longVersion: '0.8.35+commit.aaa',
+        sha256: '0x1',
+      },
+      {
+        path: 'soljson-v0.8.35+commit.bbb.js',
+        version: '0.8.35',
+        longVersion: '0.8.35+commit.bbb',
+        sha256: '0x2',
+      },
+      {
+        path: 'soljson-v0.8.37+commit.f4.js',
+        version: '0.8.37',
+        longVersion: '0.8.37+commit.f4',
+        sha256: '0x3',
+      },
+      {
+        path: 'soljson-v0.8.38-nightly.1+commit.n.js',
+        version: '0.8.38-nightly.1',
+        longVersion: '0.8.38-nightly.1+commit.n',
+      },
     ],
     releases: {
       '0.8.35': 'soljson-v0.8.35+commit.bbb.js',
@@ -243,9 +262,7 @@ describe('selectCompiledContract', () => {
   });
 
   it('requires contractName when the output has more than one contract', () => {
-    expect(() => selectCompiledContract(contracts, undefined)).toThrowError(
-      CompileVerifyHttpError,
-    );
+    expect(() => selectCompiledContract(contracts, undefined)).toThrowError(CompileVerifyHttpError);
     try {
       selectCompiledContract(contracts, undefined);
       expect.unreachable();

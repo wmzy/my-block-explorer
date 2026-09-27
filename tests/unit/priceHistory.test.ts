@@ -31,10 +31,7 @@ const fetchMock = vi.fn<typeof fetch>();
 const chartResponse = (coins: Record<string, unknown>): Response =>
   ({ ok: true, json: async () => ({ coins }) }) as Response;
 
-const chartFor = (
-  id: string,
-  prices: Array<{ timestamp: number; price: number }>,
-): Response =>
+const chartFor = (id: string, prices: Array<{ timestamp: number; price: number }>): Response =>
   chartResponse({ [id]: { symbol: 'ETH', confidence: 0.99, prices } });
 
 // Points safely inside both supported windows (no second-boundary races
@@ -88,9 +85,7 @@ describe('history URL and coin keys', () => {
     fetchMock.mockResolvedValue(chartResponse({}));
 
     await fetchPriceHistory(100, '0xabc0000000000000000000000000000000000001');
-    expect(callUrl()).toContain(
-      '/chart/xdai:0xABC0000000000000000000000000000000000001?',
-    );
+    expect(callUrl()).toContain('/chart/xdai:0xABC0000000000000000000000000000000000001?');
 
     await fetchPriceHistory(137, USDT.toLowerCase());
     expect(callUrl(1)).toContain(`/chart/polygon:${USDT}?`);
@@ -153,7 +148,7 @@ describe('shapePriceHistory (pure)', () => {
       ],
       base,
     );
-    expect(shaped.points.map((p) => p.price)).toEqual([1, 2, 3]);
+    expect(shaped.points.map(p => p.price)).toEqual([1, 2, 3]);
   });
 
   it('keeps the LAST occurrence of a duplicated timestamp', () => {
@@ -196,11 +191,7 @@ describe('shapePriceHistory (pure)', () => {
       ],
       base,
     );
-    expect(shaped.points.map((p) => p.timestamp)).toEqual([
-      base,
-      base + 2 * DAY,
-      base + 4 * DAY,
-    ]);
+    expect(shaped.points.map(p => p.timestamp)).toEqual([base, base + 2 * DAY, base + 4 * DAY]);
   });
 
   it('exposes min/max for axis scaling; empty input yields no extent', () => {
@@ -274,12 +265,12 @@ describe('unavailable taxonomy', () => {
         // Non-object JSON.
         .mockResolvedValueOnce({ ok: true, json: async () => [] } as unknown as Response)
         // coins is not a record.
-        .mockResolvedValueOnce(
-          { ok: true, json: async () => ({ coins: 'nope' }) } as unknown as Response,
-        )
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ coins: 'nope' }),
+        } as unknown as Response)
         // prices is not an array (chain 56 → its own native id).
-        .mockResolvedValueOnce(
-          chartResponse({ 'coingecko:binancecoin': { prices: 'nope' } }));
+        .mockResolvedValueOnce(chartResponse({ 'coingecko:binancecoin': { prices: 'nope' } }));
 
       // Distinct subjects (chainId is part of the cache key): each call
       // must actually reach the network — the negative cache would
@@ -352,7 +343,7 @@ describe('ok outcomes', () => {
     const outcome = await fetchPriceHistory(1);
     expect(outcome.status).toBe('ok');
     if (outcome.status !== 'ok') return;
-    expect(outcome.points.map((p) => p.price)).toEqual([1, 2, 3]);
+    expect(outcome.points.map(p => p.price)).toEqual([1, 2, 3]);
     expect(outcome.extent).toEqual({ min: 1, max: 3 });
     expect(outcome.symbol).toBe('ETH');
     expect(outcome.confidence).toBe(0.99);
@@ -415,10 +406,7 @@ describe('caching and dedupe', () => {
   it('shares one in-flight request between concurrent callers', async () => {
     fetchMock.mockResolvedValue(chartFor(`ethereum:${USDT}`, recentPoints()));
 
-    const [a, b] = await Promise.all([
-      fetchPriceHistory(1, USDT),
-      fetchPriceHistory(1, USDT),
-    ]);
+    const [a, b] = await Promise.all([fetchPriceHistory(1, USDT), fetchPriceHistory(1, USDT)]);
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(a.status).toBe('ok');
@@ -469,10 +457,9 @@ describe('usePriceHistory', () => {
   it('refetches when the window switches (30d → 7d)', async () => {
     fetchMock.mockResolvedValue(chartFor(`ethereum:${USDT}`, recentPoints()));
 
-    const { result, rerender } = renderHook(
-      ({ window }) => usePriceHistory(1, USDT, window),
-      { initialProps: { window: 30 as PriceHistoryWindow } },
-    );
+    const { result, rerender } = renderHook(({ window }) => usePriceHistory(1, USDT, window), {
+      initialProps: { window: 30 as PriceHistoryWindow },
+    });
     await waitFor(() => {
       expect(result.current?.status).toBe('ok');
     });

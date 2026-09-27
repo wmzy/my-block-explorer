@@ -153,9 +153,7 @@ describe('InternalTxnsSection', () => {
     expand();
 
     // The tx list comes from the SAME block the page rendered (by hash).
-    expect(
-      await screen.findByTestId('block-internal-txns-summary'),
-    ).toBeInTheDocument();
+    expect(await screen.findByTestId('block-internal-txns-summary')).toBeInTheDocument();
     expect(requestMock).toHaveBeenCalledWith({
       method: 'eth_getBlockByHash',
       params: [BLOCK_HASH, true],
@@ -257,9 +255,7 @@ describe('InternalTxnsSection', () => {
     // Retry genuinely re-probes the capability.
     mockHappySweep();
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
-    expect(
-      await screen.findByTestId('block-internal-txns-summary'),
-    ).toBeInTheDocument();
+    expect(await screen.findByTestId('block-internal-txns-summary')).toBeInTheDocument();
   });
 
   it('degrades a tx-list fetch failure to an error state whose Retry refetches', async () => {
@@ -280,9 +276,7 @@ describe('InternalTxnsSection', () => {
 
     mockHappySweep();
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
-    expect(
-      await screen.findByTestId('block-internal-txns-summary'),
-    ).toBeInTheDocument();
+    expect(await screen.findByTestId('block-internal-txns-summary')).toBeInTheDocument();
     // The retried sweep really traced (not just refetched the list).
     expect(requestMock).toHaveBeenCalledWith({
       method: 'debug_traceTransaction',
@@ -322,16 +316,12 @@ describe('InternalTxnsSection', () => {
     const resweepSummary = await screen.findByTestId('block-internal-txns-summary');
     expect(resweepSummary).toHaveTextContent('3 internal calls across 2 traced transactions');
     expect(
-      requestMock.mock.calls.filter(call => call[0].method === 'debug_traceTransaction')
-        .length,
+      requestMock.mock.calls.filter(call => call[0].method === 'debug_traceTransaction').length,
     ).toBe(callsBefore + 2);
   });
 
   it('traces at most 50 transactions and discloses the cut', async () => {
-    const hashes = Array.from(
-      { length: 60 },
-      (_, i) => `0x${String(i).padStart(64, '0')}`,
-    );
+    const hashes = Array.from({ length: 60 }, (_, i) => `0x${String(i).padStart(64, '0')}`);
     requestMock.mockImplementation(({ method }) => {
       if (method === 'eth_getBlockByHash') return Promise.resolve(blockWithTxs(hashes));
       return Promise.resolve(traceWithPayoutAndRevert());

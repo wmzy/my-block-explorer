@@ -49,9 +49,7 @@ describe('RawJsonCard', () => {
     // Each load receives its section's abort signal.
     expect(loadTx.mock.calls[0]?.[0]).toBeInstanceOf(AbortSignal);
 
-    await waitFor(() =>
-      expect(screen.getAllByTestId('raw-json-payload')).toHaveLength(2),
-    );
+    await waitFor(() => expect(screen.getAllByTestId('raw-json-payload')).toHaveLength(2));
     const payloads = screen.getAllByTestId('raw-json-payload');
     expect(payloads[0]?.textContent).toBe(JSON.stringify(txRaw, null, 2));
     expect(payloads[1]?.textContent).toBe(JSON.stringify(receiptRaw, null, 2));
@@ -79,9 +77,7 @@ describe('RawJsonCard', () => {
 
   it('aborts an in-flight request on collapse and refetches on re-expand', async () => {
     // Never settles on its own: only the abort path can end it.
-    const never = vi.fn(
-      (_signal?: AbortSignal) => new Promise<never>(() => undefined),
-    );
+    const never = vi.fn((_signal?: AbortSignal) => new Promise<never>(() => undefined));
     renderCard([{ label: 'Transaction', load: never }]);
 
     expand();
@@ -112,9 +108,7 @@ describe('RawJsonCard', () => {
     // Per-section retry affordance, named for its section.
     fireEvent.click(screen.getByRole('button', { name: 'Retry Receipt' }));
 
-    await waitFor(() =>
-      expect(screen.getAllByTestId('raw-json-payload')).toHaveLength(2),
-    );
+    await waitFor(() => expect(screen.getAllByTestId('raw-json-payload')).toHaveLength(2));
     const payloads = screen.getAllByTestId('raw-json-payload');
     expect(payloads[1]?.textContent).toBe(JSON.stringify(receiptRaw, null, 2));
     // The healthy sibling was never re-fetched by the retry.
@@ -136,7 +130,9 @@ describe('RawJsonCard', () => {
 
     expand();
 
-    expect(await screen.findByText('No receipt yet — the transaction is still pending')).toBeVisible();
+    expect(
+      await screen.findByText('No receipt yet — the transaction is still pending'),
+    ).toBeVisible();
     // The pending receipt section fetched nothing and offers no retry —
     // a stated absence, not a failure.
     expect(loadReceipt).not.toHaveBeenCalled();
@@ -155,9 +151,7 @@ describe('RawJsonCard', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
 
-    await waitFor(() =>
-      expect(writeText).toHaveBeenCalledWith(JSON.stringify(txRaw, null, 2)),
-    );
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith(JSON.stringify(txRaw, null, 2)));
     expect(await screen.findByRole('button', { name: 'Copied ✓' })).toBeVisible();
   });
 

@@ -97,11 +97,7 @@ describe('hook + UsdValue composition (fetch stubbed)', () => {
     try {
       function ValueRow() {
         const price = useNativeUsdPrice(1);
-        return (
-          <div>
-            {price != null && <UsdValue usd={price.usd} price={price} />}
-          </div>
-        );
+        return <div>{price != null && <UsdValue usd={price.usd} price={price} />}</div>;
       }
 
       const { container } = render(<ValueRow />);
@@ -121,9 +117,7 @@ describe('hook + UsdValue composition (fetch stubbed)', () => {
 
     function ValueRow() {
       const price = useNativeUsdPrice(9999);
-      return (
-        <div>{price != null && <UsdValue usd={price.usd} price={price} />}</div>
-      );
+      return <div>{price != null && <UsdValue usd={price.usd} price={price} />}</div>;
     }
 
     const { container } = render(<ValueRow />);
@@ -133,16 +127,17 @@ describe('hook + UsdValue composition (fetch stubbed)', () => {
   });
 
   it('a successful fetch renders the priced amount', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ coins: { 'coingecko:ethereum': { price: 2740.68 } } }),
-    }));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ coins: { 'coingecko:ethereum': { price: 2740.68 } } }),
+      }),
+    );
 
     function ValueRow() {
       const price = useNativeUsdPrice(1);
-      return (
-        <div>{price != null && <UsdValue usd={price.usd} price={price} />}</div>
-      );
+      return <div>{price != null && <UsdValue usd={price.usd} price={price} />}</div>;
     }
 
     render(<ValueRow />);

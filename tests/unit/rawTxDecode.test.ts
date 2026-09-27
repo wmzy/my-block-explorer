@@ -139,7 +139,7 @@ async function decodeOk(raw: string) {
 }
 
 function expectInvalid(raw: string) {
-  return decodeRawTransaction(raw).then((result) => {
+  return decodeRawTransaction(raw).then(result => {
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error('expected a failure result');
     expect(result.error).toMatch(/^Not a valid signed raw transaction \(.+\)\.$/);

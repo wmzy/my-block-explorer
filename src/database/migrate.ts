@@ -33,7 +33,7 @@ if (import.meta.url === `file://${process.argv[1]}`) {
       console.log('Migration finished');
       process.exit(0);
     })
-    .catch((error) => {
+    .catch(error => {
       console.error('Migration failed:', error);
       process.exit(1);
     });

@@ -25,7 +25,7 @@ vi.mock('sonner', () => ({
   toast: { success: mocks.toastSuccess, error: mocks.toastError },
 }));
 
-vi.mock('@/services/chainReset', async (importOriginal) => {
+vi.mock('@/services/chainReset', async importOriginal => {
   const actual = await importOriginal<typeof import('@/services/chainReset')>();
   return {
     ...actual,
@@ -36,8 +36,7 @@ vi.mock('@/services/chainReset', async (importOriginal) => {
 
 const CHAIN = 31337;
 
-const detect = (state: ChainResetState) =>
-  mocks.useChainResetDetection.mockReturnValue(state);
+const detect = (state: ChainResetState) => mocks.useChainResetDetection.mockReturnValue(state);
 
 const suspectedAt = (blockNumber: number): ChainResetState => ({
   suspected: true,
@@ -156,9 +155,7 @@ describe('Clear cached data', () => {
 
   it('surfaces the admin-token guidance on a 403', async () => {
     detect(suspectedAt(1_200));
-    mocks.clearChainCachedData.mockRejectedValue(
-      new ApiError('Invalid admin token.', 403),
-    );
+    mocks.clearChainCachedData.mockRejectedValue(new ApiError('Invalid admin token.', 403));
     renderBanner(4n);
 
     fireEvent.click(screen.getByTestId('chain-reset-clear'));

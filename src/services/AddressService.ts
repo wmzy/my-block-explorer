@@ -204,9 +204,11 @@ export const applyDiscoveredTxFilters = (
   if (filters === undefined) return [...transactions];
   const { fromAddress, toAddress, minValue, maxValue, method } = filters;
   if (
-    fromAddress === undefined && toAddress === undefined
-    && minValue === undefined && maxValue === undefined
-    && method === undefined
+    fromAddress === undefined &&
+    toAddress === undefined &&
+    minValue === undefined &&
+    maxValue === undefined &&
+    method === undefined
   ) {
     return [...transactions];
   }
@@ -296,15 +298,18 @@ export const scanBlockForAddressTransactions = (
   block: {
     number?: bigint | null;
     timestamp: bigint;
-    transactions: readonly (string | {
-      hash: string;
-      from: string;
-      to?: string | null;
-      value: bigint;
-      // viem's full transaction shape carries the calldata; optional so
-      // hand-built test blocks (and legacy fixtures) keep compiling.
-      input?: string | null;
-    })[];
+    transactions: readonly (
+      | string
+      | {
+        hash: string;
+        from: string;
+        to?: string | null;
+        value: bigint;
+        // viem's full transaction shape carries the calldata; optional so
+        // hand-built test blocks (and legacy fixtures) keep compiling.
+        input?: string | null;
+      }
+    )[];
   },
   address: Address,
 ): DiscoveredTransaction[] => {
@@ -320,10 +325,7 @@ export const scanBlockForAddressTransactions = (
       // plain transfer ('0x'/absent input) has none. Everything else
       // yields the validated 4-byte prefix (lowercase), null when the
       // input carries no valid selector.
-      const selector =
-        tx.to == null || tx.to === ''
-          ? null
-          : selectorOf(tx.input ?? undefined);
+      const selector = tx.to == null || tx.to === '' ? null : selectorOf(tx.input ?? undefined);
       results.push({
         hash: tx.hash,
         blockNumber: block.number ?? 0n,
@@ -478,10 +480,7 @@ const createAddressService = (deps: AddressServiceDeps) => {
     // A list shorter than its discovery budget means the search exhausted
     // the window — nothing more to find, any page is servable. Otherwise
     // the budget must cover the requested slice.
-    if (
-      entry.result.transactions.length < entry.budget ||
-      entry.budget >= neededItems
-    ) {
+    if (entry.result.transactions.length < entry.budget || entry.budget >= neededItems) {
       return entry.result;
     }
     return null;
@@ -682,10 +681,7 @@ const createAddressService = (deps: AddressServiceDeps) => {
       // undefined so the txCount-tiered default range applies.
       let requestedWindow: number | undefined;
       if (windowBlocks !== undefined) {
-        requestedWindow = Math.min(
-          Math.max(Math.trunc(windowBlocks), 1),
-          MAX_SEARCH_WINDOW_BLOCKS,
-        );
+        requestedWindow = Math.min(Math.max(Math.trunc(windowBlocks), 1), MAX_SEARCH_WINDOW_BLOCKS);
       }
       // Distinct windows are distinct searches; the txCount-tiered default
       // gets its own key so an explicit window never aliases it.
@@ -697,9 +693,7 @@ const createAddressService = (deps: AddressServiceDeps) => {
 
       const cached = readTxSearchCache(cacheKey, neededItems);
       if (cached) {
-        logger.info(
-          `Serving cached tx search for ${address} on chain ${chainId}`,
-        );
+        logger.info(`Serving cached tx search for ${address} on chain ${chainId}`);
         // Points are computed from the cached FULL list on demand, so a
         // chart request always agrees with the list served from the same
         // cache entry (the merge, when present, applies to both).

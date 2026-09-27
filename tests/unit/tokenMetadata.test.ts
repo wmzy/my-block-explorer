@@ -45,38 +45,26 @@ describe('fetchTokenMetadata', () => {
   it('aggregates symbol and decimals for an ERC-20 in one multicall', async () => {
     multicall.mockResolvedValue([ok('WETH'), ok(18)]);
 
-    const metadata = await fetchTokenMetadata(1, [
-      { address: TOKEN, includeDecimals: true },
-    ]);
+    const metadata = await fetchTokenMetadata(1, [{ address: TOKEN, includeDecimals: true }]);
 
     expect(multicall).toHaveBeenCalledTimes(1);
     const [params] = multicall.mock.calls[0];
     expect(params.multicallAddress).toBe(MULTICALL3);
     expect(params.allowFailure).toBe(true);
-    expect(params.contracts.map((contract) => contract.functionName)).toEqual([
-      'symbol',
-      'decimals',
-    ]);
-    expect(params.contracts.map((contract) => contract.address)).toEqual([
-      TOKEN,
-      TOKEN,
-    ]);
+    expect(params.contracts.map(contract => contract.functionName)).toEqual(['symbol', 'decimals']);
+    expect(params.contracts.map(contract => contract.address)).toEqual([TOKEN, TOKEN]);
     expect(metadata.get(TOKEN_LOWER)).toEqual({ symbol: 'WETH', decimals: 18 });
   });
 
   it('skips decimals() for non-ERC-20 tokens (it would revert)', async () => {
     multicall.mockResolvedValue([ok('BAYC')]);
 
-    const metadata = await fetchTokenMetadata(1, [
-      { address: TOKEN, includeDecimals: false },
-    ]);
+    const metadata = await fetchTokenMetadata(1, [{ address: TOKEN, includeDecimals: false }]);
 
     expect(multicall).toHaveBeenCalledTimes(1);
-    expect(
-      multicall.mock.calls[0][0].contracts.map(
-        (contract) => contract.functionName,
-      ),
-    ).toEqual(['symbol']);
+    expect(multicall.mock.calls[0][0].contracts.map(contract => contract.functionName)).toEqual([
+      'symbol',
+    ]);
     expect(metadata.get(TOKEN_LOWER)).toEqual({
       symbol: 'BAYC',
       decimals: null,
@@ -86,22 +74,15 @@ describe('fetchTokenMetadata', () => {
   it('decodes a reverted call to null fields without throwing', async () => {
     multicall.mockResolvedValue([null, null]);
 
-    const metadata = await fetchTokenMetadata(1, [
-      { address: TOKEN, includeDecimals: true },
-    ]);
+    const metadata = await fetchTokenMetadata(1, [{ address: TOKEN, includeDecimals: true }]);
 
     expect(metadata.get(TOKEN_LOWER)).toEqual({ symbol: null, decimals: null });
   });
 
   it('keeps the successful field when only one call of the pair reverts', async () => {
-    multicall.mockResolvedValue([
-      ok('WETH'),
-      { status: 'failure', error: new Error('reverted') },
-    ]);
+    multicall.mockResolvedValue([ok('WETH'), { status: 'failure', error: new Error('reverted') }]);
 
-    const metadata = await fetchTokenMetadata(1, [
-      { address: TOKEN, includeDecimals: true },
-    ]);
+    const metadata = await fetchTokenMetadata(1, [{ address: TOKEN, includeDecimals: true }]);
 
     expect(metadata.get(TOKEN_LOWER)).toEqual({
       symbol: 'WETH',
@@ -112,9 +93,7 @@ describe('fetchTokenMetadata', () => {
   it('resolves all-null metadata when the multicall transport fails', async () => {
     multicall.mockRejectedValue(new Error('RPC down'));
 
-    const metadata = await fetchTokenMetadata(1, [
-      { address: TOKEN, includeDecimals: true },
-    ]);
+    const metadata = await fetchTokenMetadata(1, [{ address: TOKEN, includeDecimals: true }]);
 
     expect(metadata.get(TOKEN_LOWER)).toEqual({ symbol: null, decimals: null });
   });
@@ -125,9 +104,7 @@ describe('fetchTokenMetadata', () => {
       .mockResolvedValueOnce([ok('WETH'), ok(18)]);
 
     await fetchTokenMetadata(1, [{ address: TOKEN, includeDecimals: true }]);
-    const second = await fetchTokenMetadata(1, [
-      { address: TOKEN, includeDecimals: true },
-    ]);
+    const second = await fetchTokenMetadata(1, [{ address: TOKEN, includeDecimals: true }]);
 
     expect(multicall).toHaveBeenCalledTimes(2);
     expect(second.get(TOKEN_LOWER)).toEqual({ symbol: 'WETH', decimals: 18 });
@@ -136,12 +113,8 @@ describe('fetchTokenMetadata', () => {
   it('serves a second fetch within the TTL from cache without a new multicall', async () => {
     multicall.mockResolvedValue([ok('WETH'), ok(18)]);
 
-    const first = await fetchTokenMetadata(1, [
-      { address: TOKEN, includeDecimals: true },
-    ]);
-    const second = await fetchTokenMetadata(1, [
-      { address: TOKEN, includeDecimals: true },
-    ]);
+    const first = await fetchTokenMetadata(1, [{ address: TOKEN, includeDecimals: true }]);
+    const second = await fetchTokenMetadata(1, [{ address: TOKEN, includeDecimals: true }]);
 
     expect(multicall).toHaveBeenCalledTimes(1);
     expect(second.get(TOKEN_LOWER)).toEqual(first.get(TOKEN_LOWER));
@@ -178,9 +151,7 @@ describe('fetchTokenMetadata', () => {
   });
 
   it('returns an empty map without touching the network for chainId <= 0', async () => {
-    const metadata = await fetchTokenMetadata(0, [
-      { address: TOKEN, includeDecimals: true },
-    ]);
+    const metadata = await fetchTokenMetadata(0, [{ address: TOKEN, includeDecimals: true }]);
 
     expect(metadata.size).toBe(0);
     expect(createRpcClient).not.toHaveBeenCalled();
@@ -201,9 +172,7 @@ describe('useTokenMetadata', () => {
   it('loads metadata for a token list and exposes it as a Map', async () => {
     multicall.mockResolvedValue([ok('WETH'), ok(18)]);
 
-    const { result } = renderHook(() =>
-      useTokenMetadata(1, [{ address: TOKEN, kind: 'erc20' }]),
-    );
+    const { result } = renderHook(() => useTokenMetadata(1, [{ address: TOKEN, kind: 'erc20' }]));
 
     // Undefined while the fetch is in flight.
     expect(result.current).toBeUndefined();
@@ -219,12 +188,9 @@ describe('useTokenMetadata', () => {
   it('does not refetch when the parent passes a fresh but equal token array', async () => {
     multicall.mockResolvedValue([ok('WETH'), ok(18)]);
 
-    const { result, rerender } = renderHook(
-      ({ tokens }) => useTokenMetadata(1, tokens),
-      {
-        initialProps: { tokens: [{ address: TOKEN, kind: 'erc20' as const }] },
-      },
-    );
+    const { result, rerender } = renderHook(({ tokens }) => useTokenMetadata(1, tokens), {
+      initialProps: { tokens: [{ address: TOKEN, kind: 'erc20' as const }] },
+    });
 
     await waitFor(() => expect(result.current).toBeDefined());
     expect(multicall).toHaveBeenCalledTimes(1);

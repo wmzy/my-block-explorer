@@ -94,7 +94,8 @@ afterEach(async () => {
 describe('GET /chains/:chainId/blocks/stream', () => {
   it('emits one block event per NEW block, never for the connect-time head', async () => {
     mocks.getClient.mockResolvedValue({
-      getBlockNumber: vi.fn()
+      getBlockNumber: vi
+        .fn()
         .mockResolvedValueOnce(100n) // baseline at connect
         .mockResolvedValueOnce(101n) // the new block
         .mockResolvedValue(101n), // quiet head afterwards
@@ -211,13 +212,16 @@ describe('GET /chains/:chainId/blocks/stream', () => {
   });
 
   it('caps the catch-up batch after a long stall', async () => {
-    const getBlockNumber = vi.fn()
+    const getBlockNumber = vi
+      .fn()
       .mockResolvedValueOnce(100n) // baseline
       .mockResolvedValueOnce(115n) // 15-block gap after the stall
       .mockResolvedValue(115n);
-    const getBlock = vi.fn().mockImplementation(({ blockNumber }: { blockNumber: bigint }) =>
-      Promise.resolve({ ...BLOCK_FIXTURE, number: blockNumber }),
-    );
+    const getBlock = vi
+      .fn()
+      .mockImplementation(({ blockNumber }: { blockNumber: bigint }) =>
+        Promise.resolve({ ...BLOCK_FIXTURE, number: blockNumber }),
+      );
     mocks.getClient.mockResolvedValue({ getBlockNumber, getBlock });
 
     const response = await streamRequest('/chains/1/blocks/stream');

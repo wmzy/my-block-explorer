@@ -87,7 +87,12 @@ describe('flattenBlockInternalFrames', () => {
     const root = node({
       type: 'CALL',
       calls: [
-        node({ type: 'CALL', to: OTHER, depth: 1, calls: [node({ type: 'CALL', to: OTHER, depth: 2 })] }),
+        node({
+          type: 'CALL',
+          to: OTHER,
+          depth: 1,
+          calls: [node({ type: 'CALL', to: OTHER, depth: 2 })],
+        }),
         node({ type: 'CALL', to: OTHER, depth: 1 }),
       ],
     });
@@ -202,7 +207,9 @@ describe('extractBlockTxHashes', () => {
     expect(extractBlockTxHashes({ number: '0x1' })).toBeNull();
     expect(extractBlockTxHashes({ transactions: 'not-an-array' })).toBeNull();
     // An entry without a hash would leave a silent hole — refuse the list.
-    expect(extractBlockTxHashes({ transactions: [{ hash: '0xa' }, { blockNumber: '0x1' }] })).toBeNull();
+    expect(
+      extractBlockTxHashes({ transactions: [{ hash: '0xa' }, { blockNumber: '0x1' }] }),
+    ).toBeNull();
     expect(extractBlockTxHashes({ transactions: [{ hash: '' }] })).toBeNull();
   });
 });
@@ -257,9 +264,7 @@ describe('groupBlockInternalTxns', () => {
     expect(aggregate.groups.map(group => group.hash)).toEqual(['0xa', '0xc']);
     expect(aggregate.totalRows).toBe(3);
     expect(aggregate.tracedCount).toBe(3);
-    expect(aggregate.failedTxs).toEqual([
-      { hash: '0xerr', message: 'boom', unsupported: false },
-    ]);
+    expect(aggregate.failedTxs).toEqual([{ hash: '0xerr', message: 'boom', unsupported: false }]);
     expect(aggregate.unsupported).toBe(false);
     expect(aggregate.truncated).toBe(false);
   });
@@ -326,9 +331,7 @@ describe('labels', () => {
         truncated: false,
       },
     ]);
-    expect(blockInternalTxnsSummary(aggregate)).toBe(
-      '1 internal call across 1 traced transaction',
-    );
+    expect(blockInternalTxnsSummary(aggregate)).toBe('1 internal call across 1 traced transaction');
     expect(blockInternalTxnsSummary(groupBlockInternalTxns([]))).toBe(
       '0 internal calls across 0 traced transactions',
     );

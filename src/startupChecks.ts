@@ -76,9 +76,7 @@ function banner(line: string): string {
 }
 
 function insecureWarning(host: string | undefined, posture: StartupSecurityPosture): string {
-  const lines = [
-    banner(`SECURITY WARNING: binding to non-loopback host "${host ?? ''}"`),
-  ];
+  const lines = [banner(`SECURITY WARNING: binding to non-loopback host "${host ?? ''}"`)];
   if (!posture.adminTokenConfigured) {
     lines.push(
       ' ADMIN_TOKEN is not configured — these mutating endpoints are UNGATED:',

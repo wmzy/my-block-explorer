@@ -182,7 +182,10 @@ describe('useWatchEvents hook', () => {
     const { unmount } = renderHook(() => useWatchEvents(1, event => seen.push(event.kind)));
 
     act(() => {
-      FakeEventSource.instances[0].emit('watch', JSON.stringify(gapMarkerEvent(1, ADDRESS, 1n, 2n)));
+      FakeEventSource.instances[0].emit(
+        'watch',
+        JSON.stringify(gapMarkerEvent(1, ADDRESS, 1n, 2n)),
+      );
     });
     expect(seen).toEqual(['gap']);
 

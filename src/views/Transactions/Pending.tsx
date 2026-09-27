@@ -265,9 +265,7 @@ export default function PendingTransactionsPage() {
       <PageContainer>
         <BackButton
           onClick={() => {
-            void navigate(router, `/chain/${currentChainId}/transactions`).catch(
-              () => undefined,
-            );
+            void navigate(router, `/chain/${currentChainId}/transactions`).catch(() => undefined);
           }}
           label="Back to Transactions"
         />
@@ -361,9 +359,9 @@ function PendingBody({ chainId }: { chainId: number }) {
           <CardContent>
             <p className={unsupportedLead}>{own.message}</p>
             <p className={mempoolNote}>
-              Exposing the pool is a node operator decision — the endpoint this explorer uses
-              keeps its txpool private. Nothing is wrong with the chain; the pending list simply
-              cannot be served from here.
+              Exposing the pool is a node operator decision — the endpoint this explorer uses keeps
+              its txpool private. Nothing is wrong with the chain; the pending list simply cannot be
+              served from here.
             </p>
           </CardContent>
         </Card>
@@ -403,7 +401,12 @@ function PendingBody({ chainId }: { chainId: number }) {
             pending transactions
           </span>
         )}
-        <Button variant="outline" size="sm" onClick={toggleGrouped} disabled={own.pending.length === 0}>
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={toggleGrouped}
+          disabled={own.pending.length === 0}
+        >
           {grouped ? 'Flat list' : 'Group conflicts'}
         </Button>
         <Button

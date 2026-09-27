@@ -61,9 +61,7 @@ export function validatePaginationParams(page?: string | number, limit?: string 
 /**
  * Detect the type of a search input
  */
-export function detectSearchType(
-  input: string,
-): 'address' | 'hash' | 'block' | 'ens' | 'unknown' {
+export function detectSearchType(input: string): 'address' | 'hash' | 'block' | 'ens' | 'unknown' {
   if (!input || typeof input !== 'string') return 'unknown';
 
   const trimmed = input.trim();
@@ -113,8 +111,7 @@ export function sanitizeInput(input: string): string {
   // Ensure addresses and hashes start with '0x'
   if (/^[a-fA-F0-9]{40}$/.test(cleaned)) {
     cleaned = `0x${cleaned}`;
-  }
-  else if (/^[a-fA-F0-9]{64}$/.test(cleaned)) {
+  } else if (/^[a-fA-F0-9]{64}$/.test(cleaned)) {
     cleaned = `0x${cleaned}`;
   }
 

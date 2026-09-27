@@ -55,9 +55,7 @@ const item1155 = (tokenId = '15'): NftMetadataItem => ({
 
 const readUri = vi.fn<NftUriReader>();
 const fetchJson = vi.fn<NftJsonFetcher>();
-const readContract = vi.fn<
-  (args: Record<string, unknown>) => Promise<unknown>
->();
+const readContract = vi.fn<(args: Record<string, unknown>) => Promise<unknown>>();
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -84,9 +82,7 @@ describe('substituteUriId', () => {
   });
 
   it('returns a URI without {id} unchanged', () => {
-    expect(substituteUriId(`ipfs://${CID}/15.json`, '15')).toBe(
-      `ipfs://${CID}/15.json`,
-    );
+    expect(substituteUriId(`ipfs://${CID}/15.json`, '15')).toBe(`ipfs://${CID}/15.json`);
     // Even with an unparseable id: no placeholder means nothing to break.
     expect(substituteUriId('https://meta.example/t/15.json', 'abc')).toBe(
       'https://meta.example/t/15.json',
@@ -109,15 +105,11 @@ describe('resolveIpfsUri', () => {
     expect(resolveIpfsUri(`ipfs://${CID}/meta.json`, DEFAULT_IPFS_GATEWAY)).toBe(
       `${DEFAULT_IPFS_GATEWAY}/ipfs/${CID}/meta.json`,
     );
-    expect(resolveIpfsUri(`ipfs://${CID}`, GATEWAY)).toBe(
-      `${GATEWAY}/ipfs/${CID}`,
-    );
+    expect(resolveIpfsUri(`ipfs://${CID}`, GATEWAY)).toBe(`${GATEWAY}/ipfs/${CID}`);
   });
 
   it('dedupes the ipfs://ipfs/ double-prefix form', () => {
-    expect(resolveIpfsUri(`ipfs://ipfs/${CID}`, GATEWAY)).toBe(
-      `${GATEWAY}/ipfs/${CID}`,
-    );
+    expect(resolveIpfsUri(`ipfs://ipfs/${CID}`, GATEWAY)).toBe(`${GATEWAY}/ipfs/${CID}`);
   });
 
   it('rewrites unschemed ipfs/ and /ipfs/ path forms', () => {
@@ -133,12 +125,8 @@ describe('resolveIpfsUri', () => {
   });
 
   it('passes http(s) and data URIs through unchanged', () => {
-    expect(resolveIpfsUri('https://a.example/x.json', GATEWAY)).toBe(
-      'https://a.example/x.json',
-    );
-    expect(resolveIpfsUri('http://a.example/x.json', GATEWAY)).toBe(
-      'http://a.example/x.json',
-    );
+    expect(resolveIpfsUri('https://a.example/x.json', GATEWAY)).toBe('https://a.example/x.json');
+    expect(resolveIpfsUri('http://a.example/x.json', GATEWAY)).toBe('http://a.example/x.json');
     expect(resolveIpfsUri('data:application/json;base64,e30=', GATEWAY)).toBe(
       'data:application/json;base64,e30=',
     );
@@ -171,22 +159,20 @@ describe('pickNftMetadataFields', () => {
   });
 
   it('falls back image → image_url → image_data on the first non-empty', () => {
-    expect(
-      pickNftMetadataFields({ image: 'a', image_url: 'b', image_data: 'c' })
-        ?.image,
-    ).toBe('a');
+    expect(pickNftMetadataFields({ image: 'a', image_url: 'b', image_data: 'c' })?.image).toBe('a');
     expect(pickNftMetadataFields({ image: '', image_url: 'b' })?.image).toBe('b');
-    expect(
-      pickNftMetadataFields({ image: '  ', image_url: ' ', image_data: 'c' })
-        ?.image,
-    ).toBe('c');
+    expect(pickNftMetadataFields({ image: '  ', image_url: ' ', image_data: 'c' })?.image).toBe(
+      'c',
+    );
     expect(pickNftMetadataFields({})?.image).toBeNull();
   });
 
   it('keeps empty/whitespace/non-string fields as honest nulls', () => {
-    expect(
-      pickNftMetadataFields({ name: '', description: '   ', image: 42 }),
-    ).toEqual({ name: null, description: null, image: null });
+    expect(pickNftMetadataFields({ name: '', description: '   ', image: 42 })).toEqual({
+      name: null,
+      description: null,
+      image: null,
+    });
   });
 
   it('treats non-plain-object JSON as malformed (null)', () => {
@@ -219,9 +205,7 @@ describe('IPFS gateway preference', () => {
     expect(getIpfsGateway()).toBe(GATEWAY);
 
     setIpfsGateway(' gw2.example.org/');
-    expect(localStorage.getItem(IPFS_GATEWAY_STORAGE_KEY)).toBe(
-      'https://gw2.example.org',
-    );
+    expect(localStorage.getItem(IPFS_GATEWAY_STORAGE_KEY)).toBe('https://gw2.example.org');
   });
 
   it('clearing the gateway removes the stored key and restores the default', () => {
@@ -263,9 +247,7 @@ describe('fetchNftMetadataBatch', () => {
       tokenId: 15n,
     });
     expect(fetchJson).toHaveBeenCalledTimes(1);
-    expect(fetchJson).toHaveBeenCalledWith(
-      `${DEFAULT_IPFS_GATEWAY}/ipfs/${CID}/meta.json`,
-    );
+    expect(fetchJson).toHaveBeenCalledWith(`${DEFAULT_IPFS_GATEWAY}/ipfs/${CID}/meta.json`);
     expect(out.get(KEY)).toEqual({
       status: 'ok',
       name: 'Bayc',
@@ -288,9 +270,7 @@ describe('fetchNftMetadataBatch', () => {
       functionName: 'uri',
       tokenId: 15n,
     });
-    expect(fetchJson).toHaveBeenCalledWith(
-      `https://meta.example/t/${HEX_15}.json`,
-    );
+    expect(fetchJson).toHaveBeenCalledWith(`https://meta.example/t/${HEX_15}.json`);
     // Sparse metadata (missing image/description) is still real metadata.
     expect(out.get(KEY)).toEqual({
       status: 'ok',
@@ -301,9 +281,7 @@ describe('fetchNftMetadataBatch', () => {
   });
 
   it('caches a contract revert as none without refetching', async () => {
-    readUri.mockRejectedValue(
-      new Error('VM Exception while processing transaction: reverted'),
-    );
+    readUri.mockRejectedValue(new Error('VM Exception while processing transaction: reverted'));
 
     const first = await fetchNftMetadataBatch(1, [item721()], { readUri, fetchJson });
     const second = await fetchNftMetadataBatch(1, [item721()], { readUri, fetchJson });
@@ -330,9 +308,7 @@ describe('fetchNftMetadataBatch', () => {
 
   it('treats a fetchJson rejection as retryable unavailable', async () => {
     readUri.mockResolvedValue('https://meta.example/x.json');
-    fetchJson
-      .mockRejectedValueOnce(new Error('HTTP 500'))
-      .mockResolvedValueOnce({ name: 'ok' });
+    fetchJson.mockRejectedValueOnce(new Error('HTTP 500')).mockResolvedValueOnce({ name: 'ok' });
 
     const first = await fetchNftMetadataBatch(1, [item721()], { readUri, fetchJson });
     const second = await fetchNftMetadataBatch(1, [item721()], { readUri, fetchJson });
@@ -561,12 +537,9 @@ describe('useNftMetadata', () => {
   it('does not refetch when the parent passes a fresh but equal item array', async () => {
     mockDefaultStack();
 
-    const { result, rerender } = renderHook(
-      ({ items }) => useNftMetadata(1, items),
-      {
-        initialProps: { items: [item721()] },
-      },
-    );
+    const { result, rerender } = renderHook(({ items }) => useNftMetadata(1, items), {
+      initialProps: { items: [item721()] },
+    });
 
     await waitFor(() => expect(result.current).toBeDefined());
     expect(readContract).toHaveBeenCalledTimes(1);
@@ -579,12 +552,9 @@ describe('useNftMetadata', () => {
   it('refetches when the gateway preference changes', async () => {
     mockDefaultStack();
 
-    const { result, rerender } = renderHook(
-      ({ items }) => useNftMetadata(1, items),
-      {
-        initialProps: { items: [item721()] },
-      },
-    );
+    const { result, rerender } = renderHook(({ items }) => useNftMetadata(1, items), {
+      initialProps: { items: [item721()] },
+    });
 
     await waitFor(() => expect(result.current).toBeDefined());
     expect(readContract).toHaveBeenCalledTimes(1);

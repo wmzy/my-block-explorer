@@ -9,7 +9,7 @@
 # therefore chain- and API-agnostic static hosting.
 
 # ----------------------------------------------------------------- base --
-FROM node:22-slim AS node-base
+FROM node:26-slim AS node-base
 ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
 # pnpm version that produced pnpm-lock.yaml (lockfileVersion 9.0)
 RUN corepack enable && corepack prepare pnpm@11.22.0 --activate
@@ -38,7 +38,7 @@ COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile --prod
 
 # --------------------------------------------------------- api: runtime --
-FROM node:22-slim AS api
+FROM node:26-slim AS api
 ENV NODE_ENV=production \
     PORT=8201
 WORKDIR /app
@@ -49,7 +49,7 @@ COPY drizzle ./drizzle
 # DuckDB files live here (main DB + per-chain event DBs); bind-mount it
 VOLUME /app/data
 EXPOSE 8201
-# node:22-slim ships no curl/wget — use Node's global fetch
+# node:26-slim ships no curl/wget — use Node's global fetch
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
     CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT ?? 8201)+'/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
 ENTRYPOINT ["node", "dist/server/cli.js"]

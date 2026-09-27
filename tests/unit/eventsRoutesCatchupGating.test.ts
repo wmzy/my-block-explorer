@@ -478,9 +478,7 @@ describe('missing range: 404 resource state', () => {
   });
 
   it('start keeps state conflicts (already completed) as 400', async () => {
-    mocks.getIndexingRanges.mockResolvedValue([
-      { rangeId: 9, status: 'completed' },
-    ]);
+    mocks.getIndexingRanges.mockResolvedValue([{ rangeId: 9, status: 'completed' }]);
 
     const res = await post(`${BASE}/ranges/9/start`, { abi: ABI });
 

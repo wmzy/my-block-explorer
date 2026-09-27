@@ -36,15 +36,11 @@ describe('readWatchlist', () => {
   });
 
   it('drops hand-edited non-address entries and re-caps an oversized list', () => {
-    localStorage.setItem(
-      WATCHLIST_STORAGE_KEY,
-      JSON.stringify(['nope', CHECKSUMMED, '0x123']),
-    );
+    localStorage.setItem(WATCHLIST_STORAGE_KEY, JSON.stringify(['nope', CHECKSUMMED, '0x123']));
     expect(readWatchlist()).toEqual([CHECKSUMMED]);
 
-    const oversized = Array.from(
-      { length: WATCHLIST_MAX_ENTRIES + 10 },
-      (_, i) => getAddress(`0x${(i + 1).toString(16).padStart(40, '0')}`),
+    const oversized = Array.from({ length: WATCHLIST_MAX_ENTRIES + 10 }, (_, i) =>
+      getAddress(`0x${(i + 1).toString(16).padStart(40, '0')}`),
     );
     localStorage.setItem(WATCHLIST_STORAGE_KEY, JSON.stringify(oversized));
     expect(readWatchlist()).toHaveLength(WATCHLIST_MAX_ENTRIES);

@@ -411,9 +411,9 @@ export function InternalTxnsSection({
         {aggregate.groups.length === 0 ? (
           <div data-testid="block-internal-txns-empty">
             <Alert variant="info">
-              No internal calls in the traced transactions — plain transfers leave no
-              nested frames. This is the on-demand sweep's result over a bounded slice
-              of the block, not an indexer claim that the block has none.
+              No internal calls in the traced transactions — plain transfers leave no nested frames.
+              This is the on-demand sweep's result over a bounded slice of the block, not an indexer
+              claim that the block has none.
             </Alert>
           </div>
         ) : (
@@ -569,14 +569,13 @@ export function InternalTxnsSection({
       {expanded && (
         <CardContent>
           <p className={scopeNote} data-testid="block-internal-txns-scope">
-            traced on demand from this node's debug API — internal calls only, not indexer
-            data
+            traced on demand from this node's debug API — internal calls only, not indexer data
           </p>
           {transactionCount === 0 && (
             <div data-testid="block-internal-txns-zero">
               <Alert variant="info">
-                This block contains no transactions — internal calls only exist inside
-                transactions, so there is nothing to trace.
+                This block contains no transactions — internal calls only exist inside transactions,
+                so there is nothing to trace.
               </Alert>
             </div>
           )}
@@ -597,9 +596,8 @@ export function InternalTxnsSection({
           {transactionCount > 0 && state.phase === 'unsupported' && (
             <div data-testid="block-internal-txns-unsupported">
               <Alert variant="info">
-                Internal transaction tracing is not supported by this RPC — the endpoint
-                does not implement <code>debug_traceTransaction</code>. Nothing was
-                traced.
+                Internal transaction tracing is not supported by this RPC — the endpoint does not
+                implement <code>debug_traceTransaction</code>. Nothing was traced.
               </Alert>
               <div className={retryRow}>
                 <Button variant="secondary" size="sm" onClick={retry}>

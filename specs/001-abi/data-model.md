@@ -1,7 +1,6 @@
 # 数据模型设计
 
-**创建日期**: 2025-10-15
-**版本**: 1.0
+**创建日期**: 2025-10-15 **版本**: 1.0
 
 ## 核心实体定义
 
@@ -11,14 +10,14 @@
 
 ```typescript
 export interface ChainEventTableRegistry {
-  contractAddress: Address;           // 合约地址
-  eventSignature: `0x${string}`;      // 事件签名哈希
-  eventName: string;                  // 事件名称
-  tableName: string;                  // 动态表名
-  tableSchema: string;                // JSON格式的表结构
-  isActive: boolean;                  // 表是否活跃
-  createdAt: Date;                    // 创建时间
-  updatedAt: Date;                    // 更新时间
+  contractAddress: Address; // 合约地址
+  eventSignature: `0x${string}`; // 事件签名哈希
+  eventName: string; // 事件名称
+  tableName: string; // 动态表名
+  tableSchema: string; // JSON格式的表结构
+  isActive: boolean; // 表是否活跃
+  createdAt: Date; // 创建时间
+  updatedAt: Date; // 更新时间
 }
 ```
 
@@ -29,30 +28,31 @@ export interface ChainEventTableRegistry {
 ```typescript
 export interface ChainEventTable {
   // 主键字段
-  blockHash: string;                  // 区块哈希
-  logIndex: number;                   // 日志索引
+  blockHash: string; // 区块哈希
+  logIndex: number; // 日志索引
 
   // 交易信息
-  transactionHash: string;            // 交易哈希
-  transactionIndex: number;           // 交易索引
-  blockNumber: bigint;                // 区块号
-  blockTimestamp: Date;               // 区块时间戳
+  transactionHash: string; // 交易哈希
+  transactionIndex: number; // 交易索引
+  blockNumber: bigint; // 区块号
+  blockTimestamp: Date; // 区块时间戳
 
   // 事件信息
-  eventName: string;                  // 事件名称
-  eventSignature: string;             // 事件签名
-  contractAddress: string;            // 合约地址
+  eventName: string; // 事件名称
+  eventSignature: string; // 事件签名
+  contractAddress: string; // 合约地址
 
   // 解码的事件参数 (动态字段)
-  [paramName: string]: any;           // 根据ABI动态生成的字段
+  [paramName: string]: any; // 根据ABI动态生成的字段
 
   // 元数据
-  decodedAt: Date;                    // 解码时间
-  indexedAt: Date;                    // 索引时间
+  decodedAt: Date; // 解码时间
+  indexedAt: Date; // 索引时间
 }
 ```
 
 **架构变更**：
+
 - **移除chain_id字段**：每个链使用独立的数据库文件
 - **简化主键**：使用 `(block_hash, log_index)` 作为联合主键
 - **数据隔离**：确保链间数据完全隔离，不支持跨链查询
@@ -64,24 +64,24 @@ ABI类型到数据库类型的映射规则：
 ```typescript
 export const ABI_TYPE_MAPPING = {
   // 基础类型
-  'uint': 'TEXT',              // 大数字存储为字符串
-  'int': 'TEXT',               // 有符号整数存储为字符串
-  'address': 'VARCHAR(42)',    // 地址类型
-  'bool': 'BOOLEAN',           // 布尔值
-  'bytes': 'TEXT',             // 字节数组
-  'string': 'TEXT',            // 字符串
+  uint: 'TEXT', // 大数字存储为字符串
+  int: 'TEXT', // 有符号整数存储为字符串
+  address: 'VARCHAR(42)', // 地址类型
+  bool: 'BOOLEAN', // 布尔值
+  bytes: 'TEXT', // 字节数组
+  string: 'TEXT', // 字符串
 
   // 数组类型
-  'uint[]': 'TEXT',            // JSON数组存储
-  'int[]': 'TEXT',             // JSON数组存储
-  'address[]': 'TEXT',         // JSON数组存储
-  'bool[]': 'TEXT',            // JSON数组存储
-  'bytes[]': 'TEXT',           // JSON数组存储
-  'string[]': 'TEXT',          // JSON数组存储
+  'uint[]': 'TEXT', // JSON数组存储
+  'int[]': 'TEXT', // JSON数组存储
+  'address[]': 'TEXT', // JSON数组存储
+  'bool[]': 'TEXT', // JSON数组存储
+  'bytes[]': 'TEXT', // JSON数组存储
+  'string[]': 'TEXT', // JSON数组存储
 
   // 复杂类型
-  'tuple': 'TEXT',             // 结构体存储为JSON
-  'tuple[]': 'TEXT',           // 结构体数组存储为JSON
+  tuple: 'TEXT', // 结构体存储为JSON
+  'tuple[]': 'TEXT', // 结构体数组存储为JSON
 } as const;
 ```
 
@@ -92,7 +92,7 @@ export const ABI_TYPE_MAPPING = {
 ```typescript
 export function generateChainEventTableName(
   contractAddress: Address,
-  eventSignature: `0x${string}`
+  eventSignature: `0x${string}`,
 ): string {
   // 链内唯一表名，不包含chain_id
   return `events_${contractAddress.slice(2, 10)}_${eventSignature.slice(2, 10)}`;
@@ -100,6 +100,7 @@ export function generateChainEventTableName(
 ```
 
 **命名策略变更**：
+
 - **简化命名**：移除chain_id前缀，因为每个链独立数据库
 - **唯一性保证**：在单个链数据库内确保表名唯一
 - **长度优化**：表名更短，提高可读性和性能
@@ -108,8 +109,8 @@ export function generateChainEventTableName(
 
 ```typescript
 export function generateChainEventColumns(
-  eventAbi: AbiEvent
-): Array<{name: string, type: string, nullable: boolean}> {
+  eventAbi: AbiEvent,
+): Array<{ name: string; type: string; nullable: boolean }> {
   const columns = [
     // 标准字段 - 移除了chain_id
     { name: 'block_hash', type: 'VARCHAR(66)', nullable: false },
@@ -127,7 +128,8 @@ export function generateChainEventColumns(
 
   // 动态生成事件参数字段
   eventAbi.inputs.forEach(input => {
-    const dbType = ABI_TYPE_MAPPING[input.type as keyof typeof ABI_TYPE_MAPPING] || 'TEXT';
+    const dbType =
+      ABI_TYPE_MAPPING[input.type as keyof typeof ABI_TYPE_MAPPING] || 'TEXT';
     columns.push({
       name: input.name,
       type: dbType,
@@ -164,6 +166,7 @@ CREATE INDEX idx_contract_block ON {table_name} (contract_address, block_number)
 ```
 
 **索引优化**：
+
 - **主键简化**：移除chain_id字段，提升索引性能
 - **查询优化**：专注于链内查询模式
 - **存储效率**：减少索引存储空间
@@ -283,12 +286,12 @@ WHERE new_field IS NULL;
 export interface EventTableMetrics {
   tableName: string;
   totalRows: number;
-  tableSize: number;        // MB
-  indexSize: number;        // MB
-  avgQueryTime: number;     // ms
+  tableSize: number; // MB
+  indexSize: number; // MB
+  avgQueryTime: number; // ms
   lastIndexed: Date;
-  indexingRate: number;     // events/minute
-  errorRate: number;        // percentage
+  indexingRate: number; // events/minute
+  errorRate: number; // percentage
 }
 ```
 
@@ -353,6 +356,7 @@ ANALYZE {table_name};
 ---
 
 **设计原则**:
+
 - 类型安全：使用TypeScript确保编译时类型检查
 - 性能优先：优化查询索引和存储结构
 - 可扩展性：支持动态添加新的事件类型

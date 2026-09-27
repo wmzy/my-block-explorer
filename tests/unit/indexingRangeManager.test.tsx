@@ -133,11 +133,7 @@ describe('creation-block honesty', () => {
 
   it('renders the creation block when it is known', async () => {
     render(
-      <IndexingRangeManager
-        chainId={CHAIN_ID}
-        contractAddress={ADDRESS}
-        creationBlock={123456}
-      />,
+      <IndexingRangeManager chainId={CHAIN_ID} contractAddress={ADDRESS} creationBlock={123456} />,
     );
 
     await screen.findByText(`Contract created at block #${(123456).toLocaleString()}`);
@@ -209,9 +205,7 @@ describe('Catch up to head', () => {
     );
     expect(mockPost).toHaveBeenCalledTimes(1);
     await waitFor(() =>
-      expect(vi.mocked(toast.success)).toHaveBeenCalledWith(
-        'Indexing started: blocks 400 - 500',
-      ),
+      expect(vi.mocked(toast.success)).toHaveBeenCalledWith('Indexing started: blocks 400 - 500'),
     );
     // Once the new range reaches the head, the action disappears.
     await screen.findByText('#400 - 500');
@@ -247,9 +241,7 @@ describe('Catch up to head', () => {
     headFixture = 500;
     mockPost.mockImplementation((url: string) => {
       if (url === quickUrl) {
-        return Promise.reject(
-          new ApiError('No previous range found. Cannot catch up.', 400),
-        );
+        return Promise.reject(new ApiError('No previous range found. Cannot catch up.', 400));
       }
       return Promise.resolve({});
     });
@@ -363,9 +355,7 @@ describe('Pause transient state', () => {
 
     fireEvent.click(await screen.findByRole('button', { name: 'Pause' }));
 
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Pause' })).toBeEnabled(),
-    );
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Pause' })).toBeEnabled());
     expect(screen.queryByRole('button', { name: 'Pausing...' })).toBeNull();
     expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Pause rejected');
   });
@@ -388,9 +378,7 @@ describe('quick create auto-start toasts', () => {
       }),
     );
     await waitFor(() =>
-      expect(vi.mocked(toast.success)).toHaveBeenCalledWith(
-        'Indexing started: blocks 100 - 200',
-      ),
+      expect(vi.mocked(toast.success)).toHaveBeenCalledWith('Indexing started: blocks 100 - 200'),
     );
   });
 
@@ -456,9 +444,7 @@ describe('admin-token 403 guidance', () => {
     expect(describeMutationError(new Error('network'), 'Failed to add range')).toBe(
       'Failed to add range',
     );
-    expect(describeMutationError('nope', 'Failed to delete range')).toBe(
-      'Failed to delete range',
-    );
+    expect(describeMutationError('nope', 'Failed to delete range')).toBe('Failed to delete range');
   });
 });
 
@@ -483,9 +469,7 @@ describe('one action per range state', () => {
 
     expect(await screen.findByRole('button', { name: 'Start' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Resume' })).toBeEnabled();
-    expect(
-      screen.queryByRole('button', { name: 'Resume (continues from checkpoint)' }),
-    ).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Resume (continues from checkpoint)' })).toBeNull();
   });
 });
 
@@ -508,9 +492,7 @@ describe('cold-start empty state quick actions', () => {
       }),
     );
     await waitFor(() =>
-      expect(vi.mocked(toast.success)).toHaveBeenCalledWith(
-        'Indexing started: blocks 0 - 5,000',
-      ),
+      expect(vi.mocked(toast.success)).toHaveBeenCalledWith('Indexing started: blocks 0 - 5,000'),
     );
   });
 
@@ -744,11 +726,7 @@ describe('client-side overlap precheck', () => {
     headFixture = 50000;
 
     render(
-      <IndexingRangeManager
-        chainId={CHAIN_ID}
-        contractAddress={ADDRESS}
-        creationBlock={1000}
-      />,
+      <IndexingRangeManager chainId={CHAIN_ID} contractAddress={ADDRESS} creationBlock={1000} />,
     );
 
     fireEvent.click(await screen.findByRole('button', { name: '+ Add Range' }));
@@ -837,11 +815,7 @@ describe('client-side overlap precheck', () => {
     headFixture = 50000;
 
     render(
-      <IndexingRangeManager
-        chainId={CHAIN_ID}
-        contractAddress={ADDRESS}
-        creationBlock={1000}
-      />,
+      <IndexingRangeManager chainId={CHAIN_ID} contractAddress={ADDRESS} creationBlock={1000} />,
     );
 
     fireEvent.click(await screen.findByRole('button', { name: '+ Add Range' }));
@@ -904,9 +878,7 @@ describe('staleness furthest-indexed-block', () => {
     // [35000, 40000] — the furthest indexed block is 40000, not the
     // current checkpoint.
     expect(
-      furthestIndexedBlock([
-        { ...range(1, 30000, 40000, 'paused', 35000), direction: 'backward' },
-      ]),
+      furthestIndexedBlock([{ ...range(1, 30000, 40000, 'paused', 35000), direction: 'backward' }]),
     ).toBe(40000);
   });
 
@@ -968,13 +940,15 @@ describe('indexing-rate ETA sampling', () => {
     ];
     expect(estimateRangeEta(samples, { ...forward, currentBlock: 160_000n })).toBeNull();
     // One more millisecond of span tips it over the threshold.
-    expect(estimateRangeEta(
-      [
-        { t: 0, block: 150_000 },
-        { t: 6_000, block: 160_000 },
-      ],
-      { ...forward, currentBlock: 160_000n },
-    )).not.toBeNull();
+    expect(
+      estimateRangeEta(
+        [
+          { t: 0, block: 150_000 },
+          { t: 6_000, block: 160_000 },
+        ],
+        { ...forward, currentBlock: 160_000n },
+      ),
+    ).not.toBeNull();
   });
 
   it('extrapolates a forward walk from the sampled rate', () => {

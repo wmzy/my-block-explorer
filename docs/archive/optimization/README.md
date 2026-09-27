@@ -11,10 +11,12 @@
 ## 📊 架构设计
 
 ### 数据分类
+
 - **持久化数据**: 合约信息、验证状态 → 数据库缓存
 - **实时数据**: 余额、交易数量 → 前端直接RPC
 
 ### API端点
+
 ```
 GET /api/chains/:chainId/addresses/:address/persistent  # 持久化数据 (1-9ms)
 GET /api/chains/:chainId/addresses/:address            # 兼容接口
@@ -23,12 +25,16 @@ GET /api/chains/:chainId/addresses/:address            # 兼容接口
 ## 🔧 使用方法
 
 ### 后端
+
 ```typescript
 // 持久化数据
-const persistent = await fetch(`/api/chains/${chainId}/addresses/${address}/persistent`);
+const persistent = await fetch(
+  `/api/chains/${chainId}/addresses/${address}/persistent`,
+);
 ```
 
 ### 前端
+
 ```typescript
 import { getRealTimeAddressData } from '@/utils/realTimeData';
 
@@ -37,6 +43,7 @@ const realTime = await getRealTimeAddressData(chainId, address);
 ```
 
 ### React示例
+
 ```typescript
 export function AddressPage({ chainId, address }) {
   const [persistent, setPersistent] = useState(null);

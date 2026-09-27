@@ -35,9 +35,7 @@ describe('estimateInclusionBlocks', () => {
 
   it('counts a paid tip exactly equal to the tip as included (<=, wei-exact)', () => {
     // Sub-gwei spacing: 1.000000001 vs 1.000000002 gwei.
-    expect(
-      estimateInclusionBlocks([1_000_000_001n, 1_000_000_002n], 1_000_000_001n),
-    ).toBe(2); // 1 of 2 included → ceil(2/1) = 2
+    expect(estimateInclusionBlocks([1_000_000_001n, 1_000_000_002n], 1_000_000_001n)).toBe(2); // 1 of 2 included → ceil(2/1) = 2
   });
 
   it('compares BigInts exactly where a Number round-trip would collapse them', () => {
@@ -74,7 +72,10 @@ describe('estimateTierInclusion', () => {
     // Two usable blocks: [p25, p50, p75] = [1G,2G,10G] and [3G,4G,10G].
     // Tips: slow = avg p25 = 2G, standard = avg p50 = 3G, fast = 10G.
     // Paid tips (p50 column): 2G and 4G.
-    const rewards = [[1n * GWEI, 2n * GWEI, 10n * GWEI], [3n * GWEI, 4n * GWEI, 10n * GWEI]];
+    const rewards = [
+      [1n * GWEI, 2n * GWEI, 10n * GWEI],
+      [3n * GWEI, 4n * GWEI, 10n * GWEI],
+    ];
     expect(estimateTierInclusion(rewards)).toEqual({
       sampleBlocks: 2,
       slow: 2, // only the first block's 2G ≤ 2G → 1/2 → 2 blocks

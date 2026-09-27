@@ -27,10 +27,7 @@ import {
   type TraceTxOutcome,
 } from '@/utils/internalTxScan';
 import { addressSearchSchema, effectiveInternalTxDepth } from '@/views/Address/search';
-import {
-  fetchInternalTransactions,
-  type InternalTxnsResult,
-} from '@/services/addressScan';
+import { fetchInternalTransactions, type InternalTxnsResult } from '@/services/addressScan';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { Collapsible } from '@/components/ui/Collapsible';
@@ -239,19 +236,16 @@ const traceTxBatch = async (
   const outcomes: TraceTxOutcome[] = new Array(hashes.length);
   let next = 0;
   let settled = 0;
-  const workers = Array.from(
-    { length: Math.min(TRACE_CONCURRENCY, hashes.length) },
-    async () => {
-      for (;;) {
-        const index = next;
-        next += 1;
-        if (index >= hashes.length) return;
-        outcomes[index] = await traceOneTx(chainId, viewedAddress, hashes[index]);
-        settled += 1;
-        onSettled(settled);
-      }
-    },
-  );
+  const workers = Array.from({ length: Math.min(TRACE_CONCURRENCY, hashes.length) }, async () => {
+    for (;;) {
+      const index = next;
+      next += 1;
+      if (index >= hashes.length) return;
+      outcomes[index] = await traceOneTx(chainId, viewedAddress, hashes[index]);
+      settled += 1;
+      onSettled(settled);
+    }
+  });
   await Promise.all(workers);
   return outcomes;
 };
@@ -310,9 +304,7 @@ export default function InternalTxns({
   );
   const traceKey = useMemo(() => tracedTxs.map(tx => tx.hash).join('|'), [tracedTxs]);
 
-  const [progress, setProgress] = useState<{ settled: number; total: number } | null>(
-    null,
-  );
+  const [progress, setProgress] = useState<{ settled: number; total: number } | null>(null);
   const [aggregate, setAggregate] = useState<InternalTxAggregate | null>(null);
   // Guards run-once semantics: a scan is keyed by the traced-set identity
   // plus the refresh signal, and the key is compared at EFFECT time (a
@@ -399,10 +391,9 @@ export default function InternalTxns({
     <div data-testid="internal-txns">
       <div className={tabHeader}>
         <p className={scopeNote} data-testid="internal-txns-scope-note">
-          Internal transfers are traced on demand with{' '}
-          <code>debug_traceTransaction</code> over the first{' '}
-          {traceDepth.toLocaleString()} discovered transactions of the
-          selected window{windowDeeperThanTrace
+          Internal transfers are traced on demand with <code>debug_traceTransaction</code> over the
+          first {traceDepth.toLocaleString()} discovered transactions of the selected window
+          {windowDeeperThanTrace
             ? ` (the window holds ${transactions.length.toLocaleString()} — more than the depth covers)`
             : ''}{' '}
           — not full indexing, and discovery itself is heuristic.
@@ -432,9 +423,8 @@ export default function InternalTxns({
         <section className={recordsCard} data-testid="deep-scan-records">
           <h4 className={recordsTitle}>Deep scan records</h4>
           <p className={recordsScope}>
-            recorded while deep-scanning blocks where this address changed
-            — internal calls to this address inside unrelated transactions
-            in non-scanned blocks are not included
+            recorded while deep-scanning blocks where this address changed — internal calls to this
+            address inside unrelated transactions in non-scanned blocks are not included
           </p>
           <DataTable>
             <thead>
@@ -479,11 +469,15 @@ export default function InternalTxns({
                     />
                   </td>
                   <td className={valueCell}>
-                    {record.value === '0' ? '—' : formatInternalValue(BigInt(record.value), chainId)}
+                    {record.value === '0'
+                      ? '—'
+                      : formatInternalValue(BigInt(record.value), chainId)}
                   </td>
                   <td>
                     {record.reverted ? (
-                      <Badge variant="warning" size="sm">reverted</Badge>
+                      <Badge variant="warning" size="sm">
+                        reverted
+                      </Badge>
                     ) : (
                       <span className={muted}>—</span>
                     )}
@@ -511,9 +505,9 @@ export default function InternalTxns({
 
       {!txLoading && txError === undefined && tracedTxs.length === 0 && (
         <Alert variant="info">
-          No discovered transactions in the current window — there is nothing
-          to trace. Internal transfers live inside transactions, so an empty
-          discovered set cannot say anything about them.
+          No discovered transactions in the current window — there is nothing to trace. Internal
+          transfers live inside transactions, so an empty discovered set cannot say anything about
+          them.
         </Alert>
       )}
 
@@ -528,9 +522,8 @@ export default function InternalTxns({
           {aggregate.unsupported ? (
             <div data-testid="internal-txns-unsupported">
               <Alert variant="info">
-                Internal transaction tracing is not supported by this RPC —
-                the endpoint does not implement <code>debug_traceTransaction</code>.
-                Nothing was traced.
+                Internal transaction tracing is not supported by this RPC — the endpoint does not
+                implement <code>debug_traceTransaction</code>. Nothing was traced.
               </Alert>
               <div className={retryRow}>
                 <Button variant="secondary" size="sm" onClick={retry}>
@@ -541,20 +534,17 @@ export default function InternalTxns({
           ) : (
             <>
               <p className={summaryLine} data-testid="internal-txns-summary">
-                {internalTxSummary(aggregate)} ·{' '}
-                {tracedScopeLabel(tracedTxs.length, txPage)}
+                {internalTxSummary(aggregate)} · {tracedScopeLabel(tracedTxs.length, txPage)}
               </p>
               {aggregate.truncated && (
                 <p className={summaryLine}>
-                  Row or depth limits were hit — this list is truncated, not
-                  exhaustive.
+                  Row or depth limits were hit — this list is truncated, not exhaustive.
                 </p>
               )}
               {aggregate.rows.length === 0 ? (
                 <Alert variant="info">
-                  No internal transfers found in the traced transactions. Only
-                  transactions the heuristic discovered were traced — this is
-                  not a claim that the address has none.
+                  No internal transfers found in the traced transactions. Only transactions the
+                  heuristic discovered were traced — this is not a claim that the address has none.
                 </Alert>
               ) : (
                 <DataTable>

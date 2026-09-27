@@ -70,7 +70,10 @@ class FakeNotification {
 const renderPanel = async () => {
   const Panel = () => <Watchlist chainId={1} live />;
   render(
-    <MemoryRouter routes={createRoutes([{ path: '/', component: () => Panel }])} initialEntries={['/']}>
+    <MemoryRouter
+      routes={createRoutes([{ path: '/', component: () => Panel }])}
+      initialEntries={['/']}
+    >
       <View />
     </MemoryRouter>,
   );

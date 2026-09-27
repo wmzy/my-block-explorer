@@ -173,7 +173,9 @@ describe('TransactionDetail - Safe-style multisig decode', () => {
       await screen.findByRole('heading', { name: 'Safe-style Multisig (execTransaction)' }),
     ).toBeInTheDocument();
     // The honesty line: selector-based detection, not a Safe verification.
-    expect(screen.getByText(/does not verify the target contract is a Gnosis Safe/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/does not verify the target contract is a Gnosis Safe/),
+    ).toBeInTheDocument();
     expect(screen.getByText(/0x6a761202 calldata selector/)).toBeInTheDocument();
 
     // Inner call target links into the address view.

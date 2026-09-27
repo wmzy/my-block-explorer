@@ -35,15 +35,15 @@ paths:
           required: true
           schema:
             type: string
-            pattern: '^0x[a-fA-F0-9]{40}$'
+            pattern: "^0x[a-fA-F0-9]{40}$"
           description: 合约地址
       responses:
-        '200':
+        "200":
           description: 索引状态查询成功
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/IndexingStatus'
+                $ref: "#/components/schemas/IndexingStatus"
               examples:
                 success:
                   summary: 成功响应示例
@@ -60,11 +60,11 @@ paths:
                       - Transfer
                       - Approval
                       - TransferFrom
-                    lastUpdated: '2025-10-15T10:30:00Z'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+                    lastUpdated: "2025-10-15T10:30:00Z"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /api/chains/{chainId}/contracts/{contractAddress}/events/initialize:
     post:
@@ -86,31 +86,31 @@ paths:
           required: true
           schema:
             type: string
-            pattern: '^0x[a-fA-F0-9]{40}$'
+            pattern: "^0x[a-fA-F0-9]{40}$"
           description: 合约地址
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/InitializeIndexingRequest'
+              $ref: "#/components/schemas/InitializeIndexingRequest"
       responses:
-        '200':
+        "200":
           description: 索引初始化成功
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/InitializeIndexingResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '409':
+                $ref: "#/components/schemas/InitializeIndexingResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "409":
           description: 索引已存在
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Error'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /api/chains/{chainId}/contracts/{contractAddress}/events/index-historical:
     post:
@@ -132,27 +132,27 @@ paths:
           required: true
           schema:
             type: string
-            pattern: '^0x[a-fA-F0-9]{40}$'
+            pattern: "^0x[a-fA-F0-9]{40}$"
           description: 合约地址
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/IndexHistoricalRequest'
+              $ref: "#/components/schemas/IndexHistoricalRequest"
       responses:
-        '200':
+        "200":
           description: 历史索引任务已启动
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/IndexHistoricalResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+                $ref: "#/components/schemas/IndexHistoricalResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /api/chains/{chainId}/contracts/{contractAddress}/events:
     get:
@@ -174,7 +174,7 @@ paths:
           required: true
           schema:
             type: string
-            pattern: '^0x[a-fA-F0-9]{40}$'
+            pattern: "^0x[a-fA-F0-9]{40}$"
           description: 合约地址
         - name: eventName
           in: query
@@ -187,14 +187,14 @@ paths:
           required: false
           schema:
             type: string
-            pattern: '^[0-9]+$'
+            pattern: "^[0-9]+$"
           description: 起始区块号
         - name: toBlock
           in: query
           required: false
           schema:
             type: string
-            pattern: '^[0-9]+$'
+            pattern: "^[0-9]+$"
           description: 结束区块号
         - name: fromTimestamp
           in: query
@@ -242,18 +242,18 @@ paths:
             default: timestamp
           description: 排序字段
       responses:
-        '200':
+        "200":
           description: 事件查询成功
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/EventListResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+                $ref: "#/components/schemas/EventListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /api/chains/{chainId}/contracts/{contractAddress}/events/statistics:
     get:
@@ -275,7 +275,7 @@ paths:
           required: true
           schema:
             type: string
-            pattern: '^0x[a-fA-F0-9]{40}$'
+            pattern: "^0x[a-fA-F0-9]{40}$"
           description: 合约地址
         - name: eventName
           in: query
@@ -292,16 +292,16 @@ paths:
             default: 30d
           description: 统计时间范围
       responses:
-        '200':
+        "200":
           description: 统计信息查询成功
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/EventStatistics'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+                $ref: "#/components/schemas/EventStatistics"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /api/chains/{chainId}/contracts/{contractAddress}/events/chart:
     get:
@@ -323,7 +323,7 @@ paths:
           required: true
           schema:
             type: string
-            pattern: '^0x[a-fA-F0-9]{40}$'
+            pattern: "^0x[a-fA-F0-9]{40}$"
           description: 合约地址
         - name: eventName
           in: query
@@ -354,18 +354,18 @@ paths:
             format: date-time
           description: 结束时间
       responses:
-        '200':
+        "200":
           description: 图表数据查询成功
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ChartData'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+                $ref: "#/components/schemas/ChartData"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
   /api/chains/{chainId}/contracts/{contractAddress}/events/search:
     post:
@@ -387,27 +387,27 @@ paths:
           required: true
           schema:
             type: string
-            pattern: '^0x[a-fA-F0-9]{40}$'
+            pattern: "^0x[a-fA-F0-9]{40}$"
           description: 合约地址
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/AdvancedSearchRequest'
+              $ref: "#/components/schemas/AdvancedSearchRequest"
       responses:
-        '200':
+        "200":
           description: 搜索成功
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/EventListResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '404':
-          $ref: '#/components/responses/NotFound'
-        '500':
-          $ref: '#/components/responses/InternalServerError'
+                $ref: "#/components/schemas/EventListResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalServerError"
 
 components:
   schemas:
@@ -563,12 +563,12 @@ components:
         events:
           type: array
           items:
-            $ref: '#/components/schemas/ContractEvent'
+            $ref: "#/components/schemas/ContractEvent"
           description: 事件���表
         pagination:
-          $ref: '#/components/schemas/Pagination'
+          $ref: "#/components/schemas/Pagination"
         filters:
-          $ref: '#/components/schemas/AppliedFilters'
+          $ref: "#/components/schemas/AppliedFilters"
         performance:
           type: object
           properties:
@@ -597,7 +597,7 @@ components:
           description: 链ID
         contractAddress:
           type: string
-          pattern: '^0x[a-fA-F0-9]{40}$'
+          pattern: "^0x[a-fA-F0-9]{40}$"
           description: 合约地址
         eventName:
           type: string
@@ -610,7 +610,7 @@ components:
           description: 区块号
         transactionHash:
           type: string
-          pattern: '^0x[a-fA-F0-9]{64}$'
+          pattern: "^0x[a-fA-F0-9]{64}$"
           description: 交易哈希
         logIndex:
           type: integer
@@ -818,21 +818,21 @@ components:
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/Error'
+            $ref: "#/components/schemas/Error"
 
     NotFound:
       description: 资源未找到
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/Error'
+            $ref: "#/components/schemas/Error"
 
     InternalServerError:
       description: 服务器内部错误
       content:
         application/json:
           schema:
-            $ref: '#/components/schemas/Error'
+            $ref: "#/components/schemas/Error"
 
   securitySchemes:
     BearerAuth:

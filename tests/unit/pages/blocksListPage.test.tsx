@@ -35,7 +35,13 @@ vi.mock('@/config/chains', () => ({
     return null;
   },
   getChainName: (chainId: number) =>
-    chainId === 1 ? 'Ethereum' : chainId === 11155111 ? 'Sepolia' : chainId === 137 ? 'Polygon' : 'Unknown',
+    chainId === 1
+      ? 'Ethereum'
+      : chainId === 11155111
+        ? 'Sepolia'
+        : chainId === 137
+          ? 'Polygon'
+          : 'Unknown',
   // Only Sepolia is a testnet in this fixture: the badge case has a
   // mainnet/testnet pair to distinguish.
   getChainType: (chainId: number) => (chainId === 11155111 ? 'testnet' : 'mainnet'),

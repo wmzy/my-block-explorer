@@ -114,15 +114,15 @@ export function readContract(
 
 // Immutable endpoints get the 24h cacheTime; `functions` is decoded on the
 // fly and stays on the default.
-export const contractSourceCache = createQueryCache<
-  ContractSource | undefined,
-  [number, string]
->('contracts-source', IMMUTABLE_CACHE_TIME);
+export const contractSourceCache = createQueryCache<ContractSource | undefined, [number, string]>(
+  'contracts-source',
+  IMMUTABLE_CACHE_TIME,
+);
 
-export const contractAbiCache = createQueryCache<ContractAbi | undefined, [
-  number,
-  string,
-]>('contracts-abi', IMMUTABLE_CACHE_TIME);
+export const contractAbiCache = createQueryCache<ContractAbi | undefined, [number, string]>(
+  'contracts-abi',
+  IMMUTABLE_CACHE_TIME,
+);
 
 export const contractFunctionsCache = createQueryCache<
   ContractFunctions | undefined,
@@ -141,14 +141,8 @@ export const storageLayoutCache = createQueryCache<
 
 const queryContractSource = bindQueryFn(fetchContractSource, contractSourceCache);
 const queryContractAbi = bindQueryFn(fetchContractAbi, contractAbiCache);
-const queryContractFunctions = bindQueryFn(
-  fetchContractFunctions,
-  contractFunctionsCache,
-);
-const queryContractCreation = bindQueryFn(
-  fetchContractCreation,
-  contractCreationCache,
-);
+const queryContractFunctions = bindQueryFn(fetchContractFunctions, contractFunctionsCache);
+const queryContractCreation = bindQueryFn(fetchContractCreation, contractCreationCache);
 const queryStorageLayout = bindQueryFn(fetchStorageLayout, storageLayoutCache);
 
 const useContractSourceQuery = createQueryHook({ queryFn: queryContractSource });

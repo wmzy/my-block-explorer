@@ -55,9 +55,8 @@ vi.mock('@/services/gasHistory', () => ({
   useGasHistory: (...args: unknown[]) => mockUseGasHistory(...args),
 }));
 
-const mockUseLiveBlocks = vi.fn<
-  (...args: unknown[]) => { mode: 'polling' | 'live'; blocks: LiveBlockPayload[] }
->();
+const mockUseLiveBlocks =
+  vi.fn<(...args: unknown[]) => { mode: 'polling' | 'live'; blocks: LiveBlockPayload[] }>();
 
 vi.mock('@/services/liveChain', async importOriginal => {
   const actual = await importOriginal<typeof import('@/services/liveChain')>();
@@ -129,10 +128,7 @@ describe('Home live-mode integration', () => {
     );
 
     // The polled feed is the rendered source of truth.
-    expect(screen.getByRole('link', { name: '100' })).toHaveAttribute(
-      'href',
-      '/chain/1/block/100',
-    );
+    expect(screen.getByRole('link', { name: '100' })).toHaveAttribute('href', '/chain/1/block/100');
     expect(screen.queryByRole('link', { name: '200' })).not.toBeInTheDocument();
   });
 
@@ -143,10 +139,7 @@ describe('Home live-mode integration', () => {
     expect(await screen.findByTestId('live-mode-indicator')).toHaveTextContent('Live');
 
     // Pushed blocks lead the list, polled history follows.
-    expect(screen.getByRole('link', { name: '200' })).toHaveAttribute(
-      'href',
-      '/chain/1/block/200',
-    );
+    expect(screen.getByRole('link', { name: '200' })).toHaveAttribute('href', '/chain/1/block/200');
     expect(screen.getByRole('link', { name: '199' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: '100' })).toBeInTheDocument();
 

@@ -34,9 +34,7 @@ app.route('/', addressesRoutes);
 
 const EXPORT_PATH = `/chains/1/addresses/${ROUTE_ADDRESS}/transactions/export`;
 
-const page = (
-  overrides: Partial<AddressTransactionsResult> = {},
-): AddressTransactionsResult => ({
+const page = (overrides: Partial<AddressTransactionsResult> = {}): AddressTransactionsResult => ({
   transactions: [],
   total: 0,
   method: 'binary-search',
@@ -102,9 +100,7 @@ describe('GET .../transactions/export', () => {
   });
 
   it('refuses instead of truncating above the cap: 400 too_many_rows', async () => {
-    mocks.getAddressTransactions.mockResolvedValue(
-      page({ total: ADDRESS_EXPORT_MAX_ROWS + 1 }),
-    );
+    mocks.getAddressTransactions.mockResolvedValue(page({ total: ADDRESS_EXPORT_MAX_ROWS + 1 }));
     const res = await app.request(EXPORT_PATH);
     expect(res.status).toBe(400);
     await expect(res.json()).resolves.toMatchObject({ error: 'too_many_rows' });
@@ -132,13 +128,13 @@ describe('GET .../transactions/export', () => {
     const body = await res.text();
     const dataLine = body.split('\r\n')[1];
     expect(dataLine).toBe(
-      '0xabc123def456abc123def456abc123def456abc123def456abc123def456abc1,'
-      + '18000001,'
-      + '0x1111111111111111111111111111111111111111,'
-      + '0x2222222222222222222222222222222222222222,'
-      + '1000000000000000000,'
-      + '2024-01-01T00:00:00.000Z,'
-      + '',
+      '0xabc123def456abc123def456abc123def456abc123def456abc123def456abc1,' +
+      '18000001,' +
+      '0x1111111111111111111111111111111111111111,' +
+      '0x2222222222222222222222222222222222222222,' +
+      '1000000000000000000,' +
+      '2024-01-01T00:00:00.000Z,' +
+      '',
     );
   });
 });

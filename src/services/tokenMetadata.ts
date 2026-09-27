@@ -43,8 +43,7 @@ const metadataCache = new Map<string, CacheEntry>();
 // of duplicating network work.
 const inflight = new Map<string, Promise<TokenMetadata>>();
 
-const cacheKey = (chainId: number, addressLower: string): string =>
-  `${chainId}:${addressLower}`;
+const cacheKey = (chainId: number, addressLower: string): string => `${chainId}:${addressLower}`;
 
 /** Test-only hook to clear module state between test cases. */
 export function resetTokenMetadataCacheForTests(): void {
@@ -107,9 +106,7 @@ const runTokenBatch = async (
       multicallAddress: MULTICALL3_ADDRESS,
     });
   } catch {
-    return new Map(
-      tokens.map((token) => [token.lower, { ...NULL_METADATA }]),
-    );
+    return new Map(tokens.map(token => [token.lower, { ...NULL_METADATA }]));
   }
 
   const symbols = new Map<string, string | null>();
@@ -127,9 +124,7 @@ const runTokenBatch = async (
   for (const token of tokens) {
     const metadata: TokenMetadata = {
       symbol: symbols.get(token.lower) ?? null,
-      decimals: token.includeDecimals
-        ? (decimals.get(token.lower) ?? null)
-        : null,
+      decimals: token.includeDecimals ? (decimals.get(token.lower) ?? null) : null,
     };
     resolved.set(token.lower, metadata);
     metadataCache.set(cacheKey(chainId, token.lower), {
@@ -155,7 +150,7 @@ const launchTokenBatch = (
 
   for (const token of tokens) {
     let resolveToken: (metadata: TokenMetadata) => void = () => {};
-    const promise = new Promise<TokenMetadata>((resolve) => {
+    const promise = new Promise<TokenMetadata>(resolve => {
       resolveToken = resolve;
     });
     promises.set(token.lower, promise);
@@ -174,11 +169,7 @@ const launchTokenBatch = (
 
   void runTokenBatch(chainId, tokens)
     .then(finish)
-    .catch(() =>
-      finish(
-        new Map(tokens.map((token) => [token.lower, NULL_METADATA])),
-      ),
-    );
+    .catch(() => finish(new Map(tokens.map(token => [token.lower, NULL_METADATA]))));
 
   return promises;
 };
@@ -242,10 +233,7 @@ const tokenListKey = (
   tokens: ReadonlyArray<{ address: string; kind: 'erc20' | 'erc721' | 'erc1155' }>,
 ): string =>
   [...tokens]
-    .map(
-      (token) =>
-        `${token.address.toLowerCase()}:${token.kind === 'erc20' ? 1 : 0}`,
-    )
+    .map(token => `${token.address.toLowerCase()}:${token.kind === 'erc20' ? 1 : 0}`)
     .sort()
     .join('|');
 
@@ -254,8 +242,8 @@ const tokenListKey = (
 const requestsFromKey = (key: string): TokenMetadataRequest[] =>
   key
     .split('|')
-    .filter((entry) => entry !== '')
-    .map((entry) => {
+    .filter(entry => entry !== '')
+    .map(entry => {
       const separator = entry.lastIndexOf(':');
       return {
         address: entry.slice(0, separator),
@@ -278,8 +266,8 @@ export function useTokenMetadata(
 ): Map<string, TokenMetadata> | undefined {
   const key = tokenListKey(tokens);
 
-  const [metadata, setMetadata] = useState<Map<string, TokenMetadata> | undefined>(
-    () => (key === '' ? EMPTY_TOKEN_METADATA_MAP : undefined),
+  const [metadata, setMetadata] = useState<Map<string, TokenMetadata> | undefined>(() =>
+    key === '' ? EMPTY_TOKEN_METADATA_MAP : undefined,
   );
 
   useEffect(() => {
@@ -288,7 +276,7 @@ export function useTokenMetadata(
     // consumers see the honest loading state instead of stale labels.
     setMetadata(undefined);
     let cancelled = false;
-    void fetchTokenMetadata(chainId, requestsFromKey(key)).then((fetched) => {
+    void fetchTokenMetadata(chainId, requestsFromKey(key)).then(fetched => {
       if (!cancelled) setMetadata(fetched);
     });
     return () => {
@@ -337,9 +325,7 @@ const readMulticallBigint = (outcome: unknown): bigint | null => {
     return null;
   }
   const record: { status?: unknown; result?: unknown } = outcome;
-  return record.status === 'success' && typeof record.result === 'bigint'
-    ? record.result
-    : null;
+  return record.status === 'success' && typeof record.result === 'bigint' ? record.result : null;
 };
 
 /**
@@ -424,7 +410,7 @@ export function useTokenOverview(
     // reads — drop them so consumers see the honest loading state.
     setReads(undefined);
     let cancelled = false;
-    void fetchTokenOverview(chainId, token).then((resolved) => {
+    void fetchTokenOverview(chainId, token).then(resolved => {
       if (!cancelled) setReads(resolved);
     });
     return () => {
@@ -474,7 +460,7 @@ export function useTokenOverviewProbe(
     // settle — drop both fields so consumers see the honest loading state.
     setProbe(UNSETTLED_PROBE);
     let cancelled = false;
-    void fetchTokenOverview(chainId, token).then((resolved) => {
+    void fetchTokenOverview(chainId, token).then(resolved => {
       if (!cancelled) setProbe({ reads: resolved, settled: true });
     });
     return () => {

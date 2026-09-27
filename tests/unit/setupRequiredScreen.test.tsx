@@ -67,15 +67,9 @@ describe('SetupRequiredScreen', () => {
 
       expect(screen.queryByText(/served over HTTPS/)).toBeNull();
       // Zero behavior change on HTTP: the regular setup screen is intact.
-      expect(
-        screen.getByRole('heading', { name: 'Block Explorer Setup' }),
-      ).toBeInTheDocument();
-      expect(
-        screen.getByRole('heading', { name: 'Install Local Service' }),
-      ).toBeInTheDocument();
-      expect(
-        screen.getByRole('heading', { name: 'Connect to Remote API' }),
-      ).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Block Explorer Setup' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Install Local Service' })).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Connect to Remote API' })).toBeInTheDocument();
       expect(screen.getByLabelText('API URL')).toBeInTheDocument();
     });
 
@@ -102,9 +96,7 @@ describe('SetupRequiredScreen', () => {
     it('renders a back escape only when a close handler is given', async () => {
       const onClose = vi.fn();
       renderScreen({ onClose });
-      expect(
-        screen.getByRole('button', { name: /Back to explorer/ }),
-      ).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /Back to explorer/ })).toBeInTheDocument();
     });
 
     it('has no back escape in full-page gate mode', () => {
@@ -201,9 +193,7 @@ describe('DiscoveryGate degraded mode', () => {
     expect(screen.getByText(BANNER_TEXT)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Open setup' })).toBeInTheDocument();
     // No full-page setup wall: the gate itself renders nothing else.
-    expect(
-      screen.queryByRole('heading', { name: 'Block Explorer Setup' }),
-    ).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Block Explorer Setup' })).toBeNull();
   });
 
   it('also degrades (instead of blanking) on discovery errors', () => {
@@ -279,13 +269,9 @@ describe('DiscoveryGate degraded mode', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Open setup' }));
 
-    expect(
-      screen.getByRole('heading', { name: 'Block Explorer Setup' }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Block Explorer Setup' })).toBeInTheDocument();
     // Reused setup copy: install instructions + manual URL form + retry.
-    expect(
-      screen.getByRole('heading', { name: 'Install Local Service' }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Install Local Service' })).toBeInTheDocument();
     expect(screen.getByText('npx my-block-explorer')).toBeInTheDocument();
     expect(screen.getByLabelText('API URL')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Connect' })).toBeInTheDocument();
@@ -300,15 +286,11 @@ describe('DiscoveryGate degraded mode', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open setup' }));
     fireEvent.click(screen.getByRole('button', { name: /Back to explorer/ }));
 
-    expect(
-      screen.queryByRole('heading', { name: 'Block Explorer Setup' }),
-    ).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Block Explorer Setup' })).toBeNull();
     expect(screen.getByText(BANNER_TEXT)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Open setup' }));
-    expect(
-      screen.getByRole('heading', { name: 'Block Explorer Setup' }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Block Explorer Setup' })).toBeInTheDocument();
   });
 
   it('connecting via manual URL flips to connected without remounting the app', () => {
@@ -339,9 +321,7 @@ describe('DiscoveryGate degraded mode', () => {
     // Connected: banner and overlay are gone, and the very same DOM node
     // survived the transition — no remount, no reload.
     expect(screen.queryByText(BANNER_TEXT)).toBeNull();
-    expect(
-      screen.queryByRole('heading', { name: 'Block Explorer Setup' }),
-    ).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Block Explorer Setup' })).toBeNull();
     expect(screen.getByTestId('app-content')).toBe(appNode);
   });
 

@@ -26,18 +26,9 @@
 // two events) does not fit its Transfer-only query table, so the loop
 // is re-stated here against the same constant ladder rather than forked
 // blind: any tuning change should be applied to both files.
-import {
-  getEventSelector,
-  parseAbi,
-  type AbiEvent,
-  type Address,
-  type Hex,
-} from 'viem';
+import { getEventSelector, parseAbi, type AbiEvent, type Address, type Hex } from 'viem';
 import { rpcManager } from './RpcManager';
-import {
-  isRetryableChunkError,
-  type ScanLog,
-} from './TokenTransferService';
+import { isRetryableChunkError, type ScanLog } from './TokenTransferService';
 import { createLogger } from '../server/logger';
 
 // The scan-log shape is shared with the transfers scan — re-exported so
@@ -275,9 +266,7 @@ export type ClassifiedApprovalLog = {
  * topics is ERC-1155. Anything else — foreign topic0, wrong topic count,
  * malformed topics — is null, never a throw.
  */
-export const classifyApprovalTopics = (
-  topics: readonly Hex[],
-): ClassifiedApprovalLog | null => {
+export const classifyApprovalTopics = (topics: readonly Hex[]): ClassifiedApprovalLog | null => {
   const [topic0, ownerTopic, spenderTopic, tokenIdTopic] = topics;
   if (topic0 === undefined || !TOPIC_PATTERN.test(topic0)) return null;
   if (ownerTopic === undefined || spenderTopic === undefined) return null;
@@ -544,9 +533,8 @@ const createApprovalScanService = (deps: ApprovalScanServiceDeps) => {
 
     while (!covered) {
       if (calls >= maxScanCalls || now() - startedAt >= scanTimeoutMs) break;
-      const lower = upper - BigInt(chunkSize) + 1n > oldest
-        ? upper - BigInt(chunkSize) + 1n
-        : oldest;
+      const lower =
+        upper - BigInt(chunkSize) + 1n > oldest ? upper - BigInt(chunkSize) + 1n : oldest;
       const fromBlock = lower;
       const toBlock = upper;
       calls += 1;
@@ -592,7 +580,9 @@ const createApprovalScanService = (deps: ApprovalScanServiceDeps) => {
             }
           }
         };
-        record(await client.getLogs({ fromBlock, toBlock, event: APPROVAL_EVENT, args: { owner } }));
+        record(
+          await client.getLogs({ fromBlock, toBlock, event: APPROVAL_EVENT, args: { owner } }),
+        );
         record(
           await client.getLogs({
             fromBlock,
@@ -707,10 +697,7 @@ const createApprovalScanService = (deps: ApprovalScanServiceDeps) => {
   // Per-call reverts (the read is not standard on the discovered token)
   // decode to null and the approval is dropped — pairCount still counts
   // it (the same honesty rule across kinds).
-  const rowForOutcome = (
-    pair: DiscoveredPair,
-    outcome: unknown,
-  ): DiscoveredApproval | null => {
+  const rowForOutcome = (pair: DiscoveredPair, outcome: unknown): DiscoveredApproval | null => {
     const result = readMulticallResult(outcome);
     if (pair.kind === 'erc721') {
       if (typeof result !== 'string' || !/^0x[0-9a-fA-F]{40}$/.test(result)) return null;
@@ -764,7 +751,7 @@ const createApprovalScanService = (deps: ApprovalScanServiceDeps) => {
     for (let i = 0; i < specs.length; i += MULTICALL_BATCH_SIZE) {
       const batch = specs.slice(i, i + MULTICALL_BATCH_SIZE);
       const outcomes = await client.multicall({
-        contracts: batch.map((spec) => spec.call),
+        contracts: batch.map(spec => spec.call),
         allowFailure: true,
         multicallAddress: MULTICALL3_ADDRESS,
       });
@@ -800,9 +787,10 @@ const createApprovalScanService = (deps: ApprovalScanServiceDeps) => {
       refresh = false,
     ): Promise<ApprovalsResult> => {
       // Explicit windows clamp into [1, MAX]; undefined uses the default.
-      const effectiveWindow = windowBlocks === undefined
-        ? DEFAULT_WINDOW_BLOCKS
-        : Math.min(Math.max(Math.trunc(windowBlocks), MIN_WINDOW_BLOCKS), MAX_WINDOW_BLOCKS);
+      const effectiveWindow =
+        windowBlocks === undefined
+          ? DEFAULT_WINDOW_BLOCKS
+          : Math.min(Math.max(Math.trunc(windowBlocks), MIN_WINDOW_BLOCKS), MAX_WINDOW_BLOCKS);
       const owner = address.toLowerCase() as Address;
       const cacheKey = `${chainId}:${owner}:${effectiveWindow}`;
 

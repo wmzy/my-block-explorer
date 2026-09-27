@@ -10,11 +10,7 @@ import { MemoryRouter, View, createRoutes } from '@native-router/react';
 import '@testing-library/jest-dom';
 import Home from '@/views/Home';
 import { resetPricesForTests } from '@/services/prices';
-import type {
-  GasHistoryResult,
-  GasTierInclusionEstimates,
-  GasTiers,
-} from '@/services/gasHistory';
+import type { GasHistoryResult, GasTierInclusionEstimates, GasTiers } from '@/services/gasHistory';
 
 vi.mock('@/components/TopNavigation', () => ({
   default: () => <div data-testid="top-navigation" />,
@@ -74,9 +70,7 @@ const okSnapshot = (overrides: {
     currentBaseFeeGwei: 12.5,
     averageBaseFeeGwei: 11.25,
     tiers:
-      overrides.tiers === undefined
-        ? { slow: 0.8, standard: 1.5, fast: 3.2 }
-        : overrides.tiers,
+      overrides.tiers === undefined ? { slow: 0.8, standard: 1.5, fast: 3.2 } : overrides.tiers,
     tierInclusionBlocks:
       overrides.inclusion !== undefined
         ? overrides.inclusion
@@ -141,9 +135,7 @@ describe('Home gas panel', () => {
 
     renderHome('/chain/1');
 
-    expect(
-      await screen.findByText('last 120 blocks · #100–#219'),
-    ).toBeVisible();
+    expect(await screen.findByText('last 120 blocks · #100–#219')).toBeVisible();
     expect(screen.getByRole('img', { name: /Base fee per gas/ })).toBeVisible();
     // Honest absence: dashes on exactly the three tier rows (scoped — the
     // parked stat cards also dash), never a fabricated 0 gwei tier.

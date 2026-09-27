@@ -273,13 +273,20 @@ export const KNOWN_ROUTERS: Readonly<Record<number, readonly KnownRouter[]>> = {
 // Lowercase-address index per chain, built once: the list lookups run on
 // every visible table row, and a linear scan per row inside a map is
 // exactly the pattern chains.ts warns about.
-const ROUTER_INDEX: ReadonlyMap<number, ReadonlyMap<string, { protocol: string; label: string }>> =
-  new Map(
-    Object.entries(KNOWN_ROUTERS).map(([chainId, routers]) => [
-      Number(chainId),
-      new Map(routers.map(router => [router.address.toLowerCase(), { protocol: router.protocol, label: router.label }])),
-    ]),
-  );
+const ROUTER_INDEX: ReadonlyMap<
+  number,
+  ReadonlyMap<string, { protocol: string; label: string }>
+> = new Map(
+  Object.entries(KNOWN_ROUTERS).map(([chainId, routers]) => [
+    Number(chainId),
+    new Map(
+      routers.map(router => [
+        router.address.toLowerCase(),
+        { protocol: router.protocol, label: router.label },
+      ]),
+    ),
+  ]),
+);
 
 /**
  * Curated protocol identity of a to-address on one chain, or null when

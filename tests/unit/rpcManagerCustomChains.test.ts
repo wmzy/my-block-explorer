@@ -40,8 +40,8 @@ vi.mock('@/database/drizzle', async () => {
           },
           where: () => b,
           then: (res: unknown, rej: unknown) => {
-            const settle
-              = rows === undefined
+            const settle =
+              rows === undefined
                 ? Promise.resolve([])
                 : isCustomTable && S.failCustomChains
                   ? Promise.reject(new Error('table custom_chains does not exist'))

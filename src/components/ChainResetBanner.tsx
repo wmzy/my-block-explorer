@@ -25,8 +25,8 @@ import {
 // Same guidance the other gated writes give (403 = the browser has no or
 // a wrong token while the server requires ADMIN_TOKEN — util/http already
 // attached whatever this browser stores).
-const ADMIN_TOKEN_GUIDANCE
-  = 'Requires admin token — set it via ⚙ RPC → Admin token. The server must have ADMIN_TOKEN configured.';
+const ADMIN_TOKEN_GUIDANCE =
+  'Requires admin token — set it via ⚙ RPC → Admin token. The server must have ADMIN_TOKEN configured.';
 
 const bannerRow = css`
   display: flex;
@@ -68,11 +68,7 @@ export function shouldShowResetBanner(
   storedHead: StoredChainHead | null,
   chainId: number,
 ): boolean {
-  return (
-    suspected
-    && storedHead !== null
-    && !isResetDismissed(chainId, storedHead.blockNumber)
-  );
+  return suspected && storedHead !== null && !isResetDismissed(chainId, storedHead.blockNumber);
 }
 
 /**
@@ -80,19 +76,22 @@ export function shouldShowResetBanner(
  * copy; the detail stays honest — a head regression is evidence of a
  * reset, not proof, and the caches "may" be stale until refetched.
  */
-export function chainResetCopy(storedBlockNumber: number, currentHead: number | null): {
+export function chainResetCopy(
+  storedBlockNumber: number,
+  currentHead: number | null,
+): {
   lead: string;
   detail: string;
 } {
-  const headMove
-    = currentHead === null
+  const headMove =
+    currentHead === null
       ? ''
       : ` The head moved backwards (block ${storedBlockNumber.toLocaleString()} → ${currentHead.toLocaleString()}), which usually means the node was reset (anvil/hardhat).`;
   return {
     lead: 'This chain looks like it was reset — cached contract data may be stale.',
     detail:
-      `${headMove} Cached contract sources and storage layouts for this chain were fetched before the reset and may describe contracts that no longer exist.`
-      + ' Clearing drops this explorer\u2019s cached-immutable entries for this chain; they are refetched on demand. Already-indexed event data is kept.',
+      `${headMove} Cached contract sources and storage layouts for this chain were fetched before the reset and may describe contracts that no longer exist.` +
+      ' Clearing drops this explorer\u2019s cached-immutable entries for this chain; they are refetched on demand. Already-indexed event data is kept.',
   };
 }
 
@@ -129,21 +128,17 @@ export function ChainResetBanner({ chainId, head }: ChainResetBannerProps) {
           counts.storageLayouts === 1 ? '' : 's'
         } — they will be refetched on demand.`,
       );
-    }
-    catch (e) {
+    } catch (e) {
       if (e instanceof ApiError && e.status === 403) {
         setError(`${e.message} — ${ADMIN_TOKEN_GUIDANCE}`);
-      }
-      else if (e instanceof ApiError) {
+      } else if (e instanceof ApiError) {
         setError(e.message);
-      }
-      else {
+      } else {
         setError(
           'Could not clear the cached data — the explorer API is unreachable or returned an error.',
         );
       }
-    }
-    finally {
+    } finally {
       setClearing(false);
     }
   };
@@ -164,9 +159,9 @@ export function ChainResetBanner({ chainId, head }: ChainResetBannerProps) {
           {cleared !== null && (
             <div className={noteStyle} data-testid="chain-reset-cleared-note">
               Cleared {cleared.contractSources} contract source
-              {cleared.contractSources === 1 ? '' : 's'} and {cleared.storageLayouts} storage
-              layout{cleared.storageLayouts === 1 ? '' : 's'} for this chain — they will be
-              refetched on demand.
+              {cleared.contractSources === 1 ? '' : 's'} and {cleared.storageLayouts} storage layout
+              {cleared.storageLayouts === 1 ? '' : 's'} for this chain — they will be refetched on
+              demand.
             </div>
           )}
           {error !== null && (

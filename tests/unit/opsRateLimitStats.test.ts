@@ -17,10 +17,8 @@ type TestApp = Hono<{ Bindings: ConnInfoBindings }>;
 
 const makeApp = (name: string): TestApp => {
   const app: TestApp = new Hono();
-  app.get(
-    '/limited',
-    createRateLimiter({ name, requestsPerMinute: 5, burst: 2 }),
-    c => c.json({ ok: true }),
+  app.get('/limited', createRateLimiter({ name, requestsPerMinute: 5, burst: 2 }), c =>
+    c.json({ ok: true }),
   );
   return app;
 };

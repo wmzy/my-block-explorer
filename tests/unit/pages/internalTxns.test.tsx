@@ -117,15 +117,9 @@ const defaultProps = () => ({
   txPage: 1,
 });
 
-const renderTab = (
-  props: Partial<ReturnType<typeof defaultProps>> = {},
-  search = '',
-) =>
+const renderTab = (props: Partial<ReturnType<typeof defaultProps>> = {}, search = '') =>
   render(
-    <MemoryRouter
-      routes={routes}
-      initialEntries={[`/chain/1/address/0xdeadbeef${search}`]}
-    >
+    <MemoryRouter routes={routes} initialEntries={[`/chain/1/address/0xdeadbeef${search}`]}>
       <SearchProbe />
       <InternalTxns {...defaultProps()} {...props} />
     </MemoryRouter>,
@@ -143,18 +137,14 @@ describe('InternalTxns', () => {
   it('traces on mount, renders rows and the honest bounds label', async () => {
     requestMock.mockImplementation(({ params }) =>
       Promise.resolve(
-        params[0] === TX_A
-          ? traceWithInternalPayout()
-          : traceWithValueCarryingUnrelatedCall(),
+        params[0] === TX_A ? traceWithInternalPayout() : traceWithValueCarryingUnrelatedCall(),
       ),
     );
     renderTab();
 
     // Aggregate header + the v1 scope disclosure (page 1 → "the first N").
     const summary = await screen.findByTestId('internal-txns-summary');
-    expect(summary).toHaveTextContent(
-      '2 internal transfers across 2 traced transactions',
-    );
+    expect(summary).toHaveTextContent('2 internal transfers across 2 traced transactions');
     expect(summary).toHaveTextContent('Traced the first 2 discovered transactions');
 
     // One callTracer request per discovered tx, in the shipped shape.
@@ -236,9 +226,7 @@ describe('InternalTxns', () => {
     // Retry genuinely re-probes the capability.
     requestMock.mockResolvedValue(traceWithInternalPayout());
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
-    expect(
-      await screen.findByTestId('internal-txns-summary'),
-    ).toBeInTheDocument();
+    expect(await screen.findByTestId('internal-txns-summary')).toBeInTheDocument();
   });
 
   it('lists per-tx trace failures collapsed, not hidden, and keeps the settled rows', async () => {
@@ -277,9 +265,7 @@ describe('InternalTxns', () => {
     expect(
       await screen.findByText(/No internal transfers found in the traced transactions/),
     ).toBeInTheDocument();
-    expect(
-      screen.getByText(/not a claim that the address has none/),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/not a claim that the address has none/)).toBeInTheDocument();
   });
 
   it('waits for the source list instead of tracing half a window', () => {
@@ -344,9 +330,9 @@ describe('InternalTxns', () => {
     );
     expect(note).toHaveTextContent('not full indexing');
     // The depth control sits beside the line, so the cap is adjustable.
-    expect(
-      screen.getByRole('combobox', { name: 'Trace depth' }),
-    ).toHaveValue(String(DEFAULT_INTERNAL_TX_DEPTH));
+    expect(screen.getByRole('combobox', { name: 'Trace depth' })).toHaveValue(
+      String(DEFAULT_INTERNAL_TX_DEPTH),
+    );
   });
 
   it('names the window length when it exceeds the depth (honest truncation)', async () => {
@@ -449,9 +435,7 @@ describe('InternalTxns', () => {
 
     // The depth rides the URL (shareable, refresh-stable) and the write
     // keeps the deep link landing on this tab.
-    await waitFor(() =>
-      expect(screen.getByTestId('search-probe')).toHaveTextContent('itDepth=50'),
-    );
+    await waitFor(() => expect(screen.getByTestId('search-probe')).toHaveTextContent('itDepth=50'));
     expect(screen.getByTestId('search-probe')).toHaveTextContent('tab=internal');
 
     // A different slice is a different universe: the wider depth re-scans.

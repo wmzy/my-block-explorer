@@ -35,9 +35,9 @@ vi.mock('@/util/http', async importOriginal => {
   const { ApiError } = await import('@/util/apiError');
   return {
     ...actual,
-    get: vi.fn().mockRejectedValue(
-      new ApiError('Backend not connected — indexed data unavailable', 0),
-    ),
+    get: vi
+      .fn()
+      .mockRejectedValue(new ApiError('Backend not connected — indexed data unavailable', 0)),
   };
 });
 
@@ -99,9 +99,7 @@ describe('useRealTimeAddressData', () => {
 
   it('starts in the initial-load state and settles the RPC data', async () => {
     mockedRealTime.mockResolvedValue(realTimeData('1.0'));
-    const { result } = renderHook(() =>
-      useRealTimeAddressData(testChainId, testAddress),
-    );
+    const { result } = renderHook(() => useRealTimeAddressData(testChainId, testAddress));
 
     expect(result.current.data).toBeUndefined();
     expect(result.current.loading).toBe(true);
@@ -115,13 +113,9 @@ describe('useRealTimeAddressData', () => {
 
   it('failure: error lands, data stays undefined', async () => {
     mockedRealTime.mockRejectedValue(new Error('Real-time data fetch failed'));
-    const { result } = renderHook(() =>
-      useRealTimeAddressData(testChainId, testAddress),
-    );
+    const { result } = renderHook(() => useRealTimeAddressData(testChainId, testAddress));
 
-    await waitFor(() =>
-      expect(result.current.error?.message).toBe('Real-time data fetch failed'),
-    );
+    await waitFor(() => expect(result.current.error?.message).toBe('Real-time data fetch failed'));
     expect(result.current.data).toBeUndefined();
     expect(result.current.loading).toBe(false);
   });
@@ -141,9 +135,7 @@ describe('useRealTimeAddressData', () => {
 
     // Failure path: no entry, hence no timestamp to mislead the UI with.
     mockedRealTime.mockRejectedValue(new Error('Real-time data fetch failed'));
-    const failure = renderHook(() =>
-      useRealTimeAddressData(testChainId, otherAddress),
-    );
+    const failure = renderHook(() => useRealTimeAddressData(testChainId, otherAddress));
     await waitFor(() => expect(failure.result.current.loading).toBe(false));
     expect(failure.result.current.data).toBeUndefined();
   });
@@ -287,8 +279,7 @@ function useOfflineTypeComposition() {
     codeData: code.data,
     codeError: code.error,
     type: classifyAddressType({
-      persistentType:
-        info.error === undefined ? info.data?.address.isContract : undefined,
+      persistentType: info.error === undefined ? info.data?.address.isContract : undefined,
       rpcCode: code.data,
     }),
   };

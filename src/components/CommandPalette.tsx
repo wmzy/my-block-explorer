@@ -432,17 +432,12 @@ export default function CommandPalette({ currentChainId }: CommandPaletteProps =
   // Nothing until opened — the listener above is the only footprint.
   if (!open) return null;
 
-  const activeOptionId
-    = filtered.length > 0 ? `command-palette-option-${effectiveActive}` : undefined;
+  const activeOptionId =
+    filtered.length > 0 ? `command-palette-option-${effectiveActive}` : undefined;
 
   return (
     <div className={overlay} onMouseDown={onOverlayMouseDown}>
-      <div
-        className={dialogStyle}
-        role="dialog"
-        aria-modal="true"
-        aria-label="Command palette"
-      >
+      <div className={dialogStyle} role="dialog" aria-modal="true" aria-label="Command palette">
         <input
           ref={inputRef}
           className={inputStyle}
@@ -460,12 +455,7 @@ export default function CommandPalette({ currentChainId }: CommandPaletteProps =
           }}
           onKeyDown={onInputKeyDown}
         />
-        <ul
-          id="command-palette-listbox"
-          role="listbox"
-          aria-label="Actions"
-          className={listStyle}
-        >
+        <ul id="command-palette-listbox" role="listbox" aria-label="Actions" className={listStyle}>
           {filtered.map((action, index) => (
             <li
               key={action.id}
@@ -478,7 +468,10 @@ export default function CommandPalette({ currentChainId }: CommandPaletteProps =
             >
               <span className={optionTitleStyle}>{action.title}</span>
               {action.admin === true && (
-                <span className={adminChipStyle} title="Admin-gated — requires the server's admin token where configured">
+                <span
+                  className={adminChipStyle}
+                  title="Admin-gated — requires the server's admin token where configured"
+                >
                   admin
                 </span>
               )}

@@ -9,7 +9,14 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { MemoryRouter, createRoutes } from '@native-router/react';
-import { encodeErrorResult, encodeFunctionData, getAddress, numberToHex, parseAbi, parseEther } from 'viem';
+import {
+  encodeErrorResult,
+  encodeFunctionData,
+  getAddress,
+  numberToHex,
+  parseAbi,
+  parseEther,
+} from 'viem';
 import type { Abi, AbiFunction } from 'viem';
 
 import { FunctionCallForm } from '@/views/Contract/FunctionCallForm';
@@ -63,8 +70,7 @@ const ownerFunc: EnhancedContractFunction = {
 // EIP-3326/3085 error shapes as real wallets throw them.
 const userRejectedError = () =>
   Object.assign(new Error('User rejected the request.'), { code: 4001 });
-const chainUnknownError = () =>
-  Object.assign(new Error('Unrecognized chain ID.'), { code: 4902 });
+const chainUnknownError = () => Object.assign(new Error('Unrecognized chain ID.'), { code: 4902 });
 
 type WalletScript = {
   chainId?: string;
@@ -108,19 +114,19 @@ const makeWallet = (script: WalletScript = {}) => {
 };
 
 const NullView = () => null;
-const routes = createRoutes([
-  { path: '/chain/:chainId/tx/:txHash', component: () => NullView },
-]);
+const routes = createRoutes([{ path: '/chain/:chainId/tx/:txHash', component: () => NullView }]);
 
 // The tx-hash success link renders a TypedLink, so the form mounts inside
 // a MemoryRouter (callTraceCard test pattern); the form itself has no
 // other routing dependency.
-function renderWriteForm(options: {
-  provider?: EIP1193Provider | null;
-  func?: EnhancedContractFunction;
-  chainId?: number;
-  abi?: Abi;
-} = {}) {
+function renderWriteForm(
+  options: {
+    provider?: EIP1193Provider | null;
+    func?: EnhancedContractFunction;
+    chainId?: number;
+    abi?: Abi;
+  } = {},
+) {
   const func = options.func ?? transferFunc;
   const result = render(
     <MemoryRouter routes={routes} initialEntries={['/chain/1/contract/0xdeadbeef']}>
@@ -426,11 +432,7 @@ describe('ContractInteract wallet wiring', () => {
 
   it('hides every wallet affordance and keeps the old note without window.ethereum', async () => {
     render(
-      <ContractInteract
-        chainId={1}
-        contractAddress={CONTRACT}
-        contractSource={writeSource}
-      />,
+      <ContractInteract chainId={1} contractAddress={CONTRACT} contractSource={writeSource} />,
     );
 
     expect(await screen.findByText('pause')).toBeInTheDocument();
@@ -448,11 +450,7 @@ describe('ContractInteract wallet wiring', () => {
     Object.defineProperty(window, 'ethereum', { value: wallet.provider, configurable: true });
 
     const { unmount } = render(
-      <ContractInteract
-        chainId={1}
-        contractAddress={CONTRACT}
-        contractSource={writeSource}
-      />,
+      <ContractInteract chainId={1} contractAddress={CONTRACT} contractSource={writeSource} />,
     );
 
     expect(await screen.findByText('pause')).toBeInTheDocument();

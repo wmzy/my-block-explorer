@@ -37,8 +37,8 @@ interface EventStatisticsProps {
 
 ## STYLING
 
-Uses the Linaria `css` tag + `cx()` composition over haze-ui theme
-variables (no fixed colors — dark theme comes from the `--haze-*` tokens):
+Uses the Linaria `css` tag + `cx()` composition over haze-ui theme variables (no
+fixed colors — dark theme comes from the `--haze-*` tokens):
 
 ```typescript
 import { css, cx } from '@linaria/core';

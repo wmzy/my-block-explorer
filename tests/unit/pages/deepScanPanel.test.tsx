@@ -18,11 +18,7 @@ import '@testing-library/jest-dom/vitest';
 
 import { ApiError } from '@/util/apiError';
 import { clearAllCaches } from '@/util/useQuery';
-import {
-  DeepScan,
-  estimateScanEta,
-  recordScanEtaSample,
-} from '@/views/Address/DeepScan';
+import { DeepScan, estimateScanEta, recordScanEtaSample } from '@/views/Address/DeepScan';
 import { parseScanJob, type ScanJob } from '@/services/addressScan';
 
 const mocks = vi.hoisted(() => ({
@@ -124,11 +120,7 @@ describe('DeepScan panel rendering', () => {
     mocks.post.mockResolvedValue(envelope({ ...runningJob, status: 'pending', fromBlock: 5000 }));
     fireEvent.click(screen.getByTestId('deep-scan-start'));
     await waitFor(() =>
-      expect(mocks.post).toHaveBeenCalledWith(
-        SCAN_URL,
-        { fromBlock: 5000 },
-        expect.anything(),
-      ),
+      expect(mocks.post).toHaveBeenCalledWith(SCAN_URL, { fromBlock: 5000 }, expect.anything()),
     );
 
     // Junk input never reaches the wire.
@@ -148,22 +140,14 @@ describe('DeepScan panel rendering', () => {
     expect(screen.getByTestId('deep-scan-progress').textContent).toContain(
       'Walked 1,234,568 / 20,000,001 blocks (6.2%)',
     );
-    expect(screen.getByTestId('deep-scan-txs').textContent).toContain(
-      'Transactions found: 42',
-    );
+    expect(screen.getByTestId('deep-scan-txs').textContent).toContain('Transactions found: 42');
     // No honest rate measured yet → no promised date.
-    expect(screen.getByTestId('deep-scan-eta').textContent).toMatch(
-      /no honest estimate yet/i,
-    );
+    expect(screen.getByTestId('deep-scan-eta').textContent).toMatch(/no honest estimate yet/i);
 
     mocks.post.mockResolvedValue(envelope({ ...runningJob, status: 'paused' }));
     fireEvent.click(screen.getByTestId('deep-scan-pause'));
     await waitFor(() =>
-      expect(mocks.post).toHaveBeenCalledWith(
-        `${SCAN_URL}/pause`,
-        {},
-        expect.anything(),
-      ),
+      expect(mocks.post).toHaveBeenCalledWith(`${SCAN_URL}/pause`, {}, expect.anything()),
     );
     // The resolved job flows through: the panel refetches the live state.
     await waitFor(() => expect(mocks.get).toHaveBeenCalledTimes(2));
@@ -188,11 +172,7 @@ describe('DeepScan panel rendering', () => {
     mocks.post.mockResolvedValue(envelope(runningJob));
     fireEvent.click(screen.getByTestId('deep-scan-resume'));
     await waitFor(() =>
-      expect(mocks.post).toHaveBeenCalledWith(
-        `${SCAN_URL}/resume`,
-        {},
-        expect.anything(),
-      ),
+      expect(mocks.post).toHaveBeenCalledWith(`${SCAN_URL}/resume`, {}, expect.anything()),
     );
     await waitFor(() => expect(mocks.get).toHaveBeenCalledTimes(2));
   });
@@ -248,12 +228,8 @@ describe('DeepScan panel rendering', () => {
       new ApiError('A scan job already exists with different bounds', 400, 'scan_conflict'),
     );
     fireEvent.click(screen.getByTestId('deep-scan-start'));
-    await waitFor(() =>
-      expect(screen.getByTestId('deep-scan-conflict')).toBeInTheDocument(),
-    );
-    expect(screen.getByTestId('deep-scan-conflict').textContent).toContain(
-      'different bounds',
-    );
+    await waitFor(() => expect(screen.getByTestId('deep-scan-conflict')).toBeInTheDocument());
+    expect(screen.getByTestId('deep-scan-conflict').textContent).toContain('different bounds');
     expect(screen.queryByTestId('deep-scan-action-error')).not.toBeInTheDocument();
 
     // The force path re-POSTs with force: true (bounds replaced, progress reset).
@@ -276,9 +252,7 @@ describe('DeepScan panel rendering', () => {
     mocks.post.mockRejectedValueOnce(new ApiError('Invalid admin token.', 403));
     fireEvent.click(screen.getByTestId('deep-scan-start'));
     await waitFor(() =>
-      expect(screen.getByTestId('deep-scan-action-error').textContent).toContain(
-        'Admin token',
-      ),
+      expect(screen.getByTestId('deep-scan-action-error').textContent).toContain('Admin token'),
     );
   });
 
@@ -314,9 +288,7 @@ describe('DeepScan traces opt-in and per-job traces meta', () => {
 
     expect(screen.getByTestId('deep-scan-include-traces')).not.toBeChecked();
     // The intro explains the checkbox's honest scope.
-    expect(
-      screen.getByText(/only in blocks where this address changed/i),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/only in blocks where this address changed/i)).toBeInTheDocument();
 
     mocks.post.mockResolvedValue(envelope({ ...runningJob, status: 'pending' }));
     fireEvent.click(screen.getByTestId('deep-scan-start'));
@@ -499,8 +471,7 @@ describe('DeepScan catch-up affordance', () => {
       expect(mocks.post).toHaveBeenCalledWith(`${SCAN_URL}/catchup`, {}, expect.anything()),
     );
     await waitFor(() =>
-      expect(screen.getByTestId('deep-scan-catchup-notice').textContent)
-        .toContain('Catching up'),
+      expect(screen.getByTestId('deep-scan-catchup-notice').textContent).toContain('Catching up'),
     );
     await waitFor(() => expect(mocks.get).toHaveBeenCalledTimes(2));
     view.unmount();
@@ -535,8 +506,9 @@ describe('DeepScan catch-up affordance', () => {
     fireEvent.click(screen.getByTestId('deep-scan-catchup'));
 
     await waitFor(() =>
-      expect(screen.getByTestId('deep-scan-catchup-notice').textContent)
-        .toContain('Already at the chain head'),
+      expect(screen.getByTestId('deep-scan-catchup-notice').textContent).toContain(
+        'Already at the chain head',
+      ),
     );
     expect(screen.queryByTestId('deep-scan-action-error')).not.toBeInTheDocument();
     expect(screen.getByTestId('deep-scan-catchup')).toBeInTheDocument();
@@ -556,13 +528,18 @@ describe('DeepScan catch-up affordance', () => {
     await settle();
 
     mocks.post.mockRejectedValueOnce(
-      new ApiError('Scan is running — wait for it to finish or pause it first', 400, 'invalid_state'),
+      new ApiError(
+        'Scan is running — wait for it to finish or pause it first',
+        400,
+        'invalid_state',
+      ),
     );
     fireEvent.click(screen.getByTestId('deep-scan-catchup'));
 
     await waitFor(() =>
-      expect(screen.getByTestId('deep-scan-action-error').textContent)
-        .toContain('Scan is running — wait for it to finish or pause it first'),
+      expect(screen.getByTestId('deep-scan-action-error').textContent).toContain(
+        'Scan is running — wait for it to finish or pause it first',
+      ),
     );
     expect(screen.queryByTestId('deep-scan-catchup-notice')).not.toBeInTheDocument();
     expect(screen.getByTestId('deep-scan-catchup')).toBeInTheDocument();
@@ -586,8 +563,9 @@ describe('DeepScan catch-up affordance', () => {
 
     await waitFor(() => expect(mocks.get).toHaveBeenCalledTimes(2));
     await waitFor(() =>
-      expect(screen.getByText(/walks the chain from a start block verifying balance/i))
-        .toBeInTheDocument(),
+      expect(
+        screen.getByText(/walks the chain from a start block verifying balance/i),
+      ).toBeInTheDocument(),
     );
     expect(screen.queryByTestId('deep-scan-action-error')).not.toBeInTheDocument();
   });

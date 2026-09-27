@@ -12,8 +12,7 @@ import '@testing-library/jest-dom';
 
 import { DataTable } from '@/components/ui/DataTable';
 
-const src = (relPath: string): string =>
-  readFileSync(resolve(__dirname, '../..', relPath), 'utf8');
+const src = (relPath: string): string => readFileSync(resolve(__dirname, '../..', relPath), 'utf8');
 
 describe('DataTable horizontal scroll (mobile table degradation)', () => {
   it('keeps a scroller container around the table', () => {

@@ -8,15 +8,15 @@ import { degradedSearchMessage } from '@/views/Search/degradedReasons';
 describe('degradedSearchMessage', () => {
   it('names the lookups that did not answer, in human words', () => {
     expect(degradedSearchMessage(['transaction-lookup-failed'])).toBe(
-      'Search failed — a data source errored (transaction lookup). '
-      + 'The miss may not be final; try again.',
+      'Search failed — a data source errored (transaction lookup). ' +
+      'The miss may not be final; try again.',
     );
   });
 
   it('lists several reasons comma-separated', () => {
     expect(degradedSearchMessage(['block-lookup-failed', 'address-lookup-failed'])).toBe(
-      'Search failed — a data source errored (block lookup, address lookup). '
-      + 'The miss may not be final; try again.',
+      'Search failed — a data source errored (block lookup, address lookup). ' +
+      'The miss may not be final; try again.',
     );
   });
 
@@ -30,15 +30,15 @@ describe('degradedSearchMessage', () => {
 
   it('degrades unknown reason codes to their dashes-spaced form', () => {
     expect(degradedSearchMessage(['future-shard-unavailable'])).toBe(
-      'Search failed — a data source errored (future shard unavailable). '
-      + 'The miss may not be final; try again.',
+      'Search failed — a data source errored (future shard unavailable). ' +
+      'The miss may not be final; try again.',
     );
   });
 
   it('phrases the catch-all search failure like the other reasons', () => {
     expect(degradedSearchMessage(['search-failed'])).toBe(
-      'Search failed — a data source errored (the search itself). '
-      + 'The miss may not be final; try again.',
+      'Search failed — a data source errored (the search itself). ' +
+      'The miss may not be final; try again.',
     );
   });
 });

@@ -11,8 +11,7 @@ const { okBlock, okTx, okAddress } = vi.hoisted(() => ({
   okBlock: {
     getBlockByNumber: vi.fn(() => Promise.resolve(null)),
     getBlockByHash: vi.fn(() => Promise.resolve(null)),
-    getLatestBlock: vi.fn(() =>
-      Promise.resolve({ number: 42n, hash: `0x${'a'.repeat(64)}` })),
+    getLatestBlock: vi.fn(() => Promise.resolve({ number: 42n, hash: `0x${'a'.repeat(64)}` })),
   },
   okTx: {
     getTransactionByHash: vi.fn(() => Promise.resolve(null)),
@@ -20,7 +19,8 @@ const { okBlock, okTx, okAddress } = vi.hoisted(() => ({
       Promise.resolve({
         transactions: [{ hash: `0x${'1'.repeat(64)}` }],
         total: 1,
-      })),
+      }),
+    ),
   },
   okAddress: { getAddressInfo: vi.fn(() => Promise.resolve(null)) },
 }));

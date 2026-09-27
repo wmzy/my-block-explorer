@@ -145,9 +145,12 @@ describe('CallTraceCard', () => {
 
   it('renders the honest not-supported info state for endpoints without tracing', async () => {
     requestMock.mockRejectedValueOnce(
-      Object.assign(new Error('the method debug_traceTransaction does not exist/is not available'), {
-        code: -32601,
-      }),
+      Object.assign(
+        new Error('the method debug_traceTransaction does not exist/is not available'),
+        {
+          code: -32601,
+        },
+      ),
     );
     renderCard();
 

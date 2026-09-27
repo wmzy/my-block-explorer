@@ -25,8 +25,7 @@ export type StateOverrideEntry = {
 export type StateOverride = Record<string, StateOverrideEntry>;
 
 export type StateOverrideParseResult =
-  | { ok: true; value: StateOverride }
-  | { ok: false; details: string[] };
+  { ok: true; value: StateOverride } | { ok: false; details: string[] };
 
 // Hex quantity: 0x-prefixed, canonical — zero or no leading zeros.
 const HEX_QUANTITY_RE = /^0x(?:0|[1-9a-fA-F][0-9a-fA-F]*)$/;
@@ -134,9 +133,7 @@ export function parseStateOverride(raw: unknown): StateOverrideParseResult {
           break;
         case 'code':
           if (typeof fieldValue !== 'string' || !HEX_BYTES_RE.test(fieldValue)) {
-            details.push(
-              `${address}.code: must be even-length hex bytecode of at least one byte`,
-            );
+            details.push(`${address}.code: must be even-length hex bytecode of at least one byte`);
           } else {
             entry.code = fieldValue as `0x${string}`;
           }

@@ -191,9 +191,7 @@ describe('TransactionsList ENS cells', () => {
     expect(await screen.findByText('N/A')).toBeInTheDocument();
     // Today's rendering kept verbatim: the N/A cell still renders through
     // the CopyableHash branch with its (address-less) href.
-    expect(screen.getByText('N/A').closest('a')?.getAttribute('href')).toBe(
-      '/chain/1/address/',
-    );
+    expect(screen.getByText('N/A').closest('a')?.getAttribute('href')).toBe('/chain/1/address/');
     // Only the From cell resolved; the empty To never reached the hook.
     expect(mockUseEnsName.mock.calls.some(([address]) => !address)).toBe(false);
     expect(mockUseEnsName).toHaveBeenCalledWith(PLAIN, 1);

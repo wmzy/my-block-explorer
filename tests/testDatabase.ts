@@ -20,8 +20,7 @@ export class SimpleTestDatabaseManager {
     try {
       const result = await connection.runAndReadAll(sql);
       return result.getRowObjects() as T[];
-    }
-    finally {
+    } finally {
       connection.disconnectSync();
     }
   }
@@ -33,8 +32,7 @@ export class SimpleTestDatabaseManager {
     const connection = await this.instance.connect();
     try {
       await connection.run(sql);
-    }
-    finally {
+    } finally {
       connection.disconnectSync();
     }
   }
@@ -50,8 +48,7 @@ export class SimpleTestDatabaseManager {
     for (const table of tables) {
       try {
         await this.exec(`DELETE FROM ${table}`);
-      }
-      catch {
+      } catch {
         /* table might not exist */
       }
     }

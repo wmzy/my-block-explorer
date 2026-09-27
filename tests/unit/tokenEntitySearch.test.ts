@@ -34,7 +34,12 @@ describe('matchTokenEntityHits (pure matcher, fixtures only)', () => {
   it('matches known-token symbols by case-insensitive substring', () => {
     expect(matchTokenEntityHits('usdc', TOKENS, [])).toEqual([
       { chainId: 1, address: USDC_MAINNET, matchText: 'USDC', source: 'known-token' },
-      { chainId: 137, address: '0xdef00000000000000000000000000000000000002', matchText: 'USDC', source: 'known-token' },
+      {
+        chainId: 137,
+        address: '0xdef00000000000000000000000000000000000002',
+        matchText: 'USDC',
+        source: 'known-token',
+      },
     ]);
     // Non-matching symbols stay out; the needle is not a prefix/rx.
     expect(matchTokenEntityHits('weth', TOKENS, [])).toHaveLength(1);
@@ -43,11 +48,20 @@ describe('matchTokenEntityHits (pure matcher, fixtures only)', () => {
 
   it('matches labels by case-insensitive substring on the label text', () => {
     const labels: readonly LabelEntry[] = [
-      { chainId: 1, address: '0x1110000000000000000000000000000000000001', label: 'Metamask vault' },
+      {
+        chainId: 1,
+        address: '0x1110000000000000000000000000000000000001',
+        label: 'Metamask vault',
+      },
       { chainId: 1, address: '0x2220000000000000000000000000000000000002', label: 'treasury' },
     ];
     expect(matchTokenEntityHits('VAULT', TOKENS, labels)).toEqual([
-      { chainId: 1, address: '0x1110000000000000000000000000000000000001', matchText: 'Metamask vault', source: 'label' },
+      {
+        chainId: 1,
+        address: '0x1110000000000000000000000000000000000001',
+        matchText: 'Metamask vault',
+        source: 'label',
+      },
     ]);
     expect(matchTokenEntityHits('meta', [], labels)).toHaveLength(1);
   });
@@ -96,11 +110,21 @@ describe('matchTokenEntityHits (pure matcher, fixtures only)', () => {
     expect(hits).toHaveLength(TOKEN_ENTITY_SEARCH_LIMIT);
     // Label precedence is also the visible order: the 3 label hits lead,
     // known-token entries fill the remainder of the cap.
-    expect(hits.map(h => h.source)).toEqual(['label', 'label', 'label', 'known-token', 'known-token']);
+    expect(hits.map(h => h.source)).toEqual([
+      'label',
+      'label',
+      'label',
+      'known-token',
+      'known-token',
+    ]);
   });
 
   it('returns [] for empty or whitespace-only queries', () => {
-    expect(matchTokenEntityHits('', TOKENS, [{ chainId: 1, address: USDC_MAINNET_LOWER, label: 'usdc' }])).toEqual([]);
+    expect(
+      matchTokenEntityHits('', TOKENS, [
+        { chainId: 1, address: USDC_MAINNET_LOWER, label: 'usdc' },
+      ]),
+    ).toEqual([]);
     expect(matchTokenEntityHits('   ', TOKENS, [])).toEqual([]);
   });
 
@@ -235,10 +259,7 @@ describe('GET /search tokenHits (additive merge)', () => {
     // First select = contracts cache (empty), second = labels: a label on
     // mainnet USDC's own address. The curated USDC symbol matches 'usdc'
     // too — the label must win the dedup and be the ONLY hit.
-    mocks.state.results = [
-      [],
-      [{ chainId: 1, address: USDC_MAINNET_LOWER, label: 'USDC vault' }],
-    ];
+    mocks.state.results = [[], [{ chainId: 1, address: USDC_MAINNET_LOWER, label: 'USDC vault' }]];
 
     const res = await searchRoutes.request('/search?q=usdc&chainId=1');
     const body = await res.json();
@@ -255,12 +276,23 @@ describe('GET /search tokenHits (additive merge)', () => {
   it('scopes the label read to ?chainId= when present, unscoped without', async () => {
     mocks.state.results = [
       [],
-      [{ chainId: 137, address: '0xdef00000000000000000000000000000000000002', label: 'polygon vault' }],
+      [
+        {
+          chainId: 137,
+          address: '0xdef00000000000000000000000000000000000002',
+          label: 'polygon vault',
+        },
+      ],
     ];
     const scoped = await searchRoutes.request('/search?q=vault&chainId=137');
     const scopedBody = await scoped.json();
     expect(scopedBody.tokenHits).toEqual([
-      { chainId: 137, address: '0xdef00000000000000000000000000000000000002', matchText: 'polygon vault', source: 'label' },
+      {
+        chainId: 137,
+        address: '0xdef00000000000000000000000000000000000002',
+        matchText: 'polygon vault',
+        source: 'label',
+      },
     ]);
     // whereFilters order follows the request's reads: [0] contracts,
     // [1] labels. Scoped: the chain id rides the labels filter.
@@ -273,7 +305,12 @@ describe('GET /search tokenHits (additive merge)', () => {
     const unscoped = await searchRoutes.request('/search?q=vault');
     const unscopedBody = await unscoped.json();
     expect(unscopedBody.tokenHits).toEqual([
-      { chainId: 56, address: '0xabc00000000000000000000000000000000000001', matchText: 'bsc vault', source: 'label' },
+      {
+        chainId: 56,
+        address: '0xabc00000000000000000000000000000000000001',
+        matchText: 'bsc vault',
+        source: 'label',
+      },
     ]);
     // Second request appended two more filters; its labels filter is the
     // LAST one and must carry no chain scope.

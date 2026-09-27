@@ -32,7 +32,8 @@ export function analyzeRpcError(
       contractAddress,
       rpcUrl,
       chainId,
-      suggestion: 'This RPC node may not support state queries for historical blocks. Switch to an RPC node with full historical data.',
+      suggestion:
+        'This RPC node may not support state queries for historical blocks. Switch to an RPC node with full historical data.',
       castCommand: blockNumber
         ? `cast code ${contractAddress} --block ${blockNumber} --rpc-url ${rpcUrl}`
         : `cast code ${contractAddress} --rpc-url ${rpcUrl}`,
@@ -53,7 +54,8 @@ export function analyzeRpcError(
       contractAddress,
       rpcUrl,
       chainId,
-      suggestion: 'The RPC server is temporarily unavailable; this is usually transient. Try again later.',
+      suggestion:
+        'The RPC server is temporarily unavailable; this is usually transient. Try again later.',
       castCommand: blockNumber
         ? `cast code ${contractAddress} --block ${blockNumber} --rpc-url ${rpcUrl}`
         : `cast code ${contractAddress} --rpc-url ${rpcUrl}`,
@@ -74,7 +76,8 @@ export function analyzeRpcError(
       contractAddress,
       rpcUrl,
       chainId,
-      suggestion: 'Requests are too frequent and hit the RPC node rate limit. Lower the request rate or upgrade the RPC service plan.',
+      suggestion:
+        'Requests are too frequent and hit the RPC node rate limit. Lower the request rate or upgrade the RPC service plan.',
       castCommand: blockNumber
         ? `cast code ${contractAddress} --block ${blockNumber} --rpc-url ${rpcUrl}`
         : `cast code ${contractAddress} --rpc-url ${rpcUrl}`,
@@ -116,7 +119,8 @@ export function analyzeRpcError(
       contractAddress,
       rpcUrl,
       chainId,
-      suggestion: 'The RPC node is missing state data for the requested block. This typically happens on light nodes or incomplete archive nodes.',
+      suggestion:
+        'The RPC node is missing state data for the requested block. This typically happens on light nodes or incomplete archive nodes.',
       castCommand: blockNumber
         ? `cast code ${contractAddress} --block ${blockNumber} --rpc-url ${rpcUrl}`
         : `cast code ${contractAddress} --rpc-url ${rpcUrl}`,
@@ -137,7 +141,8 @@ export function analyzeRpcError(
       contractAddress,
       rpcUrl,
       chainId,
-      suggestion: 'The RPC node refused the connection; check that the URL is correct and the node is online.',
+      suggestion:
+        'The RPC node refused the connection; check that the URL is correct and the node is online.',
       castCommand: `cast chain-id --rpc-url ${rpcUrl}`,
       retryable: true,
       troubleshooting: [

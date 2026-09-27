@@ -22,8 +22,7 @@ function redactUrl(url: string): string {
   try {
     const { protocol, host } = new URL(url);
     return `${protocol}//${host}/…`;
-  }
-  catch {
+  } catch {
     return '…';
   }
 }
@@ -41,8 +40,7 @@ function isLoopbackRemote(c: Context): boolean {
     if (!address) return false;
     const normalized = address.toLowerCase().replace(/^::ffff:/, '');
     return normalized === '::1' || /^127(?:\.\d{1,3}){3}$/.test(normalized);
-  }
-  catch {
+  } catch {
     return false;
   }
 }
@@ -56,7 +54,7 @@ function isLoopbackRemote(c: Context): boolean {
 // which CORS never applied — gets scheme + host, so a leak cannot
 // disclose the key. `urlRedacted` tells the reader which form it got;
 // the isCustom flag and the rest of the shape are identical for both.
-app.get('/rpc-configs', async (c) => {
+app.get('/rpc-configs', async c => {
   try {
     const configs = await db.select().from(userRpcConfigs);
 
@@ -75,8 +73,7 @@ app.get('/rpc-configs', async (c) => {
         maxEventRange: config.maxEventRange,
       })),
     });
-  }
-  catch (error) {
+  } catch (error) {
     logger.error({ err: error }, 'Failed to get RPC configs');
     return c.json({ error: 'Failed to get RPC configs' }, 500);
   }
@@ -84,12 +81,11 @@ app.get('/rpc-configs', async (c) => {
 
 // Writes use the opt-in gate: without ADMIN_TOKEN a local session can
 // still save its RPC config; with one configured, writes require it.
-app.post('/rpc-configs', requireAdminTokenIfConfigured, async (c) => {
+app.post('/rpc-configs', requireAdminTokenIfConfigured, async c => {
   let body: Record<string, unknown>;
   try {
     body = await c.req.json();
-  }
-  catch {
+  } catch {
     return c.json(
       {
         error: 'Invalid JSON body',
@@ -163,8 +159,7 @@ app.post('/rpc-configs', requireAdminTokenIfConfigured, async (c) => {
   let parsedUrl: URL;
   try {
     parsedUrl = new URL(url);
-  }
-  catch {
+  } catch {
     return c.json(
       {
         error: 'Invalid URL',
@@ -187,15 +182,16 @@ app.post('/rpc-configs', requireAdminTokenIfConfigured, async (c) => {
   }
 
   if (
-    (supportsHistory !== undefined && typeof supportsHistory !== 'boolean')
-    || (maxEventRange !== undefined
-      && (typeof maxEventRange !== 'number' || !Number.isInteger(maxEventRange) || maxEventRange <= 0))
+    (supportsHistory !== undefined && typeof supportsHistory !== 'boolean') ||
+    (maxEventRange !== undefined &&
+      (typeof maxEventRange !== 'number' || !Number.isInteger(maxEventRange) || maxEventRange <= 0))
   ) {
     return c.json(
       {
         error: 'Invalid optional fields',
         code: 'invalid_fields',
-        message: 'supportsHistory must be a boolean and maxEventRange a positive integer when present',
+        message:
+          'supportsHistory must be a boolean and maxEventRange a positive integer when present',
       },
       400,
     );
@@ -220,8 +216,7 @@ app.post('/rpc-configs', requireAdminTokenIfConfigured, async (c) => {
           updatedAt: new Date(),
         })
         .where(eq(userRpcConfigs.chainId, chainId));
-    }
-    else {
+    } else {
       await db.insert(userRpcConfigs).values({
         chainId,
         name,
@@ -236,8 +231,7 @@ app.post('/rpc-configs', requireAdminTokenIfConfigured, async (c) => {
     await rpcManager.reloadConfigs();
 
     return c.json({ success: true, action });
-  }
-  catch (error) {
+  } catch (error) {
     logger.error(
       { err: error, stack: error instanceof Error ? error.stack : undefined },
       'Failed to save RPC config',
@@ -246,7 +240,7 @@ app.post('/rpc-configs', requireAdminTokenIfConfigured, async (c) => {
   }
 });
 
-app.delete('/rpc-configs/:chainId', requireAdminTokenIfConfigured, async (c) => {
+app.delete('/rpc-configs/:chainId', requireAdminTokenIfConfigured, async c => {
   try {
     const chainId = getValidatedChainId(c.req.param('chainId'));
 
@@ -255,8 +249,7 @@ app.delete('/rpc-configs/:chainId', requireAdminTokenIfConfigured, async (c) => 
     await rpcManager.reloadConfigs();
 
     return c.json({ success: true });
-  }
-  catch (error) {
+  } catch (error) {
     logger.error({ err: error }, 'Failed to delete RPC config');
     return c.json({ error: 'Failed to delete RPC config' }, 500);
   }

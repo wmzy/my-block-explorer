@@ -301,11 +301,7 @@ export function DeepScan({ chainId, address, txPayload }: DeepScanProps) {
   const fromBlockValid =
     trimmedFrom === '' || (Number.isInteger(parsedFrom) && (parsedFrom as number) >= 0);
 
-  const runAction = (
-    kind: ScanAction,
-    invoke: () => Promise<unknown>,
-    fallback: string,
-  ): void => {
+  const runAction = (kind: ScanAction, invoke: () => Promise<unknown>, fallback: string): void => {
     setAction(kind);
     setActionError(null);
     setConflictMessage(null);
@@ -321,8 +317,7 @@ export function DeepScan({ chainId, address, txPayload }: DeepScanProps) {
         // Catch-up reporting "already there" is good news, not an error.
         else if (kind === 'catchup' && isAlreadyCaughtUp(error)) {
           setCatchupNotice('Already at the chain head');
-        }
-        else {
+        } else {
           setActionError(describeMutationError(error, fallback));
         }
       })
@@ -387,9 +382,8 @@ export function DeepScan({ chainId, address, txPayload }: DeepScanProps) {
           <h3 className={titleStyle}>Deep scan</h3>
         </div>
         <p className={statusLineStyle}>
-          A deep scan walks the chain from a start block verifying balance
-          checkpoints — it upgrades this address&apos;s coverage from
-          discovered to complete for genesis-anchored walks.
+          A deep scan walks the chain from a start block verifying balance checkpoints — it upgrades
+          this address&apos;s coverage from discovered to complete for genesis-anchored walks.
         </p>
         <div className={startRowStyle}>
           <Input
@@ -418,8 +412,7 @@ export function DeepScan({ chainId, address, txPayload }: DeepScanProps) {
               disabled={action !== null}
               data-testid="deep-scan-include-traces"
             />
-            Record internal transactions (slower — traces each block the
-            walk stops on)
+            Record internal transactions (slower — traces each block the walk stops on)
           </label>
           {!fromBlockValid && (
             <span className={mutedStyle}>Start block must be a non-negative integer.</span>
@@ -430,8 +423,8 @@ export function DeepScan({ chainId, address, txPayload }: DeepScanProps) {
             <Alert variant="warning">
               <p>{conflictMessage}</p>
               <p>
-                Restarting replaces the job&apos;s bounds and resets all
-                progress and findings for this address.
+                Restarting replaces the job&apos;s bounds and resets all progress and findings for
+                this address.
               </p>
               <Button
                 variant="danger"
@@ -447,21 +440,21 @@ export function DeepScan({ chainId, address, txPayload }: DeepScanProps) {
         )}
         <ul className={hintListStyle}>
           <li>
-            Non-genesis starts can never claim complete coverage — activity
-            before the start block stays unverifiable.
+            Non-genesis starts can never claim complete coverage — activity before the start block
+            stays unverifiable.
           </li>
           <li>
-            Record internal transactions captures internal calls only in
-            blocks where this address changed — internal calls inside
-            unrelated transactions in non-scanned blocks are not recorded.
+            Record internal transactions captures internal calls only in blocks where this address
+            changed — internal calls inside unrelated transactions in non-scanned blocks are not
+            recorded.
           </li>
           <li>
-            Needs an archive-capable RPC: public non-archive nodes reject
-            the historical balance reads the walk depends on.
+            Needs an archive-capable RPC: public non-archive nodes reject the historical balance
+            reads the walk depends on.
           </li>
           <li>
-            The walk runs only while the explorer backend runs; it pauses
-            across restarts and resumes.
+            The walk runs only while the explorer backend runs; it pauses across restarts and
+            resumes.
           </li>
         </ul>
         {actionError !== null && (
@@ -473,11 +466,11 @@ export function DeepScan({ chainId, address, txPayload }: DeepScanProps) {
     );
   }
 
-  const deleteTitle
-    = 'Deletes the scan job and its persisted findings (the merged transaction list loses them).';
+  const deleteTitle =
+    'Deletes the scan job and its persisted findings (the merged transaction list loses them).';
 
-  const progressPercent
-    = job.blocksTotal > 0 ? Math.min(100, (job.blocksWalked / job.blocksTotal) * 100) : 0;
+  const progressPercent =
+    job.blocksTotal > 0 ? Math.min(100, (job.blocksWalked / job.blocksTotal) * 100) : 0;
 
   return (
     <section className={panelStyle} data-testid="deep-scan-panel">
@@ -528,7 +521,12 @@ export function DeepScan({ chainId, address, txPayload }: DeepScanProps) {
           <Button
             variant="secondary"
             size="sm"
-            onClick={() => runAction('pause', () => pauseScanJob(chainId, address), 'Pausing the deep scan failed.')}
+            onClick={() =>
+              runAction(
+                'pause',
+                () => pauseScanJob(chainId, address),
+                'Pausing the deep scan failed.',
+              )}
             loading={action === 'pause'}
             data-testid="deep-scan-pause"
           >
@@ -538,7 +536,12 @@ export function DeepScan({ chainId, address, txPayload }: DeepScanProps) {
         {(job.status === 'paused' || job.status === 'error') && (
           <Button
             size="sm"
-            onClick={() => runAction('resume', () => resumeScanJob(chainId, address), 'Resuming the deep scan failed.')}
+            onClick={() =>
+              runAction(
+                'resume',
+                () => resumeScanJob(chainId, address),
+                'Resuming the deep scan failed.',
+              )}
             loading={action === 'resume'}
             data-testid="deep-scan-resume"
           >
@@ -566,7 +569,12 @@ export function DeepScan({ chainId, address, txPayload }: DeepScanProps) {
           variant="ghost"
           size="sm"
           title={deleteTitle}
-          onClick={() => runAction('delete', () => deleteScanJob(chainId, address), 'Deleting the deep scan failed.')}
+          onClick={() =>
+            runAction(
+              'delete',
+              () => deleteScanJob(chainId, address),
+              'Deleting the deep scan failed.',
+            )}
           loading={action === 'delete'}
           data-testid="deep-scan-delete"
         >
@@ -585,20 +593,17 @@ export function DeepScan({ chainId, address, txPayload }: DeepScanProps) {
       )}
       {job.status === 'complete' && job.coverage === 'complete' && (
         <p className={completeLineStyle} data-testid="deep-scan-complete">
-          Deep scan complete — every block from genesis (0) to{' '}
-          {job.toBlock.toLocaleString()} was walked and verified. No external
-          transaction for this address exists outside this list: this is the
-          product&apos;s only provable &quot;complete&quot; coverage … up to
-          block{' '}
+          Deep scan complete — every block from genesis (0) to {job.toBlock.toLocaleString()} was
+          walked and verified. No external transaction for this address exists outside this list:
+          this is the product&apos;s only provable &quot;complete&quot; coverage … up to block{' '}
           {job.toBlock.toLocaleString()}.
         </p>
       )}
       {job.status === 'complete' && job.coverage === null && (
         <p className={mutedStyle}>
-          Walk finished (blocks {job.fromBlock.toLocaleString()}–
-          {job.toBlock.toLocaleString()}), but coverage stays discovered — a
-          non-genesis start cannot prove there was no activity before block{' '}
-          {job.fromBlock.toLocaleString()}.
+          Walk finished (blocks {job.fromBlock.toLocaleString()}–{job.toBlock.toLocaleString()}),
+          but coverage stays discovered — a non-genesis start cannot prove there was no activity
+          before block {job.fromBlock.toLocaleString()}.
         </p>
       )}
       {actionError !== null && (

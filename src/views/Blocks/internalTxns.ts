@@ -234,10 +234,7 @@ export function blockInternalTxnsSummary(aggregate: BlockInternalTxnsAggregate):
  * the cap cut the block, null when every transaction was traced — the
  * card renders the line only when it is true.
  */
-export function blockTraceTruncationLabel(
-  tracedCount: number,
-  totalCount: number,
-): string | null {
+export function blockTraceTruncationLabel(tracedCount: number, totalCount: number): string | null {
   if (tracedCount >= totalCount) return null;
   return `first ${tracedCount.toLocaleString()} of ${totalCount.toLocaleString()} transactions traced`;
 }

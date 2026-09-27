@@ -13,10 +13,7 @@ import { MemoryRouter, View, createRoutes, useSearchParams } from '@native-route
 import { getAddress } from 'viem';
 import '@testing-library/jest-dom';
 import TokensList from '@/views/Tokens/List';
-import {
-  tokenDirectoryAddressesKey,
-  type TokenDirectoryReads,
-} from '@/services/tokenDirectory';
+import { tokenDirectoryAddressesKey, type TokenDirectoryReads } from '@/services/tokenDirectory';
 
 vi.mock('@/components/TopNavigation', () => ({
   default: ({ currentChainId }: { currentChainId: number }) => (
@@ -81,7 +78,8 @@ type ReadsHookResult = {
 };
 
 const mockUseTokenDirectoryReads = vi.fn<(...args: unknown[]) => ReadsHookResult>();
-const mockUseTokenUsdPrices = vi.fn<(...args: unknown[]) => Map<string, { usd: number; fetchedAt: number }>>();
+const mockUseTokenUsdPrices =
+  vi.fn<(...args: unknown[]) => Map<string, { usd: number; fetchedAt: number }>>();
 
 // Curated mainnet fixtures the assertions rely on (config/knownTokens).
 const WETH = '0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2';
@@ -98,17 +96,15 @@ const CAVEAT =
 // the rendered directory — the shape the real hook produces once its
 // multicall resolves.
 const echoSettle = (reads: Map<string, TokenDirectoryReads>) => {
-  mockUseTokenDirectoryReads.mockImplementation(
-    (chainId: unknown, addresses: unknown) => ({
-      data: {
-        chainId: chainId as number,
-        addressesKey: tokenDirectoryAddressesKey(addresses as readonly string[]),
-        reads,
-      },
-      loading: false,
-      refetch: () => undefined,
-    }),
-  );
+  mockUseTokenDirectoryReads.mockImplementation((chainId: unknown, addresses: unknown) => ({
+    data: {
+      chainId: chainId as number,
+      addressesKey: tokenDirectoryAddressesKey(addresses as readonly string[]),
+      reads,
+    },
+    loading: false,
+    refetch: () => undefined,
+  }));
 };
 
 // Exposes the current search string so ?q= writes are observable
@@ -221,10 +217,9 @@ describe('Tokens directory page', () => {
 
     const input = await screen.findByPlaceholderText('Filter by symbol, name or address...');
     fireEvent.change(input, { target: { value: 'link' } });
-    await waitFor(
-      () => expect(screen.getByTestId('search-probe').textContent).toBe('q=link'),
-      { timeout: 2000 },
-    );
+    await waitFor(() => expect(screen.getByTestId('search-probe').textContent).toBe('q=link'), {
+      timeout: 2000,
+    });
     // The hook re-keyed through the URL state (the filter is client-side;
     // the enrichment args carry the full directory either way).
     expect(screen.getByText('LINK')).toBeInTheDocument();
@@ -238,7 +233,9 @@ describe('Tokens directory page', () => {
     renderTokensList('/chain/31337/tokens');
 
     expect(
-      await screen.findByText('No known tokens on this chain yet — open a token page to add it here'),
+      await screen.findByText(
+        'No known tokens on this chain yet — open a token page to add it here',
+      ),
     ).toBeInTheDocument();
     expect(screen.getByText(CAVEAT)).toBeInTheDocument();
   });

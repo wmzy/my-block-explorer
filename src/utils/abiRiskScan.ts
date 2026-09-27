@@ -5,12 +5,7 @@
  */
 
 export type AbiRiskFlagId =
-  | 'mint'
-  | 'pausable'
-  | 'blacklist'
-  | 'upgradeable'
-  | 'ownership'
-  | 'fee-controls';
+  'mint' | 'pausable' | 'blacklist' | 'upgradeable' | 'ownership' | 'fee-controls';
 
 export type AbiRiskFlag = {
   id: AbiRiskFlagId;
@@ -139,7 +134,7 @@ function collectEvidence(
 }
 
 const hasName = (functions: ReadonlyArray<AbiFunction>, name: string): boolean =>
-  functions.some((fn) => fn.name === name);
+  functions.some(fn => fn.name === name);
 
 /**
  * Statically scan a contract ABI for risk-relevant function names. Accepts a
@@ -172,8 +167,7 @@ export function scanAbiRisks(abi: string | unknown[]): AbiRiskFlag[] | null {
     if (fn !== null) functions.push(fn);
   }
 
-  const isPausablePair = (fn: AbiFunction): boolean =>
-    fn.name === 'pause' || fn.name === 'unpause';
+  const isPausablePair = (fn: AbiFunction): boolean => fn.name === 'pause' || fn.name === 'unpause';
   const isOwnership = (fn: AbiFunction): boolean =>
     OWNERSHIP_NAMES.has(fn.name) ||
     (fn.name === 'owner' &&
@@ -181,15 +175,15 @@ export function scanAbiRisks(abi: string | unknown[]): AbiRiskFlag[] | null {
       (fn.stateMutability === 'view' || fn.stateMutability === 'pure'));
 
   const evidenceByRule: ReadonlyArray<() => string[]> = [
-    () => collectEvidence(functions, (fn) => MINT_NAMES.has(fn.name)),
+    () => collectEvidence(functions, fn => MINT_NAMES.has(fn.name)),
     () =>
       hasName(functions, 'pause') && hasName(functions, 'unpause')
         ? collectEvidence(functions, isPausablePair)
         : [],
-    () => collectEvidence(functions, (fn) => BLACKLIST_NAMES.has(fn.name)),
-    () => collectEvidence(functions, (fn) => UPGRADEABLE_NAMES.has(fn.name)),
+    () => collectEvidence(functions, fn => BLACKLIST_NAMES.has(fn.name)),
+    () => collectEvidence(functions, fn => UPGRADEABLE_NAMES.has(fn.name)),
     () => collectEvidence(functions, isOwnership),
-    () => collectEvidence(functions, (fn) => FEE_NAMES.has(fn.name)),
+    () => collectEvidence(functions, fn => FEE_NAMES.has(fn.name)),
   ];
 
   const flags: AbiRiskFlag[] = [];

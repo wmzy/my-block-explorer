@@ -23,12 +23,12 @@ export function serializeForJson(obj: unknown): unknown {
       JSON.stringify(obj, (key, value) => {
         // Skip properties like socket/parser that cause cycles
         if (
-          key === 'socket'
-          || key === 'parser'
-          || key === '_socket'
-          || key === 'req'
-          || key === 'res'
-          || key === 'client'
+          key === 'socket' ||
+          key === 'parser' ||
+          key === '_socket' ||
+          key === 'req' ||
+          key === 'res' ||
+          key === 'client'
         ) {
           return '[Unserializable]';
         }
@@ -68,8 +68,7 @@ export function serializeForJson(obj: unknown): unknown {
         return value;
       }),
     );
-  }
-  catch (error) {
+  } catch (error) {
     logger.error({ err: error }, 'Serialization error');
     return {
       error: 'Failed to serialize object',
@@ -92,8 +91,7 @@ export function safeJsonResponse(data: unknown): JsonLike {
       return null;
     }
     return result;
-  }
-  catch (error) {
+  } catch (error) {
     logger.error({ err: error }, 'JSON serialization error');
     return {
       error: 'Serialization failed',

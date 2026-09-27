@@ -77,10 +77,12 @@ describe('applyDiscoveredTxFilters (pure)', () => {
   });
 
   it('from+to intersect (both must hold)', () => {
-    expect(hashes(applyDiscoveredTxFilters(FIXTURE, { fromAddress: B, toAddress: A })))
-      .toEqual(['80']);
-    expect(hashes(applyDiscoveredTxFilters(FIXTURE, { fromAddress: A, toAddress: A })))
-      .toEqual(['60']);
+    expect(hashes(applyDiscoveredTxFilters(FIXTURE, { fromAddress: B, toAddress: A }))).toEqual([
+      '80',
+    ]);
+    expect(hashes(applyDiscoveredTxFilters(FIXTURE, { fromAddress: A, toAddress: A }))).toEqual([
+      '60',
+    ]);
   });
 
   it('matches addresses case-insensitively on both ends', () => {
@@ -90,38 +92,48 @@ describe('applyDiscoveredTxFilters (pure)', () => {
 
   it('minValue is inclusive and BigInt-exact', () => {
     // Exactly 1000 is kept (boundary), 5 and 0 dropped.
-    expect(hashes(applyDiscoveredTxFilters(FIXTURE, { minValue: 1000n })))
-      .toEqual(['100', '80', '20']);
+    expect(hashes(applyDiscoveredTxFilters(FIXTURE, { minValue: 1000n }))).toEqual([
+      '100',
+      '80',
+      '20',
+    ]);
     // minValue 0 keeps everything (0 is a valid floor).
     expect(applyDiscoveredTxFilters(FIXTURE, { minValue: 0n })).toHaveLength(5);
     // Beyond 2^64: only the huge incoming transfer survives.
-    expect(hashes(applyDiscoveredTxFilters(FIXTURE, { minValue: 2n ** 64n })))
-      .toEqual(['20']);
+    expect(hashes(applyDiscoveredTxFilters(FIXTURE, { minValue: 2n ** 64n }))).toEqual(['20']);
   });
 
   it('maxValue is inclusive and BigInt-exact', () => {
-    expect(hashes(applyDiscoveredTxFilters(FIXTURE, { maxValue: 5n })))
-      .toEqual(['60', '40']);
-    expect(hashes(applyDiscoveredTxFilters(FIXTURE, { maxValue: HUGE })))
-      .toEqual(['100', '80', '60', '40', '20']);
-    expect(hashes(applyDiscoveredTxFilters(FIXTURE, { maxValue: HUGE - 1n })))
-      .toEqual(['100', '80', '60', '40']);
+    expect(hashes(applyDiscoveredTxFilters(FIXTURE, { maxValue: 5n }))).toEqual(['60', '40']);
+    expect(hashes(applyDiscoveredTxFilters(FIXTURE, { maxValue: HUGE }))).toEqual([
+      '100',
+      '80',
+      '60',
+      '40',
+      '20',
+    ]);
+    expect(hashes(applyDiscoveredTxFilters(FIXTURE, { maxValue: HUGE - 1n }))).toEqual([
+      '100',
+      '80',
+      '60',
+      '40',
+    ]);
   });
 
   it('combined filters intersect all dimensions', () => {
-    expect(
-      hashes(applyDiscoveredTxFilters(FIXTURE, { fromAddress: A, maxValue: 5n })),
-    ).toEqual(['60', '40']);
-    expect(
-      hashes(applyDiscoveredTxFilters(FIXTURE, { toAddress: A, minValue: 1000n })),
-    ).toEqual(['80', '20']);
+    expect(hashes(applyDiscoveredTxFilters(FIXTURE, { fromAddress: A, maxValue: 5n }))).toEqual([
+      '60',
+      '40',
+    ]);
+    expect(hashes(applyDiscoveredTxFilters(FIXTURE, { toAddress: A, minValue: 1000n }))).toEqual([
+      '80',
+      '20',
+    ]);
   });
 
   it('a method filter keeps only rows carrying that exact selector', () => {
-    expect(hashes(applyDiscoveredTxFilters(FIXTURE, { method: SEL_TRANSFER })))
-      .toEqual(['100']);
-    expect(hashes(applyDiscoveredTxFilters(FIXTURE, { method: SEL_APPROVE })))
-      .toEqual(['80']);
+    expect(hashes(applyDiscoveredTxFilters(FIXTURE, { method: SEL_TRANSFER }))).toEqual(['100']);
+    expect(hashes(applyDiscoveredTxFilters(FIXTURE, { method: SEL_APPROVE }))).toEqual(['80']);
   });
 
   it('legacy rows without a selector key (undefined) never match a method filter', () => {
@@ -132,8 +144,9 @@ describe('applyDiscoveredTxFilters (pure)', () => {
   });
 
   it('matches the method filter case-insensitively (filter lowercased both ends)', () => {
-    expect(hashes(applyDiscoveredTxFilters(FIXTURE, { method: SEL_TRANSFER.toUpperCase() })))
-      .toEqual(['100']);
+    expect(
+      hashes(applyDiscoveredTxFilters(FIXTURE, { method: SEL_TRANSFER.toUpperCase() })),
+    ).toEqual(['100']);
     expect(
       hashes(applyDiscoveredTxFilters(FIXTURE, { method: SEL_APPROVE.toUpperCase() })),
     ).toEqual(['80']);
@@ -150,8 +163,9 @@ describe('applyDiscoveredTxFilters (pure)', () => {
 
   it('an over-narrow combination yields an honest empty list', () => {
     expect(applyDiscoveredTxFilters(FIXTURE, { fromAddress: C, toAddress: B })).toEqual([]);
-    expect(applyDiscoveredTxFilters(FIXTURE, { minValue: 5n, maxValue: 5n, fromAddress: B }))
-      .toEqual([]);
+    expect(
+      applyDiscoveredTxFilters(FIXTURE, { minValue: 5n, maxValue: 5n, fromAddress: B }),
+    ).toEqual([]);
   });
 });
 
@@ -202,11 +216,15 @@ const makeDiscoveryService = () => {
   };
   const service = createAddressService({
     db: undefined as unknown as Parameters<typeof createAddressService>[0]['db'],
-    indexedAddresses: undefined as unknown as Parameters<typeof createAddressService>[0]['indexedAddresses'],
+    indexedAddresses: undefined as unknown as Parameters<
+      typeof createAddressService
+    >[0]['indexedAddresses'],
     rpcManager: { getClient: vi.fn().mockResolvedValue(client) } as unknown as Parameters<
       typeof createAddressService
     >[0]['rpcManager'],
-    contractSourceService: undefined as unknown as Parameters<typeof createAddressService>[0]['contractSourceService'],
+    contractSourceService: undefined as unknown as Parameters<
+      typeof createAddressService
+    >[0]['contractSourceService'],
   });
   return { service, client };
 };
@@ -378,11 +396,6 @@ describe('getAddressTransactions — filters wiring', () => {
     // The self-transfer nets 0, so the series is 0, 0, 0, -1000.
     expect(result.balancePoints).toHaveLength(4);
     expect(result.balancePoints?.map(p => p.blockNumber)).toEqual(['40', '40', '60', '100']);
-    expect(result.balancePoints?.map(p => p.cumulativeValue)).toEqual([
-      '0',
-      '0',
-      '0',
-      '-1000',
-    ]);
+    expect(result.balancePoints?.map(p => p.cumulativeValue)).toEqual(['0', '0', '0', '-1000']);
   });
 });

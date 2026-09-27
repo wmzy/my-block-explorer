@@ -34,7 +34,7 @@ const mocks = vi.hoisted((): NftMetadataMocks => ({
   hookResult: undefined,
 }));
 
-vi.mock('@/services/nftMetadata', async (importOriginal) => {
+vi.mock('@/services/nftMetadata', async importOriginal => {
   const actual = await importOriginal<typeof import('@/services/nftMetadata')>();
   return {
     ...actual,
@@ -82,9 +82,7 @@ function Host() {
   );
 }
 
-const routes = createRoutes([
-  { path: '/', component: () => Promise.resolve(Host) },
-]);
+const routes = createRoutes([{ path: '/', component: () => Promise.resolve(Host) }]);
 
 const renderSection = async () => {
   const view = render(
@@ -98,10 +96,12 @@ const renderSection = async () => {
   return view;
 };
 
-const ok = (
-  name: string | null,
-  image: string | null,
-): NftMetadataOutcome => ({ status: 'ok', name, image, description: null });
+const ok = (name: string | null, image: string | null): NftMetadataOutcome => ({
+  status: 'ok',
+  name,
+  image,
+  description: null,
+});
 
 describe('NftHoldings metadata previews', () => {
   beforeEach(() => {
@@ -162,9 +162,7 @@ describe('NftHoldings metadata previews', () => {
 
   it('renders the thumb only (no name span) when a resolved item has no name', async () => {
     mocks.transfers = mintRows(['4']);
-    mocks.hookResult = new Map([
-      [`${mocks.token}:4`, ok(null, 'https://ipfs.io/ipfs/img4.png')],
-    ]);
+    mocks.hookResult = new Map([[`${mocks.token}:4`, ok(null, 'https://ipfs.io/ipfs/img4.png')]]);
 
     await renderSection();
 
@@ -209,9 +207,7 @@ describe('NftHoldings metadata previews', () => {
 
     const { container } = await renderSection();
 
-    expect(
-      screen.getByText('showing first 24 of 26 held items'),
-    ).toBeInTheDocument();
+    expect(screen.getByText('showing first 24 of 26 held items')).toBeInTheDocument();
     // Pending metadata: exactly 24 skeleton slots, not 26.
     expect(container.querySelectorAll(`[aria-hidden="true"]`).length).toBe(24);
     expect(screen.getByText('26 ids · 26 units total')).toBeInTheDocument();

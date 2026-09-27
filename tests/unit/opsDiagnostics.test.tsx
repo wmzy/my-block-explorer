@@ -67,7 +67,11 @@ const FULL_SUMMARY: OpsSummary = {
   watch: {
     total: 1,
     subscriptions: [
-      { chainId: 1, address: '0xabc0000000000000000000000000000000000abc', webhookConfigured: false },
+      {
+        chainId: 1,
+        address: '0xabc0000000000000000000000000000000000abc',
+        webhookConfigured: false,
+      },
     ],
   },
   rateLimit: {

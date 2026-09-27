@@ -134,7 +134,7 @@ export function KnownTokens({ chainId, address }: KnownTokensProps): ReactNode {
   // Hint lookup keyed by lowercase address (metadata/prices maps key the
   // same way); the hint only ever backfills an unresolved runtime symbol.
   const hints = useMemo(
-    () => new Map(curated.map((token) => [token.address.toLowerCase(), token.symbol])),
+    () => new Map(curated.map(token => [token.address.toLowerCase(), token.symbol])),
     [curated],
   );
 
@@ -145,18 +145,14 @@ export function KnownTokens({ chainId, address }: KnownTokensProps): ReactNode {
 
   // Cross-args guard (approvals pattern): the query store keeps the last
   // settle across an args switch, so another key's payload is absent.
-  const data = query.data?.chainId === chainId && query.data.address === owner
-    ? query.data
-    : undefined;
+  const data =
+    query.data?.chainId === chainId && query.data.address === owner ? query.data : undefined;
 
   const rows = useMemo(
     () => (data === undefined ? [] : filterNonZeroKnownTokenBalances(data.balances)),
     [data],
   );
-  const rowTokens = useMemo(
-    () => rows.map((row) => row.address.toLowerCase()),
-    [rows],
-  );
+  const rowTokens = useMemo(() => rows.map(row => row.address.toLowerCase()), [rows]);
 
   // Runtime symbol/decimals through the SHARED session cache (the
   // transfers tab and discovered-holdings section already use it, so
@@ -168,7 +164,7 @@ export function KnownTokens({ chainId, address }: KnownTokensProps): ReactNode {
   // settling (all-null usdOf → balance order), then re-sort when they land.
   const priced = useMemo(
     () =>
-      orderKnownTokenRows(rows, (row) => {
+      orderKnownTokenRows(rows, row => {
         const lower = row.address.toLowerCase();
         const decimals = metas[lower]?.decimals;
         const price = prices?.get(lower);
@@ -188,7 +184,7 @@ export function KnownTokens({ chainId, address }: KnownTokensProps): ReactNode {
   return (
     <InfoItem label="Known Tokens">
       <div>
-        {capped.shown.map((row) => {
+        {capped.shown.map(row => {
           const lower = row.address.toLowerCase();
           return (
             <KnownTokenRow

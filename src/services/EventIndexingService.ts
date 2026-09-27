@@ -153,7 +153,7 @@ const decodeLogs = (logs: Log[], abi: Abi, blockTimestamps: Map<bigint, number |
       decoded.push({
         blockNumber: log.blockNumber ?? 0n,
         blockTimestamp: blockTimestamps.get(log.blockNumber ?? 0n) ?? null,
-        transactionHash: log.transactionHash ?? ('0x'),
+        transactionHash: log.transactionHash ?? '0x',
         transactionIndex: log.transactionIndex ?? 0,
         logIndex: log.logIndex ?? 0,
         eventName: result.eventName ?? 'Unknown',
@@ -169,7 +169,7 @@ const decodeLogs = (logs: Log[], abi: Abi, blockTimestamps: Map<bigint, number |
       decoded.push({
         blockNumber: log.blockNumber ?? 0n,
         blockTimestamp: blockTimestamps.get(log.blockNumber ?? 0n) ?? null,
-        transactionHash: log.transactionHash ?? ('0x'),
+        transactionHash: log.transactionHash ?? '0x',
         transactionIndex: log.transactionIndex ?? 0,
         logIndex: log.logIndex ?? 0,
         eventName: 'Unknown',
@@ -955,12 +955,7 @@ export const addIndexingRange = async (
     };
   }
 
-  const overlaps = await checkRangeOverlaps(
-    chainId,
-    address,
-    resolvedFromBlock,
-    storedToBlock,
-  );
+  const overlaps = await checkRangeOverlaps(chainId, address, resolvedFromBlock, storedToBlock);
 
   const rangeId = await getNextRangeId(chainId, address);
 
@@ -1278,10 +1273,7 @@ export const startIndexingRange = async (
     try {
       await reconcileReorgedEvents(chainId, address);
     } catch (err) {
-      logger.warn(
-        { err, chainId, address, rangeId },
-        'Post-range reorg reconciliation failed',
-      );
+      logger.warn({ err, chainId, address, rangeId }, 'Post-range reorg reconciliation failed');
     }
 
     const finalBlock =

@@ -480,11 +480,18 @@ export function AbiListPanel({
               type="button"
               className={textButtonStyles}
               onClick={() =>
-                setRowsSelected(visibleSections.flatMap(section => section.rows), true)}
+                setRowsSelected(
+                  visibleSections.flatMap(section => section.rows),
+                  true,
+                )}
             >
               Select all
             </button>
-            <button type="button" className={textButtonStyles} onClick={() => setSelected(new Set())}>
+            <button
+              type="button"
+              className={textButtonStyles}
+              onClick={() => setSelected(new Set())}
+            >
               Clear
             </button>
           </div>

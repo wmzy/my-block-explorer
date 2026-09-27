@@ -21,10 +21,7 @@ const EIP7702_DESIGNATOR_LENGTH = EIP7702_PREFIX.length + 40;
 export function isEip7702Designator(code: string | undefined): boolean {
   if (code === undefined) return false;
   const normalized = code.toLowerCase();
-  return (
-    normalized.length === EIP7702_DESIGNATOR_LENGTH &&
-    normalized.startsWith(EIP7702_PREFIX)
-  );
+  return normalized.length === EIP7702_DESIGNATOR_LENGTH && normalized.startsWith(EIP7702_PREFIX);
 }
 
 // The delegate address a 7702 designator points at (bytes 3-42 of the
@@ -52,10 +49,7 @@ export type AddressTypeInput = {
   rpcCode?: string;
 };
 
-export function classifyAddressType({
-  persistentType,
-  rpcCode,
-}: AddressTypeInput): AddressType {
+export function classifyAddressType({ persistentType, rpcCode }: AddressTypeInput): AddressType {
   // The designator is authoritative and outranks the persistent record:
   // a delegated EOA executes another contract's code but is still an
   // account, never a contract deployed at this address.

@@ -6,11 +6,7 @@
 import { describe, it, expect } from 'vitest';
 
 import type { TokenTransfer } from '@/services/tokenTransfers';
-import {
-  aggregateMintBurn,
-  formatSharePct,
-  rankHolderShares,
-} from '@/views/Token/tokenMath';
+import { aggregateMintBurn, formatSharePct, rankHolderShares } from '@/views/Token/tokenMath';
 
 const TOKEN = `0x${'aa'.repeat(20)}`;
 const OTHER_TOKEN = `0x${'bb'.repeat(20)}`;
@@ -46,10 +42,7 @@ describe('rankHolderShares', () => {
 
   it('drops participants whose nets cancel to zero (zero-net holders)', () => {
     const result = rankHolderShares(
-      [
-        row({ from: ALICE, to: BOB, value: '5' }),
-        row({ from: BOB, to: ALICE, value: '5' }),
-      ],
+      [row({ from: ALICE, to: BOB, value: '5' }), row({ from: BOB, to: ALICE, value: '5' })],
       TOKEN,
       true,
     );
@@ -115,11 +108,7 @@ describe('rankHolderShares', () => {
   it('gives negative-net participants no share (they hold nothing)', () => {
     // Alice distributes 10 she never received within the window: her net
     // is -10, Bob ends with +10 — only positive nets form the supply.
-    const result = rankHolderShares(
-      [row({ from: ALICE, to: BOB, value: '10' })],
-      TOKEN,
-      true,
-    );
+    const result = rankHolderShares([row({ from: ALICE, to: BOB, value: '10' })], TOKEN, true);
     expect(result.shares.map(s => s.address)).toEqual([BOB, ALICE]);
     expect(result.discoveredSupply).toBe(10n);
     expect(result.shares[0]?.shareBps).toBe(10000);
@@ -127,11 +116,7 @@ describe('rankHolderShares', () => {
   });
 
   it('never ranks the zero-address sentinel as a holder', () => {
-    const result = rankHolderShares(
-      [row({ from: ZERO, to: ALICE, value: '100' })],
-      TOKEN,
-      true,
-    );
+    const result = rankHolderShares([row({ from: ZERO, to: ALICE, value: '100' })], TOKEN, true);
     expect(result.shares.map(s => s.address)).toEqual([ALICE]);
   });
 
@@ -150,11 +135,7 @@ describe('rankHolderShares', () => {
   });
 
   it('excludes every row when the standard is not ERC-20-proven', () => {
-    const result = rankHolderShares(
-      [row({ from: ZERO, to: ALICE, value: '100' })],
-      TOKEN,
-      false,
-    );
+    const result = rankHolderShares([row({ from: ZERO, to: ALICE, value: '100' })], TOKEN, false);
     expect(result.shares).toEqual([]);
     expect(result.excludedTransfers).toBe(1);
   });
@@ -208,11 +189,7 @@ describe('aggregateMintBurn', () => {
   });
 
   it('treats a from-and-to zero-address row as both a mint and a burn', () => {
-    const result = aggregateMintBurn(
-      [row({ from: ZERO, to: ZERO, value: '7' })],
-      TOKEN,
-      true,
-    );
+    const result = aggregateMintBurn([row({ from: ZERO, to: ZERO, value: '7' })], TOKEN, true);
     expect(result.mintCount).toBe(1);
     expect(result.burnCount).toBe(1);
     expect(result.minted).toBe(7n);
@@ -235,11 +212,7 @@ describe('aggregateMintBurn', () => {
   });
 
   it('reports null sums (never a guessed amount) for an unproven standard', () => {
-    const result = aggregateMintBurn(
-      [row({ from: ZERO, to: ALICE, value: '100' })],
-      TOKEN,
-      false,
-    );
+    const result = aggregateMintBurn([row({ from: ZERO, to: ALICE, value: '100' })], TOKEN, false);
     expect(result.mintCount).toBe(1);
     expect(result.minted).toBeNull();
     expect(result.burned).toBeNull();

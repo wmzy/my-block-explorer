@@ -51,8 +51,7 @@ const sleep = (ms: number): Promise<void> => new Promise(resolve => setTimeout(r
 const readStored = (key: string): string | null => {
   try {
     return localStorage.getItem(key);
-  }
-  catch {
+  } catch {
     return null;
   }
 };
@@ -71,29 +70,29 @@ export async function collectBackupParts(): Promise<BackupParts> {
   let labels: BackupLabelRow[] = [];
   try {
     const body = await get<unknown>('/api/labels');
-    const rows
-      = typeof body === 'object' && body !== null && Array.isArray((body as Record<string, unknown>).labels)
+    const rows =
+      typeof body === 'object' &&
+      body !== null &&
+      Array.isArray((body as Record<string, unknown>).labels)
         ? ((body as Record<string, unknown>).labels as unknown[])
         : null;
     if (rows === null) {
       note('labels skipped — the backend returned a malformed body');
-    }
-    else {
+    } else {
       const parsedRows = rows.map(row => parseBackupLabelRow(row));
       if (parsedRows.some(row => row === null)) {
         note('some label rows skipped — malformed backend response');
       }
       labels = parsedRows.filter((row): row is BackupLabelRow => row !== null);
     }
-  }
-  catch (error) {
+  } catch (error) {
     if (isBackendUnreachable(error)) {
       note('server data skipped — backend unreachable');
-    }
-    else if (error instanceof ApiError && error.status === 403) {
-      note('labels skipped — admin token required (save it under "Admin token", then retry the export)');
-    }
-    else {
+    } else if (error instanceof ApiError && error.status === 403) {
+      note(
+        'labels skipped — admin token required (save it under "Admin token", then retry the export)',
+      );
+    } else {
       note(`labels skipped — ${messageOf(error)}`);
     }
   }
@@ -101,14 +100,15 @@ export async function collectBackupParts(): Promise<BackupParts> {
   const customChains: BackupCustomChainRow[] = [];
   try {
     const body = await get<unknown>('/api/chains/custom');
-    const rows
-      = typeof body === 'object' && body !== null && Array.isArray((body as Record<string, unknown>).chains)
+    const rows =
+      typeof body === 'object' &&
+      body !== null &&
+      Array.isArray((body as Record<string, unknown>).chains)
         ? ((body as Record<string, unknown>).chains as unknown[])
         : null;
     if (rows === null) {
       note('custom chains skipped — the backend returned a malformed body');
-    }
-    else {
+    } else {
       // A redacted rpcUrl is not restorable — registering it back would
       // point the explorer at scheme+host with the secret stripped. Skip
       // those rows and say so instead of exporting a broken URL.
@@ -120,8 +120,10 @@ export async function collectBackupParts(): Promise<BackupParts> {
           malformed += 1;
           continue;
         }
-        const urlRedacted
-          = typeof row === 'object' && row !== null && (row as Record<string, unknown>).urlRedacted === true;
+        const urlRedacted =
+          typeof row === 'object' &&
+          row !== null &&
+          (row as Record<string, unknown>).urlRedacted === true;
         if (urlRedacted) {
           redacted += 1;
           continue;
@@ -137,12 +139,10 @@ export async function collectBackupParts(): Promise<BackupParts> {
         note(`${malformed} custom chain row(s) skipped — malformed backend response`);
       }
     }
-  }
-  catch (error) {
+  } catch (error) {
     if (isBackendUnreachable(error)) {
       note('server data skipped — backend unreachable');
-    }
-    else {
+    } else {
       note(`custom chains skipped — ${messageOf(error)}`);
     }
   }
@@ -187,8 +187,7 @@ function collectBrowserParts(notes: string[]): BackupBrowserParts {
       }
       privateNotes.push({ chainId: parsedKey.chainId, address: parsedKey.address, note });
     }
-  }
-  catch {
+  } catch {
     // Storage unavailable (private mode) — custom ABIs and private
     // notes are simply not part of this export.
   }
@@ -259,8 +258,7 @@ export async function executeRestore(plan: RestorePlan): Promise<RestoreReport> 
     try {
       localStorage.setItem(write.key, write.value);
       report.storage.written += 1;
-    }
-    catch (error) {
+    } catch (error) {
       report.storage.failures.push({ key: write.key, message: messageOf(error) });
     }
   }
@@ -269,12 +267,10 @@ export async function executeRestore(plan: RestorePlan): Promise<RestoreReport> 
     try {
       await saveAddressLabel(item.chainId, item.address, item.label, item.note);
       report.labels.restored += 1;
-    }
-    catch (error) {
+    } catch (error) {
       if (error instanceof ApiError && error.status === 403) {
         report.labels.adminDenied = true;
-      }
-      else {
+      } else {
         report.labels.failures.push({
           address: `${item.address} (chain ${item.chainId})`,
           message: messageOf(error),
@@ -288,8 +284,7 @@ export async function executeRestore(plan: RestorePlan): Promise<RestoreReport> 
     try {
       await addCustomChain(item.input);
       report.chains.registered += 1;
-    }
-    catch (error) {
+    } catch (error) {
       if (error instanceof ApiError && error.status === 429) {
         // Wait one refill period and retry once — the register limiter
         // (5/min, burst 2) cannot admit a many-chain restore in a burst.
@@ -298,15 +293,13 @@ export async function executeRestore(plan: RestorePlan): Promise<RestoreReport> 
           await addCustomChain(item.input);
           report.chains.registered += 1;
           continue;
-        }
-        catch {
+        } catch {
           // Fall through and report the original failure.
         }
       }
       if (error instanceof ApiError && error.status === 403) {
         report.chains.adminDenied = true;
-      }
-      else {
+      } else {
         report.chains.failures.push({ name, message: messageOf(error) });
       }
     }

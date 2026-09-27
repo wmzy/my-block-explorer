@@ -27,17 +27,16 @@ function mockResponse(body: unknown, ok = true, status = ok ? 200 : 500): Respon
 // signal.reason is a DOMException at runtime (an Error subclass), narrowed
 // here to satisfy prefer-promise-reject-errors.
 function hangingFetch() {
-  return vi.fn((_input: RequestInfo | URL, init?: RequestInit) =>
-    new Promise<Response>((_resolve, reject) => {
-      const signal = init?.signal;
-      if (!signal) return;
-      if (signal.aborted) return reject(signal.reason as Error);
-      signal.addEventListener(
-        'abort',
-        () => reject(init.signal!.reason as Error),
-        { once: true },
-      );
-    }),
+  return vi.fn(
+    (_input: RequestInfo | URL, init?: RequestInit) =>
+      new Promise<Response>((_resolve, reject) => {
+        const signal = init?.signal;
+        if (!signal) return;
+        if (signal.aborted) return reject(signal.reason as Error);
+        signal.addEventListener('abort', () => reject(init.signal!.reason as Error), {
+          once: true,
+        });
+      }),
   );
 }
 
@@ -309,9 +308,7 @@ describe('http utilities', () => {
       const error = (await get('/api/health').catch((e: unknown) => e)) as ApiError;
 
       expect(error).toBeInstanceOf(ApiError);
-      expect(error.message).toBe(
-        'Contract creation block unknown — enter a start block manually',
-      );
+      expect(error.message).toBe('Contract creation block unknown — enter a start block manually');
       expect(error.status).toBe(400);
     });
 
@@ -345,9 +342,7 @@ describe('http utilities', () => {
       // elapse on demand. The library discriminates timeout aborts by the
       // DOMException name 'TimeoutError'.
       const attempt = new AbortController();
-      const timeoutSpy = vi
-        .spyOn(AbortSignal, 'timeout')
-        .mockImplementation(() => attempt.signal);
+      const timeoutSpy = vi.spyOn(AbortSignal, 'timeout').mockImplementation(() => attempt.signal);
       fetchMock.mockImplementation(hangingFetch());
 
       const outcome = get('/api/health').catch((e: unknown) => e);
@@ -367,14 +362,10 @@ describe('http utilities', () => {
       fetchMock.mockImplementation(hangingFetch());
       const controller = new AbortController();
 
-      const outcome = get(
-        '/api/health',
-        undefined,
-        withSignal(api, controller.signal),
-      ).catch((e: unknown) => e);
-      controller.abort(
-        new DOMException('The user aborted a request.', 'AbortError'),
+      const outcome = get('/api/health', undefined, withSignal(api, controller.signal)).catch(
+        (e: unknown) => e,
       );
+      controller.abort(new DOMException('The user aborted a request.', 'AbortError'));
 
       const error = (await outcome) as DOMException;
 
@@ -406,9 +397,9 @@ describe('http utilities', () => {
       expect(isBackendUnreachable(httpError)).toBe(false);
 
       expect(isBackendUnreachable(new ApiError('Request timeout', 408))).toBe(false);
-      expect(isBackendUnreachable(new DOMException('The user aborted a request.', 'AbortError'))).toBe(
-        false,
-      );
+      expect(
+        isBackendUnreachable(new DOMException('The user aborted a request.', 'AbortError')),
+      ).toBe(false);
       expect(isBackendUnreachable(new Error('fetch failed'))).toBe(false);
       expect(isBackendUnreachable(undefined)).toBe(false);
     });

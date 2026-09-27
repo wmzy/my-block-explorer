@@ -58,10 +58,9 @@ describe('OpenInIdeButton', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Open in VS Code' }));
 
     await waitFor(() =>
-      expect(mockPost).toHaveBeenCalledWith(
-        `/api/chains/1/contracts/${ADDRESS}/open-in-ide`,
-        { ide: 'vscode' },
-      ),
+      expect(mockPost).toHaveBeenCalledWith(`/api/chains/1/contracts/${ADDRESS}/open-in-ide`, {
+        ide: 'vscode',
+      }),
     );
     expect(mockToastError).not.toHaveBeenCalled();
   });

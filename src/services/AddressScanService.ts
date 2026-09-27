@@ -147,7 +147,8 @@ export const validateScanJobBody = (body: unknown): ScanBodyValidation => {
       return { ok: true, value: allowedTags.includes('earliest') ? 'earliest' : 'latest' };
     }
     if (typeof value === 'string') {
-      if ((allowedTags as readonly string[]).includes(value)) return { ok: true, value: value as ScanBoundTag };
+      if ((allowedTags as readonly string[]).includes(value))
+        return { ok: true, value: value as ScanBoundTag };
       return {
         ok: false,
         message: `${label} must be a non-negative integer or one of: ${allowedTags.join(', ')}`,
@@ -295,10 +296,8 @@ export const computeBlocksTotal = (fromBlock: number, toBlock: number): number =
  * AND was anchored at genesis (fromBlock === 0), the one bound where "no
  * activity outside the walk" is provable. Everything else stays null.
  */
-export const deriveScanCoverage = (
-  status: ScanJobStatus,
-  fromBlock: number,
-): 'complete' | null => (status === 'complete' && fromBlock === 0 ? 'complete' : null);
+export const deriveScanCoverage = (status: ScanJobStatus, fromBlock: number): 'complete' | null =>
+  status === 'complete' && fromBlock === 0 ? 'complete' : null;
 
 /**
  * The API job shape (pinned contract). Numeric block fields are plain
@@ -356,12 +355,7 @@ export const toScanJobDto = (row: AddressScanJobRecord): ScanJobDto => {
 // describe code deployment (their `to` is the created contract) and
 // SELFDESTRUCT a refund — none is a call between two existing addresses.
 // Compared lowercased against the normalized node's verbatim type.
-const RECORDED_CALL_TYPES: readonly string[] = [
-  'call',
-  'callcode',
-  'delegatecall',
-  'staticcall',
-];
+const RECORDED_CALL_TYPES: readonly string[] = ['call', 'callcode', 'delegatecall', 'staticcall'];
 
 /** One flattened callTracer frame that involves the scanned address. */
 export type FlattenedTraceFrame = {
@@ -471,7 +465,10 @@ const pumpScanQueue = (): void => {
     if (isScanJobActive(next.chainId, next.address)) continue;
     const handle = startScanLoop(next.chainId, next.address);
     handle.done.catch(err =>
-      logger.error({ err, chainId: next.chainId, address: next.address }, 'Address scan loop crashed'),
+      logger.error(
+        { err, chainId: next.chainId, address: next.address },
+        'Address scan loop crashed',
+      ),
     );
   }
 };
@@ -492,9 +489,7 @@ export const ensureScanRunning = (chainId: number, address: string): void => {
     return;
   }
   const handle = startScanLoop(chainId, address);
-  handle.done.catch(err =>
-    logger.error({ err, chainId, address }, 'Address scan loop crashed'),
-  );
+  handle.done.catch(err => logger.error({ err, chainId, address }, 'Address scan loop crashed'));
 };
 
 // ============================================
@@ -509,10 +504,7 @@ export const getScanJobRow = async (
     .select()
     .from(addressScanJobs)
     .where(
-      and(
-        eq(addressScanJobs.chainId, chainId),
-        eq(addressScanJobs.address, address.toLowerCase()),
-      ),
+      and(eq(addressScanJobs.chainId, chainId), eq(addressScanJobs.address, address.toLowerCase())),
     )
     .limit(1);
   return rows[0] ?? null;
@@ -794,8 +786,7 @@ const PERMANENT_PROVIDER_ERROR_RE =
 const SHRINKABLE_PROVIDER_ERROR_RE =
   /rate.?limit|too many requests|429|exceed|limit|timeout|timed out|econnreset|econnrefused|socket hang up|network|fetch failed/i;
 
-const errorMessage = (err: unknown): string =>
-  err instanceof Error ? err.message : String(err);
+const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 const isPermanentProviderError = (err: unknown): boolean =>
   PERMANENT_PROVIDER_ERROR_RE.test(errorMessage(err));
@@ -904,9 +895,9 @@ const traceBlockInternalTransactions = async (
       if (index >= block.transactions.length) return;
       const tx = block.transactions[index];
       try {
-        const raw = await (
-          // Narrow cast around viem's typed client.request, which has no
-          // debug namespace (same route as the Call Trace card).
+        const raw = await // Narrow cast around viem's typed client.request, which has no
+        // debug namespace (same route as the Call Trace card).
+        (
           client as unknown as {
             request: (args: { method: string; params: unknown[] }) => Promise<unknown>;
           }
@@ -1045,15 +1036,19 @@ const runScanWalk = async (
 
   // Baseline balance at the cursor. Block -1 (the initial cursor of a
   // genesis-anchored walk) has no on-chain state: balance 0 by definition.
-  let baseline =
-    cursor < 0n ? 0n : await getBalanceAt(client, addr, cursor);
+  let baseline = cursor < 0n ? 0n : await getBalanceAt(client, addr, cursor);
 
   const failJob = async (err: unknown): Promise<void> => {
     const message = errorMessage(err);
     logger.error({ err, chainId, address, message }, 'Address scan job errored');
-    await updateScanJobRow(chainId, address, { status: 'error', errorMessage: message }, {
-      onlyIfRunning: true,
-    });
+    await updateScanJobRow(
+      chainId,
+      address,
+      { status: 'error', errorMessage: message },
+      {
+        onlyIfRunning: true,
+      },
+    );
   };
 
   while (cursor < to && !handle.abort) {
@@ -1204,7 +1199,8 @@ export const createOrReplaceScanJob = async (
     includeTraces: boolean;
   },
 ): Promise<
-  { ok: true; result: CreateScanJobResult } | { ok: false; error: 'invalid_bounds'; message: string }
+  | { ok: true; result: CreateScanJobResult }
+  | { ok: false; error: 'invalid_bounds'; message: string }
 > => {
   const client = await rpcManager.getClient(chainId);
   const resolved = await resolveScanBounds(client, input);
@@ -1213,9 +1209,7 @@ export const createOrReplaceScanJob = async (
 
   const existing = await getScanJobRow(chainId, address);
   const decision = decideScanJobCreation(
-    existing
-      ? { fromBlock: Number(existing.fromBlock), toBlock: Number(existing.toBlock) }
-      : null,
+    existing ? { fromBlock: Number(existing.fromBlock), toBlock: Number(existing.toBlock) } : null,
     { fromBlock, toBlock },
     input.force,
   );
@@ -1457,10 +1451,7 @@ export const deleteScanJob = async (chainId: number, address: string): Promise<v
   await db
     .delete(addressScanJobs)
     .where(
-      and(
-        eq(addressScanJobs.chainId, chainId),
-        eq(addressScanJobs.address, address.toLowerCase()),
-      ),
+      and(eq(addressScanJobs.chainId, chainId), eq(addressScanJobs.address, address.toLowerCase())),
     );
 };
 

@@ -72,7 +72,7 @@ describe('utils barrel', () => {
     } as const;
 
     const missing = Object.keys(representative).filter(
-      (name) => (barrel as Record<string, unknown>)[name] === undefined,
+      name => (barrel as Record<string, unknown>)[name] === undefined,
     );
     expect(missing).toEqual([]);
   });

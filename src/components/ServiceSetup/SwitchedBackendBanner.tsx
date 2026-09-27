@@ -22,8 +22,8 @@ export function SwitchedBackendBanner({
   return (
     <div className={bannerStyle} role="status" aria-live="polite">
       <span className={bannerMessageStyle}>
-        Configured backend {configured} is unreachable — using {using} instead.
-        Indexed data (contracts, events) may differ between backends.
+        Configured backend {configured} is unreachable — using {using} instead. Indexed data
+        (contracts, events) may differ between backends.
       </span>
       <button type="button" className={bannerDismissStyle} aria-label="Dismiss" onClick={onDismiss}>
         ×

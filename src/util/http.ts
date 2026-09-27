@@ -10,9 +10,7 @@ import { ApiError } from '@/util/apiError';
 // extract fields defensively instead of trusting the shape.
 function toApiError(e: ff.HTTPError): ApiError {
   const body: Record<string, unknown> =
-    typeof e.data === 'object' && e.data !== null
-      ? (e.data as Record<string, unknown>)
-      : {};
+    typeof e.data === 'object' && e.data !== null ? (e.data as Record<string, unknown>) : {};
   const message = typeof body.message === 'string' ? body.message : undefined;
   const errorText = typeof body.error === 'string' ? body.error : undefined;
   const code = typeof body.code === 'string' ? body.code : undefined;
@@ -88,9 +86,7 @@ export function withSignal<T extends ff.Options>(o: T, signal?: AbortSignal): T 
 // Rejected-promise form (not a sync throw) so `.catch()` chained directly
 // on a helper's return value still observes it.
 function backendUnconnected<T>(): Promise<T> {
-  return Promise.reject(
-    new ApiError('Backend not connected — indexed data unavailable', 0),
-  );
+  return Promise.reject(new ApiError('Backend not connected — indexed data unavailable', 0));
 }
 
 // Backend-unreachable class: both the degraded-mode fast reject above and

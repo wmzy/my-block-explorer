@@ -7,10 +7,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { ApiError } from '@/util/apiError';
-import {
-  BalanceHistory,
-  type BalanceHistoryPage,
-} from '@/views/Address/BalanceHistory';
+import { BalanceHistory, type BalanceHistoryPage } from '@/views/Address/BalanceHistory';
 
 const mocks = vi.hoisted(() => ({
   get: vi.fn(),
@@ -57,7 +54,11 @@ const settledPage = (address: string): BalanceHistoryPage => ({
   balancePoints: [
     { blockNumber: '100', timestamp: '2026-01-01T00:00:00Z', cumulativeValue: '0' },
     { blockNumber: '100', timestamp: '2026-01-01T00:00:00Z', cumulativeValue: (-WEI).toString() },
-    { blockNumber: '200', timestamp: '2026-01-02T00:00:00Z', cumulativeValue: (2n * WEI).toString() },
+    {
+      blockNumber: '200',
+      timestamp: '2026-01-02T00:00:00Z',
+      cumulativeValue: (2n * WEI).toString(),
+    },
   ],
   balancePointsCount: 3,
 });
@@ -225,9 +226,7 @@ describe('BalanceHistory card — collapsible', () => {
     expect(header).toHaveAttribute('aria-expanded', 'false');
     // Content stays mounted (the fetch runs even collapsed) but hidden.
     await waitFor(() => expect(screen.getByTestId('balance-chart')).toBeInTheDocument());
-    expect(
-      screen.getByTestId('balance-chart').closest('[aria-hidden="true"]'),
-    ).not.toBeNull();
+    expect(screen.getByTestId('balance-chart').closest('[aria-hidden="true"]')).not.toBeNull();
 
     fireEvent.click(header);
     expect(header).toHaveAttribute('aria-expanded', 'true');

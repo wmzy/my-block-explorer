@@ -79,7 +79,9 @@ export function createServer(options: ServerOptions = {}) {
 
       if (SERVE_STATIC_DIR) {
         console.log('  GET /                   - Frontend application');
-        console.log(`  (static dir: ${SERVE_STATIC_DIR}; HTML navigations get og/twitter meta injected)`);
+        console.log(
+          `  (static dir: ${SERVE_STATIC_DIR}; HTML navigations get og/twitter meta injected)`,
+        );
       }
     },
   );
@@ -87,7 +89,7 @@ export function createServer(options: ServerOptions = {}) {
   const shutdown = async () => {
     console.log('Shutting down gracefully...');
     try {
-      await (db.$client).end?.();
+      await db.$client.end?.();
     } catch (error) {
       console.warn('Shutdown checkpoint failed:', error);
     }

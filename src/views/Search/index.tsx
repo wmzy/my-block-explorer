@@ -18,11 +18,7 @@ import {
 } from '@/services/search';
 import { detectSearchType, sanitizeInput } from '@/utils/validation';
 import { isBackendUnreachable } from '@/util/http';
-import {
-  resolveEnsAddress,
-  ensDestinations,
-  type EnsDestinations,
-} from '@/services/ensForward';
+import { resolveEnsAddress, ensDestinations, type EnsDestinations } from '@/services/ensForward';
 import { recordSearchHistoryEntry } from '@/services/searchHistory';
 import { formatAddress } from '@/utils/format';
 import { readRememberedChainId } from '@/views/Home/Landing';
@@ -283,7 +279,7 @@ const renderSuggestions = (suggestions: string[], chainId: number | null): React
   let inTxSection = false;
   let latestBlockNumber: string | null = null;
 
-  return suggestions.map((line) => {
+  return suggestions.map(line => {
     // No chain context anywhere: inert text, never a link to a made-up
     // chain (the old hardcode linked these to mainnet).
     if (chainId === null) return <div key={line}>{line}</div>;
@@ -468,9 +464,7 @@ export default function Search() {
     // choice, and the header shows it.
     const explicitChain = pinnedChainId === undefined ? chain : pinnedChainId;
     const chainRelative = searchType === 'hash' || searchType === 'block';
-    const chainContext = chainRelative
-      ? explicitChain
-      : explicitChain ?? readRememberedChainId();
+    const chainContext = chainRelative ? explicitChain : (explicitChain ?? readRememberedChainId());
 
     setIsSearching(true);
     setError(null);
@@ -504,9 +498,10 @@ export default function Search() {
       // from a page with chain context goes straight to the entity.
       // Without a hint the endpoint answers hash/block queries with
       // needsChain and the network picker below takes over.
-      const searchResult = typeof pinnedChainId === 'number'
-        ? await fetchChainSearch(pinnedChainId, sanitized)
-        : await fetchSearch(sanitized, chainContext ?? undefined);
+      const searchResult =
+        typeof pinnedChainId === 'number'
+          ? await fetchChainSearch(pinnedChainId, sanitized)
+          : await fetchSearch(sanitized, chainContext ?? undefined);
       if (!searchResult) return;
 
       setResult(searchResult);
@@ -523,11 +518,12 @@ export default function Search() {
       // history entry but skip the URL sync: two overlapping navigations
       // (setSearch replace + the entity-page push) race and the replace
       // would strand the user on /search.
-      const navigatingToResult = searchResult.found
-        && searchResult.data !== undefined
-        && (searchResult.type === 'address'
-          || searchResult.type === 'transaction'
-          || searchResult.type === 'block');
+      const navigatingToResult =
+        searchResult.found &&
+        searchResult.data !== undefined &&
+        (searchResult.type === 'address' ||
+          searchResult.type === 'transaction' ||
+          searchResult.type === 'block');
 
       if (searchedChain !== null) {
         setResolvedChainId(searchedChain);
@@ -550,9 +546,7 @@ export default function Search() {
       if (searchResult.found && searchResult.type === 'address' && searchResult.data) {
         const data = searchResult.data as AddressInfo;
         const targetChain = searchedChain ?? data.chainId;
-        navigate(router, `/chain/${targetChain}/address/${data.address}`).catch(
-          () => undefined,
-        );
+        navigate(router, `/chain/${targetChain}/address/${data.address}`).catch(() => undefined);
       } else if (searchResult.found && searchResult.type === 'transaction' && searchResult.data) {
         const data = searchResult.data as Transaction;
         const targetChain = searchedChain ?? data.chainId;
@@ -719,9 +713,10 @@ export default function Search() {
     const filter = chainFilter.trim().toLowerCase();
     if (!filter) return null;
     return allChains.filter(
-      c => c.name.toLowerCase().includes(filter)
-        || String(c.chainId).includes(filter)
-        || c.symbol.toLowerCase().includes(filter),
+      c =>
+        c.name.toLowerCase().includes(filter) ||
+        String(c.chainId).includes(filter) ||
+        c.symbol.toLowerCase().includes(filter),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chainFilter, result]);
@@ -732,8 +727,7 @@ export default function Search() {
   // text, absent from hash/block/ens/address responses. Typed through an
   // intersection because the shared SearchResult keeps its lean shape for
   // the entity-specific consumers.
-  const localContracts = (result)
-    ?.localContracts;
+  const localContracts = result?.localContracts;
 
   // Curated token/label hits from the same additive free-text contract
   // (SearchService's tokenHits): known-token symbol matches plus this
@@ -750,7 +744,7 @@ export default function Search() {
           </CardHeader>
           <CardContent>
             <form
-              onSubmit={(e) => {
+              onSubmit={e => {
                 e.preventDefault();
                 void handleSearch();
               }}
@@ -821,9 +815,7 @@ export default function Search() {
                       to={`/chain/${hit.chainId}/contract/${hit.address}`}
                       className={localContractRow}
                     >
-                      <span className={localContractName}>
-                        {hit.name ?? 'Unnamed contract'}
-                      </span>
+                      <span className={localContractName}>{hit.name ?? 'Unnamed contract'}</span>
                       <span className={localContractAddress}>{hit.address}</span>
                       {hit.isVerified ? (
                         <Badge variant="success" size="sm">
@@ -863,9 +855,11 @@ export default function Search() {
                   {tokenHits.map(hit => (
                     <TypedLink
                       key={`${hit.chainId}-${hit.address}`}
-                      to={hit.source === 'known-token'
-                        ? `/chain/${hit.chainId}/token/${hit.address}`
-                        : `/chain/${hit.chainId}/address/${hit.address}`}
+                      to={
+                        hit.source === 'known-token'
+                          ? `/chain/${hit.chainId}/token/${hit.address}`
+                          : `/chain/${hit.chainId}/address/${hit.address}`
+                      }
                       className={localContractRow}
                     >
                       <span className={localContractName}>{hit.matchText}</span>
@@ -903,26 +897,20 @@ export default function Search() {
 
         {ensError && (
           <div className={resultCard}>
-            {ensError.kind === 'rpc-error'
-              ? (
-                  <ErrorState
-                    message={`ENS resolution failed for "${ensError.name}" — Ethereum RPC did not answer`}
-                    onRetry={() => void handleSearch(ensError.name, ensError.chainContext)}
-                  />
-                )
-              : ensError.kind === 'no-rpc'
-                ? (
-                    // Missing configuration, not a transient outage: no
-                    // Retry — re-running cannot conjure an RPC endpoint.
-                    <ErrorState
-                      message={`ENS resolution unavailable for "${ensError.name}" — this explorer has no Ethereum RPC endpoint configured`}
-                    />
-                  )
-                : (
-                    <ErrorState
-                      message={`ENS name "${ensError.name}" not found (checked on Ethereum)`}
-                    />
-                  )}
+            {ensError.kind === 'rpc-error' ? (
+              <ErrorState
+                message={`ENS resolution failed for "${ensError.name}" — Ethereum RPC did not answer`}
+                onRetry={() => void handleSearch(ensError.name, ensError.chainContext)}
+              />
+            ) : ensError.kind === 'no-rpc' ? (
+              // Missing configuration, not a transient outage: no
+              // Retry — re-running cannot conjure an RPC endpoint.
+              <ErrorState
+                message={`ENS resolution unavailable for "${ensError.name}" — this explorer has no Ethereum RPC endpoint configured`}
+              />
+            ) : (
+              <ErrorState message={`ENS name "${ensError.name}" not found (checked on Ethereum)`} />
+            )}
           </div>
         )}
 
@@ -951,9 +939,7 @@ export default function Search() {
         {result && !result.found && !result.needsChain && !result.degraded && (
           <div className={resultCard}>
             <ErrorState
-              message={
-                result.message ?? `No results found for "${result.query ?? query}"`
-              }
+              message={result.message ?? `No results found for "${result.query ?? query}"`}
             />
             {result.suggestions && result.suggestions.length > 0 && (
               <div className={suggestionList}>
@@ -1014,9 +1000,8 @@ export default function Search() {
                 // dead end: unlisted networks are reachable directly via
                 // their own chain URL.
                 <div className={chainEmpty}>
-                  No network here matches &quot;{chainFilter.trim()}&quot;. Other networks
-                  are not listed in this picker — open them directly at
-                  /chain/&lt;chain-id&gt;.
+                  No network here matches &quot;{chainFilter.trim()}&quot;. Other networks are not
+                  listed in this picker — open them directly at /chain/&lt;chain-id&gt;.
                 </div>
               ) : (
                 <div className={chainSelector}>
@@ -1032,8 +1017,7 @@ export default function Search() {
                       <div className={chainName}>{chain.name}</div>
                       <div className={chainId}>
                         Chain ID:
-                        {chain.chainId}
-                        {' '}• {chain.symbol}
+                        {chain.chainId} • {chain.symbol}
                       </div>
                     </div>
                   ))}

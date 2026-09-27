@@ -135,10 +135,7 @@ describe('buildPaletteActions', () => {
 
   it('marks exactly the SQL console and Ops as admin', () => {
     const actions = buildPaletteActions(1, 'Ethereum');
-    expect(actions.filter(action => action.admin).map(action => action.id)).toEqual([
-      'sql',
-      'ops',
-    ]);
+    expect(actions.filter(action => action.admin).map(action => action.id)).toEqual(['sql', 'ops']);
   });
 
   it('gives the theme action a run command instead of a destination', () => {
@@ -299,9 +296,7 @@ describe('CommandPalette', () => {
     const input = paletteInput();
     expect(input).toHaveValue('');
     expect(input).toHaveAttribute('aria-activedescendant', 'command-palette-option-0');
-    expect(screen.getAllByRole('option')).toHaveLength(
-      buildPaletteActions(1, 'Ethereum').length,
-    );
+    expect(screen.getAllByRole('option')).toHaveLength(buildPaletteActions(1, 'Ethereum').length);
   });
 
   it('resolves the effective chain as prop → remembered chain → preferred chain', () => {

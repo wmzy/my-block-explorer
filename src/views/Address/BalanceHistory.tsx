@@ -266,8 +266,7 @@ function tickTitle(
 // honesty semantics (coverage/reason) instead of a bare "no data".
 const EMPTY_DISCOVERY_COPY: Record<string, string> = {
   'zero-balance': 'Balance is zero — nothing to chart.',
-  'no-outgoing-transactions':
-    'No outgoing transactions; incoming activity cannot be scanned.',
+  'no-outgoing-transactions': 'No outgoing transactions; incoming activity cannot be scanned.',
   'search-failed': 'History scan failed — nothing discovered.',
   'default': 'No discovered transactions to chart.',
 };
@@ -331,7 +330,8 @@ export function BalanceHistory({
   const symbol = chainInfo?.nativeCurrency.symbol ?? 'ETH';
 
   const series = useMemo(
-    () => computeBalancePoints(data !== undefined ? withBlockTimes(data) : [], currentBalance, address),
+    () =>
+      computeBalancePoints(data !== undefined ? withBlockTimes(data) : [], currentBalance, address),
     [data, currentBalance, address],
   );
   const geometry = useMemo(() => buildBalanceChartGeometry(series.points), [series.points]);
@@ -351,8 +351,7 @@ export function BalanceHistory({
       ? `${mainLine} L${geometry.xs[geometry.xs.length - 1].toFixed(2)},96 L${geometry.xs[gapFrom].toFixed(2)},96 Z`
       : '';
 
-  const truncated =
-    data !== undefined && data.transactions.length < data.total ? data : undefined;
+  const truncated = data !== undefined && data.transactions.length < data.total ? data : undefined;
 
   let body: ReactNode;
   if (data !== undefined) {
@@ -385,9 +384,7 @@ export function BalanceHistory({
                 y1={(geometry.ys[i] - 3).toFixed(2)}
                 x2={geometry.xs[i].toFixed(2)}
                 y2={(geometry.ys[i] + 3).toFixed(2)}
-                className={
-                  point.kind === 'tx' ? balanceChartTick : balanceChartTickMuted
-                }
+                className={point.kind === 'tx' ? balanceChartTick : balanceChartTickMuted}
                 data-testid="balance-point"
               >
                 <title>{tickTitle(point, series, decimals, symbol)}</title>
@@ -425,14 +422,13 @@ export function BalanceHistory({
             </li>
             {series.hasResidualGap && (
               <li className={balanceCaveat}>
-                Discovered changes do not reconcile with the live balance — balance
-                before the oldest discovered transaction is unknown.
+                Discovered changes do not reconcile with the live balance — balance before the
+                oldest discovered transaction is unknown.
               </li>
             )}
             {!series.anchored && (
               <li className={balanceCaveat}>
-                Live balance unavailable — showing discovered change only, not
-                absolute balance.
+                Live balance unavailable — showing discovered change only, not absolute balance.
               </li>
             )}
             {truncated !== undefined && (
@@ -451,10 +447,7 @@ export function BalanceHistory({
     body = (
       <div className={balanceUnavailable} data-testid="balance-history-error">
         Balance history unavailable
-        {query.error instanceof ApiError && query.error.message
-          ? ` — ${query.error.message}`
-          : ''}
-        .
+        {query.error instanceof ApiError && query.error.message ? ` — ${query.error.message}` : ''}.
       </div>
     );
   } else {

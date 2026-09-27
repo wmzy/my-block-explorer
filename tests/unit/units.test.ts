@@ -60,9 +60,7 @@ describe('formatValueByUnit (gwei/wei)', () => {
     // 2^60 = 1152921504606846976 — far beyond 2^53; any Number step would
     // visibly round the wei digits.
     const value = 2n ** 60n;
-    expect(formatValueByUnit(value, ETH, 'wei').text).toBe(
-      '1,152,921,504,606,846,976 wei',
-    );
+    expect(formatValueByUnit(value, ETH, 'wei').text).toBe('1,152,921,504,606,846,976 wei');
     // Gwei readout truncates the sub-gwei remainder (integer display).
     expect(formatValueByUnit(value, ETH, 'gwei').text).toBe('1,152,921,504 gwei');
   });
@@ -72,9 +70,7 @@ describe('formatValueByUnit (gwei/wei)', () => {
   });
 
   it('groups integer readouts in en-US', () => {
-    expect(formatValueByUnit(1234567n * 10n ** 9n, ETH, 'gwei').text).toBe(
-      '1,234,567 gwei',
-    );
+    expect(formatValueByUnit(1234567n * 10n ** 9n, ETH, 'gwei').text).toBe('1,234,567 gwei');
   });
 });
 

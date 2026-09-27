@@ -56,8 +56,8 @@ export default function NotFound() {
           <div className={errorCode}>404</div>
           <h1 className={title}>Page Not Found</h1>
           <p className={description}>
-            Sorry, the page you are looking for does not exist. The link may be
-            incorrect or the page has been moved.
+            Sorry, the page you are looking for does not exist. The link may be incorrect or the
+            page has been moved.
           </p>
 
           <div className={actions}>

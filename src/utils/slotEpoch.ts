@@ -65,7 +65,10 @@ export function deriveSlotEpoch(chainId: number, timestampSeconds: number): Slot
  * slot. Fractional seconds floor into the containing slot, matching the
  * Unix-seconds variant.
  */
-export function deriveSlotEpochFromIso(chainId: number, isoTimestamp: string): SlotEpoch | undefined {
+export function deriveSlotEpochFromIso(
+  chainId: number,
+  isoTimestamp: string,
+): SlotEpoch | undefined {
   const milliseconds = Date.parse(isoTimestamp);
   if (Number.isNaN(milliseconds)) return undefined;
   return deriveSlotEpoch(chainId, Math.floor(milliseconds / 1000));

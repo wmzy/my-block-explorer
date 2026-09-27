@@ -181,9 +181,7 @@ describe('clearChainCachedData client', () => {
     ];
     for (const body of bad) {
       fetchMock.mockResolvedValue(mockResponse(body));
-      await expect(clearChainCachedData(CHAIN)).rejects.toThrow(
-        /without (honest|a cleared)/i,
-      );
+      await expect(clearChainCachedData(CHAIN)).rejects.toThrow(/without (honest|a cleared)/i);
     }
   });
 });

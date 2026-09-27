@@ -29,9 +29,9 @@ const BAD_CHECKSUM = (() => {
   for (let i = 2; i < CHECKSUMMED_BASE.length; i++) {
     if (/[a-f]/.test(CHECKSUMMED_BASE[i])) {
       return (
-        CHECKSUMMED_BASE.slice(0, i)
-        + CHECKSUMMED_BASE[i].toUpperCase()
-        + CHECKSUMMED_BASE.slice(i + 1)
+        CHECKSUMMED_BASE.slice(0, i) +
+        CHECKSUMMED_BASE[i].toUpperCase() +
+        CHECKSUMMED_BASE.slice(i + 1)
       );
     }
   }

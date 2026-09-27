@@ -20,11 +20,7 @@ import { createRpcClient } from '@/utils/realTimeData';
 import { isBackendUnreachable } from '@/util/http';
 import { formatAddress } from '@/utils/format';
 import { fetchChainSearch } from '@/services/search';
-import {
-  resolveEnsAddress,
-  ensDestinations,
-  type EnsDestinations,
-} from '@/services/ensForward';
+import { resolveEnsAddress, ensDestinations, type EnsDestinations } from '@/services/ensForward';
 import {
   clearSearchHistory,
   readSearchHistory,
@@ -678,22 +674,16 @@ function ChainSelector({
       const count = filteredChains.length;
       if (count > 0) {
         setHighlightedIndex(prev =>
-          prev === null
-            ? step === 1
-              ? 0
-              : count - 1
-            : (prev + step + count) % count,
+          prev === null ? (step === 1 ? 0 : count - 1) : (prev + step + count) % count,
         );
       }
     } else if (e.key === 'Enter') {
-      const highlighted =
-        highlightedIndex !== null ? filteredChains[highlightedIndex] : undefined;
+      const highlighted = highlightedIndex !== null ? filteredChains[highlightedIndex] : undefined;
       if (highlighted) selectChain(highlighted.id);
     }
   };
 
-  const highlightedChain =
-    highlightedIndex !== null ? filteredChains[highlightedIndex] : undefined;
+  const highlightedChain = highlightedIndex !== null ? filteredChains[highlightedIndex] : undefined;
 
   return (
     <div className={selectorWrapper} data-chain-selector>
@@ -896,19 +886,11 @@ function EnsDestinationActions({
   const { primaryChainId, alternateChainId } = destinations;
   return (
     <>
-      <button
-        type="button"
-        className={searchNoticeLink}
-        onClick={() => onOpen(primaryChainId)}
-      >
+      <button type="button" className={searchNoticeLink} onClick={() => onOpen(primaryChainId)}>
         Open on {getChainName(primaryChainId)} →
       </button>
       {alternateChainId !== null && (
-        <button
-          type="button"
-          className={searchNoticeLink}
-          onClick={() => onOpen(alternateChainId)}
-        >
+        <button type="button" className={searchNoticeLink} onClick={() => onOpen(alternateChainId)}>
           on {getChainName(alternateChainId)} →
         </button>
       )}
@@ -1153,9 +1135,7 @@ export default function TopNavigation({
       // service for the single-writer DuckDB and serves different data.
       let payload: ChainSearchResponse | undefined;
       try {
-        payload = (await fetchChainSearch(chainId, query)) as
-        | ChainSearchResponse
-        | undefined;
+        payload = (await fetchChainSearch(chainId, query)) as ChainSearchResponse | undefined;
       } catch (error) {
         // Offline: the selected chain's own RPC can still confirm the
         // number before the search gives up (see searchViaChainRpc).
@@ -1223,9 +1203,7 @@ export default function TopNavigation({
 
       // A degraded response means a data source errored — never worded as
       // a definitive "no results".
-      setSearchNotice(
-        payload?.degraded ? { kind: 'failed', query } : { kind: 'miss', query },
-      );
+      setSearchNotice(payload?.degraded ? { kind: 'failed', query } : { kind: 'miss', query });
       return;
     }
 
@@ -1296,10 +1274,7 @@ export default function TopNavigation({
         // ('unknown') is skipped too: its outcome is unknown until the
         // Search view lands somewhere, and that landing is what records.
         const dispatchType = detectSearchType(sanitizeInput(searchQuery.trim()));
-        if (
-          dispatchType !== 'ens'
-          && dispatchType !== 'unknown'
-        ) {
+        if (dispatchType !== 'ens' && dispatchType !== 'unknown') {
           setHistory(recordSearchHistoryEntry(sanitizeInput(searchQuery.trim()), currentChainId));
         }
         await onSearch(searchQuery.trim());
@@ -1313,9 +1288,7 @@ export default function TopNavigation({
       // data-source wording — neither is ever worded as "no results".
       const query = sanitizeInput(searchQuery.trim());
       setSearchNotice(
-        isBackendUnreachable(error)
-          ? { kind: 'unreachable', query }
-          : { kind: 'failed', query },
+        isBackendUnreachable(error) ? { kind: 'unreachable', query } : { kind: 'failed', query },
       );
       console.error('Search failed:', error);
     } finally {
@@ -1391,11 +1364,7 @@ export default function TopNavigation({
                 Signatures, Coverage legend, Broadcast…) — also the
                 command palette's touch fallback. Not chain-scoped, so it
                 links the bare /tools path like the admin group below. */}
-            <button
-              type="button"
-              className={navLink}
-              onClick={() => goTo('/tools')}
-            >
+            <button type="button" className={navLink} onClick={() => goTo('/tools')}>
               Tools
             </button>
             {/* Admin group, visually separated from the page links: the
@@ -1469,9 +1438,9 @@ export default function TopNavigation({
                     `ENS resolution failed for "${searchNotice.query}" — Ethereum RPC did not answer`}
                 </span>
                 <span className={searchNoticeActions}>
-                  {(searchNotice.kind === 'miss'
-                    || searchNotice.kind === 'block-miss'
-                    || searchNotice.kind === 'failed') && (
+                  {(searchNotice.kind === 'miss' ||
+                    searchNotice.kind === 'block-miss' ||
+                    searchNotice.kind === 'failed') && (
                     <button
                       type="button"
                       className={searchNoticeLink}

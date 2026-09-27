@@ -203,7 +203,11 @@ describe('catchupScanJob', () => {
 
   it('400 invalid_state → rejects with the backend message verbatim and its discriminator code', async () => {
     mocks.post.mockRejectedValue(
-      new ApiError('Scan is running — wait for it to finish or pause it first', 400, 'invalid_state'),
+      new ApiError(
+        'Scan is running — wait for it to finish or pause it first',
+        400,
+        'invalid_state',
+      ),
     );
     await expect(catchupScanJob(CHAIN_ID, ADDRESS)).rejects.toMatchObject({
       message: 'Scan is running — wait for it to finish or pause it first',

@@ -192,9 +192,9 @@ describe('TransactionsList anchor notices', () => {
     );
     expect(empty.closest('[data-testid="alert"]')?.getAttribute('variant')).toBe('info');
     expect(
-      screen.queryByText('No transactions in the scanned range — go older to continue')?.closest(
-        '[variant="danger"]',
-      ),
+      screen
+        .queryByText('No transactions in the scanned range — go older to continue')
+        ?.closest('[variant="danger"]'),
     ).toBeNull();
   });
 });

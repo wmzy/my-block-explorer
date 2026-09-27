@@ -267,10 +267,7 @@ export class StorageLayoutService {
       await db
         .delete(storageLayouts)
         .where(
-          and(
-            eq(storageLayouts.chainId, chainId),
-            eq(storageLayouts.address, formattedAddress),
-          ),
+          and(eq(storageLayouts.chainId, chainId), eq(storageLayouts.address, formattedAddress)),
         );
       return null;
     }

@@ -10,9 +10,7 @@ import { getAddress } from 'viem';
 
 export type AddressValidityTier = 'format' | 'checksum';
 
-export type AddressValidity =
-  | { valid: true }
-  | { valid: false; tier: AddressValidityTier };
+export type AddressValidity = { valid: true } | { valid: false; tier: AddressValidityTier };
 
 // 0x-prefixed, 40 hex characters — the shape both tiers below assume.
 const HEX_ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;

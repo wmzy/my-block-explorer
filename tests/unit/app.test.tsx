@@ -22,14 +22,14 @@ const children = (routes.children ?? []) as Array<{
 }>;
 
 const byPath = (path: string) => {
-  const route = children.find((r) => r.path === path);
+  const route = children.find(r => r.path === path);
   if (!route) throw new Error(`route not found: ${path}`);
   return route;
 };
 
 describe('route table', () => {
   it('declares exactly the known flat path set', () => {
-    expect(children.map((r) => r.path)).toEqual([
+    expect(children.map(r => r.path)).toEqual([
       '/',
       '/chain/:chainId',
       '/chain/:chainId/blocks',

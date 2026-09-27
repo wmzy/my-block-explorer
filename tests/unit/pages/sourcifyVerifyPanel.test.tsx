@@ -13,11 +13,7 @@ import Contract from '@/views/Contract';
 import { SourcifyVerifyPanel } from '@/views/Contract/SourcifyVerifyPanel';
 import { post } from '@/util/http';
 import { ApiError } from '@/util/apiError';
-import {
-  useContractCreation,
-  useContractSource,
-  useStorageLayout,
-} from '@/services/contracts';
+import { useContractCreation, useContractSource, useStorageLayout } from '@/services/contracts';
 
 // jsdom implements neither Element.scrollIntoView nor :focus scrolling.
 beforeAll(() => {
@@ -144,17 +140,13 @@ describe('Contract view - verify affordance', () => {
     renderAt(`/chain/1/contract/${ADDRESS}`);
 
     await screen.findByText('TestToken');
-    expect(
-      screen.queryByRole('button', { name: 'Verify in this page' }),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Verify in this page' })).not.toBeInTheDocument();
   });
 });
 
 describe('SourcifyVerifyPanel', () => {
   const renderPanel = () =>
-    render(
-      <SourcifyVerifyPanel chainId={1} address={ADDRESS} onVerified={vi.fn()} />,
-    );
+    render(<SourcifyVerifyPanel chainId={1} address={ADDRESS} onVerified={vi.fn()} />);
 
   const upload = async (user: ReturnType<typeof userEvent.setup>, files: File[]) => {
     const input = screen.getByLabelText('Verification files');
@@ -272,9 +264,7 @@ describe('SourcifyVerifyPanel', () => {
 
   it('attributes a 502 to the sourcify round trip and invites a retry', async () => {
     const user = userEvent.setup();
-    vi.mocked(post).mockRejectedValue(
-      new ApiError('Sourcify server error (HTTP 502).', 502),
-    );
+    vi.mocked(post).mockRejectedValue(new ApiError('Sourcify server error (HTTP 502).', 502));
     renderPanel();
 
     await upload(user, [metadataFile(), sourceFile()]);

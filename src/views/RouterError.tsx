@@ -90,9 +90,8 @@ export default function RouterError({ error }: { error: unknown }) {
             <Title level={3}>This address is not a contract</Title>
             <p className={message}>{text}</p>
             <p>
-              It holds no on-chain code on {targetChainName} — it is an
-              externally owned account (or has none deployed). Open it as a
-              regular address instead.
+              It holds no on-chain code on {targetChainName} — it is an externally owned account (or
+              has none deployed). Open it as a regular address instead.
             </p>
             {address !== undefined && (
               <p>
@@ -102,9 +101,7 @@ export default function RouterError({ error }: { error: unknown }) {
               </p>
             )}
             <p>
-              <TypedLink to={`/chain/${targetChainId}`}>
-                Back to {targetChainName}
-              </TypedLink>
+              <TypedLink to={`/chain/${targetChainId}`}>Back to {targetChainName}</TypedLink>
             </p>
           </CardContent>
         </Card>
@@ -146,9 +143,7 @@ export default function RouterError({ error }: { error: unknown }) {
           <Title level={3}>Something went wrong</Title>
           <p className={message}>{text}</p>
           <p>
-            <TypedLink to={`/chain/${targetChainId}`}>
-              Back to {targetChainName}
-            </TypedLink>
+            <TypedLink to={`/chain/${targetChainId}`}>Back to {targetChainName}</TypedLink>
           </p>
         </CardContent>
       </Card>

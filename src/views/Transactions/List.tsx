@@ -107,9 +107,7 @@ export const searchSchema = z.object({
 
 // Anchor notice the list owes the user when the ?block= deep link is not
 // usable as given. Pure logic, exported for focused unit tests.
-export type TxAnchorNotice =
-  | { kind: 'invalid-block' }
-  | { kind: 'future-anchor'; block: number };
+export type TxAnchorNotice = { kind: 'invalid-block' } | { kind: 'future-anchor'; block: number };
 
 // Pure: which anchor notice (if any) applies. Priority is invalid-block >
 // future-anchor > none. A malformed ?block= the schema dropped outranks
@@ -226,10 +224,13 @@ export default function TransactionsList() {
     }
     if (rawBlockParam === null || invalidBlockDropped) return;
     setInvalidBlockDropped(true);
-    void setSearch(prev => {
-      const { block: _dropped, ...rest } = prev;
-      return rest;
-    }, { replace: true });
+    void setSearch(
+      prev => {
+        const { block: _dropped, ...rest } = prev;
+        return rest;
+      },
+      { replace: true },
+    );
   }, [blockParam, rawBlockParam, invalidBlockDropped, setSearch]);
 
   // Head entry (no cursor): the Refresh vehicle at the live head. Its key

@@ -61,17 +61,12 @@ export function rankHolderShares(
   isErc20: boolean,
   topN = 10,
 ): RankedHolders {
-  const full = computeDiscoveredHolders(
-    transfers,
-    token,
-    isErc20,
-    allParticipants(transfers),
-  );
+  const full = computeDiscoveredHolders(transfers, token, isErc20, allParticipants(transfers));
   let discoveredSupply = 0n;
   for (const holder of full.holders) {
     if (holder.net > 0n) discoveredSupply += holder.net;
   }
-  const shares = full.holders.slice(0, topN).map((holder) => ({
+  const shares = full.holders.slice(0, topN).map(holder => ({
     address: holder.address,
     net: holder.net,
     shareBps:

@@ -197,9 +197,7 @@ describe('Tools page', () => {
   it('renders the Backup & restore card as an honest pointer, not a link', async () => {
     renderTools();
 
-    expect(
-      await screen.findByRole('heading', { name: 'Backup & restore' }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Backup & restore' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Open Backup & restore' })).not.toBeInTheDocument();
     // It says where the feature actually lives.
     expect(screen.getByText(/settings modal/)).toBeInTheDocument();

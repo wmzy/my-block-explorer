@@ -155,10 +155,7 @@ export function createRateLimiter(config: RateLimiterConfig): MiddlewareHandler 
 
   const refillPerMs = requestsPerMinute / 60_000;
 
-  const evaluate = (
-    client: string,
-    now: number,
-  ): { allowed: boolean; retryAfterMs: number } => {
+  const evaluate = (client: string, now: number): { allowed: boolean; retryAfterMs: number } => {
     const key = `${name}|${client}`;
     const bucket = buckets.get(key);
 

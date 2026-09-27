@@ -87,25 +87,18 @@ export function deriveNftItems(
   for (const transfer of transfers) {
     if (transfer.token.toLowerCase() !== tokenLower) continue;
 
-    if (
-      transfer.standard === 'erc1155-single' ||
-      transfer.standard === 'erc1155-batch'
-    ) {
+    if (transfer.standard === 'erc1155-single' || transfer.standard === 'erc1155-batch') {
       const ids = transfer.tokenIds ?? [];
       const amounts = transfer.amounts ?? [];
       // Mint adds, burn subtracts; a plain transfer moves units between
       // holders and nets nothing for supply.
-      const sign =
-        transfer.from === ZERO_ADDRESS
-          ? 1n
-          : transfer.to === ZERO_ADDRESS
-            ? -1n
-            : 0n;
+      const sign = transfer.from === ZERO_ADDRESS ? 1n : transfer.to === ZERO_ADDRESS ? -1n : 0n;
       for (let i = 0; i < ids.length; i += 1) {
         // A single row's amount also rides `value` (pre-amounts payloads
         // stay renderable); a batch's `value` is the id count, never an
         // amount, so batch amounts have no fallback.
-        const raw = transfer.standard === 'erc1155-single' ? (amounts[i] ?? transfer.value) : amounts[i];
+        const raw =
+          transfer.standard === 'erc1155-single' ? (amounts[i] ?? transfer.value) : amounts[i];
         const amount = parseDecimalInteger(raw ?? '');
         if (amount === null) continue; // malformed pair: contributes nothing
         const item = itemFor('erc1155', ids[i]);

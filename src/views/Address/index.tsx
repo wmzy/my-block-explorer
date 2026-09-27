@@ -24,10 +24,7 @@ import {
   computeDiscoveredHolders,
   formatTokenSupply,
 } from '@/views/Address/tokenOverview';
-import {
-  classifyAddressType,
-  delegationTarget,
-} from '@/views/Address/addressType';
+import { classifyAddressType, delegationTarget } from '@/views/Address/addressType';
 import { checkAddressValidity } from '@/views/Address/addressValidity';
 import {
   addressSearchSchema,
@@ -62,13 +59,14 @@ import {
 } from '@/services/addresses';
 import { useTokenUsdPrices } from '@/services/prices';
 import { UsdValue } from '@/components/ui/UsdValue';
-import {
-  useContractCode,
-  useRealTimeAddressData,
-} from '@/services/addressRealTime';
+import { useContractCode, useRealTimeAddressData } from '@/services/addressRealTime';
 import { useTokenTransfers } from '@/services/tokenTransfers';
 import { useTokenOverview } from '@/services/tokenMetadata';
-import { BalanceHistory, useBalanceHistoryQuery, withBlockTimes } from '@/views/Address/BalanceHistory';
+import {
+  BalanceHistory,
+  useBalanceHistoryQuery,
+  withBlockTimes,
+} from '@/views/Address/BalanceHistory';
 import KnownTokens from '@/views/Address/KnownTokens';
 import NftHoldings from '@/views/Address/NftHoldings';
 import InternalTxns from '@/views/Address/InternalTxns';
@@ -471,11 +469,7 @@ type AddressTxPage = {
   /** Discovered (deduped) count — never the nonce (new API contract). */
   total: number;
   coverage?: 'complete' | 'partial' | 'none';
-  reason?:
-    | 'no-transactions'
-    | 'no-outgoing-transactions'
-    | 'zero-balance'
-    | 'search-failed';
+  reason?: 'no-transactions' | 'no-outgoing-transactions' | 'zero-balance' | 'search-failed';
   searchWindowBlocks?: number;
 };
 
@@ -540,13 +534,7 @@ function TxStatusBadge({
 // tier comes from the address string itself, so the card is query-error
 // agnostic — the queries' 400s are a symptom of the same verdict, not
 // additional information worth surfacing.
-export function InvalidAddressError({
-  address,
-  chainId,
-}: {
-  address: string;
-  chainId: number;
-}) {
+export function InvalidAddressError({ address, chainId }: { address: string; chainId: number }) {
   const validity = checkAddressValidity(address);
   // Shape tier: no checksum exists to retry in lowercase, so checksum
   // advice (and a lowercase link) would be misleading.
@@ -562,10 +550,7 @@ export function InvalidAddressError({
     <>
       <ErrorState message="This address has an invalid checksum — its mixed-case form disagrees with the EIP-55 checksum. Copy the address from a trusted source, or use the all-lowercase form below." />
       <div className={errorSecondary}>
-        <TypedLink
-          to={`/chain/${chainId}/address/${address.toLowerCase()}`}
-          className={linkStyle}
-        >
+        <TypedLink to={`/chain/${chainId}/address/${address.toLowerCase()}`} className={linkStyle}>
           Open the all-lowercase form →
         </TypedLink>
       </div>
@@ -593,9 +578,7 @@ function holdingRowContent(
     // honest fallback for an incomplete metadata record (never a guessed
     // 18-decimal formatting).
     const formatAmount = (amount: bigint): string =>
-      meta?.decimals !== undefined
-        ? formatUnits(amount, meta.decimals)
-        : amount.toString();
+      meta?.decimals !== undefined ? formatUnits(amount, meta.decimals) : amount.toString();
     const symbolSuffix = meta?.symbol !== undefined ? ` ${meta.symbol}` : '';
     if (verifiedBalance === undefined) {
       return {
@@ -723,9 +706,7 @@ function HoldingsList({
         const { text, title } = holdingRowContent(
           holding,
           metas[holding.token.toLowerCase()],
-          holding.kind === 'erc20'
-            ? verifiedBalances[holding.token.toLowerCase()]
-            : undefined,
+          holding.kind === 'erc20' ? verifiedBalances[holding.token.toLowerCase()] : undefined,
         );
         return (
           <TypedLink
@@ -851,9 +832,7 @@ const NOTE_MAX_CHARS = 500;
 // the previous settle across args switches.
 function AddressLabelRow({ chainId, address }: { chainId: number; address: string }) {
   const labelQuery = useAddressLabel(chainId, address);
-  const saved = labelMatchesTarget(labelQuery.data, chainId, address)
-    ? labelQuery.data
-    : undefined;
+  const saved = labelMatchesTarget(labelQuery.data, chainId, address) ? labelQuery.data : undefined;
 
   const [editing, setEditing] = useState(false);
   const [labelDraft, setLabelDraft] = useState('');
@@ -899,11 +878,9 @@ function AddressLabelRow({ chainId, address }: { chainId: number; address: strin
       );
       await labelQuery.refetch();
       setEditing(false);
-    }
-    catch (error) {
+    } catch (error) {
       setEditorHint(classifySaveError(error));
-    }
-    finally {
+    } finally {
       setSaving(false);
     }
   };
@@ -915,18 +892,15 @@ function AddressLabelRow({ chainId, address }: { chainId: number; address: strin
       await deleteAddressLabel(chainId, address);
       await labelQuery.refetch();
       setEditing(false);
-    }
-    catch (error) {
+    } catch (error) {
       // A 404 on remove means the label is already gone — the goal state.
       if (error instanceof ApiError && error.status === 404) {
         await labelQuery.refetch();
         setEditing(false);
-      }
-      else {
+      } else {
         setEditorHint(classifySaveError(error));
       }
-    }
-    finally {
+    } finally {
       setSaving(false);
     }
   };
@@ -983,12 +957,7 @@ function AddressLabelRow({ chainId, address }: { chainId: number; address: strin
           >
             Save
           </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={cancelEditing}
-            disabled={saving}
-          >
+          <Button variant="ghost" size="sm" onClick={cancelEditing} disabled={saving}>
             Cancel
           </Button>
           {saved !== undefined && (
@@ -1012,11 +981,7 @@ function AddressLabelRow({ chainId, address }: { chainId: number; address: strin
   // fields' offline notice).
   if (labelQuery.error !== undefined) {
     return (
-      <span
-        className={labelHint}
-        title={labelQuery.error.message}
-        data-testid="label-unavailable"
-      >
+      <span className={labelHint} title={labelQuery.error.message} data-testid="label-unavailable">
         Label unavailable
       </span>
     );
@@ -1041,15 +1006,9 @@ function AddressLabelRow({ chainId, address }: { chainId: number; address: strin
 
   return (
     <>
-      <span
-        className={labelChip}
-        title={saved.note ?? undefined}
-        data-testid="label-chip"
-      >
+      <span className={labelChip} title={saved.note ?? undefined} data-testid="label-chip">
         {saved.label}
-        {saved.note !== null && (
-          <span aria-label="This label has a note">ⓘ</span>
-        )}
+        {saved.note !== null && <span aria-label="This label has a note">ⓘ</span>}
       </span>
       {saved.source === 'builtin' && (
         <span
@@ -1181,27 +1140,21 @@ export function SummaryStatsRow({
   /** Full discovered count for the window — rows may be a capped slice; the caveat says which. */
   discoveredTotal?: number;
 }) {
-  const stats = useMemo(
-    () => computeAddressSummaryStats(rows, address),
-    [rows, address],
-  );
+  const stats = useMemo(() => computeAddressSummaryStats(rows, address), [rows, address]);
 
   // Boundaries still needing a timestamp: the row carried none and no
   // cached lookup (success or failure) answered yet.
-  const pendingBlocks = [stats.firstSeen, stats.lastSeen].reduce<number[]>(
-    (acc, boundary) => {
-      if (
-        boundary !== null &&
-        boundary.timestamp === undefined &&
-        !blockTimestampCache.has(`${chainId}:${boundary.blockNumber}`) &&
-        !acc.includes(boundary.blockNumber)
-      ) {
-        acc.push(boundary.blockNumber);
-      }
-      return acc;
-    },
-    [],
-  );
+  const pendingBlocks = [stats.firstSeen, stats.lastSeen].reduce<number[]>((acc, boundary) => {
+    if (
+      boundary !== null &&
+      boundary.timestamp === undefined &&
+      !blockTimestampCache.has(`${chainId}:${boundary.blockNumber}`) &&
+      !acc.includes(boundary.blockNumber)
+    ) {
+      acc.push(boundary.blockNumber);
+    }
+    return acc;
+  }, []);
   const pendingKey = `${chainId}:${pendingBlocks.join(',')}`;
   // Lookup outcomes only re-render the strip (the cache itself is the
   // display's source of truth above).
@@ -1239,17 +1192,11 @@ export function SummaryStatsRow({
   const cells = [
     {
       label: 'First Seen',
-      value: formatSeenBoundary(
-        withCachedTimestamp(chainId, stats.firstSeen),
-        formatDateTimeLocal,
-      ),
+      value: formatSeenBoundary(withCachedTimestamp(chainId, stats.firstSeen), formatDateTimeLocal),
     },
     {
       label: 'Last Seen',
-      value: formatSeenBoundary(
-        withCachedTimestamp(chainId, stats.lastSeen),
-        formatDateTimeLocal,
-      ),
+      value: formatSeenBoundary(withCachedTimestamp(chainId, stats.lastSeen), formatDateTimeLocal),
     },
     { label: 'Total In', value: formatNativeTotal(stats.totalIn, decimals, symbol) },
     { label: 'Total Out', value: formatNativeTotal(stats.totalOut, decimals, symbol) },
@@ -1296,9 +1243,7 @@ function SectionAnchorNav({ anchors }: { anchors: SectionAnchor[] }) {
             event.preventDefault();
             const target = document.getElementById(anchor.id);
             if (target === null) return;
-            const reducedMotion = window.matchMedia(
-              '(prefers-reduced-motion: reduce)',
-            ).matches;
+            const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
             if (typeof target.scrollIntoView === 'function') {
               target.scrollIntoView({
                 behavior: reducedMotion ? 'auto' : 'smooth',
@@ -1512,9 +1457,7 @@ export default function Address() {
   // Cross-chain guard (the chart's own pattern): the query layer keeps
   // the last settle across an args switch — only same-chain data serves.
   const balanceHistoryPage =
-    balanceHistoryQuery.data?.chainId === currentChainId
-      ? balanceHistoryQuery.data
-      : undefined;
+    balanceHistoryQuery.data?.chainId === currentChainId ? balanceHistoryQuery.data : undefined;
   const summaryStatsRows = useMemo(
     () => (balanceHistoryPage === undefined ? [] : withBlockTimes(balanceHistoryPage)),
     [balanceHistoryPage],
@@ -1562,8 +1505,7 @@ export default function Address() {
   // Persistent record + code read (both declared here so the type verdict
   // below — which must precede the token-mode holders query — can read
   // them without forward references).
-  const persistent: AddressInfoResponse['address'] | undefined =
-    infoQuery.data?.address;
+  const persistent: AddressInfoResponse['address'] | undefined = infoQuery.data?.address;
   const code = codeQuery.data;
 
   // Presentation-layer type verdict (./addressType): the persistent
@@ -1577,8 +1519,7 @@ export default function Address() {
   // feed below branches on the settled token verdict, and hooks cannot
   // be ordered after the values they feed.
   const addressType = classifyAddressType({
-    persistentType:
-      infoQuery.error === undefined ? persistent?.isContract : undefined,
+    persistentType: infoQuery.error === undefined ? persistent?.isContract : undefined,
     rpcCode: code,
   });
   // Independent RPC verdict for the contract-view link below: the link is
@@ -1591,19 +1532,14 @@ export default function Address() {
   // Explicit `=== true` keeps this a plain-boolean || (not nullish), so the
   // either-channel-suffices semantics survives the nullish-coalescing rule.
   const showsContractLink =
-    addressType !== 'delegated-eoa' &&
-    (persistent?.isContract === true || rpcClassifiesContract);
+    addressType !== 'delegated-eoa' && (persistent?.isContract === true || rpcClassifiesContract);
 
   // Token Overview detection (contracts only): one Multicall3 batch of
   // name()/symbol()/decimals()/totalSupply() decides token-ness and the
   // supply. EOAs (and unsettled classifications) arm nothing — zero
   // multicall, zero network. A transport-level failure stays undefined so
   // the card renders nothing rather than a wrong "not a token" verdict.
-  const tokenOverviewReads = useTokenOverview(
-    currentChainId,
-    address,
-    addressType === 'contract',
-  );
+  const tokenOverviewReads = useTokenOverview(currentChainId, address, addressType === 'contract');
   // Pure classification: null = not a token (or not settled) → no card.
   const tokenClassification = classifyTokenOverview(tokenOverviewReads);
 
@@ -1653,9 +1589,7 @@ export default function Address() {
   // aggregation (pre-mode legacy payloads without a mode field are
   // trusted as-is).
   const tokenHoldersData =
-    tokenHoldersQuery.data?.mode === 'participant'
-      ? undefined
-      : tokenHoldersQuery.data;
+    tokenHoldersQuery.data?.mode === 'participant' ? undefined : tokenHoldersQuery.data;
   const tokenHoldersTransfers = tokenHoldersData?.transfers ?? [];
   // Metadata is only meaningful for the shared ERC-20/721 signature —
   // ERC-1155 rows carry their ids/amounts on the log themselves.
@@ -1695,21 +1629,20 @@ export default function Address() {
   const erc20Holdings = useMemo(
     () =>
       holdings.filter(
-        (holding): holding is Extract<TokenHolding, { kind: 'erc20' }> =>
-          holding.kind === 'erc20',
+        (holding): holding is Extract<TokenHolding, { kind: 'erc20' }> => holding.kind === 'erc20',
       ),
     [holdings],
   );
   const erc20HoldingPrices = useTokenUsdPrices(
     currentChainId,
-    erc20Holdings.map((holding) => holding.token),
+    erc20Holdings.map(holding => holding.token),
   );
   const holdingsUsdEstimate = useMemo(
     () =>
       erc20HoldingPrices === undefined
         ? null
         : estimateHoldingsUsd(
-            erc20Holdings.map((holding) => ({
+            erc20Holdings.map(holding => ({
               amount: holding.net,
               decimals: tokenMetas[holding.token.toLowerCase()]?.decimals,
               price: erc20HoldingPrices.get(holding.token.toLowerCase()),
@@ -1734,8 +1667,7 @@ export default function Address() {
   // balances from the token-mode scan rows (each row IS this token),
   // ERC-20 semantics only, ids excluded.
   const tokenHolders = useMemo(
-    () =>
-      tokenIsErc20 ? computeDiscoveredHolders(tokenHoldersTransfers, address, true) : null,
+    () => (tokenIsErc20 ? computeDiscoveredHolders(tokenHoldersTransfers, address, true) : null),
     [tokenIsErc20, tokenHoldersTransfers, address],
   );
 
@@ -1754,8 +1686,7 @@ export default function Address() {
     knownTokensQuery.data.address === knownTokensOwner
       ? knownTokensQuery.data
       : undefined;
-  const knownTokensPresent =
-    knownTokensCurated.length > 0 && knownTokensData !== undefined;
+  const knownTokensPresent = knownTokensCurated.length > 0 && knownTokensData !== undefined;
 
   // NFT-holdings presence mirrors NftHoldings' own gate over the SAME
   // inputs (same transfers rows, same shared metadata cache → the same
@@ -1774,12 +1705,9 @@ export default function Address() {
   // Old error semantics: the persistent error only surfaces when the code
   // fallback failed too; the realtime error surfaces on its own.
   const persistentError =
-    infoQuery.error !== undefined && codeQuery.error !== undefined
-      ? infoQuery.error
-      : undefined;
+    infoQuery.error !== undefined && codeQuery.error !== undefined ? infoQuery.error : undefined;
   const hasError = persistentError ?? realTimeQuery.error;
-  const errorMessage =
-    persistentError?.message ?? realTimeQuery.error?.message;
+  const errorMessage = persistentError?.message ?? realTimeQuery.error?.message;
 
   const getDirection = (tx: TxRecord) => {
     const lowerAddr = address?.toLowerCase();
@@ -1826,16 +1754,11 @@ export default function Address() {
   // semantics) via preload + commitReplace, so Back from the switched
   // view never resurfaces the same address on the previous chain.
   const handleChainChange = (newChainId: number) => {
-    void redirectReplace(router, `/chain/${newChainId}/address/${address}`).catch(
-      () => undefined,
-    );
+    void redirectReplace(router, `/chain/${newChainId}/address/${address}`).catch(() => undefined);
   };
 
   const isInitialLoading =
-    infoQuery.loading &&
-    realTimeQuery.loading &&
-    !infoQuery.data &&
-    !realTimeQuery.data;
+    infoQuery.loading && realTimeQuery.loading && !infoQuery.data && !realTimeQuery.data;
 
   if (!chainInfo) {
     return (
@@ -1898,9 +1821,10 @@ export default function Address() {
   const txCoverage = txData?.coverage;
   const txReason = txData?.reason;
   const txSearchWindowBlocks = txData?.searchWindowBlocks;
-  const searchWindowLabel = txSearchWindowBlocks !== undefined
-    ? `within the last ${txSearchWindowBlocks.toLocaleString()} blocks`
-    : 'within a capped block window';
+  const searchWindowLabel =
+    txSearchWindowBlocks !== undefined
+      ? `within the last ${txSearchWindowBlocks.toLocaleString()} blocks`
+      : 'within a capped block window';
   const externalToolLinks = getExternalToolLinks(currentChainId, address);
 
   // "Search deeper" escalation: quadruple the effective window, capped at
@@ -1908,11 +1832,11 @@ export default function Address() {
   // searchWindowBlocks) jumps straight to the cap — the only step that
   // guarantees progress when the current range cannot be read.
   const searchWindowAtCap =
-    txSearchWindowBlocks !== undefined &&
-    txSearchWindowBlocks >= MAX_SEARCH_WINDOW_BLOCKS;
-  const nextSearchWindow = txSearchWindowBlocks !== undefined
-    ? Math.min(txSearchWindowBlocks * 4, MAX_SEARCH_WINDOW_BLOCKS)
-    : MAX_SEARCH_WINDOW_BLOCKS;
+    txSearchWindowBlocks !== undefined && txSearchWindowBlocks >= MAX_SEARCH_WINDOW_BLOCKS;
+  const nextSearchWindow =
+    txSearchWindowBlocks !== undefined
+      ? Math.min(txSearchWindowBlocks * 4, MAX_SEARCH_WINDOW_BLOCKS)
+      : MAX_SEARCH_WINDOW_BLOCKS;
 
   // Totals honesty: `total` is what heuristic discovery actually found —
   // a floor, not a full-indexer count. Only authoritative 'complete'
@@ -2021,9 +1945,7 @@ export default function Address() {
         {/* Real failures only: an invalid address never reaches this
             branch (the page-level validity guard above owns that
             verdict), so the raw message needs no message-sniffing. */}
-        {hasError && !isInitialLoading && (
-          <ErrorState message={`Error: ${errorMessage}`} />
-        )}
+        {hasError && !isInitialLoading && <ErrorState message={`Error: ${errorMessage}`} />}
 
         {!isInitialLoading && (
           <>
@@ -2039,10 +1961,9 @@ export default function Address() {
             {persistentOffline && (
               <div className={offlineNotice} role="status">
                 <Alert variant="warning">
-                  Indexed address details are unavailable — the explorer&apos;s
-                  indexing backend is not connected; balance, nonce and the
-                  type classification below still come from the live chain
-                  RPC (per-source detail in the coverage badge above).
+                  Indexed address details are unavailable — the explorer&apos;s indexing backend is
+                  not connected; balance, nonce and the type classification below still come from
+                  the live chain RPC (per-source detail in the coverage badge above).
                 </Alert>
               </div>
             )}
@@ -2152,8 +2073,7 @@ export default function Address() {
                             <p className={holdingsCaveat}>
                               Based on discovered transfers — may be incomplete
                               {holdingsUsdEstimate !== null &&
-                                holdingsUsdEstimate.pricedTokens <
-                                  holdingsUsdEstimate.erc20Tokens
+                                holdingsUsdEstimate.pricedTokens < holdingsUsdEstimate.erc20Tokens
                                 ? ' · valued at market price where available'
                                 : ''}
                             </p>
@@ -2221,11 +2141,13 @@ export default function Address() {
                             ⓘ
                           </button>
                         </>
-                      ) : realTimeQuery.loading
-                        ? 'Loading...'
-                        : realTimeQuery.error
-                          ? 'Error loading count'
-                          : 'N/A'}
+                      ) : realTimeQuery.loading ? (
+                        'Loading...'
+                      ) : realTimeQuery.error ? (
+                        'Error loading count'
+                      ) : (
+                        'N/A'
+                      )}
                     </InfoItem>
 
                     <InfoItem label="Type">
@@ -2349,9 +2271,7 @@ export default function Address() {
               className={tokenOverviewCard}
               chainId={currentChainId}
               address={address}
-              currentBalance={
-                realTimeQuery.data ? BigInt(realTimeQuery.data.balanceWei) : null
-              }
+              currentBalance={realTimeQuery.data ? BigInt(realTimeQuery.data.balanceWei) : null}
               searchWindow={txSearchWindow}
             />
 
@@ -2391,9 +2311,7 @@ export default function Address() {
                       <InfoItem label="Symbol">{tokenClassification.symbol}</InfoItem>
                     )}
                     {tokenClassification.decimals !== null && (
-                      <InfoItem label="Decimals">
-                        {tokenClassification.decimals}
-                      </InfoItem>
+                      <InfoItem label="Decimals">{tokenClassification.decimals}</InfoItem>
                     )}
                     {tokenClassification.totalSupply !== null && (
                       <InfoItem label="Total Supply">
@@ -2418,8 +2336,8 @@ export default function Address() {
                         {!transfersScanned ? (
                           <>
                             <span className={holdingsHint}>
-                              Holders are discovered from token transfers —
-                              none have been scanned for this address yet.
+                              Holders are discovered from token transfers — none have been scanned
+                              for this address yet.
                             </span>
                             <Button
                               variant="secondary"
@@ -2455,8 +2373,7 @@ export default function Address() {
                               </div>
                             ))}
                             <p className={holdingsCaveat}>
-                              Discovered via scanned transfers — may be
-                              incomplete
+                              Discovered via scanned transfers — may be incomplete
                               {tokenHolders.excludedTransfers > 0
                                 ? ` (non-ERC-20 rows excluded: ${tokenHolders.excludedTransfers.toLocaleString()})`
                                 : ''}
@@ -2505,12 +2422,9 @@ export default function Address() {
                         {...(txExportDisabledReason === undefined
                           ? { href: txExportHref, download: true }
                           : {})}
-                        aria-disabled={
-                          txExportDisabledReason !== undefined ? true : undefined
-                        }
+                        aria-disabled={txExportDisabledReason !== undefined ? true : undefined}
                         title={
-                          txExportDisabledReason
-                          ?? 'Download the discovered transactions as CSV'
+                          txExportDisabledReason ?? 'Download the discovered transactions as CSV'
                         }
                         data-testid="tx-export-csv"
                       >
@@ -2587,9 +2501,8 @@ export default function Address() {
                     full per-source wording (incl. the ERC-20/721/1155
                     enumeration). */}
                       <p className={tokenNotice}>
-                        This list covers external transactions only — internal
-                        transfers are traced in the Internal Txns tab, token
-                        transfers in the Token Transfers tab.
+                        This list covers external transactions only — internal transfers are traced
+                        in the Internal Txns tab, token transfers in the Token Transfers tab.
                       </p>
 
                       {/* Advanced filters (tx tab only): From/To addresses,
@@ -2616,11 +2529,7 @@ export default function Address() {
                         field, parsed defensively) while its own live GET
                         settles; unmounting on tab switch also stops the
                         panel's poll cadence. */}
-                      <DeepScan
-                        chainId={currentChainId}
-                        address={address}
-                        txPayload={txData}
-                      />
+                      <DeepScan chainId={currentChainId} address={address} txPayload={txData} />
 
                       {txQuery.loading && (
                         <LoadingState message="Scanning recent chain history..." />
@@ -2628,7 +2537,10 @@ export default function Address() {
 
                       {txQuery.error && <ErrorState message={txQuery.error.message} />}
 
-                      {!txQuery.loading && !txQuery.error && txCoverage === 'none' && txReason === 'search-failed' && (
+                      {!txQuery.loading &&
+                        !txQuery.error &&
+                        txCoverage === 'none' &&
+                        txReason === 'search-failed' && (
                         <>
                           <Alert variant="danger">
                             Transaction search failed (timeout). History is temporarily
@@ -2649,15 +2561,17 @@ export default function Address() {
                         </>
                       )}
 
-                      {!txQuery.loading && !txQuery.error && txCoverage === 'none' && txReason === 'zero-balance' && (
+                      {!txQuery.loading &&
+                        !txQuery.error &&
+                        txCoverage === 'none' &&
+                        txReason === 'zero-balance' && (
                         <>
                           <Alert variant="warning">
                             {realTimeQuery.data
                               ? `This address has sent ${realTimeQuery.data.transactionCount.toLocaleString()} transactions (nonce).`
-                              : 'This address has sent an unknown number of transactions (nonce unavailable).'}
-                            {' '}Incoming activity cannot be scanned because the
-                            balance-history heuristic needs non-zero balance; token
-                            activity is never scanned.
+                              : 'This address has sent an unknown number of transactions (nonce unavailable).'}{' '}
+                            Incoming activity cannot be scanned because the balance-history
+                            heuristic needs non-zero balance; token activity is never scanned.
                           </Alert>
                           <div className={bannerLinks}>
                             <ExternalLinks links={externalToolLinks} />
@@ -2668,14 +2582,14 @@ export default function Address() {
                       {/* nonce=0: outgoing history is provably empty, but incoming
                     activity stays invisible to the heuristic — never read
                     this as a trusted "no transactions at all". */}
-                      {!txQuery.loading && !txQuery.error
-                        && txCoverage === 'partial'
-                        && txReason === 'no-outgoing-transactions' && (
+                      {!txQuery.loading &&
+                        !txQuery.error &&
+                        txCoverage === 'partial' &&
+                        txReason === 'no-outgoing-transactions' && (
                         <>
                           <Alert variant="warning">
-                            No OUTGOING transactions found. Incoming transactions
-                            are undetectable without a full indexer — check an
-                            external explorer.
+                            No OUTGOING transactions found. Incoming transactions are undetectable
+                            without a full indexer — check an external explorer.
                           </Alert>
                           <div className={bannerLinks}>
                             <ExternalLinks links={externalToolLinks} />
@@ -2688,13 +2602,15 @@ export default function Address() {
                     its own banner above — the search never ran there, so
                     "search deeper" would be a no-op (backend early-returns
                     on nonce=0 regardless of window). */}
-                      {!txQuery.loading && !txQuery.error && txCoverage === 'partial'
-                        && txReason !== 'no-outgoing-transactions' && (
+                      {!txQuery.loading &&
+                        !txQuery.error &&
+                        txCoverage === 'partial' &&
+                        txReason !== 'no-outgoing-transactions' && (
                         <>
                           <Alert variant="warning">
                             Partial history - transactions are discovered heuristically
-                            (native-token transfers {searchWindowLabel}). Token
-                            transfers and contract interactions may be missing.
+                            (native-token transfers {searchWindowLabel}). Token transfers and
+                            contract interactions may be missing.
                           </Alert>
                           <div className={bannerLinks}>
                             <ExternalLinks links={externalToolLinks} />
@@ -2706,16 +2622,12 @@ export default function Address() {
                               variant="secondary"
                               size="sm"
                               disabled={searchWindowAtCap}
-                              title={
-                                searchWindowAtCap
-                                  ? 'maximum RPC budget reached'
-                                  : undefined
-                              }
+                              title={searchWindowAtCap ? 'maximum RPC budget reached' : undefined}
                               loading={txQuery.fetching}
                               onClick={() => {
-                              // The widened window rides in the URL (pushed
-                              // history entry like ?page=): it survives
-                              // pagination, sharing and back/forward.
+                                // The widened window rides in the URL (pushed
+                                // history entry like ?page=): it survives
+                                // pagination, sharing and back/forward.
                                 void setSearch(prev => ({
                                   ...prev,
                                   window: String(nextSearchWindow),
@@ -2731,22 +2643,26 @@ export default function Address() {
                       {/* Trusted empty ONLY for authoritative coverage ('complete'):
                     the backend asserts the full history is known. Anything
                     else that looks empty must not read as "no history". */}
-                      {!txQuery.loading && !txQuery.error
-                        && transactions.length === 0 && txTotal === 0
-                        && txCoverage === 'complete' && (
+                      {!txQuery.loading &&
+                        !txQuery.error &&
+                        transactions.length === 0 &&
+                        txTotal === 0 &&
+                        txCoverage === 'complete' && (
                         <Alert variant="info">No transactions found</Alert>
                       )}
 
                       {/* Pre-coverage cached payload (no coverage/method tags):
                     the empty list is unverified, so say so instead of
                     implying a trusted empty result. */}
-                      {!txQuery.loading && !txQuery.error
-                        && transactions.length === 0 && txTotal === 0
-                        && txCoverage === undefined && (
+                      {!txQuery.loading &&
+                        !txQuery.error &&
+                        transactions.length === 0 &&
+                        txTotal === 0 &&
+                        txCoverage === undefined && (
                         <>
                           <Alert variant="warning">
-                            Transaction data source unknown — history may be
-                            incomplete. Verify on an external explorer.
+                            Transaction data source unknown — history may be incomplete. Verify on
+                            an external explorer.
                           </Alert>
                           <div className={bannerLinks}>
                             <ExternalLinks links={externalToolLinks} />
@@ -2759,13 +2675,15 @@ export default function Address() {
                     matching the active filters. The coverage banners above
                     keep their caveat (the window is still a partial
                     discovery), so this states only what happened. */}
-                      {!txQuery.loading && !txQuery.error && hasTxFilters
-                        && transactions.length === 0 && txTotal === 0 && (
+                      {!txQuery.loading &&
+                        !txQuery.error &&
+                        hasTxFilters &&
+                        transactions.length === 0 &&
+                        txTotal === 0 && (
                         <div data-testid="tx-filter-empty">
                           <Alert variant="info">
-                            No discovered transactions in this window match the
-                            current filters. Filters narrow the discovered set —
-                            they never widen coverage.
+                            No discovered transactions in this window match the current filters.
+                            Filters narrow the discovered set — they never widen coverage.
                           </Alert>
                         </div>
                       )}
@@ -2805,7 +2723,9 @@ export default function Address() {
                                         {formatBlockNumber(tx.blockNumber)}
                                       </TypedLink>
                                     </td>
-                                    <td>{tx.timestamp ? formatRelativeTime(tx.timestamp) : 'N/A'}</td>
+                                    <td>
+                                      {tx.timestamp ? formatRelativeTime(tx.timestamp) : 'N/A'}
+                                    </td>
                                     <td>
                                       <Badge variant={directionVariant[dir]} size="sm">
                                         {directionLabel[dir]}

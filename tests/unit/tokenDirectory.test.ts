@@ -104,24 +104,20 @@ describe('viewed-token store', () => {
   it('caps the list at 50 entries, oldest viewed dropped first', () => {
     recordViewedToken(1, TOKEN, {});
     for (let i = 0; i < VIEWED_TOKENS_MAX_ENTRIES; i += 1) {
-      recordViewedToken(
-        1,
-        getAddress(`0x${(i + 0x10).toString(16).padStart(40, '0')}`),
-        {},
-      );
+      recordViewedToken(1, getAddress(`0x${(i + 0x10).toString(16).padStart(40, '0')}`), {});
     }
     const entries = readViewedTokens(1);
     expect(entries).toHaveLength(VIEWED_TOKENS_MAX_ENTRIES);
     // The very first (oldest) entry was pushed out by the cap.
-    expect(entries.some((e) => e.address.toLowerCase() === TOKEN_LOWER)).toBe(false);
+    expect(entries.some(e => e.address.toLowerCase() === TOKEN_LOWER)).toBe(false);
   });
 
   it('scopes storage per chain', () => {
     recordViewedToken(1, TOKEN, { symbol: 'WETH' });
     recordViewedToken(137, OTHER, {});
 
-    expect(readViewedTokens(1).map((e) => e.address)).toEqual([TOKEN]);
-    expect(readViewedTokens(137).map((e) => e.address)).toEqual([OTHER]);
+    expect(readViewedTokens(1).map(e => e.address)).toEqual([TOKEN]);
+    expect(readViewedTokens(137).map(e => e.address)).toEqual([OTHER]);
     expect(localStorage.getItem('be:viewedTokens:1')).not.toBeNull();
     expect(localStorage.getItem('be:viewedTokens:137')).not.toBeNull();
   });
@@ -152,9 +148,12 @@ describe('viewed-token store', () => {
     // Rows that fail validation are dropped; valid ones survive.
     localStorage.setItem(
       'be:viewedTokens:1',
-      JSON.stringify([{ address: TOKEN, firstSeen: 'x' }, { address: 'zz', firstSeen: 'y' }]),
+      JSON.stringify([
+        { address: TOKEN, firstSeen: 'x' },
+        { address: 'zz', firstSeen: 'y' },
+      ]),
     );
-    expect(readViewedTokens(1).map((e) => e.address)).toEqual([TOKEN]);
+    expect(readViewedTokens(1).map(e => e.address)).toEqual([TOKEN]);
   });
 
   it('swallows a failing setItem while still returning the updated list', () => {
@@ -163,7 +162,7 @@ describe('viewed-token store', () => {
       throw new Error('quota exceeded');
     };
     const entries = recordViewedToken(1, TOKEN, { symbol: 'WETH' }, storage);
-    expect(entries.map((e) => e.address)).toEqual([TOKEN]);
+    expect(entries.map(e => e.address)).toEqual([TOKEN]);
   });
 
   it('keeps the real localStorage untouched through the injected-storage seam', () => {
@@ -177,9 +176,7 @@ describe('viewed-token store', () => {
     const oversized = Array.from({ length: 80 }, (_, i) =>
       entry(getAddress(`0x${(i + 0x10).toString(16).padStart(40, '0')}`)),
     );
-    expect(parseViewedTokens(JSON.stringify(oversized))).toHaveLength(
-      VIEWED_TOKENS_MAX_ENTRIES,
-    );
+    expect(parseViewedTokens(JSON.stringify(oversized))).toHaveLength(VIEWED_TOKENS_MAX_ENTRIES);
   });
 });
 
@@ -189,7 +186,7 @@ describe('mergeViewedEntries (pure)', () => {
       [entry(TOKEN, { firstSeen: '2020-01-01T00:00:00.000Z' }), entry(OTHER)],
       entry(TOKEN, { firstSeen: '2026-09-25T00:00:00.000Z', symbol: 'WETH' }),
     );
-    expect(merged.map((e) => e.address)).toEqual([TOKEN, OTHER]);
+    expect(merged.map(e => e.address)).toEqual([TOKEN, OTHER]);
     expect(merged[0].firstSeen).toBe('2020-01-01T00:00:00.000Z');
   });
 
@@ -210,11 +207,9 @@ describe('mergeDirectory (pure)', () => {
 
   it('curated first with provenance, then viewed rows newest-first', () => {
     const viewedAddr = getAddress(`0x${'33'.repeat(20)}`);
-    const rows = mergeDirectory(known, [
-      entry(viewedAddr, { symbol: 'PEPE', name: 'Pepe' }),
-    ]);
-    expect(rows.map((r) => r.address)).toEqual([TOKEN, OTHER, viewedAddr]);
-    expect(rows.map((r) => r.provenance)).toEqual(['curated', 'curated', 'viewed']);
+    const rows = mergeDirectory(known, [entry(viewedAddr, { symbol: 'PEPE', name: 'Pepe' })]);
+    expect(rows.map(r => r.address)).toEqual([TOKEN, OTHER, viewedAddr]);
+    expect(rows.map(r => r.provenance)).toEqual(['curated', 'curated', 'viewed']);
   });
 
   it('a curated address outranks its viewed copy but adopts the visited name hint', () => {
@@ -232,8 +227,8 @@ describe('mergeDirectory (pure)', () => {
 
   it('dedupes a viewed entry against curated case-insensitively', () => {
     const rows = mergeDirectory(known, [entry(TOKEN.toLowerCase(), {})]);
-    expect(rows.filter((r) => r.address.toLowerCase() === TOKEN_LOWER)).toHaveLength(1);
-    expect(rows.every((r) => r.provenance === 'curated')).toBe(true);
+    expect(rows.filter(r => r.address.toLowerCase() === TOKEN_LOWER)).toHaveLength(1);
+    expect(rows.every(r => r.provenance === 'curated')).toBe(true);
   });
 });
 
@@ -245,9 +240,9 @@ describe('filterByQuery (pure)', () => {
   ];
 
   it('matches symbol, name and address substrings case-insensitively', () => {
-    expect(filterByQuery(rows, 'weth').map((r) => r.symbol)).toEqual(['WETH']);
-    expect(filterByQuery(rows, 'chainlink').map((r) => r.symbol)).toEqual(['LINK']);
-    expect(filterByQuery(rows, TOKEN_LOWER.slice(0, 10)).map((r) => r.symbol)).toEqual(['WETH']);
+    expect(filterByQuery(rows, 'weth').map(r => r.symbol)).toEqual(['WETH']);
+    expect(filterByQuery(rows, 'chainlink').map(r => r.symbol)).toEqual(['LINK']);
+    expect(filterByQuery(rows, TOKEN_LOWER.slice(0, 10)).map(r => r.symbol)).toEqual(['WETH']);
   });
 
   it('an empty or whitespace query returns every row', () => {
@@ -273,27 +268,42 @@ describe('fetchTokenDirectoryReads', () => {
   it('reads name/symbol/decimals/totalSupply for every token in ONE multicall', async () => {
     // The key's sorted order (OTHER 'bb…' < WETH 'c0…') governs the batch.
     multicall.mockResolvedValue([
-      ok('Other'), ok('OTH'), ok(6), ok(42n),
-      ok('Wrapped Ether'), ok('WETH'), ok(18), ok(1_000_000n),
+      ok('Other'),
+      ok('OTH'),
+      ok(6),
+      ok(42n),
+      ok('Wrapped Ether'),
+      ok('WETH'),
+      ok(18),
+      ok(1_000_000n),
     ]);
 
-    const page = await fetchTokenDirectoryReads(
-      1,
-      tokenDirectoryAddressesKey([OTHER, TOKEN]),
-    );
+    const page = await fetchTokenDirectoryReads(1, tokenDirectoryAddressesKey([OTHER, TOKEN]));
 
     expect(multicall).toHaveBeenCalledTimes(1);
     const [params] = multicall.mock.calls[0];
     expect(params.multicallAddress).toBe(MULTICALL3);
     expect(params.allowFailure).toBe(true);
-    expect(params.contracts.map((contract) => contract.functionName)).toEqual([
-      'name', 'symbol', 'decimals', 'totalSupply',
-      'name', 'symbol', 'decimals', 'totalSupply',
+    expect(params.contracts.map(contract => contract.functionName)).toEqual([
+      'name',
+      'symbol',
+      'decimals',
+      'totalSupply',
+      'name',
+      'symbol',
+      'decimals',
+      'totalSupply',
     ]);
     // The key's sorted order governs the call order.
-    expect(params.contracts.map((contract) => contract.address)).toEqual([
-      OTHER_LOWER, OTHER_LOWER, OTHER_LOWER, OTHER_LOWER,
-      TOKEN_LOWER, TOKEN_LOWER, TOKEN_LOWER, TOKEN_LOWER,
+    expect(params.contracts.map(contract => contract.address)).toEqual([
+      OTHER_LOWER,
+      OTHER_LOWER,
+      OTHER_LOWER,
+      OTHER_LOWER,
+      TOKEN_LOWER,
+      TOKEN_LOWER,
+      TOKEN_LOWER,
+      TOKEN_LOWER,
     ]);
     expect(page.chainId).toBe(1);
     expect(page.addressesKey).toBe([OTHER_LOWER, TOKEN_LOWER].join(','));
@@ -306,14 +316,9 @@ describe('fetchTokenDirectoryReads', () => {
   });
 
   it('decodes reverted calls to honest nulls', async () => {
-    multicall.mockResolvedValue([
-      ok('Pepe'), ok('PEPE'), reverted, reverted,
-    ]);
+    multicall.mockResolvedValue([ok('Pepe'), ok('PEPE'), reverted, reverted]);
 
-    const page = await fetchTokenDirectoryReads(
-      1,
-      tokenDirectoryAddressesKey([TOKEN]),
-    );
+    const page = await fetchTokenDirectoryReads(1, tokenDirectoryAddressesKey([TOKEN]));
 
     expect(page.reads.get(TOKEN_LOWER)).toEqual({
       name: 'Pepe',
@@ -326,9 +331,9 @@ describe('fetchTokenDirectoryReads', () => {
   it('rejects on a transport-level failure (retryable error, no fabricated nulls)', async () => {
     vi.mocked(createRpcClient).mockRejectedValue(new Error('RPC unreachable'));
 
-    await expect(
-      fetchTokenDirectoryReads(1, tokenDirectoryAddressesKey([TOKEN])),
-    ).rejects.toThrow('Could not read token details from the RPC');
+    await expect(fetchTokenDirectoryReads(1, tokenDirectoryAddressesKey([TOKEN]))).rejects.toThrow(
+      'Could not read token details from the RPC',
+    );
   });
 
   it('settles an empty page with zero network for the disabled key', async () => {

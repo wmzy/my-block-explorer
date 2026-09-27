@@ -164,9 +164,7 @@ export async function probeAddressAcrossChains(
         outcomes[index] = await probeAddressOnChain(chainIds[index], address);
       }
     };
-    await Promise.all(
-      Array.from({ length: Math.min(concurrency, chainIds.length) }, runWorker),
-    );
+    await Promise.all(Array.from({ length: Math.min(concurrency, chainIds.length) }, runWorker));
     return outcomes;
   } catch {
     // Unreachable by construction — every layer settles instead of

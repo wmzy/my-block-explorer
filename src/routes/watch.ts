@@ -73,9 +73,7 @@ const parseChainAndAddress = (
     return {
       error: 'invalid_request',
       message:
-        error instanceof HTTPException
-          ? error.message
-          : 'Chain ID and address must be valid',
+        error instanceof HTTPException ? error.message : 'Chain ID and address must be valid',
     };
   }
 };
@@ -207,7 +205,10 @@ app.put(
       c.header('Cache-Control', 'no-store');
       return c.json({ subscription: result.subscription });
     } catch (error) {
-      logger.error({ err: error, chainId: parsed.chainId, address: parsed.address }, 'Watch upsert failed');
+      logger.error(
+        { err: error, chainId: parsed.chainId, address: parsed.address },
+        'Watch upsert failed',
+      );
       return c.json({ error: 'internal_error', message: 'Failed to save watch subscription' }, 500);
     }
   },
@@ -225,15 +226,18 @@ app.delete(
     try {
       const removed = await watchService.removeSubscription(parsed.chainId, parsed.address);
       if (!removed) {
-        return c.json(
-          { error: 'watch_not_found', message: 'No such watch subscription' },
-          404,
-        );
+        return c.json({ error: 'watch_not_found', message: 'No such watch subscription' }, 404);
       }
       return c.body(null, 204);
     } catch (error) {
-      logger.error({ err: error, chainId: parsed.chainId, address: parsed.address }, 'Watch delete failed');
-      return c.json({ error: 'internal_error', message: 'Failed to delete watch subscription' }, 500);
+      logger.error(
+        { err: error, chainId: parsed.chainId, address: parsed.address },
+        'Watch delete failed',
+      );
+      return c.json(
+        { error: 'internal_error', message: 'Failed to delete watch subscription' },
+        500,
+      );
     }
   },
 );
@@ -261,10 +265,7 @@ app.get('/chains/:chainId/watch/events', async c => {
   if (limitRaw !== undefined) {
     const parsed = Number(limitRaw);
     if (!Number.isInteger(parsed) || parsed < 1) {
-      return c.json(
-        { error: 'invalid_limit', message: 'limit must be a positive integer' },
-        400,
-      );
+      return c.json({ error: 'invalid_limit', message: 'limit must be a positive integer' }, 400);
     }
     limit = Math.min(parsed, WATCH_EVENTS_MAX_LIMIT);
   }

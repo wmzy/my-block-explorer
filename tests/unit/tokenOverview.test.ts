@@ -41,7 +41,7 @@ const ZERO = '0x0000000000000000000000000000000000000000';
 const setProbes = (entries: Record<string, unknown>): void => {
   mocks.multicall.mockImplementation(
     async ({ contracts }: { contracts: Array<{ functionName: string }> }) =>
-      contracts.map((contract) =>
+      contracts.map(contract =>
         contract.functionName in entries
           ? { status: 'success', result: entries[contract.functionName] }
           : { status: 'failure', error: new Error('execution reverted') },
@@ -181,10 +181,7 @@ describe('computeDiscoveredHolders', () => {
 
   it('excludes ERC-721-classified rows from balances and counts them', () => {
     const result = computeDiscoveredHolders(
-      [
-        row({ from: ZERO, to: ALICE, value: '7' }),
-        row({ from: ALICE, to: BOB, value: '9' }),
-      ],
+      [row({ from: ZERO, to: ALICE, value: '7' }), row({ from: ALICE, to: BOB, value: '9' })],
       TOKEN,
       false,
     );
@@ -218,10 +215,7 @@ describe('computeDiscoveredHolders', () => {
 
   it('drops participants whose nets cancel to zero', () => {
     const result = computeDiscoveredHolders(
-      [
-        row({ from: ZERO, to: ALICE, value: '100' }),
-        row({ from: ALICE, to: BOB, value: '100' }),
-      ],
+      [row({ from: ZERO, to: ALICE, value: '100' }), row({ from: ALICE, to: BOB, value: '100' })],
       TOKEN,
       true,
     );
@@ -319,7 +313,7 @@ describe('fetchTokenOverview', () => {
       allowFailure: boolean;
       multicallAddress: string;
     };
-    expect(request.contracts.map((contract) => contract.functionName)).toEqual([
+    expect(request.contracts.map(contract => contract.functionName)).toEqual([
       'name',
       'symbol',
       'decimals',
@@ -369,10 +363,9 @@ describe('fetchTokenOverview', () => {
 
 describe('useTokenOverview', () => {
   it('issues no RPC at all while disabled (the EOA path)', async () => {
-    const { result, rerender } = renderHook(
-      ({ enabled }) => useTokenOverview(1, TOKEN, enabled),
-      { initialProps: { enabled: false } },
-    );
+    const { result, rerender } = renderHook(({ enabled }) => useTokenOverview(1, TOKEN, enabled), {
+      initialProps: { enabled: false },
+    });
     await act(async () => {
       await Promise.resolve();
     });

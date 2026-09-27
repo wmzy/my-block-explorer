@@ -135,8 +135,8 @@ export function UnsupportedChainState({
       cancelled = true;
     };
   }, []);
-  const registeredChainId
-    = registryChecked && !invalidId ? (getChainInfo(chainId)?.id ?? null) : null;
+  const registeredChainId =
+    registryChecked && !invalidId ? (getChainInfo(chainId)?.id ?? null) : null;
 
   // Recovery redirect for a late-resolved registration. Replace (not
   // push): the unsupported URL is not a place worth keeping in history.

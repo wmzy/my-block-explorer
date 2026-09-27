@@ -39,10 +39,13 @@ describe('empty → editor → saved', () => {
     renderChip();
     openEditor();
     expect(input()).toHaveValue('');
-    expect(screen.getByTestId('private-note-counter')).toHaveTextContent(`0 / ${PRIVATE_NOTE_MAX_CHARS}`);
+    expect(screen.getByTestId('private-note-counter')).toHaveTextContent(
+      `0 / ${PRIVATE_NOTE_MAX_CHARS}`,
+    );
     // Mandatory honesty copy rides the editor itself.
-    expect(screen.getByTestId('private-note-editor'))
-      .toHaveTextContent('Stored only in this browser — never sent to the server.');
+    expect(screen.getByTestId('private-note-editor')).toHaveTextContent(
+      'Stored only in this browser — never sent to the server.',
+    );
     expect(screen.queryByTestId('private-note-error')).not.toBeInTheDocument();
   });
 
@@ -74,17 +77,19 @@ describe('char cap — reject inline, never truncate', () => {
     renderChip();
     openEditor();
     fireEvent.change(input(), { target: { value: 'x'.repeat(PRIVATE_NOTE_MAX_CHARS) } });
-    expect(screen.getByTestId('private-note-counter'))
-      .toHaveTextContent(`${PRIVATE_NOTE_MAX_CHARS} / ${PRIVATE_NOTE_MAX_CHARS}`);
+    expect(screen.getByTestId('private-note-counter')).toHaveTextContent(
+      `${PRIVATE_NOTE_MAX_CHARS} / ${PRIVATE_NOTE_MAX_CHARS}`,
+    );
     expect(screen.queryByTestId('private-note-error')).not.toBeInTheDocument();
     expect(saveButton()).toBeEnabled();
     fireEvent.click(saveButton());
     // Collapsed display truncates at 40 chars — the full text rides the
     // title; storage keeps every character.
-    expect(screen.getByTestId('private-note-chip'))
-      .toHaveTextContent(`${'x'.repeat(40)}…`);
-    expect(screen.getByTestId('private-note-chip'))
-      .toHaveAttribute('title', 'x'.repeat(PRIVATE_NOTE_MAX_CHARS));
+    expect(screen.getByTestId('private-note-chip')).toHaveTextContent(`${'x'.repeat(40)}…`);
+    expect(screen.getByTestId('private-note-chip')).toHaveAttribute(
+      'title',
+      'x'.repeat(PRIVATE_NOTE_MAX_CHARS),
+    );
     expect(readPrivateNote(1, CHECKSUMMED)).toBe('x'.repeat(PRIVATE_NOTE_MAX_CHARS));
   });
 
@@ -96,8 +101,9 @@ describe('char cap — reject inline, never truncate', () => {
     const over = 'y'.repeat(PRIVATE_NOTE_MAX_CHARS + 5);
     fireEvent.change(input(), { target: { value: over } });
     expect(input()).toHaveValue(over);
-    expect(screen.getByTestId('private-note-counter'))
-      .toHaveTextContent(`${over.length} / ${PRIVATE_NOTE_MAX_CHARS}`);
+    expect(screen.getByTestId('private-note-counter')).toHaveTextContent(
+      `${over.length} / ${PRIVATE_NOTE_MAX_CHARS}`,
+    );
     const error = screen.getByTestId('private-note-error');
     expect(error).toHaveTextContent(`at most ${PRIVATE_NOTE_MAX_CHARS} characters`);
     expect(saveButton()).toBeDisabled();

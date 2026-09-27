@@ -437,12 +437,7 @@ export function SetupRequiredScreen({
       <div className={contentWrapperStyle}>
         <header className={headerSectionStyle}>
           {onClose && (
-            <Button
-              variant="secondary"
-              size="sm"
-              className={backToAppStyle}
-              onClick={onClose}
-            >
+            <Button variant="secondary" size="sm" className={backToAppStyle} onClick={onClose}>
               ← Back to explorer
             </Button>
           )}
@@ -454,10 +449,10 @@ export function SetupRequiredScreen({
 
         {isHttpsPage && (
           <Alert variant="warning" className={httpsNoticeStyle}>
-            This page is served over HTTPS, so the automatic scan of local ports may be
-            blocked by the browser (this varies by browser; Safari blocks it). Entering{' '}
-            <code>http://localhost:8201</code> in the API URL field usually works in Chrome
-            and Firefox. On Safari, run the frontend locally instead (<code>pnpm dev</code>).
+            This page is served over HTTPS, so the automatic scan of local ports may be blocked by
+            the browser (this varies by browser; Safari blocks it). Entering{' '}
+            <code>http://localhost:8201</code> in the API URL field usually works in Chrome and
+            Firefox. On Safari, run the frontend locally instead (<code>pnpm dev</code>).
           </Alert>
         )}
 

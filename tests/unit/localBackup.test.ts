@@ -63,7 +63,10 @@ const PARTS: BackupParts = {
     theme: 'dark',
     ipfsGateway: 'https://pin.mydomain.dev',
     customAbis: [
-      { key: 'custom-abi:1:0x1234567890abcdef1234567890abcdef12345678', abi: '[{"type":"function"}]' },
+      {
+        key: 'custom-abi:1:0x1234567890abcdef1234567890abcdef12345678',
+        abi: '[{"type":"function"}]',
+      },
     ],
     privateNotes: [
       { chainId: 1, address: NOTE_ADDRESS, note: 'treasury — hardware key in the office safe' },
@@ -160,7 +163,10 @@ describe('parseBackup rejections (typed, whole-file)', () => {
   it('rejects customAbis keys that do not spell custom-abi:<chainId>:<lowercase address>', () => {
     // The pattern is the restore's safety rail: a backup must not be
     // able to write arbitrary localStorage keys (e.g. be:theme).
-    const smuggled = { ...base, browser: { ...base.browser, customAbis: [{ key: 'be:theme', abi: 'x' }] } };
+    const smuggled = {
+      ...base,
+      browser: { ...base.browser, customAbis: [{ key: 'be:theme', abi: 'x' }] },
+    };
     const parsed = parseBackup(JSON.stringify(smuggled));
     expect(parsed.ok).toBe(false);
     if (!parsed.ok) {
@@ -172,7 +178,10 @@ describe('parseBackup rejections (typed, whole-file)', () => {
   it('rejects a watchlist over the app cap and non-address entries', () => {
     const overCap = {
       ...base,
-      browser: { ...base.browser, watchlist: Array.from({ length: 26 }, () => base.browser.watchlist![0]) },
+      browser: {
+        ...base.browser,
+        watchlist: Array.from({ length: 26 }, () => base.browser.watchlist![0]),
+      },
     };
     expect(parseBackup(JSON.stringify(overCap)).ok).toBe(false);
 
@@ -207,7 +216,11 @@ describe('planRestore merge planner', () => {
     const plan = planRestore(file, emptyStorage());
 
     expect(plan.storageWrites).toEqual([
-      { key: WATCHLIST_STORAGE_KEY, value: JSON.stringify(PARTS.browser.watchlist), overwrites: false },
+      {
+        key: WATCHLIST_STORAGE_KEY,
+        value: JSON.stringify(PARTS.browser.watchlist),
+        overwrites: false,
+      },
       { key: THEME_STORAGE_KEY, value: 'dark', overwrites: false },
       { key: IPFS_GATEWAY_STORAGE_KEY, value: 'https://pin.mydomain.dev', overwrites: false },
       { key: abiKey, value: PARTS.browser.customAbis[0].abi, overwrites: false },
@@ -259,7 +272,13 @@ describe('planRestore merge planner', () => {
       {
         labels: [],
         customChains: [],
-        browser: { watchlist: null, theme: null, ipfsGateway: null, customAbis: [], privateNotes: [] },
+        browser: {
+          watchlist: null,
+          theme: null,
+          ipfsGateway: null,
+          customAbis: [],
+          privateNotes: [],
+        },
       },
       NOW,
     );
@@ -322,8 +341,9 @@ describe('private notes (v2 section)', () => {
     // (v1 readers ignore unknown sections; half-trusting hand-added v1
     // data would be worse than dropping it).
     const smuggled = JSON.parse(JSON.stringify(v1)) as Record<string, unknown>;
-    (smuggled.browser as Record<string, unknown>).privateNotes
-      = [{ chainId: 1, address: NOTE_ADDRESS, note: 'smuggled' }];
+    (smuggled.browser as Record<string, unknown>).privateNotes = [
+      { chainId: 1, address: NOTE_ADDRESS, note: 'smuggled' },
+    ];
     const parsedSmuggled = parseBackup(JSON.stringify(smuggled));
     expect(parsedSmuggled.ok).toBe(true);
     if (parsedSmuggled.ok) {
@@ -347,9 +367,13 @@ describe('private notes (v2 section)', () => {
     // Mixed-case body that is NOT the EIP-55 spelling — rejected even
     // though the hex shape is fine (the planned write key is built from
     // this value; a wrong checksum must die at parse time).
-    expect(bad({ chainId: 1, address: '0x2345678901AbCdEf2345678901abCdEf23456789', note: 'n' })).toBe(true);
+    expect(
+      bad({ chainId: 1, address: '0x2345678901AbCdEf2345678901abCdEf23456789', note: 'n' }),
+    ).toBe(true);
     expect(bad({ chainId: 1, address: NOTE_ADDRESS, note: '' })).toBe(true);
-    expect(bad({ chainId: 1, address: NOTE_ADDRESS, note: 'x'.repeat(PRIVATE_NOTE_MAX_CHARS + 1) })).toBe(true);
+    expect(
+      bad({ chainId: 1, address: NOTE_ADDRESS, note: 'x'.repeat(PRIVATE_NOTE_MAX_CHARS + 1) }),
+    ).toBe(true);
     expect(bad({ chainId: 1, address: NOTE_ADDRESS, note: 7 })).toBe(true);
     expect(bad({ chainId: 1, address: NOTE_ADDRESS })).toBe(true);
     // Duplicates (same chainId + address, case-insensitive) reject.
@@ -367,14 +391,18 @@ describe('private notes (v2 section)', () => {
     // rebuilds each key through the store's own builder — so no file
     // content can steer a write at, say, be:theme.
     const plan = planRestore(noteFile, emptyStorage());
-    const noteWrites = plan.storageWrites.filter(write => write.value === PARTS.browser.privateNotes[0].note);
+    const noteWrites = plan.storageWrites.filter(
+      write => write.value === PARTS.browser.privateNotes[0].note,
+    );
     expect(noteWrites).toHaveLength(1);
     for (const write of plan.storageWrites) {
       if (write.key.startsWith(PRIVATE_NOTE_KEY_PREFIX)) {
         expect(write.key).toMatch(PRIVATE_NOTE_KEY_RE);
       }
     }
-    expect(plan.storageWrites.some(write => write.key === 'be:theme' && write.value !== 'dark')).toBe(false);
+    expect(
+      plan.storageWrites.some(write => write.key === 'be:theme' && write.value !== 'dark'),
+    ).toBe(false);
   });
 
   it('full round-trip: a planned note write lands where the store reads it back', () => {

@@ -63,9 +63,7 @@ export function readOnboardingDismissed(storage: Pick<Storage, 'getItem'> = loca
   }
 }
 
-export function writeOnboardingDismissed(
-  storage: Pick<Storage, 'setItem'> = localStorage,
-): void {
+export function writeOnboardingDismissed(storage: Pick<Storage, 'setItem'> = localStorage): void {
   try {
     storage.setItem(ONBOARDING_DISMISSED_KEY, '1');
   } catch {
@@ -80,9 +78,10 @@ export function writeOnboardingDismissed(
 // unsupported ids), so the card can never point at a chain the app
 // itself would not open. Injecting the remembered id keeps the rule
 // unit-testable without touching localStorage.
-export function resolveGuideChainPaths(
-  remembered: number | undefined = readRememberedChainId(),
-): { blocks: string; contracts: string } {
+export function resolveGuideChainPaths(remembered: number | undefined = readRememberedChainId()): {
+  blocks: string;
+  contracts: string;
+} {
   const chainId = remembered ?? getPreferredChainId();
   return { blocks: `/chain/${chainId}/blocks`, contracts: `/chain/${chainId}/contracts` };
 }
@@ -357,9 +356,8 @@ export function GettingStarted({ onDismiss }: GettingStartedProps) {
               <div>
                 <h1 className={titleStyle}>Get started in three steps</h1>
                 <p className={subtitleStyle}>
-                  No local backend detected yet — the explorer is already browsing your
-                  chain through its public RPC. A local backend adds the indexed
-                  features.
+                  No local backend detected yet — the explorer is already browsing your chain
+                  through its public RPC. A local backend adds the indexed features.
                 </p>
               </div>
               {/* Same dismiss path as "Don't show again": one mechanism,
@@ -379,9 +377,8 @@ export function GettingStarted({ onDismiss }: GettingStartedProps) {
                 <div className={stepBodyStyle}>
                   <span className={stepTitleStyle}>Pick a network</span>
                   <p className={stepTextStyle}>
-                    Use the chain selector in the top bar — your last choice is
-                    remembered for the next visit, and custom chains are added from
-                    the same menu.
+                    Use the chain selector in the top bar — your last choice is remembered for the
+                    next visit, and custom chains are added from the same menu.
                   </p>
                 </div>
               </li>
@@ -405,9 +402,9 @@ export function GettingStarted({ onDismiss }: GettingStartedProps) {
                 <div className={stepBodyStyle}>
                   <span className={stepTitleStyle}>Read the data honestly</span>
                   <p className={stepTextStyle}>
-                    This explorer separates live RPC data from cached, discovered and
-                    sampled data — every page says which is which with a coverage
-                    chip. Check the chip before you trust a number.
+                    This explorer separates live RPC data from cached, discovered and sampled data —
+                    every page says which is which with a coverage chip. Check the chip before you
+                    trust a number.
                   </p>
                   <TypedLink to="/about/coverage" className={stepLinkStyle}>
                     What do the coverage levels mean?

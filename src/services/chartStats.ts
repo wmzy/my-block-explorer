@@ -123,17 +123,11 @@ export type FeeWindowSample = {
 
 // Why the page (boundary-derived charts) cannot render.
 export type ChartsUnavailableReason =
-  | 'unsupported-chain'
-  | 'rpc-error'
-  | 'method-not-supported'
-  | 'insufficient-history';
+  'unsupported-chain' | 'rpc-error' | 'method-not-supported' | 'insufficient-history';
 
 // Why the fee section specifically cannot render while boundary charts do.
 export type GasChartUnavailableReason =
-  | 'rpc-cap'
-  | 'method-not-supported'
-  | 'pre-eip-1559'
-  | 'rpc-error';
+  'rpc-cap' | 'method-not-supported' | 'pre-eip-1559' | 'rpc-error';
 
 // Why the sampled tx/day card specifically cannot render while boundary
 // charts do. No 'rpc-cap' variant: eth_getBlockTransactionCount takes one
@@ -263,9 +257,7 @@ export async function findDayBoundary(
     // The floor itself is at/after the target. Honest only when no
     // earlier block exists (young chain, floor 1); otherwise the caller's
     // bracket was inconsistent — refuse instead of guessing downward.
-    return lo === 1
-      ? { dayStart, block: 1, ...floorHeader }
-      : null;
+    return lo === 1 ? { dayStart, block: 1, ...floorHeader } : null;
   }
   while (hi - lo > 1) {
     const mid = Math.floor((lo + hi) / 2);
@@ -561,10 +553,7 @@ async function fetchDayGas(
       }
       if (RPC_WINDOW_CAP_PATTERN.test(text)) {
         if (cap <= MIN_FEE_CHUNK_BLOCKS) return { point: null, reason: 'rpc-cap' };
-        providerFeeCeilings.set(
-          chainId,
-          Math.max(MIN_FEE_CHUNK_BLOCKS, Math.floor(cap / 2)),
-        );
+        providerFeeCeilings.set(chainId, Math.max(MIN_FEE_CHUNK_BLOCKS, Math.floor(cap / 2)));
         continue;
       }
       return { point: null, reason: 'rpc-error' };

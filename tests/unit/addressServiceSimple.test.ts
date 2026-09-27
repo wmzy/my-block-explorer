@@ -262,7 +262,9 @@ describe('AddressService - getAddressTransactions window override', () => {
     expect(result.searchWindowBlocks).toBe(10_000_000);
     // The window actually widened the search: the low probe sits at
     // 18_500_000 - 10_000_000 instead of the 2.5M default offset.
-    const probedBlocks = getBalance.mock.calls.map(([arg]) => (arg as { blockNumber: bigint }).blockNumber);
+    const probedBlocks = getBalance.mock.calls.map(
+      ([arg]) => (arg as { blockNumber: bigint }).blockNumber,
+    );
     expect(probedBlocks).toContain(8_500_000n);
   });
 

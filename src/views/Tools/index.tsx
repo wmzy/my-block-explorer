@@ -51,8 +51,8 @@ export type ToolCard = {
   unavailableNote?: string;
 };
 
-export const NO_CHAIN_REMEMBERED_NOTE
-  = 'No chain remembered yet — open any chain page first, then this card links there.';
+export const NO_CHAIN_REMEMBERED_NOTE =
+  'No chain remembered yet — open any chain page first, then this card links there.';
 
 /**
  * The hub's full card list. Pure: the remembered chain id and its display
@@ -64,18 +64,14 @@ export function buildToolCards(
   chainName: string | undefined,
 ): ToolCard[] {
   const chainPrefix = rememberedChainId === undefined ? null : `/chain/${rememberedChainId}`;
-  const scopeNote = rememberedChainId === undefined
-    ? undefined
-    : `${chainName ?? `Chain ${rememberedChainId}`} · remembered chain`;
+  const scopeNote =
+    rememberedChainId === undefined
+      ? undefined
+      : `${chainName ?? `Chain ${rememberedChainId}`} · remembered chain`;
 
   // Chain-scoped card helper: with a remembered chain it links; without
   // one it keeps title + description and explains itself honestly.
-  const chainCard = (
-    id: string,
-    suffix: string,
-    title: string,
-    description: string,
-  ): ToolCard => ({
+  const chainCard = (id: string, suffix: string, title: string, description: string): ToolCard => ({
     id,
     title,
     description,
@@ -134,7 +130,8 @@ export function buildToolCards(
     {
       id: 'search',
       title: 'Search',
-      description: 'Cross-chain search through the backend index: addresses, blocks, transactions, tokens.',
+      description:
+        'Cross-chain search through the backend index: addresses, blocks, transactions, tokens.',
       href: '/search',
       admin: false,
     },
@@ -148,7 +145,8 @@ export function buildToolCards(
     {
       id: 'coverage',
       title: 'Coverage legend',
-      description: 'What the live / cached-immutable / discovered / sampled chips on every page mean.',
+      description:
+        'What the live / cached-immutable / discovered / sampled chips on every page mean.',
       href: '/about/coverage',
       admin: false,
     },
@@ -275,8 +273,8 @@ export default function Tools() {
           chainInfo="Every tool in this explorer on one page. Chain tools follow the chain you were browsing; admin tools are marked with a chip."
         />
         <p className={paletteHint}>
-          On a keyboard? Press Ctrl/Cmd+K anywhere for the command palette —
-          the cards below are the full list and the touch-friendly way in.
+          On a keyboard? Press Ctrl/Cmd+K anywhere for the command palette — the cards below are the
+          full list and the touch-friendly way in.
         </p>
         <div className={grid}>
           {cards.map(card => (

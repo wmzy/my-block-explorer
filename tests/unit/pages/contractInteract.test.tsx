@@ -236,11 +236,7 @@ describe('ContractInteract abiOverride', () => {
     };
 
     render(
-      <ContractInteract
-        chainId={1}
-        contractAddress={PROXY_ADDRESS}
-        contractSource={unverified}
-      />,
+      <ContractInteract chainId={1} contractAddress={PROXY_ADDRESS} contractSource={unverified} />,
     );
 
     expect(await screen.findByText('Contract ABI not available')).toBeInTheDocument();
@@ -394,9 +390,7 @@ describe('ContractInteract write simulation framing', () => {
 
     expect(await screen.findByText('simulated — not sent')).toBeInTheDocument();
     // The global disclaimer stays too.
-    expect(
-      screen.getByText(/Write functions are simulations only\./),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/Write functions are simulations only\./)).toBeInTheDocument();
   });
 
   it('keeps read result cards untagged', async () => {
@@ -482,7 +476,9 @@ describe('ContractInteract revert decoding', () => {
     // The decoded custom error leads the inline error card, args formatted
     // (address checksummed).
     expect(
-      await screen.findByText(`ContractFunctionReverted: Blacklisted(${getAddress(PROXY_ADDRESS)})`),
+      await screen.findByText(
+        `ContractFunctionReverted: Blacklisted(${getAddress(PROXY_ADDRESS)})`,
+      ),
     ).toBeInTheDocument();
   });
 
@@ -500,9 +496,7 @@ describe('ContractInteract revert decoding', () => {
     expandFunction(/owner/);
     fireEvent.click(screen.getByRole('button', { name: 'Query' }));
 
-    expect(
-      await screen.findByText('The contract function "owner" reverted.'),
-    ).toBeInTheDocument();
+    expect(await screen.findByText('The contract function "owner" reverted.')).toBeInTheDocument();
     expect(screen.queryByText(/ContractFunctionReverted/)).not.toBeInTheDocument();
   });
 });

@@ -67,7 +67,9 @@ const toViemStateMapping = (map: Record<`0x${string}`, `0x${string}`>): ViemStat
 // state/stateDiff that cannot express "both keys present, one undefined";
 // a request genuinely carrying both is forwarded verbatim so the node's
 // own conflict error surfaces instead of us silently dropping half of it.
-const toViemStateOverride = (override: StateOverride | undefined): ViemStateOverride | undefined => {
+const toViemStateOverride = (
+  override: StateOverride | undefined,
+): ViemStateOverride | undefined => {
   if (!override) return undefined;
   return Object.entries(override).map(([address, entry]) => ({
     address: address as Address,

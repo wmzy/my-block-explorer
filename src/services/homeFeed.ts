@@ -73,10 +73,9 @@ export const latestBlocksFeedCache = createQueryCache<LatestBlocksFeed | undefin
   'home-blocks-feed',
 );
 
-export const latestTransactionsFeedCache = createQueryCache<
-  RpcTransaction[] | undefined,
-  [number]
->('home-transactions-feed');
+export const latestTransactionsFeedCache = createQueryCache<RpcTransaction[] | undefined, [number]>(
+  'home-transactions-feed',
+);
 
 const queryLatestBlocksFeed = bindQueryFn(fetchLatestBlocksFeed, latestBlocksFeedCache);
 const queryLatestTransactionsFeed = bindQueryFn(

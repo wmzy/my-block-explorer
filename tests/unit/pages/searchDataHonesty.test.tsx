@@ -23,8 +23,13 @@ vi.mock('@/components/TopNavigation', () => ({
   ),
 }));
 
-const { mockFetchSearch, mockFetchChainSearch, mockResolveEnsAddress,
-  mockRecordHistory, mockReadRememberedChainId } = vi.hoisted(() => ({
+const {
+  mockFetchSearch,
+  mockFetchChainSearch,
+  mockResolveEnsAddress,
+  mockRecordHistory,
+  mockReadRememberedChainId,
+} = vi.hoisted(() => ({
   mockFetchSearch: vi.fn(),
   mockFetchChainSearch: vi.fn(),
   mockResolveEnsAddress: vi.fn(),
@@ -37,7 +42,7 @@ vi.mock('@/services/search', () => ({
   fetchChainSearch: mockFetchChainSearch,
 }));
 
-vi.mock('@/services/ensForward', async (importOriginal) => {
+vi.mock('@/services/ensForward', async importOriginal => {
   // Only the RPC-backed resolution is stubbed; the pure destination
   // decision stays the real one.
   const actual = await importOriginal<typeof import('@/services/ensForward')>();
@@ -197,7 +202,9 @@ describe('Search view failure/suggestion honesty', () => {
     renderSearch('/search?q=vitalik.eth');
 
     expect(
-      await screen.findByText('ENS resolution failed for "vitalik.eth" — Ethereum RPC did not answer'),
+      await screen.findByText(
+        'ENS resolution failed for "vitalik.eth" — Ethereum RPC did not answer',
+      ),
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument();
   });

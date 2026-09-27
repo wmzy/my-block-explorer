@@ -45,8 +45,7 @@ const ERC721_APPROVAL_TOPIC = APPROVAL_TOPIC;
 // by tsc — pad wants a 0x-template — and not flagged by eslint.)
 const topicAddress = (address: Address): Hex => pad(address.toLowerCase() as Address, { size: 32 });
 
-const txHashOf = (block: number): Hex =>
-  `0x${block.toString(16).padStart(64, '0')}`;
+const txHashOf = (block: number): Hex => `0x${block.toString(16).padStart(64, '0')}`;
 
 const erc20Log = (
   token: Address,
@@ -115,10 +114,10 @@ type HarnessOptions = {
 const makeHarness = (options: HarnessOptions = {}) => {
   const client: ApprovalScanClient = {
     getBlockNumber: async () => 10_000n,
-    getLogs: async (args) => {
+    getLogs: async args => {
       const topic0 = encodeEventTopics({ abi: [args.event], eventName: args.event.name })[0];
       return (options.logs ?? []).filter(
-        (log) =>
+        log =>
           log.topics[0] === topic0 &&
           (args.args?.owner === undefined || log.topics[1] === topicAddress(args.args.owner)) &&
           log.blockNumber !== null &&
@@ -126,8 +125,7 @@ const makeHarness = (options: HarnessOptions = {}) => {
           log.blockNumber <= args.toBlock,
       );
     },
-    multicall: async (args) =>
-      args.contracts.map(() => ({ status: 'success' as const, result: 1n })),
+    multicall: async args => args.contracts.map(() => ({ status: 'success' as const, result: 1n })),
   };
 
   const service = createApprovalScanService({
@@ -154,7 +152,7 @@ describe('ApprovalScanService - history events', () => {
     expect(result.history).toHaveLength(3);
     // Kind and approvalEvent follow straight from the topic vectors: the
     // shared Approval topic0 by topic count, ApprovalForAll by its own.
-    expect(result.history.map((event) => [event.kind, event.approvalEvent])).toEqual([
+    expect(result.history.map(event => [event.kind, event.approvalEvent])).toEqual([
       ['erc20', 'Approval'],
       ['erc721', 'Approval'],
       ['erc1155', 'ApprovalForAll'],
@@ -194,7 +192,7 @@ describe('ApprovalScanService - history events', () => {
 
     const result = await service.getApprovals(1, OWNER);
 
-    expect(result.history.map((event) => [event.blockNumber, event.kind])).toEqual([
+    expect(result.history.map(event => [event.blockNumber, event.kind])).toEqual([
       [6_500, 'erc20'],
       [40, 'erc20'],
       [40, 'erc721'],
@@ -225,8 +223,7 @@ describe('ApprovalScanService - history events', () => {
     expect(result.history[0]?.value).toBe('230');
     expect(result.history.at(-1)?.blockNumber).toBe(31);
     // Under the cap: no flag, everything retained.
-    const small = await makeHarness({ logs: logs.slice(0, 12) })
-      .service.getApprovals(1, OWNER);
+    const small = await makeHarness({ logs: logs.slice(0, 12) }).service.getApprovals(1, OWNER);
     expect(small.history).toHaveLength(12);
     expect(small.historyTruncated).toBe(false);
   });
@@ -248,7 +245,7 @@ describe('ApprovalScanService - history events', () => {
 
     const result = await service.getApprovals(1, OWNER);
 
-    expect(result.history.map((event) => [event.kind, event.value])).toEqual([
+    expect(result.history.map(event => [event.kind, event.value])).toEqual([
       // An ERC-20 revocation stays visible — value '0' IS the event.
       ['erc20', '0'],
       ['erc721', null],

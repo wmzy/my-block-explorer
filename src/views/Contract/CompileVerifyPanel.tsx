@@ -230,8 +230,7 @@ const truncateHex = (hex: string | undefined, chars = 64): string => {
 // never round-trips. A Hardhat build-info file passes too (the backend
 // unwraps its `input` member).
 type JsonFeedback =
-  | { ok: true; parsed: Record<string, unknown>; buildInfo: boolean }
-  | { ok: false; reason: string };
+  { ok: true; parsed: Record<string, unknown>; buildInfo: boolean } | { ok: false; reason: string };
 
 const parseJsonFeedback = (raw: string): JsonFeedback | null => {
   const trimmed = raw.trim();
@@ -239,12 +238,20 @@ const parseJsonFeedback = (raw: string): JsonFeedback | null => {
   try {
     const parsed: unknown = JSON.parse(trimmed);
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-      return { ok: false, reason: 'The input must be a JSON object (Standard JSON input or a Hardhat build-info file).' };
+      return {
+        ok: false,
+        reason:
+          'The input must be a JSON object (Standard JSON input or a Hardhat build-info file).',
+      };
     }
     const record = parsed as Record<string, unknown>;
     return { ok: true, parsed: record, buildInfo: record.input !== undefined };
   } catch {
-    return { ok: false, reason: 'Not valid JSON — paste the Standard JSON input object (or a Hardhat build-info file verbatim).' };
+    return {
+      ok: false,
+      reason:
+        'Not valid JSON — paste the Standard JSON input object (or a Hardhat build-info file verbatim).',
+    };
   }
 };
 
@@ -270,9 +277,7 @@ export function CompileVerifyPanel({
   // once per mount (the panel only renders while open).
   useEffect(() => {
     let cancelled = false;
-    get<CompilerListResponse>(
-      `/api/chains/${chainId}/contracts/${address}/verify/compilers`,
-    )
+    get<CompilerListResponse>(`/api/chains/${chainId}/contracts/${address}/verify/compilers`)
       .then(data => {
         if (cancelled) return;
         setVersions(data.versions ?? []);
@@ -281,9 +286,7 @@ export function CompileVerifyPanel({
       .catch(error => {
         if (cancelled) return;
         setVersions([]);
-        setListUnavailable(
-          error instanceof Error ? error.message : 'Compiler list unavailable.',
-        );
+        setListUnavailable(error instanceof Error ? error.message : 'Compiler list unavailable.');
       });
     return () => {
       cancelled = true;
@@ -353,11 +356,16 @@ export function CompileVerifyPanel({
       } else if (response.kind === 'compile_error') {
         setResult({ kind: 'compile-error', errors: response.errors ?? [] });
       } else if (response.kind === 'mismatch') {
-        setResult({ kind: 'mismatch', text: response.message ?? 'The recompiled bytecode does not match.' });
+        setResult({
+          kind: 'mismatch',
+          text: response.message ?? 'The recompiled bytecode does not match.',
+        });
       } else {
         setResult({
           kind: 'notice',
-          text: response.message ?? `The backend answered "${response.kind ?? 'unknown'}" without a match.`,
+          text:
+            response.message ??
+            `The backend answered "${response.kind ?? 'unknown'}" without a match.`,
         });
       }
     } catch (error) {
@@ -371,10 +379,10 @@ export function CompileVerifyPanel({
     <div className={panelStyles}>
       <p className={introStyles}>
         Verify by compiling locally: the backend downloads the selected solc build from
-        binaries.soliditylang.org (cached under data/solc-cache — internet needed once per
-        version), recompiles your input, and matches the runtime bytecode against this
-        chain&apos;s own RPC. Works on private chains Sourcify does not cover; a metadata-hash
-        difference alone still counts as a match and is reported.
+        binaries.soliditylang.org (cached under data/solc-cache — internet needed once per version),
+        recompiles your input, and matches the runtime bytecode against this chain&apos;s own RPC.
+        Works on private chains Sourcify does not cover; a metadata-hash difference alone still
+        counts as a match and is reported.
       </p>
       <label className={fieldLabelStyles} htmlFor="compile-verify-version">
         Compiler version

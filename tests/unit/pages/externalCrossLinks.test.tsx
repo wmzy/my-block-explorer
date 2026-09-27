@@ -150,9 +150,10 @@ describe('Transaction detail header cross-links', () => {
 
     renderView(() => TransactionDetail, '/chain/:chainId/tx/:txHash', txPath);
 
-    expect(
-      await screen.findByRole('link', { name: /Etherscan/i }),
-    ).toHaveAttribute('href', `https://etherscan.io/tx/${TX_HASH}`);
+    expect(await screen.findByRole('link', { name: /Etherscan/i })).toHaveAttribute(
+      'href',
+      `https://etherscan.io/tx/${TX_HASH}`,
+    );
     expect(screen.getByRole('link', { name: /Routescan/i })).toHaveAttribute(
       'href',
       `https://routescan.io/tx/${TX_HASH}`,
@@ -168,9 +169,10 @@ describe('Transaction detail header cross-links', () => {
 
     // The not-found card renders below; the cross-links must already be
     // in the header without waiting for data.
-    expect(
-      await screen.findByRole('link', { name: /Routescan/i }),
-    ).toHaveAttribute('href', `https://routescan.io/tx/${TX_HASH}`);
+    expect(await screen.findByRole('link', { name: /Routescan/i })).toHaveAttribute(
+      'href',
+      `https://routescan.io/tx/${TX_HASH}`,
+    );
   });
 });
 
@@ -194,9 +196,10 @@ describe('Block detail header cross-links', () => {
 
     renderView(() => BlockDetail, '/chain/:chainId/block/:blockNumber', blockPath);
 
-    expect(
-      await screen.findByRole('link', { name: /Etherscan/i }),
-    ).toHaveAttribute('href', `https://etherscan.io/block/${BLOCK_NUMBER}`);
+    expect(await screen.findByRole('link', { name: /Etherscan/i })).toHaveAttribute(
+      'href',
+      `https://etherscan.io/block/${BLOCK_NUMBER}`,
+    );
     expect(screen.getByRole('link', { name: /Routescan/i })).toHaveAttribute(
       'href',
       `https://routescan.io/block/${BLOCK_NUMBER}`,
@@ -236,9 +239,10 @@ describe('Contract header cross-links', () => {
 
     renderView(() => Contract, '/chain/:chainId/contract/:address', contractPath);
 
-    expect(
-      await screen.findByRole('link', { name: /Etherscan/i }),
-    ).toHaveAttribute('href', `https://etherscan.io/address/${ADDRESS}`);
+    expect(await screen.findByRole('link', { name: /Etherscan/i })).toHaveAttribute(
+      'href',
+      `https://etherscan.io/address/${ADDRESS}`,
+    );
     expect(screen.getByRole('link', { name: /Routescan/i })).toHaveAttribute(
       'href',
       `https://routescan.io/address/${ADDRESS}`,
@@ -258,8 +262,9 @@ describe('Contract header cross-links', () => {
 
     renderView(() => Contract, '/chain/:chainId/contract/:address', contractPath);
 
-    expect(
-      await screen.findByRole('link', { name: /Routescan/i }),
-    ).toHaveAttribute('href', `https://routescan.io/address/${ADDRESS}`);
+    expect(await screen.findByRole('link', { name: /Routescan/i })).toHaveAttribute(
+      'href',
+      `https://routescan.io/address/${ADDRESS}`,
+    );
   });
 });

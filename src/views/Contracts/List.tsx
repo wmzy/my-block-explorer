@@ -21,10 +21,7 @@ import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
 import { getChainInfo, getChainName } from '@/config/chains';
 import { redirectReplace } from '@/views/Home/Landing';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
-import {
-  CONTRACT_DIRECTORY_PAGE_SIZE,
-  useContractDirectory,
-} from '@/services/contractDirectory';
+import { CONTRACT_DIRECTORY_PAGE_SIZE, useContractDirectory } from '@/services/contractDirectory';
 import { formatNumber, formatRelativeTime } from '@/utils/format';
 
 // Header row: title on the left, the filter input and Refresh on the
@@ -115,11 +112,14 @@ export default function ContractsList() {
       const next = qInput.trim();
       if ((qParam ?? '') === next) return;
       lastPushedQRef.current = next;
-      void setSearch(prev => {
-        // Both keys are rebuilt: a new filter always restarts at offset 0.
-        const { q: _oldQ, offset: _oldOffset, ...rest } = prev;
-        return next === '' ? rest : { ...rest, q: next };
-      }, { replace: true });
+      void setSearch(
+        prev => {
+          // Both keys are rebuilt: a new filter always restarts at offset 0.
+          const { q: _oldQ, offset: _oldOffset, ...rest } = prev;
+          return next === '' ? rest : { ...rest, q: next };
+        },
+        { replace: true },
+      );
     }, FILTER_DEBOUNCE_MS);
     return () => clearTimeout(timer);
   }, [qInput, qParam, setSearch]);
@@ -144,9 +144,7 @@ export default function ContractsList() {
   // else renders as pending, never as someone else's page. A fetch error
   // outranks the pending look (the error state explains the wait).
   const pageMatchesArgs =
-    data?.chainId === currentChainId
-    && data.offset === offset
-    && (data.q ?? '') === (qParam ?? '');
+    data?.chainId === currentChainId && data.offset === offset && (data.q ?? '') === (qParam ?? '');
   const contracts = pageMatchesArgs ? data.contracts : [];
   const total = pageMatchesArgs ? data.total : 0;
   const showSkeleton = error === undefined && (loading || (data !== undefined && !pageMatchesArgs));

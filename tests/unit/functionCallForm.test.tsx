@@ -12,10 +12,7 @@ import type { Abi, AbiFunction } from 'viem';
 
 import { FunctionCallForm } from '@/views/Contract/FunctionCallForm';
 import { getDefaultRpcUrl } from '@/config/chains';
-import type {
-  ContractFunctionInput,
-  EnhancedContractFunction,
-} from '@/utils/contractInteraction';
+import type { ContractFunctionInput, EnhancedContractFunction } from '@/utils/contractInteraction';
 
 const ADDR_A = '0x1111111111111111111111111111111111111111';
 const ADDR_B = '0x2222222222222222222222222222222222222222';
@@ -236,7 +233,14 @@ describe('FunctionCallForm trailing-optional rule', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Query' }));
 
-    expect(onCall).toHaveBeenCalledWith(transfer3, [ADDR_A, '5'], [ADDR_A, '5', ''], undefined, undefined, undefined);
+    expect(onCall).toHaveBeenCalledWith(
+      transfer3,
+      [ADDR_A, '5'],
+      [ADDR_A, '5', ''],
+      undefined,
+      undefined,
+      undefined,
+    );
   });
 
   it('never promises omission while the filled count matches no overload', () => {

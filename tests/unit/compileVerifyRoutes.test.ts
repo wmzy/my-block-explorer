@@ -29,9 +29,7 @@ vi.mock('@/services/ContractSourceService', () => ({
 }));
 
 vi.mock('@/services/CompileVerifyService', async importOriginal => {
-  const actual = await importOriginal<
-    typeof import('@/services/CompileVerifyService')
-  >();
+  const actual = await importOriginal<typeof import('@/services/CompileVerifyService')>();
   return {
     ...actual,
     compileVerifyService: {
@@ -192,7 +190,11 @@ describe('POST .../verify/compile — outcome mapping', () => {
     // Same sequence as the Sourcify success flow: drop the stale row,
     // write the verified source, read it back.
     expect(mocks.clearCache).toHaveBeenCalledWith(1, ROUTE_ADDRESS);
-    expect(mocks.saveLocalCompileVerification).toHaveBeenCalledWith(1, ROUTE_ADDRESS, savedPayload());
+    expect(mocks.saveLocalCompileVerification).toHaveBeenCalledWith(
+      1,
+      ROUTE_ADDRESS,
+      savedPayload(),
+    );
     expect(mocks.getContractSource).toHaveBeenCalledWith(1, ROUTE_ADDRESS);
   });
 
@@ -270,7 +272,11 @@ describe('POST .../verify/compile — outcome mapping', () => {
         502,
         'compiler_unavailable',
       ],
-      [new CompileVerifyHttpError(502, 'rpc_unavailable', 'eth_getCode failed'), 502, 'rpc_unavailable'],
+      [
+        new CompileVerifyHttpError(502, 'rpc_unavailable', 'eth_getCode failed'),
+        502,
+        'rpc_unavailable',
+      ],
       [new CompileVerifyHttpError(500, 'compile_failed', 'OOM'), 500, 'compile_failed'],
     ];
     for (const [error, status, code] of cases) {

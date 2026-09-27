@@ -31,8 +31,12 @@ const erc20Abi: Abi = parseAbi([
   'function transfer(address to, uint256 amount) returns (bool)',
   'event Transfer(address indexed from, address indexed to, uint256 value)',
 ]);
-const approveOnlyAbi: Abi = parseAbi(['function approve(address spender, uint256 amount) returns (bool)']);
-const customErrorAbi: Abi = parseAbi(['error InsufficientBalance(uint256 available, uint256 required)']);
+const approveOnlyAbi: Abi = parseAbi([
+  'function approve(address spender, uint256 amount) returns (bool)',
+]);
+const customErrorAbi: Abi = parseAbi([
+  'error InsufficientBalance(uint256 available, uint256 required)',
+]);
 
 // ABI-encoded Error(string) payload, exactly what Solidity's revert("…") emits.
 const errorStringData = `${ERROR_STRING_SELECTOR}${encodeAbiParameters(
@@ -63,7 +67,9 @@ describe('selectorOf', () => {
   });
 
   it('returns null for non-hex input', () => {
-    expect(selectorOf('0xzzzzzzzz00000000000000000000000000000000000000000000000000000')).toBeNull();
+    expect(
+      selectorOf('0xzzzzzzzz00000000000000000000000000000000000000000000000000000'),
+    ).toBeNull();
   });
 });
 
@@ -200,7 +206,11 @@ describe('describeRevertData', () => {
 
     expect(
       describeRevertData(
-        encodeErrorResult({ abi: mixedErrorAbi, errorName: 'BadTuple', args: [{ a: 1n, b: RECIPIENT }] }),
+        encodeErrorResult({
+          abi: mixedErrorAbi,
+          errorName: 'BadTuple',
+          args: [{ a: 1n, b: RECIPIENT }],
+        }),
         mixedErrorAbi,
       ),
     ).toEqual({
@@ -228,7 +238,11 @@ describe('describeRevertData', () => {
 
   it('decodes Panic(uint256) without an ABI with the documented code table', () => {
     const overflow = described(panicData(0x11));
-    expect(overflow).toEqual({ kind: 'panic', code: 0x11n, description: 'arithmetic overflow/underflow' });
+    expect(overflow).toEqual({
+      kind: 'panic',
+      code: 0x11n,
+      description: 'arithmetic overflow/underflow',
+    });
     expect(formatRevertDescription(overflow)).toBe(decodeRevertReason(panicData(0x11)));
 
     const assert = described(panicData(0x01));

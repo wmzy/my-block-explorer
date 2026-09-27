@@ -5,11 +5,7 @@ import {
   getEffectiveRpcUrl,
   type UserRpcConfig,
 } from '../config/chains';
-import {
-  listCustomChainIds,
-  registerCustomChain,
-  removeCustomChain,
-} from '../config/customChains';
+import { listCustomChainIds, registerCustomChain, removeCustomChain } from '../config/customChains';
 import { createLogger } from '../server/logger';
 
 const logger = createLogger('rpc-manager');

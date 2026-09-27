@@ -25,9 +25,10 @@ import { appVersion } from '../version';
 // --- Pure helpers (unit-tested with injected inputs) ---
 
 /** Count + total size of a file listing — the shape of every fs section. */
-export function summarizeFiles(
-  files: readonly { bytes: number }[],
-): { files: number; bytes: number } {
+export function summarizeFiles(files: readonly { bytes: number }[]): {
+  files: number;
+  bytes: number;
+} {
   let bytes = 0;
   for (const file of files) bytes += file.bytes;
   return { files: files.length, bytes };
@@ -46,9 +47,7 @@ export function deriveChainFileMeta(
   chainType: string,
   fileName: string,
 ): { chainType: string; name: string; chainId: number | null } {
-  const stem = fileName.toLowerCase().endsWith('.db')
-    ? fileName.slice(0, -'.db'.length)
-    : fileName;
+  const stem = fileName.toLowerCase().endsWith('.db') ? fileName.slice(0, -'.db'.length) : fileName;
   const separator = stem.lastIndexOf('-');
   if (separator !== -1) {
     const tail = stem.slice(separator + 1);
@@ -268,8 +267,7 @@ export async function collectWatchSummary(): Promise<WatchSummary> {
       address: typeof record.address === 'string' ? record.address : String(record.address),
       // Unset is NULL by writer convention (empty string on PUT means
       // "clear" and stores NULL), but a defensive trim covers any stray.
-      webhookConfigured:
-        typeof record.webhook_url === 'string' && record.webhook_url.trim() !== '',
+      webhookConfigured: typeof record.webhook_url === 'string' && record.webhook_url.trim() !== '',
     });
   }
   return { total: subscriptions.length, subscriptions };

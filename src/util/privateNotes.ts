@@ -35,8 +35,7 @@ export type PrivateNoteSaveRejection =
   | 'storage-unavailable'; // localStorage threw (quota/private mode)
 
 export type PrivateNoteSaveResult =
-  | { ok: true; note: string }
-  | { ok: false; reason: PrivateNoteSaveRejection };
+  { ok: true; note: string } | { ok: false; reason: PrivateNoteSaveRejection };
 
 /**
  * Checksum a raw address through the same two tiers every address surface
@@ -64,9 +63,7 @@ export function privateNoteStorageKey(chainId: number, address: string): string 
 }
 
 /** Split a scanned storage key back into its parts; null when off-grammar. */
-export function parsePrivateNoteKey(
-  key: string,
-): { chainId: number; address: string } | null {
+export function parsePrivateNoteKey(key: string): { chainId: number; address: string } | null {
   if (!PRIVATE_NOTE_KEY_RE.test(key)) return null;
   const rest = key.slice(PRIVATE_NOTE_KEY_PREFIX.length);
   const separator = rest.indexOf(':');

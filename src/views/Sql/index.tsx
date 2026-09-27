@@ -53,10 +53,7 @@ export function readSqlHistory(): string[] {
 export function pushSqlHistory(history: string[], query: string): string[] {
   const trimmed = query.trim();
   if (trimmed === '') return history;
-  return [trimmed, ...history.filter(entry => entry !== trimmed)].slice(
-    0,
-    SQL_HISTORY_MAX,
-  );
+  return [trimmed, ...history.filter(entry => entry !== trimmed)].slice(0, SQL_HISTORY_MAX);
 }
 
 function persistSqlHistory(history: string[]): void {
@@ -79,9 +76,7 @@ export type SqlAdminGate = 'unconfigured' | 'unauthorized';
 
 export function sqlAdminGateFromError(error: unknown): SqlAdminGate | null {
   if (!(error instanceof ApiError) || error.status !== 403) return null;
-  return /Set ADMIN_TOKEN on the server/i.test(error.message)
-    ? 'unconfigured'
-    : 'unauthorized';
+  return /Set ADMIN_TOKEN on the server/i.test(error.message) ? 'unconfigured' : 'unauthorized';
 }
 
 // The backend's 429 body message carries the wait ("…retry after 3s.");
@@ -331,8 +326,7 @@ function RunErrorNotice({ error, onRetry }: { error: unknown; onRetry: () => voi
     const wait = rateLimitWaitSeconds(error);
     return (
       <Alert variant="warning">
-        Rate limited — the console allows 6 queries per minute.
-        {' '}
+        Rate limited — the console allows 6 queries per minute.{' '}
         {wait !== null ? `Retry in ${wait}s.` : error.message}
       </Alert>
     );
@@ -345,13 +339,12 @@ function SqlResults({ result }: { result: SqlQueryResult }) {
     <section className={resultsSection} aria-label="Query results">
       <div className={resultsMeta}>
         <span>
-          {result.rowCount}
-          {' '}
-          {result.rowCount === 1 ? 'row' : 'rows'}
+          {result.rowCount} {result.rowCount === 1 ? 'row' : 'rows'}
         </span>
         {result.truncated && (
           <span title="The result set had more rows than the console returns">
-            ⚠ showing the first 500 rows — result truncated; narrow the query (LIMIT / filters) to see the rest
+            ⚠ showing the first 500 rows — result truncated; narrow the query (LIMIT / filters) to
+            see the rest
           </span>
         )}
       </div>
@@ -362,7 +355,9 @@ function SqlResults({ result }: { result: SqlQueryResult }) {
           <thead>
             <tr>
               {result.columns.map(column => (
-                <th key={column} scope="col">{column}</th>
+                <th key={column} scope="col">
+                  {column}
+                </th>
               ))}
             </tr>
           </thead>
@@ -403,8 +398,7 @@ export default function SqlConsole() {
 
   // Whichever endpoint reported the gate first speaks for the whole page:
   // the browser token and the server configuration are page-global facts.
-  const gate
-    = sqlAdminGateFromError(runError) ?? sqlAdminGateFromError(tables.error);
+  const gate = sqlAdminGateFromError(runError) ?? sqlAdminGateFromError(tables.error);
 
   const runQuery = async () => {
     const query = queryText.trim();
@@ -455,14 +449,11 @@ export default function SqlConsole() {
                 <p className={sidebarNote}>Loading schema…</p>
               ) : tables.error ? (
                 isBackendUnreachable(tables.error) ? (
-                  <BackendOfflineState
-                    onRetryConnection={() => void tables.refetch()}
-                  />
+                  <BackendOfflineState onRetryConnection={() => void tables.refetch()} />
                 ) : (
                   <div>
                     <p className={sidebarNote}>
-                      Schema unavailable:
-                      {' '}
+                      Schema unavailable:{' '}
                       {tables.error instanceof Error ? tables.error.message : 'unknown error'}
                     </p>
                     <Button variant="outline" size="sm" onClick={() => void tables.refetch()}>
@@ -480,8 +471,7 @@ export default function SqlConsole() {
                     <button
                       type="button"
                       className={sidebarTable}
-                      onClick={() =>
-                        setQueryText(`SELECT *\nFROM "${table}"\nLIMIT 100;`)}
+                      onClick={() => setQueryText(`SELECT *\nFROM "${table}"\nLIMIT 100;`)}
                       title={`Fill the editor with a starter query for "${table}"`}
                     >
                       {table}

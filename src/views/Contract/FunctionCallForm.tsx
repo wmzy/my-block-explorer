@@ -417,7 +417,7 @@ export function FunctionCallForm({
   // the pasted command's text — the calldata is RPC-independent.
   const encodedCall =
     contractAddress === undefined
-      ? ({ ok: false as const, reason: 'contract address unavailable' })
+      ? { ok: false as const, reason: 'contract address unavailable' }
       : isPayable && value.trim() !== '' && valueWei === ''
         ? { ok: false as const, reason: `Invalid ${nativeSymbol} amount` }
         : buildCastCommand({
@@ -446,7 +446,7 @@ export function FunctionCallForm({
   const chainInfo = getChainInfo(chainId);
   const viemScript =
     contractAddress === undefined
-      ? ({ ok: false as const, reason: 'contract address unavailable' })
+      ? { ok: false as const, reason: 'contract address unavailable' }
       : !encodedCall.ok
           ? encodedCall
           : buildViemScript({
@@ -575,7 +575,11 @@ export function FunctionCallForm({
     // tuples) become real JS values, scalars are validated, and every
     // failure lands on its own field instead of surfacing after submit as
     // a generic encoding error.
-    const { values, fieldErrors, isValid } = parseFunctionArgs(func.inputs, args, overloadInputCounts);
+    const { values, fieldErrors, isValid } = parseFunctionArgs(
+      func.inputs,
+      args,
+      overloadInputCounts,
+    );
     setArgErrors(fieldErrors);
 
     // Payable value is entered in the chain's native currency and converted
@@ -618,9 +622,7 @@ export function FunctionCallForm({
       args,
       wei,
       fromTrimmed || undefined,
-      stateOverride.value === undefined
-        ? undefined
-        : toViemStateOverride(stateOverride.value),
+      stateOverride.value === undefined ? undefined : toViemStateOverride(stateOverride.value),
     );
   };
 
@@ -780,8 +782,8 @@ export function FunctionCallForm({
                 {/* Honesty note: the override shapes the simulated eth_call
                     only — the wallet broadcast path never sees it. */}
                 <div className={stateOverrideNoteStyles}>
-                  Applies to the simulated eth_call only — never attached to
-                  wallet sends, never broadcast, never persisted.
+                  Applies to the simulated eth_call only — never attached to wallet sends, never
+                  broadcast, never persisted.
                 </div>
               </Collapsible>
             </div>
@@ -825,8 +827,7 @@ export function FunctionCallForm({
             type="button"
             className={copyButtonStyles}
             disabled={!castCommand.ok}
-            onClick={() =>
-              void handleCopy('cast', castCommand.ok ? castCommand.command : '')}
+            onClick={() => void handleCopy('cast', castCommand.ok ? castCommand.command : '')}
             title={
               castCommand.ok
                 ? 'Copy a runnable foundry cast command — uses the chain\'s default public RPC; replace with your own endpoint if rate-limited'
@@ -839,8 +840,7 @@ export function FunctionCallForm({
             type="button"
             className={copyButtonStyles}
             disabled={!castCommand.ok}
-            onClick={() =>
-              void handleCopy('calldata', castCommand.ok ? castCommand.calldata : '')}
+            onClick={() => void handleCopy('calldata', castCommand.ok ? castCommand.calldata : '')}
             title={
               castCommand.ok
                 ? 'Copy the ABI-encoded calldata (0x…) for this call'

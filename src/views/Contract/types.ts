@@ -37,13 +37,7 @@ export type ContractSource = {
   // vscode.blockscan.com source cache); 'manual' marks a locally-pasted
   // trust annotation, 'local-compile' a real local recompile match
   // (CompileVerifyService), 'unknown'/'none' missing provenance.
-  verificationSource:
-    | 'sourcify'
-    | 'blockscan'
-    | 'manual'
-    | 'local-compile'
-    | 'unknown'
-    | 'none';
+  verificationSource: 'sourcify' | 'blockscan' | 'manual' | 'local-compile' | 'unknown' | 'none';
   verifiedAt?: string;
   lastChecked: string;
   isProxy?: boolean;

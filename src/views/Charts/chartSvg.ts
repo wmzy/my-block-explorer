@@ -12,9 +12,7 @@ export type GappedSeries = ReadonlyArray<number | null>;
  * Min/max over every non-null value of the given series sets, or null
  * when no set carries a single value.
  */
-export function seriesExtent(
-  series: readonly GappedSeries[],
-): { min: number; max: number } | null {
+export function seriesExtent(series: readonly GappedSeries[]): { min: number; max: number } | null {
   let min: number | null = null;
   let max: number | null = null;
   for (const set of series) {

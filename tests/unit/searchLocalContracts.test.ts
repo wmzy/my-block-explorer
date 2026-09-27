@@ -123,20 +123,22 @@ beforeEach(() => {
 
 describe('GET /search localContracts (additive merge)', () => {
   it('returns mapped cache hits for a free-text query, LIMIT 5', async () => {
-    mocks.state.results = [[
-      {
-        chainId: 1,
-        address: '0xabc0000000000000000000000000000000000001',
-        contractName: 'Uniswap V2',
-        isVerified: true,
-      },
-      {
-        chainId: 137,
-        address: '0xdef0000000000000000000000000000000000002',
-        contractName: null,
-        isVerified: null,
-      },
-    ]];
+    mocks.state.results = [
+      [
+        {
+          chainId: 1,
+          address: '0xabc0000000000000000000000000000000000001',
+          contractName: 'Uniswap V2',
+          isVerified: true,
+        },
+        {
+          chainId: 137,
+          address: '0xdef0000000000000000000000000000000000002',
+          contractName: null,
+          isVerified: null,
+        },
+      ],
+    ];
 
     const res = await searchRoutes.request('/search?q=uni');
     expect(res.status).toBe(200);
@@ -168,9 +170,16 @@ describe('GET /search localContracts (additive merge)', () => {
   });
 
   it('scopes the cache read to ?chainId= when present', async () => {
-    mocks.state.results = [[
-      { chainId: 137, address: '0xdef0000000000000000000000000000000000002', contractName: 'Uniswap', isVerified: false },
-    ]];
+    mocks.state.results = [
+      [
+        {
+          chainId: 137,
+          address: '0xdef0000000000000000000000000000000000002',
+          contractName: 'Uniswap',
+          isVerified: false,
+        },
+      ],
+    ];
 
     const res = await searchRoutes.request('/search?q=uni&chainId=137');
     expect(res.status).toBe(200);

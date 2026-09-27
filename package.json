@@ -30,7 +30,7 @@
     "cli"
   ],
   "engines": {
-    "node": ">=22"
+    "node": ">=26"
   },
   "license": "MIT",
   "scripts": {

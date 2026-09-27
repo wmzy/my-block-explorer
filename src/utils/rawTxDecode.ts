@@ -68,8 +68,7 @@ export type DecodedRawTransaction = {
 };
 
 export type RawTransactionDecodeResult =
-  | { ok: true; tx: DecodedRawTransaction }
-  | { ok: false; error: string };
+  { ok: true; tx: DecodedRawTransaction } | { ok: false; error: string };
 
 // 136 hex characters = 68 bytes: a 4-byte selector plus a couple of words,
 // enough for a human to recognize the shape of common calldata.
@@ -90,18 +89,14 @@ function invalid(reason: string): RawTransactionDecodeResult {
  * Total: never throws — every malformed input resolves to
  * `{ ok: false, error }` with one human sentence.
  */
-export async function decodeRawTransaction(
-  raw: string,
-): Promise<RawTransactionDecodeResult> {
+export async function decodeRawTransaction(raw: string): Promise<RawTransactionDecodeResult> {
   if (typeof raw !== 'string') return invalid('input must be a string');
   const trimmed = raw.trim();
   if (trimmed === '') return invalid('input is empty');
-  if (!trimmed.startsWith('0x'))
-    return invalid('input must be a 0x-prefixed hex string');
+  if (!trimmed.startsWith('0x')) return invalid('input must be a 0x-prefixed hex string');
   const body = trimmed.slice(2);
   if (body === '') return invalid('input has no bytes after the 0x prefix');
-  if (body.length % 2 !== 0)
-    return invalid('hex payload has an odd number of digits');
+  if (body.length % 2 !== 0) return invalid('hex payload has an odd number of digits');
   if (!HEX_BODY_PATTERN.test(body))
     return invalid('hex payload contains non-hexadecimal characters');
 
@@ -134,8 +129,7 @@ export async function decodeRawTransaction(
   if (parsed.maxFeePerGas !== undefined) tx.maxFeePerGas = parsed.maxFeePerGas;
   if (parsed.maxPriorityFeePerGas !== undefined)
     tx.maxPriorityFeePerGas = parsed.maxPriorityFeePerGas;
-  if (parsed.maxFeePerBlobGas !== undefined)
-    tx.maxFeePerBlobGas = parsed.maxFeePerBlobGas;
+  if (parsed.maxFeePerBlobGas !== undefined) tx.maxFeePerBlobGas = parsed.maxFeePerBlobGas;
   if (parsed.blobVersionedHashes !== undefined)
     tx.blobVersionedHashes = [...parsed.blobVersionedHashes];
 
@@ -183,7 +177,7 @@ function dataPreviewOf(data: Hex | undefined): string {
   const body = data?.slice(2) ?? '';
   return body.length > DATA_PREVIEW_HEX_CHARS
     ? `0x${body.slice(0, DATA_PREVIEW_HEX_CHARS)}…`
-    : data ?? '0x';
+    : (data ?? '0x');
 }
 
 // Prefer viem's `shortMessage` (a human one-liner) over the full message,

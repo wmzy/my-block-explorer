@@ -208,7 +208,9 @@ function typeExpandOf(type: StorageType | null): StructRow['expand'] {
       if (/\[\d+\]$/.test(type.label)) return 'array';
       if (type.label.startsWith('struct ')) {
         // Memberless struct labels (evmole) have nothing to drill into.
-        return 'members' in type && Array.isArray(type.members) && type.members.length > 0 ? 'struct' : 'unknown';
+        return 'members' in type && Array.isArray(type.members) && type.members.length > 0
+          ? 'struct'
+          : 'unknown';
       }
       return 'leaf';
   }
@@ -255,7 +257,11 @@ export function StorageMemberRow(props: StorageMemberRowProps) {
         )}
         {props.expr != null && (
           <CopyButton
-            text={buildViemReadSnippet({ chainId: props.chainId, address: props.address, slotExpr: props.expr })}
+            text={buildViemReadSnippet({
+              chainId: props.chainId,
+              address: props.address,
+              slotExpr: props.expr,
+            })}
             label="viem"
             title={`Copy a runnable viem snippet reading ${label} (slot ${formatSlotDecimal(slot)})`}
           />

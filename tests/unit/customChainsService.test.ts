@@ -99,7 +99,10 @@ describe('addCustomChain', () => {
 
   it('rejects with the ApiError (409 already-known etc.) and registers nothing', async () => {
     mocks.post.mockRejectedValue(
-      new ApiError('The RPC reports chain ID 137, which this explorer already knows as "Polygon".', 409),
+      new ApiError(
+        'The RPC reports chain ID 137, which this explorer already knows as "Polygon".',
+        409,
+      ),
     );
 
     await expect(addCustomChain({ rpcUrl: 'https://polygon-rpc.example' })).rejects.toMatchObject({

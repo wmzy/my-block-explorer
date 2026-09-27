@@ -25,11 +25,12 @@ vi.mock('@/database/drizzle', () => ({
       from: (table: unknown) => ({
         where: () => ({
           then: (resolve: unknown, reject: unknown) => {
-            const name = table === contractSources
-              ? 'contract_sources'
-              : table === storageLayouts
-                ? 'storage_layouts'
-                : String(table);
+            const name =
+              table === contractSources
+                ? 'contract_sources'
+                : table === storageLayouts
+                  ? 'storage_layouts'
+                  : String(table);
             return Promise.resolve([{ count: dbState.counts[name] ?? 0 }]).then(
               resolve as never,
               reject as never,
@@ -40,11 +41,12 @@ vi.mock('@/database/drizzle', () => ({
     }),
     delete: (table: unknown) => ({
       where: () => {
-        const name = table === contractSources
-          ? 'contract_sources'
-          : table === storageLayouts
-            ? 'storage_layouts'
-            : String(table);
+        const name =
+          table === contractSources
+            ? 'contract_sources'
+            : table === storageLayouts
+              ? 'storage_layouts'
+              : String(table);
         dbState.deleted.push(name);
         if (dbState.deleteError) return Promise.reject(dbState.deleteError);
         return Promise.resolve([]);

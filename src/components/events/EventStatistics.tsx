@@ -47,11 +47,7 @@ export type IndexingCoverage = {
 // persist currentBlock (both resume from it instead of restarting), so the
 // blocks they already walked are indexed and queryable — the backend's own
 // range aggregation counts them the same way.
-const CHECKPOINTED_STATUSES: ReadonlySet<RangeStatus> = new Set([
-  'indexing',
-  'paused',
-  'error',
-]);
+const CHECKPOINTED_STATUSES: ReadonlySet<RangeStatus> = new Set(['indexing', 'paused', 'error']);
 
 /**
  * Union-of-ranges coverage over the span [min fromBlock, max toBlock].
@@ -63,9 +59,7 @@ const CHECKPOINTED_STATUSES: ReadonlySet<RangeStatus> = new Set([
  * SegmentedProgressBar renders for checkpointed segments in
  * IndexingRangeManager.
  */
-export const computeIndexingCoverage = (
-  ranges: IndexingRangeSummary[],
-): IndexingCoverage => {
+export const computeIndexingCoverage = (ranges: IndexingRangeSummary[]): IndexingCoverage => {
   if (ranges.length === 0) return { coveredBlocks: 0, spanBlocks: 0, coverage: 0 };
 
   const spanStart = Math.min(...ranges.map(r => Number(r.fromBlock)));
@@ -236,16 +230,14 @@ export const EventStatistics = ({
           prevEventsRef.current = statusRes.value.totalEventsIndexed;
           onEventsUpdated?.();
         }
-      }
-      else {
+      } else {
         // Keep the last good stats (if any); mark the outage honestly.
         setStatusFailed(true);
       }
       if (rangesRes.status === 'fulfilled') {
         setRanges(rangesRes.value.ranges ?? []);
       }
-    }
-    finally {
+    } finally {
       setLoading(false);
     }
   }, [chainId, contractAddress, onEventsUpdated]);
@@ -280,8 +272,8 @@ export const EventStatistics = ({
   // progress whenever ranges did not span the full distance.
   const coverage = computeIndexingCoverage(ranges);
 
-  const statusColor
-    = stats?.status === 'indexing'
+  const statusColor =
+    stats?.status === 'indexing'
       ? 'var(--haze-color-info)'
       : stats?.status === 'error'
         ? 'var(--haze-color-danger)'
@@ -292,12 +284,13 @@ export const EventStatistics = ({
       <div className={metricStyle}>
         {stats ? (
           <>
-            <span
-              className={statusDotStyle}
-              style={{ background: statusColor }}
-            />
+            <span className={statusDotStyle} style={{ background: statusColor }} />
             <span className={metricValueStyle}>
-              {stats.status === 'indexing' ? 'Indexing' : stats.status === 'error' ? 'Error' : 'Idle'}
+              {stats.status === 'indexing'
+                ? 'Indexing'
+                : stats.status === 'error'
+                  ? 'Error'
+                  : 'Idle'}
             </span>
           </>
         ) : (
@@ -310,13 +303,9 @@ export const EventStatistics = ({
       <div className={metricStyle}>
         Indexing coverage:
         <span className={metricValueStyle}>
-          {coverage.coveredBlocks.toLocaleString()}
-          {' '}
-          /
-          {coverage.spanBlocks.toLocaleString()}
+          {coverage.coveredBlocks.toLocaleString()} /{coverage.spanBlocks.toLocaleString()}
         </span>
-        (
-        {coverage.coverage.toFixed(1)}
+        ({coverage.coverage.toFixed(1)}
         %)
         <span className={coverageScopeStyle}>of your configured block ranges</span>
       </div>

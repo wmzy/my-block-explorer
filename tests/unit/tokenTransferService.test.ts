@@ -158,7 +158,7 @@ const makeHarness = (options: {
   const calls: GetLogsArgs[] = [];
   const client: TransferScanClient = {
     getBlockNumber: async () => options.latest ?? 1_000n,
-    getLogs: async (args) => {
+    getLogs: async args => {
       calls.push(args);
       if (
         options.rejectRangeAbove !== undefined &&
@@ -168,7 +168,7 @@ const makeHarness = (options: {
           `block range too large: ${args.toBlock - args.fromBlock + 1n} blocks exceeds provider limit`,
         );
       }
-      return (options.logs ?? []).filter((log) => matchesFilter(log, args) && inRange(log, args));
+      return (options.logs ?? []).filter(log => matchesFilter(log, args) && inRange(log, args));
     },
   };
   const service = createTokenTransferService({
@@ -199,14 +199,14 @@ describe('TokenTransferService - merge, sort and self-transfer dedupe', () => {
     expect(result.coverage).toBe('complete');
     expect(result.windowBlocks).toBe(100_000);
     expect(result.nextCursor).toBeNull();
-    expect(result.transfers.map((t) => [t.blockNumber, t.logIndex])).toEqual([
+    expect(result.transfers.map(t => [t.blockNumber, t.logIndex])).toEqual([
       [900, 1],
       [900, 0],
       [800, 0],
       [700, 3],
       [600, 2],
     ]);
-    expect(result.transfers.map((t) => t.direction)).toEqual(['in', 'out', 'in', 'out', 'out']);
+    expect(result.transfers.map(t => t.direction)).toEqual(['in', 'out', 'in', 'out', 'out']);
 
     const [incoming, outgoing, single, batch, self] = result.transfers;
 
@@ -239,7 +239,7 @@ describe('TokenTransferService - merge, sort and self-transfer dedupe', () => {
     expect(self.from).toBe(OWNER.toLowerCase());
     expect(self.to).toBe(OWNER.toLowerCase());
     expect(self.value).toBe('42');
-    expect(result.transfers.filter((t) => t.blockNumber === 600)).toHaveLength(1);
+    expect(result.transfers.filter(t => t.blockNumber === 600)).toHaveLength(1);
   });
 
   it('keeps ERC-721-shaped Transfer logs (4 topics, empty data) as rows with the tokenId as value', async () => {
@@ -258,7 +258,7 @@ describe('TokenTransferService - merge, sort and self-transfer dedupe', () => {
     expect(result.transfers).toHaveLength(2);
     // Both directions surface: the positional topic vector matches the
     // fourth topic at the same from/to slots as the 3-topic shape.
-    expect(result.transfers.map((t) => t.direction)).toEqual(['in', 'out']);
+    expect(result.transfers.map(t => t.direction)).toEqual(['in', 'out']);
     const [incoming, outgoing] = result.transfers;
     for (const row of [incoming, outgoing]) {
       expect(row.standard).toBe('erc20-or-erc721');
@@ -278,7 +278,10 @@ describe('TokenTransferService - merge, sort and self-transfer dedupe', () => {
       ...erc721Log(OTHER, OWNER, 77n, 900, 0),
       topics: [ERC20_TOPIC, topicAddress(OTHER), topicAddress(OWNER), '0xnot-hex'],
     };
-    const { service } = makeHarness({ logs: [garbage, erc20Log(OWNER, OTHER, 5n, 800, 0)], latest: 1_000n });
+    const { service } = makeHarness({
+      logs: [garbage, erc20Log(OWNER, OTHER, 5n, 800, 0)],
+      latest: 1_000n,
+    });
 
     const result = await service.getTokenTransfers(1, OWNER, 0, 25);
 
@@ -300,7 +303,7 @@ describe('TokenTransferService - adaptive chunk sizing', () => {
     expect(result.windowBlocks).toBe(10_000);
     expect(result.transfers).toEqual([]);
 
-    const ranges = calls.map((call) => call.toBlock - call.fromBlock + 1n);
+    const ranges = calls.map(call => call.toBlock - call.fromBlock + 1n);
     // First attempt uses the full initial chunk.
     expect(ranges[0]).toBe(5_000n);
     // Rejections halve: 5000 -> 2500 -> 1250 -> 625 -> 312 -> 156, and
@@ -309,16 +312,14 @@ describe('TokenTransferService - adaptive chunk sizing', () => {
     for (const size of ['5000', '2500', '1250', '625', '312', '156']) {
       expect(ranges.map(String)).toContain(size);
     }
-    expect(ranges.every((range) => range >= 10n)).toBe(true);
+    expect(ranges.every(range => range >= 10n)).toBe(true);
     // The first range the provider accepts is the halved size below its cap.
-    const firstAcceptedIdx = ranges.findIndex((range) => range <= 300n);
+    const firstAcceptedIdx = ranges.findIndex(range => range <= 300n);
     expect(ranges[firstAcceptedIdx]).toBe(156n);
     // Growth after clean chunks stays below the discovered ceiling
     // (ceiling = last rejected size - 1 = 311): no runaway re-attempts of
     // rejected sizes burning the call budget.
-    expect(
-      ranges.slice(firstAcceptedIdx).every((range) => range <= 311n),
-    ).toBe(true);
+    expect(ranges.slice(firstAcceptedIdx).every(range => range <= 311n)).toBe(true);
   });
 });
 
@@ -409,7 +410,7 @@ describe('TokenTransferService - token mode', () => {
     // All three shapes surface with the emitting token as `token`.
     expect(result.mode).toBe('token');
     expect(result.coverage).toBe('complete');
-    expect(result.transfers.map((t) => t.standard)).toEqual([
+    expect(result.transfers.map(t => t.standard)).toEqual([
       'erc20-or-erc721',
       'erc1155-single',
       'erc1155-batch',
@@ -430,7 +431,7 @@ describe('TokenTransferService - token mode', () => {
 
     const result = await service.getTokenTransfers(1, TOKEN, 0, 25, undefined, false, 'token');
 
-    expect(result.transfers.map((t) => t.direction)).toEqual(['out', 'in', 'none', 'out']);
+    expect(result.transfers.map(t => t.direction)).toEqual(['out', 'in', 'none', 'out']);
   });
 
   it('participant mode keeps its six topic-filtered calls with no address filter', async () => {
@@ -443,8 +444,8 @@ describe('TokenTransferService - token mode', () => {
       expect(call.address).toBeUndefined();
       expect(call.args).toBeDefined();
     }
-    expect(calls.filter((call) => call.args?.from === OWNER.toLowerCase())).toHaveLength(3);
-    expect(calls.filter((call) => call.args?.to === OWNER.toLowerCase())).toHaveLength(3);
+    expect(calls.filter(call => call.args?.from === OWNER.toLowerCase())).toHaveLength(3);
+    expect(calls.filter(call => call.args?.to === OWNER.toLowerCase())).toHaveLength(3);
   });
 
   it('caches the two modes separately and reports the mode on every result', async () => {
@@ -482,12 +483,12 @@ describe('TokenTransferService - cursor pagination over the cached list', () => 
     const { service, calls } = makeHarness({ logs, latest: 1_000n });
 
     const page1 = await service.getTokenTransfers(1, OWNER, 0, 2);
-    expect(page1.transfers.map((t) => t.blockNumber)).toEqual([900, 800]);
+    expect(page1.transfers.map(t => t.blockNumber)).toEqual([900, 800]);
     expect(page1.nextCursor).toBe('2');
     expect(calls).toHaveLength(6); // one chunk = 6 getLogs (3 shapes x 2 directions)
 
     const page2 = await service.getTokenTransfers(1, OWNER, 2, 2);
-    expect(page2.transfers.map((t) => t.blockNumber)).toEqual([700]);
+    expect(page2.transfers.map(t => t.blockNumber)).toEqual([700]);
     expect(page2.transfers[0].direction).toBe('out');
     expect(page2.nextCursor).toBeNull();
     expect(calls).toHaveLength(6); // served entirely from the cache

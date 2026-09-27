@@ -405,8 +405,7 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
       const configs = await getRpcConfigs();
       const chainConfig = configs.find(c => c.chainId === chainId);
       setCurrentConfig(chainConfig ?? null);
-    }
-    catch (error) {
+    } catch (error) {
       // Reads are open server-side, so a failure here is a transport or
       // server problem, not the admin gate.
       console.error('Failed to load current config:', error);
@@ -431,8 +430,7 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
     try {
       await get('/api/performance/events');
       toast.success('Admin token saved & verified.');
-    }
-    catch (error) {
+    } catch (error) {
       if (error instanceof ApiError && error.status === 403) {
         // requireAdminToken fails closed, so a 403 covers both a wrong
         // token and a server with no ADMIN_TOKEN configured at all — the
@@ -440,15 +438,12 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
         toast.error(
           'Token saved, but the server rejected it — wrong token, or the server has no ADMIN_TOKEN configured.',
         );
-      }
-      else {
+      } else {
         // Transport failure (e.g. the degraded-mode fast reject 'Backend
         // not connected — indexed data unavailable') or an unexpected
         // server error: surface the real message verbatim.
         toast.error(
-          error instanceof ApiError
-            ? error.message
-            : 'Admin token saved, but verification failed.',
+          error instanceof ApiError ? error.message : 'Admin token saved, but verification failed.',
         );
       }
     }
@@ -495,16 +490,13 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
       exportBackupFile(parts);
       if (parts.notes && parts.notes.length > 0) {
         toast.success(`Backup exported — with notes:\n${parts.notes.join('\n')}`);
-      }
-      else {
+      } else {
         toast.success('Backup exported to explorer-backup.json.');
       }
-    }
-    catch (error) {
+    } catch (error) {
       console.error('Backup export failed:', error);
       toast.error('Backup export failed.');
-    }
-    finally {
+    } finally {
       setBackupBusy(false);
     }
   };
@@ -524,8 +516,7 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
     let text: string;
     try {
       text = await file.text();
-    }
-    catch {
+    } catch {
       setBackupMessage('The file could not be read.');
       return;
     }
@@ -535,14 +526,15 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
       return;
     }
     setPendingRestoreNotes(parsed.file.notes ?? []);
-    setPendingRestore(planRestore(parsed.file, key => {
-      try {
-        return localStorage.getItem(key);
-      }
-      catch {
-        return null;
-      }
-    }));
+    setPendingRestore(
+      planRestore(parsed.file, key => {
+        try {
+          return localStorage.getItem(key);
+        } catch {
+          return null;
+        }
+      }),
+    );
   };
 
   const handleExecuteRestore = async () => {
@@ -553,14 +545,12 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
       setRestoreReport(report);
       setPendingRestore(null);
       setPendingRestoreNotes([]);
-    }
-    catch (error) {
+    } catch (error) {
       // executeRestore absorbs per-item failures into its report; a
       // throw here is an unexpected crash and lands verbatim.
       console.error('Restore failed:', error);
       setBackupMessage(error instanceof Error ? error.message : 'Restore failed.');
-    }
-    finally {
+    } finally {
       setRestoring(false);
     }
   };
@@ -641,8 +631,7 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
       setCustomMaxEventRange('');
 
       toast.success('RPC configuration saved successfully!');
-    }
-    catch (error) {
+    } catch (error) {
       console.error('Failed to save config:', error);
       // A 403 means the server has ADMIN_TOKEN configured but this
       // browser's token is missing or wrong; flag it with the notice.
@@ -656,8 +645,7 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
         // diagnosis, not a network hiccup. Surface it instead of the
         // generic network advice.
         toast.error(error.message);
-      }
-      else {
+      } else {
         // The 403 body carries a server message explaining the gate;
         // show it verbatim. Anything else degrades to generic advice.
         toast.error(
@@ -666,8 +654,7 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
             : 'Failed to save configuration. Please check your network connection.',
         );
       }
-    }
-    finally {
+    } finally {
       setLoading(false);
     }
   };
@@ -688,8 +675,7 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
       await loadCurrentConfig();
       onConfigSaved?.();
       toast.success('Reverted to default RPC node.');
-    }
-    catch (error) {
+    } catch (error) {
       console.error('Failed to remove config:', error);
       if (error instanceof ApiError && error.status === 403) {
         setSaveForbidden(true);
@@ -717,11 +703,7 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
   return (
     <Dialog open={open} onClose={handleClose} className={dialogContent}>
       <div className={headerStyles}>
-        <h2>
-          {chainName}
-          {' '}
-          RPC Configuration
-        </h2>
+        <h2>{chainName} RPC Configuration</h2>
         <button onClick={handleClose}>×</button>
       </div>
 
@@ -729,39 +711,33 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
       <div className={sectionStyles}>
         <h3>Current status</h3>
         <div className={currentConfigStyles}>
-          {currentConfig
-            ? (
-                <>
-                  <div className="status custom">✅ Using a custom RPC node</div>
-                  <div style={{ marginBottom: '8px' }}>
-                    <div style={{ fontWeight: '500', marginBottom: '4px' }}>{currentConfig.name}</div>
-                    <div className="url">{currentConfig.url}</div>
-                    {currentConfig.maxEventRange && (
-                      <div
-                        style={{
-                          fontSize: '12px',
-                          color: '#6c757d',
-                          marginTop: '4px',
-                        }}
-                      >
-                        📊 Event query range:
-                        {' '}
-                        {currentConfig.maxEventRange}
-                        {' '}
-                        blocks
-                      </div>
-                    )}
+          {currentConfig ? (
+            <>
+              <div className="status custom">✅ Using a custom RPC node</div>
+              <div style={{ marginBottom: '8px' }}>
+                <div style={{ fontWeight: '500', marginBottom: '4px' }}>{currentConfig.name}</div>
+                <div className="url">{currentConfig.url}</div>
+                {currentConfig.maxEventRange && (
+                  <div
+                    style={{
+                      fontSize: '12px',
+                      color: '#6c757d',
+                      marginTop: '4px',
+                    }}
+                  >
+                    📊 Event query range: {currentConfig.maxEventRange} blocks
                   </div>
-                  <div className="actions">
-                    <button className="btn danger small" onClick={handleRemoveConfig}>
-                      Revert to default
-                    </button>
-                  </div>
-                </>
-              )
-            : (
-                <div className="status default">🔄 Using the default RPC node</div>
-              )}
+                )}
+              </div>
+              <div className="actions">
+                <button className="btn danger small" onClick={handleRemoveConfig}>
+                  Revert to default
+                </button>
+              </div>
+            </>
+          ) : (
+            <div className="status default">🔄 Using the default RPC node</div>
+          )}
         </div>
       </div>
 
@@ -857,8 +833,8 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
                   marginTop: '4px',
                 }}
               >
-                Maximum block range per event query. Smaller values are more
-                stable; larger values are faster but may time out.
+                Maximum block range per event query. Smaller values are more stable; larger values
+                are faster but may time out.
               </div>
             </div>
 
@@ -873,74 +849,55 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
                   fontSize: '14px',
                 }}
               >
-                {testResult.status === 'success'
-                  ? (
+                {testResult.status === 'success' ? (
+                  <div>
+                    <div style={{ marginBottom: '8px' }}>
+                      ✅ <strong>Connection successful</strong> (latency: {testResult.latency}
+                      ms)
+                    </div>
+                    <div style={{ fontSize: '12px', lineHeight: '1.4' }}>
+                      {testResult.detectedChainId && (
+                        <div>
+                          🔗 Chain ID: {testResult.detectedChainId}{' '}
+                          {testResult.detectedChainId === chainId ? '✅' : '❌'}
+                        </div>
+                      )}
                       <div>
-                        <div style={{ marginBottom: '8px' }}>
-                          ✅
-                          {' '}
-                          <strong>Connection successful</strong>
-                          {' '}
-                          (latency:
-                          {' '}
-                          {testResult.latency}
-                          ms)
-                        </div>
-                        <div style={{ fontSize: '12px', lineHeight: '1.4' }}>
-                          {testResult.detectedChainId && (
-                            <div>
-                              🔗 Chain ID:
-                              {' '}
-                              {testResult.detectedChainId}
-                              {' '}
-                              {testResult.detectedChainId === chainId ? '✅' : '❌'}
-                            </div>
-                          )}
-                          <div>
-                            📚 Historical data:
-                            {testResult.supportsHistory ? '✅ supported' : '❌ not supported'}
-                          </div>
-                          {testResult.maxEventRange && (
-                            <div>
-                              📊 Recommended event range:
-                              {testResult.maxEventRange}
-                              {' '}
-                              blocks
-                            </div>
-                          )}
-                        </div>
+                        📚 Historical data:
+                        {testResult.supportsHistory ? '✅ supported' : '❌ not supported'}
                       </div>
-                    )
-                  : (
-                      <div>
-                        <div style={{ marginBottom: '8px' }}>
-                          ❌
-                          {' '}
-                          <strong>Connection failed</strong>
+                      {testResult.maxEventRange && (
+                        <div>
+                          📊 Recommended event range:
+                          {testResult.maxEventRange} blocks
                         </div>
-                        <div style={{ fontSize: '12px', color: '#721c24' }}>{testResult.error}</div>
-                        <div
-                          style={{
-                            fontSize: '11px',
-                            marginTop: '8px',
-                            fontFamily: 'monospace',
-                            background: 'rgba(0,0,0,0.1)',
-                            padding: '4px',
-                            borderRadius: '3px',
-                          }}
-                        >
-                          Verification commands:
-                          <br />
-                          cast chain-id --rpc-url
-                          {' '}
-                          {customUrl}
-                          <br />
-                          cast block-number --rpc-url
-                          {' '}
-                          {customUrl}
-                        </div>
-                      </div>
-                    )}
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <div style={{ marginBottom: '8px' }}>
+                      ❌ <strong>Connection failed</strong>
+                    </div>
+                    <div style={{ fontSize: '12px', color: '#721c24' }}>{testResult.error}</div>
+                    <div
+                      style={{
+                        fontSize: '11px',
+                        marginTop: '8px',
+                        fontFamily: 'monospace',
+                        background: 'rgba(0,0,0,0.1)',
+                        padding: '4px',
+                        borderRadius: '3px',
+                      }}
+                    >
+                      Verification commands:
+                      <br />
+                      cast chain-id --rpc-url {customUrl}
+                      <br />
+                      cast block-number --rpc-url {customUrl}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -970,9 +927,8 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
         <h3>Admin token</h3>
         {saveForbidden && (
           <div className={adminNoticeStyles}>
-            Saving requires an admin token — the server has ADMIN_TOKEN
-            configured but this browser's token is missing or wrong. Enter it
-            below, then retry the save.
+            Saving requires an admin token — the server has ADMIN_TOKEN configured but this
+            browser's token is missing or wrong. Enter it below, then retry the save.
           </div>
         )}
         <div className={customFormStyles}>
@@ -1012,8 +968,8 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
       <div className={sectionStyles}>
         <h3>IPFS gateway</h3>
         <p>
-          Gateway used to rewrite <code>ipfs://</code> NFT metadata and image URIs
-          into browser-fetchable https URLs. Stored in this browser only.
+          Gateway used to rewrite <code>ipfs://</code> NFT metadata and image URIs into
+          browser-fetchable https URLs. Stored in this browser only.
         </p>
         <div className={customFormStyles}>
           <div className="form-group">
@@ -1035,8 +991,8 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
             className="btn primary small"
             onClick={handleSaveIpfsGateway}
             disabled={
-              !ipfsGatewayInput.trim()
-              || normalizeIpfsGateway(ipfsGatewayInput) === ipfsGatewayStored
+              !ipfsGatewayInput.trim() ||
+              normalizeIpfsGateway(ipfsGatewayInput) === ipfsGatewayStored
             }
           >
             Save gateway
@@ -1058,10 +1014,9 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
       <div className={sectionStyles}>
         <h3>Backup &amp; restore</h3>
         <p>
-          Export your address labels, custom chains and this browser's
-          preferences (watchlist, theme, IPFS gateway, custom ABIs, private
-          notes) to one JSON file, and restore them here or on another
-          machine.
+          Export your address labels, custom chains and this browser's preferences (watchlist,
+          theme, IPFS gateway, custom ABIs, private notes) to one JSON file, and restore them here
+          or on another machine.
         </p>
         <div className={`${buttonStyles} btn-group`}>
           <button
@@ -1099,37 +1054,29 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
             <strong>Restore this backup?</strong>
             <ul>
               <li>
-                {pendingRestore.labelPuts.length}
-                {' '}
-                address label(s) will be saved to the backend
+                {pendingRestore.labelPuts.length} address label(s) will be saved to the backend
               </li>
               <li>
-                {pendingRestore.chainPosts.length}
-                {' '}
-                custom chain(s) will be re-registered (each RPC is probed
-                server-side)
+                {pendingRestore.chainPosts.length} custom chain(s) will be re-registered (each RPC
+                is probed server-side)
               </li>
               <li>
-                {pendingRestore.storageWrites.length}
-                {' '}
-                browser preference key(s) will be written
+                {pendingRestore.storageWrites.length} browser preference key(s) will be written
                 {pendingRestore.storageWrites.some(w => w.overwrites)
                   ? ` (${pendingRestore.storageWrites.filter(w => w.overwrites).length} overwriting current values)`
                   : ''}
               </li>
             </ul>
-            {pendingRestore.labelPuts.length === 0
-              && pendingRestore.chainPosts.length === 0
-              && pendingRestore.storageWrites.length === 0 && (
+            {pendingRestore.labelPuts.length === 0 &&
+              pendingRestore.chainPosts.length === 0 &&
+              pendingRestore.storageWrites.length === 0 && (
               <div className="note">
                 Nothing to change — this browser already matches the backup.
               </div>
             )}
             {pendingRestoreNotes.map(noteLine => (
               <div className="note" key={noteLine}>
-                ℹ️
-                {' '}
-                {noteLine}
+                ℹ️ {noteLine}
               </div>
             ))}
             <div className={`${buttonStyles} btn-group`}>
@@ -1138,10 +1085,10 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
                 className="btn primary small"
                 onClick={handleExecuteRestore}
                 disabled={
-                  restoring
-                  || (pendingRestore.labelPuts.length === 0
-                    && pendingRestore.chainPosts.length === 0
-                    && pendingRestore.storageWrites.length === 0)
+                  restoring ||
+                  (pendingRestore.labelPuts.length === 0 &&
+                    pendingRestore.chainPosts.length === 0 &&
+                    pendingRestore.storageWrites.length === 0)
                 }
               >
                 {restoring ? 'Restoring…' : 'Restore now'}
@@ -1165,11 +1112,7 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
             <strong>Restore summary</strong>
             <ul>
               <li>
-                Browser preferences:
-                {' '}
-                {restoreReport.storage.written}
-                {' '}
-                written
+                Browser preferences: {restoreReport.storage.written} written
                 {restoreReport.storage.failures.length > 0
                   ? `, ${restoreReport.storage.failures.length} failed`
                   : ''}
@@ -1177,65 +1120,33 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
               </li>
               {restoreReport.storage.failures.map(failure => (
                 <li key={failure.key}>
-                  ⚠️
-                  {' '}
-                  {failure.key}
-                  :
-                  {' '}
-                  {failure.message}
+                  ⚠️ {failure.key}: {failure.message}
                 </li>
               ))}
               <li>
-                Labels:
-                {' '}
-                {restoreReport.labels.restored}
-                {' '}
-                of
-                {' '}
-                {restoreReport.labels.attempted}
-                {' '}
-                restored
+                Labels: {restoreReport.labels.restored} of {restoreReport.labels.attempted} restored
               </li>
               {restoreReport.labels.adminDenied && (
                 <li>
-                  ⚠️ Admin token required — labels were not restored. Save
-                  the token under &quot;Admin token&quot;, then restore again.
+                  ⚠️ Admin token required — labels were not restored. Save the token under
+                  &quot;Admin token&quot;, then restore again.
                 </li>
               )}
               {restoreReport.labels.failures.map(failure => (
                 <li key={failure.address}>
-                  ⚠️
-                  {' '}
-                  {failure.address}
-                  :
-                  {' '}
-                  {failure.message}
+                  ⚠️ {failure.address}: {failure.message}
                 </li>
               ))}
               <li>
-                Custom chains:
-                {' '}
-                {restoreReport.chains.registered}
-                {' '}
-                of
-                {' '}
-                {restoreReport.chains.attempted}
-                {' '}
+                Custom chains: {restoreReport.chains.registered} of {restoreReport.chains.attempted}{' '}
                 registered
               </li>
               {restoreReport.chains.adminDenied && (
-                <li>
-                  ⚠️ Admin token required — custom chains were not registered.
-                </li>
+                <li>⚠️ Admin token required — custom chains were not registered.</li>
               )}
               {restoreReport.chains.failures.map(failure => (
                 <li key={failure.name}>
-                  ⚠️
-                  {' '}
-                  {failure.name}
-                  :
-                  {' '}
-                  {failure.message}
+                  ⚠️ {failure.name}: {failure.message}
                 </li>
               ))}
             </ul>

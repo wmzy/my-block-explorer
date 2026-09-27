@@ -28,7 +28,7 @@ describe('Chains Configuration', () => {
     });
 
     it('热门链应该都在支持的链列表中', () => {
-      POPULAR_CHAINS.forEach((popularChain) => {
+      POPULAR_CHAINS.forEach(popularChain => {
         const isSupported = SUPPORTED_CHAINS.some(chain => chain.id === popularChain.id);
         expect(isSupported).toBe(true);
       });
@@ -94,7 +94,7 @@ describe('Chains Configuration', () => {
 
     it('返回的链ID应该都是数字', () => {
       const chainIds = getSupportedChainIds();
-      chainIds.forEach((id) => {
+      chainIds.forEach(id => {
         expect(typeof id).toBe('number');
         expect(id).toBeGreaterThan(0);
       });
@@ -160,10 +160,11 @@ describe('Chains Configuration', () => {
 
     it('应该正确识别测试网', () => {
       // 查找测试网链进行测试
-      const testnetChain = SUPPORTED_CHAINS.find(chain =>
-        chain.name.toLowerCase().includes('test')
-        || chain.name.toLowerCase().includes('sepolia')
-        || chain.name.toLowerCase().includes('goerli'),
+      const testnetChain = SUPPORTED_CHAINS.find(
+        chain =>
+          chain.name.toLowerCase().includes('test') ||
+          chain.name.toLowerCase().includes('sepolia') ||
+          chain.name.toLowerCase().includes('goerli'),
       );
 
       if (testnetChain) {
@@ -188,7 +189,7 @@ describe('Chains Configuration', () => {
       const firstFewChains = sortedChains.slice(0, POPULAR_CHAINS.length);
 
       // 检查前几个链是否都是热门链
-      firstFewChains.forEach((chain) => {
+      firstFewChains.forEach(chain => {
         expect(isPopularChain(chain.id)).toBe(true);
       });
     });

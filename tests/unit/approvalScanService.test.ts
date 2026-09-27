@@ -60,7 +60,9 @@ const matchesFilter = (log: ScanLog, args: ApprovalLogsArgs): boolean => {
   if (args.args?.owner !== undefined && log.topics[1] !== topicAddress(args.args.owner)) {
     return false;
   }
-  return log.blockNumber !== null && log.blockNumber >= args.fromBlock && log.blockNumber <= args.toBlock;
+  return (
+    log.blockNumber !== null && log.blockNumber >= args.fromBlock && log.blockNumber <= args.toBlock
+  );
 };
 
 type HarnessOptions = {
@@ -94,8 +96,11 @@ const makeHarness = (options: HarnessOptions = {}) => {
 
   const client: ApprovalScanClient = {
     getBlockNumber: async () => options.latest ?? 10_000n,
-    getLogs: async (args) => {
-      if (options.rejectRangeAbove !== undefined && args.toBlock - args.fromBlock + 1n > options.rejectRangeAbove) {
+    getLogs: async args => {
+      if (
+        options.rejectRangeAbove !== undefined &&
+        args.toBlock - args.fromBlock + 1n > options.rejectRangeAbove
+      ) {
         rejections += 1;
         throw new Error(
           `block range too large: ${args.toBlock - args.fromBlock + 1n} blocks exceeds provider limit`,
@@ -106,15 +111,16 @@ const makeHarness = (options: HarnessOptions = {}) => {
       }
       successes += 1;
       getLogsCalls.push(args);
-      successfulChunkMax = successfulChunkMax > args.toBlock - args.fromBlock + 1n
-        ? successfulChunkMax
-        : args.toBlock - args.fromBlock + 1n;
-      return (options.logs ?? []).filter((log) => matchesFilter(log, args));
+      successfulChunkMax =
+        successfulChunkMax > args.toBlock - args.fromBlock + 1n
+          ? successfulChunkMax
+          : args.toBlock - args.fromBlock + 1n;
+      return (options.logs ?? []).filter(log => matchesFilter(log, args));
     },
-    multicall: async (args) => {
+    multicall: async args => {
       if (options.multicallError !== undefined) throw options.multicallError;
       multicallCalls.push({ contracts: args.contracts });
-      return args.contracts.map((contract) => {
+      return args.contracts.map(contract => {
         const spender = String(contract.args[1] ?? '').toLowerCase();
         const key = `${contract.address.toLowerCase()}:${spender}`;
         const value = options.allowances?.get(key);
@@ -137,11 +143,19 @@ const makeHarness = (options: HarnessOptions = {}) => {
     getLogsCalls,
     multicallCalls,
     counts: {
-      get rejections() { return rejections; },
-      get successes() { return successes; },
-      get successfulChunkMax() { return successfulChunkMax; },
+      get rejections() {
+        return rejections;
+      },
+      get successes() {
+        return successes;
+      },
+      get successfulChunkMax() {
+        return successfulChunkMax;
+      },
     },
-    setNow: (next: number) => { t = next; },
+    setNow: (next: number) => {
+      t = next;
+    },
   };
 };
 
@@ -171,7 +185,7 @@ describe('ApprovalScanService - distinct pair derivation', () => {
     expect(result.truncated).toBe(false);
     // Newest first: SPENDER_A on TOKEN_A (block 20), then SPENDER_B
     // (block 15), then TOKEN_B (block 12).
-    expect(result.approvals.map((row) => `${row.token}:${row.spender}`)).toEqual([
+    expect(result.approvals.map(row => `${row.token}:${row.spender}`)).toEqual([
       pairKey(TOKEN_A, SPENDER_A),
       pairKey(TOKEN_A, SPENDER_B),
       pairKey(TOKEN_B, SPENDER_A),
@@ -179,7 +193,7 @@ describe('ApprovalScanService - distinct pair derivation', () => {
     // One aggregated read per pair — all three in the single first batch.
     expect(multicallCalls).toHaveLength(1);
     expect(multicallCalls[0]?.contracts).toHaveLength(3);
-    expect(result.approvals.every((row) => row.allowance === '1000000')).toBe(true);
+    expect(result.approvals.every(row => row.allowance === '1000000')).toBe(true);
   });
 
   it('omits zero grants and flags effectively-unlimited allowances as isMax', async () => {
@@ -205,13 +219,21 @@ describe('ApprovalScanService - distinct pair derivation', () => {
     const result = await service.getApprovals(1, OWNER);
 
     expect(result.pairCount).toBe(4);
-    const bySpender = new Map(result.approvals.map((row) => [row.spender, row]));
+    const bySpender = new Map(result.approvals.map(row => [row.spender, row]));
     expect(bySpender.has(SPENDER_A.toLowerCase())).toBe(true); // TOKEN_B row survived
     expect(result.approvals).toHaveLength(3);
-    expect(result.approvals.find((r) => r.token === TOKEN_A.toLowerCase())?.isMax).toBe(true);
-    expect(result.approvals.find((r) => r.token === TOKEN_B.toLowerCase() && r.spender === SPENDER_A.toLowerCase())?.isMax).toBe(true);
-    expect(result.approvals.find((r) => r.spender === SPENDER_B.toLowerCase() && r.token === TOKEN_B.toLowerCase())?.isMax).toBe(false);
-    expect(result.approvals.every((row) => /^\d+$/.test(row.allowance))).toBe(true);
+    expect(result.approvals.find(r => r.token === TOKEN_A.toLowerCase())?.isMax).toBe(true);
+    expect(
+      result.approvals.find(
+        r => r.token === TOKEN_B.toLowerCase() && r.spender === SPENDER_A.toLowerCase(),
+      )?.isMax,
+    ).toBe(true);
+    expect(
+      result.approvals.find(
+        r => r.spender === SPENDER_B.toLowerCase() && r.token === TOKEN_B.toLowerCase(),
+      )?.isMax,
+    ).toBe(false);
+    expect(result.approvals.every(row => /^\d+$/.test(row.allowance))).toBe(true);
   });
 
   it('drops pairs whose allowance() reverts without failing the response', async () => {
@@ -267,7 +289,7 @@ describe('ApprovalScanService - read cap and truncation', () => {
     expect(firstToken).toBe(`0x${(0x1000 + 129).toString(16).padStart(40, '0')}`);
     // Blocks 130..31 (pairs 129..30) were read; the 30 oldest were not.
     const readTokens = new Set(
-      multicallCalls.flatMap((call) => call.contracts.map((c) => c.address.toLowerCase())),
+      multicallCalls.flatMap(call => call.contracts.map(c => c.address.toLowerCase())),
     );
     expect(readTokens.has(`0x${(0x1000 + 30).toString(16).padStart(40, '0')}`)).toBe(true);
     expect(readTokens.has(`0x${(0x1000 + 29).toString(16).padStart(40, '0')}`)).toBe(false);

@@ -160,8 +160,7 @@ const toDecimalString = (value: unknown): string | undefined => {
   if (typeof value === 'string' && /^0x[0-9a-fA-F]+$/.test(value) && value.length > 2) {
     try {
       return BigInt(value).toString();
-    }
-    catch {
+    } catch {
       return undefined;
     }
   }
@@ -249,8 +248,7 @@ const withRecoveredAuthorities = async (tx: RpcTransaction): Promise<RpcTransact
           },
         });
         return { ...authorization, authority };
-      }
-      catch {
+      } catch {
         return authorization;
       }
     }),

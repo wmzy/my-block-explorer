@@ -26,16 +26,14 @@ export async function resolveEnsAddress(name: string): Promise<EnsAddressResolut
   let client: Awaited<ReturnType<typeof createRpcClient>>;
   try {
     client = await createRpcClient(ENS_RESOLUTION_CHAIN_ID);
-  }
-  catch {
+  } catch {
     return { status: 'no-rpc' };
   }
 
   try {
     const address = await client.getEnsAddress({ name: name.toLowerCase() });
     return address ? { status: 'resolved', address } : { status: 'not-found' };
-  }
-  catch {
+  } catch {
     return { status: 'failed' };
   }
 }

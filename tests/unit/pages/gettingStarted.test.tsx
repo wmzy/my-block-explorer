@@ -83,27 +83,19 @@ beforeEach(() => {
 
 describe('shouldShowGettingStarted visibility matrix', () => {
   it('hides the card while discovery is still running (null)', () => {
-    expect(
-      shouldShowGettingStarted({ backendConnected: null, dismissed: false }),
-    ).toBe(false);
+    expect(shouldShowGettingStarted({ backendConnected: null, dismissed: false })).toBe(false);
   });
 
   it('hides the card once a backend is connected', () => {
-    expect(
-      shouldShowGettingStarted({ backendConnected: true, dismissed: false }),
-    ).toBe(false);
+    expect(shouldShowGettingStarted({ backendConnected: true, dismissed: false })).toBe(false);
   });
 
   it('shows the card when discovery settled with no backend and it was not dismissed', () => {
-    expect(
-      shouldShowGettingStarted({ backendConnected: false, dismissed: false }),
-    ).toBe(true);
+    expect(shouldShowGettingStarted({ backendConnected: false, dismissed: false })).toBe(true);
   });
 
   it('hides the card when it was dismissed, even backend-less', () => {
-    expect(
-      shouldShowGettingStarted({ backendConnected: false, dismissed: true }),
-    ).toBe(false);
+    expect(shouldShowGettingStarted({ backendConnected: false, dismissed: true })).toBe(false);
   });
 });
 
@@ -185,11 +177,7 @@ describe('GettingStarted card', () => {
   it('walks through the three steps in order', () => {
     renderCard();
 
-    const steps = [
-      'Pick a network',
-      'Explore',
-      'Read the data honestly',
-    ];
+    const steps = ['Pick a network', 'Explore', 'Read the data honestly'];
     for (const step of steps) {
       expect(screen.getByText(step)).toBeInTheDocument();
     }
@@ -289,15 +277,15 @@ describe('Landing first-run mount', () => {
   it('persisting the dismissal releases the redirect to the chain page', async () => {
     renderLanding();
 
-    fireEvent.click(
-      await screen.findByRole('button', { name: /Don't show again/i }),
-    );
+    fireEvent.click(await screen.findByRole('button', { name: /Don't show again/i }));
 
     // The flag survived the dismissal (persistent, not session-scoped)…
     expect(localStorage.getItem(ONBOARDING_DISMISSED_KEY)).toBe('1');
     // …and the entry redirect proceeded to the resolved chain.
     expect(await screen.findByTestId('chain-page')).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Three ways to run this explorer' })).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole('heading', { name: 'Three ways to run this explorer' }),
+    ).not.toBeInTheDocument();
   });
 
   it('goes straight to the chain page when a backend is connected', async () => {

@@ -35,9 +35,7 @@ const NONE_PRESENT: AddressSectionPresence = {
 
 describe('deriveAddressSectionAnchors', () => {
   it('lists every section in page order with the transactions tab label last', () => {
-    expect(
-      deriveAddressSectionAnchors('transactions', ALL_PRESENT),
-    ).toEqual([
+    expect(deriveAddressSectionAnchors('transactions', ALL_PRESENT)).toEqual([
       { id: OVERVIEW_ANCHOR_ID, label: 'Overview' },
       { id: TOKEN_HOLDINGS_ANCHOR_ID, label: 'Token Holdings' },
       { id: KNOWN_TOKENS_ANCHOR_ID, label: 'Known Tokens' },

@@ -97,8 +97,7 @@ const toPayload = (block: Block): BlockStreamPayload | null => {
   };
 };
 
-const errorEvent = (payload: { error: string; message: string }) =>
-  JSON.stringify(payload);
+const errorEvent = (payload: { error: string; message: string }) => JSON.stringify(payload);
 
 // GET /chains/:chainId/blocks/stream — SSE tail of new blocks.
 app.get('/chains/:chainId/blocks/stream', c => {
@@ -109,8 +108,7 @@ app.get('/chains/:chainId/blocks/stream', c => {
     // Unknown/malformed chain: per the EventSource contract, one `error`
     // event then a clean close. (A bare 400 would reach the browser as an
     // opaque onerror with no body to explain itself.)
-    const message =
-      e instanceof HTTPException ? e.message : 'Invalid chain ID';
+    const message = e instanceof HTTPException ? e.message : 'Invalid chain ID';
     logger.warn({ message }, 'Block stream requested for an invalid chain');
     return streamSSE(c, async stream => {
       await stream.writeSSE({

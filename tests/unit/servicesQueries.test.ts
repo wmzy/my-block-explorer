@@ -7,17 +7,10 @@ import { renderHook, act, waitFor } from '@testing-library/react';
 import * as http from '@/util/http';
 import { ApiError } from '@/util/apiError';
 import { clearAllCaches } from '@/util/useQuery';
-import {
-  fetchAddressInfo,
-  fetchAddressTransactions,
-  useAddressInfo,
-} from '@/services/addresses';
+import { fetchAddressInfo, fetchAddressTransactions, useAddressInfo } from '@/services/addresses';
 import { fetchStorageLayout, useContractSource } from '@/services/contracts';
 import { fetchSearch, fetchChainSearch } from '@/services/search';
-import {
-  contractSourceLoader,
-  useContractSourceData,
-} from '@/services/dataloaders';
+import { contractSourceLoader, useContractSourceData } from '@/services/dataloaders';
 
 // The service layer's only network dependency is util/http; mocking it keeps
 // these tests on the query layer's observable behavior.

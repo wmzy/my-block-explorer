@@ -26,10 +26,7 @@ export function toDailyGappedSeries(
   windowDays: number,
 ): GappedSeries {
   const firstDay = Math.floor(startEpochSeconds / SECONDS_PER_DAY);
-  const values: Array<number | null> = Array.from(
-    { length: windowDays + 1 },
-    () => null,
-  );
+  const values: Array<number | null> = Array.from({ length: windowDays + 1 }, () => null);
   for (const point of points) {
     const index = Math.floor(point.timestamp / SECONDS_PER_DAY) - firstDay;
     if (index < 0 || index >= values.length) continue;

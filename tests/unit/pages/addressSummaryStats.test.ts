@@ -147,10 +147,7 @@ describe('computeAddressSummaryStats', () => {
     // 2^60 + 1 twice: any Number coercion would lose the +2.
     const huge = 2n ** 60n + 1n;
     const stats = computeAddressSummaryStats(
-      [
-        row({ blockNumber: 1, value: huge.toString() }),
-        row({ blockNumber: 2, value: huge }),
-      ],
+      [row({ blockNumber: 1, value: huge.toString() }), row({ blockNumber: 2, value: huge })],
       ADDRESS,
     );
     expect(stats.totalIn).toBe(huge * 2n);
@@ -181,9 +178,7 @@ describe('formatNativeTotal', () => {
   it('renders 4 decimals with grouped integer digits', () => {
     expect(formatNativeTotal(1_500_000_000_000_000_000n, 18, 'ETH')).toBe('1.5000 ETH');
     // 1234.567890123456789 ETH, wei-scaled.
-    expect(formatNativeTotal(1_234_567_890_123_456_789_000n, 18, 'ETH')).toBe(
-      '1,234.5678 ETH',
-    );
+    expect(formatNativeTotal(1_234_567_890_123_456_789_000n, 18, 'ETH')).toBe('1,234.5678 ETH');
   });
 
   it('uses the chain decimals — never a hardcoded 18', () => {
@@ -197,9 +192,7 @@ describe('formatNativeTotal', () => {
     // A 16-digit integer part (10^33 wei = 10^15 ETH): Number#toLocaleString
     // would flip to exponential notation; the string path keeps every digit.
     const value = 10n ** 33n + 500_000_000_000_000_000n;
-    expect(formatNativeTotal(value, 18, 'ETH')).toBe(
-      '1,000,000,000,000,000.5000 ETH',
-    );
+    expect(formatNativeTotal(value, 18, 'ETH')).toBe('1,000,000,000,000,000.5000 ETH');
   });
 });
 
@@ -207,9 +200,7 @@ describe('formatSeenBoundary', () => {
   const injected = (ms: number) => `@${ms}`;
 
   it('formats the date through the injected formatter', () => {
-    expect(formatSeenBoundary({ blockNumber: 9, timestamp: 123_456 }, injected)).toBe(
-      '@123456',
-    );
+    expect(formatSeenBoundary({ blockNumber: 9, timestamp: 123_456 }, injected)).toBe('@123456');
   });
 
   it('falls back to the block number when no timestamp is known', () => {

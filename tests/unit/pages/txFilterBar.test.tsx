@@ -24,7 +24,8 @@ const mockUseSignaturesBatched = vi.fn<
   (selectors: readonly string[]) => Record<string, SignatureOutcome>
 >(() => ({}));
 vi.mock('@/services/signatures', () => ({
-  useSignaturesBatched: (...args: unknown[]) => mockUseSignaturesBatched(...(args as [readonly string[]])),
+  useSignaturesBatched: (...args: unknown[]) =>
+    mockUseSignaturesBatched(...(args as [readonly string[]])),
 }));
 
 const VALID_FROM = '0x1111111111111111111111111111111111111111';
@@ -38,11 +39,7 @@ const CHECKSUMMED = getAddress('0x5aaeb6053f3e94c9b9a09f33669495e3474963fe');
 const BAD_CHECKSUM = (() => {
   for (let i = 2; i < CHECKSUMMED.length; i++) {
     if (/[a-f]/.test(CHECKSUMMED[i])) {
-      return (
-        CHECKSUMMED.slice(0, i)
-        + CHECKSUMMED[i].toUpperCase()
-        + CHECKSUMMED.slice(i + 1)
-      );
+      return CHECKSUMMED.slice(0, i) + CHECKSUMMED[i].toUpperCase() + CHECKSUMMED.slice(i + 1);
     }
   }
   return CHECKSUMMED;
@@ -114,32 +111,28 @@ describe('validateTxFilterValues (pure)', () => {
   });
 
   it('flags shape-invalid addresses on the format tier', () => {
-    expect(validateTxFilterValues({ ...EMPTY_VALUES, from: '0x123' }).from)
-      .toMatch(/format/i);
+    expect(validateTxFilterValues({ ...EMPTY_VALUES, from: '0x123' }).from).toMatch(/format/i);
   });
 
   it('flags checksum mismatches on the checksum tier', () => {
-    expect(validateTxFilterValues({ ...EMPTY_VALUES, to: BAD_CHECKSUM }).to)
-      .toMatch(/checksum/i);
+    expect(validateTxFilterValues({ ...EMPTY_VALUES, to: BAD_CHECKSUM }).to).toMatch(/checksum/i);
   });
 
   it('flags non-integer / negative wei amounts', () => {
     for (const bad of ['-5', '1.5', 'NaN', '1e18', 'abc']) {
-      expect(validateTxFilterValues({ ...EMPTY_VALUES, min: bad }).min)
-        .toMatch(/wei/i);
-      expect(validateTxFilterValues({ ...EMPTY_VALUES, max: bad }).max)
-        .toMatch(/wei/i);
+      expect(validateTxFilterValues({ ...EMPTY_VALUES, min: bad }).min).toMatch(/wei/i);
+      expect(validateTxFilterValues({ ...EMPTY_VALUES, max: bad }).max).toMatch(/wei/i);
     }
   });
 
   it('flags malformed method selectors (0x + 8 hex is the only valid shape)', () => {
     for (const bad of ['a9059cbb', '0xa905', '0xa9059cbb00', '0xzz059cbb', '0XA9059CBB']) {
-      expect(validateTxFilterValues({ ...EMPTY_VALUES, method: bad }).method)
-        .toMatch(/selector/i);
+      expect(validateTxFilterValues({ ...EMPTY_VALUES, method: bad }).method).toMatch(/selector/i);
     }
     // Mixed-case hex with the 0x prefix is legal (compared case-blind).
-    expect(validateTxFilterValues({ ...EMPTY_VALUES, method: '0xA9059CBB' }).method)
-      .toBeUndefined();
+    expect(
+      validateTxFilterValues({ ...EMPTY_VALUES, method: '0xA9059CBB' }).method,
+    ).toBeUndefined();
   });
 });
 

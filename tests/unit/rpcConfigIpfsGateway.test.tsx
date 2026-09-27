@@ -127,9 +127,7 @@ describe('RpcConfig IPFS gateway field', () => {
     expect(localStorage.getItem(IPFS_GATEWAY_STORAGE_KEY)).toBeNull();
     expect(getIpfsGateway()).toBe(DEFAULT_IPFS_GATEWAY);
     expect(screen.getByLabelText(LABEL)).toHaveValue(DEFAULT_IPFS_GATEWAY);
-    expect(toast.success).toHaveBeenCalledWith(
-      `IPFS gateway reset to ${DEFAULT_IPFS_GATEWAY}.`,
-    );
+    expect(toast.success).toHaveBeenCalledWith(`IPFS gateway reset to ${DEFAULT_IPFS_GATEWAY}.`);
     expect(screen.getByRole('button', { name: 'Reset to default' })).toBeDisabled();
   });
 });

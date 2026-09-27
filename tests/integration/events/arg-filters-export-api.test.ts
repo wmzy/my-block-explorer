@@ -114,24 +114,22 @@ describe('Events CSV export API', () => {
   it('streams a CSV with Content-Disposition and escaped fields', async () => {
     const decodedArgs = '{"note":"a,b","quote":"say ""hi""","text":"l1\nl2"}';
     const countSpy = vi.spyOn(exportService, 'getFilteredEventCount').mockResolvedValue(1);
-    const fetchSpy = vi
-      .spyOn(exportService, 'fetchFilteredEventsForExport')
-      .mockResolvedValue(
-        [
-          {
-            blockNumber: 18000001n,
-            blockTimestamp: 1700000000,
-            transactionHash: '0xabc0000000000000000000000000000000000000000000000000000000000def',
-            logIndex: 3,
-            eventName: 'Transfer',
-            decodedArgs,
-            address: contractAddress,
-            isFinalized: false,
-          },
-        ] as unknown as Awaited<ReturnType<typeof exportService.fetchFilteredEventsForExport>>,
-      );
+    const fetchSpy = vi.spyOn(exportService, 'fetchFilteredEventsForExport').mockResolvedValue([
+      {
+        blockNumber: 18000001n,
+        blockTimestamp: 1700000000,
+        transactionHash: '0xabc0000000000000000000000000000000000000000000000000000000000def',
+        logIndex: 3,
+        eventName: 'Transfer',
+        decodedArgs,
+        address: contractAddress,
+        isFinalized: false,
+      },
+    ] as unknown as Awaited<ReturnType<typeof exportService.fetchFilteredEventsForExport>>);
 
-    const res = await app.request(`${exportBase}?argFilters=${encodeURIComponent('{"note":"a,b"}')}`);
+    const res = await app.request(
+      `${exportBase}?argFilters=${encodeURIComponent('{"note":"a,b"}')}`,
+    );
     expect(res.status).toBe(200);
     expect(res.headers.get('Content-Type')).toBe('text/csv; charset=utf-8');
     expect(res.headers.get('Content-Disposition')).toMatch(
@@ -175,9 +173,7 @@ describe('Events CSV export API', () => {
     const _countSpy = vi
       .spyOn(exportService, 'getFilteredEventCount')
       .mockResolvedValue(exportService.EXPORT_MAX_ROWS + 1);
-    const fetchSpy = vi
-      .spyOn(exportService, 'fetchFilteredEventsForExport')
-      .mockResolvedValue([]);
+    const fetchSpy = vi.spyOn(exportService, 'fetchFilteredEventsForExport').mockResolvedValue([]);
 
     const res = await app.request(exportBase);
     expect(res.status).toBe(400);
@@ -205,10 +201,14 @@ describe('Events CSV export API', () => {
   });
 
   it('rejects unsupported chains and invalid addresses', async () => {
-    const badChain = await app.request(`/api/chains/99999/contracts/${contractAddress}/events/export`);
+    const badChain = await app.request(
+      `/api/chains/99999/contracts/${contractAddress}/events/export`,
+    );
     expect(badChain.status).toBe(400);
 
-    const badAddress = await app.request(`/api/chains/${chainId}/contracts/0xinvalid/events/export`);
+    const badAddress = await app.request(
+      `/api/chains/${chainId}/contracts/0xinvalid/events/export`,
+    );
     expect(badAddress.status).toBe(400);
   });
 });

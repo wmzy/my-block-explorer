@@ -122,8 +122,9 @@ describe('Signatures tool page', () => {
     // …the other with an explicit why-empty note, never a fake miss.
     expect(screen.getByRole('heading', { name: 'Functions' })).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: 'Events' })).toBeInTheDocument();
-    expect(screen.getByText(/event topic0 hashes \(0x \+ 64 hex characters\) resolve here/))
-      .toBeInTheDocument();
+    expect(
+      screen.getByText(/event topic0 hashes \(0x \+ 64 hex characters\) resolve here/),
+    ).toBeInTheDocument();
     expect(screen.queryByText('No match in the openchain registry.')).not.toBeInTheDocument();
   });
 
@@ -134,8 +135,9 @@ describe('Signatures tool page', () => {
 
     expect(await screen.findByText('Transfer(address,address,uint256)')).toBeInTheDocument();
     expect(mockUseSignatureLookup).toHaveBeenLastCalledWith(TOPIC0);
-    expect(screen.getByText(/function selectors \(0x \+ 8 hex characters\) resolve here/))
-      .toBeInTheDocument();
+    expect(
+      screen.getByText(/function selectors \(0x \+ 8 hex characters\) resolve here/),
+    ).toBeInTheDocument();
   });
 
   it('renders a skeleton while the lookup is loading, never a premature state', async () => {
@@ -170,7 +172,9 @@ describe('Signatures tool page', () => {
 
     renderPage(`/signatures?q=${SELECTOR}`);
 
-    expect(await screen.findByText('Backend offline — indexed data unavailable.')).toBeInTheDocument();
+    expect(
+      await screen.findByText('Backend offline — indexed data unavailable.'),
+    ).toBeInTheDocument();
     fireEvent.click(screen.getByText('Retry connection'));
     await waitFor(() => expect(mockReconnect).toHaveBeenCalledTimes(1));
   });
@@ -223,8 +227,9 @@ describe('Signatures tool page', () => {
   it('renders the idle hint and no sections for a bare visit', async () => {
     renderPage('/signatures');
 
-    expect(await screen.findByText(/Enter a function selector or an event topic0/))
-      .toBeInTheDocument();
+    expect(
+      await screen.findByText(/Enter a function selector or an event topic0/),
+    ).toBeInTheDocument();
     expect(mockUseSignatureLookup).toHaveBeenLastCalledWith(undefined);
     expect(screen.getByText('Look up')).toBeDisabled();
   });

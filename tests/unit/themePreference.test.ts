@@ -53,11 +53,9 @@ describe('readThemePreference', () => {
   });
 
   it('degrades to \'system\' when storage is unavailable (private mode)', () => {
-    const getItem = vi
-      .spyOn(Storage.prototype, 'getItem')
-      .mockImplementation(() => {
-        throw new DOMException('storage unavailable');
-      });
+    const getItem = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new DOMException('storage unavailable');
+    });
     expect(readThemePreference()).toBe('system');
     getItem.mockRestore();
   });
@@ -74,11 +72,9 @@ describe('storeThemePreference', () => {
   });
 
   it('swallows a failing write instead of breaking the click', () => {
-    const setItem = vi
-      .spyOn(Storage.prototype, 'setItem')
-      .mockImplementation(() => {
-        throw new DOMException('quota exceeded');
-      });
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('quota exceeded');
+    });
     expect(() => storeThemePreference('light')).not.toThrow();
     setItem.mockRestore();
   });

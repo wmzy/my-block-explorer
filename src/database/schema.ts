@@ -519,7 +519,9 @@ export const addressScanJobs = duckdbTable(
     tracesSupported: boolean(),
     tracesRecorded: integer().default(0),
     errorMessage: text(),
-    updatedAt: datetime().notNull().default(sql`now()`),
+    updatedAt: datetime()
+      .notNull()
+      .default(sql`now()`),
   },
   table => [primaryKey({ columns: [table.chainId, table.address] })],
 );
@@ -578,9 +580,7 @@ export const addressScanInternalTxs = duckdbTable(
     reverted: boolean().notNull(),
     blockTimestamp: datetime().notNull(),
   },
-  table => [
-    primaryKey({ columns: [table.chainId, table.address, table.txHash, table.tracePath] }),
-  ],
+  table => [primaryKey({ columns: [table.chainId, table.address, table.txHash, table.tracePath] })],
 );
 
 export type AddressScanInternalTxRecord = typeof addressScanInternalTxs.$inferSelect;

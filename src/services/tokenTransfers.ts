@@ -7,10 +7,7 @@ import { bindQueryFn, createQueryCache, createQueryHook } from '@/util/useQuery'
 // Ambiguity is honest here: the Transfer log signature is shared by
 // ERC-20 and ERC-721; decimals() disambiguates on the frontend (metadata
 // reads are RPC territory, never the backend's).
-export type TokenTransferStandard =
-  | 'erc20-or-erc721'
-  | 'erc1155-single'
-  | 'erc1155-batch';
+export type TokenTransferStandard = 'erc20-or-erc721' | 'erc1155-single' | 'erc1155-batch';
 
 // Which eth_getLogs filter shape the backend scan uses: 'participant'
 // (the viewed address as Transfer from/to) or 'token' (the viewed
@@ -107,7 +104,13 @@ export function fetchTokenTransfers(
   refreshNextFetch = false;
   return get<TokenTransferPage>(
     `/api/chains/${chainId}/addresses/${address}/transfers`,
-    { cursor, limit, window, mode: mode === 'token' ? 'token' : undefined, refresh: refresh ? '1' : undefined },
+    {
+      cursor,
+      limit,
+      window,
+      mode: mode === 'token' ? 'token' : undefined,
+      refresh: refresh ? '1' : undefined,
+    },
     withSignal(longRunningApi, signal),
   );
 }

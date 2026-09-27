@@ -56,21 +56,18 @@ type SubscriptionBody = {
 // with the wire types. Anything else is a thrown ApiError instead of
 // fabricated data (labels.ts precedent). The webhook fields predate
 // nothing — an older backend simply omits them and they parse as null.
-const parseSubscription = (
-  body: SubscriptionBody,
-): WatchSubscriptionView => {
-  if (
-    typeof body.address !== 'string'
-    || typeof body.chainId !== 'number'
-  ) {
+const parseSubscription = (body: SubscriptionBody): WatchSubscriptionView => {
+  if (typeof body.address !== 'string' || typeof body.chainId !== 'number') {
     throw new ApiError('Malformed watch subscription response', 0);
   }
   return {
     chainId: body.chainId,
     address: body.address.toLowerCase(),
     label: typeof body.label === 'string' ? body.label : null,
-    lastProcessedBlock: typeof body.lastProcessedBlock === 'string' ? body.lastProcessedBlock : null,
-    webhookUrl: typeof body.webhookUrl === 'string' && body.webhookUrl !== '' ? body.webhookUrl : null,
+    lastProcessedBlock:
+      typeof body.lastProcessedBlock === 'string' ? body.lastProcessedBlock : null,
+    webhookUrl:
+      typeof body.webhookUrl === 'string' && body.webhookUrl !== '' ? body.webhookUrl : null,
     webhookStatus: typeof body.webhookStatus === 'string' ? body.webhookStatus : null,
     webhookLastAt: typeof body.webhookLastAt === 'string' ? body.webhookLastAt : null,
     createdAt: typeof body.createdAt === 'string' ? body.createdAt : null,
@@ -118,10 +115,7 @@ export async function saveWatchSubscription(
   if (webhookUrl !== undefined) {
     body.webhookUrl = webhookUrl;
   }
-  const res = await put<{ subscription?: unknown }>(
-    `/api/chains/${chainId}/watch/${lower}`,
-    body,
-  );
+  const res = await put<{ subscription?: unknown }>(`/api/chains/${chainId}/watch/${lower}`, body);
   if (typeof res?.subscription !== 'object' || res.subscription === null) {
     throw new ApiError('Malformed watch subscription response', 0);
   }
@@ -156,7 +150,9 @@ export async function fetchWatchEvents(
   // half-rendered (the feed stays honest about what it can show).
   return events.filter(
     (event): event is WatchEventView =>
-      typeof event === 'object' && event !== null && typeof (event as WatchEventView).kind === 'string',
+      typeof event === 'object' &&
+      event !== null &&
+      typeof (event as WatchEventView).kind === 'string',
   );
 }
 
@@ -170,9 +166,10 @@ export function watchEventKey(event: LiveWatchEvent): string {
   return `${event.chainId}:gap:${event.address}:${event.blockNumber}`;
 }
 
-export const watchSubscriptionsCache = createQueryCache<WatchSubscriptionView[] | undefined, [
-  number,
-]>('watch-subscriptions');
+export const watchSubscriptionsCache = createQueryCache<
+  WatchSubscriptionView[] | undefined,
+  [number]
+>('watch-subscriptions');
 
 const queryWatchSubscriptions = bindQueryFn(fetchWatchSubscriptions, watchSubscriptionsCache);
 

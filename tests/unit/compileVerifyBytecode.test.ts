@@ -3,10 +3,7 @@
 // trailing blocks) and the three-tier comparison (exact, metadata-only,
 // mismatch with first differing byte). No compiler, no network.
 import { describe, it, expect } from 'vitest';
-import {
-  stripTrailingAuxdata,
-  compareRuntimeBytecode,
-} from '@/services/CompileVerifyService';
+import { stripTrailingAuxdata, compareRuntimeBytecode } from '@/services/CompileVerifyService';
 
 // Real Solidity 0.8.x ipfs metadata block (as emitted with default
 // settings): a2 65"ipfs" 58 22 1220<32-byte digest> 64"solc" 43 000825,
@@ -97,7 +94,9 @@ describe('stripTrailingAuxdata', () => {
   });
 
   it('accepts uppercase hex', () => {
-    const split = stripTrailingAuxdata(`0X${CODE.toUpperCase()}${blockWithLength(ipfsAuxdata).toUpperCase()}`);
+    const split = stripTrailingAuxdata(
+      `0X${CODE.toUpperCase()}${blockWithLength(ipfsAuxdata).toUpperCase()}`,
+    );
     expect(split.code).toBe(CODE.toLowerCase());
     expect(split.auxdata).toBe(ipfsAuxdata);
   });

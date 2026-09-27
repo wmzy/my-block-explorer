@@ -61,7 +61,10 @@ const renderSearch = (initial: string) =>
       routes={createRoutes([
         { path: '/search', component: () => Search },
         { path: '/chain/:chainId/token/:address', component: () => () => <div>token-page</div> },
-        { path: '/chain/:chainId/address/:address', component: () => () => <div>address-page</div> },
+        {
+          path: '/chain/:chainId/address/:address',
+          component: () => () => <div>address-page</div>,
+        },
       ])}
       initialEntries={[initial]}
     >
@@ -84,8 +87,9 @@ describe('Search view known tokens & labels section', () => {
 
     // Honesty contract: the section scopes itself — curated sources, not
     // a token index.
-    expect(screen.getByText(/Curated known tokens and your labels — not every token on this chain/))
-      .toBeInTheDocument();
+    expect(
+      screen.getByText(/Curated known tokens and your labels — not every token on this chain/),
+    ).toBeInTheDocument();
 
     // One row-link per hit, onto the hit's OWN chain; source picks the
     // destination (known-token → token page, label → address page).
@@ -107,8 +111,8 @@ describe('Search view known tokens & labels section', () => {
     // The remote miss card renders too, BELOW the curated section.
     expect(screen.getByText(/No results found for "usdc"/)).toBeInTheDocument();
     expect(
-      container.innerHTML.indexOf('Known tokens & labels (curated)')
-      < container.innerHTML.indexOf('No results found'),
+      container.innerHTML.indexOf('Known tokens & labels (curated)') <
+        container.innerHTML.indexOf('No results found'),
     ).toBe(true);
   });
 

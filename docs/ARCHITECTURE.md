@@ -2,94 +2,196 @@
 
 This file has two parts:
 
-- **Part 1 — System as shipped (maintained).** English, verified against the code; the cited files are the source of truth. It absorbs the former standalone docs on navigation, chain switching and auto-discovery.
-- **Part 2 — the original design-time document (中文, below the divider).** Its deployment section reflects reality; the rest is design-era background. Further historical design records live in [archive/](./archive/).
+- **Part 1 — System as shipped (maintained).** English, verified against the
+  code; the cited files are the source of truth. It absorbs the former
+  standalone docs on navigation, chain switching and auto-discovery.
+- **Part 2 — the original design-time document (中文, below the divider).** Its
+  deployment section reflects reality; the rest is design-era background.
+  Further historical design records live in [archive/](./archive/).
 
 ## Part 1 — System as shipped
 
 ### Routing and navigation
 
-There is no React Router and no nested routing. `src/views/index.tsx` defines one **flat `createRoutes` table** (`@native-router/react`), each route mapping to a lazily imported view. Every data page is scoped by a `/chain/:chainId` prefix; the full current path set (see the file — it is the source of truth):
+There is no React Router and no nested routing. `src/views/index.tsx` defines
+one **flat `createRoutes` table** (`@native-router/react`), each route mapping
+to a lazily imported view. Every data page is scoped by a `/chain/:chainId`
+prefix; the full current path set (see the file — it is the source of truth):
 
-`/` · `/chain/:chainId` · `/blocks` · `/transactions` · `/pending` · `/contracts` · `/token/:address` · `/charts` · `/block/:blockNumber` (numbers only, not hashes) · `/tx/:txHash` · `/address/:address` · `/contract/:address` (+ `/events`) · `/search`
+`/` · `/chain/:chainId` · `/blocks` · `/transactions` · `/pending` ·
+`/contracts` · `/token/:address` · `/charts` · `/block/:blockNumber` (numbers
+only, not hashes) · `/tx/:txHash` · `/address/:address` · `/contract/:address`
+(+ `/events`) · `/search`
 
-- `src/views/index.tsx` exports `AppPaths` (a literal union of every route path). `TypedLink<AppPaths>` narrows its `to` prop against that union, so a path typo or incomplete `params` fails at compile time. Views read route params with `useMatched()` and query params with `useSearch(schema)` (e.g. the transactions list filters by `?block=`).
-- The two contract routes attach `data: contractSourceLoader` with a skeleton `pendingComponent` — contract source is immutable, so it resolves during navigation and the view's hook serves the loader-primed cache entry.
-- The router's base URL derives from `import.meta.env.BASE_URL`, so the GitHub Pages subpath deploy (`VITE_BASE=/my-block-explorer/`) navigates correctly.
-- After a search resolves, `/search` writes the resolved chain back into the URL and renders a "Searched on {chain}" line, so deep links are shareable and unambiguous.
+- `src/views/index.tsx` exports `AppPaths` (a literal union of every route
+  path). `TypedLink<AppPaths>` narrows its `to` prop against that union, so a
+  path typo or incomplete `params` fails at compile time. Views read route
+  params with `useMatched()` and query params with `useSearch(schema)` (e.g. the
+  transactions list filters by `?block=`).
+- The two contract routes attach `data: contractSourceLoader` with a skeleton
+  `pendingComponent` — contract source is immutable, so it resolves during
+  navigation and the view's hook serves the loader-primed cache entry.
+- The router's base URL derives from `import.meta.env.BASE_URL`, so the GitHub
+  Pages subpath deploy (`VITE_BASE=/my-block-explorer/`) navigates correctly.
+- After a search resolves, `/search` writes the resolved chain back into the URL
+  and renders a "Searched on {chain}" line, so deep links are shareable and
+  unambiguous.
 
 ### The chain model: the chain lives in the URL
 
-There is no global chain state. Because the chain is a route param, a deep link is unambiguous, shareable and reload-safe; switching chains is *just a navigation* — nothing is torn down or re-bootstrapped.
+There is no global chain state. Because the chain is a route param, a deep link
+is unambiguous, shareable and reload-safe; switching chains is _just a
+navigation_ — nothing is torn down or re-bootstrapped.
 
-- `src/config/chains.ts` — `SUPPORTED_CHAINS = Object.values(chains)` from `viem/chains`: **every chain viem defines works, with no per-chain registration**. In the pinned viem version that is 732 exports deduped to 704 unique chain ids (several exports are aliases or testnet twins of one id; the picker dedupes by id). "Supported" means exactly `isChainSupported(id)` — an id lookup in that set; a viem upgrade is what adds chains.
-- `POPULAR_CHAINS` pins 10 chains (mainnet, Polygon, BSC, Arbitrum, Base, Optimism, Avalanche, Fantom, Celo, Gnosis) at the top of the picker, marked ⭐. Testnets get a badge (`getChainType`). To pin a chain, add it to `POPULAR_CHAINS` — there is nothing else to add per chain.
+- `src/config/chains.ts` — `SUPPORTED_CHAINS = Object.values(chains)` from
+  `viem/chains`: **every chain viem defines works, with no per-chain
+  registration**. In the pinned viem version that is 732 exports deduped to 704
+  unique chain ids (several exports are aliases or testnet twins of one id; the
+  picker dedupes by id). "Supported" means exactly `isChainSupported(id)` — an
+  id lookup in that set; a viem upgrade is what adds chains.
+- `POPULAR_CHAINS` pins 10 chains (mainnet, Polygon, BSC, Arbitrum, Base,
+  Optimism, Avalanche, Fantom, Celo, Gnosis) at the top of the picker, marked
+  ⭐. Testnets get a badge (`getChainType`). To pin a chain, add it to
+  `POPULAR_CHAINS` — there is nothing else to add per chain.
 
-**Landing and the remembered chain.** `/` is the redirect-only `Landing` view (`src/views/Home/Landing.tsx`). At mount it replaces the URL with: (1) the **last chain the user actually viewed**, if still a supported id — persisted in localStorage under `be:lastChainId` (`LAST_CHAIN_STORAGE_KEY`), written by the Home view via `rememberChainId()`; (2) else the **preferred chain** — mainnet when supported, else the head of the sorted chain list (`getPreferredChainId()`); (3) else `/chain/1` as the dead-last fallback.
+**Landing and the remembered chain.** `/` is the redirect-only `Landing` view
+(`src/views/Home/Landing.tsx`). At mount it replaces the URL with: (1) the
+**last chain the user actually viewed**, if still a supported id — persisted in
+localStorage under `be:lastChainId` (`LAST_CHAIN_STORAGE_KEY`), written by the
+Home view via `rememberChainId()`; (2) else the **preferred chain** — mainnet
+when supported, else the head of the sorted chain list
+(`getPreferredChainId()`); (3) else `/chain/1` as the dead-last fallback.
 
-**Switching chains.** Every view mounts `TopNavigation` and passes a `handleChainChange` that calls `redirectReplace` (exported from `src/views/Home/Landing.tsx`: `preload` + `commitReplace` — navigate-with-replace semantics, so chain hops replace the current history entry instead of piling new ones). Preservation of the entity param is decided per view:
+**Switching chains.** Every view mounts `TopNavigation` and passes a
+`handleChainChange` that calls `redirectReplace` (exported from
+`src/views/Home/Landing.tsx`: `preload` + `commitReplace` —
+navigate-with-replace semantics, so chain hops replace the current history entry
+instead of piling new ones). Preservation of the entity param is decided per
+view:
 
-| From | Goes to | Rationale |
-| --- | --- | --- |
-| Home | `/chain/:newId` | the new chain's home |
-| Blocks / Transactions lists | the same list on the new chain | lists carry no params worth keeping |
-| Address page | `/chain/:newId/address/:address` | an address is chain-agnostic |
-| Contract page | `/chain/:newId/contract/:address` | the address is chain-agnostic; the `/events` subpath is not preserved — the view lands on its default tab |
-| Tx detail | `/chain/:newId/tx/:hash` | the hash is chain-agnostic; re-resolves this exact tx on the target chain's RPC |
-| **Block detail** | **`/chain/:newId`** (chain home) | **the exception**: a block *number* is not a chain-agnostic identity — the same number on another chain is a different block, so keeping it would silently show unrelated data |
-| Search page | no navigation | re-runs the current query on the new chain; with no query, the chain becomes the context for the next search |
+| From                        | Goes to                           | Rationale                                                                                                                                                                      |
+| --------------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Home                        | `/chain/:newId`                   | the new chain's home                                                                                                                                                           |
+| Blocks / Transactions lists | the same list on the new chain    | lists carry no params worth keeping                                                                                                                                            |
+| Address page                | `/chain/:newId/address/:address`  | an address is chain-agnostic                                                                                                                                                   |
+| Contract page               | `/chain/:newId/contract/:address` | the address is chain-agnostic; the `/events` subpath is not preserved — the view lands on its default tab                                                                      |
+| Tx detail                   | `/chain/:newId/tx/:hash`          | the hash is chain-agnostic; re-resolves this exact tx on the target chain's RPC                                                                                                |
+| **Block detail**            | **`/chain/:newId`** (chain home)  | **the exception**: a block _number_ is not a chain-agnostic identity — the same number on another chain is a different block, so keeping it would silently show unrelated data |
+| Search page                 | no navigation                     | re-runs the current query on the new chain; with no query, the chain becomes the context for the next search                                                                   |
 
-**Unsupported chain deep links.** A deep link like `/chain/999999` does **not** silently redirect to another chain. Views render `UnsupportedChainState` (`src/views/Home/UnsupportedChainState.tsx`): an explicit "no configuration for chain ID X" error plus two **deterministic** recovery CTAs — *"Go to Mainnet"* (or the preferred chain; deliberately **not** the viewer's remembered chain, so a shared link behaves identically for every visitor) and *"Open chain list"* (the `/` landing route).
+**Unsupported chain deep links.** A deep link like `/chain/999999` does **not**
+silently redirect to another chain. Views render `UnsupportedChainState`
+(`src/views/Home/UnsupportedChainState.tsx`): an explicit "no configuration for
+chain ID X" error plus two **deterministic** recovery CTAs — _"Go to Mainnet"_
+(or the preferred chain; deliberately **not** the viewer's remembered chain, so
+a shared link behaves identically for every visitor) and _"Open chain list"_
+(the `/` landing route).
 
-**The chain selector UI.** `ChainSelector` (inside `src/components/TopNavigation.tsx`, top-right) shows the current chain name (+ Testnet badge) and offers:
+**The chain selector UI.** `ChainSelector` (inside
+`src/components/TopNavigation.tsx`, top-right) shows the current chain name (+
+Testnet badge) and offers:
 
-- a type-over filter — `searchChains()` matches name, chain id or native symbol, with a "Found N chains · Press Enter to select first" hint;
-- keyboard: `Enter` picks the first filtered match, `Escape` closes; the search term resets when the dropdown closes; click-outside closes;
-- entries show `ID • native symbol`, ⭐ for `POPULAR_CHAINS`, testnet badges; the list comes from `getSortedChains()` (sorted by type and popularity, deduped by id).
+- a type-over filter — `searchChains()` matches name, chain id or native symbol,
+  with a "Found N chains · Press Enter to select first" hint;
+- keyboard: `Enter` picks the first filtered match, `Escape` closes; the search
+  term resets when the dropdown closes; click-outside closes;
+- entries show `ID • native symbol`, ⭐ for `POPULAR_CHAINS`, testnet badges;
+  the list comes from `getSortedChains()` (sorted by type and popularity,
+  deduped by id).
 
 ### Search dispatch (the top-bar search box)
 
-One dispatcher (`navigateForQuery` in `src/components/TopNavigation.tsx`) sanitizes the input and classifies it with the shared `utils/validation` helpers (the same pair every other search surface uses):
+One dispatcher (`navigateForQuery` in `src/components/TopNavigation.tsx`)
+sanitizes the input and classifies it with the shared `utils/validation` helpers
+(the same pair every other search surface uses):
 
-- **Address** → deep-links straight to `/chain/:chainId/address/:address` on the current chain.
+- **Address** → deep-links straight to `/chain/:chainId/address/:address` on the
+  current chain.
 - **Block number** → deep-links straight to the block page (numbers only).
-- **Hash** → goes through the chain-scoped search API (`GET /api/chains/:chainId/search`, via the discovered API base — never a raw same-origin fetch) to decide tx vs. block-hash; a block hash lands on the block page by number.
-- **ENS name** → resolved **client-side against a mainnet client** (`createRpcClient(1)` — the ENS registry only exists on mainnet, so the lookup target never changes with the viewed chain); the resolved address is then viewed on the *current* chain, and every ENS surface labels the result "resolved on Ethereum". "Name not found" (definitive) and "resolution failed" (RPC did not answer — offers Retry) are distinct outcomes.
-- **Anything else** → `/search?q=…&chain=…` so the global search endpoint searches the current chain and its suggestions link back to that chain.
+- **Hash** → goes through the chain-scoped search API
+  (`GET /api/chains/:chainId/search`, via the discovered API base — never a raw
+  same-origin fetch) to decide tx vs. block-hash; a block hash lands on the
+  block page by number.
+- **ENS name** → resolved **client-side against a mainnet client**
+  (`createRpcClient(1)` — the ENS registry only exists on mainnet, so the lookup
+  target never changes with the viewed chain); the resolved address is then
+  viewed on the _current_ chain, and every ENS surface labels the result
+  "resolved on Ethereum". "Name not found" (definitive) and "resolution failed"
+  (RPC did not answer — offers Retry) are distinct outcomes.
+- **Anything else** → `/search?q=…&chain=…` so the global search endpoint
+  searches the current chain and its suggestions link back to that chain.
 
-Inline notices under the box distinguish a definitive miss, a degraded (data-source errored) response, and ENS resolved/failed outcomes. Focusing the box shows the **per-browser history dropdown** — entries live in localStorage (`be:searchHistory`, max 10, never sent to or read from the server) with a Clear button and per-item removal; a history entry re-runs on the chain it was recorded on.
+Inline notices under the box distinguish a definitive miss, a degraded
+(data-source errored) response, and ENS resolved/failed outcomes. Focusing the
+box shows the **per-browser history dropdown** — entries live in localStorage
+(`be:searchHistory`, max 10, never sent to or read from the server) with a Clear
+button and per-item removal; a history entry re-runs on the chain it was
+recorded on.
 
 ### RPC settings modal (`src/components/RpcConfig.tsx`)
 
-Opened from the **⚙️ RPC** button in `TopNavigation`, and from the "configure RPC" action of `RpcFunctionError` on contract pages.
+Opened from the **⚙️ RPC** button in `TopNavigation`, and from the "configure
+RPC" action of `RpcFunctionError` on contract pages.
 
-- **Reads are open**: the modal loads the current override list via `GET /api/rpc-configs` without any token (the response carries endpoint URLs only, redacted for origins the CORS policy doesn't trust — no secrets).
-- **Test before save, client-side**: "Test connection" fetches `eth_chainId` / block history directly against the entered URL in the browser (chain-id match, history support, recommended event range) and blocks the save on failure.
-- **Writes are opt-in gated server-side**: save/delete (`POST` / `DELETE /api/rpc-configs`) require the `x-admin-token` header only when the server has `ADMIN_TOKEN` set; a 403 surfaces a notice in the modal.
-- The **"Admin token (stored in this browser)"** field persists the token in localStorage (`src/util/adminAuth.ts`); the HTTP layer attaches it to every request automatically.
+- **Reads are open**: the modal loads the current override list via
+  `GET /api/rpc-configs` without any token (the response carries endpoint URLs
+  only, redacted for origins the CORS policy doesn't trust — no secrets).
+- **Test before save, client-side**: "Test connection" fetches `eth_chainId` /
+  block history directly against the entered URL in the browser (chain-id match,
+  history support, recommended event range) and blocks the save on failure.
+- **Writes are opt-in gated server-side**: save/delete (`POST` /
+  `DELETE /api/rpc-configs`) require the `x-admin-token` header only when the
+  server has `ADMIN_TOKEN` set; a 403 surfaces a notice in the modal.
+- The **"Admin token (stored in this browser)"** field persists the token in
+  localStorage (`src/util/adminAuth.ts`); the HTTP layer attaches it to every
+  request automatically.
 
 ### Frontend↔backend auto-discovery
 
-How the frontend finds the API server: `src/hooks/useAutoDiscovery.ts` (hook) + `src/util/apiBase.ts` (base URL consumed by the HTTP layer) + the service-discovery gate in `src/index.tsx` (renders the `ServiceSetup` screen until a backend is found).
+How the frontend finds the API server: `src/hooks/useAutoDiscovery.ts` (hook) +
+`src/util/apiBase.ts` (base URL consumed by the HTTP layer) + the
+service-discovery gate in `src/index.tsx` (renders the `ServiceSetup` screen
+until a backend is found).
 
-1. On mount, `autoDiscover()` scans **`localhost` ports 8201–8205**, probing `GET /api/health` on each with an `AbortController` timeout (`probeHealth`). Status machine: `idle → discovering → found | not-found | error`.
-2. The first healthy backend wins; its URL is persisted to localStorage (`my-block-explorer-api-url`) and pushed into `setApiBase()` so every request from `src/util/http.ts` (fetch-fun chain) is prefixed with it.
-3. If no port answers, the app shows the setup screen with a **manual URL fallback**: the user types a backend URL, it is validated by probing `/api/health`, then persisted like an auto-discovered one. The screen keeps re-probing automatically (~4 s).
-4. `reconnect()` prefers the saved URL and falls back to a fresh port scan; `disconnect()` clears runtime state but keeps the saved URL — a temporarily unreachable saved URL only degrades to the localhost scan for that session (the choice is **never auto-cleared**).
+1. On mount, `autoDiscover()` scans **`localhost` ports 8201–8205**, probing
+   `GET /api/health` on each with an `AbortController` timeout (`probeHealth`).
+   Status machine: `idle → discovering → found | not-found | error`.
+2. The first healthy backend wins; its URL is persisted to localStorage
+   (`my-block-explorer-api-url`) and pushed into `setApiBase()` so every request
+   from `src/util/http.ts` (fetch-fun chain) is prefixed with it.
+3. If no port answers, the app shows the setup screen with a **manual URL
+   fallback**: the user types a backend URL, it is validated by probing
+   `/api/health`, then persisted like an auto-discovered one. The screen keeps
+   re-probing automatically (~4 s).
+4. `reconnect()` prefers the saved URL and falls back to a fresh port scan;
+   `disconnect()` clears runtime state but keeps the saved URL — a temporarily
+   unreachable saved URL only degrades to the localhost scan for that session
+   (the choice is **never auto-cleared**).
 
 What this means per run mode:
 
-- **Dev (`pnpm dev`)**: the Hono app is bridged into the Vite server on `:3000`, but the frontend still prefers a discovered standalone backend on 8201–8205 when one is running. Mind the single-writer rule: don't run the bridged API and a standalone server against the same DuckDB files at once.
-- **`pnpm dev:server` / `pnpm start`**: standalone API on 8201 — discovered automatically by any frontend opened from localhost.
-- **Hosted frontend (GitHub Pages etc.)**: discovery **cannot** find a remote backend — the scan is localhost-only. Every user enters their own backend URL manually once (persists per browser), and the backend must allow the frontend's origin (`CORS_ALLOWED_ORIGINS` or `FRONTEND_URL`; see the README's CORS section).
+- **Dev (`pnpm dev`)**: the Hono app is bridged into the Vite server on `:3000`,
+  but the frontend still prefers a discovered standalone backend on 8201–8205
+  when one is running. Mind the single-writer rule: don't run the bridged API
+  and a standalone server against the same DuckDB files at once.
+- **`pnpm dev:server` / `pnpm start`**: standalone API on 8201 — discovered
+  automatically by any frontend opened from localhost.
+- **Hosted frontend (GitHub Pages etc.)**: discovery **cannot** find a remote
+  backend — the scan is localhost-only. Every user enters their own backend URL
+  manually once (persists per browser), and the backend must allow the
+  frontend's origin (`CORS_ALLOWED_ORIGINS` or `FRONTEND_URL`; see the README's
+  CORS section).
 
-The topbar's backend version chip reads `ServiceInfo.version` (`{ host, port, url, version?, latency? }`) from the discovery layer's cached health probe — no extra request, never blocks rendering.
+The topbar's backend version chip reads `ServiceInfo.version`
+(`{ host, port, url, version?, latency? }`) from the discovery layer's cached
+health probe — no extra request, never blocks rendering.
 
 ---
 
 # 系统架构设计文档
 
-> Historical design-time document (kept as background). The deployment section reflects reality; the rest is design-era notes.
+> Historical design-time document (kept as background). The deployment section
+> reflects reality; the rest is design-era notes.
 
 ## 概述
 
@@ -115,55 +217,55 @@ graph TB
         P3[Router Management<br/>React Router v7.5]
         P4[State Management<br/>Context + Hooks]
     end
-    
+
     subgraph "Service Layer"
         S1[Backend API<br/>Hono Framework]
         S2[Local Server<br/>Node.js Runtime]
         S3[Auto Discovery<br/>Port Scanning]
         S4[API Gateway<br/>Request Routing]
     end
-    
+
     subgraph "Business Layer"
         B1[Data Processing<br/>On-demand Sync]
         B2[Indexing Service<br/>Smart Caching]
         B3[Search Engine<br/>Full-text Search]
         B4[Analytics Service<br/>Statistics Calc]
     end
-    
+
     subgraph "Data Layer"
         D1[DuckDB<br/>OLAP Database]
         D2[File Storage<br/>Local Cache]
         D3[Memory Cache<br/>In-process]
         D4[Config Storage<br/>User Preferences]
     end
-    
+
     subgraph "Infrastructure Layer"
         I1[Ethereum Node<br/>JSON-RPC API]
         I2[External APIs<br/>Price/Gas Data]
         I3[CDN<br/>Static Assets]
         I4[DNS<br/>Domain Resolution]
     end
-    
+
     P1 --> S1
     P2 --> S2
     P3 --> S3
     P4 --> S4
-    
+
     S1 --> B1
     S2 --> B2
     S3 --> B3
     S4 --> B4
-    
+
     B1 --> D1
     B2 --> D2
     B3 --> D3
     B4 --> D4
-    
+
     D1 --> I1
     D2 --> I2
     D3 --> I3
     D4 --> I4
-    
+
     style P1 fill:#e3f2fd
     style S1 fill:#f3e5f5
     style B1 fill:#e8f5e8
@@ -176,7 +278,9 @@ graph TB
 ### 前端技术选型
 
 #### React 19 + Vite 6 选择理由
-- **React 19新特性**：Actions、新Hooks（useActionState、useFormStatus、useOptimistic）
+
+- **React
+  19新特性**：Actions、新Hooks（useActionState、useFormStatus、useOptimistic）
 - **现代化构建**：Vite 6 提供极快的开发服务器和构建速度
 - **ESM原生支持**：利用现代浏览器的原生ES模块
 - **开发体验**：热模块替换(HMR)，瞬间反馈
@@ -185,6 +289,7 @@ graph TB
 - **TypeScript 6**：最新语言特性和类型检查
 
 #### Linaria 选择理由
+
 - **零运行时**：编译时CSS-in-JS，无运行时开销
 - **类型安全**：TypeScript支持，编译时样式检查
 - **原子化CSS**：支持原子化样式，减少包体积
@@ -194,6 +299,7 @@ graph TB
 ### 后端技术选型
 
 #### Hono 5.0 选择理由
+
 - **超轻量级**：体积极小，适合边缘计算
 - **高性能**：基于Web标准API，性能优秀
 - **TypeScript 6支持**：完整的类型安全支持
@@ -202,6 +308,7 @@ graph TB
 - **新特性**：更好的流式响应和WebSocket支持
 
 #### DuckDB 1.1 选择理由
+
 - **OLAP优化**：专为分析查询设计
 - **列式存储**：高压缩率，快速聚合
 - **零配置**：嵌入式数据库，无需额外配置
@@ -210,6 +317,7 @@ graph TB
 - **Node.js支持**：原生Node.js驱动，TypeScript友好
 
 #### Viem 2.21 选择理由
+
 - **类型安全**：完整的TypeScript支持
 - **内置链定义**：支持所有主流EVM链
 - **标准ABI库**：内置ERC20、ERC721等标准合约ABI
@@ -226,13 +334,13 @@ graph TB
         F2[Unified Interface<br/>统一界面]
         F3[Common Components<br/>通用组件]
     end
-    
+
     subgraph "API Gateway Layer"
         G1[Request Router<br/>请求路由]
         G2[Chain Parameter<br/>链参数解析]
         G3[Unified API<br/>统一接口]
     end
-    
+
     subgraph "Service Layer"
         S1[Block Service<br/>区块服务]
         S2[Transaction Service<br/>交易服务]
@@ -240,41 +348,41 @@ graph TB
         S4[Search Service<br/>搜索服务]
         S5[Stats Service<br/>统计服务]
     end
-    
+
     subgraph "Data Layer"
         D1[Unified Database<br/>统一数据库]
         D2[Chain Dimension<br/>链维度数据]
         D3[Cross-chain Cache<br/>跨链缓存]
     end
-    
+
     subgraph "RPC Layer"
         R1[RPC Manager<br/>RPC管理器]
         R2[Client Pool<br/>客户端池]
         R3[Chain Config<br/>链配置]
     end
-    
+
     F1 --> G1
     F2 --> G2
     F3 --> G3
-    
+
     G1 --> S1
     G2 --> S2
     G3 --> S3
     G1 --> S4
     G2 --> S5
-    
+
     S1 --> D1
     S2 --> D2
     S3 --> D3
     S4 --> D1
     S5 --> D2
-    
+
     S1 --> R1
     S2 --> R2
     S3 --> R3
     S4 --> R1
     S5 --> R2
-    
+
     style F1 fill:#e3f2fd
     style G1 fill:#f3e5f5
     style S1 fill:#e8f5e8
@@ -285,16 +393,18 @@ graph TB
 ### 多链支持策略
 
 #### 核心设计理念
+
 - **链无关性**: 服务层不包含特定链的逻辑，链ID作为数据维度
 - **统一存储**: 所有链的数据存储在同一个数据库，通过chainId字段区分
 - **通用服务**: 所有服务都是链无关的，通过参数接受chainId
 - **动态配置**: 支持的链通过配置文件和viem定义动态加载
 
 #### 数据维度设计
+
 ```typescript
 // 所有数据表都包含 chain_id 字段作为分区键
 type BaseEntity = {
-  chainId: number;    // 链ID作为数据维度
+  chainId: number; // 链ID作为数据维度
   // ... 其他业务字段
 };
 
@@ -310,23 +420,24 @@ type Block = BaseEntity & {
 ### 统一服务设计
 
 #### 链无关的服务层
+
 ```typescript
 // src/server/services/BlockService.ts
 export class BlockService {
   constructor(
     private rpcManager: RpcManager,
-    private database: Database
+    private database: Database,
   ) {}
 
   // 所有方法都接受 chainId 参数
   async getLatestBlock(chainId: number): Promise<Block> {
     const client = await this.rpcManager.getClient(chainId);
     const block = await client.getBlock({ blockTag: 'latest' });
-    
+
     return {
       ...block,
       chainId, // 添加链维度
-      network: this.rpcManager.getChainName(chainId)
+      network: this.rpcManager.getChainName(chainId),
     };
   }
 
@@ -338,38 +449,41 @@ export class BlockService {
     // 2. 查询数据库
     const stored = await this.database.get(
       'SELECT * FROM blocks WHERE chain_id = ? AND number = ?',
-      [chainId, blockNumber.toString()]
+      [chainId, blockNumber.toString()],
     );
     if (stored) return this.mapRowToBlock(stored);
 
     // 3. 从RPC获取
     const client = await this.rpcManager.getClient(chainId);
     const block = await client.getBlock({ blockNumber });
-    
+
     // 4. 异步存储
     this.storeBlock({ ...block, chainId });
-    
+
     return { ...block, chainId };
   }
 
   // 链无关的存储逻辑
   private async storeBlock(block: Block): Promise<void> {
-    await this.database.run(`
+    await this.database.run(
+      `
       INSERT OR REPLACE INTO blocks (
         chain_id, number, hash, parent_hash, timestamp, 
         miner, gas_limit, gas_used, transaction_count
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `, [
-      block.chainId,
-      block.number.toString(),
-      block.hash,
-      block.parentHash,
-      block.timestamp,
-      block.miner,
-      block.gasLimit?.toString(),
-      block.gasUsed?.toString(),
-      block.transactions?.length || 0
-    ]);
+    `,
+      [
+        block.chainId,
+        block.number.toString(),
+        block.hash,
+        block.parentHash,
+        block.timestamp,
+        block.miner,
+        block.gasLimit?.toString(),
+        block.gasUsed?.toString(),
+        block.transactions?.length || 0,
+      ],
+    );
   }
 }
 ```
@@ -380,7 +494,8 @@ export class BlockService {
 
 ##### 方案一：DuckDB-PostgreSQL 适配器 (推荐)
 
-通过编写一个 DuckDB 到 postgres.js 驱动的适配器，让 Drizzle ORM 直接支持 DuckDB：
+通过编写一个 DuckDB 到 postgres.js 驱动的适配器，让 Drizzle
+ORM 直接支持 DuckDB：
 
 ##### 1. postgres.js 兼容适配器
 
@@ -415,7 +530,10 @@ export class DuckDBPostgresAdapter {
   }
 
   // 实现 postgres.js 的核心查询接口
-  async query(sql: string | TemplateStringsArray, ...params: any[]): Promise<any[]> {
+  async query(
+    sql: string | TemplateStringsArray,
+    ...params: any[]
+  ): Promise<any[]> {
     if (!this.isInitialized) {
       await this.initialize();
     }
@@ -434,13 +552,17 @@ export class DuckDBPostgresAdapter {
     }
 
     return new Promise((resolve, reject) => {
-      this.connection.all(queryText, ...queryParams, (err: Error | null, result: any[]) => {
-        if (err) {
-          reject(this.adaptError(err));
-        } else {
-          resolve(this.adaptResult(result));
-        }
-      });
+      this.connection.all(
+        queryText,
+        ...queryParams,
+        (err: Error | null, result: any[]) => {
+          if (err) {
+            reject(this.adaptError(err));
+          } else {
+            resolve(this.adaptResult(result));
+          }
+        },
+      );
     });
   }
 
@@ -553,7 +675,7 @@ export class DuckDBPostgresAdapter {
 
   // 实现 postgres.js 的连接管理
   async end(): Promise<void> {
-    return new Promise((resolve) => {
+    return new Promise(resolve => {
       this.db.close(() => resolve());
     });
   }
@@ -571,9 +693,12 @@ export class DuckDBPostgresAdapter {
 // 创建适配器工厂函数，模拟 postgres.js 的使用方式
 export function createDuckDBAdapter(connectionString: string) {
   const adapter = new DuckDBPostgresAdapter(connectionString);
-  
+
   // 返回一个类似 postgres.js 的函数接口
-  const sql = async (query: string | TemplateStringsArray, ...params: any[]) => {
+  const sql = async (
+    query: string | TemplateStringsArray,
+    ...params: any[]
+  ) => {
     return adapter.query(query, ...params);
   };
 
@@ -604,19 +729,23 @@ export const db = drizzle(duckdbAdapter as any, { schema });
 // 现在可以使用标准的 Drizzle ORM 语法！
 export const blockRepository = {
   findLatest: (chainId: number, limit = 20) =>
-    db.select()
+    db
+      .select()
       .from(schema.blocks)
       .where(eq(schema.blocks.chainId, chainId))
       .orderBy(desc(schema.blocks.number))
       .limit(limit),
 
   findByNumber: (chainId: number, blockNumber: bigint) =>
-    db.select()
+    db
+      .select()
       .from(schema.blocks)
-      .where(and(
-        eq(schema.blocks.chainId, chainId),
-        eq(schema.blocks.number, blockNumber)
-      ))
+      .where(
+        and(
+          eq(schema.blocks.chainId, chainId),
+          eq(schema.blocks.number, blockNumber),
+        ),
+      )
       .get(),
 
   create: (block: typeof schema.blocks.$inferInsert) =>
@@ -639,41 +768,49 @@ import {
   decimal,
 } from 'drizzle-orm/pg-core';
 
-export const blocks = pgTable('blocks', {
-  chainId: integer('chain_id').notNull(),
-  number: bigint('number', { mode: 'bigint' }).notNull(),
-  hash: varchar('hash', { length: 66 }).notNull(),
-  parentHash: varchar('parent_hash', { length: 66 }),
-  timestamp: timestamp('timestamp'),
-  miner: varchar('miner', { length: 42 }),
-  gasLimit: bigint('gas_limit', { mode: 'bigint' }),
-  gasUsed: bigint('gas_used', { mode: 'bigint' }),
-  baseFeePerGas: bigint('base_fee_per_gas', { mode: 'bigint' }),
-  transactionCount: integer('transaction_count'),
-  sizeBytes: integer('size_bytes'),
-  indexedAt: timestamp('indexed_at').defaultNow(),
-}, (table) => ({
-  pk: primaryKey({ columns: [table.chainId, table.number] }),
-  hashUnique: unique().on(table.chainId, table.hash),
-}));
+export const blocks = pgTable(
+  'blocks',
+  {
+    chainId: integer('chain_id').notNull(),
+    number: bigint('number', { mode: 'bigint' }).notNull(),
+    hash: varchar('hash', { length: 66 }).notNull(),
+    parentHash: varchar('parent_hash', { length: 66 }),
+    timestamp: timestamp('timestamp'),
+    miner: varchar('miner', { length: 42 }),
+    gasLimit: bigint('gas_limit', { mode: 'bigint' }),
+    gasUsed: bigint('gas_used', { mode: 'bigint' }),
+    baseFeePerGas: bigint('base_fee_per_gas', { mode: 'bigint' }),
+    transactionCount: integer('transaction_count'),
+    sizeBytes: integer('size_bytes'),
+    indexedAt: timestamp('indexed_at').defaultNow(),
+  },
+  table => ({
+    pk: primaryKey({ columns: [table.chainId, table.number] }),
+    hashUnique: unique().on(table.chainId, table.hash),
+  }),
+);
 
-export const transactions = pgTable('transactions', {
-  chainId: integer('chain_id').notNull(),
-  hash: varchar('hash', { length: 66 }).notNull(),
-  blockNumber: bigint('block_number', { mode: 'bigint' }),
-  transactionIndex: integer('transaction_index'),
-  fromAddress: varchar('from_address', { length: 42 }),
-  toAddress: varchar('to_address', { length: 42 }),
-  value: decimal('value', { precision: 38, scale: 0 }),
-  gasLimit: bigint('gas_limit', { mode: 'bigint' }),
-  gasPrice: bigint('gas_price', { mode: 'bigint' }),
-  gasUsed: bigint('gas_used', { mode: 'bigint' }),
-  status: integer('status'),
-  timestamp: timestamp('timestamp'),
-  indexedAt: timestamp('indexed_at').defaultNow(),
-}, (table) => ({
-  pk: primaryKey({ columns: [table.chainId, table.hash] }),
-}));
+export const transactions = pgTable(
+  'transactions',
+  {
+    chainId: integer('chain_id').notNull(),
+    hash: varchar('hash', { length: 66 }).notNull(),
+    blockNumber: bigint('block_number', { mode: 'bigint' }),
+    transactionIndex: integer('transaction_index'),
+    fromAddress: varchar('from_address', { length: 42 }),
+    toAddress: varchar('to_address', { length: 42 }),
+    value: decimal('value', { precision: 38, scale: 0 }),
+    gasLimit: bigint('gas_limit', { mode: 'bigint' }),
+    gasPrice: bigint('gas_price', { mode: 'bigint' }),
+    gasUsed: bigint('gas_used', { mode: 'bigint' }),
+    status: integer('status'),
+    timestamp: timestamp('timestamp'),
+    indexedAt: timestamp('indexed_at').defaultNow(),
+  },
+  table => ({
+    pk: primaryKey({ columns: [table.chainId, table.hash] }),
+  }),
+);
 
 // 类型推断
 export type Block = typeof blocks.$inferSelect;
@@ -688,39 +825,48 @@ export type NewTransaction = typeof transactions.$inferInsert;
 // src/server/database/queryBuilder.ts
 export class QueryBuilder {
   private db: DatabaseConnection;
-  
+
   constructor(db: DatabaseConnection) {
     this.db = db;
   }
-  
+
   // 类型安全的查询方法
-  async findBlockByNumber(chainId: number, blockNumber: bigint): Promise<Block | null> {
-    const row = await this.db.get(`
+  async findBlockByNumber(
+    chainId: number,
+    blockNumber: bigint,
+  ): Promise<Block | null> {
+    const row = await this.db.get(
+      `
       SELECT * FROM blocks 
       WHERE chain_id = ? AND number = ?
-    `, [chainId, blockNumber.toString()]);
-    
+    `,
+      [chainId, blockNumber.toString()],
+    );
+
     return row ? this.mapRowToBlock(row) : null;
   }
-  
+
   async findTransactionsByAddress(
-    chainId: number, 
-    address: string, 
+    chainId: number,
+    address: string,
     limit: number = 20,
-    offset: number = 0
+    offset: number = 0,
   ): Promise<Transaction[]> {
-    const rows = await this.db.all(`
+    const rows = await this.db.all(
+      `
       SELECT t.*, b.timestamp 
       FROM transactions t
       JOIN blocks b ON t.chain_id = b.chain_id AND t.block_number = b.number
       WHERE t.chain_id = ? AND (t.from_address = ? OR t.to_address = ?)
       ORDER BY b.timestamp DESC
       LIMIT ? OFFSET ?
-    `, [chainId, address.toLowerCase(), address.toLowerCase(), limit, offset]);
-    
+    `,
+      [chainId, address.toLowerCase(), address.toLowerCase(), limit, offset],
+    );
+
     return rows.map(row => this.mapRowToTransaction(row));
   }
-  
+
   // 类型转换辅助方法
   private mapRowToBlock(row: any): Block {
     return {
@@ -732,11 +878,13 @@ export class QueryBuilder {
       miner: row.miner as `0x${string}`,
       gasLimit: row.gas_limit ? BigInt(row.gas_limit) : undefined,
       gasUsed: row.gas_used ? BigInt(row.gas_used) : undefined,
-      baseFeePerGas: row.base_fee_per_gas ? BigInt(row.base_fee_per_gas) : undefined,
+      baseFeePerGas: row.base_fee_per_gas
+        ? BigInt(row.base_fee_per_gas)
+        : undefined,
       // ... 其他字段映射
     } as Block;
   }
-  
+
   private mapRowToTransaction(row: any): Transaction {
     return {
       chainId: row.chain_id,
@@ -760,29 +908,36 @@ export class QueryBuilder {
 // src/server/repositories/BlockRepository.ts
 export class BlockRepository {
   private queryBuilder: QueryBuilder;
-  
+
   constructor(queryBuilder: QueryBuilder) {
     this.queryBuilder = queryBuilder;
   }
-  
+
   async findLatest(chainId: number, limit: number = 20): Promise<Block[]> {
     return await this.queryBuilder.findLatestBlocks(chainId, limit);
   }
-  
-  async findByNumber(chainId: number, blockNumber: bigint): Promise<Block | null> {
+
+  async findByNumber(
+    chainId: number,
+    blockNumber: bigint,
+  ): Promise<Block | null> {
     return await this.queryBuilder.findBlockByNumber(chainId, blockNumber);
   }
-  
+
   async save(block: Block): Promise<void> {
     await this.queryBuilder.insertBlock(block);
   }
-  
+
   async findByRange(
-    chainId: number, 
-    fromBlock: bigint, 
-    toBlock: bigint
+    chainId: number,
+    fromBlock: bigint,
+    toBlock: bigint,
   ): Promise<Block[]> {
-    return await this.queryBuilder.findBlocksByRange(chainId, fromBlock, toBlock);
+    return await this.queryBuilder.findBlocksByRange(
+      chainId,
+      fromBlock,
+      toBlock,
+    );
   }
 }
 ```
@@ -793,20 +948,20 @@ export class BlockRepository {
 // src/server/database/migrations.ts
 export class MigrationManager {
   private db: DatabaseConnection;
-  
+
   constructor(db: DatabaseConnection) {
     this.db = db;
   }
-  
+
   async runMigrations(): Promise<void> {
     await this.createMigrationsTable();
-    
+
     const migrations = [
       { version: 1, name: 'initial_schema', sql: INITIAL_SCHEMA },
       { version: 2, name: 'add_indexes', sql: ADD_INDEXES },
       { version: 3, name: 'add_user_rpc_configs', sql: ADD_USER_RPC_CONFIGS },
     ];
-    
+
     for (const migration of migrations) {
       const applied = await this.isMigrationApplied(migration.version);
       if (!applied) {
@@ -814,12 +969,12 @@ export class MigrationManager {
       }
     }
   }
-  
+
   private async applyMigration(migration: Migration): Promise<void> {
     await this.db.exec(migration.sql);
     await this.db.run(
       'INSERT INTO migrations (version, name, applied_at) VALUES (?, ?, ?)',
-      [migration.version, migration.name, new Date().toISOString()]
+      [migration.version, migration.name, new Date().toISOString()],
     );
     console.log(`✅ Applied migration: ${migration.name}`);
   }
@@ -832,12 +987,14 @@ export class MigrationManager {
 // src/server/database/transaction.ts
 export class DatabaseTransaction {
   private db: DatabaseConnection;
-  
+
   constructor(db: DatabaseConnection) {
     this.db = db;
   }
-  
-  async withTransaction<T>(callback: (tx: DatabaseTransaction) => Promise<T>): Promise<T> {
+
+  async withTransaction<T>(
+    callback: (tx: DatabaseTransaction) => Promise<T>,
+  ): Promise<T> {
     await this.db.exec('BEGIN TRANSACTION');
     try {
       const result = await callback(this);
@@ -848,10 +1005,10 @@ export class DatabaseTransaction {
       throw error;
     }
   }
-  
+
   async insertBlockWithTransactions(
-    block: Block, 
-    transactions: Transaction[]
+    block: Block,
+    transactions: Transaction[],
   ): Promise<void> {
     await this.withTransaction(async () => {
       await this.insertBlock(block);
@@ -877,25 +1034,27 @@ export class QueryBuilder {
 
 #### 技术方案对比
 
-| 特性 | DuckDB-PostgreSQL 适配器 | 原生封装 |
-|------|-------------------------|----------|
-| **ORM 支持** | ✅ 完整 Drizzle ORM | ❌ 手写查询 |
-| **类型安全** | ✅ Drizzle 类型推断 | ✅ 手动类型转换 |
-| **开发效率** | ✅ 高 (ORM 语法) | ⚠️ 中 (SQL 编写) |
-| **性能** | ⚠️ 适配器开销 | ✅ 原生性能 |
-| **迁移支持** | ✅ Drizzle Kit | ❌ 手动管理 |
-| **关系查询** | ✅ ORM 关联查询 | ❌ 手动 JOIN |
-| **维护成本** | ⚠️ 适配器维护 | ✅ 简单直接 |
+| 特性         | DuckDB-PostgreSQL 适配器 | 原生封装         |
+| ------------ | ------------------------ | ---------------- |
+| **ORM 支持** | ✅ 完整 Drizzle ORM      | ❌ 手写查询      |
+| **类型安全** | ✅ Drizzle 类型推断      | ✅ 手动类型转换  |
+| **开发效率** | ✅ 高 (ORM 语法)         | ⚠️ 中 (SQL 编写) |
+| **性能**     | ⚠️ 适配器开销            | ✅ 原生性能      |
+| **迁移支持** | ✅ Drizzle Kit           | ❌ 手动管理      |
+| **关系查询** | ✅ ORM 关联查询          | ❌ 手动 JOIN     |
+| **维护成本** | ⚠️ 适配器维护            | ✅ 简单直接      |
 
 #### 推荐方案
 
 **优先使用适配器方案**，原因：
+
 - **开发效率**: Drizzle ORM 的类型安全和 API 设计
 - **团队协作**: 标准化的 ORM 语法，降低学习成本
 - **功能完整**: 支持迁移、关系查询、事务等
 - **未来扩展**: 当官方支持 DuckDB 时，可以无缝迁移
 
 这种设计提供了：
+
 - **最佳开发体验**：享受 Drizzle ORM 的所有优势
 - **PostgreSQL 兼容**：充分利用 DuckDB 的兼容性
 - **类型安全**：完整的 TypeScript 支持
@@ -915,7 +1074,7 @@ graph TB
             S3[constants/<br/>api.ts, blockchain.ts, config.ts]
             S4[validation/<br/>schemas.ts, rules.ts]
         end
-        
+
         subgraph "client/ 前端代码"
             C1[pages/<br/>Home, Blocks, Transactions, Addresses, Search]
             C2[components/<br/>ui, blocks, transactions, addresses, charts, layout]
@@ -924,7 +1083,7 @@ graph TB
             C5[styles/<br/>globals, theme, components]
             C6[main.tsx<br/>前端入口]
         end
-        
+
         subgraph "server/ 后端代码"
             SE1[routes/<br/>blocks, transactions, addresses, search, stats]
             SE2[services/<br/>BlockService, TransactionService, AddressService, SyncService]
@@ -933,14 +1092,14 @@ graph TB
             SE5[utils/<br/>ethereum, logger, cache]
             SE6[app.ts<br/>后端入口]
         end
-        
+
         subgraph "scripts/ 构建脚本"
             SC1[build.ts<br/>构建脚本]
             SC2[dev.ts<br/>开发脚本]
             SC3[deploy.ts<br/>部署脚本]
         end
     end
-    
+
     S1 --> C4
     S1 --> SE1
     S2 --> C3
@@ -948,19 +1107,19 @@ graph TB
     S3 --> C5
     S3 --> SE3
     S4 --> SE4
-    
+
     C1 --> C6
     C2 --> C6
     C3 --> C6
     C4 --> C6
     C5 --> C6
-    
+
     SE1 --> SE6
     SE2 --> SE6
     SE3 --> SE6
     SE4 --> SE6
     SE5 --> SE6
-    
+
     style S1 fill:#e8eaf6
     style C1 fill:#e1f5fe
     style SE1 fill:#f3e5f5
@@ -1006,44 +1165,46 @@ export type PaginationInfo = {
   hasPrev: boolean;
 };
 
-// src/shared/types/blockchain.ts  
+// src/shared/types/blockchain.ts
 // 使用viem内置类型并扩展多链支持
-import type { 
-  Block as ViemBlock, 
+import type {
+  Block as ViemBlock,
   Transaction as ViemTransaction,
-  Address, 
-  Hash 
+  Address,
+  Hash,
 } from 'viem';
 
 export type Block = ViemBlock & {
-  chainId: number;       // 新增：链ID
-  network: string;       // 新增：网络名称
+  chainId: number; // 新增：链ID
+  network: string; // 新增：网络名称
   transactionCount: number; // 交易数量统计
 };
 
 export type Transaction = ViemTransaction & {
-  chainId: number;       // 新增：链ID
-  gasUsed?: string;      // 实际使用Gas（从receipt获取）
-  status?: number;       // 交易状态（从receipt获取）
-  timestamp: string;     // 新增：时间戳
-  network: string;       // 新增：网络名称
+  chainId: number; // 新增：链ID
+  gasUsed?: string; // 实际使用Gas（从receipt获取）
+  status?: number; // 交易状态（从receipt获取）
+  timestamp: string; // 新增：时间戳
+  network: string; // 新增：网络名称
 };
 
 export type AddressInfo = {
-  chainId: number;       // 新增：链ID
-  address: Address;      // 使用viem的Address类型
+  chainId: number; // 新增：链ID
+  address: Address; // 使用viem的Address类型
   balance: string;
   transactionCount: number;
   isContract: boolean;
-  network: string;       // 新增：网络名称
-  label?: string;        // 用户自定义标签
+  network: string; // 新增：网络名称
+  label?: string; // 用户自定义标签
 };
 
 // 前端使用 - 多链支持
 // src/client/api/blocks.ts
 import type { DataResponse, Block } from '../../shared/types/index.js';
 
-export async function getLatestBlock(chainId: number = 1): Promise<DataResponse<Block>> {
+export async function getLatestBlock(
+  chainId: number = 1,
+): Promise<DataResponse<Block>> {
   // 多链API调用，通过chainId参数指定链
   const response = await fetch(`/api/chains/${chainId}/blocks/latest`);
   if (!response.ok) {
@@ -1054,8 +1215,8 @@ export async function getLatestBlock(chainId: number = 1): Promise<DataResponse<
 }
 
 export async function getBlockByNumber(
-  chainId: number, 
-  blockNumber: number
+  chainId: number,
+  blockNumber: number,
 ): Promise<DataResponse<Block>> {
   const response = await fetch(`/api/chains/${chainId}/blocks/${blockNumber}`);
   if (!response.ok) {
@@ -1065,7 +1226,7 @@ export async function getBlockByNumber(
   return response.json();
 }
 
-// 后端使用 - 统一服务路由  
+// 后端使用 - 统一服务路由
 // src/server/routes/blocks.ts
 import { Context } from 'hono';
 import type { DataResponse, Block } from '../../shared/types/index.js';
@@ -1074,16 +1235,16 @@ import { BlockService } from '../services/BlockService.js';
 export async function handleGetLatestBlock(c: Context): Promise<Response> {
   const chainId = parseInt(c.req.param('chainId'));
   const blockService = new BlockService();
-  
+
   // 服务层统一处理，chainId作为参数传入
   const block = await blockService.getLatestBlock(chainId);
-  
+
   // 设置响应头（元数据）
   c.header('X-Response-Time', '25ms');
   c.header('X-Data-Source', 'database');
   c.header('X-Chain-ID', chainId.toString());
   c.header('X-Network', block.network);
-  
+
   // 直接返回数据，无包装
   return c.json(block);
 }
@@ -1107,7 +1268,7 @@ graph TB
             RT4[Transaction Status<br/>交易状态]
             RT5[Network Stats<br/>网络统计]
         end
-        
+
         subgraph "Historical Data 历史数据"
             HT1[Block History<br/>区块历史]
             HT2[Transaction History<br/>交易历史]
@@ -1116,48 +1277,48 @@ graph TB
             HT5[Search Results<br/>搜索结果]
         end
     end
-    
+
     subgraph "Data Flow 数据流程"
         subgraph "Browser Direct 浏览器直接调用"
             B1[Viem Client<br/>前端RPC客户端]
             B2[Public RPC<br/>公共RPC节点]
         end
-        
+
         subgraph "Local Server 本地服务器"
             L1[API Gateway<br/>API网关]
             L2[On-demand Sync<br/>按需同步]
             L3[Smart Cache<br/>智能缓存]
         end
-        
+
         subgraph "Storage Layer 存储层"
             S1[Memory Cache<br/>内存缓存]
             S2[DuckDB<br/>本地数据库]
             S3[Access History<br/>访问历史]
         end
     end
-    
+
     RT1 --> B1
     RT2 --> B1
     RT3 --> B1
     RT4 --> B1
     RT5 --> B1
-    
+
     B1 --> B2
-    
+
     HT1 --> L1
     HT2 --> L1
     HT3 --> L1
     HT4 --> L1
     HT5 --> L1
-    
+
     L1 --> L2
     L2 --> L3
     L3 --> S1
     L3 --> S2
     L2 --> S3
-    
+
     L2 -.->|Fallback to RPC| B2
-    
+
     style RT1 fill:#e3f2fd
     style HT1 fill:#f3e5f5
     style B1 fill:#e8f5e8
@@ -1181,14 +1342,14 @@ sequenceDiagram
 
     U->>P: 访问页面
     P->>A: 扫描本地端口 (8200-8210)
-    
+
     alt Local Server Found
         A-->>P: 发现服务 (如:8205)
         P-->>U: 连接本地服务
-        
+
         U->>A: 请求数据 (GET /api/blocks/18500000)
         A->>S: 调用同步服务
-        
+
         S->>C: 检查内存缓存
         alt Cache Hit
             C-->>S: 返回缓存数据
@@ -1208,7 +1369,7 @@ sequenceDiagram
             end
         end
         A-->>U: 返回响应 + 元数据头
-        
+
     else Local Server Not Found
         P-->>U: 显示安装引导
         U->>U: 选择安装脚本或配置远程API
@@ -1225,35 +1386,36 @@ sequenceDiagram
 
 #### 核心思路
 
-利用 `getTransactionCount` 和余额变化的二分查找算法，在有限的RPC调用次数内定位地址相关的交易。
+利用 `getTransactionCount`
+和余额变化的二分查找算法，在有限的RPC调用次数内定位地址相关的交易。
 
 ```mermaid
 graph TD
     A[开始查询地址交易] --> B[获取基础信息]
     B --> B1[getTransactionCount<br/>获取发送交易数量]
     B --> B2[getBalance at latest<br/>获取当前余额]
-    
+
     B1 --> C{交易数量 > 0?}
     C -->|是| D[二分查找发送交易]
     C -->|否| E[仅查找接收交易]
-    
+
     D --> D1[获取历史余额快照]
     E --> D1
     D1 --> D2[binary search<br/>定位余额变化区间]
     D2 --> D3[在区间内查找具体交易]
-    
+
     D3 --> F{找到足够交易?}
     F -->|是| G[返回交易列表]
     F -->|否| H[请求用户提供线索]
-    
+
     H --> H1[时间范围输入]
     H --> H2[区块范围输入]
     H --> H3[跳转到外部浏览器]
-    
+
     H1 --> I[缩小搜索范围]
     H2 --> I
     I --> D2
-    
+
     style A fill:#e3f2fd
     style G fill:#c8e6c9
     style H3 fill:#ffcdd2
@@ -1262,6 +1424,7 @@ graph TD
 #### 算法实现
 
 ##### 1. 基础信息收集
+
 ```typescript
 // 获取地址基础信息
 async function getAddressBasicInfo(address: string): Promise<{
@@ -1272,86 +1435,89 @@ async function getAddressBasicInfo(address: string): Promise<{
   const [txCount, balance, latestBlock] = await Promise.all([
     rpcClient.getTransactionCount(address),
     rpcClient.getBalance(address),
-    rpcClient.getBlockNumber()
+    rpcClient.getBlockNumber(),
   ]);
-  
+
   return { transactionCount: txCount, currentBalance: balance, latestBlock };
 }
 ```
 
 ##### 2. 二分查找余额变化
+
 ```typescript
 // 二分查找余额变化的区块范围
 async function findBalanceChangeBlocks(
-  address: string, 
-  startBlock: number, 
+  address: string,
+  startBlock: number,
   endBlock: number,
-  maxAttempts: number = 20
+  maxAttempts: number = 20,
 ): Promise<{ blockNumber: number; balance: bigint }[]> {
   const changes: { blockNumber: number; balance: bigint }[] = [];
   const visited = new Set<number>();
-  
+
   async function binarySearch(start: number, end: number, depth: number = 0) {
     if (depth >= maxAttempts || end - start <= 1) return;
-    
+
     const mid = Math.floor((start + end) / 2);
     if (visited.has(mid)) return;
     visited.add(mid);
-    
+
     const [startBalance, midBalance, endBalance] = await Promise.all([
       rpcClient.getBalance(address, start),
       rpcClient.getBalance(address, mid),
-      rpcClient.getBalance(address, end)
+      rpcClient.getBalance(address, end),
     ]);
-    
+
     // 检查余额变化
     if (startBalance !== midBalance) {
       changes.push({ blockNumber: mid, balance: midBalance });
       await binarySearch(start, mid, depth + 1);
     }
-    
+
     if (midBalance !== endBalance) {
       changes.push({ blockNumber: mid, balance: midBalance });
       await binarySearch(mid, end, depth + 1);
     }
   }
-  
+
   await binarySearch(startBlock, endBlock);
   return changes.sort((a, b) => b.blockNumber - a.blockNumber);
 }
 ```
 
 ##### 3. 交易定位与提取
+
 ```typescript
 // 在指定区块范围内查找地址相关交易
 async function findTransactionsInRange(
   address: string,
   startBlock: number,
-  endBlock: number
+  endBlock: number,
 ): Promise<Transaction[]> {
   const transactions: Transaction[] = [];
   const maxBlocks = Math.min(endBlock - startBlock, 100); // 限制查找范围
-  
+
   for (let i = 0; i < maxBlocks; i++) {
     const blockNumber = endBlock - i;
     if (blockNumber < startBlock) break;
-    
+
     try {
       const block = await rpcClient.getBlock(blockNumber, true);
       if (!block?.transactions) continue;
-      
+
       // 筛选与目标地址相关的交易
-      const relatedTxs = block.transactions.filter(tx => 
-        tx.from?.toLowerCase() === address.toLowerCase() ||
-        tx.to?.toLowerCase() === address.toLowerCase()
+      const relatedTxs = block.transactions.filter(
+        tx =>
+          tx.from?.toLowerCase() === address.toLowerCase() ||
+          tx.to?.toLowerCase() === address.toLowerCase(),
       );
-      
+
       transactions.push(...relatedTxs);
     } catch (error) {
       console.warn(`Failed to fetch block ${blockNumber}:`, error);
     }
   }
-  
+
   return transactions;
 }
 ```
@@ -1359,30 +1525,32 @@ async function findTransactionsInRange(
 #### 用户交互策略
 
 ##### 1. 渐进式搜索体验
+
 ```typescript
 // 分阶段搜索策略
 const searchPhases = [
   {
-    name: "快速搜索",
+    name: '快速搜索',
     maxAttempts: 10,
     blockRange: 1000,
-    description: "搜索最近1000个区块"
+    description: '搜索最近1000个区块',
   },
   {
-    name: "扩展搜索", 
+    name: '扩展搜索',
     maxAttempts: 20,
     blockRange: 10000,
-    description: "扩展到最近10000个区块"
+    description: '扩展到最近10000个区块',
   },
   {
-    name: "用户辅助搜索",
+    name: '用户辅助搜索',
     requiresInput: true,
-    description: "请提供时间范围或区块范围"
-  }
+    description: '请提供时间范围或区块范围',
+  },
 ];
 ```
 
 ##### 2. 用户输入辅助
+
 ```typescript
 type SearchHint = {
   timeRange?: { start: Date; end: Date };
@@ -1393,25 +1561,33 @@ type SearchHint = {
 
 // 根据用户提示优化搜索
 async function searchWithHints(
-  address: string, 
-  hints: SearchHint
+  address: string,
+  hints: SearchHint,
 ): Promise<Transaction[]> {
   if (hints.transactionHash) {
     // 直接查询已知交易
     return await getTransactionDetails(hints.transactionHash);
   }
-  
+
   if (hints.timeRange) {
     // 时间范围转换为区块范围
     const blockRange = await timeToBlockRange(hints.timeRange);
-    return await findTransactionsInRange(address, blockRange.start, blockRange.end);
+    return await findTransactionsInRange(
+      address,
+      blockRange.start,
+      blockRange.end,
+    );
   }
-  
+
   if (hints.blockRange) {
     // 直接使用区块范围
-    return await findTransactionsInRange(address, hints.blockRange.start, hints.blockRange.end);
+    return await findTransactionsInRange(
+      address,
+      hints.blockRange.start,
+      hints.blockRange.end,
+    );
   }
-  
+
   // 默认搜索策略
   return await performDefaultSearch(address);
 }
@@ -1420,11 +1596,13 @@ async function searchWithHints(
 #### 局限性与应对策略
 
 ##### 1. 技术局限性
+
 - **合约地址**: 无法通过 `getTransactionCount` 检测接收交易
 - **复杂交易**: DeFi、NFT等内部转账难以检测
 - **性能限制**: 大量RPC调用可能导致延迟
 
 ##### 2. 用户体验优化
+
 ```typescript
 // 结果展示策略
 type SearchResult = {
@@ -1440,9 +1618,12 @@ type SearchResult = {
 };
 
 // 提供外部浏览器链接
-function generateExternalLinks(address: string, chainId: number): ExternalLinks {
+function generateExternalLinks(
+  address: string,
+  chainId: number,
+): ExternalLinks {
   const links: ExternalLinks = {};
-  
+
   switch (chainId) {
     case 1: // Ethereum Mainnet
       links.etherscan = `https://etherscan.io/address/${address}`;
@@ -1455,17 +1636,18 @@ function generateExternalLinks(address: string, chainId: number): ExternalLinks 
       break;
     // ... 其他链
   }
-  
+
   return links;
 }
 ```
 
 ##### 3. 错误处理与降级
+
 ```typescript
 // 智能降级策略
 async function searchAddressTransactions(
   address: string,
-  options: SearchOptions = {}
+  options: SearchOptions = {},
 ): Promise<SearchResult> {
   try {
     // 尝试二分查找
@@ -1474,13 +1656,13 @@ async function searchAddressTransactions(
       return {
         ...result,
         searchMethod: 'binary_search',
-        completeness: 'partial'
+        completeness: 'partial',
       };
     }
   } catch (error) {
     console.warn('Binary search failed:', error);
   }
-  
+
   // 降级到用户辅助
   return {
     transactions: [],
@@ -1489,9 +1671,9 @@ async function searchAddressTransactions(
     suggestions: [
       '请提供大概的交易时间',
       '如果知道具体交易哈希，请直接搜索',
-      '点击下方链接查看完整交易历史'
+      '点击下方链接查看完整交易历史',
     ],
-    externalLinks: generateExternalLinks(address, options.chainId || 1)
+    externalLinks: generateExternalLinks(address, options.chainId || 1),
   };
 }
 ```
@@ -1499,38 +1681,43 @@ async function searchAddressTransactions(
 #### 性能优化
 
 ##### 1. 请求批量化
+
 ```typescript
 // 批量RPC请求优化
 async function batchGetBalances(
-  address: string, 
-  blockNumbers: number[]
+  address: string,
+  blockNumbers: number[],
 ): Promise<Map<number, bigint>> {
   const batchSize = 10; // 每批请求数量
   const results = new Map<number, bigint>();
-  
+
   for (let i = 0; i < blockNumbers.length; i += batchSize) {
     const batch = blockNumbers.slice(i, i + batchSize);
     const balances = await Promise.all(
-      batch.map(block => rpcClient.getBalance(address, block))
+      batch.map(block => rpcClient.getBalance(address, block)),
     );
-    
+
     batch.forEach((block, index) => {
       results.set(block, balances[index]);
     });
   }
-  
+
   return results;
 }
 ```
 
 ##### 2. 智能缓存
+
 ```typescript
 // 地址查询结果缓存
-const addressSearchCache = new Map<string, {
-  result: SearchResult;
-  timestamp: number;
-  blockHeight: number;
-}>();
+const addressSearchCache = new Map<
+  string,
+  {
+    result: SearchResult;
+    timestamp: number;
+    blockHeight: number;
+  }
+>();
 
 // 缓存策略：按地址+区块高度缓存
 function getCacheKey(address: string, blockHeight: number): string {
@@ -1546,7 +1733,8 @@ function getCacheKey(address: string, blockHeight: number): string {
 
 #### 核心思路
 
-合约地址的交易查询以事件索引为主导，通过 `eth_getLogs` API 高效查询事件日志，再关联对应的交易详情。
+合约地址的交易查询以事件索引为主导，通过 `eth_getLogs`
+API 高效查询事件日志，再关联对应的交易详情。
 
 ```mermaid
 graph TD
@@ -1554,21 +1742,21 @@ graph TD
     B --> B1{是否为合约?}
     B1 -->|否| C[使用普通地址策略]
     B1 -->|是| D[合约事件查询策略]
-    
+
     D --> D1[获取合约ABI]
     D1 --> D2[解析事件定义]
     D2 --> D3[构建事件过滤器]
     D3 --> D4[批量查询事件日志]
     D4 --> D5[解析事件参数]
     D5 --> D6[关联交易详情]
-    
+
     D1 --> E1[Etherscan API]
     D1 --> E2[本地ABI库]
     D1 --> E3[用户上传ABI]
     D1 --> E4[事件签名推断]
-    
+
     D6 --> F[返回结构化事件数据]
-    
+
     style A fill:#e3f2fd
     style F fill:#c8e6c9
     style C fill:#ffecb3
@@ -1583,7 +1771,10 @@ graph TD
 ```typescript
 // 简化的ABI管理器
 class SimpleAbiManager {
-  async getContractAbi(address: string, chainId: number): Promise<{
+  async getContractAbi(
+    address: string,
+    chainId: number,
+  ): Promise<{
     abi: any[];
     source: 'sourcify' | 'standard' | 'user';
     verified: boolean;
@@ -1628,10 +1819,10 @@ class SourceryProvider {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           addresses: [address],
-          chainIds: [chainId.toString()]
-        })
+          chainIds: [chainId.toString()],
+        }),
       });
-      
+
       const checkResult = await checkResponse.json();
       if (!checkResult[0] || checkResult[0].status !== 'perfect') {
         throw new Error('Contract not verified in Sourcify');
@@ -1639,10 +1830,10 @@ class SourceryProvider {
 
       // 获取合约元数据
       const filesResponse = await fetch(
-        `${this.BASE_URL}/files/any/${chainId}/${address}`
+        `${this.BASE_URL}/files/any/${chainId}/${address}`,
       );
       const files = await filesResponse.json();
-      
+
       const metadataFile = files.find(f => f.name.endsWith('metadata.json'));
       if (!metadataFile) {
         throw new Error('Metadata not found');
@@ -1650,7 +1841,7 @@ class SourceryProvider {
 
       const metadataResponse = await fetch(metadataFile.url);
       const metadata = await metadataResponse.json();
-      
+
       return metadata.output.abi;
     } catch (error) {
       throw new Error(`Sourcify ABI获取失败: ${error.message}`);
@@ -1663,91 +1854,91 @@ class SourceryProvider {
 
 ```typescript
 // 使用viem内置的ABI定义
-import { 
-  erc20Abi, 
-  erc721Abi, 
-  erc1155Abi 
-} from 'viem';
+import { erc20Abi, erc721Abi, erc1155Abi } from 'viem';
 
 // 扩展viem的标准ABI库
 const VIEM_STANDARD_CONTRACTS = {
-  'ERC20': {
+  ERC20: {
     abi: erc20Abi,
     selectors: [
       '0x70a08231', // balanceOf
-      '0xa9059cbb', // transfer  
+      '0xa9059cbb', // transfer
       '0x23b872dd', // transferFrom
-      '0x095ea7b3'  // approve
-    ]
+      '0x095ea7b3', // approve
+    ],
   },
-  
-  'ERC721': {
+
+  ERC721: {
     abi: erc721Abi,
     selectors: [
       '0x70a08231', // balanceOf
       '0x6352211e', // ownerOf
       '0x23b872dd', // transferFrom
-      '0xa22cb465'  // setApprovalForAll
-    ]
+      '0xa22cb465', // setApprovalForAll
+    ],
   },
-  
-  'ERC1155': {
+
+  ERC1155: {
     abi: erc1155Abi,
     selectors: [
       '0x00fdd58e', // balanceOf
       '0x4e1273f4', // balanceOfBatch
       '0xf242432a', // safeTransferFrom
-      '0x2eb2c2d6'  // safeBatchTransferFrom
-    ]
-  }
+      '0x2eb2c2d6', // safeBatchTransferFrom
+    ],
+  },
 };
 
 // DeFi协议ABI（手动定义的常用协议）
 const DEFI_CONTRACTS = {
-  'UniswapV2Pair': {
+  UniswapV2Pair: {
     abi: [
       {
-        "name": "Swap",
-        "type": "event",
-        "inputs": [
-          {"name": "sender", "type": "address", "indexed": true},
-          {"name": "amount0In", "type": "uint256", "indexed": false},
-          {"name": "amount1In", "type": "uint256", "indexed": false},
-          {"name": "amount0Out", "type": "uint256", "indexed": false},
-          {"name": "amount1Out", "type": "uint256", "indexed": false},
-          {"name": "to", "type": "address", "indexed": true}
-        ]
+        name: 'Swap',
+        type: 'event',
+        inputs: [
+          { name: 'sender', type: 'address', indexed: true },
+          { name: 'amount0In', type: 'uint256', indexed: false },
+          { name: 'amount1In', type: 'uint256', indexed: false },
+          { name: 'amount0Out', type: 'uint256', indexed: false },
+          { name: 'amount1Out', type: 'uint256', indexed: false },
+          { name: 'to', type: 'address', indexed: true },
+        ],
       },
       {
-        "name": "getReserves",
-        "type": "function",
-        "inputs": [],
-        "outputs": [
-          {"name": "reserve0", "type": "uint112"},
-          {"name": "reserve1", "type": "uint112"},
-          {"name": "blockTimestampLast", "type": "uint32"}
+        name: 'getReserves',
+        type: 'function',
+        inputs: [],
+        outputs: [
+          { name: 'reserve0', type: 'uint112' },
+          { name: 'reserve1', type: 'uint112' },
+          { name: 'blockTimestampLast', type: 'uint32' },
         ],
-        "stateMutability": "view"
-      }
+        stateMutability: 'view',
+      },
     ],
-    selectors: ['0x0902f1ac', '0x4f1eb3d8', '0xba9a7a56']
-  }
+    selectors: ['0x0902f1ac', '0x4f1eb3d8', '0xba9a7a56'],
+  },
 };
 
 // 合并所有标准合约
 const ALL_STANDARD_CONTRACTS = {
   ...VIEM_STANDARD_CONTRACTS,
-  ...DEFI_CONTRACTS
+  ...DEFI_CONTRACTS,
 };
 
 // 智能合约检测服务
 class ContractStandardDetector {
   async detectStandard(address: string, chainId: number): Promise<string[]> {
     const detectedStandards = [];
-    
+
     for (const [standard, config] of Object.entries(ALL_STANDARD_CONTRACTS)) {
       try {
-        const isMatch = await this.checkContractInterface(address, config.selectors, chainId);
+        const isMatch = await this.checkContractInterface(
+          address,
+          config.selectors,
+          chainId,
+        );
         if (isMatch) {
           detectedStandards.push(standard);
         }
@@ -1755,28 +1946,28 @@ class ContractStandardDetector {
         console.warn(`Failed to check ${standard} for ${address}:`, error);
       }
     }
-    
+
     return detectedStandards;
   }
 
   private async checkContractInterface(
-    address: string, 
-    selectors: string[], 
-    chainId: number
+    address: string,
+    selectors: string[],
+    chainId: number,
   ): Promise<boolean> {
     const rpcClient = await this.rpcManager.getClient(chainId);
-    
+
     // 检查合约是否支持这些函数选择器
     let matchCount = 0;
-    
+
     for (const selector of selectors) {
       try {
         // 尝试调用静态函数检查是否存在
         const result = await rpcClient.call({
           to: address as `0x${string}`,
-          data: selector as `0x${string}`
+          data: selector as `0x${string}`,
         });
-        
+
         // 如果没有抛出错误，说明函数存在
         if (result) {
           matchCount++;
@@ -1785,7 +1976,7 @@ class ContractStandardDetector {
         // 函数不存在或调用失败
       }
     }
-    
+
     // 如果匹配数量超过阈值，认为是该标准的合约
     return matchCount >= Math.ceil(selectors.length * 0.6);
   }
@@ -1804,18 +1995,23 @@ class UserAbiStorage {
   private readonly STORAGE_KEY = 'user_contract_abis';
 
   // 保存用户上传的ABI
-  saveUserAbi(address: string, chainId: number, abi: any[], name?: string): void {
+  saveUserAbi(
+    address: string,
+    chainId: number,
+    abi: any[],
+    name?: string,
+  ): void {
     const key = `${chainId}:${address.toLowerCase()}`;
     const userAbis = this.getUserAbis();
-    
+
     userAbis[key] = {
       abi,
       name: name || `Contract ${address.slice(0, 8)}...`,
       uploadedAt: Date.now(),
       address: address.toLowerCase(),
-      chainId
+      chainId,
     };
-    
+
     localStorage.setItem(this.STORAGE_KEY, JSON.stringify(userAbis));
   }
 
@@ -1863,22 +2059,24 @@ type UserAbiRecord = {
 type EventFilter = {
   contractAddress: string;
   chainId: number;
-  eventNames?: string[];           // 事件名称过滤
-  topics?: (string | string[])[];  // 主题过滤
-  fromBlock?: number | 'latest';   // 起始区块
-  toBlock?: number | 'latest';     // 结束区块
-  paramFilters?: {                 // 参数过滤
+  eventNames?: string[]; // 事件名称过滤
+  topics?: (string | string[])[]; // 主题过滤
+  fromBlock?: number | 'latest'; // 起始区块
+  toBlock?: number | 'latest'; // 结束区块
+  paramFilters?: {
+    // 参数过滤
     [paramName: string]: {
       operator: 'eq' | 'gt' | 'lt' | 'in' | 'contains';
       value: any;
     };
   };
-  timeRange?: {                    // 时间范围过滤
+  timeRange?: {
+    // 时间范围过滤
     start: Date;
     end: Date;
   };
-  limit?: number;                  // 结果限制
-  offset?: number;                 // 偏移量
+  limit?: number; // 结果限制
+  offset?: number; // 偏移量
 };
 
 // 事件查询服务
@@ -1894,7 +2092,7 @@ class EventQueryService {
       chainId: filter.chainId,
       preferredSources: ['local', 'etherscan', 'inferred'],
       fallbackEnabled: true,
-      cacheExpiry: 24 // 24小时缓存
+      cacheExpiry: 24, // 24小时缓存
     });
 
     // 2. 构建事件签名映射
@@ -1920,11 +2118,13 @@ class EventQueryService {
 
   private buildEventSignatures(abi: any[]): Map<string, any> {
     const signatures = new Map();
-    
-    abi.filter(item => item.type === 'event').forEach(event => {
-      const signature = this.getEventSignature(event);
-      signatures.set(signature, event);
-    });
+
+    abi
+      .filter(item => item.type === 'event')
+      .forEach(event => {
+        const signature = this.getEventSignature(event);
+        signatures.set(signature, event);
+      });
 
     return signatures;
   }
@@ -1935,22 +2135,25 @@ class EventQueryService {
   }
 
   private async buildLogFilter(
-    filter: EventFilter, 
-    eventSignatures: Map<string, any>
+    filter: EventFilter,
+    eventSignatures: Map<string, any>,
   ): Promise<any> {
     const logFilter: any = {
       address: filter.contractAddress,
       fromBlock: filter.fromBlock || 'earliest',
-      toBlock: filter.toBlock || 'latest'
+      toBlock: filter.toBlock || 'latest',
     };
 
     // 构建topics过滤器
     if (filter.eventNames && filter.eventNames.length > 0) {
-      const eventTopics = filter.eventNames.map(name => {
-        const matchingSignature = Array.from(eventSignatures.entries())
-          .find(([_, event]) => event.name === name)?.[0];
-        return matchingSignature;
-      }).filter(Boolean);
+      const eventTopics = filter.eventNames
+        .map(name => {
+          const matchingSignature = Array.from(eventSignatures.entries()).find(
+            ([_, event]) => event.name === name,
+          )?.[0];
+          return matchingSignature;
+        })
+        .filter(Boolean);
 
       if (eventTopics.length > 0) {
         logFilter.topics = [eventTopics];
@@ -1959,9 +2162,18 @@ class EventQueryService {
 
     // 时间范围转换为区块范围
     if (filter.timeRange) {
-      const blockRange = await this.timeToBlockRange(filter.timeRange, filter.chainId);
-      logFilter.fromBlock = Math.max(logFilter.fromBlock || 0, blockRange.start);
-      logFilter.toBlock = Math.min(logFilter.toBlock || blockRange.end, blockRange.end);
+      const blockRange = await this.timeToBlockRange(
+        filter.timeRange,
+        filter.chainId,
+      );
+      logFilter.fromBlock = Math.max(
+        logFilter.fromBlock || 0,
+        blockRange.start,
+      );
+      logFilter.toBlock = Math.min(
+        logFilter.toBlock || blockRange.end,
+        blockRange.end,
+      );
     }
 
     return logFilter;
@@ -1985,7 +2197,7 @@ type ParsedEvent = {
   timestamp: Date;
   gasUsed?: number;
   gasPrice?: string;
-  
+
   // 解析后的参数
   args: {
     [paramName: string]: {
@@ -1995,13 +2207,13 @@ type ParsedEvent = {
       formatted?: string; // 格式化后的可读值
     };
   };
-  
+
   // 原始数据
   raw: {
     topics: string[];
     data: string;
   };
-  
+
   // 关联交易信息
   transaction?: {
     from: string;
@@ -2018,7 +2230,7 @@ class EventParser {
     const parsed = iface.parseLog(log);
 
     const args: ParsedEvent['args'] = {};
-    
+
     // 解析事件参数
     eventAbi.inputs.forEach((input: any, index: number) => {
       const value = parsed.args[index];
@@ -2026,7 +2238,7 @@ class EventParser {
         value: value,
         type: input.type,
         indexed: input.indexed,
-        formatted: this.formatValue(value, input.type)
+        formatted: this.formatValue(value, input.type),
       };
     });
 
@@ -2043,8 +2255,8 @@ class EventParser {
       args,
       raw: {
         topics: log.topics,
-        data: log.data
-      }
+        data: log.data,
+      },
     };
   }
 
@@ -2152,7 +2364,7 @@ const AbiUploadModal = ({ address, chainId, onClose, onSuccess }) => {
 
       // 保存用户ABI
       userAbiStorage.saveUserAbi(address, chainId, abi, contractName);
-      
+
       onSuccess();
       onClose();
     } catch (error) {
@@ -2163,10 +2375,10 @@ const AbiUploadModal = ({ address, chainId, onClose, onSuccess }) => {
   return (
     <div className="abi-upload-modal">
       <h3>上传合约ABI</h3>
-      
+
       <div className="form-group">
         <label>合约名称（可选）</label>
-        <input 
+        <input
           value={contractName}
           onChange={(e) => setContractName(e.target.value)}
           placeholder="例如：USDC Token"
@@ -2175,7 +2387,7 @@ const AbiUploadModal = ({ address, chainId, onClose, onSuccess }) => {
 
       <div className="form-group">
         <label>ABI JSON</label>
-        <textarea 
+        <textarea
           value={abiText}
           onChange={(e) => setAbiText(e.target.value)}
           placeholder="粘贴ABI JSON数组..."
@@ -2208,12 +2420,12 @@ const StandardAbiSelector = ({ address, chainId, onClose, onSuccess }) => {
 
     const standardAbi = STANDARD_CONTRACTS[selectedStandard].abi;
     userAbiStorage.saveUserAbi(
-      address, 
-      chainId, 
-      standardAbi, 
+      address,
+      chainId,
+      standardAbi,
       `${selectedStandard} Contract`
     );
-    
+
     onSuccess();
     onClose();
   };
@@ -2221,10 +2433,10 @@ const StandardAbiSelector = ({ address, chainId, onClose, onSuccess }) => {
   return (
     <div className="standard-abi-selector">
       <h3>选择标准合约ABI</h3>
-      
+
       <div className="standards-list">
         {Object.keys(STANDARD_CONTRACTS).map(standard => (
-          <div 
+          <div
             key={standard}
             className={`standard-item ${selectedStandard === standard ? 'selected' : ''}`}
             onClick={() => setSelectedStandard(standard)}
@@ -2271,16 +2483,16 @@ type EventBrowserState = {
 };
 
 // 事件过滤器UI组件
-const EventFilterPanel = ({ 
-  filters, 
-  onFiltersChange, 
-  availableEvents 
+const EventFilterPanel = ({
+  filters,
+  onFiltersChange,
+  availableEvents
 }: EventFilterPanelProps) => {
   return (
     <div className="event-filter-panel">
       {/* 事件类型选择 */}
       <FilterSection title="事件类型">
-        <EventTypeSelector 
+        <EventTypeSelector
           events={availableEvents}
           selected={filters.eventNames || []}
           onChange={(events) => onFiltersChange({ ...filters, eventNames: events })}
@@ -2289,7 +2501,7 @@ const EventFilterPanel = ({
 
       {/* 时间范围 */}
       <FilterSection title="时间范围">
-        <TimeRangePicker 
+        <TimeRangePicker
           range={filters.timeRange}
           onChange={(range) => onFiltersChange({ ...filters, timeRange: range })}
         />
@@ -2297,20 +2509,20 @@ const EventFilterPanel = ({
 
       {/* 区块范围 */}
       <FilterSection title="区块范围">
-        <BlockRangePicker 
+        <BlockRangePicker
           fromBlock={filters.fromBlock}
           toBlock={filters.toBlock}
-          onChange={(from, to) => onFiltersChange({ 
-            ...filters, 
-            fromBlock: from, 
-            toBlock: to 
+          onChange={(from, to) => onFiltersChange({
+            ...filters,
+            fromBlock: from,
+            toBlock: to
           })}
         />
       </FilterSection>
 
       {/* 参数过滤器 */}
       <FilterSection title="参数过滤">
-        <ParameterFilters 
+        <ParameterFilters
           filters={filters.paramFilters || {}}
           eventAbi={getSelectedEventAbi(filters.eventNames)}
           onChange={(paramFilters) => onFiltersChange({ ...filters, paramFilters })}
@@ -2331,8 +2543,8 @@ class OptimizedEventQuery {
   async queryLargeRange(filter: EventFilter): Promise<ParsedEvent[]> {
     const maxBlocksPerBatch = 10000; // 每批最大区块数
     const fromBlock = filter.fromBlock || 0;
-    const toBlock = filter.toBlock || await this.rpcClient.getBlockNumber();
-    
+    const toBlock = filter.toBlock || (await this.rpcClient.getBlockNumber());
+
     const totalBlocks = toBlock - fromBlock;
     if (totalBlocks <= maxBlocksPerBatch) {
       // 直接查询
@@ -2342,21 +2554,24 @@ class OptimizedEventQuery {
     // 分批查询
     const results: ParsedEvent[] = [];
     const batches = Math.ceil(totalBlocks / maxBlocksPerBatch);
-    
+
     for (let i = 0; i < batches; i++) {
-      const batchFromBlock = fromBlock + (i * maxBlocksPerBatch);
-      const batchToBlock = Math.min(batchFromBlock + maxBlocksPerBatch - 1, toBlock);
-      
+      const batchFromBlock = fromBlock + i * maxBlocksPerBatch;
+      const batchToBlock = Math.min(
+        batchFromBlock + maxBlocksPerBatch - 1,
+        toBlock,
+      );
+
       const batchFilter: EventFilter = {
         ...filter,
         fromBlock: batchFromBlock,
-        toBlock: batchToBlock
+        toBlock: batchToBlock,
       };
 
       try {
         const batchResults = await this.queryEvents(batchFilter);
         results.push(...batchResults);
-        
+
         // 避免RPC限制，添加延迟
         if (i < batches - 1) {
           await new Promise(resolve => setTimeout(resolve, 100));
@@ -2377,14 +2592,21 @@ class OptimizedEventQuery {
 ```typescript
 // 事件缓存管理
 class EventCacheManager {
-  private eventCache = new Map<string, {
-    events: ParsedEvent[];
-    blockRange: { from: number; to: number };
-    timestamp: number;
-    chainId: number;
-  }>();
+  private eventCache = new Map<
+    string,
+    {
+      events: ParsedEvent[];
+      blockRange: { from: number; to: number };
+      timestamp: number;
+      chainId: number;
+    }
+  >();
 
-  getCacheKey(contractAddress: string, eventName: string, chainId: number): string {
+  getCacheKey(
+    contractAddress: string,
+    eventName: string,
+    chainId: number,
+  ): string {
     return `${chainId}:${contractAddress}:${eventName}`;
   }
 
@@ -2392,7 +2614,7 @@ class EventCacheManager {
     contractAddress: string,
     eventName: string,
     chainId: number,
-    blockRange: { from: number; to: number }
+    blockRange: { from: number; to: number },
   ): Promise<ParsedEvent[] | null> {
     const key = this.getCacheKey(contractAddress, eventName, chainId);
     const cached = this.eventCache.get(key);
@@ -2400,13 +2622,15 @@ class EventCacheManager {
     if (!cached) return null;
 
     // 检查区块范围是否覆盖
-    if (cached.blockRange.from <= blockRange.from && 
-        cached.blockRange.to >= blockRange.to) {
-      
+    if (
+      cached.blockRange.from <= blockRange.from &&
+      cached.blockRange.to >= blockRange.to
+    ) {
       // 过滤出指定范围的事件
-      return cached.events.filter(event => 
-        event.blockNumber >= blockRange.from && 
-        event.blockNumber <= blockRange.to
+      return cached.events.filter(
+        event =>
+          event.blockNumber >= blockRange.from &&
+          event.blockNumber <= blockRange.to,
       );
     }
 
@@ -2418,15 +2642,15 @@ class EventCacheManager {
     eventName: string,
     chainId: number,
     events: ParsedEvent[],
-    blockRange: { from: number; to: number }
+    blockRange: { from: number; to: number },
   ): void {
     const key = this.getCacheKey(contractAddress, eventName, chainId);
-    
+
     this.eventCache.set(key, {
       events,
       blockRange,
       timestamp: Date.now(),
-      chainId
+      chainId,
     });
 
     // 定期清理过期缓存
@@ -2438,16 +2662,19 @@ class EventCacheManager {
 #### 简化策略的优势
 
 ##### ✅ 实用性强
+
 - **Sourcify**: 免费、可靠的去中心化合约验证服务
 - **用户上传**: 灵活处理任何合约，支持本地存储
 - **标准库**: 快速处理常见合约（ERC20/721/Uniswap等）
 
 ##### ✅ 用户体验好
+
 - **零配置**: 无需API Key，降低使用门槛
 - **渐进增强**: 找不到ABI时提供明确的解决方案
 - **数据持久**: 用户上传的ABI本地保存，支持跨会话使用
 
 ##### ✅ 维护成本低
+
 - **代码简单**: 易于理解和维护，避免复杂的字节码分析
 - **依赖少**: 只依赖Sourcify一个外部服务
 - **扩展性**: 可以随时添加更多标准合约到本地库
@@ -2468,14 +2695,14 @@ sequenceDiagram
 
     C->>API: HTTP Request
     API->>V: 参数验证
-    
+
     alt 验证失败
         V-->>API: 返回错误
         API-->>C: 400 Bad Request + 错误详情
     else 验证成功
         V-->>API: 验证通过
         API->>CH: 检查缓存
-        
+
         alt 缓存命中
             CH-->>API: 返回缓存数据
             Note over API: 设置响应头:<br/>X-Cache-Status: hit<br/>X-Data-Source: cache
@@ -2483,7 +2710,7 @@ sequenceDiagram
         else 缓存未命中
             API->>S: 调用业务服务
             S->>DB: 查询本地数据库
-            
+
             alt 本地数据存在
                 DB-->>S: 返回数据
                 S->>CH: 更新缓存
@@ -2510,11 +2737,13 @@ sequenceDiagram
 ### 统一数据库设计
 
 #### 单一数据库策略
+
 - **统一存储**：所有链的数据存储在同一个 `blockchain.db` 文件
 - **链维度分区**：通过 `chain_id` 字段实现逻辑分区
 - **查询优化**：基于 `chain_id` 的索引优化跨链查询
 
 #### 用户RPC配置表
+
 ```sql
 -- 用户自定义RPC配置（可选，不配置则使用viem默认）
 CREATE TABLE user_rpc_configs (
@@ -2532,6 +2761,7 @@ CREATE TABLE user_rpc_configs (
 #### 核心数据表
 
 ##### 索引状态表
+
 ```sql
 CREATE TABLE index_status (
     chain_id INTEGER NOT NULL,              -- 链ID
@@ -2544,6 +2774,7 @@ CREATE TABLE index_status (
 ```
 
 ##### 区块表
+
 ```sql
 CREATE TABLE blocks (
     chain_id INTEGER NOT NULL,                   -- 链ID（分区键）
@@ -2576,6 +2807,7 @@ CREATE INDEX idx_blocks_hash ON blocks(hash);
 ```
 
 ##### 交易表
+
 ```sql
 CREATE TABLE transactions (
     chain_id INTEGER NOT NULL,                  -- 链ID（分区键）
@@ -2613,6 +2845,7 @@ CREATE INDEX idx_transactions_hash ON transactions(hash);
 ```
 
 ##### 地址索引表
+
 ```sql
 CREATE TABLE indexed_addresses (
     chain_id INTEGER NOT NULL,                  -- 链ID
@@ -2632,6 +2865,7 @@ CREATE INDEX idx_indexed_addresses_global ON indexed_addresses(address); -- 跨�
 ```
 
 ##### 用户偏好表
+
 ```sql
 CREATE TABLE user_preferences (
     key VARCHAR(50) PRIMARY KEY,                 -- 配置键
@@ -2641,6 +2875,7 @@ CREATE TABLE user_preferences (
 ```
 
 ##### 访问历史表
+
 ```sql
 CREATE TABLE access_history (
     chain_id INTEGER NOT NULL,                  -- 链ID
@@ -2659,30 +2894,32 @@ CREATE INDEX idx_access_history_count ON access_history(access_count DESC);
 #### 查询优化策略
 
 ##### 多链查询优化
+
 ```sql
 -- 跨链查询（按哈希查找）
 SELECT * FROM transactions WHERE hash = ?;  -- 利用全局hash索引
 
 -- 链内查询（大部分场景）
-SELECT * FROM blocks 
+SELECT * FROM blocks
 WHERE chain_id = ? AND timestamp > ?
 ORDER BY number DESC LIMIT 20;  -- 利用chain_id + timestamp索引
 
 -- 地址跨链查询
-SELECT chain_id, address, transaction_count 
-FROM indexed_addresses 
+SELECT chain_id, address, transaction_count
+FROM indexed_addresses
 WHERE address = ?;  -- 查看地址在哪些链上活跃
 ```
 
 ##### 分区查询示例
+
 ```sql
 -- 获取特定链的最新区块
-SELECT * FROM blocks 
-WHERE chain_id = 1 
+SELECT * FROM blocks
+WHERE chain_id = 1
 ORDER BY number DESC LIMIT 10;
 
 -- 获取地址在特定链上的交易
-SELECT t.*, b.timestamp 
+SELECT t.*, b.timestamp
 FROM transactions t
 JOIN blocks b ON t.chain_id = b.chain_id AND t.block_number = b.number
 WHERE t.chain_id = 1 AND (t.from_address = ? OR t.to_address = ?)
@@ -2690,11 +2927,11 @@ ORDER BY b.timestamp DESC
 LIMIT 20;
 
 -- 跨链统计查询
-SELECT 
+SELECT
     chain_id,
     COUNT(*) as tx_count,
     AVG(gas_price) as avg_gas_price
-FROM transactions 
+FROM transactions
 WHERE timestamp > date('now', '-1 day')
 GROUP BY chain_id;
 ```
@@ -2703,17 +2940,17 @@ GROUP BY chain_id;
 
 ```sql
 -- 清理长期未查询的地址索引（按链清理）
-DELETE FROM indexed_addresses 
+DELETE FROM indexed_addresses
 WHERE last_queried < datetime('now', '-90 days')
 AND chain_id IN (SELECT chain_id FROM user_rpc_configs WHERE custom_rpc_url IS NULL);
 
 -- 清理过期的索引状态
-DELETE FROM index_status 
-WHERE last_updated < datetime('now', '-7 days') 
+DELETE FROM index_status
+WHERE last_updated < datetime('now', '-7 days')
 AND type = 'temp';
 
 -- 清理低活跃度链的访问历史
-DELETE FROM access_history 
+DELETE FROM access_history
 WHERE last_accessed < datetime('now', '-60 days')
 AND access_count < 5;
 ```
@@ -2723,30 +2960,33 @@ AND access_count < 5;
 ```sql
 -- 按月分区交易表（DuckDB暂不支持，考虑应用层分区）
 -- 大表查询优化策略
-CREATE VIEW recent_transactions AS 
-SELECT * FROM transactions 
+CREATE VIEW recent_transactions AS
+SELECT * FROM transactions
 WHERE timestamp > (CURRENT_TIMESTAMP - INTERVAL '30 days');
 
-CREATE VIEW recent_token_transfers AS 
-SELECT * FROM token_transfers 
+CREATE VIEW recent_token_transfers AS
+SELECT * FROM token_transfers
 WHERE timestamp > (CURRENT_TIMESTAMP - INTERVAL '30 days');
 ```
 
 ### 数据获取策略
 
 #### 1. 实时数据（浏览器直接RPC）
+
 - **最新区块信息**：直接从 RPC 获取
 - **实时余额查询**：直接调用 RPC
 - **交易状态**：直接查询 RPC
 - **Gas 价格**：实时从 RPC 获取
 
 #### 2. 历史数据（本地按需索引）
+
 - **用户搜索的区块**：首次搜索时索引并存储
 - **用户查询的地址**：按需索引交易历史
 - **统计数据**：基于已索引数据计算
 - **搜索建议**：基于历史查询记录
 
 #### 3. 轻量级缓存
+
 - **内存缓存**：简单的 Map 结构，存储热点数据
 - **浏览器缓存**：静态资源和短期 API 响应
 - **本地存储**：用户偏好和搜索历史
@@ -2758,50 +2998,53 @@ WHERE timestamp > (CURRENT_TIMESTAMP - INTERVAL '30 days');
 class OnDemandIndexService {
   private indexedBlocks = new Set<number>();
   private indexedAddresses = new Set<string>();
-  
+
   // 按需索引区块
   async indexBlockIfNeeded(blockNumber: number): Promise<void> {
     if (this.indexedBlocks.has(blockNumber)) {
       return; // 已索引，跳过
     }
-    
+
     // 从 RPC 获取区块数据
     const block = await ethereumClient.getBlock(BigInt(blockNumber));
-    
+
     // 存储到本地数据库
     await this.storeBlock(block);
-    
+
     // 标记为已索引
     this.indexedBlocks.add(blockNumber);
   }
-  
+
   // 按需索引地址交易
-  async indexAddressTransactions(address: string, fromBlock?: number): Promise<void> {
+  async indexAddressTransactions(
+    address: string,
+    fromBlock?: number,
+  ): Promise<void> {
     if (this.indexedAddresses.has(address)) {
       return; // 已索引
     }
-    
+
     // 使用 RPC 查询地址相关交易（或第三方API）
     const transactions = await this.getAddressTransactions(address, fromBlock);
-    
+
     // 存储相关区块和交易
     for (const tx of transactions) {
       await this.indexBlockIfNeeded(tx.blockNumber);
     }
-    
+
     this.indexedAddresses.add(address);
   }
-  
+
   private memoryCache = new Map<string, { data: any; expires: number }>();
-  
+
   // 简单内存缓存
   cache(key: string, data: any, ttlSeconds = 300): void {
     this.memoryCache.set(key, {
       data,
-      expires: Date.now() + ttlSeconds * 1000
+      expires: Date.now() + ttlSeconds * 1000,
     });
   }
-  
+
   getCache(key: string): any | null {
     const cached = this.memoryCache.get(key);
     if (!cached || cached.expires < Date.now()) {
@@ -2818,14 +3061,15 @@ class OnDemandIndexService {
 ### 数据库优化
 
 #### 查询优化
+
 ```sql
 -- 优化最新区块查询
-SELECT * FROM blocks 
-ORDER BY number DESC 
+SELECT * FROM blocks
+ORDER BY number DESC
 LIMIT 20;
 
 -- 优化地址交易历史查询
-SELECT t.*, b.timestamp 
+SELECT t.*, b.timestamp
 FROM transactions t
 JOIN blocks b ON t.block_number = b.number
 WHERE t.from_address = ? OR t.to_address = ?
@@ -2833,17 +3077,18 @@ ORDER BY b.timestamp DESC
 LIMIT 20 OFFSET ?;
 
 -- 优化统计查询
-SELECT 
+SELECT
     DATE_TRUNC('day', timestamp) as date,
     COUNT(*) as transaction_count,
     AVG(gas_price) as avg_gas_price
-FROM transactions 
+FROM transactions
 WHERE timestamp >= CURRENT_DATE - INTERVAL '30 days'
 GROUP BY DATE_TRUNC('day', timestamp)
 ORDER BY date;
 ```
 
 #### 存储优化
+
 ```sql
 -- 数据压缩设置
 PRAGMA memory_limit='2GB';
@@ -2851,7 +3096,7 @@ PRAGMA temp_directory='/tmp/duckdb_temp';
 
 -- 预聚合表创建
 CREATE TABLE daily_stats AS
-SELECT 
+SELECT
     DATE_TRUNC('day', timestamp) as date,
     COUNT(*) as tx_count,
     AVG(gas_price) as avg_gas_price,
@@ -2864,6 +3109,7 @@ GROUP BY DATE_TRUNC('day', timestamp);
 ### API优化
 
 #### 响应优化
+
 ```typescript
 // 分页优化
 type PaginationParams = {
@@ -2888,6 +3134,7 @@ type BatchQuery = {
 ```
 
 #### 连接池优化
+
 ```typescript
 // 数据库连接池配置
 const dbConfig = {
@@ -2899,9 +3146,9 @@ const dbConfig = {
 
 // 查询超时设置
 const queryTimeout = {
-  simple: 5000,    // 简单查询5秒超时
-  complex: 30000,  // 复杂查询30秒超时
-  batch: 60000,    // 批量查询60秒超时
+  simple: 5000, // 简单查询5秒超时
+  complex: 30000, // 复杂查询30秒超时
+  batch: 60000, // 批量查询60秒超时
 };
 ```
 
@@ -2910,12 +3157,14 @@ const queryTimeout = {
 ### 系统监控指标
 
 #### 性能指标
+
 - **响应时间**：API接口平均响应时间
 - **吞吐量**：每秒处理请求数量
 - **错误率**：4xx/5xx错误请求比例
 - **数据库性能**：查询执行时间、连接数
 
 #### 业务指标
+
 - **同步延迟**：与最新区块的差距
 - **数据完整性**：丢失区块或交易检查
 - **缓存命中率**：各级缓存命中情况
@@ -2933,13 +3182,13 @@ const alertRules = {
     lowMemory: { threshold: 0.1, duration: '1m' },
     highCpuUsage: { threshold: 0.8, duration: '5m' },
   },
-  
+
   // 业务告警
   business: {
-    syncDelay: { threshold: 10, duration: '2m' },      // 同步延迟超过10个区块
+    syncDelay: { threshold: 10, duration: '2m' }, // 同步延迟超过10个区块
     lowCacheHitRate: { threshold: 0.7, duration: '10m' }, // 缓存命中率低于70%
-    dataInconsistency: { threshold: 1, duration: '0m' },   // 数据不一致立即告警
-  }
+    dataInconsistency: { threshold: 1, duration: '0m' }, // 数据不一致立即告警
+  },
 };
 ```
 
@@ -2970,12 +3219,12 @@ const isValidBlockNumber = (blockNumber: string): boolean => {
 ```typescript
 // 速率限制配置
 const rateLimitConfig = {
-  global: { max: 1000, window: '15m' },      // 全局限制
-  ip: { max: 100, window: '1m' },            // IP限制
+  global: { max: 1000, window: '15m' }, // 全局限制
+  ip: { max: 100, window: '1m' }, // IP限制
   endpoint: {
-    search: { max: 30, window: '1m' },       // 搜索接口限制
-    stats: { max: 10, window: '1m' },        // 统计接口限制
-  }
+    search: { max: 30, window: '1m' }, // 搜索接口限制
+    stats: { max: 10, window: '1m' }, // 统计接口限制
+  },
 };
 
 // CORS配置
@@ -3045,7 +3294,8 @@ graph TD
 
 ### 容器化部署
 
-仓库中没有 Dockerfile / docker-compose（历史文档曾给出，已删除——那套配置从未存在）。
+仓库中没有 Dockerfile /
+docker-compose（历史文档曾给出，已删除——那套配置从未存在）。
 
 ## 扩展规划
 
@@ -3058,16 +3308,16 @@ graph TD
 ```mermaid
 graph TD
     A[Write Node<br/>Master Instance<br/>Write Operations] --> B[Primary DB<br/>DuckDB Master<br/>Real-time Writes]
-    
+
     A -.->|Replication| C[Read Node 1<br/>Replica Instance<br/>Query Load Balancing]
     A -.->|Replication| D[Read Node 2<br/>Replica Instance<br/>Backup Queries]
-    
+
     B -->|Data Sync| E[Read Replica 1<br/>DuckDB Copy<br/>Query Optimization]
     B -->|Data Sync| F[Read Replica 2<br/>DuckDB Copy<br/>Failover Ready]
-    
+
     C --> E
     D --> F
-    
+
     style A fill:#ffcdd2
     style B fill:#ffcdd2
     style C fill:#c8e6c9
@@ -3077,6 +3327,7 @@ graph TD
 ```
 
 #### 分片策略
+
 - **按时间分片**：不同时间段的数据存储在不同节点
 - **按数据类型分片**：区块、交易、地址数据分别存储
 - **按负载分片**：根据访问频率分配存储
@@ -3084,11 +3335,13 @@ graph TD
 ### 功能扩展
 
 #### 多链支持
+
 - **链抽象层**：统一的区块链接口
 - **配置化**：通过配置支持新链
 - **数据隔离**：不同链的数据独立存储
 
 #### 高级分析
+
 - **DeFi协议支持**：DEX、借贷、流动性挖矿
 - **NFT追踪**：NFT交易、持有、价格趋势
 - **MEV分析**：MEV机器人、套利交易识别

@@ -28,11 +28,6 @@ export const respondError = (
   message?: string,
   details?: unknown,
 ) => {
-  const body = createApiError(
-    statusCode,
-    error,
-    message ?? error,
-    details,
-  );
+  const body = createApiError(statusCode, error, message ?? error, details);
   return c.json(body, statusCode as 400 | 401 | 403 | 404 | 500);
 };

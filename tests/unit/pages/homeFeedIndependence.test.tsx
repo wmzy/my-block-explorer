@@ -100,9 +100,10 @@ describe('deriveStatPresentation', () => {
   });
 
   it('shows a present value even mid-flight or under error (stale data stays)', () => {
-    expect(
-      deriveStatPresentation({ value: '21,236,964', loading: true, error: true }),
-    ).toEqual({ kind: 'value', text: '21,236,964' });
+    expect(deriveStatPresentation({ value: '21,236,964', loading: true, error: true })).toEqual({
+      kind: 'value',
+      text: '21,236,964',
+    });
   });
 
   it('marks a missing value under a failing feed as Unavailable', () => {

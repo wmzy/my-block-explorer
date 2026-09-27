@@ -1,5 +1,9 @@
 import { Hono } from 'hono';
-import { searchService, searchLocalContractHits, searchTokenEntityHits } from '../services/SearchService';
+import {
+  searchService,
+  searchLocalContractHits,
+  searchTokenEntityHits,
+} from '../services/SearchService';
 import {
   getChainName,
   getSortedChains,
@@ -21,7 +25,7 @@ const logger = createLogger('search-routes');
 // interactive search never trips it.
 const searchRateLimiter = createRateLimiter({ name: 'search', requestsPerMinute: 30, burst: 10 });
 
-app.get('/search', searchRateLimiter, async (c) => {
+app.get('/search', searchRateLimiter, async c => {
   const query = c.req.query('q');
 
   if (!query) {
@@ -92,9 +96,10 @@ app.get('/search', searchRateLimiter, async (c) => {
     // ENS) keeps its exact pre-existing response, no localContracts key
     // at all. A FAILED cache read also drops the key (null from the
     // helper): an absent section never claims "no matches" was checked.
-    const localContracts = searchType === 'unknown'
-      ? await searchLocalContractHits(sanitized, hasChainHint ? requestedChainId : undefined)
-      : undefined;
+    const localContracts =
+      searchType === 'unknown'
+        ? await searchLocalContractHits(sanitized, hasChainHint ? requestedChainId : undefined)
+        : undefined;
 
     // Curated token/label hits ride the SAME free-text-only, strictly
     // additive contract: known-token symbols (the curated per-chain list
@@ -104,9 +109,10 @@ app.get('/search', searchRateLimiter, async (c) => {
     // carry their own chainId so clients link to the right chain. A
     // FAILED label read drops this field independently of localContracts
     // above; an absent section never claims "no matches" was checked.
-    const tokenHits = searchType === 'unknown'
-      ? await searchTokenEntityHits(sanitized, hasChainHint ? requestedChainId : undefined)
-      : undefined;
+    const tokenHits =
+      searchType === 'unknown'
+        ? await searchTokenEntityHits(sanitized, hasChainHint ? requestedChainId : undefined)
+        : undefined;
 
     // Hash/block hits now flow through this endpoint too, and their Block/
     // Transaction payloads carry BigInt fields (number, timestamp, gasUsed)
@@ -120,18 +126,13 @@ app.get('/search', searchRateLimiter, async (c) => {
     return c.json(
       safeJsonResponse({
         ...result,
-        ...(localContracts !== undefined && localContracts !== null
-          ? { localContracts }
-          : {}),
-        ...(tokenHits !== undefined && tokenHits !== null
-          ? { tokenHits }
-          : {}),
+        ...(localContracts !== undefined && localContracts !== null ? { localContracts } : {}),
+        ...(tokenHits !== undefined && tokenHits !== null ? { tokenHits } : {}),
         searchedChainId,
         timestamp: new Date().toISOString(),
       }),
     );
-  }
-  catch (error) {
+  } catch (error) {
     logger.error({ err: error, query }, 'Global search failed');
     return c.json(
       {
@@ -147,7 +148,7 @@ app.get('/search', searchRateLimiter, async (c) => {
   }
 });
 
-app.get('/chains/:chainId/search', async (c) => {
+app.get('/chains/:chainId/search', async c => {
   const chainIdParam = c.req.param('chainId');
   const query = c.req.query('q');
 
@@ -210,8 +211,7 @@ app.get('/chains/:chainId/search', async (c) => {
     });
 
     return c.json(responseData);
-  }
-  catch (error) {
+  } catch (error) {
     logger.error({ err: error }, 'Search API error');
 
     return c.json(

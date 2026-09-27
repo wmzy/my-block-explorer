@@ -21,7 +21,10 @@ const parseAbiFeedback = (raw: string): AbiParseResult => {
   try {
     const parsed: unknown = JSON.parse(trimmed);
     if (!Array.isArray(parsed)) {
-      return { ok: false, reason: 'ABI must be a JSON array — an object or bare value is not one.' };
+      return {
+        ok: false,
+        reason: 'ABI must be a JSON array — an object or bare value is not one.',
+      };
     }
     if (parsed.length === 0) {
       return { ok: false, reason: 'ABI array is empty — at least one entry is required.' };
@@ -240,7 +243,9 @@ export function ManualVerifyPanel({
         setNotice('Local trust mark saved — the source below now reflects it.');
         onChanged();
       } else {
-        setError('The backend did not confirm the manual mark — refreshing to see the actual state.');
+        setError(
+          'The backend did not confirm the manual mark — refreshing to see the actual state.',
+        );
         onChanged();
       }
     } catch (err) {
@@ -256,10 +261,10 @@ export function ManualVerifyPanel({
     setNotice(null);
     setError(null);
     try {
-      await del<ManualDeleteResponse>(
-        `/api/chains/${chainId}/contracts/${address}/verify/manual`,
+      await del<ManualDeleteResponse>(`/api/chains/${chainId}/contracts/${address}/verify/manual`);
+      setNotice(
+        'Local trust mark removed — the contract is unverified again unless a remote verifier covers it.',
       );
-      setNotice('Local trust mark removed — the contract is unverified again unless a remote verifier covers it.');
       onChanged();
     } catch (err) {
       setError(describeSubmitError(err, 'remove'));

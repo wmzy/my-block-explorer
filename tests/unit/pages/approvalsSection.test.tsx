@@ -38,8 +38,7 @@ vi.mock('@/services/tokenMetadata', () => ({
 
 // Distinct per test: the query layer's cache is keyed by (chainId,
 // address, window), so a shared address would serve a stale settle.
-const addressOf = (seed: string): string =>
-  `0x${seed.padEnd(40, '0').slice(0, 40)}`;
+const addressOf = (seed: string): string => `0x${seed.padEnd(40, '0').slice(0, 40)}`;
 
 const TOKEN_A = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const TOKEN_B = '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
@@ -118,7 +117,9 @@ describe('ApprovalSection — settled data', () => {
       'most recent 100,000 blocks',
     );
     // Spenders render shortened with the full address on the title.
-    expect(screen.getByText(`${SPENDER_A.slice(0, 8)}...${SPENDER_A.slice(-6)}`)).toBeInTheDocument();
+    expect(
+      screen.getByText(`${SPENDER_A.slice(0, 8)}...${SPENDER_A.slice(-6)}`),
+    ).toBeInTheDocument();
   });
 
   it('shows the RAW allowance when token decimals are unknown — never a guessed amount', async () => {
@@ -174,9 +175,9 @@ describe('ApprovalSection — honesty states', () => {
 
     renderSection(1, address);
 
-    expect(
-      await screen.findByTestId('approvals-degraded'),
-    ).toHaveTextContent('Discovered 7 approvals, but current allowances could not be read');
+    expect(await screen.findByTestId('approvals-degraded')).toHaveTextContent(
+      'Discovered 7 approvals, but current allowances could not be read',
+    );
     expect(screen.queryByTestId('approvals-table')).not.toBeInTheDocument();
   });
 
@@ -199,9 +200,7 @@ describe('ApprovalSection — honesty states', () => {
 
     renderSection(1, address);
 
-    expect(await screen.findByTestId('approvals-empty')).toHaveTextContent(
-      'not proof of absence',
-    );
+    expect(await screen.findByTestId('approvals-empty')).toHaveTextContent('not proof of absence');
   });
 
   it('empty + scan-failed says the scan failed', async () => {
@@ -340,9 +339,7 @@ describe('ApprovalSection — approval history sub-section', () => {
     fireEvent.click(header);
 
     expect(header).toHaveAttribute('aria-expanded', 'true');
-    expect(
-      screen.getByTestId('approval-history-table').closest('[aria-hidden="true"]'),
-    ).toBeNull();
+    expect(screen.getByTestId('approval-history-table').closest('[aria-hidden="true"]')).toBeNull();
     expect(screen.getAllByTestId('approval-history-row')).toHaveLength(3);
   });
 

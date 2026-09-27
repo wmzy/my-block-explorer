@@ -152,8 +152,11 @@ describe('CrossChainStrip', () => {
   it('shows a USD estimate only where a spot price resolved — never a cross-chain total', async () => {
     const polygonId = nativePriceId(137);
     expect(polygonId).not.toBeNull();
-    mocks.fetchUsdPrices.mockImplementation(async (ids: readonly string[]) =>
-      new Map(ids.filter(id => id === polygonId).map(id => [id, { usd: 0.42, fetchedAt: Date.now() }])),
+    mocks.fetchUsdPrices.mockImplementation(
+      async (ids: readonly string[]) =>
+        new Map(
+          ids.filter(id => id === polygonId).map(id => [id, { usd: 0.42, fetchedAt: Date.now() }]),
+        ),
     );
     mocks.probeAddressAcrossChains.mockResolvedValue([
       ok(137, 1_500_000_000_000_000_000n),
@@ -200,12 +203,13 @@ describe('CrossChainStrip', () => {
       [polygonId as string, 0.42],
       [bscId as string, 600],
     ]);
-    mocks.fetchUsdPrices.mockImplementation(async (ids: readonly string[]) =>
-      new Map(
-        ids
-          .filter(id => usdById.has(id))
-          .map(id => [id, { usd: usdById.get(id) as number, fetchedAt: Date.now() }]),
-      ),
+    mocks.fetchUsdPrices.mockImplementation(
+      async (ids: readonly string[]) =>
+        new Map(
+          ids
+            .filter(id => usdById.has(id))
+            .map(id => [id, { usd: usdById.get(id) as number, fetchedAt: Date.now() }]),
+        ),
     );
     mocks.probeAddressAcrossChains.mockResolvedValue([
       ok(CUSTOM_CHAIN_ID, 1_500_000_000n),
@@ -229,10 +233,7 @@ describe('CrossChainStrip', () => {
   });
 
   it('summarizes zero presence without failures honestly', async () => {
-    mocks.probeAddressAcrossChains.mockResolvedValue([
-      ok(137, 0n),
-      ok(56, 0n),
-    ]);
+    mocks.probeAddressAcrossChains.mockResolvedValue([ok(137, 0n), ok(56, 0n)]);
 
     render(<Harness chainId={1} />);
 
@@ -242,10 +243,7 @@ describe('CrossChainStrip', () => {
   });
 
   it('singularizes the summary for one detected network', async () => {
-    mocks.probeAddressAcrossChains.mockResolvedValue([
-      ok(137, 0n),
-      ok(56, 1n),
-    ]);
+    mocks.probeAddressAcrossChains.mockResolvedValue([ok(137, 0n), ok(56, 1n)]);
 
     render(<Harness chainId={1} />);
 

@@ -85,9 +85,7 @@ type BackButtonProps = {
 export function BackButton({ onClick, label = 'Back to Explorer' }: BackButtonProps) {
   return (
     <button className={backButtonStyle} onClick={onClick}>
-      ←
-      {' '}
-      {label}
+      ← {label}
     </button>
   );
 }

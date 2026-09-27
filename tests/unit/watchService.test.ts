@@ -31,8 +31,7 @@ const logFixture = (over: Partial<Log> = {}): Log =>
     ],
     data: '0x',
     blockNumber: 1_234_567n,
-    transactionHash:
-      '0xabc0000000000000000000000000000000000000000000000000000000000def',
+    transactionHash: '0xabc0000000000000000000000000000000000000000000000000000000000def',
     transactionIndex: 3,
     blockHash: '0xblock00000000000000000000000000000000000000000000000000000d',
     logIndex: 7,
@@ -117,8 +116,7 @@ describe('shapeLogEvent — event shaping', () => {
       blockNumber: '1234567',
       txHash: '0xabc0000000000000000000000000000000000000000000000000000000000def',
       logIndex: 7,
-      topic0:
-        '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef',
+      topic0: '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef',
       message: null,
       at: '2026-09-23T10:00:00.000Z',
     });

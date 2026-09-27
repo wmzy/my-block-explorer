@@ -72,7 +72,7 @@ const build = (
     func,
     rawArgs,
     contractAddress: CONTRACT,
-    rpcUrl: extra?.chain === undefined ? RPC_1 : extra.chain.rpcUrls[0] ?? RPC_1,
+    rpcUrl: extra?.chain === undefined ? RPC_1 : (extra.chain.rpcUrls[0] ?? RPC_1),
     valueWei: extra?.valueWei,
     overloadInputCounts: extra?.overloadInputCounts,
     chain: extra?.chain ?? CHAIN_1,
@@ -238,9 +238,7 @@ describe('buildViemScript chain selection', () => {
       expect(script).toContain(
         'nativeCurrency: { name: \'Base Sepolia\', symbol: \'ETH\', decimals: 18 },',
       );
-      expect(script).toContain(
-        'rpcUrls: { default: { http: [\'https://sepolia.base.org\'] } },',
-      );
+      expect(script).toContain('rpcUrls: { default: { http: [\'https://sepolia.base.org\'] } },');
       expect(script).toContain('chain: chain,');
       expect(script).toContain('transport: http(\'https://sepolia.base.org\')');
     }

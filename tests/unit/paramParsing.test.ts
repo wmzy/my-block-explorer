@@ -371,7 +371,9 @@ describe('describeCallError', () => {
 });
 
 describe('describeRevertedCall / describeCallError revert enrichment', () => {
-  const errorAbi: Abi = parseAbi(['error InsufficientBalance(uint256 available, uint256 required)']);
+  const errorAbi: Abi = parseAbi([
+    'error InsufficientBalance(uint256 available, uint256 required)',
+  ]);
   const revertData = encodeErrorResult({
     abi: errorAbi,
     errorName: 'InsufficientBalance',
@@ -399,9 +401,7 @@ describe('describeRevertedCall / describeCallError revert enrichment', () => {
 
   it('keeps the single-argument classification byte-identical even with revert data present', () => {
     // No ABI supplied: the exact pre-enrichment rendering.
-    expect(describeCallError(viemRevertError())).toBe(
-      'The contract function "withdraw" reverted.',
-    );
+    expect(describeCallError(viemRevertError())).toBe('The contract function "withdraw" reverted.');
     expect(describeRevertedCall(viemRevertError())).toBeNull();
   });
 
@@ -424,9 +424,12 @@ describe('describeRevertedCall / describeCallError revert enrichment', () => {
     const word = (n: number) => n.toString(16).padStart(64, '0');
     const errorStringData = `0x08c379a0${word(32)}${word(18)}${body.padEnd(64, '0')}`;
     const error = () =>
-      Object.assign(new Error('The contract function "withdraw" reverted with reason: Insufficient balance'), {
-        data: errorStringData,
-      });
+      Object.assign(
+        new Error('The contract function "withdraw" reverted with reason: Insufficient balance'),
+        {
+          data: errorStringData,
+        },
+      );
     expect(describeRevertedCall(error(), errorAbi)).toBeNull();
     expect(describeCallError(error(), errorAbi)).toBe(
       'The contract function "withdraw" reverted with reason: Insufficient balance',

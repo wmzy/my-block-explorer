@@ -99,13 +99,7 @@ describe('DataTable caption / ariaLabel (opt-in)', () => {
 describe('Pagination accessible names (icon-only-button audit)', () => {
   it('exposes visible text as the buttons\' accessible name, default and custom labels', () => {
     render(
-      <Pagination
-        page={2}
-        hasPrev
-        hasNext
-        onPrev={() => undefined}
-        onNext={() => undefined}
-      />,
+      <Pagination page={2} hasPrev hasNext onPrev={() => undefined} onNext={() => undefined} />,
     );
     expect(screen.getByRole('button', { name: 'Prev' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Next' })).toBeInTheDocument();

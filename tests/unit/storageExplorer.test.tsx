@@ -453,13 +453,19 @@ describe('StorageExplorer', () => {
     const key = '0x1111111111111111111111111111111111111111';
     const input = screen.getByLabelText('Mapping key for mapping(address => struct Account)');
     await user.type(input, key);
-    await user.click(within(input.parentElement as HTMLElement).getByRole('button', { name: 'Open ▸' }));
+    await user.click(
+      within(input.parentElement as HTMLElement).getByRole('button', { name: 'Open ▸' }),
+    );
 
-    expect(await screen.findByTitle('Storage.accounts[0x1111111111111111111111111111111111111111]')).toBeInTheDocument();
+    expect(
+      await screen.findByTitle('Storage.accounts[0x1111111111111111111111111111111111111111]'),
+    ).toBeInTheDocument();
     // The value column shows the Account struct's members.
     expect(screen.getByTitle('balance')).toBeInTheDocument();
     expect(screen.getByTitle('sealed')).toBeInTheDocument();
-    expect(onPathChange).toHaveBeenLastCalledWith('m.accounts/k.0x1111111111111111111111111111111111111111');
+    expect(onPathChange).toHaveBeenLastCalledWith(
+      'm.accounts/k.0x1111111111111111111111111111111111111111',
+    );
   });
 
   it('drills a nested mapping from the shell column without re-pushing m', async () => {
@@ -505,9 +511,13 @@ describe('StorageExplorer', () => {
     const k1 = '0x1111111111111111111111111111111111111111';
     const k2 = '0x2222222222222222222222222222222222222222';
 
-    const outer = screen.getByLabelText('Mapping key for mapping(address => mapping(address => uint256))');
+    const outer = screen.getByLabelText(
+      'Mapping key for mapping(address => mapping(address => uint256))',
+    );
     await user.type(outer, k1);
-    await user.click(within(outer.parentElement as HTMLElement).getByRole('button', { name: 'Open ▸' }));
+    await user.click(
+      within(outer.parentElement as HTMLElement).getByRole('button', { name: 'Open ▸' }),
+    );
     // The shell column lands with the outer key in its breadcrumb.
     expect(await screen.findByTitle(`Storage.spends[${k1}]`)).toBeInTheDocument();
     expect(onPathChange).toHaveBeenLastCalledWith(`m.spends/k.${k1}`);

@@ -55,7 +55,13 @@ vi.mock('@/config/chains', () => ({
     return null;
   },
   getChainName: (chainId: number) =>
-    chainId === 1 ? 'Ethereum' : chainId === 11155111 ? 'Sepolia' : chainId === 137 ? 'Polygon' : 'Unknown',
+    chainId === 1
+      ? 'Ethereum'
+      : chainId === 11155111
+        ? 'Sepolia'
+        : chainId === 137
+          ? 'Polygon'
+          : 'Unknown',
   // Only Sepolia is a testnet in this fixture.
   getChainType: (chainId: number) => (chainId === 11155111 ? 'testnet' : 'mainnet'),
   // Consumed by the Burnt Fees / withdrawals rows.

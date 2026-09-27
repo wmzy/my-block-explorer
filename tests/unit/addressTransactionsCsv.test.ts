@@ -28,13 +28,13 @@ describe('buildAddressTransactionsCsv', () => {
     expect(lines).toHaveLength(3);
     expect(lines[0]).toBe('hash,block_number,from,to,value_wei,timestamp,status');
     expect(lines[1]).toBe(
-      '0xabc123def456abc123def456abc123def456abc123def456abc123def456abc1,'
-      + '18000001,'
-      + '0x1111111111111111111111111111111111111111,'
-      + '0x2222222222222222222222222222222222222222,'
-      + '1000000000000000000,'
-      + '2024-01-01T00:00:00.000Z,'
-      + '',
+      '0xabc123def456abc123def456abc123def456abc123def456abc123def456abc1,' +
+      '18000001,' +
+      '0x1111111111111111111111111111111111111111,' +
+      '0x2222222222222222222222222222222222222222,' +
+      '1000000000000000000,' +
+      '2024-01-01T00:00:00.000Z,' +
+      '',
     );
     expect(lines[2]).toBe('');
   });
@@ -61,12 +61,12 @@ describe('buildAddressTransactionsCsv', () => {
     ]);
     const dataLine = csv.split('\r\n')[1];
     expect(dataLine).toBe(
-      '"we""ird,hash",'
-      + '18000001,'
-      + '0x1111111111111111111111111111111111111111,'
-      + ',"1,000",'
-      + '2024-01-01T00:00:00.000Z,'
-      + '',
+      '"we""ird,hash",' +
+      '18000001,' +
+      '0x1111111111111111111111111111111111111111,' +
+      ',"1,000",' +
+      '2024-01-01T00:00:00.000Z,' +
+      '',
     );
     // Round-trip through a naive RFC 4180 consumer keeps the original value.
     const quoted = dataLine.match(/"([^"]*(?:""[^"]*)*)"/g) ?? [];

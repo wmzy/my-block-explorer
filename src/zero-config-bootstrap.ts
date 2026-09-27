@@ -30,8 +30,7 @@ export async function bootstrap(): Promise<void> {
         { chainCount: status.chainCount, databaseCount: status.databasePaths.length },
         'Bootstrap status',
       );
-    }
-    else {
+    } else {
       logger.warn('System needs attention');
       readiness.issues.forEach(issue => logger.warn({ issue }, 'Issue'));
       if (readiness.recommendations.length > 0) {
@@ -42,8 +41,7 @@ export async function bootstrap(): Promise<void> {
     }
 
     logger.info('Bootstrap completed successfully');
-  }
-  catch (error) {
+  } catch (error) {
     logger.error({ err: error }, 'Bootstrap failed');
     throw error;
   }
@@ -53,7 +51,7 @@ export async function bootstrap(): Promise<void> {
  * Auto-bootstrap when this file is executed
  */
 if (require.main === module) {
-  bootstrap().catch((error) => {
+  bootstrap().catch(error => {
     logger.error({ err: error }, 'Auto-bootstrap failed');
     process.exit(1);
   });

@@ -1,9 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import {
-  setApiBase,
-  getStoredManualBase,
-  storeManualBase,
-} from '@/util/apiBase';
+import { setApiBase, getStoredManualBase, storeManualBase } from '@/util/apiBase';
 
 export const DEFAULT_PORTS = [8201, 8202, 8203, 8204, 8205] as const;
 const DEFAULT_HOST = 'localhost';
@@ -20,10 +16,7 @@ const MANUAL_URL_TIMEOUT_MS = 5000;
 // stays a direct fetch with the probe's own timeout. Same error contract
 // as before: throws on failure, callers decide whether that means "port
 // closed" or "invalid URL".
-async function probeHealth(
-  url: string,
-  timeoutMs: number,
-): Promise<Record<string, unknown>> {
+async function probeHealth(url: string, timeoutMs: number): Promise<Record<string, unknown>> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -83,10 +76,7 @@ async function probePort(
   };
 }
 
-function serviceInfoFromUrl(
-  url: string,
-  health: Record<string, unknown>,
-): ServiceInfo {
+function serviceInfoFromUrl(url: string, health: Record<string, unknown>): ServiceInfo {
   const parsed = new URL(url);
   return {
     host: parsed.hostname,
@@ -140,8 +130,7 @@ export function useAutoDiscovery() {
   const [serviceInfo, setServiceInfo] = useState<ServiceInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isScanning, setIsScanning] = useState(false);
-  const [switchedFromManual, setSwitchedFromManual] =
-    useState<ManualBaseFallback | null>(null);
+  const [switchedFromManual, setSwitchedFromManual] = useState<ManualBaseFallback | null>(null);
 
   // Derived: true when connected to a service
   const isConnected = useMemo(() => status === 'found', [status]);
@@ -162,9 +151,7 @@ export function useAutoDiscovery() {
       setServiceInfo(null);
 
       try {
-        const services = await Promise.all(
-          ports.map(port => probePort(port, host)),
-        );
+        const services = await Promise.all(ports.map(port => probePort(port, host)));
         const service = services.find(candidate => candidate !== null) ?? null;
 
         if (service) {

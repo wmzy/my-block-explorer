@@ -84,11 +84,7 @@ const mocks = vi.hoisted(() => {
     transactions: typeof mockTransactions;
     total: number;
     coverage?: 'complete' | 'partial' | 'none';
-    reason?:
-      | 'no-transactions'
-      | 'no-outgoing-transactions'
-      | 'zero-balance'
-      | 'search-failed';
+    reason?: 'no-transactions' | 'no-outgoing-transactions' | 'zero-balance' | 'search-failed';
     searchWindowBlocks?: number;
     // Additive deep-scan job riding the payload (typed opaque: the page
     // reads it defensively through parseScanJob, never structurally).
@@ -481,15 +477,9 @@ describe('Address view', () => {
 
     // One click routes to the tx tab from wherever the user sits.
     fireEvent.click(screen.getByRole('button', { name: 'Token Transfers' }));
-    expect(
-      await screen.findByRole('columnheader', { name: 'Amount' }),
-    ).toBeInTheDocument();
-    fireEvent.click(
-      screen.getByRole('button', { name: 'About transaction history coverage' }),
-    );
-    expect(
-      await screen.findByRole('columnheader', { name: 'Value' }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole('columnheader', { name: 'Amount' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'About transaction history coverage' }));
+    expect(await screen.findByRole('columnheader', { name: 'Value' })).toBeInTheDocument();
   });
 
   it('renders the activity card with the Transactions tab active by default', async () => {
@@ -497,9 +487,7 @@ describe('Address view', () => {
 
     // Segmented control replaces the old card title; the tx table (Value
     // column) is the default tab.
-    expect(
-      await screen.findByRole('group', { name: 'Recent activity' }),
-    ).toBeInTheDocument();
+    expect(await screen.findByRole('group', { name: 'Recent activity' })).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: 'Value' })).toBeInTheDocument();
     expect(screen.queryByRole('columnheader', { name: 'Amount' })).not.toBeInTheDocument();
   });
@@ -536,9 +524,7 @@ describe('Address view', () => {
     // the external-only scope while pointing internal transfers and token
     // transfers at their own tabs.
     renderPage();
-    expect(
-      await screen.findByText(/external transactions only/),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/external transactions only/)).toBeInTheDocument();
     expect(screen.getByText(/Internal Txns tab/)).toBeInTheDocument();
     expect(screen.getByText(/Token Transfers tab/)).toBeInTheDocument();
   });
@@ -552,9 +538,7 @@ describe('Address view', () => {
 
     renderPage();
 
-    expect(
-      await screen.findByText(/external transactions only/),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/external transactions only/)).toBeInTheDocument();
   });
 
   it('uses plain scanning copy while the history search runs', async () => {
@@ -623,12 +607,8 @@ describe('Address view', () => {
 
     // The URL is pinned via replace to the page actually shown — no
     // shareable/refreshable empty page, no Prev-walking back.
-    await waitFor(() =>
-      expect(screen.getByTestId('search-probe')).toHaveTextContent('page=3'),
-    );
-    expect(
-      await screen.findByText('Page 3 of 3 • 25 transactions'),
-    ).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByTestId('search-probe')).toHaveTextContent('page=3'));
+    expect(await screen.findByText('Page 3 of 3 • 25 transactions')).toBeInTheDocument();
   });
 
   it('keeps a mid-flight empty page as the fallback instead of converging', async () => {
@@ -644,9 +624,7 @@ describe('Address view', () => {
 
     renderPage(`/chain/1/address/${mocks.testAddress}?page=5`);
 
-    expect(
-      await screen.findByText('Scanning recent chain history...'),
-    ).toBeInTheDocument();
+    expect(await screen.findByText('Scanning recent chain history...')).toBeInTheDocument();
     expect(screen.getByTestId('search-probe')).toHaveTextContent('page=5');
   });
 
@@ -666,9 +644,7 @@ describe('Address view', () => {
     expect(screen.getByText('ID 5 × 3')).toBeInTheDocument();
     expect(screen.queryByRole('columnheader', { name: 'Value' })).not.toBeInTheDocument();
     // The tx-only indexing notice is scoped to the Transactions tab.
-    expect(
-      screen.queryByText(/Internal transactions are not indexed/),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText(/Internal transactions are not indexed/)).not.toBeInTheDocument();
     // Coverage honesty travels with the transfers tab: complete + window.
     expect(screen.getByText(/Scanned within the last 100,000 blocks/)).toBeInTheDocument();
 
@@ -844,9 +820,7 @@ describe('Address view', () => {
 
     expect(await screen.findByText('Delegated EOA (EIP-7702)')).toBeInTheDocument();
     expect(screen.queryByText('View Contract Details →')).not.toBeInTheDocument();
-    expect(
-      screen.queryByText('Externally Owned Account (EOA)'),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText('Externally Owned Account (EOA)')).not.toBeInTheDocument();
   });
 
   it('warns about an unknown data source instead of a trusted empty state when coverage is missing', async () => {
@@ -855,9 +829,7 @@ describe('Address view', () => {
 
     renderPage();
 
-    expect(
-      await screen.findByText(/Transaction data source unknown/),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/Transaction data source unknown/)).toBeInTheDocument();
     expect(screen.getByText(/history may be incomplete/)).toBeInTheDocument();
     expect(screen.getByText(/Verify on an external explorer/)).toBeInTheDocument();
     // External escape hatch mirrors the partial banner's link row.
@@ -946,9 +918,7 @@ describe('Address view', () => {
 
     // Pagination must keep the widened window: the page write merges too.
     fireEvent.click(screen.getByRole('button', { name: 'Next' }));
-    await waitFor(() =>
-      expect(screen.getByTestId('search-probe')).toHaveTextContent('page=3'),
-    );
+    await waitFor(() => expect(screen.getByTestId('search-probe')).toHaveTextContent('page=3'));
     expect(screen.getByTestId('search-probe')).toHaveTextContent('window=2400000');
     expect(mocks.txQueryArgs[4]).toBe(2_400_000);
   });
@@ -1043,13 +1013,9 @@ describe('Address view', () => {
 
     renderPage();
 
+    expect(await screen.findByText(/No OUTGOING transactions found\./)).toBeInTheDocument();
     expect(
-      await screen.findByText(/No OUTGOING transactions found\./),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText(
-        /Incoming transactions are undetectable without a full indexer/,
-      ),
+      screen.getByText(/Incoming transactions are undetectable without a full indexer/),
     ).toBeInTheDocument();
     expect(screen.getByText(/check an external explorer/)).toBeInTheDocument();
     // The trusted empty state must NOT fire for a partial-coverage nonce=0.
@@ -1071,9 +1037,7 @@ describe('Address view', () => {
 
     renderPage();
 
-    expect(
-      await screen.findByText(/Transaction search failed \(timeout\)/),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/Transaction search failed \(timeout\)/)).toBeInTheDocument();
     expect(screen.getByText(/this is NOT an empty result/)).toBeInTheDocument();
     expect(screen.queryByText('No transactions found')).not.toBeInTheDocument();
 
@@ -1103,10 +1067,7 @@ describe('Address view', () => {
     // deterministic CTAs instead of a bare dead-end error.
     expect(await screen.findByText(/Chain not supported/)).toBeInTheDocument();
     expect(screen.getByText(/chain ID 999/)).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Go to Mainnet' })).toHaveAttribute(
-      'href',
-      '/chain/1',
-    );
+    expect(screen.getByRole('link', { name: 'Go to Mainnet' })).toHaveAttribute('href', '/chain/1');
     // In-card chain list replaces the old '/' bounce CTA.
     expect(screen.getByRole('heading', { name: 'Open a supported chain' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Polygon/ })).toHaveAttribute('href', '/chain/137');
@@ -1194,9 +1155,7 @@ describe('Address view', () => {
     renderPage();
 
     expect(await screen.findByText(/Indexed address details are unavailable/)).toBeInTheDocument();
-    expect(
-      screen.getByText(/still come from the live chain RPC/),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/still come from the live chain RPC/)).toBeInTheDocument();
     expect(screen.getByText('Externally Owned Account (EOA)')).toBeInTheDocument();
     // The RPC fallback covers the page, so no raw page-level error card.
     expect(screen.queryByText(/Error: Backend not connected/)).not.toBeInTheDocument();
@@ -1217,9 +1176,7 @@ describe('Address view', () => {
     ).toBeInTheDocument();
     expect(screen.getByText(/Indexed address details are unavailable/)).toBeInTheDocument();
     expect(screen.getByText('Unknown')).toBeInTheDocument();
-    expect(
-      screen.queryByText('Externally Owned Account (EOA)'),
-    ).not.toBeInTheDocument();
+    expect(screen.queryByText('Externally Owned Account (EOA)')).not.toBeInTheDocument();
   });
 
   it('does not run the tx history scan for a transfers-only deep link', async () => {
@@ -1312,9 +1269,7 @@ describe('Token Holdings (discovered) overview section', () => {
     expect(
       screen.getByText('Token transfers have not been scanned for this address.'),
     ).toBeInTheDocument();
-    expect(
-      screen.getByRole('button', { name: 'Scan Token Transfers' }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Scan Token Transfers' })).toBeInTheDocument();
     // The lazy section renders no aggregate rows before the first scan.
     expect(screen.queryByText('ID 5 × -3')).not.toBeInTheDocument();
     expect(screen.queryByText(/Based on discovered transfers/)).not.toBeInTheDocument();
@@ -1452,8 +1407,6 @@ describe('Overview summary stats row', () => {
     renderPage();
     await screen.findByRole('heading', { name: 'Overview' });
     fireEvent.click(screen.getByTestId('coverage-badge-toggle'));
-    expect(screen.getByTestId('coverage-badge-detail')).toHaveTextContent(
-      'complete (deep scan)',
-    );
+    expect(screen.getByTestId('coverage-badge-detail')).toHaveTextContent('complete (deep scan)');
   });
 });

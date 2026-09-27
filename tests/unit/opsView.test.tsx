@@ -9,11 +9,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter, View, createRoutes } from '@native-router/react';
 import '@testing-library/jest-dom/vitest';
-import Ops, {
-  formatChainLabel,
-  formatStatusCounts,
-  opsAdminGateFromError,
-} from '@/views/Ops';
+import Ops, { formatChainLabel, formatStatusCounts, opsAdminGateFromError } from '@/views/Ops';
 import { ApiError } from '@/util/apiError';
 import type { OpsSummary } from '@/services/opsSummary';
 
@@ -69,7 +65,11 @@ const FULL_SUMMARY: OpsSummary = {
   watch: {
     total: 1,
     subscriptions: [
-      { chainId: 1, address: '0xabc0000000000000000000000000000000000abc', webhookConfigured: true },
+      {
+        chainId: 1,
+        address: '0xabc0000000000000000000000000000000000abc',
+        webhookConfigured: true,
+      },
     ],
   },
   rateLimit: {
@@ -147,9 +147,7 @@ describe('cards render from a full summary', () => {
   it('renders the watch subscription with its webhook flag', async () => {
     await renderOps();
 
-    expect(
-      screen.getByText(/0xabc0000000000000000000000000000000000abc/),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/0xabc0000000000000000000000000000000000abc/)).toBeInTheDocument();
     expect(screen.getByText('webhook configured')).toBeInTheDocument();
   });
 
@@ -252,10 +250,7 @@ describe('honest degraded and empty states', () => {
 describe('page-level failure states', () => {
   it('renders the OPT-IN gate setup card (not the dashboard) on a 403', async () => {
     mockUseOpsSummary.mockReturnValue(
-      summaryQuery(
-        undefined,
-        new ApiError('Invalid admin token.', 403),
-      ),
+      summaryQuery(undefined, new ApiError('Invalid admin token.', 403)),
     );
     await renderOps();
 
@@ -309,7 +304,9 @@ describe('page-level failure states', () => {
 describe('pure display helpers', () => {
   it('formatStatusCounts orders known statuses and appends unknown ones', () => {
     expect(formatStatusCounts({ completed: 2, error: 1 })).toBe('2 completed, 1 error');
-    expect(formatStatusCounts({ indexing: 1, paused: 0, pending: 2 })).toBe('1 indexing, 2 pending');
+    expect(formatStatusCounts({ indexing: 1, paused: 0, pending: 2 })).toBe(
+      '1 indexing, 2 pending',
+    );
     expect(formatStatusCounts({ weird: 3, error: 1 })).toBe('1 error, 3 weird');
     expect(formatStatusCounts({})).toBe('none');
   });
@@ -322,7 +319,10 @@ describe('pure display helpers', () => {
   it('opsAdminGateFromError classifies the two 403 faces and nothing else', () => {
     expect(
       opsAdminGateFromError(
-        new ApiError('Admin operations are disabled. Set ADMIN_TOKEN on the server to enable them.', 403),
+        new ApiError(
+          'Admin operations are disabled. Set ADMIN_TOKEN on the server to enable them.',
+          403,
+        ),
       ),
     ).toBe('unconfigured');
     expect(opsAdminGateFromError(new ApiError('Invalid admin token.', 403))).toBe('unauthorized');

@@ -21,35 +21,29 @@ describe('classifyAddressType', () => {
   });
 
   it('accepts an uppercase designator read as a designator too', () => {
-    expect(
-      classifyAddressType({ rpcCode: designator.toUpperCase() }),
-    ).toBe('delegated-eoa');
+    expect(classifyAddressType({ rpcCode: designator.toUpperCase() })).toBe('delegated-eoa');
   });
 
   it('outranks a persistent contract record: a delegated EOA is not a contract', () => {
     // The persistent channel files "has code" under isContract=true, but a
     // 7702 designator is the authoritative signal that this is an account.
-    expect(
-      classifyAddressType({ persistentType: true, rpcCode: designator }),
-    ).toBe('delegated-eoa');
+    expect(classifyAddressType({ persistentType: true, rpcCode: designator })).toBe(
+      'delegated-eoa',
+    );
   });
 
   it('outranks a persistent EOA record: the delegation happened after sync', () => {
-    expect(
-      classifyAddressType({ persistentType: false, rpcCode: designator }),
-    ).toBe('delegated-eoa');
+    expect(classifyAddressType({ persistentType: false, rpcCode: designator })).toBe(
+      'delegated-eoa',
+    );
   });
 
   it('keeps the persistent verdict when the code is not a designator', () => {
     expect(classifyAddressType({ persistentType: true })).toBe('contract');
     expect(classifyAddressType({ persistentType: false })).toBe('eoa');
     // Persistent wins over plain bytecode in both directions.
-    expect(
-      classifyAddressType({ persistentType: false, rpcCode: contractCode }),
-    ).toBe('eoa');
-    expect(classifyAddressType({ persistentType: true, rpcCode: '0x' })).toBe(
-      'contract',
-    );
+    expect(classifyAddressType({ persistentType: false, rpcCode: contractCode })).toBe('eoa');
+    expect(classifyAddressType({ persistentType: true, rpcCode: '0x' })).toBe('contract');
   });
 
   it('classifies from the RPC code alone when no persistent record exists', () => {
@@ -102,9 +96,7 @@ describe('classifyAddressType', () => {
 describe('delegationTarget', () => {
   it('extracts and checksums the 20-byte delegate address', () => {
     expect(delegationTarget(designator)).toBe(getAddress(delegate));
-    expect(delegationTarget(otherDesignator)).toBe(
-      getAddress(`0x${'cd'.repeat(20)}`),
-    );
+    expect(delegationTarget(otherDesignator)).toBe(getAddress(`0x${'cd'.repeat(20)}`));
   });
 
   it('returns undefined for non-designators', () => {

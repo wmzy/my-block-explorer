@@ -105,9 +105,7 @@ export const categorize = (
 };
 
 // Per-category counts for the chip row.
-export const categoryCounts = (
-  entries: readonly AbiListEntry[],
-): Record<AbiCategory, number> => {
+export const categoryCounts = (entries: readonly AbiListEntry[]): Record<AbiCategory, number> => {
   const buckets = categorize(entries);
   return {
     read: buckets.read.length,

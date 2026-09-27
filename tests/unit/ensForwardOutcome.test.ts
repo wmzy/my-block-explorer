@@ -13,9 +13,8 @@ vi.mock('@/utils/realTimeData');
 
 const mockedCreateRpcClient = vi.mocked(createRpcClient);
 
-const clientWithGetEnsAddress = (
-  getEnsAddress: PublicClient['getEnsAddress'],
-): PublicClient => ({ getEnsAddress }) as unknown as PublicClient;
+const clientWithGetEnsAddress = (getEnsAddress: PublicClient['getEnsAddress']): PublicClient =>
+  ({ getEnsAddress }) as unknown as PublicClient;
 
 describe('resolveEnsAddress outcome split', () => {
   beforeEach(() => {

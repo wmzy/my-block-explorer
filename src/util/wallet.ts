@@ -69,9 +69,7 @@ export function getInjectedProvider(): EIP1193Provider | null {
 // refresh triggers (a locked wallet nulls accounts; a wallet injecting
 // later is picked up on the next event or mount).
 export function useInjectedProvider(): EIP1193Provider | null {
-  const [provider, setProvider] = useState<EIP1193Provider | null>(() =>
-    getInjectedProvider(),
-  );
+  const [provider, setProvider] = useState<EIP1193Provider | null>(() => getInjectedProvider());
 
   useEffect(() => {
     const injected = getInjectedProvider();
