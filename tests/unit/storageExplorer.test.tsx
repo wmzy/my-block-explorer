@@ -193,6 +193,49 @@ describe('StorageExplorer', () => {
     expect(onPathChange).not.toHaveBeenCalled();
   });
 
+  it('offers the copy affordances at the ROOT column without drilling', async () => {
+    const { reader } = createFakeReader({ '0x0': pad(OWNER_ADDR as Hex, { size: 32 }) });
+    renderExplorer({ reader });
+    const user = userEvent.setup();
+
+    // Root header carries the base-slot trio (slot 0) — previously these
+    // rendered only on drilled columns.
+    expect(
+      screen.getByTitle('Copy a runnable viem snippet reading this column\'s base slot'),
+    ).toBeInTheDocument();
+    expect(screen.getByTitle(/Copy the foundry-cast command/)).toBeInTheDocument();
+
+    // Every member row copies its own viem snippet; owner is slot 0.
+    const ownerViem = screen.getByTitle('Copy a runnable viem snippet reading owner (slot 0)');
+    // Stub the async clipboard API (present in this jsdom) to capture
+    // exactly what the button placed on the clipboard; removing the
+    // instance-level stub afterwards restores the pristine surface.
+    const payloads: string[] = [];
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: {
+        writeText: (text: string) => {
+          payloads.push(text);
+          return Promise.resolve();
+        },
+      },
+    });
+    try {
+      await user.click(ownerViem);
+      expect(await screen.findByText('Copied ✓')).toBeInTheDocument();
+    } finally {
+      // The instance-level stub shadows any prototype getter — removing
+      // it restores the pristine surface either way.
+      delete (navigator as { clipboard?: unknown }).clipboard;
+    }
+    expect(payloads).toHaveLength(1);
+    expect(payloads[0]).toContain('getStorageAt');
+    expect(payloads[0]).toContain(`address: '${ADDR}'`);
+    // owner sits at slot 0: the snippet's symbolic expression is the
+    // marker-idiom base literal (substitutable), not a derived hash.
+    expect(payloads[0]).toContain('const slot = /* owner< */0n/* >*/;');
+  });
+
   it('opens a struct member as a new column and emits the encoded path', async () => {
     const { reader } = createFakeReader({});
     const onPathChange = vi.fn();

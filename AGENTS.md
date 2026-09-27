@@ -1224,3 +1224,30 @@ pnpm typecheck           # tsc --noEmit
   access (rows lives on `.node`) masqueraded as resolver corruption;
   cross-check suspicious failures with a standalone tsx script before
   believing them.
+- **2026-09-27 storage copy-affordance fix wave (user-reported, same day)** —
+  two user bugs from live use: **(1) copy buttons only on drilled
+  columns** — the root ResolvedColumn carried `slot:null, expr:null`, so
+  ColumnHeader's trio (slot hex / viem / cast) never rendered at root,
+  and member rows only copied raw slot hex. Fixed: root now carries the
+  storage origin (`slot: toHex(0n,{size:32})`, `expr:'0n'`) so the
+  header trio renders at root; EVERY member row gained its own viem
+  CopyButton driven by the row's symbolic expr (`StructRow.expr` from
+  structRows; array elements derive theirs via
+  `exprAdd(node.dataExpr, slotDelta)`) — a leaf's read code is copyable
+  without drilling. **(2) "Copy failed" in real browsers** — the storage
+  CopyButton called `navigator.clipboard.writeText` directly; the async
+  Clipboard API is unavailable outside secure contexts (plain-http LAN
+  host is the common local-explorer case) and rejectable by permission.
+  New `src/util/clipboard.ts` `copyText()`: async API first, legacy
+  `document.execCommand('copy')` via an off-screen textarea fallback
+  (textarea removal in a `finally` — an execCommand throw used to leak
+  the helper into the DOM, caught by a unit test), honest boolean
+  return. Note: 12 OTHER call sites across the app still call
+  `navigator.clipboard` directly (CopyableHash, EventTable, RawJson,
+  AddressQr, FunctionCallForm, Ops, Signatures, …) — same failure class,
+  not yet cut over. Verified: 11 files / 203+ tests green via
+  `vitest --changed`, typecheck clean, live Chromium smoke on WETH
+  (root header trio + per-row viem present; page clipboard received the
+  full runnable snippet with the marker-idiom expr; with `writeText`
+  sabotaged to reject, the button still flips to `Copied ✓` via the
+  execCommand fallback with zero textarea leak).

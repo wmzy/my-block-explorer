@@ -9,7 +9,7 @@ import { hexToBigInt, pad, type Hex } from 'viem';
 import { clampRange, type ResolvedColumn } from './columnModel';
 import type { StorageType } from '@/types/storage';
 import { arrayElementPlacement, slotAdd } from '@/utils/storageSlots';
-import { buildCastStorageCommand, buildViemReadSnippet } from '@/utils/storageSlotCode';
+import { buildCastStorageCommand, buildViemReadSnippet, exprAdd } from '@/utils/storageSlotCode';
 import { useRefreshStorageValues, useSlotValue } from '@/services/storageValues';
 import { EmptyState } from '@/components/ui/ErrorState';
 import { CopyButton, StorageMemberRow } from './StorageMemberRow';
@@ -314,6 +314,9 @@ function StructColumn(props: StorageColumnProps & { isRoot: boolean }) {
             key={`${row.label}:${row.slot}:${row.offset}`}
             label={row.label}
             slot={row.slot}
+            expr={row.expr}
+            chainId={props.chainId}
+            address={props.address}
             slotChip="decimal"
             offset={row.offset}
             type={row.type}
@@ -461,6 +464,12 @@ function ArrayColumn(
                     key={idx}
                     label={`[${idx}]`}
                     slot={slotAdd(node.dataSlot, BigInt(placement.slotDelta))}
+                    // Symbolic element expr = data base + the same delta
+                    // the slot carries, so array rows copy runnable
+                    // snippets too.
+                    expr={exprAdd(node.dataExpr, BigInt(placement.slotDelta))}
+                    chainId={props.chainId}
+                    address={props.address}
                     slotChip={placementOk ? 'none' : 'hex'}
                     offset={placement.offset}
                     type={elementType}

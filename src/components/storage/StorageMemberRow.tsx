@@ -6,8 +6,10 @@
 import { css } from '@linaria/core';
 import { useEffect, useRef, useState } from 'react';
 import type { Hex } from 'viem';
+import { copyText } from '@/util/clipboard';
 import type { StorageMapping, StorageType } from '@/types/storage';
 import type { StructRow } from './columnModel';
+import { buildViemReadSnippet } from '@/utils/storageSlotCode';
 import {
   encodeMappingKey,
   formatSlotDecimal,
@@ -167,12 +169,10 @@ export function CopyButton({
   }, []);
 
   const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setResult('ok');
-    } catch {
-      setResult('fail');
-    }
+    // copyText falls back to the legacy execCommand path when the async
+    // Clipboard API is unavailable (non-secure context) or rejected.
+    const ok = await copyText(text);
+    setResult(ok ? 'ok' : 'fail');
     if (timerRef.current !== undefined) window.clearTimeout(timerRef.current);
     timerRef.current = window.setTimeout(() => setResult('idle'), 2000);
   };
@@ -217,6 +217,14 @@ function typeExpandOf(type: StorageType | null): StructRow['expand'] {
 export type StorageMemberRowProps = {
   label: string;
   slot: Hex;
+  // Symbolic slot expression for this row (when the resolver carries
+  // one): powers the per-row viem-snippet copy so a leaf's read code is
+  // copyable WITHOUT drilling a column first.
+  expr?: string | null;
+  // Snippet context: the chain and the address values are read from
+  // (proxy footnote semantics — the proxy address for proxies).
+  chainId: number;
+  address: string;
   // Struct rows show the `slot <decimal>` copy chip; array element rows
   // show their `[i]` index instead (spec) — except unknown-type elements,
   // which fall back to a raw hex slot chip.
@@ -244,6 +252,13 @@ export function StorageMemberRow(props: StorageMemberRowProps) {
         )}
         {slotChip === 'hex' && (
           <CopyButton text={slot} label={`slot: ${shortHex(slot)}`} title={slot} />
+        )}
+        {props.expr != null && (
+          <CopyButton
+            text={buildViemReadSnippet({ chainId: props.chainId, address: props.address, slotExpr: props.expr })}
+            label="viem"
+            title={`Copy a runnable viem snippet reading ${label} (slot ${formatSlotDecimal(slot)})`}
+          />
         )}
         <span className={labelStyle} title={label}>
           {label}

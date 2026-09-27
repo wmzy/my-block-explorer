@@ -32,7 +32,7 @@ import {
   slotAdd,
 } from '@/utils/storageSlots';
 import { exprAdd, exprKeccakConcat, exprPad, type SlotExpr } from '@/utils/storageSlotCode';
-import type { Hex } from 'viem';
+import { toHex, type Hex } from 'viem';
 
 export type Segment =
   | { t: 'm'; label: string } // member within the current struct node
@@ -441,8 +441,12 @@ export function resolveColumns(layout: StorageLayout, segments: Segment[]): Reso
     {
       segments: [],
       pathLabel: ROOT_LABEL,
-      slot: null,
-      expr: null,
+      // The root column's base is the contract's storage origin (slot 0):
+      // kept concrete so the header copy affordances (slot/viem/cast)
+      // render at root too, not only on drilled columns. Padded 32-byte
+      // form for display/cast consistency with every other column.
+      slot: toHex(0n, { size: 32 }),
+      expr: '0n',
       node: {
         kind: 'struct',
         typeLabel: ROOT_LABEL,

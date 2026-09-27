@@ -156,8 +156,10 @@ describe('resolveColumns — root', () => {
     const root = columns[0];
     expect(root.segments).toEqual([]);
     expect(root.pathLabel).toBe('Storage');
-    expect(root.slot).toBeNull();
-    expect(root.expr).toBeNull();
+    // The root column carries the storage origin (slot 0) so the header
+    // copy affordances render at root, not only on drilled columns.
+    expect(root.slot).toBe(toHex(0n, { size: 32 }));
+    expect(root.expr).toBe('0n');
     expect(root.node.kind).toBe('struct');
     if (root.node.kind !== 'struct') return;
     expect(root.node.rows.map(row => row.label)).toEqual([
