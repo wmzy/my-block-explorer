@@ -22,6 +22,7 @@ import { formatAddress, formatNumber } from '@/utils/format';
 import { getPreferredChainId, readRememberedChainId } from '@/views/Home/Landing';
 import { subscribeWatchEvents, type LiveWatchEvent } from '@/services/liveChain';
 import { watchEventKey } from '@/services/watch';
+import { registerPwa } from '@/util/pwa';
 
 // SPA route recovery for GitHub Pages 404 redirect
 // 404.html encodes the original path into the hash (e.g. #/chain/1)
@@ -156,3 +157,8 @@ root.render(
   onApiBaseChange(evaluate);
   setInterval(evaluate, 5_000);
 })();
+
+// PWA shell: register the service worker (production builds only — dev is
+// never controlled). Installs/offline shell + update toast; see
+// public/sw.js for the caching contract (app shell only, never data).
+registerPwa();

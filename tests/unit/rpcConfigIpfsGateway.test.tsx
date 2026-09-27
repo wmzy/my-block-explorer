@@ -11,7 +11,7 @@ import '@testing-library/jest-dom';
 import { useControl } from 'react-use-control';
 import { MemoryRouter, createRoutes } from '@native-router/react';
 import RpcConfig from '@/components/RpcConfig';
-import { toast } from 'sonner';
+import { toast } from 'haze-ui';
 import {
   DEFAULT_IPFS_GATEWAY,
   IPFS_GATEWAY_STORAGE_KEY,
@@ -35,10 +35,6 @@ vi.mock('@/utils/rpcConfigService', () => ({
 
 vi.mock('@/util/http', () => ({
   get: mockHttpGet,
-}));
-
-vi.mock('sonner', () => ({
-  toast: { success: vi.fn(), error: vi.fn() },
 }));
 
 vi.mock('@/config/chains', () => ({
@@ -68,7 +64,7 @@ describe('RpcConfig IPFS gateway field', () => {
     mockGetRpcConfigs.mockReset().mockResolvedValue([]);
     mockHttpGet.mockReset().mockResolvedValue(undefined);
     vi.mocked(toast.success).mockClear();
-    vi.mocked(toast.error).mockClear();
+    vi.mocked(toast.danger).mockClear();
     localStorage.clear();
   });
 

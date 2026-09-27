@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Maskable variant: full-bleed background (launcher masks crop freely)
+       with the block glyph scaled into the safe zone (inner ~80% circle). -->
+  <defs>
+    <linearGradient id="bgm" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0a7bff" />
+      <stop offset="1" stop-color="#0047b3" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#bgm)" />
+  <g stroke="#04316e" stroke-width="12" stroke-linejoin="round">
+    <path d="M256 91 411 180 256 270 101 180Z" fill="#ffffff" />
+    <path d="M101 180 256 270v112L101 292Z" fill="#bcd8ff" />
+    <path d="M411 180 256 270v112l155-90Z" fill="#7db4f7" />
+  </g>
+  <path d="M160 180 256 124l96 56-96 56Z" fill="#dbeaff" stroke="none" />
+</svg>

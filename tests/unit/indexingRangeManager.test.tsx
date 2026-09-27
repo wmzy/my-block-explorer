@@ -7,7 +7,7 @@
 // outlives the pause POST until the polled status flips away from
 // 'indexing'. Quick-button pre-disable pins First Blocks (unknown creation)
 // and Continue (empty range list) disabling before their backing POST can
-// 400. The HTTP layer and sonner are mocked so backend calls and
+// 400. The HTTP layer is mocked and haze-ui toasts run on the setup-level mock so backend calls and
 // surfaced errors are observable. The client-side overlap precheck
 // describe block pins the two-click gate (warning + 'Create anyway') for
 // the manual form and the gated quick modes, the catchup/continue
@@ -24,7 +24,7 @@ import IndexingRangeManager, {
   furthestIndexedBlock,
   recordEtaSample,
 } from '@/components/events/IndexingRangeManager';
-import { toast } from 'sonner';
+import { toast } from 'haze-ui';
 import { ApiError } from '@/util/apiError';
 
 const { mockGet, mockPost, mockDel } = vi.hoisted(() => ({
@@ -37,10 +37,6 @@ vi.mock('@/util/http', () => ({
   get: mockGet,
   post: mockPost,
   del: mockDel,
-}));
-
-vi.mock('sonner', () => ({
-  toast: { success: vi.fn(), error: vi.fn() },
 }));
 
 const CHAIN_ID = 1;
@@ -106,7 +102,7 @@ beforeEach(() => {
   mockPost.mockReset().mockResolvedValue({});
   mockDel.mockReset();
   vi.mocked(toast.success).mockClear();
-  vi.mocked(toast.error).mockClear();
+  vi.mocked(toast.danger).mockClear();
 });
 
 afterEach(() => {
@@ -250,7 +246,7 @@ describe('Catch up to head', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Catch up to head' }));
 
     await waitFor(() =>
-      expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
+      expect(vi.mocked(toast.danger)).toHaveBeenCalledWith(
         'No previous range found. Cannot catch up.',
       ),
     );
@@ -357,7 +353,7 @@ describe('Pause transient state', () => {
 
     await waitFor(() => expect(screen.getByRole('button', { name: 'Pause' })).toBeEnabled());
     expect(screen.queryByRole('button', { name: 'Pausing...' })).toBeNull();
-    expect(vi.mocked(toast.error)).toHaveBeenCalledWith('Pause rejected');
+    expect(vi.mocked(toast.danger)).toHaveBeenCalledWith('Pause rejected');
   });
 });
 
@@ -433,7 +429,7 @@ describe('admin-token 403 guidance', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Start' }));
 
     await waitFor(() =>
-      expect(vi.mocked(toast.error)).toHaveBeenCalledWith(
+      expect(vi.mocked(toast.danger)).toHaveBeenCalledWith(
         'Invalid admin token. — Set it via ⚙️ RPC → Admin token (stored in this browser)',
       ),
     );
@@ -596,7 +592,7 @@ describe('full-history gate (Index everything)', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(
       /Full history spans about 20M blocks/,
     );
-    expect(vi.mocked(toast.error)).not.toHaveBeenCalled();
+    expect(vi.mocked(toast.danger)).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole('checkbox'));
     mockPost.mockResolvedValue({ rangeId: 5, fromBlock: 0, toBlock: 20_000_000, started: true });

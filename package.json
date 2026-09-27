@@ -81,8 +81,7 @@
     "react-toolroom": "^1.1.1",
     "react-use-control": "^1.6.1",
     "solc": "^0.8.37",
-    "sonner": "^2.0.8",
-    "storage-layout-fetcher": "^0.2.1",
+        "storage-layout-fetcher": "^0.2.1",
     "undici": "^8.11.2",
     "viem": "^2.56.9",
     "zod": "^4.6.5"

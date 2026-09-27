@@ -66,6 +66,10 @@ own server): https://wmzy.github.io/my-block-explorer/
   detail pages
 - **Light/dark/system theme** with persistence, backend version chip in the
   topbar
+- **PWA (installable)** — manifest + service worker make the explorer
+  installable as a standalone app; the worker caches ONLY the app shell
+  (HTML + hashed assets) for offline boot — blockchain data is never cached
+  or served stale, and the dev server is never controlled
 - **Docker packaging** — multi-target `Dockerfile` (API + static web) and
   `compose.yaml` (see [Deployment](docs/DEPLOYMENT.md))
 - **Data separation** — ephemeral data (balances, latest blocks) is fetched in

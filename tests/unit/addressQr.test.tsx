@@ -14,11 +14,7 @@ import { AddressQr } from '@/components/ui/AddressQr';
 const LOWERCASE = '0x1234567890abcdef1234567890abcdef12345678';
 const CHECKSUMMED = getAddress(LOWERCASE);
 
-vi.mock('sonner', () => ({ toast: vi.fn() }));
-import { toast } from 'sonner';
-
 beforeEach(() => {
-  vi.mocked(toast).mockClear();
   // jsdom ships no clipboard API — the fallback's contract is the
   // writeText call, stubbed here.
   Object.assign(navigator, {

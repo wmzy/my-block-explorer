@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Brand: haze-ui blue (light-theme blue-9 = oklch(56.3% .241 260.8)) -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0a7bff" />
+      <stop offset="1" stop-color="#0047b3" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="108" fill="url(#bg)" />
+  <!-- Isometric block (the explorer's "block"): white top face, tinted sides -->
+  <g stroke="#04316e" stroke-width="10" stroke-linejoin="round">
+    <path d="M256 108 394 187 256 266 118 187Z" fill="#ffffff" />
+    <path d="M118 187 256 266V406L118 327Z" fill="#bcd8ff" />
+    <path d="M394 187 256 266V406l138-79Z" fill="#7db4f7" />
+  </g>
+  <!-- Top-face inner edge for depth at small sizes -->
+  <path d="M170 187 256 138l86 49-86 49Z" fill="#dbeaff" stroke="none" />
+</svg>

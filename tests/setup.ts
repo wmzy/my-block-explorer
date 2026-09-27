@@ -21,6 +21,20 @@ vi.mock('haze-ui', () => ({
   spacing: {},
   typography: {},
   ToastContainer: () => null,
+  // Module-level toast(): observable in tests without a mounted
+  // ToastContainer — the same instance components import (the factory's
+  // result is cached per test file). Sugar methods cover every variant
+  // the app calls (info/success/danger; pwa.ts uses info).
+  toast: Object.assign(vi.fn(), {
+    info: vi.fn(),
+    success: vi.fn(),
+    warning: vi.fn(),
+    danger: vi.fn(),
+    loading: vi.fn(),
+    dismiss: vi.fn(),
+    update: vi.fn(),
+    promise: vi.fn(),
+  }),
   Input: (props: MockProps) =>
     React.createElement('input', {
       'data-testid': 'search-input',

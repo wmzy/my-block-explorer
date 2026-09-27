@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { css } from '@linaria/core';
 import { SegmentedProgressBar } from '../ui/SegmentedProgressBar';
-import { toast } from 'sonner';
+import { toast } from 'haze-ui';
 import { get, post, del } from '@/util/http';
 import { ApiError } from '@/util/apiError';
 
@@ -794,19 +794,19 @@ export const IndexingRangeManager: React.FC<Props> = ({
       const toBlock = isToTag ? toBlockValue : parseInt(formState.toBlock);
 
       if (!isFromTag && isNaN(fromBlock as number)) {
-        toast.error('Please enter valid block numbers or tags (latest, finalized, safe, earliest)');
+        toast.danger('Please enter valid block numbers or tags (latest, finalized, safe, earliest)');
         return;
       }
       if (!isToTag && isNaN(toBlock as number)) {
-        toast.error('Please enter valid block numbers or tags (latest, finalized, safe, earliest)');
+        toast.danger('Please enter valid block numbers or tags (latest, finalized, safe, earliest)');
         return;
       }
       if (!isFromTag && !isToTag && (fromBlock as number) >= (toBlock as number)) {
-        toast.error('From block must be less than to block');
+        toast.danger('From block must be less than to block');
         return;
       }
       if (!isFromTag && hasKnownCreationBlock && (fromBlock as number) < creationBlockNumber) {
-        toast.error(`From block cannot be before contract creation block (${creationBlockNumber})`);
+        toast.danger(`From block cannot be before contract creation block (${creationBlockNumber})`);
         return;
       }
       // Client-side overlap precheck against the already-loaded list: the
@@ -848,7 +848,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
         onRefresh?.();
       } catch (error) {
         console.error('Failed to add range:', error);
-        toast.error(describeMutationError(error, 'Failed to add range'));
+        toast.danger(describeMutationError(error, 'Failed to add range'));
       } finally {
         setActionLoading(null);
         // The submit resolved — drop any armed confirmation so the form
@@ -924,7 +924,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
         // 403 admin-token errors and contract 400s like 'No previous range
         // found. Cannot catch up.' surface verbatim via ApiError.
         console.error('Failed to create range:', error);
-        toast.error(describeMutationError(error, 'Failed to create range'));
+        toast.danger(describeMutationError(error, 'Failed to create range'));
         return false;
       } finally {
         setActionLoading(null);
@@ -949,7 +949,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
       const blockCountNum = needsBlockCount ? parseInt(blockCount) : 0;
 
       if (needsBlockCount && (isNaN(blockCountNum) || blockCountNum <= 0)) {
-        toast.error('Please enter a valid block count');
+        toast.danger('Please enter a valid block count');
         return;
       }
 
@@ -1000,7 +1000,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
         await fetchRanges();
       } catch (error) {
         console.error('Failed to start indexing:', error);
-        toast.error(describeMutationError(error, 'Failed to start indexing'));
+        toast.danger(describeMutationError(error, 'Failed to start indexing'));
       } finally {
         setActionLoading(null);
       }
@@ -1030,7 +1030,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
           return next;
         });
         console.error('Failed to pause indexing:', error);
-        toast.error(describeMutationError(error, 'Failed to pause indexing'));
+        toast.danger(describeMutationError(error, 'Failed to pause indexing'));
       } finally {
         setActionLoading(null);
       }
@@ -1051,7 +1051,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
         await fetchRanges();
       } catch (error) {
         console.error('Failed to resume indexing:', error);
-        toast.error(describeMutationError(error, 'Failed to resume indexing'));
+        toast.danger(describeMutationError(error, 'Failed to resume indexing'));
       } finally {
         setActionLoading(null);
       }
@@ -1069,7 +1069,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
         onRefresh?.();
       } catch (error) {
         console.error('Failed to delete range:', error);
-        toast.error(describeMutationError(error, 'Failed to delete range'));
+        toast.danger(describeMutationError(error, 'Failed to delete range'));
       } finally {
         setActionLoading(null);
       }

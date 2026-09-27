@@ -1,26 +1,22 @@
 // OpenInIdeButton contract tests: honest absence when detection yields no
 // IDEs (or fails), the intact single-IDE open path, and the toast that
-// replaced the silent open failure. The http layer and sonner are mocked so
+// replaced the silent open failure. The http layer is mocked and haze-ui toasts run on the setup-level mock so
 // both the backend calls and the surfaced error are observable.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
+import { toast } from 'haze-ui';
 import { OpenInIdeButton } from '@/views/Contract/OpenInIdeButton';
 import { ApiError } from '@/util/apiError';
 
-const { mockGet, mockPost, mockToastError } = vi.hoisted(() => ({
+const { mockGet, mockPost } = vi.hoisted(() => ({
   mockGet: vi.fn(),
   mockPost: vi.fn(),
-  mockToastError: vi.fn(),
 }));
 
 vi.mock('@/util/http', () => ({
   get: mockGet,
   post: mockPost,
-}));
-
-vi.mock('sonner', () => ({
-  toast: { error: mockToastError },
 }));
 
 const ADDRESS = '0xabc0000000000000000000000000000000000001';
@@ -62,7 +58,7 @@ describe('OpenInIdeButton', () => {
         ide: 'vscode',
       }),
     );
-    expect(mockToastError).not.toHaveBeenCalled();
+    expect(vi.mocked(toast.danger)).not.toHaveBeenCalled();
   });
 
   it('surfaces open failures via a toast instead of failing silently', async () => {
@@ -74,7 +70,7 @@ describe('OpenInIdeButton', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Open in VS Code' }));
 
     await waitFor(() =>
-      expect(mockToastError).toHaveBeenCalledWith('Failed to open in IDE: bridge unreachable'),
+      expect(vi.mocked(toast.danger)).toHaveBeenCalledWith('Failed to open in IDE: bridge unreachable'),
     );
   });
 
@@ -89,7 +85,7 @@ describe('OpenInIdeButton', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Open in VS Code' }));
 
     await waitFor(() =>
-      expect(mockToastError).toHaveBeenCalledWith(
+      expect(vi.mocked(toast.danger)).toHaveBeenCalledWith(
         'Failed to open in IDE: requires admin token — set it via ⚙️ RPC → Admin token. The server must have ADMIN_TOKEN configured.',
       ),
     );

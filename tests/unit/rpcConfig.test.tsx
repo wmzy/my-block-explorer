@@ -5,7 +5,7 @@ import '@testing-library/jest-dom';
 import { MemoryRouter, createRoutes } from '@native-router/react';
 import { useControl } from 'react-use-control';
 import RpcConfig from '@/components/RpcConfig';
-import { toast } from 'sonner';
+import { toast } from 'haze-ui';
 import { ApiError } from '@/util/apiError';
 import { clearAdminToken, getAdminToken, setAdminToken } from '@/util/adminAuth';
 
@@ -36,10 +36,6 @@ vi.mock('@/utils/rpcConfigService', () => ({
 
 vi.mock('@/util/http', () => ({
   get: mockHttpGet,
-}));
-
-vi.mock('sonner', () => ({
-  toast: { success: vi.fn(), error: vi.fn() },
 }));
 
 vi.mock('@/config/chains', () => ({
@@ -157,7 +153,7 @@ describe('RpcConfig admin gating', () => {
     // 403 on save: notice points at the token field (not at the config
     // list), and the server's message surfaces verbatim.
     expect(await screen.findByText(/Saving requires an admin token/)).toBeInTheDocument();
-    expect(toast.error).toHaveBeenCalledWith('Invalid admin token.');
+    expect(toast.danger).toHaveBeenCalledWith('Invalid admin token.');
 
     // Entering a token drops the stale notice...
     await saveAdminToken('secret-token');
@@ -187,9 +183,9 @@ describe('RpcConfig admin gating', () => {
     await submitCustomRpc();
 
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith('Backend not connected — indexed data unavailable');
+      expect(toast.danger).toHaveBeenCalledWith('Backend not connected — indexed data unavailable');
     });
-    expect(toast.error).not.toHaveBeenCalledWith(
+    expect(toast.danger).not.toHaveBeenCalledWith(
       'Failed to save configuration. Please check your network connection.',
     );
   });
@@ -222,7 +218,7 @@ describe('RpcConfig admin gating', () => {
       expect(toast.success).toHaveBeenCalledWith('Admin token saved & verified.');
     });
     expect(getAdminToken()).toBe('secret-token');
-    expect(toast.error).not.toHaveBeenCalled();
+    expect(toast.danger).not.toHaveBeenCalled();
   });
 
   it('toasts the honest both-causes message when the server rejects the token with 403', async () => {
@@ -237,7 +233,7 @@ describe('RpcConfig admin gating', () => {
     // ADMIN_TOKEN configured (the gate fails closed) — the toast must
     // say exactly that instead of pretending verification succeeded.
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith(
+      expect(toast.danger).toHaveBeenCalledWith(
         'Token saved, but the server rejected it — wrong token, or the server has no ADMIN_TOKEN configured.',
       );
     });
@@ -255,7 +251,7 @@ describe('RpcConfig admin gating', () => {
     await saveAdminToken('secret-token');
 
     await waitFor(() => {
-      expect(toast.error).toHaveBeenCalledWith('Backend not connected — indexed data unavailable');
+      expect(toast.danger).toHaveBeenCalledWith('Backend not connected — indexed data unavailable');
     });
     expect(toast.success).not.toHaveBeenCalledWith('Admin token saved & verified.');
   });

@@ -1,6 +1,6 @@
 # Block Explorer - Project Knowledge Base
 
-**Generated:** 2026-09-19 (updated after the 2026-09-26/27 gap wave #4)
+**Generated:** 2026-09-19 (updated after the 2026-09-27 PWA wave)
 **Branch:** 001-abi
 
 ## OVERVIEW
@@ -1214,3 +1214,57 @@ pnpm typecheck           # tsc --noEmit
   unlock hint) — pick smoke fixtures by probing `/source` for non-empty ABI
   first (WETH `...756Cc2`, note the 756 — `...753` is a different, wrong
   address).
+- **2026-09-27 PWA support (single stream)** — installable app shell, all
+  verified: tsc clean, eslint 0 errors, `vitest --changed` 275 files / 3940
+  tests green, live Chromium smoke on the built bundle (`pnpm build &&
+  pnpm preview`) + a `VITE_BASE=/my-block-explorer/` build checked for
+  subpath rewriting. **Assets** — `public/favicon.svg` (hand-drawn iso-block
+  glyph, haze-ui blue; **the old `/favicon.svg` link had been dead since
+  forever — nothing ever shipped the file**), PNG rasterizations via
+  ImageMagick/RSVG (192/512 any + maskable variants + 180 apple-touch),
+  `public/manifest.webmanifest` (`start_url`/`scope` = **relative `"."`** so
+  the same manifest serves `/` and subpath deploys — GitHub Pages checked:
+  Vite rewrites the index.html head links to `/my-block-explorer/...` and the
+  relative manifest fields resolve against the manifest URL). **Worker** —
+  `public/sw.js`, hand-rolled (no vite-plugin-pwa — Vite 8/Rolldown
+  compat risk not worth it; the caching model is 40 lines): navigations
+  network-first cached under ONE shell key (scope root → any route boots
+  offline, SPA-fallback serves the same document anyway), `${base}assets/*`
+  cache-first (content-hashed), other same-origin GET static SWR (503
+  fallback instead of respondWith(undefined)), **`/api/*` + cross-origin +
+  non-GET always bypass** (data is never cached — offline the app's own
+  honest failure states speak), inline offline HTML for a first visit that
+  never completed; `BASE` derives from `self.registration.scope`; versioned
+  cache names (`be-shell-v1`/`be-static-v1`) deleted on activate;
+  `SKIP_WAITING` message. **Registration** — `src/util/pwa.ts`
+  (`registerPwa()`, called from `src/index.tsx`): PROD-only (dev is never
+  controlled), `import.meta.env.BASE_URL + 'sw.js'`, silent on failure;
+  update flow = worker flips `installed` while a controller exists → sticky
+  haze-ui toast (duration 0) with Reload action → `SKIP_WAITING` →
+  `controllerchange` → guarded single `location.reload()`. **En-route bug
+  fixed (real, pre-existing, user-visible)**: five components fired
+  `toast()` from **sonner whose `<Toaster>` was never mounted** — 34 calls
+  silently dropped forever; migrated all of them (incl. 7 test files) to
+  haze-ui's already-mounted `ToastContainer` toast API
+  (`toast.error`→`toast.danger`), added a `toast` mock to the global
+  haze-ui mock in `tests/setup.ts`, **removed the sonner dependency
+  entirely**. A test caught a real duplicate-toast bug in the first
+  `registerPwa` draft: the immediate `watchInstalling()` call and the
+  `updatefound` listener both attach a `statechange` handler to the SAME
+  worker — dedupe by tracking the watched worker. `public/sw.js` needs
+  `/* global self, caches, fetch */` (SW globals aren't in the shared eslint
+  config; `clients` unused — don't declare it). Tests:
+  `tests/unit/pwa.test.ts` (faked SW API: prod-only guard, BASE_URL
+  registration, silent failure, update toast, first-install no-toast),
+  `tests/unit/pwaAssets.test.ts` (manifest shape + PNG IHDR dimensions vs
+  declared sizes + index.html links — dependency-free ground truth).
+  **Smoke results (pinned)**: SW active+controlling without reload
+  (clients.claim), manifest served `application/manifest+json` by vite
+  preview, offline `goto('/chain/1')` renders the deep route from cache
+  (title derived, no navigation error) while `/api/health` rejects (probe
+  caches API), byte-changed sw.js → `reg.update()` → toast visible with
+  Reload button → click reloads onto the new worker. Browser-smoke gotcha:
+  a failed `tab.waitFor('load')` killed the tab session; and
+  `navigator.serviceWorker.ready` throws `NotSupportedError` when the
+  evaluate lands outside a page context — reopen the tab and do the whole
+  flow in ONE cell (`page.createCDPSession` for offline emulation).

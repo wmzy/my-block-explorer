@@ -206,6 +206,33 @@ server {
 Then have the frontend talk to `https://explorer-api.example.com` (manual URL
 entry) and set `ADMIN_TOKEN` on the backend.
 
+## PWA behavior (service worker)
+
+The built frontend ships as an installable PWA (`public/manifest.webmanifest`
++ `public/sw.js`, registered only in production builds — the dev server is
+never controlled).
+
+- **What is cached:** the app shell only — the SPA document (network-first,
+  cached under one key so any route boots offline) and content-hashed
+  `/assets/*` (cache-first, immutable). Favicon/manifest/icons use
+  stale-while-revalidate. Cache names are version-bumped in `sw.js`; old
+  versions are deleted on activation.
+- **What is never cached:** the backend API (`/api/*` incl. SSE streams),
+  cross-origin traffic (RPC providers, DefiLlama, …) and every non-GET
+  request. Offline, the cached shell boots and the app's own failure states
+  (backend-offline banners, RPC error cards) tell the truth about the
+  network. A first visit that never completed gets an inline "You are
+  offline" page instead of the shell.
+- **Updates:** when a new build's worker finishes installing behind the old
+  one, a persistent toast offers Reload (`src/util/pwa.ts` →
+  `SKIP_WAITING` → single reload on `controllerchange`).
+- **Subpath deploys:** the manifest uses relative `start_url`/`scope` and the
+  worker derives its prefix from `self.registration.scope`, so the same
+  files serve both `/` and `/my-block-explorer/` (`VITE_BASE`) deployments.
+- **HTTPS or localhost:** browsers only register service workers on secure
+  origins; plain-HTTP LAN hosts install nothing (the app still works — the
+  worker is an enhancement).
+
 ## What does NOT exist (removed stale guidance)
 
 Earlier versions of this document described Cloudflare Workers proxies,

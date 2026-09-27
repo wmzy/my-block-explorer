@@ -9,7 +9,7 @@
 import { useState } from 'react';
 import { css } from '@linaria/core';
 import { Alert } from 'haze-ui';
-import { toast } from 'sonner';
+import { toast } from 'haze-ui';
 import { Button } from '@/components/ui/Button';
 import { ApiError } from '@/util/apiError';
 import {

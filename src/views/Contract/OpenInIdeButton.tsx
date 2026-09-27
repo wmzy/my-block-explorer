@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { CSSProperties } from 'react';
-import { toast } from 'sonner';
+import { toast } from 'haze-ui';
 import { get, post } from '@/util/http';
 import { ApiError } from '@/util/apiError';
 
@@ -55,11 +55,11 @@ export function OpenInIdeButton({ chainId, address }: { chainId: number; address
         // 403 — the browser has no token set while the server requires
         // ADMIN_TOKEN.
         if (error instanceof ApiError && error.status === 403) {
-          toast.error(
+          toast.danger(
             'Failed to open in IDE: requires admin token — set it via ⚙️ RPC → Admin token. The server must have ADMIN_TOKEN configured.',
           );
         } else {
-          toast.error(
+          toast.danger(
             error instanceof Error && error.message
               ? `Failed to open in IDE: ${error.message}`
               : 'Failed to open in IDE. Please check that your IDE is running.',

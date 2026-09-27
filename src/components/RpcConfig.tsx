@@ -3,7 +3,7 @@ import { css } from '@linaria/core';
 import { Dialog } from 'haze-ui';
 import { TypedLink } from '@native-router/react';
 import { useControl, type Control } from 'react-use-control';
-import { toast } from 'sonner';
+import { toast } from 'haze-ui';
 import { ApiError } from '../util/apiError';
 import { get } from '../util/http';
 import { clearAdminToken, hasAdminToken, setAdminToken } from '../util/adminAuth';
@@ -435,14 +435,14 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
         // requireAdminToken fails closed, so a 403 covers both a wrong
         // token and a server with no ADMIN_TOKEN configured at all — the
         // status alone cannot tell them apart, so say exactly that.
-        toast.error(
+        toast.danger(
           'Token saved, but the server rejected it — wrong token, or the server has no ADMIN_TOKEN configured.',
         );
       } else {
         // Transport failure (e.g. the degraded-mode fast reject 'Backend
         // not connected — indexed data unavailable') or an unexpected
         // server error: surface the real message verbatim.
-        toast.error(
+        toast.danger(
           error instanceof ApiError ? error.message : 'Admin token saved, but verification failed.',
         );
       }
@@ -495,7 +495,7 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
       }
     } catch (error) {
       console.error('Backup export failed:', error);
-      toast.error('Backup export failed.');
+      toast.danger('Backup export failed.');
     } finally {
       setBackupBusy(false);
     }
@@ -577,7 +577,7 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
       setTestResult(result);
 
       if (result.status === 'failed') {
-        toast.error(
+        toast.danger(
           `RPC test failed: ${result.error}\n\nRecommended to verify RPC using:\ncast chain-id --rpc-url ${url}\ncast block-number --rpc-url ${url}`,
         );
         return;
@@ -585,7 +585,7 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
 
       // Verify the chain ID matches the explorer's target chain.
       if (result.detectedChainId && result.detectedChainId !== chainId) {
-        toast.error(
+        toast.danger(
           `Chain ID mismatch!\nExpected: ${chainId}\nActual: ${result.detectedChainId}\n\nPlease confirm the RPC URL corresponds to the correct chain.`,
         );
         return;
@@ -644,11 +644,11 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
         // not connected — indexed data unavailable'), which is a
         // diagnosis, not a network hiccup. Surface it instead of the
         // generic network advice.
-        toast.error(error.message);
+        toast.danger(error.message);
       } else {
         // The 403 body carries a server message explaining the gate;
         // show it verbatim. Anything else degrades to generic advice.
-        toast.error(
+        toast.danger(
           error instanceof ApiError && error.status === 403 && error.message
             ? error.message
             : 'Failed to save configuration. Please check your network connection.',
@@ -680,7 +680,7 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
       if (error instanceof ApiError && error.status === 403) {
         setSaveForbidden(true);
       }
-      toast.error(
+      toast.danger(
         error instanceof ApiError && error.status === 403 && error.message
           ? error.message
           : 'Failed to remove configuration.',

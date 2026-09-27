@@ -4,7 +4,7 @@ import { css } from '@linaria/core';
 import { Dialog } from 'haze-ui';
 import { useControl } from 'react-use-control';
 import QRCode from 'qrcode';
-import { toast } from 'sonner';
+import { toast } from 'haze-ui';
 import { Button } from '@/components/ui/Button';
 import { checksummedAddressOrNull } from '@/util/privateNotes';
 
@@ -146,9 +146,9 @@ export function AddressQr({ address }: { address: string }) {
   const copyAddress = async () => {
     try {
       await navigator.clipboard.writeText(payload);
-      toast('Address copied to clipboard!', { duration: 2000 });
+      toast.info('Address copied to clipboard!', { duration: 2000 });
     } catch {
-      toast('Failed to copy address', { duration: 2000 });
+      toast.danger('Failed to copy address', { duration: 2000 });
     }
   };
 

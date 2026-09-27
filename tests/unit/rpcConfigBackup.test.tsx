@@ -14,7 +14,7 @@ import '@testing-library/jest-dom';
 import { useControl } from 'react-use-control';
 import { MemoryRouter, createRoutes } from '@native-router/react';
 import RpcConfig from '@/components/RpcConfig';
-import { toast } from 'sonner';
+import { toast } from 'haze-ui';
 import {
   BACKUP_VERSION,
   serializeBackup,
@@ -39,10 +39,6 @@ vi.mock('@/utils/rpcConfigService', () => ({
 
 vi.mock('@/util/http', () => ({
   get: vi.fn().mockResolvedValue(undefined),
-}));
-
-vi.mock('sonner', () => ({
-  toast: { success: vi.fn(), error: vi.fn() },
 }));
 
 vi.mock('@/config/chains', () => ({
@@ -112,7 +108,7 @@ beforeEach(() => {
   mockExportBackupFile.mockReset();
   mockExecuteRestore.mockReset();
   vi.mocked(toast.success).mockClear();
-  vi.mocked(toast.error).mockClear();
+  vi.mocked(toast.danger).mockClear();
   localStorage.clear();
 });
 

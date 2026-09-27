@@ -11,18 +11,13 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { ApiError } from '@/util/apiError';
+import { toast } from 'haze-ui';
 import { ChainResetBanner } from '@/components/ChainResetBanner';
 import type { ChainResetState } from '@/services/chainReset';
 
 const mocks = vi.hoisted(() => ({
   useChainResetDetection: vi.fn<() => ChainResetState>(),
   clearChainCachedData: vi.fn(),
-  toastSuccess: vi.fn(),
-  toastError: vi.fn(),
-}));
-
-vi.mock('sonner', () => ({
-  toast: { success: mocks.toastSuccess, error: mocks.toastError },
 }));
 
 vi.mock('@/services/chainReset', async importOriginal => {
@@ -131,7 +126,7 @@ describe('Clear cached data', () => {
       ),
     );
     expect(mocks.clearChainCachedData).toHaveBeenCalledWith(CHAIN);
-    expect(mocks.toastSuccess).toHaveBeenCalledWith(
+    expect(vi.mocked(toast.success)).toHaveBeenCalledWith(
       expect.stringContaining('3 cached contract sources and 1 storage layout'),
     );
   });
