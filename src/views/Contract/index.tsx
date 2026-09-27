@@ -31,6 +31,8 @@ import {
   type DetectedProxy,
 } from '@/utils/proxyDetection';
 import { EventsPanel } from './EventsPanel';
+import { AbiListPanel } from './AbiListPanel';
+import { parseAbiEntries } from './abiList';
 import { deriveContractCoverage } from './coverage';
 import { ContractInteract } from './ContractInteract';
 import { decodeRevokeIntent } from './revokeIntent';
@@ -496,22 +498,6 @@ const notAContractLinkStyles = css`
   &:hover {
     text-decoration: underline;
   }
-`;
-
-// Names the ABI source inside the ABI card while the pasted custom ABI
-// drives the tabs — the server answer for unverified contracts is '[]',
-// which alone would read as a broken surface. Amber palette matches the
-// tab-bar custom-ABI badge.
-const customAbiSourceStyles = css`
-  display: inline-block;
-  margin-bottom: 12px;
-  padding: 2px 10px;
-  border-radius: 12px;
-  background: #f0a500;
-  border: 1px solid #d69200;
-  color: white;
-  font-size: 12px;
-  font-weight: 600;
 `;
 
 // Inline unlock pointer rendered by the ABI/Interact tabs when the contract
@@ -1927,24 +1913,27 @@ export default function Contract() {
                     // answer is '[]' for unverified contracts — render the
                     // paste itself with its provenance annotation instead
                     // of an empty array that reads as a broken surface.
-                    <>
-                      <span className={customAbiSourceStyles}>Custom ABI (this browser)</span>
-                      <SourceCodeViewer sourceCode={customAbiRaw ?? ''} />
-                    </>
-                  ) : (
-                    <SourceCodeViewer
-                      sourceCode={
-                        contractTarget === 'impl' && contractSource.implementationContract?.abi
-                          ? JSON.stringify(
-                              JSON.parse(contractSource.implementationContract.abi),
-                              null,
-                              2,
-                            )
-                          : contractSource.abi
-                            ? JSON.stringify(JSON.parse(contractSource.abi), null, 2)
-                            : 'No ABI available'
-                      }
+                    <AbiListPanel
+                      abi={parseAbiEntries(customAbiRaw ?? '')}
+                      rawJson={customAbiRaw ?? ''}
+                      provenanceLabel="Custom ABI (this browser)"
                     />
+                  ) : contractTarget === 'impl' && contractSource.implementationContract?.abi ? (
+                    <AbiListPanel
+                      abi={parseAbiEntries(contractSource.implementationContract.abi)}
+                      rawJson={JSON.stringify(
+                        JSON.parse(contractSource.implementationContract.abi),
+                        null,
+                        2,
+                      )}
+                    />
+                  ) : contractSource.abi ? (
+                    <AbiListPanel
+                      abi={parseAbiEntries(contractSource.abi)}
+                      rawJson={JSON.stringify(JSON.parse(contractSource.abi), null, 2)}
+                    />
+                  ) : (
+                    <SourceCodeViewer sourceCode="No ABI available" />
                   )}
                 </div>
               ))}

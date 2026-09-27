@@ -42,6 +42,7 @@ export * from './rpcConfig';
 export * from './rpcConfigService';
 export * from './rpcErrorHandler';
 export * from './rawTxDecode';
+export * from './viemScript';
 export * from './serialization';
 export * from './sorting-optimization';
 export * from './stateOverride';

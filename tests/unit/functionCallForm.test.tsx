@@ -403,7 +403,7 @@ describe('FunctionCallForm cast copy actions', () => {
   const calldataButton = () => screen.getByRole('button', { name: 'Copy calldata' });
 
   it('copies a runnable cast call command for the filled args', async () => {
-    const writeText = vi.fn(async () => undefined);
+    const writeText = vi.fn(async (_text: string) => undefined);
     stubClipboard(writeText);
     const func = makeFunc([{ name: 'who', type: 'address' }], 'balanceOf');
     renderForm(func, { contractAddress: CONTRACT });
@@ -434,7 +434,7 @@ describe('FunctionCallForm cast copy actions', () => {
   });
 
   it('copies the send variant with the key placeholder for write functions', async () => {
-    const writeText = vi.fn(async () => undefined);
+    const writeText = vi.fn(async (_text: string) => undefined);
     stubClipboard(writeText);
     const func = makeWriteFunc(
       [
@@ -456,7 +456,7 @@ describe('FunctionCallForm cast copy actions', () => {
   });
 
   it('switches to the encoded-calldata form for array args and copies the raw bytes', async () => {
-    const writeText = vi.fn(async () => undefined);
+    const writeText = vi.fn(async (_text: string) => undefined);
     stubClipboard(writeText);
     const func = makeFunc([{ name: 'owners', type: 'address[]' }], 'getOwners');
     renderForm(func, { contractAddress: CONTRACT });
@@ -529,5 +529,114 @@ describe('FunctionCallForm cast copy actions', () => {
 
     expect(await screen.findByRole('button', { name: 'Copy failed' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Copied ✓' })).not.toBeInTheDocument();
+  });
+});
+
+describe('FunctionCallForm viem copy action', () => {
+  // Same clipboard stubbing approach as the cast tests: fireEvent plus a
+  // direct platform-API stub (userEvent swaps in its own clipboard).
+  const stubClipboard = (writeText?: (text: string) => Promise<void>) => {
+    Object.defineProperty(navigator, 'clipboard', {
+      value: writeText ? { writeText } : undefined,
+      configurable: true,
+    });
+  };
+
+  const viemButton = () => screen.getByRole('button', { name: 'Copy as viem' });
+
+  it('renders beside the cast actions and copies a read snippet', async () => {
+    const writeText = vi.fn(async (_text: string) => undefined);
+    stubClipboard(writeText);
+    const func = makeFunc(
+      [
+        { name: 'who', type: 'address' },
+        { name: 'amount', type: 'uint256' },
+      ],
+      'balanceOf',
+    );
+    renderForm(func, { contractAddress: CONTRACT });
+
+    expect(viemButton()).toBeInTheDocument();
+    expect(viemButton()).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText('who (address)'), { target: { value: ADDR_A } });
+    fireEvent.change(screen.getByLabelText('amount (uint256)'), { target: { value: '1000' } });
+    fireEvent.click(viemButton());
+
+    expect(writeText).toHaveBeenCalledTimes(1);
+    const script = writeText.mock.calls[0][0];
+    expect(script).toContain('createPublicClient');
+    expect(script).toContain('await client.readContract({');
+    expect(script).toContain(`address: '${CONTRACT}'`);
+    expect(script).toContain('functionName: \'balanceOf\'');
+    // Int args ride as bigint literals — type-clean against viem's args.
+    expect(script).toContain('1000n');
+    expect(script).not.toContain('writeContract');
+    expect(await screen.findByRole('button', { name: 'Copied ✓' })).toBeInTheDocument();
+  });
+
+  it('copies a wallet write snippet with the key placeholder and wei value', async () => {
+    const writeText = vi.fn(async (_text: string) => undefined);
+    stubClipboard(writeText);
+    const func = makeWriteFunc(
+      [
+        { name: 'to', type: 'address' },
+        { name: 'amount', type: 'uint256' },
+      ],
+      'transfer',
+    );
+    renderForm(func, { contractAddress: CONTRACT });
+
+    fireEvent.change(screen.getByLabelText('to (address)'), { target: { value: ADDR_A } });
+    fireEvent.change(screen.getByLabelText('amount (uint256)'), { target: { value: '1' } });
+    fireEvent.change(screen.getByLabelText('Value (ETH)'), { target: { value: '0.1' } });
+    fireEvent.click(viemButton());
+
+    const script = writeText.mock.calls[0][0];
+    expect(script).toContain('createWalletClient');
+    expect(script).toContain('privateKeyToAccount(\'<ENTER_YOUR_KEY>\')');
+    expect(script).toContain('await client.writeContract({');
+    // parseEther('0.1') — the payable value embeds as a bigint literal.
+    expect(script).toContain('value: 100000000000000000n,');
+  });
+
+  it('disables with the offending field as tooltip while args are incomplete', () => {
+    const func = makeFunc([{ name: 'who', type: 'address' }], 'balanceOf');
+    renderForm(func, { contractAddress: CONTRACT });
+
+    expect(viemButton()).toBeDisabled();
+    expect(viemButton()).toHaveAttribute('title', 'who: required');
+
+    fireEvent.change(screen.getByLabelText('who (address)'), { target: { value: 'nope' } });
+    expect(viemButton()).toHaveAttribute('title', 'who: invalid address');
+
+    fireEvent.change(screen.getByLabelText('who (address)'), { target: { value: ADDR_A } });
+    expect(viemButton()).toBeEnabled();
+  });
+
+  it('embeds the panel abi error entries in the snippet', async () => {
+    const writeText = vi.fn(async (_text: string) => undefined);
+    stubClipboard(writeText);
+    const func = makeFunc([{ name: 'who', type: 'address' }], 'balanceOf');
+    renderForm(func, {
+      contractAddress: CONTRACT,
+      abi: [
+        {
+          type: 'function',
+          name: 'balanceOf',
+          stateMutability: 'view',
+          inputs: [{ name: 'who', type: 'address' }],
+          outputs: [],
+        },
+        { type: 'error', name: 'Denied', inputs: [] },
+      ] satisfies Abi,
+    });
+
+    fireEvent.change(screen.getByLabelText('who (address)'), { target: { value: ADDR_A } });
+    fireEvent.click(viemButton());
+
+    const script = writeText.mock.calls[0][0];
+    expect(script).toContain('"type": "error"');
+    expect(script).toContain('"name": "Denied"');
   });
 });

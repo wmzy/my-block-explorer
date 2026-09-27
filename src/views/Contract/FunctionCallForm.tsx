@@ -7,6 +7,8 @@ import { Collapsible } from '@/components/ui/Collapsible';
 import { CopyableHash } from '@/components/ui/CopyableHash';
 import { getFunctionSelector, formatSelectorForDisplay } from '@/utils/functionSelector';
 import { buildCastCommand } from '@/utils/castCommand';
+import { buildViemScript } from '@/utils/viemScript';
+import { copyText } from '@/util/clipboard';
 import { formatResultWithLinks } from '@/utils/addressTypeDetection';
 import { functionSignature, type EnhancedContractFunction } from '@/utils/contractInteraction';
 import {
@@ -144,7 +146,8 @@ const buttonWriteStyles = css`
   }
 `;
 
-// Submit plus the two cast-copy actions share one footer row.
+// Submit plus the copy actions (cast command, viem script, raw calldata)
+// share one footer row.
 const formFooterStyles = css`
   display: flex;
   align-items: center;
@@ -434,10 +437,38 @@ export function FunctionCallForm({
       ? { ok: false as const, reason: 'no default RPC URL known for this chain' }
       : encodedCall;
 
+  // The viem snippet embeds its own rpc url and chain metadata, so it
+  // needs no default-RPC gate: any state that parses copies a complete
+  // script. The chain shape comes from the same resolution the form's
+  // labels use; the panel's raw error entries ride along so a revert in
+  // the pasted script decodes to its name and args.
+  const abiErrors = (abi ?? []).filter(entry => entry.type === 'error');
+  const chainInfo = getChainInfo(chainId);
+  const viemScript =
+    contractAddress === undefined
+      ? ({ ok: false as const, reason: 'contract address unavailable' })
+      : !encodedCall.ok
+          ? encodedCall
+          : buildViemScript({
+              func,
+              rawArgs: args,
+              contractAddress,
+              rpcUrl: getDefaultRpcUrl(chainId),
+              valueWei: isPayable && valueWei !== '' ? valueWei : undefined,
+              overloadInputCounts,
+              chain: {
+                id: chainId,
+                name: getChainName(chainId),
+                nativeSymbol,
+                rpcUrls: chainInfo?.rpcUrls.default.http ?? [],
+              },
+              errors: abiErrors,
+            });
+
   // Label-swap feedback for the copy buttons (SourceCodeViewer/RawJson
   // pattern): the button itself reports the honest clipboard outcome.
   const [copyFeedback, setCopyFeedback] = useState<{
-    which: 'cast' | 'calldata';
+    which: 'cast' | 'calldata' | 'viem';
     ok: boolean;
   } | null>(null);
   const copyTimerRef = useRef<number | undefined>(undefined);
@@ -448,18 +479,16 @@ export function FunctionCallForm({
     };
   }, []);
 
-  const handleCopy = async (which: 'cast' | 'calldata', text: string) => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setCopyFeedback({ which, ok: true });
-    } catch {
-      setCopyFeedback({ which, ok: false });
-    }
+  const handleCopy = async (which: 'cast' | 'calldata' | 'viem', text: string) => {
+    // copyText covers insecure contexts (execCommand fallback) and never
+    // throws — the boolean is the honest clipboard outcome.
+    const ok = await copyText(text);
+    setCopyFeedback({ which, ok });
     if (copyTimerRef.current !== undefined) window.clearTimeout(copyTimerRef.current);
     copyTimerRef.current = window.setTimeout(() => setCopyFeedback(null), 2000);
   };
 
-  const copyLabel = (which: 'cast' | 'calldata', idle: string) =>
+  const copyLabel = (which: 'cast' | 'calldata' | 'viem', idle: string) =>
     copyFeedback?.which === which ? (copyFeedback.ok ? 'Copied ✓' : 'Copy failed') : idle;
 
   // --- Wallet send ---------------------------------------------------------
@@ -819,6 +848,22 @@ export function FunctionCallForm({
             }
           >
             {copyLabel('calldata', 'Copy calldata')}
+          </button>
+          {/* Same parse gate as the cast actions but no default-RPC
+              requirement — the snippet embeds the chain's rpc url itself
+              and stays complete on chains without a curated default. */}
+          <button
+            type="button"
+            className={copyButtonStyles}
+            disabled={!viemScript.ok}
+            onClick={() => void handleCopy('viem', viemScript.ok ? viemScript.script : '')}
+            title={
+              viemScript.ok
+                ? 'Copy a runnable viem TypeScript snippet for this call — embeds the abi (error entries included) and the chain\'s rpc url'
+                : viemScript.reason
+            }
+          >
+            {copyLabel('viem', 'Copy as viem')}
           </button>
         </div>
 

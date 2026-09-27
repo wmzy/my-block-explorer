@@ -1258,3 +1258,46 @@ pnpm typecheck           # tsc --noEmit
   full runnable snippet with the marker-idiom expr; with `writeText`
   sabotaged to reject, the button still flips to `Copied ✓` via the
   execCommand fallback with zero textarea leak).
+- **2026-09-27 Interact copy-as-viem + ABI list view (2 agents + integration)** —
+  two contract-page features (all verified: tsc clean, eslint 0 errors,
+  `vitest --changed` 18 files / 262 tests green, live Chromium smoke on
+  mainnet WETH + UniversalRouter through the vite bridge):
+  **Copy as viem** — `src/utils/viemScript.ts` pure `buildViemScript`
+  (mirrors `buildCastCommand`'s `{ok,script|reason}` contract and reuses the
+  same `toAbiFunction` — exported from castCommand at integration, was
+  agent-duplicated): READ → createPublicClient/readContract snippet, WRITE →
+  createWalletClient/writeContract with the `<ENTER_YOUR_KEY>` placeholder +
+  replace-key comment (cast's honesty pattern); `value: <wei>n` only when
+  payable + value parses; chain via curated map for EXACTLY the 10
+  POPULAR_CHAINS ids (`import { polygon } from 'viem/chains'`, test asserts
+  every mapped export exists) with inline `defineChain` for all other ids;
+  args literalized descriptor-aware (ints as bigint `123n` literals, arrays/
+  tuples positional — never JSON.stringify, bigint throws); the snippet's
+  `abi` const embeds the panel's error entries verbatim so reverts decode.
+  Footer third button "Copy as viem"; `handleCopy` migrated to
+  `util/clipboard.ts copyText` (insecure-context fallback — the flagged
+  failure class).
+  **ABI list view** — the ABI tab renders a selectable list by default
+  (`views/Contract/abiList.ts` pure + `AbiListPanel.tsx`): categories
+  read/write/event/error/other (constructor/receive/fallback → other; empty
+  categories hidden) with counts, name filter, per-category select-all,
+  multi-select checkboxes, `Copy selected (N)` merging selected entries
+  (original ABI order) into a JSON array — **ALL error entries are ALWAYS
+  merged in even when unselected** (hard requirement: pasted fragments must
+  decode custom errors; standing note "Always includes N error definitions
+  so reverts decode", hidden when 0). "Raw JSON" toggle keeps the old
+  byte-identical dump (incl. custom-ABI provenance chip); locked/unlock-hint
+  path untouched. Uses copyText + Copied ✓/Copy failed feedback.
+  **Smoke finds (pinned)**: (1) page-level `window`/`document` refs in
+  `tab.run` code hit the TAB runtime, not the page — all DOM work must go
+  through `page.evaluate`; (2) FunctionCallForm blocks key on the function
+  SELECTOR text (e.g. `0x06fdde03`), not `name()` — the signature renders as
+  separate name/badge nodes; (3) collapsed Collapsible content keeps inputs
+  in the DOM but invisible (offsetWidth 0) — expand via the cursor:pointer
+  header div's click event before typing; (4) the clipboard between cells
+  can hold the previous copy — always correlate clip content with the click
+  that just ran; (5) cached `contract_sources` rows can carry an empty ABI
+  (Seaport/EntryPoint/UniversalRouter listings may show `abiHasNoEntries` →
+  unlock hint) — pick smoke fixtures by probing `/source` for non-empty ABI
+  first (WETH `...756Cc2`, note the 756 — `...753` is a different, wrong
+  address).

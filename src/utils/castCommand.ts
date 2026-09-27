@@ -178,7 +178,9 @@ function shellQuote(text: string): string {
 
 // Single-entry ABI for viem's encoder, built from the same input
 // descriptors the form validates against (tuple components preserved).
-function toAbiFunction(func: CastableFunction, inputs: readonly ParamDescriptor[]): AbiFunction {
+// Shared with viemScript — both builders must embed the exact entry the
+// form's encode path would produce.
+export function toAbiFunction(func: CastableFunction, inputs: readonly ParamDescriptor[]): AbiFunction {
   return {
     type: 'function',
     name: func.name,

@@ -294,9 +294,11 @@ describe('Contract view', () => {
 
     expect(await screen.findByRole('heading', { name: 'Contract ABI' })).toBeInTheDocument();
     expect(screen.getByTestId('search-probe')).toHaveTextContent('tab=abi');
-    // Panel switched: the ABI tab renders the pretty-printed ABI, not the
-    // Solidity source.
-    expect(screen.getByText(/"type": "event"/)).toBeInTheDocument();
+    // Panel switched: the ABI tab defaults to the categorized list (the
+    // fixture's read function and event render as selectable rows), not
+    // the Solidity source.
+    expect(screen.getByRole('checkbox', { name: 'name()' })).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'event Transfer()' })).toBeInTheDocument();
     expect(screen.queryByText(/pragma solidity/)).not.toBeInTheDocument();
   });
 
@@ -847,7 +849,7 @@ describe('Contract view proxy with unverified implementation (B2)', () => {
     // server ABI unlocks the tab without any pasting.
     await user.click(screen.getByRole('button', { name: 'Switch to Proxy view' }));
     expect(await screen.findByRole('heading', { name: 'Proxy Contract ABI' })).toBeInTheDocument();
-    expect(screen.getByText(/"type": "event"/)).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'event Transfer()' })).toBeInTheDocument();
     expect(screen.queryByText(/Implementation not verified/)).not.toBeInTheDocument();
   });
 
@@ -897,9 +899,16 @@ describe('Contract view custom ABI on the ABI tab (B3)', () => {
 
     await user.click(await screen.findByRole('button', { name: 'ABI' }));
 
-    // The paste itself (exactly as stored) renders, with the annotation
-    // naming where it comes from.
+    // The paste's entries render as the categorized list with the
+    // annotation naming where they come from.
     expect(await screen.findByText('Custom ABI (this browser)')).toBeInTheDocument();
+    expect(
+      screen.getByRole('checkbox', { name: 'event Transfer(address, address, uint256)' }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'name() returns (string)' })).toBeInTheDocument();
+
+    // The raw view still renders the paste exactly as stored.
+    await user.click(screen.getByRole('button', { name: 'Raw JSON' }));
     const viewer = screen.getByTestId('source-viewer');
     expect(viewer).toHaveTextContent('"type":"event"');
     expect(viewer).toHaveTextContent('"name":"Transfer"');
@@ -915,6 +924,9 @@ describe('Contract view custom ABI on the ABI tab (B3)', () => {
     await user.click(await screen.findByRole('button', { name: 'ABI' }));
 
     expect(screen.queryByText('Custom ABI (this browser)')).not.toBeInTheDocument();
+    // The server ABI's raw view is the same pretty-printed JSON as before
+    // (behind the toggle; the list is the new default surface).
+    await user.click(screen.getByRole('button', { name: 'Raw JSON' }));
     expect(screen.getByTestId('source-viewer')).toHaveTextContent('"type": "event"');
   });
 });
