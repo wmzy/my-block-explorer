@@ -1,12 +1,14 @@
 // FunctionCallForm wiring tests: the pure parser's output actually drives
 // the form — composite inputs submit as real JS arrays/tuples, invalid
-// values render field-level inline errors (no submit), trailing inputs may
-// be left empty (omitted from the call, hinted via placeholder), and a
-// non-trailing empty input blocks the submit with a 'required' error.
+// values render field-level inline errors (no submit), trailing inputs
+// may be left empty only when the abi carries a same-name overload
+// accepting the filled count (omitted from the call, hinted via
+// placeholder), and any other empty input blocks the submit with a
+// 'required' error.
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { encodeFunctionData } from 'viem';
-import type { AbiFunction } from 'viem';
+import type { Abi, AbiFunction } from 'viem';
 
 import { FunctionCallForm } from '@/views/Contract/FunctionCallForm';
 import { getDefaultRpcUrl } from '@/config/chains';
@@ -44,7 +46,10 @@ const makeWriteFunc = (inputs: ContractFunctionInput[], name = 'f'): TestFunctio
   source: 'impl',
 });
 
-function renderForm(func: TestFunction, options?: { contractAddress?: string; chainId?: number }) {
+function renderForm(
+  func: TestFunction,
+  options?: { contractAddress?: string; chainId?: number; abi?: Abi },
+) {
   const onCall = vi.fn();
   render(
     <FunctionCallForm
@@ -56,6 +61,7 @@ function renderForm(func: TestFunction, options?: { contractAddress?: string; ch
       chainId={options?.chainId ?? 1}
       blockNumber=""
       contractAddress={options?.contractAddress}
+      abi={options?.abi}
     />,
   );
   // Function forms render collapsed; expand like a real user would.
@@ -177,63 +183,145 @@ describe('FunctionCallForm composite arguments', () => {
 });
 
 describe('FunctionCallForm trailing-optional rule', () => {
-  const func = makeFunc(
+  // ERC-223-style overload family: the abi carries both the 2-input and
+  // the 3-input transfer, so the form's third input is genuinely
+  // omittable once two are filled.
+  const transferAbi = [
+    {
+      type: 'function',
+      name: 'transfer',
+      stateMutability: 'nonpayable',
+      inputs: [
+        { name: 'to', type: 'address' },
+        { name: 'amount', type: 'uint256' },
+      ],
+      outputs: [],
+    },
+    {
+      type: 'function',
+      name: 'transfer',
+      stateMutability: 'nonpayable',
+      inputs: [
+        { name: 'to', type: 'address' },
+        { name: 'amount', type: 'uint256' },
+        { name: 'data', type: 'bytes' },
+      ],
+      outputs: [],
+    },
+  ] satisfies Abi;
+
+  const transfer3 = makeFunc(
     [
-      { name: 'owner', type: 'address' },
+      { name: 'to', type: 'address' },
       { name: 'amount', type: 'uint256' },
+      { name: 'data', type: 'bytes' },
     ],
-    'setOwner',
+    'transfer',
   );
 
-  it('omits an empty trailing input from the submitted values', () => {
-    const onCall = renderForm(func);
+  it('omits an empty trailing input when the abi has the shorter overload', () => {
+    const onCall = renderForm(transfer3, { abi: transferAbi });
+
+    // All-empty start: nothing is omittable yet (a 0-argument transfer
+    // does not exist); the affordance appears once two are filled.
+    expect(screen.getByLabelText('data (bytes)')).toHaveAttribute('placeholder', 'Enter bytes');
+
+    fireEvent.change(screen.getByLabelText('to (address)'), { target: { value: ADDR_A } });
+    fireEvent.change(screen.getByLabelText('amount (uint256)'), { target: { value: '5' } });
+
+    expect(screen.getByLabelText('data (bytes)')).toHaveAttribute(
+      'placeholder',
+      'optional — leave empty to omit',
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Query' }));
+
+    expect(onCall).toHaveBeenCalledWith(transfer3, [ADDR_A, '5'], [ADDR_A, '5', ''], undefined, undefined, undefined);
+  });
+
+  it('never promises omission while the filled count matches no overload', () => {
+    renderForm(transfer3, { abi: transferAbi });
+
+    // Only one input filled: a 1-argument transfer does not exist, so no
+    // input is advertised as omittable.
+    fireEvent.change(screen.getByLabelText('to (address)'), { target: { value: ADDR_A } });
+    expect(screen.getByLabelText('amount (uint256)')).toHaveAttribute(
+      'placeholder',
+      'Enter uint256',
+    );
+    expect(screen.getByLabelText('data (bytes)')).toHaveAttribute('placeholder', 'Enter bytes');
+  });
+
+  it('does not advertise omission without an abi to consult', async () => {
+    const func = makeFunc(
+      [
+        { name: 'owner', type: 'address' },
+        { name: 'amount', type: 'uint256' },
+      ],
+      'setOwner',
+    );
+    renderForm(func);
+
+    expect(screen.getByLabelText('owner (address)')).toHaveAttribute(
+      'placeholder',
+      'Enter address',
+    );
+    expect(screen.getByLabelText('amount (uint256)')).toHaveAttribute(
+      'placeholder',
+      'Enter uint256',
+    );
 
     fireEvent.change(screen.getByLabelText('owner (address)'), {
       target: { value: ADDR_A },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Query' }));
 
-    expect(onCall).toHaveBeenCalledWith(func, [ADDR_A], [ADDR_A, ''], undefined, undefined, undefined);
+    expect(await screen.findByText('amount: required')).toBeInTheDocument();
   });
 
-  it('hints the omission on inputs that may be left empty', () => {
-    renderForm(func);
-
-    expect(screen.getByLabelText('amount (uint256)')).toHaveAttribute(
-      'placeholder',
-      'optional — leave empty to omit',
-    );
-    // With the amount still empty, the owner input is also part of the
-    // omittable trailing run; filling the amount makes it required again.
-    expect(screen.getByLabelText('owner (address)')).toHaveAttribute(
-      'placeholder',
-      'optional — leave empty to omit',
-    );
-
-    fireEvent.change(screen.getByLabelText('amount (uint256)'), {
-      target: { value: '5' },
+  it('blocks an empty submit of a single-input function at the field level', async () => {
+    // balanceOf(address): no shorter overload exists, so the empty
+    // submit must never reach the encoder (which would either throw a
+    // generic length mismatch or encode a wrong selector).
+    const balanceOfAbi = [
+      {
+        type: 'function',
+        name: 'balanceOf',
+        stateMutability: 'view',
+        inputs: [{ name: 'account', type: 'address' }],
+        outputs: [{ name: '', type: 'uint256' }],
+      },
+    ] satisfies Abi;
+    const balanceOf = makeFunc([{ name: 'account', type: 'address' }], 'balanceOf');
+    const onCall = renderForm(balanceOf, {
+      abi: balanceOfAbi,
+      contractAddress: CONTRACT,
     });
-    expect(screen.getByLabelText('owner (address)')).toHaveAttribute(
+
+    expect(screen.getByLabelText('account (address)')).toHaveAttribute(
       'placeholder',
       'Enter address',
     );
-    // The last input stays omittable no matter what follows (nothing
-    // does); with a value entered its placeholder is simply not shown.
-    expect(screen.getByLabelText('amount (uint256)')).toHaveAttribute(
-      'placeholder',
-      'optional — leave empty to omit',
-    );
+    // The cast/wallet consumers of the same encode are gated too: an
+    // unencodable call must disable them instead of fabricating a
+    // balanceOf() selector that does not exist on the contract.
+    expect(screen.getByRole('button', { name: 'Copy as cast' })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Query' }));
+
+    expect(await screen.findByText('account: required')).toBeInTheDocument();
+    expect(onCall).not.toHaveBeenCalled();
   });
 
   it('blocks a non-trailing empty input with a required error', async () => {
-    const onCall = renderForm(func);
+    const onCall = renderForm(transfer3, { abi: transferAbi });
 
     fireEvent.change(screen.getByLabelText('amount (uint256)'), {
       target: { value: '5' },
     });
     fireEvent.click(screen.getByRole('button', { name: 'Query' }));
 
-    expect(await screen.findByText('owner: required')).toBeInTheDocument();
+    expect(await screen.findByText('to: required')).toBeInTheDocument();
     expect(onCall).not.toHaveBeenCalled();
   });
 });
@@ -334,6 +422,10 @@ describe('FunctionCallForm cast copy actions', () => {
     renderForm(makeFunc([{ name: 'who', type: 'address' }], 'balanceOf'), {
       contractAddress: CONTRACT,
     });
+
+    // The copy actions only enable once the call encodes — an empty
+    // required arg would disable them with the field error instead.
+    fireEvent.change(screen.getByLabelText('who (address)'), { target: { value: ADDR_A } });
 
     expect(castButton()).toHaveAttribute(
       'title',

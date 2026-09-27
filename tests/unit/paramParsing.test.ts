@@ -9,6 +9,7 @@ import {
   describeRevertedCall,
   paramLabel,
   parseFunctionArgs,
+  sameNameInputCounts,
 } from '@/views/Contract/paramParsing';
 import type { ParamDescriptor } from '@/views/Contract/paramParsing';
 import { ApiError } from '@/util/apiError';
@@ -206,6 +207,94 @@ describe('parseFunctionArgs empty-input rule', () => {
     const result = parse([param('', 'address'), param('n', 'uint256')], ['', '5']);
     expect(result.fieldErrors[0]).toBe('arg 0: required');
     expect(paramLabel(param('', 'uint256'), 1)).toBe('arg 1');
+  });
+});
+
+describe('parseFunctionArgs overload-aware omission', () => {
+  // A 3-input entry whose abi also carries the 2-input same-name
+  // overload (ERC-223-style transfer family).
+  const transferInputs = [
+    param('to', 'address'),
+    param('amount', 'uint256'),
+    param('data', 'bytes'),
+  ];
+
+  it('omits the trailing run when a shorter overload accepts the filled count', () => {
+    const result = parseFunctionArgs(transferInputs, [ADDR_A, '5', ''], [2, 3]);
+    expect(result.isValid).toBe(true);
+    expect(result.values).toEqual([ADDR_A, '5']);
+  });
+
+  it('flags the first empty input when no overload accepts the filled count', () => {
+    // Overloads of 2 and 4 inputs: three filled arguments resolve to
+    // neither — the omission would fabricate an unresolvable call.
+    const result = parseFunctionArgs(
+      [param('a', 'address'), param('b', 'uint256'), param('c', 'bytes'), param('d', 'bytes')],
+      [ADDR_A, '5', '0xdeadbeef', ''],
+      [2, 4],
+    );
+    expect(result.isValid).toBe(false);
+    expect(result.fieldErrors).toEqual(['', '', '', 'd: required']);
+  });
+
+  it('rejects an empty single-input signature with no shorter overload', () => {
+    // balanceOf(address): counts carry only its own length, so an empty
+    // submit must stop at the field instead of reaching the encoder
+    // (which throws a generic length mismatch).
+    const result = parseFunctionArgs([param('account', 'address')], [''], [1]);
+    expect(result.isValid).toBe(false);
+    expect(result.fieldErrors).toEqual(['account: required']);
+  });
+
+  it('accepts a fully filled form regardless of the count set', () => {
+    const result = parseFunctionArgs(transferInputs, [ADDR_A, '5', '0xdeadbeef'], [2, 3]);
+    expect(result.isValid).toBe(true);
+    expect(result.values).toEqual([ADDR_A, '5', '0xdeadbeef']);
+  });
+
+  it('keeps the permissive legacy rule when no count set is given', () => {
+    // Callers without a full-ABI view keep the old semantics: the
+    // encoder is the only remaining gate.
+    const result = parseFunctionArgs(transferInputs, [ADDR_A, '', '']);
+    expect(result.isValid).toBe(true);
+    expect(result.values).toEqual([ADDR_A]);
+  });
+});
+
+describe('sameNameInputCounts', () => {
+  it('collects the input counts of every same-name entry', () => {
+    const abi = parseAbi([
+      'function transfer(address to, uint256 amount) returns (bool)',
+      'function transfer(address to, uint256 amount, bytes data) returns (bool)',
+      'function balanceOf(address account) view returns (uint256)',
+      'event Transfer(address indexed from, address indexed to, uint256 value)',
+    ]);
+    expect(sameNameInputCounts(abi, 'transfer')).toEqual([2, 3]);
+    expect(sameNameInputCounts(abi, 'balanceOf')).toEqual([1]);
+  });
+
+  it('treats a same-name event as a resolution candidate (viem parity)', () => {
+    // viem's getAbiItem filters by name only, so a Transfer-style event
+    // named like the function counts toward the set.
+    const abi = parseAbi([
+      'function balanceOf(address account) view returns (uint256)',
+      'event balanceOf(address who)',
+    ]);
+    expect(sameNameInputCounts(abi, 'balanceOf')).toEqual([1]);
+  });
+
+  it('counts entries with a missing inputs array as zero', () => {
+    // Raw JSON.parse'd ABI entries may omit `inputs` (same guard as
+    // functionSignature).
+    const abi = [
+      { type: 'function', name: 'f', stateMutability: 'view', outputs: [] },
+    ] as unknown as Abi;
+    expect(sameNameInputCounts(abi, 'f')).toEqual([0]);
+  });
+
+  it('returns an empty set for an unknown name or missing abi', () => {
+    expect(sameNameInputCounts(parseAbi(['function f()']), 'g')).toEqual([]);
+    expect(sameNameInputCounts(undefined, 'f')).toEqual([]);
   });
 });
 

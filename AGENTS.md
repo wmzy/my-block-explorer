@@ -341,9 +341,16 @@ pnpm typecheck           # tsc --noEmit
   `verify.sourcify.dev/widget?chainId=&address=` (plus the Force Refresh
   hint that closes the verify→return→refresh loop). Interact parses
   composite args (arrays/tuples; JSON or bare comma lists) with field-level
-  inline errors (`addrs[1]: invalid address`), lets the trailing run of
-  params be left empty (omitted from the encoded call), and classifies
-  failures honestly (`views/Contract/paramParsing.ts`: API vs network vs
+  inline errors (`addrs[1]: invalid address`), and the trailing run of
+  params may be left empty ONLY when the panel's abi actually carries a
+  same-name overload accepting exactly the filled count
+  (`sameNameInputCounts`/`overloadInputCounts` in `views/Contract/
+  paramParsing.ts` — viem resolves overloads by argument count): a
+  single-input function like `balanceOf` never promises omission, an
+  empty submit stops at a field-level `required` error, and
+  `buildCastCommand` refuses the same states so the copy/wallet paths can
+  never encode a shortened signature's (nonexistent) selector. Failure
+  classification (`views/Contract/paramParsing.ts`: API vs network vs
   encoding). Backend-unreachable errors (ApiError status 0,
   `isBackendUnreachable` in `util/http.ts`) render `BackendOfflineState`:
   cause attribution + `npx my-block-explorer --port 8201` + retry via the

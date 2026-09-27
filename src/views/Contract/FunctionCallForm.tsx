@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { css } from '@linaria/core';
 import { numberToHex, parseEther, type Abi, type StateOverride as ViemStateOverride } from 'viem';
@@ -18,7 +18,12 @@ import {
   walletChainId,
   type EIP1193Provider,
 } from '@/util/wallet';
-import { describeRevertedCall, parseFunctionArgs, ADDRESS_PATTERN } from './paramParsing';
+import {
+  describeRevertedCall,
+  parseFunctionArgs,
+  sameNameInputCounts,
+  ADDRESS_PATTERN,
+} from './paramParsing';
 import { parseStateOverrideInput, toViemStateOverride } from './stateOverrideInput';
 import { argsKey } from './types';
 
@@ -377,6 +382,16 @@ export function FunctionCallForm({
 
   const isPayable = func.interactionType === 'write' && func.stateMutability === 'payable';
 
+  // Overload-aware omission gate: the trailing-empty affordance is real
+  // only when the abi actually carries a same-name signature accepting
+  // exactly the filled-argument count (that is how viem resolves
+  // overloads). Without an abi to consult only this signature's own
+  // count is known — nothing is promised as omittable.
+  const overloadInputCounts = useMemo(() => {
+    const counts = sameNameInputCounts(abi, func.name);
+    return counts.includes(func.inputs.length) ? counts : [...counts, func.inputs.length];
+  }, [abi, func.name, func.inputs.length]);
+
   // Wei equivalent of the current native-currency input; '' when empty or
   // not (yet) parseable. Used both as the key fragment shared with the
   // parent and as the wei helper display under the field.
@@ -408,6 +423,7 @@ export function FunctionCallForm({
             contractAddress,
             rpcUrl: getDefaultRpcUrl(chainId),
             valueWei: isPayable && valueWei !== '' ? valueWei : undefined,
+            overloadInputCounts,
           });
 
   // The pasted command additionally requires a known default RPC (its
@@ -530,7 +546,7 @@ export function FunctionCallForm({
     // tuples) become real JS values, scalars are validated, and every
     // failure lands on its own field instead of surfacing after submit as
     // a generic encoding error.
-    const { values, fieldErrors, isValid } = parseFunctionArgs(func.inputs, args);
+    const { values, fieldErrors, isValid } = parseFunctionArgs(func.inputs, args, overloadInputCounts);
     setArgErrors(fieldErrors);
 
     // Payable value is entered in the chain's native currency and converted
@@ -619,10 +635,15 @@ export function FunctionCallForm({
     </span>
   );
 
-  // An input may be left empty only when every following input is empty
-  // too — that trailing run is omitted from the encoded call — so the
-  // placeholder advertises the option exactly where it applies.
-  const isOmittable = (index: number) => args.slice(index + 1).every(arg => arg.trim() === '');
+  // An input may be left empty only when it starts the trailing run of
+  // empty inputs (everything after the last filled one) AND the abi can
+  // resolve the shortened call — a same-name overload accepting exactly
+  // the filled count. The placeholder advertises the option exactly
+  // where it applies, so a single-input function like balanceOf(address)
+  // never claims to be omittable.
+  const lastFilledIndex = args.reduce((last, value, i) => (value.trim() !== '' ? i : last), -1);
+  const omissionResolvable = overloadInputCounts.includes(lastFilledIndex + 1);
+  const isOmittable = (index: number) => omissionResolvable && index > lastFilledIndex;
 
   return (
     <Collapsible title={headerTitle} defaultExpanded={defaultExpanded} badge={badge}>

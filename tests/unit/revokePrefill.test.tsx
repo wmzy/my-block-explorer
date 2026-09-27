@@ -155,14 +155,16 @@ describe('FunctionCallForm initialArgs prefill', () => {
     expect(onCall).toHaveBeenCalledWith(approveWrite, [SPENDER, '5'], [SPENDER, '5'], undefined, undefined, undefined);
   });
 
-  it('pads a short prefill with empty inputs (trailing-empty-omit semantics intact)', () => {
+  it('pads a short prefill with empty inputs', () => {
     renderForm([SPENDER]);
 
     expect(screen.getByLabelText('spender (address)')).toHaveValue(SPENDER);
     expect(screen.getByLabelText('value (uint256)')).toHaveValue('');
+    // Without an abi carrying a 1-input approve overload, the padded
+    // empty input is honestly required — no omission is promised.
     expect(screen.getByLabelText('value (uint256)')).toHaveAttribute(
       'placeholder',
-      'optional — leave empty to omit',
+      'Enter uint256',
     );
   });
 

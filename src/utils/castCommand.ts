@@ -67,21 +67,24 @@ export function buildCastCommand({
   contractAddress,
   rpcUrl,
   valueWei,
+  overloadInputCounts,
 }: {
   func: CastableFunction;
   rawArgs: readonly (string | null | undefined)[];
   contractAddress: string;
   rpcUrl: string;
   valueWei?: string;
+  /** Same-name overload input counts (`sameNameInputCounts` output). */
+  overloadInputCounts?: readonly number[];
 }): CastCommand {
   // An explicit null/undefined argument cannot be formatted; refuse it
-  // instead of silently treating it as an omitted trailing empty.
+  // instead of silently treating it as a missing trailing empty.
   if (rawArgs.some(arg => arg == null)) {
     return { ok: false, reason: 'missing argument value' };
   }
   const args = rawArgs as readonly string[];
 
-  const parsed = parseFunctionArgs(func.inputs, args);
+  const parsed = parseFunctionArgs(func.inputs, args, overloadInputCounts);
   if (!parsed.isValid) {
     return {
       ok: false,
@@ -90,10 +93,14 @@ export function buildCastCommand({
   }
 
   // The form's trailing-empty rule: the trailing run of empty inputs is
-  // omitted from the encoded call (with an overloaded ABI, viem then
-  // selects the shorter signature). The command mirrors that on both
-  // fronts — its argument list AND its signature use the shortened
-  // inputs, so calldata and signature agree with what submit sends.
+  // omitted from the encoded call, but only when a same-name overload
+  // accepts exactly the filled count (viem resolves by argument count).
+  // Without that overload the parse above already refused — the command
+  // must never encode a shortened signature the abi does not carry, or
+  // the calldata would target a selector that does not exist on the
+  // contract. The command mirrors the omission on both fronts — its
+  // argument list AND its signature use the shortened inputs, so
+  // calldata and signature agree with what submit sends.
   const effectiveInputs = func.inputs.slice(0, parsed.values.length);
 
   let calldata: string;

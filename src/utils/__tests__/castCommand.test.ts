@@ -32,13 +32,18 @@ const makeFunc = (
   source: 'impl',
 });
 
-const build = (func: TestFunction, rawArgs: string[], extra?: { valueWei?: string }) =>
+const build = (
+  func: TestFunction,
+  rawArgs: string[],
+  extra?: { valueWei?: string; overloadInputCounts?: readonly number[] },
+) =>
   buildCastCommand({
     func,
     rawArgs,
     contractAddress: CONTRACT,
     rpcUrl: RPC,
     valueWei: extra?.valueWei,
+    overloadInputCounts: extra?.overloadInputCounts,
   });
 
 describe('buildCastCommand signature form', () => {
@@ -287,6 +292,60 @@ describe('buildCastCommand unbuildable states', () => {
     expect(build(func, [undefined as unknown as string])).toEqual({
       ok: false,
       reason: 'missing argument value',
+    });
+  });
+
+  it('refuses an empty arg when no shorter overload accepts the filled count', () => {
+    // balanceOf(address) with only its own count known: encoding the
+    // emptied form would fabricate a balanceOf() selector that does not
+    // exist on the contract.
+    const func = makeFunc([{ name: 'account', type: 'address' }], 'balanceOf');
+
+    expect(build(func, [''], { overloadInputCounts: [1] })).toEqual({
+      ok: false,
+      reason: 'account: required',
+    });
+  });
+
+  it('shortens to the overload that accepts the filled count', () => {
+    const func = makeFunc(
+      [
+        { name: 'to', type: 'address' },
+        { name: 'amount', type: 'uint256' },
+        { name: 'data', type: 'bytes' },
+      ],
+      'transfer',
+      'nonpayable',
+    );
+
+    const result = build(func, [ADDR, '5', ''], { overloadInputCounts: [2, 3] });
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      // The shortened signature names the 2-input overload — the bytes
+      // never reach the command.
+      expect(result.command).toBe(
+        `cast send ${CONTRACT} "transfer(address,uint256)" ${ADDR} 5 --rpc-url ${RPC} --private-key <ENTER_YOUR_KEY>`,
+      );
+    }
+  });
+
+  it('refuses a filled count that matches no overload', () => {
+    // Overloads of 2 and 4 inputs; three filled args resolve to neither.
+    const func = makeFunc(
+      [
+        { name: 'a', type: 'address' },
+        { name: 'b', type: 'uint256' },
+        { name: 'c', type: 'bytes' },
+        { name: 'd', type: 'bytes' },
+      ],
+      'f',
+      'nonpayable',
+    );
+
+    expect(build(func, [ADDR, '5', '0xdeadbeef', ''], { overloadInputCounts: [2, 4] })).toEqual({
+      ok: false,
+      reason: 'd: required',
     });
   });
 });

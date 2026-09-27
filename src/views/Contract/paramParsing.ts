@@ -15,9 +15,13 @@
 // precision.
 //
 // Empty-input rule: only the trailing run of empty inputs may be left
-// empty; it is omitted from the encoded call (with an overloaded ABI, viem
-// then selects the shorter signature). An empty input followed by a filled
-// one is a field-level 'required' error.
+// empty; it is omitted from the encoded call. viem resolves same-name
+// overloads by argument count, so the omission is real only when the ABI
+// carries a shorter same-name signature accepting exactly the filled
+// count (`overloadInputCounts`); otherwise the first empty input is a
+// field-level 'required' error — the same message as an empty input with
+// a filled one after it (a hole), because filling forward always reaches
+// this signature's own always-known count.
 
 import type { Abi } from 'viem';
 
@@ -68,15 +72,46 @@ export function paramLabel(input: ParamDescriptor, index: number): string {
   return input.name !== '' ? input.name : `arg ${index}`;
 }
 
+// Input counts of every same-name ABI entry (this signature included) —
+// the set viem's argument-count overload resolution can actually select.
+// The name-only filter mirrors viem's getAbiItem: every same-name entry
+// is a resolution candidate regardless of its declared type. Entries
+// without an `inputs` array count as zero (raw JSON.parse'd ABIs may omit
+// the key — same guard as `functionSignature`). An undefined abi yields
+// []: nothing about overloads is known.
+export function sameNameInputCounts(abi: Abi | undefined, name: string): number[] {
+  if (abi === undefined) return [];
+  const counts = new Set<number>();
+  for (const raw of abi) {
+    const item = raw as { name?: string; inputs?: readonly unknown[] };
+    if (item.name !== name) continue;
+    counts.add(item.inputs?.length ?? 0);
+  }
+  return [...counts];
+}
+
 // Parse the raw string inputs of a function form against its ABI inputs.
+// `overloadInputCounts` is the input-count set of every same-name ABI
+// entry (`sameNameInputCounts` output, this signature's own count
+// included); it decides whether the trailing run of empty inputs may be
+// legally omitted. Omitted when the caller has no full-ABI view — the
+// encoder is then the only remaining gate.
 export function parseFunctionArgs(
   inputs: readonly ParamDescriptor[],
   rawArgs: readonly string[],
+  overloadInputCounts?: readonly number[],
 ): ParsedArgs {
   const trimmed = inputs.map((_, i) => (rawArgs[i] ?? '').trim());
   // Index of the last filled input; everything after it is the trailing
   // run that may be left empty and omitted from the call.
   const lastFilled = trimmed.reduce((last, value, i) => (value !== '' ? i : last), -1);
+
+  // viem resolves same-name overloads by exact argument count (its
+  // getAbiItem falls back to the first same-name entry and the encode
+  // then throws a length mismatch), so the shortened call is encodable
+  // only when some overload accepts exactly the filled count.
+  const omissionResolvable =
+    overloadInputCounts === undefined || overloadInputCounts.includes(lastFilled + 1);
 
   const fieldErrors: string[] = inputs.map(() => '');
   const values: unknown[] = [];
@@ -84,7 +119,9 @@ export function parseFunctionArgs(
   for (let i = 0; i < inputs.length; i++) {
     const label = paramLabel(inputs[i], i);
     if (trimmed[i] === '') {
-      if (i <= lastFilled) {
+      // A hole (empty with a filled input after it) or an unresolvable
+      // trailing run: the first empty input names the requirement.
+      if (i <= lastFilled || (!omissionResolvable && i === lastFilled + 1)) {
         fieldErrors[i] = `${label}: required`;
       }
       continue;
