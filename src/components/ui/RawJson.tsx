@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { Card, CardHeader, CardTitle } from './Card';
 import { ErrorState } from './ErrorState';
+import { copyText } from '@/util/clipboard';
 
 // One raw-RPC payload section of the Raw JSON card. `load` receives the
 // section's abort signal so a collapse mid-flight cancels the request;
@@ -151,12 +152,9 @@ function CopyButton({ text }: { text: string }) {
   }, []);
 
   const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setResult('ok');
-    } catch {
-      setResult('fail');
-    }
+    // Shared copyText: async Clipboard API with the legacy execCommand
+    // fallback (insecure contexts); the label reports the honest outcome.
+    setResult((await copyText(text)) ? 'ok' : 'fail');
     if (timerRef.current !== undefined) window.clearTimeout(timerRef.current);
     timerRef.current = window.setTimeout(() => setResult('idle'), 2000);
   };

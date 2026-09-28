@@ -4,6 +4,7 @@ import { Alert } from 'haze-ui';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { ErrorState } from '@/components/ui/ErrorState';
+import { copyText } from '@/util/clipboard';
 
 type SetupRequiredScreenProps = {
   error: string | null;
@@ -409,12 +410,11 @@ export function SetupRequiredScreen({
   }, []);
 
   const handleCopy = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(currentCommand);
+    // copyText also covers insecure contexts via its legacy fallback;
+    // a genuine failure stays silent (as before).
+    if (await copyText(currentCommand)) {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // Silent fail - clipboard may be unavailable
     }
   }, [currentCommand]);
 

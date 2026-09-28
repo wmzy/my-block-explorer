@@ -32,6 +32,7 @@ import { useServiceDiscovery } from '@/hooks/ServiceDiscoveryContext';
 import { useSignatureLookup } from '@/services/signatures';
 import type { ResolvedSignatures, SignatureLookup } from '@/services/signatures';
 import { isBackendUnreachable } from '@/util/http';
+import { copyText } from '@/util/clipboard';
 import { readRememberedChainId } from '@/views/Home/Landing';
 
 // ---------------------------------------------------------------------------
@@ -254,12 +255,9 @@ function SignatureCopyButton({ text }: { text: string }) {
   }, []);
 
   const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setResult('ok');
-    } catch {
-      setResult('fail');
-    }
+    // Shared copyText: async Clipboard API with the legacy execCommand
+    // fallback (plain-http LAN is the common local-explorer case).
+    setResult((await copyText(text)) ? 'ok' : 'fail');
     if (timerRef.current !== undefined) window.clearTimeout(timerRef.current);
     timerRef.current = window.setTimeout(() => setResult('idle'), 2000);
   };

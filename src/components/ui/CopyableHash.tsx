@@ -2,9 +2,14 @@ import { css, cx } from '@linaria/core';
 import { Tooltip, useToast } from 'haze-ui';
 import { TypedLink } from '@native-router/react';
 import { linkStyle } from './DataTable';
+import { copyText } from '@/util/clipboard';
 
 const copyable = css`
   cursor: pointer;
+  /* Click-to-copy affordance: the hover dim glides in (the title tooltip
+     carries the full value; the cursor signals the action). */
+  transition: opacity var(--haze-duration-fast, 0.12s) var(--haze-ease, ease);
+
   &:hover {
     opacity: 0.8;
   }
@@ -23,10 +28,9 @@ export function CopyableHash({ value, truncated, href, className }: CopyableHash
   const handleCopy = async (e: React.MouseEvent) => {
     if (href) return;
     e.preventDefault();
-    try {
-      await navigator.clipboard.writeText(value);
+    if (await copyText(value)) {
       toast('Copied to clipboard!', { variant: 'success', duration: 2000 });
-    } catch {
+    } else {
       toast('Failed to copy', { variant: 'danger', duration: 2000 });
     }
   };

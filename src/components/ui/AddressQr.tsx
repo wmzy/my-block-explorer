@@ -7,6 +7,7 @@ import QRCode from 'qrcode';
 import { toast } from 'haze-ui';
 import { Button } from '@/components/ui/Button';
 import { checksummedAddressOrNull } from '@/util/privateNotes';
+import { copyText } from '@/util/clipboard';
 
 // Header icon button: the same family as the page's back button (bordered
 // subtle square), just icon-sized so it reads as a header action.
@@ -144,10 +145,9 @@ export function AddressQr({ address }: { address: string }) {
   if (payload === null) return null;
 
   const copyAddress = async () => {
-    try {
-      await navigator.clipboard.writeText(payload);
+    if (await copyText(payload)) {
       toast.info('Address copied to clipboard!', { duration: 2000 });
-    } catch {
+    } else {
       toast.danger('Failed to copy address', { duration: 2000 });
     }
   };

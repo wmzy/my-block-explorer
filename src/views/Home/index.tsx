@@ -49,11 +49,25 @@ const hero = css`
 const titleStyle = css`
   font-size: 36px;
   font-weight: var(--haze-weight-bold);
+  letter-spacing: -0.02em;
   margin: 0 0 var(--haze-space-2) 0;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  /* Token-derived gradient: tracks the light/dark palettes instead of a
+   * hardcoded purple that read dim on the dark background. */
+  background: linear-gradient(
+    135deg,
+    var(--haze-color-primary) 0%,
+    oklch(from var(--haze-color-primary) calc(l - 0.10) calc(c * 1.05) calc(h + 34)) 100%
+  );
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
+
+  /* Gradient-clipped text stays invisible inside a selection highlight
+   * (text-fill stays transparent) — restore a readable fill on select. */
+  &::selection {
+    background: var(--haze-color-primary-subtle);
+    -webkit-text-fill-color: var(--haze-color-text);
+  }
 
   @media (max-width: 768px) {
     font-size: 28px;
@@ -89,6 +103,10 @@ const statValueStyle = css`
   font-weight: var(--haze-weight-bold);
   color: var(--haze-color-text);
   margin-bottom: 2px;
+  /* Stat figures swap between renders (latest block, gas) on the poll
+     cadence — equal-width digits stop the card from reflowing each tick. */
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
 `;
 
 const statLabelStyle = css`
@@ -306,22 +324,26 @@ const gasTierValue = css`
   font-weight: var(--haze-weight-medium);
   font-family: var(--haze-font-mono, monospace);
   color: var(--haze-color-text);
+  /* "0.474 gwei" must never split across two lines when the card narrows. */
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 `;
 
 // Per-tier transfer-cost USD: secondary inside the mono tier value, so
 // the gwei figure stays the row's anchor.
 const gasTierUsdStyle = css`
-  font-family: var(--haze-font-body, inherit);
-  font-weight: var(--haze-weight-regular);
+  font-family: var(--haze-font-sans, inherit);
+  font-weight: var(--haze-weight-normal);
   color: var(--haze-color-text-muted);
+  font-variant-numeric: tabular-nums;
 `;
 
 // Per-tier inclusion estimate ("~N blocks (est.)"): muted like the USD
 // figure so the gwei value stays the row's anchor; nowrap keeps the chip
 // on one line when the column is squeezed.
 const gasTierEstimateStyle = css`
-  font-family: var(--haze-font-body, inherit);
-  font-weight: var(--haze-weight-regular);
+  font-family: var(--haze-font-sans, inherit);
+  font-weight: var(--haze-weight-normal);
   font-size: var(--haze-text-xs);
   color: var(--haze-color-text-muted);
   white-space: nowrap;

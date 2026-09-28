@@ -42,6 +42,9 @@ const valueStyle = css`
   word-break: break-all;
   text-align: right;
   font-size: var(--haze-text-sm);
+  /* InfoGrid values are number-dense (amounts, gas, timestamps): equal-width
+     digits keep adjacent rows' figures vertically comparable. */
+  font-variant-numeric: tabular-nums;
 
   @media (max-width: 768px) {
     text-align: left;

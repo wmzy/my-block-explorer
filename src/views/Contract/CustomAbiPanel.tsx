@@ -3,6 +3,7 @@ import { css } from '@linaria/core';
 import type { Abi, AbiEvent, AbiFunction, AbiParameter } from 'viem';
 import { cardStyles } from './styles';
 import type { ContractABI } from './types';
+import { copyText } from '@/util/clipboard';
 
 // Parses a raw JSON ABI string into the ContractABI shape the view's tabs
 // and panels consume (functions/events/errors split, plus the raw string
@@ -194,36 +195,10 @@ const activeChipStyles = css`
   font-weight: 600;
 `;
 
-// Clipboard copy with a fallback for contexts without the async clipboard
-// API (non-secure origins, embedded webviews): a hidden selected textarea
-// plus the legacy execCommand('copy'). Returns whether the copy verifiably
-// happened so the button can report failure honestly.
-async function copyText(text: string): Promise<boolean> {
-  if (navigator.clipboard?.writeText) {
-    try {
-      await navigator.clipboard.writeText(text);
-      return true;
-    } catch {
-      // Permission denied or the promise rejected: fall through to the
-      // legacy path before giving up.
-    }
-  }
-  const helper = document.createElement('textarea');
-  helper.value = text;
-  helper.setAttribute('readonly', '');
-  helper.style.position = 'fixed';
-  helper.style.opacity = '0';
-  document.body.appendChild(helper);
-  helper.select();
-  let copied: boolean;
-  try {
-    copied = document.execCommand('copy');
-  } catch {
-    copied = false;
-  }
-  helper.remove();
-  return copied;
-}
+// Clipboard copy lives in the shared util (async Clipboard API plus a
+// legacy execCommand fallback for non-secure origins and embedded
+// webviews); it returns whether the copy verifiably happened so the
+// button can report failure honestly.
 
 // Paste-ABI unlock for contracts without a server-side ABI: the textarea
 // holds a draft, Validate checks it, Apply persists it through onApply and

@@ -23,6 +23,7 @@ import {
   type NftMetadataItem,
   type NftMetadataOutcome,
 } from '@/services/nftMetadata';
+import { copyText } from '@/util/clipboard';
 import { NFT_ITEMS_LIMIT, type NftItem } from './nftItems';
 
 export type NftGridProps = {
@@ -257,18 +258,15 @@ function NftTile({ item, contract, outcome, onRetry, retrying }: NftTileProps) {
   );
 
   const copyId = () => {
-    const write = navigator.clipboard?.writeText?.(item.tokenId);
-    if (write !== undefined) {
-      // The confirmation appears only on a real copy; a clipboard
-      // denial simply stays quiet (never a false "copied").
-      void write
-        .then(() => {
-          setCopied(true);
-          if (copyTimer.current !== null) window.clearTimeout(copyTimer.current);
-          copyTimer.current = window.setTimeout(() => setCopied(false), 1500);
-        })
-        .catch(() => undefined);
-    }
+    // The confirmation appears only on a real copy; a clipboard denial
+    // simply stays quiet (never a false "copied"). copyText also covers
+    // insecure contexts via its legacy fallback.
+    void copyText(item.tokenId).then(ok => {
+      if (!ok) return;
+      setCopied(true);
+      if (copyTimer.current !== null) window.clearTimeout(copyTimer.current);
+      copyTimer.current = window.setTimeout(() => setCopied(false), 1500);
+    });
   };
 
   const idText = `#${shortId(item.tokenId)}`;

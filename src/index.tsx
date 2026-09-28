@@ -1,6 +1,6 @@
 import { createRoot } from 'react-dom/client';
 import { cx } from '@linaria/core';
-import { lightTheme, spacing, typography } from 'haze-ui';
+import { lightTheme, motion, spacing, typography } from 'haze-ui';
 // tokens.css side-effect import: theme (--haze-* variables), spacing and
 // typography baselines. All other component CSS is injected on demand by
 // vite-plugin-haze-ui (vite plugin, devDependency) based on the module graph,
@@ -54,7 +54,7 @@ function Root() {
     useServiceDiscovery();
 
   return (
-    <div className={cx(lightTheme, spacing, typography)}>
+    <div className={cx(lightTheme, spacing, typography, motion)}>
       {/* Toast host above the router (painless pattern): every view — and
           the setup overlay — gets useToast coverage. */}
       <ToastContainer>

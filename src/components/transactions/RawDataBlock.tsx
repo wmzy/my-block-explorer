@@ -1,5 +1,6 @@
 import { css } from '@linaria/core';
 import { useToast } from 'haze-ui';
+import { copyText } from '@/util/clipboard';
 
 const blockStyle = css`
   margin-top: var(--haze-space-4);
@@ -55,10 +56,9 @@ export function RawDataBlock({ title, data }: RawDataBlockProps) {
   const toast = useToast();
 
   const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(data);
+    if (await copyText(data)) {
       toast('Copied to clipboard!', { variant: 'success', duration: 2000 });
-    } catch {
+    } else {
       toast('Failed to copy', { variant: 'danger', duration: 2000 });
     }
   };

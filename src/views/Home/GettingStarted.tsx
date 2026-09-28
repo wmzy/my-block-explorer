@@ -11,6 +11,7 @@ import { useCallback, useState } from 'react';
 import { TypedLink } from '@native-router/react';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent } from '@/components/ui/Card';
+import { copyText } from '@/util/clipboard';
 import type { DiscoveryStatus } from '@/hooks/useAutoDiscovery';
 import { getPreferredChainId, readRememberedChainId } from './Landing';
 
@@ -334,16 +335,13 @@ export function GettingStarted({ onDismiss }: GettingStartedProps) {
   // a guessed chain id.
   const { blocks: blocksPath, contracts: contractsPath } = resolveGuideChainPaths();
 
-  // Copy pattern shared with SetupRequiredScreen: async clipboard write,
-  // transient "Copied!" feedback, silent degradation when the clipboard
-  // is unavailable.
+  // Copy pattern shared with SetupRequiredScreen: shared copyText (async
+  // Clipboard API or legacy fallback), transient "Copied!" feedback,
+  // silent degradation when the clipboard is unavailable.
   const handleCopy = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(GETTING_STARTED_COMMAND);
+    if (await copyText(GETTING_STARTED_COMMAND)) {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
-    } catch {
-      // Silent fail - clipboard may be unavailable
     }
   }, []);
 

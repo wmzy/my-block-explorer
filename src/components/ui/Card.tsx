@@ -40,7 +40,9 @@ export function CardHeader({ children, className }: CardHeaderProps) {
 const cardTitleStyle = css`
   font-size: var(--haze-text-lg);
   font-weight: var(--haze-weight-semibold);
-  line-height: var(--haze-leading-normal);
+  /* Headings read tighter than body copy — normal leading at 18px leaves a
+   * sloppy gap under every card header. */
+  line-height: var(--haze-leading-tight);
   margin: 0;
   color: var(--haze-color-text);
 `;

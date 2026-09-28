@@ -18,6 +18,8 @@ const pageHeaderStyle = css`
   h1 {
     font-size: var(--haze-text-2xl);
     font-weight: var(--haze-weight-semibold);
+    line-height: var(--haze-leading-tight);
+    letter-spacing: -0.01em;
     margin: 0 0 var(--haze-space-2) 0;
     color: var(--haze-color-text);
   }
@@ -39,7 +41,7 @@ const backButtonStyle = css`
   margin-bottom: var(--haze-space-5);
   display: inline-block;
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all var(--haze-duration-fast, 0.15s) var(--haze-ease, ease);
   font-family: var(--haze-font-sans);
 
   &:hover {

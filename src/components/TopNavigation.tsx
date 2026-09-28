@@ -78,6 +78,11 @@ const logoStyle = css`
   cursor: pointer;
   display: flex;
   align-items: center;
+  /* The brand must never be squeezed by the nav/search/chain controls:
+     without this the flex row compresses it to ~70px and "My Block
+     Explorer" wraps into three stacked lines. */
+  flex-shrink: 0;
+  white-space: nowrap;
   gap: var(--haze-space-2);
 `;
 
@@ -85,6 +90,7 @@ const logoText = css`
   font-size: var(--haze-text-lg);
   font-weight: var(--haze-weight-semibold);
   color: var(--haze-color-text);
+  white-space: nowrap;
 `;
 
 // Page links beside the logo: the chain's blocks/transactions lists, the
@@ -104,6 +110,11 @@ const navLink = css`
   color: var(--haze-color-text-secondary);
   cursor: pointer;
   border-radius: var(--haze-radius-md);
+  /* Hover tints glide in/out instead of snapping (duration token zeroes
+     itself under prefers-reduced-motion via the motion scope). */
+  transition:
+    color var(--haze-duration-fast, 0.12s) var(--haze-ease, ease),
+    background-color var(--haze-duration-fast, 0.12s) var(--haze-ease, ease);
 
   &:hover {
     color: var(--haze-color-primary);

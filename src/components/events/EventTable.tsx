@@ -10,6 +10,7 @@ import { Address, formatEther, AbiEvent } from 'viem';
 import { EventFilterPanel, type EventFilterState } from './EventFilterPanel';
 import { get } from '@/util/http';
 import { getApiBase } from '@/util/apiBase';
+import { copyText } from '@/util/clipboard';
 
 // Types
 type EventData = {
@@ -1002,12 +1003,9 @@ function CopyButton({ text, label }: { text: string; label: string }) {
   }, []);
 
   const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(text);
-      setResult('ok');
-    } catch {
-      setResult('fail');
-    }
+    // Shared copyText: async Clipboard API with the legacy execCommand
+    // fallback (plain-http LAN is the common local-explorer case).
+    setResult((await copyText(text)) ? 'ok' : 'fail');
     if (timerRef.current !== undefined) window.clearTimeout(timerRef.current);
     timerRef.current = window.setTimeout(() => setResult('idle'), 2000);
   };

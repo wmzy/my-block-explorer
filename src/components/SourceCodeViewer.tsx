@@ -1,6 +1,7 @@
 import { useState, useCallback, useMemo } from 'react';
 import { css } from '@linaria/core';
 import { Tree } from 'haze-ui';
+import { copyText } from '@/util/clipboard';
 
 type SourceFile = {
   filename: string;
@@ -205,15 +206,13 @@ export function SourceCodeViewer({ sourceCode, sourceFiles }: SourceCodeViewerPr
     : sourceCode;
 
   const handleCopy = useCallback(() => {
-    navigator.clipboard
-      .writeText(activeContent)
-      .then(() => {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      })
-      .catch(() => {
-        // Fallback: silently ignore clipboard errors
-      });
+    // Shared copyText: async Clipboard API with the legacy execCommand
+    // fallback for insecure contexts; a genuine failure stays silent.
+    void copyText(activeContent).then(ok => {
+      if (!ok) return;
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
   }, [activeContent]);
 
   if (!hasMultipleFiles) {

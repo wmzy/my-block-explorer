@@ -23,6 +23,9 @@ const tableStyle = css`
   font-family: var(--haze-font-sans);
   font-size: var(--haze-text-sm);
   color: var(--haze-color-text);
+  /* Equal-width digits: amount/percentage columns stop wobbling between
+     rows (mono hash cells are unaffected — mono glyphs are uniform). */
+  font-variant-numeric: tabular-nums;
 
   th {
     background: var(--haze-color-bg-subtle);
@@ -42,6 +45,9 @@ const tableStyle = css`
     border-bottom: 1px solid var(--haze-color-bg-muted);
     font-size: var(--haze-text-sm);
     color: var(--haze-color-text);
+    /* Row hover glides instead of snapping; the duration token zeroes
+       itself under prefers-reduced-motion via the motion scope. */
+    transition: background-color var(--haze-duration-fast, 0.12s) var(--haze-ease, ease);
   }
 
   tr:last-child td {

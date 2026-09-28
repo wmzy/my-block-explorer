@@ -26,6 +26,7 @@ import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
 import { readRememberedChainId } from '@/views/Home/Landing';
 import { useOpsSummary, type OpsMeta, type OpsSummary } from '@/services/opsSummary';
 import { ApiError } from '@/util/apiError';
+import { copyText } from '@/util/clipboard';
 import { isBackendUnreachable } from '@/util/http';
 import { formatDuration, formatFileSize, formatNumber } from '@/utils/format';
 
@@ -603,12 +604,10 @@ export default function Ops() {
   // Same toast contract as CopyableHash — success and failure both say so.
   const copyDiagnostics = async () => {
     if (summary.data === undefined) return;
-    try {
-      await navigator.clipboard.writeText(
-        JSON.stringify(buildOpsDiagnostics(summary.data), null, 2),
-      );
+    const text = JSON.stringify(buildOpsDiagnostics(summary.data), null, 2);
+    if (await copyText(text)) {
       toast('Diagnostics copied to clipboard', { variant: 'success', duration: 2000 });
-    } catch {
+    } else {
       toast('Failed to copy diagnostics', { variant: 'danger', duration: 2000 });
     }
   };

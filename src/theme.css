@@ -232,3 +232,42 @@ pre code {
   --haze-color-info: var(--haze-blue-10);
   --haze-color-focus-ring: oklch(from var(--haze-color-primary) l c h / 0.4);
 }
+
+/* —— Interaction polish layer ——
+ * App-wide finishing rules. Everything here keys off --haze-* tokens, so it
+ * tracks the light/dark palettes above for free; where a rule can only
+ * resolve inside the token scope (the root div carries the scope classes),
+ * behavior outside it simply keeps the UA default. */
+
+/* Themed text selection: a primary-tinted wash instead of the OS default. */
+::selection {
+  background: var(--haze-color-primary-subtle);
+  color: var(--haze-color-text);
+}
+
+a {
+  /* Underline sits below descenders instead of striking through them; the
+   * link color glides on hover now that the motion scope is mounted. */
+  text-underline-offset: 0.16em;
+  transition: color var(--haze-duration-fast, 0.12s) var(--haze-ease, ease);
+}
+
+/* One themed focus ring for every focusable element. haze-ui components
+ * keep their own box-shadow ring (their class+pseudo selectors outrank this
+ * universal rule and suppress the outline); this covers the project's
+ * custom buttons, links, list rows and chips so keyboard focus is always
+ * visible and on-palette. */
+:focus-visible {
+  outline: 2px solid var(--haze-color-focus-ring);
+  outline-offset: 2px;
+  border-radius: var(--haze-radius-sm);
+}
+
+/* Tabular numerals for number-dense surfaces (data lists, stat values):
+ * equal-width digits stop columns of amounts from wobbling between rows
+ * and make magnitudes comparable at a glance. Applied via the utility
+ * class or targeted component rules — NOT globally, because body prose
+ * benefits from proportional figures. */
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+}
