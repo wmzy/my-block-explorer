@@ -1,7 +1,13 @@
 import { defineConfig } from 'tsup';
 
 export default defineConfig({
-  entry: ['src/server.ts', 'src/cli.ts'],
+  // Object keys keep the MCP CLI at dist/server/mcp.js — a plain path
+  // entry would collide with src/cli.ts on the basename.
+  entry: {
+    server: 'src/server.ts',
+    cli: 'src/cli.ts',
+    mcp: 'src/mcp/cli.ts',
+  },
   outDir: 'dist/server',
   format: ['esm'],
   target: 'node26',

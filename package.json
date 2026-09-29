@@ -4,7 +4,8 @@
   "type": "module",
   "description": "Multi-chain blockchain explorer with auto-discovery",
   "bin": {
-    "my-block-explorer": "./dist/server/cli.js"
+    "my-block-explorer": "./dist/server/cli.js",
+    "my-block-explorer-mcp": "./dist/server/mcp.js"
   },
   "files": [
     "dist/server",
@@ -36,6 +37,7 @@
   "scripts": {
     "dev": "vite",
     "dev:server": "tsx watch src/cli.ts --port 8201 --no-open",
+    "mcp": "tsx src/mcp/cli.ts",
     "build": "npm run build:client && npm run build:server",
     "build:client": "vite build",
     "build:server": "tsup",
@@ -62,6 +64,7 @@
     "@duckdb/node-bindings-darwin-arm64": "1.5.5-r.5",
     "@hono/node-server": "^2.1.1",
     "@linaria/core": "^8.2.0",
+    "@modelcontextprotocol/sdk": "^1.30.1",
     "@native-router/core": "^1.17.0",
     "@native-router/react": "^1.16.1",
     "drizzle-kit": "^0.31.11",
@@ -81,7 +84,7 @@
     "react-toolroom": "^1.1.1",
     "react-use-control": "^1.6.1",
     "solc": "^0.8.37",
-        "storage-layout-fetcher": "^0.2.1",
+    "storage-layout-fetcher": "^0.2.1",
     "undici": "^8.11.2",
     "viem": "^2.56.9",
     "zod": "^4.6.5"

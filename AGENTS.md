@@ -18,6 +18,13 @@ block-explorer/
 │   ├── api-app.ts          # Hono API entry (all routes)
 │   ├── server.ts           # Node server entry
 │   ├── index.tsx           # React entry (tokens.css + theme.css, service-discovery gate)
+│   ├── mcp/                # MCP server for AI assistants (stdio bin, separate process)
+│   │   ├── cli.ts          # bin entry (my-block-explorer-mcp) — stdout IS the protocol
+│   │   ├── server.ts       # McpServer assembly (transport-agnostic)
+│   │   ├── tools.ts        # 12 read-only tools (zod v4 input schemas)
+│   │   ├── rest.ts         # ExplorerApi: backend REST client (no DuckDB in this process)
+│   │   ├── rpc.ts          # RpcGateway: viem clients (rpc-config → custom chain → viem default)
+│   │   └── abi.ts          # JSON→viem arg coercion for read_contract
 │   ├── views/              # Route-table + views (native-router, flat routing)
 │   │   └── index.tsx       # createRoutes table, AppPaths, HistoryRouter App
 │   ├── services/           # Backend services (*Service.ts) + FRONTEND data services
@@ -58,6 +65,7 @@ block-explorer/
 | Admin gating / CORS  | `src/middleware/admin-token.ts`, `src/middleware/cors-origins.ts`              | Two-tier ADMIN_TOKEN gate; shared origin allowlist                                                                                                    |
 | ENS reverse lookup   | `src/services/ens.ts`                                                          | `useEnsName()` — mainnet-pinned, browser-side, reverse+forward roundtrip verified (spoofed reverse records render as no name)                         |
 | HTTP layer           | `src/util/http.ts` (fetch-fun) + `src/util/apiBase.ts`                         | Runtime-discovered API base URL                                                                                                                       |
+| MCP server           | `src/mcp/`                                                                     | stdio bin `my-block-explorer-mcp` — read-only tools for AI assistants (REST+RPC planes); docs/MCP.md                                                  |
 
 ## CODE MAP
 
@@ -178,6 +186,7 @@ for unified dev experience.
 # Development
 pnpm dev                 # Vite dev server on 3000 (Hono API bridged in-process)
 pnpm dev:server          # Server only on 8201
+pnpm mcp                 # MCP stdio server (tsx; EXPLORER_API_URL, default 8201)
 
 # Build
 pnpm build               # Build client + server
@@ -1319,3 +1328,54 @@ pnpm typecheck           # tsc --noEmit
   re-measured live: header heights and `--app-nav-height` unchanged (93/136/
   193/229px), `overflowX: 0` at 1440/1024/900/768, trigger hidden <768px as
   before.
+
+- **2026-09-29 MCP support (single stream)** — the explorer is now consumable
+  by AI assistants: `src/mcp/` + stdio bin `my-block-explorer-mcp`
+  (`pnpm mcp` in dev; tsup object-entry `mcp: 'src/mcp/cli.ts'` →
+  `dist/server/mcp.js` — a plain path entry would COLLIDE with `src/cli.ts`
+  on basename). **Architecture**: a SEPARATE process from the backend on
+  purpose — it never opens DuckDB (single-writer lock); persistent data
+  travels over REST (`ExplorerApi`, base from `EXPLORER_API_URL`, default
+  127.0.0.1:8201) and live chain data via its own viem clients
+  (`RpcGateway`), with the browser's URL precedence mirrored: REST
+  rpc-configs (redacted rows skipped) → registered custom chains → viem
+  defaults; both fetched from the open GETs and cached ~60s (single-flight).
+  **12 read-only tools** (`registerTool`, zod v4 input schemas — SDK ≥1.30
+  peers `zod ^3.25 || ^4`, repo zod 4.6.5 fine): health, list_chains,
+  search, get_block, get_transaction, get_address_overview (EOA/contract/
+  EIP-7702 + delegate), get_contract (ABI string parsed to array,
+  `not_a_contract` → EOA explanation), read_contract (human-readable
+  signature via parseAbiItem + JSON→viem arg coercion `src/mcp/abi.ts` —
+  ints→bigint, field-path errors, fractional numbers rejected with a
+  precision hint), get_events (empty results carry the "indexed ranges
+  ONLY" note), get_indexing_status (per-section degrade incl. the 503
+  indexing_status_unavailable), get_address_transactions (coverage relayed
+  verbatim), get_storage_at (reuses `parseSlotNumber`). **Conventions
+  pinned**: (1) stdout is the protocol channel — ALL diagnostics to stderr;
+  (2) thrown Errors already surface as isError tool results with the
+  message verbatim, so error CLASSES carry caller-ready wording
+  (backend-unreachable advice baked into the Error, HTTP status baked into
+  McpApiError's message) instead of a wrapper at every tool; (3) bigint
+  quantities serialize as decimal STRINGS everywhere (`jsonText` replacer);
+  (4) the viem-generic surface lives behind the structural `RpcReader`
+  interface (`src/mcp/rpc.ts`) so tools/tests never fight viem generics —
+  `client.readContract` with broad `Abi` is the established dynamic-fragment
+  pattern; (5) `GetStorageAtParameters` is a discriminated union — build
+  exact per-variant args objects, never spread a loose `{blockNumber?|
+  blockTag?}` fragment; (6) tsup's banner supplies the shebang — NEVER also
+  put `#!/usr/bin/env node` in the source (double shebang = SyntaxError in
+  the spawned child). **Tests**: 4 files / 44 tests — the server is driven
+  through the REAL protocol path (SDK Client + InMemoryTransport pair),
+  REST via stubbed global fetch, RPC via RpcReader stubs; SDK client-side
+  note: schema violations arrive as isError RESULTS (text "Input validation
+  error…"), not thrown protocol errors. **Live smoke (built bundle, mainnet
+  via stored rpc-config)**: all 12 tools green incl. vitalik.eth classified
+  `eip-7702-delegated` with delegate, WETH name()/balanceOf() decoded,
+  get_contract WETH9 (blockscan-verified, ABI parsed); backend-less pass
+  (EXPLORER_API_URL→dead port): health degrades with `npx
+  my-block-explorer` advice while get_block/list_chains keep working over
+  viem defaults. En-route env find: a 2-day-old `vite --host` (node binary
+  since replaced) held the DuckDB single-writer lock and made every
+  dev:server query fail with cause-less "Failed query" — check
+  `ps`/procfs for stale vite/tsx PIDs holding data/blockchain.db before
+  suspecting migrations.

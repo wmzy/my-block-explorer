@@ -9,6 +9,19 @@ commit subjects rather than a curated release notes process.
 
 ## Unreleased
 
+- **MCP server** — `my-block-explorer-mcp` (also `pnpm mcp` in the repo)
+  exposes the explorer to AI assistants (Claude Desktop, Cursor, VS Code,
+  agent harnesses) as a stdio Model Context Protocol server. A separate
+  process by design — it never opens DuckDB (single-writer lock): persistent
+  data (verified sources/ABIs, indexed events, discovered address
+  transactions, search) travels over the backend REST API, live chain data
+  (blocks, transactions, balances, storage, view/pure contract calls) via
+  its own viem clients with the browser's RPC precedence (stored rpc-config
+  → custom chain → viem default). 12 read-only tools, zod-validated inputs,
+  bigint-safe decimal-string serialization, and the UI's honesty contracts
+  carried verbatim (tx coverage fields, "events cover only configured
+  ranges", EIP-7702 classification, backend-down advice). Client config
+  snippets + tool table in docs/MCP.md.
 - **Toolchain upgrade (TypeScript 6, Node 26 floor)** — dependencies bumped
   across the board, notably TypeScript 5.9 → 6.0 and `@types/node` 25 → 26.
   The Node.js floor rises from 22 to 26 everywhere it's pinned: `engines.node`,

@@ -24,6 +24,10 @@ own server): https://wmzy.github.io/my-block-explorer/
 - **700+ chains, zero config** — every chain defined in `viem/chains` (732 in
   the pinned viem version) works out of the box; 10 popular chains are pinned at
   the top of the chain picker (`POPULAR_CHAINS` in `src/config/chains.ts`)
+- **MCP server for AI assistants** — `npx my-block-explorer-mcp` exposes the
+  explorer to Claude Desktop / Cursor / agent harnesses as read-only tools
+  (blocks, transactions, balances, verified sources, indexed events) over the
+  same honesty contracts as the UI ([docs/MCP.md](docs/MCP.md))
 - **On-demand event indexing** — index specific block ranges for a contract,
   query decoded events with argument filters, export CSV
 - **Contract tools** — verified source & ABI (Sourcify → Etherscan fallback),
@@ -330,6 +334,7 @@ Details a developer will run into:
 - [Configuration](docs/CONFIG.md)
 - [Deployment](docs/DEPLOYMENT.md)
 - [API reference](docs/API.md)
+- [MCP server](docs/MCP.md) — the explorer as read-only tools for AI assistants
 - [Architecture](docs/ARCHITECTURE.md) — the system as shipped (routing, chain
   switching, search dispatch, auto-discovery), followed by the original
   design-time document

@@ -10,6 +10,7 @@ it:
 - [CONFIG.md](./CONFIG.md) — everything actually configurable (env vars, config
   files, RPC overrides)
 - [API.md](./API.md) — API reference (route files are the source of truth)
+- [MCP.md](./MCP.md) — the MCP server: running it, client configs, tool surface
 - [ARCHITECTURE.md](./ARCHITECTURE.md) — the system as shipped (routing, chain
   switching, search dispatch, auto-discovery) followed by the original
   design-time document
