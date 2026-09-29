@@ -67,6 +67,10 @@ commit subjects rather than a curated release notes process.
   keyboard-navigable) jumping to every page, chain, and theme toggle; `/tools`
   hub card grid (15 tools incl. informational cards — no dead links; SQL/Ops
   carry admin chips).
+- **Palette trigger spells its shortcut** — the top bar's palette button no
+  longer draws a magnifier icon (it read as a second search button beside the
+  search box); it shows the actual shortcut as a keycap label — `Ctrl+K`, or
+  `⌘K` on Apple platforms — and the accessible name states it in words.
 - **Troubleshooting, issue templates & ops diagnostics** —
   `/help/troubleshooting` static guide (backend-banner modes, provider quirks,
   dev-chain resets, health checklist); GitHub issue templates; the Ops dashboard

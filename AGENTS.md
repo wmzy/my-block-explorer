@@ -1268,3 +1268,54 @@ pnpm typecheck           # tsc --noEmit
   `navigator.serviceWorker.ready` throws `NotSupportedError` when the
   evaluate lands outside a page context — reopen the tab and do the whole
   flow in ONE cell (`page.createCDPSession` for offline emulation).
+
+- **2026-09-29 top-bar search/layout fix (user-reported, single stream)** — the
+  header search box rendered as a **~26px sliver** on desktop (measured live at
+  1440/1920) and the bar overflowed the viewport: page `scrollWidth` 1572 at
+  1440, and **+282px of horizontal page scroll at 390px** because the ten-link
+  row never wrapped (the "app-wide 375px-clean" claim had gone stale as links
+  were added). Root cause: four groups (brand 195 + links 677 + controls ~420 +
+  search) cannot share one 60px row inside the 1200px content column; the
+  search `<input>` — a bare `<input>` from haze-ui with a ~20ch intrinsic width
+  — lost the flex fight. Fix: **two rows at every width** (brand + search +
+  right controls on the primary row; page links on a full-basis second row that
+  wraps), DOM order changed to match visual order (logo → search → controls →
+  links) so keyboard tab order stays left-to-right, search area
+  `flex: 1 1 auto; min-width: 240px; max-width: 640px`, input
+  `flex: 1 1 auto; min-width: 0`. Measured after: input 418px @1440 (442 on the
+  built bundle), 242 @1024, 650 @768, 257–272 on phones, `overflowX: 0`
+  everywhere; bar heights 93px desktop / 136px with a search notice / 193 @768
+  / 229–255 on phones. **New contract — `--app-nav-height`**: TopNavigation
+  publishes its live height onto `<html>` via ResizeObserver; anything sticky
+  below the bar MUST offset by it (Address page anchor chip row:
+  `top: var(--app-nav-height, 93px)` + `scroll-margin-top: calc(var(
+  --app-nav-height, 93px) + 56px)`; verified live — chip row sticks at 93px and
+  an anchor jump lands 12px below it). Hardcoded offsets (the old 60/116px)
+  silently hide such rows behind the bar the moment its height changes.
+  `tests/setup.ts`'s ResizeObserver mock is now a constructible class — an
+  arrow-function `mockImplementation` cannot serve `new ResizeObserver(cb)`
+  (56 topNavigation tests died on it). Verification: full suite 275 files /
+  3940 tests green (the setup change marks everything changed), tsc + eslint 0
+  errors on the touched files, live Chromium smoke on dev (vite bridge) **and**
+  the production bundle (`vite preview`), plus the address-page anchor flow.
+  Tooling find: the installed prettier (3.9.9) wants nested-ternary / JSX
+  expression-continuation reindentation that the committed code — and
+  `@stylistic/indent`, which enforces the committed shape — disagree with;
+  `prettier --write` on a file you did not mean to reformat injects lint errors
+  (Address/index.tsx and TopNavigation.tsx both failed `prettier --check` at
+  HEAD). Hand-format additions in the file's existing style instead.
+
+- **2026-09-29 palette-trigger icon fix (user-reported, same day)** — the
+  top bar's command-palette trigger drew a magnifier icon and read as a second
+  search button next to the real search box. It now **spells the shortcut as a
+  keycap label** (`Ctrl+K`, or `⌘K` on Apple platforms) via
+  `paletteShortcutLabel()` in `TopNavigation.tsx` — detection is
+  `navigator.userAgentData.platform ?? navigator.platform` (neither exists in
+  jsdom, so tests read the Ctrl spelling; the ⌘ variant is pinned by stubbing
+  `userAgentData` and the `platform` fallback separately). The accessible
+  name/title carry the same platform spelling, so anything scraping
+  `'Command palette (Ctrl+K)'` must read jsdom as non-Apple. Button stays in
+  the 40px-tall control family, min-width 40px + mono text (55px on Linux);
+  re-measured live: header heights and `--app-nav-height` unchanged (93/136/
+  193/229px), `overflowX: 0` at 1440/1024/900/768, trigger hidden <768px as
+  before.

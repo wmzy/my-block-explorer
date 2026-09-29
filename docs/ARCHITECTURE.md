@@ -99,6 +99,18 @@ Testnet badge) and offers:
   the list comes from `getSortedChains()` (sorted by type and popularity,
   deduped by id).
 
+**The top-bar layout.** The bar is **two rows at every width**: brand + search box
++ right-hand controls (palette, theme, RPC, chain selector, version chip) share
+the primary row; the page links (blocks … Ops) own a wrapping second row — one
+row cannot hold all four groups inside the 1200px content column (the ten links
+alone measure ≈680px, the chain selector 180px, the controls ≈420px). The search
+box is the primary row's flexible member (`flex: 1 1 auto`, 240px floor, 640px
+ceiling; ≈420–520px of input on a desktop, full-width below 768px).
+`TopNavigation` publishes the bar's live height as `--app-nav-height` on `<html>`
+(ResizeObserver); anything sticky below the bar offsets by that variable — never
+a hardcoded pixel value — because the height changes with breakpoints and with
+the inline search notice.
+
 ### Search dispatch (the top-bar search box)
 
 One dispatcher (`navigateForQuery` in `src/components/TopNavigation.tsx`)

@@ -134,26 +134,30 @@ const coverageBadgeRow = css`
 
 // --- In-page section anchor chips (sticky row under the page header) ---
 
-// Sticky offset math assumes the top navigation's fixed 60px bar (its
-// desktop shape); the row itself is ~44px, so jumped-to sections keep
-// 116px of clearance (60 nav + row + breathing room) via scroll-margin.
+// Sticky offset math follows the top navigation's live height, published
+// as --app-nav-height on <html> by TopNavigation (the bar wraps across
+// breakpoints and grows with an inline search notice, so a fixed number
+// would drift). The row itself is ~44px: jumped-to sections keep the
+// bar + row + ~12px of breathing room via scroll-margin. The 93px
+// fallback is the two-row desktop bar (used before the first measure and
+// in environments without ResizeObserver).
 const anchorTarget = css`
-  scroll-margin-top: 116px;
+  scroll-margin-top: calc(var(--app-nav-height, 93px) + 56px);
 `;
 
 // The sticky chip row itself. The page background (--haze-color-bg on the
 // themed root) masks the content scrolling beneath the stuck row.
-// Hidden below the top nav's own 768px wrap breakpoint: there the nav is
-// taller than the 60px bar this row's sticky offset (and the targets'
-// scroll-margin) assume, and at phone widths (375px) the full chip set
-// would wrap past two rows — a deterministic hide, not a measured guess.
+// Hidden below the nav's 768px wrap breakpoint: there the bar stacks into
+// four rows (≈255px on a 375px phone) and a second sticky row would leave
+// too little of the viewport for content — a deterministic hide, not a
+// measured guess.
 const anchorNavRow = css`
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--haze-space-2);
   position: sticky;
-  top: 60px;
+  top: var(--app-nav-height, 93px);
   z-index: 90;
   background: var(--haze-color-bg);
   padding: var(--haze-space-2) 0;
@@ -194,7 +198,7 @@ const anchorChip = css`
 // resolves to real content.
 const anchorGridRow = css`
   border-bottom: 1px solid var(--haze-color-bg-muted);
-  scroll-margin-top: 116px;
+  scroll-margin-top: calc(var(--app-nav-height, 93px) + 56px);
 `;
 
 // ENS names carry no length ceiling, and the page title is one: without a

@@ -55,20 +55,28 @@ const nav = css`
   z-index: 100;
 `;
 
+// Two rows, at every width: brand + search + right-hand controls share the
+// primary row; the page links own a full-width second row. One row cannot
+// hold all four groups inside the 1200px content column (ten links ≈ 680px,
+// the chain selector 180px, the controls ≈ 420px, the brand 195px) — the
+// single-row bar squeezed the search <input> down to a ~26px sliver and
+// pushed the viewport 282px wide on phones.
+//
+// Wrapping stays on so the primary row degrades gracefully on medium
+// screens (the controls drop to their own line rather than crushing the
+// search box), and the links row wraps its buttons instead of overflowing.
 const navInner = css`
   max-width: 1200px;
   margin: 0 auto;
-  padding: 0 var(--haze-space-5);
+  padding: var(--haze-space-2) var(--haze-space-5);
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  height: 60px;
+  column-gap: var(--haze-space-4);
+  row-gap: var(--haze-space-1);
 
-  /* Narrow screens: logo + search + chain selector cannot share one
-     60px row — let the bar wrap and give each row breathing room. */
+  /* Narrow screens: every group owns a row; give the rows breathing room. */
   @media (max-width: 768px) {
-    flex-wrap: wrap;
-    height: auto;
     padding: var(--haze-space-2) var(--haze-space-4);
     row-gap: var(--haze-space-2);
   }
@@ -93,13 +101,18 @@ const logoText = css`
   white-space: nowrap;
 `;
 
-// Page links beside the logo: the chain's blocks/transactions lists, the
-// pending pool, the cached-contract directory and the charts page. Flex
-// with a small gap keeps the group readable at any member count.
+// Page links: the chain's blocks/transactions/pending/broadcast lists, the
+// contracts/tokens directories, the charts page, the tools hub and the
+// admin pair. They own the bar's second row (a full-basis flex item always
+// starts a fresh line) and wrap their buttons once they outgrow one line —
+// the same 10 links used to overflow the viewport on phones.
 const navLinks = css`
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: var(--haze-space-1);
+  flex-basis: 100%;
+  min-width: 0;
 `;
 
 const navLink = css`
@@ -145,16 +158,18 @@ const navDivider = css`
 `;
 
 const searchArea = css`
-  flex: 1;
-  max-width: 400px;
-  margin: 0 var(--haze-space-5);
+  /* Primary row's flexible member: takes whatever the brand and the
+     controls leave over, but never collapses below a usable width (the old
+     single-row bar left it 112px, 26px of which was the input itself). */
+  flex: 1 1 auto;
+  min-width: 240px;
+  max-width: 640px;
   position: relative;
 
-  /* Owns a full row when the nav wraps below 768px. */
+  /* Narrow screens: the search box owns a full row of the wrapped bar. */
   @media (max-width: 768px) {
     flex: 1 1 100%;
     max-width: none;
-    margin: 0;
   }
 `;
 
@@ -162,13 +177,17 @@ const searchRow = css`
   display: flex;
   gap: var(--haze-space-2);
 
-  /* Narrow screens: the haze Input renders a bare <input> and the search
-     Button a plain <button> (~36px tall) — grow both to the 44px touch
-     target and let the input take whatever width the row has left. */
+  /* The haze Input renders a bare <input>, whose intrinsic (20-character)
+     width otherwise wins: let it fill the row instead. */
+  input {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  /* Narrow screens: grow both the input and the search Button to the 44px
+     touch target. */
   @media (max-width: 768px) {
     input {
-      flex: 1 1 auto;
-      min-width: 0;
       min-height: 44px;
     }
 
@@ -223,9 +242,9 @@ const rightControls = css`
   align-items: center;
   gap: var(--haze-space-3);
 
-  /* Narrow screens: the nowrap row (theme + RPC + 180px chain button +
-     version chip) exceeds the viewport — let the controls wrap onto a
-     second row, right-aligned under the search row. */
+  /* Narrow screens: the group (palette + theme + RPC + 180px chain button
+     + version chip) is wider than the viewport — wrap it internally and
+     right-align the rows under the search box. */
   @media (max-width: 768px) {
     flex-wrap: wrap;
     justify-content: flex-end;
@@ -262,24 +281,28 @@ const themeToggleIcon = css`
   display: block;
 `;
 
-// Command-palette trigger: same icon-button size/shape family as the
-// theme toggle so the two read as one row of controls. Hidden below
+// Command-palette trigger: shows the shortcut as a keycap label (⌘K /
+// Ctrl+K) in the theme toggle's 40px-tall control family. Hidden below
 // 768px with the palette itself — the Tools page is the touch fallback,
 // so the trigger must not promise a dialog touch users cannot get.
 const paletteTrigger = css`
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 3px;
-  width: 40px;
+  min-width: 40px;
   height: 40px;
-  padding: 0;
+  padding: 0 var(--haze-space-2);
   flex-shrink: 0;
   background: var(--haze-color-bg);
   border: 1px solid var(--haze-color-border);
   border-radius: var(--haze-radius-md);
   cursor: pointer;
   color: var(--haze-color-text-secondary);
+  font-family: var(--haze-font-mono);
+  font-size: var(--haze-text-xs);
+  font-weight: var(--haze-weight-medium);
+  letter-spacing: 0.02em;
+  white-space: nowrap;
 
   &:hover {
     border-color: var(--haze-color-border-hover);
@@ -291,9 +314,8 @@ const paletteTrigger = css`
   }
 `;
 
-const paletteTriggerIcon = css`
-  width: 16px;
-  height: 16px;
+const paletteTriggerKey = css`
+  line-height: 1;
   display: block;
 `;
 
@@ -1002,6 +1024,16 @@ function BackendVersionChip() {
   );
 }
 
+/** The palette trigger spells the shortcut instead of drawing a glyph: a
+ *  magnifier icon beside the search box read as a second search button.
+ *  Apple platforms get the ⌘ spelling, everyone else Ctrl+K (the handler
+ *  accepts either modifier, so neither spelling overpromises). */
+function paletteShortcutLabel(): string {
+  const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
+  const platform = nav.userAgentData?.platform ?? navigator.platform ?? '';
+  return /mac|iphone|ipad|ipod/i.test(platform) ? '⌘K' : 'Ctrl+K';
+}
+
 export default function TopNavigation({
   currentChainId,
   onChainChange,
@@ -1021,6 +1053,7 @@ export default function TopNavigation({
   // (see SearchNotice for the kinds).
   const [searchNotice, setSearchNotice] = useState<SearchNotice | null>(null);
   const searchContainerRef = React.useRef<HTMLDivElement>(null);
+  const navRef = React.useRef<HTMLElement>(null);
 
   // Fire-and-forget in-app navigation; a superseded navigation rejects with
   // NavigationCancelledError, swallowed here as "stay on the old view".
@@ -1078,6 +1111,32 @@ export default function TopNavigation({
   };
 
   const chainInfo = getChainInfo(currentChainId);
+
+  // Publish the bar's live height as --app-nav-height on <html>: elements
+  // that stick below the bar (the address page's anchor chip row) need the
+  // real height to clear it, and the height is content- and
+  // breakpoint-dependent — two rows at desktop widths, more when the bar's
+  // groups wrap on smaller viewports, and up to ~40px taller while an
+  // inline search notice is shown. A hardcoded offset would leave those
+  // sticky rows hidden behind the bar.
+  useEffect(() => {
+    const el = navRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const root = document.documentElement;
+    const publish = () => {
+      root.style.setProperty(
+        '--app-nav-height',
+        `${Math.round(el.getBoundingClientRect().height)}px`,
+      );
+    };
+    publish();
+    const observer = new ResizeObserver(publish);
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+      root.style.removeProperty('--app-nav-height');
+    };
+  }, []);
 
   const handleSearchFocus = () => {
     setShowHistory(true);
@@ -1308,100 +1367,15 @@ export default function TopNavigation({
     }
   };
 
+  const paletteShortcut = paletteShortcutLabel();
+
   return (
     <>
-      <nav className={nav}>
+      <nav className={nav} ref={navRef}>
         <div className={navInner}>
           <div onClick={() => goTo(`/chain/${currentChainId}`)} className={logoStyle}>
             <span style={{ fontSize: '24px' }}>🚀</span>
             <span className={logoText}>My Block Explorer</span>
-          </div>
-
-          {/* In-app page links beside the logo, same navigation as the
-              logo above: the block list, the transaction list, the node's
-              pending pool, the cached-contract directory and the daily
-              charts derived from live RPC sampling. */}
-          <div className={navLinks}>
-            <button
-              type="button"
-              className={navLink}
-              onClick={() => goTo(`/chain/${currentChainId}/blocks`)}
-            >
-              Blocks
-            </button>
-            <button
-              type="button"
-              className={navLink}
-              onClick={() => goTo(`/chain/${currentChainId}/transactions`)}
-            >
-              Transactions
-            </button>
-            <button
-              type="button"
-              className={navLink}
-              onClick={() => goTo(`/chain/${currentChainId}/pending`)}
-            >
-              Pending
-            </button>
-            <button
-              type="button"
-              className={navLink}
-              onClick={() => goTo(`/chain/${currentChainId}/broadcast`)}
-            >
-              Broadcast
-            </button>
-            <button
-              type="button"
-              className={navLink}
-              onClick={() => goTo(`/chain/${currentChainId}/contracts`)}
-            >
-              Contracts
-            </button>
-            <button
-              type="button"
-              className={navLink}
-              onClick={() => goTo(`/chain/${currentChainId}/tokens`)}
-            >
-              Tokens
-            </button>
-            <button
-              type="button"
-              className={navLink}
-              onClick={() => goTo(`/chain/${currentChainId}/charts`)}
-            >
-              Charts
-            </button>
-            {/* Tools hub: every tool on one page (SQL console, Ops,
-                Signatures, Coverage legend, Broadcast…) — also the
-                command palette's touch fallback. Not chain-scoped, so it
-                links the bare /tools path like the admin group below. */}
-            <button type="button" className={navLink} onClick={() => goTo('/tools')}>
-              Tools
-            </button>
-            {/* Admin group, visually separated from the page links: the
-                SQL console runs admin-gated read-only queries against the
-                explorer's own DuckDB. Not chain-scoped (it queries the
-                main database), so it links to the bare /sql path. */}
-            <span className={navDivider} data-testid="nav-admin-divider" aria-hidden="true" />
-            <button
-              type="button"
-              className={cx(navLink, navLinkMuted)}
-              aria-label="SQL console (admin)"
-              onClick={() => goTo('/sql')}
-            >
-              SQL
-            </button>
-            {/* Ops joins the admin group: an operator-facing read-only
-                dashboard (storage, indexing, watch, rate limits) — same
-                non-chain-scoped, secondary-tier treatment as SQL. */}
-            <button
-              type="button"
-              className={cx(navLink, navLinkMuted)}
-              aria-label="Ops overview (admin)"
-              onClick={() => goTo('/ops')}
-            >
-              Ops
-            </button>
           </div>
 
           <div ref={searchContainerRef} className={searchArea}>
@@ -1546,29 +1520,20 @@ export default function TopNavigation({
 
           <div className={rightControls}>
             {/* Command-palette trigger (Ctrl/Cmd+K): opens the global
-                palette mounted in App. The accessible name carries the
-                shortcut; the glyph is decorative. */}
+                palette mounted in App. The visible glyph is the actual
+                shortcut, spelled for this platform — a magnifier here
+                read as a second search button next to the search box.
+                The accessible name carries the words the keycaps cannot. */}
             <button
               type="button"
               className={paletteTrigger}
-              aria-label="Command palette (Ctrl+K)"
-              title="Command palette (Ctrl+K)"
+              aria-label={`Command palette (${paletteShortcut})`}
+              title={`Command palette (${paletteShortcut})`}
               onClick={openCommandPalette}
             >
-              <svg
-                className={paletteTriggerIcon}
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth={2}
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden="true"
-                focusable="false"
-              >
-                <circle cx="11" cy="11" r="7" />
-                <path d="M21 21l-4.35-4.35" />
-              </svg>
+              <span className={paletteTriggerKey} aria-hidden="true">
+                {paletteShortcut}
+              </span>
             </button>
             <ThemeToggle />
             <Button variant="outline" size="md" onClick={() => setShowRpcConfig(true)}>
@@ -1576,6 +1541,95 @@ export default function TopNavigation({
             </Button>
             <ChainSelector currentChainId={currentChainId} onChainChange={onChainChange} />
             <BackendVersionChip />
+          </div>
+
+          {/* In-app page links, on the bar's own second row (see
+              navLinks): the block/transaction/pending lists, broadcast,
+              the contract and token directories, the daily charts
+              derived from live RPC sampling, the tools hub and the
+              admin pair. Placed after the primary row so DOM order
+              matches the visual order for keyboard users. */}
+          <div className={navLinks}>
+            <button
+              type="button"
+              className={navLink}
+              onClick={() => goTo(`/chain/${currentChainId}/blocks`)}
+            >
+              Blocks
+            </button>
+            <button
+              type="button"
+              className={navLink}
+              onClick={() => goTo(`/chain/${currentChainId}/transactions`)}
+            >
+              Transactions
+            </button>
+            <button
+              type="button"
+              className={navLink}
+              onClick={() => goTo(`/chain/${currentChainId}/pending`)}
+            >
+              Pending
+            </button>
+            <button
+              type="button"
+              className={navLink}
+              onClick={() => goTo(`/chain/${currentChainId}/broadcast`)}
+            >
+              Broadcast
+            </button>
+            <button
+              type="button"
+              className={navLink}
+              onClick={() => goTo(`/chain/${currentChainId}/contracts`)}
+            >
+              Contracts
+            </button>
+            <button
+              type="button"
+              className={navLink}
+              onClick={() => goTo(`/chain/${currentChainId}/tokens`)}
+            >
+              Tokens
+            </button>
+            <button
+              type="button"
+              className={navLink}
+              onClick={() => goTo(`/chain/${currentChainId}/charts`)}
+            >
+              Charts
+            </button>
+            {/* Tools hub: every tool on one page (SQL console, Ops,
+                Signatures, Coverage legend, Broadcast…) — also the
+                command palette's touch fallback. Not chain-scoped, so it
+                links the bare /tools path like the admin group below. */}
+            <button type="button" className={navLink} onClick={() => goTo('/tools')}>
+              Tools
+            </button>
+            {/* Admin group, visually separated from the page links: the
+                SQL console runs admin-gated read-only queries against the
+                explorer's own DuckDB. Not chain-scoped (it queries the
+                main database), so it links to the bare /sql path. */}
+            <span className={navDivider} data-testid="nav-admin-divider" aria-hidden="true" />
+            <button
+              type="button"
+              className={cx(navLink, navLinkMuted)}
+              aria-label="SQL console (admin)"
+              onClick={() => goTo('/sql')}
+            >
+              SQL
+            </button>
+            {/* Ops joins the admin group: an operator-facing read-only
+                dashboard (storage, indexing, watch, rate limits) — same
+                non-chain-scoped, secondary-tier treatment as SQL. */}
+            <button
+              type="button"
+              className={cx(navLink, navLinkMuted)}
+              aria-label="Ops overview (admin)"
+              onClick={() => goTo('/ops')}
+            >
+              Ops
+            </button>
           </div>
         </div>
       </nav>

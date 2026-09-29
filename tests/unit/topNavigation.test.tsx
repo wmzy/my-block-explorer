@@ -1178,15 +1178,46 @@ describe('tools entry and palette trigger', () => {
     expect(mockNavigate).toHaveBeenCalledTimes(1);
   });
 
-  it('renders the palette trigger with its accessible name and opens the palette through the control', () => {
+  it('renders the palette trigger as its keyboard shortcut, not a search glyph', () => {
     renderTopNavigation({ currentChainId: 1 });
 
     const trigger = screen.getByRole('button', { name: 'Command palette (Ctrl+K)' });
     expect(trigger).toHaveAttribute('title', 'Command palette (Ctrl+K)');
+    // The visible label IS the shortcut: a magnifier glyph here read as a
+    // second search button beside the search box.
+    expect(trigger).toHaveTextContent('Ctrl+K');
+    expect(trigger.querySelector('svg')).toBeNull();
 
     fireEvent.click(trigger);
     expect(mockOpenCommandPalette).toHaveBeenCalledTimes(1);
     // The trigger never navigates on its own — the palette owns routing.
     expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('spells the shortcut ⌘K on Apple platforms', () => {
+    const nav = window.navigator as Navigator & { userAgentData?: { platform?: string } };
+
+    // Modern Chromium reports the platform through userAgentData…
+    Object.defineProperty(nav, 'userAgentData', {
+      value: { platform: 'macOS' },
+      configurable: true,
+    });
+    try {
+      const { unmount } = renderTopNavigation({ currentChainId: 1 });
+      expect(screen.getByRole('button', { name: 'Command palette (⌘K)' })).toHaveTextContent('⌘K');
+      unmount();
+    } finally {
+      delete (nav as { userAgentData?: unknown }).userAgentData;
+    }
+
+    // …Firefox/Safari only expose navigator.platform.
+    const original = nav.platform;
+    Object.defineProperty(nav, 'platform', { value: 'MacIntel', configurable: true });
+    try {
+      renderTopNavigation({ currentChainId: 1 });
+      expect(screen.getByRole('button', { name: 'Command palette (⌘K)' })).toHaveTextContent('⌘K');
+    } finally {
+      Object.defineProperty(nav, 'platform', { value: original, configurable: true });
+    }
   });
 });
