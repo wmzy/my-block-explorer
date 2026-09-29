@@ -123,6 +123,9 @@ instance and a `tsx` watch instance would fight over the same DuckDB file):
 pnpm dev:server   # tsx watch src/cli.ts --port 8201 --no-open → http://localhost:8201
 ```
 
+Done with it? `npx my-block-explorer uninstall` removes the local DuckDB data
+(it shows sizes and asks before deleting anything).
+
 ### Production build
 
 ```bash

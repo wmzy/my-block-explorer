@@ -155,6 +155,32 @@ Backup = stop the server and copy the files (DuckDB is single-writer; a hot copy
 of a database being written to is not safe). Inspect data with `pnpm db:studio`
 (Drizzle Studio) or the DuckDB CLI — these are DuckDB files, **not** SQLite.
 
+## Uninstall
+
+```bash
+npx my-block-explorer uninstall
+```
+
+The command enumerates everything the backend wrote under the **current working
+directory** (data is cwd-relative — the summary prints the absolute path it
+scanned): the main DuckDB file, the per-chain event DBs, the solc compiler
+cache, plus the open-in-IDE scratch dir in the OS temp dir. It shows sizes and
+asks before deleting anything — only `y`/`yes` deletes; any other answer (or a
+piped/non-interactive stdin) keeps the data. Flags: `--yes`/`-y` skips the
+question for scripts, `--force` deletes even when a server is running.
+
+The running-server guard matters: DuckDB keeps the database files open, and a
+probe of `localhost:8201-8205` (the same range the frontend's auto-discovery
+scans, plus `PORT` if set) makes the command refuse rather than delete under a
+live writer — stop the server first, or pass `--force` knowingly.
+
+Removing the package itself is your package manager's job (`npm rm -g
+my-block-explorer` for global installs; npx keeps nothing beyond npm's download
+cache; a source clone is just a directory to delete). Browser-side settings
+(watchlist, private notes, custom ABIs, theme, custom chains) live in the
+browser's localStorage, not on this machine's disk — export them from the
+app's Settings → Backup & restore panel first if you want to keep them.
+
 ## Running it as a service (optional)
 
 ```ini

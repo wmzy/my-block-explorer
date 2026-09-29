@@ -1329,6 +1329,38 @@ pnpm typecheck           # tsc --noEmit
   193/229px), `overflowX: 0` at 1440/1024/900/768, trigger hidden <768px as
   before.
 
+- **2026-09-29 uninstall command (single stream)** — `my-block-explorer
+  uninstall` (CLI positional subcommand; flags `--yes`/`-y` skip the prompt,
+  `--force` bypasses the server guard): enumerates ONLY what the explorer
+  writes — main DB via DATABASE_URL (`parseMainDbPath`, extracted from
+  OpsService into the import-free leaf `src/database/dbPath.ts`, re-exported
+  from OpsService so its public surface is unchanged), per-chain event DBs +
+  solc-cache (always cwd-based), and the open-in-IDE scratch dir under the OS
+  tmpdir. Default layout (main db under `<cwd>/data`) collapses to ONE
+  `data-dir` target covering the `.wal` sibling; custom/absolute DATABASE_URL
+  removes the main db + `.wal` individually. Shows sizes with the ABSOLUTE
+  scan root before asking; only `y`/`yes` deletes; non-interactive stdin
+  keeps data with a `--yes` hint. Deletion is refused while anything answers
+  `/api/health` on the discovery range 8201–8205 (+ PORT env) — DuckDB holds
+  files open, deleting under a live writer leaves it on unlinked inodes.
+  Core module `src/uninstall.ts` (every side effect injectable; tests in
+  `tests/unit/uninstall.test.ts` must inject a refusing `fetchImpl` so they
+  never probe real loopback ports). **Structural rule**: `src/cli.ts` dynamic-
+  imports `./server` (and uninstall) — statically importing the server graph
+  runs the DuckDB adapter constructor, which mkdirs `data/` and would
+  fabricate the thing uninstall measures; `--help`/`--version` in an empty
+  dir must create nothing (pinned by smoke). parseArgs needs BOTH
+  `allowPositionals: true` AND `allowNegative: true` (the latter is what
+  `--no-open` — used by `pnpm dev:server` — depends on; dropping it in a
+  rewrite breaks the built bundle only at runtime). Docs:
+  INSTALLATION.md "Uninstall", README getting-started pointer. **Incident
+  during smoke (disclosed to user)**: invoking the CLI through
+  `pnpm --dir <repo> exec tsx …` from a temp cwd SHIFTED process.cwd() to
+  the repo — the uninstall enumerated and deleted the repo's own dev
+  `data/` (32.6 MB DuckDB caches/indexed events/rpc-configs). Recovery is
+  automatic (fresh DB on next start, builtin labels reseed on empty table);
+  the stored rpc-configs were lost and need re-adding. Resulting UX rule:
+  the summary prints the absolute scan root, not relative labels.
 - **2026-09-29 MCP support (single stream)** — the explorer is now consumable
   by AI assistants: `src/mcp/` + stdio bin `my-block-explorer-mcp`
   (`pnpm mcp` in dev; tsup object-entry `mcp: 'src/mcp/cli.ts'` →

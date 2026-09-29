@@ -20,7 +20,13 @@ import { sql } from 'drizzle-orm';
 // (also bundled into vite.config.ts's dev bridge via esbuild, which does
 // not resolve the '@/' alias for runtime imports).
 import { addressScanJobs, db, indexingRanges } from '../database/init';
+import { parseMainDbPath } from '../database/dbPath';
 import { appVersion } from '../version';
+
+// Re-exported for the existing public surface (tests import it from here);
+// the implementation lives in the import-free leaf so the uninstall CLI can
+// share it without pulling the database graph.
+export { parseMainDbPath };
 
 // --- Pure helpers (unit-tested with injected inputs) ---
 
@@ -106,18 +112,8 @@ export function groupCountsByChain(
     .sort((a, b) => a.chainId - b.chainId);
 }
 
-/**
- * The main database file path from DATABASE_URL, mirroring the adapter's
- * own parseConnectionString (src/database/duckdb-postgres-adapter.ts):
- * strip the duckdb:// scheme, fall back to the default relative path for
- * anything else (including unset).
- */
-export function parseMainDbPath(databaseUrl: string | undefined): string {
-  if (databaseUrl?.startsWith('duckdb://')) {
-    return databaseUrl.slice('duckdb://'.length);
-  }
-  return 'data/blockchain.db';
-}
+// parseMainDbPath moved to src/database/dbPath.ts (shared with the
+// uninstall CLI); re-exported above.
 
 // --- Section types (mirrored by the frontend service, src/services/opsSummary.ts) ---
 
