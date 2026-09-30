@@ -131,6 +131,20 @@ export function ConnectionStatus({ className: _className }: ConnectionStatusProp
 
   const [isExpanded, setIsExpanded] = useState(false);
   const reconnectingRef = useRef(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Click-outside auto-close (same pattern as TopNavigation/OpenInIdeButton):
+  // the container wraps badge + panel, so only truly outside clicks dismiss.
+  useEffect(() => {
+    if (!isExpanded) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setIsExpanded(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isExpanded]);
 
   // Auto-reconnect: poll every 30s, silently attempt reconnect on service loss
   useEffect(() => {
@@ -200,7 +214,7 @@ export function ConnectionStatus({ className: _className }: ConnectionStatusProp
           : 'Unknown';
 
   return (
-    <div className={containerStyle}>
+    <div className={containerStyle} ref={containerRef}>
       {isExpanded && (
         <div className={expandedPanelStyle}>
           <div className={expandedRowStyle}>
