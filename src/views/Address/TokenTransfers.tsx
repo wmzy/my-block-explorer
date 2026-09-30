@@ -598,20 +598,26 @@ export default function TokenTransfers({
   // entry, the latch sends ?refresh=1 so the backend re-scans instead of
   // re-serving its (possibly 'partial') 60s cache entry.
   const retryFresh = () => {
-    requestTokenTransfersRefresh();
+    requestTokenTransfersRefresh(chainId, address, searchWindow, scanMode);
     void query.refetch();
   };
 
   // The tab's fetch lives here (not in the parent), so the unmounted tab
   // fetches nothing. A parent Refresh arrives as a signal bump and is an
   // explicit refresh too — same cache-bypass semantics as Retry.
+  //
+  // The identity values are deps so a refresh arriving AFTER an
+  // address/window/mode switch arms the latch for the request that is
+  // actually about to run. The signal ref is the real guard: an identity
+  // change alone re-runs the effect but returns immediately, so only a
+  // genuine signal bump refreshes.
   const appliedSignal = useRef(refreshSignal);
   useEffect(() => {
     if (refreshSignal === appliedSignal.current) return;
     appliedSignal.current = refreshSignal;
-    requestTokenTransfersRefresh();
+    requestTokenTransfersRefresh(chainId, address, searchWindow, scanMode);
     void Promise.resolve(query.refetch()).finally(() => onRefreshed?.());
-  }, [refreshSignal, query, onRefreshed]);
+  }, [refreshSignal, query, onRefreshed, chainId, address, searchWindow, scanMode]);
 
   if (query.loading && !query.data) {
     return <LoadingState message="Scanning token transfers..." />;
@@ -723,7 +729,9 @@ export default function TokenTransfers({
                 // rides ?ttWindow= (a pushed history entry, like ?ttPage=)
                 // so the depth survives refresh, share and back/forward,
                 // and a different address's URL never inherits it.
-                requestTokenTransfersRefresh();
+                // Armed for the WIDENED window — that is the request the
+                // ?ttWindow= write is about to produce, not the current one.
+                requestTokenTransfersRefresh(chainId, address, nextSearchWindow, scanMode);
                 void setSearch(prev => ({
                   ...prev,
                   tab: 'transfers',
