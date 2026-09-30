@@ -1239,23 +1239,31 @@ export const EventRow = React.memo(({
 });
 
 // Default sort options
+// SortOption.key must name a REAL EventData field: the sorter's
+// extractValue does a literal `obj[key]` walk, so a key that does not
+// exist on a row reads undefined for every row and compares equal to
+// every other — the column silently stops sorting. These keys used to be
+// snake_case (`block_timestamp`, `block_number`, `event_name`,
+// `transaction_hash`) while rows are camelCase EventData, so four of the
+// five columns — including the default 'Time' — were no-ops in both
+// directions. They now name the row fields they claim to sort.
 const defaultSortOptions: SortOption[] = [
   {
-    key: 'block_timestamp',
+    key: 'blockTimestamp',
     label: 'Time',
     type: 'timestamp',
     defaultDirection: 'desc',
     description: 'Sort by block time',
   },
   {
-    key: 'block_number',
+    key: 'blockNumber',
     label: 'Block',
     type: 'numeric',
     defaultDirection: 'desc',
     description: 'Sort by block number',
   },
   {
-    key: 'event_name',
+    key: 'eventName',
     label: 'Event Name',
     type: 'text',
     defaultDirection: 'asc',
@@ -1283,7 +1291,7 @@ const defaultSortOptions: SortOption[] = [
     description: 'Sort by transaction value',
   },
   {
-    key: 'transaction_hash',
+    key: 'transactionHash',
     label: 'Tx Hash',
     type: 'text',
     defaultDirection: 'asc',
@@ -1328,13 +1336,13 @@ export const EventTable: React.FC<EventTableProps> = ({
   });
   const [filters, _setFilters] = useState<FilterState>({});
   const [sort, setSort] = useState<SortState>({
-    field: 'block_timestamp',
+    field: 'blockTimestamp',
     direction: 'desc',
   });
 
   // Enhanced sorting state
   const [multiSort, setMultiSort] = useState<SortConfig[]>([]);
-  const [currentSortField, setCurrentSortField] = useState<string>('block_timestamp');
+  const [currentSortField, setCurrentSortField] = useState<string>('blockTimestamp');
   const [showAdvancedSort, setShowAdvancedSort] = useState(false);
 
   // Enhanced pagination state
@@ -2108,20 +2116,20 @@ export const EventTable: React.FC<EventTableProps> = ({
                 <th scope="col" className={tableHeaderCell} aria-label="Raw log" />
                 <th
                   className={cx(tableHeaderCell, tableHeaderCellSortable)}
-                  onClick={() => handleSort('block_number')}
+                  onClick={() => handleSort('blockNumber')}
                 >
                   Block
                   <span className={sortIndicator}>
-                    {sort.field === 'block_number' ? (sort.direction === 'asc' ? '↑' : '↓') : '↕'}
+                    {sort.field === 'blockNumber' ? (sort.direction === 'asc' ? '↑' : '↓') : '↕'}
                   </span>
                 </th>
                 <th
                   className={cx(tableHeaderCell, tableHeaderCellSortable)}
-                  onClick={() => handleSort('block_timestamp')}
+                  onClick={() => handleSort('blockTimestamp')}
                 >
                   Time
                   <span className={sortIndicator}>
-                    {sort.field === 'block_timestamp'
+                    {sort.field === 'blockTimestamp'
                       ? sort.direction === 'asc'
                         ? '↑'
                         : '↓'
@@ -2130,11 +2138,11 @@ export const EventTable: React.FC<EventTableProps> = ({
                 </th>
                 <th
                   className={cx(tableHeaderCell, tableHeaderCellSortable)}
-                  onClick={() => handleSort('event_name')}
+                  onClick={() => handleSort('eventName')}
                 >
                   Event
                   <span className={sortIndicator}>
-                    {sort.field === 'event_name' ? (sort.direction === 'asc' ? '↑' : '↓') : '↕'}
+                    {sort.field === 'eventName' ? (sort.direction === 'asc' ? '↑' : '↓') : '↕'}
                   </span>
                 </th>
                 <th className={tableHeaderCell}>From</th>
