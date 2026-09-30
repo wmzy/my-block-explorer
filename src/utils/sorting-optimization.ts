@@ -26,6 +26,49 @@ export interface SortingCache {
 }
 
 /**
+ * A value that is exactly a plain decimal integer, or null otherwise.
+ * Used to detect the wei-scale strings this module must compare exactly.
+ */
+const EXACT_DECIMAL = /^-?\d+$/;
+
+/**
+ * Compare two numeric values EXACTLY.
+ *
+ * The previous implementation parsed both sides with parseFloat and
+ * subtracted, which is wrong for this module's real inputs: EventTable's
+ * 'numeric' columns carry wei decimal strings, and a double's ulp at 1e18
+ * is ~222 wei — so 10000000000000000000 and 10000000000000000050 parse to
+ * the SAME double, the comparator returns 0, and the two rows stay in
+ * whatever order they arrived in. The table looked sorted because a page
+ * of wei values is mostly correct anyway, but the order was arbitrary
+ * within each double-tie.
+ *
+ * Strategy, cheapest test first:
+ *  1. Both plain integer literals (the wei case) → BigInt comparison,
+ *     exact at any magnitude.
+ *  2. Otherwise → the original parseFloat subtraction, which stays
+ *     correct for the small numbers and fractions the other callers use
+ *     (chart samples, indices, latencies).
+ *
+ * A non-finite parse keeps the old behavior (NaN comparison → 0), so a
+ * junk cell can never scramble the ordering. Null/undefined are handled
+ * here too so the helper is total regardless of the caller's narrowing.
+ */
+function compareNumbersExactly(a: unknown, b: unknown): number {
+  if (a == null && b == null) return 0;
+  if (a == null) return -1;
+  if (b == null) return 1;
+  const aStr = a.toString();
+  const bStr = b.toString();
+  if (EXACT_DECIMAL.test(aStr) && EXACT_DECIMAL.test(bStr)) {
+    const aBig = BigInt(aStr);
+    const bBig = BigInt(bStr);
+    return aBig > bBig ? 1 : aBig < bBig ? -1 : 0;
+  }
+  return parseFloat(aStr) - parseFloat(bStr);
+}
+
+/**
  * Performance-optimized sorting class for large datasets
  */
 export class OptimizedSorter {
@@ -311,9 +354,7 @@ export class OptimizedSorter {
 
     switch (type) {
       case 'numeric': {
-        const aNum = parseFloat(a.toString());
-        const bNum = parseFloat(b.toString());
-        comparison = aNum - bNum;
+        comparison = compareNumbersExactly(a, b);
         break;
       }
 
