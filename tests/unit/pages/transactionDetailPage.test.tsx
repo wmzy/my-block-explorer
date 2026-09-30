@@ -273,13 +273,9 @@ const mockRpcClient = (call: ReturnType<typeof vi.fn>) => {
   vi.mocked(createRpcClient).mockResolvedValue({ call } as never);
 };
 
-// The back button's fallback destination.
-const TxListStub = () => <div data-testid="tx-list" />;
-
 function renderDetail(path = `/chain/1/tx/${TX_HASH}`) {
   const routes = createRoutes([
     { path: '/chain/:chainId/tx/:txHash', component: () => TransactionDetail },
-    { path: '/chain/:chainId/transactions', component: () => TxListStub },
   ]);
   return render(
     <MemoryRouter routes={routes} initialEntries={[path]}>
@@ -560,6 +556,16 @@ describe('TransactionDetail page', () => {
     ).not.toBeInTheDocument();
   });
 
+  it('links the Block Number row to the block page for a mined tx', async () => {
+    vi.mocked(useTransactionByHash).mockReturnValue(hookResult(makeTx()));
+    renderDetail();
+
+    // The block cross-link is the concrete replacement for the removed
+    // page-level Back row (browser back + nav cover the rest).
+    const link = await screen.findByRole('link', { name: '18,000,001' });
+    expect(link).toHaveAttribute('href', '/chain/1/block/18000001');
+  });
+
   it('mounts the Raw JSON appendix: pending tx fetches its tx object and states the absent receipt', async () => {
     vi.mocked(useTransactionByHash).mockReturnValue(
       hookResult(
@@ -615,21 +621,6 @@ describe('TransactionDetail page', () => {
     expect(await screen.findByText('<0.0001 ETH')).toBeInTheDocument();
     expect(screen.getByTitle('1 wei')).toBeInTheDocument();
     expect(screen.queryByText('0.000000 ETH')).not.toBeInTheDocument();
-  });
-
-  it('falls back to the transactions list when the back button has no history to step into', async () => {
-    // Fresh deep link (jsdom: no referrer, window.history.length === 1):
-    // the back control lands on the chain's transactions list — the same
-    // fallback rule the block detail page uses — not the old chain home.
-    renderDetail();
-
-    // Both the page header and the card share the "Transaction Details"
-    // title — the back click is what matters below.
-    expect((await screen.findAllByRole('heading', { name: 'Transaction Details' })).length).toBe(2);
-
-    fireEvent.click(screen.getByRole('button', { name: /Back to Explorer/ }));
-    expect(await screen.findByTestId('tx-list')).toBeInTheDocument();
-    expect(screen.queryByTestId('top-navigation')).not.toBeInTheDocument();
   });
 
   // --- Value-row USD (browser-side DefiLlama price layer) ---

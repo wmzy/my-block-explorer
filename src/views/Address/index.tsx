@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { css, cx } from '@linaria/core';
 import type { ReactNode } from 'react';
 import { TypedLink, useMatched, useSearch, useSetSearch } from '@native-router/react';
-import { navigate } from '@native-router/core';
 import { erc20Abi, formatUnits } from 'viem';
 import type { ContractFunctionParameters } from 'viem';
 import { Alert } from 'haze-ui';
@@ -91,7 +90,7 @@ import { formatRelativeTime } from '@/utils/format';
 import { getExternalToolLinks } from '@/config/externalTools';
 import { redirectReplace } from '@/views/Home/Landing';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
-import { PageContainer, PageHeader, BackButton } from '@/components/ui/PageLayout';
+import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { InfoGrid, InfoItem } from '@/components/ui/InfoGrid';
 import { DataTable, Pagination, linkStyle } from '@/components/ui/DataTable';
@@ -1796,11 +1795,6 @@ export default function Address() {
       <>
         <TopNavigation currentChainId={currentChainId} onChainChange={handleChainChange} />
         <PageContainer>
-          <BackButton
-            onClick={() => {
-              void navigate(router, `/chain/${currentChainId}`).catch(() => undefined);
-            }}
-          />
           <PageHeader
             title="Address Details"
             chainInfo={`${getChainName(currentChainId)} • Chain ID: ${currentChainId}`}
@@ -1908,12 +1902,6 @@ export default function Address() {
     <>
       <TopNavigation currentChainId={currentChainId} onChainChange={handleChainChange} />
       <PageContainer>
-        <BackButton
-          onClick={() => {
-            void navigate(router, `/chain/${currentChainId}`).catch(() => undefined);
-          }}
-        />
-
         <div className={addressTitleRow}>
           <PageHeader
             title={ensName ?? 'Address Details'}

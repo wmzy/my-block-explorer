@@ -16,7 +16,7 @@ import { navigate } from '@native-router/core';
 
 import TopNavigation from '@/components/TopNavigation';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
-import { PageContainer, PageHeader, BackButton } from '@/components/ui/PageLayout';
+import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { parseChainIdParam } from '@/utils/chainParam';
 import { formatNumber } from '@/utils/format';
@@ -600,10 +600,6 @@ export default function ChartsPage() {
     <>
       <TopNavigation currentChainId={currentChainId} onChainChange={handleChainChange} />
       <PageContainer>
-        <BackButton
-          onClick={() => void navigate(router, `/chain/${currentChainId}`).catch(() => undefined)}
-        />
-
         <PageHeader
           title={`${getChainName(currentChainId)} Charts`}
           chainInfo={`Chain ID: ${currentChainId}`}

@@ -1526,3 +1526,26 @@ pnpm typecheck           # tsc --noEmit
   Events tab renders the honest empty state + indexing CTA; the only
   console error was the environmental creation-endpoint RPC timeout,
   surfaced with the product's own guidance card.
+
+- **2026-09-30 page-level Back rows removed (user-requested)** — the
+  "Back to Explorer" button family is deleted: it duplicated browser back
+  (the history-aware variants literally called `window.history.back()`)
+  and its deterministic fallbacks are one click away in the top nav (logo
+  → chain home, Blocks/Transactions → the list routes). Removed:
+  `BackButton` from `components/ui/PageLayout.tsx`, all 8 view usages
+  (Address, Blocks/Detail, Transactions Detail/Pending, Contract, Token,
+  Charts, Broadcast — Token's `onBack` shell prop threading with it),
+  Contract's `hasInSiteHistory` heuristic + `backButtonStyles`, and the
+  now-dead `navigateBack` helper in `views/Home/Landing.tsx`. Compensating
+  cross-link: tx detail's Block Number row is now a `TypedLink` to the
+  block page (was plain text; pending txs still render honest "Pending").
+  Kept on purpose: `SetupRequiredScreen`'s wizard-step back,
+  TopNavigation's "Back to chain list" (both in-flow controls, not page
+  chrome), and RouterError/UnsupportedChainState CTAs. Known tradeoff:
+  installed desktop-PWA windows have no browser toolbar back (Alt+← and
+  the nav still work). Tests: the three back-fallback pins (block/tx/
+  contract page suites) deleted; new pin asserts the tx Block Number
+  link href. Verified: tsc clean, eslint 0 errors, `vitest --changed`
+  57 files / 722 tests green, live smoke on mainnet (tx list → tx detail
+  → block-number link lands on the block; address/contract pages render
+  with zero back buttons; browser back contract→address still works).

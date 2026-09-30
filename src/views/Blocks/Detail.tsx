@@ -12,13 +12,13 @@ import { CopyableHash } from '@/components/ui/CopyableHash';
 import { ErrorState, EmptyState } from '@/components/ui/ErrorState';
 import { InfoGrid, InfoItem } from '@/components/ui/InfoGrid';
 import { LoadingState } from '@/components/ui/LoadingState';
-import { PageContainer, PageHeader, BackButton } from '@/components/ui/PageLayout';
+import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
 import { RawJsonCard, type RawJsonFetcher } from '@/components/ui/RawJson';
 import { linkStyle } from '@/components/ui/DataTable';
 import { ExternalLinks } from '@/components/ui/ExternalLinks';
 import { getChainInfo, getChainName, getChainSymbol, getChainType } from '@/config/chains';
 import { getExternalBlockLinks } from '@/config/externalTools';
-import { redirectReplace, navigateBack } from '@/views/Home/Landing';
+import { redirectReplace } from '@/views/Home/Landing';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
 import { useBlockByNumber } from '@/services/chainRpc';
 import { finalityLabelFor, useFinalityHeads } from '@/services/blocks';
@@ -503,8 +503,6 @@ export default function BlockDetail() {
     <>
       <TopNavigation currentChainId={currentChainId} onChainChange={handleChainChange} />
       <PageContainer>
-        <BackButton onClick={() => navigateBack(router, `/chain/${currentChainId}/blocks`)} />
-
         <div className={headerRow}>
           <PageHeader
             title={`Block #${blockNumberStr}`}

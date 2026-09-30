@@ -3,7 +3,6 @@ import { css } from '@linaria/core';
 import { getAddress, type Address, type Hex } from 'viem';
 import { useControl } from 'react-use-control';
 import { z } from 'zod';
-import { navigate } from '@native-router/core';
 import { TypedLink, useMatched, useSearch, useSetSearch } from '@native-router/react';
 import { getChainName, isChainSupported } from '@/config/chains';
 import { getExternalToolLinks } from '@/config/externalTools';
@@ -378,22 +377,6 @@ const infoGridStyles = css`
       align-items: flex-start;
       gap: 4px;
     }
-  }
-`;
-
-const backButtonStyles = css`
-  background: #f8f9fa;
-  border: 1px solid #dee2e6;
-  color: #495057;
-  padding: 8px 16px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 14px;
-  margin-bottom: 20px;
-  display: inline-block;
-
-  &:hover {
-    background: #e9ecef;
   }
 `;
 
@@ -907,33 +890,6 @@ const readStoredCustomAbi = (chainId: number, address: string): string | null =>
   }
 };
 
-// History-aware Back heuristic. The button must behave like the browser's
-// Back when this page was reached through real browsing (previous tab, the
-// facet page the user came from, the transaction that linked here) instead
-// of always pushing the address page — which, on a deep link followed by
-// in-site navigation, was never visited.
-//
-// Two signals, either counts:
-// (a) document.referrer is same-origin — this document was opened by a hard
-//     in-site link, so the entry under Back is one of ours.
-// (b) history.length > 1 — every in-app router push grows the tab's session
-//     history, while a fresh deep link (new tab, typed URL, bookmark)
-//     starts at 1 and reloads keep it there. length > 1 therefore means the
-//     tab genuinely has a previous page; the one false positive (a URL
-//     typed into a tab that already had history) still matches what the
-//     browser's own Back button would do, so following it is honest.
-const hasInSiteHistory = (): boolean => {
-  if (typeof window === 'undefined') return false;
-  try {
-    if (document.referrer !== '' && new URL(document.referrer).origin === window.location.origin) {
-      return true;
-    }
-  } catch {
-    // Unparseable referrer — fall through to the history-length signal.
-  }
-  return window.history.length > 1;
-};
-
 // A deployment cannot consume zero gas: a 0/'' answer means the RPC/indexer
 // did not record the creation receipt — render Unknown instead of a
 // confident-looking '0 gas'.
@@ -1320,25 +1276,6 @@ export default function Contract() {
     <>
       <TopNavigation currentChainId={currentChainId} onChainChange={handleChainChange} />
       <div className={pageStyles}>
-        <button
-          className={backButtonStyles}
-          onClick={() => {
-            if (hasInSiteHistory()) {
-              // In-app navigation: follow the browser's own history back to
-              // wherever the user actually came from.
-              window.history.back();
-            } else {
-              // Deep link with nothing under Back: the deterministic
-              // address-page fallback stays.
-              void navigate(router, `/chain/${currentChainId}/address/${address}`).catch(
-                () => undefined,
-              );
-            }
-          }}
-        >
-          ← Back
-        </button>
-
         <div className={headerStyles}>
           <h1>Contract Source Code</h1>
           <div className="chain-info">

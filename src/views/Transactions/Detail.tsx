@@ -16,12 +16,12 @@ import { ExternalLinks } from '@/components/ui/ExternalLinks';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { InfoGrid, InfoItem } from '@/components/ui/InfoGrid';
 import { LoadingState } from '@/components/ui/LoadingState';
-import { PageContainer, PageHeader, BackButton } from '@/components/ui/PageLayout';
+import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
 import { RawJsonCard, type RawJsonFetcher } from '@/components/ui/RawJson';
 import { UnitToggle } from '@/components/ui/UnitToggle';
 import { POPULAR_CHAINS, getChainInfo, getChainName, getChainSymbol } from '@/config/chains';
 import { getExternalTxLinks } from '@/config/externalTools';
-import { redirectReplace, navigateBack } from '@/views/Home/Landing';
+import { redirectReplace } from '@/views/Home/Landing';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
 import { finalityLabelFor, useFinalityHeads } from '@/services/blocks';
 import { useContractSource } from '@/services/contracts';
@@ -1315,8 +1315,6 @@ export default function TransactionDetail() {
     <>
       <TopNavigation currentChainId={currentChainId} onChainChange={handleChainChange} />
       <PageContainer>
-        <BackButton onClick={() => navigateBack(router, `/chain/${currentChainId}/transactions`)} />
-
         {/* Cross-verification in an external explorer from the page head —
             available before/without the tx resolving. */}
         <div className={headerLinksRow}>
@@ -1362,10 +1360,19 @@ export default function TransactionDetail() {
                   </InfoItem>
                   <InfoItem label="Block Number">
                     {/* Pending tx (not yet mined): honest Pending text,
-                        never a "0" or a /block/0 link. */}
-                    {txInfo.blockNumber === null
-                      ? 'Pending'
-                      : formatNumber(BigInt(txInfo.blockNumber))}
+                        never a "0" or a /block/0 link. Mined txs link their
+                        block — the standard explorer cross-link, and the
+                        replacement for the removed page-level Back row. */}
+                    {txInfo.blockNumber === null ? (
+                      'Pending'
+                    ) : (
+                      <TypedLink
+                        to={`/chain/${currentChainId}/block/${txInfo.blockNumber}`}
+                        className={linkStyle}
+                      >
+                        {formatNumber(BigInt(txInfo.blockNumber))}
+                      </TypedLink>
+                    )}
                   </InfoItem>
                   {txInfo.blockNumber !== null && (
                     <InfoItem label="Confirmations">

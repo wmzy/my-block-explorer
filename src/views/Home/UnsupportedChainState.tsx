@@ -39,9 +39,9 @@ const ctaRow = css`
   margin-bottom: var(--haze-space-4);
 `;
 
-// Button-scale links modeled on PageLayout's BackButton so the CTAs read as
-// actions, not body-text links. Doubles as the base style of the
-// popular-chain links so the whole recovery block reads as one family.
+// Button-scale links so the CTAs read as actions, not body-text links.
+// Doubles as the base style of the popular-chain links so the whole
+// recovery block reads as one family.
 const ctaLink = css`
   display: inline-block;
   background: var(--haze-color-bg-subtle);

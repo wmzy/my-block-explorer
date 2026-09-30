@@ -30,26 +30,6 @@ const chainInfoStyle = css`
   font-size: var(--haze-text-sm);
 `;
 
-const backButtonStyle = css`
-  background: var(--haze-color-bg-subtle);
-  border: 1px solid var(--haze-color-border);
-  border-radius: var(--haze-radius-lg);
-  padding: var(--haze-space-2) var(--haze-space-4);
-  color: var(--haze-color-text-muted);
-  text-decoration: none;
-  font-size: var(--haze-text-sm);
-  margin-bottom: var(--haze-space-5);
-  display: inline-block;
-  cursor: pointer;
-  transition: all var(--haze-duration-fast, 0.15s) var(--haze-ease, ease);
-  font-family: var(--haze-font-sans);
-
-  &:hover {
-    background: var(--haze-color-bg-muted);
-    color: var(--haze-color-text);
-  }
-`;
-
 type PageContainerProps = {
   children: ReactNode;
   narrow?: boolean;
@@ -76,18 +56,5 @@ export function PageHeader({ title, chainInfo, className }: PageHeaderProps) {
       <h1>{title}</h1>
       {chainInfo && <div className={chainInfoStyle}>{chainInfo}</div>}
     </div>
-  );
-}
-
-type BackButtonProps = {
-  onClick: () => void;
-  label?: string;
-};
-
-export function BackButton({ onClick, label = 'Back to Explorer' }: BackButtonProps) {
-  return (
-    <button className={backButtonStyle} onClick={onClick}>
-      ← {label}
-    </button>
   );
 }

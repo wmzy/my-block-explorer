@@ -39,7 +39,7 @@ import { CopyableHash } from '@/components/ui/CopyableHash';
 import { DataTable, linkStyle, monoStyle } from '@/components/ui/DataTable';
 import { EmptyState, ErrorState } from '@/components/ui/ErrorState';
 import { TableSkeleton } from '@/components/ui/LoadingState';
-import { BackButton, PageContainer, PageHeader } from '@/components/ui/PageLayout';
+import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
 import { getChainInfo, getChainName } from '@/config/chains';
 import { usePendingTransactions, type PoolEntry } from '@/services/txpool';
 import { formatGwei } from '@/services/gasHistory';
@@ -263,13 +263,6 @@ export default function PendingTransactionsPage() {
     <>
       <TopNavigation currentChainId={currentChainId} onChainChange={handleChainChange} />
       <PageContainer>
-        <BackButton
-          onClick={() => {
-            void navigate(router, `/chain/${currentChainId}/transactions`).catch(() => undefined);
-          }}
-          label="Back to Transactions"
-        />
-
         <PageHeader
           title="Pending Transactions"
           chainInfo={`${getChainName(currentChainId)} • Chain ID: ${currentChainId}`}

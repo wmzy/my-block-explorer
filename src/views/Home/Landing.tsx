@@ -16,7 +16,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import {
   commitReplace,
-  navigate,
   preload,
   type BaseRoute,
   type RouterInstance,
@@ -82,26 +81,6 @@ export function redirectReplace<R extends BaseRoute>(
   to: string,
 ): Promise<void> {
   return preload(router, to).then(entry => commitReplace(router, entry.task, entry.location));
-}
-
-// Detail pages' back control: prefer the real history entry when the user
-// actually arrived from inside the app (a same-origin referrer with
-// somewhere to go back to); a deep link or a freshly opened tab has no
-// meaningful "back", so it falls back to the canonical list route instead
-// of the old hard-coded chain home.
-export function navigateBack<R extends BaseRoute>(
-  router: RouterInstance<R>,
-  fallbackPath: string,
-): void {
-  const fromSameOrigin =
-    typeof document !== 'undefined' &&
-    document.referrer !== '' &&
-    new URL(document.referrer, window.location.href).origin === window.location.origin;
-  if (fromSameOrigin && window.history.length > 1) {
-    window.history.back();
-    return;
-  }
-  navigate(router, fallbackPath).catch(() => undefined);
 }
 
 export default function Landing() {

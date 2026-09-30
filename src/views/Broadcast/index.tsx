@@ -36,7 +36,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { CopyableHash } from '@/components/ui/CopyableHash';
 import { linkStyle, monoStyle } from '@/components/ui/DataTable';
 import { InfoGrid, InfoItem } from '@/components/ui/InfoGrid';
-import { BackButton, PageContainer, PageHeader } from '@/components/ui/PageLayout';
+import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
 import { getChainInfo, getChainName } from '@/config/chains';
 import { formatGasPrice, formatNumber } from '@/utils/format';
 import { parseChainIdParam } from '@/utils/chainParam';
@@ -177,13 +177,6 @@ export default function BroadcastTransactionPage() {
     <>
       <TopNavigation currentChainId={currentChainId} onChainChange={handleChainChange} />
       <PageContainer>
-        <BackButton
-          onClick={() => {
-            void navigate(router, `/chain/${currentChainId}`).catch(() => undefined);
-          }}
-          label="Back to Explorer"
-        />
-
         <PageHeader
           title="Broadcast Transaction"
           chainInfo={`${getChainName(currentChainId)} • Chain ID: ${currentChainId}`}

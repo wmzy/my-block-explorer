@@ -14,13 +14,12 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { css, cx } from '@linaria/core';
 import { TypedLink, useMatched, useSearch } from '@native-router/react';
-import { navigate } from '@native-router/core';
 import { formatUnits, getAddress } from 'viem';
 
 import TopNavigation from '@/components/TopNavigation';
 import { redirectReplace } from '@/views/Home/Landing';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
-import { PageContainer, PageHeader, BackButton } from '@/components/ui/PageLayout';
+import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { InfoGrid, InfoItem } from '@/components/ui/InfoGrid';
 import { linkStyle } from '@/components/ui/DataTable';
@@ -480,15 +479,13 @@ export function TokenOverviewCardLink({
   );
 }
 
-// Shared page chrome for the guard states below (nav, back, header).
+// Shared page chrome for the guard states below (nav, header).
 function TokenPageShell({
   chainId,
-  onBack,
   onChainChange,
   children,
 }: {
   chainId: number;
-  onBack: () => void;
   onChainChange: (chainId: number) => void;
   children: ReactNode;
 }) {
@@ -496,7 +493,6 @@ function TokenPageShell({
     <>
       <TopNavigation currentChainId={chainId} onChainChange={onChainChange} />
       <PageContainer>
-        <BackButton onClick={onBack} />
         <PageHeader title="Token" chainInfo={`${getChainName(chainId)} • Chain ID: ${chainId}`} />
         {children}
       </PageContainer>
@@ -922,9 +918,6 @@ export default function TokenPage() {
   const handleChainChange = (newChainId: number) => {
     void redirectReplace(router, `/chain/${newChainId}/token/${address}`).catch(() => undefined);
   };
-  const backToExplorer = () => {
-    void navigate(router, `/chain/${currentChainId}`).catch(() => undefined);
-  };
 
   // --- Guards (after every hook) ---
 
@@ -943,7 +936,6 @@ export default function TokenPage() {
     return (
       <TokenPageShell
         chainId={currentChainId}
-        onBack={backToExplorer}
         onChainChange={handleChainChange}
       >
         <InvalidAddressError address={address} chainId={currentChainId} />
@@ -955,7 +947,6 @@ export default function TokenPage() {
     return (
       <TokenPageShell
         chainId={currentChainId}
-        onBack={backToExplorer}
         onChainChange={handleChainChange}
       >
         {codeQuery.error !== undefined ? (
@@ -973,7 +964,6 @@ export default function TokenPage() {
     return (
       <TokenPageShell
         chainId={currentChainId}
-        onBack={backToExplorer}
         onChainChange={handleChainChange}
       >
         <NotATokenContractState
@@ -989,7 +979,6 @@ export default function TokenPage() {
     return (
       <TokenPageShell
         chainId={currentChainId}
-        onBack={backToExplorer}
         onChainChange={handleChainChange}
       >
         <LoadingState message="Reading token interface..." />
@@ -1004,7 +993,6 @@ export default function TokenPage() {
     return (
       <TokenPageShell
         chainId={currentChainId}
-        onBack={backToExplorer}
         onChainChange={handleChainChange}
       >
         <ErrorState message="Could not read the token interface from the RPC — this is not a verdict on the address. Try again, or use the address and contract views." />
@@ -1025,7 +1013,6 @@ export default function TokenPage() {
     return (
       <TokenPageShell
         chainId={currentChainId}
-        onBack={backToExplorer}
         onChainChange={handleChainChange}
       >
         <NotATokenContractState
@@ -1055,8 +1042,6 @@ export default function TokenPage() {
     <>
       <TopNavigation currentChainId={currentChainId} onChainChange={handleChainChange} />
       <PageContainer>
-        <BackButton onClick={backToExplorer} />
-
         <PageHeader
           title={title}
           chainInfo={`${getChainName(currentChainId)} • Chain ID: ${currentChainId}`}

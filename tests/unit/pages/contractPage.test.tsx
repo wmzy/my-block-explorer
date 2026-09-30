@@ -985,35 +985,6 @@ describe('Contract view verification source provenance', () => {
   });
 });
 
-describe('Contract view history-aware back', () => {
-  it('falls back to the address-page navigation on a fresh deep link', async () => {
-    const backSpy = vi.spyOn(window.history, 'back').mockImplementation(() => {});
-    const user = userEvent.setup();
-    renderAt(`/chain/1/contract/${ADDRESS}`);
-
-    await user.click(await screen.findByRole('button', { name: /← Back/ }));
-
-    // No in-site history (jsdom: length 1, empty referrer): the browser
-    // back must not fire.
-    expect(backSpy).not.toHaveBeenCalled();
-    backSpy.mockRestore();
-  });
-
-  it('uses the browser back when the tab carries in-site history', async () => {
-    // Every in-app router push grows history.length; emulate one prior
-    // entry so the heuristic sees real browsing behind the page.
-    window.history.pushState({}, '', '/chain/1/blocks');
-    const backSpy = vi.spyOn(window.history, 'back').mockImplementation(() => {});
-    const user = userEvent.setup();
-    renderAt(`/chain/1/contract/${ADDRESS}`);
-
-    await user.click(await screen.findByRole('button', { name: /← Back/ }));
-
-    expect(backSpy).toHaveBeenCalledTimes(1);
-    backSpy.mockRestore();
-  });
-});
-
 describe('Contract view on-chain proxy detection', () => {
   // Detection targets: a plain implementation and a beacon contract. Both
   // are all-hex addresses whose viem checksum form is the identity (no
