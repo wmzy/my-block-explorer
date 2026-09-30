@@ -670,9 +670,14 @@ app.patch(
     if ('error' in result) return c.json(result.error, result.status);
 
     const { chainId, address } = result;
-    const rangeId = parseInt(c.req.param('rangeId'));
+    // Strict decimal parse: parseInt() accepted a valid prefix, so
+    // `…/ranges/3abc` addressed range 3, `…/ranges/0x10` range 16 and
+    // `…/ranges/1e3` range 1 — a mutating request could delete, start or
+    // pause a range the caller never named. Junk is now 400 before any
+    // service is reached. Same rule as every other numeric route param.
+    const rangeId = parseStrictInteger(c.req.param('rangeId'));
 
-    if (isNaN(rangeId)) {
+    if (rangeId === null) {
       return respondError(c, 400, 'invalid_range_id', 'rangeId must be a number');
     }
 
@@ -738,9 +743,9 @@ app.delete(
     if ('error' in result) return c.json(result.error, result.status);
 
     const { chainId, address } = result;
-    const rangeId = parseInt(c.req.param('rangeId'));
+    const rangeId = parseStrictInteger(c.req.param('rangeId'));
 
-    if (isNaN(rangeId)) {
+    if (rangeId === null) {
       return respondError(c, 400, 'invalid_range_id', 'rangeId must be a number');
     }
 
@@ -790,9 +795,9 @@ app.post(
     if ('error' in result) return c.json(result.error, result.status);
 
     const { chainId, address } = result;
-    const rangeId = parseInt(c.req.param('rangeId'));
+    const rangeId = parseStrictInteger(c.req.param('rangeId'));
 
-    if (isNaN(rangeId)) {
+    if (rangeId === null) {
       return respondError(c, 400, 'invalid_range_id', 'rangeId must be a number');
     }
 
@@ -876,9 +881,9 @@ app.post(
     if ('error' in result) return c.json(result.error, result.status);
 
     const { chainId, address } = result;
-    const rangeId = parseInt(c.req.param('rangeId'));
+    const rangeId = parseStrictInteger(c.req.param('rangeId'));
 
-    if (isNaN(rangeId)) {
+    if (rangeId === null) {
       return respondError(c, 400, 'invalid_range_id', 'rangeId must be a number');
     }
 
@@ -975,9 +980,9 @@ app.post(
     if ('error' in result) return c.json(result.error, result.status);
 
     const { chainId, address } = result;
-    const rangeId = parseInt(c.req.param('rangeId'));
+    const rangeId = parseStrictInteger(c.req.param('rangeId'));
 
-    if (isNaN(rangeId)) {
+    if (rangeId === null) {
       return respondError(c, 400, 'invalid_range_id', 'rangeId must be a number');
     }
 
