@@ -4,6 +4,7 @@ import { useState, useCallback, useMemo } from 'react';
 import { Collapsible } from '@/components/ui/Collapsible';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
+import { parseStrictInteger } from '@/utils/validation';
 
 export type EventFilterState = {
   eventName?: string;
@@ -147,11 +148,21 @@ export function EventFilterPanel({
     return count;
   }, [eventName, fromBlock, toBlock, abiFilters]);
 
+  // A typed block bound is either a plain decimal or nothing. parseInt
+  // accepted a valid prefix and ignored the rest, so '1e5' became block
+  // 100000 and '200abc' became block 200 — the table then filtered from
+  // a boundary the user never typed. Junk degrades to "no bound", the
+  // same contract effectiveTxFilters uses for the address page's
+  // ?tfMin=/?tfMax= family: a malformed shared link can never fire a
+  // request it does not mean. 0 stays a real bound (genesis).
+  const blockBound = (raw: string): number | undefined =>
+    raw === '' ? undefined : (parseStrictInteger(raw) ?? undefined);
+
   const handleApply = useCallback(() => {
     const filters: EventFilterState = {
       eventName: eventName || undefined,
-      fromBlock: fromBlock ? parseInt(fromBlock, 10) : undefined,
-      toBlock: toBlock ? parseInt(toBlock, 10) : undefined,
+      fromBlock: blockBound(fromBlock),
+      toBlock: blockBound(toBlock),
       abiFilters: Object.keys(abiFilters).length > 0 ? abiFilters : undefined,
     };
     onApply(filters);
@@ -172,8 +183,8 @@ export function EventFilterPanel({
       setEventName(value);
       onFiltersChange?.({
         eventName: value || undefined,
-        fromBlock: fromBlock ? parseInt(fromBlock, 10) : undefined,
-        toBlock: toBlock ? parseInt(toBlock, 10) : undefined,
+        fromBlock: blockBound(fromBlock),
+        toBlock: blockBound(toBlock),
       });
     },
     [fromBlock, toBlock, onFiltersChange],
@@ -185,8 +196,8 @@ export function EventFilterPanel({
       setFromBlock(value);
       onFiltersChange?.({
         eventName: eventName || undefined,
-        fromBlock: value ? parseInt(value, 10) : undefined,
-        toBlock: toBlock ? parseInt(toBlock, 10) : undefined,
+        fromBlock: blockBound(value),
+        toBlock: blockBound(toBlock),
       });
     },
     [eventName, toBlock, onFiltersChange],
@@ -198,8 +209,8 @@ export function EventFilterPanel({
       setToBlock(value);
       onFiltersChange?.({
         eventName: eventName || undefined,
-        fromBlock: fromBlock ? parseInt(fromBlock, 10) : undefined,
-        toBlock: value ? parseInt(value, 10) : undefined,
+        fromBlock: blockBound(fromBlock),
+        toBlock: blockBound(value),
       });
     },
     [eventName, fromBlock, onFiltersChange],
@@ -218,8 +229,8 @@ export function EventFilterPanel({
       });
       onFiltersChange?.({
         eventName: eventName || undefined,
-        fromBlock: fromBlock ? parseInt(fromBlock, 10) : undefined,
-        toBlock: toBlock ? parseInt(toBlock, 10) : undefined,
+        fromBlock: blockBound(fromBlock),
+        toBlock: blockBound(toBlock),
         abiFilters: {
           ...abiFilters,
           [paramName]: value,

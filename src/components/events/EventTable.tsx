@@ -11,6 +11,7 @@ import { EventFilterPanel, type EventFilterState } from './EventFilterPanel';
 import { get } from '@/util/http';
 import { getApiBase } from '@/util/apiBase';
 import { copyText } from '@/util/clipboard';
+import { parseStrictInteger } from '@/utils/validation';
 
 // Types
 type EventData = {
@@ -1740,8 +1741,11 @@ export const EventTable: React.FC<EventTableProps> = ({
   };
 
   const handleGoToPage = () => {
-    const pageNumber = parseInt(pageInput);
-    if (!isNaN(pageNumber) && pageNumber >= 1 && pageNumber <= totalPages) {
+    // Strict parse: a page is an addressable offset, and parseInt's prefix
+    // acceptance meant '2e' jumped to page 2 (or '3abc' to page 3) —
+    // silently showing a page the user never asked for.
+    const pageNumber = parseStrictInteger(pageInput);
+    if (pageNumber !== null && pageNumber >= 1 && pageNumber <= totalPages) {
       setPagination(prev => ({ ...prev, page: pageNumber }));
 
       if (!shouldUseClientSideSort) {

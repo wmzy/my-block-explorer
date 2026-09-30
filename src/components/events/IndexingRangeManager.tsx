@@ -4,6 +4,7 @@ import { SegmentedProgressBar } from '../ui/SegmentedProgressBar';
 import { toast } from 'haze-ui';
 import { get, post, del } from '@/util/http';
 import { ApiError } from '@/util/apiError';
+import { parseStrictInteger } from '@/utils/validation';
 
 const containerStyles = css`
   background: var(--haze-color-bg);
@@ -790,14 +791,19 @@ export const IndexingRangeManager: React.FC<Props> = ({
       const isFromTag = validBlockTags.includes(fromBlockValue);
       const isToTag = validBlockTags.includes(toBlockValue);
 
-      const fromBlock = isFromTag ? fromBlockValue : parseInt(formState.fromBlock);
-      const toBlock = isToTag ? toBlockValue : parseInt(formState.toBlock);
+      // Strict decimal parse, matching the query-param discipline
+      // (parseStrictInteger): parseInt accepted a valid prefix and
+      // ignored the rest, so '4e4' became block 40000 and '200abc'
+      // became block 200 — a range created at boundaries the user never
+      // typed. Junk is rejected exactly like a bad block tag.
+      const fromBlock = isFromTag ? fromBlockValue : parseStrictInteger(formState.fromBlock);
+      const toBlock = isToTag ? toBlockValue : parseStrictInteger(formState.toBlock);
 
-      if (!isFromTag && isNaN(fromBlock as number)) {
+      if (!isFromTag && fromBlock === null) {
         toast.danger('Please enter valid block numbers or tags (latest, finalized, safe, earliest)');
         return;
       }
-      if (!isToTag && isNaN(toBlock as number)) {
+      if (!isToTag && toBlock === null) {
         toast.danger('Please enter valid block numbers or tags (latest, finalized, safe, earliest)');
         return;
       }
@@ -946,12 +952,18 @@ export const IndexingRangeManager: React.FC<Props> = ({
     async (confirmOverlap = false) => {
       const { mode, blockCount } = quickFormState;
       const needsBlockCount = ['recent', 'first', 'continue'].includes(mode);
-      const blockCountNum = needsBlockCount ? parseInt(blockCount) : 0;
+      // Strict parse: '1e3' is not the block count 1000, and '10k' is not
+      // 10 — parseInt's prefix acceptance turned junk into a real scan
+      // span behind a green submit.
+      const blockCountNum = needsBlockCount ? parseStrictInteger(blockCount) : 0;
 
-      if (needsBlockCount && (isNaN(blockCountNum) || blockCountNum <= 0)) {
+      if (needsBlockCount && (blockCountNum === null || blockCountNum <= 0)) {
         toast.danger('Please enter a valid block count');
         return;
       }
+      // Narrowed to a real span for every downstream use (the guard above
+      // returned on every null path).
+      const effectiveBlockCount = needsBlockCount ? (blockCountNum as number) : undefined;
 
       // Same client-side overlap precheck as the manual form, mirroring the
       // backend's quick-mode bounds (see quickModeBounds). Exempt or
@@ -959,7 +971,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
       if (!confirmOverlap) {
         const bounds = quickModeBounds(
           mode,
-          needsBlockCount ? blockCountNum : undefined,
+          effectiveBlockCount,
           creationBlockNumber,
           headBlock,
         );
@@ -970,7 +982,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
         }
       }
 
-      const created = await runQuickCreate(mode, needsBlockCount ? blockCountNum : undefined, -2);
+      const created = await runQuickCreate(mode, effectiveBlockCount, -2);
       // runQuickCreate never throws (it catches internally), so the gate
       // always clears once the submit resolves.
       setOverlapGate(null);

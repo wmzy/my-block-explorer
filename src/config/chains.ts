@@ -41,6 +41,7 @@ import {
   zksync,
 } from 'viem/chains';
 import { getCustomChain, toViemChain } from './customChains';
+import { parseStrictInteger } from '../utils/strictInteger';
 
 // The curated subset. Every entry is justified by a concrete consumer:
 // - the ten POPULAR_CHAINS members (UI recovery grid, cross-chain probe
@@ -364,8 +365,13 @@ export function searchChains(query: string): Chain[] {
 
   const lowerQuery = query.toLowerCase();
   const compactQuery = lowerQuery.replace(/\s+/g, '');
-  const numericQuery = parseInt(query);
-  const hasNumericQuery = !isNaN(numericQuery);
+  // The EXACT-id tier is strict (parseStrictInteger, the same rule the
+  // route params use): '1e5' is not the chain id 100000 and '0x89' is not
+  // 137. The partial-id tier below deliberately stays substring-based —
+  // typing '13' to find 1337 is the feature, and it is driven by the raw
+  // string, never by a parsed number.
+  const numericQuery = parseStrictInteger(query);
+  const hasNumericQuery = numericQuery !== null;
 
   const matches = SEARCH_ORDER.filter(entry => {
     const { chain, lowerName, compactLowerName } = entry;

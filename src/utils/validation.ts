@@ -3,11 +3,7 @@
 import { isAddress, isHash } from 'viem';
 import { normalize } from 'viem/ens';
 
-// parseInt() accepts a valid prefix and ignores the rest, so "12abc",
-// "0x1a", "1e5" and " 7 " all came back as 12/26/100000/7 — junk reached
-// the RPC layer and silently addressed the WRONG block or chain. Every
-// numeric string in this module must be a plain run of decimal digits.
-const DECIMAL_INTEGER = /^\d+$/;
+import { parseStrictInteger } from './strictInteger';
 
 /**
  * Parse a plain decimal integer, or null when the input is not one.
@@ -17,16 +13,15 @@ const DECIMAL_INTEGER = /^\d+$/;
  * contracts,addresses,events}.ts), which had the same parseInt prefix
  * acceptance: `?limit=20abc` was served as limit 20 instead of the 400
  * those parsers' own comments promise.
+ *
+ * The implementation lives in ./strictInteger (import-free) so the CLI
+ * can share this one definition without pulling viem into its entry graph;
+ * re-exported here because this module is the canonical import site.
+ * parseInt() accepted a valid prefix and ignored the rest, so "12abc",
+ * "0x1a", "1e5" and " 7 " all came back as 12/26/100000/7 — junk reached
+ * the RPC layer and silently addressed the WRONG block or chain.
  */
-export function parseStrictInteger(value: string | number | undefined): number | null {
-  if (value === undefined) return null;
-  if (typeof value === 'number') {
-    return Number.isSafeInteger(value) ? value : null;
-  }
-  if (typeof value !== 'string' || !DECIMAL_INTEGER.test(value)) return null;
-  const parsed = Number(value);
-  return Number.isSafeInteger(parsed) ? parsed : null;
-}
+export { parseStrictInteger };
 
 /**
  * Validate an Ethereum address

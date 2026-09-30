@@ -14,6 +14,7 @@ import {
   setIpfsGateway,
 } from '@/services/nftMetadata';
 import { getChainName } from '../config/chains';
+import { parseStrictInteger } from '@/utils/validation';
 import { getRpcPresets, type RpcPreset } from '../config/rpcPresets';
 import {
   getRpcConfigs,
@@ -691,9 +692,12 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
   const handleCustomSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (customName.trim() && customUrl.trim()) {
-      const maxEventRange = customMaxEventRange.trim()
-        ? parseInt(customMaxEventRange.trim())
-        : undefined;
+      // Strict parse: the range is persisted as the provider's event-query
+      // ceiling, and parseInt's prefix acceptance stored a value the user
+      // never typed ('5k' → 5, '1e4' → 1). Junk means "no override".
+      const trimmedRange = customMaxEventRange.trim();
+      const maxEventRange =
+        trimmedRange === '' ? undefined : (parseStrictInteger(trimmedRange) ?? undefined);
       handleSaveConfig(customName.trim(), customUrl.trim(), maxEventRange);
     }
   };

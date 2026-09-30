@@ -11,6 +11,7 @@
 // measures). node:util is the entire import budget; anything richer
 // belongs in cli.ts after the kind has been decided.
 import { parseArgs } from 'node:util';
+import { parseStrictInteger } from './utils/strictInteger';
 
 export type CliArgsResult =
   | { kind: 'help' }
@@ -89,8 +90,15 @@ export function parseCliArgs(argv: string[]): CliArgsResult {
     };
   }
 
-  const portArg = values.port !== undefined ? parseInt(values.port, 10) : undefined;
-  if (portArg !== undefined && (Number.isNaN(portArg) || portArg < 1 || portArg > 65535)) {
+  // Strict parse: a port binds a socket, so a value the user never
+  // typed is a silent misconfiguration. parseInt accepted a valid
+  // prefix — '8201x' was 8201, '8e3' was 8000, and '0x2001' was
+  // 8193 (hex, not decimal). The import-free leaf keeps this
+  // module's no-server-graph constraint (utils/validation would
+  // drag viem in for one number rule).
+  const portArg =
+    values.port !== undefined ? parseStrictInteger(values.port) : undefined;
+  if (portArg !== undefined && (portArg === null || portArg < 1 || portArg > 65535)) {
     return {
       kind: 'error',
       message: `Invalid port: ${values.port}`,
