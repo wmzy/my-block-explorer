@@ -158,17 +158,24 @@ export class OptimizedSorter {
 
   /**
    * Merge multiple sorted chunks
+   *
+   * Min-heap over the per-chunk heads, root at index 0. The previous
+   * implementation extracted the minimum with `Array.shift()` and then
+   * sifted only the root: shift relocates every remaining element, so
+   * violations appeared at internal nodes that a single root sift-down
+   * cannot repair, and the freshly appended replacement was left as a leaf
+   * that was never sifted up. Either defect let a larger value escape
+   * ahead of a smaller one, so a page above the sort threshold came back
+   * out of order. Root replacement plus one sift-down is the standard
+   * delete-min and restores the invariant over the whole heap.
    */
   private mergeSortedChunks<T>(chunks: T[][], sortConfigs: SortConfig[]): T[] {
     if (chunks.length === 1) return chunks[0];
 
     const sortedConfigs = [...sortConfigs].sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0));
 
-    // Use a min-heap approach for efficient merging
-    const result: T[] = [];
+    // One entry per non-empty chunk: its current head position.
     const heap: { chunk: number; index: number; value: T }[] = [];
-
-    // Initialize heap with first element from each chunk
     chunks.forEach((chunk, chunkIndex) => {
       if (chunk.length > 0) {
         heap.push({
@@ -179,27 +186,27 @@ export class OptimizedSorter {
       }
     });
 
-    // Build heap
     this.buildHeap(heap, sortedConfigs);
 
-    // Extract minimum element and add next from same chunk
+    const result: T[] = [];
     while (heap.length > 0) {
-      const min = heap.shift()!;
+      const min = heap[0];
       result.push(min.value);
 
-      // Add next element from the same chunk
+      // The next head of the same chunk replaces the consumed root; an
+      // exhausted chunk hands over the heap's last element instead.
       const nextIndex = min.index + 1;
-      if (nextIndex < chunks[min.chunk].length) {
-        const newValue = chunks[min.chunk][nextIndex];
+      const replacement =
+        nextIndex < chunks[min.chunk].length
+          ? { chunk: min.chunk, index: nextIndex, value: chunks[min.chunk][nextIndex] }
+          : heap.length > 1
+            ? heap.pop()!
+            : null;
 
-        // Insert new value into heap
-        heap.push({
-          chunk: min.chunk,
-          index: nextIndex,
-          value: newValue,
-        });
-
-        // Restore heap property
+      if (replacement === null) {
+        heap.pop();
+      } else {
+        heap[0] = replacement;
         this.heapifyDown(heap, 0, sortedConfigs);
       }
     }
@@ -250,13 +257,23 @@ export class OptimizedSorter {
 
   /**
    * Compare two heap items
+   *
+   * Every sort config participates, in priority order — the same
+   * lexicographic comparison standardSort applies. Comparing only
+   * `sortConfigs[0]` left ties on the primary key in whatever order the
+   * chunking left them, so a multi-key sort only ever looked right below
+   * the optimized-sort threshold.
    */
   private compareHeapItems<T>(
     a: { chunk: number; index: number; value: T },
     b: { chunk: number; index: number; value: T },
     sortConfigs: SortConfig[],
   ): number {
-    return this.compareItems(a.value, b.value, sortConfigs[0]);
+    for (const config of sortConfigs) {
+      const result = this.compareItems(a.value, b.value, config);
+      if (result !== 0) return result;
+    }
+    return 0;
   }
 
   /**
