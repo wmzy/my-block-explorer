@@ -43,6 +43,13 @@ export function expandExtent(
  * y-scaling for line charts: values normalized into [top, top + height]
  * (higher value → smaller y), clamped to the box. A flat extent maps to
  * the vertical center, mirroring the gas sparkline's flat-series rule.
+ *
+ * `height` is the height of the plot box itself — callers pass
+ * `boxHeight - 2 * pad` because the padding has already been removed from
+ * BOTH sides. Subtracting `top` a second time squeezed every series into
+ * [top, top + height - top], so the minimum never reached the plot bottom
+ * and the line sat `pad` pixels above the gridlines the Charts page draws
+ * for the very same extent.
  */
 export function lineYScaler(
   extent: { min: number; max: number },
@@ -50,10 +57,9 @@ export function lineYScaler(
   height: number,
 ): (value: number) => number {
   const span = extent.max - extent.min;
-  const usable = height - top;
   return value => {
     const normalized = span > 0 ? (value - extent.min) / span : 0.5;
-    const y = top + (1 - normalized) * usable;
+    const y = top + (1 - normalized) * height;
     return Math.min(top + height, Math.max(top, y));
   };
 }
