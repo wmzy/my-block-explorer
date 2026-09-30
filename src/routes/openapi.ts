@@ -1933,6 +1933,60 @@ export const openApiDocument: OpenApiDocument = {
       },
     },
 
+    '/ops/uninstall/preview': {
+      post: {
+        tags: ['Ops'],
+        summary: 'Enumerate what POST /ops/uninstall would delete',
+        description:
+          `Same enumeration as the CLI (\`my-block-explorer uninstall\`): the main DuckDB ` +
+          `(via DATABASE_URL), per-chain event DBs, the solc cache and the IDE scratch ` +
+          `dir — nothing is deleted here. Rate limit 4/min · burst 3. ${AUTH_OPT_IN}`,
+        operationId: 'previewOpsUninstall',
+        responses: {
+          200: ok(
+            fields({
+              targets: arr(
+                fields({
+                  kind: str(),
+                  path: str('Absolute path on the backend disk'),
+                  label: str('Display form, cwd-relative when applicable'),
+                  exists: bool(),
+                  bytes: int(),
+                  files: int(),
+                }),
+              ),
+              existingBytes: int(),
+              existingFiles: int(),
+              confirmPhrase: str('The exact string the execute endpoint demands'),
+            }),
+          ),
+        },
+      },
+    },
+
+    '/ops/uninstall': {
+      post: {
+        tags: ['Ops'],
+        summary: 'Erase this explorer’s data and exit the backend',
+        description:
+          `Self-destruct: answers 202 immediately, then the backend closes its listeners ` +
+          `and DuckDB handles, deletes every enumerated target and exits. The body must ` +
+          `carry {"confirm": "uninstall"} verbatim; a second arm attempt inside the grace ` +
+          `window is a 409. Rate limit 4/min · burst 3. ${AUTH_OPT_IN}`,
+        operationId: 'executeOpsUninstall',
+        requestBody: jsonBody(
+          fields({
+            confirm: str('Required — the literal string "uninstall"'),
+          }),
+        ),
+        responses: {
+          202: ok(fields({ status: str('scheduled'), graceMs: int() })),
+          400: error('400', 'invalid_json / confirmation_mismatch'),
+          409: error('409', 'already_scheduled — the process is already shutting down'),
+        },
+      },
+    },
+
     '/sql/query': {
       post: {
         tags: ['SQL Console'],

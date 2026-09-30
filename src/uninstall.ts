@@ -1,9 +1,14 @@
-// `my-block-explorer uninstall` — data cleanup for the CLI. This module
-// MUST stay out of the api-app/server import graph (and out of src/utils,
-// whose barrel the browser bundle can pull): importing the server graph
-// constructs the DuckDB adapter, whose constructor mkdirs data/ — that
-// would fabricate the very thing this command measures. "No data found"
-// has to be a fact, not an artifact of our own imports.
+// `my-block-explorer uninstall` — data cleanup, shared by the CLI and the
+// in-server flow (POST /api/ops/uninstall via services/selfDestruct.ts).
+// Import-direction invariant: this module must never import server-graph
+// modules (only the import-free leaf database/dbPath) and must never be
+// re-exported through the src/utils barrel (the browser bundle can pull
+// that) — the CLI imports it BEFORE deciding to start a server, and any
+// server-graph import would construct the DuckDB adapter, whose
+// constructor mkdirs data/, fabricating the very thing this command
+// measures. Being imported BY the api-app graph is fine and now by
+// design: that graph already constructs the adapter, so nothing new is
+// fabricated.
 //
 // Honesty rules (same posture as OpsService): only the paths the explorer
 // itself writes are enumerated — the main DuckDB file (via DATABASE_URL,
@@ -224,7 +229,7 @@ export async function removeTargets(
 }
 
 /** rmdir a fixed candidate list if empty; failures are cosmetic, swallowed. */
-async function pruneEmptyDirs(candidates: readonly string[]): Promise<void> {
+export async function pruneEmptyDirs(candidates: readonly string[]): Promise<void> {
   for (const dir of new Set(candidates)) {
     try {
       await rmdir(dir);

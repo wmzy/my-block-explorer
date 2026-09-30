@@ -5,7 +5,7 @@
 // to {error:'unavailable'} by the backend, so the types model that union
 // and the view renders per-section honest states instead of trusting
 // presence.
-import { get, withSignal, api } from '@/util/http';
+import { get, post, withSignal, api } from '@/util/http';
 import { bindQueryFn, createQueryCache } from '@/util/useQuery';
 import { createPolledQueryHook, type PolledQueryResult } from './polledQuery';
 
@@ -91,4 +91,57 @@ export type OpsSummaryQuery = PolledQueryResult<OpsSummary>;
 
 export function useOpsSummary(): OpsSummaryQuery {
   return useOpsSummaryQuery([]);
+}
+
+// --- Uninstall (the /ops danger zone) ---
+//
+// The in-server face of `my-block-explorer uninstall`: preview lists
+// exactly the paths the backend would erase (the CLI and this endpoint
+// share src/uninstall.ts's enumeration — there is no second list), and
+// execute arms a self-destruct that closes the server's DuckDB handles,
+// deletes those paths and exits the process. Deliberately NOT part of the
+// polled summary: both calls are explicit operator gestures.
+
+// Twin of UNINSTALL_CONFIRM_PHRASE in src/routes/ops.ts (via services/
+// selfDestruct.ts) — the server file is node-only, so the constant is
+// duplicated here with the twin named on both sides. The API demands it
+// verbatim in the body; the UI makes the operator type it.
+export const UNINSTALL_CONFIRM_PHRASE = 'uninstall';
+
+export type UninstallPreviewTarget = {
+  kind: string;
+  /** Absolute path on the backend's disk. */
+  path: string;
+  /** Display form — cwd-relative on the server when applicable. */
+  label: string;
+  exists: boolean;
+  bytes: number;
+  files: number;
+};
+
+export type UninstallPreview = {
+  targets: UninstallPreviewTarget[];
+  existingBytes: number;
+  existingFiles: number;
+  confirmPhrase: string;
+};
+
+export type UninstallAccepted = {
+  status: 'scheduled';
+  graceMs: number;
+};
+
+export async function fetchUninstallPreview(signal?: AbortSignal): Promise<UninstallPreview> {
+  return post<UninstallPreview>('/api/ops/uninstall/preview', {}, withSignal(api, signal));
+}
+
+export async function requestBackendUninstall(
+  confirmation: string,
+  signal?: AbortSignal,
+): Promise<UninstallAccepted> {
+  return post<UninstallAccepted>(
+    '/api/ops/uninstall',
+    { confirm: confirmation },
+    withSignal(api, signal),
+  );
 }

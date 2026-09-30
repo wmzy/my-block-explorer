@@ -1363,6 +1363,28 @@ pnpm typecheck           # tsc --noEmit
   automatic (fresh DB on next start, builtin labels reseed on empty table);
   the stored rpc-configs were lost and need re-adding. Resulting UX rule:
   the summary prints the absolute scan root, not relative labels.
+- **2026-09-30 uninstall from the /ops page** — the CLI uninstall now has an
+  in-server face: `POST /api/ops/uninstall/preview` (enumeration + sizes,
+  reads only) and `POST /api/ops/uninstall` (body `{confirm:'uninstall'}`
+  verbatim → `202 {status:'scheduled', graceMs:1500}`) in `src/routes/ops.ts`;
+  the UI is the /ops "Uninstall — erase server data" danger card (typed
+  confirmation, terminal state + toast). The self-destruct lives in
+  `src/services/selfDestruct.ts`: stop watchers → close HTTP listener
+  (closer registered by server.ts; null under the vite bridge) → close
+  per-chain DBs → end main adapter (WAL checkpoint) → `removeTargets` →
+  exit (0 clean / 1 partial). Ordering is the safety property (never
+  delete under an open DuckDB handle) and is unit-pinned via
+  invocationCallOrder. One-shot arm (second call → 409 already_scheduled);
+  4/min·burst-3 limiter; opt-in admin tier like the rest of /ops.
+  `src/uninstall.ts` is now imported BY the api-app graph BY DESIGN — the
+  surviving invariant is its own import direction (never import
+  server-graph modules; never re-export via the src/utils barrel) so the
+  CLI entry still fabricates nothing. Tests pinned: the global haze-ui
+  useToast mock returned a non-callable `{addToast}` (real useToast is
+  callable-with-sugar) — any view under test firing a toast crashed
+  inside its handler and surfaced as never-committing state; the mock now
+  returns the shared callable. Live-smoked end-to-end in a temp cwd:
+  400 mismatch → 202 → process exit → data/ + scratch dir gone.
 - **2026-09-29 MCP support (single stream)** — the explorer is now consumable
   by AI assistants: `src/mcp/` + stdio bin `my-block-explorer-mcp`
   (`pnpm mcp` in dev; tsup object-entry `mcp: 'src/mcp/cli.ts'` →

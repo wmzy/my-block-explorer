@@ -9,7 +9,17 @@ commit subjects rather than a curated release notes process.
 
 ## Unreleased
 
-- **Full-project review fix wave (security, correctness, cleanup)** —
+- **Uninstall from the /ops page** — the CLI's `my-block-explorer uninstall`
+  now has an in-server face: the Ops dashboard carries an "Uninstall — erase
+  server data" danger zone. `POST /api/ops/uninstall/preview` lists exactly
+  what would be deleted (same enumeration as the CLI — one list,
+  `src/uninstall.ts`), and `POST /api/ops/uninstall` (body
+  `{confirm: "uninstall"}`, typed in the UI) answers `202` then self-destructs:
+  close HTTP listener → close per-chain DuckDB handles → close/checkpoint the
+  main adapter → delete the enumerated files → exit (exit code reports full
+  vs partial removal). Double-arm inside the grace window → `409`. Opt-in
+  admin tier like the rest of the dashboard; 4/min·burst 3.
+  **Full-project review fix wave (security, correctness, cleanup)** —
   landed the complete P0–P3 review list. Security: the server now binds
   loopback by default (`HOST` unset → `127.0.0.1`; previously it bound all
   interfaces while the startup checks assumed loopback, silencing the

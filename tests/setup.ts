@@ -13,6 +13,25 @@ const mockComponent = (tag: string, props: MockProps, extraProps?: Record<string
   return React.createElement(tag, { ...rest, ...extraProps }, children);
 };
 
+// Shared callable-with-sugar toast mock: the module-level toast() export
+// AND useToast()'s return value (haze-ui's real contract — its docs say
+// the toast() options are "the same call shape useToast() takes"). The
+// previous useToast stub returned a non-callable {addToast}, so any view
+// under test that fired a toast crashed inside its handler — surfacing
+// as state that never commits, not as a toast error.
+const sharedToastMock = vi.hoisted(() =>
+  Object.assign(vi.fn(), {
+    info: vi.fn(),
+    success: vi.fn(),
+    warning: vi.fn(),
+    danger: vi.fn(),
+    loading: vi.fn(),
+    dismiss: vi.fn(),
+    update: vi.fn(),
+    promise: vi.fn(),
+  }),
+);
+
 // Mock haze-ui to avoid babel-runtime-jsx-plus/classnames import error
 vi.mock('haze-ui', () => ({
   __esModule: true,
@@ -24,16 +43,7 @@ vi.mock('haze-ui', () => ({
   // ToastContainer — the same instance components import (the factory's
   // result is cached per test file). Sugar methods cover every variant
   // the app calls (info/success/danger; pwa.ts uses info).
-  toast: Object.assign(vi.fn(), {
-    info: vi.fn(),
-    success: vi.fn(),
-    warning: vi.fn(),
-    danger: vi.fn(),
-    loading: vi.fn(),
-    dismiss: vi.fn(),
-    update: vi.fn(),
-    promise: vi.fn(),
-  }),
+  toast: sharedToastMock,
   Input: (props: MockProps) =>
     React.createElement('input', {
       'data-testid': 'search-input',
@@ -159,7 +169,7 @@ vi.mock('haze-ui', () => ({
   Spin: (props: MockProps) => mockComponent('div', props, { 'data-testid': 'spin' }),
   Divider: (props: MockProps) => mockComponent('hr', props, { 'data-testid': 'divider' }),
   Text: (props: MockProps) => React.createElement('span', props, props.children),
-  useToast: () => ({ addToast: vi.fn() }),
+  useToast: () => sharedToastMock,
 }));
 
 // Cleanup after each test

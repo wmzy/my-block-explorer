@@ -28,6 +28,9 @@ vi.mock('haze-ui', async () => {
   return {
     Alert: (props: { children?: ReactNode }) =>
       React.createElement('div', { 'data-testid': 'alert' }, props.children),
+    // Ops also renders the (always-closed here) uninstall Dialog — it
+    // must exist as a component or the whole page crashes at import.
+    Dialog: () => null,
     useToast: () => toastFn,
   };
 });

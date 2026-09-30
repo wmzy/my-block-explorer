@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { setGlobalDispatcher, ProxyAgent } from 'undici';
 import apiApp, { reconcileStartupState } from './api-app';
 import { db } from './database/drizzle';
+import { registerSelfDestructCloser } from './services/selfDestruct';
 import { runStartupSecurityChecks } from './startupChecks';
 import { createStaticFrontendHandler } from './middleware/og-meta';
 
@@ -140,6 +141,18 @@ export async function createServer(options: ServerOptions = {}) {
 
   process.on('SIGTERM', shutdown);
   process.on('SIGINT', shutdown);
+
+  // Self-destruct closer for POST /api/ops/uninstall (services/
+  // selfDestruct.ts): same teardown shape as the signal handler, minus
+  // process.exit — the caller continues into data deletion and exits with
+  // a code that reports whether every target was removed. Registered here
+  // (not in api-app) because only this file owns the server handle.
+  registerSelfDestructCloser(async () => {
+    if ('closeAllConnections' in server) server.closeAllConnections();
+    await new Promise<void>(resolve => {
+      server.close(() => resolve());
+    });
+  });
 
   return { server, port };
 }

@@ -13,17 +13,27 @@ import Ops, { formatChainLabel, formatStatusCounts, opsAdminGateFromError } from
 import { ApiError } from '@/util/apiError';
 import type { OpsSummary } from '@/services/opsSummary';
 
-const { mockUseOpsSummary } = vi.hoisted(() => ({
+const { mockUseOpsSummary, mockFetchPreview, mockRequestUninstall } = vi.hoisted(() => ({
   mockUseOpsSummary: vi.fn(),
+  mockFetchPreview: vi.fn(),
+  mockRequestUninstall: vi.fn(),
 }));
 
 vi.mock('@/components/TopNavigation', () => ({
   default: () => <div data-testid="top-navigation" />,
 }));
 
-vi.mock('@/services/opsSummary', () => ({
-  useOpsSummary: (...args: unknown[]) => mockUseOpsSummary(...args),
-}));
+// The danger-zone card's fetchers are stubbed too (the dialog is only
+// opened by an explicit click — these just keep the module surface whole).
+vi.mock('@/services/opsSummary', async importOriginal => {
+  const actual = await importOriginal<typeof import('@/services/opsSummary')>();
+  return {
+    ...actual,
+    useOpsSummary: (...args: unknown[]) => mockUseOpsSummary(...args),
+    fetchUninstallPreview: (...args: unknown[]) => mockFetchPreview(...args),
+    requestBackendUninstall: (...args: unknown[]) => mockRequestUninstall(...args),
+  };
+});
 
 // The view only reads the remembered chain for topbar context; pinning it
 // keeps the test independent of localStorage state.

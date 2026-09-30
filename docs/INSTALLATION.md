@@ -175,6 +175,14 @@ probe of `localhost:8201-8205` (the same range the frontend's auto-discovery
 scans, plus `PORT` if set) makes the command refuse rather than delete under a
 live writer — stop the server first, or pass `--force` knowingly.
 
+The same erase is available from the running app: the **Ops dashboard**
+(`/ops`, "Uninstall — erase server data") previews exactly what would be
+deleted, requires typing `uninstall`, and then the backend tears itself down
+in the honest order — close listener, close every DuckDB handle, delete the
+enumerated files, exit the process (the page goes offline; that is the
+feature, not a failure). Same enumeration as the CLI; same opt-in admin gate
+as the rest of the dashboard.
+
 Removing the package itself is your package manager's job (`npm rm -g
 my-block-explorer` for global installs; npx keeps nothing beyond npm's download
 cache; a source clone is just a directory to delete). Browser-side settings

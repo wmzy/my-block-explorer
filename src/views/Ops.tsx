@@ -12,10 +12,12 @@
 // refetches the whole summary, and only the failing part may recover).
 // The react-toolroom cache holds errors, so the page-level failure states
 // (backend offline, admin gate, rate limit) carry retry affordances too.
-import { css } from '@linaria/core';
+import { css, cx } from '@linaria/core';
 import { navigate } from '@native-router/core';
 import { useRouter } from '@native-router/react';
-import { Alert, useToast } from 'haze-ui';
+import { Alert, Dialog, useToast } from 'haze-ui';
+import { useControl } from 'react-use-control';
+import { useState } from 'react';
 
 import TopNavigation from '@/components/TopNavigation';
 import { Button } from '@/components/ui/Button';
@@ -25,6 +27,12 @@ import { BackendOfflineState } from '@/components/ui/ErrorState';
 import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
 import { readRememberedChainId } from '@/views/Home/Landing';
 import { useOpsSummary, type OpsMeta, type OpsSummary } from '@/services/opsSummary';
+import {
+  UNINSTALL_CONFIRM_PHRASE,
+  fetchUninstallPreview,
+  requestBackendUninstall,
+  type UninstallPreview,
+} from '@/services/opsSummary';
 import { ApiError } from '@/util/apiError';
 import { copyText } from '@/util/clipboard';
 import { isBackendUnreachable } from '@/util/http';
@@ -585,6 +593,261 @@ function BackupCard() {
   );
 }
 
+// --- Uninstall (danger zone) ---
+
+// Failure → operator-ready sentence. The 403 faces reuse the page's gate
+// classification (the endpoint sits behind the same OPT-IN gate as the
+// summary); the 429 wait and backend-unreachable attribution follow the
+// page's established copy. Exported for the view tests.
+export function uninstallErrorText(error: unknown): string {
+  const gate = opsAdminGateFromError(error);
+  if (gate === 'unauthorized') {
+    return 'The server requires an admin token for this action. Set it in the RPC/settings modal (⚙) and retry.';
+  }
+  if (gate !== null) {
+    return 'This action is blocked by an admin gate — configure ADMIN_TOKEN on the server and in this browser.';
+  }
+  const wait = opsRateLimitWaitSeconds(error);
+  if (wait !== null) return `Too many requests — retry after ${wait}s.`;
+  if (isBackendUnreachable(error)) {
+    return 'The backend is unreachable — it may already be shutting down. Nothing was confirmed.';
+  }
+  return error instanceof Error ? error.message : String(error);
+}
+
+const uninstallDialog = css`
+  width: min(560px, 92vw);
+`;
+
+const uninstallList = css`
+  margin: 0 0 var(--haze-space-3);
+  display: grid;
+  gap: var(--haze-space-1);
+`;
+
+const uninstallRow = css`
+  display: flex;
+  justify-content: space-between;
+  gap: var(--haze-space-3);
+  font-size: var(--haze-text-sm);
+`;
+
+const uninstallMissing = css`
+  color: var(--haze-color-text-muted);
+  text-decoration: line-through;
+`;
+
+const uninstallTotal = css`
+  font-size: var(--haze-text-sm);
+  font-weight: 600;
+  margin: 0 0 var(--haze-space-3);
+`;
+
+const uninstallNote = css`
+  font-size: var(--haze-text-sm);
+  color: var(--haze-color-text-muted);
+  margin: 0 0 var(--haze-space-2);
+`;
+
+const uninstallActions = css`
+  display: flex;
+  gap: var(--haze-space-2);
+  justify-content: flex-end;
+  margin-top: var(--haze-space-4);
+`;
+
+const uninstallInput = css`
+  padding: var(--haze-space-2) var(--haze-space-3);
+  border: 1px solid var(--haze-color-border);
+  border-radius: var(--haze-radius-lg);
+  font-size: var(--haze-text-sm);
+  font-family: var(--haze-font-mono);
+  background: var(--haze-color-bg-subtle);
+  color: var(--haze-color-text);
+  width: 100%;
+  margin-bottom: var(--haze-space-3);
+
+  &:focus {
+    outline: none;
+    border-color: var(--haze-color-danger);
+  }
+`;
+
+// The danger zone: the in-server face of `my-block-explorer uninstall`.
+// The preview lists exactly what the backend would erase (the CLI and the
+// endpoint share one enumeration), the operator must TYPE the confirmation
+// phrase the API demands verbatim, and a 202 means the backend tears
+// itself down — close listeners, close DuckDB handles, delete, exit. The
+// toast (not the dialog) carries the terminal message: it survives this
+// page flipping to its backend-offline state when the process dies.
+function UninstallCard() {
+  const toast = useToast();
+  // Control, never a plain boolean: haze-ui's Dialog treats a value prop
+  // as the INITIAL value only (the AddressQr regression pins this).
+  const [, setOpen, openControl] = useControl(false);
+  const [phase, setPhase] = useState<'loading' | 'confirm' | 'executing' | 'accepted'>('loading');
+  const [preview, setPreview] = useState<UninstallPreview | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [typed, setTyped] = useState('');
+
+  const loadPreview = async () => {
+    setPhase('loading');
+    setError(null);
+    try {
+      setPreview(await fetchUninstallPreview());
+      setPhase('confirm');
+      setTyped('');
+    } catch (err) {
+      setError(uninstallErrorText(err));
+      setPhase('confirm');
+    }
+  };
+
+  const openDialog = () => {
+    setOpen(true);
+    void loadPreview();
+  };
+
+  const execute = async () => {
+    setPhase('executing');
+    setError(null);
+    try {
+      await requestBackendUninstall(UNINSTALL_CONFIRM_PHRASE);
+      setPhase('accepted');
+      toast.danger('Erasure scheduled — the backend is shutting down and exits after deleting.', {
+        duration: 8000,
+      });
+    } catch (err) {
+      setError(uninstallErrorText(err));
+      setPhase('confirm');
+    }
+  };
+
+  const existing = preview?.targets.filter(target => target.exists) ?? [];
+  const missing = preview?.targets.filter(target => !target.exists) ?? [];
+
+  return (
+    <Card className={fullRow}>
+      <CardHeader>
+        <CardTitle>Uninstall — erase server data</CardTitle>
+        <CardDescription>
+          The in-server equivalent of <code>my-block-explorer uninstall</code>: deletes every file
+          this explorer wrote and exits the backend process. Requires typing a confirmation.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <p className={gateText}>
+          Removes the main DuckDB (verified sources, labels, custom chains, RPC configs, indexed
+          events), the per-chain event databases, the solc cache and the IDE scratch dir.
+          Browser-local data (watchlist, theme, custom ABIs, private notes, search history) is not
+          touched — clear site data to remove those. Nothing happens until you confirm.
+        </p>
+        <div className={refreshRow}>
+          <Button variant="danger" size="sm" onClick={openDialog} data-testid="uninstall-button">
+            Erase server data…
+          </Button>
+        </div>
+      </CardContent>
+
+      <Dialog
+        open={openControl}
+        onClose={() => setOpen(false)}
+        title="Erase server data"
+        className={uninstallDialog}
+      >
+        {phase === 'accepted' ? (
+          <div data-testid="uninstall-accepted">
+            <p className={uninstallNote}>
+              Erasure scheduled — the backend is shutting down: it closes its databases, deletes the
+              files listed above and exits. This page goes offline within seconds; restart later
+              with <code>npx my-block-explorer</code>.
+            </p>
+            <div className={uninstallActions}>
+              <Button variant="outline" size="sm" onClick={() => setOpen(false)}>
+                Close
+              </Button>
+            </div>
+          </div>
+        ) : phase === 'loading' ? (
+          <p className={uninstallNote} data-testid="uninstall-loading">
+            Enumerating what would be deleted…
+          </p>
+        ) : (
+          <div data-testid="uninstall-confirm">
+            {error !== null && (
+              <div role="alert" data-testid="uninstall-error" className={uninstallNote}>
+                {error}{' '}
+                <Button variant="outline" size="sm" onClick={() => void loadPreview()}>
+                  Retry
+                </Button>
+              </div>
+            )}
+            {preview !== null && (
+              <>
+                <div className={uninstallList} data-testid="uninstall-preview">
+                  {existing.map(target => (
+                    <div key={target.path} className={uninstallRow}>
+                      <span>{target.label}</span>
+                      <span>
+                        {formatFileSize(target.bytes)} · {formatNumber(target.files)}{' '}
+                        {target.files === 1 ? 'file' : 'files'}
+                      </span>
+                    </div>
+                  ))}
+                  {missing.map(target => (
+                    <div key={target.path} className={cx(uninstallRow, uninstallMissing)}>
+                      <span>{target.label}</span>
+                      <span>not present</span>
+                    </div>
+                  ))}
+                </div>
+                <p className={uninstallTotal}>
+                  {existing.length === 0
+                    ? 'Nothing to delete — no explorer data exists on disk.'
+                    : `Total: ${formatFileSize(preview.existingBytes)} across ${formatNumber(preview.existingFiles)} files.`}
+                </p>
+              </>
+            )}
+            <p className={uninstallNote}>
+              The backend process exits right after erasing — every panel on this page goes
+              offline. This cannot be undone.
+            </p>
+            <label className={uninstallNote} htmlFor="uninstall-confirm-input">
+              Type <code>{UNINSTALL_CONFIRM_PHRASE}</code> to confirm
+            </label>
+            <input
+              id="uninstall-confirm-input"
+              type="text"
+              className={uninstallInput}
+              value={typed}
+              onChange={e => setTyped(e.target.value)}
+              placeholder={UNINSTALL_CONFIRM_PHRASE}
+              spellCheck={false}
+              autoComplete="off"
+              data-testid="uninstall-confirm-input"
+            />
+            <div className={uninstallActions}>
+              <Button variant="outline" size="sm" onClick={() => setOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                variant="danger"
+                size="sm"
+                disabled={typed !== UNINSTALL_CONFIRM_PHRASE || existing.length === 0}
+                loading={phase === 'executing'}
+                onClick={() => void execute()}
+                data-testid="uninstall-execute"
+              >
+                Erase everything
+              </Button>
+            </div>
+          </div>
+        )}
+      </Dialog>
+    </Card>
+  );
+}
+
 export default function Ops() {
   const router = useRouter();
   const toast = useToast();
@@ -682,6 +945,7 @@ export default function Ops() {
               <RateLimitCard summary={summary.data} onRetry={retry} />
               <DeepScanCard summary={summary.data} onRetry={retry} />
               <BackupCard />
+              <UninstallCard />
             </div>
           </>
         )}
