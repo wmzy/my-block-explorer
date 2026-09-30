@@ -41,33 +41,89 @@ type TransactionServiceDeps = {
 const createTransactionService = (deps: TransactionServiceDeps) => {
   const { db, transactions, blocks, rpcManager } = deps;
 
+  // The `timestamp` column is the repo's unix-SECONDS customType
+  // (database/db-types.ts: TIMESTAMP_S, data: number) — `new Date(number)`
+  // reads a number as MILLIseconds, so the old conversion reported January
+  // 1970 for every DB-served transaction. A Date passes through, a bare
+  // decimal string is seconds, anything else parses as written.
+  const secondsToDate = (value: unknown): Date | undefined => {
+    if (value === null || value === undefined || value === '') return undefined;
+    if (value instanceof Date) return Number.isNaN(value.getTime()) ? undefined : value;
+    if (typeof value === 'number') return Number.isNaN(value) ? undefined : new Date(value * 1000);
+    const text = String(value);
+    if (/^\d+$/.test(text)) return new Date(Number(text) * 1000);
+    const parsed = new Date(text);
+    return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+  };
+
+  // drizzle returns camelCase keys (casing: 'snake_case' applies to
+  // generated SQL column names, not to the JS row). The old formatter read
+  // snake_case keys that never exist, so EVERY field but the two written
+  // verbatim came back undefined — transaction lists served a bare hash and
+  // value, and formatTransactionForApi then dropped blockNumber, gas
+  // fields, nonce, status and timestamp as "null". Both spellings are
+  // accepted so raw/plain rows keep working too.
+  const pick = (tx: Record<string, unknown>, camel: string, snake: string): unknown =>
+    tx[camel] ?? tx[snake];
+
+  const num = (tx: Record<string, unknown>, camel: string, snake: string): number | undefined => {
+    const value = pick(tx, camel, snake);
+    return typeof value === 'number' ? value : undefined;
+  };
+  const str = (tx: Record<string, unknown>, camel: string, snake: string): string | undefined => {
+    const value = pick(tx, camel, snake);
+    return typeof value === 'string' ? value : undefined;
+  };
+  const addr = (tx: Record<string, unknown>, camel: string, snake: string): Address | undefined =>
+    str(tx, camel, snake) as Address | undefined;
+  const big = (
+    tx: Record<string, unknown>,
+    camel: string,
+    snake: string,
+  ): bigint | undefined => {
+    const value = pick(tx, camel, snake);
+    if (value === null || value === undefined || value === '') return undefined;
+    try {
+      return BigInt(value as string | number | bigint);
+    } catch {
+      return undefined;
+    }
+  };
+  // BIGNUM columns can arrive as bigint; the wire contract is a decimal string.
+  const bigToDecimal = (value: unknown): string =>
+    typeof value === 'bigint' || typeof value === 'number' ? String(value) : '0';
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const formatTransaction = (dbTx: any): Transaction => {
+    const row = dbTx as Record<string, unknown>;
     return {
-      chainId: dbTx.chain_id,
-      hash: dbTx.hash,
-      blockNumber: dbTx.block_number ? BigInt(dbTx.block_number) : undefined,
-      transactionIndex: dbTx.transaction_index ?? undefined,
-      fromAddress: dbTx.from_address ?? undefined,
-      toAddress: dbTx.to_address ?? undefined,
-      value: dbTx.value ?? '0',
-      gasLimit: dbTx.gas_limit ? BigInt(dbTx.gas_limit) : undefined,
-      gasPrice: dbTx.gas_price ? BigInt(dbTx.gas_price) : undefined,
-      maxFeePerGas: dbTx.max_fee_per_gas ? BigInt(dbTx.max_fee_per_gas) : undefined,
-      maxPriorityFeePerGas: dbTx.max_priority_fee_per_gas
-        ? BigInt(dbTx.max_priority_fee_per_gas)
-        : undefined,
-      gasUsed: dbTx.gas_used ? BigInt(dbTx.gas_used) : undefined,
-      effectiveGasPrice: dbTx.effective_gas_price ? BigInt(dbTx.effective_gas_price) : undefined,
-      status: dbTx.status ?? undefined,
-      type: dbTx.type ?? 0,
-      nonce: dbTx.nonce ? BigInt(dbTx.nonce) : undefined,
-      inputData: dbTx.input_data ?? undefined,
-      logsCount: dbTx.logs_count ?? 0,
-      contractAddress: dbTx.contract_address ?? undefined,
-      cumulativeGasUsed: dbTx.cumulative_gas_used ? BigInt(dbTx.cumulative_gas_used) : undefined,
-      timestamp: dbTx.timestamp ? new Date(dbTx.timestamp) : undefined,
-      indexedAt: dbTx.indexed_at ? new Date(dbTx.indexed_at) : undefined,
+      chainId: num(row, 'chainId', 'chain_id') ?? 0,
+      hash: str(row, 'hash', 'hash') ?? '',
+      blockNumber: big(row, 'blockNumber', 'block_number'),
+      transactionIndex: num(row, 'transactionIndex', 'transaction_index'),
+      fromAddress: addr(row, 'fromAddress', 'from_address'),
+      toAddress: addr(row, 'toAddress', 'to_address'),
+      // `value` is a BIGNUM column: drizzle hands it back as a bigint (the
+      // adapter stringifies its own bigints, but a real row keeps the
+      // driver's type) and the API contract is a decimal STRING — so it is
+      // stringified here rather than narrowed to string, which silently
+      // flattened every non-string value to the '0' default.
+      value: str(row, 'value', 'value') ?? bigToDecimal(row.value),
+      gasLimit: big(row, 'gasLimit', 'gas_limit'),
+      gasPrice: big(row, 'gasPrice', 'gas_price'),
+      maxFeePerGas: big(row, 'maxFeePerGas', 'max_fee_per_gas'),
+      maxPriorityFeePerGas: big(row, 'maxPriorityFeePerGas', 'max_priority_fee_per_gas'),
+      gasUsed: big(row, 'gasUsed', 'gas_used'),
+      effectiveGasPrice: big(row, 'effectiveGasPrice', 'effective_gas_price'),
+      status: num(row, 'status', 'status'),
+      type: num(row, 'type', 'type') ?? 0,
+      nonce: big(row, 'nonce', 'nonce'),
+      inputData: str(row, 'inputData', 'input_data'),
+      logsCount: num(row, 'logsCount', 'logs_count') ?? 0,
+      contractAddress: str(row, 'contractAddress', 'contract_address'),
+      cumulativeGasUsed: big(row, 'cumulativeGasUsed', 'cumulative_gas_used'),
+      timestamp: secondsToDate(row.timestamp),
+      indexedAt: secondsToDate(pick(row, 'indexedAt', 'indexed_at')),
     };
   };
 

@@ -46,6 +46,26 @@ const createBlockService = (deps: BlockServiceDeps) => {
     logError: logErr,
   } = deps;
 
+  // The `timestamp` column is the repo's unix-SECONDS customType
+  // (database/db-types.ts: TIMESTAMP_S, data: number). drizzle hands the
+  // formatter a plain number of seconds, and `new Date(number)` reads a
+  // number as MILLIseconds — so the old `new Date(row.timestamp)` reported
+  // January 1970 for every DB-served block (~56 years off) and
+  // formatBlockForApi serialized the bogus Date as a plausible ISO
+  // string. Seconds are scaled to ms here, once, for both numbers and any
+  // legacy string form; a Date is already correct and passes through.
+  const secondsToDate = (value: unknown): Date | undefined => {
+    if (value === null || value === undefined || value === '') return undefined;
+    if (value instanceof Date) return Number.isNaN(value.getTime()) ? undefined : value;
+    if (typeof value === 'number') return Number.isNaN(value) ? undefined : new Date(value * 1000);
+    const text = String(value);
+    // A bare decimal string is seconds (the column's own fromDriver form);
+    // anything with a date part parses as written.
+    if (/^\d+$/.test(text)) return new Date(Number(text) * 1000);
+    const parsed = new Date(text);
+    return Number.isNaN(parsed.getTime()) ? undefined : parsed;
+  };
+
   const formatBlock = (dbBlock: Record<string, unknown>): Block => {
     const get = (camel: string, snake: string) => dbBlock[camel] ?? dbBlock[snake];
     return {
@@ -53,9 +73,7 @@ const createBlockService = (deps: BlockServiceDeps) => {
       number: BigInt((get('number', 'number') as string | number) || 0),
       hash: get('hash', 'hash') as string,
       parentHash: (get('parentHash', 'parent_hash') as string) || undefined,
-      timestamp: get('timestamp', 'timestamp')
-        ? new Date(get('timestamp', 'timestamp') as string | number)
-        : undefined,
+      timestamp: secondsToDate(get('timestamp', 'timestamp')),
       miner: (get('miner', 'miner') as string) || undefined,
       gasLimit: get('gasLimit', 'gas_limit')
         ? BigInt(get('gasLimit', 'gas_limit') as string)
@@ -75,9 +93,7 @@ const createBlockService = (deps: BlockServiceDeps) => {
       stateRoot: (get('stateRoot', 'state_root') as string) || undefined,
       transactionsRoot: (get('transactionsRoot', 'transactions_root') as string) || undefined,
       receiptsRoot: (get('receiptsRoot', 'receipts_root') as string) || undefined,
-      indexedAt: get('indexedAt', 'indexed_at')
-        ? new Date(get('indexedAt', 'indexed_at') as string | number)
-        : undefined,
+      indexedAt: secondsToDate(get('indexedAt', 'indexed_at')),
     };
   };
 
@@ -85,16 +101,22 @@ const createBlockService = (deps: BlockServiceDeps) => {
     chainId: number,
     chainBlock: Record<string, unknown>,
   ): Promise<Block> => {
-    const blockTimestamp = chainBlock.timestamp
-      ? new Date(Number(chainBlock.timestamp) * 1000)
-      : null;
+    // SECONDS, matching the column's customType. The old code passed a Date
+    // in, which toDriver (db-types.ts) only stringifies — landing as a
+    // local-format "Wed Oct 01 2025 21:20:23 GMT+0800 …" string that
+    // DuckDB rejects outright ("Could not convert string … to INT64"), so
+    // indexing any block threw. viem's block timestamp is already seconds.
+    const blockTimestampSeconds =
+      chainBlock.timestamp === null || chainBlock.timestamp === undefined
+        ? null
+        : Number(chainBlock.timestamp);
 
     const values = {
       chainId,
       number: chainBlock.number?.toString() ?? '0',
       hash: chainBlock.hash as string,
       parentHash: (chainBlock.parentHash as string) ?? null,
-      timestamp: blockTimestamp,
+      timestamp: blockTimestampSeconds,
       miner: (chainBlock.miner as string) ?? null,
       gasLimit: chainBlock.gasLimit?.toString() ?? null,
       gasUsed: chainBlock.gasUsed?.toString() ?? null,
@@ -325,10 +347,14 @@ const createBlockService = (deps: BlockServiceDeps) => {
         if (blocksWithTimestamp.length >= 2) {
           const timeDiffs: number[] = [];
           for (let i = 0; i < blocksWithTimestamp.length - 1; i++) {
-            const current = new Date(blocksWithTimestamp[i].timestamp!);
-            const next = new Date(blocksWithTimestamp[i + 1].timestamp!);
-            const diff = (current.getTime() - next.getTime()) / 1000;
-            timeDiffs.push(diff);
+            // Same seconds contract as formatBlock: the column is unix
+            // seconds, so both ends are scaled before subtracting. Reading
+            // them as ms made every diff ~1000× too small, collapsing
+            // avgBlockTime to fractions of a second on real chains.
+            const current = secondsToDate(blocksWithTimestamp[i].timestamp)?.getTime() ?? NaN;
+            const next = secondsToDate(blocksWithTimestamp[i + 1].timestamp)?.getTime() ?? NaN;
+            const diff = (current - next) / 1000;
+            if (Number.isFinite(diff)) timeDiffs.push(diff);
           }
           if (timeDiffs.length > 0) {
             avgBlockTime = timeDiffs.reduce((a, b) => a + b, 0) / timeDiffs.length;
