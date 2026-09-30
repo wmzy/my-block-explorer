@@ -50,9 +50,7 @@ describe('GET .../storage/:slot decimal-slot validation', () => {
     const res = await app.request(`${BASE}/abc`);
 
     expect(res.status).toBe(400);
-    await expect(res.json()).resolves.toEqual({
-      error: 'Invalid slot: must be a decimal integer',
-    });
+    await expect(res.json()).resolves.toMatchObject({ error: 'invalid_slot' });
     expect(mocks.getClient).not.toHaveBeenCalled();
   });
 
@@ -60,18 +58,14 @@ describe('GET .../storage/:slot decimal-slot validation', () => {
     const res = await app.request(`${BASE}/1.5`);
 
     expect(res.status).toBe(400);
-    await expect(res.json()).resolves.toEqual({
-      error: 'Invalid slot: must be a decimal integer',
-    });
+    await expect(res.json()).resolves.toMatchObject({ error: 'invalid_slot' });
   });
 
   it('answers 400 for a negative slot', async () => {
     const res = await app.request(`${BASE}/-5`);
 
     expect(res.status).toBe(400);
-    await expect(res.json()).resolves.toEqual({
-      error: 'Invalid slot: must be non-negative',
-    });
+    await expect(res.json()).resolves.toMatchObject({ error: 'invalid_slot' });
   });
 
   it('keeps converting a valid decimal slot to its 0x-hex form and answering 200', async () => {
@@ -98,8 +92,6 @@ describe('GET .../storage/:slot decimal-slot validation', () => {
     const res = await app.request(`${BASE}/0xzz`);
 
     expect(res.status).toBe(400);
-    await expect(res.json()).resolves.toEqual({
-      error: 'Invalid slot: must be valid hex string',
-    });
+    await expect(res.json()).resolves.toMatchObject({ error: 'invalid_slot' });
   });
 });

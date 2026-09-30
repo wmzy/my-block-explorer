@@ -14,8 +14,23 @@ const logger = createLogger('stats-routes');
 
 const RPC_TIMEOUT_MS = 3000;
 
+// The timeout's timer must die with the race: a losing setTimeout keeps
+// the event loop alive for the full window (and stacks one per chain per
+// request here), so both outcomes of the wrapped promise clear it.
 const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T | null> =>
-  Promise.race([promise, new Promise<null>(resolve => setTimeout(() => resolve(null), ms))]);
+  new Promise<T | null>((resolve, reject) => {
+    const timer = setTimeout(() => resolve(null), ms);
+    promise.then(
+      value => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      error => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
 
 const app = new Hono();
 

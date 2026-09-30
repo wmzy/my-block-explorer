@@ -67,6 +67,9 @@ type OperationObject = {
   parameters?: ParameterObject[];
   requestBody?: RequestBodyObject;
   responses: Record<string, ResponseObject>;
+  // OpenAPI 3.1 operation-level server override — used by the one debug
+  // path that lives outside the /api prefix.
+  servers?: { url: string }[];
 };
 
 type HttpMethod = 'get' | 'post' | 'put' | 'patch' | 'delete';
@@ -230,6 +233,12 @@ export const openApiDocument: OpenApiDocument = {
         'Relative form — resolves against whatever host serves this explorer ' +
         '(standalone server :8201, or the Vite dev bridge :3000).',
     },
+    {
+      url: '/',
+      description:
+        'Host-root form — only for /debug/db/query, the one documented path that ' +
+        'lives outside the /api prefix (it is mounted conditionally; see its entry).',
+    },
   ],
   tags: [
     { name: 'Meta', description: 'Endpoint index, liveness/posture probe, and this document.' },
@@ -246,6 +255,11 @@ export const openApiDocument: OpenApiDocument = {
     },
     { name: 'Deep Scan', description: 'Persistent resumable address transaction-discovery jobs.' },
     { name: 'Contracts', description: 'Cached source/ABI and read/simulate/gas interactions.' },
+    { name: 'Storage', description: 'Verified storage layouts and live storage slot reads.' },
+    {
+      name: 'Verification',
+      description: 'Sourcify submission, manual local-trust marks, local compile checks.',
+    },
     { name: 'Events', description: 'Per-contract range-based event indexing and querying.' },
     {
       name: 'Signatures',
@@ -269,6 +283,11 @@ export const openApiDocument: OpenApiDocument = {
     {
       name: 'SQL Console',
       description: 'Read-only queries against the explorer\'s own DuckDB (strict admin).',
+    },
+    {
+      name: 'Debug',
+      description:
+        'Development-only raw SQL surface — mounted solely when ENABLE_DEBUG_API=1.',
     },
   ],
   paths: {
@@ -364,7 +383,7 @@ export const openApiDocument: OpenApiDocument = {
               timestamp: str(),
             }),
           ),
-          400: error('400', 'Missing q parameter.'),
+          400: error('400', 'missing_query.'),
         },
       },
     },
@@ -389,7 +408,7 @@ export const openApiDocument: OpenApiDocument = {
               timestamp: str(),
             }),
           ),
-          400: error('400', 'Unsupported chain or missing q.'),
+          400: error('400', 'unsupported_chain / missing_query.'),
         },
       },
     },
@@ -481,7 +500,7 @@ export const openApiDocument: OpenApiDocument = {
               timestamp: tsProp,
             }),
           ),
-          404: error('404', 'Block not found.'),
+          404: error('404', 'block_not_found.'),
         },
       },
     },
@@ -566,7 +585,7 @@ export const openApiDocument: OpenApiDocument = {
               timestamp: tsProp,
             }),
           ),
-          404: error('404', 'Transaction not found.'),
+          404: error('404', 'transaction_not_found.'),
         },
       },
     },
@@ -592,7 +611,7 @@ export const openApiDocument: OpenApiDocument = {
               timestamp: tsProp,
             }),
           ),
-          400: error('400', 'invalid_limit / Invalid offset.'),
+          400: error('400', 'invalid_limit / invalid_offset.'),
         },
       },
     },
@@ -987,6 +1006,72 @@ export const openApiDocument: OpenApiDocument = {
       },
     },
 
+    '/chains/{chainId}/contracts': {
+      get: {
+        tags: ['Contracts'],
+        summary: 'Cached-contract directory (paged)',
+        description:
+          `Every contract_sources row this explorer has cached for the chain — populated ` +
+          `by opening (or force-refreshing) a contract page, never by this endpoint. ` +
+          `X-Data-Source: database (local cache, not an on-chain fact). ${AUTH_OPEN}`,
+        operationId: 'listCachedContracts',
+        parameters: [
+          chainIdParam(),
+          q('q', 'Optional name/address substring filter'),
+          q('limit', 'Page size — default 50, max 100; over-cap or junk → 400', int()),
+          q('offset', 'Page offset — default 0, negative clamps to 0, capped at 100,000', int()),
+        ],
+        responses: {
+          200: ok(
+            fields({
+              ...chainProps,
+              contracts: arr(
+                fields({
+                  chainId: int(),
+                  address: str(),
+                  name: str('null when the cached row carries no name'),
+                  isVerified: bool(),
+                  verificationSource: str(),
+                  updatedAt: str('null when the row has no timestamp'),
+                }),
+                'Verified first, then most recently updated',
+              ),
+              total: int('Rows matching the filter, ignoring paging'),
+              q: str('The applied filter, null when absent'),
+              offset: int(),
+              timestamp: tsProp,
+            }),
+          ),
+          400: error('400', 'invalid_limit / invalid_offset.'),
+        },
+      },
+    },
+    '/chains/{chainId}/contracts/stats': {
+      get: {
+        tags: ['Contracts'],
+        summary: 'Cached-contract verification counts',
+        description:
+          `Counts over the chain's cached contract rows (the same local cache the ` +
+          `directory endpoint pages). Kept as public API although the bundled frontend ` +
+          `no longer calls it. ${AUTH_OPEN}`,
+        operationId: 'getContractStats',
+        parameters: [chainIdParam()],
+        responses: {
+          200: ok(
+            fields({
+              ...chainProps,
+              stats: fields({
+                total: int(),
+                verified: int(),
+                unverified: int(),
+                partial: int(),
+              }),
+              timestamp: tsProp,
+            }),
+          ),
+        },
+      },
+    },
     '/chains/{chainId}/contracts/{address}/source': {
       get: {
         tags: ['Contracts'],
@@ -1034,6 +1119,85 @@ export const openApiDocument: OpenApiDocument = {
             }),
           ),
           404: error('404', 'not_a_contract.'),
+        },
+      },
+    },
+    '/chains/{chainId}/contracts/{address}/functions': {
+      get: {
+        tags: ['Contracts'],
+        summary: 'Readable/writable function lists',
+        description:
+          `Splits the cached ABI (proxy implementations followed) into readFunctions / ` +
+          `writeFunctions for the Interact form. Cache-Control: public, max-age=300. ${AUTH_OPEN}`,
+        operationId: 'getContractFunctions',
+        parameters: [chainIdParam(), addressParam()],
+        responses: {
+          200: ok(
+            fields({
+              ...chainProps,
+              address: str(),
+              readFunctions: arr(fields({}, 'Function descriptor')),
+              writeFunctions: arr(fields({}, 'Function descriptor')),
+              timestamp: tsProp,
+            }),
+          ),
+        },
+      },
+    },
+    '/chains/{chainId}/contracts/{address}/creation': {
+      get: {
+        tags: ['Contracts'],
+        summary: 'Creation transaction lookup',
+        description:
+          `Creator, tx hash, block, timestamp and gas of the deployment (X-Data-Source: ` +
+          `rpc). An unanswerable chain still answers 200 with found: false — creation ` +
+          `is never fabricated. ${AUTH_OPEN}`,
+        operationId: 'getContractCreation',
+        parameters: [chainIdParam(), addressParam()],
+        responses: {
+          200: ok(
+            fields({
+              ...chainProps,
+              contractAddress: str(),
+              found: bool(),
+              creation: fields(
+                {
+                  txHash: str(),
+                  blockNumber: int(),
+                  creator: str(),
+                  timestamp: str(),
+                  gasUsed: str('Decimal string'),
+                  gasPrice: str('Decimal string'),
+                },
+                'Present only when found',
+              ),
+              message: str('Why not found, when found is false'),
+              timestamp: tsProp,
+            }),
+          ),
+        },
+      },
+    },
+    '/chains/{chainId}/contracts/{address}/ides': {
+      get: {
+        tags: ['Contracts'],
+        summary: 'Detected local IDE openers',
+        description: `Which IDEs the open-in-ide endpoint can spawn on this machine. ${AUTH_OPEN}`,
+        operationId: 'listDetectedIdes',
+        parameters: [chainIdParam(), addressParam()],
+        responses: {
+          200: ok(
+            fields({
+              ides: arr(
+                fields({
+                  id: str('vscode | cursor | zed | webstorm | sublime'),
+                  displayName: str(),
+                  command: str('Executable the opener spawns'),
+                }),
+              ),
+              timestamp: tsProp,
+            }),
+          ),
         },
       },
     },
@@ -1139,6 +1303,267 @@ export const openApiDocument: OpenApiDocument = {
             }),
           ),
           400: error('400', 'Validation errors or estimation failure.'),
+        },
+      },
+    },
+
+    '/chains/{chainId}/contracts/{address}/open-in-ide': {
+      post: {
+        tags: ['Contracts'],
+        summary: 'Write sources to disk and spawn a local IDE',
+        description:
+          `Writes the (implementation) contract sources under the IDE scratch dir and ` +
+          `spawns the chosen editor — a process-spawning write on the backend host, ` +
+          `hence the admin gate even in a zero-config session. ${AUTH_OPT_IN}`,
+        operationId: 'openContractInIde',
+        parameters: [chainIdParam(), addressParam()],
+        requestBody: jsonBody(
+          fields({
+            ide: str('Required — vscode | cursor | zed | webstorm | sublime (see GET .../ides)'),
+          }),
+        ),
+        responses: {
+          200: ok(
+            fields({
+              success: bool(),
+              directory: str('Scratch dir the sources were written to'),
+              ide: str(),
+              timestamp: tsProp,
+            }),
+          ),
+          400: error('400', 'invalid_ide / ide_not_installed / invalid_json.'),
+          404: error('404', 'No cached contract source for the address.'),
+        },
+      },
+    },
+    '/chains/{chainId}/contracts/{address}/clear-cache': {
+      post: {
+        tags: ['Contracts'],
+        summary: 'Drop the cached contract source',
+        description:
+          `Non-destructive: the immutable source simply re-fetches from upstream on the ` +
+          `next read (this backs the Force Refresh button). ${AUTH_OPT_IN}`,
+        operationId: 'clearContractCache',
+        parameters: [chainIdParam(), addressParam()],
+        responses: {
+          200: ok(fields({ success: bool(), message: str() })),
+        },
+      },
+    },
+
+    '/chains/{chainId}/contracts/{address}/storage-layout': {
+      get: {
+        tags: ['Storage'],
+        summary: 'Verified storage layout',
+        description:
+          `DB cache → storage-layout-fetcher fallback (immutable once cached); the ` +
+          `X-Data-Source header names where the answer came from. ${AUTH_OPEN}`,
+        operationId: 'getStorageLayout',
+        parameters: [chainIdParam(), addressParam()],
+        responses: {
+          200: ok(
+            fields({
+              ...chainProps,
+              address: str(),
+              found: bool(),
+              layout: fields({}, 'Storage layout entries (types, slots, offsets)'),
+              source: str('Where the layout came from'),
+              timestamp: tsProp,
+            }),
+          ),
+          404: error('404', 'No layout — unverified contract or the fetcher cannot cover it.'),
+        },
+      },
+    },
+    '/chains/{chainId}/contracts/{address}/storage-layout/cache': {
+      delete: {
+        tags: ['Storage'],
+        summary: 'Drop the cached storage layout',
+        description:
+          `Non-destructive: the layout is immutable upstream and refetches on the next ` +
+          `read; a missing entry is a no-op 200. ${AUTH_OPT_IN}`,
+        operationId: 'clearStorageLayoutCache',
+        parameters: [chainIdParam(), addressParam()],
+        responses: {
+          200: ok(fields({ success: bool(), message: str() })),
+        },
+      },
+    },
+    '/chains/{chainId}/contracts/{address}/storage/{slot}': {
+      get: {
+        tags: ['Storage'],
+        summary: 'Live storage slot read',
+        description:
+          `eth_getStorageAt at the chain head (X-Data-Source: rpc) — the storage ` +
+          `explorer reads slots this way. ${AUTH_OPEN}`,
+        operationId: 'getStorageSlot',
+        parameters: [
+          chainIdParam(),
+          addressParam(),
+          {
+            name: 'slot',
+            in: 'path',
+            required: true,
+            description: 'Storage slot — 0x-hex or a non-negative decimal integer',
+            schema: str(),
+          },
+        ],
+        responses: {
+          200: ok(
+            fields({
+              ...chainProps,
+              address: str(),
+              slot: str('Normalized 0x-hex form'),
+              value: str('32-byte 0x-hex word'),
+              timestamp: tsProp,
+            }),
+          ),
+          400: error('400', 'invalid_slot (0x-hex or a non-negative decimal integer).'),
+        },
+      },
+    },
+
+    '/chains/{chainId}/contracts/{address}/verify': {
+      post: {
+        tags: ['Verification'],
+        summary: 'Submit a Sourcify verification bundle',
+        description:
+          `Body { files: { 'metadata.json': string, … } } — submitted through the ` +
+          `backend to Sourcify. Success drops the cached unverified source so the next ` +
+          `GET re-fetches. Rate limit 3/min · burst 1. ${AUTH_OPT_IN}`,
+        operationId: 'submitContractVerification',
+        parameters: [chainIdParam(), addressParam()],
+        requestBody: jsonBody(
+          fields({
+            files: fields({}, 'Sourcify bundle: file name → content (metadata.json required)'),
+          }),
+        ),
+        responses: {
+          200: ok(
+            fields({
+              verified: bool(),
+              status: str('\'perfect\' | \'partial\' — present when verified'),
+              verificationStatus: str('Fresh source status, when the post-verify refresh ran'),
+              kind: str('\'unsupported_chain\' | \'rejected\' — present when not verified'),
+              message: str('Sourcify\'s own words, when not verified'),
+            }),
+          ),
+          400: error('400', 'invalid_files — structural bundle problems.'),
+          502: error('502', 'sourcify_unreachable.'),
+        },
+      },
+    },
+    '/chains/{chainId}/contracts/{address}/verify/manual': {
+      post: {
+        tags: ['Verification'],
+        summary: 'Save a local-trust verification mark',
+        description:
+          `For contracts the remote verifiers cannot cover (anvil/hardhat/private): body ` +
+          `{ abi, sourceCode?, name? } — abi must parse to a non-empty array. A sticky ` +
+          `local annotation, NOT cryptographic verification; a later Sourcify match ` +
+          `supersedes it. Same 3/min · burst 1 bucket as verify. ${AUTH_OPT_IN}`,
+        operationId: 'saveManualVerification',
+        parameters: [chainIdParam(), addressParam()],
+        requestBody: jsonBody(
+          fields({
+            abi: str('Required — JSON text parsing to a non-empty array'),
+            sourceCode: str(),
+            name: str(),
+          }),
+        ),
+        responses: {
+          200: ok(
+            fields({
+              verified: bool(),
+              verificationSource: str('\'manual\''),
+              verificationStatus: str(),
+              contractSource: fields({}, 'Freshly re-read source (same shape as GET .../source)'),
+            }),
+          ),
+          400: error('400', 'missing_fields / invalid_abi.'),
+        },
+      },
+      delete: {
+        tags: ['Verification'],
+        summary: 'Remove the local-trust mark',
+        description:
+          `Deletes only rows with verificationSource 'manual' — a sourcify/blockscan ` +
+          `row answers 404 and stays intact. The next GET re-probes the remote ` +
+          `verifiers. ${AUTH_OPT_IN}`,
+        operationId: 'deleteManualVerification',
+        parameters: [chainIdParam(), addressParam()],
+        responses: {
+          200: ok(fields({ success: bool(), message: str() })),
+          404: error('404', 'not_found — no manual mark exists for this contract.'),
+        },
+      },
+    },
+    '/chains/{chainId}/contracts/{address}/verify/compilers': {
+      get: {
+        tags: ['Verification'],
+        summary: 'solc builds available for compile verification',
+        description:
+          `The official wasm build list, cached 24h server-side (a degraded answer names ` +
+          `why it came from the local cache). ${AUTH_OPEN}`,
+        operationId: 'listVerifyCompilers',
+        parameters: [chainIdParam(), addressParam()],
+        responses: {
+          200: ok(
+            fields({
+              versions: arr(
+                fields({ version: str(), longVersion: str(), prerelease: bool() }),
+              ),
+              degraded: str('Why the list is stale/empty, when it is'),
+            }),
+          ),
+          502: error('502', 'compilers_unavailable.'),
+        },
+      },
+    },
+    '/chains/{chainId}/contracts/{address}/verify/compile': {
+      post: {
+        tags: ['Verification'],
+        summary: 'Local compile verification',
+        description:
+          `Works on chains Sourcify does not cover: the backend downloads the exact ` +
+          `solc wasm build (sha256-verified, cached under data/solc-cache), compiles the ` +
+          `Standard JSON input (a Hardhat build-info file is accepted verbatim) and ` +
+          `matches the runtime bytecode against this chain's RPC. Any match tier ` +
+          `persists the source. Same 3/min · burst 1 bucket as verify. ${AUTH_OPT_IN}`,
+        operationId: 'verifyByCompilation',
+        parameters: [chainIdParam(), addressParam()],
+        requestBody: jsonBody(
+          fields({
+            compilerVersion: str('Required — a version from GET .../verify/compilers'),
+            standardJsonInput: fields({}, 'Required — solc Standard JSON input'),
+            contractName: str('Required when the input compiles to more than one contract'),
+          }),
+        ),
+        responses: {
+          200: ok(
+            fields({
+              verified: bool(),
+              tier: str('\'exact\' | \'matches-metadata-only\' — when verified'),
+              contractName: str(),
+              compilerVersion: str(),
+              comparison: fields({}, 'Bytecode match diff'),
+              warnings: arr(str()),
+              verificationStatus: str(),
+              contractSource: fields({}, 'Freshly re-read source (same shape as GET .../source)'),
+              kind: str('\'mismatch\' | \'compile_error\' | \'no_contracts\' | \'no_runtime_bytecode\''),
+              message: str(),
+              errors: arr(str(), 'Compiler errors, on compile_error'),
+            }),
+          ),
+          400: error(
+            '400',
+            'invalid_input / contract_name_required / unknown_contract / not_a_contract.',
+          ),
+          500: error('500', 'compile_failed — the compiler build itself crashed.'),
+          502: error(
+            '502',
+            'compilers_unavailable / compiler_unavailable / rpc_unavailable.',
+          ),
         },
       },
     },
@@ -1268,7 +1693,7 @@ export const openApiDocument: OpenApiDocument = {
             description: 'CSV attachment (text/csv).',
             content: { 'text/csv': { schema: fields({}, 'CSV rows incl. is_finalized') } },
           },
-          400: error('400', 'Export limit exceeded (100,000 rows) or invalid filters.'),
+          400: error('400', 'too_many_rows (100,000-row cap) or invalid filters.'),
         },
       },
     },
@@ -1327,7 +1752,10 @@ export const openApiDocument: OpenApiDocument = {
               timestamp: tsProp,
             }),
           ),
-          400: error('400', 'Invalid bounds or overlapping range.'),
+          400: error(
+            '400',
+            'invalid_mode / invalid_block_count / range_overlap / no_previous_range / range_create_failed.',
+          ),
         },
       },
     },
@@ -1406,7 +1834,7 @@ export const openApiDocument: OpenApiDocument = {
               timestamp: tsProp,
             }),
           ),
-          400: error('400', 'Invalid rangeId/bounds or overlap.'),
+          400: error('400', 'invalid_range_id / invalid_bounds / range_overlap.'),
         },
       },
       delete: {
@@ -1429,8 +1857,8 @@ export const openApiDocument: OpenApiDocument = {
           200: ok(
             fields({ ...chainProps, contractAddress: str(), rangeId: int(), timestamp: tsProp }),
           ),
-          400: error('400', 'Range is currently indexing.'),
-          404: error('404', 'Range not found.'),
+          400: error('400', 'invalid_state — the range is currently indexing.'),
+          404: error('404', 'range_not_found.'),
         },
       },
     },
@@ -1461,8 +1889,8 @@ export const openApiDocument: OpenApiDocument = {
               timestamp: tsProp,
             }),
           ),
-          400: error('400', 'Already indexing or completed.'),
-          404: error('404', 'Range not found.'),
+          400: error('400', 'invalid_state (already indexing or completed).'),
+          404: error('404', 'range_not_found.'),
         },
       },
     },
@@ -1487,8 +1915,8 @@ export const openApiDocument: OpenApiDocument = {
           200: ok(
             fields({ ...chainProps, contractAddress: str(), rangeId: int(), timestamp: tsProp }),
           ),
-          400: error('400', 'Not indexing.'),
-          404: error('404', 'Range not found.'),
+          400: error('400', 'no_active_job.'),
+          404: error('404', 'range_not_found.'),
         },
       },
     },
@@ -1519,8 +1947,8 @@ export const openApiDocument: OpenApiDocument = {
               timestamp: tsProp,
             }),
           ),
-          400: error('400', 'Not paused.'),
-          404: error('404', 'Range not found.'),
+          400: error('400', 'invalid_state (not paused).'),
+          404: error('404', 'range_not_found.'),
         },
       },
     },
@@ -1940,7 +2368,7 @@ export const openApiDocument: OpenApiDocument = {
         description:
           `Same enumeration as the CLI (\`my-block-explorer uninstall\`): the main DuckDB ` +
           `(via DATABASE_URL), per-chain event DBs, the solc cache and the IDE scratch ` +
-          `dir — nothing is deleted here. Rate limit 4/min · burst 3. ${AUTH_OPT_IN}`,
+          `dir — nothing is deleted here. Rate limit 4/min · burst 3. ${AUTH_STRICT}`,
         operationId: 'previewOpsUninstall',
         responses: {
           200: ok(
@@ -1972,7 +2400,7 @@ export const openApiDocument: OpenApiDocument = {
           `Self-destruct: answers 202 immediately, then the backend closes its listeners ` +
           `and DuckDB handles, deletes every enumerated target and exits. The body must ` +
           `carry {"confirm": "uninstall"} verbatim; a second arm attempt inside the grace ` +
-          `window is a 409. Rate limit 4/min · burst 3. ${AUTH_OPT_IN}`,
+          `window is a 409. Rate limit 4/min · burst 3. ${AUTH_STRICT}`,
         operationId: 'executeOpsUninstall',
         requestBody: jsonBody(
           fields({
@@ -2051,6 +2479,34 @@ export const openApiDocument: OpenApiDocument = {
               }),
             }),
           ),
+        },
+      },
+    },
+
+    // The one documented path outside the /api prefix — resolve it against
+    // the second server entry (url: '/'), not the /api one.
+    '/debug/db/query': {
+      post: {
+        tags: ['Debug'],
+        summary: 'Raw SQL against the explorer DuckDB (development only)',
+        description:
+          `CONDITIONALLY MOUNTED: this path exists only when the server boots with ` +
+          `ENABLE_DEBUG_API=1 (off by default; a non-loopback HOST refuses to boot with ` +
+          `it unless ALLOW_INSECURE_START=1 — see src/startupChecks.ts). Host-root ` +
+          `path — resolve against the servers[1] entry, not the /api prefix. ${AUTH_OPT_IN}`,
+        operationId: 'debugDbQuery',
+        servers: [{ url: '/' }],
+        requestBody: jsonBody(fields({ sql: str('Required — the SQL text') })),
+        responses: {
+          200: ok(
+            fields({
+              success: bool(),
+              rowCount: int(),
+              rows: arr(fields({}, 'Row objects — cells unnormalized')),
+            }),
+          ),
+          400: error('400', 'Missing or invalid sql parameter.'),
+          500: error('500', 'Query failed (message carries the real DuckDB error).'),
         },
       },
     },

@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
+import { bodyLimit } from 'hono/body-limit';
 import { timing } from 'hono/timing';
 import { loggerMiddleware } from './middleware/logger';
 import { corsMiddleware } from './middleware/cors';
@@ -29,14 +30,42 @@ import streamRoutes from './routes/stream';
 import debugRoutes from './routes/debug';
 import { reconcileInterruptedRanges } from './services/EventIndexingService';
 import { reconcileInterruptedAddressScans } from './services/AddressScanService';
+import { ensureBuiltInChainsLoaded } from './config/chains';
 
 const logger = createLogger('api-app');
 
 const app = new Hono();
 
+// Shared request-body ceiling (see the bodyLimit middleware below).
+const MAX_BODY_BYTES = 8 * 1024 * 1024;
+
 app.use('*', corsMiddleware);
 app.use('*', loggerMiddleware);
 app.use('*', timing());
+
+// Request body ceiling for EVERY route (mounted before all route modules
+// so nothing can dodge it): 8 MB. The largest legitimate body is a
+// verify/compile source bundle (verifyRoutes accepts full standard-json
+// inputs) at ≤2 MB in practice; 8 MB leaves 4x headroom without leaving
+// the door open to unbounded JSON/byte bodies eating memory. The default
+// bodyLimit answer is a plain-text 413 page — this onError keeps the
+// canonical createApiError envelope so util/http.ts's toApiError can
+// read the code, exactly like every other error path.
+app.use(
+  '*',
+  bodyLimit({
+    maxSize: MAX_BODY_BYTES,
+    onError: c =>
+      c.json(
+        createApiError(
+          413,
+          'payload_too_large',
+          `Request body exceeds the ${MAX_BODY_BYTES / (1024 * 1024)} MB limit.`,
+        ),
+        413,
+      ),
+  }),
+);
 
 app.onError((e, c) => {
   if (e instanceof HTTPException) {
@@ -130,7 +159,9 @@ app.route('/api', sqlRoutes);
 // the OPT-IN admin tier inside the sub-app — unlike the SQL console's
 // strict gate it executes no raw SQL, so a zero-config local session stays
 // open; each section degrades independently to {error:'unavailable'}
-// instead of failing the whole endpoint.
+// instead of failing the whole endpoint. The sub-app's /ops/uninstall
+// pair is the exception: it strict-gates (requireAdminToken, fail-closed)
+// because it erases all server data.
 app.route('/api', opsRoutes);
 // Watch subscriptions: server-side address watching (WatchService tick +
 // getLogs per subscription, ring buffer + SSE `watch` frames). Mounting
@@ -162,6 +193,12 @@ if (process.env.ENABLE_DEBUG_API === '1') {
 // not block the server from booting.
 export async function reconcileStartupState(): Promise<void> {
   await Promise.all([
+    // Full viem chain registry before listen: the custom-chain 409 gate
+    // (isBuiltInChainProtected) and chain-id validation must not miss a
+    // REAL viem chain just because the barrel had not loaded yet. Never
+    // rejects — a failed import warns inside config/chains and the
+    // curated subset keeps serving (honest degrade, boot proceeds).
+    ensureBuiltInChainsLoaded(),
     reconcileInterruptedRanges().catch(err =>
       logger.error({ err }, 'Failed to reconcile interrupted indexing ranges'),
     ),
@@ -170,6 +207,15 @@ export async function reconcileStartupState(): Promise<void> {
     ),
   ]);
 }
+
+// Full viem chain registry for the vite dev bridge: src/server.ts awaits
+// ensureBuiltInChainsLoaded() pre-listen (reconcileStartupState above),
+// but the dev bridge loads this module WITHOUT server.ts — without this
+// kick its chain-id validation and the custom-chain 409 gate would serve
+// the curated subset indefinitely. Fire-and-forget: requests answered in
+// the milliseconds the barrel takes to import see the subset, exactly
+// like the frontend's first paint.
+void ensureBuiltInChainsLoaded();
 
 app.notFound(c => {
   return c.json(

@@ -57,6 +57,10 @@ const dbState = vi.hoisted(() => ({
   creationInfoRows: [] as Array<Record<string, unknown>>,
   orderedRangeRows: [] as Array<Record<string, unknown>>,
   rawRangeRows: [] as Array<Record<string, unknown>>,
+  // What a getNextRangeId select (coalesce(max(range_id), 0)) reports;
+  // bumpable by tests to simulate a concurrent insert landing between the
+  // read and the write.
+  maxId: 0,
   // Optional per-insert-call rejection: consulted when the builder is
   // awaited, so tests can fail the chunk insert, the row retry, or both.
   insertReject: null as null | ((table: unknown, values: unknown) => Error | null),
@@ -92,10 +96,9 @@ vi.mock('@/database/drizzle', async () => {
         return b;
       },
       then: (res: unknown, rej: unknown) =>
-        Promise.resolve(withFields ? [{ maxId: 0 }] : rowsFor(state.table, state.ordered)).then(
-          res as never,
-          rej as never,
-        ),
+        Promise.resolve(
+          withFields ? [{ maxId: S.maxId }] : rowsFor(state.table, state.ordered),
+        ).then(res as never, rej as never),
     };
     return b;
   };
@@ -228,6 +231,7 @@ beforeEach(() => {
   dbState.creationInfoRows.length = 0;
   dbState.orderedRangeRows.length = 0;
   dbState.rawRangeRows.length = 0;
+  dbState.maxId = 0;
   dbState.insertReject = null;
   logMocks.warn.mockClear();
   logMocks.error.mockClear();
@@ -310,6 +314,59 @@ describe('addIndexingRange stores only concrete numbers', () => {
     expect(result.success).toBe(true);
     expect(result.truncatedToBlock).toBeUndefined();
     expect(lastInsert()?.values.toBlock).toBe(20_000_000n);
+  });
+});
+
+describe('addIndexingRange range-id race (read-then-insert)', () => {
+  // Two concurrent adds for the same (chain, address) both mint
+  // max(range_id)+1; the loser's insert dies on the range PK (23505).
+  // The service must recompute once and retry once — and still error
+  // honestly if the duplicate class persists.
+  const duplicateError = () => {
+    const err = new Error(
+      'Constraint Error: Duplicate key "1:0x1234..:1" violates primary key constraint',
+    ) as Error & { code?: string };
+    err.code = '23505';
+    return err;
+  };
+
+  it('recomputes the id once and retries the insert after losing the race', async () => {
+    // The concurrent winner's row lands between our read and our insert:
+    // our first insert (rangeId 1) hits the PK, and the re-read now sees
+    // the winner's row as max(range_id).
+    dbState.insertReject = (table, values) => {
+      if (
+        table === indexingRanges &&
+        (values as { rangeId?: number }).rangeId === 1 &&
+        dbState.maxId === 0
+      ) {
+        dbState.maxId = 1;
+        return duplicateError();
+      }
+      return null;
+    };
+
+    const result = await addIndexingRange(CHAIN_ID, ADDRESS, { fromBlock: 100, toBlock: 200 });
+
+    expect(result.success).toBe(true);
+    expect(result.rangeId).toBe(2);
+    const rangeInserts = dbState.inserts.filter(i => i.table === indexingRanges);
+    expect(rangeInserts).toHaveLength(2);
+    expect(rangeInserts[1]?.values.rangeId).toBe(2);
+  });
+
+  it('errors honestly when the retry hits a duplicate-class failure again', async () => {
+    dbState.insertReject = table => {
+      if (table === indexingRanges) return duplicateError();
+      return null;
+    };
+
+    await expect(
+      addIndexingRange(CHAIN_ID, ADDRESS, { fromBlock: 100, toBlock: 200 }),
+    ).rejects.toThrow(/Duplicate key/);
+    // Exactly one recompute + one retry — no retry loop.
+    const rangeInserts = dbState.inserts.filter(i => i.table === indexingRanges);
+    expect(rangeInserts).toHaveLength(2);
   });
 });
 

@@ -3,7 +3,6 @@ import { useState } from 'react';
 import { css } from '@linaria/core';
 import { Dialog } from 'haze-ui';
 import { useControl } from 'react-use-control';
-import QRCode from 'qrcode';
 import { toast } from 'haze-ui';
 import { Button } from '@/components/ui/Button';
 import { checksummedAddressOrNull } from '@/util/privateNotes';
@@ -98,7 +97,8 @@ function QrIcon() {
  * the CHECKSUMMED address — the plain hex string, deliberately NOT an
  * EIP-681 payment URI (this explorer is read-only; a wallet that scans
  * it simply opens the account). The QR renders as an inline SVG produced
- * by the `qrcode` package's pure string renderer — no canvas involved,
+ * by the `qrcode` package's pure string renderer — loaded lazily on
+ * first open, no canvas involved,
  * so the same code path works in every browser and in tests — with a
  * copy-address button as the fallback for screens a camera cannot reach.
  *
@@ -124,11 +124,16 @@ export function AddressQr({ address }: { address: string }) {
     let cancelled = false;
     setSvg(null);
     setError(null);
-    QRCode.toString(payload, { type: 'svg', margin: 2, width: 232 })
-      .then(markup => {
+    // Lazy renderer: the qrcode package is imported only when a dialog
+    // actually opens, so the encoder stays out of every Address-page
+    // chunk until it is genuinely needed. A failed chunk load lands in
+    // the same honest error state as a failed encode.
+    void (async () => {
+      try {
+        const { default: QRCode } = await import('qrcode');
+        const markup = await QRCode.toString(payload, { type: 'svg', margin: 2, width: 232 });
         if (!cancelled) setSvg(markup);
-      })
-      .catch(err => {
+      } catch (err) {
         if (!cancelled) {
           setError(
             `The QR code could not be generated — ${
@@ -136,7 +141,8 @@ export function AddressQr({ address }: { address: string }) {
             }. Copy the address below instead.`,
           );
         }
-      });
+      }
+    })();
     return () => {
       cancelled = true;
     };

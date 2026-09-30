@@ -6,6 +6,7 @@ import { getChainName } from '../config/chains';
 const logger = createLogger('blocks-routes');
 import { getValidatedChainId, getValidatedBlockNumber } from '../server/validation';
 import { formatBlockForApi, safeJsonResponse } from '../utils/serialization';
+import { respondError } from '../utils/api-error';
 
 const app = new Hono();
 
@@ -27,7 +28,7 @@ app.get('/chains/:chainId/blocks/latest', async c => {
     return c.json(responseData);
   } catch (error) {
     logger.error({ err: error }, 'Latest block API error');
-    return c.json({ error: 'Failed to get latest block' }, 500);
+    return respondError(c, 500, 'internal_error', 'Failed to get latest block');
   }
 });
 
@@ -39,7 +40,7 @@ app.get('/chains/:chainId/blocks/:blockNumber', async c => {
     const block = await blockService.getBlockByNumber(chainId, BigInt(blockNumber));
 
     if (!block) {
-      return c.json({ error: 'Block not found' }, 404);
+      return respondError(c, 404, 'block_not_found', 'Block not found');
     }
 
     c.header('X-Data-Source', 'blockchain');
@@ -55,7 +56,7 @@ app.get('/chains/:chainId/blocks/:blockNumber', async c => {
     return c.json(responseData);
   } catch (error) {
     logger.error({ err: error }, 'Block API error');
-    return c.json({ error: 'Failed to get block' }, 500);
+    return respondError(c, 500, 'internal_error', 'Failed to get block');
   }
 });
 
@@ -87,23 +88,11 @@ app.get('/chains/:chainId/blocks', async c => {
   const offset = parseOffsetParam(c.req.query('offset'));
 
   if (limit === null) {
-    return c.json(
-      {
-        error: 'invalid_limit',
-        message: 'limit must be a positive integer',
-      },
-      400,
-    );
+    return respondError(c, 400, 'invalid_limit', 'limit must be a positive integer');
   }
 
   if (offset === null) {
-    return c.json(
-      {
-        error: 'Invalid offset',
-        message: 'offset must be a non-negative integer',
-      },
-      400,
-    );
+    return respondError(c, 400, 'invalid_offset', 'offset must be a non-negative integer');
   }
 
   try {
@@ -122,7 +111,7 @@ app.get('/chains/:chainId/blocks', async c => {
     return c.json(responseData);
   } catch (error) {
     logger.error({ err: error }, 'Blocks list API error');
-    return c.json({ error: 'Failed to get blocks' }, 500);
+    return respondError(c, 500, 'internal_error', 'Failed to get blocks');
   }
 });
 

@@ -391,13 +391,16 @@ const readMulticallResult = (outcome: unknown): unknown => {
 // caller can distinguish it from real provider errors).
 class ScanTimeoutError extends Error {}
 
-const withTimeout = <T>(promise: Promise<T>, ms: number, label: string): Promise<T> =>
-  Promise.race([
-    promise,
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new ScanTimeoutError(`${label} timed out after ${ms}ms`)), ms),
-    ),
-  ]);
+// The losing timer is cleared on settle (crossChainProbe withinBudget
+// pattern): a winning scan must not leave a live ms-later timer pending
+// for every request.
+const withTimeout = <T>(promise: Promise<T>, ms: number, label: string): Promise<T> => {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expired = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new ScanTimeoutError(`${label} timed out after ${ms}ms`)), ms);
+  });
+  return Promise.race([promise, expired]).finally(() => clearTimeout(timer));
+};
 
 type ScanOutcome = {
   pairs: DiscoveredPair[];

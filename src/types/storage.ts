@@ -31,6 +31,14 @@ export type StorageBytesN = InplaceStorageType<`bytes${number}`, number>;
 export type StorageEnum = InplaceStorageType<`enum ${string}`, 1>;
 
 /**
+ * Opaque inplace entry from sources that only know the label (evmole):
+ * the label is the only truthful field — encoding and byte size are
+ * best-effort placeholders that the frontend resolver re-derives from
+ * the label (columnModel's canonicalizeLayout).
+ */
+export type StorageOpaque = InplaceStorageType<string, number>;
+
+/**
  * Fixed-size array stored inplace in storage
  */
 export type StorageArray = InplaceStorageType<`${string}[${number}]`, number> & {
@@ -96,7 +104,8 @@ export type StorageType =
   | StorageUint
   | StorageInt
   | StorageBytesN
-  | StorageEnum;
+  | StorageEnum
+  | StorageOpaque;
 
 /**
  * Map of type labels to their storage type definitions

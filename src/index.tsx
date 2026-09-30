@@ -23,6 +23,7 @@ import { getPreferredChainId, readRememberedChainId } from '@/views/Home/Landing
 import { subscribeWatchEvents, type LiveWatchEvent } from '@/services/liveChain';
 import { watchEventKey } from '@/services/watch';
 import { registerPwa } from '@/util/pwa';
+import { ensureBuiltInChainsLoaded } from '@/config/chains';
 
 // SPA route recovery for GitHub Pages 404 redirect
 // 404.html encodes the original path into the hash (e.g. #/chain/1)
@@ -48,6 +49,14 @@ import { registerPwa } from '@/util/pwa';
 // prefers-color-scheme media query in theme.css already styles the first
 // paint correctly on a dark-OS machine, so there is nothing to correct.
 setDocumentThemeAttribute(readThemePreference());
+
+// Full chain registry (config/chains): the curated static subset serves
+// the first paint (chain selector, popular grids); viem's ~737-export
+// barrel streams in behind it and rebuilds the indexes. Rare-chain deep
+// links re-check inside UnsupportedChainState once it lands, so nothing
+// dead-ends while it loads. Fire-and-forget on purpose — boot never
+// waits on it.
+void ensureBuiltInChainsLoaded();
 
 function Root() {
   const { status, error, isScanning, setApiUrl, discover, switchedFromManual } =
@@ -188,13 +197,13 @@ root.render(
   onApiBaseChange(evaluate);
   // Permission flips re-evaluate immediately instead of waiting for the
   // next poll tick: granting from the Watchlist panel's button or
-  // revoking in the browser's site settings both fire permissionchange.
-  // App-lifetime listeners, never removed — exactly like the api-base one.
-  document.addEventListener('permissionchange', evaluate);
-  // Belt for engines without the document-level event (the standard
-  // Permissions API's per-status 'change'): granted-only polling cannot
-  // observe a DENIED→GRANTED flip because the poll is stopped while
-  // ungranted. Silently skipped where unsupported (jsdom, Safari).
+  // revoking in the browser's site settings both surface on the standard
+  // Permissions API's per-status 'change' event (no engine dispatches a
+  // document-level 'permissionchange' event). This is not a mere belt:
+  // granted-only polling cannot observe a DENIED→GRANTED flip because
+  // the poll is stopped while ungranted. App-lifetime listener, never
+  // removed — exactly like the api-base one. Silently skipped where the
+  // Permissions API is unsupported (jsdom; a rejected query name).
   if (typeof navigator.permissions?.query === 'function') {
     navigator.permissions
       .query({ name: 'notifications' })

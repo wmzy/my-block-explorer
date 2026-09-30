@@ -180,8 +180,10 @@ The same erase is available from the running app: the **Ops dashboard**
 deleted, requires typing `uninstall`, and then the backend tears itself down
 in the honest order — close listener, close every DuckDB handle, delete the
 enumerated files, exit the process (the page goes offline; that is the
-feature, not a failure). Same enumeration as the CLI; same opt-in admin gate
-as the rest of the dashboard.
+feature, not a failure). Same enumeration as the CLI; the erase pair sits
+behind the STRICT admin gate (it fails closed with `ADMIN_TOKEN` unset —
+unlike the read-only dashboard around it), so set a token to use it in-page
+or run the CLI command above.
 
 Removing the package itself is your package manager's job (`npm rm -g
 my-block-explorer` for global installs; npx keeps nothing beyond npm's download

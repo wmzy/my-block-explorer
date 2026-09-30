@@ -78,7 +78,7 @@ describe('POST /rpc-configs field validation', () => {
 
     expect(res.status).toBe(400);
     const body = await res.json();
-    expect(body.code).toBe('invalid_url');
+    expect(body.error).toBe('invalid_url');
     expect(typeof body.message).toBe('string');
     expect(mocks.insertValues).not.toHaveBeenCalled();
   });
@@ -88,7 +88,7 @@ describe('POST /rpc-configs field validation', () => {
 
     expect(res.status).toBe(400);
     const body = await res.json();
-    expect(body.code).toBe('invalid_url');
+    expect(body.error).toBe('invalid_url');
     expect(body.message).toContain('http');
     expect(mocks.insertValues).not.toHaveBeenCalled();
   });
@@ -98,7 +98,7 @@ describe('POST /rpc-configs field validation', () => {
 
     expect(res.status).toBe(400);
     const body = await res.json();
-    expect(body.code).toBe('invalid_url');
+    expect(body.error).toBe('invalid_url');
   });
 
   it('rejects a non-integer chainId with 400 invalid_chain_id', async () => {
@@ -106,7 +106,7 @@ describe('POST /rpc-configs field validation', () => {
 
     expect(res.status).toBe(400);
     const body = await res.json();
-    expect(body.code).toBe('invalid_chain_id');
+    expect(body.error).toBe('invalid_chain_id');
     expect(mocks.insertValues).not.toHaveBeenCalled();
   });
 
@@ -117,7 +117,7 @@ describe('POST /rpc-configs field validation', () => {
 
     expect(res.status).toBe(400);
     const body = await res.json();
-    expect(body.code).toBe('invalid_chain_id');
+    expect(body.error).toBe('invalid_chain_id');
   });
 
   it('rejects a chainId that names no supported chain with 400 invalid_chain_id', async () => {
@@ -127,7 +127,7 @@ describe('POST /rpc-configs field validation', () => {
 
     expect(res.status).toBe(400);
     const body = await res.json();
-    expect(body.code).toBe('invalid_chain_id');
+    expect(body.error).toBe('invalid_chain_id');
     expect(body.message).toContain(String(UNSUPPORTED_CHAIN_ID));
     expect(mocks.insertValues).not.toHaveBeenCalled();
   });
@@ -137,7 +137,7 @@ describe('POST /rpc-configs field validation', () => {
 
     expect(res.status).toBe(400);
     const body = await res.json();
-    expect(body.code).toBe('invalid_json');
+    expect(body.error).toBe('invalid_json');
   });
 
   it('still rejects missing required fields with 400', async () => {
@@ -145,7 +145,7 @@ describe('POST /rpc-configs field validation', () => {
 
     expect(res.status).toBe(400);
     const body = await res.json();
-    expect(body.code).toBe('missing_fields');
+    expect(body.error).toBe('missing_fields');
   });
 
   it('rejects a non-string name with 400 invalid_name', async () => {
@@ -153,7 +153,7 @@ describe('POST /rpc-configs field validation', () => {
 
     expect(res.status).toBe(400);
     const body = await res.json();
-    expect(body.code).toBe('invalid_name');
+    expect(body.error).toBe('invalid_name');
     expect(mocks.insertValues).not.toHaveBeenCalled();
   });
 
@@ -162,7 +162,7 @@ describe('POST /rpc-configs field validation', () => {
 
     expect(res.status).toBe(400);
     const body = await res.json();
-    expect(body.code).toBe('invalid_fields');
+    expect(body.error).toBe('invalid_fields');
     expect(mocks.insertValues).not.toHaveBeenCalled();
   });
 });

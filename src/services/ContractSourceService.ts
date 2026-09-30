@@ -54,6 +54,39 @@ export const UNVERIFIED_CACHE_TTL_HOURS = 1;
 // until the row is manually cleared.
 export const CREATION_FAILURE_CACHE_TTL_HOURS = 24;
 
+// Proxy-resolution recursion guard. A cyclic implementation() pointer — a
+// proxy whose slot points back at itself or at an earlier link in the
+// resolution chain — is fully constructible on-chain (it is just a storage
+// slot), and without a guard getContractSource recursed into itself
+// forever, one Sourcify/Blockscan round trip per hop, until the stack
+// overflowed. Resolution stops past this many proxy hops.
+export const MAX_PROXY_RESOLUTION_DEPTH = 5;
+
+// Internal per-request state threaded through the recursive implementation
+// lookups. `visited` is branch-local: each recursion hop copies the parent
+// set (childResolutionState), so a sibling lookup — e.g. the post-fetch
+// enhance pass re-entering a just-resolved implementation through the DB
+// cache — is never mistaken for a cycle.
+type ProxyResolutionState = {
+  visited: Set<string>;
+  depth: number;
+};
+
+const freshResolutionState = (): ProxyResolutionState => ({
+  visited: new Set<string>(),
+  depth: 0,
+});
+
+const resolutionKey = (chainId: number, address: Address): string =>
+  `${chainId}:${address.toLowerCase()}`;
+
+// State for one more hop down the proxy chain: copy the ancestor path so a
+// child frame's bookkeeping never leaks back into its parent.
+const childResolutionState = (state: ProxyResolutionState): ProxyResolutionState => ({
+  visited: new Set(state.visited),
+  depth: state.depth + 1,
+});
+
 type CallTracerCall = {
   type: string;
   to?: string;
@@ -786,8 +819,33 @@ export class ContractSourceService {
     }
   }
 
-  async getContractSource(chainId: number, address: Address): Promise<ContractSource | null> {
+  async getContractSource(
+    chainId: number,
+    address: Address,
+    internal?: ProxyResolutionState,
+  ): Promise<ContractSource | null> {
     try {
+      // Recursion guard for proxy→implementation lookups. Public callers
+      // omit the bag and start a fresh path at depth 0. On a cycle or at
+      // the depth cap, degrade honestly: return null so the caller keeps
+      // its proxy-level result without implementationContract. Never throw.
+      const state = internal ?? freshResolutionState();
+      const key = resolutionKey(chainId, address);
+      if (state.visited.has(key) || state.depth >= MAX_PROXY_RESOLUTION_DEPTH) {
+        logger.warn(
+          {
+            chainId,
+            address,
+            depth: state.depth,
+            maxDepth: MAX_PROXY_RESOLUTION_DEPTH,
+            reason: state.visited.has(key) ? 'cycle' : 'depth_cap',
+            resolutionPath: [...state.visited],
+          },
+          'Proxy implementation resolution stopped (cycle or depth cap); serving proxy-level result without implementation',
+        );
+        return null;
+      }
+      state.visited.add(key);
       const cached = await this.getFromDatabase(chainId, address);
       logger.info(
         {
@@ -816,10 +874,10 @@ export class ContractSourceService {
         if (this.isCacheValid(cached)) {
           return cached;
         }
-        const remote = await this.fetchFromSourcify(chainId, address);
+        const remote = await this.fetchFromSourcify(chainId, address, state);
         if (remote) {
           await this.saveToDatabase(remote);
-          return this.enhanceWithProxyInfo(remote);
+          return this.enhanceWithProxyInfo(remote, undefined, state);
         }
         await this.refreshManualMark(chainId, address);
         cached.lastChecked = new Date();
@@ -828,21 +886,21 @@ export class ContractSourceService {
 
       if (cached?.verificationStatus === 'verified' && cached.sourceCode) {
         if (cached.isProxy) {
-          return await this.enhanceWithProxyInfo(cached);
+          return await this.enhanceWithProxyInfo(cached, undefined, state);
         }
         return cached;
       }
 
-      const sourcifyResult = await this.fetchFromSourcify(chainId, address);
+      const sourcifyResult = await this.fetchFromSourcify(chainId, address, state);
       if (sourcifyResult) {
         await this.saveToDatabase(sourcifyResult);
-        return this.enhanceWithProxyInfo(sourcifyResult);
+        return this.enhanceWithProxyInfo(sourcifyResult, undefined, state);
       }
 
       const blockscanResult = await this.fetchFromBlockscan(chainId, address);
       if (blockscanResult) {
         await this.saveToDatabase(blockscanResult);
-        return this.enhanceWithProxyInfo(blockscanResult);
+        return this.enhanceWithProxyInfo(blockscanResult, undefined, state);
       }
 
       // Both verifiers missed. Before caching an "unverified" record, make
@@ -995,6 +1053,7 @@ export class ContractSourceService {
   private async fetchFromSourcify(
     chainId: number,
     address: Address,
+    state: ProxyResolutionState = freshResolutionState(),
   ): Promise<ContractSource | null> {
     try {
       const baseUrl = 'https://sourcify.dev/server/v2';
@@ -1084,7 +1143,11 @@ export class ContractSourceService {
           'Sourcify detected proxy contract',
         );
 
-        const implContract = await this.getContractSource(chainId, implAddress);
+        const implContract = await this.getContractSource(
+          chainId,
+          implAddress,
+          childResolutionState(state),
+        );
         if (implContract) {
           result.implementationContract = implContract;
         }
@@ -1245,13 +1308,14 @@ export class ContractSourceService {
       proxyType?: ProxyType;
       implementationAddress?: Address;
     },
+    state: ProxyResolutionState = freshResolutionState(),
   ): Promise<ContractSource | null> {
     try {
       // Fetch the proxy contract's own source code
       let proxyContract: ContractSource | null = null;
 
       // Try to fetch the proxy contract source from Sourcify
-      proxyContract = await this.fetchFromSourcify(chainId, address);
+      proxyContract = await this.fetchFromSourcify(chainId, address, state);
 
       if (!proxyContract) {
         const blockscanResult = await this.fetchFromBlockscan(chainId, address);
@@ -1289,6 +1353,7 @@ export class ContractSourceService {
         implementationContract = await this.getContractSource(
           chainId,
           proxyInfo.implementationAddress,
+          childResolutionState(state),
         );
       }
 
@@ -1314,6 +1379,7 @@ export class ContractSourceService {
       proxyType?: ProxyType;
       implementationAddress?: Address;
     },
+    state: ProxyResolutionState = freshResolutionState(),
   ): Promise<ContractSource> {
     try {
       if (!proxyInfo) {
@@ -1358,6 +1424,7 @@ export class ContractSourceService {
         implementationContract = await this.getContractSource(
           contract.chainId,
           proxyInfo.implementationAddress,
+          childResolutionState(state),
         );
       }
 

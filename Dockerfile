@@ -1,7 +1,7 @@
 # my-block-explorer — container images
 #
 # Two build targets:
-#   docker build --target api .   → Node 22 API server (Hono + DuckDB), port 8201
+#   docker build --target api .   → Node 26 API server (Hono + DuckDB), port 8201
 #   docker build --target web .   → nginx serving the built SPA, port 80
 #
 # The SPA never proxies API traffic: browsers talk to the API directly (see
@@ -16,9 +16,14 @@ RUN corepack enable && corepack prepare pnpm@11.22.0 --activate
 
 # ------------------------------------------------- api: build the server --
 FROM node-base AS api-build
-# Toolchain for native postinstall scripts (better-sqlite3 runs node-gyp;
-# the DuckDB bindings ship prebuilt binaries). Builder-only — the runtime
-# stage copies the installed node_modules artifacts.
+# Toolchain kept for native postinstall fallback. The DuckDB bindings ship
+# prebuilt binaries (duckdb.node + libduckdb.so) and never compile. The one
+# package in the tree that can run node-gyp is better-sqlite3 — not used by
+# this project's DuckDB adapter, but pnpm auto-installs it as drizzle-orm's
+# optional peer (autoInstallPeers), and its binding.gyp build is the fallback
+# whenever prebuild-install finds no prebuilt binary for the platform/Node
+# ABI. Builder-only — the runtime stage copies the installed node_modules
+# artifacts.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends python3 make g++ \
     && rm -rf /var/lib/apt/lists/*

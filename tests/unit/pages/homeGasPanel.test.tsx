@@ -27,6 +27,8 @@ vi.mock('@/config/chains', () => ({
   getChainType: () => 'mainnet',
   isChainSupported: (chainId: number) => chainId === 1 || chainId === 137,
   getSortedChains: () => [{ id: 1, name: 'Ethereum' }],
+  // UnsupportedChainState awaits the registries before rendering a verdict.
+  ensureBuiltInChainsLoaded: () => Promise.resolve(),
   // Rendered by the unsupported-chain recovery grid.
   POPULAR_CHAINS: [
     { id: 1, name: 'Ethereum' },

@@ -258,13 +258,18 @@ const MAX_SEARCH_WINDOW_BLOCKS = 50_000_000;
 const TX_RESULT_TTL_MS = 60_000;
 const TX_RESULT_MAX_ENTRIES = 20;
 
-const withTimeout = <T>(promise: Promise<T>, ms: number, label: string): Promise<T> =>
-  Promise.race([
-    promise,
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms),
-    ),
-  ]);
+const withTimeout = <T>(promise: Promise<T>, ms: number, label: string): Promise<T> => {
+  // Clear the losing timer on settle — a dangling setTimeout per call keeps
+  // the vitest/scan loops littered with live timers (and keeps the losing
+  // promise's frame alive until the timer fires).
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer !== undefined) clearTimeout(timer);
+  });
+};
 
 const getSearchRange = (txCount: number): bigint => {
   if (txCount > 100) return 200_000n;

@@ -58,8 +58,12 @@ describe('openapi document shape', () => {
     expect(openApiDocument.info.version).toBe(pkg.version);
   });
 
-  it('uses the relative /api server form so it resolves on any host/port', () => {
-    expect(openApiDocument.servers).toEqual([expect.objectContaining({ url: '/api' })]);
+  it('uses relative server forms so it resolves on any host/port', () => {
+    // First entry serves everything under /api; the second (host-root)
+    // exists solely for the conditionally-mounted debug path that lives
+    // outside the /api prefix.
+    expect(openApiDocument.servers[0]).toEqual(expect.objectContaining({ url: '/api' }));
+    expect(openApiDocument.servers.map(s => s.url)).toEqual(['/api', '/']);
   });
 
   it('every path starts with "/" and uses OpenAPI braces, not Hono colons', () => {

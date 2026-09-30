@@ -1549,3 +1549,85 @@ pnpm typecheck           # tsc --noEmit
   57 files / 722 tests green, live smoke on mainnet (tx list → tx detail
   → block-number link lands on the block; address/contract pages render
   with zero back buttons; browser back contract→address still works).
+
+- **2026-09-30/10-01 second full-review implementation wave (14 slices, 4
+  dispatch waves + integration)** — the complete P0–P3 list from the second
+  project review landed. All verified: tsc clean, eslint 0 errors (97
+  warnings, all pre-existing react-refresh/exhaustive-deps classes),
+  `pnpm build` green, curl + browser smoke on the built bundle (dist server
+  8201 + vite preview). **Security** — the `/api/ops/uninstall` pair moved
+  to the STRICT admin tier (fail-closed without ADMIN_TOKEN; the previous
+  opt-in gate + guessable confirm-phrase handed out by the unauthenticated
+  preview = remote data destruction on the tokenless Docker `HOST=0.0.0.0`
+  posture; the Ops card renders the two-path 403 face — set ADMIN_TOKEN or
+  use the CLI); `hono/body-limit` 8MB on `*` with the JSON 413 envelope;
+  `estimate-gas` gained its 60/min bucket; the global proxy dispatcher is
+  an `EnvHttpProxyAgent` with loopback bypass (undici ProxyAgent has NO
+  noProxy option — verified). **Correctness** — the DuckDB adapter's
+  DEFAULT→NULL rewrite is INSERT-scoped and quote-aware (any query whose
+  text contained `default` — including `'default'` literals — was silently
+  corrupted; pure helper `rewriteInsertDefaultTokens` exported + pinned);
+  contract proxy resolution carries visited-set + depth-5
+  (`MAX_PROXY_RESOLUTION_DEPTH`, mutation-proven: guard off = heap death);
+  dual-process first-boot migration race tolerated (duplicate-class errors
+  verified-then-tolerated, no locks); EventIndexingService writes are CAS
+  (`onlyIfIndexing`) + reconcile only flips rows stale >2min
+  (INTERRUPTED_ROW_STALE_MS; NULL updated_at counts stale) — same
+  freshness rule in AddressScanService; addIndexingRange retries the
+  range-id 23505 once; solc compile runs in a worker_thread (eval-string
+  bootstrap, 60s hard timeout + terminate, LRU cap 3 resident compilers)
+  and the dead `solc/wrapper` resolve (broken since solc's removal — zero
+  code references now) is an inlined MIT-attributed wrapper re-derivation
+  proven against the REAL soljson 0.8.37 wasm in dev+bundle modes;
+  argFilters non-scalars + junk fromBlock/toBlock → specific 400s (was
+  silent unfilter); events pause route consumes the CAS refusal (400
+  invalid_state, never a canned completed body); SSE watch queue capped
+  1000 drop-oldest; stats withTimeout clears its loser. **Frontend** —
+  the viem/chains barrel is lazy: 25 curated named imports serve the shell
+  (eager JS −58.6%, 1,129,438→467,205 B; static HTML bakes only the 6.5KB
+  subset chunk — the 519KB full-barrel chunk loads post-boot via
+  `ensureBuiltInChainsLoaded()`, which REBUILDS registry+indexes in place
+  from `Object.values(barrel)` so sort order stays byte-identical; prod
+  uses a `viem/chains?full` query instance because viem exposes no
+  per-chain subpaths and one module lives in one chunk); UnsupportedChain-
+  State awaits the registries before rendering a verdict (Zora 7777777
+  deep link recovers, browser-verified); backend boots await it too
+  (custom-chain 409 gate correctness; mcp/cli.ts as well); four bare-
+  localStorage boot paths guarded; dead document permissionchange listener
+  deleted; qrcode lazily imported behind the QR dialog; selfDestruct's
+  injectable `prune` actually called (dead assignment was a real bug).
+  **API/docs/tooling** — OpenAPI complete: 69 paths / 79 operations (whole
+  storage + verify families + contracts extras + conditional /debug were
+  missing), guarded both directions by a source-regex route-vs-spec test
+  (mutation-proven); API-only routes deliberately kept + annotated;
+  legacy error envelopes swept to createApiError `{error: snake_case,
+  message}` across blocks/transactions/addresses/contracts/transfers/
+  approvals/search/storage/chains/rpc-config (+events prose bodies; the
+  `not_a_contract` `code` key retained where util/http.ts discriminates
+  on it); lifecycle tests landed (startupChecks 16-cell matrix, pure-
+  extracted `src/cliArgs.ts` — no server-graph imports, `--help` creates
+  nothing pinned — in-process serverBootSmoke on ephemeral port + temp
+  `duckdb://` DATABASE_URL, mounted debugRouteHandler test); provider
+  getLogs span ceilings persist (`provider_limits` table, migration 0016,
+  memory-first + fire-and-forget upsert, DB failure = in-memory degrade);
+  shared `utils/providerErrors.ts` kills the copy-paste regex pair;
+  RpcManager dedupes concurrent client creation; scan services clear
+  losing withTimeout timers (AddressService's too); build script invokes
+  `vite build && tsup` directly (npm-in-pnpm removed); darwin-arm64 DuckDB
+  binding pin dropped (root importer clean; macOS resolves via
+  @duckdb/node-api's own optionalDeps); CI/Docker pnpm aligned at 11.22.0
+  + `--frozen-lockfile` everywhere + deploy-pages lint/typecheck + release
+  lint; Dockerfile comments match code truth (Node 26; toolchain exists
+  for drizzle-orm's optional better-sqlite3 peer); eslint: no-console
+  scoped to the 6 CLI-entry files (34→0 warnings), a localStorage guard
+  rule (no-restricted-globals/properties) with an empirically-derived
+  16-file allowlist keeps the guarded-helper convention, and
+  `no-explicit-any` is ERROR in src (drizzle.ts's six globalThis `as any`
+  properly typed via an AdapterRegistry intersection; tests keep warn).
+  **Wave discipline confirmed again**: file-ownership lists per agent +
+  Main-owned CHANGELOG/AGENTS/docs seams let 14 slices run conflict-free;
+  the solc follow-up (uncovered pre-existing breakage) was routed back to
+  its owning agent rather than opened new. Tooling note: a 17h-stale vite
+  dev server held the DuckDB write lock and made the dist-server smoke
+  fail with cause-less "Failed query" — `fuser -v data/blockchain.db`
+  names the holder; kill before standalone-server smokes.

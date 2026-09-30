@@ -6,7 +6,7 @@
 // isRetryableChunkError classification (asserted here by CONFIGURATION:
 // an injected provider error that the shared classifier calls retryable
 // halves the chunk, one it calls fatal aborts with 'scan-failed').
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   encodeAbiParameters,
   encodeEventTopics,
@@ -425,5 +425,59 @@ describe('ApprovalScanService - allowance read honesty', () => {
     expect(result.pairCount).toBe(1);
     expect(result.approvals).toEqual([]);
     expect(result.reason).toBe('allowance-read-failed');
+  });
+});
+
+// Scan-timeout timer hygiene (statsRouteTimeout.test.ts pattern): the
+// withTimeout race around each sweep must clear its losing timer on BOTH
+// outcomes — a winning sweep leaves no 25-30s timer keeping the loop
+// alive, and a timed-out sweep leaves nothing pending after the honest
+// fallback result is served.
+describe('ApprovalScanService - scan timeout timer hygiene', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    // Nothing pending may leak past a test — the whole point of the fix.
+    expect(vi.getTimerCount()).toBe(0);
+    vi.useRealTimers();
+  });
+
+  it('clears the losing timer when the sweep completes in time', async () => {
+    const { service } = makeHarness({
+      logs: [logOf(TOKEN_A, OWNER, SPENDER_A, 1n, 100, 0)],
+    });
+
+    const pending = service.getApprovals(1, OWNER);
+    await vi.advanceTimersByTimeAsync(0);
+    const result = await pending;
+
+    expect(result.coverage).toBe('complete');
+    // Far past the race window: the losing 30s timer was cleared, not
+    // left to fire (getTimerCount below is the no-pending-timer proof).
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('fires the race guard on a hung provider and leaves nothing pending', async () => {
+    const client: ApprovalScanClient = {
+      getBlockNumber: async () => 10_000n,
+      getLogs: () => new Promise<ScanLog[]>(() => {}), // hangs forever
+      multicall: async () => [],
+    };
+    const service = createApprovalScanService({
+      rpcManager: { getClient: async () => client },
+      now: () => 0,
+      scanTimeoutMs: 1_000,
+    });
+
+    const pending = service.getApprovals(1, OWNER);
+    await vi.advanceTimersByTimeAsync(6_000); // scanTimeoutMs + 5s grace
+    const result = await pending;
+
+    expect(result.coverage).toBe('scan-failed');
+    expect(result.approvals).toEqual([]);
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

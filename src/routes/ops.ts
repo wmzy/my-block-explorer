@@ -3,14 +3,19 @@
 // (storage footprint, indexing/watch/deep-scan counts, rate-limiter
 // totals in one request); the /ops/uninstall pair is the in-server face
 // of the CLI uninstall (preview = the shared enumeration with sizes,
-// execute = the self-destruct, services/selfDestruct.ts). Everything is
-// gated by the OPT-IN admin tier (requireAdminTokenIfConfigured), NOT
-// the strict SQL tier: every fact here is local-process or own-database
-// only (fs sizes, row counts, in-process counters) and none of it
-// executes raw SQL, so a zero-config local session stays open; once
-// ADMIN_TOKEN is set, enforcement is identical to every other gated
-// route. The destructive endpoint demands a typed confirmation phrase
-// verbatim — the UI makes the operator type it.
+// execute = the self-destruct, services/selfDestruct.ts). The split is
+// two tiers: the summary is OPT-IN gated (requireAdminTokenIfConfigured)
+// because every fact it serves is local-process or own-database only
+// (fs sizes, row counts, in-process counters) and none of it executes
+// raw SQL, so a zero-config local session stays open. The uninstall pair
+// is STRICT gated (requireAdminToken — the SQL console tier, fails
+// closed when ADMIN_TOKEN is unset): it erases every byte the server
+// ever wrote and even its preview hands out the destruction manifest,
+// so on a tokenless public bind (Docker HOST=0.0.0.0) no network peer
+// may reach either route — a missing token must mean "nobody can",
+// never "everybody can". The destructive endpoint additionally demands
+// a typed confirmation phrase verbatim — the UI makes the operator type
+// it.
 //
 // Honesty rules: sections are assembled with Promise.allSettled — a
 // failing section (e.g. watch stats on a database from before the webhook
@@ -20,7 +25,7 @@
 // estimates.
 import { Hono } from 'hono';
 import { createLogger } from '../server/logger';
-import { requireAdminTokenIfConfigured } from '../middleware/admin-token';
+import { requireAdminToken, requireAdminTokenIfConfigured } from '../middleware/admin-token';
 import { createRateLimiter, getRateLimitStats } from '../middleware/rate-limit';
 import { createApiError } from '../utils/api-error';
 import {
@@ -45,9 +50,20 @@ const logger = createLogger('ops-routes');
 
 const app = new Hono();
 
-// Opt-in gate for the whole sub-app (debug.ts precedent): a zero-config
-// local session keeps the dashboard working; with ADMIN_TOKEN configured
-// the x-admin-token header is enforced exactly like the strict tier.
+// STRICT gate for the uninstall pair, registered BEFORE the opt-in line
+// below: Hono runs matching middleware in registration order, so this one
+// answers first and the pair fails closed (403) whenever ADMIN_TOKEN is
+// unset — see the file header for why erasure must never be tokenless-
+// open. The pattern still scopes the sub-app's own prefix (never '*'):
+// '/ops/uninstall/*' matches BOTH routes ('/ops/uninstall' itself — the
+// wildcard matches the empty tail — and '/ops/uninstall/preview') and
+// hoists no further, so the opt-in line keeps covering only the summary.
+app.use('/ops/uninstall/*', requireAdminToken);
+
+// Opt-in gate for the rest of the sub-app (debug.ts precedent): a
+// zero-config local session keeps the dashboard working; with
+// ADMIN_TOKEN configured the x-admin-token header is enforced exactly
+// like the strict tier.
 //
 // The pattern is the sub-app's own prefix, never '*': Hono hoists a
 // mounted sub-app's use('*') to <base>/* on the parent, where it swallows

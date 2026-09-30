@@ -1,4 +1,4 @@
-import { eq, and, or, sql, gte, lte, desc, ne, type SQL } from 'drizzle-orm';
+import { eq, and, or, sql, gte, lte, lt, isNull, desc, ne, type SQL } from 'drizzle-orm';
 import { db } from '../database/drizzle';
 import {
   indexingProgress,
@@ -14,6 +14,14 @@ import { inputToStoredValue, resolveToBlock } from '../utils/blockTagUtils';
 // with esbuild, which does not resolve the '@/' alias for runtime imports.
 import { createLogger } from '../server/logger';
 import type { BlockTagInput } from '@/types/events';
+// Shared shrinkable-provider-error classification (formerly a conscious
+// copy of AddressScanService's regex — see utils/providerErrors).
+import { isShrinkableProviderError } from '../utils/providerErrors';
+// Persisted per-chain getLogs span ceilings (provider_limits table).
+import {
+  getProviderLogSpanCeiling,
+  recordProviderLogSpanCeiling,
+} from './providerCeilings';
 
 const logger = createLogger('event-indexing-service');
 
@@ -71,19 +79,6 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 // deterministically and turns Resume into a failure loop. On such errors the
 // span halves (with a floor) and the per-chain ceiling is remembered so
 // later batches — and later jobs on the same chain — start small.
-// NOTE: this regex is a conscious copy of AddressScanService's
-// SHRINKABLE_PROVIDER_ERROR_RE, which is not exported (and importing that
-// service here just for a regex would couple two service graphs). If you
-// change one, change the other — or lift both into a shared util.
-const SHRINKABLE_PROVIDER_ERROR_RE =
-  /rate.?limit|too many requests|429|exceed|limit|timeout|timed out|econnreset|econnrefused|socket hang up|network|fetch failed/i;
-
-const isShrinkableProviderError = (err: unknown): boolean =>
-  SHRINKABLE_PROVIDER_ERROR_RE.test(err instanceof Error ? err.message : String(err));
-
-// Learned provider span ceilings per chain (in-memory, like the
-// providerCeiling locals in TokenTransferService/ApprovalScanService).
-const providerLogSpanCeilings = new Map<number, bigint>();
 
 // Floor for span halving: 2000 -> 1000 -> 500 -> 250 -> 125. At the floor a
 // provider cap is no longer the plausible cause, so bounded identical
@@ -101,9 +96,10 @@ const fetchLogsWithRetry = async (
   // The caller advances its checkpoint across the WHOLE [fromBlock,
   // toBlock] window once this resolves, so shrinking must never skip
   // blocks: fetch the window as consecutive sub-spans bounded by the
-  // remembered ceiling. Non-shrinkable errors keep the bounded
+  // remembered ceiling (persisted across restarts — see
+  // providerCeilings). Non-shrinkable errors keep the bounded
   // identical-retry policy (MAX_RETRY attempts with linear backoff).
-  const remembered = providerLogSpanCeilings.get(chainId);
+  const remembered = await getProviderLogSpanCeiling(chainId);
   let span = toBlock - fromBlock + 1n;
   if (remembered !== undefined && remembered < span) span = remembered;
 
@@ -122,7 +118,7 @@ const fetchLogsWithRetry = async (
       if (isShrinkableProviderError(err) && span > MIN_LOG_SPAN_BLOCKS) {
         const halved = span / 2n;
         span = halved < MIN_LOG_SPAN_BLOCKS ? MIN_LOG_SPAN_BLOCKS : halved;
-        providerLogSpanCeilings.set(chainId, span);
+        recordProviderLogSpanCeiling(chainId, span);
         logger.warn(
           { chainId, fromBlock: cursor, span, err },
           'getLogs rejected the block span (provider range cap); retrying a smaller span',
@@ -1052,23 +1048,38 @@ export const addIndexingRange = async (
 
   const overlaps = await checkRangeOverlaps(chainId, address, resolvedFromBlock, storedToBlock);
 
-  const rangeId = await getNextRangeId(chainId, address);
+  // getNextRangeId is read-then-insert (max(range_id) + 1): two concurrent
+  // adds for the same (chain, address) mint the same id and the loser dies
+  // on the range PK ([23505]) — previously surfaced as a raw 500. On a
+  // duplicate-class failure recompute once (the winner's row is visible by
+  // then) and retry the insert once; a second duplicate-class failure is a
+  // real constraint problem and propagates honestly.
+  const insertRangeRow = (id: number) =>
+    db.insert(indexingRanges).values({
+      chainId,
+      address,
+      rangeId: id,
+      fromBlock: resolvedFromBlock,
+      toBlock: storedToBlock,
+      direction,
+      currentBlock: null,
+      status: 'pending',
+      totalEventsIndexed: 0,
+      errorMessage: null,
+      priority,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
 
-  await db.insert(indexingRanges).values({
-    chainId,
-    address,
-    rangeId,
-    fromBlock: resolvedFromBlock,
-    toBlock: storedToBlock,
-    direction,
-    currentBlock: null,
-    status: 'pending',
-    totalEventsIndexed: 0,
-    errorMessage: null,
-    priority,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-  });
+  let rangeId: number;
+  try {
+    rangeId = await getNextRangeId(chainId, address);
+    await insertRangeRow(rangeId);
+  } catch (err) {
+    if (!isDuplicateRowError(err)) throw err;
+    rangeId = await getNextRangeId(chainId, address);
+    await insertRangeRow(rangeId);
+  }
 
   return {
     success: true,
@@ -1281,20 +1292,29 @@ export const startIndexingRange = async (
       totalEventsIndexed: number;
       errorMessage: string | null;
     }>,
+    options?: { onlyIfIndexing?: boolean },
   ) => {
+    const conditions = [
+      eq(indexingRanges.chainId, chainId),
+      eq(indexingRanges.address, address),
+      eq(indexingRanges.rangeId, rangeId),
+    ];
+    // Loop writes are compare-and-set on status = 'indexing' (mirrors
+    // AddressScanService.updateScanJobRow's onlyIfRunning): without the
+    // guard, the loop's periodic checkpoint write would resurrect
+    // 'indexing' over a row a concurrent status flip already moved out of
+    // the live state, and a stale draining loop could mark 'completed' a
+    // range that was paused/cancelled underneath it.
+    if (options?.onlyIfIndexing) conditions.push(eq(indexingRanges.status, 'indexing'));
     await db
       .update(indexingRanges)
       .set({ ...updates, updatedAt: new Date() })
-      .where(
-        and(
-          eq(indexingRanges.chainId, chainId),
-          eq(indexingRanges.address, address),
-          eq(indexingRanges.rangeId, rangeId),
-        ),
-      );
+      .where(and(...conditions));
   };
 
   try {
+    // Claim write (settled -> 'indexing'): bare on purpose — only this
+    // transition legitimately moves the row INTO the live state.
     await updateRange({ status: 'indexing', errorMessage: null });
 
     const client = await rpcManager.getClient(chainId);
@@ -1351,11 +1371,14 @@ export const startIndexingRange = async (
         totalInserted += decoded.length;
       }
 
-      await updateRange({
-        currentBlock: direction === 'forward' ? batchTo : batchFrom,
-        totalEventsIndexed: totalInserted,
-        status: 'indexing',
-      });
+      await updateRange(
+        {
+          currentBlock: direction === 'forward' ? batchTo : batchFrom,
+          totalEventsIndexed: totalInserted,
+          status: 'indexing',
+        },
+        { onlyIfIndexing: true },
+      );
 
       currentBlock = step(currentBlock);
     }
@@ -1382,17 +1405,20 @@ export const startIndexingRange = async (
       resolvedFromBlock,
       resolvedToBlock,
     );
-    await updateRange({
-      currentBlock: finalBlock,
-      status: job.abort ? 'paused' : 'completed',
-      totalEventsIndexed,
-    });
+    await updateRange(
+      {
+        currentBlock: finalBlock,
+        status: job.abort ? 'paused' : 'completed',
+        totalEventsIndexed,
+      },
+      { onlyIfIndexing: true },
+    );
 
     return { success: true };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     logger.error({ err, key, msg }, 'Error indexing range');
-    await updateRange({ status: 'error', errorMessage: msg });
+    await updateRange({ status: 'error', errorMessage: msg }, { onlyIfIndexing: true });
     return { success: false, error: msg };
   } finally {
     activeJobs.delete(key);
@@ -1467,6 +1493,18 @@ export const updateRangeStatus = async (
     return { success: false, error: 'Range not found' };
   }
 
+  // External status flips must not race a live loop: a row still in
+  // 'indexing' may be walked by this process (whose compare-and-set writes
+  // own the row's final status) or by a peer process sharing the database
+  // (the documented dual-process dev topology). Refusing keeps the CAS
+  // writes authoritative; stale 'indexing' rows are reconciliation's job.
+  if (existing[0].status === 'indexing') {
+    return {
+      success: false,
+      error: 'Range is currently indexing — wait for the job to finish or pause it first',
+    };
+  }
+
   await db
     .update(indexingRanges)
     .set({ status, updatedAt: new Date() })
@@ -1486,13 +1524,25 @@ export const updateRangeStatus = async (
 // resumeIndexingRange only accepts paused/error, and the range UI exposes no
 // action for a range that claims to be indexing. Flip them to 'error' with a
 // resume hint so the user can continue. Idempotent by construction (a second
-// run finds no 'indexing' rows), so the vite-bridge instance and a standalone
-// server can both run it against the same database.
+// run finds no stale 'indexing' rows), so the vite-bridge instance and a
+// standalone server can both run it against the same database.
 //
+// STALENESS: a blanket flip is wrong in the dual-process dev topology
+// (vite bridge + standalone server share the DB): process B would flip a
+// range process A is actively walking — a resume in B then runs a second
+// loop over the same range. Only rows whose last write is older than
+// INTERRUPTED_ROW_STALE_MS are provably stranded: a live loop checkpoints
+// at least once per batch, so a fresh updated_at means "probably still
+// walking". A NULL updated_at (legacy rows) cannot be proven fresh and is
+// treated as stale. AddressScanService.reconcileInterruptedAddressScans
+// applies the same rule with the same threshold.
+const INTERRUPTED_ROW_STALE_MS = 2 * 60 * 1000;
+
 // The same startup hook also runs the reorg reconciliation sweep: unfinalized
 // rows below the finalized head get receipt-verified, promoted, or deleted
 // without waiting for the next range job on that contract.
 export const reconcileInterruptedRanges = async (): Promise<void> => {
+  const staleBefore = new Date(Date.now() - INTERRUPTED_ROW_STALE_MS);
   await db
     .update(indexingRanges)
     .set({
@@ -1500,7 +1550,12 @@ export const reconcileInterruptedRanges = async (): Promise<void> => {
       errorMessage: 'Interrupted by server restart — resume to continue',
       updatedAt: new Date(),
     })
-    .where(eq(indexingRanges.status, 'indexing'));
+    .where(
+      and(
+        eq(indexingRanges.status, 'indexing'),
+        or(isNull(indexingRanges.updatedAt), lt(indexingRanges.updatedAt, staleBefore)),
+      ),
+    );
 
   await reconcileAllReorgedEvents();
 };

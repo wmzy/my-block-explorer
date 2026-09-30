@@ -8,6 +8,62 @@ import { createLogger } from '../server/logger';
 const logger = createLogger('duckdb-postgres-adapter');
 
 /**
+ * DuckDB's prepared statement API (runAndReadAll with params) does not support
+ * the DEFAULT keyword mixed with parameterized values ($1, $2...) in INSERT.
+ * Drizzle's PostgreSQL dialect always generates a bare `default` token in the
+ * column list for unprovided columns that have .default() in the schema, so
+ * those tokens must become NULL (all default columns are nullable here).
+ *
+ * The rewrite is scoped to INSERT statements ONLY, and within them to bare
+ * tokens OUTSIDE single-quoted string literals and double-quoted identifiers:
+ * a blanket regex would silently corrupt unrelated SQL such as
+ * `WHERE label = 'default'` into `WHERE label = 'NULL'`.
+ */
+export function rewriteInsertDefaultTokens(sql: string): string {
+  if (!/^\s*insert\b/i.test(sql)) return sql;
+
+  let out = '';
+  let i = 0;
+  while (i < sql.length) {
+    const ch = sql[i];
+    if (ch === '\'' || ch === '"') {
+      // Consume the quoted region verbatim (SQL escapes a quote by doubling it)
+      let j = i + 1;
+      while (j < sql.length) {
+        if (sql[j] === ch) {
+          if (sql[j + 1] === ch) {
+            j += 2;
+            continue;
+          }
+          break;
+        }
+        j++;
+      }
+      out += sql.slice(i, Math.min(j + 1, sql.length));
+      i = j + 1;
+      continue;
+    }
+    // Unquoted run: rewrite bare default tokens up to the next quote char
+    let j = i;
+    while (j < sql.length && sql[j] !== '\'' && sql[j] !== '"') j++;
+    out += sql.slice(i, j).replace(/\bdefault\b/gi, 'NULL');
+    i = j;
+  }
+  return out;
+}
+
+// Duplicate-class errors: DuckDB catalog conflicts ("Table with name x already
+// exists") and PK/unique violations — the signature of losing a race against
+// another process booting on the same fresh database. Deliberately excludes
+// other constraint classes (not-null 23502, foreign-key 23503).
+export function isDuplicateClassError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  return /already exists|already have|duplicate key|primary key constraint|unique constraint/i.test(
+    message,
+  );
+}
+
+/**
  * DuckDB-to-postgres adapter
  * Implements the core postgres interface on top of @duckdb/node-api (Neo) so Drizzle ORM can use it directly
  */
@@ -195,8 +251,7 @@ export class DuckDBPostgresAdapter {
         const isReapply = !!existingRecord;
         for (const statement of statements) {
           if (statement.trim()) {
-            const isCreateTable = /^\s*CREATE\s+TABLE/i.test(statement);
-            await this.executeStatement(statement, isReapply && isCreateTable);
+            await this.runMigrationStatement(statement, isReapply);
           }
         }
 
@@ -260,15 +315,43 @@ export class DuckDBPostgresAdapter {
     if (!this.instance) return;
     const conn = await this.instance.connect();
     try {
+      // A concurrent process may have recorded this migration between the
+      // loop's existence check and this INSERT: both sides mint MAX(id) + 1
+      // from the same journal state and the loser's INSERT dies on the PK
+      // (leaving the migration half-recorded). An identical existing row
+      // means "the other process did it" — skip and move on.
+      const winner = await this.getMigrationRecord(migrationName);
+      if (winner?.hash === hash) {
+        logger.info(
+          { migrationName },
+          'Migration already recorded by concurrent process, skipping journal insert',
+        );
+        return;
+      }
+
       const result = await conn.runAndReadAll(
         'SELECT COALESCE(MAX(id), 0) + 1 as next_id FROM "drizzle"."__drizzle_migrations"',
       );
       const nextId = result.getRowObjects()[0]?.next_id ?? 1;
 
-      await conn.run(
-        'INSERT INTO "drizzle"."__drizzle_migrations" (id, name, hash, created_at) VALUES ($1, $2, $3, $4)',
-        [nextId, migrationName, hash, Date.now()],
-      );
+      try {
+        await conn.run(
+          'INSERT INTO "drizzle"."__drizzle_migrations" (id, name, hash, created_at) VALUES ($1, $2, $3, $4)',
+          [nextId, migrationName, hash, Date.now()],
+        );
+      } catch (error) {
+        if (isDuplicateClassError(error)) {
+          const raced = await this.getMigrationRecord(migrationName);
+          if (raced?.hash === hash) {
+            logger.info(
+              { migrationName },
+              'Migration journal insert lost a concurrent race, verified row present',
+            );
+            return;
+          }
+        }
+        throw error;
+      }
     } finally {
       conn.disconnectSync();
     }
@@ -306,6 +389,30 @@ export class DuckDBPostgresAdapter {
     }
 
     return Array.from(names);
+  }
+
+  // Runs one migration statement. Two processes can boot against the same
+  // fresh database concurrently (the documented vite-bridge + standalone
+  // server dev topology): the per-process isMigrating flag cannot help, so
+  // the loser of a CREATE TABLE race sees a catalog 'already exists' error.
+  // Tolerate exactly that duplicate class — and only when the table is
+  // verifiably present afterwards — then rethrow everything else unchanged.
+  private async runMigrationStatement(statement: string, isReapply: boolean): Promise<void> {
+    const isCreateTable = /^\s*CREATE\s+TABLE/i.test(statement);
+    try {
+      await this.executeStatement(statement, isReapply && isCreateTable);
+    } catch (error) {
+      if (isCreateTable && isDuplicateClassError(error)) {
+        if (await this.verifyMigrationTables(statement)) {
+          logger.info(
+            { statement: statement.slice(0, 80) },
+            'Migration table already created by concurrent process, skipping',
+          );
+          return;
+        }
+      }
+      throw error;
+    }
   }
 
   private async executeStatement(statement: string, ignoreIfExists = false): Promise<void> {
@@ -398,8 +505,8 @@ export class DuckDBPostgresAdapter {
     // Drizzle's PostgreSQL dialect always generates `default` for unprovided columns
     // that have .default() in the schema. Replace with NULL since all default columns
     // are nullable in our schema.
-    if (queryText.toUpperCase().includes('DEFAULT')) {
-      queryText = queryText.replace(/\bdefault\b/gi, 'NULL');
+    if (/\bdefault\b/i.test(queryText)) {
+      queryText = rewriteInsertDefaultTokens(queryText);
     }
 
     try {
@@ -427,14 +534,14 @@ export class DuckDBPostgresAdapter {
       // Create the transaction SQL object on the same connection
       const transactionSql: TransactionSql = {
         query: async (sql: string, ...params: unknown[]) => {
-          const queryText = sql.toUpperCase().includes('DEFAULT')
-            ? sql.replace(/\bdefault\b/gi, 'NULL')
+          const queryText = /\bdefault\b/i.test(sql)
+            ? rewriteInsertDefaultTokens(sql)
             : sql;
           return await this.executeQuery(queryText, params, connection);
         },
         unsafe: (query: string, params?: unknown[]) => {
-          const queryText = query.toUpperCase().includes('DEFAULT')
-            ? query.replace(/\bdefault\b/gi, 'NULL')
+          const queryText = /\bdefault\b/i.test(query)
+            ? rewriteInsertDefaultTokens(query)
             : query;
           const queryPromise = (async () => {
             return await this.executeQuery(queryText, params ?? [], connection);

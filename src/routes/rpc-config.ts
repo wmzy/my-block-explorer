@@ -11,6 +11,7 @@ import { getChainInfo } from '../config/chains';
 import { getValidatedChainId } from '../server/validation';
 import { requireAdminTokenIfConfigured } from '../middleware/admin-token';
 import { isAllowedCorsOrigin } from '../middleware/cors-origins';
+import { respondError } from '../utils/api-error';
 
 const app = new Hono();
 
@@ -75,7 +76,7 @@ app.get('/rpc-configs', async c => {
     });
   } catch (error) {
     logger.error({ err: error }, 'Failed to get RPC configs');
-    return c.json({ error: 'Failed to get RPC configs' }, 500);
+    return respondError(c, 500, 'internal_error', 'Failed to get RPC configs');
   }
 });
 
@@ -86,99 +87,48 @@ app.post('/rpc-configs', requireAdminTokenIfConfigured, async c => {
   try {
     body = await c.req.json();
   } catch {
-    return c.json(
-      {
-        error: 'Invalid JSON body',
-        code: 'invalid_json',
-        message: 'Request body must be valid JSON',
-      },
-      400,
-    );
+    return respondError(c, 400, 'invalid_json', 'Request body must be valid JSON');
   }
   // Destructured from Record<string, unknown>: every field is unknown and
   // must earn its type through the guards below.
   const { chainId, name, url, supportsHistory, maxEventRange } = body;
 
   if (!chainId || !name || !url) {
-    return c.json(
-      {
-        error: 'Missing required fields',
-        code: 'missing_fields',
-        message: 'chainId, name and url are required',
-      },
-      400,
-    );
+    return respondError(c, 400, 'missing_fields', 'chainId, name and url are required');
   }
 
   if (typeof chainId !== 'number' || !Number.isInteger(chainId) || chainId <= 0) {
-    return c.json(
-      {
-        error: 'Invalid chain ID',
-        code: 'invalid_chain_id',
-        message: 'chainId must be a positive integer',
-      },
-      400,
-    );
+    return respondError(c, 400, 'invalid_chain_id', 'chainId must be a positive integer');
   }
 
   if (typeof name !== 'string') {
-    return c.json(
-      {
-        error: 'Invalid name',
-        code: 'invalid_name',
-        message: 'name must be a string',
-      },
-      400,
-    );
+    return respondError(c, 400, 'invalid_name', 'name must be a string');
   }
 
   // The saved config feeds an RPC client for the chain, so the chain must
   // actually be resolvable in the chain registry.
   if (!getChainInfo(chainId)) {
-    return c.json(
-      {
-        error: 'Invalid chain ID',
-        code: 'invalid_chain_id',
-        message: `chainId ${chainId} is not a supported chain`,
-      },
+    return respondError(
+      c,
       400,
+      'invalid_chain_id',
+      `chainId ${chainId} is not a supported chain`,
     );
   }
 
   if (typeof url !== 'string') {
-    return c.json(
-      {
-        error: 'Invalid URL',
-        code: 'invalid_url',
-        message: 'url must be a string',
-      },
-      400,
-    );
+    return respondError(c, 400, 'invalid_url', 'url must be a string');
   }
 
   let parsedUrl: URL;
   try {
     parsedUrl = new URL(url);
   } catch {
-    return c.json(
-      {
-        error: 'Invalid URL',
-        code: 'invalid_url',
-        message: 'url must be a valid absolute URL',
-      },
-      400,
-    );
+    return respondError(c, 400, 'invalid_url', 'url must be a valid absolute URL');
   }
 
   if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
-    return c.json(
-      {
-        error: 'Invalid URL',
-        code: 'invalid_url',
-        message: 'url must use the http or https protocol',
-      },
-      400,
-    );
+    return respondError(c, 400, 'invalid_url', 'url must use the http or https protocol');
   }
 
   if (
@@ -186,14 +136,11 @@ app.post('/rpc-configs', requireAdminTokenIfConfigured, async c => {
     (maxEventRange !== undefined &&
       (typeof maxEventRange !== 'number' || !Number.isInteger(maxEventRange) || maxEventRange <= 0))
   ) {
-    return c.json(
-      {
-        error: 'Invalid optional fields',
-        code: 'invalid_fields',
-        message:
-          'supportsHistory must be a boolean and maxEventRange a positive integer when present',
-      },
+    return respondError(
+      c,
       400,
+      'invalid_fields',
+      'supportsHistory must be a boolean and maxEventRange a positive integer when present',
     );
   }
 
@@ -236,7 +183,7 @@ app.post('/rpc-configs', requireAdminTokenIfConfigured, async c => {
       { err: error, stack: error instanceof Error ? error.stack : undefined },
       'Failed to save RPC config',
     );
-    return c.json({ error: 'Failed to save RPC config' }, 500);
+    return respondError(c, 500, 'internal_error', 'Failed to save RPC config');
   }
 });
 
@@ -251,7 +198,7 @@ app.delete('/rpc-configs/:chainId', requireAdminTokenIfConfigured, async c => {
     return c.json({ success: true });
   } catch (error) {
     logger.error({ err: error }, 'Failed to delete RPC config');
-    return c.json({ error: 'Failed to delete RPC config' }, 500);
+    return respondError(c, 500, 'internal_error', 'Failed to delete RPC config');
   }
 });
 

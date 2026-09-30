@@ -31,6 +31,7 @@ export * from './form-validation';
 export * from './format';
 export * from './functionSelector';
 export * from './internalTxScan';
+export * from './providerErrors';
 export * from './realTimeData';
 export * from './rpcConfigService';
 export * from './rpcErrorHandler';

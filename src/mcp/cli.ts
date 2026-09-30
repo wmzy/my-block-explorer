@@ -8,6 +8,7 @@
 
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { DEFAULT_MCP_API_BASE, createExplorerMcpServer } from './server';
+import { ensureBuiltInChainsLoaded } from '../config/chains';
 
 function stderr(line: string): void {
   process.stderr.write(`${line}\n`);
@@ -24,6 +25,12 @@ async function main(): Promise<void> {
   }
 
   const server = createExplorerMcpServer({ apiBase });
+  // Full viem chain registry before the transport answers: MCP tool calls
+  // resolve chains through getBuiltInChainInfo, and this process loads
+  // neither src/server.ts nor src/api-app.ts — without this await it would
+  // serve the curated startup subset forever. Never rejects (warns and
+  // degrades inside config/chains).
+  await ensureBuiltInChainsLoaded();
   await server.connect(new StdioServerTransport());
   stderr(`my-block-explorer-mcp ready — backend API ${apiBase} (set EXPLORER_API_URL to change)`);
 

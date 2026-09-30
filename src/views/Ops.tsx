@@ -4,7 +4,9 @@
 // the main DuckDB and the data/ directory, so no chain param is read.
 // Guarded server-side by the OPT-IN admin tier (requireAdminTokenIfConfigured
 // — open in a zero-config local session, x-admin-token enforced once
-// ADMIN_TOKEN is set), unlike the SQL console's fail-closed strict gate.
+// ADMIN_TOKEN is set), unlike the SQL console's fail-closed strict gate —
+// EXCEPT the uninstall danger zone, which strict-gates like the SQL console
+// (erasing all data must fail closed; its card explains the CLI fallback).
 //
 // Honesty rules: every response section may be degraded to
 // {error: 'unavailable'} by the backend; each section card renders that
@@ -40,13 +42,14 @@ import { formatDuration, formatFileSize, formatNumber } from '@/utils/format';
 
 // --- Error classification (exported for the view tests) ---
 
-// The OPT-IN gate's two distinct 403 faces (same split as the SQL console,
-// but only one is normally reachable here): 'unauthorized' = the server has
-// an ADMIN_TOKEN and this browser's stored token is missing or wrong — the
-// everyday face of this gate. 'unconfigured' = the server answered from the
-// STRICT tier's "no ADMIN_TOKEN" rejection, which this endpoint's opt-in
-// gate never produces on its own — it means something stricter is in front
-// of the route. The recovery copy differs, so the distinction must survive.
+// The admin gate's two distinct 403 faces (same split as the SQL
+// console): 'unauthorized' = the server has an ADMIN_TOKEN and this
+// browser's stored token is missing or wrong. 'unconfigured' = the
+// server answered from the STRICT tier's "no ADMIN_TOKEN" rejection —
+// unreachable for the summary (its own opt-in gate passes tokenless
+// requests through) but the everyday zero-config face of the UNINSTALL
+// pair, which strict-gates because it erases all server data. The
+// recovery copy differs, so the distinction must survive.
 export type OpsAdminGate = 'unconfigured' | 'unauthorized';
 
 export function opsAdminGateFromError(error: unknown): OpsAdminGate | null {
@@ -596,16 +599,19 @@ function BackupCard() {
 // --- Uninstall (danger zone) ---
 
 // Failure → operator-ready sentence. The 403 faces reuse the page's gate
-// classification (the endpoint sits behind the same OPT-IN gate as the
-// summary); the 429 wait and backend-unreachable attribution follow the
-// page's established copy. Exported for the view tests.
+// classification: the uninstall endpoints sit behind the STRICT gate (the
+// summary does not), so a zero-config server surfaces as 'unconfigured'
+// here — the copy must say the in-page action is disabled by design and
+// offer both real ways out (configure a token, or use the CLI). The 429
+// wait and backend-unreachable attribution follow the page's established
+// copy. Exported for the view tests.
 export function uninstallErrorText(error: unknown): string {
   const gate = opsAdminGateFromError(error);
   if (gate === 'unauthorized') {
     return 'The server requires an admin token for this action. Set it in the RPC/settings modal (⚙) and retry.';
   }
   if (gate !== null) {
-    return 'This action is blocked by an admin gate — configure ADMIN_TOKEN on the server and in this browser.';
+    return 'This backend has no ADMIN_TOKEN configured, so it rejects every uninstall request by design — erasing all server data fails closed, and the server cannot authorize anyone. Start the server with ADMIN_TOKEN set and reload this page, or run my-block-explorer uninstall in a terminal (it deletes the same files).';
   }
   const wait = opsRateLimitWaitSeconds(error);
   if (wait !== null) return `Too many requests — retry after ${wait}s.`;
@@ -674,12 +680,14 @@ const uninstallInput = css`
 `;
 
 // The danger zone: the in-server face of `my-block-explorer uninstall`.
-// The preview lists exactly what the backend would erase (the CLI and the
-// endpoint share one enumeration), the operator must TYPE the confirmation
-// phrase the API demands verbatim, and a 202 means the backend tears
-// itself down — close listeners, close DuckDB handles, delete, exit. The
-// toast (not the dialog) carries the terminal message: it survives this
-// page flipping to its backend-offline state when the process dies.
+// STRICT-gated (fails closed with no ADMIN_TOKEN — the preview error face
+// then explains the terminal alternative). The preview lists exactly what
+// the backend would erase (the CLI and the endpoint share one
+// enumeration), the operator must TYPE the confirmation phrase the API
+// demands verbatim, and a 202 means the backend tears itself down — close
+// listeners, close DuckDB handles, delete, exit. The toast (not the
+// dialog) carries the terminal message: it survives this page flipping to
+// its backend-offline state when the process dies.
 function UninstallCard() {
   const toast = useToast();
   // Control, never a plain boolean: haze-ui's Dialog treats a value prop
@@ -732,7 +740,8 @@ function UninstallCard() {
         <CardTitle>Uninstall — erase server data</CardTitle>
         <CardDescription>
           The in-server equivalent of <code>my-block-explorer uninstall</code>: deletes every file
-          this explorer wrote and exits the backend process. Requires typing a confirmation.
+          this explorer wrote and exits the backend process. Requires the server&apos;s admin token
+          (fails closed without one) and a typed confirmation.
         </CardDescription>
       </CardHeader>
       <CardContent>

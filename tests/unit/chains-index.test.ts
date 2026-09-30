@@ -9,7 +9,7 @@
  * identical classification and ordering for every query shape — the change
  * is performance-only.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import type { Chain } from 'viem';
 import {
   SUPPORTED_CHAINS,
@@ -18,7 +18,13 @@ import {
   getSortedChains,
   isPopularChain,
   searchChains,
+  ensureBuiltInChainsLoaded,
 } from '@/config/chains';
+
+// The parity corpus must be the FULL viem barrel (the >500-chain sanity
+// check below pins that): the lazy registry loads before any reference
+// comparison runs.
+beforeAll(() => ensureBuiltInChainsLoaded());
 
 // ---------------------------------------------------------------------------
 // Reference (old) implementation

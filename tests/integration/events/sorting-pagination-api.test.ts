@@ -107,17 +107,18 @@ describe('Sorting and Pagination API Integration', () => {
       );
     });
 
-    it('should drop non-scalar argFilters values instead of failing', async () => {
+    it('should reject non-scalar argFilters values with 400 instead of dropping them', async () => {
+      // Dropping the non-scalar entries would run the query with the
+      // surviving scalar filters and present the result as fully filtered.
       const argFilters = encodeURIComponent('{"owner":"0xabc","weird":null,"list":[1]}');
       const res = await app.request(
         `/api/chains/${chainId}/contracts/${contractAddress}/events?argFilters=${argFilters}`,
       );
-      expect(res.status).toBe(200);
-      expect(vi.mocked(getContractEvents)).toHaveBeenCalledWith(
-        chainId,
-        contractAddress.toLowerCase(),
-        expect.objectContaining({ argFilters: { owner: '0xabc' } }),
-      );
+      expect(res.status).toBe(400);
+      const data = await res.json();
+      expect(data.error).toBe('invalid_arg_filters');
+      expect(data.message).toContain('weird');
+      expect(vi.mocked(getContractEvents)).not.toHaveBeenCalled();
     });
 
     it('should reject malformed argFilters with 400', async () => {
@@ -126,7 +127,7 @@ describe('Sorting and Pagination API Integration', () => {
       );
       expect(res.status).toBe(400);
       const data = await res.json();
-      expect(data.error).toBe('Invalid argFilters');
+      expect(data.error).toBe('invalid_arg_filters');
     });
 
     it('should handle unsupported chain IDs', async () => {

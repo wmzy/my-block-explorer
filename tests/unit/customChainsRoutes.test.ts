@@ -145,7 +145,7 @@ describe('POST /chains/custom — validation', () => {
     for (const body of [{}, { rpcUrl: 42 }]) {
       const res = await post(body);
       expect(res.status).toBe(400);
-      await expect(res.json()).resolves.toMatchObject({ code: 'invalid_url' });
+      await expect(res.json()).resolves.toMatchObject({ error: 'invalid_url' });
     }
     expect(probe).not.toHaveBeenCalled();
   });
@@ -153,7 +153,7 @@ describe('POST /chains/custom — validation', () => {
   it('rejects an unparseable URL with 400 invalid_url', async () => {
     const res = await post({ rpcUrl: 'not a url' });
     expect(res.status).toBe(400);
-    await expect(res.json()).resolves.toMatchObject({ code: 'invalid_url' });
+    await expect(res.json()).resolves.toMatchObject({ error: 'invalid_url' });
     expect(probe).not.toHaveBeenCalled();
   });
 
@@ -161,7 +161,7 @@ describe('POST /chains/custom — validation', () => {
     const res = await post({ rpcUrl: 'ws://localhost:8545' });
     expect(res.status).toBe(400);
     const body = await res.json();
-    expect(body.code).toBe('invalid_url');
+    expect(body.error).toBe('invalid_url');
     expect(body.message).toContain('http');
   });
 
@@ -175,7 +175,7 @@ describe('POST /chains/custom — validation', () => {
     ]) {
       const res = await post({ rpcUrl: 'http://127.0.0.1:8545', ...bad });
       expect(res.status).toBe(400);
-      await expect(res.json()).resolves.toMatchObject({ code: 'invalid_fields' });
+      await expect(res.json()).resolves.toMatchObject({ error: 'invalid_fields' });
     }
     expect(probe).not.toHaveBeenCalled();
   });
@@ -183,7 +183,7 @@ describe('POST /chains/custom — validation', () => {
   it('rejects a non-JSON body with 400 invalid_json', async () => {
     const res = await post('{not json');
     expect(res.status).toBe(400);
-    await expect(res.json()).resolves.toMatchObject({ code: 'invalid_json' });
+    await expect(res.json()).resolves.toMatchObject({ error: 'invalid_json' });
   });
 });
 
@@ -250,8 +250,8 @@ describe('POST /chains/custom — conflict with viem', () => {
     expect(res.status).toBe(409);
     const body = await res.json();
     expect(body.error).toBe('chain_already_known');
-    expect(body.existingName).toBe('Polygon');
-    expect(body.hint).toContain('RPC panel');
+    expect(body.details.existingName).toBe('Polygon');
+    expect(body.details.hint).toContain('RPC panel');
     expect(body.message).toContain('Polygon');
     expect(dbState.upsert).toBeNull();
   });
@@ -394,7 +394,7 @@ describe('DELETE /chains/custom/:chainId', () => {
     const res = await request('/chains/custom/abc', { method: 'DELETE' });
 
     expect(res.status).toBe(400);
-    await expect(res.json()).resolves.toMatchObject({ code: 'invalid_chain_id' });
+    await expect(res.json()).resolves.toMatchObject({ error: 'invalid_chain_id' });
   });
 
   it('removes a registration with 204, reloads the manager, and deregisters', async () => {

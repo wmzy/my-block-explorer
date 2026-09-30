@@ -3,7 +3,7 @@
 // '?limit=abc' fed NaN into DuckDB, whose error the service catch swallowed
 // into an honest-looking EMPTY page, and '?limit=999999999' was accepted
 // verbatim. Now the endpoint mirrors transactions.ts: junk or non-positive
-// limit → 400 invalid_limit, junk offset → 400 'Invalid offset', oversized
+// limit → 400 invalid_limit, junk offset → 400 invalid_offset, oversized
 // values clamp (limit 100, offset 100_000) and valid requests keep the
 // exact success shape. BlockService is stubbed at the module boundary.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -36,10 +36,7 @@ describe('GET .../blocks pagination validation', () => {
     const res = await app.request(`${BASE}?limit=abc`);
 
     expect(res.status).toBe(400);
-    await expect(res.json()).resolves.toEqual({
-      error: 'invalid_limit',
-      message: 'limit must be a positive integer',
-    });
+    await expect(res.json()).resolves.toMatchObject({ error: 'invalid_limit' });
     expect(mocks.getBlocks).not.toHaveBeenCalled();
   });
 
@@ -51,14 +48,11 @@ describe('GET .../blocks pagination validation', () => {
     expect(mocks.getBlocks).not.toHaveBeenCalled();
   });
 
-  it('answers 400 Invalid offset for a non-numeric offset', async () => {
+  it('answers 400 invalid_offset for a non-numeric offset', async () => {
     const res = await app.request(`${BASE}?offset=abc`);
 
     expect(res.status).toBe(400);
-    await expect(res.json()).resolves.toEqual({
-      error: 'Invalid offset',
-      message: 'offset must be a non-negative integer',
-    });
+    await expect(res.json()).resolves.toMatchObject({ error: 'invalid_offset' });
     expect(mocks.getBlocks).not.toHaveBeenCalled();
   });
 

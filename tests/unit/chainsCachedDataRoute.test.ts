@@ -146,7 +146,8 @@ describe('DELETE /chains/:chainId/cached-data', () => {
 
     expect(res.status).toBe(500);
     const body = await res.json();
-    expect(body.error).toBe('Failed to clear chain cached data');
+    expect(body.error).toBe('internal_error');
+    expect(body.message).toBe('Failed to clear chain cached data');
   });
 });
 

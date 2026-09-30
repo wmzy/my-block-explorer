@@ -1,7 +1,7 @@
 import { serve } from '@hono/node-server';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { setGlobalDispatcher, ProxyAgent } from 'undici';
+import { setGlobalDispatcher, EnvHttpProxyAgent } from 'undici';
 import apiApp, { reconcileStartupState } from './api-app';
 import { db } from './database/drizzle';
 import { registerSelfDestructCloser } from './services/selfDestruct';
@@ -11,6 +11,32 @@ import { createStaticFrontendHandler } from './middleware/og-meta';
 export type ServerOptions = {
   port?: number;
 };
+
+// Pure mapping from the proxy env to EnvHttpProxyAgent options —
+// exported for tests. null = no proxy env at all (no global dispatcher).
+//
+// EnvHttpProxyAgent, not a bare ProxyAgent: undici's ProxyAgent has no
+// noProxy option at all (verified against the installed 8.x typings —
+// only EnvHttpProxyAgent accepts one), and without a bypass the global
+// dispatcher would drag LOOPBACK traffic through the proxy too — local
+// anvil/hardhat nodes (127.0.0.1:8545) and this server's own probes die
+// behind a corporate proxy that cannot reach the dev box. httpProxy and
+// httpsProxy both take PROXY_URL so the single-URL precedence chain
+// (HTTPS_PROXY > https_proxy > HTTP_PROXY > http_proxy) keeps routing
+// both protocols exactly like the old bare ProxyAgent did; loopback
+// stays direct unless the operator's own NO_PROXY says otherwise — an
+// explicit NO_PROXY replaces the default list wholesale.
+export function proxyDispatcherOptions(
+  env: NodeJS.ProcessEnv = process.env,
+): { httpProxy: string; httpsProxy: string; noProxy: string } | null {
+  const proxyUrl = env.HTTPS_PROXY ?? env.https_proxy ?? env.HTTP_PROXY ?? env.http_proxy;
+  if (!proxyUrl) return null;
+  return {
+    httpProxy: proxyUrl,
+    httpsProxy: proxyUrl,
+    noProxy: env.NO_PROXY ?? env.no_proxy ?? '127.0.0.1,localhost,::1',
+  };
+}
 
 export async function createServer(options: ServerOptions = {}) {
   const port = options.port ?? parseInt(process.env.PORT ?? '8201');
@@ -33,14 +59,10 @@ export async function createServer(options: ServerOptions = {}) {
   // never at api-app import time, which the vite dev bridge also loads.
   runStartupSecurityChecks();
 
-  const PROXY_URL =
-    process.env.HTTPS_PROXY ??
-    process.env.https_proxy ??
-    process.env.HTTP_PROXY ??
-    process.env.http_proxy;
+  const proxyOptions = proxyDispatcherOptions();
 
-  if (PROXY_URL) {
-    setGlobalDispatcher(new ProxyAgent(PROXY_URL));
+  if (proxyOptions) {
+    setGlobalDispatcher(new EnvHttpProxyAgent(proxyOptions));
   }
 
   // Optional static frontend hosting (single-container deployments).

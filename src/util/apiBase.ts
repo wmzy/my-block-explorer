@@ -22,12 +22,24 @@ const listeners = new Set<() => void>();
 
 /** The explicitly chosen backend base, if the user ever saved one. */
 export function getStoredManualBase(): string | null {
-  return localStorage.getItem(MANUAL_BASE_STORAGE_KEY);
+  try {
+    return localStorage.getItem(MANUAL_BASE_STORAGE_KEY);
+  } catch {
+    // Storage-blocked contexts (Safari private mode): the property access
+    // itself throws — no stored choice, discovery falls to the localhost
+    // scan. This read runs before the app renders data, so it must never
+    // take the boot path down.
+    return null;
+  }
 }
 
 /** Persist an explicit (manual) backend base. It takes precedence over scans. */
 export function storeManualBase(url: string): void {
-  localStorage.setItem(MANUAL_BASE_STORAGE_KEY, url);
+  try {
+    localStorage.setItem(MANUAL_BASE_STORAGE_KEY, url);
+  } catch {
+    // Quota/private mode — the choice lasts only for this session.
+  }
 }
 
 export function getApiBase(): string {

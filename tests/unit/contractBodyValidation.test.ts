@@ -11,6 +11,7 @@
 // Services are stubbed at the module boundary (same set as
 // stateOverrideRoute.test.ts) so no RPC or DuckDB access happens.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { getRateLimitStats, resetRateLimiterState } from '@/middleware/rate-limit';
 
 const mocks = vi.hoisted(() => ({
   getContractSource: vi.fn(),
@@ -62,6 +63,9 @@ const estimateParams = () => vi.mocked(mocks.estimateContractGasWithABI).mock.ca
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // In-process limiter buckets are shared across tests (module scope);
+  // starting each test at full tokens keeps the burst math below exact.
+  resetRateLimiterState();
   mocks.getContractSource.mockResolvedValue({
     abi: JSON.stringify([
       { type: 'function', name: 'mint', stateMutability: 'nonpayable', inputs: [], outputs: [] },
@@ -80,9 +84,8 @@ describe('POST .../simulate value validation', () => {
     const res = await simulate({ functionName: 'mint', value: '1.5' });
 
     expect(res.status).toBe(400);
-    await expect(res.json()).resolves.toEqual({
-      error: 'Invalid value',
-      code: 'invalid_value',
+    await expect(res.json()).resolves.toMatchObject({
+      error: 'invalid_value',
       message: 'value must be a 0x-hex or decimal integer quantity',
     });
     expect(mocks.simulateContractWithABI).not.toHaveBeenCalled();
@@ -92,7 +95,7 @@ describe('POST .../simulate value validation', () => {
     const res = await simulate({ functionName: 'mint', value: 'abc' });
 
     expect(res.status).toBe(400);
-    await expect(res.json()).resolves.toMatchObject({ code: 'invalid_value' });
+    await expect(res.json()).resolves.toMatchObject({ error: 'invalid_value' });
     expect(mocks.simulateContractWithABI).not.toHaveBeenCalled();
   });
 
@@ -100,7 +103,7 @@ describe('POST .../simulate value validation', () => {
     const res = await simulate({ functionName: 'mint', value: 1.5 });
 
     expect(res.status).toBe(400);
-    await expect(res.json()).resolves.toMatchObject({ code: 'invalid_value' });
+    await expect(res.json()).resolves.toMatchObject({ error: 'invalid_value' });
   });
 
   it('converts a decimal integer string exactly like the old inline BigInt()', async () => {
@@ -130,7 +133,7 @@ describe('POST .../estimate-gas value validation', () => {
     const res = await estimateGas({ functionName: 'mint', value: 'abc' });
 
     expect(res.status).toBe(400);
-    await expect(res.json()).resolves.toMatchObject({ code: 'invalid_value' });
+    await expect(res.json()).resolves.toMatchObject({ error: 'invalid_value' });
     expect(mocks.estimateContractGasWithABI).not.toHaveBeenCalled();
   });
 
@@ -147,9 +150,8 @@ describe('malformed JSON bodies', () => {
     const res = await simulate('{not json');
 
     expect(res.status).toBe(400);
-    await expect(res.json()).resolves.toEqual({
-      error: 'Invalid JSON body',
-      code: 'invalid_json',
+    await expect(res.json()).resolves.toMatchObject({
+      error: 'invalid_json',
       message: 'Request body must be valid JSON',
     });
     expect(mocks.simulateContractWithABI).not.toHaveBeenCalled();
@@ -159,7 +161,7 @@ describe('malformed JSON bodies', () => {
     const res = await estimateGas('{not json');
 
     expect(res.status).toBe(400);
-    await expect(res.json()).resolves.toMatchObject({ code: 'invalid_json' });
+    await expect(res.json()).resolves.toMatchObject({ error: 'invalid_json' });
     expect(mocks.estimateContractGasWithABI).not.toHaveBeenCalled();
   });
 
@@ -167,7 +169,7 @@ describe('malformed JSON bodies', () => {
     const res = await post(`/chains/1/contracts/${CONTRACT}/read`, '{not json');
 
     expect(res.status).toBe(400);
-    await expect(res.json()).resolves.toMatchObject({ code: 'invalid_json' });
+    await expect(res.json()).resolves.toMatchObject({ error: 'invalid_json' });
     expect(mocks.getContractSource).not.toHaveBeenCalled();
   });
 
@@ -175,6 +177,31 @@ describe('malformed JSON bodies', () => {
     const res = await post(`/chains/1/contracts/${CONTRACT}/open-in-ide`, '{not json');
 
     expect(res.status).toBe(400);
-    await expect(res.json()).resolves.toMatchObject({ code: 'invalid_json' });
+    await expect(res.json()).resolves.toMatchObject({ error: 'invalid_json' });
+  });
+});
+
+describe('POST .../estimate-gas rate limiting — 60/min, burst 20', () => {
+  it('admits the burst then answers 429 with Retry-After', async () => {
+    const responses = await Promise.all(
+      Array.from({ length: 21 }, () => estimateGas({ functionName: 'mint' })),
+    );
+
+    expect(responses.slice(0, 20).map(r => r.status)).toEqual(Array.from({ length: 20 }, () => 200));
+    expect(responses[20].status).toBe(429);
+    expect(responses[20].headers.get('Retry-After')).toMatch(/^\d+$/);
+    // The 429 answers before any handler: the 21st call must not have
+    // reached the service at all.
+    expect(mocks.estimateContractGasWithABI).toHaveBeenCalledTimes(20);
+  });
+
+  it('runs on its own bucket (independent of the simulate quota)', async () => {
+    await estimateGas({ functionName: 'mint' });
+
+    const own = getRateLimitStats().find(bucket => bucket.name === 'contract-estimate-gas');
+    expect(own).toMatchObject({ capacity: 20, requestsPerMinute: 60, hits: 1, rejected: 0 });
+
+    const simulateBucket = getRateLimitStats().find(bucket => bucket.name === 'contracts-simulate');
+    expect(simulateBucket?.hits ?? 0).toBe(0);
   });
 });

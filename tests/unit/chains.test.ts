@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll } from 'vitest';
 import {
   SUPPORTED_CHAINS,
   POPULAR_CHAINS,
@@ -11,7 +11,14 @@ import {
   getChainType,
   getSortedChains,
   searchChains,
+  ensureBuiltInChainsLoaded,
 } from '@/config/chains';
+
+// These cases pin FULL viem-barrel semantics (LUKSO on the dead Kovan id
+// 42, corpus breadth, alias duplicates), so the lazy registry is loaded
+// before they run. Subset-only behavior is owned by
+// builtInChainsRegistry.test.ts.
+beforeAll(() => ensureBuiltInChainsLoaded());
 
 describe('Chains Configuration', () => {
   describe('基本配置', () => {

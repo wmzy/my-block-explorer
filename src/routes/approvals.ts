@@ -5,6 +5,7 @@ import { getValidatedChainId, getValidatedAddress } from '../server/validation';
 import { approvalScanService } from '../services/ApprovalScanService';
 import { createRateLimiter } from '../middleware/rate-limit';
 import { safeJsonResponse } from '../utils/serialization';
+import { respondError } from '../utils/api-error';
 
 const logger = createLogger('approvals-routes');
 
@@ -73,7 +74,7 @@ app.get('/chains/:chainId/addresses/:address/approvals', approvalsRateLimiter, a
     return c.json(responseData);
   } catch (error) {
     logger.error({ err: error }, 'Approvals API error');
-    return c.json({ error: 'Failed to get approvals' }, 500);
+    return respondError(c, 500, 'internal_error', 'Failed to get approvals');
   }
 });
 

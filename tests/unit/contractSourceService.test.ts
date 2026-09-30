@@ -26,12 +26,30 @@ vi.mock('@/database/init', async importOriginal => {
   };
 });
 
+// Shared logger mock: the recursion-guard tests must assert the one-shot
+// degradation warn without depending on pino's async transport.
+const mockLogger = vi.hoisted(() => ({
+  info: vi.fn(),
+  warn: vi.fn(),
+  error: vi.fn(),
+  debug: vi.fn(),
+}));
+
+vi.mock('@/server/logger', async importOriginal => {
+  const actual = await importOriginal<typeof import('@/server/logger')>();
+  return {
+    ...actual,
+    createLogger: () => mockLogger,
+  };
+});
+
 import { ContractSourceService } from '@/services/ContractSourceService';
 import {
   PROXY_CACHE_TTL_HOURS,
   UNVERIFIED_CACHE_TTL_HOURS,
   VERIFIED_CACHE_TTL_HOURS,
   CREATION_FAILURE_CACHE_TTL_HOURS,
+  MAX_PROXY_RESOLUTION_DEPTH,
   type ContractSource,
   type ContractCreationInfo,
 } from '@/services/ContractSourceService';
@@ -1045,5 +1063,216 @@ describe('ContractSourceService - manual (local-trust) verification', () => {
       expect(removed).toBe(false);
       expect(mockDb.delete).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe('ContractSourceService - proxy resolution recursion guard', () => {
+  const chainId = 1;
+  const hexAddress = (hex: string): Address => `0x${hex}`;
+  const A = hexAddress('aa'.repeat(20));
+  // Checksummed spelling of A: Sourcify returns checksummed addresses, and
+  // the visited-set key must normalize case or the cycle would slip through.
+  const A_CHECKSUMMED = hexAddress('Aa'.repeat(20));
+  const B = hexAddress('bb'.repeat(20));
+  // Deep non-cyclic chain: P0 → P1 → … → P6.
+  const P = Array.from({ length: 7 }, (_, i): Address =>
+    hexAddress((i + 1).toString(16).padStart(40, '0')),
+  );
+
+  let service: ContractSourceService;
+  let fetchUrls: string[];
+
+  const proxyPayload = (name: string, impl: Address) => ({
+    match: 'match',
+    abi: [],
+    compilation: { name, compilerVersion: 'v0.8.20' },
+    sources: { [`${name}.sol`]: { content: `// ${name}` } },
+    proxyResolution: {
+      isProxy: true,
+      proxyType: 'EIP1967Proxy',
+      implementations: [{ address: impl }],
+    },
+  });
+
+  const plainPayload = (name: string) => ({
+    match: 'match',
+    abi: [],
+    compilation: { name, compilerVersion: 'v0.8.20' },
+    sources: { [`${name}.sol`]: { content: `// ${name}` } },
+  });
+
+  // Routes Sourcify URLs by contract address; everything else 404s.
+  const stubSourcifyByAddress = (payloads: Map<string, unknown>) => {
+    fetchUrls = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: unknown) => {
+        const s = String(url);
+        fetchUrls.push(s);
+        const marker = '/contract/';
+        if (s.includes('sourcify.dev') && s.includes(marker)) {
+          const addr = s.split(marker)[1]?.split('?')[0]?.split('/')[1]?.toLowerCase();
+          const payload = addr ? payloads.get(addr) : undefined;
+          if (payload) {
+            return { ok: true, status: 200, json: async () => payload };
+          }
+        }
+        return { ok: false, status: 404 };
+      }),
+    );
+  };
+
+  // Guard warns only — unrelated warns from other code paths are filtered out.
+  const guardWarns = () =>
+    mockLogger.warn.mock.calls.filter(([, msg]) => String(msg).includes('resolution stopped'));
+
+  // Nth implementationContract level of a resolved chain.
+  const level = (source: ContractSource | null, n: number): ContractSource | undefined => {
+    let cur: ContractSource | undefined | null = source;
+    for (let i = 0; i < n && cur; i++) {
+      cur = cur.implementationContract;
+    }
+    return cur ?? undefined;
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+
+    const mockClient = {
+      getStorageAt: vi.fn(),
+      getCode: vi.fn(),
+      readContract: vi.fn(),
+    };
+    mockGetClient.mockResolvedValue(mockClient);
+
+    service = new ContractSourceService();
+
+    // The cache never hits: every re-entry re-resolves through the mocked
+    // fetch, so termination is proven by the guard alone — the DB cache
+    // cannot mask a cycle.
+    mockDb.select.mockImplementation(() => ({
+      from: () => ({
+        where: () => ({
+          limit: async () => [],
+        }),
+      }),
+    }));
+    mockDb.insert.mockImplementation(() => ({
+      values: () => ({ onConflictDoUpdate: async () => undefined }),
+    }));
+    mockDb.delete.mockImplementation(() => ({ where: async () => undefined }));
+    (mockDb as Record<string, unknown>).update = vi.fn(() => ({
+      set: () => ({ where: async () => undefined }),
+    }));
+
+    // Leaf contracts take enhanceWithProxyInfo's detect branch; stub the
+    // on-chain probe instead of sequencing RPC mocks.
+    vi.spyOn(service as any, 'detectProxy').mockResolvedValue({ isProxy: false });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('returns proxy-level data (no implementationContract) for a self-referential proxy A→A', async () => {
+    stubSourcifyByAddress(new Map([[A, proxyPayload('CyclicProxyA', A_CHECKSUMMED)]]));
+
+    const result = await service.getContractSource(chainId, A);
+
+    // Terminates without stack overflow and keeps the proxy-level view.
+    expect(result).not.toBeNull();
+    expect(result?.isProxy).toBe(true);
+    expect(result?.implementationAddress?.toLowerCase()).toBe(A);
+    expect(result?.implementationContract).toBeUndefined();
+    // Degradation is announced exactly at the refusal points, cycle reason,
+    // with the resolution path that closed the loop.
+    expect(guardWarns().length).toBeGreaterThan(0);
+    expect(mockLogger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: 'cycle', resolutionPath: expect.arrayContaining([`${chainId}:${A}`]) }),
+      expect.stringContaining('resolution stopped'),
+    );
+    // Bounded work: the refused hop never issues a network fetch.
+    expect(fetchUrls).toHaveLength(1);
+  });
+
+  it('terminates an A→B→A cycle with both proxy levels rendered', async () => {
+    stubSourcifyByAddress(
+      new Map([
+        [A, proxyPayload('CyclicProxyA', B)],
+        [B, proxyPayload('CyclicProxyB', A)],
+      ]),
+    );
+
+    const result = await service.getContractSource(chainId, A);
+
+    expect(result).not.toBeNull();
+    expect(result?.isProxy).toBe(true);
+    expect(result?.implementationAddress).toBe(B);
+    // The B level survives with its own proxy fields…
+    expect(result?.implementationContract?.address).toBe(B);
+    expect(result?.implementationContract?.implementationAddress).toBe(A);
+    // …but the hop back to A degrades instead of recursing.
+    expect(result?.implementationContract?.implementationContract).toBeUndefined();
+    expect(guardWarns().length).toBeGreaterThan(0);
+    expect(mockLogger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ reason: 'cycle' }),
+      expect.stringContaining('resolution stopped'),
+    );
+    expect(fetchUrls.length).toBeLessThan(10);
+  });
+
+  it('still resolves a legitimate 2-level proxy chain end to end', async () => {
+    stubSourcifyByAddress(
+      new Map([
+        [A, proxyPayload('UpgradeableProxy', B)],
+        [B, plainPayload('Implementation')],
+      ]),
+    );
+
+    const result = await service.getContractSource(chainId, A);
+
+    expect(result?.isProxy).toBe(true);
+    expect(result?.implementationAddress).toBe(B);
+    expect(result?.implementationContract?.address).toBe(B);
+    expect(result?.implementationContract?.sourceCode).toContain('// Implementation');
+    expect(result?.implementationContract?.isProxy).toBeFalsy();
+    // No degradation happened anywhere in the chain.
+    expect(guardWarns()).toHaveLength(0);
+  });
+
+  it(`caps resolution at ${MAX_PROXY_RESOLUTION_DEPTH} hops on a deep non-cyclic chain`, async () => {
+    const payloads = new Map<string, unknown>([
+      [P[6], plainPayload('DeepImpl')],
+    ]);
+    for (let i = 0; i < 6; i++) {
+      payloads.set(P[i], proxyPayload(`DeepProxy${i}`, P[i + 1]));
+    }
+    stubSourcifyByAddress(payloads);
+
+    const result = await service.getContractSource(chainId, P[0]);
+
+    expect(result).not.toBeNull();
+    // Levels 0..4 resolve (five proxy hops)…
+    for (let i = 0; i <= 4; i++) {
+      expect(level(result, i)?.address).toBe(P[i]);
+    }
+    // …the sixth hop is refused at the depth cap: P4 keeps the pointer to
+    // P5 but no implementationContract, and nothing nests deeper.
+    const p4 = level(result, 4);
+    expect(p4?.implementationAddress).toBe(P[5]);
+    expect(p4?.implementationContract).toBeUndefined();
+    expect(level(result, 5)).toBeUndefined();
+    expect(mockLogger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reason: 'depth_cap',
+        depth: MAX_PROXY_RESOLUTION_DEPTH,
+        address: P[5],
+      }),
+      expect.stringContaining('resolution stopped'),
+    );
+    // Pre-fix this chain recursed forever (one fetch per hop, no cap);
+    // ~30 fetches is the bounded re-resolution cost of a 7-deep chain
+    // with a cold cache.
+    expect(fetchUrls.length).toBeLessThan(50);
   });
 });

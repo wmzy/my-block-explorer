@@ -5,6 +5,7 @@ import { getValidatedChainId, getValidatedAddress } from '../server/validation';
 import { tokenTransferService } from '../services/TokenTransferService';
 import { createRateLimiter } from '../middleware/rate-limit';
 import { safeJsonResponse } from '../utils/serialization';
+import { respondError } from '../utils/api-error';
 
 const logger = createLogger('transfers-routes');
 
@@ -48,12 +49,11 @@ app.get('/chains/:chainId/addresses/:address/transfers', transfersRateLimiter, a
   // must be exactly one of the known modes.
   const rawMode = c.req.query('mode');
   if (rawMode !== undefined && !(SCAN_MODES as readonly string[]).includes(rawMode)) {
-    return c.json(
-      {
-        error: 'invalid_mode',
-        message: `Invalid mode "${rawMode}" — expected "token" or "participant"`,
-      },
+    return respondError(
+      c,
       400,
+      'invalid_mode',
+      `Invalid mode "${rawMode}" — expected "token" or "participant"`,
     );
   }
   const mode = rawMode === 'token' ? 'token' : 'participant';
@@ -84,7 +84,7 @@ app.get('/chains/:chainId/addresses/:address/transfers', transfersRateLimiter, a
     return c.json(responseData);
   } catch (error) {
     logger.error({ err: error }, 'Token transfers API error');
-    return c.json({ error: 'Failed to get token transfers' }, 500);
+    return respondError(c, 500, 'internal_error', 'Failed to get token transfers');
   }
 });
 

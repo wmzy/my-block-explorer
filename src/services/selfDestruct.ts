@@ -135,7 +135,7 @@ export async function runSelfDestruct(options: {
   log(`Self-destruct: freed ${formatBytes(freedBytes)}.`);
 
   // Same cosmetic husk-removal as the CLI: drop an emptied data/ dir.
-  await pruneEmptyDirs([join(cwd, 'data')]);
+  await prune([join(cwd, 'data')]);
 
   const exit = options.exit ?? ((code: number) => process.exit(code));
   exit(results.every(result => result.removed) ? 0 : 1);

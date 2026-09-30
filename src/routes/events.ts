@@ -33,6 +33,7 @@ import {
   getFilteredEventCount,
 } from '../services/EventExportService';
 import { safeJsonResponse } from '../utils/serialization';
+import { createApiError, respondError } from '../utils/api-error';
 import { contractSourceService } from '../services/ContractSourceService';
 import { requireAdminTokenIfConfigured } from '../middleware/admin-token';
 import type { BlockTagInput } from '@/types/events';
@@ -60,24 +61,22 @@ const validateChainAndAddress = (chainIdStr: string, addressStr: string) => {
     address = getValidatedAddress(addressStr);
   } catch (error) {
     return {
-      error: {
-        error: 'Invalid contract address',
-        message:
-          error instanceof HTTPException
-            ? error.message
-            : 'Address must be a valid 42-character hexadecimal string starting with 0x',
-      },
+      error: createApiError(
+        400,
+        'invalid_address',
+        error instanceof HTTPException
+          ? error.message
+          : 'Address must be a valid 42-character hexadecimal string starting with 0x',
+      ),
       status: 400 as const,
     };
   }
 
   if (isNaN(chainId) || !isChainSupported(chainId)) {
     return {
-      error: {
-        error: 'Unsupported chain',
-        message: `Chain ID ${chainId} is not supported`,
+      error: createApiError(400, 'unsupported_chain', `Chain ID ${chainId} is not supported`, {
         supportedChains: getSupportedChainIds(),
-      },
+      }),
       status: 400 as const,
     };
   }
@@ -89,10 +88,15 @@ const validateChainAndAddress = (chainIdStr: string, addressStr: string) => {
 
 // Query params shared by the events list and export endpoints. Malformed
 // argFilters fail loudly with 400 instead of being ignored: silently dropping
-// them would present unfiltered results as if they were filtered.
+// them would present unfiltered results as if they were filtered. The same
+// goes for non-scalar filter values — a typo like {a: [1,2]} must not run the
+// query unfiltered and return a wrong answer that looks right — and for junk
+// block bounds, which must not be treated as absent.
+type ApiErrorBody = ReturnType<typeof createApiError>;
+
 type ParsedEventFilters =
   | (EventArgFiltersOwner & { topics?: EventTopicFilters })
-  | { error: { error: string; message: string }; status: 400 };
+  | { error: ApiErrorBody; status: 400 };
 
 type EventArgFiltersOwner = {
   eventName?: string;
@@ -102,12 +106,29 @@ type EventArgFiltersOwner = {
 };
 
 const parseEventFilters = (searchParams: URLSearchParams): ParsedEventFilters => {
-  const parseBlock = (key: string): number | undefined => {
+  // Same loud-400 contract as page/pageSize above: junk like 'abc' used to
+  // be treated as absent, silently dropping the bound. Empty string and
+  // missing stay absent, and only plain decimal is honored — hex block
+  // numbers were never meaningful input (parseInt with radix 10 reads
+  // '0x10' as 0) and the UI only ever sends Number.prototype.toString().
+  const parseBlock = (
+    key: string,
+    errorCode: string,
+  ): number | undefined | { error: ApiErrorBody; status: 400 } => {
     const raw = searchParams.get(key);
     if (raw === null || raw === '') return undefined;
     const parsed = parseInt(raw, 10);
-    // Unparseable block numbers are treated as absent rather than 500-ing.
-    return Number.isNaN(parsed) ? undefined : parsed;
+    if (Number.isNaN(parsed)) {
+      return {
+        error: createApiError(
+          400,
+          errorCode,
+          `${key} must be a decimal block number, e.g. ${key}=18000000`,
+        ),
+        status: 400 as const,
+      };
+    }
+    return parsed;
   };
 
   let argFilters: EventArgFilters | undefined;
@@ -121,17 +142,27 @@ const parseEventFilters = (searchParams: URLSearchParams): ParsedEventFilters =>
     }
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
       return {
-        error: {
-          error: 'Invalid argFilters',
-          message: 'argFilters must be a JSON object of {argName: string | number | boolean}',
-        },
+        error: createApiError(
+          400,
+          'invalid_arg_filters',
+          'argFilters must be a JSON object of {argName: string | number | boolean}',
+        ),
         status: 400 as const,
       };
     }
-    const scalarEntries = Object.entries(parsed as Record<string, unknown>).filter(
-      ([, v]) => typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean',
-    );
-    argFilters = Object.fromEntries(scalarEntries) as EventArgFilters;
+    for (const [key, value] of Object.entries(parsed as Record<string, unknown>)) {
+      if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') {
+        return {
+          error: createApiError(
+            400,
+            'invalid_arg_filters',
+            `argFilters.${key} must be a scalar — expected the shape {argName: string | number | boolean}`,
+          ),
+          status: 400 as const,
+        };
+      }
+    }
+    argFilters = parsed as EventArgFilters;
   }
 
   const topics: EventTopicFilters = {};
@@ -144,10 +175,15 @@ const parseEventFilters = (searchParams: URLSearchParams): ParsedEventFilters =>
 
   const eventName = searchParams.get('eventName');
 
+  const fromBlock = parseBlock('fromBlock', 'invalid_from_block');
+  if (typeof fromBlock === 'object') return { error: fromBlock.error, status: fromBlock.status };
+  const toBlock = parseBlock('toBlock', 'invalid_to_block');
+  if (typeof toBlock === 'object') return { error: toBlock.error, status: toBlock.status };
+
   return {
     eventName: eventName !== null && eventName !== '' ? eventName : undefined,
-    fromBlock: parseBlock('fromBlock'),
-    toBlock: parseBlock('toBlock'),
+    fromBlock,
+    toBlock,
     argFilters,
     topics: (topics.topic0 ?? topics.topic1 ?? topics.topic2 ?? topics.topic3) ? topics : undefined,
   };
@@ -229,12 +265,11 @@ app.get('/chains/:chainId/contracts/:address/events/statistics', async c => {
     );
   } catch (error) {
     logger.error({ err: error }, 'Event statistics API error');
-    return c.json(
-      {
-        error: 'Failed to fetch event statistics',
-        message: error instanceof Error ? error.message : 'Unknown error',
-      },
+    return respondError(
+      c,
       500,
+      'internal_error',
+      error instanceof Error ? error.message : 'Failed to fetch event statistics',
     );
   }
 });
@@ -259,10 +294,11 @@ app.get('/chains/:chainId/contracts/:address/events/indexing-status', async c =>
     // 503 + error envelope: answering 200 with zeroed counters would
     // fabricate an "indexed nothing" state the database never reported.
     return c.json(
-      {
-        error: 'indexing_status_unavailable',
-        message: error instanceof Error ? error.message : 'Failed to load indexing status',
-      },
+      createApiError(
+        503,
+        'indexing_status_unavailable',
+        error instanceof Error ? error.message : 'Failed to load indexing status',
+      ),
       503,
     );
   }
@@ -286,22 +322,10 @@ app.get('/chains/:chainId/contracts/:address/events', async c => {
     rawPageSize === undefined || rawPageSize === '' ? 50 : parseInt(rawPageSize, 10);
 
   if (Number.isNaN(parsedPage)) {
-    return c.json(
-      {
-        error: 'invalid_page',
-        message: 'page must be a positive integer',
-      },
-      400,
-    );
+    return respondError(c, 400, 'invalid_page', 'page must be a positive integer');
   }
   if (Number.isNaN(parsedPageSize)) {
-    return c.json(
-      {
-        error: 'invalid_page_size',
-        message: 'pageSize must be a positive integer',
-      },
-      400,
-    );
+    return respondError(c, 400, 'invalid_page_size', 'pageSize must be a positive integer');
   }
   const page = Math.max(1, parsedPage);
   const pageSize = Math.min(Math.max(1, parsedPageSize), 1000);
@@ -337,13 +361,7 @@ app.get('/chains/:chainId/contracts/:address/events', async c => {
     // Error envelope, never a success shape: a 500 body that looks like an
     // empty result page invites clients to render backend failures as
     // "no events found".
-    return c.json(
-      {
-        error: 'internal_error',
-        message: 'Failed to query contract events',
-      },
-      500,
-    );
+    return respondError(c, 500, 'internal_error', 'Failed to query contract events');
   }
 });
 
@@ -368,12 +386,11 @@ app.get('/chains/:chainId/contracts/:address/events/export', exportRateLimiter, 
     // Refuse instead of truncating: a silently capped CSV would look complete.
     const count = await getFilteredEventCount(chainId, address, parsedFilters);
     if (count > EXPORT_MAX_ROWS) {
-      return c.json(
-        {
-          error: 'Export limit exceeded',
-          message: 'Export limited to 100,000 rows; narrow your filters',
-        },
+      return respondError(
+        c,
         400,
+        'too_many_rows',
+        'Export limited to 100,000 rows; narrow your filters',
       );
     }
 
@@ -391,12 +408,11 @@ app.get('/chains/:chainId/contracts/:address/events/export', exportRateLimiter, 
     return c.body(csv);
   } catch (error) {
     logger.error({ err: error }, 'Event export API error');
-    return c.json(
-      {
-        error: 'Failed to export events',
-        message: error instanceof Error ? error.message : 'Unknown error',
-      },
+    return respondError(
+      c,
       500,
+      'internal_error',
+      error instanceof Error ? error.message : 'Failed to export events',
     );
   }
 });
@@ -425,12 +441,11 @@ app.get('/chains/:chainId/contracts/:address/events/ranges', async c => {
     );
   } catch (error) {
     logger.error({ err: error }, 'Get indexing ranges API error');
-    return c.json(
-      {
-        error: 'Failed to fetch indexing ranges',
-        message: error instanceof Error ? error.message : 'Unknown error',
-      },
+    return respondError(
+      c,
       500,
+      'internal_error',
+      error instanceof Error ? error.message : 'Failed to fetch indexing ranges',
     );
   }
 });
@@ -450,13 +465,11 @@ app.post(
       const { fromBlock, toBlock, direction, priority } = body;
 
       if (!isValidBlockBound(fromBlock) || !isValidBlockBound(toBlock)) {
-        return c.json(
-          {
-            error: 'Invalid request body',
-            message:
-              'fromBlock and toBlock are required and must be numbers or valid block tags (latest, finalized, safe, earliest)',
-          },
+        return respondError(
+          c,
           400,
+          'invalid_bounds',
+          'fromBlock and toBlock are required and must be numbers or valid block tags (latest, finalized, safe, earliest)',
         );
       }
 
@@ -468,14 +481,9 @@ app.post(
       });
 
       if (!response.success) {
-        return c.json(
-          {
-            error: 'Failed to add indexing range',
-            message: response.error,
-            overlaps: response.overlaps,
-          },
-          400,
-        );
+        return respondError(c, 400, 'range_overlap', response.error, {
+          overlaps: response.overlaps,
+        });
       }
 
       c.header('X-Chain-Name', getChainName(chainId));
@@ -496,12 +504,11 @@ app.post(
       );
     } catch (error) {
       logger.error({ err: error }, 'Add indexing range API error');
-      return c.json(
-        {
-          error: 'Failed to add indexing range',
-          message: error instanceof Error ? error.message : 'Unknown error',
-        },
+      return respondError(
+        c,
         500,
+        'internal_error',
+        error instanceof Error ? error.message : 'Failed to add indexing range',
       );
     }
   },
@@ -523,24 +530,21 @@ app.post(
 
       const validModes = ['all', 'recent', 'first', 'continue', 'catchup'];
       if (!mode || typeof mode !== 'string' || !validModes.includes(mode)) {
-        return c.json(
-          {
-            error: 'Invalid request body',
-            message: 'mode is required and must be one of: all, recent, first, continue, catchup',
-          },
+        return respondError(
+          c,
           400,
+          'invalid_mode',
+          'mode is required and must be one of: all, recent, first, continue, catchup',
         );
       }
 
       const needsBlockCount = ['recent', 'first', 'continue'].includes(mode);
       if (needsBlockCount && (typeof blockCount !== 'number' || blockCount <= 0)) {
-        return c.json(
-          {
-            error: 'Invalid request body',
-            message:
-              'blockCount is required and must be a positive number for mode: recent, first, continue',
-          },
+        return respondError(
+          c,
           400,
+          'invalid_block_count',
+          'blockCount is required and must be a positive number for mode: recent, first, continue',
         );
       }
 
@@ -586,37 +590,33 @@ app.post(
       if (!response?.success) {
         // Catchup without history has its own contract error body.
         if (response?.error === 'No previous range found. Cannot catch up.') {
-          return c.json({ error: response.error }, 400);
+          return respondError(c, 400, 'no_previous_range', response.error);
         }
         // The full-history gate is a confirmation prompt, not a failure:
-        // mirror the span facts and duplicate them into `details` — the
-        // frontend HTTP layer (toApiError) only surfaces message/code/
-        // details, so that is the channel the UI reads the reason from.
+        // mirror the span facts into `details` — the frontend HTTP layer
+        // (toApiError) only surfaces message/code/details, so that is the
+        // channel the UI reads the reason from.
         if (response?.reason === 'full-history-unconfirmed') {
           return c.json(
-            {
-              error: 'Full history confirmation required',
-              message: response.error,
-              reason: response.reason,
-              spanBlocks: response.spanBlocks,
-              fromBlock: response.fromBlock,
-              head: response.head,
-              details: {
+            createApiError(
+              400,
+              'full_history_confirmation_required',
+              response.error ?? 'Full history confirmation required',
+              {
                 reason: response.reason,
                 spanBlocks: response.spanBlocks,
                 fromBlock: response.fromBlock,
                 head: response.head,
               },
-            },
+            ),
             400,
           );
         }
-        return c.json(
-          {
-            error: `Failed to create range with mode: ${mode}`,
-            message: response?.error ?? 'Unknown error',
-          },
+        return respondError(
+          c,
           400,
+          'range_create_failed',
+          response?.error ?? `Failed to create range with mode: ${mode}`,
         );
       }
 
@@ -648,12 +648,11 @@ app.post(
       );
     } catch (error) {
       logger.error({ err: error }, 'Quick create indexing range API error');
-      return c.json(
-        {
-          error: 'Failed to create indexing range',
-          message: error instanceof Error ? error.message : 'Unknown error',
-        },
+      return respondError(
+        c,
         500,
+        'internal_error',
+        error instanceof Error ? error.message : 'Failed to create indexing range',
       );
     }
   },
@@ -671,13 +670,7 @@ app.patch(
     const rangeId = parseInt(c.req.param('rangeId'));
 
     if (isNaN(rangeId)) {
-      return c.json(
-        {
-          error: 'Invalid rangeId',
-          message: 'rangeId must be a number',
-        },
-        400,
-      );
+      return respondError(c, 400, 'invalid_range_id', 'rangeId must be a number');
     }
 
     try {
@@ -688,13 +681,11 @@ app.patch(
         (fromBlock !== undefined && !isValidBlockBound(fromBlock)) ||
         (toBlock !== undefined && !isValidBlockBound(toBlock))
       ) {
-        return c.json(
-          {
-            error: 'Invalid request body',
-            message:
-              'fromBlock and toBlock must be numbers or valid block tags (latest, finalized, safe, earliest)',
-          },
+        return respondError(
+          c,
           400,
+          'invalid_bounds',
+          'fromBlock and toBlock must be numbers or valid block tags (latest, finalized, safe, earliest)',
         );
       }
 
@@ -706,14 +697,9 @@ app.patch(
       });
 
       if (!response.success) {
-        return c.json(
-          {
-            error: 'Failed to update indexing range',
-            message: response.error,
-            overlaps: response.overlaps,
-          },
-          400,
-        );
+        return respondError(c, 400, 'range_overlap', response.error, {
+          overlaps: response.overlaps,
+        });
       }
 
       c.header('X-Chain-Name', getChainName(chainId));
@@ -730,12 +716,11 @@ app.patch(
       );
     } catch (error) {
       logger.error({ err: error }, 'Update indexing range API error');
-      return c.json(
-        {
-          error: 'Failed to update indexing range',
-          message: error instanceof Error ? error.message : 'Unknown error',
-        },
+      return respondError(
+        c,
         500,
+        'internal_error',
+        error instanceof Error ? error.message : 'Failed to update indexing range',
       );
     }
   },
@@ -753,13 +738,7 @@ app.delete(
     const rangeId = parseInt(c.req.param('rangeId'));
 
     if (isNaN(rangeId)) {
-      return c.json(
-        {
-          error: 'Invalid rangeId',
-          message: 'rangeId must be a number',
-        },
-        400,
-      );
+      return respondError(c, 400, 'invalid_range_id', 'rangeId must be a number');
     }
 
     try {
@@ -770,15 +749,9 @@ app.delete(
         // resume routes return; other failures (e.g. deleting while
         // indexing) are state conflicts and stay 400.
         if (response.error === 'Range not found') {
-          return c.json({ error: 'Range not found' }, 404);
+          return respondError(c, 404, 'range_not_found', 'Range not found');
         }
-        return c.json(
-          {
-            error: 'Failed to delete indexing range',
-            message: response.error,
-          },
-          400,
-        );
+        return respondError(c, 400, 'invalid_state', response.error);
       }
 
       c.header('X-Chain-Name', getChainName(chainId));
@@ -795,12 +768,11 @@ app.delete(
       );
     } catch (error) {
       logger.error({ err: error }, 'Delete indexing range API error');
-      return c.json(
-        {
-          error: 'Failed to delete indexing range',
-          message: error instanceof Error ? error.message : 'Unknown error',
-        },
+      return respondError(
+        c,
         500,
+        'internal_error',
+        error instanceof Error ? error.message : 'Failed to delete indexing range',
       );
     }
   },
@@ -818,13 +790,7 @@ app.post(
     const rangeId = parseInt(c.req.param('rangeId'));
 
     if (isNaN(rangeId)) {
-      return c.json(
-        {
-          error: 'Invalid rangeId',
-          message: 'rangeId must be a number',
-        },
-        400,
-      );
+      return respondError(c, 400, 'invalid_range_id', 'rangeId must be a number');
     }
 
     try {
@@ -839,26 +805,18 @@ app.post(
       const abi = await resolveIndexingAbi(bodyAbi, chainId, address);
 
       if (abi.length === 0) {
-        return c.json(
-          {
-            error: 'No ABI available',
-            message:
-              'Contract ABI is required for indexing. Verify the contract on a block explorer first.',
-          },
+        return respondError(
+          c,
           400,
+          'abi_unavailable',
+          'Contract ABI is required for indexing. Verify the contract on a block explorer first.',
         );
       }
 
       // Fail fast on invalid states so clients still get actionable 400s
       // before the (potentially hours-long) indexing work is kicked off.
       if (getActiveRangeJob(chainId, address, rangeId)) {
-        return c.json(
-          {
-            error: 'Failed to start indexing range',
-            message: 'Range is already being indexed',
-          },
-          400,
-        );
+        return respondError(c, 400, 'invalid_state', 'Range is already being indexed');
       }
 
       const ranges = await getIndexingRanges(chainId, address);
@@ -867,17 +825,11 @@ app.post(
       if (!range) {
         // Mirrors the pause route: a missing range is a 404 resource state,
         // while state conflicts (already indexing/completed) stay 400.
-        return c.json({ error: 'Range not found' }, 404);
+        return respondError(c, 404, 'range_not_found', 'Range not found');
       }
 
       if (range.status === 'completed') {
-        return c.json(
-          {
-            error: 'Failed to start indexing range',
-            message: 'Range is already completed',
-          },
-          400,
-        );
+        return respondError(c, 400, 'invalid_state', 'Range is already completed');
       }
 
       // Indexing a range can run for hours: acknowledge immediately and let
@@ -902,12 +854,11 @@ app.post(
       );
     } catch (error) {
       logger.error({ err: error }, 'Start indexing range API error');
-      return c.json(
-        {
-          error: 'Failed to start indexing range',
-          message: error instanceof Error ? error.message : 'Unknown error',
-        },
+      return respondError(
+        c,
         500,
+        'internal_error',
+        error instanceof Error ? error.message : 'Failed to start indexing range',
       );
     }
   },
@@ -925,13 +876,7 @@ app.post(
     const rangeId = parseInt(c.req.param('rangeId'));
 
     if (isNaN(rangeId)) {
-      return c.json(
-        {
-          error: 'Invalid rangeId',
-          message: 'rangeId must be a number',
-        },
-        400,
-      );
+      return respondError(c, 400, 'invalid_range_id', 'rangeId must be a number');
     }
 
     try {
@@ -942,7 +887,7 @@ app.post(
         const range = ranges.find(r => r.rangeId === rangeId);
 
         if (!range) {
-          return c.json({ error: 'Range not found' }, 404);
+          return respondError(c, 404, 'range_not_found', 'Range not found');
         }
 
         if (range.currentBlock !== null && range.toBlock !== null) {
@@ -953,7 +898,28 @@ app.post(
             range.direction === 'forward' ? currentBlock >= toBlock : currentBlock <= fromBlock;
 
           if (isComplete) {
-            await updateRangeStatus(chainId, address, rangeId, 'completed');
+            // Consume the CAS result instead of ignoring it: the service
+            // refuses status flips on rows still in live 'indexing' (the
+            // indexing loop's compare-and-set writes own that row's final
+            // status, possibly from a peer process sharing the database).
+            // Answering the canned 'completed' body anyway would overstate
+            // the outcome while the row actually stays 'indexing', so the
+            // refusal surfaces as 400 invalid_state — the state-invalid
+            // convention this file uses per AGENTS.md (no 409s anywhere) —
+            // and a row deleted in the race surfaces as the same 404 the
+            // other range routes return.
+            const flip = await updateRangeStatus(chainId, address, rangeId, 'completed');
+            if (!flip.success) {
+              if (flip.error === 'Range not found') {
+                return respondError(c, 404, 'range_not_found', 'Range not found');
+              }
+              return respondError(
+                c,
+                400,
+                'invalid_state',
+                flip.error ?? 'Range status could not be updated',
+              );
+            }
             return c.json(
               safeJsonResponse({
                 chainId,
@@ -968,13 +934,7 @@ app.post(
           }
         }
 
-        return c.json(
-          {
-            error: 'No active indexing job',
-            message: 'Range is not currently being indexed',
-          },
-          400,
-        );
+        return respondError(c, 400, 'no_active_job', 'Range is not currently being indexed');
       }
 
       pauseIndexingRange(chainId, address, rangeId);
@@ -993,12 +953,11 @@ app.post(
       );
     } catch (error) {
       logger.error({ err: error }, 'Pause indexing range API error');
-      return c.json(
-        {
-          error: 'Failed to pause indexing range',
-          message: error instanceof Error ? error.message : 'Unknown error',
-        },
+      return respondError(
+        c,
         500,
+        'internal_error',
+        error instanceof Error ? error.message : 'Failed to pause indexing range',
       );
     }
   },
@@ -1016,13 +975,7 @@ app.post(
     const rangeId = parseInt(c.req.param('rangeId'));
 
     if (isNaN(rangeId)) {
-      return c.json(
-        {
-          error: 'Invalid rangeId',
-          message: 'rangeId must be a number',
-        },
-        400,
-      );
+      return respondError(c, 400, 'invalid_range_id', 'rangeId must be a number');
     }
 
     try {
@@ -1037,26 +990,18 @@ app.post(
       const abi = await resolveIndexingAbi(bodyAbi, chainId, address);
 
       if (abi.length === 0) {
-        return c.json(
-          {
-            error: 'No ABI available',
-            message:
-              'Contract ABI is required for indexing. Verify the contract on a block explorer first.',
-          },
+        return respondError(
+          c,
           400,
+          'abi_unavailable',
+          'Contract ABI is required for indexing. Verify the contract on a block explorer first.',
         );
       }
 
       // Fail fast on invalid states so clients still get actionable 400s
       // before the (potentially hours-long) indexing work is kicked off.
       if (getActiveRangeJob(chainId, address, rangeId)) {
-        return c.json(
-          {
-            error: 'Failed to resume indexing range',
-            message: 'Range is already being indexed',
-          },
-          400,
-        );
+        return respondError(c, 400, 'invalid_state', 'Range is already being indexed');
       }
 
       const ranges = await getIndexingRanges(chainId, address);
@@ -1065,17 +1010,11 @@ app.post(
       if (!range) {
         // Mirrors the pause route: a missing range is a 404 resource state,
         // while state conflicts (already indexing / not paused) stay 400.
-        return c.json({ error: 'Range not found' }, 404);
+        return respondError(c, 404, 'range_not_found', 'Range not found');
       }
 
       if (range.status !== 'paused' && range.status !== 'error') {
-        return c.json(
-          {
-            error: 'Failed to resume indexing range',
-            message: 'Can only resume paused or errored ranges',
-          },
-          400,
-        );
+        return respondError(c, 400, 'invalid_state', 'Can only resume paused or errored ranges');
       }
 
       // Resuming re-runs the remaining (potentially hours-long) indexing work:
@@ -1100,12 +1039,11 @@ app.post(
       );
     } catch (error) {
       logger.error({ err: error }, 'Resume indexing range API error');
-      return c.json(
-        {
-          error: 'Failed to resume indexing range',
-          message: error instanceof Error ? error.message : 'Unknown error',
-        },
+      return respondError(
+        c,
         500,
+        'internal_error',
+        error instanceof Error ? error.message : 'Failed to resume indexing range',
       );
     }
   },

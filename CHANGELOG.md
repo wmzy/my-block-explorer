@@ -9,6 +9,84 @@ commit subjects rather than a curated release notes process.
 
 ## Unreleased
 
+- **2026-09-30 full-review implementation wave (14 slices, 4 dispatch waves +
+  integration)** — the second review's complete P0–P3 list landed. All verified
+  below in this entry's trailing paragraph.
+  **Security (P0/P1)** — the `/api/ops/uninstall` pair moved to the STRICT
+  admin tier (fails closed without `ADMIN_TOKEN`; the zero-config Docker bind
+  `HOST=0.0.0.0` previously left remote data destruction one guessable
+  confirm-phrase away, and the unauthenticated preview even handed the phrase
+  out; the Ops card now explains the two recovery paths); `hono/body-limit`
+  (8 MB) guards every route with the JSON 413 envelope; `estimate-gas` gained
+  the rate bucket its read/simulate twins already had; the global proxy
+  dispatcher became an `EnvHttpProxyAgent` that bypasses loopback by default
+  (`NO_PROXY` honored).
+  **Correctness (P1/P2)** — the DuckDB adapter's `DEFAULT→NULL` rewrite is
+  now scoped to INSERT statements outside string literals (any query
+  containing the word `default` — including `'default'` literals in WHERE
+  clauses — was silently corrupted; repro'd before, verified after);
+  contract proxy resolution carries a visited-set + depth cap (cyclic
+  proxies could hang the backend until stack overflow with per-hop network
+  amplification — mutation check: guard off = heap death, guard on = honest
+  proxy-level degrade); migration application tolerates the dual-process
+  first-boot race (duplicate-class errors verified-then-tolerated); event
+  range writes are compare-and-set (`onlyIfIndexing`) and startup
+  reconciliation only flips jobs stale >2 min (the vite-bridge + standalone
+  dev topology could double-start live ranges); `addIndexingRange` retries
+  the range-id race once; solc compilation moved into a worker_thread with a
+  60s hard timeout + terminate and an LRU-capped (3) resident-compiler cache
+  (a 4 MB Standard-JSON input used to stall the whole backend; pathological
+  inputs could hang it forever), and the missing `solc/wrapper` dependency —
+  dead since the 09-30 dependency cleanup removed `solc` — was replaced by an
+  inlined MIT-attributed wrapper re-derivation proven against the real
+  soljson 0.8.37 wasm in both dev and bundled modes; `argFilters` non-scalar
+  values and junk `fromBlock`/`toBlock` now answer specific 400s instead of
+  silently running unfiltered queries; the events pause route consumes the
+  service's CAS refusal (no more canned "completed" body over a live row);
+  the SSE watch queue is capped (1000, drop-oldest) and the stats route
+  clears its losing timeout timer.
+  **Frontend** — the full `viem/chains` barrel (~1000 chain definitions,
+  ~1.1 MB eager) is now a lazy post-boot chunk: 25 curated named imports
+  serve the shell (eager JS −58.6%, 1,129,438 → 467,205 B), the full
+  registry rebuilds in place once loaded (byte-identical ordering pinned),
+  rare-chain deep links await it in the unsupported-chain view before
+  rendering a verdict, and the backend/MCP boots await it before serving the
+  custom-chain 409 gate; the four bare-`localStorage` boot paths
+  (apiBase/remembered-chain) are guarded (Safari private mode no longer
+  crashes startup outside any ErrorBoundary); the dead
+  `document.permissionchange` listener is gone; `qrcode` loads lazily behind
+  the QR dialog; the self-destruct's injectable `prune` option is actually
+  called (dead assignment surfaced by lint as a real bug).
+  **API/docs/tooling** — the OpenAPI spec is complete: 69 paths / 79
+  operations (was 54/63 with the whole storage + verify families and the
+  contracts extras missing), guarded by a route-vs-spec coverage test proven
+  by mutation; API-only routes (blocks/transactions GET families,
+  stats/overview, persistent-address, contracts/stats) are deliberately kept
+  and annotated; legacy route error bodies unified onto the
+  `{error: snake_case, message}` envelope (mixed prose codes like
+  `'Invalid offset'` next to `invalid_limit` gone); lifecycle-critical
+  modules gained first-ever tests (startupChecks 16-cell posture matrix,
+  pure-extracted CLI arg parser, in-process server boot/health/graceful-
+  shutdown smoke, mounted debug-route handler); CI/Docker pnpm majors
+  aligned (11.22.0 everywhere), `--frozen-lockfile` on all workflows,
+  deploy-pages runs lint+typecheck, release runs lint; `build` invokes
+  `vite build && tsup` directly (no nested npm); the darwin-arm64 DuckDB
+  binding pin removed from dependencies (the api package resolves platform
+  bindings itself); Dockerfile comments match code truth (Node 26; the
+  native toolchain exists for drizzle-orm's optional better-sqlite3 peer);
+  ESLint noise engineered to zero on the console rule (CLI-entry allowlist),
+  a localStorage guard rule keeps the guarded-helper convention from
+  regressing, and `no-explicit-any` is a hard error in `src/` (the remaining
+  six `as any` in the drizzle client were properly typed). Provider getLogs
+  span ceilings persist per chain (new `provider_limits` table, migration
+  0016) so restarts stop re-paying the provider-probing burst;
+  `RpcManager` dedupes concurrent client creation; the scan services clear
+  their losing timeout timers.
+  **Verification** — every slice landed with targeted green suites (agent
+  reports: 58+20 frontend, 18+39 adapter, 38 proxy, 133+160 HTTP, 259
+  indexing, 310 scan-services, 13+134 solc, 15 openapi, 495 chains, 53
+  lifecycle, 115 events, plus Main's own lint/typecheck/build/browser
+  passes); integration re-ran typecheck (clean) and full lint (0 errors).
 - **Uninstall from the /ops page** — the CLI's `my-block-explorer uninstall`
   now has an in-server face: the Ops dashboard carries an "Uninstall — erase
   server data" danger zone. `POST /api/ops/uninstall/preview` lists exactly
@@ -148,8 +226,10 @@ commit subjects rather than a curated release notes process.
   whose final step explains coverage honesty and links the coverage legend; the
   RPC/settings modal footer carries a persistent legend link.
 - **OpenAPI** — `GET /api/openapi.json` (open, cached 1h): hand-maintained 3.1
-  spec, 52 paths / 61 operations; six endpoints found missing from docs/API.md
-  during the audit were documented in the same change.
+  spec; six endpoints found missing from docs/API.md during the audit were
+  documented in the same change. (The spec stood at 54 paths at the time;
+  the later 2026-09-30/10-01 wave completed it to 69 paths / 79 operations
+  and added a route-vs-spec coverage guard test.)
 - **Contributor readiness** — docs/CONTRIBUTING.md + docs/adr/0001–0008 (data
   separation, honesty model, local positioning, DuckDB adapter, frontend stack,
   verification sources, browser capability surface, route-mount discipline).

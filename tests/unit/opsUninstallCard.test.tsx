@@ -4,7 +4,10 @@
 // "not present" — the Erase button stays disabled until the operator
 // types the exact phrase the API demands, and a 202 swaps the dialog to
 // the terminal state + toast (the page itself is about to go offline —
-// the toast is what survives that flip). Failure faces classify through
+// the toast is what survives that flip). The uninstall endpoints sit
+// behind the STRICT gate, so failure faces include the zero-config
+// 'unconfigured' 403 (in-page uninstall disabled by design; the copy
+// offers the terminal alternative). Everything else classifies through
 // the page's established error helpers.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
@@ -211,6 +214,29 @@ describe('preview flow', () => {
       expect(screen.getByTestId('uninstall-preview')).toBeInTheDocument();
     });
   });
+
+  // The strict gate's zero-config face (no ADMIN_TOKEN on the server): the
+  // in-page action is disabled BY DESIGN, so the copy must say so and
+  // offer both real ways out instead of a token-field hint that cannot
+  // fix a tokenless server.
+  it('renders the fail-closed face for an unconfigured server, with the CLI alternative', async () => {
+    mockFetchPreview.mockRejectedValue(
+      new ApiError(
+        'Admin operations are disabled. Set ADMIN_TOKEN on the server to enable them.',
+        403,
+      ),
+    );
+    await renderOps();
+    await openDialog();
+
+    const error = await screen.findByTestId('uninstall-error');
+    expect(error).toHaveTextContent(/no ADMIN_TOKEN configured/);
+    expect(error).toHaveTextContent(/fails closed/);
+    expect(error).toHaveTextContent(/reload this page/);
+    expect(error).toHaveTextContent(/my-block-explorer uninstall/);
+    // No preview was served, so nothing renders as deletable.
+    expect(screen.queryByTestId('uninstall-preview')).not.toBeInTheDocument();
+  });
 });
 
 describe('execute flow', () => {
@@ -262,9 +288,16 @@ describe('uninstallErrorText — pure classification', () => {
     expect(uninstallErrorText(new ApiError('Invalid admin token.', 403))).toMatch(
       /requires an admin token/,
     );
-    expect(uninstallErrorText(new ApiError('Set ADMIN_TOKEN on the server', 403))).toMatch(
-      /blocked by an admin gate/,
-    );
+    // The strict tier's zero-config face: fail-closed by design, with the
+    // two real ways out (token + reload, or the CLI).
+    expect(
+      uninstallErrorText(
+        new ApiError(
+          'Admin operations are disabled. Set ADMIN_TOKEN on the server to enable them.',
+          403,
+        ),
+      ),
+    ).toMatch(/no ADMIN_TOKEN configured.*fails closed.*my-block-explorer uninstall/s);
     expect(uninstallErrorText(new ApiError('…retry after 3s.', 429))).toBe(
       'Too many requests — retry after 3s.',
     );

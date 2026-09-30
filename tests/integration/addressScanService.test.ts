@@ -751,6 +751,7 @@ describe('deep scan walk engine', () => {
   it('reconciles restart-stranded running rows to error with a resume hint', async () => {
     const strandedAddress = uniqueAddress();
     const pausedAddress = uniqueAddress();
+    const liveAddress = uniqueAddress();
     await db.insert(addressScanJobs).values({
       chainId: 1,
       address: strandedAddress,
@@ -760,7 +761,9 @@ describe('deep scan walk engine', () => {
       status: 'running',
       txsFound: 0,
       errorMessage: null,
-      updatedAt: new Date(),
+      // Older than the service's 2-minute staleness threshold: provably
+      // stranded (no live walk checkpoints that rarely).
+      updatedAt: new Date(Date.now() - 5 * 60 * 1000),
     });
     await db.insert(addressScanJobs).values({
       chainId: 1,
@@ -773,15 +776,31 @@ describe('deep scan walk engine', () => {
       errorMessage: null,
       updatedAt: new Date(),
     });
+    await db.insert(addressScanJobs).values({
+      chainId: 1,
+      address: liveAddress,
+      fromBlock: 0n,
+      toBlock: 10n,
+      cursorBlock: 4n,
+      status: 'running',
+      txsFound: 0,
+      errorMessage: null,
+      // Fresh checkpoint: a peer process (the documented dual-process dev
+      // topology) may be walking this address — reconcile must leave it.
+      updatedAt: new Date(),
+    });
 
     await reconcileInterruptedAddressScans();
 
     const stranded = await getJob(1, strandedAddress);
     expect(stranded?.status).toBe('error');
     expect(stranded?.errorMessage).toBe('Interrupted by server restart — resume to continue');
-    // Other statuses untouched; second run is a no-op.
+    // Fresh running rows stay running; other statuses untouched; the
+    // second run is a no-op on all of them.
+    expect((await getJob(1, liveAddress))?.status).toBe('running');
     await reconcileInterruptedAddressScans();
     expect((await getJob(1, pausedAddress))?.status).toBe('paused');
+    expect((await getJob(1, liveAddress))?.status).toBe('running');
     expect((await getJob(1, strandedAddress))?.errorMessage).toBe(
       'Interrupted by server restart — resume to continue',
     );

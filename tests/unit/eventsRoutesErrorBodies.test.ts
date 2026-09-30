@@ -9,6 +9,14 @@
  * - GET .../events pagination: non-numeric page/pageSize must 400 with
  *   invalid_page/invalid_page_size (addresses.ts contract), never leak NaN
  *   into SQL offsets; numeric input keeps the legacy clamp behavior.
+ * - GET .../events argFilters: non-object JSON and non-scalar values
+ *   (arrays/objects/null — a typo like {a: [1,2]}) must 400 with
+ *   invalid_arg_filters naming the offending key; silently dropping them
+ *   would run the query unfiltered and return a wrong answer that looks
+ *   right. Scalar filters keep flowing through unchanged.
+ * - GET .../events block bounds: junk like fromBlock=abc must 400 with
+ *   invalid_from_block/invalid_to_block instead of being treated as absent
+ *   (the silent-unfilter class again); numeric and empty/absent stay as-is.
  *
  * The service and middleware modules are mocked, mirroring
  * eventsRoutesCatchupGating.test.ts: these tests pin the route wiring, not
@@ -114,7 +122,7 @@ describe('GET .../events failure shape', () => {
     const res = await request(BASE);
 
     expect(res.status).toBe(500);
-    await expect(res.json()).resolves.toEqual({
+    await expect(res.json()).resolves.toMatchObject({
       error: 'internal_error',
       message: 'Failed to query contract events',
     });
@@ -126,7 +134,7 @@ describe('GET .../events pagination validation', () => {
     const res = await request(`${BASE}?page=abc`);
 
     expect(res.status).toBe(400);
-    await expect(res.json()).resolves.toEqual({
+    await expect(res.json()).resolves.toMatchObject({
       error: 'invalid_page',
       message: 'page must be a positive integer',
     });
@@ -137,7 +145,7 @@ describe('GET .../events pagination validation', () => {
     const res = await request(`${BASE}?pageSize=abc`);
 
     expect(res.status).toBe(400);
-    await expect(res.json()).resolves.toEqual({
+    await expect(res.json()).resolves.toMatchObject({
       error: 'invalid_page_size',
       message: 'pageSize must be a positive integer',
     });
@@ -163,6 +171,95 @@ describe('GET .../events pagination validation', () => {
       CHAIN_ID,
       ADDRESS,
       expect.objectContaining({ page: 1, pageSize: 50 }),
+    );
+  });
+});
+
+describe('GET .../events argFilters validation', () => {
+  it('answers 400 invalid_arg_filters naming the key when a value is an array', async () => {
+    const res = await request(`${BASE}?argFilters=${encodeURIComponent('{"owner":"0xabc","ids":[1,2]}')}`);
+
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.error).toBe('invalid_arg_filters');
+    expect(body.message).toContain('ids');
+    expect(body.message).toContain('string | number | boolean');
+    expect(mocks.getContractEvents).not.toHaveBeenCalled();
+  });
+
+  it('answers 400 invalid_arg_filters for null and object values too', async () => {
+    for (const bad of ['{"weird":null}', '{"weird":{"a":1}}']) {
+      const res = await request(`${BASE}?argFilters=${encodeURIComponent(bad)}`);
+
+      expect(res.status).toBe(400);
+      const body = (await res.json()) as Record<string, unknown>;
+      expect(body.error).toBe('invalid_arg_filters');
+      expect(body.message).toContain('weird');
+    }
+    expect(mocks.getContractEvents).not.toHaveBeenCalled();
+  });
+
+  it('keeps answering 400 invalid_arg_filters for unparseable JSON', async () => {
+    const res = await request(`${BASE}?argFilters=not-json`);
+
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.error).toBe('invalid_arg_filters');
+    expect(body.message).toContain('{argName: string | number | boolean}');
+    expect(mocks.getContractEvents).not.toHaveBeenCalled();
+  });
+
+  it('forwards valid scalar filters unchanged', async () => {
+    const filters = encodeURIComponent('{"owner":"0xabc","value":1000,"active":true}');
+    const res = await request(`${BASE}?argFilters=${filters}`);
+
+    expect(res.status).toBe(200);
+    expect(mocks.getContractEvents).toHaveBeenCalledWith(
+      CHAIN_ID,
+      ADDRESS,
+      expect.objectContaining({
+        argFilters: { owner: '0xabc', value: 1000, active: true },
+      }),
+    );
+  });
+});
+
+describe('GET .../events block bound validation', () => {
+  it('answers 400 invalid_from_block for junk instead of dropping the bound', async () => {
+    const res = await request(`${BASE}?fromBlock=abc`);
+
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.error).toBe('invalid_from_block');
+    expect(body.message).toContain('fromBlock');
+    expect(mocks.getContractEvents).not.toHaveBeenCalled();
+  });
+
+  it('answers 400 invalid_to_block for junk', async () => {
+    const res = await request(`${BASE}?toBlock=abc`);
+
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.error).toBe('invalid_to_block');
+    expect(mocks.getContractEvents).not.toHaveBeenCalled();
+  });
+
+  it('forwards numeric bounds and treats empty values as absent', async () => {
+    const res = await request(`${BASE}?fromBlock=18000000&toBlock=18000100`);
+
+    expect(res.status).toBe(200);
+    expect(mocks.getContractEvents).toHaveBeenCalledWith(
+      CHAIN_ID,
+      ADDRESS,
+      expect.objectContaining({ fromBlock: 18000000, toBlock: 18000100 }),
+    );
+
+    const empty = await request(`${BASE}?fromBlock=&toBlock=`);
+    expect(empty.status).toBe(200);
+    expect(mocks.getContractEvents).toHaveBeenLastCalledWith(
+      CHAIN_ID,
+      ADDRESS,
+      expect.objectContaining({ fromBlock: undefined, toBlock: undefined }),
     );
   });
 });
@@ -197,7 +294,7 @@ describe('GET .../events/indexing-status failure shape', () => {
     const res = await request(`${BASE}/indexing-status`);
 
     expect(res.status).toBe(503);
-    await expect(res.json()).resolves.toEqual({
+    await expect(res.json()).resolves.toMatchObject({
       error: 'indexing_status_unavailable',
       message: 'Failed to load indexing status',
     });

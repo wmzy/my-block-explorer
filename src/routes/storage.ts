@@ -5,6 +5,7 @@ import { storageLayoutService } from '../services/StorageLayoutService';
 import { getChainName } from '../config/chains';
 import { getValidatedChainId, getValidatedAddress } from '../server/validation';
 import { safeJsonResponse } from '../utils/serialization';
+import { respondError } from '../utils/api-error';
 import { requireAdminTokenIfConfigured } from '../middleware/admin-token';
 
 const logger = createLogger('storage-routes');
@@ -19,12 +20,11 @@ app.get('/chains/:chainId/contracts/:address/storage-layout', async c => {
     const result = await storageLayoutService.getStorageLayout(chainId, address);
 
     if (!result.found) {
-      return c.json(
-        {
-          error: 'Storage layout not found',
-          message: result.error ?? 'Contract may not be verified or storage layout not available',
-        },
+      return respondError(
+        c,
         404,
+        'storage_layout_not_found',
+        result.error ?? 'Contract may not be verified or storage layout not available',
       );
     }
 
@@ -44,7 +44,7 @@ app.get('/chains/:chainId/contracts/:address/storage-layout', async c => {
     return c.json(responseData);
   } catch (error) {
     logger.error({ err: error, chainId, address }, 'Storage layout API error');
-    return c.json({ error: 'Failed to get storage layout' }, 500);
+    return respondError(c, 500, 'internal_error', 'Failed to get storage layout');
   }
 });
 
@@ -65,7 +65,7 @@ app.delete(
       return c.json({ success: true, message: 'Storage layout cache cleared' });
     } catch (error) {
       logger.error({ err: error, chainId, address }, 'Clear storage layout cache API error');
-      return c.json({ error: 'Failed to clear storage layout cache' }, 500);
+      return respondError(c, 500, 'internal_error', 'Failed to clear storage layout cache');
     }
   },
 );
@@ -78,7 +78,7 @@ app.get('/chains/:chainId/contracts/:address/storage/:slot', async c => {
   let slot: `0x${string}`;
   if (slotParam.startsWith('0x')) {
     if (!/^0x[0-9a-fA-F]*$/.test(slotParam)) {
-      return c.json({ error: 'Invalid slot: must be valid hex string' }, 400);
+      return respondError(c, 400, 'invalid_slot', 'Invalid slot: must be valid hex string');
     }
     slot = slotParam as `0x${string}`;
   } else {
@@ -89,10 +89,10 @@ app.get('/chains/:chainId/contracts/:address/storage/:slot', async c => {
     try {
       slotNumber = BigInt(slotParam);
     } catch {
-      return c.json({ error: 'Invalid slot: must be a decimal integer' }, 400);
+      return respondError(c, 400, 'invalid_slot', 'Invalid slot: must be a decimal integer');
     }
     if (slotNumber < 0n) {
-      return c.json({ error: 'Invalid slot: must be non-negative' }, 400);
+      return respondError(c, 400, 'invalid_slot', 'Invalid slot: must be non-negative');
     }
     slot = `0x${slotNumber.toString(16)}`;
   }
@@ -119,7 +119,7 @@ app.get('/chains/:chainId/contracts/:address/storage/:slot', async c => {
     return c.json(responseData);
   } catch (error) {
     logger.error({ err: error, chainId, address, slot }, 'Storage slot read API error');
-    return c.json({ error: 'Failed to read storage slot' }, 500);
+    return respondError(c, 500, 'internal_error', 'Failed to read storage slot');
   }
 });
 

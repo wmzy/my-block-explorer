@@ -17,16 +17,23 @@
 //   (which probes the RPC's eth_chainId) and navigates into it — the
 //   dead end becomes the onboarding path for anvil/hardhat/private
 //   chains. Before any of this renders as a verdict, the state consults
-//   the backend's custom registrations once (ensureCustomChainsLoaded):
-//   a chain registered in an earlier session resolves and redirects
-//   instead of dead-ending.
+//   BOTH registries once (ensureCustomChainsLoaded +
+//   ensureBuiltInChainsLoaded): a chain registered in an earlier session
+//   resolves and redirects instead of dead-ending, and so does a real
+//   viem chain that the curated startup subset does not cover — the full
+//   barrel may still be streaming in when a rare-chain deep link lands.
 import { useEffect, useState } from 'react';
 import { css, cx } from '@linaria/core';
 import { TypedLink, useMatched } from '@native-router/react';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { AddCustomChainForm } from '@/components/AddCustomChainForm';
-import { POPULAR_CHAINS, getChainInfo, getChainName } from '@/config/chains';
+import {
+  POPULAR_CHAINS,
+  ensureBuiltInChainsLoaded,
+  getChainInfo,
+  getChainName,
+} from '@/config/chains';
 import { ensureCustomChainsLoaded } from '@/services/customChains';
 import { parseChainIdParam } from '@/utils/chainParam';
 import { getPreferredChainId, redirectReplace } from './Landing';
@@ -119,35 +126,41 @@ export function UnsupportedChainState({
   // kept it, else a generic phrase (no raw string is available).
   const namedParam = rawChainId !== undefined ? `"${rawChainId}"` : 'the value in this URL';
 
-  // Before a well-formed id is declared unsupported, the backend's custom
-  // registrations must have been consulted once: a chain registered in an
-  // earlier session (the row lives in the backend's database) resolves
-  // here and the deep link recovers instead of dead-ending. The load
-  // never blocks rendering and never fails the page — worst case it
-  // settles without the chain and the honest unsupported state stands.
-  const [registryChecked, setRegistryChecked] = useState(false);
+  // Before a well-formed id is declared unsupported, BOTH registries must
+  // have been consulted once: the backend's custom registrations (a chain
+  // registered in an earlier session resolves and the deep link recovers)
+  // and viem's full barrel (a real chain outside the curated startup
+  // subset — the barrel loads lazily behind the first paint). Neither
+  // wait blocks rendering beyond the interim state below, and neither can
+  // fail the page — worst case both settle without the chain and the
+  // honest unsupported state stands.
+  const [resolution, setResolution] = useState<'resolving' | 'settled'>(
+    invalidId ? 'settled' : 'resolving',
+  );
   useEffect(() => {
+    if (invalidId) return; // nothing to resolve for a broken param
     let cancelled = false;
-    ensureCustomChainsLoaded().finally(() => {
-      if (!cancelled) setRegistryChecked(true);
+    Promise.all([ensureCustomChainsLoaded(), ensureBuiltInChainsLoaded()]).finally(() => {
+      if (!cancelled) setResolution('settled');
     });
     return () => {
       cancelled = true;
     };
-  }, []);
-  const registeredChainId =
-    registryChecked && !invalidId ? (getChainInfo(chainId)?.id ?? null) : null;
+  }, [invalidId]);
+  const resolvedChainId =
+    resolution === 'settled' && !invalidId ? (getChainInfo(chainId)?.id ?? null) : null;
 
-  // Recovery redirect for a late-resolved registration. Replace (not
+  // Recovery redirect for a late-resolved chain (a custom registration or
+  // a viem entry that arrived with the lazy barrel). Replace (not
   // push): the unsupported URL is not a place worth keeping in history.
   // The effect depends on the resolved ID (a stable number), never the
   // chain object — getChainInfo builds a fresh object per call, which
   // would re-fire this redirect on every render.
   useEffect(() => {
-    if (registeredChainId !== null) {
-      redirectReplace(router, `/chain/${registeredChainId}`).catch(() => undefined);
+    if (resolvedChainId !== null) {
+      redirectReplace(router, `/chain/${resolvedChainId}`).catch(() => undefined);
     }
-  }, [registeredChainId, router]);
+  }, [resolvedChainId, router]);
 
   const openRegisteredChain = (targetChainId: number) => {
     redirectReplace(router, `/chain/${targetChainId}`).catch(() => undefined);
@@ -156,6 +169,17 @@ export function UnsupportedChainState({
   const message = invalidId
     ? `Invalid chain ID: ${namedParam} is not a valid chain ID (expected a decimal number like 1 or 11155111), so no chain data can be shown.`
     : `Chain not supported: this explorer has no configuration for chain ID ${chainId}, so none of its data can be shown.`;
+
+  // Interim states before the verdict: while the registries resolve, and
+  // for the moment after a chain resolves (the redirect above is in
+  // flight), no unsupported verdict may render — it would name a chain
+  // that just resolved as unsupported.
+  if (resolution === 'resolving') {
+    return <ErrorState message={`Resolving chain ID ${chainId}…`} />;
+  }
+  if (resolvedChainId !== null) {
+    return <ErrorState message={`Opening chain ${getChainName(resolvedChainId)}…`} />;
+  }
 
   return (
     <div>

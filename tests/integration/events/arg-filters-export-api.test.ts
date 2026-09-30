@@ -178,7 +178,7 @@ describe('Events CSV export API', () => {
     const res = await app.request(exportBase);
     expect(res.status).toBe(400);
     const data = await res.json();
-    expect(data.error).toBe('Export limit exceeded');
+    expect(data.error).toBe('too_many_rows');
     expect(data.message).toBe('Export limited to 100,000 rows; narrow your filters');
     expect(fetchSpy).not.toHaveBeenCalled();
   });
@@ -197,7 +197,15 @@ describe('Events CSV export API', () => {
     const res = await app.request(`${exportBase}?argFilters=not-json`);
     expect(res.status).toBe(400);
     const data = await res.json();
-    expect(data.error).toBe('Invalid argFilters');
+    expect(data.error).toBe('invalid_arg_filters');
+  });
+
+  it('rejects non-scalar argFilters values with 400 naming the key', async () => {
+    const res = await app.request(`${exportBase}?argFilters=${encodeURIComponent('{"ids":[1,2]}')}`);
+    expect(res.status).toBe(400);
+    const data = await res.json();
+    expect(data.error).toBe('invalid_arg_filters');
+    expect(data.message).toContain('ids');
   });
 
   it('rejects unsupported chains and invalid addresses', async () => {

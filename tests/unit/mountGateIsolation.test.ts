@@ -51,6 +51,36 @@ describe('mount gate isolation', () => {
     expect(res.status).toBe(200);
   });
 
+  // The uninstall pair's STRICT gate (registered before the opt-in line,
+  // scoped '/ops/uninstall/*'): it must fail closed in a zero-config
+  // session — including POST /api/ops/uninstall itself, where the
+  // wildcard matches the empty tail — and must not hoist any further
+  // than its own prefix (the sibling and the unknown path stay
+  // unaffected; only the opt-in '/ops/*' line could ever hoist, and it
+  // is prefix-scoped).
+  it('ops uninstall pair fails closed (403) without swallowing siblings', async () => {
+    const app = compose(opsRoutes, dummy());
+    const execute = await app.request('/api/ops/uninstall', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ confirm: 'uninstall' }),
+    });
+    expect(execute.status).toBe(403);
+    expect(((await execute.json()) as { message?: string }).message).toContain('ADMIN_TOKEN');
+
+    const preview = await app.request('/api/ops/uninstall/preview', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: '{}',
+    });
+    expect(preview.status).toBe(403);
+
+    // The strict prefix is not a 'use(*)': the sibling after opsRoutes
+    // still answers, and unknown /api paths still 404.
+    expect((await app.request('/api/sibling-route')).status).toBe(200);
+    expect((await app.request('/api/does-not-exist')).status).toBe(404);
+  });
+
   it('unknown /api paths 404 instead of being swallowed by a hoisted gate', async () => {
     const app = compose(sqlRoutes, opsRoutes, dummy());
     const res = await app.request('/api/does-not-exist');

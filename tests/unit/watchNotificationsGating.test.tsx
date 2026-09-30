@@ -2,14 +2,15 @@
 // SSE subscription is permission-GATED at subscription time — 'denied'
 // and 'default' never open the stream (the old code subscribed always
 // and dropped events inside notify()), 'granted' subscribes, and the
-// permissionchange event re-evaluates immediately both ways. The chain
-// poll that re-resolves the remembered chain runs ONLY while granted,
-// and the api-base change trigger is preserved end-to-end.
+// Permissions API's per-status 'change' event re-evaluates immediately
+// both ways (no engine dispatches a document-level 'permissionchange').
+// The chain poll that re-resolves the remembered chain runs ONLY while
+// granted, and the api-base change trigger is preserved end-to-end.
 //
 // src/index.tsx is an import-once app entry (module-scope createRoot +
 // app-lifetime listeners), so this suite is one ordered scenario around
 // a single import with fake timers — a second import would stack a
-// second permissionchange listener on the shared jsdom document.
+// second 'change' listener on the shared Permissions double.
 //
 // Driven through the REAL modules (vi.mock aliases do not reliably reach
 // this module graph's imports): the real apiBase module's setApiBase
@@ -65,8 +66,22 @@ class FakeNotification {
 const BASE = 'http://backend.test';
 const CHAIN_KEY = 'be:lastChainId';
 
+// Minimal Permissions-API double: index.tsx queries the notifications
+// status once at import and attaches its re-evaluate to the status's
+// 'change' event — the only real permission-flip signal (jsdom ships no
+// navigator.permissions, so the double stands in for it).
+const permissionChangeListeners = new Set<() => void>();
+const permissionsDouble = {
+  query: () =>
+    Promise.resolve({
+      addEventListener: (_type: 'change', listener: () => void) => {
+        permissionChangeListeners.add(listener);
+      },
+    }),
+};
+
 const dispatchPermissionChange = (): void => {
-  document.dispatchEvent(new Event('permissionchange'));
+  for (const listener of permissionChangeListeners) listener();
 };
 
 const streamUrls = (): string[] => FakeEventSource.instances.map(source => source.url);
@@ -80,6 +95,9 @@ describe('watch notification SSE gating (src/index.tsx wireWatchNotifications)',
     localStorage.setItem(CHAIN_KEY, '1');
     vi.stubGlobal('EventSource', FakeEventSource);
     vi.stubGlobal('Notification', FakeNotification);
+    // Install BEFORE the import: the module wires its status 'change'
+    // listener at import time.
+    Object.assign(navigator, { permissions: permissionsDouble });
     FakeNotification.permission = 'default';
     // The global setup file set a base; own it from here on. Import with
     // permission 'default' and a perfectly valid base+chain — the gate
@@ -98,6 +116,7 @@ describe('watch notification SSE gating (src/index.tsx wireWatchNotifications)',
     vi.clearAllTimers();
     vi.useRealTimers();
     vi.unstubAllGlobals();
+    Reflect.deleteProperty(navigator, 'permissions');
   });
 
   it('never subscribes while permission is default/denied — even with base+chain present, even across poll ticks', () => {

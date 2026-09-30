@@ -3,11 +3,12 @@
 // sizes and an exists flag — reads only), execute demands the verbatim
 // confirmation phrase, arms the self-destruct EXACTLY once (409 inside
 // the grace window) and answers 202 with the grace window. Both sit
-// behind the sub-app's OPT-IN admin gate (open zero-config, 403 with a
-// configured ADMIN_TOKEN and a missing/wrong header) and share the
-// 4/min·burst-3 bucket. The self-destruct and the fs-touching uninstall
-// helpers are faked at the module boundary — nothing here deletes files
-// or exits the process.
+// behind the STRICT admin gate (requireAdminToken — fails closed with
+// no ADMIN_TOKEN, 403 with a set token and a missing/wrong header;
+// only the matching x-admin-token passes) and share the 4/min·burst-3
+// bucket. The self-destruct and the fs-touching uninstall helpers are
+// faked at the module boundary — nothing here deletes files or exits
+// the process.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Hono } from 'hono';
 import { getRateLimitStats, resetRateLimiterState } from '@/middleware/rate-limit';
@@ -73,6 +74,9 @@ const postExecute = (body: unknown, token?: string) => postJson('/ops/uninstall'
 beforeEach(() => {
   vi.clearAllMocks();
   resetRateLimiterState();
+  // The strict tier needs a configured token for every functional test
+  // below; the fail-closed case deletes it explicitly.
+  process.env.ADMIN_TOKEN = 'test-token';
   uninstall.resolveUninstallTargets.mockReturnValue([uninstall.dataDir, uninstall.scratch]);
   uninstall.collectTargetStats.mockResolvedValue([
     { target: uninstall.dataDir, exists: true, bytes: 21_840_000, files: 3 },
@@ -85,29 +89,33 @@ afterEach(() => {
   delete process.env.ADMIN_TOKEN;
 });
 
-describe('OPT-IN gate — shared with the summary', () => {
-  it('is open in a zero-config local session', async () => {
+describe('STRICT gate — the uninstall pair fails closed', () => {
+  it('rejects both endpoints with 403 when ADMIN_TOKEN is unset (fail-closed)', async () => {
     delete process.env.ADMIN_TOKEN;
-    expect((await postPreview()).status).toBe(200);
+    const preview = await postPreview();
+    expect(preview.status).toBe(403);
+    expect((await preview.json()).message).toContain('ADMIN_TOKEN');
+    const execute = await postExecute({ confirm: 'uninstall' });
+    expect(execute.status).toBe(403);
+    expect(uninstall.scheduleSelfDestruct).not.toHaveBeenCalled();
+    expect(uninstall.collectTargetStats).not.toHaveBeenCalled();
   });
 
-  it('rejects both endpoints with 403 once ADMIN_TOKEN is set without the header', async () => {
-    process.env.ADMIN_TOKEN = 'test-token';
-    expect((await postPreview()).status).toBe(403);
-    expect((await postExecute({ confirm: 'uninstall' })).status).toBe(403);
+  it('rejects a wrong token with 403', async () => {
+    expect((await postPreview('wrong-token')).status).toBe(403);
+    expect((await postExecute({ confirm: 'uninstall' }, 'wrong-token')).status).toBe(403);
     expect(uninstall.scheduleSelfDestruct).not.toHaveBeenCalled();
   });
 
   it('accepts the matching token', async () => {
-    process.env.ADMIN_TOKEN = 'test-token';
+    expect((await postPreview('test-token')).status).toBe(200);
     expect((await postExecute({ confirm: 'uninstall' }, 'test-token')).status).toBe(202);
   });
 });
 
 describe('POST /api/ops/uninstall/preview — enumeration only', () => {
   it('returns the shared enumeration with sizes and the confirm phrase', async () => {
-    delete process.env.ADMIN_TOKEN;
-    const res = await postPreview();
+    const res = await postPreview('test-token');
     expect(res.status).toBe(200);
     expect(res.headers.get('Cache-Control')).toBe('no-store');
     expect(await res.json()).toEqual({
@@ -141,8 +149,7 @@ describe('POST /api/ops/uninstall/preview — enumeration only', () => {
 
 describe('POST /api/ops/uninstall — the self-destruct arm', () => {
   it('rejects a non-JSON body with 400 invalid_json', async () => {
-    delete process.env.ADMIN_TOKEN;
-    const res = await postExecute('this is not json');
+    const res = await postExecute('this is not json', 'test-token');
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error).toBe('invalid_json');
@@ -150,11 +157,13 @@ describe('POST /api/ops/uninstall — the self-destruct arm', () => {
   });
 
   it('rejects any confirmation other than the verbatim phrase', async () => {
-    delete process.env.ADMIN_TOKEN;
     // Three probes: the shared 4/min·burst-3 bucket admits exactly three
     // in-window requests — more would trip the limiter, not the gate.
     for (const wrong of [undefined, true, 'Uninstall']) {
-      const res = await postExecute(wrong === undefined ? {} : { confirm: wrong });
+      const res = await postExecute(
+        wrong === undefined ? {} : { confirm: wrong },
+        'test-token',
+      );
       expect(res.status).toBe(400);
       expect((await res.json()).error).toBe('confirmation_mismatch');
     }
@@ -162,8 +171,7 @@ describe('POST /api/ops/uninstall — the self-destruct arm', () => {
   });
 
   it('arms once and answers 202 with the grace window', async () => {
-    delete process.env.ADMIN_TOKEN;
-    const res = await postExecute({ confirm: 'uninstall' });
+    const res = await postExecute({ confirm: 'uninstall' }, 'test-token');
     expect(res.status).toBe(202);
     expect(res.headers.get('Cache-Control')).toBe('no-store');
     expect(await res.json()).toEqual({ status: 'scheduled', graceMs: 1500 });
@@ -171,9 +179,8 @@ describe('POST /api/ops/uninstall — the self-destruct arm', () => {
   });
 
   it('answers 409 already_scheduled inside the grace window', async () => {
-    delete process.env.ADMIN_TOKEN;
     uninstall.scheduleSelfDestruct.mockReturnValue(false);
-    const res = await postExecute({ confirm: 'uninstall' });
+    const res = await postExecute({ confirm: 'uninstall' }, 'test-token');
     expect(res.status).toBe(409);
     expect((await res.json()).error).toBe('already_scheduled');
   });
@@ -181,16 +188,16 @@ describe('POST /api/ops/uninstall — the self-destruct arm', () => {
 
 describe('rate limiting — 4/min, burst 3 (shared by both endpoints)', () => {
   it('allows the burst then answers 429 with Retry-After', async () => {
-    delete process.env.ADMIN_TOKEN;
-    const responses = await Promise.all(Array.from({ length: 4 }, () => postPreview()));
+    const responses = await Promise.all(
+      Array.from({ length: 4 }, () => postPreview('test-token')),
+    );
     expect(responses.slice(0, 3).map(r => r.status)).toEqual([200, 200, 200]);
     expect(responses[3].status).toBe(429);
     expect(responses[3].headers.get('Retry-After')).toMatch(/^\d+$/);
   });
 
   it('counts hits and rejections in the stats snapshot', async () => {
-    delete process.env.ADMIN_TOKEN;
-    await Promise.all(Array.from({ length: 4 }, () => postPreview()));
+    await Promise.all(Array.from({ length: 4 }, () => postPreview('test-token')));
     const own = getRateLimitStats().find(bucket => bucket.name === 'ops-uninstall');
     expect(own).toMatchObject({ capacity: 3, requestsPerMinute: 4, hits: 4, rejected: 1 });
   });

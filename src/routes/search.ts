@@ -14,6 +14,7 @@ import {
 } from '../config/chains';
 import { detectSearchType, sanitizeInput } from '../utils/validation';
 import { safeJsonResponse } from '../utils/serialization';
+import { respondError } from '../utils/api-error';
 import { createRateLimiter } from '../middleware/rate-limit';
 import { createLogger } from '../server/logger';
 
@@ -29,13 +30,7 @@ app.get('/search', searchRateLimiter, async c => {
   const query = c.req.query('q');
 
   if (!query) {
-    return c.json(
-      {
-        error: 'Missing query parameter',
-        message: 'Please provide a \'q\' parameter',
-      },
-      400,
-    );
+    return respondError(c, 400, 'missing_query', 'Please provide a \'q\' parameter');
   }
 
   try {
@@ -134,16 +129,11 @@ app.get('/search', searchRateLimiter, async c => {
     );
   } catch (error) {
     logger.error({ err: error, query }, 'Global search failed');
-    return c.json(
-      {
-        query,
-        type: 'unknown',
-        found: false,
-        data: null,
-        error: error instanceof Error ? error.message : 'Search failed',
-        timestamp: new Date().toISOString(),
-      },
+    return respondError(
+      c,
       500,
+      'internal_error',
+      error instanceof Error ? error.message : 'Search failed',
     );
   }
 });
@@ -153,35 +143,18 @@ app.get('/chains/:chainId/search', async c => {
   const query = c.req.query('q');
 
   if (!chainIdParam) {
-    return c.json(
-      {
-        error: 'Missing chain ID',
-        message: 'Please provide a valid chain ID',
-      },
-      400,
-    );
+    return respondError(c, 400, 'missing_chain_id', 'Please provide a valid chain ID');
   }
 
   const chainId = parseInt(chainIdParam);
   if (isNaN(chainId) || !isChainSupported(chainId)) {
-    return c.json(
-      {
-        error: 'Unsupported chain',
-        message: `Chain ID ${chainId} is not supported`,
-        supportedChains: getSupportedChainIds(),
-      },
-      400,
-    );
+    return respondError(c, 400, 'unsupported_chain', `Chain ID ${chainId} is not supported`, {
+      supportedChains: getSupportedChainIds(),
+    });
   }
 
   if (!query) {
-    return c.json(
-      {
-        error: 'Missing query parameter',
-        message: 'Please provide a \'q\' parameter',
-      },
-      400,
-    );
+    return respondError(c, 400, 'missing_query', 'Please provide a \'q\' parameter');
   }
 
   try {
@@ -214,12 +187,11 @@ app.get('/chains/:chainId/search', async c => {
   } catch (error) {
     logger.error({ err: error }, 'Search API error');
 
-    return c.json(
-      {
-        error: 'Search failed',
-        message: error instanceof Error ? error.message : 'Internal server error',
-      },
+    return respondError(
+      c,
       500,
+      'internal_error',
+      error instanceof Error ? error.message : 'Internal server error',
     );
   }
 });

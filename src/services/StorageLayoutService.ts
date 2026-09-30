@@ -14,7 +14,9 @@ import type {
 
 const logger = createLogger('storage-layout-service');
 
-const GLOBAL_TIMEOUT_MS = 20_000;
+// Each source is bounded by its own cap instead of a decorative global
+// budget: the explorer fetcher by the FETCHER_TIMEOUT_MS race below, the
+// evmole fallback by the viem transport's own timeout.
 const FETCHER_TIMEOUT_MS = 8_000;
 const MS_PER_HOUR = 1000 * 60 * 60;
 
@@ -59,8 +61,6 @@ export class StorageLayoutService {
   async getStorageLayout(chainId: number, address: Address): Promise<StorageLayoutResponse> {
     logger.info({ chainId, address }, 'Getting storage layout');
 
-    const startTime = Date.now();
-
     try {
       const cached = await this.getFromDatabase(chainId, address);
       if (cached) {
@@ -75,9 +75,13 @@ export class StorageLayoutService {
     }
 
     const fetcherPromise = this.fetchFromStorageLayoutFetcher(chainId, address);
-    const fetcherTimeoutPromise = new Promise<null>(resolve =>
-      setTimeout(() => resolve(null), FETCHER_TIMEOUT_MS),
-    );
+    // The losing timer is cleared on settle (crossChainProbe withinBudget
+    // pattern): a fast fetch (or failure) must not leave a live 8s timer
+    // behind per request.
+    let fetcherTimer: ReturnType<typeof setTimeout> | undefined;
+    const fetcherTimeoutPromise = new Promise<null>(resolve => {
+      fetcherTimer = setTimeout(() => resolve(null), FETCHER_TIMEOUT_MS);
+    });
 
     try {
       const layout = await Promise.race([fetcherPromise, fetcherTimeoutPromise]);
@@ -91,10 +95,8 @@ export class StorageLayoutService {
       }
     } catch (error) {
       logger.warn({ err: error, chainId, address }, 'storage-layout-fetcher failed');
-    }
-
-    if (Date.now() - startTime > GLOBAL_TIMEOUT_MS) {
-      return { found: false, error: 'Request timeout' };
+    } finally {
+      clearTimeout(fetcherTimer);
     }
 
     try {
@@ -170,7 +172,7 @@ export class StorageLayoutService {
           if (!typesMap[typeKey]) {
             typesMap[typeKey] = {
               encoding: 'inplace',
-              label: typeKey as any,
+              label: typeKey,
               numberOfBytes: '32',
             };
           }

@@ -20,11 +20,14 @@
 //   auxdata block — the differing auxdata is reported), mismatch (first
 //   differing byte offset plus both lengths);
 // - offline/unfetchable compiler resources surface as typed errors
-//   naming the network need; a cached build stays usable without it.
+//   naming the network need; a cached build stays usable without it;
+// - the compile itself runs in a worker_threads Worker (never on the
+//   event loop) under a hard timeout that terminates the worker, and
+//   resident compilers are capped — see WorkerSolcRunner.
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
-import { createRequire } from 'node:module';
 import path from 'node:path';
+import { Worker } from 'node:worker_threads';
 import { createLogger } from '../server/logger';
 import type { Address } from 'viem';
 
@@ -37,6 +40,16 @@ const SOLC_BINARIES_BASE_URL = 'https://binaries.soliditylang.org/wasm/';
 // Downloading a soljson (~9 MB) plus the first wasm instantiation gets
 // one minute before the caller hears an honest timeout.
 export const COMPILER_LOAD_BUDGET_MS = 60_000;
+// The compile itself gets one hard minute inside its worker thread: on
+// expiry the worker is terminated and the caller hears a typed timeout.
+// solc's constant-expression solver can loop forever on pathological
+// inputs, so a budget is the only honest ceiling a compile can have.
+export const COMPILE_TIMEOUT_MS = 60_000;
+// Resident compiler workers are capped: each holds a live wasm solc
+// instance, so at capacity the least-recently-used worker is evicted
+// (terminated). The on-disk soljson cache stays — it is the expensive,
+// content-verified part, and re-creating a worker from it is cheap.
+export const MAX_RESIDENT_COMPILERS = 3;
 // The version list changes rarely; one fetch per day per process.
 const VERSION_LIST_TTL_MS = 24 * 60 * 60 * 1000;
 // A degraded (offline) list answer must not pin "unavailable" for a day.
@@ -55,12 +68,12 @@ const SOLC_CACHE_DIR = path.join('data', 'solc-cache');
 // ---------------------------------------------------------------------------
 
 export class CompileVerifyHttpError extends Error {
-  readonly status: 400 | 500 | 502;
+  readonly status: 400 | 500 | 502 | 504;
   readonly code: string;
   readonly details?: Record<string, unknown>;
 
   constructor(
-    status: 400 | 500 | 502,
+    status: 400 | 500 | 502 | 504,
     code: string,
     message: string,
     details?: Record<string, unknown>,
@@ -87,6 +100,9 @@ export const rpcUnavailable = (message: string) =>
 
 export const compileFailed = (message: string) =>
   new CompileVerifyHttpError(500, 'compile_failed', message);
+
+export const compileTimedOut = (message: string) =>
+  new CompileVerifyHttpError(504, 'compile_timeout', message);
 
 // ---------------------------------------------------------------------------
 // Version list (pure parsing + resolution, exported for unit tests)
@@ -502,15 +518,345 @@ export type SolcCompilerHandle = {
   compile: (input: string) => string;
   semver: () => string;
 };
-type SolcWrapper = (soljson: unknown) => SolcCompilerHandle;
 
-// The wrapper and the soljson builds are CommonJS artifacts; createRequire
-// keeps them true runtime requires so bundling the server (tsup) never
-// inlines the 9 MB soljson graph — they resolve from node_modules / the
-// solc cache at runtime under tsx and the built server alike.
-const nodeRequire = createRequire(import.meta.url);
+// The execution boundary the service consumes: compile runs OFF the
+// main thread under a hard timeout (a synchronous solc compile on the
+// event loop stalls every request, WatchService tick and SSE frame for
+// as long as solc feels like taking), and dispose tears the underlying
+// worker down once it is idle.
+export type SolcCompileRunner = {
+  /** One Standard-JSON compile; resolves with solc's JSON output. */
+  compile: (input: string) => Promise<string>;
+  /** True once the runner's worker is gone (timeout, crash, eviction). */
+  isDead: () => boolean;
+  /** Releases the worker; in-flight compiles are allowed to finish. */
+  dispose: () => void;
+};
 
-const loadSolcWrapper = (): SolcWrapper => nodeRequire('solc/wrapper') as SolcWrapper;
+export type CompileRunnerParams = {
+  /** Absolute path of the sha256-verified soljson cache file. */
+  solcPath: string;
+  longVersion: string;
+};
+
+export type CompileRunnerFactory = (params: CompileRunnerParams) => Promise<SolcCompileRunner>;
+
+// ---------------------------------------------------------------------------
+// Compile worker — worker_threads delivery of the solc execution
+// ---------------------------------------------------------------------------
+
+// Delivery mechanism: an eval'd bootstrap worker (new Worker(code,
+// { eval: true })) rather than a separate worker FILE. The bootstrap is
+// a self-contained string that ships inside this module unchanged under
+// tsx (dev) and inside the tsup bundle (production) — there is no worker
+// file path that would have to resolve differently per mode, and no
+// runtime dependency on the `solc` npm package (removed from this repo's
+// dependencies on 2026-09-30): the only input is the ABSOLUTE path of
+// the sha256-verified soljson cache file, passed through workerData.
+// CJS require is available inside eval'd workers.
+//
+// The wrapper semantics implemented inline in the bootstrap are a
+// minimal re-derivation of solc-js's wrapper.js + bindings
+// (https://github.com/ethereum/solc-js, MIT License, (c) Ethereum
+// contributors) — the subset this service's compile path uses: native
+// Standard-JSON compilation through `solidity_compile` with inline
+// sources only (no import callback), callback registration via
+// addFunction('viiiii'), and solidity_reset() after every compile to
+// free compiler allocations. Older callback/translate fallbacks
+// (compileJSON*/translateJsonCompilerOutput) are deliberately NOT
+// reimplemented: every build in the official wasm list exposes
+// solidity_compile, and one that does not is refused with an honest
+// init error instead of being silently mis-driven.
+// Both the 9 MB Emscripten module evaluation and the wasm instantiation
+// happen HERE, in the worker — the main thread never loads soljson at
+// all. A compile crash is reported as a message (the service maps it to
+// compile_failed) instead of killing the worker.
+const COMPILE_WORKER_BOOTSTRAP = `'use strict';
+// Minimal inline re-derivation of solc-js wrapper semantics (MIT, see
+// the attribution note next to this constant's declaration).
+const { parentPort, workerData } = require('node:worker_threads');
+const reasonOf = (error) => (error instanceof Error ? error.message : String(error));
+
+function createCompiler(soljson) {
+  if (typeof soljson.cwrap !== 'function' || typeof soljson._solidity_compile !== 'function') {
+    throw new Error('the build does not expose the native Standard-JSON interface (solidity_compile)');
+  }
+  if (typeof soljson.addFunction !== 'function' || typeof soljson.removeFunction !== 'function') {
+    throw new Error('the build does not expose function-pointer registration (addFunction/removeFunction)');
+  }
+  // Arity: solc >= 0.6 passes (input, callback, callback_context = 0);
+  // older builds pass (input, callback). Decided from the raw version
+  // string, mirroring solc-js's isVersion6OrNewer (semver > 0.5.99);
+  // an unparseable version is treated as modern.
+  const version = (typeof soljson._solidity_version === 'function'
+    ? soljson.cwrap('solidity_version', 'string', [])
+    : soljson.cwrap('version', 'string', []))();
+  const match = /^\\D*(\\d+)\\.(\\d+)/.exec(version);
+  const version6OrNewer = match === null || Number(match[1]) > 0 || Number(match[2]) >= 6;
+
+  const compile = version6OrNewer
+    ? soljson.cwrap('solidity_compile', 'string', ['string', 'number', 'number'])
+    : soljson.cwrap('solidity_compile', 'string', ['string', 'number']);
+  // reset() frees the compile-time allocations after every run (solc
+  // >= 0.6); absent on older builds.
+  const reset = typeof soljson._solidity_reset === 'function'
+    ? soljson.cwrap('solidity_reset', null, [])
+    : null;
+  const alloc = typeof soljson._solidity_alloc === 'function'
+    ? soljson.cwrap('solidity_alloc', 'number', ['number'])
+    : soljson._malloc;
+  if (typeof alloc !== 'function') {
+    throw new Error('the build exposes no allocator (solidity_alloc / _malloc)');
+  }
+
+  // Inline sources only: an import or SMT request the compiler makes is
+  // refused exactly the way solc-js refuses it when no caller callback
+  // was supplied — written through the Emscripten string helpers into
+  // the error out-pointer (copyToCString semantics).
+  const writeCString = (str, pointer) => {
+    const length = soljson.lengthBytesUTF8(str);
+    const buffer = alloc(length + 1);
+    soljson.stringToUTF8(str, buffer, length + 1);
+    soljson.setValue(pointer, buffer, '*');
+  };
+  // >= 0.6: (context, kind, data, contents, error); older: (data, contents, error)
+  const callback = version6OrNewer
+    ? (context, kind, data, contents, error) => {
+        writeCString('File import callback not supported', error);
+      }
+    : (data, contents, error) => {
+        writeCString('File import callback not supported', error);
+      };
+
+  const compileStandard = (input) => {
+    const callbackPointer = soljson.addFunction(callback, 'viiiii');
+    try {
+      return version6OrNewer ? compile(input, callbackPointer, 0) : compile(input, callbackPointer);
+    } finally {
+      soljson.removeFunction(callbackPointer);
+      if (reset !== null) reset();
+    }
+  };
+
+  return { compile: compileStandard, version: String(version) };
+}
+
+try {
+  const soljson = require(workerData.solcPath);
+  const compiler = createCompiler(soljson);
+  parentPort.on('message', (message) => {
+    if (message.kind !== 'compile') return;
+    try {
+      parentPort.postMessage({ kind: 'compiled', id: message.id, output: compiler.compile(message.input) });
+    } catch (error) {
+      parentPort.postMessage({ kind: 'compile_crashed', id: message.id, reason: reasonOf(error) });
+    }
+  });
+  parentPort.postMessage({ kind: 'ready', version: compiler.version });
+} catch (error) {
+  parentPort.postMessage({ kind: 'init_failed', reason: reasonOf(error) });
+}
+`;
+
+type CompileWorkerMessage =
+  | { kind: 'ready'; version: string }
+  | { kind: 'init_failed'; reason: string }
+  | { kind: 'compiled'; id: number; output: string }
+  | { kind: 'compile_crashed'; id: number; reason: string };
+
+type PendingCompile = {
+  resolve: (output: string) => void;
+  reject: (error: Error) => void;
+  timer: NodeJS.Timeout;
+};
+
+// One resident compiler = one worker thread. The worker loads the build
+// and answers compile requests; the main thread owns the hard timeout —
+// on expiry the worker is terminated outright, so even an infinite
+// constant-expression loop inside solc cannot outlive COMPILE_TIMEOUT_MS.
+export class WorkerSolcRunner implements SolcCompileRunner {
+  readonly threadId: number;
+
+  private readonly worker: Worker;
+  private readonly longVersion: string;
+  private readonly timeoutMs: number;
+  private readonly pending = new Map<number, PendingCompile>();
+  private nextId = 1;
+  private activeCompiles = 0;
+  private disposeRequested = false;
+  private terminated = false;
+
+  private constructor(worker: Worker, longVersion: string, timeoutMs: number) {
+    this.worker = worker;
+    this.longVersion = longVersion;
+    this.timeoutMs = timeoutMs;
+    this.threadId = worker.threadId;
+    this.worker.on('message', (message: CompileWorkerMessage) => {
+      this.onCompileResult(message);
+    });
+    this.worker.on('exit', () => {
+      this.rejectAllPending(new Error(`The solc ${this.longVersion} compile worker exited`));
+    });
+    this.worker.on('error', (error: Error) => {
+      this.rejectAllPending(error);
+    });
+  }
+
+  // Spawns the worker and waits for it to load the soljson build (the
+  // wasm load can take seconds; it gets the same load budget as the
+  // download). Init failures, an init timeout or a dying worker surface
+  // as the honest compiler_unavailable — the worker is torn down either
+  // way, never left half-loaded.
+  static async start(params: {
+    solcPath: string;
+    longVersion: string;
+    timeoutMs?: number;
+  }): Promise<WorkerSolcRunner> {
+    const worker = new Worker(COMPILE_WORKER_BOOTSTRAP, {
+      eval: true,
+      workerData: { solcPath: params.solcPath },
+    });
+    const runner = new WorkerSolcRunner(worker, params.longVersion, params.timeoutMs ?? COMPILE_TIMEOUT_MS);
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const settle = (action: () => void) => {
+          clearTimeout(timer);
+          worker.off('message', onMessage);
+          worker.off('exit', onExit);
+          worker.off('error', onError);
+          action();
+        };
+        const timer = setTimeout(() => {
+          settle(() =>
+            reject(
+              compilerUnavailable(
+                `Failed to initialize the solc ${params.longVersion} build: timed out after ${Math.round(COMPILER_LOAD_BUDGET_MS / 1000)}s`,
+              ),
+            ),
+          );
+        }, COMPILER_LOAD_BUDGET_MS);
+        timer.unref();
+        const onMessage = (message: CompileWorkerMessage): void => {
+          if (message.kind === 'ready') {
+            settle(resolve);
+          } else if (message.kind === 'init_failed') {
+            settle(() =>
+              reject(
+                compilerUnavailable(
+                  `Failed to initialize the solc ${params.longVersion} build: ${message.reason}`,
+                ),
+              ),
+            );
+          }
+        };
+        const onExit = (): void => {
+          settle(() =>
+            reject(
+              compilerUnavailable(
+                `Failed to initialize the solc ${params.longVersion} build: the compile worker exited before the build was ready`,
+              ),
+            ),
+          );
+        };
+        const onError = (error: Error): void => {
+          settle(() =>
+            reject(
+              compilerUnavailable(
+                `Failed to initialize the solc ${params.longVersion} build: ${error.message}`,
+              ),
+            ),
+          );
+        };
+        worker.on('message', onMessage);
+        worker.on('exit', onExit);
+        worker.on('error', onError);
+      });
+    } catch (error) {
+      void worker.terminate();
+      throw error;
+    }
+    return runner;
+  }
+
+  compile(input: string): Promise<string> {
+    if (this.terminated) {
+      return Promise.reject(
+        new Error(`The solc ${this.longVersion} compile worker was terminated`),
+      );
+    }
+    this.activeCompiles++;
+    const id = this.nextId++;
+    return new Promise<string>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        // Hard stop: the compile is terminated, never left running, and
+        // the caller hears the typed timeout (504 compile_timeout).
+        this.pending.delete(id);
+        void this.worker.terminate();
+        this.terminated = true;
+        reject(
+          compileTimedOut(
+            `The solc ${this.longVersion} compile timed out after ${Math.round(this.timeoutMs / 1000)}s and was terminated — try a smaller contract, fewer sources, or lower optimizer runs`,
+          ),
+        );
+      }, this.timeoutMs);
+      timer.unref();
+      this.pending.set(id, { resolve, reject, timer });
+      try {
+        this.worker.postMessage({ kind: 'compile', id, input });
+      } catch (error) {
+        this.pending.delete(id);
+        clearTimeout(timer);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      }
+    }).finally(() => {
+      this.activeCompiles--;
+      // A dispose that arrived mid-compile takes effect once idle.
+      if (this.disposeRequested && this.activeCompiles === 0 && !this.terminated) {
+        this.terminateNow();
+      }
+    });
+  }
+
+  isDead(): boolean {
+    return this.terminated;
+  }
+
+  dispose(): void {
+    this.disposeRequested = true;
+    if (this.activeCompiles === 0 && !this.terminated) this.terminateNow();
+  }
+
+  private terminateNow(): void {
+    if (this.terminated) return;
+    this.terminated = true;
+    this.rejectAllPending(new Error(`The solc ${this.longVersion} compile worker was disposed`));
+    void this.worker.terminate();
+  }
+
+  private rejectAllPending(error: Error): void {
+    for (const [id, entry] of this.pending) {
+      this.pending.delete(id);
+      clearTimeout(entry.timer);
+      entry.reject(error);
+    }
+  }
+
+  private onCompileResult(message: CompileWorkerMessage): void {
+    if (message.kind !== 'compiled' && message.kind !== 'compile_crashed') return;
+    const entry = this.pending.get(message.id);
+    if (entry === undefined) return;
+    this.pending.delete(message.id);
+    clearTimeout(entry.timer);
+    if (message.kind === 'compiled') entry.resolve(message.output);
+    else entry.reject(new Error(message.reason));
+  }
+}
+
+// Default runner factory: hand the verified soljson path to the worker;
+// the wrapper semantics live inline in the bootstrap (no `solc` npm
+// dependency — see the attribution note above).
+const defaultCreateCompileRunner: CompileRunnerFactory = async params =>
+  WorkerSolcRunner.start(params);
 
 export type CompilerListResult = {
   versions: SolcVersionEntry[];
@@ -569,6 +915,12 @@ export type CompileVerifyDeps = {
   readCacheDir?: () => Promise<string[]>;
   /** solc-cache directory override (injectable for tests; default data/solc-cache). */
   cacheDir?: string;
+  /**
+   * Compile-runner factory (injectable for tests). Default: a
+   * worker_threads Worker that loads the verified soljson off the main
+   * thread (see WorkerSolcRunner).
+   */
+  createCompileRunner?: CompileRunnerFactory;
 };
 
 export class CompileVerifyService {
@@ -583,7 +935,9 @@ export class CompileVerifyService {
   } | null = null;
 
   private versionListInFlight: Promise<CompilerListResult> | null = null;
-  private readonly compilerCache = new Map<string, Promise<SolcCompilerHandle>>();
+  // Resident compile runners (one worker thread each), insertion order
+  // = least-recently-used order; capped at MAX_RESIDENT_COMPILERS.
+  private readonly compilerCache = new Map<string, Promise<SolcCompileRunner>>();
 
   constructor(deps: CompileVerifyDeps = {}) {
     this.deps = deps;
@@ -646,7 +1000,9 @@ export class CompileVerifyService {
   private async listCachedVersions(): Promise<SolcVersionEntry[]> {
     try {
       const readDir = this.deps.readCacheDir ?? readdir;
-      const fileNames = await readDir(SOLC_CACHE_DIR);
+      // The cache-dir override applies here too — the offline fallback
+      // must see the same directory downloads land in.
+      const fileNames = await readDir(this.deps.cacheDir ?? SOLC_CACHE_DIR);
       return parseCachedCompilerNames(fileNames);
     } catch {
       // Missing/empty cache dir is the normal cold start, not an error.
@@ -677,19 +1033,61 @@ export class CompileVerifyService {
     return base;
   }
 
-  private async loadCompiler(build: ResolvedSolcBuild): Promise<SolcCompilerHandle> {
+  private async loadCompiler(build: ResolvedSolcBuild): Promise<SolcCompileRunner> {
     const loader = this.deps.loadCompilerBuild;
-    if (loader !== undefined) return loader(build);
+    if (loader !== undefined) {
+      // Test/inline path: a directly-injected handle compiles
+      // synchronously — wrap it in the runner surface (no worker, no
+      // timeout, no residency; the stub owns its own lifecycle).
+      const handle = await loader(build);
+      return {
+        compile: input => {
+          try {
+            return Promise.resolve(handle.compile(input));
+          } catch (error) {
+            return Promise.reject(error instanceof Error ? error : new Error(String(error)));
+          }
+        },
+        isDead: () => false,
+        dispose: () => {},
+      };
+    }
     const cached = this.compilerCache.get(build.longVersion);
-    if (cached !== undefined) return cached;
+    if (cached !== undefined) {
+      // Delete + re-insert moves the version to the back of the Map —
+      // insertion order IS the least-recently-used order.
+      this.compilerCache.delete(build.longVersion);
+      this.compilerCache.set(build.longVersion, cached);
+      return cached;
+    }
     const loading = this.downloadAndLoad(build);
     this.compilerCache.set(build.longVersion, loading);
     // Drop rejected promises so a transient failure can be retried.
-    void loading.catch(() => this.compilerCache.delete(build.longVersion));
+    void loading.catch(() => {
+      this.compilerCache.delete(build.longVersion);
+    });
+    this.evictLeastRecentlyUsed(build.longVersion);
     return loading;
   }
 
-  private async downloadAndLoad(build: ResolvedSolcBuild): Promise<SolcCompilerHandle> {
+  // Evicts from the Map's front (least recently used) while over
+  // capacity; the version just inserted is never the victim. A victim
+  // that is still loading is disposed once it resolves — dispose lets
+  // its in-flight compiles finish first.
+  private evictLeastRecentlyUsed(keep: string): void {
+    for (const [version, runnerPromise] of this.compilerCache) {
+      if (this.compilerCache.size <= MAX_RESIDENT_COMPILERS) return;
+      if (version === keep) continue;
+      this.compilerCache.delete(version);
+      void runnerPromise
+        .then(runner => runner.dispose())
+        .catch(() => {
+          // The load itself failed; nothing resident to dispose.
+        });
+    }
+  }
+
+  private async downloadAndLoad(build: ResolvedSolcBuild): Promise<SolcCompileRunner> {
     // The cache file keeps the official name but with a .cjs extension:
     // this package is "type": "module", and Node would otherwise load a
     // cached .js soljson as ESM — the Emscripten build needs CommonJS
@@ -748,22 +1146,21 @@ export class CompileVerifyService {
       );
     }
 
-    // The soljson file is a CommonJS Emscripten build; loading it through
-    // require lets it set up module.exports the way the wrapper expects.
-    let soljson: unknown;
+    // The soljson file is a CommonJS Emscripten build. It is no longer
+    // required on this thread: the compile runs inside a worker that
+    // loads the soljson build by absolute path and drives it through the
+    // inline wrapper semantics in its bootstrap (see
+    // WorkerSolcRunner) — the 9 MB module evaluation and the wasm
+    // instantiation happen off the main thread, under a hard timeout.
     try {
-      soljson = nodeRequire(path.resolve(cachePath));
+      return await (this.deps.createCompileRunner ?? defaultCreateCompileRunner)({
+        solcPath: path.resolve(cachePath),
+        longVersion: build.longVersion,
+      });
     } catch (error) {
+      if (error instanceof CompileVerifyHttpError) throw error;
       const reason = error instanceof Error ? error.message : 'unknown error';
-      throw compilerUnavailable(`Failed to load the solc ${build.longVersion} build: ${reason}`);
-    }
-    try {
-      return loadSolcWrapper()(soljson);
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : 'unknown error';
-      throw compilerUnavailable(
-        `Failed to initialize the solc ${build.longVersion} build: ${reason}`,
-      );
+      throw compilerUnavailable(`Failed to initialize the solc ${build.longVersion} build: ${reason}`);
     }
   }
 
@@ -797,13 +1194,21 @@ export class CompileVerifyService {
     }
 
     const build = await this.resolveBuild(versionEntry);
-    const compiler = await this.loadCompiler(build);
+    const runner = await this.loadCompiler(build);
 
     const compileInput = buildCompileInput(validation.input);
     let output: unknown;
     try {
-      output = JSON.parse(compiler.compile(JSON.stringify(compileInput)));
+      // The compile runs inside the runner's worker thread — a heavy
+      // multi-file input or a pathological constant-expression loop
+      // can no longer stall the event loop (or outlive the timeout).
+      output = JSON.parse(await runner.compile(JSON.stringify(compileInput)));
     } catch (error) {
+      // A dead runner (hard compile timeout or worker crash) is dropped
+      // so the next request re-creates it from the verified on-disk
+      // soljson instead of reusing a terminated worker.
+      if (runner.isDead()) this.compilerCache.delete(versionEntry.longVersion);
+      if (error instanceof CompileVerifyHttpError) throw error;
       const reason = error instanceof Error ? error.message : 'unknown error';
       throw compileFailed(
         `The solc ${versionEntry.longVersion} build crashed while compiling: ${reason}`,

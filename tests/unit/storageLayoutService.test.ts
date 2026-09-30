@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Partial mock: the real storageLayouts table export stays intact so
 // drizzle operators receive real columns; only the db client is faked.
@@ -31,8 +31,15 @@ vi.mock('storage-layout-fetcher', () => ({
   fetchStorageLayout: vi.fn(async () => null),
 }));
 
+import { fetchStorageLayout } from 'storage-layout-fetcher';
 import { storageLayoutService } from '@/services/StorageLayoutService';
 import type { Address } from 'viem';
+import type { StorageLayout } from '@/types/storage';
+
+// The real module resolves null for "no layout found" (the service
+// null-checks); its typed signature cannot express that, so the test
+// double narrows through one cast.
+const noLayout = null as unknown as StorageLayout;
 
 const NOT_FOUND_TTL_HOURS = 24;
 const MS_PER_HOUR = 1000 * 60 * 60;
@@ -163,5 +170,67 @@ describe('StorageLayoutService - NOT_FOUND cache TTL', () => {
     expect(mockDb.delete).toHaveBeenCalledTimes(1);
     // The negative entry was re-cached with a fresh timestamp.
     expect(mockDb.insert).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Fetcher-race timer hygiene (statsRouteTimeout.test.ts pattern): the
+// 8s FETCHER_TIMEOUT_MS race around the explorer fetch must clear its
+// losing timer on BOTH outcomes — a fast fetch (or failure) leaves no
+// live 8s timer per request, and a hung fetch falls through to the
+// evmole path with nothing pending.
+describe('StorageLayoutService - fetcher timeout timer hygiene', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useFakeTimers();
+    vi.mocked(fetchStorageLayout).mockResolvedValue(noLayout);
+
+    mockDb.select.mockImplementation(() => ({
+      from: () => ({
+        where: () => ({
+          limit: async () => [] as Array<unknown>,
+        }),
+      }),
+    }));
+    mockDb.insert.mockImplementation(() => ({
+      values: () => ({ onConflictDoUpdate: async () => undefined }),
+    }));
+    mockDb.delete.mockImplementation(() => ({ where: async () => undefined }));
+    // evmole fallback bails fast (no RPC client) unless a test overrides.
+    mockGetClient.mockResolvedValue(null);
+  });
+
+  afterEach(() => {
+    // Nothing pending may leak past a test — the whole point of the fix.
+    expect(vi.getTimerCount()).toBe(0);
+    vi.useRealTimers();
+  });
+
+  it('clears the losing timer when the explorer fetch wins fast', async () => {
+    vi.mocked(fetchStorageLayout).mockResolvedValue({ storage: [], types: {} });
+
+    const pending = storageLayoutService.getStorageLayout(chainId, address);
+    await vi.advanceTimersByTimeAsync(0);
+    const result = await pending;
+
+    expect(result.found).toBe(true);
+    expect(result.source).toBe('fetcher');
+    // Far past the window: the losing 8s timer was cleared, not left to
+    // fire (getTimerCount below is the no-pending-timer proof).
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('bounds a hung explorer fetch at 8s and leaves nothing pending', async () => {
+    vi.mocked(fetchStorageLayout).mockImplementation(() => new Promise(() => {}));
+    // evmole fallback bails fast (no bytecode) so the miss is re-cached.
+    mockGetClient.mockResolvedValue({ getCode: async () => '0x' });
+
+    const pending = storageLayoutService.getStorageLayout(chainId, address);
+    await vi.advanceTimersByTimeAsync(8_000);
+    const result = await pending;
+
+    expect(result.found).toBe(false);
+    expect(mockGetClient).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
   });
 });

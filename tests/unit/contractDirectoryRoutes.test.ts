@@ -194,7 +194,7 @@ describe('GET /chains/:chainId/contracts', () => {
   it('rejects a non-numeric offset with 400 instead of silently paging from 0', async () => {
     const res = await app.request('/chains/1/contracts?offset=abc');
     expect(res.status).toBe(400);
-    expect((await res.json()).error).toBe('Invalid offset');
+    expect((await res.json()).error).toBe('invalid_offset');
     // Failed validation never reaches the db.
     expect(mocks.dbSelect).not.toHaveBeenCalled();
   });
@@ -237,6 +237,8 @@ describe('GET /chains/:chainId/contracts', () => {
     mocks.state.rejectNext = true;
     const res = await app.request('/chains/1/contracts');
     expect(res.status).toBe(500);
-    expect((await res.json()).error).toBe('Failed to list cached contracts');
+    const body = await res.json();
+    expect(body.error).toBe('internal_error');
+    expect(body.message).toBe('Failed to list cached contracts');
   });
 });

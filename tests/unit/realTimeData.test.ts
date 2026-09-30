@@ -128,7 +128,12 @@ describe('realTimeData', () => {
 
     it('formats the balance with the chain native-currency decimals, not hardcoded 18', async () => {
       // Nautilus (chain 22222) runs a 9-decimal native currency (ZBC):
-      // 1e9 base units must be divided by 1e9, not 1e18.
+      // 1e9 base units must be divided by 1e9, not 1e18. 22222 is outside
+      // the static 25-chain subset, so load the full viem registry first
+      // (the app does this at boot; getChainInfo serves the subset only
+      // until then).
+      const { ensureBuiltInChainsLoaded } = await import('@/config/chains');
+      await ensureBuiltInChainsLoaded();
       mockClient.getBalance.mockResolvedValue(BigInt(1_000_000_000));
       mockClient.getTransactionCount.mockResolvedValue(1);
       mockClient.getBlockNumber.mockResolvedValue(BigInt(1));

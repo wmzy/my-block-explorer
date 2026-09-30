@@ -47,6 +47,7 @@ describe('utils barrel', () => {
       formatEth: 'format',
       getFunctionSelector: 'functionSelector',
       clampInternalTxDepth: 'internalTxScan',
+      isShrinkableProviderError: 'providerErrors',
       createRpcClient: 'realTimeData',
       analyzeRpcError: 'rpcErrorHandler',
       serializeForJson: 'serialization',

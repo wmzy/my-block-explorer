@@ -1,9 +1,11 @@
 // AddressQr contract: the modal encodes the CHECKSUMMED address (plain
 // hex, not an EIP-681 URI) as a genuinely non-empty QR symbol, shows the
 // payload text, and offers the copy-address fallback. The QR renders
-// through qrcode's pure SVG string renderer — no canvas — so these
-// assertions run the REAL encoder (the module is not mocked), and the
-// symbol is asserted structurally (viewBox + non-empty module path).
+// through qrcode's pure SVG string renderer — no canvas, imported lazily
+// on first open — so these assertions run the REAL encoder (the module
+// is not mocked; the two failure-path tests at the end are, at the
+// module boundary), and the symbol is asserted structurally (viewBox +
+// non-empty module path).
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
@@ -121,5 +123,30 @@ describe('AddressQr', () => {
     expect(error).toHaveTextContent('could not be generated');
     expect(screen.getByTestId('address-qr-copy')).toBeInTheDocument();
     expect(screen.queryByTestId('address-qr-plate')?.querySelector('svg')).toBeNull();
+  });
+
+  it('says so honestly when the lazy qrcode chunk fails to LOAD', async () => {
+    // The lazy import makes chunk-load failure a real runtime path
+    // (flaky network, offline edge) — it must land in the same honest
+    // error state as an encode failure, with the copy fallback intact.
+    // Deliberately LAST in the file: the fresh module registry it needs
+    // (resetModules + a throwing qrcode mock) detaches dynamic
+    // import('qrcode') from the instance the assertions above spy on.
+    vi.resetModules();
+    vi.doMock('qrcode', () => {
+      throw new Error('chunk load failed');
+    });
+    try {
+      const { AddressQr: LazyAddressQr } = await import('@/components/ui/AddressQr');
+      render(<LazyAddressQr address={LOWERCASE} />);
+      openModal();
+      const error = await screen.findByTestId('address-qr-error');
+      expect(error).toHaveTextContent('could not be generated');
+      expect(screen.getByTestId('address-qr-copy')).toBeInTheDocument();
+      expect(screen.queryByTestId('address-qr-plate')?.querySelector('svg')).toBeNull();
+    } finally {
+      vi.doUnmock('qrcode');
+      vi.resetModules();
+    }
   });
 });

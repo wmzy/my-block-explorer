@@ -32,6 +32,10 @@ import { createRetryableDbCall, RpcError, logError } from '../utils/errorHandler
  */
 export class RpcManager {
   private clients = new Map<number, PublicClient>();
+  // In-flight client creations, one per chain: concurrent first-touch
+  // getClient calls join the same promise instead of racing to build
+  // (and silently discarding) duplicate clients.
+  private creatingClients = new Map<number, Promise<PublicClient>>();
   private userConfigs = new Map<number, UserRpcConfig>();
   private configsReady: Promise<void>;
 
@@ -39,21 +43,33 @@ export class RpcManager {
     this.configsReady = this.loadUserConfigs();
   }
 
-  // Reload RPC configurations
+  // Reload RPC configurations. The swap is atomic with the load: the old
+  // configs keep serving readers while the new ones are still loading
+  // (loadUserConfigs populates a fresh map and assigns it at the end),
+  // and cached clients are dropped only once the new URLs are live.
+  // In-flight requests that already hold an old client are unaffected —
+  // viem clients own no exclusive resources, so stranded references are
+  // benign.
   async reloadConfigs(): Promise<void> {
-    this.userConfigs.clear();
+    const reload = this.loadUserConfigs();
+    this.configsReady = reload;
+    await reload;
     this.clients.clear();
-    this.configsReady = this.loadUserConfigs();
-    await this.configsReady;
+    this.creatingClients.clear();
   }
 
   // Load user RPC configurations
   private async loadUserConfigs(): Promise<void> {
-    const loadConfigs = createRetryableDbCall(async () => {
-      const configs = await db.select().from(userRpcConfigs);
+    // Fresh map per load: fully populated here and swapped into place
+    // only at the end, so a concurrent reader never sees a half-cleared
+    // config view mid-reload.
+    const configs = new Map<number, UserRpcConfig>();
 
-      for (const config of configs) {
-        this.userConfigs.set(config.chainId, {
+    const loadConfigs = createRetryableDbCall(async () => {
+      const rows = await db.select().from(userRpcConfigs);
+
+      for (const config of rows) {
+        configs.set(config.chainId, {
           chainId: config.chainId,
           customRpcUrl: config.url ?? undefined,
           rpcBackups: undefined,
@@ -89,8 +105,8 @@ export class RpcManager {
         });
         // A user RPC override (user_rpc_configs) loaded above wins over
         // the chain's own registration URL — keep it when one exists.
-        if (!this.userConfigs.has(row.chainId)) {
-          this.userConfigs.set(row.chainId, {
+        if (!configs.has(row.chainId)) {
+          configs.set(row.chainId, {
             chainId: row.chainId,
             customRpcUrl: row.rpcUrl,
             rpcBackups: undefined,
@@ -122,44 +138,66 @@ export class RpcManager {
     // here because loadUserConfigs is the one bootstrap both lifecycles
     // share — the standalone server and the vite dev bridge — so a fresh
     // local instance gets the bundled names regardless of how it was
-    // started. The seeder is first-startup-only, never overwrites
+    // The seeder is first-startup-only, never overwrites
     // existing rows, and swallows its own failures.
     await seedBuiltinLabels(db);
+
+    this.userConfigs = configs;
   }
 
-  // Get an RPC client
+  // Get an RPC client. Concurrent first-touch callers share ONE creation
+  // through the per-chain in-flight promise; without it, racing callers
+  // each build their own client and the losers' clients are silently
+  // discarded while their requests still hold them.
   async getClient(chainId: number): Promise<PublicClient> {
     await this.configsReady;
 
-    if (!this.clients.has(chainId)) {
-      try {
-        logger.info({ chainId }, 'Creating new RPC client for chain');
-        const config = this.userConfigs.get(chainId);
-        logger.info(
-          {
-            configFound: !!config,
-            // Host + discriminator only — the URL itself may embed a key.
-            rpcSource: config?.customRpcUrl !== undefined ? 'user-config' : 'viem-default',
-            ...(config?.customRpcUrl !== undefined
-              ? { rpcHost: rpcHostForLog(config.customRpcUrl) }
-              : {}),
-          },
-          'RPC config',
-        );
+    const existing = this.clients.get(chainId);
+    if (existing) return existing;
 
-        const client = await this.createClient(chainId);
-        this.clients.set(chainId, client);
-      } catch (error) {
-        logError(error, `RpcManager.getClient`, { chainId });
-        throw new RpcError(
-          `Failed to create RPC client for chain ${chainId}`,
-          undefined,
-          undefined,
-          chainId,
-        );
-      }
+    let creating = this.creatingClients.get(chainId);
+    if (creating === undefined) {
+      creating = this.createAndCacheClient(chainId).finally(() => {
+        this.creatingClients.delete(chainId);
+      });
+      this.creatingClients.set(chainId, creating);
     }
-    return this.clients.get(chainId)!;
+    return creating;
+  }
+
+  // One shared creation: caches the client on success and converts any
+  // failure into the public RpcError, so every awaiter of the in-flight
+  // promise sees the same outcome. The in-flight entry is dropped on
+  // settle (getClient's finally), so a failed creation is retried on the
+  // next call instead of poisoning the chain.
+  private async createAndCacheClient(chainId: number): Promise<PublicClient> {
+    try {
+      logger.info({ chainId }, 'Creating new RPC client for chain');
+      const config = this.userConfigs.get(chainId);
+      logger.info(
+        {
+          configFound: !!config,
+          // Host + discriminator only — the URL itself may embed a key.
+          rpcSource: config?.customRpcUrl !== undefined ? 'user-config' : 'viem-default',
+          ...(config?.customRpcUrl !== undefined
+            ? { rpcHost: rpcHostForLog(config.customRpcUrl) }
+            : {}),
+        },
+        'RPC config',
+      );
+
+      const client = await this.createClient(chainId);
+      this.clients.set(chainId, client);
+      return client;
+    } catch (error) {
+      logError(error, 'RpcManager.getClient', { chainId });
+      throw new RpcError(
+        `Failed to create RPC client for chain ${chainId}`,
+        undefined,
+        undefined,
+        chainId,
+      );
+    }
   }
 
   // Create an RPC client
@@ -221,6 +259,7 @@ export class RpcManager {
 
       this.userConfigs.set(config.chainId, config);
       this.clients.delete(config.chainId);
+      this.creatingClients.delete(config.chainId);
     } catch (error) {
       logError(error, 'RpcManager.updateUserRpcConfig');
       throw new Error('Failed to update RPC configuration', { cause: error });
@@ -234,6 +273,7 @@ export class RpcManager {
 
       this.userConfigs.delete(chainId);
       this.clients.delete(chainId);
+      this.creatingClients.delete(chainId);
     } catch (error) {
       logError(error, 'RpcManager.deleteUserRpcConfig');
       throw new Error('Failed to delete RPC configuration', { cause: error });
@@ -286,6 +326,7 @@ export class RpcManager {
   // Tear down all client connections
   cleanup(): void {
     this.clients.clear();
+    this.creatingClients.clear();
     this.userConfigs.clear();
   }
 }

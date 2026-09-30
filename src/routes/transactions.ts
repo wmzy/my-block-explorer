@@ -6,6 +6,7 @@ import { getChainName } from '../config/chains';
 const logger = createLogger('transactions-routes');
 import { getValidatedChainId } from '../server/validation';
 import { formatTransactionForApi, safeJsonResponse } from '../utils/serialization';
+import { respondError } from '../utils/api-error';
 
 const app = new Hono();
 
@@ -17,7 +18,7 @@ app.get('/chains/:chainId/transactions/:hash', async c => {
     const transaction = await transactionService.getTransactionByHash(chainId, hash);
 
     if (!transaction) {
-      return c.json({ error: 'Transaction not found' }, 404);
+      return respondError(c, 404, 'transaction_not_found', 'Transaction not found');
     }
 
     c.header('X-Data-Source', 'blockchain');
@@ -33,7 +34,7 @@ app.get('/chains/:chainId/transactions/:hash', async c => {
     return c.json(responseData);
   } catch (error) {
     logger.error({ err: error }, 'Transaction API error');
-    return c.json({ error: 'Failed to get transaction' }, 500);
+    return respondError(c, 500, 'internal_error', 'Failed to get transaction');
   }
 });
 
@@ -68,23 +69,11 @@ app.get('/chains/:chainId/transactions', async c => {
   const offset = parseOffsetParam(c.req.query('offset'));
 
   if (limit === null) {
-    return c.json(
-      {
-        error: 'invalid_limit',
-        message: 'limit must be a positive integer',
-      },
-      400,
-    );
+    return respondError(c, 400, 'invalid_limit', 'limit must be a positive integer');
   }
 
   if (offset === null) {
-    return c.json(
-      {
-        error: 'Invalid offset',
-        message: 'offset must be a non-negative integer',
-      },
-      400,
-    );
+    return respondError(c, 400, 'invalid_offset', 'offset must be a non-negative integer');
   }
 
   try {
@@ -107,7 +96,7 @@ app.get('/chains/:chainId/transactions', async c => {
     return c.json(responseData);
   } catch (error) {
     logger.error({ err: error }, 'Transactions API error');
-    return c.json({ error: 'Failed to get transactions' }, 500);
+    return respondError(c, 500, 'internal_error', 'Failed to get transactions');
   }
 });
 

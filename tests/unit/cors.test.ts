@@ -61,6 +61,19 @@ describe('corsMiddleware allowlist', () => {
       // preflight must allow it for cross-origin saves to work.
       expect(response.headers.get('Access-Control-Allow-Headers')).toContain('X-Admin-Token');
     });
+
+    it('exposes the headers the routes actually set (X-Chain-Name, not the X-Chain-Id typo)', async () => {
+      const response = await get('http://localhost:3000');
+
+      const exposed = response.headers.get('Access-Control-Expose-Headers') ?? '';
+      // The chain-scoped handlers set X-Chain-Name; a cross-origin browser
+      // page can only read exposed headers, so the name must match what
+      // the routes set (X-Chain-Id is set by nothing — grep-verified).
+      expect(exposed).toContain('X-Chain-Name');
+      expect(exposed).toContain('X-Response-Time');
+      expect(exposed).toContain('X-Data-Source');
+      expect(exposed).not.toContain('X-Chain-Id');
+    });
   });
 
   describe('disallowed origins', () => {

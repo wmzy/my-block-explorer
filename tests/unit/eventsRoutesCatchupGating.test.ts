@@ -8,7 +8,11 @@
  * - contract-address validation tiers (all-lower/all-upper pass, mixed case
  *   must be EIP-55 correct) with lowercase storage keys preserved,
  * - a missing range is a 404 resource state on start/resume/delete while
- *   state conflicts stay 400.
+ *   state conflicts stay 400,
+ * - pause consumes updateRangeStatus's compare-and-set result: a refusal
+ *   (row still live 'indexing' in the database) answers 400 invalid_state
+ *   instead of the canned 'completed' body, and a row lost to a race
+ *   answers the shared 404.
  *
  * The service and middleware modules are mocked: these tests pin the route
  * wiring, not the service semantics (covered by eventIndexingRanges.test.ts)
@@ -163,8 +167,9 @@ describe('quick range mode: catchup', () => {
     const res = await post(`${BASE}/ranges/quick`, { mode: 'catchup' });
 
     expect(res.status).toBe(400);
-    await expect(res.json()).resolves.toEqual({
-      error: 'No previous range found. Cannot catch up.',
+    await expect(res.json()).resolves.toMatchObject({
+      error: 'no_previous_range',
+      message: 'No previous range found. Cannot catch up.',
     });
     // A failed create never auto-starts anything.
     expect(mocks.startIndexingRange).not.toHaveBeenCalled();
@@ -177,7 +182,7 @@ describe('quick range mode: catchup', () => {
 
     expect(res.status).toBe(400);
     const body = await res.json();
-    expect(body.error).toBe('Failed to create range with mode: catchup');
+    expect(body.error).toBe('range_create_failed');
     expect(body.message).toBe('boom');
     expect(mocks.startIndexingRange).not.toHaveBeenCalled();
   });
@@ -267,9 +272,8 @@ describe('quick range mode: all (full-history gate)', () => {
       confirmFullHistory: false,
     });
     const body = await res.json();
-    expect(body.error).toBe('Full history confirmation required');
+    expect(body.error).toBe('full_history_confirmation_required');
     expect(body.message).toContain('20,000,000');
-    expect(body.reason).toBe('full-history-unconfirmed');
     // `details` is the channel the frontend HTTP layer surfaces on
     // ApiError — the UI arms its confirmation gate from these facts.
     expect(body.details).toEqual({
@@ -316,7 +320,7 @@ describe('PATCH range bound validation', () => {
 
     expect(res.status).toBe(400);
     const body = await res.json();
-    expect(body.error).toBe('Invalid request body');
+    expect(body.error).toBe('invalid_bounds');
     expect(mocks.updateIndexingRange).not.toHaveBeenCalled();
   });
 
@@ -397,7 +401,7 @@ describe('contract address validation (EIP-55 tiers)', () => {
 
     expect(res.status).toBe(400);
     const body = await res.json();
-    expect(body.error).toBe('Invalid contract address');
+    expect(body.error).toBe('invalid_address');
     expect(body.message).toContain('checksum');
     expect(mocks.getContractEvents).not.toHaveBeenCalled();
   });
@@ -430,7 +434,7 @@ describe('contract address validation (EIP-55 tiers)', () => {
 
     expect(res.status).toBe(400);
     const body = await res.json();
-    expect(body.error).toBe('Invalid contract address');
+    expect(body.error).toBe('invalid_address');
     expect(mocks.getContractEvents).not.toHaveBeenCalled();
   });
 });
@@ -442,7 +446,7 @@ describe('missing range: 404 resource state', () => {
     const res = await post(`${BASE}/ranges/9/start`, { abi: ABI });
 
     expect(res.status).toBe(404);
-    await expect(res.json()).resolves.toEqual({ error: 'Range not found' });
+    await expect(res.json()).resolves.toMatchObject({ error: 'range_not_found' });
     expect(mocks.startIndexingRange).not.toHaveBeenCalled();
   });
 
@@ -450,7 +454,7 @@ describe('missing range: 404 resource state', () => {
     const res = await post(`${BASE}/ranges/9/resume`, { abi: ABI });
 
     expect(res.status).toBe(404);
-    await expect(res.json()).resolves.toEqual({ error: 'Range not found' });
+    await expect(res.json()).resolves.toMatchObject({ error: 'range_not_found' });
     expect(mocks.resumeIndexingRange).not.toHaveBeenCalled();
   });
 
@@ -460,7 +464,7 @@ describe('missing range: 404 resource state', () => {
     const res = await request(`${BASE}/ranges/9`, { method: 'DELETE' });
 
     expect(res.status).toBe(404);
-    await expect(res.json()).resolves.toEqual({ error: 'Range not found' });
+    await expect(res.json()).resolves.toMatchObject({ error: 'range_not_found' });
   });
 
   it('delete keeps non-missing-range service failures as 400', async () => {
@@ -473,7 +477,7 @@ describe('missing range: 404 resource state', () => {
 
     expect(res.status).toBe(400);
     const body = await res.json();
-    expect(body.error).toBe('Failed to delete indexing range');
+    expect(body.error).toBe('invalid_state');
     expect(body.message).toBe('Cannot delete range while indexing');
   });
 
@@ -486,5 +490,68 @@ describe('missing range: 404 resource state', () => {
     const body = await res.json();
     expect(body.message).toBe('Range is already completed');
     expect(mocks.startIndexingRange).not.toHaveBeenCalled();
+  });
+});
+
+describe('pause honesty: updateRangeStatus refusals surface instead of a canned body', () => {
+  // A forward range walked past its toBlock: the pause route's
+  // "already complete" branch, which flips the row to 'completed'.
+  const completeRange = {
+    chainId: CHAIN_ID,
+    address: ADDRESS,
+    rangeId: 9,
+    fromBlock: 1_000,
+    toBlock: 2_000,
+    currentBlock: 2_000,
+    direction: 'forward',
+    status: 'indexing',
+  };
+
+  const arrange = () => {
+    mocks.getActiveRangeJob.mockReturnValue(false);
+    mocks.getIndexingRanges.mockResolvedValue([completeRange]);
+  };
+
+  it('answers 200 completed when the flip succeeds', async () => {
+    arrange();
+    mocks.updateRangeStatus.mockResolvedValue({ success: true });
+
+    const res = await post(`${BASE}/ranges/9/pause`, {});
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.status).toBe('completed');
+    expect(mocks.updateRangeStatus).toHaveBeenCalledWith(CHAIN_ID, ADDRESS, 9, 'completed');
+  });
+
+  it('answers 400 invalid_state with the service refusal when the row is still live indexing', async () => {
+    // No in-process job (isActive false) but the DB row says 'indexing':
+    // the CAS in updateRangeStatus owns that row (a peer process sharing
+    // the database may be walking it). The route must not claim
+    // 'completed' — that body overstated the outcome while the row
+    // actually stayed 'indexing'.
+    arrange();
+    mocks.updateRangeStatus.mockResolvedValue({
+      success: false,
+      error: 'Range is currently indexing — wait for the job to finish or pause it first',
+    });
+
+    const res = await post(`${BASE}/ranges/9/pause`, {});
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe('invalid_state');
+    expect(body.message).toBe('Range is currently indexing — wait for the job to finish or pause it first');
+    expect(mocks.pauseIndexingRange).not.toHaveBeenCalled();
+  });
+
+  it('answers 404 when the row disappears between the range fetch and the flip', async () => {
+    arrange();
+    mocks.updateRangeStatus.mockResolvedValue({ success: false, error: 'Range not found' });
+
+    const res = await post(`${BASE}/ranges/9/pause`, {});
+
+    expect(res.status).toBe(404);
+    await expect(res.json()).resolves.toMatchObject({ error: 'range_not_found' });
   });
 });

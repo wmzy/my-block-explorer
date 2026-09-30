@@ -585,3 +585,20 @@ export const addressScanInternalTxs = duckdbTable(
 
 export type AddressScanInternalTxRecord = typeof addressScanInternalTxs.$inferSelect;
 export type NewAddressScanInternalTx = typeof addressScanInternalTxs.$inferInsert;
+
+// Learned provider limits — ceilings indexing walks discover at runtime
+// (services/providerCeilings.ts), persisted so a restart does not
+// re-learn them by burning 5-8 failed provider calls per chain. One row
+// per chain: max_log_span is the largest eth_getLogs block span the
+// provider accepted (bignum per the project's block-number convention;
+// the adapter round-trips it as a string driver value). Written
+// fire-and-forget with upsert semantics; the in-memory map is the fast
+// path and DB unavailability degrades to in-memory-only.
+export const providerLimits = duckdbTable('provider_limits', {
+  chainId: integer().primaryKey(),
+  maxLogSpan: bignum().notNull(),
+  updatedAt: datetime().default(sql`now()`),
+});
+
+export type ProviderLimitRecord = typeof providerLimits.$inferSelect;
+export type NewProviderLimit = typeof providerLimits.$inferInsert;

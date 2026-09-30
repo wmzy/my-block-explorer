@@ -20,6 +20,7 @@ import { registerCustomChain, removeCustomChain } from '../config/customChains';
 import { requireAdminTokenIfConfigured } from '../middleware/admin-token';
 import { createRateLimiter } from '../middleware/rate-limit';
 import { isAllowedCorsOrigin } from '../middleware/cors-origins';
+import { createApiError, respondError } from '../utils/api-error';
 import { getValidatedChainId } from '../server/validation';
 import { chainCacheService } from '../services/ChainCacheService';
 
@@ -155,7 +156,7 @@ app.get('/chains/custom', async c => {
     });
   } catch (error) {
     logger.error({ err: error }, 'Failed to list custom chains');
-    return c.json({ error: 'Failed to list custom chains' }, 500);
+    return respondError(c, 500, 'internal_error', 'Failed to list custom chains');
   }
 });
 
@@ -175,53 +176,25 @@ app.post('/chains/custom', requireAdminTokenIfConfigured, registerRateLimiter, a
   try {
     body = await c.req.json();
   } catch {
-    return c.json(
-      {
-        error: 'Invalid JSON body',
-        code: 'invalid_json',
-        message: 'Request body must be valid JSON',
-      },
-      400,
-    );
+    return respondError(c, 400, 'invalid_json', 'Request body must be valid JSON');
   }
   // Destructured from a parsed-JSON value: every field is unknown and
   // must earn its type through the guards below.
   const { rpcUrl, name, symbol, decimals } = (body ?? {}) as Record<string, unknown>;
 
   if (typeof rpcUrl !== 'string' || rpcUrl === '') {
-    return c.json(
-      {
-        error: 'Invalid URL',
-        code: 'invalid_url',
-        message: 'rpcUrl is required and must be a string',
-      },
-      400,
-    );
+    return respondError(c, 400, 'invalid_url', 'rpcUrl is required and must be a string');
   }
 
   let parsedUrl: URL;
   try {
     parsedUrl = new URL(rpcUrl);
   } catch {
-    return c.json(
-      {
-        error: 'Invalid URL',
-        code: 'invalid_url',
-        message: 'rpcUrl must be a valid absolute URL',
-      },
-      400,
-    );
+    return respondError(c, 400, 'invalid_url', 'rpcUrl must be a valid absolute URL');
   }
 
   if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
-    return c.json(
-      {
-        error: 'Invalid URL',
-        code: 'invalid_url',
-        message: 'rpcUrl must use the http or https protocol',
-      },
-      400,
-    );
+    return respondError(c, 400, 'invalid_url', 'rpcUrl must use the http or https protocol');
   }
 
   if (
@@ -233,20 +206,17 @@ app.post('/chains/custom', requireAdminTokenIfConfigured, registerRateLimiter, a
         decimals < 0 ||
         decimals > 256))
   ) {
-    return c.json(
-      {
-        error: 'Invalid optional fields',
-        code: 'invalid_fields',
-        message:
-          'name and symbol must be non-empty strings and decimals an integer between 0 and 256 when present',
-      },
+    return respondError(
+      c,
       400,
+      'invalid_fields',
+      'name and symbol must be non-empty strings and decimals an integer between 0 and 256 when present',
     );
   }
 
   const probe = await probeRpcChainId(rpcUrl);
   if (!probe.ok) {
-    return c.json({ error: probe.code, message: probe.message }, 502);
+    return c.json(createApiError(502, probe.code, probe.message), 502);
   }
 
   // viem already shipping the id as a REAL network means the user does
@@ -257,15 +227,18 @@ app.post('/chains/custom', requireAdminTokenIfConfigured, registerRateLimiter, a
   // defaults, exactly what this flow exists to replace.
   if (isBuiltInChainProtected(probe.chainId)) {
     const known = getBuiltInChainInfo(probe.chainId);
+    const knownName = known?.name ?? String(probe.chainId);
     return c.json(
-      {
-        error: 'chain_already_known',
-        message:
-          `The RPC reports chain ID ${probe.chainId}, which this explorer already knows as "${known?.name ?? String(probe.chainId)}". ` +
-          'Use the RPC override (⚙ RPC panel) for a known chain.',
-        existingName: known?.name ?? String(probe.chainId),
-        hint: 'Use the RPC override (⚙ RPC panel) for a known chain',
-      },
+      createApiError(
+        409,
+        'chain_already_known',
+        `The RPC reports chain ID ${probe.chainId}, which this explorer already knows as "${knownName}". ` +
+        'Use the RPC override (⚙ RPC panel) for a known chain.',
+        {
+          existingName: knownName,
+          hint: 'Use the RPC override (⚙ RPC panel) for a known chain',
+        },
+      ),
       409,
     );
   }
@@ -322,7 +295,7 @@ app.post('/chains/custom', requireAdminTokenIfConfigured, registerRateLimiter, a
     );
   } catch (error) {
     logger.error({ err: error, chainId: probe.chainId }, 'Failed to register custom chain');
-    return c.json({ error: 'Failed to register custom chain' }, 500);
+    return respondError(c, 500, 'internal_error', 'Failed to register custom chain');
   }
 });
 
@@ -336,14 +309,7 @@ app.delete('/chains/custom/:chainId', requireAdminTokenIfConfigured, async c => 
     const param = c.req.param('chainId');
     const chainId = Number.parseInt(param, 10);
     if (Number.isNaN(chainId) || chainId <= 0) {
-      return c.json(
-        {
-          error: 'Invalid chain ID',
-          code: 'invalid_chain_id',
-          message: 'chainId must be a positive integer',
-        },
-        400,
-      );
+      return respondError(c, 400, 'invalid_chain_id', 'chainId must be a positive integer');
     }
 
     const existing = await db
@@ -352,12 +318,11 @@ app.delete('/chains/custom/:chainId', requireAdminTokenIfConfigured, async c => 
       .where(eq(customChains.chainId, chainId));
 
     if (existing.length === 0) {
-      return c.json(
-        {
-          error: 'not_found',
-          message: `No custom chain is registered for chain ID ${chainId}`,
-        },
+      return respondError(
+        c,
         404,
+        'not_found',
+        `No custom chain is registered for chain ID ${chainId}`,
       );
     }
 
@@ -369,7 +334,7 @@ app.delete('/chains/custom/:chainId', requireAdminTokenIfConfigured, async c => 
     return c.body(null, 204);
   } catch (error) {
     logger.error({ err: error }, 'Failed to delete custom chain');
-    return c.json({ error: 'Failed to delete custom chain' }, 500);
+    return respondError(c, 500, 'internal_error', 'Failed to delete custom chain');
   }
 });
 
@@ -410,7 +375,7 @@ app.delete(
       });
     } catch (error) {
       logger.error({ err: error, chainId }, 'Failed to clear chain cached data');
-      return c.json({ error: 'Failed to clear chain cached data' }, 500);
+      return respondError(c, 500, 'internal_error', 'Failed to clear chain cached data');
     }
   },
 );

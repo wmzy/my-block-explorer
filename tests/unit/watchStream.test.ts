@@ -19,6 +19,20 @@ const mocks = vi.hoisted(() => ({
   // clock advances, and its unsubscribe would otherwise clobber a shared
   // slot mid-assertion.
   activeSubscriptions: 0,
+  // Captured stream-routes logger.warn calls ({payload, message}) — the
+  // queue-overflow warning is behavior under test.
+  warns: [] as Array<{ payload: Record<string, unknown>; message: string }>,
+}));
+
+vi.mock('@/server/logger', () => ({
+  createLogger: (module: string) => ({
+    info: () => undefined,
+    warn: (payload: Record<string, unknown>, message: string) => {
+      if (module === 'stream-routes') mocks.warns.push({ payload, message });
+    },
+    error: () => undefined,
+    debug: () => undefined,
+  }),
 }));
 
 vi.mock('@/services/RpcManager', () => ({
@@ -92,6 +106,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   resetRateLimiterState();
   process.env.RATE_LIMIT_DISABLED = '1';
+  mocks.warns.length = 0;
   mocks.emit = null;
   mocks.activeSubscriptions = 0;
   mocks.subscribeChainEvents.mockImplementation(
@@ -186,5 +201,44 @@ describe('GET /chains/:chainId/blocks/stream — watch frames', () => {
     const response = await streamRequest('/chains/1/blocks/stream');
     await startReading(response).finished();
     expect(mocks.subscribeChainEvents).not.toHaveBeenCalled();
+  });
+
+  it('caps the queued watch events at 1000 (drop-oldest) and warns once with the dropped count', async () => {
+    mocks.getClient.mockResolvedValue({
+      getBlockNumber: vi.fn().mockResolvedValue(100n), // quiet head
+      getBlock: vi.fn(),
+    });
+
+    const response = await streamRequest('/chains/1/blocks/stream');
+    const reading = startReading(response);
+    await vi.advanceTimersByTimeAsync(1_200); // baseline set; loop sleeping
+
+    // 1050 events arrive while the loop sleeps (a stalled consumer or a
+    // slow catch-up batch): the queue holds only the NEWEST 1000.
+    for (let i = 0; i < 1_050; i++) {
+      mocks.emit?.({ ...LOG_EVENT, blockNumber: String(1_000 + i) });
+    }
+    await vi.advanceTimersByTimeAsync(1_200);
+
+    const text = reading.text();
+    // Exactly the cap was flushed — never an unbounded backlog burst.
+    expect(text.match(/event: watch/g)).toHaveLength(1_000);
+
+    // Drop-OLDEST: the survivors start at event #50 (the newest 1000).
+    const firstData = text
+      .split('\n')
+      .find(line => line.startsWith('data: ')) as string;
+    expect(JSON.parse(firstData.slice('data: '.length)).blockNumber).toBe('1050');
+
+    // One warn for the whole overflow, carrying the dropped count — not
+    // one per dropped event.
+    expect(mocks.warns).toHaveLength(1);
+    expect(mocks.warns[0]).toMatchObject({
+      payload: { chainId: 1, dropped: 50, queueCap: 1_000 },
+      message: expect.stringContaining('overflow'),
+    });
+
+    await reading.cancel();
+    await reading.finished();
   });
 });

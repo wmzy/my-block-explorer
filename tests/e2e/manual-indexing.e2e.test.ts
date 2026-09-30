@@ -155,7 +155,7 @@ describe('Manual Range Indexing E2E', () => {
 
       expect(response.status).toBe(400);
       const data = await response.json();
-      expect(data.error).toBe('Failed to add indexing range');
+      expect(data.error).toBe('range_overlap');
       expect(data.message).toBe('fromBlock must be less than toBlock');
     });
 
@@ -171,7 +171,7 @@ describe('Manual Range Indexing E2E', () => {
 
       expect(response.status).toBe(400);
       const data = await response.json();
-      expect(data.error).toBe('Invalid request body');
+      expect(data.error).toBe('invalid_bounds');
     });
 
     it('should reject invalid chain ID', async () => {
@@ -304,7 +304,7 @@ describe('Manual Range Indexing E2E', () => {
 
       expect(response.status).toBe(400);
       const data = await response.json();
-      expect(data.error).toBe('No ABI available');
+      expect(data.error).toBe('abi_unavailable');
       expect(startIndexingRange).not.toHaveBeenCalled();
     });
 
@@ -321,7 +321,7 @@ describe('Manual Range Indexing E2E', () => {
 
       expect(response.status).toBe(400);
       const data = await response.json();
-      expect(data.error).toBe('Failed to start indexing range');
+      expect(data.error).toBe('invalid_state');
       expect(data.message).toBe('Range is already being indexed');
       expect(startIndexingRange).not.toHaveBeenCalled();
     });
@@ -370,7 +370,7 @@ describe('Manual Range Indexing E2E', () => {
 
       expect(response.status).toBe(400);
       const data = await response.json();
-      expect(data.error).toBe('Invalid rangeId');
+      expect(data.error).toBe('invalid_range_id');
     });
   });
 
@@ -413,7 +413,7 @@ describe('Manual Range Indexing E2E', () => {
 
       expect(response.status).toBe(400);
       const data = await response.json();
-      expect(data.error).toBe('Failed to resume indexing range');
+      expect(data.error).toBe('invalid_state');
       expect(data.message).toBe('Can only resume paused or errored ranges');
       expect(resumeIndexingRange).not.toHaveBeenCalled();
     });
@@ -551,7 +551,7 @@ describe('Manual Range Indexing E2E', () => {
 
       expect(response.status).toBe(400);
       const data = await response.json();
-      expect(data.error).toBe('No active indexing job');
+      expect(data.error).toBe('no_active_job');
       expect(data.message).toBe('Range is not currently being indexed');
     });
 
@@ -563,7 +563,7 @@ describe('Manual Range Indexing E2E', () => {
 
       expect(response.status).toBe(400);
       const data = await response.json();
-      expect(data.error).toBe('Invalid rangeId');
+      expect(data.error).toBe('invalid_range_id');
     });
   });
 
@@ -598,7 +598,7 @@ describe('Manual Range Indexing E2E', () => {
 
       expect(response.status).toBe(400);
       const data = await response.json();
-      expect(data.error).toBe('Failed to delete indexing range');
+      expect(data.error).toBe('invalid_state');
       expect(data.message).toBe('Cannot delete range while indexing');
     });
 
@@ -626,7 +626,7 @@ describe('Manual Range Indexing E2E', () => {
 
       expect(response.status).toBe(400);
       const data = await response.json();
-      expect(data.error).toBe('Invalid rangeId');
+      expect(data.error).toBe('invalid_range_id');
     });
   });
 
@@ -755,7 +755,7 @@ describe('Manual Range Indexing E2E', () => {
 
       expect(response.status).toBe(500);
       const data = await response.json();
-      expect(data.error).toBe('Failed to add indexing range');
+      expect(data.error).toBe('internal_error');
       expect(data.message).toBe('Database connection failed');
     });
 

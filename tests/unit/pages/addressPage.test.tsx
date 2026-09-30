@@ -173,6 +173,9 @@ vi.mock('../../../src/components/TopNavigation', () => ({
 }));
 
 vi.mock('../../../src/config/chains', () => ({
+  // Lazy full-registry loader consumed by UnsupportedChainState; the
+  // factory mock must model every export the view imports.
+  ensureBuiltInChainsLoaded: () => Promise.resolve(),
   getChainInfo: (chainId: number) => {
     if (chainId === 1) return { id: 1, name: 'Ethereum', nativeCurrency: { symbol: 'ETH' } };
     return null;

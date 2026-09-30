@@ -48,6 +48,15 @@ const BLOCK_STREAM_MAX_CATCHUP = 10;
 // up with an explicit error event.
 const BLOCK_STREAM_MAX_CONSECUTIVE_ERRORS = 10;
 
+// Watch-frame queue ceiling per connection. Events queue only while the
+// stream loop is busy (a slow catch-up batch, a stalled consumer); a
+// healthy loop flushes every cycle. Past the cap the OLDEST events are
+// dropped — the stream is a live tail and the ring-buffer endpoint
+// covers history — and the next flush cycle logs ONE warn carrying how
+// many were dropped (never one warn per event: the overflow itself means
+// the consumer is slow, and per-event logging would compound it).
+const BLOCK_STREAM_WATCH_QUEUE_CAP = 1_000;
+
 // Cost control: each open stream polls the chain head once per second, so
 // connection creation is rate-limited per client. A page opens at most one
 // stream; extra browser tabs are the realistic burst — beyond the burst
@@ -150,8 +159,15 @@ app.get('/chains/:chainId/blocks/stream', c => {
     // heartbeats and error handling are untouched. No replay at connect:
     // the ring buffer endpoint covers history; the stream is a live tail.
     const pendingWatch: WatchFeedEvent[] = [];
+    let droppedWatchEvents = 0;
     const unsubscribeWatch = watchService.subscribeChainEvents(chainId, event => {
       pendingWatch.push(event);
+      // Drop-oldest overflow: the subscription callback must stay cheap
+      // (no logging in the hot path — the flush loop reports the damage).
+      if (pendingWatch.length > BLOCK_STREAM_WATCH_QUEUE_CAP) {
+        pendingWatch.splice(0, pendingWatch.length - BLOCK_STREAM_WATCH_QUEUE_CAP);
+        droppedWatchEvents += 1;
+      }
     });
 
     try {
@@ -162,6 +178,13 @@ app.get('/chains/:chainId/blocks/stream', c => {
           const event = pendingWatch.shift()!;
           await stream.writeSSE({ event: 'watch', data: JSON.stringify(event) });
           lastWriteMs = Date.now();
+        }
+        if (droppedWatchEvents > 0) {
+          logger.warn(
+            { chainId, dropped: droppedWatchEvents, queueCap: BLOCK_STREAM_WATCH_QUEUE_CAP },
+            'Block stream watch queue overflowed; dropped the oldest events',
+          );
+          droppedWatchEvents = 0;
         }
 
         let head: bigint;

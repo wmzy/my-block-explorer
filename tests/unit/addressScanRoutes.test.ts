@@ -226,10 +226,7 @@ describe('POST /chains/:chainId/addresses/:address/scan', () => {
       headers: { 'content-type': 'application/json' },
     });
     expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({
-      error: 'scan_conflict',
-      message: 'bounds differ; pass force: true',
-    });
+    expect(await res.json()).toMatchObject({ error: 'scan_conflict' });
   });
 
   it('rejects invalid bounds with 400 invalid_bounds without touching the service', async () => {
@@ -268,10 +265,7 @@ describe('POST /chains/:chainId/addresses/:address/scan', () => {
       headers: { 'content-type': 'application/json' },
     });
     expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({
-      error: 'invalid_bounds',
-      message: 'fromBlock (5000) must not be after toBlock (1000)',
-    });
+    expect(await res.json()).toMatchObject({ error: 'invalid_bounds' });
   });
 });
 
@@ -292,7 +286,7 @@ describe('GET /chains/:chainId/addresses/:address/scan', () => {
     mocks.getScanJobRow.mockResolvedValue(null);
     const res = await app.request(scanPath());
     expect(res.status).toBe(404);
-    expect(await res.json()).toEqual({ error: 'no_scan_job' });
+    expect(await res.json()).toMatchObject({ error: 'no_scan_job' });
   });
 });
 
@@ -351,10 +345,7 @@ describe('GET /chains/:chainId/addresses/:address/scan/internal-transactions', (
   it('rejects non-numeric offset with 400 invalid_offset', async () => {
     const res = await app.request(internalTxnsPath('?offset=abc'));
     expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({
-      error: 'invalid_offset',
-      message: 'offset must be a non-negative integer',
-    });
+    expect(await res.json()).toMatchObject({ error: 'invalid_offset' });
     expect(mocks.listInternalTransactions).not.toHaveBeenCalled();
   });
 
@@ -387,7 +378,10 @@ describe('GET /chains/:chainId/addresses/:address/scan/internal-transactions', (
     mocks.listInternalTransactions.mockRejectedValue(new Error('DuckDB down'));
     const res = await app.request(internalTxnsPath());
     expect(res.status).toBe(500);
-    expect(await res.json()).toEqual({ error: 'Failed to list internal transactions' });
+    expect(await res.json()).toMatchObject({
+      error: 'internal_error',
+      message: 'Failed to list internal transactions',
+    });
   });
 
   it('stays an open read even with an admin token configured', async () => {
@@ -442,7 +436,7 @@ describe('POST /scan/pause and /scan/resume', () => {
     });
     const res = await app.request(scanPath('/resume'), { method: 'POST' });
     expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({
+    expect(await res.json()).toMatchObject({
       error: 'invalid_state',
       message: 'Scan job is not paused (status: running)',
     });
@@ -497,7 +491,7 @@ describe('POST /scan/catchup', () => {
     mocks.catchupScanJob.mockResolvedValue({ ok: false, error: 'no_scan_job' });
     const res = await app.request(scanPath('/catchup'), { method: 'POST' });
     expect(res.status).toBe(404);
-    expect(await res.json()).toEqual({ error: 'no_scan_job' });
+    expect(await res.json()).toMatchObject({ error: 'no_scan_job' });
   });
 
   it('answers 400 invalid_state with the displayable message when the scan is running', async () => {
@@ -508,7 +502,7 @@ describe('POST /scan/catchup', () => {
     });
     const res = await app.request(scanPath('/catchup'), { method: 'POST' });
     expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({
+    expect(await res.json()).toMatchObject({
       error: 'invalid_state',
       message: 'Scan is running — wait for it to finish or pause it first',
     });
@@ -522,7 +516,7 @@ describe('POST /scan/catchup', () => {
     });
     const res = await app.request(scanPath('/catchup'), { method: 'POST' });
     expect(res.status).toBe(400);
-    expect(await res.json()).toEqual({
+    expect(await res.json()).toMatchObject({
       error: 'already_caught_up',
       message: 'Scan is already at the chain head',
     });

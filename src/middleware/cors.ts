@@ -17,6 +17,9 @@ export const corsMiddleware = cors({
   // talks to the API cross-origin (localhost:3000 -> localhost:8201), so
   // the preflight must allow it or those writes are blocked.
   allowHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Admin-Token'],
-  exposeHeaders: ['X-Response-Time', 'X-Data-Source', 'X-Chain-Id'],
+  // X-Chain-Name (set by the chain-scoped route handlers) and the
+  // middleware-added X-Response-Time/X-Data-Source are the headers a
+  // cross-origin browser page legitimately reads; nothing sets X-Chain-Id.
+  exposeHeaders: ['X-Response-Time', 'X-Data-Source', 'X-Chain-Name'],
   maxAge: 86400,
 });

@@ -11,9 +11,6 @@ importers:
       '@duckdb/node-api':
         specifier: 1.5.5-r.5
         version: 1.5.5-r.5
-      '@duckdb/node-bindings-darwin-arm64':
-        specifier: 1.5.5-r.5
-        version: 1.5.5-r.5
       '@hono/node-server':
         specifier: ^2.1.1
         version: 2.1.1(hono@4.13.9)
@@ -5718,7 +5715,8 @@ snapshots:
     dependencies:
       '@duckdb/node-bindings': 1.5.5-r.5
 
-  '@duckdb/node-bindings-darwin-arm64@1.5.5-r.5': {}
+  '@duckdb/node-bindings-darwin-arm64@1.5.5-r.5':
+    optional: true
 
   '@duckdb/node-bindings-darwin-x64@1.5.5-r.5':
     optional: true

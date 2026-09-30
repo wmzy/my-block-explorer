@@ -70,7 +70,7 @@ describe('GET /chains/:chainId/transactions offset', () => {
 
     expect(res.status).toBe(400);
     const body = await res.json();
-    expect(body.error).toBe('Invalid offset');
+    expect(body.error).toBe('invalid_offset');
     expect(mocks.getLatestTransactions).not.toHaveBeenCalled();
   });
 });

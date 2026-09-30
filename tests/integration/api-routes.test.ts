@@ -160,7 +160,7 @@ describe('API routes', () => {
       });
 
       expect(response.status).toBe(400);
-      expect((await response.json()).error).toBe('Missing required fields');
+      expect((await response.json()).error).toBe('missing_fields');
     });
 
     it('rejects POST /api/rpc-configs without the token once ADMIN_TOKEN is set', async () => {

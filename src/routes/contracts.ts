@@ -7,6 +7,7 @@ import { contractInteractionService } from '../services/ContractInteractionServi
 import { getChainName } from '../config/chains';
 import { getValidatedChainId, getValidatedAddress } from '../server/validation';
 import { safeJsonResponse } from '../utils/serialization';
+import { createApiError, respondError } from '../utils/api-error';
 import { parseStateOverride, type StateOverride } from '../utils/stateOverride';
 import { requireAdminTokenIfConfigured } from '../middleware/admin-token';
 import { createRateLimiter } from '../middleware/rate-limit';
@@ -57,12 +58,20 @@ const parseContractsOffsetParam = (raw: string | undefined): number | null => {
 const parseBodyStateOverride = (
   raw: unknown,
 ):
-  | { error: { error: string; details: string[] }; status: 400 }
+  | { error: ReturnType<typeof createApiError>; status: 400 }
   | { value: StateOverride | undefined } => {
   if (raw === undefined) return { value: undefined };
   const parsed = parseStateOverride(raw);
   if (!parsed.ok) {
-    return { error: { error: 'invalid_state_override', details: parsed.details }, status: 400 };
+    return {
+      error: createApiError(
+        400,
+        'invalid_state_override',
+        'stateOverride must map addresses to valid override objects',
+        parsed.details,
+      ),
+      status: 400,
+    };
   }
   const hasEntries = Object.keys(parsed.value).length > 0;
   return { value: hasEntries ? parsed.value : undefined };
@@ -94,24 +103,17 @@ app.get('/chains/:chainId/contracts', async c => {
 
   const limit = parseContractsLimitParam(c.req.query('limit'));
   if (limit === null) {
-    return c.json(
-      {
-        error: 'invalid_limit',
-        message: `limit must be a positive integer no greater than ${CONTRACT_DIRECTORY_MAX_LIMIT}`,
-      },
+    return respondError(
+      c,
       400,
+      'invalid_limit',
+      `limit must be a positive integer no greater than ${CONTRACT_DIRECTORY_MAX_LIMIT}`,
     );
   }
 
   const offset = parseContractsOffsetParam(c.req.query('offset'));
   if (offset === null) {
-    return c.json(
-      {
-        error: 'Invalid offset',
-        message: 'offset must be a non-negative integer',
-      },
-      400,
-    );
+    return respondError(c, 400, 'invalid_offset', 'offset must be a non-negative integer');
   }
 
   try {
@@ -138,7 +140,7 @@ app.get('/chains/:chainId/contracts', async c => {
     return c.json(responseData);
   } catch (error) {
     logger.error({ err: error }, 'Contract directory API error');
-    return c.json({ error: 'Failed to list cached contracts' }, 500);
+    return respondError(c, 500, 'internal_error', 'Failed to list cached contracts');
   }
 });
 
@@ -161,7 +163,7 @@ app.get('/chains/:chainId/contracts/stats', async c => {
     return c.json(responseData);
   } catch (error) {
     logger.error({ err: error }, 'Contract stats API error');
-    return c.json({ error: 'Failed to get contract stats' }, 500);
+    return respondError(c, 500, 'internal_error', 'Failed to get contract stats');
   }
 });
 
@@ -175,9 +177,16 @@ app.get('/chains/:chainId/contracts/:address/source', async c => {
     if (!contractSource) {
       // null means the address has no deployed code (C-1: the frontend
       // detects err.code === 'not_a_contract' to show an EOA state).
+      // The extra `code` key is the discriminator util/http.ts's toApiError
+      // reads (it only maps body.code, not body.error, onto ApiError.code)
+      // — kept until that parser learns the canonical `error` field.
       return c.json(
         {
-          message: `Address ${address} is not a contract on chain ${chainId}`,
+          ...createApiError(
+            404,
+            'not_a_contract',
+            `Address ${address} is not a contract on chain ${chainId}`,
+          ),
           code: 'not_a_contract',
         },
         404,
@@ -198,7 +207,7 @@ app.get('/chains/:chainId/contracts/:address/source', async c => {
     return c.json(responseData);
   } catch (error) {
     logger.error({ err: error }, 'Contract source API error');
-    return c.json({ error: 'Failed to get contract source' }, 500);
+    return respondError(c, 500, 'internal_error', 'Failed to get contract source');
   }
 });
 
@@ -219,7 +228,7 @@ app.post(
       return c.json({ success: true, message: 'Cache cleared' });
     } catch (error) {
       logger.error({ err: error }, 'Clear contract cache API error');
-      return c.json({ error: 'Failed to clear contract cache' }, 500);
+      return respondError(c, 500, 'internal_error', 'Failed to clear contract cache');
     }
   },
 );
@@ -236,9 +245,15 @@ app.get('/chains/:chainId/contracts/:address/abi', async c => {
 
     if (!contractSource) {
       // Same C-1 contract as the source endpoint: null === no deployed code.
+      // The extra `code` key feeds util/http.ts's body.code-only mapper (see
+      // the source route above).
       return c.json(
         {
-          message: `Address ${address} is not a contract on chain ${chainId}`,
+          ...createApiError(
+            404,
+            'not_a_contract',
+            `Address ${address} is not a contract on chain ${chainId}`,
+          ),
           code: 'not_a_contract',
         },
         404,
@@ -263,7 +278,7 @@ app.get('/chains/:chainId/contracts/:address/abi', async c => {
     return c.json(responseData);
   } catch (error) {
     logger.error({ err: error }, 'Contract ABI API error');
-    return c.json({ error: 'Failed to get contract ABI' }, 500);
+    return respondError(c, 500, 'internal_error', 'Failed to get contract ABI');
   }
 });
 
@@ -287,7 +302,7 @@ app.get('/chains/:chainId/contracts/:address/functions', async c => {
     );
 
     c.header('X-Chain-Name', getChainName(chainId));
-    c.header('X-Cache-Control', 'public, max-age=300');
+    c.header('Cache-Control', 'public, max-age=300');
 
     const responseData = safeJsonResponse({
       chainId,
@@ -301,7 +316,7 @@ app.get('/chains/:chainId/contracts/:address/functions', async c => {
     return c.json(responseData);
   } catch (error) {
     logger.error({ err: error }, 'Contract functions API error');
-    return c.json({ error: 'Failed to get contract functions' }, 500);
+    return respondError(c, 500, 'internal_error', 'Failed to get contract functions');
   }
 });
 
@@ -323,25 +338,18 @@ app.post('/chains/:chainId/contracts/:address/read', contractReadRateLimiter, as
   try {
     body = await c.req.json();
   } catch {
-    return c.json(
-      {
-        error: 'Invalid JSON body',
-        code: 'invalid_json',
-        message: 'Request body must be valid JSON',
-      },
-      400,
-    );
+    return respondError(c, 400, 'invalid_json', 'Request body must be valid JSON');
   }
 
   try {
     const { functionName, args = [] } = body;
 
     if (!functionName || typeof functionName !== 'string') {
-      return c.json({ error: 'Function name is required' }, 400);
+      return respondError(c, 400, 'invalid_function_name', 'Function name is required');
     }
 
     if (!Array.isArray(args)) {
-      return c.json({ error: 'Arguments must be an array' }, 400);
+      return respondError(c, 400, 'invalid_args', 'Arguments must be an array');
     }
 
     const contractSource = await contractSourceService.getContractSource(chainId, address);
@@ -353,7 +361,7 @@ app.post('/chains/:chainId/contracts/:address/read', contractReadRateLimiter, as
     }
 
     if (!targetABI) {
-      return c.json({ error: 'Contract ABI not available' }, 400);
+      return respondError(c, 400, 'abi_unavailable', 'Contract ABI not available');
     }
 
     const result = await contractInteractionService.readContractWithABI({
@@ -381,7 +389,7 @@ app.post('/chains/:chainId/contracts/:address/read', contractReadRateLimiter, as
     return c.json(responseData, result.success ? 200 : 400);
   } catch (error) {
     logger.error({ err: error }, 'Read contract API error');
-    return c.json({ error: 'Failed to read contract' }, 500);
+    return respondError(c, 500, 'internal_error', 'Failed to read contract');
   }
 });
 
@@ -400,36 +408,27 @@ app.post('/chains/:chainId/contracts/:address/simulate', contractSimulateRateLim
   try {
     body = await c.req.json();
   } catch {
-    return c.json(
-      {
-        error: 'Invalid JSON body',
-        code: 'invalid_json',
-        message: 'Request body must be valid JSON',
-      },
-      400,
-    );
+    return respondError(c, 400, 'invalid_json', 'Request body must be valid JSON');
   }
 
   try {
     const { functionName, args = [], value, from, stateOverride: stateOverrideRaw } = body;
 
     if (!functionName || typeof functionName !== 'string') {
-      return c.json({ error: 'Function name is required' }, 400);
+      return respondError(c, 400, 'invalid_function_name', 'Function name is required');
     }
 
     if (!Array.isArray(args)) {
-      return c.json({ error: 'Arguments must be an array' }, 400);
+      return respondError(c, 400, 'invalid_args', 'Arguments must be an array');
     }
 
     const parsedValue = parseBodyValue(value);
     if (!parsedValue.ok) {
-      return c.json(
-        {
-          error: 'Invalid value',
-          code: 'invalid_value',
-          message: 'value must be a 0x-hex or decimal integer quantity',
-        },
+      return respondError(
+        c,
         400,
+        'invalid_value',
+        'value must be a 0x-hex or decimal integer quantity',
       );
     }
 
@@ -447,7 +446,7 @@ app.post('/chains/:chainId/contracts/:address/simulate', contractSimulateRateLim
     }
 
     if (!targetABI) {
-      return c.json({ error: 'Contract ABI not available' }, 400);
+      return respondError(c, 400, 'abi_unavailable', 'Contract ABI not available');
     }
 
     const result = await contractInteractionService.simulateContractWithABI({
@@ -481,108 +480,112 @@ app.post('/chains/:chainId/contracts/:address/simulate', contractSimulateRateLim
     return c.json(responseData, result.success ? 200 : 400);
   } catch (error) {
     logger.error({ err: error }, 'Simulate contract API error');
-    return c.json({ error: 'Failed to simulate contract' }, 500);
+    return respondError(c, 500, 'internal_error', 'Failed to simulate contract');
   }
 });
 
-app.post('/chains/:chainId/contracts/:address/estimate-gas', async c => {
-  const chainId = getValidatedChainId(c.req.param('chainId'));
-  const address = getValidatedAddress(c.req.param('address'));
-
-  // Same contract as simulate: a malformed JSON body is a 400 invalid_json,
-  // not an opaque 500 'Failed to estimate gas'.
-  let body;
-  try {
-    body = await c.req.json();
-  } catch {
-    return c.json(
-      {
-        error: 'Invalid JSON body',
-        code: 'invalid_json',
-        message: 'Request body must be valid JSON',
-      },
-      400,
-    );
-  }
-
-  try {
-    const { functionName, args = [], value, from, stateOverride: stateOverrideRaw } = body;
-
-    if (!functionName || typeof functionName !== 'string') {
-      return c.json({ error: 'Function name is required' }, 400);
-    }
-
-    if (!Array.isArray(args)) {
-      return c.json({ error: 'Arguments must be an array' }, 400);
-    }
-
-    const parsedValue = parseBodyValue(value);
-    if (!parsedValue.ok) {
-      return c.json(
-        {
-          error: 'Invalid value',
-          code: 'invalid_value',
-          message: 'value must be a 0x-hex or decimal integer quantity',
-        },
-        400,
-      );
-    }
-
-    const override = parseBodyStateOverride(stateOverrideRaw);
-    if ('error' in override) {
-      return c.json(override.error, override.status);
-    }
-
-    const contractSource = await contractSourceService.getContractSource(chainId, address);
-
-    let targetABI = contractSource?.abi;
-
-    if (contractSource?.isProxy && contractSource?.implementationContract) {
-      targetABI = contractSource.implementationContract.abi;
-    }
-
-    if (!targetABI) {
-      return c.json({ error: 'Contract ABI not available' }, 400);
-    }
-
-    const gasEstimate = await contractInteractionService.estimateContractGasWithABI({
-      chainId,
-      contractAddress: address,
-      functionName,
-      args,
-      value: parsedValue.value,
-      from,
-      abi: targetABI,
-      stateOverride: override.value,
-    });
-
-    c.header('X-Chain-Name', getChainName(chainId));
-
-    if (!gasEstimate) {
-      return c.json({ error: 'Failed to estimate gas' }, 400);
-    }
-
-    const responseData = safeJsonResponse({
-      chainId,
-      chainName: getChainName(chainId),
-      contractAddress: address,
-      functionName,
-      args,
-      value,
-      from,
-      gasLimit: gasEstimate.gasLimit.toString(),
-      gasPrice: gasEstimate.gasPrice?.toString(),
-      maxFeePerGas: gasEstimate.maxFeePerGas?.toString(),
-      maxPriorityFeePerGas: gasEstimate.maxPriorityFeePerGas?.toString(),
-      timestamp: new Date().toISOString(),
-    });
-
-    return c.json(responseData);
-  } catch (error) {
-    logger.error({ err: error }, 'Gas estimation API error');
-    return c.json({ error: 'Failed to estimate gas' }, 500);
-  }
+// estimate-gas drives the same per-request RPC proxying as simulate, so
+// it gets the same dedicated bucket (independent quota — estimating
+// cannot starve simulate and vice versa); named for the ops dashboard's
+// per-bucket stats.
+const contractEstimateGasRateLimiter = createRateLimiter({
+  name: 'contract-estimate-gas',
+  requestsPerMinute: 60,
+  burst: 20,
 });
+app.post(
+  '/chains/:chainId/contracts/:address/estimate-gas',
+  contractEstimateGasRateLimiter,
+  async c => {
+    const chainId = getValidatedChainId(c.req.param('chainId'));
+    const address = getValidatedAddress(c.req.param('address'));
+
+    // Same contract as simulate: a malformed JSON body is a 400 invalid_json,
+    // not an opaque 500 'Failed to estimate gas'.
+    let body;
+    try {
+      body = await c.req.json();
+    } catch {
+      return respondError(c, 400, 'invalid_json', 'Request body must be valid JSON');
+    }
+
+    try {
+      const { functionName, args = [], value, from, stateOverride: stateOverrideRaw } = body;
+
+      if (!functionName || typeof functionName !== 'string') {
+        return respondError(c, 400, 'invalid_function_name', 'Function name is required');
+      }
+
+      if (!Array.isArray(args)) {
+        return respondError(c, 400, 'invalid_args', 'Arguments must be an array');
+      }
+
+      const parsedValue = parseBodyValue(value);
+      if (!parsedValue.ok) {
+        return respondError(
+          c,
+          400,
+          'invalid_value',
+          'value must be a 0x-hex or decimal integer quantity',
+        );
+      }
+
+      const override = parseBodyStateOverride(stateOverrideRaw);
+      if ('error' in override) {
+        return c.json(override.error, override.status);
+      }
+
+      const contractSource = await contractSourceService.getContractSource(chainId, address);
+
+      let targetABI = contractSource?.abi;
+
+      if (contractSource?.isProxy && contractSource?.implementationContract) {
+        targetABI = contractSource.implementationContract.abi;
+      }
+
+      if (!targetABI) {
+        return respondError(c, 400, 'abi_unavailable', 'Contract ABI not available');
+      }
+
+      const gasEstimate = await contractInteractionService.estimateContractGasWithABI({
+        chainId,
+        contractAddress: address,
+        functionName,
+        args,
+        value: parsedValue.value,
+        from,
+        abi: targetABI,
+        stateOverride: override.value,
+      });
+
+      c.header('X-Chain-Name', getChainName(chainId));
+
+      if (!gasEstimate) {
+        return respondError(c, 400, 'gas_estimation_failed', 'Failed to estimate gas');
+      }
+
+      const responseData = safeJsonResponse({
+        chainId,
+        chainName: getChainName(chainId),
+        contractAddress: address,
+        functionName,
+        args,
+        value,
+        from,
+        gasLimit: gasEstimate.gasLimit.toString(),
+        gasPrice: gasEstimate.gasPrice?.toString(),
+        maxFeePerGas: gasEstimate.maxFeePerGas?.toString(),
+        maxPriorityFeePerGas: gasEstimate.maxPriorityFeePerGas?.toString(),
+        timestamp: new Date().toISOString(),
+      });
+
+      return c.json(responseData);
+    } catch (error) {
+      logger.error({ err: error }, 'Gas estimation API error');
+      return respondError(c, 500, 'internal_error', 'Failed to estimate gas');
+    }
+  },
+);
 
 app.get('/chains/:chainId/contracts/:address/creation', async c => {
   const chainId = getValidatedChainId(c.req.param('chainId'));
@@ -624,7 +627,7 @@ app.get('/chains/:chainId/contracts/:address/creation', async c => {
     return c.json(responseData);
   } catch (error) {
     logger.error({ err: error }, 'Contract creation info API error');
-    return c.json({ error: 'Failed to get contract creation info' }, 500);
+    return respondError(c, 500, 'internal_error', 'Failed to get contract creation info');
   }
 });
 
@@ -653,14 +656,7 @@ app.post(
     try {
       body = await c.req.json();
     } catch {
-      return c.json(
-        {
-          error: 'Invalid JSON body',
-          code: 'invalid_json',
-          message: 'Request body must be valid JSON',
-        },
-        400,
-      );
+      return respondError(c, 400, 'invalid_json', 'Request body must be valid JSON');
     }
 
     try {
@@ -668,20 +664,27 @@ app.post(
 
       const validIdes: IdeId[] = ['vscode', 'cursor', 'zed', 'webstorm', 'sublime'];
       if (!ide || !validIdes.includes(ide)) {
-        return c.json(
-          { error: 'Unsupported IDE. Must be one of: vscode, cursor, zed, webstorm, sublime' },
+        return respondError(
+          c,
           400,
+          'invalid_ide',
+          'Unsupported IDE. Must be one of: vscode, cursor, zed, webstorm, sublime',
         );
       }
 
       const installedIdes = detectInstalledIdes();
       if (!installedIdes.includes(ide)) {
-        return c.json({ error: `${ide} is not installed or not in PATH` }, 400);
+        return respondError(c, 400, 'ide_not_installed', `${ide} is not installed or not in PATH`);
       }
 
       const contractSource = await contractSourceService.getContractSource(chainId, address);
       if (!contractSource) {
-        return c.json({ error: 'Contract not found or not a contract address' }, 404);
+        return respondError(
+          c,
+          404,
+          'contract_not_found',
+          'Contract not found or not a contract address',
+        );
       }
 
       const targetSource = contractSource.implementationContract ?? contractSource;
@@ -707,7 +710,7 @@ app.post(
       });
     } catch (error) {
       logger.error({ err: error }, 'Open in IDE API error');
-      return c.json({ error: 'Failed to open contract in IDE' }, 500);
+      return respondError(c, 500, 'internal_error', 'Failed to open contract in IDE');
     }
   },
 );

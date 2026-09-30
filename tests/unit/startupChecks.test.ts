@@ -89,6 +89,48 @@ describe('evaluateStartupSecurity', () => {
     const posture = evaluateStartupSecurity(env({ host: '0.0.0.0', allowInsecureStart: '1' }));
     expect(posture.level).toBe('ok');
   });
+
+  // The exhaustive posture matrix — loopback × ADMIN_TOKEN × ENABLE_DEBUG_API
+  // × ALLOW_INSECURE_START, every cell. The named cases above document the
+  // interesting rows; this pins the whole decision table so a future edit
+  // to evaluateStartupSecurity cannot silently shift an untouched cell.
+  // Derivation, exactly as the module header documents:
+  // - fatal ⟺ non-loopback ∧ debug ∧ no bypass
+  // - warn  ⟺ non-loopback ∧ ¬fatal ∧ (no token ∨ debug) — the bypass
+  //   only converts fatal to warn; it never silences the tokenless warning
+  // - ok    otherwise (every loopback bind, and fully-armed public binds)
+  it.each([
+    // [host, adminToken, enableDebugApi, allowInsecureStart, expected level]
+    ['localhost', 'secret', '1', '1', 'ok'],
+    ['localhost', 'secret', '1', undefined, 'ok'],
+    ['localhost', 'secret', undefined, '1', 'ok'],
+    ['localhost', 'secret', undefined, undefined, 'ok'],
+    ['localhost', undefined, '1', '1', 'ok'],
+    ['localhost', undefined, '1', undefined, 'ok'],
+    ['localhost', undefined, undefined, '1', 'ok'],
+    ['localhost', undefined, undefined, undefined, 'ok'],
+    ['0.0.0.0', 'secret', '1', '1', 'warn'],
+    ['0.0.0.0', 'secret', '1', undefined, 'fatal'],
+    ['0.0.0.0', 'secret', undefined, '1', 'ok'],
+    ['0.0.0.0', 'secret', undefined, undefined, 'ok'],
+    ['0.0.0.0', undefined, '1', '1', 'warn'],
+    ['0.0.0.0', undefined, '1', undefined, 'fatal'],
+    ['0.0.0.0', undefined, undefined, '1', 'warn'],
+    ['0.0.0.0', undefined, undefined, undefined, 'warn'],
+  ] as const)(
+    'host=%s token=%s debug=%s bypass=%s → %s',
+    (host, adminToken, enableDebugApi, allowInsecureStart, expected) => {
+      const posture = evaluateStartupSecurity(
+        env({ host, adminToken, enableDebugApi, allowInsecureStart }),
+      );
+      expect(posture).toEqual({
+        loopback: host === 'localhost',
+        adminTokenConfigured: adminToken === 'secret',
+        debugApiEnabled: enableDebugApi === '1',
+        level: expected,
+      });
+    },
+  );
 });
 
 describe('runStartupSecurityChecks', () => {

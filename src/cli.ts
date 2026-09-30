@@ -1,9 +1,9 @@
-import { parseArgs } from 'node:util';
 import { exec } from 'node:child_process';
 import { platform } from 'node:os';
 import * as readline from 'node:readline/promises';
 import type { UninstallOutcome } from './uninstall';
 import { appVersion } from './version';
+import { parseCliArgs } from './cliArgs';
 
 const DEFAULT_FRONTEND_URL = 'https://wmzy.github.io/my-block-explorer/';
 
@@ -95,62 +95,39 @@ async function runCliUninstall(flags: { assumeYes: boolean; force: boolean }): P
 }
 
 async function main(): Promise<void> {
-  const { values, positionals } = parseArgs({
-    options: {
-      port: { type: 'string', short: 'p' },
-      open: { type: 'boolean', default: true },
-      yes: { type: 'boolean', short: 'y' },
-      force: { type: 'boolean' },
-      help: { type: 'boolean', short: 'h' },
-      version: { type: 'boolean', short: 'v' },
-    },
-    allowPositionals: true,
-    allowNegative: true,
-    strict: true,
-  });
+  // Parsing lives in src/cliArgs.ts (pure, server-graph-free) so the arg
+  // surface is unit-testable; this file keeps only the side effects.
+  const result = parseCliArgs(process.argv.slice(2));
 
-  if (values.help) {
+  if (result.kind === 'error') {
+    console.error(result.message);
+    process.exit(result.exitCode);
+  }
+
+  if (result.kind === 'help') {
     console.log(HELP_TEXT);
     process.exit(0);
   }
 
-  if (values.version) {
+  if (result.kind === 'version') {
     console.log(`my-block-explorer v${appVersion()}`);
     process.exit(0);
   }
 
-  if (positionals.length > 0) {
-    const [command, ...rest] = positionals;
-    if (command === 'uninstall') {
-      if (rest.length > 0) {
-        console.error(`Unexpected argument${rest.length === 1 ? '' : 's'} after 'uninstall': ${rest.join(' ')}`);
-        console.error('Run \'my-block-explorer --help\' for usage.');
-        process.exit(1);
-      }
-      const code = await runCliUninstall({
-        assumeYes: values.yes === true,
-        force: values.force === true,
-      });
-      process.exit(code);
-    }
-    console.error(`Unknown command: ${command}`);
-    console.error('Run \'my-block-explorer --help\' for usage.');
-    process.exit(1);
-  }
-
-  const portArg = values.port ? parseInt(values.port) : undefined;
-
-  if (portArg !== undefined && (Number.isNaN(portArg) || portArg < 1 || portArg > 65535)) {
-    console.error(`Invalid port: ${values.port}`);
-    process.exit(1);
+  if (result.kind === 'uninstall') {
+    const code = await runCliUninstall({
+      assumeYes: result.assumeYes,
+      force: result.force,
+    });
+    process.exit(code);
   }
 
   // Dynamic import for the same reason as uninstall: --help/--version/
   // subcommands must not construct the database adapter (it mkdirs data/).
   const { createServer } = await import('./server');
-  const { port: _port } = await createServer({ port: portArg });
+  const { port: _port } = await createServer({ port: result.port });
 
-  if (values.open) {
+  if (result.open) {
     const url = process.env.FRONTEND_URL ?? DEFAULT_FRONTEND_URL;
     setTimeout(() => openBrowser(url), 1000);
   }

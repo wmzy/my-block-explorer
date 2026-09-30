@@ -1,23 +1,111 @@
-// Chain configuration definitions
+// Chain configuration definitions.
+//
+// TWO-STAGE REGISTRY. `import * as chains from 'viem/chains'` used to drag
+// viem's ~737-export barrel into every chunk importing this module — the
+// app shell included. The barrel now loads lazily:
+// 1. A curated, statically imported subset (below) serves from module
+//    load: every popular chain, the common dev/testnets, anvil, and the
+//    major L2s users actually open.
+// 2. ensureBuiltInChainsLoaded() dynamically imports the full barrel,
+//    rebuilds every precomputed index from Object.values(module) and
+//    bumps a module version (subscribers fire).
+// getSupportedChainIds/isChainSupported/searchChains/getSortedChains (and
+// every getChainInfo/getChainType-family lookup) therefore serve the
+// subset before that load and the full viem registry after it.
 import type { Chain } from 'viem';
-import * as chains from 'viem/chains';
+import {
+  anvil,
+  arbitrum,
+  arbitrumSepolia,
+  avalanche,
+  avalancheFuji,
+  base,
+  baseSepolia,
+  berachain,
+  bsc,
+  bscTestnet,
+  celo,
+  fantom,
+  gnosis,
+  holesky,
+  linea,
+  mainnet,
+  mantle,
+  optimism,
+  optimismSepolia,
+  polygon,
+  polygonAmoy,
+  scroll,
+  sepolia,
+  unichain,
+  zksync,
+} from 'viem/chains';
 import { getCustomChain, toViemChain } from './customChains';
 
-// All chains supported by viem
-export const SUPPORTED_CHAINS: Chain[] = Object.values(chains);
+// The curated subset. Every entry is justified by a concrete consumer:
+// - the ten POPULAR_CHAINS members (UI recovery grid, cross-chain probe
+//   head, curated token lists read celo 42220);
+// - dev/testnets (sepolia, holesky, base/arbitrum/polygon/optimism
+//   sepolia-flavored testnets, avalanche fuji, bsc testnet) — the chains
+//   local developers deep-link first;
+// - anvil 31337: viem's local-dev placeholder must resolve statically —
+//   the custom-chain flow's default answer (getChainInfo before any
+//   registration) is exercised against it at boot and in tests;
+// - major L2/mainnets users actually open in a fresh tab: scroll, linea,
+//   mantle (RpcManager.getChainName serves it in tests), zksync, unichain,
+//   berachain.
+// Everything else (rare mainnets, exotic testnets) arrives with the lazy
+// barrel; rare-chain deep links re-check after it loads
+// (views/Home/UnsupportedChainState).
+const STATIC_BUILT_IN_CHAINS: readonly Chain[] = [
+  // POPULAR_CHAINS members
+  mainnet,
+  polygon,
+  bsc,
+  arbitrum,
+  base,
+  optimism,
+  avalanche,
+  fantom,
+  celo,
+  gnosis,
+  // Common dev/testnets
+  sepolia,
+  holesky,
+  baseSepolia,
+  arbitrumSepolia,
+  polygonAmoy,
+  optimismSepolia,
+  avalancheFuji,
+  bscTestnet,
+  anvil,
+  // Major L2 / mainnets
+  scroll,
+  linea,
+  mantle,
+  zksync,
+  unichain,
+  berachain,
+];
+
+// All chains supported by viem as currently loaded: the curated subset at
+// module load, the full barrel once ensureBuiltInChainsLoaded() settles.
+// Mutated in place by buildRegistryFrom so existing references observe
+// the rebuild.
+export const SUPPORTED_CHAINS: Chain[] = [];
 
 // Popular chains (prioritized in the UI)
 export const POPULAR_CHAINS: Chain[] = [
-  chains.mainnet,
-  chains.polygon,
-  chains.bsc,
-  chains.arbitrum,
-  chains.base,
-  chains.optimism,
-  chains.avalanche,
-  chains.fantom,
-  chains.celo,
-  chains.gnosis,
+  mainnet,
+  polygon,
+  bsc,
+  arbitrum,
+  base,
+  optimism,
+  avalanche,
+  fantom,
+  celo,
+  gnosis,
 ];
 
 // Static viem-registry lookup with NO custom-chain fallback. Callers that
@@ -56,7 +144,9 @@ function isPlaceholderChain(chain: Chain): boolean {
 // True when a custom registration for this id must conflict (409): viem
 // ships the id as a REAL network whose metadata a registration would
 // shadow. Placeholder dev chains stay registrable; ids viem does not
-// ship at all trivially do not conflict either.
+// ship at all trivially do not conflict either. Correct only against the
+// FULL registry — the backend awaits ensureBuiltInChainsLoaded() at
+// startup (api-app reconcileStartupState) before serving registrations.
 export function isBuiltInChainProtected(chainId: number): boolean {
   const candidates = chainsById.get(chainId) ?? [];
   return candidates.some(chain => !isPlaceholderChain(chain));
@@ -130,20 +220,13 @@ export function getEffectiveRpcUrl(chainId: number, userConfig?: UserRpcConfig):
 
 // Precomputed popular-chain id set: O(1) membership checks. isPopularChain
 // used to do a linear scan per call and sits inside sort comparators.
+// The popular list is static (a curated UI ordering) and never rebuilt.
 const POPULAR_CHAIN_IDS: Set<number> = new Set(POPULAR_CHAINS.map(chain => chain.id));
 
 // viem's barrel export contains multiple exports sharing one chain id
 // (aliases and testnet twins); classification must consider every export
-// with that id, so group them once at module load.
+// with that id, so group them once per registry build.
 const chainsById = new Map<number, Chain[]>();
-for (const chain of SUPPORTED_CHAINS) {
-  const group = chainsById.get(chain.id);
-  if (group) {
-    group.push(chain);
-  } else {
-    chainsById.set(chain.id, [chain]);
-  }
-}
 
 // Classify one chain id from its full candidate group. Logic extracted
 // verbatim from the original per-call implementation — behavior is unchanged.
@@ -208,9 +291,6 @@ function classifyChainType(
 // all ~700 chains per call. It used to run inside sort comparators, making
 // every search keystroke O(n² log n).
 const chainIdToType = new Map<number, 'mainnet' | 'testnet' | 'unknown'>();
-for (const [chainId, candidates] of chainsById) {
-  chainIdToType.set(chainId, classifyChainType(chainId, candidates));
-}
 
 // Check whether a chain is popular
 export function isPopularChain(chainId: number): boolean {
@@ -248,31 +328,28 @@ type ChainIndexEntry = {
   compactLowerName: string;
 };
 
-const CHAIN_INDEX: ChainIndexEntry[] = SUPPORTED_CHAINS.map(chain => ({
-  chain,
-  lowerName: chain.name.toLowerCase(),
-  compactLowerName: chain.name.toLowerCase().replace(/\s+/g, ''),
-}));
+const CHAIN_INDEX: ChainIndexEntry[] = [];
 
-// Base search order (popular → type → name), sorted once at module load.
-// searchChains only filters it and re-ranks the query-dependent tiers.
-const SEARCH_ORDER: ChainIndexEntry[] = CHAIN_INDEX.slice().sort((a, b) =>
-  compareByPopularityThenTypeThenName(a.chain, b.chain),
-);
+// Base search order (popular → type → name), the filtered-and-sorted
+// SEARCH_ORDER recomputed per registry build. searchChains only filters
+// it and re-ranks the query-dependent tiers.
+const SEARCH_ORDER: ChainIndexEntry[] = [];
 
 // Precomputed sorted chain list. Object.values(chains) contains multiple
 // exports sharing one chain id (aliases and testnet twins); dedupe by id
 // (first export wins) or selector cards repeat.
-const SORTED_CHAINS: Chain[] = (() => {
+const SORTED_CHAINS: Chain[] = [];
+
+function computeSortedChains(entries: readonly ChainIndexEntry[]): Chain[] {
   const seen = new Set<number>();
   const unique: Chain[] = [];
-  for (const { chain } of CHAIN_INDEX) {
+  for (const { chain } of entries) {
     if (seen.has(chain.id)) continue;
     seen.add(chain.id);
     unique.push(chain);
   }
   return unique.sort(compareByPopularityThenTypeThenName);
-})();
+}
 
 // Sort chains by type and popularity
 export function getSortedChains(): Chain[] {
@@ -331,6 +408,73 @@ export function searchChains(query: string): Chain[] {
       return 0;
     })
     .map(entry => entry.chain);
+}
+
+// Lazy full registry: state + loader. The barrel import is cached; a
+// second call returns the same promise (one import, one rebuild).
+let builtInChainsVersion = 0;
+const builtInChainsListeners = new Set<() => void>();
+let builtInChainsLoad: Promise<void> | null = null;
+
+// Monotonic registry version: 0 while only the curated subset is loaded,
+// bumped once when the full viem barrel lands. Consumers re-reading
+// lookups after a change notification can use it to detect staleness.
+export function getBuiltInChainsVersion(): number {
+  return builtInChainsVersion;
+}
+
+// Subscribe to registry rebuilds (fires once, when the lazy barrel
+// lands). Returns an unsubscribe function.
+export function subscribeBuiltInChains(listener: () => void): () => void {
+  builtInChainsListeners.add(listener);
+  return () => {
+    builtInChainsListeners.delete(listener);
+  };
+}
+
+// Import viem's full chains barrel as a DISTINCT module instance for the
+// production browser bundle. The plain 'viem/chains' specifier is ALSO
+// this module's static import for the curated subset — and one module
+// lives in exactly one chunk, so a shared instance would keep the whole
+// ~737-export barrel in the eager graph no matter how few names the
+// static side uses. Under a production Vite build the '?full' query makes
+// the bundler treat the async load as a separate module: the eager copy
+// tree-shakes down to the curated re-exports while the ?full copy keeps
+// every export for Object.values. Node (tsx backend), vitest and the dev
+// server take the plain specifier — no bundling there, same file.
+async function importFullViemChains(): Promise<typeof import('viem/chains')> {
+  if (import.meta.env?.PROD === true) {
+    // @ts-expect-error query-suffixed specifier: resolved by Vite's
+    // bundler (distinct module id), not by TypeScript's module resolver.
+    return import('viem/chains?full') as Promise<typeof import('viem/chains')>;
+  }
+  return import('viem/chains');
+}
+
+// Load viem's full chain barrel and swap it in. Never rejects: a failed
+// import warns once and the curated subset keeps serving (honest degrade
+// — boot callers fire-and-forget this).
+export function ensureBuiltInChainsLoaded(): Promise<void> {
+  builtInChainsLoad ??= importFullViemChains().then(
+    module => {
+      // REBUILD from scratch, never append-merge: Array#sort is stable,
+      // so the byte-identical order the tests pin depends on the
+      // post-load source array being exactly Object.values(barrel) —
+      // the same array the old `import * as chains` built.
+      buildRegistryFrom(Object.values(module));
+      builtInChainsVersion += 1;
+      for (const listener of [...builtInChainsListeners]) {
+        listener();
+      }
+    },
+    error => {
+      console.warn(
+        'Failed to load the full viem chain registry; the curated subset keeps serving.',
+        error,
+      );
+    },
+  );
+  return builtInChainsLoad;
 }
 
 // Multi-chain database configuration
@@ -393,20 +537,17 @@ export function getMultiChainDatabaseConfig(
   return chainIds.map(chainId => getChainDatabaseConfig(chainId, overrides));
 }
 
-// Chain configuration for multi-chain support (all viem chains by default)
-export const MULTI_CHAIN_SUPPORTED_CHAINS = getSupportedChainIds();
+// Chain configuration for multi-chain support (all viem chains by default;
+// rebuilt in place when the lazy barrel lands)
+export const MULTI_CHAIN_SUPPORTED_CHAINS: number[] = [];
 
 // Popular multi-chain configurations (for quick starts)
 export const POPULAR_MULTI_CHAINS = POPULAR_CHAINS.map(chain => chain.id);
 
-// Chains grouped by type
-export const CHAINS_BY_TYPE = {
-  mainnet: SUPPORTED_CHAINS.filter(chain => getChainType(chain.id) === 'mainnet').map(
-    chain => chain.id,
-  ),
-  testnet: SUPPORTED_CHAINS.filter(chain => getChainType(chain.id) === 'testnet').map(
-    chain => chain.id,
-  ),
+// Chains grouped by type (rebuilt in place when the lazy barrel lands)
+export const CHAINS_BY_TYPE: { mainnet: number[]; testnet: number[] } = {
+  mainnet: [],
+  testnet: [],
 };
 
 // Get chains of a specific type
@@ -467,6 +608,68 @@ export function validateMultiChainConfig(chainIds: number[]): {
     unsupportedChains,
   };
 }
+
+// Replace a live array's contents in place so references held elsewhere
+// (including the exported consts above) observe the rebuilt registry.
+function replaceInPlace<T>(target: T[], source: readonly T[]): void {
+  target.length = 0;
+  target.push(...source);
+}
+
+// Rebuild EVERY precomputed index from one source array. Called at module
+// load with the curated subset and again (via ensureBuiltInChainsLoaded)
+// with Object.values of the full viem barrel.
+function buildRegistryFrom(source: readonly Chain[]): void {
+  replaceInPlace(SUPPORTED_CHAINS, source);
+
+  chainsById.clear();
+  for (const chain of SUPPORTED_CHAINS) {
+    const group = chainsById.get(chain.id);
+    if (group) {
+      group.push(chain);
+    } else {
+      chainsById.set(chain.id, [chain]);
+    }
+  }
+
+  chainIdToType.clear();
+  for (const [chainId, candidates] of chainsById) {
+    chainIdToType.set(chainId, classifyChainType(chainId, candidates));
+  }
+
+  replaceInPlace(
+    CHAIN_INDEX,
+    SUPPORTED_CHAINS.map(chain => ({
+      chain,
+      lowerName: chain.name.toLowerCase(),
+      compactLowerName: chain.name.toLowerCase().replace(/\s+/g, ''),
+    })),
+  );
+
+  replaceInPlace(
+    SEARCH_ORDER,
+    CHAIN_INDEX.slice().sort((a, b) => compareByPopularityThenTypeThenName(a.chain, b.chain)),
+  );
+
+  replaceInPlace(SORTED_CHAINS, computeSortedChains(CHAIN_INDEX));
+
+  replaceInPlace(MULTI_CHAIN_SUPPORTED_CHAINS, getSupportedChainIds());
+
+  replaceInPlace(
+    CHAINS_BY_TYPE.mainnet,
+    SUPPORTED_CHAINS.filter(chain => getChainType(chain.id) === 'mainnet').map(
+      chain => chain.id,
+    ),
+  );
+  replaceInPlace(
+    CHAINS_BY_TYPE.testnet,
+    SUPPORTED_CHAINS.filter(chain => getChainType(chain.id) === 'testnet').map(
+      chain => chain.id,
+    ),
+  );
+}
+
+buildRegistryFrom(STATIC_BUILT_IN_CHAINS);
 
 // Recommended multi-chain configurations (based on popularity and performance)
 export const RECOMMENDED_MULTI_CHAINS = [

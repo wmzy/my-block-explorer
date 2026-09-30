@@ -41,7 +41,16 @@ export { LAST_CHAIN_STORAGE_KEY };
 // chain). Shared by the landing redirect, the search context and the router
 // error view's back link so they all agree on "the chain I was browsing".
 export function readRememberedChainId(): number | undefined {
-  const raw = localStorage.getItem(LAST_CHAIN_STORAGE_KEY);
+  // Guarded like themePreference/units: in storage-blocked contexts
+  // (Safari private mode) the localStorage access itself throws, and this
+  // reader runs at boot and on every watch-notification poll tick — it
+  // must degrade to "nothing remembered", not crash the app.
+  let raw: string | null;
+  try {
+    raw = localStorage.getItem(LAST_CHAIN_STORAGE_KEY);
+  } catch {
+    raw = null;
+  }
   const remembered = raw !== null ? Number.parseInt(raw, 10) : Number.NaN;
   return Number.isInteger(remembered) && isChainSupported(remembered) ? remembered : undefined;
 }
@@ -70,7 +79,11 @@ export function resolveLandingChainPath(): string {
 // Persist the chain worth landing on next time. Callers only pass ids that
 // already resolved to a supported chain.
 export function rememberChainId(chainId: number): void {
-  localStorage.setItem(LAST_CHAIN_STORAGE_KEY, String(chainId));
+  try {
+    localStorage.setItem(LAST_CHAIN_STORAGE_KEY, String(chainId));
+  } catch {
+    // Quota/private mode — the choice lasts only for this session.
+  }
 }
 
 // navigate() always pushes; replace semantics come from committing a

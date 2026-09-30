@@ -53,7 +53,7 @@
  * process to 'error' with a resume hint.
  */
 
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, desc, eq, lt, sql } from 'drizzle-orm';
 import { db } from '../database/drizzle';
 import {
   addressScanJobs,
@@ -71,6 +71,9 @@ import {
   type DiscoveredTransaction,
 } from './AddressService';
 import { selectorOf } from '../utils/txDecode';
+// Shared shrinkable-provider-error classification (formerly a conscious
+// copy of EventIndexingService's regex — see utils/providerErrors).
+import { isShrinkableProviderError } from '../utils/providerErrors';
 import { createLogger } from '../server/logger';
 // Trace reuse: the same pure normalizer the frontend Call Trace card and
 // internal-tx tab use (utils/traceFormat) — never a reimplementation.
@@ -780,19 +783,16 @@ export const listInternalTransactions = async (
 // verbatim provider message (never silently 'complete').
 const PERMANENT_PROVIDER_ERROR_RE =
   /historical state|missing trie|pruned|archive node|header not found/i;
-// Range/throttle-style errors plausibly yield to a smaller checkpoint
-// stride (the transfers chunk-ladder/providerCeiling lesson): halve the
-// batch and retry the same segment.
-const SHRINKABLE_PROVIDER_ERROR_RE =
-  /rate.?limit|too many requests|429|exceed|limit|timeout|timed out|econnreset|econnrefused|socket hang up|network|fetch failed/i;
 
 const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 const isPermanentProviderError = (err: unknown): boolean =>
   PERMANENT_PROVIDER_ERROR_RE.test(errorMessage(err));
 
-const isShrinkableProviderError = (err: unknown): boolean =>
-  SHRINKABLE_PROVIDER_ERROR_RE.test(errorMessage(err));
+// Range/throttle-style errors plausibly yield to a smaller checkpoint
+// stride (the transfers chunk-ladder/providerCeiling lesson): halve the
+// batch and retry the same segment — classification shared with
+// EventIndexingService via utils/providerErrors (see the import above).
 
 // ============================================
 // The walk loop
@@ -1485,8 +1485,20 @@ export const deleteScanJob = async (chainId: number, address: string): Promise<v
  * accepts 'paused'). Flip them to 'error' with a resume hint, mirroring
  * EventIndexingService.reconcileInterruptedRanges. Idempotent by
  * construction. Startup wiring lives in api-app.ts.
+ *
+ * STALENESS: only rows whose last checkpoint write is older than
+ * INTERRUPTED_ROW_STALE_MS flip (same rule/threshold as
+ * reconcileInterruptedRanges). A blanket flip would break the documented
+ * dual-process dev topology (vite bridge + standalone server share the
+ * DB): process B would error a scan process A is actively walking — a
+ * resume in B then runs a second loop over the same address. A live walk
+ * checkpoints after every segment, so a fresh updated_at means "probably
+ * still walking".
  */
+const INTERRUPTED_ROW_STALE_MS = 2 * 60 * 1000;
+
 export const reconcileInterruptedAddressScans = async (): Promise<void> => {
+  const staleBefore = new Date(Date.now() - INTERRUPTED_ROW_STALE_MS);
   await db
     .update(addressScanJobs)
     .set({
@@ -1494,5 +1506,5 @@ export const reconcileInterruptedAddressScans = async (): Promise<void> => {
       errorMessage: 'Interrupted by server restart — resume to continue',
       updatedAt: new Date(),
     })
-    .where(eq(addressScanJobs.status, 'running'));
+    .where(and(eq(addressScanJobs.status, 'running'), lt(addressScanJobs.updatedAt, staleBefore)));
 };

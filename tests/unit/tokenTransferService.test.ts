@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   encodeAbiParameters,
   encodeEventTopics,
@@ -603,5 +603,60 @@ describe('exported singleton', () => {
   it('exposes getTokenTransfers and clearTransfersCache', () => {
     expect(typeof tokenTransferService.getTokenTransfers).toBe('function');
     expect(typeof tokenTransferService.clearTransfersCache).toBe('function');
+  });
+});
+
+// Scan-timeout timer hygiene (statsRouteTimeout.test.ts pattern): the
+// withTimeout race around each scan must clear its losing timer on BOTH
+// outcomes — a winning scan leaves no 25-30s timer keeping the loop
+// alive, and a timed-out scan leaves nothing pending after the honest
+// fallback result is served.
+describe('TokenTransferService - scan timeout timer hygiene', () => {
+  beforeEach(() => {
+    tokenTransferService.clearTransfersCache();
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    // Nothing pending may leak past a test — the whole point of the fix.
+    expect(vi.getTimerCount()).toBe(0);
+    vi.useRealTimers();
+  });
+
+  it('clears the losing timer when the scan completes in time', async () => {
+    const { service } = makeHarness({
+      logs: [erc20Log(OWNER, OTHER, 1000n, 900, 0)],
+      latest: 1_000n,
+    });
+
+    const pending = service.getTokenTransfers(1, OWNER, 0, 25);
+    await vi.advanceTimersByTimeAsync(0);
+    const result = await pending;
+
+    expect(result.coverage).toBe('complete');
+    // Far past the race window: the losing 30s timer was cleared, not
+    // left to fire (getTimerCount below is the no-pending-timer proof).
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it('fires the race guard on a hung provider and leaves nothing pending', async () => {
+    const client: TransferScanClient = {
+      getBlockNumber: async () => 1_000n,
+      getLogs: () => new Promise<ScanLog[]>(() => {}), // hangs forever
+    };
+    const service = createTokenTransferService({
+      rpcManager: { getClient: async () => client },
+      now: () => 0,
+      scanTimeoutMs: 1_000,
+    });
+
+    const pending = service.getTokenTransfers(1, OWNER, 0, 25);
+    await vi.advanceTimersByTimeAsync(6_000); // scanTimeoutMs + 5s grace
+    const result = await pending;
+
+    expect(result.coverage).toBe('partial');
+    expect(result.transfers).toEqual([]);
+    expect(vi.getTimerCount()).toBe(0);
   });
 });
