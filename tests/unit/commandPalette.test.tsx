@@ -82,10 +82,11 @@ describe('filterActions', () => {
 
   it('matches on keywords beyond the title', () => {
     // 'mempool' appears only as a Pending keyword; 'topic0' only as a
-    // Signatures keyword.
+    // Signatures keyword; 'faq' only as a Help keyword.
     expect(filterActions(actions, 'mempool').map(action => action.id)).toEqual(['pending']);
     expect(filterActions(actions, 'topic0').map(action => action.id)).toEqual(['signatures']);
     expect(filterActions(actions, 'duckdb').map(action => action.id)).toEqual(['sql']);
+    expect(filterActions(actions, 'faq').map(action => action.id)).toEqual(['help']);
   });
 
   it('returns an empty list when nothing matches, trimmed first', () => {
@@ -128,6 +129,7 @@ describe('buildPaletteActions', () => {
     expect(byId.get('search')).toBe('/search');
     expect(byId.get('signatures')).toBe('/signatures');
     expect(byId.get('tools')).toBe('/tools');
+    expect(byId.get('help')).toBe('/help');
     expect(byId.get('coverage')).toBe('/about/coverage');
     expect(byId.get('sql')).toBe('/sql');
     expect(byId.get('ops')).toBe('/ops');

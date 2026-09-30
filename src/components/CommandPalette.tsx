@@ -153,6 +153,13 @@ export function buildPaletteActions(chainId: number, chainName: string): Palette
       keywords: ['hub', 'all tools', 'palette'],
     },
     {
+      id: 'help',
+      title: 'Help',
+      hint: 'How this explorer works: topics, shortcuts, glossary, FAQ',
+      to: '/help',
+      keywords: ['docs', 'guide', 'faq', 'questions', 'how to'],
+    },
+    {
       id: 'coverage',
       title: 'Coverage legend',
       hint: 'What the live / cached / sampled chips mean',

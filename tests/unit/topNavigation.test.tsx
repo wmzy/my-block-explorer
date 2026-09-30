@@ -1178,6 +1178,21 @@ describe('tools entry and palette trigger', () => {
     expect(mockNavigate).toHaveBeenCalledTimes(1);
   });
 
+  it('adds a Help nav entry after Tools that navigates to the help section', () => {
+    renderTopNavigation({ currentChainId: 1 });
+
+    const tools = screen.getByRole('button', { name: 'Tools' });
+    const help = screen.getByRole('button', { name: 'Help' });
+    const sql = screen.getByRole('button', { name: 'SQL console (admin)' });
+    expect(tools.compareDocumentPosition(help)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(help.compareDocumentPosition(sql)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+
+    fireEvent.click(help);
+    // The help copy is chain-agnostic, so the bare /help path — no chain prefix.
+    expect(mockNavigate).toHaveBeenCalledWith(mockRouter, '/help');
+    expect(mockNavigate).toHaveBeenCalledTimes(1);
+  });
+
   it('renders the palette trigger as its keyboard shortcut, not a search glyph', () => {
     renderTopNavigation({ currentChainId: 1 });
 

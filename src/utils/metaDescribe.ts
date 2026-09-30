@@ -10,6 +10,10 @@
 // existing import paths keep working.
 
 import { getChainName } from '../config/chains';
+// The help section's pure content model: React-free by construction, so
+// the Node-side og middleware can read a topic's own title/summary (the
+// /help/:topic derivations below) without pulling any view code.
+import { HELP_SECTION_DESCRIPTION, findHelpTopic } from '../views/Help/helpContent';
 
 export const FALLBACK_TITLE = 'My Block Explorer';
 
@@ -41,8 +45,15 @@ export function deriveDocumentTitle(pathname: string, search: string): string {
   if (segments[0] === 'tools' && segments.length === 1) {
     return `Tools — ${FALLBACK_TITLE}`;
   }
-  if (segments[0] === 'help' && segments[1] === 'troubleshooting' && segments.length === 2) {
-    return `Troubleshooting — ${FALLBACK_TITLE}`;
+  if (segments[0] === 'help' && segments.length === 1) {
+    return `Help — ${FALLBACK_TITLE}`;
+  }
+  // /help/:topic — the topic's own title, so a shared link to one page of
+  // the help section unfurls as that page rather than as the section. An
+  // unknown topic keeps the app title (the page itself is a 404).
+  if (segments[0] === 'help' && segments.length === 2) {
+    const topic = findHelpTopic(segments[1]);
+    return topic === undefined ? FALLBACK_TITLE : `${topic.title} — ${FALLBACK_TITLE}`;
   }
 
   if (segments[0] !== 'chain' || segments.length < 2) return FALLBACK_TITLE;
@@ -108,8 +119,14 @@ export function deriveMetaDescription(pathname: string, search: string): string 
   if (segments[0] === 'tools' && segments.length === 1) {
     return 'Every tool this explorer ships on one page — chain pages, search, signatures, the SQL console, the ops dashboard and where to find backup & restore.';
   }
-  if (segments[0] === 'help' && segments[1] === 'troubleshooting' && segments.length === 2) {
-    return 'Troubleshooting guide: backend-offline banner, RPC provider quirks (getLogs range caps, missing archive state, private txpool), dev-chain resets and the health checklist.';
+  if (segments[0] === 'help' && segments.length === 1) {
+    return HELP_SECTION_DESCRIPTION;
+  }
+  // A topic page unfurls as that topic: its own summary is already written
+  // as the one-line answer, so it is reused verbatim. An unknown topic
+  // keeps the section blurb (the page itself renders the 404 view).
+  if (segments[0] === 'help' && segments.length === 2) {
+    return findHelpTopic(segments[1])?.summary ?? HELP_SECTION_DESCRIPTION;
   }
 
   if (segments[0] !== 'chain' || segments.length < 2) return FALLBACK_DESCRIPTION;

@@ -50,13 +50,19 @@ describe('route table', () => {
       '/ops',
       '/signatures',
       '/tools',
-      '/help/troubleshooting',
+      '/help',
+      '/help/:topic',
       '/about/coverage',
     ]);
   });
 
-  it('keeps the static about route loader-free (pure copy page)', () => {
-    expect(byPath('/about/coverage').data).toBeUndefined();
+  it('keeps the static copy routes loader-free (no data fetching at all)', () => {
+    // The help section and the coverage explainer are pure copy: they
+    // must not gain a loader, or a deep link to them would wait on a
+    // request that has nothing to request.
+    for (const path of ['/help', '/help/:topic', '/about/coverage']) {
+      expect(byPath(path).data, path).toBeUndefined();
+    }
   });
 
   it('renders the dynamic landing component on \'/\' (remembered-chain redirect)', async () => {
@@ -91,7 +97,8 @@ describe('route table', () => {
       ['/ops', 'Ops'],
       ['/signatures', 'Signatures'],
       ['/tools', 'Tools'],
-      ['/help/troubleshooting', 'Help/Troubleshooting'],
+      ['/help', 'Help'],
+      ['/help/:topic', 'Help/HelpPage'],
     ];
 
     for (const [path] of expectations) {

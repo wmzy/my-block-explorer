@@ -1606,6 +1606,12 @@ export default function TopNavigation({
             <button type="button" className={navLink} onClick={() => goTo('/tools')}>
               Tools
             </button>
+            {/* Help section: the answer index (topics, shortcuts,
+                glossary, FAQ). Not chain-scoped — the copy is the same on
+                every chain — so it links the bare /help path. */}
+            <button type="button" className={navLink} onClick={() => goTo('/help')}>
+              Help
+            </button>
             {/* Admin group, visually separated from the page links: the
                 SQL console runs admin-gated read-only queries against the
                 explorer's own DuckDB. Not chain-scoped (it queries the

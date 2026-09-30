@@ -9,6 +9,24 @@ commit subjects rather than a curated release notes process.
 
 ## Unreleased
 
+- **Help section (`/help`)** — a documentation section in the app, reachable
+  from a top-bar **Help** link, the command palette (Ctrl/Cmd+K, "faq"
+  keyword) and a Tools-hub card. The index lists eight topics — Troubleshooting,
+  Getting started, Navigation & shortcuts, Addresses & transactions, Contracts &
+  interacting, Tokens & prices, Storage & raw data, RPC & backend settings —
+  each on its own `/help/:topic` page so a single answer is linkable, plus the
+  shared reference (keyboard shortcuts, glossary, FAQ) and pointers to the data
+  coverage legend and the Tools hub. All copy comes from one React-free model
+  (`src/views/Help/helpContent.ts`), so the index and a topic page can never
+  disagree. The former standalone `/help/troubleshooting` page was absorbed as
+  the troubleshooting topic — same URL, no links broken — and its two
+  structured blocks (the verbatim provider-symptom list and the `/api/health`
+  field table) became structured fields the topic page renders generically.
+  An unknown topic raises the router's `NotFoundError`, so a mistyped help URL
+  gets the app's 404 rather than a blank page or a themed dead end. Each topic
+  page derives its own tab title and share description from the same model;
+  the section fetches nothing, so it works with the backend offline.
+
 - **2026-09-30 full-review implementation wave (14 slices, 4 dispatch waves +
   integration)** — the second review's complete P0–P3 list landed. All verified
   below in this entry's trailing paragraph.

@@ -21,6 +21,12 @@ own server): https://wmzy.github.io/my-block-explorer/
 
 ## Features
 
+- **In-app help section** — `/help` documents how the explorer works and what
+  its data means: eight topics (getting started, navigation, addresses,
+  contracts, tokens, storage, RPC settings, troubleshooting) each linkable on
+  its own, plus keyboard shortcuts, a glossary and an FAQ. Reachable from the
+  top bar, the command palette (Ctrl/Cmd+K) and the Tools hub; works with the
+  backend offline
 - **700+ chains, zero config** — every chain defined in `viem/chains` (732 in
   the pinned viem version) works out of the box; 10 popular chains are pinned at
   the top of the chain picker (`POPULAR_CHAINS` in `src/config/chains.ts`)

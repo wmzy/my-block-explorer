@@ -11,6 +11,7 @@ import { navigate } from '@native-router/core';
 import '@testing-library/jest-dom';
 
 import { deriveDocumentTitle, deriveMetaDescription, DocumentTitle } from '@/views';
+import { HELP_SECTION_DESCRIPTION, HELP_TOPICS } from '@/views/Help/helpContent';
 
 const TX_HASH = '0xabcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcd';
 const ADDRESS = '0x9876543210abcdef9876543210abcdef9876543210';
@@ -59,14 +60,22 @@ describe('deriveDocumentTitle', () => {
     expect(deriveDocumentTitle('/about/coverage', '')).toBe('Data Coverage — My Block Explorer');
   });
 
-  it('titles the tools hub and troubleshooting guide with the app name', () => {
+  it('titles the tools hub and the help section with the app name', () => {
     expect(deriveDocumentTitle('/tools', '')).toBe('Tools — My Block Explorer');
-    expect(deriveDocumentTitle('/help/troubleshooting', '')).toBe(
-      'Troubleshooting — My Block Explorer',
-    );
+    expect(deriveDocumentTitle('/help', '')).toBe('Help — My Block Explorer');
     // Exact shapes only — deeper paths are unknown and keep the fallback.
     expect(deriveDocumentTitle('/tools/extra', '')).toBe('My Block Explorer');
-    expect(deriveDocumentTitle('/help', '')).toBe('My Block Explorer');
+    expect(deriveDocumentTitle('/help/nope', '')).toBe('My Block Explorer');
+  });
+
+  it('titles a help topic page with the topic its slug names', () => {
+    // A shared link to one page of the help section must unfurl as that
+    // page, read from the same content model the page renders.
+    for (const topic of HELP_TOPICS) {
+      expect(deriveDocumentTitle(`/help/${topic.slug}`, ''), topic.slug).toBe(
+        `${topic.title} — My Block Explorer`,
+      );
+    }
   });
 
   it('falls back to the app title for unchanined, unknown, or malformed routes', () => {
@@ -145,6 +154,19 @@ describe('deriveMetaDescription', () => {
     expect(deriveMetaDescription('/about/coverage', '')).toBe(
       'What the data-coverage levels — live, cached, discovered, sampled, partial and unavailable — mean in this explorer, and why its numbers can differ from full-indexer explorers.',
     );
+  });
+
+  it('describes the help section and each topic page', () => {
+    // The section blurb is the shared constant, not a second wording.
+    expect(deriveMetaDescription('/help', '')).toBe(HELP_SECTION_DESCRIPTION);
+    // A topic page unfurls as that topic, reusing the summary the page
+    // itself shows — one string, no drift between the card and the card's
+    // share preview.
+    for (const topic of HELP_TOPICS) {
+      expect(deriveMetaDescription(`/help/${topic.slug}`, ''), topic.slug).toBe(topic.summary);
+    }
+    // An unknown topic is a 404: the section blurb, never a topic's.
+    expect(deriveMetaDescription('/help/nope', '')).toBe(HELP_SECTION_DESCRIPTION);
   });
 
   it('falls back to the generic explorer blurb for unknown or paramless shapes', () => {

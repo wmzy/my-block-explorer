@@ -149,11 +149,19 @@ const routes = createRoutes({
       component: () => import('./Tools'),
     },
     {
-      // Static troubleshooting guide: RPC provider quirks (getLogs range
-      // caps, missing archive state, private txpool), dev-chain resets,
-      // the health checklist. Pure copy, not chain-scoped.
-      path: '/help/troubleshooting',
-      component: () => import('./Help/Troubleshooting'),
+      // Help section index: every topic as a card plus the shared
+      // reference (keyboard shortcuts, glossary, FAQ). Pure copy, not
+      // chain-scoped.
+      path: '/help',
+      component: () => import('./Help'),
+    },
+    {
+      // One help topic per page, so a specific answer can be linked on
+      // its own. The :topic segment absorbs the former standalone
+      // /help/troubleshooting path (same net URL, nothing to retarget);
+      // an unknown topic falls through to the router's NotFound view.
+      path: '/help/:topic',
+      component: () => import('./Help/HelpPage'),
     },
     {
       // Static explainer for the data-coverage vocabulary the CoverageBadge

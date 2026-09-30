@@ -218,6 +218,11 @@ and an nginx sketch.
 
 ## Troubleshooting
 
+Operator-side symptoms are also documented in the app itself, at
+`/help/troubleshooting` (the Help link in the top bar, or Ctrl/Cmd+K →
+"faq") — it covers the backend-offline banner, RPC provider quirks, dev-chain
+resets and what `/api/health` answers with.
+
 - **Port already in use** — `lsof -i :8201`; start on another port
   (`--port 8202` — it stays within the discovery scan range).
 - **DuckDB lock / "Could not set lock on file"** — another process still holds

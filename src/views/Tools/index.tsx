@@ -151,11 +151,14 @@ export function buildToolCards(
       admin: false,
     },
     {
-      id: 'troubleshooting',
-      title: 'Troubleshooting',
+      // The help section index now carries troubleshooting as one topic
+      // among the rest, so the hub points at the section rather than at
+      // the single topic page it grew out of.
+      id: 'help',
+      title: 'Help',
       description:
-        'RPC provider quirks (getLogs range caps, missing archive state, private txpool), dev-chain resets, the health checklist and how to report issues.',
-      href: '/help/troubleshooting',
+        'How this explorer works and what its data means — getting started, navigation and shortcuts, addresses, contracts, tokens, storage, RPC settings, a glossary and an FAQ.',
+      href: '/help',
       admin: false,
     },
     {

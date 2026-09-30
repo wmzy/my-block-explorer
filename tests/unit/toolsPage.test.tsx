@@ -58,7 +58,7 @@ const EXPECTED_TOOL_TITLES = [
   'Search',
   'Signatures',
   'Coverage legend',
-  'Troubleshooting',
+  'Help',
   'SQL console',
   'Ops',
   'Backup & restore',
@@ -172,7 +172,7 @@ describe('Tools page', () => {
       ['Search', '/search'],
       ['Signatures', '/signatures'],
       ['Coverage legend', '/about/coverage'],
-      ['Troubleshooting', '/help/troubleshooting'],
+      ['Help', '/help'],
       ['SQL console', '/sql'],
       ['Ops', '/ops'],
     ];
@@ -229,7 +229,7 @@ describe('Tools page', () => {
       .sort();
     expect(hrefs).toEqual([
       '/about/coverage',
-      '/help/troubleshooting',
+      '/help',
       '/ops',
       '/search',
       '/signatures',

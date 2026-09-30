@@ -1526,7 +1526,6 @@ pnpm typecheck           # tsc --noEmit
   Events tab renders the honest empty state + indexing CTA; the only
   console error was the environmental creation-endpoint RPC timeout,
   surfaced with the product's own guidance card.
-
 - **2026-09-30 page-level Back rows removed (user-requested)** — the
   "Back to Explorer" button family is deleted: it duplicated browser back
   (the history-aware variants literally called `window.history.back()`)
@@ -1631,3 +1630,42 @@ pnpm typecheck           # tsc --noEmit
   dev server held the DuckDB write lock and made the dist-server smoke
   fail with cause-less "Failed query" — `fuser -v data/blockchain.db`
   names the holder; kill before standalone-server smokes.
+- **2026-09-30 help section (`/help`, 3 files + integration)** — the
+  in-app documentation section, replacing the single standalone
+  `/help/troubleshooting` page. **Architecture** — all copy lives in
+  ONE React-free model, `src/views/Help/helpContent.ts` (topics with
+  `body` paragraphs + optional structured `quotes`/`table` blocks,
+  keyboard shortcuts, glossary, FAQ); `src/views/Help/index.tsx` renders
+  the index (topic cards + the non-topic reference + pointers to
+  `/about/coverage` and `/tools`), `src/views/Help/HelpPage.tsx` renders
+  ONE topic. Single source, so the index summary and the topic page can
+  never disagree — that is the whole point. **Routes** — `/help` and
+  `/help/:topic`; the param route ABSORBED the old standalone path, so
+  `/help/troubleshooting` keeps resolving to its content and no caller was
+  retargeted. Eight topics: troubleshooting, getting-started, navigation,
+  addresses, contracts, tokens, storage, rpc-settings. **Conventions
+  pinned**: (1) an unknown `:topic` THROWS the router's `NotFoundError`
+  (`@native-router/core`) — the router's `notFound` prop only renders for
+  a rejected NotFoundError, so a matched route that renders `null` is a
+  BLANK PAGE, not a 404 (this bit the first draft; the jsdom test
+  caught it); (2) the help model must stay React/router-free —
+  `utils/metaDescribe.ts` imports it in **Node** for the server-side
+  og-meta middleware, so a topic's title/summary is the og source and
+  there is no second copy of any string (the section blurb is
+  `HELP_SECTION_DESCRIPTION`); (3) a `<ul>` grid needs `list-style: none`
+  + `padding: 0` AND `minmax(min(280px, 100%), 1fr)` or it overflows
+  375px by 40px — caught only in the live mobile smoke, invisible to
+  jsdom (verified `overflowX: 0`, single 245px column); (4) the
+  honesty contract extends to help copy: a test greps the model for
+  overclaiming phrases ("all data", "always complete", …) word-bounded,
+  because "failed-call data" contains "all data" and promises nothing.
+  **Entry points** — TopNavigation Help link (bare `/help`, chain-agnostic
+  between Tools and the admin divider), command palette action
+  (keywords `docs/guide/faq/questions/how to`), and the Tools hub card
+  that REPLACED its Troubleshooting card. Both views render
+  TopNavigation on the remembered chain (same fallback as Ops/Tools).
+  Verified: tsc 0 errors, eslint 0 errors, `vitest --changed` 55 files /
+  706 tests green, live Chromium smoke (all 8 topics resolve with their
+  own derived title, cross-links intact, unknown topic renders the app
+  404 card with no help-content leak, palette `faq` → Help → Enter
+  navigates, nav entry navigates, 375px clean).
