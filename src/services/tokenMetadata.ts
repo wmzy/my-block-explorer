@@ -34,16 +34,25 @@ const NULL_METADATA: TokenMetadata = { symbol: null, decimals: null };
 
 type CacheEntry = { metadata: TokenMetadata; expires: number };
 
-// `${chainId}:${lowercase address}` → cache entry. TTL eviction is lazy:
-// expired entries are simply refetched and overwritten on the next request.
+// `${chainId}:${lowercase address}:${includeDecimals ? 1 : 0}` → cache
+// entry. TTL eviction is lazy: expired entries are simply refetched and
+// overwritten on the next request. includeDecimals is part of the key
+// because it changes the ANSWER, not just the call shape: decimals() is
+// only requested when the caller sets it, so a decimals-less entry is a
+// genuinely different (and much poorer) answer. Keying by address alone
+// let an ERC-721/1155 reader poison the ERC-20 view of the same contract
+// with `decimals: null` for the full hour.
 const metadataCache = new Map<string, CacheEntry>();
 
-// `${chainId}:${lowercase address}` → never-rejecting in-flight promise.
-// Concurrent callers of the same token share one multicall batch instead
-// of duplicating network work.
+// Same key shape as above → never-rejecting in-flight promise. Concurrent
+// callers agree on includeDecimals share one multicall batch instead of
+// duplicating network work; a caller that needs a WIDER batch must not
+// join a narrower one in flight (it would resolve without the decimals
+// call it actually needs).
 const inflight = new Map<string, Promise<TokenMetadata>>();
 
-const cacheKey = (chainId: number, addressLower: string): string => `${chainId}:${addressLower}`;
+const cacheKey = (chainId: number, addressLower: string, includeDecimals: boolean): string =>
+  `${chainId}:${addressLower}:${includeDecimals ? 1 : 0}`;
 
 /** Test-only hook to clear module state between test cases. */
 export function resetTokenMetadataCacheForTests(): void {
@@ -127,7 +136,7 @@ const runTokenBatch = async (
       decimals: token.includeDecimals ? (decimals.get(token.lower) ?? null) : null,
     };
     resolved.set(token.lower, metadata);
-    metadataCache.set(cacheKey(chainId, token.lower), {
+    metadataCache.set(cacheKey(chainId, token.lower, token.includeDecimals), {
       metadata,
       expires: Date.now() + CACHE_TTL_MS,
     });
@@ -154,7 +163,7 @@ const launchTokenBatch = (
       resolveToken = resolve;
     });
     promises.set(token.lower, promise);
-    inflight.set(cacheKey(chainId, token.lower), promise);
+    inflight.set(cacheKey(chainId, token.lower, token.includeDecimals), promise);
     reservations.push({ lower: token.lower, resolve: resolveToken });
   }
 
@@ -163,7 +172,7 @@ const launchTokenBatch = (
       resolve(resolved.get(lower) ?? NULL_METADATA);
     }
     for (const token of tokens) {
-      inflight.delete(cacheKey(chainId, token.lower));
+      inflight.delete(cacheKey(chainId, token.lower, token.includeDecimals));
     }
   };
 
@@ -192,7 +201,7 @@ export async function fetchTokenMetadata(
   for (const request of requests) {
     const lower = request.address.toLowerCase();
     if (out.has(lower) || uncached.has(lower)) continue;
-    const entry = metadataCache.get(cacheKey(chainId, lower));
+    const entry = metadataCache.get(cacheKey(chainId, lower, request.includeDecimals));
     if (entry !== undefined && entry.expires > now) {
       out.set(lower, entry.metadata);
     } else {
@@ -203,7 +212,7 @@ export async function fetchTokenMetadata(
   const pending: Array<{ lower: string; promise: Promise<TokenMetadata> }> = [];
   const toBatch: Array<{ lower: string; includeDecimals: boolean }> = [];
   for (const [lower, request] of uncached) {
-    const existing = inflight.get(cacheKey(chainId, lower));
+    const existing = inflight.get(cacheKey(chainId, lower, request.includeDecimals));
     if (existing !== undefined) {
       pending.push({ lower, promise: existing });
     } else {
@@ -317,6 +326,12 @@ const overviewCache = new Map<string, OverviewCacheEntry>();
 // Concurrent callers for the same contract share one multicall batch.
 const overviewInflight = new Map<string, Promise<TokenOverviewReads | undefined>>();
 
+// The overview batch always reads name/symbol/decimals/totalSupply, so
+// its answer has no request-parameter dimension — its own key helper,
+// deliberately NOT the metadata cacheKey (which carries includeDecimals).
+const overviewCacheKey = (chainId: number, addressLower: string): string =>
+  `${chainId}:${addressLower}`;
+
 // Narrows one multicall outcome to its bigint value (uint256 returns such
 // as totalSupply). Anything unrecognized — including test doubles handing
 // back a bare null for a reverted call — decodes to null.
@@ -343,7 +358,7 @@ export async function fetchTokenOverview(
   const lower = address.toLowerCase();
   if (lower === '' || !(chainId > 0)) return undefined;
 
-  const key = cacheKey(chainId, lower);
+  const key = overviewCacheKey(chainId, lower);
   const cached = overviewCache.get(key);
   if (cached !== undefined && cached.expires > Date.now()) return cached.reads;
 

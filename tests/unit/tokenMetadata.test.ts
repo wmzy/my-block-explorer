@@ -142,6 +142,44 @@ describe('fetchTokenMetadata', () => {
     expect(b.get(TOKEN_LOWER)).toEqual({ symbol: 'TKN', decimals: 6 });
   });
 
+  // The cache and the in-flight map are both keyed by chain+address, but
+  // the stored answer DEPENDS on includeDecimals: a request that never
+  // asked for decimals() caches `decimals: null` for an hour. An ERC-721
+  // reader (kind 721/1155) therefore poisoned the ERC-20 view of the same
+  // contract with a null decimals for the rest of the TTL.
+  it('does not serve a non-ERC-20 null-decimals entry to a later ERC-20 request', async () => {
+    multicall.mockResolvedValue([ok('BAYC')]);
+
+    await fetchTokenMetadata(1, [{ address: TOKEN, includeDecimals: false }]);
+
+    // Same address, same chain — but this caller genuinely needs decimals.
+    multicall.mockResolvedValue([ok('BAYC'), ok(18)]);
+    const erc20 = await fetchTokenMetadata(1, [{ address: TOKEN, includeDecimals: true }]);
+
+    expect(erc20.get(TOKEN_LOWER)).toEqual({ symbol: 'BAYC', decimals: 18 });
+  });
+
+  it('does not let a concurrent non-ERC-20 request steal the ERC-20 batch', async () => {
+    let release!: (outcomes: readonly unknown[]) => void;
+    multicall.mockReturnValue(
+      new Promise<readonly unknown[]>(resolve => {
+        release = resolve;
+      }),
+    );
+
+    // An ERC-721 reader starts first and launches the batch (symbol only).
+    const nft = fetchTokenMetadata(1, [{ address: TOKEN, includeDecimals: false }]);
+    // An ERC-20 reader arrives while that batch is in flight and genuinely
+    // needs the decimals() call that batch never made.
+    const erc20 = fetchTokenMetadata(1, [{ address: TOKEN, includeDecimals: true }]);
+
+    release([ok('BAYC'), ok(18)]);
+    const [nftResult, erc20Result] = await Promise.all([nft, erc20]);
+
+    expect(erc20Result.get(TOKEN_LOWER)).toEqual({ symbol: 'BAYC', decimals: 18 });
+    expect(nftResult.get(TOKEN_LOWER)).toEqual({ symbol: 'BAYC', decimals: null });
+  });
+
   it('returns an empty map without touching the network for an empty request list', async () => {
     const metadata = await fetchTokenMetadata(1, []);
 
