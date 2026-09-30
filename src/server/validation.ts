@@ -27,9 +27,11 @@ export function getValidatedAddress(address: string) {
 }
 
 export function getValidatedChainId(chainId: string | number): number {
-  const id = typeof chainId === 'string' ? parseInt(chainId, 10) : chainId;
+  // Strict decimal parse: parseInt() would accept "1abc", "0x1" and "1e3"
+  // as 1, letting a junk route param address the wrong chain.
+  const id = typeof chainId === 'string' ? Number(chainId) : chainId;
 
-  if (isNaN(id) || id <= 0) {
+  if (!Number.isSafeInteger(id) || id <= 0 || !/^\d+$/.test(String(chainId))) {
     throw new HTTPException(400, { message: 'Invalid chain ID' });
   }
 
@@ -58,11 +60,12 @@ export function getValidatedBlockNumber(blockNumber: string | number): number | 
     return 'latest';
   }
 
-  const num = typeof blockNumber === 'string' ? parseInt(blockNumber, 10) : blockNumber;
-
-  if (!isValidBlockNumber(num)) {
+  // The string is handed to isValidBlockNumber unparsed: parsing it here
+  // with parseInt() first would let "12abc" through as 12 and address the
+  // wrong block.
+  if (!isValidBlockNumber(blockNumber)) {
     throw new HTTPException(400, { message: 'Invalid block number' });
   }
 
-  return num;
+  return typeof blockNumber === 'string' ? Number(blockNumber) : blockNumber;
 }
