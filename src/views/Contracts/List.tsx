@@ -19,6 +19,7 @@ import { EmptyState, ErrorState } from '@/components/ui/ErrorState';
 import { TableSkeleton } from '@/components/ui/LoadingState';
 import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
 import { getChainInfo, getChainName } from '@/config/chains';
+import { parseChainIdParam } from '@/utils/chainParam';
 import { redirectReplace } from '@/views/Home/Landing';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
 import { CONTRACT_DIRECTORY_PAGE_SIZE, useContractDirectory } from '@/services/contractDirectory';
@@ -95,7 +96,7 @@ export default function ContractsList() {
   const setSearch = useSetSearch(searchSchema);
   const { q: qParam, offset } = useSearch(searchSchema);
 
-  const currentChainId = Number.parseInt(params.chainId ?? '1', 10);
+  const currentChainId = parseChainIdParam(params.chainId) ?? 0;
   const chainInfo = getChainInfo(currentChainId);
 
   // The filter input starts from the deep-linked ?q= and then leads the

@@ -24,7 +24,7 @@ import { useBlockByNumber } from '@/services/chainRpc';
 import { finalityLabelFor, useFinalityHeads } from '@/services/blocks';
 import { describeBlockProducer } from '@/utils/blockRpcData';
 import { formatRelativeTime } from '@/utils/format';
-import { parseBlockNumberParam } from '@/utils/chainParam';
+import { parseBlockNumberParam, parseChainIdParam } from '@/utils/chainParam';
 import { deriveSlotEpochFromIso } from '@/utils/slotEpoch';
 import { createRpcClient } from '@/utils/realTimeData';
 import { computeBlockNav } from './nav';
@@ -288,7 +288,7 @@ const detailStackStyle = css`
 export default function BlockDetail() {
   const { params, router } = useMatched();
 
-  const currentChainId = Number.parseInt(params.chainId ?? '1', 10);
+  const currentChainId = parseChainIdParam(params.chainId) ?? 0;
   const chainInfo = getChainInfo(currentChainId);
   const blockNumberStr = params.blockNumber ?? '';
   // Decimal-only validation: Number("0x1a") === 26 (hex!), so a hex-ish

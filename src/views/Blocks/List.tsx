@@ -12,6 +12,7 @@ import { EmptyState, ErrorState } from '@/components/ui/ErrorState';
 import { TableSkeleton } from '@/components/ui/LoadingState';
 import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
 import { getChainInfo, getChainName, getChainType } from '@/config/chains';
+import { parseChainIdParam } from '@/utils/chainParam';
 import { redirectReplace } from '@/views/Home/Landing';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
 import { useLatestBlocks } from '@/services/chainRpc';
@@ -100,7 +101,7 @@ export default function BlocksList() {
   const setSearch = useSetSearch(searchSchema);
   const { page } = useSearch(searchSchema);
 
-  const currentChainId = Number.parseInt(params.chainId ?? '1', 10);
+  const currentChainId = parseChainIdParam(params.chainId) ?? 0;
   const chainInfo = getChainInfo(currentChainId);
 
   // Pagination anchor: the chain head observed when the list was first

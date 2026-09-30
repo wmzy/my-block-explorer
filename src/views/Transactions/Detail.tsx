@@ -20,6 +20,7 @@ import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
 import { RawJsonCard, type RawJsonFetcher } from '@/components/ui/RawJson';
 import { UnitToggle } from '@/components/ui/UnitToggle';
 import { POPULAR_CHAINS, getChainInfo, getChainName, getChainSymbol } from '@/config/chains';
+import { parseChainIdParam } from '@/utils/chainParam';
 import { getExternalTxLinks } from '@/config/externalTools';
 import { redirectReplace } from '@/views/Home/Landing';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
@@ -1114,7 +1115,7 @@ function AuthorizationsCard({
 export default function TransactionDetail() {
   const { params, router } = useMatched();
 
-  const currentChainId = Number.parseInt(params.chainId ?? '1', 10);
+  const currentChainId = parseChainIdParam(params.chainId) ?? 0;
   const chainInfo = getChainInfo(currentChainId);
   const txHash = params.txHash ?? '';
 

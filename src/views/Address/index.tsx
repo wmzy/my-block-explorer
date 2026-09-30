@@ -6,6 +6,7 @@ import { erc20Abi, formatUnits } from 'viem';
 import type { ContractFunctionParameters } from 'viem';
 import { Alert } from 'haze-ui';
 import { getChainInfo, getChainName, getChainSymbol } from '@/config/chains';
+import { parseChainIdParam } from '@/utils/chainParam';
 import TopNavigation from '@/components/TopNavigation';
 import TokenTransfers, {
   TRANSFER_LIMIT,
@@ -1265,7 +1266,7 @@ function SectionAnchorNav({ anchors }: { anchors: SectionAnchor[] }) {
 export default function Address() {
   const { params, router } = useMatched();
 
-  const currentChainId = Number.parseInt(params.chainId ?? '1', 10);
+  const currentChainId = parseChainIdParam(params.chainId) ?? 0;
   const chainInfo = getChainInfo(currentChainId);
   const address = params.address ?? '';
   // Page-level two-tier verdict (./addressValidity): an invalid address

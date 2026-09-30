@@ -56,6 +56,7 @@ import { addressSearchSchema } from '@/views/Address/search';
 import { classifyTokenOverview, formatTokenSupply } from '@/views/Address/tokenOverview';
 import TokenTransfers, { TRANSFER_LIMIT } from '@/views/Address/TokenTransfers';
 import { getChainInfo, getChainName } from '@/config/chains';
+import { parseChainIdParam } from '@/utils/chainParam';
 import { useContractSource } from '@/services/contracts';
 import { recordViewedToken } from '@/services/tokenDirectory';
 import { scanAbiRisks, type AbiRiskFlag } from '@/utils/abiRiskScan';
@@ -776,7 +777,7 @@ function AbiRiskScanCard({ flags }: { flags: readonly AbiRiskFlag[] }) {
 export default function TokenPage() {
   const { params, router } = useMatched();
 
-  const currentChainId = Number.parseInt(params.chainId ?? '1', 10);
+  const currentChainId = parseChainIdParam(params.chainId) ?? 0;
   const chainInfo = getChainInfo(currentChainId);
   const address = params.address ?? '';
   // Two-tier URL-param guard (the address page's twin, ./addressValidity):

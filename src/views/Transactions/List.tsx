@@ -19,6 +19,7 @@ import { EnsInline, shortAddress } from '@/components/ui/EnsInline';
 import { TableSkeleton } from '@/components/ui/LoadingState';
 import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
 import { getChainInfo, getChainName, getChainSymbol } from '@/config/chains';
+import { parseChainIdParam } from '@/utils/chainParam';
 import { redirectReplace } from '@/views/Home/Landing';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
 import { useLatestTransactions } from '@/services/chainRpc';
@@ -179,7 +180,7 @@ export default function TransactionsList() {
   const [rawSearchParams] = useSearchParams();
   const rawBlockParam = rawSearchParams.get('block');
 
-  const currentChainId = Number.parseInt(params.chainId ?? '1', 10);
+  const currentChainId = parseChainIdParam(params.chainId) ?? 0;
   const chainInfo = getChainInfo(currentChainId);
   const symbol = getChainSymbol(currentChainId);
 
