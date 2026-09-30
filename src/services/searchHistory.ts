@@ -3,7 +3,11 @@
 // privacy leak), so history is now local-only: this module is the single
 // reader/writer of the storage key and every surface that executes a search
 // records through it.
-export const SEARCH_HISTORY_STORAGE_KEY = 'be:searchHistory';
+import { SEARCH_HISTORY_STORAGE_KEY } from '@/util/storageKeys';
+
+// Canonical literal lives in the manifest (util/storageKeys.ts);
+// re-exported so existing consumers keep this import point.
+export { SEARCH_HISTORY_STORAGE_KEY };
 
 // Keep the dropdown short and the storage payload tiny.
 export const SEARCH_HISTORY_MAX_ENTRIES = 10;

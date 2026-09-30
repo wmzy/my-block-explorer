@@ -1,6 +1,6 @@
 {
-  "id": "b063fad1-ec43-4ac8-baef-598f0d17b78b",
-  "prevId": "cfd433f5-cd9a-4e1d-99ae-c23858947afa",
+  "id": "cfd433f5-cd9a-4e1d-99ae-c23858947afa",
+  "prevId": "a57decff-ec63-4992-8bc2-2812b4488efa",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -53,7 +53,11 @@
       "compositePrimaryKeys": {
         "access_history_chain_id_type_identifier_pk": {
           "name": "access_history_chain_id_type_identifier_pk",
-          "columns": ["chain_id", "type", "identifier"]
+          "columns": [
+            "chain_id",
+            "type",
+            "identifier"
+          ]
         }
       },
       "uniqueConstraints": {},
@@ -186,14 +190,20 @@
       "compositePrimaryKeys": {
         "blocks_chain_id_number_pk": {
           "name": "blocks_chain_id_number_pk",
-          "columns": ["chain_id", "number"]
+          "columns": [
+            "chain_id",
+            "number"
+          ]
         }
       },
       "uniqueConstraints": {
         "blocks_chainId_hash_unique": {
           "name": "blocks_chainId_hash_unique",
           "nullsNotDistinct": false,
-          "columns": ["chain_id", "hash"]
+          "columns": [
+            "chain_id",
+            "hash"
+          ]
         }
       },
       "policies": {},
@@ -265,7 +275,10 @@
       "compositePrimaryKeys": {
         "contract_creation_info_chain_id_address_pk": {
           "name": "contract_creation_info_chain_id_address_pk",
-          "columns": ["chain_id", "address"]
+          "columns": [
+            "chain_id",
+            "address"
+          ]
         }
       },
       "uniqueConstraints": {},
@@ -387,7 +400,11 @@
       "compositePrimaryKeys": {
         "contract_events_chain_id_transaction_hash_log_index_pk": {
           "name": "contract_events_chain_id_transaction_hash_log_index_pk",
-          "columns": ["chain_id", "transaction_hash", "log_index"]
+          "columns": [
+            "chain_id",
+            "transaction_hash",
+            "log_index"
+          ]
         }
       },
       "uniqueConstraints": {},
@@ -534,7 +551,10 @@
       "compositePrimaryKeys": {
         "contract_sources_chain_id_address_pk": {
           "name": "contract_sources_chain_id_address_pk",
-          "columns": ["chain_id", "address"]
+          "columns": [
+            "chain_id",
+            "address"
+          ]
         }
       },
       "uniqueConstraints": {},
@@ -621,7 +641,11 @@
       "compositePrimaryKeys": {
         "event_table_registry_chain_id_contract_address_event_signature_pk": {
           "name": "event_table_registry_chain_id_contract_address_event_signature_pk",
-          "columns": ["chain_id", "contract_address", "event_signature"]
+          "columns": [
+            "chain_id",
+            "contract_address",
+            "event_signature"
+          ]
         }
       },
       "uniqueConstraints": {},
@@ -664,7 +688,10 @@
       "compositePrimaryKeys": {
         "index_status_chain_id_index_type_pk": {
           "name": "index_status_chain_id_index_type_pk",
-          "columns": ["chain_id", "index_type"]
+          "columns": [
+            "chain_id",
+            "index_type"
+          ]
         }
       },
       "uniqueConstraints": {},
@@ -726,7 +753,10 @@
       "compositePrimaryKeys": {
         "indexed_addresses_chain_id_address_pk": {
           "name": "indexed_addresses_chain_id_address_pk",
-          "columns": ["chain_id", "address"]
+          "columns": [
+            "chain_id",
+            "address"
+          ]
         }
       },
       "uniqueConstraints": {},
@@ -801,7 +831,10 @@
       "compositePrimaryKeys": {
         "indexing_progress_chain_id_address_pk": {
           "name": "indexing_progress_chain_id_address_pk",
-          "columns": ["chain_id", "address"]
+          "columns": [
+            "chain_id",
+            "address"
+          ]
         }
       },
       "uniqueConstraints": {},
@@ -903,7 +936,11 @@
       "compositePrimaryKeys": {
         "indexing_ranges_chain_id_address_range_id_pk": {
           "name": "indexing_ranges_chain_id_address_range_id_pk",
-          "columns": ["chain_id", "address", "range_id"]
+          "columns": [
+            "chain_id",
+            "address",
+            "range_id"
+          ]
         }
       },
       "uniqueConstraints": {},
@@ -957,55 +994,6 @@
       "indexes": {},
       "foreignKeys": {},
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.signature_cache": {
-      "name": "signature_cache",
-      "schema": "",
-      "columns": {
-        "kind": {
-          "name": "kind",
-          "type": "varchar(10)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "selector": {
-          "name": "selector",
-          "type": "varchar(66)",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "signature": {
-          "name": "signature",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "source": {
-          "name": "source",
-          "type": "varchar(20)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "fetched_at": {
-          "name": "fetched_at",
-          "type": "TIMESTAMP_MS",
-          "primaryKey": false,
-          "notNull": false,
-          "default": "now()"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {
-        "signature_cache_kind_selector_pk": {
-          "name": "signature_cache_kind_selector_pk",
-          "columns": ["kind", "selector"]
-        }
-      },
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
@@ -1072,7 +1060,10 @@
       "compositePrimaryKeys": {
         "storage_layouts_chain_id_address_pk": {
           "name": "storage_layouts_chain_id_address_pk",
-          "columns": ["chain_id", "address"]
+          "columns": [
+            "chain_id",
+            "address"
+          ]
         }
       },
       "uniqueConstraints": {},
@@ -1225,14 +1216,21 @@
       "compositePrimaryKeys": {
         "transactions_chain_id_hash_pk": {
           "name": "transactions_chain_id_hash_pk",
-          "columns": ["chain_id", "hash"]
+          "columns": [
+            "chain_id",
+            "hash"
+          ]
         }
       },
       "uniqueConstraints": {
         "transactions_chainId_blockNumber_transactionIndex_unique": {
           "name": "transactions_chainId_blockNumber_transactionIndex_unique",
           "nullsNotDistinct": false,
-          "columns": ["chain_id", "block_number", "transaction_index"]
+          "columns": [
+            "chain_id",
+            "block_number",
+            "transaction_index"
+          ]
         }
       },
       "policies": {},

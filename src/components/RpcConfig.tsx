@@ -428,7 +428,7 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
     // endpoint (the http layer attaches the just-stored token) and report
     // what the server actually said.
     try {
-      await get('/api/performance/events');
+      await get('/api/sql/tables');
       toast.success('Admin token saved & verified.');
     } catch (error) {
       if (error instanceof ApiError && error.status === 403) {

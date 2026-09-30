@@ -68,6 +68,23 @@ const parseBodyStateOverride = (
   return { value: hasEntries ? parsed.value : undefined };
 };
 
+// Parses the optional wei `value` body field shared by the simulate and
+// estimate-gas endpoints. Falsy keeps the legacy undefined passthrough
+// (no value attached); valid quantities (0x-hex or decimal integer,
+// string or integer number) convert to bigint exactly like the previous
+// inline BigInt() call; junk like '1.5' or 'abc' used to throw inside
+// the generic try and surface as an opaque 500 — now a 400 invalid_value.
+const parseBodyValue = (raw: unknown): { ok: true; value?: bigint } | { ok: false } => {
+  if (!raw) return { ok: true };
+  if (typeof raw === 'number') {
+    return Number.isInteger(raw) ? { ok: true, value: BigInt(raw) } : { ok: false };
+  }
+  if (typeof raw === 'string' && /^-?(0x[0-9a-fA-F]+|\d+)$/.test(raw)) {
+    return { ok: true, value: BigInt(raw) };
+  }
+  return { ok: false };
+};
+
 // Every contract_sources row this explorer has cached for the chain —
 // populated by opening (or force-refreshing) a contract page, never by
 // this endpoint. Read-only and open; X-Data-Source says 'database'
@@ -300,8 +317,23 @@ app.post('/chains/:chainId/contracts/:address/read', contractReadRateLimiter, as
   const chainId = getValidatedChainId(c.req.param('chainId'));
   const address = getValidatedAddress(c.req.param('address'));
 
+  // A malformed JSON body must not reach the generic catch below, where it
+  // would surface as an opaque 500 'Failed to read contract'.
+  let body;
   try {
-    const body = await c.req.json();
+    body = await c.req.json();
+  } catch {
+    return c.json(
+      {
+        error: 'Invalid JSON body',
+        code: 'invalid_json',
+        message: 'Request body must be valid JSON',
+      },
+      400,
+    );
+  }
+
+  try {
     const { functionName, args = [] } = body;
 
     if (!functionName || typeof functionName !== 'string') {
@@ -362,8 +394,23 @@ app.post('/chains/:chainId/contracts/:address/simulate', contractSimulateRateLim
   const chainId = getValidatedChainId(c.req.param('chainId'));
   const address = getValidatedAddress(c.req.param('address'));
 
+  // A malformed JSON body must not reach the generic catch below, where it
+  // would surface as an opaque 500 'Failed to simulate contract'.
+  let body;
   try {
-    const body = await c.req.json();
+    body = await c.req.json();
+  } catch {
+    return c.json(
+      {
+        error: 'Invalid JSON body',
+        code: 'invalid_json',
+        message: 'Request body must be valid JSON',
+      },
+      400,
+    );
+  }
+
+  try {
     const { functionName, args = [], value, from, stateOverride: stateOverrideRaw } = body;
 
     if (!functionName || typeof functionName !== 'string') {
@@ -372,6 +419,18 @@ app.post('/chains/:chainId/contracts/:address/simulate', contractSimulateRateLim
 
     if (!Array.isArray(args)) {
       return c.json({ error: 'Arguments must be an array' }, 400);
+    }
+
+    const parsedValue = parseBodyValue(value);
+    if (!parsedValue.ok) {
+      return c.json(
+        {
+          error: 'Invalid value',
+          code: 'invalid_value',
+          message: 'value must be a 0x-hex or decimal integer quantity',
+        },
+        400,
+      );
     }
 
     const override = parseBodyStateOverride(stateOverrideRaw);
@@ -396,7 +455,7 @@ app.post('/chains/:chainId/contracts/:address/simulate', contractSimulateRateLim
       contractAddress: address,
       functionName,
       args,
-      value: value ? BigInt(value) : undefined,
+      value: parsedValue.value,
       from,
       abi: targetABI,
       stateOverride: override.value,
@@ -430,8 +489,23 @@ app.post('/chains/:chainId/contracts/:address/estimate-gas', async c => {
   const chainId = getValidatedChainId(c.req.param('chainId'));
   const address = getValidatedAddress(c.req.param('address'));
 
+  // Same contract as simulate: a malformed JSON body is a 400 invalid_json,
+  // not an opaque 500 'Failed to estimate gas'.
+  let body;
   try {
-    const body = await c.req.json();
+    body = await c.req.json();
+  } catch {
+    return c.json(
+      {
+        error: 'Invalid JSON body',
+        code: 'invalid_json',
+        message: 'Request body must be valid JSON',
+      },
+      400,
+    );
+  }
+
+  try {
     const { functionName, args = [], value, from, stateOverride: stateOverrideRaw } = body;
 
     if (!functionName || typeof functionName !== 'string') {
@@ -440,6 +514,18 @@ app.post('/chains/:chainId/contracts/:address/estimate-gas', async c => {
 
     if (!Array.isArray(args)) {
       return c.json({ error: 'Arguments must be an array' }, 400);
+    }
+
+    const parsedValue = parseBodyValue(value);
+    if (!parsedValue.ok) {
+      return c.json(
+        {
+          error: 'Invalid value',
+          code: 'invalid_value',
+          message: 'value must be a 0x-hex or decimal integer quantity',
+        },
+        400,
+      );
     }
 
     const override = parseBodyStateOverride(stateOverrideRaw);
@@ -464,7 +550,7 @@ app.post('/chains/:chainId/contracts/:address/estimate-gas', async c => {
       contractAddress: address,
       functionName,
       args,
-      value: value ? BigInt(value) : undefined,
+      value: parsedValue.value,
       from,
       abi: targetABI,
       stateOverride: override.value,
@@ -561,8 +647,23 @@ app.post(
     const chainId = getValidatedChainId(c.req.param('chainId'));
     const address = getValidatedAddress(c.req.param('address'));
 
+    // A malformed JSON body must not reach the generic catch below, where it
+    // would surface as an opaque 500.
+    let body;
     try {
-      const body = await c.req.json();
+      body = await c.req.json();
+    } catch {
+      return c.json(
+        {
+          error: 'Invalid JSON body',
+          code: 'invalid_json',
+          message: 'Request body must be valid JSON',
+        },
+        400,
+      );
+    }
+
+    try {
       const ide = body.ide as IdeId;
 
       const validIdes: IdeId[] = ['vscode', 'cursor', 'zed', 'webstorm', 'sublime'];

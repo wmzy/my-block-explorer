@@ -66,6 +66,30 @@ const rangeJobKey = (chainId: number, address: string, rangeId: number) =>
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
+// Provider range-cap adaptation (chunk-ladder lesson). Public RPCs cap the
+// block span of eth_getLogs; retrying the identical span then fails
+// deterministically and turns Resume into a failure loop. On such errors the
+// span halves (with a floor) and the per-chain ceiling is remembered so
+// later batches — and later jobs on the same chain — start small.
+// NOTE: this regex is a conscious copy of AddressScanService's
+// SHRINKABLE_PROVIDER_ERROR_RE, which is not exported (and importing that
+// service here just for a regex would couple two service graphs). If you
+// change one, change the other — or lift both into a shared util.
+const SHRINKABLE_PROVIDER_ERROR_RE =
+  /rate.?limit|too many requests|429|exceed|limit|timeout|timed out|econnreset|econnrefused|socket hang up|network|fetch failed/i;
+
+const isShrinkableProviderError = (err: unknown): boolean =>
+  SHRINKABLE_PROVIDER_ERROR_RE.test(err instanceof Error ? err.message : String(err));
+
+// Learned provider span ceilings per chain (in-memory, like the
+// providerCeiling locals in TokenTransferService/ApprovalScanService).
+const providerLogSpanCeilings = new Map<number, bigint>();
+
+// Floor for span halving: 2000 -> 1000 -> 500 -> 250 -> 125. At the floor a
+// provider cap is no longer the plausible cause, so bounded identical
+// retries run instead and an eventual failure surfaces honestly.
+const MIN_LOG_SPAN_BLOCKS = 125n;
+
 const fetchLogsWithRetry = async (
   chainId: number,
   address: `0x${string}`,
@@ -73,15 +97,45 @@ const fetchLogsWithRetry = async (
   toBlock: bigint,
 ): Promise<Log[]> => {
   const client = await rpcManager.getClient(chainId);
-  for (let attempt = 0; attempt < MAX_RETRY; attempt++) {
+
+  // The caller advances its checkpoint across the WHOLE [fromBlock,
+  // toBlock] window once this resolves, so shrinking must never skip
+  // blocks: fetch the window as consecutive sub-spans bounded by the
+  // remembered ceiling. Non-shrinkable errors keep the bounded
+  // identical-retry policy (MAX_RETRY attempts with linear backoff).
+  const remembered = providerLogSpanCeilings.get(chainId);
+  let span = toBlock - fromBlock + 1n;
+  if (remembered !== undefined && remembered < span) span = remembered;
+
+  const logs: Log[] = [];
+  let cursor = fromBlock;
+  let attempt = 0;
+  while (cursor <= toBlock) {
+    let spanTo = cursor + span - 1n;
+    if (spanTo > toBlock) spanTo = toBlock;
     try {
-      return await client.getLogs({ address, fromBlock, toBlock });
+      const part = await client.getLogs({ address, fromBlock: cursor, toBlock: spanTo });
+      logs.push(...part);
+      cursor = spanTo + 1n;
+      attempt = 0;
     } catch (err) {
+      if (isShrinkableProviderError(err) && span > MIN_LOG_SPAN_BLOCKS) {
+        const halved = span / 2n;
+        span = halved < MIN_LOG_SPAN_BLOCKS ? MIN_LOG_SPAN_BLOCKS : halved;
+        providerLogSpanCeilings.set(chainId, span);
+        logger.warn(
+          { chainId, fromBlock: cursor, span, err },
+          'getLogs rejected the block span (provider range cap); retrying a smaller span',
+        );
+        attempt = 0;
+        continue;
+      }
       if (attempt === MAX_RETRY - 1) throw err;
-      await sleep(RETRY_DELAY_MS * (attempt + 1));
+      attempt += 1;
+      await sleep(RETRY_DELAY_MS * attempt);
     }
   }
-  return [];
+  return logs;
 };
 
 // Max parallel getBlock calls when resolving timestamps for one batch.
@@ -207,6 +261,24 @@ const insertEventChunk = async (rows: Array<typeof contractEvents.$inferInsert>)
     });
 };
 
+// Row-level insert errors split into two classes. A constraint violation on
+// the event PK is legitimate dedup (overlapping or re-created ranges
+// re-walk stored events) and may be skipped. Any other failure (lock
+// contention, IO, conversion) must propagate: the range loop advances its
+// checkpoint AFTER insertEvents returns, so a swallowed error here meant
+// rows silently dropped with the range later reported complete —
+// unrecoverable event loss. The duckdb adapter wraps errors as
+// '[<pgcode>] <message>' with a `code` property; '23505' is the pg
+// unique-violation code (duckdb-postgres-adapter.ts mapErrorCode).
+const DUPLICATE_ROW_ERROR_RE = /duplicate key|unique constraint|\[23505\]/i;
+
+const isDuplicateRowError = (err: unknown): boolean => {
+  if (err !== null && typeof err === 'object' && (err as { code?: unknown }).code === '23505') {
+    return true;
+  }
+  return DUPLICATE_ROW_ERROR_RE.test(err instanceof Error ? err.message : String(err));
+};
+
 const insertEvents = async (
   chainId: number,
   contractAddress: `0x${string}`,
@@ -239,12 +311,35 @@ const insertEvents = async (
     const chunk = rows.slice(i, i + INSERT_CHUNK_SIZE);
     try {
       await insertEventChunk(chunk);
-    } catch {
+    } catch (err) {
+      // A chunk can fail for one bad row (the batch aborts atomically):
+      // retry row-by-row so the good rows still land.
+      logger.warn(
+        { chainId, contractAddress, rowCount: chunk.length, err },
+        'Event chunk insert failed; retrying rows individually',
+      );
       for (const row of chunk) {
         try {
           await insertEventChunk([row]);
-        } catch {
-          // skip duplicates
+        } catch (rowErr) {
+          if (isDuplicateRowError(rowErr)) {
+            // Legitimate dedup: the row is already stored under the PK.
+            logger.warn(
+              {
+                chainId,
+                contractAddress,
+                transactionHash: row.transactionHash,
+                logIndex: row.logIndex,
+              },
+              'Skipped duplicate event row',
+            );
+            continue;
+          }
+          logger.error(
+            { chainId, contractAddress, blockNumber: row.blockNumber, err: rowErr },
+            'Event row insert failed; failing the range so a resume replays this batch',
+          );
+          throw rowErr;
         }
       }
     }

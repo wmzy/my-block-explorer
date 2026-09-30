@@ -24,6 +24,7 @@ import {
 import { useMatched } from '@native-router/react';
 import { useServiceDiscovery } from '@/hooks/ServiceDiscoveryContext';
 import { getSortedChains, isChainSupported } from '@/config/chains';
+import { LAST_CHAIN_STORAGE_KEY } from '@/util/storageKeys';
 import {
   GettingStarted,
   backendConnectedFromStatus,
@@ -32,7 +33,9 @@ import {
   writeOnboardingDismissed,
 } from './GettingStarted';
 
-export const LAST_CHAIN_STORAGE_KEY = 'be:lastChainId';
+// Canonical literal lives in the manifest (util/storageKeys.ts);
+// re-exported so existing consumers keep this import point.
+export { LAST_CHAIN_STORAGE_KEY };
 
 // Reader for the remembered chain: a valid supported id, or undefined when
 // nothing valid is remembered (missing key, malformed value, unsupported

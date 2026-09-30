@@ -275,8 +275,36 @@ app.get('/chains/:chainId/contracts/:address/events', async c => {
 
   const { chainId, address } = result;
 
-  const page = Math.max(1, parseInt(c.req.query('page') ?? '1'));
-  const pageSize = Math.min(Math.max(1, parseInt(c.req.query('pageSize') ?? '50')), 1000);
+  // Pagination params fail loudly with 400 on non-numeric input (same
+  // contract as addresses.ts): NaN would otherwise flow into the SQL
+  // offset and surface as a 500. Missing/empty keeps the defaults, pages
+  // below 1 keep the clamp-to-1 behavior, pageSize stays capped at 1000.
+  const rawPage = c.req.query('page');
+  const rawPageSize = c.req.query('pageSize');
+  const parsedPage = rawPage === undefined || rawPage === '' ? 1 : parseInt(rawPage, 10);
+  const parsedPageSize =
+    rawPageSize === undefined || rawPageSize === '' ? 50 : parseInt(rawPageSize, 10);
+
+  if (Number.isNaN(parsedPage)) {
+    return c.json(
+      {
+        error: 'invalid_page',
+        message: 'page must be a positive integer',
+      },
+      400,
+    );
+  }
+  if (Number.isNaN(parsedPageSize)) {
+    return c.json(
+      {
+        error: 'invalid_page_size',
+        message: 'pageSize must be a positive integer',
+      },
+      400,
+    );
+  }
+  const page = Math.max(1, parsedPage);
+  const pageSize = Math.min(Math.max(1, parsedPageSize), 1000);
   const parsedFilters = parseEventFilters(new URL(c.req.url).searchParams);
   if ('error' in parsedFilters) return c.json(parsedFilters.error, parsedFilters.status);
 

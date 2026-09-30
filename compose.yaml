@@ -19,7 +19,10 @@ services:
       dockerfile: Dockerfile
       target: api
     # Published so the host browser can reach the API directly (the web
-    # container does not proxy /api).
+    # container does not proxy /api). Like every compose port mapping this
+    # binds the host side on ALL interfaces — combined with HOST=0.0.0.0
+    # baked into the api image (Dockerfile), the API is LAN-reachable from
+    # the moment compose comes up.
     ports:
       - "8201:8201"
     volumes:
@@ -29,8 +32,11 @@ services:
     environment:
       # --- optional, uncomment as needed ---
       # Gates core-workflow writes + required for the /api/performance/* admin
-      # surface. Set this whenever anything other than your own browser can
-      # reach port 8201:
+      # surface. The api container binds 0.0.0.0 and port 8201 is published
+      # on all host interfaces, so anything on your LAN can reach it — set
+      # this before exposing the stack beyond your own machine. Until you
+      # do, the server logs a loud startup warning about ungated mutating
+      # endpoints (src/startupChecks.ts):
       #   ADMIN_TOKEN: change-me-to-a-long-random-string
       # Only needed when the web UI is visited from another machine (see the
       # CORS pairing note above):

@@ -1,6 +1,6 @@
 // Value-unit preference (Native / Gwei / Wei) behind the transaction
-// Value and Transaction Fee rows, stored per browser under 'be:valueUnit'
-// (same prefix family as be:theme / be:searchHistory / be:lastChainId).
+// Value and Transaction Fee rows, stored per browser under the manifest
+// key (same prefix family as the theme and the search history).
 //
 // Idioms follow the two existing single-reader storage modules: reads and
 // writes are best-effort like themePreference (an unavailable localStorage
@@ -11,7 +11,11 @@
 
 import { formatUnits } from 'viem';
 
-export const VALUE_UNIT_STORAGE_KEY = 'be:valueUnit';
+import { VALUE_UNIT_STORAGE_KEY } from '@/util/storageKeys';
+
+// Canonical literal lives in the manifest (util/storageKeys.ts);
+// re-exported so existing consumers keep this import point.
+export { VALUE_UNIT_STORAGE_KEY };
 
 export type UnitPreference = 'native' | 'gwei' | 'wei';
 

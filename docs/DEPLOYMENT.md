@@ -125,8 +125,8 @@ that Docker may prune. Back up that directory; it is the whole database.
 - With no env set, read endpoints are open and opt-in-gated writes pass through
   — fine when only your own browser can reach port 8201. The moment the API is
   reachable from anything else (published port on a shared host, LAN exposure),
-  set `ADMIN_TOKEN` (gates core-workflow writes; also required for the
-  fail-closed `/api/performance/*` surface) and restrict `CORS_ALLOWED_ORIGINS`,
+  set `ADMIN_TOKEN` (gates core-workflow writes and the fail-closed SQL
+  console) and restrict `CORS_ALLOWED_ORIGINS`,
   or keep the API unpublished and front it with the authenticated reverse proxy
   above.
 - **Never set `ENABLE_DEBUG_API=1` in a container others can reach** — it mounts
@@ -137,7 +137,7 @@ that Docker may prune. Back up that directory; it is the whole database.
 Native-module note: `@duckdb/node-bindings-linux-x64` ships prebuilt binaries;
 the builder stages install `python3/make/g++` only because the dependency tree
 contains `better-sqlite3` (node-gyp postinstall). The runtime image is plain
-`node:22-slim` with the installed `node_modules` copied in — no toolchain
+`node:26-slim` with the installed `node_modules` copied in — no toolchain
 shipped.
 
 ## Warnings you must not skip
@@ -168,8 +168,8 @@ shipped.
        (`src/routes/storage.ts`)
    - **Fail-closed admin surface** (`requireAdminToken`): rejected with 403
      whenever `ADMIN_TOKEN` is unset **or** the header doesn't match — there is
-     no default token. Covers the entire `/api/performance/*` subtree
-     (`app.use('/performance/*', …)` in `src/routes/performance.ts`).
+     no default token. Covers the SQL console subtree
+     (`app.use('/sql/*', …)` in `src/routes/sql.ts`).
    - **Dev-only debug surface**: `ENABLE_DEBUG_API=1` mounts
      `POST /debug/db/query` — arbitrary SQL against your databases
      (`src/routes/debug.ts`). It is not mounted at all by default and carries no

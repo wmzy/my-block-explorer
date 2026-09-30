@@ -3,6 +3,7 @@ import { exec } from 'node:child_process';
 import { platform } from 'node:os';
 import * as readline from 'node:readline/promises';
 import type { UninstallOutcome } from './uninstall';
+import { appVersion } from './version';
 
 const DEFAULT_FRONTEND_URL = 'https://wmzy.github.io/my-block-explorer/';
 
@@ -114,7 +115,7 @@ async function main(): Promise<void> {
   }
 
   if (values.version) {
-    console.log('my-block-explorer v0.0.0-development');
+    console.log(`my-block-explorer v${appVersion()}`);
     process.exit(0);
   }
 
@@ -147,7 +148,7 @@ async function main(): Promise<void> {
   // Dynamic import for the same reason as uninstall: --help/--version/
   // subcommands must not construct the database adapter (it mkdirs data/).
   const { createServer } = await import('./server');
-  const { port: _port } = createServer({ port: portArg });
+  const { port: _port } = await createServer({ port: portArg });
 
   if (values.open) {
     const url = process.env.FRONTEND_URL ?? DEFAULT_FRONTEND_URL;

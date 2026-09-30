@@ -9,21 +9,24 @@
 //
 // Key grammar (single source of truth for the writer, the reader AND the
 // backup layer): `be:privateNote:<chainId>:<checksummed address>`. The
-// regex below is what the exporter scans for and what the restore's
-// write plan is pinned to — a hostile backup file cannot reach any other
+// grammar constants come from the manifest (util/storageKeys.ts) — the
+// regex is what the exporter scans for and what the restore's write plan
+// is pinned to, so a hostile backup file cannot reach any other
 // localStorage key through private notes.
 import { getAddress } from 'viem';
 import { checkAddressValidity } from '@/views/Address/addressValidity';
+import { PRIVATE_NOTE_KEY_PREFIX, PRIVATE_NOTE_KEY_RE } from '@/util/storageKeys';
 
-export const PRIVATE_NOTE_KEY_PREFIX = 'be:privateNote:';
+// Canonical literals live in the manifest (util/storageKeys.ts);
+// re-exported so existing consumers keep this import point.
+export { PRIVATE_NOTE_KEY_PREFIX, PRIVATE_NOTE_KEY_RE };
 
 /** Hard cap enforced on save (the editor mirrors it with a live counter). */
 export const PRIVATE_NOTE_MAX_CHARS = 280;
 
-// Written keys are always checksummed, but the regex must also match what
-// a hand-edited storage can hold (any hex case) so the backup scan sees
-// the entry and the restore normalizes it.
-export const PRIVATE_NOTE_KEY_RE = /^be:privateNote:\d+:0x[0-9a-fA-F]{40}$/;
+// Written keys are always checksummed, but the manifest's grammar regex
+// must also match what a hand-edited storage can hold (any hex case) so
+// the backup scan sees the entry and the restore normalizes it.
 
 /** The three localStorage calls this store needs (injectable for tests). */
 export type PrivateNoteStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;

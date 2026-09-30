@@ -1,12 +1,16 @@
-// Theme preference (Light / Dark / System), stored per browser under
-// 'be:theme' (same prefix family as be:searchHistory / be:lastChainId).
-// This module is the single reader/writer of the key and owns the mapping
-// from a preference to the `data-theme` attribute the palette overrides in
-// theme.css select on. Storage is best-effort, matching searchHistory: a
-// full/private-mode localStorage degrades reads to 'system' and swallows
-// writes — theming must never break rendering.
+// Theme preference (Light / Dark / System), stored per browser under the
+// manifest key (same prefix family as the search history and the
+// remembered chain). This module is the single reader/writer of the key
+// and owns the mapping from a preference to the `data-theme` attribute
+// the palette overrides in theme.css select on. Storage is best-effort,
+// matching searchHistory: a full/private-mode localStorage degrades reads
+// to 'system' and swallows writes — theming must never break rendering.
 
-export const THEME_STORAGE_KEY = 'be:theme';
+import { THEME_STORAGE_KEY } from '@/util/storageKeys';
+
+// Canonical literal lives in the manifest (util/storageKeys.ts);
+// re-exported so existing consumers keep this import point.
+export { THEME_STORAGE_KEY };
 
 export type ThemePreference = 'light' | 'dark' | 'system';
 

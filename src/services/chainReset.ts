@@ -6,8 +6,9 @@
 // one-click clear of the backend's chain-scoped caches.
 //
 // Detection model: per-chain high-water head mark in localStorage
-// ('be:lastHead:{chainId}' = {blockNumber, updatedAt}, same be: prefix
-// family as be:theme / be:searchHistory). The mark only ever moves UP —
+// (LAST_HEAD_STORAGE_PREFIX + chainId = {blockNumber, updatedAt}, same
+// be: prefix family as the theme and the search history). The mark only
+// ever moves UP —
 // a sub-threshold regression is a reorg and is ignored; a head ≥5 blocks
 // BELOW the mark means the chain itself was reset. While a reset is
 // suspected the mark stays frozen so the banner keeps firing (and its
@@ -17,12 +18,14 @@
 // simply stays quiet.
 import { useEffect, useState } from 'react';
 import { del } from '@/util/http';
+import { CHAIN_RESET_DISMISSED_PREFIX, LAST_HEAD_STORAGE_PREFIX } from '@/util/storageKeys';
+
+// Canonical literals live in the manifest (util/storageKeys.ts);
+// re-exported so existing consumers keep this import point.
+export { CHAIN_RESET_DISMISSED_PREFIX, LAST_HEAD_STORAGE_PREFIX };
 
 /** Heads at or beyond this distance below the mark read as a reset. */
 export const CHAIN_RESET_THRESHOLD_BLOCKS = 5;
-
-export const LAST_HEAD_STORAGE_PREFIX = 'be:lastHead:';
-export const CHAIN_RESET_DISMISSED_PREFIX = 'be:chainResetDismissed:';
 
 /** The stored high-water head for one chain (blockNumber + when seen). */
 export type StoredChainHead = { blockNumber: number; updatedAt: number };

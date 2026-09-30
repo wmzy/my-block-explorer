@@ -21,7 +21,7 @@ wave, "Deferred by PM decision"; re-pinned in the 2026-09-22/23
 - Admin auth is **two-tier**, both keyed on the `x-admin-token` header with a
   timing-safe compare (`src/middleware/admin-token.ts`):
   - **Strict / fail-closed** (`requireAdminToken`): 403 whenever the token is
-    unset or wrong. Covers raw-power surfaces — `/api/performance/*`, the SQL
+    unset or wrong. Covers raw-power surfaces — the SQL
     console, the debug API.
   - **Opt-in** (`requireAdminTokenIfConfigured`): passes when `ADMIN_TOKEN` is
     unset (zero-config local sessions work out of the box), enforces identically

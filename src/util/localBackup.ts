@@ -21,9 +21,17 @@
 // writes, the private-note key grammar (util/privateNotes.ts), and the
 // label/note caps the write API (routes/labels.ts) enforces when the
 // plan is replayed.
-import { IPFS_GATEWAY_STORAGE_KEY } from '@/services/nftMetadata';
-import { THEME_STORAGE_KEY } from '@/themePreference';
-import { WATCHLIST_STORAGE_KEY, WATCHLIST_MAX_ENTRIES } from '@/util/watchlist';
+//
+// Key constants and grammar regexes come from the localStorage manifest
+// (util/storageKeys.ts) — the same literals the owners write and the
+// export side scans with, so the three sides cannot drift apart.
+import { WATCHLIST_MAX_ENTRIES } from '@/util/watchlist';
+import {
+  CUSTOM_ABI_KEY_RE,
+  IPFS_GATEWAY_STORAGE_KEY,
+  THEME_STORAGE_KEY,
+  WATCHLIST_STORAGE_KEY,
+} from '@/util/storageKeys';
 import {
   checksummedAddressOrNull,
   privateNoteStorageKey,
@@ -51,12 +59,6 @@ const NOTE_MAX_LENGTH = 500;
 
 // 0x + 40 hex chars — the same shape tier every address surface uses.
 export const HEX_ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
-
-// Custom-ABI storage keys exactly as views/Contract writes them:
-// `custom-abi:<chainId>:<lowercase address>`. Pinning the pattern here is
-// also the restore's safety rail — a backup file cannot smuggle writes
-// to arbitrary localStorage keys (e.g. be:theme) through customAbis.
-export const CUSTOM_ABI_KEY_RE = /^custom-abi:\d+:0x[0-9a-f]{40}$/;
 
 /** One address-label row exactly as GET /api/labels serves it. */
 export type BackupLabelRow = {
@@ -102,6 +104,21 @@ export type BackupBrowserParts = {
   /** Browser-local private notes (v2+; v1 files parse with []). */
   privateNotes: BackupPrivateNote[];
 };
+
+// The manifest entry ids (util/storageKeys.ts) the browser section's
+// five fields consume. The manifest decides WHAT export collects; this
+// table — owned by the file format — decides where each collected family
+// lands. An includeInBackup family absent here is collected but has no
+// section to land in, and services/backupRestore.ts attributes that
+// honestly instead of dropping it silently. Adding a section means a
+// format version bump (see BACKUP_VERSION).
+export const BACKUP_SECTION_ENTRY_IDS: readonly string[] = [
+  'watchlist',
+  'theme',
+  'ipfsGateway',
+  'customAbi',
+  'privateNote',
+];
 
 /** The v2 backup file (what gets serialized to disk). */
 export type BackupFile = {

@@ -2,7 +2,7 @@ import { serve } from '@hono/node-server';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { setGlobalDispatcher, ProxyAgent } from 'undici';
-import apiApp from './api-app';
+import apiApp, { reconcileStartupState } from './api-app';
 import { db } from './database/drizzle';
 import { runStartupSecurityChecks } from './startupChecks';
 import { createStaticFrontendHandler } from './middleware/og-meta';
@@ -11,9 +11,20 @@ export type ServerOptions = {
   port?: number;
 };
 
-export function createServer(options: ServerOptions = {}) {
+export async function createServer(options: ServerOptions = {}) {
   const port = options.port ?? parseInt(process.env.PORT ?? '8201');
-  const hostname = process.env.HOST;
+  // Default to the loopback bind: an unset HOST must mean "local dev", never
+  // "all interfaces". Passing undefined to serve() would make Node bind ::
+  // (dual-stack, LAN-reachable) while startupChecks treats unset HOST as
+  // loopback — the exact posture inversion this default closes. The default
+  // is the IPv4 literal 127.0.0.1, NOT 'localhost': Node resolves 'localhost'
+  // to a single stack (on Linux often ::1 only), which silently breaks every
+  // IPv4-literal loopback consumer (the MCP default EXPLORER_API_URL,
+  // curl-by-IP, docker healthchecks); browsers probing 'localhost' still
+  // reach an IPv4 bind via happy-eyeballs. Explicit HOST (e.g.
+  // HOST=0.0.0.0 in the Docker api image) still overrides, and the startup
+  // posture then evaluates the real bind.
+  const hostname = process.env.HOST ?? '127.0.0.1';
 
   // Public-binding posture, evaluated before listen: refuse to start with
   // ENABLE_DEBUG_API on a non-loopback HOST (unless ALLOW_INSECURE_START=1)
@@ -59,6 +70,14 @@ export function createServer(options: ServerOptions = {}) {
     });
   }
 
+  // Zombie-walk reconciliation (stranded 'running' rows → 'error') must
+  // land BEFORE the listener exists: awaited here so the blanket UPDATE
+  // can never race a job this same process just started — the old
+  // fire-and-forget call in api-app's module scope could flip a fresh job
+  // between listen and the UPDATE committing. Never throws (failures are
+  // logged inside reconcileStartupState); boot proceeds regardless.
+  await reconcileStartupState();
+
   const server = serve(
     {
       fetch: fetchHandler,
@@ -86,14 +105,35 @@ export function createServer(options: ServerOptions = {}) {
     },
   );
 
+  let shutdownStarted = false;
   const shutdown = async () => {
+    // A second signal means "stop waiting" — abandon in-flight cleanup.
+    if (shutdownStarted) {
+      console.log('Second shutdown signal received, exiting immediately.');
+      process.exit(1);
+    }
+    shutdownStarted = true;
+
     console.log('Shutting down gracefully...');
     try {
       await db.$client.end?.();
     } catch (error) {
       console.warn('Shutdown checkpoint failed:', error);
     }
+    // Idle keep-alive sockets hold close() open forever — destroy them so
+    // the callback can actually fire. serve()'s declared return type covers
+    // http2 variants that lack this method; our options always build a
+    // plain http.Server, hence the narrowing guard.
+    if ('closeAllConnections' in server) server.closeAllConnections();
+    // Bound the wait regardless: anything still blocking close() (in-flight
+    // request, stray handle) must not turn SIGTERM into a hang.
+    const forceExitTimer = setTimeout(() => {
+      console.warn('Graceful shutdown did not finish within 5s, forcing exit.');
+      process.exit(1);
+    }, 5000);
+    forceExitTimer.unref?.();
     server.close(() => {
+      clearTimeout(forceExitTimer);
       process.exit(0);
     });
   };

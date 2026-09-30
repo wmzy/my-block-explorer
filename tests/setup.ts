@@ -1,7 +1,6 @@
-import { expect, afterEach, beforeAll, afterAll, beforeEach, vi } from 'vitest';
+import { expect, afterEach, beforeAll, beforeEach, vi } from 'vitest';
 import { cleanup } from '@testing-library/react';
 import * as matchers from '@testing-library/jest-dom/matchers';
-import { simpleTestDb } from './testDatabase';
 import { setApiBase } from '@/util/apiBase';
 import React from 'react';
 
@@ -166,33 +165,6 @@ vi.mock('haze-ui', () => ({
 // Cleanup after each test
 afterEach(() => {
   cleanup();
-});
-
-// Initialize test database before all tests
-beforeAll(async () => {
-  try {
-    await simpleTestDb.initialize();
-  } catch (error) {
-    console.warn('Failed to initialize test database:', error);
-  }
-});
-
-// Clean up test database after all tests
-afterAll(async () => {
-  try {
-    await simpleTestDb.close();
-  } catch (error) {
-    console.warn('Failed to close test database:', error);
-  }
-});
-
-// Clear test data before each test
-beforeEach(async () => {
-  try {
-    await simpleTestDb.clearAllData();
-  } catch (error) {
-    console.warn('Failed to clear test data:', error);
-  }
 });
 
 // Mock window.matchMedia for responsive design tests

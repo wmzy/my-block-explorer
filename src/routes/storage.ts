@@ -82,7 +82,15 @@ app.get('/chains/:chainId/contracts/:address/storage/:slot', async c => {
     }
     slot = slotParam as `0x${string}`;
   } else {
-    const slotNumber = BigInt(slotParam);
+    // Non-hex slots are decimal integers; junk like 'abc' or '1.5' makes
+    // BigInt() throw, which would escape as a generic 500 — answer with
+    // the same 400 contract as the hex branch above.
+    let slotNumber: bigint;
+    try {
+      slotNumber = BigInt(slotParam);
+    } catch {
+      return c.json({ error: 'Invalid slot: must be a decimal integer' }, 400);
+    }
     if (slotNumber < 0n) {
       return c.json({ error: 'Invalid slot: must be non-negative' }, 400);
     }

@@ -1128,6 +1128,116 @@ function RawLogDisclosure({
   );
 }
 
+// Memoized table row: the toggle cell, the data cells, and the lazy
+// disclosure row, exactly as the former inline map body rendered them.
+// React.memo over {event, rowKey, chainId, emitterFallback, isExpanded,
+// onToggle} means a single disclosure toggle re-renders only that row —
+// event objects keep their identity across renders (expandedRawLogs is
+// separate state) and onToggle (toggleRawLog) is a stable useCallback.
+export type EventRowProps = {
+  event: EventData;
+  // Row identity (tx hash + log index), doubling as the disclosure key.
+  rowKey: string;
+  chainId: number;
+  // Rendered as the emitter fallback when the row lacks contractAddress.
+  emitterFallback: Address;
+  isExpanded: boolean;
+  onToggle: (key: string) => void;
+};
+
+export const EventRow = React.memo(({
+  event,
+  rowKey,
+  chainId,
+  emitterFallback,
+  isExpanded,
+  onToggle,
+}: EventRowProps) => {
+  const toggleLabel = `Raw log for block ${event.blockNumber}${
+    typeof event.logIndex === 'number' ? `, log index ${event.logIndex}` : ''
+  }`;
+
+  return (
+    <React.Fragment>
+      <tr>
+        <td className={rawLogToggleCell}>
+          <button
+            type="button"
+            className={rawLogToggleButton}
+            aria-expanded={isExpanded}
+            aria-label={toggleLabel}
+            title={toggleLabel}
+            onClick={() => onToggle(rowKey)}
+          >
+            <svg
+              className={cx(rawLogChevron, isExpanded && rawLogChevronExpanded)}
+              viewBox="0 0 20 20"
+              fill="currentColor"
+              aria-hidden="true"
+            >
+              <path
+                fillRule="evenodd"
+                d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
+                clipRule="evenodd"
+              />
+            </svg>
+          </button>
+        </td>
+        <td className={tableCell}>{event.blockNumber}</td>
+        <td className={cx(tableCell, timestampCell)}>
+          {formatTimestamp(event.blockTimestamp)}
+        </td>
+        <td className={cx(tableCell, eventNameCell)}>
+          {event.eventName}
+          {event.isFinalized === false && <span className={unfinalizedBadge}>unfinalized</span>}
+        </td>
+        <td className={cx(tableCell, addressCell)}>
+          {event.from ? (
+            <a
+              href={`/chain/${chainId}/address/${event.from}`}
+              style={{ color: 'var(--haze-color-primary)', textDecoration: 'none' }}
+            >
+              {formatAddress(event.from)}
+            </a>
+          ) : (
+            'N/A'
+          )}
+        </td>
+        <td className={cx(tableCell, addressCell)}>
+          {event.to ? (
+            <a
+              href={`/chain/${chainId}/address/${event.to}`}
+              style={{ color: 'var(--haze-color-primary)', textDecoration: 'none' }}
+            >
+              {formatAddress(event.to)}
+            </a>
+          ) : (
+            'N/A'
+          )}
+        </td>
+        <td className={cx(tableCell, valueCell)}>{formatValue(event.value)}</td>
+        <td className={cx(tableCell, transactionHashCell)}>
+          <a
+            href={`/chain/${chainId}/tx/${event.transactionHash}`}
+            style={{ color: 'var(--haze-color-primary)', textDecoration: 'none' }}
+          >
+            {formatTransactionHash(event.transactionHash)}
+          </a>
+        </td>
+      </tr>
+      {/* Lazy disclosure: the detail row only mounts while the
+          row is expanded. */}
+      {isExpanded && (
+        <tr>
+          <td colSpan={8} className={rawLogRowCell}>
+            <RawLogDisclosure event={event} chainId={chainId} emitterFallback={emitterFallback} />
+          </td>
+        </tr>
+      )}
+    </React.Fragment>
+  );
+});
+
 // Default sort options
 const defaultSortOptions: SortOption[] = [
   {
@@ -1273,9 +1383,19 @@ export const EventTable: React.FC<EventTableProps> = ({
   const shouldUseClientSideSort =
     enableClientSideSort && pagination.total > 0 && pagination.total <= clientSideSortThreshold;
 
+  // Request-race guard: every fetchEvents call stamps itself with the
+  // current (monotonic) id, and each async setState below is gated on the
+  // id still being current. When a slower earlier request (previous page,
+  // old sort) resolves after a newer one, its response is discarded instead
+  // of clobbering rows that no longer match the pagination/sort state. The
+  // unmount cleanup bumps the id so in-flight responses never setState on a
+  // dead component.
+  const requestIdRef = useRef(0);
+
   // API call function
   const fetchEvents = useCallback(
     async (cursor?: string, targetPage?: number) => {
+      const requestId = ++requestIdRef.current;
       setLoading(true);
       setError(null);
 
@@ -1346,6 +1466,10 @@ export const EventTable: React.FC<EventTableProps> = ({
           totalPages?: number;
         }>(url);
 
+        // Superseded by a newer request (or unmounted): discard instead of
+        // rendering rows that no longer match the current pagination/sort.
+        if (requestId !== requestIdRef.current) return;
+
         const normalizedEvents = (data.events ?? []).map(e => {
           const args =
             typeof e.decodedArgs === 'string'
@@ -1378,10 +1502,15 @@ export const EventTable: React.FC<EventTableProps> = ({
           totalPages: data.totalPages,
         }));
       } catch (err) {
+        if (requestId !== requestIdRef.current) return;
         console.error('Failed to fetch events:', err);
         setError(err instanceof Error ? err.message : 'Failed to load events');
       } finally {
-        setLoading(false);
+        // Only the newest request owns the loading flag: a superseded
+        // request clearing it would un-disable controls mid-flight.
+        if (requestId === requestIdRef.current) {
+          setLoading(false);
+        }
       }
     },
     [
@@ -1402,7 +1531,25 @@ export const EventTable: React.FC<EventTableProps> = ({
     fetchEvents();
   }, [chainId, contractAddress, refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Unmount invalidates in-flight responses (see requestIdRef): the bumped
+  // id turns their gated setStates into no-ops.
+  useEffect(
+    () => () => {
+      requestIdRef.current++;
+    },
+    [],
+  );
+
+  // Limit/sort changes refetch — except on mount, where the initial-load
+  // effect above already issued the identical request (initialEvents
+  // pre-populating allEvents makes the gate below pass, which used to
+  // produce two identical fetches on mount).
+  const skipFirstSortEffectRef = useRef(true);
   useEffect(() => {
+    if (skipFirstSortEffectRef.current) {
+      skipFirstSortEffectRef.current = false;
+      return;
+    }
     if (allEvents.length > 0) {
       fetchEvents();
     }
@@ -2002,95 +2149,16 @@ export const EventTable: React.FC<EventTableProps> = ({
                 // primary key of the indexed row (index only as a fallback for
                 // rows supplied without a logIndex).
                 const rowKey = `${event.transactionHash}-${event.logIndex ?? index}`;
-                const isExpanded = expandedRawLogs.has(rowKey);
-                const toggleLabel = `Raw log for block ${event.blockNumber}${
-                  typeof event.logIndex === 'number' ? `, log index ${event.logIndex}` : ''
-                }`;
-
                 return (
-                  <React.Fragment key={rowKey}>
-                    <tr>
-                      <td className={rawLogToggleCell}>
-                        <button
-                          type="button"
-                          className={rawLogToggleButton}
-                          aria-expanded={isExpanded}
-                          aria-label={toggleLabel}
-                          title={toggleLabel}
-                          onClick={() => toggleRawLog(rowKey)}
-                        >
-                          <svg
-                            className={cx(rawLogChevron, isExpanded && rawLogChevronExpanded)}
-                            viewBox="0 0 20 20"
-                            fill="currentColor"
-                            aria-hidden="true"
-                          >
-                            <path
-                              fillRule="evenodd"
-                              d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
-                              clipRule="evenodd"
-                            />
-                          </svg>
-                        </button>
-                      </td>
-                      <td className={tableCell}>{event.blockNumber}</td>
-                      <td className={cx(tableCell, timestampCell)}>
-                        {formatTimestamp(event.blockTimestamp)}
-                      </td>
-                      <td className={cx(tableCell, eventNameCell)}>
-                        {event.eventName}
-                        {event.isFinalized === false && (
-                          <span className={unfinalizedBadge}>unfinalized</span>
-                        )}
-                      </td>
-                      <td className={cx(tableCell, addressCell)}>
-                        {event.from ? (
-                          <a
-                            href={`/chain/${chainId}/address/${event.from}`}
-                            style={{ color: 'var(--haze-color-primary)', textDecoration: 'none' }}
-                          >
-                            {formatAddress(event.from)}
-                          </a>
-                        ) : (
-                          'N/A'
-                        )}
-                      </td>
-                      <td className={cx(tableCell, addressCell)}>
-                        {event.to ? (
-                          <a
-                            href={`/chain/${chainId}/address/${event.to}`}
-                            style={{ color: 'var(--haze-color-primary)', textDecoration: 'none' }}
-                          >
-                            {formatAddress(event.to)}
-                          </a>
-                        ) : (
-                          'N/A'
-                        )}
-                      </td>
-                      <td className={cx(tableCell, valueCell)}>{formatValue(event.value)}</td>
-                      <td className={cx(tableCell, transactionHashCell)}>
-                        <a
-                          href={`/chain/${chainId}/tx/${event.transactionHash}`}
-                          style={{ color: 'var(--haze-color-primary)', textDecoration: 'none' }}
-                        >
-                          {formatTransactionHash(event.transactionHash)}
-                        </a>
-                      </td>
-                    </tr>
-                    {/* Lazy disclosure: the detail row only mounts while the
-                        row is expanded. */}
-                    {isExpanded && (
-                      <tr>
-                        <td colSpan={8} className={rawLogRowCell}>
-                          <RawLogDisclosure
-                            event={event}
-                            chainId={chainId}
-                            emitterFallback={contractAddress}
-                          />
-                        </td>
-                      </tr>
-                    )}
-                  </React.Fragment>
+                  <EventRow
+                    key={rowKey}
+                    event={event}
+                    rowKey={rowKey}
+                    chainId={chainId}
+                    emitterFallback={contractAddress}
+                    isExpanded={expandedRawLogs.has(rowKey)}
+                    onToggle={toggleRawLog}
+                  />
                 );
               })}
             </tbody>

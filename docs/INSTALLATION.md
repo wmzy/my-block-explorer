@@ -44,7 +44,8 @@ signature cache, storage layouts.
 Run the API where others can reach it; the full model is in
 [DEPLOYMENT.md](./DEPLOYMENT.md). The knobs that matter:
 
-- **`ADMIN_TOKEN` (two tiers)** — `/api/performance/*` always requires it and
+- **`ADMIN_TOKEN` (two tiers)** — the SQL console
+  (`POST /api/sql/query`, `GET /api/sql/tables`) always requires it and
   403s even when unset (fail-closed); the core-workflow writes (event ranges,
   labels, RPC configs, contract/storage cache clears) enforce it only once it is
   set, so a zero-config local session stays frictionless. Each browser stores
@@ -87,7 +88,7 @@ source.
 
 ## Requirements
 
-- Node.js **22+** (`engines` field in `package.json`)
+- Node.js **26+** (`engines` field in `package.json`; the server build targets `node26`)
 - **pnpm** — the repo's node_modules layout breaks npm's arborist; use pnpm for
   every command below
 - Free disk for DuckDB files if you index events
@@ -124,7 +125,7 @@ by the code:
 | ---------------------------- | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `PORT`                       | `8201` (server) / `3000` (vite dev) | Listen port                                                                                                                                                                                                                                                                                                             |
 | `DATABASE_URL`               | `duckdb://data/blockchain.db`       | Main DuckDB file                                                                                                                                                                                                                                                                                                        |
-| `ADMIN_TOKEN`                | unset                               | When set, enforces the `x-admin-token` header on the core-workflow writes (event ranges, RPC configs, contract/storage-layout cache clears) and the performance endpoints. Unset: those writes pass through, while `/api/performance/*` still 403s (fail-closed). Two-tier details in [DEPLOYMENT.md](./DEPLOYMENT.md). |
+| `ADMIN_TOKEN`                | unset                               | When set, enforces the `x-admin-token` header on the core-workflow writes (event ranges, RPC configs, contract/storage-layout cache clears). Unset: those writes pass through, while the SQL console (`/api/sql/*`) still 403s (fail-closed). Two-tier details in [DEPLOYMENT.md](./DEPLOYMENT.md). |
 | `ENABLE_DEBUG_API`           | unset                               | `1` mounts `POST /debug/db/query` (raw SQL) — never enable on a reachable host                                                                                                                                                                                                                                          |
 | `LOG_LEVEL`                  | `info`                              | pino log level                                                                                                                                                                                                                                                                                                          |
 | `HTTP_PROXY` / `HTTPS_PROXY` | unset                               | Proxy for outbound RPC calls                                                                                                                                                                                                                                                                                            |
@@ -216,6 +217,6 @@ and an nginx sketch.
   `localhost:8201-8205`; start one or enter its URL manually.
 - **403 on RPC settings / cache clear** — the server has `ADMIN_TOKEN` set and
   the browser token doesn't match; fill it in the ⚙️ RPC modal. (With
-  `ADMIN_TOKEN` unset these writes pass through — only `/api/performance/*`
-  403s.)
+  `ADMIN_TOKEN` unset these writes pass through — only the SQL console
+  (`/api/sql/*`) 403s.)
 - **RPC calls fail behind a firewall** — set `HTTP_PROXY`/`HTTPS_PROXY`.

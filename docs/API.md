@@ -17,7 +17,7 @@ files are the source of truth.
   delete, and `open-in-ide` — all non-destructive or regenerative operations
   (dropped caches re-fetch from upstream; the IDE endpoint only builds a URL),
   so a token-less local session stays fully functional. 🔒 **Fail-closed tier**
-  (`requireAdminToken` — no token configured → `403`): `/api/performance/*`, the
+  (`requireAdminToken` — no token configured → `403`): the
   SQL console (`POST /api/sql/query`, `GET /api/sql/tables`), the
   admin/diagnostic surface.
 - **Common response headers**: `X-Data-Source` (e.g. `database`, `rpc`, method
@@ -227,14 +227,11 @@ token (verified against the server on save).
 🔐 = `requireAdminTokenIfConfigured` (enforced only when `ADMIN_TOKEN` is set);
 🔒 = `requireAdminToken` (fail-closed). See the Auth bullet at the top.
 
-## Performance & debug
+## Debug
 
-| Method & path                          | Notes                                                                                                                                                                                                                                                                                                               |
-| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /api/performance/events?chainId=` | 🔒 **admin** — performance metrics                                                                                                                                                                                                                                                                                  |
-| `POST /api/performance/clear-cache`    | 🔒 **admin**                                                                                                                                                                                                                                                                                                        |
-| `POST /api/performance/warmup`         | 🔒 **admin** — cache warmup                                                                                                                                                                                                                                                                                         |
-| `POST /debug/db/query`                 | ⚠️ **opt-in via `ENABLE_DEBUG_API=1`** — executes arbitrary SQL; gated by the opt-in admin tier (`x-admin-token` required when `ADMIN_TOKEN` is set). The server **refuses to start** with the debug API enabled on a non-loopback bind unless `ALLOW_INSECURE_START=1`; still, never enable it on a reachable host |
+| Method & path          | Notes                                                                                                                                                                                                                                                                                                               |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST /debug/db/query` | ⚠️ **opt-in via `ENABLE_DEBUG_API=1`** — executes arbitrary SQL; gated by the opt-in admin tier (`x-admin-token` required when `ADMIN_TOKEN` is set). The server **refuses to start** with the debug API enabled on a non-loopback bind unless `ALLOW_INSECURE_START=1`; still, never enable it on a reachable host |
 
 ## Rate limiting & startup security checks
 

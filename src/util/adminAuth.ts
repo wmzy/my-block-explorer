@@ -3,7 +3,7 @@
 // performance tooling) behind the x-admin-token header, mirroring
 // ADMIN_TOKEN on the server. Stored per browser; attached to every
 // request by the http chain in util/http.ts.
-const STORAGE_KEY = 'my-block-explorer-admin-token';
+import { ADMIN_TOKEN_STORAGE_KEY as STORAGE_KEY } from '@/util/storageKeys';
 
 export function getAdminToken(): string | null {
   try {

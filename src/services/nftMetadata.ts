@@ -17,9 +17,11 @@ import { useEffect, useState } from 'react';
 import { parseAbi, type Address } from 'viem';
 
 import { createRpcClient } from '@/utils/realTimeData';
+import { IPFS_GATEWAY_STORAGE_KEY } from '@/util/storageKeys';
 
-/** localStorage key holding the user's preferred IPFS gateway. */
-export const IPFS_GATEWAY_STORAGE_KEY = 'be:ipfsGateway';
+// Canonical literal lives in the manifest (util/storageKeys.ts);
+// re-exported so existing consumers keep this import point.
+export { IPFS_GATEWAY_STORAGE_KEY };
 
 export const DEFAULT_IPFS_GATEWAY = 'https://ipfs.io';
 

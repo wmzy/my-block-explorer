@@ -9,6 +9,18 @@ import { listCustomChainIds, registerCustomChain, removeCustomChain } from '../c
 import { createLogger } from '../server/logger';
 
 const logger = createLogger('rpc-manager');
+
+// Log-safe RPC endpoint identity: provider URLs routinely embed API keys
+// in the path or query (Alchemy/Infura style), so logs carry the HOST
+// only — never the full URL (same convention as WatchService's
+// webhookHostForLog). '<invalid-url>' marks an unparseable value.
+const rpcHostForLog = (url: string): string => {
+  try {
+    return new URL(url).host;
+  } catch {
+    return '<invalid-url>';
+  }
+};
 import { db, userRpcConfigs, customChains } from '../database/init';
 import { seedBuiltinLabels } from '../database/seedBuiltinLabels';
 import { eq } from 'drizzle-orm';
@@ -123,7 +135,17 @@ export class RpcManager {
       try {
         logger.info({ chainId }, 'Creating new RPC client for chain');
         const config = this.userConfigs.get(chainId);
-        logger.info({ configFound: !!config, customRpc: config?.customRpcUrl }, 'RPC config');
+        logger.info(
+          {
+            configFound: !!config,
+            // Host + discriminator only — the URL itself may embed a key.
+            rpcSource: config?.customRpcUrl !== undefined ? 'user-config' : 'viem-default',
+            ...(config?.customRpcUrl !== undefined
+              ? { rpcHost: rpcHostForLog(config.customRpcUrl) }
+              : {}),
+          },
+          'RPC config',
+        );
 
         const client = await this.createClient(chainId);
         this.clients.set(chainId, client);
@@ -150,9 +172,18 @@ export class RpcManager {
 
     // Get the effective RPC URL (user config first, otherwise the viem default)
     const userConfig = this.userConfigs.get(chainId);
-    const rpcUrl = userConfig?.customRpcUrl ?? getDefaultRpcUrl(chainId);
+    const customRpcUrl = userConfig?.customRpcUrl;
+    const rpcUrl = customRpcUrl ?? getDefaultRpcUrl(chainId);
 
-    logger.info({ rpcUrl }, 'Creating client with RPC URL');
+    // Host + discriminator only: user URLs embed provider API keys and
+    // even defaults are unnecessary detail — chainId identifies the client.
+    logger.info(
+      {
+        rpcSource: customRpcUrl !== undefined ? 'user-config' : 'viem-default',
+        rpcHost: rpcHostForLog(rpcUrl),
+      },
+      'Creating client with RPC URL',
+    );
 
     return createPublicClient({
       chain: viemChain,

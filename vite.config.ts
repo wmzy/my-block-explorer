@@ -6,7 +6,7 @@ import path from 'path';
 import type { Plugin } from 'vite';
 // Relative import of a dependency-free module — safe for esbuild's config
 // bundling (no @/ alias resolution needed; see cors-origins.ts header).
-import { allowedCorsOriginList } from './src/middleware/cors-origins';
+import { allowedCorsOriginList, isLoopbackRemoteAddress } from './src/middleware/cors-origins';
 
 // Custom plugin to integrate Hono API app
 function honoApiPlugin(): Plugin {
@@ -46,12 +46,18 @@ function honoApiPlugin(): Plugin {
           // API's URL-redaction policy treats Origin-less requests as
           // untrusted (fail-closed without socket info — this in-process
           // bridge has none). The dev server's own page IS the same-origin
-          // reader, so synthesize the request's own host as Origin. Dev
-          // bridge only: the standalone server never runs this code.
+          // reader, so synthesize the request's own host as Origin — but
+          // only when the connection comes from this machine: Host is
+          // client-controlled (a LAN peer can send `Host: localhost` at the
+          // `host: true` listener), and a forged loopback Origin would grant
+          // that peer full unredacted RPC URLs with embedded provider API
+          // keys. Remote Origin-less requests keep the fail-closed no-Origin
+          // behavior. Dev bridge only: the standalone server never runs
+          // this code.
           const headers: Record<string, string> = {
             ...(req.headers as Record<string, string>),
           };
-          if (!headers.origin && headers.host) {
+          if (!headers.origin && headers.host && isLoopbackRemoteAddress(req.socket.remoteAddress)) {
             headers.origin = `http://${headers.host}`;
           }
 
@@ -122,7 +128,6 @@ export default defineConfig({
         manualChunks(id) {
           if (id.includes('node_modules/react-dom') || id.includes('node_modules/react/'))
             return 'vendor';
-          if (id.includes('node_modules/react-router')) return 'router';
           if (id.includes('node_modules/echarts')) return 'charts';
         },
       },

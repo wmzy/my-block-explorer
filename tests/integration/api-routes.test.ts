@@ -71,6 +71,49 @@ describe('API routes', () => {
     });
   });
 
+  describe('thrown validation errors use the unified JSON envelope', () => {
+    // Routes that let server/validation.ts's HTTPExceptions escape (blocks,
+    // transactions, addresses, …) used to surface Hono's plain-text
+    // exception page. The app-level onError now maps them onto the same
+    // createApiError envelope as every other error path, because the
+    // frontend (util/http.ts toApiError) only reads JSON bodies — a
+    // plain-text 400 degraded to a bare "HTTP 400" with the reason lost.
+    it('wraps an unsupported-chain throw (blocks route)', async () => {
+      const response = await app.request('/api/chains/999999/blocks/latest');
+
+      expect(response.status).toBe(400);
+      expect(response.headers.get('content-type')).toContain('application/json');
+      expect(await response.json()).toEqual({
+        error: 'Unsupported chain',
+        message: 'Unsupported chain',
+        statusCode: 400,
+        timestamp: expect.any(String),
+      });
+    });
+
+    it('wraps a malformed-address throw (addresses route)', async () => {
+      const response = await app.request('/api/chains/1/addresses/not-an-address');
+
+      expect(response.status).toBe(400);
+      const body = await response.json();
+      expect(body.error).toBe('Invalid address format');
+      expect(body.message).toBe('Invalid address format');
+      expect(body.statusCode).toBe(400);
+      expect(typeof body.timestamp).toBe('string');
+    });
+
+    it('keeps the checksum-failure tier distinguishable via message', async () => {
+      // Mixed-case with a wrong EIP-55 checksum: the frontend branches its
+      // input guidance on this tier, so the message must survive verbatim.
+      const response = await app.request(
+        '/api/chains/1/addresses/0xAaBbccDDeeFF00112233445566778899aabbccdd',
+      );
+
+      expect(response.status).toBe(400);
+      expect((await response.json()).message).toBe('Invalid address checksum');
+    });
+  });
+
   describe('admin gating (no env vars)', () => {
     // Gating model: rpc-config READS are open (endpoint URLs, no secrets).
     // rpc-config WRITES use the opt-in gate (requireAdminTokenIfConfigured):
@@ -149,8 +192,8 @@ describe('API routes', () => {
       expect(body.message).toBe('Invalid admin token.');
     });
 
-    it('rejects GET /api/performance/events (whole subtree gated)', async () => {
-      const response = await app.request('/api/performance/events');
+    it('rejects GET /api/sql/tables (strict subtree gated)', async () => {
+      const response = await app.request('/api/sql/tables');
 
       expect(response.status).toBe(403);
       expect((await response.json()).error).toBe('Forbidden');
@@ -168,17 +211,18 @@ describe('API routes', () => {
     it('lets a matching x-admin-token through', async () => {
       vi.stubEnv('ADMIN_TOKEN', 'test-admin-token');
 
-      // clear-cache runs on the in-memory optimizer manager (no DB), so it
-      // is a safe probe for the authorized pass-through path.
-      const response = await app.request('/api/performance/clear-cache', {
+      // sql/query with an empty body reaches the handler's validation and
+      // dies there with 400 (no DB touch), so it is a safe probe for the
+      // authorized pass-through path — a 403 would mean the gate held.
+      const response = await app.request('/api/sql/query', {
         method: 'POST',
         headers: { 'x-admin-token': 'test-admin-token' },
         body: JSON.stringify({}),
       });
 
-      expect(response.status).toBe(200);
+      expect(response.status).toBe(400);
       const data = await response.json();
-      expect(data.success).toBe(true);
+      expect(data.error).toBe('invalid_query');
     });
   });
 });

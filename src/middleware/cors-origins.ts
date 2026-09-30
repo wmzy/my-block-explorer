@@ -43,3 +43,17 @@ export function isAllowedCorsOrigin(origin: string | undefined | null): boolean 
   const normalized = normalizeOrigin(origin);
   return loopbackOriginPattern.test(normalized) || extraAllowedOrigins().has(normalized);
 }
+
+// Loopback check for a raw socket remote address (Node's
+// `socket.remoteAddress`): 127.0.0.0/8, ::1, and the ::ffff:-mapped IPv4
+// form Node reports on dual-stack listeners. This is the unforgeable trust
+// signal for Origin-less requests — Host headers are client-controlled, so
+// the Vite dev bridge only synthesizes an Origin when the connection itself
+// comes from this machine. Mirrors the inline helpers in
+// routes/rpc-config.ts and routes/chains.ts (same policy, string form).
+// Anything unparsable or absent fails closed.
+export function isLoopbackRemoteAddress(address: string | undefined | null): boolean {
+  if (!address) return false;
+  const normalized = address.toLowerCase().replace(/^::ffff:/, '');
+  return normalized === '::1' || /^127(?:\.\d{1,3}){3}$/.test(normalized);
+}

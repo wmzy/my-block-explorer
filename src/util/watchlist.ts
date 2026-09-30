@@ -10,8 +10,11 @@
 // views/Home/Watchlist.tsx — there deliberately is no background service.
 import { getAddress } from 'viem';
 import { checkAddressValidity } from '@/views/Address/addressValidity';
+import { WATCHLIST_STORAGE_KEY } from '@/util/storageKeys';
 
-export const WATCHLIST_STORAGE_KEY = 'be:watchlist';
+// Canonical literal lives in the manifest (util/storageKeys.ts);
+// re-exported so existing consumers keep this import point.
+export { WATCHLIST_STORAGE_KEY };
 
 export const WATCHLIST_MAX_ENTRIES = 25;
 

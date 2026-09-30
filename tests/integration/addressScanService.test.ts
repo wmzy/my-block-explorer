@@ -448,6 +448,125 @@ describe('deep scan walk engine', () => {
     expect(row?.cursorBlock).toBe(99_999n);
   });
 
+  it('drops the findings batch when a delete races the walk mid-segment (no rows for a dead job)', async () => {
+    const address = uniqueAddress();
+    const txHash = '0xdead00000000000000000000000000000000000000000000000000000000beef';
+    const base = buildClient({
+      balances: bn => (bn < 100n ? 0n : 5n),
+      blocks: {
+        100: {
+          number: 100n,
+          timestamp: 1700000123n,
+          transactions: [{ hash: txHash, from: `0x${'1'.repeat(40)}`, to: address, value: 5n }],
+        },
+      },
+    });
+    // Gate the change block's getBlock: the walk is then mid-segment —
+    // past discovery (the balance search settled on block 100), right
+    // before the findings INSERT.
+    const resolvers: Array<() => void> = [];
+    let changeBlockReads = 0;
+    let holdChangeBlock = true;
+    const client = {
+      ...base,
+      getBlock: vi.fn(async (args: { blockNumber: bigint }) => {
+        if (args.blockNumber === 100n && holdChangeBlock) {
+          holdChangeBlock = false;
+          changeBlockReads += 1;
+          await new Promise<void>(resolve => {
+            resolvers.push(resolve);
+          });
+        }
+        return base.getBlock(args);
+      }),
+    } as unknown as PublicClient;
+    mocks.client = client;
+
+    const created = await createOrReplaceScanJob(1, address, {
+      fromBlock: 0,
+      toBlock: 1000,
+      force: false,
+      includeTraces: false,
+    });
+    if (!created.ok || created.result.outcome !== 'created') throw new Error('not created');
+
+    await vi.waitFor(() => expect(changeBlockReads).toBe(1));
+    // While the segment is in flight, DELETE races it: the handle is
+    // flagged synchronously, then findings and job row are wiped. The
+    // gated walk must not resurrect either when it resumes.
+    await deleteScanJob(1, address);
+    resolvers.shift()!();
+    await created.result.started;
+
+    expect(await getJob(1, address)).toBeNull();
+    expect(await getFindings(1, address)).toHaveLength(0);
+  });
+
+  it('drops the findings batch when a force-replace races the walk mid-segment (old rows never land in the new job)', async () => {
+    const address = uniqueAddress();
+    const oldWalkTx = '0xold00000000000000000000000000000000000000000000000000000000000tx1';
+    const base = buildClient({
+      balances: bn => (bn < 100n ? 0n : 5n),
+      blocks: {
+        100: {
+          number: 100n,
+          timestamp: 1700000123n,
+          transactions: [
+            { hash: oldWalkTx, from: `0x${'1'.repeat(40)}`, to: address, value: 5n },
+          ],
+        },
+      },
+    });
+    const resolvers: Array<() => void> = [];
+    let changeBlockReads = 0;
+    const client = {
+      ...base,
+      getBlock: vi.fn(async (args: { blockNumber: bigint }) => {
+        if (args.blockNumber === 100n && changeBlockReads === 0) {
+          changeBlockReads += 1;
+          await new Promise<void>(resolve => {
+            resolvers.push(resolve);
+          });
+        }
+        return base.getBlock(args);
+      }),
+    } as unknown as PublicClient;
+    mocks.client = client;
+
+    const created = await createOrReplaceScanJob(1, address, {
+      fromBlock: 0,
+      toBlock: 1000,
+      force: false,
+      includeTraces: false,
+    });
+    if (!created.ok || created.result.outcome !== 'created') throw new Error('not created');
+
+    await vi.waitFor(() => expect(changeBlockReads).toBe(1));
+    // Force-replace onto bounds that EXCLUDE the old walk's change
+    // block: a block-100 finding in the new job would be foreign data.
+    // `started` here is the OLD loop's done promise (the replacement's
+    // own start is queued behind the draining loop).
+    const replaced = await createOrReplaceScanJob(1, address, {
+      fromBlock: 500,
+      toBlock: 1000,
+      force: true,
+      includeTraces: false,
+    });
+    if (!replaced.ok || replaced.result.outcome !== 'created') throw new Error('not replaced');
+    resolvers.shift()!();
+    await replaced.result.started;
+    await vi.waitFor(async () => expect((await getJob(1, address))?.status).toBe('complete'));
+
+    const row = await getJob(1, address);
+    expect(row?.fromBlock).toBe(500n);
+    expect(row?.txsFound).toBe(0);
+    // The pinned invariant: NOTHING of the aborted old walk survived —
+    // its discovered tx is not a finding of the replacement job.
+    const findings = await getFindings(1, address);
+    expect(findings).toHaveLength(0);
+    expect(findings.some(finding => finding.txHash === oldWalkTx)).toBe(false);
+  });
+
   it('conflicts on different bounds without force and force-resets progress + findings', async () => {
     const address = uniqueAddress();
     mocks.client = buildClient({ balances: () => 1n, head: 1000n });

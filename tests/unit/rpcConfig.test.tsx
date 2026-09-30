@@ -212,7 +212,7 @@ describe('RpcConfig admin gating', () => {
     // Verification hits an admin-gated endpoint via the http layer, which
     // attaches the just-stored token.
     await waitFor(() => {
-      expect(mockHttpGet).toHaveBeenCalledWith('/api/performance/events');
+      expect(mockHttpGet).toHaveBeenCalledWith('/api/sql/tables');
     });
     await waitFor(() => {
       expect(toast.success).toHaveBeenCalledWith('Admin token saved & verified.');

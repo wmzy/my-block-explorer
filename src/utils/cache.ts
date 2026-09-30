@@ -243,17 +243,18 @@ export const transactionCache = cacheManager.getCache('transactions', {
   maxSize: 1000,
 });
 
-export const addressCache = cacheManager.getCache('addresses', {
-  ttl: 2 * 60 * 1000, // 2 minutes
-  maxSize: 500,
-});
-
 export const searchCache = cacheManager.getCache('search', {
   ttl: 5 * 60 * 1000, // 5 minutes
   maxSize: 200,
 });
 
 // Periodically clean up expired cache entries
-setInterval(() => {
+const cleanupTimer: ReturnType<typeof setInterval> = setInterval(() => {
   cacheManager.cleanupAll();
 }, 60 * 1000); // clean up once per minute
+// Allow the process to exit even if this timer is still running (same
+// convention as the WatchService and DuckDB adapter timers); browsers have
+// no unref and simply keep the interval.
+if (cleanupTimer.unref) {
+  cleanupTimer.unref();
+}

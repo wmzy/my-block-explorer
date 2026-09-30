@@ -39,8 +39,13 @@ RUN pnpm install --frozen-lockfile --prod
 
 # --------------------------------------------------------- api: runtime --
 FROM node:26-slim AS api
+# Containers must bind wide to be reachable through a published port. With
+# this explicit HOST the startup posture evaluates the real bind (and warns
+# loudly while ADMIN_TOKEN is unset) instead of silently treating the
+# container as loopback-only.
 ENV NODE_ENV=production \
-    PORT=8201
+    PORT=8201 \
+    HOST=0.0.0.0
 WORKDIR /app
 COPY --from=api-deps /app/node_modules ./node_modules
 COPY --from=api-build /app/dist/server ./dist/server

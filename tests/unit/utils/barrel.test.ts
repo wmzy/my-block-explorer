@@ -1,5 +1,5 @@
 // The utils barrel's contract: every module under src/utils is reachable
-// through it, and the eight cross-module name collisions resolve to the
+// through it, and the cross-module name collisions resolve to the
 // documented winner. A bare `export *` surface would silently DROP an
 // ambiguous name — these identity pins keep the resolution intentional
 // (the losing variants stay reachable via deep imports, not via the
@@ -22,24 +22,12 @@ import {
   isValidAddress as validationIsValidAddress,
   sanitizeInput as validationSanitizeInput,
 } from '@/utils/validation';
-import { withRetry as errorHandlerWithRetry } from '@/utils/errorHandler';
-import {
-  getRpcConfigs,
-  saveRpcConfig,
-  deleteRpcConfig,
-  testRpcConnection,
-} from '@/utils/rpcConfigService';
 
 describe('utils barrel', () => {
   it('resolves every colliding name to the documented winner', () => {
     expect(barrel.formatAddress).toBe(formatFormatAddress);
     expect(barrel.isValidAddress).toBe(validationIsValidAddress);
     expect(barrel.sanitizeInput).toBe(validationSanitizeInput);
-    expect(barrel.withRetry).toBe(errorHandlerWithRetry);
-    expect(barrel.getRpcConfigs).toBe(getRpcConfigs);
-    expect(barrel.saveRpcConfig).toBe(saveRpcConfig);
-    expect(barrel.deleteRpcConfig).toBe(deleteRpcConfig);
-    expect(barrel.testRpcConnection).toBe(testRpcConnection);
   });
 
   it('exposes a representative export of every utils module', () => {
@@ -60,8 +48,6 @@ describe('utils barrel', () => {
       getFunctionSelector: 'functionSelector',
       clampInternalTxDepth: 'internalTxScan',
       createRpcClient: 'realTimeData',
-      getRpcClient: 'rpcClient',
-      testMultipleRpcConnections: 'rpcConfig',
       analyzeRpcError: 'rpcErrorHandler',
       serializeForJson: 'serialization',
       optimizedSort: 'sorting-optimization',

@@ -1,4 +1,4 @@
-import { timingSafeEqual } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import type { MiddlewareHandler } from 'hono';
 import { respondError } from '../utils/api-error';
 
@@ -15,12 +15,17 @@ export const requireAdminToken: MiddlewareHandler = async (c, next) => {
     return respondError(c, 403, 'Forbidden', DISABLED_MESSAGE);
   }
 
-  // timingSafeEqual throws when buffer lengths differ, so the length
-  // comparison must happen first; a missing header degrades to ''.
-  const expected = Buffer.from(adminToken, 'utf8');
-  const provided = Buffer.from(c.req.header('x-admin-token') ?? '', 'utf8');
+  // Both sides are sha256-hashed before the comparison: the digests are
+  // fixed 32-byte buffers, so timingSafeEqual never sees a length
+  // difference and no length branch remains (a length pre-check would
+  // time-leak the ADMIN_TOKEN's byte length). A missing header still
+  // degrades to ''.
+  const expected = createHash('sha256').update(adminToken, 'utf8').digest();
+  const provided = createHash('sha256')
+    .update(c.req.header('x-admin-token') ?? '', 'utf8')
+    .digest();
 
-  const authorized = provided.length === expected.length && timingSafeEqual(provided, expected);
+  const authorized = timingSafeEqual(provided, expected);
 
   if (!authorized) {
     return respondError(c, 403, 'Forbidden', 'Invalid admin token.');

@@ -13,7 +13,7 @@ import { MemoryRouter, createRoutes } from '@native-router/react';
 
 import { FunctionCallForm } from '@/views/Contract/FunctionCallForm';
 import { simulateContract } from '@/utils/contractInteraction';
-import { getRpcClient } from '@/utils/rpcClient';
+import { createRpcClient } from '@/utils/realTimeData';
 import { parseStateOverrideInput, toViemStateOverride } from '@/views/Contract/stateOverrideInput';
 import type { EIP1193Provider } from '@/util/wallet';
 import type { ContractFunctionInput, EnhancedContractFunction } from '@/utils/contractInteraction';
@@ -36,11 +36,11 @@ const VALID_OVERRIDE_VIEM = [
 ];
 
 // The Interact panel talks to the chain through viem clients from
-// getRpcClient; swap just that factory so the request composition stays
-// real while the transport is a spy.
-vi.mock('@/utils/rpcClient', async importOriginal => {
-  const actual = await importOriginal<typeof import('@/utils/rpcClient')>();
-  return { ...actual, getRpcClient: vi.fn() };
+// createRpcClient; swap just that factory so the request composition
+// stays real while the transport is a spy.
+vi.mock('@/utils/realTimeData', async importOriginal => {
+  const actual = await importOriginal<typeof import('@/utils/realTimeData')>();
+  return { ...actual, createRpcClient: vi.fn() };
 });
 
 type TestFunction = EnhancedContractFunction;
@@ -249,9 +249,9 @@ describe('simulateContract request composition', () => {
 
   beforeEach(() => {
     simulateSpy.mockClear();
-    vi.mocked(getRpcClient).mockReturnValue({
+    vi.mocked(createRpcClient).mockResolvedValue({
       simulateContract: simulateSpy,
-    } as unknown as ReturnType<typeof getRpcClient>);
+    } as unknown as Awaited<ReturnType<typeof createRpcClient>>);
   });
 
   it('omits the stateOverride key entirely when none is given (byte-identical wire)', async () => {

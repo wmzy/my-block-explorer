@@ -1,6 +1,6 @@
 import { execSync, spawn } from 'node:child_process';
 import { mkdtemp, writeFile, mkdir } from 'node:fs/promises';
-import { join, dirname } from 'node:path';
+import { join, dirname, isAbsolute, resolve, sep } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createLogger } from '../server/logger';
 
@@ -25,6 +25,56 @@ export type SourceFile = {
   filename: string;
   content: string;
 };
+
+// Resolves a caller-supplied source filename to a path inside dir.
+// Standard JSON 'sources' keys flow here verbatim (CompileVerifyService
+// persists them as-is), so a hostile key — an absolute path or anything
+// with a '..' segment — must never reach writeFile: it is refused with
+// an error naming the file (honest failure, no silent skip). Ordinary
+// relative paths with subdirectories ('contracts/Foo.sol') pass.
+export function resolveContainedSourcePath(dir: string, filename: string): string {
+  if (filename === '') {
+    throw new Error('Refusing to write a source file with an empty filename');
+  }
+  if (isAbsolute(filename)) {
+    throw new Error(`Refusing to write source file with an absolute path: ${filename}`);
+  }
+  if (filename.split(/[\\/]/).includes('..')) {
+    throw new Error(`Refusing to write source file with a '..' segment: ${filename}`);
+  }
+  // Backstop: whatever the shape, the resolved target must stay inside dir.
+  const target = resolve(dir, filename);
+  if (!target.startsWith(dir + sep)) {
+    throw new Error(`Refusing to write source file outside the export directory: ${filename}`);
+  }
+  return target;
+}
+
+// Writes the export bundle — source files (containment-guarded above)
+// plus the README — into dir. Split out of openInIde so the write path
+// is unit-testable without spawning a real IDE process.
+export async function writeSourceExport(
+  dir: string,
+  sourceCode: string,
+  sanitizedName: string,
+  sourceFiles: SourceFile[] | undefined,
+  readme: string,
+): Promise<void> {
+  if (sourceFiles && sourceFiles.length > 1) {
+    // Resolve every filename first: a hostile key aborts the export
+    // before anything is written, so a refused bundle is never partial.
+    const paths = sourceFiles.map(file => resolveContainedSourcePath(dir, file.filename));
+    for (const [index, file] of sourceFiles.entries()) {
+      const filePath = paths[index];
+      await mkdir(dirname(filePath), { recursive: true });
+      await writeFile(filePath, file.content, 'utf-8');
+    }
+  } else {
+    const fileName = `${sanitizedName}.sol`;
+    await writeFile(join(dir, fileName), sourceCode, 'utf-8');
+  }
+  await writeFile(join(dir, 'README.md'), readme, 'utf-8');
+}
 
 function isCommandAvailable(cmd: string): boolean {
   try {
@@ -78,17 +128,6 @@ export async function openInIde(
   const prefix = join(baseDir, `${chainId}-${sanitizedAddress.slice(0, 10)}-${sanitizedName}-`);
   const dir = await mkdtemp(prefix);
 
-  if (sourceFiles && sourceFiles.length > 1) {
-    for (const file of sourceFiles) {
-      const filePath = join(dir, file.filename);
-      await mkdir(dirname(filePath), { recursive: true });
-      await writeFile(filePath, file.content, 'utf-8');
-    }
-  } else {
-    const fileName = `${sanitizedName}.sol`;
-    await writeFile(join(dir, fileName), sourceCode, 'utf-8');
-  }
-
   const readmeContent = generateReadme({
     chainId,
     address,
@@ -99,7 +138,7 @@ export async function openInIde(
     sourceFileCount: sourceFiles?.length ?? 1,
     openedAt: new Date().toISOString(),
   });
-  await writeFile(join(dir, 'README.md'), readmeContent, 'utf-8');
+  await writeSourceExport(dir, sourceCode, sanitizedName, sourceFiles, readmeContent);
 
   const child = spawn(ideConfig.command, [dir], {
     detached: true,

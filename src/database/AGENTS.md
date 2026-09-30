@@ -12,9 +12,6 @@ database/
 ├── duckdb.ts                   # DuckDB manager wrapper
 ├── db-types.ts                 # Custom types (bignum, timestamp, address)
 ├── chain-database-manager.ts   # Per-chain DB file management
-├── chain-schema-manager.ts     # Dynamic event table schemas via drizzle-kit/api
-├── chain-event-table-manager.ts # Dynamic event table creation (923 lines)
-├── performance-monitor.ts      # Query performance tracking
 ├── migrate.ts                  # Migration script
 └── init.ts                     # Re-exports
 ```
@@ -26,8 +23,6 @@ database/
 | Create DB connection | duckdb-postgres-adapter.ts   | `createDuckDBAdapter()`     |
 | Add table schema     | schema.ts                    | `duckdbTable()`             |
 | Get per-chain DB     | chain-database-manager.ts    | `MultiChainDatabaseManager` |
-| Create event table   | chain-event-table-manager.ts | `createEventTable()`        |
-| Dynamic table SQL    | chain-schema-manager.ts      | `ChainSchemaManager`        |
 | Run migrations       | migrate.ts                   | `runMigrations()`           |
 
 ## KEY TYPES

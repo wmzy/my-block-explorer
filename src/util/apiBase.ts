@@ -14,14 +14,11 @@
 //      and backend-indexed surfaces must fail fast instead of firing a
 //      request against an unintended same-origin target.
 
+import { MANUAL_BASE_STORAGE_KEY } from '@/util/storageKeys';
+
 let apiBase = '';
 
 const listeners = new Set<() => void>();
-
-// Shared by the discovery hook (probe-on-startup) and ConnectionStatus
-// (auto-reconnect health poll). Keep the literal stable: values written by
-// older builds live under this key.
-const MANUAL_BASE_STORAGE_KEY = 'my-block-explorer-api-url';
 
 /** The explicitly chosen backend base, if the user ever saved one. */
 export function getStoredManualBase(): string | null {

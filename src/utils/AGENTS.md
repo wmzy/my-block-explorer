@@ -12,8 +12,6 @@ utils/
 ├── format.ts                 # Value formatting (Eth, Gas, tokens)
 ├── errorHandler.ts           # Error classes + withRetry decorator
 ├── rpcErrorHandler.ts        # RPC error analysis
-├── rpcClient.ts              # Simple RPC client
-├── rpcConfig.ts              # RPC configuration
 ├── rpcConfigService.ts       # RPC config management
 ├── contractInteraction.ts    # Contract call utilities
 ├── sorting-optimization.ts   # Large dataset sorting with caching (543 lines)
@@ -35,7 +33,7 @@ utils/
 | Get address balance/nonce | realTimeData.ts    | `getRealTimeAddressData()`                |
 | Fetch blocks              | blockRpcData.ts    | `getLatestBlocks()`, `getBlockByNumber()` |
 | Fetch transactions        | blockRpcData.ts    | `getTransactionByHash()`                  |
-| Get cached data           | cache.ts           | `blockCache`, `addressCache`              |
+| Get cached data           | cache.ts           | `blockCache`, `searchCache`             |
 | Format values             | format.ts          | `formatEther()`, `formatGas()`            |
 | Retry logic               | errorHandler.ts    | `withRetry()`                             |
 | Analyze RPC errors        | rpcErrorHandler.ts | `analyzeRpcError()`                       |
@@ -46,7 +44,7 @@ utils/
 
 ```typescript
 export const blockCache = new LRUCache(...);
-export const addressCache = new LRUCache(...);
+export const searchCache = new LRUCache(...);
 ```
 
 ### Factory Functions
@@ -63,11 +61,10 @@ export const withRetry = async <T>(fn: () => Promise<T>, maxRetries = 3): Promis
 
 ## BARREL
 
-`index.ts` re-exports all util modules (8 cross-module name collisions are
+`index.ts` re-exports all util modules (3 cross-module name collisions are
 resolved with explicit re-exports that take precedence over ambiguous star
 exports: `formatAddress`→`format`, `isValidAddress`/`sanitizeInput`→
-`validation`, `withRetry`→`errorHandler`, the five `rpcConfigService`
-functions). Deep imports remain canonical for call sites — the barrel is
+`validation`). Deep imports remain canonical for call sites — the barrel is
 convenience surface, and `serialization.ts` pulls the pino logger through it
 (browser code should keep deep imports there).
 

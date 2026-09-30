@@ -9,6 +9,38 @@ commit subjects rather than a curated release notes process.
 
 ## Unreleased
 
+- **Full-project review fix wave (security, correctness, cleanup)** —
+  landed the complete P0–P3 review list. Security: the server now binds
+  loopback by default (`HOST` unset → `127.0.0.1`; previously it bound all
+  interfaces while the startup checks assumed loopback, silencing the
+  ADMIN_TOKEN warning and the `ENABLE_DEBUG_API` refusal); the Docker api
+  image sets `HOST=0.0.0.0` so the posture evaluates the real bind; graceful
+  shutdown now closes keep-alive connections with a 5s force-exit; open-in-ide
+  source writes are containment-checked; RPC manager logs carry host only
+  (API keys no longer land in logs); the admin token compares sha256 digests
+  (length oracle removed); solc downloads without a checksum are refused; the
+  dev-server bridge only synthesizes an Origin for loopback requests (Host
+  forgery can no longer unlock unredacted RPC URLs). Correctness: event
+  indexing no longer silently drops rows on non-duplicate insert errors (the
+  range errors and replays); getLogs batches shrink under provider range
+  caps; the contract Interact tab uses the full RPC client stack (custom
+  chains work); thrown validation errors return the JSON error envelope (the
+  frontend previously lost the reason); junk query/body input answers
+  specific 400s instead of 500s across storage/events/contracts/blocks;
+  webhook notifications dedupe only after confirmed delivery; deep-scan
+  findings respect force-replace; startup reconciliation runs before listen;
+  the events table is race-safe (stale page responses discarded) and renders
+  memoized rows; watch notifications only subscribe while browser
+  notification permission is granted. Cleanup: ~6.3k lines of dead code
+  removed (unused event-query family, `/api/performance`, legacy RPC config
+  store, orphaned schema/performance modules, dead test scaffolding);
+  localStorage keys centralized behind one manifest that backup/restore
+  consumes. Packaging: `--version` reports the real version; runtime
+  dependencies reduced 24 → 11 (frontend stack and build tools moved to
+  devDependencies, unused `solc` removed); CI builds the client; the missing
+  drizzle 0006 snapshot was reconstructed and the chain re-linked
+  (`drizzle-kit check` clean); docs corrected (Node 26+ requirement, complete
+  env-var table, accurate admin-gate labels).
 - **MCP server** — `my-block-explorer-mcp` (also `pnpm mcp` in the repo)
   exposes the explorer to AI assistants (Claude Desktop, Cursor, VS Code,
   agent harnesses) as a stdio Model Context Protocol server. A separate

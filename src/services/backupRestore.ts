@@ -12,18 +12,14 @@
 // per-item outcomes instead of aborting on the first failure.
 import { get, isBackendUnreachable } from '@/util/http';
 import { ApiError } from '@/util/apiError';
-import { readWatchlist, WATCHLIST_STORAGE_KEY } from '@/util/watchlist';
-import { readThemePreference, THEME_STORAGE_KEY } from '@/themePreference';
-import { getIpfsGateway, IPFS_GATEWAY_STORAGE_KEY } from '@/services/nftMetadata';
+import { readWatchlist } from '@/util/watchlist';
+import { readThemePreference } from '@/themePreference';
+import { getIpfsGateway } from '@/services/nftMetadata';
 import { saveAddressLabel } from '@/services/labels';
 import { addCustomChain } from '@/services/customChains';
+import { parsePrivateNoteKey, parseStoredPrivateNote } from '@/util/privateNotes';
 import {
-  parsePrivateNoteKey,
-  parseStoredPrivateNote,
-  PRIVATE_NOTE_KEY_RE,
-} from '@/util/privateNotes';
-import {
-  CUSTOM_ABI_KEY_RE,
+  BACKUP_SECTION_ENTRY_IDS,
   parseBackupChainRow,
   parseBackupLabelRow,
   serializeBackup,
@@ -33,6 +29,7 @@ import {
   type BackupParts,
   type RestorePlan,
 } from '@/util/localBackup';
+import { STORAGE_KEY_MANIFEST, type StorageKeyManifestEntry } from '@/util/storageKeys';
 
 export const BACKUP_FILENAME = 'explorer-backup.json';
 
@@ -153,53 +150,129 @@ export async function collectBackupParts(): Promise<BackupParts> {
   return { labels, customChains, browser, ...(notes.length > 0 ? { notes } : {}) };
 }
 
+/** What one manifest family collected from this browser (see scanStorageByManifest). */
+type ScannedFamily = { exact: string | null } | { scanned: string[] };
+
 /**
- * Browser-local preferences. `null` (= not exported) is keyed off the
- * raw stored key, while the VALUE comes from the app's own validated
- * readers — a hand-corrupted localStorage entry exports as what the app
- * would actually use, never the corruption itself. Private notes are a
- * key scan like custom ABIs (they accrue per visited address); entries
- * whose stored value the app's reader would reject are skipped with a
- * note line instead of exported broken.
+ * Bucket localStorage by manifest family — one snapshot scan for
+ * everything. Only entries flagged includeInBackup are touched: the
+ * manifest (util/storageKeys.ts), not this module, decides what a backup
+ * may read. Exact families read their single key (null = absent);
+ * prefix/pattern families list every storage key they own. A full or
+ * private-mode localStorage reads as absent/empty throughout.
  */
-function collectBrowserParts(notes: string[]): BackupBrowserParts {
+function scanStorageByManifest(
+  manifest: readonly StorageKeyManifestEntry[],
+): Map<string, ScannedFamily> {
+  const families = new Map<string, ScannedFamily>();
+  let snapshot: string[] | null = null;
+  const snapshotKeys = (): string[] => {
+    if (snapshot !== null) return snapshot;
+    snapshot = [];
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key !== null) snapshot.push(key);
+      }
+    } catch {
+      // Storage unavailable (private mode) — nothing to scan.
+    }
+    return snapshot;
+  };
+  for (const entry of manifest) {
+    if (!entry.includeInBackup) continue;
+    if (entry.kind === 'exact') {
+      families.set(entry.id, { exact: readStored(entry.key) });
+    } else if (entry.kind === 'prefix') {
+      families.set(entry.id, {
+        scanned: snapshotKeys().filter(key => key.startsWith(entry.prefix)),
+      });
+    } else {
+      families.set(entry.id, {
+        scanned: snapshotKeys().filter(key => entry.pattern.test(key)),
+      });
+    }
+  }
+  return families;
+}
+
+const exactValue = (families: Map<string, ScannedFamily>, id: string): string | null => {
+  const family = families.get(id);
+  return family !== undefined && 'exact' in family ? family.exact : null;
+};
+
+const scannedKeys = (families: Map<string, ScannedFamily>, id: string): string[] => {
+  const family = families.get(id);
+  return family !== undefined && 'scanned' in family ? family.scanned : [];
+};
+
+/**
+ * Browser-local preferences, collected by iterating the manifest (the
+ * default; tests inject a hypothetical manifest through the second
+ * parameter). `null` (= not exported) is keyed off the raw stored key,
+ * while the VALUE comes from the app's own validated readers — a
+ * hand-corrupted localStorage entry exports as what the app would
+ * actually use, never the corruption itself. Private notes are a key scan
+ * like custom ABIs (they accrue per visited address); entries whose
+ * stored value the app's reader would reject are skipped with a note line
+ * instead of exported broken.
+ */
+export function collectBrowserParts(
+  notes: string[],
+  manifest: readonly StorageKeyManifestEntry[] = STORAGE_KEY_MANIFEST,
+): BackupBrowserParts {
+  const families = scanStorageByManifest(manifest);
+
+  // Pattern families shape their raw entries through the app's own
+  // parsers, exactly as before the manifest reorganization.
   const customAbis: BackupBrowserParts['customAbis'] = [];
+  for (const key of scannedKeys(families, 'customAbi')) {
+    const abi = readStored(key);
+    if (abi !== null) customAbis.push({ key, abi });
+  }
   const privateNotes: BackupBrowserParts['privateNotes'] = [];
   let corruptedNotes = 0;
-  try {
-    // Key scan (not a known list): custom ABIs accrue per visited
-    // contract and private notes per visited address, so the key
-    // pattern is the inventory.
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key === null) continue;
-      if (CUSTOM_ABI_KEY_RE.test(key)) {
-        const abi = localStorage.getItem(key);
-        if (abi !== null) customAbis.push({ key, abi });
-        continue;
-      }
-      if (!PRIVATE_NOTE_KEY_RE.test(key)) continue;
-      const parsedKey = parsePrivateNoteKey(key);
-      const note = parsedKey === null ? null : parseStoredPrivateNote(localStorage.getItem(key));
-      if (parsedKey === null || note === null) {
-        corruptedNotes += 1;
-        continue;
-      }
-      privateNotes.push({ chainId: parsedKey.chainId, address: parsedKey.address, note });
+  for (const key of scannedKeys(families, 'privateNote')) {
+    const parsedKey = parsePrivateNoteKey(key);
+    const note = parsedKey === null ? null : parseStoredPrivateNote(readStored(key));
+    if (parsedKey === null || note === null) {
+      corruptedNotes += 1;
+      continue;
     }
-  } catch {
-    // Storage unavailable (private mode) — custom ABIs and private
-    // notes are simply not part of this export.
+    privateNotes.push({ chainId: parsedKey.chainId, address: parsedKey.address, note });
   }
   if (corruptedNotes > 0) {
     notes.push(
       `${corruptedNotes} private note(s) skipped — the stored entry is corrupted (unreadable key or over-length value)`,
     );
   }
+
+  // Honest-drop guard: a family flagged includeInBackup that the file
+  // format has no section for must not vanish silently. The note lands
+  // in the export (and its toast) so a future key registered for backup
+  // without its format section is attributed, not lost — the exact
+  // failure mode the manifest exists to prevent.
+  for (const entry of manifest) {
+    if (!entry.includeInBackup || BACKUP_SECTION_ENTRY_IDS.includes(entry.id)) continue;
+    const family = families.get(entry.id);
+    const collected =
+      family === undefined
+        ? 0
+        : 'exact' in family
+          ? family.exact !== null
+            ? 1
+            : 0
+          : family.scanned.length;
+    if (collected === 0) continue;
+    notes.push(
+      `${entry.id} skipped — ${collected} stored value(s) not exported: flagged includeInBackup but the backup format has no section for this key family yet (add one in util/localBackup.ts)`,
+    );
+  }
+
   return {
-    watchlist: readStored(WATCHLIST_STORAGE_KEY) === null ? null : readWatchlist(),
-    theme: readStored(THEME_STORAGE_KEY) === null ? null : readThemePreference(),
-    ipfsGateway: readStored(IPFS_GATEWAY_STORAGE_KEY) === null ? null : getIpfsGateway(),
+    watchlist: exactValue(families, 'watchlist') === null ? null : readWatchlist(),
+    theme: exactValue(families, 'theme') === null ? null : readThemePreference(),
+    ipfsGateway: exactValue(families, 'ipfsGateway') === null ? null : getIpfsGateway(),
     customAbis,
     privateNotes,
   };

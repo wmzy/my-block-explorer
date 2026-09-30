@@ -2,10 +2,26 @@
 // functionSignature (name + input types) that keys results per overload,
 // and parseContractFunctionsUnified's proxy/impl merge — same-name
 // overloads with different parameters are distinct entries; only an exact
-// signature match is deduped.
-import { describe, it, expect } from 'vitest';
+// signature match is deduped. The networked paths resolve their viem
+// client through the async createRpcClient factory (user RPC config +
+// custom chains), so any chain the factory serves works — including ids
+// outside every hardcoded list — and factory failures flow through the
+// documented error contracts.
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-import { functionSignature, parseContractFunctionsUnified } from '@/utils/contractInteraction';
+import {
+  functionSignature,
+  parseContractFunctionsUnified,
+  readContract,
+  simulateContract,
+  estimateContractGas,
+} from '@/utils/contractInteraction';
+import { createRpcClient } from '@/utils/realTimeData';
+
+vi.mock('@/utils/realTimeData', async importOriginal => {
+  const actual = await importOriginal<typeof import('@/utils/realTimeData')>();
+  return { ...actual, createRpcClient: vi.fn() };
+});
 
 const fn = (
   name: string,
@@ -131,5 +147,77 @@ describe('parseContractFunctionsUnified overload dedupe', () => {
 
     expect(functions.map(f => functionSignature(f))).toEqual(['get(uint256)', 'get(string)']);
     expect(functions.every(f => f.source === 'impl')).toBe(true);
+  });
+});
+
+describe('RPC client resolution (createRpcClient factory)', () => {
+  const CONTRACT = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+
+  beforeEach(() => {
+    vi.mocked(createRpcClient).mockReset();
+  });
+
+  it('reads through a client resolved for a chain outside the legacy six (custom 31337)', async () => {
+    const readSpy = vi.fn().mockResolvedValue(42n);
+    vi.mocked(createRpcClient).mockResolvedValue({
+      readContract: readSpy,
+    } as unknown as Awaited<ReturnType<typeof createRpcClient>>);
+
+    const result = await readContract({
+      chainId: 31337,
+      contractAddress: CONTRACT,
+      functionName: 'totalSupply',
+      args: [],
+      abi: '[]',
+    });
+
+    expect(createRpcClient).toHaveBeenCalledWith(31337);
+    expect(readSpy).toHaveBeenCalledTimes(1);
+    expect(result).toEqual({ success: true, result: '42' });
+  });
+
+  it('simulates through a client resolved for another outside chain (56)', async () => {
+    const simulateSpy = vi.fn().mockResolvedValue({ result: 1n, request: { gas: 21000n } });
+    vi.mocked(createRpcClient).mockResolvedValue({
+      simulateContract: simulateSpy,
+    } as unknown as Awaited<ReturnType<typeof createRpcClient>>);
+
+    const result = await simulateContract({
+      chainId: 56,
+      contractAddress: CONTRACT,
+      functionName: 'deposit',
+      args: [],
+      abi: '[]',
+    });
+
+    expect(createRpcClient).toHaveBeenCalledWith(56);
+    expect(result).toEqual({ success: true, result: '1', gasUsed: 21000n });
+  });
+
+  it('keeps the read error contract when client creation fails', async () => {
+    vi.mocked(createRpcClient).mockRejectedValue(new Error('Unsupported chain ID: 999999'));
+
+    const result = await readContract({
+      chainId: 999999,
+      contractAddress: CONTRACT,
+      functionName: 'totalSupply',
+      args: [],
+      abi: '[]',
+    });
+
+    expect(result).toEqual({ success: false, error: 'Unsupported chain ID: 999999' });
+  });
+
+  it('returns null from gas estimation when client creation fails', async () => {
+    vi.mocked(createRpcClient).mockRejectedValue(new Error('Unsupported chain ID: 999999'));
+
+    await expect(
+      estimateContractGas({
+        chainId: 999999,
+        contractAddress: CONTRACT,
+        functionName: 'deposit',
+        args: [],
+      }),
+    ).resolves.toBeNull();
   });
 });

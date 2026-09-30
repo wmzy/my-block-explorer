@@ -1,6 +1,11 @@
-import { getRpcClient, withRetry } from './rpcClient';
+import { createRpcClient } from './realTimeData';
+import { withRetry } from './errorHandler';
 import { get } from '@/util/http';
 import type { Abi, AbiParameter, Address, StateOverride } from 'viem';
+
+// errorHandler's withRetry is a decorator — it returns a wrapped fn. The
+// interact paths run one-shot operations, so bind and invoke in one step.
+const retryRpc = <R>(operation: () => Promise<R>): Promise<R> => withRetry(operation)();
 
 export type ContractFunction = {
   name: string;
@@ -77,7 +82,7 @@ export async function readContract(
   params: ContractCallParams & { abi?: string },
 ): Promise<ContractCallResult> {
   try {
-    const client = getRpcClient(params.chainId);
+    const client = await createRpcClient(params.chainId);
 
     let abi: Abi;
 
@@ -96,7 +101,7 @@ export async function readContract(
       abi = JSON.parse(contractSource.abi) as Abi;
     }
 
-    const result = await withRetry(async () => {
+    const result = await retryRpc(async () => {
       return await client.readContract({
         address: params.contractAddress as Address,
         abi,
@@ -126,7 +131,7 @@ export async function simulateContract(
   params: ContractCallParams & { abi?: string; stateOverride?: StateOverride },
 ): Promise<ContractCallResult> {
   try {
-    const client = getRpcClient(params.chainId);
+    const client = await createRpcClient(params.chainId);
 
     let abi: Abi;
 
@@ -145,7 +150,7 @@ export async function simulateContract(
       abi = JSON.parse(contractSource.abi) as Abi;
     }
 
-    const simulation = await withRetry(async () => {
+    const simulation = await retryRpc(async () => {
       return await client.simulateContract({
         address: params.contractAddress as Address,
         abi,
@@ -184,7 +189,7 @@ export async function estimateContractGas(params: ContractCallParams): Promise<{
   maxPriorityFeePerGas?: bigint;
 } | null> {
   try {
-    const client = getRpcClient(params.chainId);
+    const client = await createRpcClient(params.chainId);
 
     // Fetch the contract ABI
     const contractSource = await fetchContractSource(params.chainId, params.contractAddress);
@@ -194,7 +199,7 @@ export async function estimateContractGas(params: ContractCallParams): Promise<{
 
     const abi = JSON.parse(contractSource.abi) as Abi;
 
-    const gasLimit = await withRetry(async () => {
+    const gasLimit = await retryRpc(async () => {
       return await client.estimateContractGas({
         address: params.contractAddress as Address,
         abi,

@@ -620,7 +620,8 @@ export class WatchService {
   // delivery failure (or even a crashing sender) is caught, recorded
   // and logged; the tick loop stays uncrashable. A status-write failure
   // does propagate to the sweep's catch — the range replays next tick,
-  // with the POSTs already deduped.
+  // re-sending exactly the events whose POSTs failed (ids are remembered
+  // only after a successful send) and skipping the delivered ones.
   private async deliverWebhooks(
     chainId: number,
     sub: WatchSubscriptionRecord,
@@ -637,7 +638,6 @@ export class WatchService {
     for (const log of logs) {
       const payload = buildWebhookPayload(chainId, sub.address, log);
       if (this.deliveredWebhookIds.has(payload.id)) continue;
-      this.rememberDeliveredWebhookId(payload.id);
 
       const body = discord
         ? buildDiscordMessage(
@@ -651,7 +651,16 @@ export class WatchService {
       lastAttemptAt = new Date();
       try {
         const result = await sendWebhookWithRetry(url, body, this.webhookSender);
-        if (result.ok) continue;
+        if (result.ok) {
+          // Remember only AFTER a successful POST: remembering up front
+          // would skip the event forever on a replayed range (failed
+          // delivery + failed cursor write = at-least-once replay) while
+          // webhookStatus honestly says 'failed' — a silently lost
+          // notification. The serial loop already bounds in-flight
+          // double-send risk.
+          this.rememberDeliveredWebhookId(payload.id);
+          continue;
+        }
         failure = result.reason;
         logger.warn(
           { chainId, address: sub.address, host: webhookHostForLog(url), reason: result.reason },

@@ -1027,6 +1027,26 @@ const runScanWalk = async (
     return;
   }
 
+  // Mid-segment ownership re-check for the findings INSERT: the walk's
+  // RPC reads can straddle a concurrent pause / force-replace / delete —
+  // all three flag this handle, and replace/delete also wipe the
+  // findings table. A bare INSERT has no onlyIfRunning WHERE to lean on
+  // (the guard every other walk write uses), so ownership is re-verified
+  // immediately before the batch: this handle still live AND the row
+  // still 'running' with this walk's bounds. Anything else means the
+  // segment's rows would land in whatever job owns the table now.
+  const stillOwnsJobRow = async (): Promise<boolean> => {
+    if (handle.abort) return false;
+    if (runningScanJobs.get(scanJobKey(chainId, address)) !== handle) return false;
+    const row = await getScanJobRow(chainId, address);
+    return (
+      row !== null &&
+      row.status === 'running' &&
+      row.fromBlock === snapshot.fromBlock &&
+      row.toBlock === snapshot.toBlock
+    );
+  };
+
   const client = await rpcManager.getClient(chainId);
 
   let cursor = snapshot.cursorBlock;
@@ -1074,6 +1094,10 @@ const runScanWalk = async (
       const txs = block ? scanBlockForAddressTransactions(block, addr) : [];
       if (txs.length > 0) {
         rememberHydratedTransactions(txs);
+        // Aborted/replaced mid-segment: drop this batch (the cache write
+        // is harmless) and exit to the loop's honest abort bookkeeping —
+        // never land old-walk rows into the job that owns the table now.
+        if (!(await stillOwnsJobRow())) break;
         await persistFindings(chainId, address, txs);
       }
 

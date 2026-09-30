@@ -14,7 +14,6 @@ import searchRoutes from './routes/search';
 import statsRoutes from './routes/stats';
 import contractsRoutes from './routes/contracts';
 import eventsRoutes from './routes/events';
-import performanceRoutes from './routes/performance';
 import rpcConfigRoutes from './routes/rpc-config';
 import chainsRoutes from './routes/chains';
 import storageRoutes from './routes/storage';
@@ -41,7 +40,24 @@ app.use('*', timing());
 
 app.onError((e, c) => {
   if (e instanceof HTTPException) {
-    return e.getResponse();
+    // An exception constructed with a prebuilt Response keeps its exact
+    // body (none exist today; the guard preserves that contract).
+    if (e.res) return e.getResponse();
+
+    // Thrown HTTPExceptions — the validator 400s from server/validation.ts
+    // that blocks/transactions/addresses/... let escape — must render as
+    // the API's canonical JSON envelope (createApiError, the same shape
+    // notFound/500/admin-token paths use), not Hono's plain-text exception
+    // page: util/http.ts's toApiError only reads JSON bodies, so a
+    // plain-text 400 degraded to a bare "HTTP 400" with the reason lost.
+    // The validator's short message doubles as the machine-readable `error`
+    // code, matching openapi.ts's documented {error, message} shape (e.g.
+    // 'Unknown ids → 400 { "error": "Unsupported chain" }').
+    const message = e.message || `HTTP ${e.status}`;
+    return c.json(
+      createApiError(e.status, message, message),
+      e.status as 400 | 401 | 403 | 404 | 500,
+    );
   }
 
   logger.error(e, 'Unhandled API error');
@@ -93,7 +109,6 @@ app.route('/api', searchRoutes);
 app.route('/api', statsRoutes);
 app.route('/api', contractsRoutes);
 app.route('/api', eventsRoutes);
-app.route('/api', performanceRoutes);
 app.route('/api', rpcConfigRoutes);
 app.route('/api', storageRoutes);
 app.route('/api', signaturesRoutes);
@@ -134,20 +149,27 @@ if (process.env.ENABLE_DEBUG_API === '1') {
   app.route('/debug', debugRoutes);
 }
 
-// Startup reconciliation: flip indexing ranges stranded by a previous
-// process to 'error' so Resume becomes available (see
-// reconcileInterruptedRanges). Fire-and-forget — module load must not block
-// on the database, and a failure to reconcile is logged, not fatal.
-void reconcileInterruptedRanges().catch(err =>
-  logger.error({ err }, 'Failed to reconcile interrupted indexing ranges'),
-);
-
-// Same fire-and-forget startup reconciliation for address deep-scan jobs:
-// rows stuck in 'running' from a previous process flip to 'error' so the
-// Deep Scan panel offers Resume from the last checkpointed cursor.
-void reconcileInterruptedAddressScans().catch(err =>
-  logger.error({ err }, 'Failed to reconcile interrupted address scans'),
-);
+// Startup reconciliation ("zombie walk"): flip indexing ranges and address
+// deep-scan jobs stranded in 'running' by a previous process to 'error' so
+// Resume becomes available. Exported and awaited by the standalone server
+// BEFORE listen (src/server.ts) instead of firing at module load: the
+// blanket UPDATE ... WHERE status='running' must land before this process
+// can accept a request that starts a new job, or it may flip that fresh
+// job to 'error'. The vite dev bridge imports this module without
+// server.ts and deliberately does NOT reconcile — a dev boot reconciles
+// nothing; stranded rows are picked up by the next standalone start.
+// Failures are logged here, never thrown: a failed reconciliation must
+// not block the server from booting.
+export async function reconcileStartupState(): Promise<void> {
+  await Promise.all([
+    reconcileInterruptedRanges().catch(err =>
+      logger.error({ err }, 'Failed to reconcile interrupted indexing ranges'),
+    ),
+    reconcileInterruptedAddressScans().catch(err =>
+      logger.error({ err }, 'Failed to reconcile interrupted address scans'),
+    ),
+  ]);
+}
 
 app.notFound(c => {
   return c.json(

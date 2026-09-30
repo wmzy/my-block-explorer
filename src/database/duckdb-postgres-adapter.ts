@@ -464,21 +464,6 @@ export class DuckDBPostgresAdapter {
     }
   }
 
-  // Execute a SQL statement
-  private async exec(sql: string): Promise<void> {
-    if (!this.instance) {
-      throw new Error('Database not initialized');
-    }
-
-    try {
-      const connection = await this.instance.connect();
-      await connection.run(sql);
-      connection.disconnectSync();
-    } catch (error) {
-      throw this.adaptError(error as Error);
-    }
-  }
-
   // Error adaptation - convert DuckDB errors to a PostgreSQL-compatible shape
   private adaptError(error: Error): Error & { code?: string } {
     const code = this.mapErrorCode(error.message);

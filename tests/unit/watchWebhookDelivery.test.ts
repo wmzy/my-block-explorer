@@ -225,6 +225,41 @@ describe('WatchService webhook delivery — replay dedupe', () => {
     const statusUpdates = state.updates.filter(update => 'webhookStatus' in update.set);
     expect(statusUpdates).toHaveLength(1);
   });
+
+  it('does NOT remember a failed delivery: a replayed range retries the POST, success pins the id', async () => {
+    // The crash window this pins: failed delivery + failed cursor write
+    // replays the range next tick. Remembering the id up front would
+    // skip the event FOREVER while webhookStatus honestly says 'failed'
+    // — a lost notification. The id must be pinned only by a successful
+    // POST, so the replay retries it.
+    const sender = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, reason: 'HTTP 500' })
+      .mockResolvedValueOnce({ ok: false, reason: 'HTTP 500' })
+      .mockResolvedValue({ ok: true, status: 204 });
+    primeOneSub(WEBHOOK_URL);
+    const service = makeService(sender);
+
+    // Tick 1: both attempts fail — the id is NOT remembered.
+    await service.tick();
+    expect(sender).toHaveBeenCalledTimes(2);
+
+    // Tick 2 (cursor write never landed, same range replays): the event
+    // is retried and now delivered — only then is the id remembered.
+    await service.tick();
+    expect(sender).toHaveBeenCalledTimes(3);
+    expect((sender.mock.calls[2] as unknown[])[0]).toBe(WEBHOOK_URL);
+
+    // Tick 3 (still replaying): delivered id is skipped, nothing
+    // attempted, no third status row.
+    await service.tick();
+    expect(sender).toHaveBeenCalledTimes(3);
+    const statusUpdates = state.updates.filter(update => 'webhookStatus' in update.set);
+    expect(statusUpdates.map(update => update.set.webhookStatus)).toEqual([
+      'failed: HTTP 500',
+      'ok',
+    ]);
+  });
 });
 
 describe('WatchService webhook delivery — fresh subscription baselines without POSTs', () => {

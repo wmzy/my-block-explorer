@@ -13,7 +13,8 @@
 //   already in the local cache — never as a free-form URL (no SSRF
 //   surface; the download URL is always derived server-side);
 // - downloaded soljson files are sha256-verified against the list before
-//   they are used and cached under data/solc-cache/;
+//   they are used and cached under data/solc-cache/ — a list entry that
+//   carries no checksum is refused outright, never downloaded;
 // - the comparison reports three honest tiers: exact (raw equal),
 //   matches-metadata-only (equal after stripping the trailing CBOR
 //   auxdata block — the differing auxdata is reported), mismatch (first
@@ -566,6 +567,8 @@ export type CompileVerifyDeps = {
   fetchRuntimeCode?: (chainId: number, address: Address) => Promise<string>;
   /** solc-cache directory reader (injectable for tests). */
   readCacheDir?: () => Promise<string[]>;
+  /** solc-cache directory override (injectable for tests; default data/solc-cache). */
+  cacheDir?: string;
 };
 
 export class CompileVerifyService {
@@ -693,7 +696,7 @@ export class CompileVerifyService {
     // (__dirname/module.exports). tsx masks this (its require hook treats
     // .js as CJS); the real `node dist/server/cli.js` run does not.
     const cacheFileName = build.fileName.replace(/\.js$/, '.cjs');
-    const cachePath = path.join(SOLC_CACHE_DIR, cacheFileName);
+    const cachePath = path.join(this.deps.cacheDir ?? SOLC_CACHE_DIR, cacheFileName);
     try {
       const existing = await readFile(cachePath);
       logger.info({ longVersion: build.longVersion, bytes: existing.length }, 'soljson cache hit');
@@ -701,6 +704,17 @@ export class CompileVerifyService {
       // Not cached: download under the load budget, verify the checksum
       // from the list, then write atomically (tmp + rename) so a partial
       // download can never be mistaken for a usable build.
+      // Fail closed on unverifiable builds: a list entry without a sha256
+      // would let an unauthenticated blob — arbitrary in-process JS once
+      // require()d — reach the cache, so the download is refused and the
+      // malformed upstream entry named. (A build already in the local
+      // cache stays usable offline; it was verified at download time.)
+      const expectedSha256 = build.sha256;
+      if (expectedSha256 === undefined) {
+        throw compilerUnavailable(
+          `solc list entry for ${build.longVersion} (${build.fileName}) carries no sha256 checksum — refusing to download an unverifiable build`,
+        );
+      }
       let response: Response;
       try {
         response = await fetch(`${SOLC_BINARIES_BASE_URL}${build.fileName}`, {
@@ -718,15 +732,13 @@ export class CompileVerifyService {
         );
       }
       const downloaded = Buffer.from(await response.arrayBuffer());
-      if (build.sha256 !== undefined) {
-        const digest = `0x${createHash('sha256').update(downloaded).digest('hex')}`;
-        if (digest !== build.sha256.toLowerCase()) {
-          throw compilerUnavailable(
-            `soljson checksum mismatch for solc ${build.longVersion} — the downloaded file was discarded`,
-          );
-        }
+      const digest = `0x${createHash('sha256').update(downloaded).digest('hex')}`;
+      if (digest !== expectedSha256.toLowerCase()) {
+        throw compilerUnavailable(
+          `soljson checksum mismatch for solc ${build.longVersion} — the downloaded file was discarded`,
+        );
       }
-      await mkdir(SOLC_CACHE_DIR, { recursive: true });
+      await mkdir(this.deps.cacheDir ?? SOLC_CACHE_DIR, { recursive: true });
       const tempPath = `${cachePath}.tmp`;
       await writeFile(tempPath, downloaded);
       await rename(tempPath, cachePath);
@@ -866,6 +878,19 @@ export class CompileVerifyService {
       .filter(([, source]) => typeof source.content === 'string')
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([filename, source]) => ({ filename, content: source.content as string }));
+    // Ingest-time guard for the same rule IdeService enforces at write
+    // time: these filenames flow verbatim into the IDE export directory,
+    // so absolute or '..'-bearing Standard JSON keys are rejected here
+    // with an honest 400 naming the file instead of failing later.
+    const unsafeFilename = sourceFiles.find(
+      f =>
+        f.filename === '' || path.isAbsolute(f.filename) || f.filename.split(/[\\/]/).includes('..'),
+    );
+    if (unsafeFilename) {
+      throw invalidInput(
+        `Source filename must be a relative path without '..' segments: ${unsafeFilename.filename}`,
+      );
+    }
     const abi = extractAbi(selected.contract);
 
     return {

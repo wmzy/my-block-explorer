@@ -105,11 +105,15 @@ root.render(
 //   the Watchlist panel's Enable-notifications button owns that;
 // - only 'log' events notify; gap markers (unchecked ranges) stay in the
 //   panel feed where their full message is readable;
+// - the SSE subscription itself is permission-gated: nothing subscribes
+//   (and no chain poll runs) until the browser reports 'granted', and a
+//   runtime revoke tears both back down;
 // - a dead/degraded SSE stream silently stops alerts (the liveChain
 //   fallback contract) — the panel's feed keeps the record.
 // The current chain is re-resolved from the remembered-chain key on a
-// slow interval: the key is written on every chain navigation but has no
-// same-tab event, and a storage listener only fires cross-tab.
+// slow interval (running only while notifications are live): the key is
+// written on every chain navigation but has no same-tab event, and a
+// storage listener only fires cross-tab.
 (function wireWatchNotifications() {
   if (typeof Notification === 'undefined') return;
 
@@ -122,6 +126,8 @@ root.render(
     if (seen.has(key)) return;
     seen.add(key);
     if (seen.size > NOTIFICATION_MEMORY) seen.clear();
+    // Belt behind the subscription-time gate: permission can flip
+    // between an event arriving and this constructor call.
     if (Notification.permission !== 'granted') return;
     try {
       new Notification('Watch activity', {
@@ -137,8 +143,33 @@ root.render(
 
   let unsubscribe: (() => void) | null = null;
   let currentChain = 0;
+  let chainPoll: ReturnType<typeof setInterval> | null = null;
+
+  const stop = () => {
+    unsubscribe?.();
+    unsubscribe = null;
+    currentChain = 0;
+    if (chainPoll !== null) {
+      clearInterval(chainPoll);
+      chainPoll = null;
+    }
+  };
 
   const evaluate = () => {
+    // Gate at subscription time, not inside notify(): without granted
+    // permission the stream could never raise a single alert, so it must
+    // not even be subscribed — the Enable-notifications button (the
+    // browser-required gesture) owns the request.
+    if (Notification.permission !== 'granted') {
+      stop();
+      return;
+    }
+    // While granted, a slow poll re-resolves the remembered chain even
+    // before anything is subscribed: the key is written on every chain
+    // navigation but has no same-tab event (a storage listener only
+    // fires cross-tab). It never runs ungranted — there is nothing to
+    // re-evaluate toward.
+    chainPoll ??= setInterval(evaluate, 5_000);
     const base = getApiBase();
     const chainId = readRememberedChainId() ?? getPreferredChainId();
     if (base === '' || !(chainId > 0)) {
@@ -155,7 +186,23 @@ root.render(
 
   evaluate();
   onApiBaseChange(evaluate);
-  setInterval(evaluate, 5_000);
+  // Permission flips re-evaluate immediately instead of waiting for the
+  // next poll tick: granting from the Watchlist panel's button or
+  // revoking in the browser's site settings both fire permissionchange.
+  // App-lifetime listeners, never removed — exactly like the api-base one.
+  document.addEventListener('permissionchange', evaluate);
+  // Belt for engines without the document-level event (the standard
+  // Permissions API's per-status 'change'): granted-only polling cannot
+  // observe a DENIED→GRANTED flip because the poll is stopped while
+  // ungranted. Silently skipped where unsupported (jsdom, Safari).
+  if (typeof navigator.permissions?.query === 'function') {
+    navigator.permissions
+      .query({ name: 'notifications' })
+      .then(status => {
+        status.addEventListener('change', evaluate);
+      })
+      .catch(() => undefined);
+  }
 })();
 
 // PWA shell: register the service worker (production builds only — dev is

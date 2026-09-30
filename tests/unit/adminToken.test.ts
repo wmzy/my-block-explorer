@@ -4,7 +4,7 @@ import { Hono } from 'hono';
 import { requireAdminToken, requireAdminTokenIfConfigured } from '@/middleware/admin-token';
 
 // Minimal app wrapping the middleware with a probe route, mirroring how
-// routes/rpc-config.ts (per-route) and routes/performance.ts (subtree)
+// routes/rpc-config.ts (per-route) and routes/sql.ts (subtree)
 // apply it. The middleware reads ADMIN_TOKEN per request, so vi.stubEnv
 // controls it per test.
 function testApp(middleware = requireAdminToken) {

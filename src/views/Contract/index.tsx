@@ -16,6 +16,7 @@ import { CoverageBadge } from '@/components/ui/CoverageBadge';
 import { SourceCodeViewer } from '@/components/SourceCodeViewer';
 import { post, isBackendUnreachable } from '@/util/http';
 import { ApiError } from '@/util/apiError';
+import { CUSTOM_ABI_STORAGE_PREFIX } from '@/util/storageKeys';
 import { useServiceDiscovery } from '@/hooks/ServiceDiscoveryContext';
 import { redirectReplace } from '@/views/Home/Landing';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
@@ -884,7 +885,7 @@ const sourcifyVerifyUrl = (chainId: number, address: string) =>
 // sessions. Access is guarded — browsers can throw on storage in private
 // modes or after storage policy changes.
 const customAbiStorageKey = (chainId: number, address: string) =>
-  `custom-abi:${chainId}:${address.toLowerCase()}`;
+  `${CUSTOM_ABI_STORAGE_PREFIX}${chainId}:${address.toLowerCase()}`;
 
 const readStoredCustomAbi = (chainId: number, address: string): string | null => {
   const key = customAbiStorageKey(chainId, address);

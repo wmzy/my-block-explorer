@@ -6,6 +6,9 @@
  * - GET .../indexing-status must answer 503 with an error envelope instead
  *   of fabricating a zeroed status object ("indexed nothing") the database
  *   never reported.
+ * - GET .../events pagination: non-numeric page/pageSize must 400 with
+ *   invalid_page/invalid_page_size (addresses.ts contract), never leak NaN
+ *   into SQL offsets; numeric input keeps the legacy clamp behavior.
  *
  * The service and middleware modules are mocked, mirroring
  * eventsRoutesCatchupGating.test.ts: these tests pin the route wiring, not
@@ -115,6 +118,52 @@ describe('GET .../events failure shape', () => {
       error: 'internal_error',
       message: 'Failed to query contract events',
     });
+  });
+});
+
+describe('GET .../events pagination validation', () => {
+  it('answers 400 invalid_page for a non-numeric page instead of a 500 from NaN SQL offsets', async () => {
+    const res = await request(`${BASE}?page=abc`);
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toEqual({
+      error: 'invalid_page',
+      message: 'page must be a positive integer',
+    });
+    expect(mocks.getContractEvents).not.toHaveBeenCalled();
+  });
+
+  it('answers 400 invalid_page_size for a non-numeric pageSize', async () => {
+    const res = await request(`${BASE}?pageSize=abc`);
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toEqual({
+      error: 'invalid_page_size',
+      message: 'pageSize must be a positive integer',
+    });
+    expect(mocks.getContractEvents).not.toHaveBeenCalled();
+  });
+
+  it('keeps the legacy clamps for numeric input: page floors at 1, pageSize caps at 1000', async () => {
+    await request(`${BASE}?page=0&pageSize=5000`);
+
+    expect(mocks.getContractEvents).toHaveBeenCalledTimes(1);
+    expect(mocks.getContractEvents).toHaveBeenCalledWith(
+      CHAIN_ID,
+      ADDRESS,
+      expect.objectContaining({ page: 1, pageSize: 1000 }),
+    );
+  });
+
+  it('treats empty pagination params as absent (defaults 1/50)', async () => {
+    const res = await request(`${BASE}?page=&pageSize=`);
+
+    expect(res.status).toBe(200);
+    expect(mocks.getContractEvents).toHaveBeenCalledWith(
+      CHAIN_ID,
+      ADDRESS,
+      expect.objectContaining({ page: 1, pageSize: 50 }),
+    );
   });
 });
 

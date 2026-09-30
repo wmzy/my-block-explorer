@@ -81,7 +81,6 @@ block-explorer/
 | `routes`/`AppPaths`     | Table     | `src/views/index.tsx`                         | native-router flat route table + typed links            |
 | `getChainInfo`          | Function  | `src/config/chains.ts:23`                     | Viem chain lookup                                       |
 | `honoApiPlugin`         | Plugin    | `vite.config.ts:8-66`                         | Vite→Hono bridge (dev only)                             |
-| `ChainSchemaManager`    | Class     | `src/database/chain-schema-manager.ts`        | Dynamic event table SQL via drizzle-kit/api             |
 
 ## CONVENTIONS
 
@@ -241,8 +240,10 @@ pnpm typecheck           # tsc --noEmit
 - **Proxy port 7890** — Set `HTTP_PROXY`/`HTTPS_PROXY` if network issues
 - **Admin auth is two-tier** (`src/middleware/admin-token.ts`, `x-admin-token`
   header, timing-safe compare). Strict tier (`requireAdminToken`, **fail
-  closed** when `ADMIN_TOKEN` unset): all of `/api/performance/*` (and the debug
-  API below carries no gate at all). Opt-in tier
+  closed** when `ADMIN_TOKEN` unset): the SQL console subtree
+  (`/api/sql/*` — the former `/api/performance/*` family was deleted in the
+  2026-09-30 cleanup wave; the RpcConfig admin-token verify probe now hits
+  `GET /api/sql/tables`). The debug API below carries no gate at all. Opt-in tier
   (`requireAdminTokenIfConfigured`): passes when `ADMIN_TOKEN` is unset
   (zero-config local works), enforces identically to the strict tier when it is
   set — covers the 7 mutating event-range routes
@@ -1174,9 +1175,10 @@ pnpm typecheck           # tsc --noEmit
   `copyText()`: async API first, legacy `document.execCommand('copy')` via an
   off-screen textarea fallback (textarea removal in a `finally` — an execCommand
   throw used to leak the helper into the DOM, caught by a unit test), honest
-  boolean return. Note: 12 OTHER call sites across the app still call
-  `navigator.clipboard` directly (CopyableHash, EventTable, RawJson, AddressQr,
-  FunctionCallForm, Ops, Signatures, …) — same failure class, not yet cut over.
+  boolean return. RESOLVED (2026-09-29/30): every call site across the app
+  (CopyableHash, EventTable, RawJson, AddressQr, FunctionCallForm, Ops,
+  Signatures, …) now routes through `copyText` — grep proves zero direct
+  `navigator.clipboard` uses outside `util/clipboard.ts` itself.
   Verified: 11 files / 203+ tests green via `vitest --changed`, typecheck clean,
   live Chromium smoke on WETH (root header trio + per-row viem present; page
   clipboard received the full runnable snippet with the marker-idiom expr; with
@@ -1411,3 +1413,94 @@ pnpm typecheck           # tsc --noEmit
   dev:server query fail with cause-less "Failed query" — check
   `ps`/procfs for stale vite/tsx PIDs holding data/blockchain.db before
   suspecting migrations.
+- **2026-09-30 review-fix wave (4 waves, 14 task agents + integration)** — the
+  full-project review's P0–P3 list landed; verified: tsc 0 errors, eslint 0
+  errors, `vitest --changed` 292 files green, `pnpm build` + dist CLI smoke,
+  live browser smoke (events tab + Interact through the vite bridge).
+  **P0 security posture** — `server.ts` now defaults `HOST ?? '127.0.0.1'`
+  (IPv4 loopback literal — integration catch: 'localhost' resolves to a
+  SINGLE stack, ::1-only on this Linux box, silently breaking every
+  IPv4-literal loopback consumer incl. the MCP default EXPLORER_API_URL;
+  browsers still reach an IPv4 bind via happy-eyeballs);
+  previously unset HOST bound `::` (all interfaces, verified against
+  @hono/node-server's listen) while `startupChecks.isLoopbackHost` treated
+  unset as loopback → the ADMIN_TOKEN warning and the ENABLE_DEBUG_API fatal
+  refusal NEVER fired in default starts (and Docker/compose publishes 8201
+  wide). Dockerfile api target now sets `ENV HOST=0.0.0.0` so the posture
+  evaluates the real container bind. Shutdown hardened: closeAllConnections +
+  5s force-exit timer + second-signal immediate exit. **P0 event loss** —
+  EventIndexingService.insertEvents no longer blanket-catches row-insert
+  failures: duplicates are classified (23505 / duplicate-key) and skipped,
+  everything else rethrows → range `error`, checkpoint stays at the last
+  successful batch (resume replays; previously a transient DB error silently
+  dropped rows and completed the range). fetchLogsWithRetry tiles sub-spans
+  and halves on shrinkable provider errors (floor 125) with a per-chain
+  ceiling map. **P1** — legacy 6-chain `utils/rpcClient.ts` DELETED;
+  contractInteraction read/simulate/estimate now await `createRpcClient`
+  (custom chains + user RPC config honored; withRetry from errorHandler).
+  **Security** — IdeService source-file containment (absolute/`..` rejected,
+  pre-resolves ALL files so zero partial writes); RpcManager logs host-only
+  RPC URLs (was full key-bearing URLs at info); admin-token compares
+  sha256 digests (no length oracle); CompileVerifyService refuses
+  checksum-less solc list entries (fail-closed) and 400s hostile source keys
+  at ingest; vite dev bridge synthesizes Origin ONLY for loopback-remote
+  requests (Host-header forgery from LAN peers closed — new shared predicate
+  `isLoopbackRemoteAddress` in cors-origins.ts; live LAN probe verified the
+  attack path). **API consistency** — thrown HTTPExceptions render as the
+  createApiError JSON envelope via app.onError (frontend http.ts only parses
+  JSON error bodies — the old plain-text 400s silently LOST validator reasons
+  like "Invalid address checksum"); junk input 400s across
+  storage/events/contracts/blocks (incl. read + open-in-ide malformed JSON,
+  added at integration); blocks limit capped 100. **Correctness** —
+  WatchService webhook dedupe records ids only after confirmed delivery;
+  AddressScan persistFindings guarded by stillOwnsJobRow (force-replace can't
+  collect old-walk rows); startup reconciliations awaited before listen
+  (`createServer` is now ASYNC — cli awaits; the vite bridge intentionally
+  reconciles nothing: strands are picked up by the next standalone start);
+  EventTable requestId guard (stale responses can't overwrite newer pages) +
+  no mount double-fetch + memoized EventRow; watch notifications subscribe
+  SSE only while Notification.permission === 'granted' (permissionchange
+  driven). **Cleanup** — deleted ~6.3k lines: vestigial event family
+  (EventQuery/EventDecoder/AbiParsing/EventValidation/EventPerformanceOptimizer/
+  chain-event-table-manager), /api/performance routes, legacy utils/rpcConfig,
+  tests/testDatabase, database/chain-schema-manager + database/performance-monitor
+  (zero-importer orphans after the family died; services/PerformanceMonitor is
+  a DIFFERENT live file); RpcConfig admin-token probe → GET /api/sql/tables;
+  utils barrel collisions 8→3; cache.ts timer unref'd. localStorage keys
+  centralized in `util/storageKeys.ts` (typed manifest; backupRestore consumes
+  it — new keys can no longer silently fall out of exports). **Release** —
+  CLI --version reads appVersion() (was hardcoded 0.0.0-development);
+  dependencies 24→11 (frontend stack → devDeps; solc removed outright —
+  CompileVerifyService downloads wasm and never imported the package; postgres
+  type-only → devDeps; tsup externals pinned: duckdb family, drizzle-orm,
+  hono, undici); CI adds `pnpm build`; release.yml `pnpm test` + typecheck;
+  drizzle 0006_snapshot reconstructed (0007.prevId repointed to the fresh
+  0006 id — the old prevId chained straight over 0006; drizzle-kit check
+  green). Docs: INSTALLATION Node 26+, CONFIG.md env table complete (18 vars,
+  GET /api/rpc-configs relabeled open-with-redaction), DEPLOYMENT node:26-slim.
+  **Conventions pinned**: (1) vitest writes its summary to STDERR — pipe
+  `2>&1` before grepping for "Test Files"; pino warnings pollute a plain
+  `grep failed`; (2) mid-wave `pnpm exec` can die on the frozen lockfile
+  after package.json edits — invoke `./node_modules/.bin/vitest` directly;
+  (3) agents that must prove a fix reverts-to-red (B3/B4 did temp reverts)
+  produce the strongest regression evidence in this repo's history; keep
+  requiring it for race-class fixes; (4) `serve()` returns a ServerType union
+  — closeAllConnections needs an `in`-narrowing guard for the http2 variants;
+  (5) DATABASE_URL MUST carry the `duckdb://` scheme — a bare path is
+  silently ignored and the adapter opens the DEFAULT db (a "fresh DB" smoke
+  that shows pre-existing journal rows proves the env var never took);
+  (6) the dev DuckDB was found dirty (half-applied 0001: tables existed
+  without journal rows → every boot re-ran CREATE TABLE → catalog error →
+  cause-less "Failed query" on all queries) — set aside as
+  `data/blockchain.db.dirty-20260930.bak`, regenerated fresh (16 migrations
+  + 68 labels on first boot; the user's stored rpc-configs live in the .bak
+  — a publicnode mainnet config was re-added during smoke because viem's
+  default llamarpc is unreachable from this machine); (7) dist-server smoke
+  recipe: wait for the "Server is running" log line before curling (boot =
+  migrations + reconcile before listen). Live browser smoke (vite bridge,
+  fresh DB): WETH contract verified via Sourcify, Interact name() Query →
+  "Result: Wrapped Ether" through the new createRpcClient path (rpc-config
+  absorbed after page reload — the browser client cache is per-page-load),
+  Events tab renders the honest empty state + indexing CTA; the only
+  console error was the environmental creation-endpoint RPC timeout,
+  surfaced with the product's own guidance card.

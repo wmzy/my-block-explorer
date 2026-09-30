@@ -35,7 +35,8 @@ jobs:
 
       - run: pnpm install
       - run: pnpm build:server
-      - run: npm run test
+      - run: pnpm typecheck
+      - run: pnpm test
 
       # semantic-release derives versions from commit messages and publishes
       # from the workflow workspace — it never writes the bump back to this
