@@ -5,6 +5,7 @@ import { getChainName } from '../config/chains';
 
 const logger = createLogger('transactions-routes');
 import { getValidatedChainId } from '../server/validation';
+import { parseStrictInteger } from '../utils/validation';
 import { formatTransactionForApi, safeJsonResponse } from '../utils/serialization';
 import { respondError } from '../utils/api-error';
 
@@ -47,10 +48,15 @@ const MAX_TRANSACTION_LIMIT = 100;
 
 const parseOffsetParam = (raw: string | undefined): number | null => {
   if (raw === undefined || raw === '') return 0;
-  const parsed = parseInt(raw, 10);
+  // Strict decimal parse: parseInt() accepted a valid prefix and ignored
+  // the rest, so `?offset=5abc` was served as offset 5 — the "silently
+  // treated as 0"-class failure the comment below rules out. A genuinely
+  // negative offset still clamps to 0 (documented policy), so it is
+  // matched explicitly rather than through the lenient parse.
+  const parsed = raw.startsWith('-') ? Number(raw) : parseStrictInteger(raw);
   // Malformed pagination params fail loudly with 400 instead of being
   // silently treated as 0 — a wrong page is worse than an error.
-  if (Number.isNaN(parsed)) return null;
+  if (parsed === null || !Number.isSafeInteger(parsed)) return null;
   return Math.min(Math.max(parsed, 0), MAX_TRANSACTION_OFFSET);
 };
 
@@ -58,8 +64,8 @@ const parseOffsetParam = (raw: string | undefined): number | null => {
 // non-positive values 400, oversized values clamp instead of erroring.
 const parseLimitParam = (raw: string | undefined): number | null => {
   if (raw === undefined || raw === '') return 20;
-  const parsed = parseInt(raw, 10);
-  if (Number.isNaN(parsed) || parsed < 1) return null;
+  const parsed = parseStrictInteger(raw);
+  if (parsed === null || parsed < 1) return null;
   return Math.min(parsed, MAX_TRANSACTION_LIMIT);
 };
 

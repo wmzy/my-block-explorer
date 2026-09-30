@@ -5,6 +5,7 @@ import { createLogger } from '../server/logger';
 import { createRateLimiter } from '../middleware/rate-limit';
 import { getChainName, isChainSupported, getSupportedChainIds } from '../config/chains';
 import { getValidatedChainId, getValidatedAddress } from '../server/validation';
+import { parseStrictInteger } from '../utils/validation';
 import {
   addIndexingRange,
   getIndexingRanges,
@@ -117,8 +118,10 @@ const parseEventFilters = (searchParams: URLSearchParams): ParsedEventFilters =>
   ): number | undefined | { error: ApiErrorBody; status: 400 } => {
     const raw = searchParams.get(key);
     if (raw === null || raw === '') return undefined;
-    const parsed = parseInt(raw, 10);
-    if (Number.isNaN(parsed)) {
+    // Strict decimal parse: parseInt() accepted a valid prefix, so
+    // `?fromBlock=100abc` filtered from block 100 instead of 400-ing.
+    const parsed = parseStrictInteger(raw);
+    if (parsed === null) {
       return {
         error: createApiError(
           400,
@@ -317,14 +320,14 @@ app.get('/chains/:chainId/contracts/:address/events', async c => {
   // below 1 keep the clamp-to-1 behavior, pageSize stays capped at 1000.
   const rawPage = c.req.query('page');
   const rawPageSize = c.req.query('pageSize');
-  const parsedPage = rawPage === undefined || rawPage === '' ? 1 : parseInt(rawPage, 10);
+  const parsedPage = rawPage === undefined || rawPage === '' ? 1 : parseStrictInteger(rawPage);
   const parsedPageSize =
-    rawPageSize === undefined || rawPageSize === '' ? 50 : parseInt(rawPageSize, 10);
+    rawPageSize === undefined || rawPageSize === '' ? 50 : parseStrictInteger(rawPageSize);
 
-  if (Number.isNaN(parsedPage)) {
+  if (parsedPage === null) {
     return respondError(c, 400, 'invalid_page', 'page must be a positive integer');
   }
-  if (Number.isNaN(parsedPageSize)) {
+  if (parsedPageSize === null) {
     return respondError(c, 400, 'invalid_page_size', 'pageSize must be a positive integer');
   }
   const page = Math.max(1, parsedPage);

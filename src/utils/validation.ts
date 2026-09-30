@@ -12,8 +12,14 @@ const DECIMAL_INTEGER = /^\d+$/;
 /**
  * Parse a plain decimal integer, or null when the input is not one.
  * Numbers pass through when finite and integral.
+ *
+ * Exported for the route query-param parsers (routes/{blocks,transactions,
+ * contracts,addresses,events}.ts), which had the same parseInt prefix
+ * acceptance: `?limit=20abc` was served as limit 20 instead of the 400
+ * those parsers' own comments promise.
  */
-function parseStrictInteger(value: string | number): number | null {
+export function parseStrictInteger(value: string | number | undefined): number | null {
+  if (value === undefined) return null;
   if (typeof value === 'number') {
     return Number.isSafeInteger(value) ? value : null;
   }

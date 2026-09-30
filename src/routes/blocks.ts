@@ -5,6 +5,7 @@ import { getChainName } from '../config/chains';
 
 const logger = createLogger('blocks-routes');
 import { getValidatedChainId, getValidatedBlockNumber } from '../server/validation';
+import { parseStrictInteger } from '../utils/validation';
 import { formatBlockForApi, safeJsonResponse } from '../utils/serialization';
 import { respondError } from '../utils/api-error';
 
@@ -69,15 +70,20 @@ const MAX_BLOCK_LIMIT = 100;
 
 const parseOffsetParam = (raw: string | undefined): number | null => {
   if (raw === undefined || raw === '') return 0;
-  const parsed = parseInt(raw, 10);
-  if (Number.isNaN(parsed)) return null;
+  // Strict decimal parse: parseInt() accepted a valid prefix and ignored
+  // the rest, so `?offset=5abc` was served as offset 5 — a plausible page
+  // from a request the contract above says must 400. A genuinely negative
+  // offset still clamps to 0 (the documented policy), so it is matched
+  // explicitly instead of riding on the lenient parse.
+  const parsed = raw.startsWith('-') ? Number(raw) : parseStrictInteger(raw);
+  if (parsed === null || !Number.isSafeInteger(parsed)) return null;
   return Math.min(Math.max(parsed, 0), MAX_BLOCK_OFFSET);
 };
 
 const parseLimitParam = (raw: string | undefined): number | null => {
   if (raw === undefined || raw === '') return 20;
-  const parsed = parseInt(raw, 10);
-  if (Number.isNaN(parsed) || parsed < 1) return null;
+  const parsed = parseStrictInteger(raw);
+  if (parsed === null || parsed < 1) return null;
   return Math.min(parsed, MAX_BLOCK_LIMIT);
 };
 

@@ -22,6 +22,7 @@ import { createRateLimiter } from '../middleware/rate-limit';
 import { isAllowedCorsOrigin } from '../middleware/cors-origins';
 import { createApiError, respondError } from '../utils/api-error';
 import { getValidatedChainId } from '../server/validation';
+import { parseStrictInteger } from '../utils/validation';
 import { chainCacheService } from '../services/ChainCacheService';
 
 const logger = createLogger('custom-chain-routes');
@@ -307,8 +308,11 @@ app.post('/chains/custom', requireAdminTokenIfConfigured, registerRateLimiter, a
 app.delete('/chains/custom/:chainId', requireAdminTokenIfConfigured, async c => {
   try {
     const param = c.req.param('chainId');
-    const chainId = Number.parseInt(param, 10);
-    if (Number.isNaN(chainId) || chainId <= 0) {
+    // Strict decimal parse: parseInt() accepted a valid prefix, so
+    // `:chainId = 31337abc` was read as 31337 and could delete the wrong
+    // custom chain registration.
+    const chainId = parseStrictInteger(param);
+    if (chainId === null || chainId <= 0) {
       return respondError(c, 400, 'invalid_chain_id', 'chainId must be a positive integer');
     }
 
