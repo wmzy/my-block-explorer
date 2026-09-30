@@ -192,6 +192,57 @@ describe('useAutoDiscovery', () => {
     expect(getApiBase()).toBe('http://localhost:8201');
   });
 
+  // A scan/reconnect is an ASYNC probe that takes up to 1.5s. If the
+  // user points the app at a backend in the meantime, the late scan
+  // result used to overwrite the user's choice: status flipped back and
+  // setApiBase() re-pointed the whole app at a port the user did not
+  // pick. A slow localhost scan must never outrank an explicit choice.
+  it('does not let a late scan overwrite a newer explicit setApiUrl', async () => {
+    const { result } = renderHook(() => useAutoDiscovery());
+    await act(async () => {});
+    // The startup scan is still probing.
+    expect(inFlightUrls()).toEqual(PORT_URLS);
+
+    // The user picks a backend by hand before the scan finishes.
+    await act(async () => {
+      const connected = result.current.setApiUrl(MANUAL_BASE);
+      respond(MANUAL_URL);
+      await expect(connected).resolves.toBe(true);
+    });
+    expect(getApiBase()).toBe(MANUAL_BASE);
+
+    // The stale scan now answers 8201 and lands late.
+    respond(PORT_URLS[0]);
+    await act(async () => {
+      vi.advanceTimersByTime(1500);
+    });
+
+    // The explicit choice still stands.
+    expect(getApiBase()).toBe(MANUAL_BASE);
+    expect(result.current.serviceInfo?.url).toBe(MANUAL_BASE);
+    expect(result.current.status).toBe('found');
+  });
+
+  it('does not let a late scan overwrite a disconnect', async () => {
+    const { result } = renderHook(() => useAutoDiscovery());
+    await act(async () => {});
+
+    // The user disconnects mid-scan (the "backend not found" path).
+    act(() => {
+      result.current.disconnect();
+    });
+    expect(getApiBase()).toBe('');
+
+    respond(PORT_URLS[0]);
+    await act(async () => {
+      vi.advanceTimersByTime(1500);
+    });
+
+    // A backend the user explicitly turned off must stay off.
+    expect(getApiBase()).toBe('');
+    expect(result.current.status).toBe('not-found');
+  });
+
   it('setApiUrl connects mid-session and persists the manual base', async () => {
     const { result } = renderHook(() => useAutoDiscovery());
     await act(async () => {});
