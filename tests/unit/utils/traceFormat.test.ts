@@ -126,6 +126,19 @@ describe('normalizeCallTrace', () => {
     expect(valueOf(1.5)).toBeNull(); // fractional quantities → absent
   });
 
+  it('refuses a JSON number that already lost precision past 2^53', () => {
+    const valueOf = (value: unknown): bigint | null | undefined =>
+      normalizeCallTrace({ type: 'CALL', value })?.value;
+
+    // A lenient node that answers a wei quantity as a JSON number: the
+    // literal 2000000000000000001 arrives as the double 2000000000000000000
+    // (spelled out here so the test states the delivered value), and
+    // isInteger waves that through — the card would report a wrong wei
+    // amount. Below the safe range the number shape is still fine.
+    expect(valueOf(2000000000000000000)).toBeNull();
+    expect(valueOf(21_000)).toBe(21_000n);
+  });
+
   it('normalizes CREATE frames without a `to` and without calls', () => {
     const root = must({
       type: 'CREATE2',

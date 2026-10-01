@@ -156,7 +156,11 @@ const toRpcTxType = (txType: unknown): number => {
 // means the field is unusable and the entry degrades honestly.
 const toDecimalString = (value: unknown): string | undefined => {
   if (typeof value === 'bigint') return value.toString();
-  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  // A number quantity (chainId/nonce) is exact while it is a safe integer;
+  // past 2^53 JSON.parse already rounded it and isFinite cannot tell, so
+  // the field is treated as unusable rather than rendered as a wrong chain
+  // or nonce.
+  if (typeof value === 'number' && Number.isSafeInteger(value)) return String(value);
   if (typeof value === 'string' && /^0x[0-9a-fA-F]+$/.test(value) && value.length > 2) {
     try {
       return BigInt(value).toString();

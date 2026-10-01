@@ -93,7 +93,11 @@ const parseBodyStateOverride = (
 const parseBodyValue = (raw: unknown): { ok: true; value?: bigint } | { ok: false } => {
   if (!raw) return { ok: true };
   if (typeof raw === 'number') {
-    return Number.isInteger(raw) ? { ok: true, value: BigInt(raw) } : { ok: false };
+    // A wei `value` sent as a JSON number past 2^53 was already rounded by
+    // JSON.parse, so it names a different amount than the caller wrote and
+    // isInteger cannot detect it. Reject with the same 400 the other junk
+    // shapes get; the caller can send the exact quantity as a string.
+    return Number.isSafeInteger(raw) ? { ok: true, value: BigInt(raw) } : { ok: false };
   }
   if (typeof raw === 'string' && /^-?(0x[0-9a-fA-F]+|\d+)$/.test(raw)) {
     return { ok: true, value: BigInt(raw) };

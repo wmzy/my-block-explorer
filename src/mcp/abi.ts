@@ -123,6 +123,16 @@ function coerceScalar(value: unknown, type: string, path: string): unknown {
       if (!Number.isInteger(value)) {
         throw new McpArgError(`${path}: ${value} is not an integer — pass big values as decimal strings to keep precision`);
       }
+      // JSON has no big integers, so JSON.parse already rounded a literal
+      // past 2^53 (10000000000000001 became 10000000000000000) before this
+      // function ever saw it. `isInteger` passes such a value, and sending
+      // it would read a DIFFERENT number than the caller asked for — name
+      // the value and the exact fix.
+      if (!Number.isSafeInteger(value)) {
+        throw new McpArgError(
+          `${path}: ${value} exceeds the exact integer range — pass it as a decimal string to keep precision`,
+        );
+      }
       return BigInt(value);
     }
     if (typeof value === 'string' && /^(0x[0-9a-fA-F]+|-?\d+)$/.test(value)) {

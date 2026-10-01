@@ -101,7 +101,11 @@ const nonEmptyString = (raw: unknown): string | null =>
 const parseQuantity = (raw: unknown): bigint | null => {
   if (typeof raw === 'bigint') return raw >= 0n ? raw : null;
   if (typeof raw === 'number') {
-    return Number.isInteger(raw) && raw >= 0 ? BigInt(raw) : null;
+    // A JSON number past 2^53 was already rounded by JSON.parse and
+    // isInteger cannot detect it — a "confirmed" pending amount that
+    // differs from what the node reported is worse than no row. Safe
+    // integers stay accepted; everything larger is absent (null).
+    return Number.isSafeInteger(raw) && raw >= 0 ? BigInt(raw) : null;
   }
   if (typeof raw === 'string' && raw !== '') {
     try {

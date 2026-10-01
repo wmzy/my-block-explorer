@@ -43,6 +43,19 @@ describe('coerceArgs', () => {
     expect(() => coerceArgs([1.5], fragment)).toThrow(/decimal strings/);
   });
 
+  it('rejects a JSON number that already lost precision past 2^53', () => {
+    // The args literal 10000000000000001 was already rounded by JSON.parse
+    // to the double 10000000000000000 (spelled out here so the test states
+    // the delivered value); it IS an integer, so an isInteger check waves it
+    // through and the contract call would silently read the wrong value.
+    const fragment = parseFunctionFragment('function f(uint256 a) view returns (uint256)');
+    expect(() => coerceArgs([10000000000000000], fragment)).toThrow(
+      'args[0]: 10000000000000000 exceeds the exact integer range — pass it as a decimal string to keep precision',
+    );
+    // Below the safe range the number shape is still fine.
+    expect((coerceArgs([1000000000000000], fragment))[0]).toBe(1000000000000000n);
+  });
+
   it('validates addresses and booleans with field paths', () => {
     const fragment = parseFunctionFragment('function f(address a, bool b) view returns (bool)');
     expect(() => coerceArgs(['0x123', true], fragment)).toThrow('args[0]');
