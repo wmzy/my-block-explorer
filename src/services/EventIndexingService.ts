@@ -1394,8 +1394,6 @@ export const startIndexingRange = async (
       logger.warn({ err, chainId, address, rangeId }, 'Post-range reorg reconciliation failed');
     }
 
-    const finalBlock =
-      direction === 'forward' ? BigInt(resolvedToBlock) : BigInt(resolvedFromBlock);
     // insertEvents counts attempted rows even when the upsert conflicted, so
     // overlap/catchup re-walks inflate totalInserted. Close out with the
     // distinct stored count over the range instead.
@@ -1405,9 +1403,18 @@ export const startIndexingRange = async (
       resolvedFromBlock,
       resolvedToBlock,
     );
+
+    // The checkpoint must reflect WHERE THE WALK ACTUALLY GOT TO. On an
+    // abort (pause) that is `currentBlock`, which is short of the end —
+    // writing the end bound instead made the persisted row claim the whole
+    // window was indexed, so the next resume computed currentBlock+1 >
+    // endBlock, treated the range as already complete and fetched NOTHING.
+    // The remaining events were silently lost while the range reported
+    // itself finished. On normal completion the loop exits one step past
+    // the end, so the persisted checkpoint stays the end bound.
     await updateRange(
       {
-        currentBlock: finalBlock,
+        currentBlock: job.abort ? currentBlock : endBlock,
         status: job.abort ? 'paused' : 'completed',
         totalEventsIndexed,
       },

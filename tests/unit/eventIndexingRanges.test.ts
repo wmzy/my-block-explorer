@@ -716,3 +716,77 @@ describe('getLogs provider range-cap adaptation', () => {
     expect(firstCall.toBlock - firstCall.fromBlock + 1n).toBe(500n);
   });
 });
+
+describe('pausing an in-flight range keeps the checkpoint honest', () => {
+  // A pause must record WHERE THE WALK ACTUALLY GOT TO. The close-out
+  // used to write the range's END bound unconditionally, so a paused row
+  // claimed the whole window was indexed; the next resume then saw
+  // currentBlock already past the end, treated the range as complete and
+  // fetched NOTHING — the remaining events were silently lost while the
+  // UI reported a finished range.
+  it('records real progress, not the range end, when a batch loop aborts', async () => {
+    // Three BATCH_SIZE windows: [0,1999] [2000,3999] [4000,5999].
+    dbState.rawRangeRows.push(rangeRow({ fromBlock: 0n, toBlock: 5_999n }));
+    const svc = await import('@/services/EventIndexingService');
+    const client = makeClient(20_000_000n);
+    mocks.getClient.mockResolvedValue(client);
+    // Pause while the SECOND batch is being fetched: the first batch's
+    // checkpoint is already persisted, so this aborts mid-walk.
+    let calls = 0;
+    client.getLogs.mockImplementation(async () => {
+      calls += 1;
+      if (calls === 2) svc.pauseIndexingRange(CHAIN_ID, ADDRESS, 1);
+      return [];
+    });
+
+    const result = await startIndexingRange(CHAIN_ID, ADDRESS, 1, EMPTY_ABI);
+
+    const closeOut = dbState.updates.at(-1)?.set;
+    expect(result.success).toBe(true);
+    expect(closeOut?.status).toBe('paused');
+    // The checkpoint is the last batch actually completed ([2000,3999] ran
+    // before the abort took effect) — and, decisively, NOT the range's
+    // toBlock, which is what the old close-out always wrote.
+    expect(closeOut?.currentBlock).toBe(4_000n);
+    expect(closeOut?.currentBlock).not.toBe(5_999n);
+
+    // And the walk really did stop early rather than running to the end:
+    // the third window was never fetched.
+    const servedThrough = client.getLogs.mock.calls.at(-1)?.[0].toBlock ?? -1n;
+    expect(servedThrough).toBeLessThan(5_999n);
+  });
+
+  it('a resume after a pause continues from the checkpoint and fetches the remainder', async () => {
+    // First run: pause after the first batch.
+    dbState.rawRangeRows.push(rangeRow({ fromBlock: 0n, toBlock: 5_999n }));
+    const svc = await import('@/services/EventIndexingService');
+    const client = makeClient(20_000_000n);
+    mocks.getClient.mockResolvedValue(client);
+    let calls = 0;
+    client.getLogs.mockImplementation(async () => {
+      calls += 1;
+      if (calls === 2) svc.pauseIndexingRange(CHAIN_ID, ADDRESS, 1);
+      return [];
+    });
+    await svc.startIndexingRange(CHAIN_ID, ADDRESS, 1, EMPTY_ABI);
+    const pausedAt = dbState.updates.at(-1)?.set.currentBlock as bigint;
+
+    // Second run: the row now carries the paused checkpoint and 'paused'
+    // status, exactly as it was persisted.
+    dbState.updates.length = 0;
+    client.getLogs.mockClear();
+    client.getLogs.mockImplementation(async () => []);
+    dbState.rawRangeRows.length = 0;
+    dbState.rawRangeRows.push(
+      rangeRow({ fromBlock: 0n, toBlock: 5_999n, currentBlock: pausedAt, status: 'paused' }),
+    );
+
+    await svc.startIndexingRange(CHAIN_ID, ADDRESS, 1, EMPTY_ABI);
+
+    // The remainder really is fetched, and the run finishes complete.
+    const firstResumeCall = client.getLogs.mock.calls[0]?.[0];
+    expect(firstResumeCall?.fromBlock).toBe(pausedAt + 1n);
+    expect(client.getLogs.mock.calls.at(-1)?.[0].toBlock).toBe(5_999n);
+    expect(dbState.updates.at(-1)?.set.status).toBe('completed');
+  });
+});
