@@ -696,12 +696,21 @@ export const IndexingRangeManager: React.FC<Props> = ({
   const hasKnownCreationBlock = creationBlockNumber > 0;
   const maxRangeToBlock = ranges.length > 0 ? Math.max(...ranges.map(r => Number(r.toBlock))) : 0;
   const quickUrl = `/api/chains/${chainId}/contracts/${contractAddress}/events/ranges/quick`;
+  // Generation guard: the Contract route reuses this component across a
+  // contract switch, and the 3s poll overlaps the remount fetch, so a
+  // slower run for the previous contract (or a superseded poll tick) could
+  // settle after a newer one and replace the current contract's ranges,
+  // its 'Pausing…' set and the chain head. Only the newest run writes.
+  const rangesRequestIdRef = useRef(0);
   const fetchRanges = useCallback(async () => {
+    const requestId = rangesRequestIdRef.current;
+    const isCurrent = () => requestId === rangesRequestIdRef.current;
     setLoading(true);
     try {
       const data = await get<{ ranges?: IndexingRange[] }>(
         `/api/chains/${chainId}/contracts/${contractAddress}/events/ranges`,
       );
+      if (!isCurrent()) return;
       const nextRanges = data.ranges ?? [];
       setRanges(nextRanges);
       // Drop the transient 'Pausing…' state once the polled status is no
@@ -723,19 +732,27 @@ export const IndexingRangeManager: React.FC<Props> = ({
           const status = await get<{ latestBlock?: number }>(
             `/api/chains/${chainId}/contracts/${contractAddress}/events/indexing-status`,
           );
+          if (!isCurrent()) return;
           setHeadBlock(status.latestBlock ?? 0);
         } catch {
           // keep the last known head
         }
       }
     } catch (error) {
-      console.error('Failed to fetch ranges:', error);
+      if (isCurrent()) console.error('Failed to fetch ranges:', error);
     } finally {
-      setLoading(false);
+      // Only the newest run owns the spinner.
+      if (isCurrent()) setLoading(false);
     }
   }, [chainId, contractAddress]);
   useEffect(() => {
+    // Bump the generation so the previous contract's in-flight fetch can
+    // never write into this one (the cleanup covers the unmount too).
+    rangesRequestIdRef.current += 1;
     fetchRanges();
+    return () => {
+      rangesRequestIdRef.current += 1;
+    };
   }, [fetchRanges]);
   useEffect(() => {
     const hasIndexing = ranges.some(r => r.status === 'indexing');

@@ -205,6 +205,22 @@ export const EventStatistics = ({
   // silently disappearing, and good /ranges data still renders coverage.
   const [statusFailed, setStatusFailed] = useState(false);
   const prevEventsRef = useRef(0);
+  // Generation guard: the Contract route reuses this component across a
+  // contract switch, so a fetch started for the previous contract can
+  // settle after the new one answered and would paint the old contract's
+  // status, ranges and outage state over the new contract's. Every run
+  // stamps the current identity; only the newest run may write, and a
+  // contract change restarts the "events grew" counter so the new
+  // contract's total is compared against its own baseline (its count can
+  // legitimately be lower than the previous contract's).
+  const requestIdRef = useRef(0);
+  const identityRef = useRef(`${chainId}:${contractAddress}`);
+
+  if (identityRef.current !== `${chainId}:${contractAddress}`) {
+    identityRef.current = `${chainId}:${contractAddress}`;
+    requestIdRef.current += 1;
+    prevEventsRef.current = 0;
+  }
 
   // Indexing status drives the status/event metrics; the ranges feed the
   // coverage metric (same endpoint IndexingRangeManager polls). Both ride
@@ -212,6 +228,8 @@ export const EventStatistics = ({
   // segmented range view. allSettled: one endpoint failing must not drag
   // the other's good data down with it.
   const fetchStatus = useCallback(async () => {
+    const requestId = requestIdRef.current;
+    const isCurrent = () => requestId === requestIdRef.current;
     try {
       setLoading(true);
       const [statusRes, rangesRes] = await Promise.allSettled([
@@ -222,6 +240,7 @@ export const EventStatistics = ({
           `/api/chains/${chainId}/contracts/${contractAddress}/events/ranges`,
         ),
       ]);
+      if (!isCurrent()) return;
       if (statusRes.status === 'fulfilled') {
         setStats(statusRes.value);
         setStatusFailed(false);
@@ -238,12 +257,18 @@ export const EventStatistics = ({
         setRanges(rangesRes.value.ranges ?? []);
       }
     } finally {
-      setLoading(false);
+      // Only the newest run owns the spinner: a superseded run must not
+      // clear the flag its successor set.
+      if (isCurrent()) setLoading(false);
     }
   }, [chainId, contractAddress, onEventsUpdated]);
 
   useEffect(() => {
     fetchStatus();
+    return () => {
+      // Unmount / identity change invalidates in-flight runs.
+      requestIdRef.current += 1;
+    };
   }, [fetchStatus]);
 
   // Poll at IndexingRangeManager's 3s cadence while anything is indexing
