@@ -3,7 +3,7 @@
 // presentation the view picks per chain: explicit recovery state (never a
 // silent redirect to some other chain) plus the hero badge on testnets.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, View, createRoutes } from '@native-router/react';
 import '@testing-library/jest-dom';
 import Home from '@/views/Home';
@@ -186,5 +186,45 @@ describe('Home view', () => {
     // 1 wei uses the shared dust floor, not a misleading 0.0000.
     expect(screen.getByText('<0.0001 ETH')).toBeInTheDocument();
     expect(screen.queryByText('0.0000 ETH')).not.toBeInTheDocument();
+  });
+
+  it('shows a real gas percentage, and never NaN% or Infinity% on a degenerate block', async () => {
+    // The blocks feed's own shape: { blocks, latestBlockNumber, gasPrice }.
+    const block = (gasUsed: string, gasLimit: string, number: string) => ({
+      blocks: [
+        {
+          number,
+          hash: '0xabc',
+          parentHash: '0xdef',
+          timestamp: '2026-10-01T00:00:00.000Z',
+          miner: '0x1111111111111111111111111111111111111111',
+          transactionCount: 3,
+          gasUsed,
+          gasLimit,
+        },
+      ],
+      latestBlockNumber: number,
+      gasPrice: null,
+    });
+
+    mockUseLatestBlocksFeed.mockReturnValue({
+      data: block('15000000', '30000000', '21000000'),
+      loading: false,
+    });
+    renderHome('/chain/1');
+    expect(await screen.findByText('50.0%')).toBeInTheDocument();
+
+    // A block that reports no gas limit at all: the old inline division
+    // rendered "Infinity%" as if it were a measured share.
+    mockUseLatestBlocksFeed.mockReturnValue({
+      data: block('15000000', '0', '21000001'),
+      loading: false,
+    });
+    renderHome('/chain/1');
+
+    await waitFor(() => expect(screen.getByText('Gas Used (latest block)')).toBeInTheDocument());
+    expect(screen.queryByText(/Infinity%/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/NaN%/)).not.toBeInTheDocument();
+    expect(screen.getAllByText('—').length).toBeGreaterThan(0);
   });
 });

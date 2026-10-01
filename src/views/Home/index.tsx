@@ -14,6 +14,7 @@ import {
   formatRelativeTime,
   formatValue,
 } from '@/utils/format';
+import { gasUsedPercentLabel } from '@/utils/gasShare';
 import { parseChainIdParam } from '@/utils/chainParam';
 import { PageContainer } from '@/components/ui/PageLayout';
 import { Button } from '@/components/ui/Button';
@@ -854,8 +855,11 @@ export default function Home() {
     );
   }
 
+  // The share helper degrades a block that reports no usable gas limit
+  // (0/0) to the shared placeholder; the old inline division printed
+  // "NaN%" / "Infinity%" into the Gas Used card.
   const gasUsedPercent = blocks[0]
-    ? ((Number(blocks[0].gasUsed) / Number(blocks[0].gasLimit)) * 100).toFixed(1)
+    ? gasUsedPercentLabel(blocks[0].gasUsed, blocks[0].gasLimit)
     : null;
 
   // Stats-bar inputs. All four cards read the blocks feed, but each value
@@ -865,7 +869,8 @@ export default function Home() {
   const latestBlockText = latestBlockNumber !== null ? formatNumber(latestBlockNumber) : null;
   const gasPriceText = gasPrice !== null ? `${formatFixed(gasPrice, 9, 2)} Gwei` : null;
   const latestTxCountText = blocks[0] ? formatNumber(blocks[0].transactionCount) : null;
-  const gasUsedText = gasUsedPercent !== null ? `${gasUsedPercent}%` : null;
+  // The helper already returns the full '50.0%' / '—' label.
+  const gasUsedText = gasUsedPercent;
 
   return (
     <>

@@ -20,6 +20,7 @@ import { useLatestBlocksFeed } from '@/services/homeFeed';
 import { finalityLabelFor, useFinalityHeads } from '@/services/blocks';
 import { describeBlockProducer } from '@/utils/blockRpcData';
 import { formatNumber, formatRelativeTime } from '@/utils/format';
+import { gasUsageShare } from '@/utils/gasShare';
 
 const LIMIT = 20;
 
@@ -78,18 +79,11 @@ const minerNotExposedNote = css`
   color: var(--haze-color-text-muted);
 `;
 
-// Gas quantities are on-chain integers serialized as strings; parse them
-// BigInt-safe (parseInt would lose precision past 2^53).
-const formatGasUsage = (used: string, limit: string): string => {
-  try {
-    const usedNum = Number(BigInt(used));
-    const limitNum = Number(BigInt(limit));
-    const percentage = ((usedNum / limitNum) * 100).toFixed(1);
-    return `${formatNumber(usedNum)} (${percentage}%)`;
-  } catch {
-    return used;
-  }
-};
+// Gas quantities are on-chain integers serialized as strings; the share
+// helper parses them BigInt-safe (parseInt would lose precision past
+// 2^53) and omits the ratio when the block reports no usable gas limit —
+// the old inline division printed "NaN%" / "Infinity%" there.
+export const formatGasUsage = (used: string, limit: string): string => gasUsageShare(used, limit);
 
 const formatMiner = (miner: string): string => {
   if (!miner || miner.length < 10) return miner;
