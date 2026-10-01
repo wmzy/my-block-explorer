@@ -6,7 +6,8 @@
 // the tx list is unsettled). Page-test style: services mocked, jsdom.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { MemoryRouter, View, createRoutes, useSearchParams } from '@native-router/react';
+import { MemoryRouter, View, createRoutes, useMatched, useSearchParams } from '@native-router/react';
+import { navigate } from '@native-router/core';
 import '@testing-library/jest-dom/vitest';
 import AddressView from '@/views/Address';
 import { ApiError } from '@/util/apiError';
@@ -180,6 +181,40 @@ const renderPage = (path = `/chain/1/address/${mocks.testAddress}`) =>
     </MemoryRouter>,
   );
 
+// Param-driven host: navigating between addresses changes params WITHOUT
+// remounting the view — the same-route scenario the real Address route
+// runs, and the reuse that lets per-address editor state leak.
+const OTHER_ADDRESS = '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd';
+function AddressLabelHost() {
+  const { router } = useMatched();
+  return (
+    <>
+      {/* The real view reads :chainId/:address from the route itself, so
+          this host is just the view plus a navigation button. */}
+      <AddressView />
+      <button
+        type="button"
+        onClick={() => {
+          void navigate(router, `/chain/1/address/${OTHER_ADDRESS}`).catch(() => undefined);
+        }}
+      >
+        go other address
+      </button>
+    </>
+  );
+}
+
+const paramRoutes = createRoutes([
+  { path: '/chain/:chainId/address/:address', component: () => Promise.resolve(AddressLabelHost) },
+]);
+
+const renderParamPage = (address: string) =>
+  render(
+    <MemoryRouter routes={paramRoutes} initialEntries={[`/chain/1/address/${address}`]}>
+      <View />
+    </MemoryRouter>,
+  );
+
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.labelQuery = {
@@ -348,6 +383,34 @@ describe('Address label row', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
     await waitFor(() => expect(mocks.deleteLabel).toHaveBeenCalledWith(1, mocks.testAddress));
     await waitFor(() => expect(mocks.labelQuery.refetch).toHaveBeenCalled());
+  });
+
+  // The Address route reuses this view's component instance across address
+  // changes (native-router composes matched elements without a key), so an
+  // open editor must not survive into the next address: the Save path
+  // writes to the (chainId, address) the row renders for, and a draft
+  // typed for the previous address would land on the new one.
+  it('drops an open editor when the address changes so no draft crosses over', async () => {
+    mocks.labelQuery.data = {
+      chainId: 1,
+      address: mocks.testAddress,
+      label: 'Cold wallet',
+      note: null,
+      source: 'user',
+    };
+    renderParamPage(mocks.testAddress);
+
+    fireEvent.click(await screen.findByTestId('label-edit'));
+    fireEvent.change(screen.getByTestId('label-input'), { target: { value: 'For A only' } });
+    expect(screen.getByTestId('label-input')).toBeInTheDocument();
+
+    // Same component instance, new :address param (the route is reused).
+    fireEvent.click(screen.getByRole('button', { name: 'go other address' }));
+
+    await screen.findByTestId('label-add');
+    expect(screen.queryByTestId('label-input')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('label-save')).not.toBeInTheDocument();
+    expect(mocks.saveLabel).not.toHaveBeenCalled();
   });
 });
 

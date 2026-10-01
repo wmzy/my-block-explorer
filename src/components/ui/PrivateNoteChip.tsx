@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { css } from '@linaria/core';
 import { Button } from '@/components/ui/Button';
 import {
@@ -127,6 +127,28 @@ export function PrivateNoteChip({ chainId, address }: { chainId: number; address
   // Set only when the synchronous write itself failed (storage off) —
   // validation errors are derived live from the draft instead.
   const [storageHint, setStorageHint] = useState<string | null>(null);
+
+  // The Address route reuses this component instance across address and
+  // chain changes (native-router composes matched elements without a key),
+  // so the seeded state above is only correct for the identity it was
+  // created with. Without this resync a note written for address A stayed
+  // on screen under address B whenever the view did not unmount in
+  // between — the cached-visit case — and an open editor prefilled with
+  // A's text could be saved onto B. Every piece of per-address state is
+  // rebuilt here, so no draft can cross identities.
+  const identity = `${chainId}:${address}`;
+  const identityRef = useRef(identity);
+  if (identityRef.current !== identity) {
+    identityRef.current = identity;
+    // Render-phase sync of state derived from props (the documented
+    // "adjusting state when props change" pattern): no effect, so the
+    // rendered output can never show the previous address's note for a
+    // frame.
+    setNote(readPrivateNote(chainId, address));
+    setEditing(false);
+    setDraft('');
+    setStorageHint(null);
+  }
 
   const rawLength = draft.length;
   const tooLong = rawLength > PRIVATE_NOTE_MAX_CHARS;

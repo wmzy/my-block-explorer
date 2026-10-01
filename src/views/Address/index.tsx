@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { css, cx } from '@linaria/core';
 import type { ReactNode } from 'react';
 import { TypedLink, useMatched, useSearch, useSetSearch } from '@native-router/react';
@@ -845,6 +845,23 @@ function AddressLabelRow({ chainId, address }: { chainId: number; address: strin
   // null = no complaint; 'admin-token' = 403 guidance; otherwise the
   // honest error message from the failed request.
   const [editorHint, setEditorHint] = useState<string | null>(null);
+
+  // The Address route reuses this component instance across address and
+  // chain changes (native-router composes matched elements without a key),
+  // so per-address editor state must be rebuilt when the identity changes.
+  // Without it an editor opened for address A stays open under address B,
+  // and its Save writes to B's label key with A's draft. Render-phase sync
+  // (no effect) so no draft can survive a single frame across identities.
+  const labelIdentity = `${chainId}:${address}`;
+  const labelIdentityRef = useRef(labelIdentity);
+  if (labelIdentityRef.current !== labelIdentity) {
+    labelIdentityRef.current = labelIdentity;
+    setEditing(false);
+    setLabelDraft('');
+    setNoteDraft('');
+    setEditorHint(null);
+    setSaving(false);
+  }
 
   const trimmedLabel = labelDraft.trim();
   const trimmedNote = noteDraft.trim();
