@@ -353,9 +353,17 @@ export function AbiListPanel({
 
   // The route reuses this component across contracts (params change without
   // a remount); a different ABI must never inherit the previous selection.
+  //
+  // The signal is the ABI's CONTENT, never the identity of a derived
+  // array. Every call site computes the prop inline
+  // (`abi={parseAbiEntries(contractSource.abi)}`), so the array is a new
+  // object on every parent render — keying the reset on it fired on every
+  // render and wiped the user's checkboxes whenever anything above
+  // re-rendered (a toast, a search-param update, a query notification).
+  const abiSignature = useMemo(() => JSON.stringify(entries), [entries]);
   useEffect(() => {
     setSelected(new Set());
-  }, [entries]);
+  }, [abiSignature]);
 
   const buckets = useMemo(() => categorize(entries), [entries]);
   const errorCount = buckets.error.length;
