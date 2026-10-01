@@ -514,6 +514,18 @@ export default function TokenTransfers({
   // Local state, deliberately NOT a URL param: mode is a view choice, and
   // the window/refresh/page params below stay shared by both modes.
   const [participantView, setParticipantView] = useState(false);
+
+  // The scan-mode choice belongs to ONE address, but the route reuses this
+  // component when only :address changes: a "participant" selection made on
+  // one token contract silently followed the user to the next one (the URL
+  // params below are re-parsed per render, but this local flag was not).
+  // Render-phase resync — the PrivateNoteChip pattern.
+  const addressIdentity = `${chainId}:${address}`;
+  const addressIdentityRef = useRef(addressIdentity);
+  if (addressIdentityRef.current !== addressIdentity) {
+    addressIdentityRef.current = addressIdentity;
+    setParticipantView(false);
+  }
   const scanMode: TransferScanMode = isTokenContract && !participantView ? 'token' : 'participant';
   const switchMode = (next: TransferScanMode) => {
     if (next === scanMode) return;

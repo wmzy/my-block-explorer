@@ -363,6 +363,11 @@ export function AbiListPanel({
   const abiSignature = useMemo(() => JSON.stringify(entries), [entries]);
   useEffect(() => {
     setSelected(new Set());
+    // The name filter and the category chip are per-ABI view state too: a
+    // stale filter hid the new contract's entries behind a term the user
+    // typed for the previous one (same rule as `selected` above).
+    setFilter('');
+    setCategory('all');
   }, [abiSignature]);
 
   const buckets = useMemo(() => categorize(entries), [entries]);

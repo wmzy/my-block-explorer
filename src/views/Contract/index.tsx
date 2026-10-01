@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { css } from '@linaria/core';
 import { getAddress, type Address, type Hex } from 'viem';
 import { useControl } from 'react-use-control';
@@ -963,6 +963,17 @@ export default function Contract() {
 
   const chainId = params.chainId;
   const address = params.address;
+
+  // The proxy/implementation toggle is per-contract view state, but the route
+  // reuses this component across contracts. A 'proxy' selection made on one
+  // contract silently followed the user to the next address (where it decides
+  // which layout address the Storage tab reads). Render-phase resync.
+  const contractIdentity = `${chainId}:${address}`;
+  const contractIdentityRef = useRef(contractIdentity);
+  if (contractIdentityRef.current !== contractIdentity) {
+    contractIdentityRef.current = contractIdentity;
+    setContractTarget('impl');
+  }
 
   const tabFromUrl =
     tabParam ?? (location.pathname.endsWith('/events') ? ('events' as const) : undefined);
