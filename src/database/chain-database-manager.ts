@@ -1,5 +1,5 @@
 import { drizzle, type PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import { join } from 'path';
+import { join, dirname } from 'path';
 import { mkdir } from 'fs/promises';
 import { createLogger } from '../server/logger';
 import { createDuckDBAdapter } from './duckdb-postgres-adapter';
@@ -30,8 +30,12 @@ export class ChainDatabaseManager {
   }
 
   async initialize(): Promise<void> {
-    const dataDir = join(process.cwd(), 'data', 'chains');
-    await mkdir(dataDir, { recursive: true });
+    // Create the directory OF THIS DATABASE, not the shared parent. The
+    // path is data/chains/{type}/{name}-{id}.db, so creating only
+    // `data/chains` left the `{type}` level missing and the first open of
+    // any chain database failed with "Cannot open file ...: No such file
+    // or directory".
+    await mkdir(dirname(this.dbPath), { recursive: true });
 
     // Eagerly trigger the adapter's lazy connect + ensureTables path
     await this.sql.unsafe('SELECT 1');
