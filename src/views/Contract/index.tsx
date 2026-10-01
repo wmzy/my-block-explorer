@@ -19,6 +19,7 @@ import { CUSTOM_ABI_STORAGE_PREFIX } from '@/util/storageKeys';
 import { useServiceDiscovery } from '@/hooks/ServiceDiscoveryContext';
 import { redirectReplace } from '@/views/Home/Landing';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
+import { parseChainIdParam } from '@/utils/chainParam';
 import { useContractCreation, useContractSource, useStorageLayout } from '@/services/contracts';
 import { createRpcClient } from '@/utils/realTimeData';
 import {
@@ -994,7 +995,13 @@ export default function Contract() {
     );
   };
 
-  const currentChainId = Number(chainId ?? 1);
+  // Strict parse (parseChainIdParam): Number() read '0x1a' as 26 and '1e5'
+  // as 100000, so a hand-typed chain in the URL silently loaded — and
+  // cached under — a chain the user never asked for. An unparseable param
+  // becomes 0, which isChainSupported rejects, so it renders the same
+  // UnsupportedChainState recovery as a genuinely unknown chain (the
+  // guard its Home/Charts/Blocks siblings already use).
+  const currentChainId = parseChainIdParam(chainId) ?? (chainId === undefined ? 1 : 0);
 
   // Raw pasted ABI (exactly the string that was applied), lazily restored
   // from localStorage so a reload keeps the unlock.

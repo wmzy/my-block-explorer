@@ -7,14 +7,19 @@
 import { createDataLoader } from '@/util/dataLoader';
 
 import { contractSourceCache, fetchContractSource, IMMUTABLE_CACHE_TIME } from './contracts';
+import { parseChainIdParam } from '@/utils/chainParam';
 
 type ChainAddressParams = { params: { chainId: string; address: string } };
 
 // keyOf for every chain-scoped entity route: string params → the numeric
-// chainId + address the fetch functions key on. NaN chainIds (malformed
-// URLs) hit the fetch's invalid-args guard and resolve undefined.
-const chainAddressKey = ({ params }: ChainAddressParams): [number, string] => [
-  Number(params.chainId),
+// chainId + address the fetch functions key on. The chainId parses
+// STRICTLY (parseChainIdParam): Number() read '0x1a' as 26 and '1e5' as
+// 100000, so a hand-typed URL keyed AND served the immutable 24h
+// contract-source cache of a different chain. Unparseable input becomes
+// 0 — never a supported id — and the fetch's own invalid-args guard
+// resolves undefined, which the view renders as UnsupportedChainState.
+export const chainAddressKey = ({ params }: ChainAddressParams): [number, string] => [
+  parseChainIdParam(params.chainId) ?? 0,
   params.address,
 ];
 

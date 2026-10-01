@@ -6,20 +6,30 @@ import { approvalScanService } from '../services/ApprovalScanService';
 import { createRateLimiter } from '../middleware/rate-limit';
 import { safeJsonResponse } from '../utils/serialization';
 import { respondError } from '../utils/api-error';
+import { parseStrictInteger } from '../utils/validation';
 
 const logger = createLogger('approvals-routes');
 
 const app = new Hono();
 
-// Query params. catch() keeps the documented fallback on junk input
-// ('abc', out-of-range numbers) instead of 400ing — the transfers route's
-// window philosophy: windowBlocks clamps into 1..50M at the schema
-// (min(1)/max(50M) failures degrade to the default window, and the
-// service echoes the effective value).
-const windowSchema = z.coerce.number().int().min(1).max(50_000_000).optional().catch(undefined);
+// Query params. The window keeps its documented degrade-to-default
+// policy (junk and out-of-range fall back to the service's tiered
+// default, which is echoed back) — a scan window is a discovery bound,
+// not a page. What changes is the PARSE: the old z.coerce.number() ran
+// Number(), which accepts a valid prefix and reinterprets the rest, so
+// '0x10' became 16 and '1e5' became 100000 — a junk window silently swept
+// a range the client never asked for. parseStrictInteger accepts plain
+// decimal digits only, so those now degrade like any other junk.
+const MAX_WINDOW_BLOCKS = 50_000_000;
+const readWindow = (raw: string | undefined): number | undefined => {
+  if (raw === undefined || raw === '') return undefined;
+  const parsed = parseStrictInteger(raw);
+  if (parsed === null || parsed < 1 || parsed > MAX_WINDOW_BLOCKS) return undefined;
+  return parsed;
+};
 // Cache-bypass flag: only the exact literal '1' forces a re-scan; junk
 // values ('true', '0', 'abc') degrade to a cache-serving read instead of
-// 400ing, matching the fallback philosophy of the schema above.
+// 400ing, matching the flag's own documented convention.
 const refreshSchema = z.literal('1').optional().catch(undefined);
 
 // On-demand approvals discovery (owner-filtered approval-event
@@ -40,7 +50,7 @@ app.get('/chains/:chainId/addresses/:address/approvals', approvalsRateLimiter, a
   const chainId = getValidatedChainId(c.req.param('chainId'));
   const address = getValidatedAddress(c.req.param('address'));
 
-  const windowBlocks = windowSchema.parse(c.req.query('window'));
+  const windowBlocks = readWindow(c.req.query('window'));
   const refresh = refreshSchema.parse(c.req.query('refresh')) === '1';
 
   try {
