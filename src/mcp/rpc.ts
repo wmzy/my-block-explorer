@@ -95,7 +95,13 @@ export class RpcGateway implements RpcReader {
 
   private async refreshRemote(): Promise<void> {
     if (this.remote !== null && this.now() - this.remote.at < REMOTE_TTL_MS) return;
-    // Single-flight: concurrent tool calls share one load.
+    // Single-flight: concurrent tool calls share one load. The slot is
+    // released on SETTLE, not on success: a rejected load left in the slot
+    // was replayed by every later tool call for the rest of the process
+    // (one transient 5xx from /api/rpc-configs bricked every RPC-backed
+    // tool permanently). Every other in-flight cache in this repo
+    // (CompileVerifyService, SignatureService, prices, tokenMetadata,
+    // nftMetadata, realTimeData's rpc-config load) clears the same way.
     this.loading ??= (async () => {
       const [configs, customs] = await Promise.all([
         this.api.tryGet<RpcConfigsResponse>('/api/rpc-configs'),
@@ -120,8 +126,9 @@ export class RpcGateway implements RpcReader {
         }
       }
       this.remote = { at: this.now(), configs: configMap, customs: customMap };
+    })().finally(() => {
       this.loading = null;
-    })();
+    });
     await this.loading;
   }
 
