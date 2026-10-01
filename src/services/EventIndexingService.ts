@@ -601,7 +601,11 @@ export const getIndexingStatus = async (
   ]);
 
   const eventTypes = eventTypeRows.map(r => r.eventName).filter((n): n is string => !!n);
-  const actualTotalEvents = countResult[0]?.count ?? 0;
+  // The adapter surfaces DuckDB count(*) as a string (see the same note in
+  // getContractEvents); without Number() the status payload carried a string
+  // count and downstream numeric comparisons (EventStatistics' growth check)
+  // silently misbehaved.
+  const actualTotalEvents = Number(countResult[0]?.count ?? 0);
 
   // Query indexingRanges for range-based aggregation
   const rangeRows = await db
@@ -895,15 +899,18 @@ export const getEventStatistics = async (chainId: number, address: `0x${string}`
       .groupBy(contractEvents.eventName),
   ]);
 
+  // DuckDB count(*) arrives as a string through the adapter — normalize so
+  // the statistics payload keeps its documented int() contract and callers
+  // can do arithmetic on it (same normalization as getContractEvents).
   const eventsByType: Record<string, number> = {};
   for (const row of typeResult) {
     if (row.eventName) {
-      eventsByType[row.eventName] = row.count;
+      eventsByType[row.eventName] = Number(row.count);
     }
   }
 
   return {
-    totalEvents: countResult[0]?.count ?? 0,
+    totalEvents: Number(countResult[0]?.count ?? 0),
     eventsByType,
     uniqueEventTypes: typeResult.length,
   };
