@@ -90,4 +90,67 @@ describe('OpenInIdeButton', () => {
       ),
     );
   });
+
+  it('never shows the previous contract\'s IDEs after a prop change', async () => {
+    // The Contract route reuses this component across contracts (params
+    // change without a remount). The detection effect had no cancelled
+    // guard, so a slow response for contract A could land after the user
+    // navigated to contract B and repaint the button with A's IDEs.
+    const deferred: Array<{ settle: (v: unknown, ok: boolean) => void }> = [];
+    mockGet.mockImplementation(
+      () =>
+        new Promise((resolve, reject) =>
+          deferred.push({ settle: (v, ok) => (ok ? resolve(v) : reject(v)) }),
+        ),
+    );
+
+    const ADDRESS_A = '0xaaa0000000000000000000000000000000000001';
+    const ADDRESS_B = '0xbbb0000000000000000000000000000000000002';
+    const { rerender, container } = render(<OpenInIdeButton chainId={1} address={ADDRESS_A} />);
+    await waitFor(() => expect(deferred).toHaveLength(1));
+
+    // Navigate to contract B before A's detection answers.
+    rerender(<OpenInIdeButton chainId={1} address={ADDRESS_B} />);
+    await waitFor(() => expect(deferred).toHaveLength(2));
+
+    // B answers first, then the STALE A response finally lands.
+    deferred[1].settle({ ides: [{ id: 'idea', displayName: 'IntelliJ' }] }, true);
+    await screen.findByRole('button', { name: 'Open in IntelliJ' });
+    deferred[0].settle({ ides: [{ id: 'vscode', displayName: 'VS Code' }] }, true);
+
+    // Contract B's action must survive A's late answer.
+    await waitFor(() => {
+      expect(container.textContent).not.toContain('VS Code');
+    });
+    expect(screen.getByRole('button', { name: 'Open in IntelliJ' })).toBeInTheDocument();
+  });
+
+  it('never shows a stale IDE list when the newer detection FAILS', async () => {
+    const deferred: Array<{ settle: (v: unknown, ok: boolean) => void }> = [];
+    mockGet.mockImplementation(
+      () =>
+        new Promise((resolve, reject) =>
+          deferred.push({ settle: (v, ok) => (ok ? resolve(v) : reject(v)) }),
+        ),
+    );
+
+    const ADDRESS_A = '0xaaa0000000000000000000000000000000000001';
+    const ADDRESS_B = '0xbbb0000000000000000000000000000000000002';
+    const { rerender, container } = render(<OpenInIdeButton chainId={1} address={ADDRESS_A} />);
+    await waitFor(() => expect(deferred).toHaveLength(1));
+
+    rerender(<OpenInIdeButton chainId={1} address={ADDRESS_B} />);
+    await waitFor(() => expect(deferred).toHaveLength(2));
+
+    // B's detection fails (no IDE running) ...
+    deferred[1].settle(new Error('network down'), false);
+    await waitFor(() => expect(container.querySelector('button')).toBeNull());
+    // ... and A's late success must not resurrect its IDEs.
+    deferred[0].settle({ ides: [{ id: 'vscode', displayName: 'VS Code' }] }, true);
+
+    await waitFor(() => {
+      expect(container.textContent).not.toContain('VS Code');
+    });
+    expect(container.querySelector('button')).toBeNull();
+  });
 });
