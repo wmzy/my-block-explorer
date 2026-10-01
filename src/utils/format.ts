@@ -133,26 +133,44 @@ export function formatNumber(value: number | string | bigint): string {
 }
 
 /**
- * Format a percentage
+ * Format a percentage.
+ *
+ * A non-finite ratio (NaN from a failed division, Infinity) rendered the
+ * literal "NaN%" / "Infinity%" — arithmetic noise dressed as a measured
+ * figure. Degrades to the shared placeholder instead.
  */
 export function formatPercentage(value: number, decimals = 2): string {
+  if (!Number.isFinite(value)) return '—';
   return `${value.toFixed(decimals)}%`;
 }
 
 /**
- * Format a file size
+ * Format a file size.
+ *
+ * A negative or NaN byte count made the unit index NaN, which printed
+ * "NaN undefined" (and a petabyte-scale value read "909.49 undefined" —
+ * the unit table simply stops at GB). A non-finite count degrades to the
+ * placeholder; oversized real values extend the table instead of lying
+ * about the unit.
  */
 export function formatFileSize(bytes: number): string {
-  const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+  if (!Number.isFinite(bytes)) return '—';
   if (bytes === 0) return '0 Bytes';
-  const i = Math.floor(Math.log(bytes) / Math.log(1024));
+  if (bytes < 0) return '—';
+  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB', 'PB'];
+  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), sizes.length - 1);
   return `${Math.round((bytes / Math.pow(1024, i)) * 100) / 100} ${sizes[i]}`;
 }
 
 /**
- * Format a duration
+ * Format a duration.
+ *
+ * A negative or NaN seconds value printed "-5s" / "NaNd NaNh" — a number
+ * the server could not compute presented as a measurement. Degrades to the
+ * placeholder; real durations are unchanged.
  */
 export function formatDuration(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds < 0) return '—';
   if (seconds < 60) return `${seconds}s`;
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
   if (seconds < 86400) {
@@ -166,13 +184,26 @@ export function formatDuration(seconds: number): string {
 }
 
 /**
- * Format a relative time (e.g. "2 minutes ago")
+ * Format a relative time (e.g. "2 minutes ago").
+ *
+ * Two holes in the old version, both reachable from real payloads: an
+ * unparseable or empty timestamp string made `date.getTime()` NaN, every
+ * `NaN < x` comparison is false, and the fallthrough printed the literal
+ * "Invalid Date" into the table; and a FUTURE timestamp (a block ahead of
+ * the head, a clock skew, a hand-edited link) produced a negative
+ * difference that answered "just now" — claiming a transaction was just
+ * mined when its time is still in the future.
  */
 export function formatRelativeTime(timestamp: Date | string | number): string {
   const now = new Date();
-  const date = new Date(timestamp);
+  const date = timestamp instanceof Date ? timestamp : new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return '—';
   const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
 
+  if (diffInSeconds < -1) {
+    // Genuinely ahead of us: name the gap instead of claiming recency.
+    return `in ${formatDuration(-diffInSeconds)}`;
+  }
   if (diffInSeconds < 60) return 'just now';
   if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)} min ago`;
   if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)} hours ago`;
