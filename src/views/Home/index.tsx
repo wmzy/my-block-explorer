@@ -9,6 +9,7 @@ import { getChainInfo, getChainSymbol, getChainType } from '@/config/chains';
 import {
   formatNumber,
   formatAddress,
+  formatFixedDecimals,
   formatHash,
   formatRelativeTime,
   formatValue,
@@ -423,17 +424,12 @@ const skeletonLine = css`
 
 // --- helpers ---
 
-// BigInt-safe fixed-decimal formatting: divides and rounds (half up) in
-// integer arithmetic instead of round-tripping viem's formatted strings
-// through parseFloat, so on-chain magnitudes never lose precision to a
-// double. `decimals` is the value's token scale (gwei = 9, ether = 18).
+// BigInt-safe fixed-decimal formatting, shared with utils/format so the
+// exactness rule has one implementation (this local copy threw on a
+// negative exponent, i.e. decimals < fractionDigits, which the shared
+// helper handles). Returns '—' for a degenerate request instead of NaN.
 function formatFixed(value: bigint, decimals: number, fractionDigits: number): string {
-  const unit = 10n ** BigInt(decimals - fractionDigits);
-  const scaled = (value + unit / 2n) / unit;
-  const fractionScale = 10n ** BigInt(fractionDigits);
-  const whole = scaled / fractionScale;
-  const fraction = scaled % fractionScale;
-  return `${whole}.${fraction.toString().padStart(fractionDigits, '0')}`;
+  return formatFixedDecimals(value, decimals, fractionDigits) ?? '—';
 }
 
 // --- stats-bar presentation ---

@@ -87,7 +87,7 @@ import { knownTokensForChain } from '@/config/knownTokens';
 import { useKnownTokenBalances } from '@/services/knownTokenBalances';
 import { createRpcClient } from '@/utils/realTimeData';
 import { useEnsName } from '@/services/ens';
-import { formatRelativeTime } from '@/utils/format';
+import { formatFixedDecimals, formatRelativeTime } from '@/utils/format';
 import { getExternalToolLinks } from '@/config/externalTools';
 import { redirectReplace } from '@/views/Home/Landing';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
@@ -1742,13 +1742,17 @@ export default function Address() {
     const symbol = getChainSymbol(currentChainId);
     try {
       // BigInt-safe wei → whole-token conversion honoring the chain's
-      // native-currency decimals (most are 18; parseFloat/1e18 would both
-      // hardcode the wrong divisor and lose precision past 2^53).
+      // native-currency decimals (most are 18). The old
+      // `Number(formatUnits(...)).toFixed(4)` round-tripped through a
+      // double, so distinct values past 2^53 whole units collapsed onto
+      // one figure and larger ones printed as "1e+21".
       const decimals = chainInfo?.nativeCurrency.decimals ?? 18;
-      const v = Number(formatUnits(BigInt(value), decimals));
-      if (v === 0) return `0 ${symbol}`;
-      if (v < 0.0001) return `<0.0001 ${symbol}`;
-      return `${v.toFixed(4)} ${symbol}`;
+      const wei = BigInt(value);
+      if (wei === 0n) return `0 ${symbol}`;
+      const shown = formatFixedDecimals(wei, decimals, 4);
+      if (shown === null) return value;
+      if (/^0*\.?0*$/.test(shown)) return `<0.0001 ${symbol}`;
+      return `${shown} ${symbol}`;
     } catch {
       return value;
     }

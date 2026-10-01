@@ -1,13 +1,66 @@
 // Formatting utilities
 
-import { formatEther, formatGwei, formatUnits } from 'viem';
+/**
+ * Exact fixed-decimal rendering of a scaled integer amount.
+ *
+ * Integer-only: the value is divided by 10^(decimals - fractionDigits) with
+ * half-up rounding and reassembled from BigInt digits. Nothing passes
+ * through a double, so distinct 256-bit amounts stay distinct and the
+ * output can never switch to `toFixed`'s exponential notation (>= 1e21).
+ *
+ * `decimals` is the amount's on-chain scale (wei = 0, gwei = 9, ether = 18)
+ * and `fractionDigits` the displayed precision. `decimals <
+ * fractionDigits` is a real case (a 0-decimal token shown to 4 digits):
+ * the value is exact, so it is only zero-padded.
+ *
+ * Returns null for a negative fractionDigits count or a non-finite
+ * decimals argument, so callers can degrade explicitly rather than
+ * render NaN.
+ */
+export function formatFixedDecimals(
+  value: bigint,
+  decimals: number,
+  fractionDigits: number,
+): string | null {
+  if (!Number.isInteger(fractionDigits) || fractionDigits < 0) return null;
+  if (!Number.isFinite(decimals) || !Number.isInteger(decimals) || decimals < 0) return null;
+
+  const negative = value < 0n;
+  const magnitude = negative ? -value : value;
+  let scaled: bigint;
+  if (decimals >= fractionDigits) {
+    const unit = 10n ** BigInt(decimals - fractionDigits);
+    scaled = (magnitude + unit / 2n) / unit; // half up
+  } else {
+    scaled = magnitude * 10n ** BigInt(fractionDigits - decimals);
+  }
+  const scale = 10n ** BigInt(fractionDigits);
+  const whole = scaled / scale;
+  const fraction = scaled % scale;
+  return `${negative ? '-' : ''}${whole}.${fraction.toString().padStart(fractionDigits, '0')}`;
+}
 
 /**
- * Format an ether value
+ * Format an ether value.
+ *
+ * `decimals` is the DISPLAYED precision. The old implementation
+ * round-tripped viem's exact string through parseFloat().toFixed(), which
+ * collapsed distinct amounts past 2^53 (10,000,000,000,000,001 and
+ * 10,000,000,000,000,000 wei both read "0.0000" here), printed "1e+21"
+ * for huge figures, and rendered a NONZERO amount below the display floor
+ * as an exact "0.0000". A nonzero amount that rounds to zero now renders
+ * as the honest "<0.0001" floor — the same contract formatValue below
+ * already used.
  */
 export function formatEth(value: bigint | string, decimals = 4): string {
-  const ethValue = formatEther(BigInt(value));
-  return parseFloat(ethValue).toFixed(decimals);
+  const wei = BigInt(value);
+  if (wei === 0n) return decimals === 0 ? '0' : `0.${'0'.repeat(decimals)}`;
+  if (decimals === 0) return formatFixedDecimals(wei, 18, 0) ?? '';
+  // 1/10^decimals native unit in wei — the display floor, compared exactly.
+  if (wei > 0n && wei < 10n ** BigInt(18 - decimals)) {
+    return `<0.${'0'.repeat(decimals - 1)}1`;
+  }
+  return formatFixedDecimals(wei, 18, decimals) ?? '';
 }
 
 // Shared native-token value display for the tx surfaces (Home feed, tx
@@ -25,20 +78,34 @@ export function formatValue(wei: bigint, symbol: string): string {
  * Format a gas price (Gwei)
  */
 export function formatGasPrice(value: bigint | string): string {
-  const gweiValue = formatGwei(BigInt(value));
-  return parseFloat(gweiValue).toFixed(2);
+  return formatFixedDecimals(BigInt(value), 9, 2) ?? '0.00';
 }
 
 /**
  * Format a token amount
+ *
+ * `decimals` is the token's on-chain scale and `displayDecimals` the
+ * rendered precision. Exact integer arithmetic (see formatFixedDecimals);
+ * a nonzero amount that rounds to zero renders the "<0.0…01" floor rather
+ * than an exact zero.
  */
 export function formatTokenAmount(
   value: bigint | string,
   decimals: number = 18,
   displayDecimals = 4,
 ): string {
-  const formatted = formatUnits(BigInt(value), decimals);
-  return parseFloat(formatted).toFixed(displayDecimals);
+  const amount = BigInt(value);
+  if (amount === 0n) return (0).toFixed(displayDecimals);
+  const shown = formatFixedDecimals(amount, decimals, displayDecimals);
+  if (shown === null) return amount.toString();
+  // A nonzero amount whose every displayed digit is zero: the floor
+  // states the truth (something is there, it is smaller than we show).
+  // The floor figure is the last place unit rendered as a string — a
+  // leading "0." plus (displayDecimals - 1) zeros and a 1.
+  if (/^0*\.?0*$/.test(shown)) {
+    return displayDecimals === 0 ? '<1' : `<0.${'0'.repeat(displayDecimals - 1)}1`;
+  }
+  return shown;
 }
 
 /**

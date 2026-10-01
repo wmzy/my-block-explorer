@@ -9,9 +9,8 @@
 // wakes every mounted consumer (the UnitToggle and the rows it governs)
 // without a reload. This module is the single reader/writer of the key.
 
-import { formatUnits } from 'viem';
-
 import { VALUE_UNIT_STORAGE_KEY } from '@/util/storageKeys';
+import { formatFixedDecimals } from '@/utils/format';
 
 // Canonical literal lives in the manifest (util/storageKeys.ts);
 // re-exported so existing consumers keep this import point.
@@ -103,8 +102,15 @@ export function formatValueByUnit(
     // compared exactly (10^14 wei on an 18-decimal chain).
     const dustFloor = 10n ** BigInt(Math.max(decimals - 4, 0));
     if (valueWei < dustFloor) return { text: `<0.0001 ${symbol}`, unitLabel: symbol };
-    const figure = Number.parseFloat(formatUnits(valueWei, decimals)).toFixed(4);
-    return { text: `${figure} ${symbol}`, unitLabel: symbol };
+    // Exact integer rendering (utils/format.formatFixedDecimals): the old
+    // `parseFloat(formatUnits(...)).toFixed(4)` round-tripped through a
+    // double, so distinct amounts past 2^53 units collapsed onto one
+    // figure and huge ones printed as "1e+21".
+    const shown = formatFixedDecimals(valueWei, decimals, 4);
+    return {
+      text: shown === null ? `${valueWei} ${symbol}` : `${shown} ${symbol}`,
+      unitLabel: symbol,
+    };
   }
   const wholeUnits = unit === 'wei' ? valueWei : valueWei / GWEI_IN_WEI;
   return { text: `${groupedInteger.format(wholeUnits)} ${unit}`, unitLabel: unit };

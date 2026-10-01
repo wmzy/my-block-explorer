@@ -6,7 +6,8 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { css, cx } from '@linaria/core';
 import { TypedLink } from '@native-router/react';
-import { Address, formatEther, AbiEvent } from 'viem';
+import { Address, AbiEvent } from 'viem';
+import { formatFixedDecimals } from '@/utils/format';
 import { EventFilterPanel, type EventFilterState } from './EventFilterPanel';
 import { get } from '@/util/http';
 import { getApiBase } from '@/util/apiBase';
@@ -906,8 +907,17 @@ const formatTimestamp = (timestamp: string | null | undefined): string => {
 const formatValue = (value?: string): string => {
   if (!value) return 'N/A';
   try {
-    const etherValue = formatEther(BigInt(value));
-    return `${parseFloat(etherValue).toFixed(6)} ETH`;
+    const wei = BigInt(value);
+    if (wei === 0n) return '0.000000 ETH';
+    // Exact integer rendering at 6 displayed decimals: the old
+    // `parseFloat(formatEther(...)).toFixed(6)` printed a NONZERO value
+    // below 0.0000005 ETH as an exact "0.000000 ETH" (a 400,000,000-wei
+    // withdrawal read as zero), collapsed distinct amounts past 2^53,
+    // and switched to "1e+21" above that.
+    const shown = formatFixedDecimals(wei, 18, 6);
+    if (shown === null) return `${value} wei`;
+    if (/^0*\.?0*$/.test(shown)) return '<0.000001 ETH';
+    return `${shown} ETH`;
   } catch {
     return `${value} wei`;
   }
