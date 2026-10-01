@@ -72,7 +72,7 @@ describe('event statistics counts are numbers (real DuckDB driver)', () => {
     await insertEvent('Transfer');
     await insertEvent('Approval');
 
-    const stats = await getEventStatistics(CHAIN_ID, ADDRESS as `0x${string}`);
+    const stats = await getEventStatistics(CHAIN_ID, ADDRESS);
 
     expect(stats.totalEvents).toBe(3);
     expect(typeof stats.totalEvents).toBe('number');
@@ -85,7 +85,7 @@ describe('event statistics counts are numbers (real DuckDB driver)', () => {
     await insertEvent('Transfer');
     await insertEvent('Transfer');
 
-    const status = await getIndexingStatus(CHAIN_ID, ADDRESS as `0x${string}`);
+    const status = await getIndexingStatus(CHAIN_ID, ADDRESS);
 
     expect(status.totalEventsIndexed).toBe(2);
     expect(typeof status.totalEventsIndexed).toBe('number');
