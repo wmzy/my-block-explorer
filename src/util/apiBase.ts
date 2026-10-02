@@ -15,6 +15,7 @@
 //      request against an unintended same-origin target.
 
 import { MANUAL_BASE_STORAGE_KEY } from '@/util/storageKeys';
+import { readStorageItem, writeStorageItem } from '@/util/storageAccess';
 
 let apiBase = '';
 
@@ -22,24 +23,18 @@ const listeners = new Set<() => void>();
 
 /** The explicitly chosen backend base, if the user ever saved one. */
 export function getStoredManualBase(): string | null {
-  try {
-    return localStorage.getItem(MANUAL_BASE_STORAGE_KEY);
-  } catch {
-    // Storage-blocked contexts (Safari private mode): the property access
-    // itself throws — no stored choice, discovery falls to the localhost
-    // scan. This read runs before the app renders data, so it must never
-    // take the boot path down.
-    return null;
-  }
+  // Unavailable storage reads as "nothing stored" — the port scan then
+  // fills the slot. Throwing here used to abort the whole discovery
+  // bootstrap (see util/storageAccess).
+  return readStorageItem(MANUAL_BASE_STORAGE_KEY);
 }
 
 /** Persist an explicit (manual) backend base. It takes precedence over scans. */
 export function storeManualBase(url: string): void {
-  try {
-    localStorage.setItem(MANUAL_BASE_STORAGE_KEY, url);
-  } catch {
-    // Quota/private mode — the choice lasts only for this session.
-  }
+  // Best-effort: with storage blocked the choice simply lasts for this
+  // session, which is strictly better than failing the connection the
+  // health probe already accepted.
+  writeStorageItem(MANUAL_BASE_STORAGE_KEY, url);
 }
 
 export function getApiBase(): string {
