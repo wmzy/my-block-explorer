@@ -1611,9 +1611,12 @@ export default function Address() {
     },
     [tokenMetas],
   );
+  // The holder address rides in: the nets are derived from each row's
+  // from/to against it, so a self-transfer (which the backend serves as a
+  // single 'out' row) nets to zero instead of being charged as an outflow.
   const holdings = useMemo(
-    () => aggregateTokenHoldings(holdingsTransfers, classifyShared),
-    [holdingsTransfers, classifyShared],
+    () => aggregateTokenHoldings(holdingsTransfers, classifyShared, address),
+    [holdingsTransfers, classifyShared, address],
   );
 
   // USD estimate over the discovered ERC-20 holdings rows: prices come

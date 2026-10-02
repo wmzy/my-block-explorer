@@ -361,6 +361,31 @@ describe('TokenTransfers tab', () => {
     for (const badge of outs) expect(badge).toHaveAttribute('data-variant', 'error');
   });
 
+  it('labels a self-transfer SELF, never the collapsed OUT tag the backend sends', async () => {
+    // The backend scans `from` before `to` and collapses a self-transfer to
+    // ONE row tagged 'out'. Rendering that tag charged the address for
+    // sending to itself; the row's own from/to say what happened.
+    mocks.page = {
+      transfers: [
+        {
+          ...mocks.transfers[0],
+          from: mocks.holder,
+          to: mocks.holder,
+          direction: 'out',
+        },
+      ],
+      nextCursor: null,
+      coverage: 'partial',
+      windowBlocks: 50_000,
+    };
+
+    renderTab();
+
+    expect(await screen.findByText('SELF')).toBeInTheDocument();
+    expect(screen.queryByText('OUT')).not.toBeInTheDocument();
+    expect(screen.queryByText('IN')).not.toBeInTheDocument();
+  });
+
   it('shows a formatted amount + symbol for a known ERC-20 token', async () => {
     renderTab();
 

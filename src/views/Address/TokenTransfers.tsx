@@ -363,11 +363,23 @@ function AmountCell({ transfer, meta }: { transfer: TokenTransfer; meta: TokenMe
   );
 }
 
-function TransferRow({ chainId, transfer }: { chainId: number; transfer: TokenTransfer }) {
+function TransferRow({
+  chainId,
+  transfer,
+  holder,
+}: {
+  chainId: number;
+  transfer: TokenTransfer;
+  /** The viewed address, so a self-transfer can be told from a real OUT. */
+  holder: string;
+}) {
   // Only the shared-signature standard needs metadata; passing '' for the
   // ERC-1155 rows keeps the hook unconditional (rules of hooks) while
   // skipping their enrichment entirely.
   const meta = useTokenMeta(chainId, transfer.standard === 'erc20-or-erc721' ? transfer.token : '');
+  const holderLower = holder.toLowerCase();
+  const isSelfTransfer =
+    transfer.from.toLowerCase() === holderLower && transfer.to.toLowerCase() === holderLower;
   return (
     <tr>
       <td>
@@ -387,12 +399,22 @@ function TransferRow({ chainId, transfer }: { chainId: number; transfer: TokenTr
       <td title="Timestamps are not available for scan results">—</td>
       {/* Token-mode rows where the viewed contract is neither sender nor
           recipient (mints, burns, user-to-user transfers of the viewed
-          token): an em dash, honestly explained — never a guessed IN/OUT. */}
+          token): an em dash, honestly explained — never a guessed IN/OUT.
+          A self-transfer is a third case: the backend collapses it to ONE
+          row tagged 'out' (the outgoing scan query runs first), so
+          rendering that tag would charge the address for sending to
+          itself. The row's own from/to say what actually happened. */}
       <td>
         {transfer.direction === 'none' ? (
           <span title="The viewed token contract emitted this log; it is neither sender nor recipient">
             <Badge variant="default" size="sm">
               —
+            </Badge>
+          </span>
+        ) : isSelfTransfer ? (
+          <span title="Sent to itself — the balance is unchanged">
+            <Badge variant="default" size="sm">
+              SELF
             </Badge>
           </span>
         ) : (
@@ -835,6 +857,7 @@ export default function TokenTransfers({
                       key={`${transfer.txHash}-${transfer.logIndex}`}
                       chainId={chainId}
                       transfer={transfer}
+                      holder={address}
                     />
                   ))}
                   {transfers.length === 0 && (

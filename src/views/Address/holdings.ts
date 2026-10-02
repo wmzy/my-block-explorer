@@ -90,11 +90,44 @@ function compareHoldings(a: TokenHolding, b: TokenHolding): number {
   return 0;
 }
 
+/**
+ * How one transfer row moves the holder's balance: +1 received, -1 sent.
+ *
+ * 0 means the row moves nothing — a self-transfer (both parties are the
+ * holder) or a row the holder is not party to (a token-mode mint/burn).
+ * null means the row cannot be attributed at all, which happens only when
+ * no holder was supplied: the fallback then reads the server's `direction`
+ * tag, which is lossy for exactly the self-transfer rows (the backend
+ * collapses them to one 'out' row).
+ */
+function nettingSign(transfer: TokenTransfer, target: string | undefined): bigint | null {
+  if (target === undefined) return transfer.direction === 'in' ? 1n : -1n;
+  const received = transfer.to.toLowerCase() === target;
+  const sent = transfer.from.toLowerCase() === target;
+  if (received && sent) return 0n;
+  if (received) return 1n;
+  if (sent) return -1n;
+  return 0n;
+}
+
 export function aggregateTokenHoldings(
   transfers: readonly TokenTransfer[],
   classifyShared: (token: string) => SharedTokenClass,
+  // The address whose holdings are being aggregated. In/out is derived from
+  // the row's from/to against THIS address, never from the server's
+  // `direction` field: the backend scans each event shape twice (once by
+  // `from`, once by `to`) and collapses a self-transfer to a SINGLE row
+  // tagged 'out' (TokenTransferService: "the outgoing query runs before the
+  // incoming one"). Reading that tag as a net direction charged a
+  // self-transfer as a full outflow — an ERC-20 balance went negative and
+  // an ERC-721 id the address still held dropped out of the list. Both
+  // sibling aggregators already net from/to for this reason
+  // (nftHoldings.ts, tokenOverview.ts). Optional so a caller that only
+  // wants the tag-based netting can still pass one.
+  holder?: string,
 ): TokenHolding[] {
   const groups = new Map<string, TokenGroup>();
+  const target = holder?.toLowerCase();
 
   for (const transfer of transfers) {
     const key = transfer.token.toLowerCase();
@@ -103,7 +136,11 @@ export function aggregateTokenHoldings(
       group = createGroup(transfer.token);
       groups.set(key, group);
     }
-    const sign = transfer.direction === 'in' ? 1n : -1n;
+    // +1 received, -1 sent, 0 for a self-transfer (both parties are the
+    // holder) and for a row where the holder is not a party at all (a
+    // token-mode mint/burn, which says nothing about this address).
+    const sign = nettingSign(transfer, target);
+    if (sign === null) continue;
 
     switch (transfer.standard) {
       case 'erc1155-single': {
@@ -141,10 +178,11 @@ export function aggregateTokenHoldings(
         group.classification ??= classifyShared(group.token);
         const classification = group.classification;
         if (classification === 'erc721') {
-          // value is the token id; direction adjusts a held-count multiset.
+          // value is the token id; the direction adjusts a held-count
+          // multiset (a self-transfer adjusts it by zero).
           const counts = erc721CountsOf(group);
           const id = transfer.value;
-          counts.set(id, (counts.get(id) ?? 0) + (transfer.direction === 'in' ? 1 : -1));
+          counts.set(id, (counts.get(id) ?? 0) + (sign === 1n ? 1 : sign === -1n ? -1 : 0));
           group.transferCount += 1;
         } else {
           const amount = parseDecimalInteger(transfer.value);
