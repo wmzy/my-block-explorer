@@ -35,7 +35,7 @@ vi.mock('@/utils/realTimeData', () => ({
 }));
 
 const CONTRACT = '0xBB00000000000000000000000000000000000001';
-const KEY = nftMetadataKey(CONTRACT, '15');
+const KEY = nftMetadataKey(CONTRACT, '15', 'erc721');
 const CID = 'QmYwAPJzv5CZsnA625s3Xf2nemtYgPpHdWEz79ojWnPbdG';
 const CIDV1 = 'bafkreia1b2c3d4e5f6g7h8i9j0';
 const GATEWAY = 'https://gw.example.com';
@@ -272,7 +272,9 @@ describe('fetchNftMetadataBatch', () => {
     });
     expect(fetchJson).toHaveBeenCalledWith(`https://meta.example/t/${HEX_15}.json`);
     // Sparse metadata (missing image/description) is still real metadata.
-    expect(out.get(KEY)).toEqual({
+    // The 1155 identity is its own entry (the erc721 lookup above does not
+    // share it).
+    expect(out.get(nftMetadataKey(CONTRACT, '15', 'erc1155'))).toEqual({
       status: 'ok',
       name: 'Edition 15',
       image: null,
@@ -352,7 +354,7 @@ describe('fetchNftMetadataBatch', () => {
   });
 
   it('treats an unparseable token id as definitive none with no contract call', async () => {
-    const key = nftMetadataKey(CONTRACT, 'not-a-number');
+    const key = nftMetadataKey(CONTRACT, 'not-a-number', 'erc721');
 
     const first = await fetchNftMetadataBatch(1, [item721('not-a-number')], {
       readUri,
@@ -458,7 +460,7 @@ describe('fetchNftMetadataBatch', () => {
   it('resolves every uncached item as unavailable when the client cannot be created', async () => {
     vi.mocked(createRpcClient).mockRejectedValue(new Error('unknown chain'));
 
-    const other = nftMetadataKey('0xcc00000000000000000000000000000000000001', '7');
+    const other = nftMetadataKey('0xcc00000000000000000000000000000000000001', '7', 'erc721');
     const out = await fetchNftMetadataBatch(1, [
       item721(),
       { contract: '0xcc00000000000000000000000000000000000001', tokenId: '7', standard: 'erc721' },
@@ -488,6 +490,41 @@ describe('fetchNftMetadataBatch', () => {
     expect(out.size).toBe(0);
     expect(createRpcClient).not.toHaveBeenCalled();
     expect(readUri).not.toHaveBeenCalled();
+  });
+
+  it('resolves both standards of a hybrid contract in one batch', async () => {
+    // A contract emitting both 721- and 1155-shaped logs for one id: the
+    // two shapes are DIFFERENT questions (tokenURI vs uri), so one batch
+    // carrying both must not collapse them into one answer.
+    readUri.mockImplementation(async call =>
+      call.functionName === 'uri' ? `ipfs://${CID}/1155.json` : `ipfs://${CID}/721.json`,
+    );
+    fetchJson.mockResolvedValue({ name: 'Hybrid' });
+
+    const out = await fetchNftMetadataBatch(1, [item721(), item1155()], { readUri, fetchJson });
+
+    expect(out.size).toBe(2);
+    expect(readUri.mock.calls.map(call => call[0].functionName).sort()).toEqual([
+      'tokenURI',
+      'uri',
+    ]);
+  });
+
+  it('does not serve one standard\'s cached metadata to the other standard', async () => {
+    readUri.mockImplementation(async call =>
+      call.functionName === 'uri' ? `ipfs://${CID}/1155.json` : `ipfs://${CID}/721.json`,
+    );
+    fetchJson.mockResolvedValue({ name: 'Hybrid' });
+
+    // The 1155 answer is cached for the TTL...
+    await fetchNftMetadataBatch(1, [item1155()], { readUri, fetchJson });
+    expect(readUri).toHaveBeenCalledTimes(1);
+
+    // ...and must NOT satisfy an erc721 lookup of the same (contract, id):
+    // tokenURI is a different question, so it genuinely resolves again.
+    await fetchNftMetadataBatch(1, [item721()], { readUri, fetchJson });
+
+    expect(readUri.mock.calls.map(call => call[0].functionName)).toEqual(['uri', 'tokenURI']);
   });
 });
 

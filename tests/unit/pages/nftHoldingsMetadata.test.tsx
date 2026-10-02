@@ -114,7 +114,7 @@ describe('NftHoldings metadata previews', () => {
   it('renders thumbnail and name for a resolved item', async () => {
     mocks.transfers = mintRows(['1']);
     mocks.hookResult = new Map([
-      [`${mocks.token}:1`, ok('Azumi #1', 'https://ipfs.io/ipfs/img1.png')],
+      [`${mocks.token}:1:erc1155`, ok('Azumi #1', 'https://ipfs.io/ipfs/img1.png')],
     ]);
 
     await renderSection();
@@ -127,7 +127,7 @@ describe('NftHoldings metadata previews', () => {
 
   it('keeps the sample-id display when the item has no metadata (none)', async () => {
     mocks.transfers = mintRows(['1']);
-    mocks.hookResult = new Map([[`${mocks.token}:1`, { status: 'none' }]]);
+    mocks.hookResult = new Map([[`${mocks.token}:1:erc1155`, { status: 'none' }]]);
 
     await renderSection();
 
@@ -140,7 +140,7 @@ describe('NftHoldings metadata previews', () => {
 
   it('shows a muted retryable chip when metadata transport failed', async () => {
     mocks.transfers = mintRows(['2']);
-    mocks.hookResult = new Map([[`${mocks.token}:2`, { status: 'unavailable' }]]);
+    mocks.hookResult = new Map([[`${mocks.token}:2:erc1155`, { status: 'unavailable' }]]);
 
     await renderSection();
 
@@ -151,7 +151,7 @@ describe('NftHoldings metadata previews', () => {
 
   it('falls back to a muted placeholder when the item has no image', async () => {
     mocks.transfers = mintRows(['3']);
-    mocks.hookResult = new Map([[`${mocks.token}:3`, ok('No Image', null)]]);
+    mocks.hookResult = new Map([[`${mocks.token}:3:erc1155`, ok('No Image', null)]]);
 
     await renderSection();
 
@@ -162,7 +162,7 @@ describe('NftHoldings metadata previews', () => {
 
   it('renders the thumb only (no name span) when a resolved item has no name', async () => {
     mocks.transfers = mintRows(['4']);
-    mocks.hookResult = new Map([[`${mocks.token}:4`, ok(null, 'https://ipfs.io/ipfs/img4.png')]]);
+    mocks.hookResult = new Map([[`${mocks.token}:4:erc1155`, ok(null, 'https://ipfs.io/ipfs/img4.png')]]);
 
     await renderSection();
 
@@ -175,7 +175,7 @@ describe('NftHoldings metadata previews', () => {
   it('swaps a failed image load to the muted placeholder', async () => {
     mocks.transfers = mintRows(['5']);
     mocks.hookResult = new Map([
-      [`${mocks.token}:5`, ok('Broken', 'https://ipfs.io/ipfs/broken.png')],
+      [`${mocks.token}:5:erc1155`, ok('Broken', 'https://ipfs.io/ipfs/broken.png')],
     ]);
 
     await renderSection();

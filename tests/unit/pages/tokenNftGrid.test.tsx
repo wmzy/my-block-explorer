@@ -55,7 +55,7 @@ const settleMetadata = (
 ) => {
   const map = new Map<string, NftMetadataOutcome>();
   for (const item of items)
-    map.set(nftMetadataKey(CONTRACT, item.tokenId), outcomeFor(item.tokenId));
+    map.set(nftMetadataKey(CONTRACT, item.tokenId, item.standard), outcomeFor(item.tokenId));
   mockUseNftMetadata.mockReturnValue(map);
 };
 
@@ -125,7 +125,7 @@ describe('NftGrid metadata honesty states', () => {
     mockFetchBatch.mockResolvedValue(
       new Map([
         [
-          nftMetadataKey(CONTRACT, '8'),
+          nftMetadataKey(CONTRACT, '8', 'erc721'),
           { status: 'ok', name: 'After retry', image: null, description: null },
         ],
       ]),

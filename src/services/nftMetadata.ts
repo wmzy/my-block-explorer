@@ -50,9 +50,20 @@ export type NftMetadataOutcome =
   | { status: 'none' }
   | { status: 'unavailable' };
 
-/** Stable per-item identity: lowercase contract + raw decimal token id. */
-export function nftMetadataKey(contract: string, tokenId: string): string {
-  return `${contract.toLowerCase()}:${tokenId}`;
+/**
+ * Stable per-item identity: lowercase contract + raw decimal token id +
+ * the standard the item is being asked about. The standard is part of the
+ * identity on purpose — erc721 resolves `tokenURI(id)` and erc1155
+ * `uri(id)`, so they are DIFFERENT questions that must not share a cache
+ * entry (a hybrid contract emitting both log shapes for one id would
+ * otherwise be served one standard's metadata for the other).
+ */
+export function nftMetadataKey(
+  contract: string,
+  tokenId: string,
+  standard: NftMetadataStandard,
+): string {
+  return `${contract.toLowerCase()}:${tokenId}:${standard}`;
 }
 
 // --- pure URI helpers ---
@@ -429,10 +440,12 @@ export async function fetchNftMetadataBatch(
   const gateway = getIpfsGateway();
   const now = Date.now();
 
-  // Collapse duplicates by item key; first occurrence wins.
+  // Collapse duplicates by item key; first occurrence wins. The key
+  // carries the standard, so the two shapes of a hybrid contract stay
+  // distinct entries instead of one shape's answer serving the other.
   const unique = new Map<string, NftMetadataItem>();
   for (const item of items) {
-    const itemKey = nftMetadataKey(item.contract, item.tokenId);
+    const itemKey = nftMetadataKey(item.contract, item.tokenId, item.standard);
     if (!unique.has(itemKey)) unique.set(itemKey, item);
   }
 
@@ -468,34 +481,31 @@ export async function fetchNftMetadataBatch(
   return out;
 }
 
-// Content digest of the item list: lowercase contract + token id plus
-// the standard flag, order-insensitive. The effect below depends on this
-// string (plus chain and gateway) only, so a parent passing a fresh
-// array literal each render does not refetch.
+// Content digest of the item list: order-insensitive item identities (each
+// already carrying contract + token id + standard). The effect below
+// depends on this string (plus chain and gateway) only, so a parent
+// passing a fresh array literal each render does not refetch.
 const nftItemsKey = (items: readonly NftMetadataItem[]): string =>
   [...items]
-    .map(
-      item =>
-        `${nftMetadataKey(item.contract, item.tokenId)}:${item.standard === 'erc1155' ? 1 : 0}`,
-    )
+    .map(item => nftMetadataKey(item.contract, item.tokenId, item.standard))
     .sort()
     .join('|');
 
-// Round-trips a digest back into fetch items. Contract addresses and
-// decimal token ids contain no ':', so splitting is unambiguous: the
-// trailing segment is the standard flag, the first separator splits
-// contract from token id.
+// Round-trips a digest back into fetch items. Contract addresses, decimal
+// token ids and standard names contain no ':', so splitting is
+// unambiguous: the trailing segment is the standard, the first separator
+// splits contract from token id.
 const itemsFromKey = (key: string): NftMetadataItem[] =>
   key
     .split('|')
     .filter(entry => entry !== '')
     .map(entry => {
-      const flagSeparator = entry.lastIndexOf(':');
+      const standardSeparator = entry.lastIndexOf(':');
       const idSeparator = entry.indexOf(':');
       return {
         contract: entry.slice(0, idSeparator),
-        tokenId: entry.slice(idSeparator + 1, flagSeparator),
-        standard: entry.slice(flagSeparator + 1) === '1' ? 'erc1155' : 'erc721',
+        tokenId: entry.slice(idSeparator + 1, standardSeparator),
+        standard: entry.slice(standardSeparator + 1) === 'erc1155' ? 'erc1155' : 'erc721',
       };
     });
 
