@@ -175,28 +175,38 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
       ? await getBlockTimestamp(chainId, BigInt(receipt.blockNumber))
       : null;
 
+    // Presence, not truthiness: `0n` and `0` are falsy. `nonce` is 0 for the
+    // FIRST transaction of every account and `blockNumber` is 0n for any
+    // genesis transaction, so a truthiness test persisted NULL for fields
+    // that are always present — the row then read back as "position unknown"
+    // and the API dropped the field entirely. A nullable quantity is absent
+    // only when it is null/undefined. (`value` uses ?? for the same reason:
+    // a 0-value transaction is a real 0, not a missing value.)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const transactionData: any = {
       chainId,
       hash: tx.hash,
-      blockNumber: tx.blockNumber ? BigInt(tx.blockNumber) : null,
+      blockNumber: tx.blockNumber != null ? BigInt(tx.blockNumber) : null,
       transactionIndex: tx.transactionIndex ?? null,
       fromAddress: tx.from ?? null,
       toAddress: tx.to ?? null,
-      value: tx.value ? BigInt(tx.value) : 0n,
-      gasLimit: tx.gas ? BigInt(tx.gas) : null,
-      gasPrice: tx.gasPrice ? BigInt(tx.gasPrice) : null,
-      maxFeePerGas: tx.maxFeePerGas ? BigInt(tx.maxFeePerGas) : null,
-      maxPriorityFeePerGas: tx.maxPriorityFeePerGas ? BigInt(tx.maxPriorityFeePerGas) : null,
-      gasUsed: receipt?.gasUsed ? BigInt(receipt.gasUsed) : null,
-      effectiveGasPrice: receipt?.effectiveGasPrice ? BigInt(receipt.effectiveGasPrice) : null,
+      value: tx.value ?? 0n,
+      gasLimit: tx.gas != null ? BigInt(tx.gas) : null,
+      gasPrice: tx.gasPrice != null ? BigInt(tx.gasPrice) : null,
+      maxFeePerGas: tx.maxFeePerGas != null ? BigInt(tx.maxFeePerGas) : null,
+      maxPriorityFeePerGas:
+        tx.maxPriorityFeePerGas != null ? BigInt(tx.maxPriorityFeePerGas) : null,
+      gasUsed: receipt?.gasUsed != null ? BigInt(receipt.gasUsed) : null,
+      effectiveGasPrice:
+        receipt?.effectiveGasPrice != null ? BigInt(receipt.effectiveGasPrice) : null,
       status: toDbTxStatus(receipt),
       type: toDbTxType(tx.type),
-      nonce: tx.nonce ? BigInt(tx.nonce) : null,
+      nonce: tx.nonce != null ? BigInt(tx.nonce) : null,
       inputData: tx.input ?? null,
       logsCount: receipt?.logs?.length ?? 0,
       contractAddress: receipt?.contractAddress ?? null,
-      cumulativeGasUsed: receipt?.cumulativeGasUsed ? BigInt(receipt.cumulativeGasUsed) : null,
+      cumulativeGasUsed:
+        receipt?.cumulativeGasUsed != null ? BigInt(receipt.cumulativeGasUsed) : null,
       timestamp,
       indexedAt: new Date(),
     };

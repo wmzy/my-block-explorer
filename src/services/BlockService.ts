@@ -340,7 +340,12 @@ const createBlockService = (deps: BlockServiceDeps) => {
           .limit(100);
 
         const totalBlocks = countResult[0]?.value || 0;
-        const latestBlock = latestResult[0]?.number ? BigInt(latestResult[0].number) : null;
+        // Presence, not truthiness: `blocks.number` is a bignum column, so a
+        // chain whose only indexed block is genesis yields 0n — falsy, and
+        // the old test reported latestBlock: null beside totalBlocks: 1
+        // (a self-contradictory payload for a freshly booted dev chain).
+        const latestNumber = latestResult[0]?.number;
+        const latestBlock = latestNumber != null ? BigInt(latestNumber) : null;
 
         let avgBlockTime: number | null = null;
         const blocksWithTimestamp = recentBlocks.filter(b => b.timestamp != null);

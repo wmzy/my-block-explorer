@@ -1338,12 +1338,17 @@ export const startIndexingRange = async (
     let isComplete: (current: bigint, end: bigint) => boolean;
 
     if (direction === 'forward') {
-      currentBlock = range.currentBlock ? range.currentBlock + 1n : BigInt(resolvedFromBlock);
+      // Presence, NOT truthiness: `0n` is falsy, so a range checkpointed at
+      // block 0 (its first batch — the shape of every range that starts at
+      // genesis) read as "never started" and re-walked the whole window.
+      currentBlock =
+        range.currentBlock !== null ? range.currentBlock + 1n : BigInt(resolvedFromBlock);
       endBlock = BigInt(resolvedToBlock);
       step = n => n + BigInt(BATCH_SIZE);
       isComplete = (current, end) => current > end;
     } else {
-      currentBlock = range.currentBlock ? range.currentBlock - 1n : BigInt(resolvedToBlock);
+      currentBlock =
+        range.currentBlock !== null ? range.currentBlock - 1n : BigInt(resolvedToBlock);
       endBlock = BigInt(resolvedFromBlock);
       step = n => n - BigInt(BATCH_SIZE);
       isComplete = (current, end) => current < end;
