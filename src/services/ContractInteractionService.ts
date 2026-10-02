@@ -131,8 +131,12 @@ export class ContractInteractionService {
 
       return { readFunctions, writeFunctions };
     } catch (error) {
+      // An empty list is the honest answer for a contract whose ABI has no
+      // functions (or for an EOA, which has no ABI at all). A failed
+      // source read or unparseable ABI is not: rethrow, so the route
+      // answers 500 instead of "this contract has no callable functions".
       logger.error({ err: error }, 'Failed to get contract functions');
-      return { readFunctions: [], writeFunctions: [] };
+      throw error;
     }
   }
 

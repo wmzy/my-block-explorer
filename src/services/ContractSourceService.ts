@@ -940,8 +940,14 @@ export class ContractSourceService {
       await this.saveToDatabase(unverifiedContract);
       return unverifiedContract;
     } catch (error) {
-      logger.error({ err: error, address }, 'Failed to get contract source');
-      return null;
+      // Rethrow, do NOT return null. null is this method's one factual
+      // answer ("no deployed code") and the routes turn it into 404
+      // not_a_contract, so swallowing an internal failure here reported a
+      // database outage as an EOA verdict on a real contract. Every caller
+      // already handles a rejection (the routes 500, the informational
+      // read-backs log and omit the field, the address enricher warns).
+      logger.error({ err: error, chainId, address }, 'Failed to get contract source');
+      throw error;
     }
   }
 
@@ -1143,11 +1149,20 @@ export class ContractSourceService {
           'Sourcify detected proxy contract',
         );
 
+        // Enrichment, not a precondition: a facet whose source cannot be
+        // read must not discard the proxy record Sourcify just returned
+        // (that is what turned a facet read failure into "not verified").
         const implContract = await this.getContractSource(
           chainId,
           implAddress,
           childResolutionState(state),
-        );
+        ).catch((error: unknown) => {
+          logger.warn(
+            { err: error, chainId, implementation: implAddress },
+            'Implementation source unavailable; serving the proxy record alone',
+          );
+          return null;
+        });
         if (implContract) {
           result.implementationContract = implContract;
         }
@@ -1347,14 +1362,24 @@ export class ContractSourceService {
         lastChecked: new Date(),
       };
 
-      // Fetch the implementation contract's source code
+      // Fetch the implementation contract's source code. This is an
+      // ENRICHMENT: a failure to read the implementation must not sink the
+      // proxy record we already hold (the proxy itself stays verified and
+      // its own ABI is served), so a rejection is caught here rather than
+      // being allowed to abort the whole lookup.
       let implementationContract: ContractSource | null = null;
       if (proxyInfo.implementationAddress) {
         implementationContract = await this.getContractSource(
           chainId,
           proxyInfo.implementationAddress,
           childResolutionState(state),
-        );
+        ).catch((error: unknown) => {
+          logger.warn(
+            { err: error, chainId, implementation: proxyInfo.implementationAddress },
+            'Implementation source unavailable; serving the proxy record alone',
+          );
+          return null;
+        });
       }
 
       // Return the enriched proxy contract info
@@ -1419,13 +1444,27 @@ export class ContractSourceService {
         proxyInfo.implementationAddress,
       );
 
+      // Same enrichment contract as enhanceWithProxyInfo above: the
+      // implementation lookup is optional context, not a precondition for
+      // returning the proxy record.
+      const implementationToResolve = proxyInfo.implementationAddress;
       let implementationContract: ContractSource | null = null;
-      if (proxyInfo.implementationAddress) {
+      if (implementationToResolve) {
         implementationContract = await this.getContractSource(
           contract.chainId,
-          proxyInfo.implementationAddress,
+          implementationToResolve,
           childResolutionState(state),
-        );
+        ).catch((error: unknown) => {
+          logger.warn(
+            {
+              err: error,
+              chainId: contract.chainId,
+              implementation: implementationToResolve,
+            },
+            'Implementation source unavailable; serving the proxy record alone',
+          );
+          return null;
+        });
       }
 
       return {
@@ -1711,8 +1750,12 @@ export class ContractSourceService {
         implementationAddresses,
       };
     } catch (error) {
+      // A cache miss is null; a cache that could not be READ is not. This
+      // is the failure that made getContractSource answer "no deployed
+      // code" (404 not_a_contract) for a real contract whenever DuckDB was
+      // unhappy. Malformed stored JSON above still degrades on its own.
       logger.error({ err: error }, 'Database query error');
-      return null;
+      throw error;
     }
   }
 
@@ -1783,7 +1826,11 @@ export class ContractSourceService {
           },
         });
     } catch (error) {
+      // The cache is an optimization; a failed WRITE degrades to a
+      // re-fetch, not to a wrong answer. Swallowing it here meant a
+      // database outage looked like a successful unverified lookup.
       logger.error({ err: error }, 'Failed to save contract source');
+      throw error;
     }
   }
 
@@ -1908,8 +1955,12 @@ export class ContractSourceService {
         })),
       };
     } catch (error) {
+      // An empty function list is this endpoint's factual answer for a
+      // contract with no functions (an unverified record's ABI really is
+      // '[]'), so a failed read or unparseable stored ABI must not be
+      // reported as one: rethrow and let the route answer 500.
       logger.error({ err: error }, 'Failed to parse contract ABI');
-      return { functions: [], events: [], errors: [] };
+      throw error;
     }
   }
 
@@ -1955,8 +2006,10 @@ export class ContractSourceService {
 
       return stats;
     } catch (error) {
+      // Zeroed stats are this endpoint's answer for a chain with nothing
+      // cached; a failed COUNT must not look like one.
       logger.error({ err: error }, 'Failed to get contract stats');
-      return { total: 0, verified: 0, unverified: 0, partial: 0 };
+      throw error;
     }
   }
 
