@@ -302,7 +302,7 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
           .from(transactions)
           .where(and(eq(transactions.chainId, chainId), eq(transactions.blockNumber, blockNumber)));
 
-        const total = countResult[0]?.count || 0;
+        const total = Number(countResult[0]?.count ?? 0);
 
         if (txResults.length === 0 && offset === 0) {
           await indexBlockTransactions(chainId, blockNumber);
@@ -365,7 +365,10 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
             ),
           );
 
-        const total = countResult[0]?.count || 0;
+        // DuckDB count(*) arrives as a string through the adapter; normalize
+        // so the declared numeric total is real (same rule as the event and
+        // scan services).
+        const total = Number(countResult[0]?.count ?? 0);
 
         return {
           transactions: txResults.map(tx => formatTransaction(tx)),
@@ -441,7 +444,11 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
           .orderBy(sql`${transactions.timestamp} DESC`)
           .limit(1000);
 
-        const totalTransactions = countResult[0]?.count || 0;
+        // Raw `sql<number>`count(*)`` comes back as a string from the adapter
+        // (drizzle's own count() helper does not). Without Number() the
+        // stats payload carried a string total, and /api/stats/overview's
+        // cross-chain `sum + ch.indexedTransactions` STRING-CONCATENATED it.
+        const totalTransactions = Number(countResult[0]?.count ?? 0);
 
         let avgGasPrice: string | null = null;
         const gasPrices = statsResult
