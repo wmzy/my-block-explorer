@@ -205,6 +205,56 @@ describe('Charts page', () => {
     );
   });
 
+  it('draws every mark inside the frame its axis is drawn in', async () => {
+    mockUseChartStats.mockReturnValue({ data: okResult(), loading: false });
+
+    renderCharts('/chain/1/charts');
+
+    const blocksCard = await screen.findByTestId('charts-blocks-day');
+    const svg = within(blocksCard).getByRole('img', { name: 'Blocks mined per day' });
+    // The view's own frame constants (src/views/Charts/index.tsx).
+    const PLOT_LEFT = 46;
+    const PLOT_TOP = 8;
+    const PLOT_BOTTOM_EDGE = 216 - 30;
+
+    const bars = within(blocksCard).getAllByTestId('chart-bar');
+    expect(bars.length).toBeGreaterThan(0);
+    for (const bar of bars) {
+      const x = Number(bar.getAttribute('x'));
+      const y = Number(bar.getAttribute('y'));
+      const height = Number(bar.getAttribute('height'));
+      // Within the plot box horizontally — a bar drawn from x = 8 sits in
+      // the y tick label column, which is what the old symmetric pad did.
+      expect(x).toBeGreaterThanOrEqual(PLOT_LEFT);
+      expect(x + Number(bar.getAttribute('width'))).toBeLessThanOrEqual(632);
+      // Anchored between the top and bottom gridlines.
+      expect(y).toBeGreaterThanOrEqual(PLOT_TOP);
+      expect(y + height).toBeLessThanOrEqual(PLOT_BOTTOM_EDGE);
+    }
+
+    // The gridlines and the marks share one frame: the bottom gridline is
+    // the zero baseline the bars stand on.
+    const gridlines = svg.querySelectorAll('line');
+    const gridlineYs = [...gridlines].map(line => Number(line.getAttribute('y1')));
+    expect(gridlineYs).toContain(PLOT_BOTTOM_EDGE);
+    const tallestBottom = Math.max(...bars.map(bar => Number(bar.getAttribute('y')) + Number(bar.getAttribute('height'))));
+    expect(tallestBottom).toBeCloseTo(PLOT_BOTTOM_EDGE, 6);
+
+    // Lines are inside the same box on both axes.
+    const feeCard = screen.getByTestId('charts-gas-fees');
+    const lines = within(feeCard).getAllByTestId('chart-line');
+    expect(lines.length).toBeGreaterThanOrEqual(2);
+    for (const line of lines) {
+      for (const command of (line.getAttribute('d') ?? '').split(' ').filter(Boolean)) {
+        const [x, y] = command.slice(1).split(',').map(Number);
+        expect(x).toBeGreaterThanOrEqual(PLOT_LEFT);
+        expect(x).toBeLessThanOrEqual(632);
+        expect(y).toBeGreaterThanOrEqual(PLOT_TOP);
+        expect(y).toBeLessThanOrEqual(PLOT_BOTTOM_EDGE);
+      }
+    }
+  });
+
   it('renders gaps as gaps: a missing day drops its bar and splits the line', async () => {
     mockUseChartStats.mockReturnValue({ data: okResult({ gapDay: 15 }), loading: false });
 

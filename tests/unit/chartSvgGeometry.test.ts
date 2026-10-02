@@ -14,6 +14,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildLineSegments,
+  frameWithPad,
   linePoints,
   lineX,
   lineYScaler,
@@ -25,6 +26,10 @@ import {
 const WIDTH = 320;
 const HEIGHT = 96;
 const PAD = 8;
+// The helpers now take the plot box they must land in. `frameWithPad` is
+// the symmetric box this file has always used, so every assertion below
+// still describes the same geometry through the new API.
+const FRAME = frameWithPad(WIDTH, HEIGHT, PAD);
 
 describe('lineYScaler', () => {
   const extent = { min: 0, max: 100 };
@@ -68,7 +73,7 @@ describe('line chart geometry agrees with the page axis', () => {
 
   it('places plotted points exactly on the gridline for the same value', () => {
     const values = [10, 40, 25, 90, 60, 5];
-    const points = linePoints(values, WIDTH, HEIGHT, PAD);
+    const points = linePoints(values, FRAME);
     const extent = expandExtent(seriesExtent([values])!);
     const plotTop = PAD;
     const plotBottom = HEIGHT - PAD;
@@ -80,7 +85,7 @@ describe('line chart geometry agrees with the page axis', () => {
 
   it('keeps every plotted point inside the padded plot box', () => {
     const values = [1, 2, 3, 500, 7];
-    const points = linePoints(values, WIDTH, HEIGHT, PAD);
+    const points = linePoints(values, FRAME);
     for (const point of points) {
       expect(point.y).toBeGreaterThanOrEqual(PAD);
       expect(point.y).toBeLessThanOrEqual(HEIGHT - PAD);
@@ -89,8 +94,8 @@ describe('line chart geometry agrees with the page axis', () => {
 
   it('emits segments whose y coordinates match the markers for the same values', () => {
     const values = [3, 1, 4, 1, 5];
-    const segments = buildLineSegments(values, WIDTH, HEIGHT, PAD);
-    const points = linePoints(values, WIDTH, HEIGHT, PAD);
+    const segments = buildLineSegments(values, FRAME);
+    const points = linePoints(values, FRAME);
     expect(segments).toHaveLength(1);
     // 'M…L…' — one command per value, in the same order as the markers.
     const commands = segments[0].split(' ');
@@ -103,7 +108,7 @@ describe('line chart geometry agrees with the page axis', () => {
 
   it('spans the full padded width (x and y use symmetric padding)', () => {
     const values = [1, 2, 3];
-    const points = linePoints(values, WIDTH, HEIGHT, PAD);
+    const points = linePoints(values, FRAME);
     expect(points[0].x).toBe(lineX(0, values.length, PAD, WIDTH - PAD));
     expect(points[values.length - 1].x).toBe(lineX(values.length - 1, values.length, PAD, WIDTH - PAD));
   });
@@ -111,7 +116,7 @@ describe('line chart geometry agrees with the page axis', () => {
 
 describe('bar chart geometry is unaffected by the line scaler fix', () => {
   it('still anchors bars to the bottom of the plot box', () => {
-    const bars = buildBars([0, 50, 100], WIDTH, HEIGHT, PAD);
+    const bars = buildBars([0, 50, 100], FRAME);
     const plotHeight = HEIGHT - 2 * PAD;
     const tallest = bars[2]!;
     expect(tallest.h).toBeCloseTo(plotHeight, 10);
@@ -119,7 +124,7 @@ describe('bar chart geometry is unaffected by the line scaler fix', () => {
   });
 
   it('keeps a null day as an empty slot', () => {
-    const bars = buildBars([1, null, 3], WIDTH, HEIGHT, PAD);
+    const bars = buildBars([1, null, 3], FRAME);
     expect(bars[1]).toBeNull();
     expect(bars[0]).not.toBeNull();
     expect(bars[2]).not.toBeNull();

@@ -299,8 +299,20 @@ function DayChart({
 }) {
   const plotBottom = VIEW_HEIGHT - PLOT_BOTTOM;
   const plotRight = VIEW_WIDTH - PLOT_RIGHT;
-  // Bars share a zero baseline; lines normalize over their own extent
-  // (flat series draw the mid-line, same rule as the gas sparkline).
+  // ONE frame for the axis and the data: the gridlines below and every
+  // mark mapped through the helpers must be rectangles in the same
+  // coordinate space, or no value can be read off its own axis.
+  const frame = {
+    width: VIEW_WIDTH,
+    height: VIEW_HEIGHT,
+    left: PLOT_LEFT,
+    right: plotRight,
+    top: PLOT_TOP,
+    bottom: plotBottom,
+  };
+  // Bars share a zero baseline; lines normalize over the extent of ALL
+  // series on the card (flat series draw the mid-line, same rule as the
+  // gas sparkline) so two lines under one axis are comparable.
   const extent =
     mode === 'bars'
       ? { min: 0, max: Math.max(0, seriesExtent(series.map(s => s.values))?.max ?? 1) }
@@ -342,7 +354,7 @@ function DayChart({
         </text>
       ))}
       {mode === 'bars'
-        ? buildBars(series[0]?.values ?? [], VIEW_WIDTH, VIEW_HEIGHT, 8).map((bar, index) =>
+        ? buildBars(series[0]?.values ?? [], frame).map((bar, index) =>
             bar === null ? null : (
               <rect
                 key={index}
@@ -358,8 +370,8 @@ function DayChart({
         : series.map((spec, specIndex) => {
             const lineClass = spec.tone === 'primary' ? linePrimary : lineSecondary;
             const dotClass = spec.tone === 'primary' ? dotPrimary : dotSecondary;
-            const segments = buildLineSegments(spec.values, VIEW_WIDTH, VIEW_HEIGHT, 8);
-            const points = linePoints(spec.values, VIEW_WIDTH, VIEW_HEIGHT, 8);
+            const segments = buildLineSegments(spec.values, frame, extent);
+            const points = linePoints(spec.values, frame, extent);
             return (
               <g key={specIndex}>
                 {segments.map((segment, segmentIndex) => (

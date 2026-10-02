@@ -71,18 +71,51 @@ export function lineX(index: number, count: number, left: number, right: number)
 }
 
 /**
+ * The plot box a chart draws its axis in: the four edges of the rectangle
+ * every mark is mapped onto.
+ *
+ * The helpers used to take a single symmetric `pad`, which made a chart's
+ * axis frame and its data frame two different rectangles: the Charts page
+ * reserves a left column for y tick labels (46px) and a bottom row for day
+ * labels (30px), so its data sat 38px left of and 22px below the gridlines
+ * drawn for the same extent. Callers that draw an axis MUST pass the same
+ * edges they draw it in.
+ */
+export type ChartFrame = {
+  width: number;
+  height: number;
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+};
+
+/** A frame that keeps the old symmetric `pad` on all four edges. */
+export const frameWithPad = (width: number, height: number, pad = 8): ChartFrame => ({
+  width,
+  height,
+  left: pad,
+  right: width - pad,
+  top: pad,
+  bottom: height - pad,
+});
+
+/**
  * Contiguous line segments (SVG path strings) for a gapped series: a run
  * of non-null days becomes one 'M…L…' path; null breaks the run. Runs of
  * a single day emit no segment (the caller's point markers carry it).
+ *
+ * `extent` overrides the per-series normalization; a two-series card passes
+ * the extent of BOTH series so its lines share one scale (each series
+ * normalizing over its own range draws two incomparable lines against one
+ * set of gridlines).
  */
 export function buildLineSegments(
   series: GappedSeries,
-  width: number,
-  height: number,
-  pad = 8,
+  frame: ChartFrame,
+  extent?: { min: number; max: number },
 ): string[] {
-  const extent = expandExtent(seriesExtent([series]) ?? { min: 0, max: 1 });
-  const y = lineYScaler(extent, pad, height - 2 * pad);
+  const y = lineYScaler(extent ?? expandExtent(seriesExtent([series]) ?? { min: 0, max: 1 }), frame.top, frame.bottom - frame.top);
   const segments: string[] = [];
   let current: string[] = [];
   series.forEach((value, index) => {
@@ -91,26 +124,28 @@ export function buildLineSegments(
       current = [];
       return;
     }
-    const x = lineX(index, series.length, pad, width - pad).toFixed(2);
+    const x = lineX(index, series.length, frame.left, frame.right).toFixed(2);
     current.push(`${current.length === 0 ? 'M' : 'L'}${x},${y(value).toFixed(2)}`);
   });
   if (current.length >= 2) segments.push(current.join(' '));
   return segments;
 }
 
-/** Marker positions for every non-null day (line charts draw these as dots). */
+/**
+ * Marker positions for every non-null day (line charts draw these as
+ * dots). Shares {@link buildLineSegments}' frame and optional shared
+ * extent, so markers and paths always land on the same transform.
+ */
 export function linePoints(
   series: GappedSeries,
-  width: number,
-  height: number,
-  pad = 8,
+  frame: ChartFrame,
+  extent?: { min: number; max: number },
 ): Array<{ x: number; y: number }> {
-  const extent = expandExtent(seriesExtent([series]) ?? { min: 0, max: 1 });
-  const y = lineYScaler(extent, pad, height - 2 * pad);
+  const y = lineYScaler(extent ?? expandExtent(seriesExtent([series]) ?? { min: 0, max: 1 }), frame.top, frame.bottom - frame.top);
   const points: Array<{ x: number; y: number }> = [];
   series.forEach((value, index) => {
     if (value === null) return;
-    points.push({ x: lineX(index, series.length, pad, width - pad), y: y(value) });
+    points.push({ x: lineX(index, series.length, frame.left, frame.right), y: y(value) });
   });
   return points;
 }
@@ -124,25 +159,22 @@ export type BarRect = { x: number; y: number; w: number; h: number };
  */
 export function buildBars(
   series: GappedSeries,
-  width: number,
-  height: number,
-  pad = 8,
+  frame: ChartFrame,
   gapRatio = 0.25,
   minHeight = 1,
 ): Array<BarRect | null> {
   const extent = seriesExtent([series]);
   const max = extent === null ? 1 : Math.max(extent.max, 0);
-  const top = pad;
-  const plotHeight = height - 2 * pad;
-  const slot = (width - 2 * pad) / Math.max(1, series.length);
+  const plotHeight = frame.bottom - frame.top;
+  const slot = (frame.right - frame.left) / Math.max(1, series.length);
   const barWidth = Math.max(1, slot * (1 - gapRatio));
   return series.map((value, index) => {
     if (value === null) return null;
     const ratio = max > 0 ? Math.min(1, Math.max(0, value / max)) : 0;
     const barHeight = Math.max(minHeight, plotHeight * ratio);
     return {
-      x: pad + slot * index + (slot - barWidth) / 2,
-      y: top + plotHeight - barHeight,
+      x: frame.left + slot * index + (slot - barWidth) / 2,
+      y: frame.bottom - barHeight,
       w: barWidth,
       h: barHeight,
     };

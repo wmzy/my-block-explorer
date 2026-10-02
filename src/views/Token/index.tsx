@@ -44,6 +44,7 @@ import {
   buildLineSegments,
   expandExtent,
   formatDayTick,
+  frameWithPad,
   linePoints,
   lineYScaler,
   seriesExtent,
@@ -533,11 +534,11 @@ function PriceHistoryChart({
     [points, start, windowDays],
   );
   const segments = useMemo(
-    () => buildLineSegments(series, PRICE_CHART_WIDTH, PRICE_CHART_HEIGHT, PRICE_CHART_PAD),
+    () => buildLineSegments(series, frameWithPad(PRICE_CHART_WIDTH, PRICE_CHART_HEIGHT, PRICE_CHART_PAD)),
     [series],
   );
   const markers = useMemo(
-    () => linePoints(series, PRICE_CHART_WIDTH, PRICE_CHART_HEIGHT, PRICE_CHART_PAD),
+    () => linePoints(series, frameWithPad(PRICE_CHART_WIDTH, PRICE_CHART_HEIGHT, PRICE_CHART_PAD)),
     [series],
   );
   const lastMarker = markers.length > 0 ? markers[markers.length - 1] : undefined;
