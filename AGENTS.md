@@ -1669,3 +1669,48 @@ pnpm typecheck           # tsc --noEmit
   own derived title, cross-links intact, unknown topic renders the app
   404 card with no help-content leak, palette `faq` → Help → Enter
   navigates, nav entry navigates, 375px clean).
+
+- **2026-10-02 bug-hunt wave (4 classes, 4 commits, one per class)** — each
+  class was found by grepping a SHAPE, each has a repro test that is red on
+  the pre-fix code, and each came with a sibling sweep so the class is closed
+  rather than the instance. Verified: tsc clean, eslint 0 errors,
+  `vitest --changed 6bda9e1` 84 files / 962 tests green, live smoke on
+  Polygon through the vite bridge (tx list statuses, tx detail, contract
+  Events tab with the range manager + statistics, `/api/stats/overview`).
+  **Conventions now pinned** (grep for these before "fixing" one): (1) **A
+  generation/request guard must CLAIM an id, not read one** —
+  `const id = ref.current` is shared by every overlapping run, so
+  `isCurrent()` cannot tell a superseded tick from the newest one and the
+  slower (staler) response wins. The correct form is `++ref.current`
+  (EventTable's pattern); two 3s pollers (IndexingRangeManager,
+  EventStatistics) only advanced their counter on an identity change and are
+  fixed in 160e402 (`tests/unit/pollGenerationGuard.test.tsx` drives two
+  overlapping ticks with manually controlled promises, settles the newer one
+  first, and asserts the stale one never writes). (2) **A per-item read
+  failure must never be laundered into plausible absence** — a
+  `.catch(() => [])` inside a paginated block walk turns a transport error
+  into "this block is empty" and the cursor pages past those transactions
+  forever, while `hasMore`/`nextCursor` still claim a gapless sequence; the
+  receipt sibling turned a mined transaction into "Pending"
+  (ad69804 — `withOneRetry` then throw, `readReceipt` treats viem's
+  `TransactionReceiptNotFoundError` as data and never retries it, and
+  `components/ui/TxStatusBadge.tsx` is now the single honest
+  `hasBlock ? Unknown : Pending` implementation: -1 is Pending ONLY without a
+  block position). (3) **A failed read is never a 200 with zeroed content** —
+  `/api/stats/overview` caught both service throws into zeroed defaults and
+  summed them into the cross-chain totals; it now answers
+  `503 {error:'stats_unavailable'}` like the sibling indexing-status route
+  (030fe41). (4) **A quantity that can be 0 must be tested for PRESENCE** —
+  `0n`/`0` are falsy, so `x.currentBlock ? … : …`, `tx.nonce ? … : null` and
+  `row.number ? … : null` silently take the "absent" branch: a range
+  checkpointed at genesis re-walked its whole window on resume, the FIRST
+  transaction of every account was persisted with `nonce = NULL` (and any
+  genesis tx with `block_number = NULL` — stored as "position unknown" and
+  dropped from the API payload by the `!= null` guards), and a genesis-only
+  dev chain reported `totalBlocks: 1` beside `latestBlock: null` (dd97c14 —
+  `tests/unit/falsyZeroWritePath.test.ts` asserts the row handed to drizzle
+  plus the API payload). Backend service-tier fields are real
+  bigint/number (`bignum`/`integer` columns), so truthiness there is a real
+  bug; on the WIRE they arrive as decimal strings ("0" is truthy), which is
+  why the two `IndexingRangeManager` guards are latent type-contract
+  landmines rather than live defects — fix them with the rest when touched.
