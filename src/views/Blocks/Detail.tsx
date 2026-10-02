@@ -754,8 +754,13 @@ export default function BlockDetail() {
 
             {/* Raw JSON appendix: verbatim eth_getBlockByNumber payloads
                 for this block, collapsed by default and fetched on first
-                expand only. */}
-            <RawJsonCard title="Raw JSON" fetchers={rawJsonFetchers} />
+                expand only. The identity is this block's — the route reuses
+                this subtree across blocks. */}
+            <RawJsonCard
+              identity={`${currentChainId}:${blockInfo.hash}`}
+              title="Raw JSON"
+              fetchers={rawJsonFetchers}
+            />
           </div>
         )}
       </PageContainer>

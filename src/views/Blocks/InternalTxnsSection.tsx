@@ -314,6 +314,22 @@ export function InternalTxnsSection({
   const sweptOnce = useRef(false);
   const sweepSeq = useRef(0);
 
+  // The block-detail route reuses this section across blocks (only
+  // :blockNumber changes — no remount), so all of the state above describes
+  // exactly ONE block's sweep. A different block must reset it, the
+  // sweep-once latch included: otherwise the next block renders the previous
+  // block's internal transactions and never re-sweeps. Adjusting state during
+  // render keeps the stale output from ever reaching the screen.
+  const blockIdentity = `${chainId}:${blockHash}`;
+  const blockIdentityRef = useRef(blockIdentity);
+  if (blockIdentityRef.current !== blockIdentity) {
+    blockIdentityRef.current = blockIdentity;
+    setExpanded(false);
+    setState({ phase: 'idle' });
+    sweptOnce.current = false;
+    sweepSeq.current += 1; // drop any in-flight settle from the previous block
+  }
+
   const runSweep = useCallback(async () => {
     const seq = sweepSeq.current + 1;
     sweepSeq.current = seq;

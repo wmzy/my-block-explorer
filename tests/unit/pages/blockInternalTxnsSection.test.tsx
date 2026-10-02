@@ -365,4 +365,44 @@ describe('InternalTxnsSection', () => {
     expect(debugCalls).toHaveLength(9);
     expect(peak).toBeLessThanOrEqual(4);
   });
+
+  it('resets when the block changes (the block route reuses this section)', async () => {
+    const BLOCK_B = `0x${'ef'.repeat(32)}`;
+    mockHappySweep();
+    const { rerender } = renderSection();
+
+    expand();
+    expect(await screen.findByTestId('block-internal-txns-summary')).toBeInTheDocument();
+    expect(screen.getByTestId('block-internal-txns-header')).toHaveAttribute(
+      'aria-expanded',
+      'true',
+    );
+
+    // The flat block route reuses the SAME section instance when only
+    // :blockNumber changes — a rerender with new props is that reuse.
+    rerender(
+      <MemoryRouter routes={routes} initialEntries={['/chain/1/block/18000001']}>
+        <InternalTxnsSection chainId={1} blockHash={BLOCK_B} transactionCount={2} />
+      </MemoryRouter>,
+    );
+
+    // The previous block's sweep must not linger under the new block.
+    expect(screen.getByTestId('block-internal-txns-header')).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    );
+    expect(screen.queryByTestId('block-internal-txns-summary')).not.toBeInTheDocument();
+
+    // Expanding sweeps THIS block (by its own hash), not the latched one.
+    requestMock.mockImplementation(({ method }) => {
+      if (method === 'eth_getBlockByHash') return Promise.resolve(blockWithTxs([TX_A, TX_B]));
+      return Promise.resolve(plainTransferTrace());
+    });
+    expand();
+    expect(await screen.findByTestId('block-internal-txns-summary')).toBeInTheDocument();
+    expect(requestMock).toHaveBeenCalledWith({
+      method: 'eth_getBlockByHash',
+      params: [BLOCK_B, true],
+    });
+  });
 });

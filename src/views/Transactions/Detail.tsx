@@ -1637,8 +1637,15 @@ export default function TransactionDetail() {
             )}
 
             {/* Raw JSON appendix: verbatim RPC payloads behind this page,
-                collapsed by default and fetched on first expand only. */}
-            <RawJsonCard title="Raw JSON" fetchers={rawJsonFetchers} />
+                collapsed by default and fetched on first expand only. The
+                identity is this transaction's — the route reuses this
+                subtree across transactions, so without it the section
+                latches would show the previous transaction's payload. */}
+            <RawJsonCard
+              identity={`${currentChainId}:${txInfo.hash}`}
+              title="Raw JSON"
+              fetchers={rawJsonFetchers}
+            />
           </div>
         )}
       </PageContainer>
