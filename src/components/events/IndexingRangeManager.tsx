@@ -703,7 +703,11 @@ export const IndexingRangeManager: React.FC<Props> = ({
   // its 'Pausing…' set and the chain head. Only the newest run writes.
   const rangesRequestIdRef = useRef(0);
   const fetchRanges = useCallback(async () => {
-    const requestId = rangesRequestIdRef.current;
+    // Claim a NEW generation for this run (the EventTable pattern): reading
+    // the current id without claiming one let two overlapping poll ticks
+    // share an id, so both passed isCurrent() and the slower (staler) tick
+    // could replace the fresher one's ranges and chain head.
+    const requestId = ++rangesRequestIdRef.current;
     const isCurrent = () => requestId === rangesRequestIdRef.current;
     setLoading(true);
     try {

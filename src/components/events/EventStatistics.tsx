@@ -228,7 +228,11 @@ export const EventStatistics = ({
   // segmented range view. allSettled: one endpoint failing must not drag
   // the other's good data down with it.
   const fetchStatus = useCallback(async () => {
-    const requestId = requestIdRef.current;
+    // Claim a NEW generation for this run: an id merely READ from the ref is
+    // shared by every overlapping tick, so isCurrent() could not tell a
+    // superseded run from the newest one and a stale 3s tick was able to
+    // paint over fresher status/ranges (and clear the spinner).
+    const requestId = ++requestIdRef.current;
     const isCurrent = () => requestId === requestIdRef.current;
     try {
       setLoading(true);
