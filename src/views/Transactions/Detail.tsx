@@ -11,6 +11,7 @@ import { RawDataBlock } from '@/components/transactions/RawDataBlock';
 import { Badge } from '@/components/ui/Badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import { CopyableHash } from '@/components/ui/CopyableHash';
+import { TxStatusBadge } from '@/components/ui/TxStatusBadge';
 import { linkStyle, monoStyle } from '@/components/ui/DataTable';
 import { ExternalLinks } from '@/components/ui/ExternalLinks';
 import { ErrorState } from '@/components/ui/ErrorState';
@@ -77,29 +78,6 @@ const formatGas = (gas: string): string => {
     return gas;
   }
 };
-
-// status: 1 → success, 0 → failed, -1 → pending (no receipt yet, NOT failed).
-function TxStatusBadge({ status }: { status: number }) {
-  if (status === 1) {
-    return (
-      <Badge variant="success" size="sm">
-        Success
-      </Badge>
-    );
-  }
-  if (status === 0) {
-    return (
-      <Badge variant="error" size="sm">
-        Failed
-      </Badge>
-    );
-  }
-  return (
-    <Badge variant="default" size="sm">
-      Pending
-    </Badge>
-  );
-}
 
 // Wrong-chain lookups: viem raises TransactionNotFoundError, and some
 // providers answer with an RPC error whose message embeds "not found".
@@ -1357,7 +1335,7 @@ export default function TransactionDetail() {
                 <InfoGrid>
                   <InfoItem label="Transaction Hash">{txInfo.hash}</InfoItem>
                   <InfoItem label="Status">
-                    <TxStatusBadge status={txInfo.status} />
+                    <TxStatusBadge status={txInfo.status} hasBlock={txInfo.blockNumber !== null} />
                   </InfoItem>
                   <InfoItem label="Block Number">
                     {/* Pending tx (not yet mined): honest Pending text,

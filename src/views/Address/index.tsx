@@ -92,6 +92,7 @@ import { getExternalToolLinks } from '@/config/externalTools';
 import { redirectReplace } from '@/views/Home/Landing';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
 import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
+import { TxStatusBadge } from '@/components/ui/TxStatusBadge';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { InfoGrid, InfoItem } from '@/components/ui/InfoGrid';
 import { DataTable, Pagination, linkStyle } from '@/components/ui/DataTable';
@@ -500,38 +501,10 @@ const activityTabs: ReadonlyArray<{ id: ActivityTabId; label: string }> = [
   { id: 'internal', label: 'Internal Txns' },
 ];
 
-// status: 1 → success, 0 → failed, -1 → pending (no receipt yet, NOT
-// failed), null/undefined → unknown (the heuristic discovers txs from
-// block data without receipts — never read that as "pending").
-function TxStatusBadge({
-  status,
-  hasBlock,
-}: {
-  status: number | null | undefined;
-  hasBlock: boolean;
-}) {
-  if (status === 1) {
-    return (
-      <Badge variant="success" size="sm">
-        Success
-      </Badge>
-    );
-  }
-  if (status === 0) {
-    return (
-      <Badge variant="error" size="sm">
-        Failed
-      </Badge>
-    );
-  }
-  // Without a receipt status, only a block-less tx can honestly read as
-  // pending (mempool); a mined tx with unknown status says "Unknown".
-  return (
-    <Badge variant="default" size="sm">
-      {hasBlock ? 'Unknown' : 'Pending'}
-    </Badge>
-  );
-}
+// TxStatusBadge (components/ui) is the single implementation of the status
+// wording: 1 → Success, 0 → Failed, and a missing receipt verdict resolves
+// to Unknown/Pending by block position, so the address table, the chain-wide
+// transaction list and the tx detail page cannot disagree.
 
 // The two-tier invalid-address guidance card, rendered page-level for any
 // address the local validity check rejects (see ./addressValidity). The
