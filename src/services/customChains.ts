@@ -108,15 +108,28 @@ export function invalidateCustomChainsCache(): void {
 // UI declares a chain id unsupported it must have consulted the backend's
 // registrations once — a deep link to /chain/31337 with the chain already
 // registered (another tab, a previous session) recovers instead of dead
-// -ending. Any failure — including no backend at all — settles silently:
-// the gate then simply keeps its honest unsupported state.
+// -ending. A successful fetch settles silently; so does the zero-backend
+// mode (apiBase === '' rejects with status 0), which is a STABLE state —
+// the app renders degraded, and the discovery reconnect is the documented
+// re-probe path, so latching it cannot request-storm. Every OTHER failure
+// leaves the latch OPEN: otherwise one 403/5xx would pin the registry
+// empty for the session and send a registered custom dev chain to viem's
+// anvil placeholder endpoint for good.
 let registryLoaded: Promise<void> | null = null;
+
+const isStableOfflineFailure = (error: unknown): boolean =>
+  (error as { status?: unknown } | null)?.status === 0;
 
 /** Resolve once the backend's custom chains have been fetched (or the fetch failed). */
 export function ensureCustomChainsLoaded(): Promise<void> {
   registryLoaded ??= fetchCustomChains()
     .then(() => undefined)
-    .catch(() => undefined);
+    .catch((error: unknown) => {
+      if (!isStableOfflineFailure(error)) {
+        // Re-arm: the next caller must re-ask rather than trust this.
+        registryLoaded = null;
+      }
+    });
   return registryLoaded;
 }
 
