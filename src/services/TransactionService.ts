@@ -1,6 +1,8 @@
 import { db, transactions, blocks } from '../database/init';
 import { eq, and, sql, count } from 'drizzle-orm';
 import { rpcManager } from './RpcManager';
+import { withOneRetry } from '../utils/rpcReadRetry';
+import { createLogger } from '../server/logger';
 import type { Address, Transaction as ViemTransaction, TransactionReceipt } from 'viem';
 
 /**
@@ -38,8 +40,56 @@ type TransactionServiceDeps = {
   rpcManager: typeof import('./RpcManager').rpcManager;
 };
 
+// viem rejects getTransactionReceipt for a transaction that is not mined
+// yet with TransactionReceiptNotFoundError. That answer is DATA ("no
+// receipt yet"), not a transport failure: it must not be retried (pending
+// lookups would double their RPC traffic) and must not be reported as an
+// error. The name/message shape (rather than `instanceof`) matches the
+// RPC-path sibling in utils/blockRpcData.ts, which has to work across
+// duplicate viem copies.
+const isReceiptNotFound = (error: unknown): boolean => {
+  if (typeof error !== 'object' || error === null) return false;
+  const name = 'name' in error ? String(error.name) : '';
+  if (name === 'TransactionReceiptNotFoundError') return true;
+  const message = 'message' in error ? String(error.message) : '';
+  return /could not be found/i.test(message);
+};
+
+/** What one receipt read actually established. */
+type ReceiptOutcome =
+  | { kind: 'receipt'; receipt: TransactionReceipt }
+  // Not mined yet — a real answer that carries no receipt facts.
+  | { kind: 'pending' }
+  // The read itself failed. This must never be turned into "0 logs".
+  | { kind: 'failed'; error: unknown };
+
+const logger = createLogger('transaction-service');
+
 const createTransactionService = (deps: TransactionServiceDeps) => {
   const { db, transactions, blocks, rpcManager } = deps;
+
+  // One retry for the idempotent read (utils/rpcReadRetry: public RPCs drop
+  // a single getReceipt under load; a failure that SURVIVES the retry is
+  // real and must reach the caller, never be laundered into a plausible
+  // value). 'pending' resolves on the first not-found instead of retrying.
+  const readReceiptOutcome = async (
+    client: { getTransactionReceipt: (args: { hash: `0x${string}` }) => Promise<TransactionReceipt> },
+    hash: `0x${string}`,
+  ): Promise<ReceiptOutcome> => {
+    const attempt = async (): Promise<ReceiptOutcome> => {
+      try {
+        return { kind: 'receipt', receipt: await client.getTransactionReceipt({ hash }) };
+      } catch (error) {
+        if (isReceiptNotFound(error)) return { kind: 'pending' };
+        throw error;
+      }
+    };
+    try {
+      return await withOneRetry(attempt);
+    } catch (error) {
+      return { kind: 'failed', error };
+    }
+  };
 
   // The `timestamp` column is the repo's unix-SECONDS customType
   // (database/db-types.ts: TIMESTAMP_S, data: number) — `new Date(number)`
@@ -119,7 +169,10 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
       type: num(row, 'type', 'type') ?? 0,
       nonce: big(row, 'nonce', 'nonce'),
       inputData: str(row, 'inputData', 'input_data'),
-      logsCount: num(row, 'logsCount', 'logs_count') ?? 0,
+      // No default: 0 is a claim ("this transaction emitted no events"),
+      // and a row stored without a receipt has none. The field is absent
+      // in that case.
+      logsCount: num(row, 'logsCount', 'logs_count'),
       contractAddress: str(row, 'contractAddress', 'contract_address'),
       cumulativeGasUsed: big(row, 'cumulativeGasUsed', 'cumulative_gas_used'),
       timestamp: secondsToDate(row.timestamp),
@@ -166,6 +219,47 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
     return Number.isFinite(parsed) ? parsed : 0;
   };
 
+  // The row an indexed transaction would be stored as. Factored out of
+  // indexTransaction so the pending path can answer from the same
+  // mapping WITHOUT writing it.
+  //
+  // Presence, not truthiness: `0n` and `0` are falsy. `nonce` is 0 for the
+  // FIRST transaction of every account and `blockNumber` is 0n for any
+  // genesis transaction, so a truthiness test persisted NULL for fields
+  // that are always present — the row then read back as "position unknown"
+  // and the API dropped the field entirely. A nullable quantity is absent
+  // only when it is null/undefined. (`value` uses ?? for the same reason:
+  // a 0-value transaction is a real 0, not a missing value.)
+  const toStoredRow = (chainId: number, tx: ViemTransaction, receipt: TransactionReceipt | null) => ({
+    chainId,
+    hash: tx.hash,
+    blockNumber: tx.blockNumber != null ? BigInt(tx.blockNumber) : null,
+    transactionIndex: tx.transactionIndex ?? null,
+    fromAddress: tx.from ?? null,
+    toAddress: tx.to ?? null,
+    value: tx.value ?? 0n,
+    gasLimit: tx.gas != null ? BigInt(tx.gas) : null,
+    gasPrice: tx.gasPrice != null ? BigInt(tx.gasPrice) : null,
+    maxFeePerGas: tx.maxFeePerGas != null ? BigInt(tx.maxFeePerGas) : null,
+    maxPriorityFeePerGas:
+      tx.maxPriorityFeePerGas != null ? BigInt(tx.maxPriorityFeePerGas) : null,
+    gasUsed: receipt?.gasUsed != null ? BigInt(receipt.gasUsed) : null,
+    effectiveGasPrice:
+      receipt?.effectiveGasPrice != null ? BigInt(receipt.effectiveGasPrice) : null,
+    status: toDbTxStatus(receipt),
+    type: toDbTxType(tx.type),
+    nonce: tx.nonce != null ? BigInt(tx.nonce) : null,
+    inputData: tx.input ?? null,
+    // Receipt-derived: a transaction whose receipt was never read carries
+    // NULL here, and formatTransaction leaves the field undefined. Writing
+    // 0 instead claimed "this transaction produced no events" — a fact we
+    // never established.
+    logsCount: receipt ? receipt.logs.length : null,
+    contractAddress: receipt?.contractAddress ?? null,
+    cumulativeGasUsed:
+      receipt?.cumulativeGasUsed != null ? BigInt(receipt.cumulativeGasUsed) : null,
+  });
+
   const indexTransaction = async (
     chainId: number,
     tx: ViemTransaction,
@@ -175,38 +269,9 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
       ? await getBlockTimestamp(chainId, BigInt(receipt.blockNumber))
       : null;
 
-    // Presence, not truthiness: `0n` and `0` are falsy. `nonce` is 0 for the
-    // FIRST transaction of every account and `blockNumber` is 0n for any
-    // genesis transaction, so a truthiness test persisted NULL for fields
-    // that are always present — the row then read back as "position unknown"
-    // and the API dropped the field entirely. A nullable quantity is absent
-    // only when it is null/undefined. (`value` uses ?? for the same reason:
-    // a 0-value transaction is a real 0, not a missing value.)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const transactionData: any = {
-      chainId,
-      hash: tx.hash,
-      blockNumber: tx.blockNumber != null ? BigInt(tx.blockNumber) : null,
-      transactionIndex: tx.transactionIndex ?? null,
-      fromAddress: tx.from ?? null,
-      toAddress: tx.to ?? null,
-      value: tx.value ?? 0n,
-      gasLimit: tx.gas != null ? BigInt(tx.gas) : null,
-      gasPrice: tx.gasPrice != null ? BigInt(tx.gasPrice) : null,
-      maxFeePerGas: tx.maxFeePerGas != null ? BigInt(tx.maxFeePerGas) : null,
-      maxPriorityFeePerGas:
-        tx.maxPriorityFeePerGas != null ? BigInt(tx.maxPriorityFeePerGas) : null,
-      gasUsed: receipt?.gasUsed != null ? BigInt(receipt.gasUsed) : null,
-      effectiveGasPrice:
-        receipt?.effectiveGasPrice != null ? BigInt(receipt.effectiveGasPrice) : null,
-      status: toDbTxStatus(receipt),
-      type: toDbTxType(tx.type),
-      nonce: tx.nonce != null ? BigInt(tx.nonce) : null,
-      inputData: tx.input ?? null,
-      logsCount: receipt?.logs?.length ?? 0,
-      contractAddress: receipt?.contractAddress ?? null,
-      cumulativeGasUsed:
-        receipt?.cumulativeGasUsed != null ? BigInt(receipt.cumulativeGasUsed) : null,
+      ...toStoredRow(chainId, tx, receipt ?? null),
       timestamp,
       indexedAt: new Date(),
     };
@@ -240,23 +305,47 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
         return;
       }
 
-      const receipts = await Promise.all(
-        block.transactions.map(tx =>
-          client
-            .getTransactionReceipt({
-              hash: typeof tx === 'string' ? (tx as `0x${string}`) : tx.hash,
-            })
-            .catch(() => null),
-        ),
+      // A block header can name its transactions without their bodies
+      // (includeTransactions silently downgrades on some providers) — the
+      // indexer indexes what it can read, and never invents the rest.
+      const readable = block.transactions.filter(
+        (tx): tx is Exclude<typeof tx, string> => typeof tx !== 'string',
       );
+      if (readable.length === 0) {
+        logger.warn(
+          { chainId, blockNumber },
+          'Block returned transaction hashes only; receipts cannot be read',
+        );
+        return;
+      }
 
-      for (let i = 0; i < block.transactions.length; i++) {
-        const tx = block.transactions[i];
-        const receipt = receipts[i];
+      // One unreadable receipt is not a transaction with no receipt: the
+      // same rule the hash path follows (retry once, then report). The
+      // transactions whose receipts DO resolve are still indexed — a
+      // provider hiccup on one of them must not drop the rest.
+      const outcomes = await Promise.all(readable.map(tx => readReceiptOutcome(client, tx.hash)));
+      let unreadable = 0;
+      for (let i = 0; i < readable.length; i++) {
+        const tx = readable[i];
+        const outcome = outcomes[i];
 
-        if (typeof tx !== 'string') {
-          await indexTransaction(chainId, tx, receipt);
+        if (outcome.kind === 'failed') {
+          logger.warn(
+            { err: outcome.error, chainId, blockNumber, hash: tx.hash },
+            'Transaction receipt could not be read; leaving it unindexed',
+          );
+          unreadable += 1;
+          continue;
         }
+        if (outcome.kind === 'pending') continue;
+
+        await indexTransaction(chainId, tx, outcome.receipt);
+      }
+      if (unreadable > 0) {
+        logger.warn(
+          { chainId, blockNumber, unreadable },
+          'Block indexed with unreadable receipts; those transactions are absent, not empty',
+        );
       }
     } catch (error) {
       console.error(`Failed to index transactions for block ${blockNumber}:`, error);
@@ -279,16 +368,43 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
         }
 
         const client = await rpcManager.getClient(chainId);
-        const [tx, receipt] = await Promise.all([
-          client.getTransaction({ hash: txHash as `0x${string}` }),
-          client.getTransactionReceipt({ hash: txHash as `0x${string}` }).catch(() => null),
-        ]);
+        const tx = await client.getTransaction({ hash: txHash as `0x${string}` });
+        const outcome = await readReceiptOutcome(client, txHash as `0x${string}`);
 
-        const transaction = await indexTransaction(chainId, tx, receipt);
-        return transaction;
+        if (outcome.kind === 'failed') {
+          // Report it. Swallowing into `null` is what turned one dropped
+          // read into a 404 for a transaction that exists; persisting a
+          // null receipt is worse, because that row claims status=NULL /
+          // logsCount=0 and short-circuits every later read of the hash.
+          throw outcome.error instanceof Error
+            ? outcome.error
+            : new Error('Failed to read transaction receipt', { cause: outcome.error });
+        }
+
+        if (outcome.kind === 'pending') {
+          // A pending transaction is a real answer with NO receipt facts.
+          // Nothing is cached: a stored row could never learn them later
+          // (the read short-circuits on any stored row), so the "no
+          // receipt" verdict would outlive the transaction's mining.
+          return formatTransaction({
+            ...toStoredRow(chainId, tx, null),
+            timestamp: null,
+            indexedAt: null,
+          });
+        }
+
+        return await indexTransaction(chainId, tx, outcome.receipt);
       } catch (error) {
-        console.error(`Failed to get transaction ${txHash}:`, error);
-        return null;
+        logger.error({ err: error, chainId, txHash }, 'Failed to get transaction');
+        if (isReceiptNotFound(error)) {
+          // viem's transaction-not-found is DATA, and the ONLY answer that
+          // may map to the route's 404.
+          return null;
+        }
+        // A read that could not be completed is not a transaction that
+        // does not exist. /api/search renders the rejection as its honest
+        // degraded verdict; the hash route answers 500.
+        throw error;
       }
     },
 
@@ -327,9 +443,19 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
             .limit(limit)
             .offset(offset);
 
+          // The count above was taken BEFORE indexing, so it described an
+          // empty block. Re-read it: `total` is the block's transaction
+          // count, not the length of the page just served (which is capped
+          // by `limit` and hid every later transaction of a busy block
+          // from pagination).
+          const indexedCount = await db
+            .select({ count: sql<number>`count(*)` })
+            .from(transactions)
+            .where(and(eq(transactions.chainId, chainId), eq(transactions.blockNumber, blockNumber)));
+
           return {
             transactions: newTransactions.map(tx => formatTransaction(tx)),
-            total: newTransactions.length,
+            total: Number(indexedCount[0]?.count ?? 0),
           };
         }
 
