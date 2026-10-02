@@ -1136,15 +1136,38 @@ export const IndexingRangeManager: React.FC<Props> = ({
     if (overlapGate?.source === 'quick') return 'Create anyway';
     return 'Create';
   };
+  // How many blocks of `range` are actually indexed, from the walked
+  // checkpoint. InCLUSIVE, clipped into the range bounds and saturated at
+  // the full span — the two corrections the old arithmetic lacked, and the
+  // exact semantics computeIndexingCoverage (EventStatistics) already
+  // uses for its coverage union:
+  //
+  //  - the walk checkpoints the LAST COVERED block, so a completed range
+  //    reads +1 (a 0-block range is 1 covered block; the backend's
+  //    `currentBlock - fromBlock` claimed 0);
+  //  - the walk steps by BATCH_SIZE, so the final checkpoint can sit past
+  //    the end bound (last full batch below 100, then a clamped one) —
+  //    unbounded, that rendered e.g. 199% for a completed range.
+  const coveredBlocksOf = (range: IndexingRange): number => {
+    // Presence, not truthiness: `currentBlock` is `bigint | null`, and 0n
+    // is a real walked position (a backward range that reached genesis),
+    // not "progress unknown".
+    if (range.currentBlock === null || range.currentBlock === undefined) return 0;
+    const from = Number(range.fromBlock);
+    const to = Number(range.toBlock);
+    const spanBlocks = to - from + 1;
+    if (spanBlocks <= 0) return 0;
+    const current = Math.min(Math.max(Number(range.currentBlock), from), to);
+    // A forward walk covers fromBlock..current; a backward one covers
+    // current..toBlock.
+    const covered =
+      range.direction === 'backward' ? to - current + 1 : current - from + 1;
+    return Math.min(spanBlocks, covered);
+  };
   const calculateProgress = (range: IndexingRange): number => {
-    if (!range.currentBlock) return 0;
     const totalBlocks = Number(range.toBlock) - Number(range.fromBlock) + 1;
     if (totalBlocks <= 0) return 0;
-    const currentIndexed =
-      range.direction === 'forward'
-        ? Number(range.currentBlock) - Number(range.fromBlock) + 1
-        : Number(range.toBlock) - Number(range.currentBlock) + 1;
-    return Math.round((currentIndexed / totalBlocks) * 100);
+    return Math.round((coveredBlocksOf(range) / totalBlocks) * 100);
   };
   const getStatusLabel = (status: RangeStatus): string => {
     const labels: Record<RangeStatus, string> = {
@@ -1398,15 +1421,17 @@ export const IndexingRangeManager: React.FC<Props> = ({
                         suffix is indexing-only (live rate) and only once the
                         sampled window supports one; nothing renders while
                         the estimate is still forming. */}
-                    {CHECKPOINTED_RANGE_STATUSES.has(range.status) && range.currentBlock && (
-                      <>
-                        Progress: {calculateProgress(range)}%
-                        {range.direction === 'forward'
-                          ? `(${formatBlock(range.currentBlock)} / ${formatBlock(range.toBlock)})`
-                          : `(${formatBlock(range.fromBlock)} / ${formatBlock(range.currentBlock)})`}
-                        {etaText !== null && ` — ${etaText}`}
-                      </>
-                    )}
+                    {CHECKPOINTED_RANGE_STATUSES.has(range.status) &&
+                      range.currentBlock !== null &&
+                      range.currentBlock !== undefined && (
+                        <>
+                          Progress: {calculateProgress(range)}%
+                          {range.direction === 'forward'
+                            ? `(${formatBlock(range.currentBlock)} / ${formatBlock(range.toBlock)})`
+                            : `(${formatBlock(range.fromBlock)} / ${formatBlock(range.currentBlock)})`}
+                          {etaText !== null && ` — ${etaText}`}
+                        </>
+                      )}
                     {range.totalEventsIndexed > 0 && (
                       <span>{range.totalEventsIndexed.toLocaleString()} events indexed</span>
                     )}

@@ -66,6 +66,17 @@ const createBlockService = (deps: BlockServiceDeps) => {
     return Number.isNaN(parsed.getTime()) ? undefined : parsed;
   };
 
+  // A stored quantity mapped onto the API row: 0 is a VALUE, so only
+  // null/undefined (and a non-finite read) mean "not recorded". The
+  // integer columns reach this as numbers, but the adapter can hand back
+  // a decimal string for an integer column, so both are accepted — and a
+  // fractional read is dropped rather than served as a count.
+  const toNumberOrUndefined = (value: unknown): number | undefined => {
+    if (value === null || value === undefined || value === '') return undefined;
+    const parsed = typeof value === 'number' ? value : Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  };
+
   const formatBlock = (dbBlock: Record<string, unknown>): Block => {
     const get = (camel: string, snake: string) => dbBlock[camel] ?? dbBlock[snake];
     return {
@@ -84,8 +95,17 @@ const createBlockService = (deps: BlockServiceDeps) => {
       baseFeePerGas: get('baseFeePerGas', 'base_fee_per_gas')
         ? BigInt(get('baseFeePerGas', 'base_fee_per_gas') as string)
         : undefined,
-      transactionCount: (get('transactionCount', 'transaction_count') as number) || undefined,
-      sizeBytes: (get('sizeBytes', 'size_bytes') as number) || undefined,
+      // `get(...) ? x : undefined` on these two would delete a REAL 0:
+      // transaction_count is an integer column written as
+      // `transactions.length`, so an empty block stores 0 and the mapper
+      // used to report it as absent — a blank Txs cell in the blocks
+      // list, "View  Transactions" on the detail page, and an
+      // InternalTxnsSection whose `transactionCount === 0` branch never
+      // ran. Only null/undefined mean "not recorded". (The BIGNUM
+      // columns above get away with the truthiness form only because a
+      // bignum zero arrives as the truthy string "0".)
+      transactionCount: toNumberOrUndefined(get('transactionCount', 'transaction_count')),
+      sizeBytes: toNumberOrUndefined(get('sizeBytes', 'size_bytes')),
       difficulty: (get('difficulty', 'difficulty') as string) || undefined,
       totalDifficulty: (get('totalDifficulty', 'total_difficulty') as string) || undefined,
       extraData: (get('extraData', 'extra_data') as string) || undefined,
