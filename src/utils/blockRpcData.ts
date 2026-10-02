@@ -2,6 +2,7 @@ import { type Block, type TransactionReceipt, type Address, type Hex } from 'vie
 import { recoverAuthorizationAddress } from 'viem/utils';
 import { createRpcClient } from './realTimeData';
 import { decodeTokenTransfersFromLogs, type DecodedTokenTransfer } from './tokenTransferDecode';
+import { withOneRetry } from './rpcReadRetry';
 
 export type RpcBlock = {
   number: string;
@@ -260,25 +261,11 @@ const withRecoveredAuthorities = async (tx: RpcTransaction): Promise<RpcTransact
   return { ...tx, authorizationList: entries };
 };
 
-// One retry for an idempotent read. Public RPCs drop a single getBlock or
-// getReceipt under load; retrying once converts most transient failures into
-// data. A failure that survives the retry is REAL and must be reported — the
-// old `.catch(() => [])` / `.catch(() => null)` turned it into "this block is
-// empty", which the paginated transaction walk then paged past (losing those
-// transactions for good) and the Home feed rendered as a shorter list.
-const withOneRetry = async <T>(read: () => Promise<T>): Promise<T> => {
-  try {
-    return await read();
-  } catch (firstError) {
-    try {
-      return await read();
-    } catch (error) {
-      throw error instanceof Error && error.cause === undefined
-        ? Object.assign(error, { cause: firstError })
-        : error;
-    }
-  }
-};
+// The one-retry rule for idempotent reads lives in utils/rpcReadRetry
+// (shared with the address discovery walk) — a failure that survives the
+// retry is REAL and must be reported, never laundered into "this block is
+// empty" that a paginated walk then pages past (losing those transactions
+// for good).
 
 // viem's getTransactionReceipt for a transaction that is not mined yet
 // rejects with TransactionReceiptNotFoundError. That answer is DATA ("no
