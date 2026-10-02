@@ -546,6 +546,34 @@ type RangeSummary = {
   progress: number;
 };
 
+/**
+ * Blocks of one range actually indexed, from the walked checkpoint.
+ *
+ * The walk persists the LAST block a batch covered (batchTo going forward,
+ * batchFrom going backward), so the count is INCLUSIVE of `currentBlock`
+ * and direction-aware — the same shape as the frontend's coveredBlocksOf
+ * and EventStatistics' coverage union. The old
+ * `currentBlock - fromBlock` undercounted one block per range (a
+ * checkpoint at block 0 counted nothing at all), which fed both the
+ * per-range percentage and the aggregate indexed-block total.
+ *
+ * Clipped into the range bounds: an aborted forward walk persists a
+ * checkpoint already stepped past the end bound.
+ */
+const walkedBlockCount = (range: {
+  fromBlock: unknown;
+  toBlock: unknown;
+  currentBlock: bigint | null;
+  direction: string;
+}): number => {
+  if (range.currentBlock === null) return 0;
+  const from = Number(range.fromBlock);
+  const to = Number(range.toBlock);
+  const current = Math.min(Math.max(Number(range.currentBlock), from), to);
+  const covered = range.direction === 'backward' ? to - current + 1 : current - from + 1;
+  return Math.max(0, covered);
+};
+
 export const getIndexingStatus = async (
   chainId: number,
   address: `0x${string}`,
@@ -628,55 +656,44 @@ export const getIndexingStatus = async (
     const fromBlock = Number(r.fromBlock);
     const toBlock = Number(r.toBlock);
     const currentBlock = r.currentBlock !== null ? Number(r.currentBlock) : null;
-    const rangeSize = toBlock - fromBlock;
+    // Block numbers are INCLUSIVE on both ends: a range from 0 to 0 covers
+    // one block, not zero. The old `to - from` denominator is why a
+    // completed range could never reach 100% and why the weighted average
+    // below drifted against its own numerator (walkedBlockCount counts the
+    // checkpoint itself).
+    const spanBlocks = toBlock - fromBlock + 1;
 
     totalRanges++;
-    totalBlocks += rangeSize;
+    totalBlocks += Math.max(0, spanBlocks);
 
     switch (r.status) {
       case 'completed':
         completedRanges++;
-        indexedBlocks += rangeSize;
+        indexedBlocks += Math.max(0, spanBlocks);
         break;
       case 'indexing':
         indexingRangesCount++;
-        if (currentBlock !== null) {
-          const progress =
-            r.direction === 'forward' ? currentBlock - fromBlock : toBlock - currentBlock;
-          indexedBlocks += Math.max(0, progress);
-        }
+        indexedBlocks += walkedBlockCount(r);
         break;
       case 'pending':
         pendingRanges++;
         break;
       case 'paused':
         pausedRanges++;
-        if (currentBlock !== null) {
-          const progress =
-            r.direction === 'forward' ? currentBlock - fromBlock : toBlock - currentBlock;
-          indexedBlocks += Math.max(0, progress);
-        }
+        indexedBlocks += walkedBlockCount(r);
         break;
       case 'error':
         errorRanges++;
-        if (currentBlock !== null) {
-          const progress =
-            r.direction === 'forward' ? currentBlock - fromBlock : toBlock - currentBlock;
-          indexedBlocks += Math.max(0, progress);
-        }
+        indexedBlocks += walkedBlockCount(r);
         break;
     }
 
-    const progress =
-      rangeSize > 0
-        ? (() => {
-            if (r.status === 'completed') return 100;
-            if (currentBlock === null) return 0;
-            const completed =
-              r.direction === 'forward' ? currentBlock - fromBlock : toBlock - currentBlock;
-            return Math.min(100, Math.max(0, (completed / rangeSize) * 100));
-          })()
-        : 0;
+    const progress = (() => {
+      if (spanBlocks <= 0) return 0;
+      if (r.status === 'completed') return 100;
+      if (currentBlock === null) return 0;
+      return Math.min(100, Math.max(0, (walkedBlockCount(r) / spanBlocks) * 100));
+    })();
 
     return {
       rangeId: r.rangeId,
