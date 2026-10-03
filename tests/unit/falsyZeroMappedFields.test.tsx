@@ -120,7 +120,7 @@ describe('BlockService.formatBlock — a stored zero is a value, not an absence'
     const service = makeBlockService(emptyBlockRow);
 
     const block = await service.getBlockByNumber(CHAIN_ID, 0n);
-    const payload = formatBlockForApi(block as unknown as Record<string, unknown>);
+    const payload = formatBlockForApi(block);
 
     // The key must EXIST: views/Blocks/List renders `{block.transactionCount}`
     // and InternalTxnsSection branches on `transactionCount === 0`.
