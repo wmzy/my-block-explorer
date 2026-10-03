@@ -986,6 +986,13 @@ const clientSideSort = (
   return result.sortedData;
 };
 
+// The events route caps pageSize at 1000 (routes/events.ts), and the
+// client-side-sort threshold is the same 1000. A total above that cap
+// therefore cannot be fetched whole, so the branch falls back to
+// server-side pagination (see shouldUseClientSideSort) rather than
+// promising a set it cannot hold.
+const EVENT_CLIENT_SORT_MAX_PAGE_SIZE = 1000;
+
 const paginateData = (data: EventData[], page: number, limit: number): EventData[] => {
   const startIndex = (page - 1) * limit;
   const endIndex = startIndex + limit;
@@ -1399,8 +1406,17 @@ export const EventTable: React.FC<EventTableProps> = ({
   // Determine if we should use client-side sorting
   // Use pagination.total (server-reported count) instead of allEvents.length (loaded data)
   // This prevents incorrect total count when only a page of data is loaded
+  //
+  // The branch also has to be a set it can actually HOLD: it paginates and
+  // sorts locally, so the whole reported total must fit in one server
+  // response. The events route caps pageSize at 1000, so a total above
+  // that can never be fetched whole — that case stays server-paginated
+  // rather than silently rendering an unreachable last page.
   const shouldUseClientSideSort =
-    enableClientSideSort && pagination.total > 0 && pagination.total <= clientSideSortThreshold;
+    enableClientSideSort &&
+    pagination.total > 0 &&
+    pagination.total <= clientSideSortThreshold &&
+    pagination.total <= EVENT_CLIENT_SORT_MAX_PAGE_SIZE;
 
   // Request-race guard: every fetchEvents call stamps itself with the
   // current (monotonic) id, and each async setState below is gated on the
@@ -1413,16 +1429,28 @@ export const EventTable: React.FC<EventTableProps> = ({
 
   // API call function
   const fetchEvents = useCallback(
-    async (cursor?: string, targetPage?: number) => {
+    async (cursor?: string, targetPage?: number, totalOverride?: number) => {
       const requestId = ++requestIdRef.current;
       setLoading(true);
       setError(null);
 
       try {
         const currentPage = targetPage ?? pagination.page;
+        // The client-side branch paginates and sorts the rows it HOLDS,
+        // and its threshold is the server-reported total — so the request
+        // must cover that whole set. Asking for `pagination.limit` (50)
+        // left `allEvents` holding one truncated server page while
+        // `total` reported more: with 60 events the footer read
+        // "Page 1 / 2", Next only bumped the page number, and page 2
+        // sliced rows 50..60 out of a 50-row array — an empty page whose
+        // last 10 events were unreachable. Server-side pagination keeps
+        // asking for one page, which is all it renders.
+        const pageSize = totalOverride ?? (shouldUseClientSideSort
+          ? Math.min(Math.max(pagination.total, 1), EVENT_CLIENT_SORT_MAX_PAGE_SIZE)
+          : pagination.limit);
         const queryParams = new URLSearchParams({
           page: currentPage.toString(),
-          pageSize: pagination.limit.toString(),
+          pageSize: pageSize.toString(),
           sort: sort.direction,
           sortBy: sort.field,
         });
@@ -1508,6 +1536,28 @@ export const EventTable: React.FC<EventTableProps> = ({
           return { ...args, ...e, blockTimestamp } as EventData;
         });
 
+        const reportedTotal = data.total ?? data.events.length;
+        // The client-side branch can only paginate the rows it HOLDS, and
+        // the total is only known from this response — the mount request
+        // could not have been sized by it. When the answer says the set
+        // spans more than one page and the whole set fits the branch's
+        // threshold, re-issue at full width exactly once so `allEvents`
+        // really is the set the footer counts. A short first page
+        // (reportedTotal > pageSize) is the trigger; the widened request
+        // returns pageSize === reportedTotal, so this cannot loop.
+        if (
+          !cursor &&
+          targetPage === undefined &&
+          currentPage === 1 &&
+          enableClientSideSort &&
+          reportedTotal > pageSize &&
+          reportedTotal <= Math.min(clientSideSortThreshold, EVENT_CLIENT_SORT_MAX_PAGE_SIZE)
+        ) {
+          setPagination(prev => ({ ...prev, total: reportedTotal }));
+          void fetchEvents(undefined, 1, reportedTotal);
+          return;
+        }
+
         if (cursor) {
           setAllEvents(prev => [...prev, ...normalizedEvents]);
         } else {
@@ -1516,7 +1566,7 @@ export const EventTable: React.FC<EventTableProps> = ({
 
         setPagination(prev => ({
           ...prev,
-          total: data.total ?? data.events.length,
+          total: reportedTotal,
           hasMore: (data.page ?? 1) < (data.totalPages ?? 1),
           totalPages: data.totalPages,
         }));
@@ -1537,6 +1587,12 @@ export const EventTable: React.FC<EventTableProps> = ({
       contractAddress,
       pagination.page,
       pagination.limit,
+      // The client-side branch's page size is derived from the reported
+      // total, and the widened re-issue reads the threshold/cap, so all
+      // three must be able to re-create this request.
+      pagination.total,
+      shouldUseClientSideSort,
+      clientSideSortThreshold,
       sort,
       filters,
       enableMultiSort,
