@@ -876,7 +876,7 @@ export class ContractSourceService {
         }
         const remote = await this.fetchFromSourcify(chainId, address, state);
         if (remote) {
-          await this.saveToDatabase(remote);
+          await this.cacheSource(remote);
           return this.enhanceWithProxyInfo(remote, undefined, state);
         }
         await this.refreshManualMark(chainId, address);
@@ -893,13 +893,13 @@ export class ContractSourceService {
 
       const sourcifyResult = await this.fetchFromSourcify(chainId, address, state);
       if (sourcifyResult) {
-        await this.saveToDatabase(sourcifyResult);
+        await this.cacheSource(sourcifyResult);
         return this.enhanceWithProxyInfo(sourcifyResult, undefined, state);
       }
 
       const blockscanResult = await this.fetchFromBlockscan(chainId, address);
       if (blockscanResult) {
-        await this.saveToDatabase(blockscanResult);
+        await this.cacheSource(blockscanResult);
         return this.enhanceWithProxyInfo(blockscanResult, undefined, state);
       }
 
@@ -937,7 +937,7 @@ export class ContractSourceService {
         verificationSource: 'unknown',
         lastChecked: new Date(),
       };
-      await this.saveToDatabase(unverifiedContract);
+      await this.cacheSource(unverifiedContract);
       return unverifiedContract;
     } catch (error) {
       // Rethrow, do NOT return null. null is this method's one factual
@@ -1756,6 +1756,28 @@ export class ContractSourceService {
       // unhappy. Malformed stored JSON above still degrades on its own.
       logger.error({ err: error }, 'Database query error');
       throw error;
+    }
+  }
+
+  // The READ path's cache write. A source that was just fetched from a
+  // verifier is an ANSWER; persisting it is an optimization. If the row
+  // write fails (a locked store, a conversion error on one column) the
+  // request must still serve what it read — before this, the rejection
+  // escaped getContractSource and routes/contracts.ts answered 500
+  // 'Failed to get contract source' for a contract whose verified ABI the
+  // verifier had just returned, even though the next request would have
+  // re-fetched it happily. The explicit write APIs
+  // (saveManualVerification / saveLocalCompileVerification) keep calling
+  // saveToDatabase directly: there the row IS the requested result, so a
+  // failed write must be reported, not swallowed.
+  private async cacheSource(contractSource: ContractSource): Promise<void> {
+    try {
+      await this.saveToDatabase(contractSource);
+    } catch (error) {
+      logger.warn(
+        { err: error, chainId: contractSource.chainId, address: contractSource.address },
+        'Failed to cache contract source; serving the fetched answer',
+      );
     }
   }
 

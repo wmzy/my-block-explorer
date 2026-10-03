@@ -117,21 +117,21 @@ const createBlockService = (deps: BlockServiceDeps) => {
     };
   };
 
-  const indexBlock = async (
-    chainId: number,
-    chainBlock: Record<string, unknown>,
-  ): Promise<Block> => {
-    // SECONDS, matching the column's customType. The old code passed a Date
-    // in, which toDriver (db-types.ts) only stringifies — landing as a
-    // local-format "Wed Oct 01 2025 21:20:23 GMT+0800 …" string that
-    // DuckDB rejects outright ("Could not convert string … to INT64"), so
-    // indexing any block threw. viem's block timestamp is already seconds.
+  // The row an RPC block would be stored as. Factored out of indexBlock so
+  // the read path can answer from the same mapping WITHOUT the cache write.
+  //
+  // SECONDS, matching the `timestamp` column's customType. The old code
+  // passed a Date in, which toDriver (db-types.ts) only stringifies —
+  // landing as a local-format "Wed Oct 01 2025 21:20:23 GMT+0800 …" string
+  // that DuckDB rejects outright ("Could not convert string … to INT64"),
+  // so indexing any block threw. viem's block timestamp is already seconds.
+  const buildBlockValues = (chainId: number, chainBlock: Record<string, unknown>) => {
     const blockTimestampSeconds =
       chainBlock.timestamp === null || chainBlock.timestamp === undefined
         ? null
         : Number(chainBlock.timestamp);
 
-    const values = {
+    return {
       chainId,
       number: chainBlock.number?.toString() ?? '0',
       hash: chainBlock.hash as string,
@@ -151,6 +151,13 @@ const createBlockService = (deps: BlockServiceDeps) => {
       transactionsRoot: (chainBlock.transactionsRoot as string) ?? null,
       receiptsRoot: (chainBlock.receiptsRoot as string) ?? null,
     };
+  };
+
+  const indexBlock = async (
+    chainId: number,
+    chainBlock: Record<string, unknown>,
+  ): Promise<Block> => {
+    const values = buildBlockValues(chainId, chainBlock);
 
     await db
       .insert(blocks)
@@ -181,6 +188,28 @@ const createBlockService = (deps: BlockServiceDeps) => {
     const row = inserted[0];
     if (!row) throw new Error('Failed to insert block');
     return formatBlock(row);
+  };
+
+  // The READ path's cache write. A block that was just read from the RPC is
+  // an ANSWER; indexing it is an optimization. Before this, the rejection
+  // escaped the read path's catch, which answers `null` — and routes/blocks
+  // renders `null` as a 404 "Block not found" for a block whose header the
+  // RPC had just returned (and which a later request would index happily).
+  // The mapping is shared with the write path, so the answer is identical
+  // whether or not the row landed.
+  const cacheBlock = async (
+    chainId: number,
+    chainBlock: Record<string, unknown>,
+  ): Promise<Block> => {
+    try {
+      return await indexBlock(chainId, chainBlock);
+    } catch (error) {
+      logErr(error, 'BlockService.cacheBlock', {
+        chainId,
+        blockNumber: String(chainBlock.number ?? ''),
+      });
+      return formatBlock(buildBlockValues(chainId, chainBlock));
+    }
   };
 
   const service = {
@@ -223,7 +252,7 @@ const createBlockService = (deps: BlockServiceDeps) => {
         }, chainId);
 
         const latestBlock = await fetchLatestBlock();
-        const block: Block = await indexBlock(chainId, latestBlock);
+        const block: Block = await cacheBlock(chainId, latestBlock);
 
         blockCache.set(cacheKey, block, 15000);
         return block;
@@ -251,8 +280,7 @@ const createBlockService = (deps: BlockServiceDeps) => {
           includeTransactions: false,
         });
 
-        const block = await indexBlock(chainId, chainBlock);
-        return block;
+        return await cacheBlock(chainId, chainBlock);
       } catch (error) {
         logErr(error, 'BlockService.getBlockByNumber', {
           chainId,
@@ -280,8 +308,7 @@ const createBlockService = (deps: BlockServiceDeps) => {
           includeTransactions: false,
         });
 
-        const block = await indexBlock(chainId, chainBlock);
-        return block;
+        return await cacheBlock(chainId, chainBlock);
       } catch (error) {
         logErr(error, 'BlockService.getBlockByHash', { chainId, blockHash });
         return null;

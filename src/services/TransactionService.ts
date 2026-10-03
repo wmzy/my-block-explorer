@@ -260,21 +260,33 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
       receipt?.cumulativeGasUsed != null ? BigInt(receipt.cumulativeGasUsed) : null,
   });
 
+  // The row a transaction would be stored as. Factored out of
+  // indexTransaction so the read path can answer from the same mapping
+  // WITHOUT the cache write.
+  const buildTransactionValues = async (
+    chainId: number,
+    tx: ViemTransaction,
+    receipt: TransactionReceipt | null | undefined,
+    indexedAt: Date | null,
+  ) => {
+    const timestamp = receipt?.blockNumber
+      ? await getBlockTimestamp(chainId, BigInt(receipt.blockNumber))
+      : null;
+
+    return {
+      ...toStoredRow(chainId, tx, receipt ?? null),
+      timestamp,
+      indexedAt,
+    };
+  };
+
   const indexTransaction = async (
     chainId: number,
     tx: ViemTransaction,
     receipt?: TransactionReceipt | null,
   ): Promise<Transaction> => {
-    const timestamp = receipt?.blockNumber
-      ? await getBlockTimestamp(chainId, BigInt(receipt.blockNumber))
-      : null;
-
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const transactionData: any = {
-      ...toStoredRow(chainId, tx, receipt ?? null),
-      timestamp,
-      indexedAt: new Date(),
-    };
+    const transactionData: any = await buildTransactionValues(chainId, tx, receipt, new Date());
 
     await db
       .insert(transactions)
@@ -291,6 +303,30 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
       .limit(1);
 
     return formatTransaction(inserted[0]);
+  };
+
+  // The READ path's cache write. A transaction that was just read from the
+  // chain (and whose receipt resolved) is an ANSWER; storing it is an
+  // optimization. Before this, a failed INSERT escaped into
+  // getTransactionByHash's catch, which rethrew — the route answered 500
+  // for a transaction it had in hand, and the only recoverable thing about
+  // the request (the row write) decided the outcome. The fallback formats
+  // the same mapping in memory, so the answer is identical whether or not
+  // the row landed; the next request simply re-fetches.
+  const cacheTransaction = async (
+    chainId: number,
+    tx: ViemTransaction,
+    receipt?: TransactionReceipt | null,
+  ): Promise<Transaction> => {
+    try {
+      return await indexTransaction(chainId, tx, receipt);
+    } catch (error) {
+      logger.warn(
+        { err: error, chainId, hash: tx.hash },
+        'Failed to cache transaction; serving the fetched transaction',
+      );
+      return formatTransaction(await buildTransactionValues(chainId, tx, receipt, null));
+    }
   };
 
   const indexBlockTransactions = async (chainId: number, blockNumber: bigint): Promise<void> => {
@@ -393,7 +429,7 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
           });
         }
 
-        return await indexTransaction(chainId, tx, outcome.receipt);
+        return await cacheTransaction(chainId, tx, outcome.receipt);
       } catch (error) {
         logger.error({ err: error, chainId, txHash }, 'Failed to get transaction');
         if (isReceiptNotFound(error)) {
