@@ -350,7 +350,13 @@ const formatTransaction = (
 
 /**
  * Fetch the latest N blocks directly from RPC.
- * Paginates by walking backwards from the latest block number.
+ *
+ * Paginates by walking backwards from the latest block number. `beforeBlock`
+ * is an EXCLUSIVE upper bound (the transaction walk's cursor convention):
+ * the newest block in the page is `beforeBlock - 1`, so the caller can hand
+ * over an already-seen block's own number + 1 — or the head + 1 for page 1 —
+ * without re-reading a block and without ever asking the RPC for a block
+ * above the head. Omit it for the head page, which starts at the chain head.
  */
 export const getLatestBlocks = async (
   chainId: number,
@@ -358,7 +364,15 @@ export const getLatestBlocks = async (
   beforeBlock?: bigint,
 ): Promise<{ blocks: RpcBlock[]; latestBlockNumber: bigint }> => {
   const client = await createRpcClient(chainId);
-  const latestBlockNumber = beforeBlock ?? (await client.getBlockNumber());
+  // The newest block of the page: the head without a cursor, one below the
+  // exclusive bound with one. Clamped at genesis so a cursor at or below 1n
+  // yields the block-0 page rather than a negative number.
+  const latestBlockNumber =
+    beforeBlock === undefined
+      ? await client.getBlockNumber()
+      : beforeBlock > 1n
+        ? beforeBlock - 1n
+        : 0n;
 
   const startBlock = latestBlockNumber;
   const endBlock = startBlock - BigInt(count - 1) > 0n ? startBlock - BigInt(count - 1) : 0n;
