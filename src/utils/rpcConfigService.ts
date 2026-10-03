@@ -136,7 +136,14 @@ export async function testRpcConnection(
           supportsHistory = !historicalData.error && historicalData.result;
         }
 
-        // Test event query ranges
+        // Test event query ranges. The reported number must be the window
+        // the node actually SERVED, not the ladder step it was derived
+        // from: `fromBlock` is clamped at 1, so on a chain shorter than
+        // the step the probe is narrower than the step (head 5000 with the
+        // 10000 step probes only 5000 blocks) and the inclusive window is
+        // `range + 1`. Reporting the step stored a capability larger than
+        // the one that answered — the RPC modal persists it as the chain's
+        // maxEventRange and renders it as "Recommended event range".
         if (supportsHistory) {
           const testRanges = [10000, 5000, 2000, 1000, 500];
           for (const range of testRanges) {
@@ -164,7 +171,10 @@ export async function testRpcConnection(
               if (logsResponse.ok) {
                 const logsData = await logsResponse.json();
                 if (!logsData.error) {
-                  maxEventRange = range;
+                  // fromBlock is INCLUSIVE and so is toBlock, so the
+                  // width is `to - from + 1` — exactly the window the node
+                  // just served, whether the clamp narrowed it or not.
+                  maxEventRange = currentBlock - fromBlock + 1;
                   break;
                 }
               }
