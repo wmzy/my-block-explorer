@@ -37,7 +37,9 @@ export function formatFixedDecimals(
   const scale = 10n ** BigInt(fractionDigits);
   const whole = scaled / scale;
   const fraction = scaled % scale;
-  return `${negative ? '-' : ''}${whole}.${fraction.toString().padStart(fractionDigits, '0')}`;
+  const fractionText = fraction.toString().padStart(fractionDigits, '0');
+  // No dot at zero displayed digits: "123", never "123.0".
+  return `${negative ? '-' : ''}${whole}${fractionDigits > 0 ? `.${fractionText}` : ''}`;
 }
 
 /**
@@ -54,13 +56,19 @@ export function formatFixedDecimals(
  */
 export function formatEth(value: bigint | string, decimals = 4): string {
   const wei = BigInt(value);
-  if (wei === 0n) return decimals === 0 ? '0' : `0.${'0'.repeat(decimals)}`;
-  if (decimals === 0) return formatFixedDecimals(wei, 18, 0) ?? '';
-  // 1/10^decimals native unit in wei — the display floor, compared exactly.
-  if (wei > 0n && wei < 10n ** BigInt(18 - decimals)) {
-    return `<0.${'0'.repeat(decimals - 1)}1`;
+  // Display precision is capped at the native unit's 18 digits: more
+  // asks for sub-wei precision that does not exist (and a negative
+  // BigInt exponent throws). Non-integer input falls back to the
+  // default precision; negative or over-18 input clamps into range.
+  const precision =
+    Number.isInteger(decimals) ? Math.min(Math.max(decimals, 0), 18) : 4;
+  if (wei === 0n) return precision === 0 ? '0' : `0.${'0'.repeat(precision)}`;
+  if (precision === 0) return formatFixedDecimals(wei, 18, 0) ?? '';
+  // 1/10^precision native unit in wei — the display floor, compared exactly.
+  if (wei > 0n && wei < 10n ** BigInt(18 - precision)) {
+    return `<0.${'0'.repeat(precision - 1)}1`;
   }
-  return formatFixedDecimals(wei, 18, decimals) ?? '';
+  return formatFixedDecimals(wei, 18, precision) ?? '';
 }
 
 // Shared native-token value display for the tx surfaces (Home feed, tx

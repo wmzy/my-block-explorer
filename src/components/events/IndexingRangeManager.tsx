@@ -1424,14 +1424,14 @@ export const IndexingRangeManager: React.FC<Props> = ({
                     {CHECKPOINTED_RANGE_STATUSES.has(range.status) &&
                       range.currentBlock !== null &&
                       range.currentBlock !== undefined && (
-                        <>
-                          Progress: {calculateProgress(range)}%
-                          {range.direction === 'forward'
-                            ? `(${formatBlock(range.currentBlock)} / ${formatBlock(range.toBlock)})`
-                            : `(${formatBlock(range.fromBlock)} / ${formatBlock(range.currentBlock)})`}
-                          {etaText !== null && ` — ${etaText}`}
-                        </>
-                      )}
+                      <>
+                        Progress: {calculateProgress(range)}%
+                        {range.direction === 'forward'
+                          ? `(${formatBlock(range.currentBlock)} / ${formatBlock(range.toBlock)})`
+                          : `(${formatBlock(range.fromBlock)} / ${formatBlock(range.currentBlock)})`}
+                        {etaText !== null && ` — ${etaText}`}
+                      </>
+                    )}
                     {range.totalEventsIndexed > 0 && (
                       <span>{range.totalEventsIndexed.toLocaleString()} events indexed</span>
                     )}

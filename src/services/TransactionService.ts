@@ -2,6 +2,7 @@ import { db, transactions, blocks } from '../database/init';
 import { eq, and, sql, count } from 'drizzle-orm';
 import { rpcManager } from './RpcManager';
 import { withOneRetry } from '../utils/rpcReadRetry';
+import { secondsToDate } from '../utils/dbTime';
 import { createLogger } from '../server/logger';
 import type { Address, Transaction as ViemTransaction, TransactionReceipt } from 'viem';
 
@@ -89,21 +90,6 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
     } catch (error) {
       return { kind: 'failed', error };
     }
-  };
-
-  // The `timestamp` column is the repo's unix-SECONDS customType
-  // (database/db-types.ts: TIMESTAMP_S, data: number) — `new Date(number)`
-  // reads a number as MILLIseconds, so the old conversion reported January
-  // 1970 for every DB-served transaction. A Date passes through, a bare
-  // decimal string is seconds, anything else parses as written.
-  const secondsToDate = (value: unknown): Date | undefined => {
-    if (value === null || value === undefined || value === '') return undefined;
-    if (value instanceof Date) return Number.isNaN(value.getTime()) ? undefined : value;
-    if (typeof value === 'number') return Number.isNaN(value) ? undefined : new Date(value * 1000);
-    const text = String(value);
-    if (/^\d+$/.test(text)) return new Date(Number(text) * 1000);
-    const parsed = new Date(text);
-    return Number.isNaN(parsed.getTime()) ? undefined : parsed;
   };
 
   // drizzle returns camelCase keys (casing: 'snake_case' applies to

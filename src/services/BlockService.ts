@@ -1,5 +1,6 @@
 import { eq, and, sql, desc, count } from 'drizzle-orm';
 import { createLogger } from '../server/logger';
+import { secondsToDate } from '../utils/dbTime';
 
 const logger = createLogger('block-service');
 
@@ -45,26 +46,6 @@ const createBlockService = (deps: BlockServiceDeps) => {
     createRetryableDbCall: retryableDb,
     logError: logErr,
   } = deps;
-
-  // The `timestamp` column is the repo's unix-SECONDS customType
-  // (database/db-types.ts: TIMESTAMP_S, data: number). drizzle hands the
-  // formatter a plain number of seconds, and `new Date(number)` reads a
-  // number as MILLIseconds — so the old `new Date(row.timestamp)` reported
-  // January 1970 for every DB-served block (~56 years off) and
-  // formatBlockForApi serialized the bogus Date as a plausible ISO
-  // string. Seconds are scaled to ms here, once, for both numbers and any
-  // legacy string form; a Date is already correct and passes through.
-  const secondsToDate = (value: unknown): Date | undefined => {
-    if (value === null || value === undefined || value === '') return undefined;
-    if (value instanceof Date) return Number.isNaN(value.getTime()) ? undefined : value;
-    if (typeof value === 'number') return Number.isNaN(value) ? undefined : new Date(value * 1000);
-    const text = String(value);
-    // A bare decimal string is seconds (the column's own fromDriver form);
-    // anything with a date part parses as written.
-    if (/^\d+$/.test(text)) return new Date(Number(text) * 1000);
-    const parsed = new Date(text);
-    return Number.isNaN(parsed.getTime()) ? undefined : parsed;
-  };
 
   // A stored quantity mapped onto the API row: 0 is a VALUE, so only
   // null/undefined (and a non-finite read) mean "not recorded". The

@@ -18,7 +18,7 @@
 // (a 0-decimal token, where the in-repo formatFixed's `10n ** negative`
 // would throw).
 import { describe, it, expect } from 'vitest';
-import { formatEth, formatTokenAmount, formatValue } from '@/utils/format';
+import { formatEth, formatFixedDecimals, formatTokenAmount, formatValue } from '@/utils/format';
 import { formatValueByUnit } from '@/util/units';
 
 const ONE_ETH = 10n ** 18n;
@@ -93,5 +93,27 @@ describe('exact wei/token formatting', () => {
     // gwei/wei readouts are untouched by this change.
     expect(formatValueByUnit(12345678901n, chain, 'gwei').text).toBe('12 gwei');
     expect(formatValueByUnit(12345678901n, chain, 'wei').text).toBe('12,345,678,901 wei');
+  });
+});
+
+describe('formatEth/formatFixedDecimals precision guards', () => {
+  it('renders zero displayed digits without a trailing dot', () => {
+    expect(formatFixedDecimals(ONE_ETH, 18, 0)).toBe('1');
+    expect(formatFixedDecimals(123456789n, 8, 0)).toBe('1');
+    expect(formatEth(ONE_ETH, 0)).toBe('1');
+  });
+
+  it('caps display precision at the native unit instead of throwing', () => {
+    // decimals > 18 asks for sub-wei precision that does not exist;
+    // a negative BigInt exponent used to throw.
+    expect(formatEth(2n * ONE_ETH, 20)).toBe('2.000000000000000000');
+    expect(formatEth(ONE_ETH, 100)).toBe('1.000000000000000000');
+  });
+
+  it('falls back to the default precision on non-integer input', () => {
+    expect(formatEth(ONE_ETH, 4.5)).toBe('1.0000');
+    // Negative display precision is nonsense input; the clamp reads it
+    // as zero displayed digits rather than throwing.
+    expect(formatEth(ONE_ETH, -1)).toBe('1');
   });
 });
