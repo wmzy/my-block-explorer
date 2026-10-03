@@ -8,10 +8,10 @@
 // explicit: junk degrades to "no filter"/"invalid", never to a
 // plausible-but-wrong number.
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeAll } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { EventFilterPanel } from '@/components/events/EventFilterPanel';
-import { searchChains } from '@/config/chains';
+import { searchChains, ensureBuiltInChainsLoaded } from '@/config/chains';
 import { parseStrictInteger } from '@/utils/validation';
 
 describe('parseStrictInteger (the shared strict parser)', () => {
@@ -100,6 +100,14 @@ describe('EventFilterPanel block bounds', () => {
 });
 
 describe('chain search numeric query', () => {
+  // The full viem barrel is lazy (config/chains): the substring
+  // tier must see the real registry (a partial id like '1337'
+  // matches chains that only exist in the full barrel), so load
+  // it before asserting.
+  beforeAll(async () => {
+    await ensureBuiltInChainsLoaded();
+  });
+
   it('does not treat a hex-typed query as the decimal chain id it parses to', () => {
     // '0x89' is a hex literal, not the chain id 137 (Polygon). parseInt
     // accepted the radix prefix, so typing it exact-matched Polygon and

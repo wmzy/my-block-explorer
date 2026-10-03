@@ -97,7 +97,10 @@ describe('GET /chains/:chainId/transactions — limit param', () => {
     const res = await transactionsApp.request('/chains/1/transactions');
 
     expect(res.status).toBe(500);
-    await expect(res.json()).resolves.toEqual({ error: 'Failed to get transactions' });
+    await expect(res.json()).resolves.toMatchObject({
+      error: 'internal_error',
+      message: 'Failed to get transactions',
+    });
   });
 });
 

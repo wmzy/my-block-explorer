@@ -114,7 +114,7 @@ describe('POST .../simulate value validation', () => {
     const res = await simulate({ functionName: 'mint', value: 1000000000000000000 });
 
     expect(res.status).toBe(400);
-    await expect(res.json()).resolves.toMatchObject({ code: 'invalid_value' });
+    await expect(res.json()).resolves.toMatchObject({ error: 'invalid_value' });
     expect(mocks.simulateContractWithABI).not.toHaveBeenCalled();
   });
 

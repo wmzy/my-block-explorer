@@ -100,7 +100,7 @@ describe('event range routes: :rangeId must be a plain decimal integer', () => {
 
         expect(res.status).toBe(400);
         await expect(res.json()).resolves.toMatchObject({
-          error: 'Invalid rangeId',
+          error: 'invalid_range_id',
           message: 'rangeId must be a number',
         });
 
@@ -119,7 +119,7 @@ describe('event range routes: :rangeId must be a plain decimal integer', () => {
     const res = await app.request(`${BASE}/abc`, { method: 'DELETE' });
 
     expect(res.status).toBe(400);
-    await expect(res.json()).resolves.toMatchObject({ error: 'Invalid rangeId' });
+    await expect(res.json()).resolves.toMatchObject({ error: 'invalid_range_id' });
   });
 
   it('accepts a plain decimal rangeId and forwards it unchanged', async () => {

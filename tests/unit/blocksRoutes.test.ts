@@ -91,6 +91,9 @@ describe('GET .../blocks pagination validation', () => {
     const res = await app.request(BASE);
 
     expect(res.status).toBe(500);
-    await expect(res.json()).resolves.toEqual({ error: 'Failed to get blocks' });
+    await expect(res.json()).resolves.toMatchObject({
+      error: 'internal_error',
+      message: 'Failed to get blocks',
+    });
   });
 });

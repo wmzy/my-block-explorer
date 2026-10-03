@@ -52,6 +52,7 @@ vi.mock('@/config/chains', () => ({
   getChainType: () => 'mainnet',
   isChainSupported: (chainId: number) => chainId === 1 || chainId === 137 || chainId === 11155111,
   getSupportedChainIds: () => [1, 137, 11155111],
+  ensureBuiltInChainsLoaded: async () => {},
   POPULAR_CHAINS: [
     { id: 1, name: 'Ethereum' },
     { id: 137, name: 'Polygon' },

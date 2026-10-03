@@ -1714,3 +1714,36 @@ pnpm typecheck           # tsc --noEmit
   bug; on the WIRE they arrive as decimal strings ("0" is truthy), which is
   why the two `IndexingRangeManager` guards are latent type-contract
   landmines rather than live defects — fix them with the rest when touched.
+- **2026-10-04 rebase onto main (505093d) + review follow-ups** —
+  fix-1 rebased onto the /help + Node-26 main; every conflict
+  resolved as PR bug-fix semantics + main's newer conventions
+  (`respondError`/`createApiError` envelopes over the PR's legacy
+  `c.json` bodies, the `onlyIfIndexing` CAS guard on both
+  EventIndexingService close-outs, `childResolutionState(state)`
+  kept on the proxy-implementation lookups alongside the PR's
+  `.catch` enrichment guard, `parseCliArgs` architecture kept with
+  the PR's strict port parse moved into `cliArgs.ts`). Integration
+  fixes the rebase surfaced: (1) main's `parseInt` +
+  `Number.isNaN` checks were LATENT — `parseStrictInteger` returns
+  `null`, which `Number.isNaN(null)` never catches, so junk still
+  slipped through on main's events page/pageSize, addresses
+  pagination, search chainId, chains DELETE and the events rangeId
+  routes; the merged code checks `=== null`. (2) The new
+  `util/storageAccess.ts` guard module joins the eslint
+  localStorage allowlist (it IS the guarded helper). (3) Tests
+  pinning the PR's legacy envelopes now assert the
+  `createApiError` shape (`invalid_range_id`/`internal_error`/
+  `invalid_value` + message). (4) The lazy viem-barrel registry
+  (main's 09-30 wave) means chain-id substring searches only see
+  the full chain set after `ensureBuiltInChainsLoaded()` —
+  `typedIntegerFields` now awaits it, and `chainIdParamStrict`'s
+  `@/config/chains` mock exports the loader
+  (`UnsupportedChainState` awaits it before rendering a verdict).
+  (5) `secondsToDate` extracted to `utils/dbTime.ts` (was
+  duplicated in BlockService + TransactionService);
+  `formatFixedDecimals` renders no trailing dot at
+  `fractionDigits === 0` and `formatEth` clamps display precision
+  into [0, 18] (a >18 precision used to throw on a negative
+  BigInt exponent). Verified: tsc 0 errors, eslint 0 errors
+  (36 pre-existing warnings), `vitest --changed main` 295 files /
+  3738 passed.
