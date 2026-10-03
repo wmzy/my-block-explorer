@@ -20,8 +20,8 @@ const stubClipboard = (writeText?: (text: string) => Promise<void>) => {
   });
 };
 
-const renderCard = (fetchers: RawJsonFetcher[]) =>
-  render(<RawJsonCard title="Raw JSON" fetchers={fetchers} />);
+const renderCard = (fetchers: RawJsonFetcher[], identity = '1:0xabc') =>
+  render(<RawJsonCard title="Raw JSON" fetchers={fetchers} identity={identity} />);
 
 const expand = () => fireEvent.click(screen.getByTestId('raw-json-header'));
 
@@ -168,5 +168,40 @@ describe('RawJsonCard', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
 
     expect(await screen.findByRole('button', { name: 'Copy failed' })).toBeVisible();
+  });
+
+  it('drops the settled payload when the entity changes (detail routes reuse the card)', async () => {
+    // The tx/block routes reuse the mounted card when only the param
+    // changes, so a new identity arrives as new props on the same
+    // component instance — exactly what a rerender reproduces.
+    const txARaw = { hash: '0xA', nonce: '0x1' };
+    const txBRaw = { hash: '0xB', nonce: '0x9' };
+    const loadTx = vi.fn((_signal?: AbortSignal) => Promise.resolve(txARaw));
+    const { rerender } = renderCard([{ label: 'Transaction', load: loadTx }], '1:0xA');
+
+    expand();
+    expect(await screen.findByTestId('raw-json-payload')).toHaveTextContent('"hash": "0xA"');
+    expect(screen.getByTestId('raw-json-header')).toHaveAttribute('aria-expanded', 'true');
+
+    // Next transaction: the previous one's payload must be gone, and the
+    // card must not claim a settled result it no longer owns.
+    const loadTxB = vi.fn((_signal?: AbortSignal) => Promise.resolve(txBRaw));
+    rerender(
+      <RawJsonCard
+        title="Raw JSON"
+        identity="1:0xB"
+        fetchers={[{ label: 'Transaction', load: loadTxB }]}
+      />,
+    );
+
+    expect(screen.getByTestId('raw-json-header')).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText(/"hash": "0xA"/)).not.toBeInTheDocument();
+    expect(loadTxB).not.toHaveBeenCalled();
+
+    // Expanding genuinely loads THIS entity (the latch was not inherited).
+    expand();
+    expect(await screen.findByTestId('raw-json-payload')).toHaveTextContent('"hash": "0xB"');
+    expect(loadTxB).toHaveBeenCalledTimes(1);
+    expect(loadTx).toHaveBeenCalledTimes(1);
   });
 });

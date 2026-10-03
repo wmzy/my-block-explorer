@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { css, cx } from '@linaria/core';
 import type { ReactNode } from 'react';
 import { TypedLink, useMatched, useSearch, useSetSearch } from '@native-router/react';
@@ -6,6 +6,7 @@ import { erc20Abi, formatUnits } from 'viem';
 import type { ContractFunctionParameters } from 'viem';
 import { Alert } from 'haze-ui';
 import { getChainInfo, getChainName, getChainSymbol } from '@/config/chains';
+import { parseChainIdParam } from '@/utils/chainParam';
 import TopNavigation from '@/components/TopNavigation';
 import TokenTransfers, {
   TRANSFER_LIMIT,
@@ -86,11 +87,12 @@ import { knownTokensForChain } from '@/config/knownTokens';
 import { useKnownTokenBalances } from '@/services/knownTokenBalances';
 import { createRpcClient } from '@/utils/realTimeData';
 import { useEnsName } from '@/services/ens';
-import { formatRelativeTime } from '@/utils/format';
+import { formatFixedDecimals, formatRelativeTime } from '@/utils/format';
 import { getExternalToolLinks } from '@/config/externalTools';
 import { redirectReplace } from '@/views/Home/Landing';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
 import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
+import { TxStatusBadge } from '@/components/ui/TxStatusBadge';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { InfoGrid, InfoItem } from '@/components/ui/InfoGrid';
 import { DataTable, Pagination, linkStyle } from '@/components/ui/DataTable';
@@ -499,38 +501,10 @@ const activityTabs: ReadonlyArray<{ id: ActivityTabId; label: string }> = [
   { id: 'internal', label: 'Internal Txns' },
 ];
 
-// status: 1 → success, 0 → failed, -1 → pending (no receipt yet, NOT
-// failed), null/undefined → unknown (the heuristic discovers txs from
-// block data without receipts — never read that as "pending").
-function TxStatusBadge({
-  status,
-  hasBlock,
-}: {
-  status: number | null | undefined;
-  hasBlock: boolean;
-}) {
-  if (status === 1) {
-    return (
-      <Badge variant="success" size="sm">
-        Success
-      </Badge>
-    );
-  }
-  if (status === 0) {
-    return (
-      <Badge variant="error" size="sm">
-        Failed
-      </Badge>
-    );
-  }
-  // Without a receipt status, only a block-less tx can honestly read as
-  // pending (mempool); a mined tx with unknown status says "Unknown".
-  return (
-    <Badge variant="default" size="sm">
-      {hasBlock ? 'Unknown' : 'Pending'}
-    </Badge>
-  );
-}
+// TxStatusBadge (components/ui) is the single implementation of the status
+// wording: 1 → Success, 0 → Failed, and a missing receipt verdict resolves
+// to Unknown/Pending by block position, so the address table, the chain-wide
+// transaction list and the tx detail page cannot disagree.
 
 // The two-tier invalid-address guidance card, rendered page-level for any
 // address the local validity check rejects (see ./addressValidity). The
@@ -844,6 +818,23 @@ function AddressLabelRow({ chainId, address }: { chainId: number; address: strin
   // null = no complaint; 'admin-token' = 403 guidance; otherwise the
   // honest error message from the failed request.
   const [editorHint, setEditorHint] = useState<string | null>(null);
+
+  // The Address route reuses this component instance across address and
+  // chain changes (native-router composes matched elements without a key),
+  // so per-address editor state must be rebuilt when the identity changes.
+  // Without it an editor opened for address A stays open under address B,
+  // and its Save writes to B's label key with A's draft. Render-phase sync
+  // (no effect) so no draft can survive a single frame across identities.
+  const labelIdentity = `${chainId}:${address}`;
+  const labelIdentityRef = useRef(labelIdentity);
+  if (labelIdentityRef.current !== labelIdentity) {
+    labelIdentityRef.current = labelIdentity;
+    setEditing(false);
+    setLabelDraft('');
+    setNoteDraft('');
+    setEditorHint(null);
+    setSaving(false);
+  }
 
   const trimmedLabel = labelDraft.trim();
   const trimmedNote = noteDraft.trim();
@@ -1265,7 +1256,7 @@ function SectionAnchorNav({ anchors }: { anchors: SectionAnchor[] }) {
 export default function Address() {
   const { params, router } = useMatched();
 
-  const currentChainId = Number.parseInt(params.chainId ?? '1', 10);
+  const currentChainId = parseChainIdParam(params.chainId) ?? 0;
   const chainInfo = getChainInfo(currentChainId);
   const address = params.address ?? '';
   // Page-level two-tier verdict (./addressValidity): an invalid address
@@ -1620,9 +1611,12 @@ export default function Address() {
     },
     [tokenMetas],
   );
+  // The holder address rides in: the nets are derived from each row's
+  // from/to against it, so a self-transfer (which the backend serves as a
+  // single 'out' row) nets to zero instead of being charged as an outflow.
   const holdings = useMemo(
-    () => aggregateTokenHoldings(holdingsTransfers, classifyShared),
-    [holdingsTransfers, classifyShared],
+    () => aggregateTokenHoldings(holdingsTransfers, classifyShared, address),
+    [holdingsTransfers, classifyShared, address],
   );
 
   // USD estimate over the discovered ERC-20 holdings rows: prices come
@@ -1741,13 +1735,17 @@ export default function Address() {
     const symbol = getChainSymbol(currentChainId);
     try {
       // BigInt-safe wei → whole-token conversion honoring the chain's
-      // native-currency decimals (most are 18; parseFloat/1e18 would both
-      // hardcode the wrong divisor and lose precision past 2^53).
+      // native-currency decimals (most are 18). The old
+      // `Number(formatUnits(...)).toFixed(4)` round-tripped through a
+      // double, so distinct values past 2^53 whole units collapsed onto
+      // one figure and larger ones printed as "1e+21".
       const decimals = chainInfo?.nativeCurrency.decimals ?? 18;
-      const v = Number(formatUnits(BigInt(value), decimals));
-      if (v === 0) return `0 ${symbol}`;
-      if (v < 0.0001) return `<0.0001 ${symbol}`;
-      return `${v.toFixed(4)} ${symbol}`;
+      const wei = BigInt(value);
+      if (wei === 0n) return `0 ${symbol}`;
+      const shown = formatFixedDecimals(wei, decimals, 4);
+      if (shown === null) return value;
+      if (/^0*\.?0*$/.test(shown)) return `<0.0001 ${symbol}`;
+      return `${shown} ${symbol}`;
     } catch {
       return value;
     }

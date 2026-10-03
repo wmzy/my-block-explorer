@@ -4,6 +4,7 @@ import { SegmentedProgressBar } from '../ui/SegmentedProgressBar';
 import { toast } from 'haze-ui';
 import { get, post, del } from '@/util/http';
 import { ApiError } from '@/util/apiError';
+import { parseStrictInteger } from '@/utils/validation';
 
 const containerStyles = css`
   background: var(--haze-color-bg);
@@ -695,12 +696,25 @@ export const IndexingRangeManager: React.FC<Props> = ({
   const hasKnownCreationBlock = creationBlockNumber > 0;
   const maxRangeToBlock = ranges.length > 0 ? Math.max(...ranges.map(r => Number(r.toBlock))) : 0;
   const quickUrl = `/api/chains/${chainId}/contracts/${contractAddress}/events/ranges/quick`;
+  // Generation guard: the Contract route reuses this component across a
+  // contract switch, and the 3s poll overlaps the remount fetch, so a
+  // slower run for the previous contract (or a superseded poll tick) could
+  // settle after a newer one and replace the current contract's ranges,
+  // its 'Pausing…' set and the chain head. Only the newest run writes.
+  const rangesRequestIdRef = useRef(0);
   const fetchRanges = useCallback(async () => {
+    // Claim a NEW generation for this run (the EventTable pattern): reading
+    // the current id without claiming one let two overlapping poll ticks
+    // share an id, so both passed isCurrent() and the slower (staler) tick
+    // could replace the fresher one's ranges and chain head.
+    const requestId = ++rangesRequestIdRef.current;
+    const isCurrent = () => requestId === rangesRequestIdRef.current;
     setLoading(true);
     try {
       const data = await get<{ ranges?: IndexingRange[] }>(
         `/api/chains/${chainId}/contracts/${contractAddress}/events/ranges`,
       );
+      if (!isCurrent()) return;
       const nextRanges = data.ranges ?? [];
       setRanges(nextRanges);
       // Drop the transient 'Pausing…' state once the polled status is no
@@ -722,19 +736,27 @@ export const IndexingRangeManager: React.FC<Props> = ({
           const status = await get<{ latestBlock?: number }>(
             `/api/chains/${chainId}/contracts/${contractAddress}/events/indexing-status`,
           );
+          if (!isCurrent()) return;
           setHeadBlock(status.latestBlock ?? 0);
         } catch {
           // keep the last known head
         }
       }
     } catch (error) {
-      console.error('Failed to fetch ranges:', error);
+      if (isCurrent()) console.error('Failed to fetch ranges:', error);
     } finally {
-      setLoading(false);
+      // Only the newest run owns the spinner.
+      if (isCurrent()) setLoading(false);
     }
   }, [chainId, contractAddress]);
   useEffect(() => {
+    // Bump the generation so the previous contract's in-flight fetch can
+    // never write into this one (the cleanup covers the unmount too).
+    rangesRequestIdRef.current += 1;
     fetchRanges();
+    return () => {
+      rangesRequestIdRef.current += 1;
+    };
   }, [fetchRanges]);
   useEffect(() => {
     const hasIndexing = ranges.some(r => r.status === 'indexing');
@@ -790,14 +812,19 @@ export const IndexingRangeManager: React.FC<Props> = ({
       const isFromTag = validBlockTags.includes(fromBlockValue);
       const isToTag = validBlockTags.includes(toBlockValue);
 
-      const fromBlock = isFromTag ? fromBlockValue : parseInt(formState.fromBlock);
-      const toBlock = isToTag ? toBlockValue : parseInt(formState.toBlock);
+      // Strict decimal parse, matching the query-param discipline
+      // (parseStrictInteger): parseInt accepted a valid prefix and
+      // ignored the rest, so '4e4' became block 40000 and '200abc'
+      // became block 200 — a range created at boundaries the user never
+      // typed. Junk is rejected exactly like a bad block tag.
+      const fromBlock = isFromTag ? fromBlockValue : parseStrictInteger(formState.fromBlock);
+      const toBlock = isToTag ? toBlockValue : parseStrictInteger(formState.toBlock);
 
-      if (!isFromTag && isNaN(fromBlock as number)) {
+      if (!isFromTag && fromBlock === null) {
         toast.danger('Please enter valid block numbers or tags (latest, finalized, safe, earliest)');
         return;
       }
-      if (!isToTag && isNaN(toBlock as number)) {
+      if (!isToTag && toBlock === null) {
         toast.danger('Please enter valid block numbers or tags (latest, finalized, safe, earliest)');
         return;
       }
@@ -946,12 +973,18 @@ export const IndexingRangeManager: React.FC<Props> = ({
     async (confirmOverlap = false) => {
       const { mode, blockCount } = quickFormState;
       const needsBlockCount = ['recent', 'first', 'continue'].includes(mode);
-      const blockCountNum = needsBlockCount ? parseInt(blockCount) : 0;
+      // Strict parse: '1e3' is not the block count 1000, and '10k' is not
+      // 10 — parseInt's prefix acceptance turned junk into a real scan
+      // span behind a green submit.
+      const blockCountNum = needsBlockCount ? parseStrictInteger(blockCount) : 0;
 
-      if (needsBlockCount && (isNaN(blockCountNum) || blockCountNum <= 0)) {
+      if (needsBlockCount && (blockCountNum === null || blockCountNum <= 0)) {
         toast.danger('Please enter a valid block count');
         return;
       }
+      // Narrowed to a real span for every downstream use (the guard above
+      // returned on every null path).
+      const effectiveBlockCount = needsBlockCount ? (blockCountNum as number) : undefined;
 
       // Same client-side overlap precheck as the manual form, mirroring the
       // backend's quick-mode bounds (see quickModeBounds). Exempt or
@@ -959,7 +992,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
       if (!confirmOverlap) {
         const bounds = quickModeBounds(
           mode,
-          needsBlockCount ? blockCountNum : undefined,
+          effectiveBlockCount,
           creationBlockNumber,
           headBlock,
         );
@@ -970,7 +1003,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
         }
       }
 
-      const created = await runQuickCreate(mode, needsBlockCount ? blockCountNum : undefined, -2);
+      const created = await runQuickCreate(mode, effectiveBlockCount, -2);
       // runQuickCreate never throws (it catches internally), so the gate
       // always clears once the submit resolves.
       setOverlapGate(null);
@@ -1103,15 +1136,38 @@ export const IndexingRangeManager: React.FC<Props> = ({
     if (overlapGate?.source === 'quick') return 'Create anyway';
     return 'Create';
   };
+  // How many blocks of `range` are actually indexed, from the walked
+  // checkpoint. InCLUSIVE, clipped into the range bounds and saturated at
+  // the full span — the two corrections the old arithmetic lacked, and the
+  // exact semantics computeIndexingCoverage (EventStatistics) already
+  // uses for its coverage union:
+  //
+  //  - the walk checkpoints the LAST COVERED block, so a completed range
+  //    reads +1 (a 0-block range is 1 covered block; the backend's
+  //    `currentBlock - fromBlock` claimed 0);
+  //  - the walk steps by BATCH_SIZE, so the final checkpoint can sit past
+  //    the end bound (last full batch below 100, then a clamped one) —
+  //    unbounded, that rendered e.g. 199% for a completed range.
+  const coveredBlocksOf = (range: IndexingRange): number => {
+    // Presence, not truthiness: `currentBlock` is `bigint | null`, and 0n
+    // is a real walked position (a backward range that reached genesis),
+    // not "progress unknown".
+    if (range.currentBlock === null || range.currentBlock === undefined) return 0;
+    const from = Number(range.fromBlock);
+    const to = Number(range.toBlock);
+    const spanBlocks = to - from + 1;
+    if (spanBlocks <= 0) return 0;
+    const current = Math.min(Math.max(Number(range.currentBlock), from), to);
+    // A forward walk covers fromBlock..current; a backward one covers
+    // current..toBlock.
+    const covered =
+      range.direction === 'backward' ? to - current + 1 : current - from + 1;
+    return Math.min(spanBlocks, covered);
+  };
   const calculateProgress = (range: IndexingRange): number => {
-    if (!range.currentBlock) return 0;
     const totalBlocks = Number(range.toBlock) - Number(range.fromBlock) + 1;
     if (totalBlocks <= 0) return 0;
-    const currentIndexed =
-      range.direction === 'forward'
-        ? Number(range.currentBlock) - Number(range.fromBlock) + 1
-        : Number(range.toBlock) - Number(range.currentBlock) + 1;
-    return Math.round((currentIndexed / totalBlocks) * 100);
+    return Math.round((coveredBlocksOf(range) / totalBlocks) * 100);
   };
   const getStatusLabel = (status: RangeStatus): string => {
     const labels: Record<RangeStatus, string> = {
@@ -1365,7 +1421,9 @@ export const IndexingRangeManager: React.FC<Props> = ({
                         suffix is indexing-only (live rate) and only once the
                         sampled window supports one; nothing renders while
                         the estimate is still forming. */}
-                    {CHECKPOINTED_RANGE_STATUSES.has(range.status) && range.currentBlock && (
+                    {CHECKPOINTED_RANGE_STATUSES.has(range.status) &&
+                      range.currentBlock !== null &&
+                      range.currentBlock !== undefined && (
                       <>
                         Progress: {calculateProgress(range)}%
                         {range.direction === 'forward'

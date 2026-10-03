@@ -837,7 +837,93 @@ describe('client-side overlap precheck', () => {
   });
 });
 
-// Staleness banner honesty (B5): furthestIndexedBlock folds only ranges
+// Typed block bounds must not be prefix-parsed. parseInt('4e4') is 40000,
+// so the form used to create a range at a boundary the user never typed
+// (and the from<to check silently passed because the parsed pair was
+// 40000/45000). Junk is the same input class the block tag path already
+// rejects with a toast — one rule for the field, not two.
+describe('typed block bounds are parsed strictly', () => {
+  it('rejects scientific notation in From Block instead of creating block 40000', async () => {
+    headFixture = 50000;
+    mockPost.mockResolvedValue({ rangeId: 9, fromBlock: 40000, toBlock: 45000 });
+
+    render(<IndexingRangeManager chainId={CHAIN_ID} contractAddress={ADDRESS} />);
+    fireEvent.click(await screen.findByRole('button', { name: '+ Add Range' }));
+    const [fromInput, toInput] = screen.getAllByRole('textbox');
+    fireEvent.change(fromInput, { target: { value: '4e4' } });
+    fireEvent.change(toInput, { target: { value: '45000' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add Range' }));
+
+    expect(mockPost).not.toHaveBeenCalled();
+    expect(toast.danger).toHaveBeenCalledWith(
+      'Please enter valid block numbers or tags (latest, finalized, safe, earliest)',
+    );
+  });
+
+  it('rejects a trailing-suffix bound instead of truncating to its prefix', async () => {
+    headFixture = 50000;
+    mockPost.mockResolvedValue({ rangeId: 9, fromBlock: 100, toBlock: 200 });
+
+    render(<IndexingRangeManager chainId={CHAIN_ID} contractAddress={ADDRESS} />);
+    fireEvent.click(await screen.findByRole('button', { name: '+ Add Range' }));
+    const [fromInput, toInput] = screen.getAllByRole('textbox');
+    fireEvent.change(fromInput, { target: { value: '100' } });
+    fireEvent.change(toInput, { target: { value: '200abc' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add Range' }));
+
+    expect(mockPost).not.toHaveBeenCalled();
+  });
+
+  it('rejects a decimal fraction instead of truncating it', async () => {
+    headFixture = 50000;
+    mockPost.mockResolvedValue({ rangeId: 9, fromBlock: 100, toBlock: 200 });
+
+    render(<IndexingRangeManager chainId={CHAIN_ID} contractAddress={ADDRESS} />);
+    fireEvent.click(await screen.findByRole('button', { name: '+ Add Range' }));
+    const [fromInput, toInput] = screen.getAllByRole('textbox');
+    fireEvent.change(fromInput, { target: { value: '100' } });
+    fireEvent.change(toInput, { target: { value: '200.9' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add Range' }));
+
+    expect(mockPost).not.toHaveBeenCalled();
+  });
+
+  it('still creates the range for a plain numeric pair (unchanged happy path)', async () => {
+    headFixture = 50000;
+    mockPost.mockResolvedValue({ rangeId: 9, fromBlock: 35000, toBlock: 45000 });
+
+    render(<IndexingRangeManager chainId={CHAIN_ID} contractAddress={ADDRESS} />);
+    fireEvent.click(await screen.findByRole('button', { name: '+ Add Range' }));
+    const [fromInput, toInput] = screen.getAllByRole('textbox');
+    fireEvent.change(fromInput, { target: { value: '35000' } });
+    fireEvent.change(toInput, { target: { value: '45000' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add Range' }));
+
+    await waitFor(() => expect(mockPost).toHaveBeenCalledWith(rangesUrl, {
+      fromBlock: 35000,
+      toBlock: 45000,
+      direction: 'forward',
+    }));
+  });
+
+  it('rejects a junk quick block count instead of defaulting it to a real span', async () => {
+    headFixture = 50000;
+    mockPost.mockResolvedValue({ rangeId: 9, fromBlock: 40000, toBlock: 50000 });
+
+    render(<IndexingRangeManager chainId={CHAIN_ID} contractAddress={ADDRESS} />);
+    fireEvent.click(await screen.findByRole('button', { name: '+ Add Range' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Recent Blocks' }));
+    fireEvent.change(screen.getByPlaceholderText('Count'), {
+      target: { value: '1e3' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Create' }));
+
+    expect(mockPost).not.toHaveBeenCalled();
+    expect(toast.danger).toHaveBeenCalledWith('Please enter a valid block count');
+  });
+});
+
+// Staleness banner honesty (B5): furthest-indexedBlock folds only ranges
 // with real walked data — pending ranges contribute nothing (the old fold
 // treated their null currentBlock as block 0 and rendered 'Indexed through
 // block 0' for an all-pending list), completed ranges count through their

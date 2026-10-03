@@ -1,5 +1,5 @@
 import { DuckDBInstance } from '@duckdb/node-api';
-import { join } from 'path';
+import { join, dirname } from 'path';
 import { mkdir, unlink } from 'fs/promises';
 import { existsSync } from 'fs';
 import { type Sql } from 'postgres';
@@ -74,6 +74,10 @@ export class DuckDBPostgresAdapter {
   private isFullInitializing = false;
   private isMigrating = false;
   private dbPath: string;
+  // Resolves once the database's parent directory exists. A detached
+  // mkdir in the constructor raced the first open (a fast connect could
+  // still see ENOENT), so connect() awaits this before touching the file.
+  private dataDirReady: Promise<void>;
   private checkpointTimer: ReturnType<typeof setInterval> | null = null;
   private static readonly CHECKPOINT_INTERVAL_MS = 60_000;
 
@@ -81,11 +85,19 @@ export class DuckDBPostgresAdapter {
     // Parse the connection string and extract the database path
     this.dbPath = this.parseConnectionString(connectionString);
 
-    // Make sure the data directory exists
-    const dataDir = join(process.cwd(), 'data');
-    mkdir(dataDir, { recursive: true }).catch(err =>
-      logger.warn({ err }, 'Failed to create data directory'),
-    );
+    // Create the parent directory OF THIS DATABASE, not a hardcoded
+    // `data/`. The per-chain event stores live at
+    // data/chains/{mainnet,testnet}/{type}/{name}-{id}.db, so a fixed
+    // `data/` left every intermediate level missing and the open failed
+    // with "Cannot open file ...: No such file or directory" on a fresh
+    // install. dirname() handles a relative path (the documented
+    // default 'duckdb://data/blockchain.db') by returning a relative
+    // dir, which mkdir resolves against cwd.
+    this.dataDirReady = mkdir(dirname(this.dbPath), { recursive: true })
+      .then(() => undefined)
+      .catch(err => {
+        logger.warn({ err, dir: dirname(this.dbPath) }, 'Failed to create database directory');
+      });
   }
 
   private parseConnectionString(connectionString: string): string {
@@ -109,6 +121,9 @@ export class DuckDBPostgresAdapter {
 
     this.isInitializing = true;
     try {
+      // The directory must exist before the WAL recovery or the open
+      // touches the file.
+      await this.dataDirReady;
       await this.recoverWal();
       this.instance = await this.createInstance();
       await this.checkpointWal();

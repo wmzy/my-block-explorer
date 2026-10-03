@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, View, createRoutes, useSearchParams } from '@native-router/react';
 import '@testing-library/jest-dom';
 import TransactionsList from '@/views/Transactions/List';
@@ -214,10 +214,23 @@ describe('TransactionsList view', () => {
     expect(screen.getByRole('link', { name: /Polygon/ })).toHaveAttribute('href', '/chain/137');
   });
 
-  it('renders Pending for transactions without a receipt (status -1)', async () => {
+  it('renders Pending only for a block-less (mempool) tx, never for a mined one', async () => {
     mockUseLatestTransactions.mockReturnValue({
       data: {
-        transactions: [makeTx(18000001, -1), makeTx(18000000, 1)],
+        transactions: [
+          // Mined (has a blockNumber) but the RPC returned no receipt:
+          // status -1 means "receipt unknown", NOT "pending" — claiming
+          // Pending here asserts a position the chain already disproved.
+          { ...makeTx(18000001, -1), hash: '0xtxminedUnknown' },
+          // Genuinely pending: no block position yet.
+          {
+            ...makeTx(18000000, -1),
+            hash: '0xtxmempool',
+            blockNumber: null,
+            transactionIndex: null,
+          },
+          { ...makeTx(18000000, 1), hash: '0xtxsuccess' },
+        ],
         latestBlockNumber: 18000001n,
         hasMore: false,
       },
@@ -226,10 +239,15 @@ describe('TransactionsList view', () => {
     });
     renderTransactionsList('/chain/1/transactions');
 
-    expect(await screen.findByText('Pending')).toBeInTheDocument();
-    expect(screen.getByText('Success')).toBeInTheDocument();
-    // A pending tx must never be labeled Failed
-    expect(screen.queryByText('Failed')).not.toBeInTheDocument();
+    // Rows render in feed order; the Status cell is the last one.
+    await screen.findByText('Success');
+    const [, mined, mempool, settled] = screen.getAllByRole('row');
+    const statusOf = (row: HTMLElement) =>
+      (within(row).getAllByRole('cell').pop() as HTMLElement).textContent;
+
+    expect(statusOf(mined)).toBe('Unknown');
+    expect(statusOf(mempool)).toBe('Pending');
+    expect(statusOf(settled)).toBe('Success');
   });
 
   it('paginates via the continuation cursor the service returned', async () => {

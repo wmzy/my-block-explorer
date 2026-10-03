@@ -98,7 +98,10 @@ web UI. Backend rate-limit buckets apply as for any REST client (e.g. search
 ## Honesty contracts carried into tool results
 
 - **Integer quantities are decimal strings** (wei, raw RPC fields) — never
-  JSON numbers, so precision survives every hop.
+  JSON numbers, so precision survives every hop. An `args` entry that
+  arrived as a JSON number outside the exact range (±2^53) is refused with
+  that field's path and the decimal-string fix, rather than sent to the
+  contract as a rounded value.
 - **Address transaction lists are discoveries** — `coverage`/`reason` are
   relayed verbatim; only a finished genesis-anchored deep scan reports
   `complete`.

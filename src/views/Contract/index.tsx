@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { css } from '@linaria/core';
 import { getAddress, type Address, type Hex } from 'viem';
 import { useControl } from 'react-use-control';
@@ -19,6 +19,7 @@ import { CUSTOM_ABI_STORAGE_PREFIX } from '@/util/storageKeys';
 import { useServiceDiscovery } from '@/hooks/ServiceDiscoveryContext';
 import { redirectReplace } from '@/views/Home/Landing';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
+import { parseChainIdParam } from '@/utils/chainParam';
 import { useContractCreation, useContractSource, useStorageLayout } from '@/services/contracts';
 import { createRpcClient } from '@/utils/realTimeData';
 import {
@@ -963,6 +964,17 @@ export default function Contract() {
   const chainId = params.chainId;
   const address = params.address;
 
+  // The proxy/implementation toggle is per-contract view state, but the route
+  // reuses this component across contracts. A 'proxy' selection made on one
+  // contract silently followed the user to the next address (where it decides
+  // which layout address the Storage tab reads). Render-phase resync.
+  const contractIdentity = `${chainId}:${address}`;
+  const contractIdentityRef = useRef(contractIdentity);
+  if (contractIdentityRef.current !== contractIdentity) {
+    contractIdentityRef.current = contractIdentity;
+    setContractTarget('impl');
+  }
+
   const tabFromUrl =
     tabParam ?? (location.pathname.endsWith('/events') ? ('events' as const) : undefined);
   const activeTab: TabId = tabFromUrl ?? 'source';
@@ -994,7 +1006,13 @@ export default function Contract() {
     );
   };
 
-  const currentChainId = Number(chainId ?? 1);
+  // Strict parse (parseChainIdParam): Number() read '0x1a' as 26 and '1e5'
+  // as 100000, so a hand-typed chain in the URL silently loaded — and
+  // cached under — a chain the user never asked for. An unparseable param
+  // becomes 0, which isChainSupported rejects, so it renders the same
+  // UnsupportedChainState recovery as a genuinely unknown chain (the
+  // guard its Home/Charts/Blocks siblings already use).
+  const currentChainId = parseChainIdParam(chainId) ?? (chainId === undefined ? 1 : 0);
 
   // Raw pasted ABI (exactly the string that was applied), lazily restored
   // from localStorage so a reload keeps the unlock.

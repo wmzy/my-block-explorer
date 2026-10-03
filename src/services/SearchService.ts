@@ -1,4 +1,5 @@
 import { createLogger } from '../server/logger';
+import { getAddress } from 'viem';
 import { blockService, type Block } from './BlockService';
 
 const logger = createLogger('search-service');
@@ -54,6 +55,28 @@ type SearchServiceDeps = {
   blockService: typeof import('./BlockService').blockService;
   transactionService: typeof import('./TransactionService').transactionService;
   addressService: typeof import('./AddressService').addressService;
+};
+
+// The canonical CHECKSUMMED form of a user-typed address, or null when the
+// string is not an address this product will accept.
+//
+// Mirrors getValidatedAddress (server/validation.ts) exactly, including its
+// rule that only a MIXED-case address carries checksum information:
+// all-lower/all-upper pass through and are canonicalized, while a mixed-case
+// address must match its EIP-55 checksum. Kept as a local (rather than
+// importing the route helper) because that one throws HTTPException, and
+// this path must return a search result, not a 400.
+const HEX_ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
+
+const canonicalAddressOrNull = (value: string): `0x${string}` | null => {
+  if (!HEX_ADDRESS_RE.test(value)) return null;
+  // viem's getAddress silently checksums ANY hex-shaped input, so the
+  // explicit mixed-case comparison is what actually enforces EIP-55.
+  const checksummed = getAddress(value);
+  const body = value.slice(2);
+  const isMixedCase = /[a-f]/.test(body) && /[A-F]/.test(body);
+  if (isMixedCase && value !== checksummed) return null;
+  return checksummed;
 };
 
 const createSearchService = (deps: SearchServiceDeps) => {
@@ -188,19 +211,33 @@ const createSearchService = (deps: SearchServiceDeps) => {
 
   const searchAddress = async (chainId: number, query: string): Promise<SearchResult> => {
     try {
-      const address = query;
-
-      if (!/^0x[a-fA-F0-9]{40}$/.test(address)) {
+      // Two tiers, the same contract the :address route params get from
+      // getValidatedAddress (server/validation.ts) — shape, then EIP-55
+      // checksum. Search was shape-only, which made it the one entry
+      // point where user-typed CASING chose a storage key:
+      //
+      //  - indexed_addresses is keyed (chain_id, address) as a varchar, so
+      //    the key is case-sensitive. A lowercase query missed the row
+      //    the address page had already written under the checksummed key
+      //    (re-running the RPC + Sourcify/Blockscan work) and then
+      //    inserted a SECOND row for the same address, which the page
+      //    can never read: one address, two rows, a half-effective cache.
+      //  - a mixed-case address with a wrong checksum answered
+      //    found:true here and then rendered "Invalid address checksum"
+      //    on the page it links to. One string, two verdicts.
+      const address = canonicalAddressOrNull(query);
+      if (address === null) {
+        const badChecksum = /^0x[a-fA-F0-9]{40}$/.test(query);
         return {
           type: 'address',
           query,
           chainId,
           found: false,
-          error: 'Invalid address format',
+          error: badChecksum ? 'Invalid address checksum' : 'Invalid address format',
         };
       }
 
-      const addressInfo = await addressService.getAddressInfo(chainId, address as `0x${string}`);
+      const addressInfo = await addressService.getAddressInfo(chainId, address);
 
       return {
         type: 'address',

@@ -379,7 +379,7 @@ export default function NftGrid({ chainId, contract, items }: NftGridProps) {
   const retry = useCallback(
     (retryItem: NftMetadataItem) => {
       if (retryingKey !== null) return;
-      const key = nftMetadataKey(retryItem.contract, retryItem.tokenId);
+      const key = nftMetadataKey(retryItem.contract, retryItem.tokenId, retryItem.standard);
       setRetryingKey(key);
       // fetchNftMetadataBatch never rejects (the service's contract) and
       // does not cache 'unavailable' outcomes — this is a genuine
@@ -406,7 +406,7 @@ export default function NftGrid({ chainId, contract, items }: NftGridProps) {
       <CardContent>
         <div className={tileGrid}>
           {items.map(item => {
-            const key = nftMetadataKey(contract, item.tokenId);
+            const key = nftMetadataKey(contract, item.tokenId, item.standard);
             return (
               <NftTile
                 key={item.tokenId}

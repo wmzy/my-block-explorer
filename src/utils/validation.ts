@@ -3,6 +3,26 @@
 import { isAddress, isHash } from 'viem';
 import { normalize } from 'viem/ens';
 
+import { parseStrictInteger } from './strictInteger';
+
+/**
+ * Parse a plain decimal integer, or null when the input is not one.
+ * Numbers pass through when finite and integral.
+ *
+ * Exported for the route query-param parsers (routes/{blocks,transactions,
+ * contracts,addresses,events}.ts), which had the same parseInt prefix
+ * acceptance: `?limit=20abc` was served as limit 20 instead of the 400
+ * those parsers' own comments promise.
+ *
+ * The implementation lives in ./strictInteger (import-free) so the CLI
+ * can share this one definition without pulling viem into its entry graph;
+ * re-exported here because this module is the canonical import site.
+ * parseInt() accepted a valid prefix and ignored the rest, so "12abc",
+ * "0x1a", "1e5" and " 7 " all came back as 12/26/100000/7 — junk reached
+ * the RPC layer and silently addressed the WRONG block or chain.
+ */
+export { parseStrictInteger };
+
 /**
  * Validate an Ethereum address
  */
@@ -28,30 +48,30 @@ export function isValidBlockHash(hash: string): boolean {
  * Validate a block number
  */
 export function isValidBlockNumber(blockNumber: string | number): boolean {
-  const num = typeof blockNumber === 'string' ? parseInt(blockNumber, 10) : blockNumber;
-  return !isNaN(num) && num >= 0 && num <= Number.MAX_SAFE_INTEGER;
+  const num = parseStrictInteger(blockNumber);
+  return num !== null && num >= 0;
 }
 
 /**
  * Validate a chain ID
  */
 export function isValidChainId(chainId: string | number): boolean {
-  const num = typeof chainId === 'string' ? parseInt(chainId, 10) : chainId;
-  return !isNaN(num) && num > 0;
+  const num = parseStrictInteger(chainId);
+  return num !== null && num > 0;
 }
 
 /**
  * Validate pagination parameters
  */
 export function validatePaginationParams(page?: string | number, limit?: string | number) {
-  const pageNum = typeof page === 'string' ? parseInt(page, 10) : (page ?? 1);
-  const limitNum = typeof limit === 'string' ? parseInt(limit, 10) : (limit ?? 20);
+  const pageNum = page === undefined ? 1 : parseStrictInteger(page);
+  const limitNum = limit === undefined ? 20 : parseStrictInteger(limit);
 
-  if (isNaN(pageNum) || pageNum < 1) {
+  if (pageNum === null || pageNum < 1) {
     throw new Error('Page must be a positive integer');
   }
 
-  if (isNaN(limitNum) || limitNum < 1 || limitNum > 100) {
+  if (limitNum === null || limitNum < 1 || limitNum > 100) {
     throw new Error('Limit must be between 1 and 100');
   }
 
@@ -146,26 +166,30 @@ export function validateTimeRange(from?: string, to?: string) {
  * Validate a block range
  */
 export function validateBlockRange(fromBlock?: string | number, toBlock?: string | number) {
-  if (!fromBlock && !toBlock) return { fromBlock: undefined, toBlock: undefined };
+  if (fromBlock === undefined && toBlock === undefined) {
+    return { fromBlock: undefined, toBlock: undefined };
+  }
 
-  const from = fromBlock
-    ? typeof fromBlock === 'string'
-      ? parseInt(fromBlock, 10)
-      : fromBlock
-    : undefined;
-  const to = toBlock ? (typeof toBlock === 'string' ? parseInt(toBlock, 10) : toBlock) : undefined;
+  // Absence is decided by undefined, never by truthiness: block 0 is
+  // genesis, a real bound. The old `fromBlock ? … : undefined` guard
+  // dropped a 0 from bound (so the span silently widened to the head) and
+  // skipped the from>to check whenever either side was 0, letting
+  // validateBlockRange(10, 0) return an inverted range.
+  const from = fromBlock === undefined ? undefined : parseStrictInteger(fromBlock);
+  const to = toBlock === undefined ? undefined : parseStrictInteger(toBlock);
 
-  if (fromBlock && (isNaN(from!) || from! < 0)) {
+  if (from !== undefined && (from === null || from < 0)) {
     throw new Error('Invalid from block number');
   }
 
-  if (toBlock && (isNaN(to!) || to! < 0)) {
+  if (to !== undefined && (to === null || to < 0)) {
     throw new Error('Invalid to block number');
   }
 
-  if (from && to && from > to) {
+  // Past the guards both bounds are undefined or a non-negative integer.
+  if (from !== undefined && to !== undefined && from !== null && to !== null && from > to) {
     throw new Error('From block must be before to block');
   }
 
-  return { fromBlock: from, toBlock: to };
+  return { fromBlock: from ?? undefined, toBlock: to ?? undefined };
 }

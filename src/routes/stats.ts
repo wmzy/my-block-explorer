@@ -41,55 +41,39 @@ app.get('/stats/overview', async c => {
 
     const results = await Promise.all(
       popularChainIds.map(async chainId => {
-        try {
-          const [blockStats, txStats, rpcBlockNumber] = await Promise.all([
-            blockService.getBlockStats(chainId).catch(() => ({
-              totalBlocks: 0,
-              latestBlock: null,
-              avgBlockTime: null,
-              avgGasUsed: null,
-            })),
-            transactionService.getTransactionStats(chainId).catch(() => ({
-              totalTransactions: 0,
-              avgGasPrice: null,
-              avgGasUsed: null,
-              successRate: 0,
-            })),
-            withTimeout(
-              rpcManager.getClient(chainId).then(client => client.getBlockNumber()),
-              RPC_TIMEOUT_MS,
-            ).catch(() => null),
-          ]);
+        // Indexed counts come from DuckDB and BOTH services throw when the
+        // database cannot be read. Those throws used to be caught into a
+        // zeroed default, which answered 200 with a confident
+        // "indexed nothing / successRate 0" for a chain whose database was
+        // broken — indistinguishable from a chain that genuinely has no
+        // indexed data, and summed into the cross-chain totals. Let the
+        // rejection reach the handler below, which reports 503
+        // stats_unavailable; a real zero still comes back as a real zero.
+        const [blockStats, txStats, rpcBlockNumber] = await Promise.all([
+          blockService.getBlockStats(chainId),
+          transactionService.getTransactionStats(chainId),
+          // The live head probe is the one read that degrades instead: an
+          // unreachable node is a normal condition and the response has
+          // always documented a null head with rpcConnected:false.
+          withTimeout(
+            rpcManager.getClient(chainId).then(client => client.getBlockNumber()),
+            RPC_TIMEOUT_MS,
+          ).catch(() => null),
+        ]);
 
-          return {
-            chainId,
-            chainName: getChainName(chainId),
-            chainSymbol: getChainSymbol(chainId),
-            latestBlockNumber: rpcBlockNumber?.toString() ?? null,
-            isIndexed: blockStats.totalBlocks > 0,
-            indexedBlocks: blockStats.totalBlocks,
-            indexedTransactions: txStats.totalTransactions,
-            latestIndexedBlock: blockStats.latestBlock?.toString() ?? null,
-            avgBlockTime: blockStats.avgBlockTime,
-            successRate: txStats.successRate,
-            rpcConnected: rpcBlockNumber !== null,
-          };
-        } catch (error) {
-          logger.warn({ err: error, chainId }, 'Failed to get stats for chain');
-          return {
-            chainId,
-            chainName: getChainName(chainId),
-            chainSymbol: getChainSymbol(chainId),
-            latestBlockNumber: null,
-            isIndexed: false,
-            indexedBlocks: 0,
-            indexedTransactions: 0,
-            latestIndexedBlock: null,
-            avgBlockTime: null,
-            successRate: 0,
-            rpcConnected: false,
-          };
-        }
+        return {
+          chainId,
+          chainName: getChainName(chainId),
+          chainSymbol: getChainSymbol(chainId),
+          latestBlockNumber: rpcBlockNumber?.toString() ?? null,
+          isIndexed: blockStats.totalBlocks > 0,
+          indexedBlocks: blockStats.totalBlocks,
+          indexedTransactions: txStats.totalTransactions,
+          latestIndexedBlock: blockStats.latestBlock?.toString() ?? null,
+          avgBlockTime: blockStats.avgBlockTime,
+          successRate: txStats.successRate,
+          rpcConnected: rpcBlockNumber !== null,
+        };
       }),
     );
 
@@ -116,8 +100,17 @@ app.get('/stats/overview', async c => {
       timestamp: new Date().toISOString(),
     });
   } catch (error) {
+    // 503 + the same error vocabulary the sibling indexing-status route
+    // uses: a database we could not read is NOT the same answer as a
+    // database that reported zero indexed blocks.
     logger.error({ err: error }, 'Stats overview API error');
-    return c.json({ error: 'Failed to get stats overview' }, 500);
+    return c.json(
+      {
+        error: 'stats_unavailable',
+        message: error instanceof Error ? error.message : 'Failed to load stats overview',
+      },
+      503,
+    );
   }
 });
 

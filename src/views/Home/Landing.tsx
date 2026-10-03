@@ -24,6 +24,8 @@ import { useMatched } from '@native-router/react';
 import { useServiceDiscovery } from '@/hooks/ServiceDiscoveryContext';
 import { getSortedChains, isChainSupported } from '@/config/chains';
 import { LAST_CHAIN_STORAGE_KEY } from '@/util/storageKeys';
+import { readStorageItem, writeStorageItem } from '@/util/storageAccess';
+import { parseStrictInteger } from '@/utils/validation';
 import {
   GettingStarted,
   backendConnectedFromStatus,
@@ -41,18 +43,17 @@ export { LAST_CHAIN_STORAGE_KEY };
 // chain). Shared by the landing redirect, the search context and the router
 // error view's back link so they all agree on "the chain I was browsing".
 export function readRememberedChainId(): number | undefined {
-  // Guarded like themePreference/units: in storage-blocked contexts
-  // (Safari private mode) the localStorage access itself throws, and this
-  // reader runs at boot and on every watch-notification poll tick — it
-  // must degrade to "nothing remembered", not crash the app.
-  let raw: string | null;
-  try {
-    raw = localStorage.getItem(LAST_CHAIN_STORAGE_KEY);
-  } catch {
-    raw = null;
-  }
-  const remembered = raw !== null ? Number.parseInt(raw, 10) : Number.NaN;
-  return Number.isInteger(remembered) && isChainSupported(remembered) ? remembered : undefined;
+  // Unavailable storage reads as "nothing remembered" (util/storageAccess):
+  // the reader is called during the render that decides the landing
+  // redirect, the nav default and eight sibling views, so a throw here is
+  // a white screen, not a missing preference.
+  // Strict decimal parse: parseInt() accepted a valid prefix and ignored
+  // the rest, so a hand-edited or truncated "1abc" / "1e5" / " 7 " /
+  // "0x1a" resolved to a DIFFERENT, plausible chain id and the app
+  // silently reopened that chain — the malformed value the reader above
+  // promises to drop.
+  const remembered = parseStrictInteger(readStorageItem(LAST_CHAIN_STORAGE_KEY) ?? undefined);
+  return remembered !== null && isChainSupported(remembered) ? remembered : undefined;
 }
 
 // Preferred entry chain: mainnet when supported (the intuitive default for
@@ -79,11 +80,9 @@ export function resolveLandingChainPath(): string {
 // Persist the chain worth landing on next time. Callers only pass ids that
 // already resolved to a supported chain.
 export function rememberChainId(chainId: number): void {
-  try {
-    localStorage.setItem(LAST_CHAIN_STORAGE_KEY, String(chainId));
-  } catch {
-    // Quota/private mode — the choice lasts only for this session.
-  }
+  // Best-effort: this runs inside a navigation, so a storage failure must
+  // not unwind the route change it was observing.
+  writeStorageItem(LAST_CHAIN_STORAGE_KEY, String(chainId));
 }
 
 // navigate() always pushes; replace semantics come from committing a

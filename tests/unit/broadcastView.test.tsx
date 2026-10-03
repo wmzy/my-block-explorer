@@ -135,6 +135,27 @@ describe('broadcast view honest states', () => {
     });
   });
 
+  it('never broadcasts bytes the preview is not showing (a paste-then-click race)', async () => {
+    await renderBroadcast(137);
+    // Settle the first paste: the preview decodes it and the button
+    // enables, exactly as a user would see after copying one payload.
+    pasteRaw(RAW_EIP1559_POLYGON);
+    await waitFor(() => expect(broadcastButton()).toBeEnabled());
+
+    // Replace the bytes and click IMMEDIATELY, before the 300ms debounce
+    // can re-decode. The textarea now holds a MAINNET-signed payload while
+    // the preview (and the chain-mismatch guard) still describe the
+    // polygon one. Before the fix the click broadcast the previous payload
+    // verbatim — a signed transaction the user never had in the box at
+    // click time, with the wrong-chain check applied to different bytes.
+    pasteRaw(RAW_EIP1559_MAINNET);
+    fireEvent.click(broadcastButton());
+
+    // Nothing may reach the node: the visible bytes are unsettled.
+    expect(mockSendRawTransaction).not.toHaveBeenCalled();
+    expect(broadcastButton()).toBeDisabled();
+  });
+
   it('shows an inline error and keeps broadcasting disabled for undecodable input', async () => {
     await renderBroadcast(137);
     pasteRaw('0xdeadbeef');

@@ -22,6 +22,15 @@ type RawJsonProps = {
   /** Card heading, e.g. "Raw JSON". */
   title: string;
   fetchers: RawJsonFetcher[];
+  /**
+   * Identity of the entity whose payloads this card shows (e.g.
+   * `${chainId}:${txHash}`). Required: the tx and block routes reuse the
+   * mounted card when only the param changes (no remount), and every piece
+   * of the card's state — the expanded flag and each section's settled
+   * latch — belongs to ONE entity. Without it the next entity would render
+   * the previous one's payload and never refetch.
+   */
+  identity: string;
 };
 
 // The clickable header row: full-width toggle with the Collapsible card's
@@ -254,8 +263,19 @@ function RawJsonSection({ label, load, note, active }: RawJsonSectionProps) {
 // data-separation rule). Sections fetch on the first expand only and cache
 // across collapse/expand; each failure degrades to its own retryable
 // error, never affecting siblings or the page.
-export function RawJsonCard({ title, fetchers }: RawJsonProps) {
+export function RawJsonCard({ title, fetchers, identity }: RawJsonProps) {
   const [expanded, setExpanded] = useState(false);
+
+  // The detail routes reuse this card across transactions/blocks, so the
+  // expanded flag and every section's settled latch describe ONE entity.
+  // Adjusting state during render (React's documented props-change pattern)
+  // keeps the previous entity's payload off the screen; the identity in the
+  // section keys below remounts the sections so their latches reset too.
+  const identityRef = useRef(identity);
+  if (identityRef.current !== identity) {
+    identityRef.current = identity;
+    setExpanded(false);
+  }
 
   const handleToggle = () => {
     setExpanded(prev => !prev);
@@ -298,7 +318,7 @@ export function RawJsonCard({ title, fetchers }: RawJsonProps) {
       <div className={cx(contentStyle, !expanded && contentCollapsedStyle)} aria-hidden={!expanded}>
         {fetchers.map((fetcher, index) => (
           <RawJsonSection
-            key={`${index}-${fetcher.label}-${fetcher.note ?? ''}`}
+            key={`${identity}-${index}-${fetcher.label}-${fetcher.note ?? ''}`}
             label={fetcher.label}
             load={fetcher.load}
             note={fetcher.note}

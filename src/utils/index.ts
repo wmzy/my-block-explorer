@@ -24,6 +24,7 @@ export * from './cache';
 export * from './castCommand';
 export * from './chainParam';
 export * from './contractInteraction';
+export * from './dbTime';
 export * from './errorHandler';
 export * from './event-search-optimization';
 export * from './events';

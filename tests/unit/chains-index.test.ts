@@ -20,6 +20,7 @@ import {
   searchChains,
   ensureBuiltInChainsLoaded,
 } from '@/config/chains';
+import { parseStrictInteger } from '@/utils/validation';
 
 // The parity corpus must be the FULL viem barrel (the >500-chain sanity
 // check below pins that): the lazy registry loads before any reference
@@ -92,10 +93,15 @@ function referenceSearchChains(query: string): Chain[] {
   if (!query.trim()) return referenceSortedChains();
 
   const lowerQuery = query.toLowerCase();
-  const numericQuery = parseInt(query);
+  // Strict exact-id tier: '1e5' is not the chain id 100000, '0x89' is not
+  // 137. The partial-id tier stays substring-based on the RAW string, so
+  // '1abc' still finds chains whose id contains '1' (and '1abc' matching
+  // chain 1 is the SUBSTRING tier, not the exact tier).
+  const numericQuery = parseStrictInteger(query);
+  const hasNumericQuery = numericQuery !== null;
 
   const results = SUPPORTED_CHAINS.filter(chain => {
-    if (!isNaN(numericQuery) && chain.id === numericQuery) return true;
+    if (hasNumericQuery && chain.id === numericQuery) return true;
     if (chain.name.toLowerCase().includes(lowerQuery)) return true;
     if (chain.id.toString().includes(query)) return true;
     if (chain.nativeCurrency.symbol.toLowerCase().includes(lowerQuery)) return true;
@@ -105,7 +111,7 @@ function referenceSearchChains(query: string): Chain[] {
   });
 
   return results.sort((a, b) => {
-    if (!isNaN(numericQuery)) {
+    if (hasNumericQuery) {
       if (a.id === numericQuery && b.id !== numericQuery) return -1;
       if (a.id !== numericQuery && b.id === numericQuery) return 1;
     }
@@ -133,7 +139,8 @@ function referenceSearchChains(query: string): Chain[] {
 const fingerprint = (chains: readonly Chain[]): string[] => chains.map(c => `${c.id}:${c.name}`);
 
 // Covers: empty/whitespace, exact ids, id substrings, mixed numerics
-// (parseInt prefixes), case-insensitive names/symbols, duplicate-id aliases
+// (junk queries: '1abc' must reach only the substring tier, never the
+// exact-id tier), case-insensitive names/symbols, duplicate-id aliases
 // (Base 8453, Kaia/Klaytn 8217, Localhost/Tempo 1337, Bitlayer 200901),
 // testnet keywords, whitespace-stripped alias matching, and no-match.
 const QUERY_BATTERY = [

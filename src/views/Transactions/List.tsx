@@ -10,15 +10,16 @@ import {
 import { z } from 'zod';
 
 import TopNavigation from '@/components/TopNavigation';
-import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { CopyableHash } from '@/components/ui/CopyableHash';
 import { DataTable, Pagination, linkStyle, monoStyle } from '@/components/ui/DataTable';
 import { EmptyState, ErrorState } from '@/components/ui/ErrorState';
 import { EnsInline, shortAddress } from '@/components/ui/EnsInline';
 import { TableSkeleton } from '@/components/ui/LoadingState';
+import { TxStatusBadge } from '@/components/ui/TxStatusBadge';
 import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
 import { getChainInfo, getChainName, getChainSymbol } from '@/config/chains';
+import { parseChainIdParam } from '@/utils/chainParam';
 import { redirectReplace } from '@/views/Home/Landing';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
 import { useLatestTransactions } from '@/services/chainRpc';
@@ -147,28 +148,8 @@ const formatHash = (hash: string): string => {
   return `${hash.slice(0, 10)}...${hash.slice(-8)}`;
 };
 
-// status: 1 → success, 0 → failed, -1 → pending (no receipt yet, NOT failed).
-function TxStatusBadge({ status }: { status: number }) {
-  if (status === 1) {
-    return (
-      <Badge variant="success" size="sm">
-        Success
-      </Badge>
-    );
-  }
-  if (status === 0) {
-    return (
-      <Badge variant="error" size="sm">
-        Failed
-      </Badge>
-    );
-  }
-  return (
-    <Badge variant="default" size="sm">
-      Pending
-    </Badge>
-  );
-}
+// TxStatusBadge (components/ui) owns the status wording; -1 (no receipt
+// verdict) is "Pending" only for a block-less tx.
 
 export default function TransactionsList() {
   const { params, router } = useMatched();
@@ -179,7 +160,7 @@ export default function TransactionsList() {
   const [rawSearchParams] = useSearchParams();
   const rawBlockParam = rawSearchParams.get('block');
 
-  const currentChainId = Number.parseInt(params.chainId ?? '1', 10);
+  const currentChainId = parseChainIdParam(params.chainId) ?? 0;
   const chainInfo = getChainInfo(currentChainId);
   const symbol = getChainSymbol(currentChainId);
 
@@ -522,7 +503,7 @@ export default function TransactionsList() {
                   </td>
                   <td className={monoStyle}>{formatValue(BigInt(tx.value), symbol)}</td>
                   <td>
-                    <TxStatusBadge status={tx.status} />
+                    <TxStatusBadge status={tx.status} hasBlock={tx.blockNumber !== null} />
                   </td>
                 </tr>
               ))}

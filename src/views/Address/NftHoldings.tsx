@@ -248,7 +248,9 @@ function NftItemPreviews({
   return (
     <div className={nftItemStrip}>
       {items.map(item => {
-        const outcome = metadata.get(nftMetadataKey(item.contract, item.tokenId));
+        const outcome = metadata.get(
+          nftMetadataKey(item.contract, item.tokenId, item.standard),
+        );
         if (outcome?.status === 'ok') {
           return (
             <span key={item.tokenId} className={nftItemChip} data-testid="nft-item-chip">

@@ -93,3 +93,40 @@ describe('RpcGateway.chainMeta precedence', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(4);
   });
 });
+
+describe('RpcGateway survives a failed remote load', () => {
+  it('recovers after a non-2xx from the config endpoints instead of pinning the failure', async () => {
+    let healthy = false;
+    const { gateway, fetchImpl } = gatewayFor(url => {
+      if (!healthy) return { status: 500, body: { error: 'internal_error' } };
+      if (url.endsWith('/api/rpc-configs')) {
+        return {
+          status: 200,
+          body: { configs: [{ chainId: 1, url: 'http://my-eth-node:8545', urlRedacted: false }] },
+        };
+      }
+      if (url.endsWith('/api/chains/custom')) return { status: 200, body: { chains: [] } };
+      return null;
+    });
+
+    // A real API error (not a transport failure) rejects tryGet, so the
+    // single-flight load rejects.
+    await expect(gateway.chainMeta(1)).rejects.toThrow(/500/);
+
+    // The backend recovers. Every later tool call must be able to load again
+    // instead of replaying the cached rejection forever.
+    healthy = true;
+    const meta = await gateway.chainMeta(1);
+    expect(meta).toMatchObject({ rpcUrl: 'http://my-eth-node:8545', rpcSource: 'user-config' });
+    expect(fetchImpl).toHaveBeenCalledTimes(4);
+  });
+
+  it('keeps failing fast for concurrent callers of the same failed load', async () => {
+    const { gateway, fetchImpl } = gatewayFor(() => ({ status: 503, body: { error: 'down' } }));
+    const [a, b] = await Promise.allSettled([gateway.chainMeta(1), gateway.chainMeta(137)]);
+    expect(a.status).toBe('rejected');
+    expect(b.status).toBe('rejected');
+    // One load shared by both callers (single-flight preserved).
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+});

@@ -2,6 +2,7 @@ import { type Block, type TransactionReceipt, type Address, type Hex } from 'vie
 import { recoverAuthorizationAddress } from 'viem/utils';
 import { createRpcClient } from './realTimeData';
 import { decodeTokenTransfersFromLogs, type DecodedTokenTransfer } from './tokenTransferDecode';
+import { withOneRetry } from './rpcReadRetry';
 
 export type RpcBlock = {
   number: string;
@@ -156,7 +157,11 @@ const toRpcTxType = (txType: unknown): number => {
 // means the field is unusable and the entry degrades honestly.
 const toDecimalString = (value: unknown): string | undefined => {
   if (typeof value === 'bigint') return value.toString();
-  if (typeof value === 'number' && Number.isFinite(value)) return String(value);
+  // A number quantity (chainId/nonce) is exact while it is a safe integer;
+  // past 2^53 JSON.parse already rounded it and isFinite cannot tell, so
+  // the field is treated as unusable rather than rendered as a wrong chain
+  // or nonce.
+  if (typeof value === 'number' && Number.isSafeInteger(value)) return String(value);
   if (typeof value === 'string' && /^0x[0-9a-fA-F]+$/.test(value) && value.length > 2) {
     try {
       return BigInt(value).toString();
@@ -256,6 +261,45 @@ const withRecoveredAuthorities = async (tx: RpcTransaction): Promise<RpcTransact
   return { ...tx, authorizationList: entries };
 };
 
+// The one-retry rule for idempotent reads lives in utils/rpcReadRetry
+// (shared with the address discovery walk) — a failure that survives the
+// retry is REAL and must be reported, never laundered into "this block is
+// empty" that a paginated walk then pages past (losing those transactions
+// for good).
+
+// viem's getTransactionReceipt for a transaction that is not mined yet
+// rejects with TransactionReceiptNotFoundError. That answer is DATA ("no
+// receipt yet"), not a transport failure: it must not be retried (pending
+// transactions would cost double RPC traffic) and must not be reported as an
+// error.
+const isReceiptNotFound = (error: unknown): boolean => {
+  if (typeof error !== 'object' || error === null) return false;
+  const name = 'name' in error ? String(error.name) : '';
+  if (name === 'TransactionReceiptNotFoundError') return true;
+  const message = 'message' in error ? String(error.message) : '';
+  return /could not be found/i.test(message);
+};
+
+const readReceipt = async (
+  client: { getTransactionReceipt: (args: { hash: `0x${string}` }) => Promise<TransactionReceipt> },
+  hash: `0x${string}`,
+): Promise<TransactionReceipt | null> => {
+  try {
+    return await client.getTransactionReceipt({ hash });
+  } catch (error) {
+    if (isReceiptNotFound(error)) return null;
+    // A transport failure is not "no receipt yet": retry once, then let it
+    // stay null (the row renders the honest unknown status instead of a
+    // fabricated Pending) rather than killing the whole page's transaction
+    // list over one unreadable receipt.
+    try {
+      return await client.getTransactionReceipt({ hash });
+    } catch {
+      return null;
+    }
+  }
+};
+
 const formatTransaction = (
   tx: Record<string, unknown>,
   receipt: TransactionReceipt | null,
@@ -306,7 +350,13 @@ const formatTransaction = (
 
 /**
  * Fetch the latest N blocks directly from RPC.
- * Paginates by walking backwards from the latest block number.
+ *
+ * Paginates by walking backwards from the latest block number. `beforeBlock`
+ * is an EXCLUSIVE upper bound (the transaction walk's cursor convention):
+ * the newest block in the page is `beforeBlock - 1`, so the caller can hand
+ * over an already-seen block's own number + 1 — or the head + 1 for page 1 —
+ * without re-reading a block and without ever asking the RPC for a block
+ * above the head. Omit it for the head page, which starts at the chain head.
  */
 export const getLatestBlocks = async (
   chainId: number,
@@ -314,7 +364,15 @@ export const getLatestBlocks = async (
   beforeBlock?: bigint,
 ): Promise<{ blocks: RpcBlock[]; latestBlockNumber: bigint }> => {
   const client = await createRpcClient(chainId);
-  const latestBlockNumber = beforeBlock ?? (await client.getBlockNumber());
+  // The newest block of the page: the head without a cursor, one below the
+  // exclusive bound with one. Clamped at genesis so a cursor at or below 1n
+  // yields the block-0 page rather than a negative number.
+  const latestBlockNumber =
+    beforeBlock === undefined
+      ? await client.getBlockNumber()
+      : beforeBlock > 1n
+        ? beforeBlock - 1n
+        : 0n;
 
   const startBlock = latestBlockNumber;
   const endBlock = startBlock - BigInt(count - 1) > 0n ? startBlock - BigInt(count - 1) : 0n;
@@ -325,16 +383,19 @@ export const getLatestBlocks = async (
   }
 
   const blocks = await Promise.all(
-    blockNumbers.map(n =>
-      client
-        .getBlock({ blockNumber: n })
-        .then(b => formatBlock(b))
-        .catch(() => null),
-    ),
+    blockNumbers.map(async n => {
+      try {
+        return formatBlock(await withOneRetry(() => client.getBlock({ blockNumber: n })));
+      } catch (error) {
+        // Never a silently shorter list: the feed surfaces the failure (and
+        // keeps its last good data behind the staleness banner) instead.
+        throw new Error(`Failed to read block ${n} from RPC`, { cause: error });
+      }
+    }),
   );
 
   return {
-    blocks: blocks.filter((b): b is RpcBlock => b !== null),
+    blocks,
     latestBlockNumber,
   };
 };
@@ -368,7 +429,7 @@ export const getBlockTransactions = async (
   }[];
 
   const receipts = await Promise.all(
-    txObjects.map(tx => client.getTransactionReceipt({ hash: tx.hash }).catch(() => null)),
+    txObjects.map(tx => readReceipt(client, tx.hash)),
   );
 
   return Promise.all(
@@ -449,7 +510,13 @@ export const getLatestTransactions = async (
 
   for (let n = startBlock; n >= 0n; n--) {
     stopBlock = n;
-    const blockTxs = await getBlockTransactions(chainId, n).catch(() => []);
+    // A block read that keeps failing must NOT be recorded as an empty block:
+    // the walk would advance past its transactions and report a gapless page
+    // (hasMore/nextCursor) while they become unreachable. Surface it — the
+    // list view renders the error with Retry.
+    const blockTxs = await withOneRetry(() => getBlockTransactions(chainId, n)).catch(error => {
+      throw new Error(`Failed to read block ${n} from RPC`, { cause: error });
+    });
     // Page order is strictly descending (blockNumber, transactionIndex) —
     // newest first — so consecutive cursor pages tile the sequence with no
     // duplicate and no gap. (Walk transactions are always mined, but the
@@ -510,7 +577,7 @@ export const getTransactionByHash = async (
   const client = await createRpcClient(chainId);
   const [tx, receipt] = await Promise.all([
     client.getTransaction({ hash: txHash as `0x${string}` }),
-    client.getTransactionReceipt({ hash: txHash as `0x${string}` }).catch(() => null),
+    readReceipt(client, txHash as `0x${string}`),
   ]);
 
   let blockTimestamp: bigint | undefined;

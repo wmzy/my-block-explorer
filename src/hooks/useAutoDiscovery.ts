@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { setApiBase, getStoredManualBase, storeManualBase } from '@/util/apiBase';
 
 export const DEFAULT_PORTS = [8201, 8202, 8203, 8204, 8205] as const;
@@ -132,6 +132,23 @@ export function useAutoDiscovery() {
   const [isScanning, setIsScanning] = useState(false);
   const [switchedFromManual, setSwitchedFromManual] = useState<ManualBaseFallback | null>(null);
 
+  // Discovery-attempt generation. Every async path (the port scan, the
+  // stored-base probe, setApiUrl, disconnect) bumps this counter, and a
+  // path that resumes after an await checks it before writing any state
+  // or calling setApiBase. Without it a SLOW earlier attempt lands on
+  // top of a NEWER explicit one: the user points the app at a backend
+  // while the startup scan is still probing, and the late scan then
+  // re-points the whole app at a port they never chose (or reconnects a
+  // backend they just disconnected). The user's action must win.
+  const attemptRef = useRef(0);
+  // Bump and return the new generation. A ref (not state) so starting an
+  // attempt never re-renders — the calls are made from handlers and
+  // effects, not during render.
+  const beginAttempt = useCallback((): number => {
+    attemptRef.current += 1;
+    return attemptRef.current;
+  }, []);
+
   // Derived: true when connected to a service
   const isConnected = useMemo(() => status === 'found', [status]);
 
@@ -145,6 +162,7 @@ export function useAutoDiscovery() {
       ports: readonly number[] = DEFAULT_PORTS,
       host = DEFAULT_HOST,
     ): Promise<ServiceInfo | null> => {
+      const attempt = beginAttempt();
       setStatus('discovering');
       setError(null);
       setIsScanning(true);
@@ -152,6 +170,9 @@ export function useAutoDiscovery() {
 
       try {
         const services = await Promise.all(ports.map(port => probePort(port, host)));
+        // Superseded by a newer action (explicit URL, disconnect, a newer
+        // reconnect): discard the result instead of overwriting it.
+        if (attempt !== attemptRef.current) return null;
         const service = services.find(candidate => candidate !== null) ?? null;
 
         if (service) {
@@ -164,14 +185,17 @@ export function useAutoDiscovery() {
         setStatus('not-found');
         return null;
       } catch (err) {
+        if (attempt !== attemptRef.current) return null;
         setError(err instanceof Error ? err.message : 'Discovery failed');
         setStatus('error');
         return null;
       } finally {
-        setIsScanning(false);
+        // Only the newest attempt owns the scanning flag: a superseded
+        // one clearing it would hide a scan that is still running.
+        if (attempt === attemptRef.current) setIsScanning(false);
       }
     },
-    [],
+    [beginAttempt],
   );
 
   // Auto-discover on page load. The stored manual base is an explicit
@@ -183,11 +207,14 @@ export function useAutoDiscovery() {
   // backend, that switch is surfaced via switchedFromManual instead of
   // passing silently.
   const autoDiscover = useCallback(async (): Promise<ServiceInfo | null> => {
+    const attempt = beginAttempt();
     const savedUrl = getStoredManualBase();
     if (savedUrl) {
       try {
         const health = await probeHealth(savedUrl, MANUAL_URL_TIMEOUT_MS);
 
+        // Superseded while the stored-base probe was in flight.
+        if (attempt !== attemptRef.current) return null;
         if (health?.status) {
           const info = serviceInfoFromUrl(savedUrl, health);
           setServiceInfo(info);
@@ -202,52 +229,66 @@ export function useAutoDiscovery() {
       }
     }
 
+    // discover() opens its OWN attempt, which supersedes this one from
+    // here on — that is what lets an explicit action in between win.
     const service = await discover();
     if (savedUrl && service && !sameBackendOrigin(service.url, savedUrl)) {
       setSwitchedFromManual({ configured: savedUrl, using: service.url });
     }
     return service;
-  }, [discover]);
+  }, [discover, beginAttempt]);
 
   // Manually set API URL (setup panel). Persists the choice so it takes
   // precedence over scans on the next startup too.
-  const setApiUrl = useCallback(async (url: string): Promise<boolean> => {
-    try {
-      const health = await probeHealth(url, MANUAL_URL_TIMEOUT_MS);
+  const setApiUrl = useCallback(
+    async (url: string): Promise<boolean> => {
+      // An explicit choice opens a new generation: any scan still probing
+      // is now stale and must not re-point the app when it lands.
+      const attempt = beginAttempt();
+      try {
+        const health = await probeHealth(url, MANUAL_URL_TIMEOUT_MS);
 
-      if (health?.status) {
-        setServiceInfo(serviceInfoFromUrl(url, health));
-        setStatus('found');
-        setError(null);
-        // An explicit fresh choice supersedes any earlier silent
-        // fallback — the banner would be stale.
-        setSwitchedFromManual(null);
+        if (attempt !== attemptRef.current) return false;
+        if (health?.status) {
+          setServiceInfo(serviceInfoFromUrl(url, health));
+          setStatus('found');
+          setError(null);
+          // An explicit fresh choice supersedes any earlier silent
+          // fallback — the banner would be stale.
+          setSwitchedFromManual(null);
 
-        storeManualBase(url);
-        setApiBase(url);
+          storeManualBase(url);
+          setApiBase(url);
 
-        return true;
+          return true;
+        }
+
+        return false;
+      } catch (err) {
+        if (attempt !== attemptRef.current) return false;
+        setError(err instanceof Error ? err.message : 'Invalid API URL');
+        return false;
       }
-
-      return false;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Invalid API URL');
-      return false;
-    }
-  }, []);
+    },
+    [beginAttempt],
+  );
 
   // Disconnect from current service (preserves saved URL for reconnect)
   const disconnect = useCallback(() => {
+    // Opens a new generation: a scan or reconnect still in flight is now
+    // stale, so it cannot reconnect the backend the user just turned off.
+    beginAttempt();
     setApiBase('');
     setServiceInfo(null);
     setError(null);
     setIsScanning(false);
     setStatus('not-found');
     // Intentionally keep the stored manual base for reconnect
-  }, []);
+  }, [beginAttempt]);
 
   // Reconnect: try saved URL first, fallback to port scan
   const reconnect = useCallback(async (): Promise<ServiceInfo | null> => {
+    const attempt = beginAttempt();
     const savedUrl = getStoredManualBase();
 
     if (savedUrl) {
@@ -258,6 +299,8 @@ export function useAutoDiscovery() {
       try {
         const health = await probeHealth(savedUrl, MANUAL_URL_TIMEOUT_MS);
 
+        // Superseded while the stored-base probe was in flight.
+        if (attempt !== attemptRef.current) return null;
         if (health?.status) {
           const info = serviceInfoFromUrl(savedUrl, health);
           setServiceInfo(info);
@@ -273,13 +316,13 @@ export function useAutoDiscovery() {
     }
 
     // Fallback to port scanning; same silent-switch surfacing as the
-    // startup path above.
+    // startup path above. discover() opens its own attempt.
     const service = await discover();
     if (savedUrl && service && !sameBackendOrigin(service.url, savedUrl)) {
       setSwitchedFromManual({ configured: savedUrl, using: service.url });
     }
     return service;
-  }, [discover]);
+  }, [discover, beginAttempt]);
 
   // Auto-discover on mount
   useEffect(() => {

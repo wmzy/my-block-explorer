@@ -4,6 +4,7 @@ import { rpcManager } from './RpcManager';
 import { contractSourceService } from './ContractSourceService';
 import type { Address, PublicClient } from 'viem';
 import { selectorOf } from '../utils/txDecode';
+import { withOneRetry } from '../utils/rpcReadRetry';
 import { createLogger } from '../server/logger';
 
 const logger = createLogger('address-service');
@@ -348,6 +349,20 @@ export const scanBlockForAddressTransactions = (
 /**
  * Scan a contiguous range of blocks and extract transactions involving the target address.
  * Fetches blocks in parallel batches to reduce latency.
+ *
+ * A block read that FAILS is never data. The old
+ * `.catch(() => null)` plus the `!block?.transactions` skip turned one
+ * transient getBlock failure into "this block is empty": every
+ * transaction of that block vanished from the discovered set, the cursor
+ * paged past the hole for good, and the short list was cached for 60s —
+ * all under the same `coverage: 'partial'` a healthy search carries.
+ * Reads are now retried once (utils/rpcReadRetry) and a failure that
+ * survives the retry propagates: `getAddressTransactions` already maps a
+ * thrown search to its honest `coverage:'none' / reason:'search-failed'`
+ * verdict instead of serving a plausible shorter list.
+ *
+ * A null/undefined block with no error IS data — viem folds a '0x' empty
+ * block into undefined — so it is kept and consumes no retry.
  */
 const scanBlocksForAddress = async (
   client: PublicClient,
@@ -371,7 +386,17 @@ const scanBlocksForAddress = async (
     const blocks = await Promise.all(
       batch.map(async bn => {
         rpcCallCount.value++;
-        return client.getBlock({ blockNumber: bn, includeTransactions: true }).catch(() => null);
+        return withOneRetry(
+          () => client.getBlock({ blockNumber: bn, includeTransactions: true }),
+          // The retry is charged only when it is actually issued, so a
+          // healthy walk's call accounting is unchanged — and a failure
+          // that survives the retry cannot stop the walk by exhausting
+          // the counter, which would report a broken window as "exhausted"
+          // instead of the honest search-failed verdict.
+          () => {
+            rpcCallCount.value++;
+          },
+        );
       }),
     );
 

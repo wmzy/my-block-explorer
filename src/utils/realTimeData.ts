@@ -29,18 +29,32 @@ const loadRpcConfigs = (): Promise<void> => {
       rpcConfigsLoaded = true;
     })
     .catch((reason: unknown) => {
-      // Keep the default-RPC fallback, but surface why: otherwise a
-      // server-side rejection (e.g. 403) silently forks this frontend's
-      // RPC set from the server's and looks like random slowness.
       const message = reason instanceof Error ? reason.message : String(reason);
       const status =
         typeof (reason as { status?: unknown } | null)?.status === 'number'
           ? (reason as { status: number }).status
           : undefined;
+      // The zero-backend mode (apiBase === '' rejects with status 0) is a
+      // STABLE state — DiscoveryGate renders the app degraded, so a first
+      // call before the backend answers is the normal case. Latch that one
+      // and let the discovery reconnect re-probe, instead of re-requesting
+      // from every page forever.
+      if (status === 0) {
+        rpcConfigsLoaded = true;
+        console.warn(
+          `No backend for custom RPC configs: ${message}. Falling back to default RPC endpoints.`,
+        );
+        return;
+      }
+      // A real backend answered and the fetch failed (403, 5xx, network).
+      // Do NOT latch that: the user is then driven onto viem's public
+      // defaults for the rest of the session — exactly the rate-limited
+      // endpoints they configured around. Leave the latch open so the next
+      // client request tries again.
+      rpcConfigsLoaded = false;
       console.warn(
         `Custom RPC configs unavailable${status ? ` (HTTP ${status})` : ''}: ${message}. Falling back to default RPC endpoints.`,
       );
-      rpcConfigsLoaded = true;
     })
     .finally(() => {
       rpcConfigsPromise = null;

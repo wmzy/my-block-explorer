@@ -44,6 +44,7 @@ import {
   buildLineSegments,
   expandExtent,
   formatDayTick,
+  frameWithPad,
   linePoints,
   lineYScaler,
   seriesExtent,
@@ -56,6 +57,7 @@ import { addressSearchSchema } from '@/views/Address/search';
 import { classifyTokenOverview, formatTokenSupply } from '@/views/Address/tokenOverview';
 import TokenTransfers, { TRANSFER_LIMIT } from '@/views/Address/TokenTransfers';
 import { getChainInfo, getChainName } from '@/config/chains';
+import { parseChainIdParam } from '@/utils/chainParam';
 import { useContractSource } from '@/services/contracts';
 import { recordViewedToken } from '@/services/tokenDirectory';
 import { scanAbiRisks, type AbiRiskFlag } from '@/utils/abiRiskScan';
@@ -532,11 +534,11 @@ function PriceHistoryChart({
     [points, start, windowDays],
   );
   const segments = useMemo(
-    () => buildLineSegments(series, PRICE_CHART_WIDTH, PRICE_CHART_HEIGHT, PRICE_CHART_PAD),
+    () => buildLineSegments(series, frameWithPad(PRICE_CHART_WIDTH, PRICE_CHART_HEIGHT, PRICE_CHART_PAD)),
     [series],
   );
   const markers = useMemo(
-    () => linePoints(series, PRICE_CHART_WIDTH, PRICE_CHART_HEIGHT, PRICE_CHART_PAD),
+    () => linePoints(series, frameWithPad(PRICE_CHART_WIDTH, PRICE_CHART_HEIGHT, PRICE_CHART_PAD)),
     [series],
   );
   const lastMarker = markers.length > 0 ? markers[markers.length - 1] : undefined;
@@ -776,7 +778,7 @@ function AbiRiskScanCard({ flags }: { flags: readonly AbiRiskFlag[] }) {
 export default function TokenPage() {
   const { params, router } = useMatched();
 
-  const currentChainId = Number.parseInt(params.chainId ?? '1', 10);
+  const currentChainId = parseChainIdParam(params.chainId) ?? 0;
   const chainInfo = getChainInfo(currentChainId);
   const address = params.address ?? '';
   // Two-tier URL-param guard (the address page's twin, ./addressValidity):

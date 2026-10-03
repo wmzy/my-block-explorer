@@ -1,5 +1,6 @@
 import { eq, and, sql, desc, count } from 'drizzle-orm';
 import { createLogger } from '../server/logger';
+import { secondsToDate } from '../utils/dbTime';
 
 const logger = createLogger('block-service');
 
@@ -46,6 +47,17 @@ const createBlockService = (deps: BlockServiceDeps) => {
     logError: logErr,
   } = deps;
 
+  // A stored quantity mapped onto the API row: 0 is a VALUE, so only
+  // null/undefined (and a non-finite read) mean "not recorded". The
+  // integer columns reach this as numbers, but the adapter can hand back
+  // a decimal string for an integer column, so both are accepted — and a
+  // fractional read is dropped rather than served as a count.
+  const toNumberOrUndefined = (value: unknown): number | undefined => {
+    if (value === null || value === undefined || value === '') return undefined;
+    const parsed = typeof value === 'number' ? value : Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  };
+
   const formatBlock = (dbBlock: Record<string, unknown>): Block => {
     const get = (camel: string, snake: string) => dbBlock[camel] ?? dbBlock[snake];
     return {
@@ -53,9 +65,7 @@ const createBlockService = (deps: BlockServiceDeps) => {
       number: BigInt((get('number', 'number') as string | number) || 0),
       hash: get('hash', 'hash') as string,
       parentHash: (get('parentHash', 'parent_hash') as string) || undefined,
-      timestamp: get('timestamp', 'timestamp')
-        ? new Date(get('timestamp', 'timestamp') as string | number)
-        : undefined,
+      timestamp: secondsToDate(get('timestamp', 'timestamp')),
       miner: (get('miner', 'miner') as string) || undefined,
       gasLimit: get('gasLimit', 'gas_limit')
         ? BigInt(get('gasLimit', 'gas_limit') as string)
@@ -66,8 +76,17 @@ const createBlockService = (deps: BlockServiceDeps) => {
       baseFeePerGas: get('baseFeePerGas', 'base_fee_per_gas')
         ? BigInt(get('baseFeePerGas', 'base_fee_per_gas') as string)
         : undefined,
-      transactionCount: (get('transactionCount', 'transaction_count') as number) || undefined,
-      sizeBytes: (get('sizeBytes', 'size_bytes') as number) || undefined,
+      // `get(...) ? x : undefined` on these two would delete a REAL 0:
+      // transaction_count is an integer column written as
+      // `transactions.length`, so an empty block stores 0 and the mapper
+      // used to report it as absent — a blank Txs cell in the blocks
+      // list, "View  Transactions" on the detail page, and an
+      // InternalTxnsSection whose `transactionCount === 0` branch never
+      // ran. Only null/undefined mean "not recorded". (The BIGNUM
+      // columns above get away with the truthiness form only because a
+      // bignum zero arrives as the truthy string "0".)
+      transactionCount: toNumberOrUndefined(get('transactionCount', 'transaction_count')),
+      sizeBytes: toNumberOrUndefined(get('sizeBytes', 'size_bytes')),
       difficulty: (get('difficulty', 'difficulty') as string) || undefined,
       totalDifficulty: (get('totalDifficulty', 'total_difficulty') as string) || undefined,
       extraData: (get('extraData', 'extra_data') as string) || undefined,
@@ -75,26 +94,30 @@ const createBlockService = (deps: BlockServiceDeps) => {
       stateRoot: (get('stateRoot', 'state_root') as string) || undefined,
       transactionsRoot: (get('transactionsRoot', 'transactions_root') as string) || undefined,
       receiptsRoot: (get('receiptsRoot', 'receipts_root') as string) || undefined,
-      indexedAt: get('indexedAt', 'indexed_at')
-        ? new Date(get('indexedAt', 'indexed_at') as string | number)
-        : undefined,
+      indexedAt: secondsToDate(get('indexedAt', 'indexed_at')),
     };
   };
 
-  const indexBlock = async (
-    chainId: number,
-    chainBlock: Record<string, unknown>,
-  ): Promise<Block> => {
-    const blockTimestamp = chainBlock.timestamp
-      ? new Date(Number(chainBlock.timestamp) * 1000)
-      : null;
+  // The row an RPC block would be stored as. Factored out of indexBlock so
+  // the read path can answer from the same mapping WITHOUT the cache write.
+  //
+  // SECONDS, matching the `timestamp` column's customType. The old code
+  // passed a Date in, which toDriver (db-types.ts) only stringifies —
+  // landing as a local-format "Wed Oct 01 2025 21:20:23 GMT+0800 …" string
+  // that DuckDB rejects outright ("Could not convert string … to INT64"),
+  // so indexing any block threw. viem's block timestamp is already seconds.
+  const buildBlockValues = (chainId: number, chainBlock: Record<string, unknown>) => {
+    const blockTimestampSeconds =
+      chainBlock.timestamp === null || chainBlock.timestamp === undefined
+        ? null
+        : Number(chainBlock.timestamp);
 
-    const values = {
+    return {
       chainId,
       number: chainBlock.number?.toString() ?? '0',
       hash: chainBlock.hash as string,
       parentHash: (chainBlock.parentHash as string) ?? null,
-      timestamp: blockTimestamp,
+      timestamp: blockTimestampSeconds,
       miner: (chainBlock.miner as string) ?? null,
       gasLimit: chainBlock.gasLimit?.toString() ?? null,
       gasUsed: chainBlock.gasUsed?.toString() ?? null,
@@ -109,6 +132,13 @@ const createBlockService = (deps: BlockServiceDeps) => {
       transactionsRoot: (chainBlock.transactionsRoot as string) ?? null,
       receiptsRoot: (chainBlock.receiptsRoot as string) ?? null,
     };
+  };
+
+  const indexBlock = async (
+    chainId: number,
+    chainBlock: Record<string, unknown>,
+  ): Promise<Block> => {
+    const values = buildBlockValues(chainId, chainBlock);
 
     await db
       .insert(blocks)
@@ -139,6 +169,28 @@ const createBlockService = (deps: BlockServiceDeps) => {
     const row = inserted[0];
     if (!row) throw new Error('Failed to insert block');
     return formatBlock(row);
+  };
+
+  // The READ path's cache write. A block that was just read from the RPC is
+  // an ANSWER; indexing it is an optimization. Before this, the rejection
+  // escaped the read path's catch, which answers `null` — and routes/blocks
+  // renders `null` as a 404 "Block not found" for a block whose header the
+  // RPC had just returned (and which a later request would index happily).
+  // The mapping is shared with the write path, so the answer is identical
+  // whether or not the row landed.
+  const cacheBlock = async (
+    chainId: number,
+    chainBlock: Record<string, unknown>,
+  ): Promise<Block> => {
+    try {
+      return await indexBlock(chainId, chainBlock);
+    } catch (error) {
+      logErr(error, 'BlockService.cacheBlock', {
+        chainId,
+        blockNumber: String(chainBlock.number ?? ''),
+      });
+      return formatBlock(buildBlockValues(chainId, chainBlock));
+    }
   };
 
   const service = {
@@ -181,7 +233,7 @@ const createBlockService = (deps: BlockServiceDeps) => {
         }, chainId);
 
         const latestBlock = await fetchLatestBlock();
-        const block: Block = await indexBlock(chainId, latestBlock);
+        const block: Block = await cacheBlock(chainId, latestBlock);
 
         blockCache.set(cacheKey, block, 15000);
         return block;
@@ -209,8 +261,7 @@ const createBlockService = (deps: BlockServiceDeps) => {
           includeTransactions: false,
         });
 
-        const block = await indexBlock(chainId, chainBlock);
-        return block;
+        return await cacheBlock(chainId, chainBlock);
       } catch (error) {
         logErr(error, 'BlockService.getBlockByNumber', {
           chainId,
@@ -238,8 +289,7 @@ const createBlockService = (deps: BlockServiceDeps) => {
           includeTransactions: false,
         });
 
-        const block = await indexBlock(chainId, chainBlock);
-        return block;
+        return await cacheBlock(chainId, chainBlock);
       } catch (error) {
         logErr(error, 'BlockService.getBlockByHash', { chainId, blockHash });
         return null;
@@ -271,7 +321,11 @@ const createBlockService = (deps: BlockServiceDeps) => {
         return { blocks: formattedBlocks, total };
       } catch (error) {
         logErr(error, 'BlockService.getBlocks', { chainId });
-        return { blocks: [], total: 0 };
+        // The route's own catch answers 500 'Failed to get blocks'. An
+        // error swallowed here reached the client as a 200 with an empty
+        // page — indistinguishable from a chain with nothing indexed, and
+        // with no retry affordance (same rule as /api/stats/overview).
+        throw error;
       }
     },
 
@@ -318,17 +372,26 @@ const createBlockService = (deps: BlockServiceDeps) => {
           .limit(100);
 
         const totalBlocks = countResult[0]?.value || 0;
-        const latestBlock = latestResult[0]?.number ? BigInt(latestResult[0].number) : null;
+        // Presence, not truthiness: `blocks.number` is a bignum column, so a
+        // chain whose only indexed block is genesis yields 0n — falsy, and
+        // the old test reported latestBlock: null beside totalBlocks: 1
+        // (a self-contradictory payload for a freshly booted dev chain).
+        const latestNumber = latestResult[0]?.number;
+        const latestBlock = latestNumber != null ? BigInt(latestNumber) : null;
 
         let avgBlockTime: number | null = null;
         const blocksWithTimestamp = recentBlocks.filter(b => b.timestamp != null);
         if (blocksWithTimestamp.length >= 2) {
           const timeDiffs: number[] = [];
           for (let i = 0; i < blocksWithTimestamp.length - 1; i++) {
-            const current = new Date(blocksWithTimestamp[i].timestamp!);
-            const next = new Date(blocksWithTimestamp[i + 1].timestamp!);
-            const diff = (current.getTime() - next.getTime()) / 1000;
-            timeDiffs.push(diff);
+            // Same seconds contract as formatBlock: the column is unix
+            // seconds, so both ends are scaled before subtracting. Reading
+            // them as ms made every diff ~1000× too small, collapsing
+            // avgBlockTime to fractions of a second on real chains.
+            const current = secondsToDate(blocksWithTimestamp[i].timestamp)?.getTime() ?? NaN;
+            const next = secondsToDate(blocksWithTimestamp[i + 1].timestamp)?.getTime() ?? NaN;
+            const diff = (current - next) / 1000;
+            if (Number.isFinite(diff)) timeDiffs.push(diff);
           }
           if (timeDiffs.length > 0) {
             avgBlockTime = timeDiffs.reduce((a, b) => a + b, 0) / timeDiffs.length;

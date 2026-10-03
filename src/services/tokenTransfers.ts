@@ -68,20 +68,48 @@ export type TokenTransferPage = {
   mode?: TransferScanMode;
 };
 
-// One-shot cache-bypass latch for the tab's explicit Retry/Refresh and
-// "Search deeper": the NEXT fetch sends ?refresh=1 so the backend skips
-// its 60s scan cache (even a not-yet-expired 'partial' entry) and
-// overwrites it with the re-scan. Refresh is per-REQUEST semantics and
-// deliberately NOT a hook argument: hook args are the cache identity
-// below, so a refresh boolean riding them would either stick (re-scanning
-// on every page turn) or reset (flashing the stale pre-refresh entry back
-// in). refetch() already drops the frontend cache entry; the latch only
-// needs to reach the wire.
-let refreshNextFetch = false;
+// Cache-bypass latch for the tab's explicit Retry/Refresh and "Search
+// deeper": the fetch armed for a given request identity sends ?refresh=1
+// so the backend skips its 60s scan cache (even a not-yet-expired
+// 'partial' entry) and overwrites it with the re-scan.
+//
+// Refresh is per-REQUEST semantics and deliberately NOT a hook argument:
+// hook args are the cache identity below, so a refresh boolean riding
+// them would either stick (re-scanning on every page turn) or reset
+// (flashing the stale pre-refresh entry back in). refetch() already
+// drops the frontend cache entry; the latch only needs to reach the wire.
+//
+// The latch is keyed by the request identity it was armed FOR, not a
+// bare "next fetch wins" flag: a global boolean was spent by whatever
+// request happened to run next — another address, another page, a
+// background re-render — so a user's Retry could silently re-serve the
+// stale cached scan while an unrelated request paid for the backend
+// re-scan. Arming a specific identity keeps the semantics and removes
+// the cross-talk.
+let armedRefreshKey: string | null = null;
 
-/** Arm ?refresh=1 for the next token-transfers fetch (consumed once). */
-export function requestTokenTransfersRefresh(): void {
-  refreshNextFetch = true;
+/** The request identity a refresh is scoped to (chain/address/window/mode). */
+const refreshKeyFor = (
+  chainId: number,
+  address: string,
+  windowBlocks: number | undefined,
+  mode: TransferScanMode,
+): string => `${chainId}:${address.toLowerCase()}:${windowBlocks ?? 'default'}:${mode}`;
+
+/**
+ * Arm ?refresh=1 for the next fetch of THIS request (chain + address +
+ * window + mode); a fetch of any other request ignores and preserves it.
+ * The page/cursor is deliberately NOT part of the identity: the user's
+ * intent is "re-scan this address at this depth", and the entry the
+ * backend replaces is the full cached list, not one page of it.
+ */
+export function requestTokenTransfersRefresh(
+  chainId: number,
+  address: string,
+  windowBlocks?: number,
+  mode: TransferScanMode = 'participant',
+): void {
+  armedRefreshKey = refreshKeyFor(chainId, address, windowBlocks, mode);
 }
 
 export function fetchTokenTransfers(
@@ -98,10 +126,13 @@ export function fetchTokenTransfers(
   // ~30s budget — the default 10s per-attempt timeout would abort
   // healthy scans. `window` widens the scanned block range; omitted →
   // backend default. `mode` picks the getLogs filter shape (token vs
-  // participant); omitted → participant. `refresh` is the consumed
-  // one-shot latch above.
-  const refresh = refreshNextFetch;
-  refreshNextFetch = false;
+  // participant); omitted → participant.
+  //
+  // The latch is consumed ONLY by the request it was armed for; any other
+  // request passes through without spending it (and without dropping it).
+  const requestKey = refreshKeyFor(chainId, address, window, mode);
+  const refresh = armedRefreshKey === requestKey;
+  if (refresh) armedRefreshKey = null;
   return get<TokenTransferPage>(
     `/api/chains/${chainId}/addresses/${address}/transfers`,
     {

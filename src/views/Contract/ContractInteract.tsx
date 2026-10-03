@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, type ReactNode } from 'react';
+import { useState, useEffect, useMemo, useRef, type ReactNode } from 'react';
 import { css } from '@linaria/core';
 import type { Abi, StateOverride as ViemStateOverride } from 'viem';
 import {
@@ -316,6 +316,26 @@ export function ContractInteract({
     name: '',
   });
   const [debouncedNameFilter, setDebouncedNameFilter] = useState('');
+
+  // The route reuses this panel across contracts (chainId/contractAddress
+  // change without a remount). Every piece of state declared above belongs
+  // to ONE contract: the result keys carry the signature + args but no
+  // contract identity, so the previous contract's read/simulate answers were
+  // rendering under the next contract's forms (and its block override and
+  // filters came along too). Render-phase resync — the PrivateNoteChip /
+  // StorageExplorer pattern — so no frame can ever show the old contract's
+  // answer.
+  const contractIdentity = `${chainId}:${contractAddress}`;
+  const contractIdentityRef = useRef(contractIdentity);
+  if (contractIdentityRef.current !== contractIdentity) {
+    contractIdentityRef.current = contractIdentity;
+    setResults({});
+    setErrors({});
+    setLoadingStates({});
+    setGlobalBlockNumber('');
+    setBlockError('');
+    setFilters({ readWrite: 'all', source: 'all', name: '' });
+  }
 
   // Wallet liveness for the whole panel: one read on mount plus the
   // provider's own chainChanged/accountsChanged events — no polling. A
@@ -893,7 +913,13 @@ export function ContractInteract({
         <div className={functionListStyles}>
           {filteredFunctions.map((func, index) => (
             <FunctionCallForm
-              key={`${func.source}-${func.interactionType}-${index}`}
+              // Identity + signature key: an index-only key reused the SAME
+              // form instance for the next contract's function at the same
+              // position (React reuses when the element type and key match),
+              // so typed args, value and expanded state leaked across
+              // contracts. The signature is unique per function after facet
+              // dedup; the index stays as a deterministic tiebreaker.
+              key={`${contractAddress}:${functionSignature(func)}-${index}`}
               func={func}
               onCall={
                 func.interactionType === 'read'

@@ -11,6 +11,7 @@ import { RawDataBlock } from '@/components/transactions/RawDataBlock';
 import { Badge } from '@/components/ui/Badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/Card';
 import { CopyableHash } from '@/components/ui/CopyableHash';
+import { TxStatusBadge } from '@/components/ui/TxStatusBadge';
 import { linkStyle, monoStyle } from '@/components/ui/DataTable';
 import { ExternalLinks } from '@/components/ui/ExternalLinks';
 import { ErrorState } from '@/components/ui/ErrorState';
@@ -20,6 +21,7 @@ import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
 import { RawJsonCard, type RawJsonFetcher } from '@/components/ui/RawJson';
 import { UnitToggle } from '@/components/ui/UnitToggle';
 import { POPULAR_CHAINS, getChainInfo, getChainName, getChainSymbol } from '@/config/chains';
+import { parseChainIdParam } from '@/utils/chainParam';
 import { getExternalTxLinks } from '@/config/externalTools';
 import { redirectReplace } from '@/views/Home/Landing';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
@@ -76,29 +78,6 @@ const formatGas = (gas: string): string => {
     return gas;
   }
 };
-
-// status: 1 → success, 0 → failed, -1 → pending (no receipt yet, NOT failed).
-function TxStatusBadge({ status }: { status: number }) {
-  if (status === 1) {
-    return (
-      <Badge variant="success" size="sm">
-        Success
-      </Badge>
-    );
-  }
-  if (status === 0) {
-    return (
-      <Badge variant="error" size="sm">
-        Failed
-      </Badge>
-    );
-  }
-  return (
-    <Badge variant="default" size="sm">
-      Pending
-    </Badge>
-  );
-}
 
 // Wrong-chain lookups: viem raises TransactionNotFoundError, and some
 // providers answer with an RPC error whose message embeds "not found".
@@ -1114,7 +1093,7 @@ function AuthorizationsCard({
 export default function TransactionDetail() {
   const { params, router } = useMatched();
 
-  const currentChainId = Number.parseInt(params.chainId ?? '1', 10);
+  const currentChainId = parseChainIdParam(params.chainId) ?? 0;
   const chainInfo = getChainInfo(currentChainId);
   const txHash = params.txHash ?? '';
 
@@ -1356,7 +1335,7 @@ export default function TransactionDetail() {
                 <InfoGrid>
                   <InfoItem label="Transaction Hash">{txInfo.hash}</InfoItem>
                   <InfoItem label="Status">
-                    <TxStatusBadge status={txInfo.status} />
+                    <TxStatusBadge status={txInfo.status} hasBlock={txInfo.blockNumber !== null} />
                   </InfoItem>
                   <InfoItem label="Block Number">
                     {/* Pending tx (not yet mined): honest Pending text,
@@ -1636,8 +1615,15 @@ export default function TransactionDetail() {
             )}
 
             {/* Raw JSON appendix: verbatim RPC payloads behind this page,
-                collapsed by default and fetched on first expand only. */}
-            <RawJsonCard title="Raw JSON" fetchers={rawJsonFetchers} />
+                collapsed by default and fetched on first expand only. The
+                identity is this transaction's — the route reuses this
+                subtree across transactions, so without it the section
+                latches would show the previous transaction's payload. */}
+            <RawJsonCard
+              identity={`${currentChainId}:${txInfo.hash}`}
+              title="Raw JSON"
+              fetchers={rawJsonFetchers}
+            />
           </div>
         )}
       </PageContainer>

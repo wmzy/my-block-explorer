@@ -258,6 +258,23 @@ export function CallTraceCard({ chainId, txHash, txGasUsed }: CallTraceCardProps
   const fetchedOnce = useRef(false);
   const fetchSeq = useRef(0);
 
+  // The tx-detail route reuses this card across transactions (only :txHash
+  // changes — native-router composes matched elements without a key), so
+  // every piece of state above describes exactly ONE tx's trace. A different
+  // hash must reset all of it, the fetch-once latch included: otherwise tx B
+  // renders tx A's tree under its own header and never refetches. Adjusting
+  // state during render (React's documented props-change pattern) keeps the
+  // stale output from ever reaching the screen.
+  const txIdentity = `${chainId}:${txHash}`;
+  const txIdentityRef = useRef(txIdentity);
+  if (txIdentityRef.current !== txIdentity) {
+    txIdentityRef.current = txIdentity;
+    setExpanded(false);
+    setState({ phase: 'idle' });
+    fetchedOnce.current = false;
+    fetchSeq.current += 1; // drop any in-flight settle from the previous tx
+  }
+
   const runFetch = useCallback(async () => {
     const seq = fetchSeq.current + 1;
     fetchSeq.current = seq;

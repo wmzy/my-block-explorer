@@ -19,6 +19,7 @@ import { createLogger } from '../server/logger';
 import { getValidatedAddress, getValidatedChainId } from '../server/validation';
 import { requireAdminTokenIfConfigured } from '../middleware/admin-token';
 import { createRateLimiter } from '../middleware/rate-limit';
+import { parseStrictInteger } from '../utils/validation';
 import {
   watchService,
   WATCH_EVENTS_DEFAULT_LIMIT,
@@ -263,8 +264,11 @@ app.get('/chains/:chainId/watch/events', async c => {
   const limitRaw = c.req.query('limit');
   let limit = WATCH_EVENTS_DEFAULT_LIMIT;
   if (limitRaw !== undefined) {
-    const parsed = Number(limitRaw);
-    if (!Number.isInteger(parsed) || parsed < 1) {
+    // Strict decimal parse: Number() would accept '0x10' (16), '1e2'
+    // (100) and ' 7 ' (7), silently answering a page the client never
+    // asked for. parseStrictInteger is the repo-wide convention.
+    const parsed = parseStrictInteger(limitRaw);
+    if (parsed === null || parsed < 1) {
       return c.json({ error: 'invalid_limit', message: 'limit must be a positive integer' }, 400);
     }
     limit = Math.min(parsed, WATCH_EVENTS_MAX_LIMIT);

@@ -39,6 +39,7 @@ import {
   type ScanJob,
   type ScanJobStatus,
 } from '@/services/addressScan';
+import { parseScanStartBlock } from '@/views/Address/scanStartBlock';
 
 // Mutating scan actions answer a missing browser token with a raw 403
 // body that offers no path forward; this suffix points at where the
@@ -296,10 +297,12 @@ export function DeepScan({ chainId, address, txPayload }: DeepScanProps) {
     if (liveStatus === 'pending' || liveStatus === 'running') setCatchupNotice(null);
   }, [liveStatus]);
 
-  const trimmedFrom = fromBlockInput.trim();
-  const parsedFrom: number | 'earliest' = trimmedFrom === '' ? 'earliest' : Number(trimmedFrom);
-  const fromBlockValid =
-    trimmedFrom === '' || (Number.isInteger(parsedFrom) && (parsedFrom as number) >= 0);
+  // Strict start-block parse: Number() accepted '0x1a' (26) and '1e5'
+  // (100000) — both passed Number.isInteger, so the field reported itself
+  // valid and the POST carried a block the user never typed.
+  const startBlock = parseScanStartBlock(fromBlockInput);
+  const fromBlockValid = startBlock.ok;
+  const parsedFrom: number | 'earliest' = startBlock.ok ? startBlock.value : 'earliest';
 
   const runAction = (kind: ScanAction, invoke: () => Promise<unknown>, fallback: string): void => {
     setAction(kind);

@@ -55,7 +55,12 @@ export type CallTraceNode = {
 const parseQuantity = (raw: unknown): bigint | null => {
   if (typeof raw === 'bigint') return raw >= 0n ? raw : null;
   if (typeof raw === 'number') {
-    return Number.isInteger(raw) && raw >= 0 ? BigInt(raw) : null;
+    // JSON has no big integers: a literal past 2^53 was already rounded by
+    // JSON.parse before this function saw it, and `isInteger` cannot tell a
+    // rounded value from an exact one. Below the safe range every integer is
+    // exactly representable, so those stay accepted; above it the field is
+    // unusable and degrades to the honest absence (null).
+    return Number.isSafeInteger(raw) && raw >= 0 ? BigInt(raw) : null;
   }
   if (typeof raw === 'string' && raw !== '') {
     try {

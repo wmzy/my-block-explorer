@@ -22,6 +22,7 @@ import { getChainName } from '../config/chains';
 
 const logger = createLogger('addresses-routes');
 import { getValidatedChainId, getValidatedAddress } from '../server/validation';
+import { parseStrictInteger } from '../utils/validation';
 import { formatTransactionForApi, safeJsonResponse } from '../utils/serialization';
 import { respondError } from '../utils/api-error';
 import { createRateLimiter } from '../middleware/rate-limit';
@@ -117,13 +118,15 @@ app.get(
 
     const rawLimit = c.req.query('limit');
     const rawPage = c.req.query('page');
-    const parsedLimit = rawLimit === undefined || rawLimit === '' ? 20 : parseInt(rawLimit, 10);
-    const parsedPage = rawPage === undefined || rawPage === '' ? 1 : parseInt(rawPage, 10);
+    // Strict decimal parse (parseInt accepted a valid prefix and ignored the
+    // rest, so `?limit=20abc` was served as limit 20).
+    const parsedLimit = rawLimit === undefined || rawLimit === '' ? 20 : parseStrictInteger(rawLimit);
+    const parsedPage = rawPage === undefined || rawPage === '' ? 1 : parseStrictInteger(rawPage);
 
-    if (Number.isNaN(parsedLimit) || parsedLimit < 1) {
+    if (parsedLimit === null || parsedLimit < 1) {
       return respondError(c, 400, 'invalid_limit', 'limit must be a positive integer');
     }
-    if (Number.isNaN(parsedPage)) {
+    if (parsedPage === null) {
       return respondError(c, 400, 'invalid_page', 'page must be a positive integer');
     }
 
@@ -353,13 +356,13 @@ app.get(
 
     // Chunked exports start at a non-negative integer offset; anything
     // else fails loudly (same philosophy as the list's page validation)
-    // rather than exporting from a mystery position. The regex runs first
-    // so parseInt's lenient suffix handling ('12abc' → 12) never slips in.
+    // rather than exporting from a mystery position. parseStrictInteger
+    // already refuses parseInt's lenient suffix handling ('12abc' → 12).
     const rawOffset = c.req.query('offset') ?? '';
-    if (rawOffset !== '' && !/^\d+$/.test(rawOffset)) {
+    const parsedOffset = rawOffset === '' ? 0 : parseStrictInteger(rawOffset);
+    if (parsedOffset === null) {
       return respondError(c, 400, 'invalid_offset', 'offset must be a non-negative integer');
     }
-    const parsedOffset = rawOffset === '' ? 0 : parseInt(rawOffset, 10);
 
     try {
       // One service call for the whole discovered set (the discovery
@@ -502,13 +505,16 @@ app.get('/chains/:chainId/addresses/:address/scan/internal-transactions', async 
   // page cap is 100.
   const rawOffset = c.req.query('offset');
   const rawLimit = c.req.query('limit');
-  const parsedOffset = rawOffset === undefined || rawOffset === '' ? 0 : parseInt(rawOffset, 10);
-  const parsedLimit = rawLimit === undefined || rawLimit === '' ? 50 : parseInt(rawLimit, 10);
+  // Strict decimal parse (parseInt accepted a valid prefix, so
+  // `?offset=5abc` was served as offset 5).
+  const parsedOffset =
+    rawOffset === undefined || rawOffset === '' ? 0 : parseStrictInteger(rawOffset);
+  const parsedLimit = rawLimit === undefined || rawLimit === '' ? 50 : parseStrictInteger(rawLimit);
 
-  if (Number.isNaN(parsedOffset) || parsedOffset < 0) {
+  if (parsedOffset === null || parsedOffset < 0) {
     return respondError(c, 400, 'invalid_offset', 'offset must be a non-negative integer');
   }
-  if (Number.isNaN(parsedLimit) || parsedLimit < 1) {
+  if (parsedLimit === null || parsedLimit < 1) {
     return respondError(c, 400, 'invalid_limit', 'limit must be a positive integer');
   }
   const limit = Math.min(parsedLimit, 100);

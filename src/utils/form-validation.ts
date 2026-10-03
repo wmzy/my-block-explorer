@@ -218,10 +218,18 @@ export function validateTxHash(hash: string): boolean {
 
 /**
  * Validate block number
+ *
+ * Strict plain-decimal check, matching utils/validation.ts: parseInt()
+ * accepts a valid prefix and ignores the rest, so "12abc" validated as 12.
  */
 export function validateBlockNumber(blockNumber: string | number): boolean {
-  const num = typeof blockNumber === 'string' ? parseInt(blockNumber, 10) : blockNumber;
-  return !isNaN(num) && num >= 0 && num <= Number.MAX_SAFE_INTEGER;
+  const num =
+    typeof blockNumber === 'string'
+      ? /^\d+$/.test(blockNumber)
+        ? Number(blockNumber)
+        : Number.NaN
+      : blockNumber;
+  return Number.isSafeInteger(num) && num >= 0;
 }
 
 /**

@@ -171,6 +171,23 @@ describe('buildPoolSnapshot', () => {
     expect(snapshot.pending[0].hash).toBe('0xkeep');
     expect(snapshot.queuedCount).toBe(0);
   });
+
+  it('skips an entry whose wei value arrived as a lossy JSON number', () => {
+    // A node that answers the wei `value` as a JSON number past 2^53 has
+    // already rounded it: the literal 2000000000000000001 arrives here as
+    // 2000000000000000000 (written literally, so the test states the value
+    // the parser actually delivers). Rendering that as a confirmed pending
+    // amount states a different transfer than the node reported.
+    const snapshot = buildPoolSnapshot({
+      pending: {
+        '0xA': {
+          0: rawTx({ hash: '0xlossy', value: 2000000000000000000 }),
+        },
+      },
+    });
+    expect(snapshot.pendingCount).toBe(0);
+    expect(snapshot.pending).toHaveLength(0);
+  });
 });
 
 // --- failure classification ---

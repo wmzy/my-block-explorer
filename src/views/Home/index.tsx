@@ -9,10 +9,12 @@ import { getChainInfo, getChainSymbol, getChainType } from '@/config/chains';
 import {
   formatNumber,
   formatAddress,
+  formatFixedDecimals,
   formatHash,
   formatRelativeTime,
   formatValue,
 } from '@/utils/format';
+import { gasUsedPercentLabel } from '@/utils/gasShare';
 import { parseChainIdParam } from '@/utils/chainParam';
 import { PageContainer } from '@/components/ui/PageLayout';
 import { Button } from '@/components/ui/Button';
@@ -423,17 +425,12 @@ const skeletonLine = css`
 
 // --- helpers ---
 
-// BigInt-safe fixed-decimal formatting: divides and rounds (half up) in
-// integer arithmetic instead of round-tripping viem's formatted strings
-// through parseFloat, so on-chain magnitudes never lose precision to a
-// double. `decimals` is the value's token scale (gwei = 9, ether = 18).
+// BigInt-safe fixed-decimal formatting, shared with utils/format so the
+// exactness rule has one implementation (this local copy threw on a
+// negative exponent, i.e. decimals < fractionDigits, which the shared
+// helper handles). Returns '—' for a degenerate request instead of NaN.
 function formatFixed(value: bigint, decimals: number, fractionDigits: number): string {
-  const unit = 10n ** BigInt(decimals - fractionDigits);
-  const scaled = (value + unit / 2n) / unit;
-  const fractionScale = 10n ** BigInt(fractionDigits);
-  const whole = scaled / fractionScale;
-  const fraction = scaled % fractionScale;
-  return `${whole}.${fraction.toString().padStart(fractionDigits, '0')}`;
+  return formatFixedDecimals(value, decimals, fractionDigits) ?? '—';
 }
 
 // --- stats-bar presentation ---
@@ -858,8 +855,11 @@ export default function Home() {
     );
   }
 
+  // The share helper degrades a block that reports no usable gas limit
+  // (0/0) to the shared placeholder; the old inline division printed
+  // "NaN%" / "Infinity%" into the Gas Used card.
   const gasUsedPercent = blocks[0]
-    ? ((Number(blocks[0].gasUsed) / Number(blocks[0].gasLimit)) * 100).toFixed(1)
+    ? gasUsedPercentLabel(blocks[0].gasUsed, blocks[0].gasLimit)
     : null;
 
   // Stats-bar inputs. All four cards read the blocks feed, but each value
@@ -869,7 +869,8 @@ export default function Home() {
   const latestBlockText = latestBlockNumber !== null ? formatNumber(latestBlockNumber) : null;
   const gasPriceText = gasPrice !== null ? `${formatFixed(gasPrice, 9, 2)} Gwei` : null;
   const latestTxCountText = blocks[0] ? formatNumber(blocks[0].transactionCount) : null;
-  const gasUsedText = gasUsedPercent !== null ? `${gasUsedPercent}%` : null;
+  // The helper already returns the full '50.0%' / '—' label.
+  const gasUsedText = gasUsedPercent;
 
   return (
     <>

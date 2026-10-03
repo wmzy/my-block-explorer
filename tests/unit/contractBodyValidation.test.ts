@@ -106,6 +106,18 @@ describe('POST .../simulate value validation', () => {
     await expect(res.json()).resolves.toMatchObject({ error: 'invalid_value' });
   });
 
+  it('rejects a lossy JSON number value with 400 invalid_value', async () => {
+    // The body literal 1000000000000000001 was already rounded by
+    // JSON.parse to 1000000000000000000 before the handler saw it, so an
+    // isInteger-only check forwards a wei amount the caller never wrote —
+    // the eth_call would be made with a different value than requested.
+    const res = await simulate({ functionName: 'mint', value: 1000000000000000000 });
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({ error: 'invalid_value' });
+    expect(mocks.simulateContractWithABI).not.toHaveBeenCalled();
+  });
+
   it('converts a decimal integer string exactly like the old inline BigInt()', async () => {
     const res = await simulate({ functionName: 'mint', value: '1000000000000000000' });
 

@@ -12,7 +12,7 @@ import {
   getChainSymbol,
   POPULAR_CHAINS,
 } from '../config/chains';
-import { detectSearchType, sanitizeInput } from '../utils/validation';
+import { detectSearchType, sanitizeInput, parseStrictInteger } from '../utils/validation';
 import { safeJsonResponse } from '../utils/serialization';
 import { respondError } from '../utils/api-error';
 import { createRateLimiter } from '../middleware/rate-limit';
@@ -46,7 +46,10 @@ app.get('/search', searchRateLimiter, async c => {
     const searchType = detectSearchType(sanitized);
 
     const chainIdParam = c.req.query('chainId');
-    const requestedChainId = chainIdParam ? parseInt(chainIdParam, 10) : NaN;
+    // Strict decimal parse: parseInt() accepted a valid prefix, so
+    // `?chainId=1abc` was treated as a valid hint for chain 1.
+    const parsedHint = chainIdParam ? parseStrictInteger(chainIdParam) : null;
+    const requestedChainId = parsedHint ?? Number.NaN;
     const hasChainHint = !isNaN(requestedChainId) && isChainSupported(requestedChainId);
 
     if ((searchType === 'hash' || searchType === 'block') && !hasChainHint) {
@@ -146,8 +149,8 @@ app.get('/chains/:chainId/search', async c => {
     return respondError(c, 400, 'missing_chain_id', 'Please provide a valid chain ID');
   }
 
-  const chainId = parseInt(chainIdParam);
-  if (isNaN(chainId) || !isChainSupported(chainId)) {
+  const chainId = parseStrictInteger(chainIdParam);
+  if (chainId === null || chainId <= 0 || !isChainSupported(chainId)) {
     return respondError(c, 400, 'unsupported_chain', `Chain ID ${chainId} is not supported`, {
       supportedChains: getSupportedChainIds(),
     });

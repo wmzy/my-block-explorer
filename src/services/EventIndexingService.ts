@@ -546,6 +546,34 @@ type RangeSummary = {
   progress: number;
 };
 
+/**
+ * Blocks of one range actually indexed, from the walked checkpoint.
+ *
+ * The walk persists the LAST block a batch covered (batchTo going forward,
+ * batchFrom going backward), so the count is INCLUSIVE of `currentBlock`
+ * and direction-aware — the same shape as the frontend's coveredBlocksOf
+ * and EventStatistics' coverage union. The old
+ * `currentBlock - fromBlock` undercounted one block per range (a
+ * checkpoint at block 0 counted nothing at all), which fed both the
+ * per-range percentage and the aggregate indexed-block total.
+ *
+ * Clipped into the range bounds: an aborted forward walk persists a
+ * checkpoint already stepped past the end bound.
+ */
+const walkedBlockCount = (range: {
+  fromBlock: unknown;
+  toBlock: unknown;
+  currentBlock: bigint | null;
+  direction: string;
+}): number => {
+  if (range.currentBlock === null) return 0;
+  const from = Number(range.fromBlock);
+  const to = Number(range.toBlock);
+  const current = Math.min(Math.max(Number(range.currentBlock), from), to);
+  const covered = range.direction === 'backward' ? to - current + 1 : current - from + 1;
+  return Math.max(0, covered);
+};
+
 export const getIndexingStatus = async (
   chainId: number,
   address: `0x${string}`,
@@ -601,7 +629,11 @@ export const getIndexingStatus = async (
   ]);
 
   const eventTypes = eventTypeRows.map(r => r.eventName).filter((n): n is string => !!n);
-  const actualTotalEvents = countResult[0]?.count ?? 0;
+  // The adapter surfaces DuckDB count(*) as a string (see the same note in
+  // getContractEvents); without Number() the status payload carried a string
+  // count and downstream numeric comparisons (EventStatistics' growth check)
+  // silently misbehaved.
+  const actualTotalEvents = Number(countResult[0]?.count ?? 0);
 
   // Query indexingRanges for range-based aggregation
   const rangeRows = await db
@@ -624,55 +656,44 @@ export const getIndexingStatus = async (
     const fromBlock = Number(r.fromBlock);
     const toBlock = Number(r.toBlock);
     const currentBlock = r.currentBlock !== null ? Number(r.currentBlock) : null;
-    const rangeSize = toBlock - fromBlock;
+    // Block numbers are INCLUSIVE on both ends: a range from 0 to 0 covers
+    // one block, not zero. The old `to - from` denominator is why a
+    // completed range could never reach 100% and why the weighted average
+    // below drifted against its own numerator (walkedBlockCount counts the
+    // checkpoint itself).
+    const spanBlocks = toBlock - fromBlock + 1;
 
     totalRanges++;
-    totalBlocks += rangeSize;
+    totalBlocks += Math.max(0, spanBlocks);
 
     switch (r.status) {
       case 'completed':
         completedRanges++;
-        indexedBlocks += rangeSize;
+        indexedBlocks += Math.max(0, spanBlocks);
         break;
       case 'indexing':
         indexingRangesCount++;
-        if (currentBlock !== null) {
-          const progress =
-            r.direction === 'forward' ? currentBlock - fromBlock : toBlock - currentBlock;
-          indexedBlocks += Math.max(0, progress);
-        }
+        indexedBlocks += walkedBlockCount(r);
         break;
       case 'pending':
         pendingRanges++;
         break;
       case 'paused':
         pausedRanges++;
-        if (currentBlock !== null) {
-          const progress =
-            r.direction === 'forward' ? currentBlock - fromBlock : toBlock - currentBlock;
-          indexedBlocks += Math.max(0, progress);
-        }
+        indexedBlocks += walkedBlockCount(r);
         break;
       case 'error':
         errorRanges++;
-        if (currentBlock !== null) {
-          const progress =
-            r.direction === 'forward' ? currentBlock - fromBlock : toBlock - currentBlock;
-          indexedBlocks += Math.max(0, progress);
-        }
+        indexedBlocks += walkedBlockCount(r);
         break;
     }
 
-    const progress =
-      rangeSize > 0
-        ? (() => {
-            if (r.status === 'completed') return 100;
-            if (currentBlock === null) return 0;
-            const completed =
-              r.direction === 'forward' ? currentBlock - fromBlock : toBlock - currentBlock;
-            return Math.min(100, Math.max(0, (completed / rangeSize) * 100));
-          })()
-        : 0;
+    const progress = (() => {
+      if (spanBlocks <= 0) return 0;
+      if (r.status === 'completed') return 100;
+      if (currentBlock === null) return 0;
+      return Math.min(100, Math.max(0, (walkedBlockCount(r) / spanBlocks) * 100));
+    })();
 
     return {
       rangeId: r.rangeId,
@@ -895,15 +916,18 @@ export const getEventStatistics = async (chainId: number, address: `0x${string}`
       .groupBy(contractEvents.eventName),
   ]);
 
+  // DuckDB count(*) arrives as a string through the adapter — normalize so
+  // the statistics payload keeps its documented int() contract and callers
+  // can do arithmetic on it (same normalization as getContractEvents).
   const eventsByType: Record<string, number> = {};
   for (const row of typeResult) {
     if (row.eventName) {
-      eventsByType[row.eventName] = row.count;
+      eventsByType[row.eventName] = Number(row.count);
     }
   }
 
   return {
-    totalEvents: countResult[0]?.count ?? 0,
+    totalEvents: Number(countResult[0]?.count ?? 0),
     eventsByType,
     uniqueEventTypes: typeResult.length,
   };
@@ -1331,18 +1355,30 @@ export const startIndexingRange = async (
     let isComplete: (current: bigint, end: bigint) => boolean;
 
     if (direction === 'forward') {
-      currentBlock = range.currentBlock ? range.currentBlock + 1n : BigInt(resolvedFromBlock);
+      // Presence, NOT truthiness: `0n` is falsy, so a range checkpointed at
+      // block 0 (its first batch — the shape of every range that starts at
+      // genesis) read as "never started" and re-walked the whole window.
+      currentBlock =
+        range.currentBlock !== null ? range.currentBlock + 1n : BigInt(resolvedFromBlock);
       endBlock = BigInt(resolvedToBlock);
       step = n => n + BigInt(BATCH_SIZE);
       isComplete = (current, end) => current > end;
     } else {
-      currentBlock = range.currentBlock ? range.currentBlock - 1n : BigInt(resolvedToBlock);
+      currentBlock =
+        range.currentBlock !== null ? range.currentBlock - 1n : BigInt(resolvedToBlock);
       endBlock = BigInt(resolvedFromBlock);
       step = n => n - BigInt(BATCH_SIZE);
       isComplete = (current, end) => current < end;
     }
 
     let totalInserted = range.totalEventsIndexed ?? 0;
+
+    // The LAST block a batch actually covered (batchTo forward, batchFrom
+    // backward). The resume protocol starts at `checkpoint + 1`, so this is
+    // what an abort must persist: by close-out time `currentBlock` has
+    // already been stepped to the NEXT batch's first block, and persisting
+    // that value skipped exactly that block on the next resume.
+    let lastCoveredBlock: bigint | null = null;
 
     const finalizedBlockNumber = await fetchFinalizedBlockNumber(chainId);
 
@@ -1371,9 +1407,11 @@ export const startIndexingRange = async (
         totalInserted += decoded.length;
       }
 
+      const coveredBlock = direction === 'forward' ? batchTo : batchFrom;
+      lastCoveredBlock = coveredBlock;
       await updateRange(
         {
-          currentBlock: direction === 'forward' ? batchTo : batchFrom,
+          currentBlock: coveredBlock,
           totalEventsIndexed: totalInserted,
           status: 'indexing',
         },
@@ -1394,8 +1432,6 @@ export const startIndexingRange = async (
       logger.warn({ err, chainId, address, rangeId }, 'Post-range reorg reconciliation failed');
     }
 
-    const finalBlock =
-      direction === 'forward' ? BigInt(resolvedToBlock) : BigInt(resolvedFromBlock);
     // insertEvents counts attempted rows even when the upsert conflicted, so
     // overlap/catchup re-walks inflate totalInserted. Close out with the
     // distinct stored count over the range instead.
@@ -1405,14 +1441,34 @@ export const startIndexingRange = async (
       resolvedFromBlock,
       resolvedToBlock,
     );
-    await updateRange(
-      {
-        currentBlock: finalBlock,
-        status: job.abort ? 'paused' : 'completed',
-        totalEventsIndexed,
-      },
-      { onlyIfIndexing: true },
-    );
+
+    // The checkpoint must reflect WHERE THE WALK ACTUALLY GOT TO. On an
+    // abort (pause) that is the last COVERED block — the resume protocol
+    // starts at `checkpoint + 1`, and the loop's `currentBlock` has already
+    // been stepped to the NEXT batch's first block by close-out time.
+    // Persisting that stepped value skipped exactly that block on the next
+    // resume (with BATCH_SIZE 2000, a pause after [2000,3999] stored 4000
+    // and the resumed walk started at 4001 — block 4000's events were
+    // silently absent while the range later reported itself complete).
+    // With no completed batch the row's own checkpoint stands: a null
+    // rewinds to the range start on resume, which loses nothing.
+    const closeOut: {
+      currentBlock?: bigint;
+      status: RangeStatus;
+      totalEventsIndexed: number;
+    } = {
+      status: job.abort ? 'paused' : 'completed',
+      totalEventsIndexed,
+    };
+    if (job.abort) {
+      const checkpoint = lastCoveredBlock ?? range.currentBlock;
+      if (checkpoint !== null) closeOut.currentBlock = checkpoint;
+    } else {
+      // Normal completion: the loop exits one step past the end, so the
+      // persisted checkpoint stays the end bound.
+      closeOut.currentBlock = endBlock;
+    }
+    await updateRange(closeOut, { onlyIfIndexing: true });
 
     return { success: true };
   } catch (err) {

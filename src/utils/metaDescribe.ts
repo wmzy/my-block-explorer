@@ -14,6 +14,12 @@ import { getChainName } from '../config/chains';
 // the Node-side og middleware can read a topic's own title/summary (the
 // /help/:topic derivations below) without pulling any view code.
 import { HELP_SECTION_DESCRIPTION, findHelpTopic } from '../views/Help/helpContent';
+// Strict decimal parse: Number.parseInt() accepted a valid prefix, so
+// `/chain/0x89/blocks` produced "Polygon Blocks" and `?chain=1abc`
+// produced an Ethereum share blurb for a link that names no chain. A
+// broken link now gets the generic title/blurb instead of a confidently
+// wrong one.
+import { parseChainIdParam } from './chainParam';
 
 export const FALLBACK_TITLE = 'My Block Explorer';
 
@@ -31,8 +37,8 @@ export function deriveDocumentTitle(pathname: string, search: string): string {
     // The /search route carries its viewing chain in ?chain= (the context
     // the header search forwards); without it the generic suffix stands.
     const chainParam = new URLSearchParams(search).get('chain');
-    const chainId = chainParam !== null ? Number.parseInt(chainParam, 10) : Number.NaN;
-    return Number.isFinite(chainId) ? `Search · ${getChainName(chainId)}` : 'Search · Explorer';
+    const chainId = parseChainIdParam(chainParam ?? undefined);
+    return chainId !== null ? `Search · ${getChainName(chainId)}` : 'Search · Explorer';
   }
 
   // Static coverage explainer: exact shape only — deeper /about/* paths are
@@ -58,8 +64,8 @@ export function deriveDocumentTitle(pathname: string, search: string): string {
 
   if (segments[0] !== 'chain' || segments.length < 2) return FALLBACK_TITLE;
 
-  const chainId = Number.parseInt(segments[1], 10);
-  if (!Number.isFinite(chainId)) return FALLBACK_TITLE;
+  const chainId = parseChainIdParam(segments[1]);
+  if (chainId === null) return FALLBACK_TITLE;
   const chainName = getChainName(chainId);
 
   switch (segments[2]) {
@@ -106,8 +112,8 @@ export function deriveMetaDescription(pathname: string, search: string): string 
 
   if (segments[0] === 'search') {
     const chainParam = new URLSearchParams(search).get('chain');
-    const chainId = chainParam !== null ? Number.parseInt(chainParam, 10) : Number.NaN;
-    return Number.isFinite(chainId)
+    const chainId = parseChainIdParam(chainParam ?? undefined);
+    return chainId !== null
       ? `Search blocks, transactions, addresses and contracts on ${getChainName(chainId)}.`
       : 'Search blocks, transactions, addresses and contracts across chains.';
   }
@@ -131,8 +137,8 @@ export function deriveMetaDescription(pathname: string, search: string): string 
 
   if (segments[0] !== 'chain' || segments.length < 2) return FALLBACK_DESCRIPTION;
 
-  const chainId = Number.parseInt(segments[1], 10);
-  const chainNoun = Number.isFinite(chainId) ? getChainName(chainId) : 'the chain';
+  const chainId = parseChainIdParam(segments[1]);
+  const chainNoun = chainId !== null ? getChainName(chainId) : 'the chain';
 
   switch (segments[2]) {
     case undefined:

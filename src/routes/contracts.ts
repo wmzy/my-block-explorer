@@ -6,6 +6,7 @@ const logger = createLogger('contracts-routes');
 import { contractInteractionService } from '../services/ContractInteractionService';
 import { getChainName } from '../config/chains';
 import { getValidatedChainId, getValidatedAddress } from '../server/validation';
+import { parseStrictInteger } from '../utils/validation';
 import { safeJsonResponse } from '../utils/serialization';
 import { createApiError, respondError } from '../utils/api-error';
 import { parseStateOverride, type StateOverride } from '../utils/stateOverride';
@@ -37,16 +38,22 @@ const app = new Hono();
 // the cap is a client bug worth surfacing, not silently shrinking.
 const parseContractsLimitParam = (raw: string | undefined): number | null => {
   if (raw === undefined || raw === '') return CONTRACT_DIRECTORY_DEFAULT_LIMIT;
-  const parsed = parseInt(raw, 10);
-  if (Number.isNaN(parsed) || parsed < 1) return null;
+  // Strict decimal parse: parseInt() accepted a valid prefix and ignored
+  // the rest, so `?limit=20abc` was served as limit 20 — the "silently
+  // paging" failure the comment above rules out.
+  const parsed = parseStrictInteger(raw);
+  if (parsed === null || parsed < 1) return null;
   if (parsed > CONTRACT_DIRECTORY_MAX_LIMIT) return null;
   return parsed;
 };
 
 const parseContractsOffsetParam = (raw: string | undefined): number | null => {
   if (raw === undefined || raw === '') return 0;
-  const parsed = parseInt(raw, 10);
-  if (Number.isNaN(parsed)) return null;
+  // Strict decimal parse: parseInt() accepted a valid prefix and ignored
+  // the rest, so `?offset=5abc` was served as offset 5. A genuinely
+  // negative offset still clamps to 0 (documented policy).
+  const parsed = raw.startsWith('-') ? Number(raw) : parseStrictInteger(raw);
+  if (parsed === null || !Number.isSafeInteger(parsed)) return null;
   return Math.min(Math.max(parsed, 0), CONTRACT_DIRECTORY_MAX_OFFSET);
 };
 
@@ -86,7 +93,11 @@ const parseBodyStateOverride = (
 const parseBodyValue = (raw: unknown): { ok: true; value?: bigint } | { ok: false } => {
   if (!raw) return { ok: true };
   if (typeof raw === 'number') {
-    return Number.isInteger(raw) ? { ok: true, value: BigInt(raw) } : { ok: false };
+    // A wei `value` sent as a JSON number past 2^53 was already rounded by
+    // JSON.parse, so it names a different amount than the caller wrote and
+    // isInteger cannot detect it. Reject with the same 400 the other junk
+    // shapes get; the caller can send the exact quantity as a string.
+    return Number.isSafeInteger(raw) ? { ok: true, value: BigInt(raw) } : { ok: false };
   }
   if (typeof raw === 'string' && /^-?(0x[0-9a-fA-F]+|\d+)$/.test(raw)) {
     return { ok: true, value: BigInt(raw) };

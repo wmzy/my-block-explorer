@@ -93,8 +93,16 @@ export async function walletChainId(provider: EIP1193Provider): Promise<number |
   try {
     const result = await provider.request({ method: 'eth_chainId' });
     if (typeof result !== 'string') return null;
-    const parsed = Number.parseInt(result, 16);
-    return Number.isFinite(parsed) ? parsed : null;
+    // Strict hex QUANTITY parse: parseInt(result, 16) accepted a valid
+    // prefix and ignored the rest, so '0x1zz' read as chain 1 and
+    // '137abc' as chain 1276604 — a fabricated id the chain guard would
+    // then have compared against the wrong network. BigInt first (a
+    // chain id is uint64 in JSON-RPC), then a safe-integer gate so a
+    // value past 2^53 is rejected rather than rounded. Same shape as
+    // the backend's own eth_chainId reader in routes/chains.ts.
+    if (!/^0x[0-9a-fA-F]+$/.test(result)) return null;
+    const chainId = Number(BigInt(result));
+    return Number.isSafeInteger(chainId) ? chainId : null;
   } catch {
     return null;
   }

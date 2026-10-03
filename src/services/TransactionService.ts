@@ -1,6 +1,9 @@
 import { db, transactions, blocks } from '../database/init';
 import { eq, and, sql, count } from 'drizzle-orm';
 import { rpcManager } from './RpcManager';
+import { withOneRetry } from '../utils/rpcReadRetry';
+import { secondsToDate } from '../utils/dbTime';
+import { createLogger } from '../server/logger';
 import type { Address, Transaction as ViemTransaction, TransactionReceipt } from 'viem';
 
 /**
@@ -38,36 +41,128 @@ type TransactionServiceDeps = {
   rpcManager: typeof import('./RpcManager').rpcManager;
 };
 
+// viem rejects getTransactionReceipt for a transaction that is not mined
+// yet with TransactionReceiptNotFoundError. That answer is DATA ("no
+// receipt yet"), not a transport failure: it must not be retried (pending
+// lookups would double their RPC traffic) and must not be reported as an
+// error. The name/message shape (rather than `instanceof`) matches the
+// RPC-path sibling in utils/blockRpcData.ts, which has to work across
+// duplicate viem copies.
+const isReceiptNotFound = (error: unknown): boolean => {
+  if (typeof error !== 'object' || error === null) return false;
+  const name = 'name' in error ? String(error.name) : '';
+  if (name === 'TransactionReceiptNotFoundError') return true;
+  const message = 'message' in error ? String(error.message) : '';
+  return /could not be found/i.test(message);
+};
+
+/** What one receipt read actually established. */
+type ReceiptOutcome =
+  | { kind: 'receipt'; receipt: TransactionReceipt }
+  // Not mined yet — a real answer that carries no receipt facts.
+  | { kind: 'pending' }
+  // The read itself failed. This must never be turned into "0 logs".
+  | { kind: 'failed'; error: unknown };
+
+const logger = createLogger('transaction-service');
+
 const createTransactionService = (deps: TransactionServiceDeps) => {
   const { db, transactions, blocks, rpcManager } = deps;
 
+  // One retry for the idempotent read (utils/rpcReadRetry: public RPCs drop
+  // a single getReceipt under load; a failure that SURVIVES the retry is
+  // real and must reach the caller, never be laundered into a plausible
+  // value). 'pending' resolves on the first not-found instead of retrying.
+  const readReceiptOutcome = async (
+    client: { getTransactionReceipt: (args: { hash: `0x${string}` }) => Promise<TransactionReceipt> },
+    hash: `0x${string}`,
+  ): Promise<ReceiptOutcome> => {
+    const attempt = async (): Promise<ReceiptOutcome> => {
+      try {
+        return { kind: 'receipt', receipt: await client.getTransactionReceipt({ hash }) };
+      } catch (error) {
+        if (isReceiptNotFound(error)) return { kind: 'pending' };
+        throw error;
+      }
+    };
+    try {
+      return await withOneRetry(attempt);
+    } catch (error) {
+      return { kind: 'failed', error };
+    }
+  };
+
+  // drizzle returns camelCase keys (casing: 'snake_case' applies to
+  // generated SQL column names, not to the JS row). The old formatter read
+  // snake_case keys that never exist, so EVERY field but the two written
+  // verbatim came back undefined — transaction lists served a bare hash and
+  // value, and formatTransactionForApi then dropped blockNumber, gas
+  // fields, nonce, status and timestamp as "null". Both spellings are
+  // accepted so raw/plain rows keep working too.
+  const pick = (tx: Record<string, unknown>, camel: string, snake: string): unknown =>
+    tx[camel] ?? tx[snake];
+
+  const num = (tx: Record<string, unknown>, camel: string, snake: string): number | undefined => {
+    const value = pick(tx, camel, snake);
+    return typeof value === 'number' ? value : undefined;
+  };
+  const str = (tx: Record<string, unknown>, camel: string, snake: string): string | undefined => {
+    const value = pick(tx, camel, snake);
+    return typeof value === 'string' ? value : undefined;
+  };
+  const addr = (tx: Record<string, unknown>, camel: string, snake: string): Address | undefined =>
+    str(tx, camel, snake) as Address | undefined;
+  const big = (
+    tx: Record<string, unknown>,
+    camel: string,
+    snake: string,
+  ): bigint | undefined => {
+    const value = pick(tx, camel, snake);
+    if (value === null || value === undefined || value === '') return undefined;
+    try {
+      return BigInt(value as string | number | bigint);
+    } catch {
+      return undefined;
+    }
+  };
+  // BIGNUM columns can arrive as bigint; the wire contract is a decimal string.
+  const bigToDecimal = (value: unknown): string =>
+    typeof value === 'bigint' || typeof value === 'number' ? String(value) : '0';
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const formatTransaction = (dbTx: any): Transaction => {
+    const row = dbTx as Record<string, unknown>;
     return {
-      chainId: dbTx.chain_id,
-      hash: dbTx.hash,
-      blockNumber: dbTx.block_number ? BigInt(dbTx.block_number) : undefined,
-      transactionIndex: dbTx.transaction_index ?? undefined,
-      fromAddress: dbTx.from_address ?? undefined,
-      toAddress: dbTx.to_address ?? undefined,
-      value: dbTx.value ?? '0',
-      gasLimit: dbTx.gas_limit ? BigInt(dbTx.gas_limit) : undefined,
-      gasPrice: dbTx.gas_price ? BigInt(dbTx.gas_price) : undefined,
-      maxFeePerGas: dbTx.max_fee_per_gas ? BigInt(dbTx.max_fee_per_gas) : undefined,
-      maxPriorityFeePerGas: dbTx.max_priority_fee_per_gas
-        ? BigInt(dbTx.max_priority_fee_per_gas)
-        : undefined,
-      gasUsed: dbTx.gas_used ? BigInt(dbTx.gas_used) : undefined,
-      effectiveGasPrice: dbTx.effective_gas_price ? BigInt(dbTx.effective_gas_price) : undefined,
-      status: dbTx.status ?? undefined,
-      type: dbTx.type ?? 0,
-      nonce: dbTx.nonce ? BigInt(dbTx.nonce) : undefined,
-      inputData: dbTx.input_data ?? undefined,
-      logsCount: dbTx.logs_count ?? 0,
-      contractAddress: dbTx.contract_address ?? undefined,
-      cumulativeGasUsed: dbTx.cumulative_gas_used ? BigInt(dbTx.cumulative_gas_used) : undefined,
-      timestamp: dbTx.timestamp ? new Date(dbTx.timestamp) : undefined,
-      indexedAt: dbTx.indexed_at ? new Date(dbTx.indexed_at) : undefined,
+      chainId: num(row, 'chainId', 'chain_id') ?? 0,
+      hash: str(row, 'hash', 'hash') ?? '',
+      blockNumber: big(row, 'blockNumber', 'block_number'),
+      transactionIndex: num(row, 'transactionIndex', 'transaction_index'),
+      fromAddress: addr(row, 'fromAddress', 'from_address'),
+      toAddress: addr(row, 'toAddress', 'to_address'),
+      // `value` is a BIGNUM column: drizzle hands it back as a bigint (the
+      // adapter stringifies its own bigints, but a real row keeps the
+      // driver's type) and the API contract is a decimal STRING — so it is
+      // stringified here rather than narrowed to string, which silently
+      // flattened every non-string value to the '0' default.
+      value: str(row, 'value', 'value') ?? bigToDecimal(row.value),
+      gasLimit: big(row, 'gasLimit', 'gas_limit'),
+      gasPrice: big(row, 'gasPrice', 'gas_price'),
+      maxFeePerGas: big(row, 'maxFeePerGas', 'max_fee_per_gas'),
+      maxPriorityFeePerGas: big(row, 'maxPriorityFeePerGas', 'max_priority_fee_per_gas'),
+      gasUsed: big(row, 'gasUsed', 'gas_used'),
+      effectiveGasPrice: big(row, 'effectiveGasPrice', 'effective_gas_price'),
+      status: num(row, 'status', 'status'),
+      type: num(row, 'type', 'type') ?? 0,
+      nonce: big(row, 'nonce', 'nonce'),
+      inputData: str(row, 'inputData', 'input_data'),
+      // No default: 0 is a claim ("this transaction emitted no events"),
+      // and a row stored without a receipt has none. The field is absent
+      // in that case.
+      logsCount: num(row, 'logsCount', 'logs_count'),
+      contractAddress: str(row, 'contractAddress', 'contract_address'),
+      cumulativeGasUsed: big(row, 'cumulativeGasUsed', 'cumulative_gas_used'),
+      timestamp: secondsToDate(row.timestamp),
+      indexedAt: secondsToDate(pick(row, 'indexedAt', 'indexed_at')),
     };
   };
 
@@ -110,40 +205,74 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
     return Number.isFinite(parsed) ? parsed : 0;
   };
 
+  // The row an indexed transaction would be stored as. Factored out of
+  // indexTransaction so the pending path can answer from the same
+  // mapping WITHOUT writing it.
+  //
+  // Presence, not truthiness: `0n` and `0` are falsy. `nonce` is 0 for the
+  // FIRST transaction of every account and `blockNumber` is 0n for any
+  // genesis transaction, so a truthiness test persisted NULL for fields
+  // that are always present — the row then read back as "position unknown"
+  // and the API dropped the field entirely. A nullable quantity is absent
+  // only when it is null/undefined. (`value` uses ?? for the same reason:
+  // a 0-value transaction is a real 0, not a missing value.)
+  const toStoredRow = (chainId: number, tx: ViemTransaction, receipt: TransactionReceipt | null) => ({
+    chainId,
+    hash: tx.hash,
+    blockNumber: tx.blockNumber != null ? BigInt(tx.blockNumber) : null,
+    transactionIndex: tx.transactionIndex ?? null,
+    fromAddress: tx.from ?? null,
+    toAddress: tx.to ?? null,
+    value: tx.value ?? 0n,
+    gasLimit: tx.gas != null ? BigInt(tx.gas) : null,
+    gasPrice: tx.gasPrice != null ? BigInt(tx.gasPrice) : null,
+    maxFeePerGas: tx.maxFeePerGas != null ? BigInt(tx.maxFeePerGas) : null,
+    maxPriorityFeePerGas:
+      tx.maxPriorityFeePerGas != null ? BigInt(tx.maxPriorityFeePerGas) : null,
+    gasUsed: receipt?.gasUsed != null ? BigInt(receipt.gasUsed) : null,
+    effectiveGasPrice:
+      receipt?.effectiveGasPrice != null ? BigInt(receipt.effectiveGasPrice) : null,
+    status: toDbTxStatus(receipt),
+    type: toDbTxType(tx.type),
+    nonce: tx.nonce != null ? BigInt(tx.nonce) : null,
+    inputData: tx.input ?? null,
+    // Receipt-derived: a transaction whose receipt was never read carries
+    // NULL here, and formatTransaction leaves the field undefined. Writing
+    // 0 instead claimed "this transaction produced no events" — a fact we
+    // never established.
+    logsCount: receipt ? receipt.logs.length : null,
+    contractAddress: receipt?.contractAddress ?? null,
+    cumulativeGasUsed:
+      receipt?.cumulativeGasUsed != null ? BigInt(receipt.cumulativeGasUsed) : null,
+  });
+
+  // The row a transaction would be stored as. Factored out of
+  // indexTransaction so the read path can answer from the same mapping
+  // WITHOUT the cache write.
+  const buildTransactionValues = async (
+    chainId: number,
+    tx: ViemTransaction,
+    receipt: TransactionReceipt | null | undefined,
+    indexedAt: Date | null,
+  ) => {
+    const timestamp = receipt?.blockNumber
+      ? await getBlockTimestamp(chainId, BigInt(receipt.blockNumber))
+      : null;
+
+    return {
+      ...toStoredRow(chainId, tx, receipt ?? null),
+      timestamp,
+      indexedAt,
+    };
+  };
+
   const indexTransaction = async (
     chainId: number,
     tx: ViemTransaction,
     receipt?: TransactionReceipt | null,
   ): Promise<Transaction> => {
-    const timestamp = receipt?.blockNumber
-      ? await getBlockTimestamp(chainId, BigInt(receipt.blockNumber))
-      : null;
-
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const transactionData: any = {
-      chainId,
-      hash: tx.hash,
-      blockNumber: tx.blockNumber ? BigInt(tx.blockNumber) : null,
-      transactionIndex: tx.transactionIndex ?? null,
-      fromAddress: tx.from ?? null,
-      toAddress: tx.to ?? null,
-      value: tx.value ? BigInt(tx.value) : 0n,
-      gasLimit: tx.gas ? BigInt(tx.gas) : null,
-      gasPrice: tx.gasPrice ? BigInt(tx.gasPrice) : null,
-      maxFeePerGas: tx.maxFeePerGas ? BigInt(tx.maxFeePerGas) : null,
-      maxPriorityFeePerGas: tx.maxPriorityFeePerGas ? BigInt(tx.maxPriorityFeePerGas) : null,
-      gasUsed: receipt?.gasUsed ? BigInt(receipt.gasUsed) : null,
-      effectiveGasPrice: receipt?.effectiveGasPrice ? BigInt(receipt.effectiveGasPrice) : null,
-      status: toDbTxStatus(receipt),
-      type: toDbTxType(tx.type),
-      nonce: tx.nonce ? BigInt(tx.nonce) : null,
-      inputData: tx.input ?? null,
-      logsCount: receipt?.logs?.length ?? 0,
-      contractAddress: receipt?.contractAddress ?? null,
-      cumulativeGasUsed: receipt?.cumulativeGasUsed ? BigInt(receipt.cumulativeGasUsed) : null,
-      timestamp,
-      indexedAt: new Date(),
-    };
+    const transactionData: any = await buildTransactionValues(chainId, tx, receipt, new Date());
 
     await db
       .insert(transactions)
@@ -162,6 +291,30 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
     return formatTransaction(inserted[0]);
   };
 
+  // The READ path's cache write. A transaction that was just read from the
+  // chain (and whose receipt resolved) is an ANSWER; storing it is an
+  // optimization. Before this, a failed INSERT escaped into
+  // getTransactionByHash's catch, which rethrew — the route answered 500
+  // for a transaction it had in hand, and the only recoverable thing about
+  // the request (the row write) decided the outcome. The fallback formats
+  // the same mapping in memory, so the answer is identical whether or not
+  // the row landed; the next request simply re-fetches.
+  const cacheTransaction = async (
+    chainId: number,
+    tx: ViemTransaction,
+    receipt?: TransactionReceipt | null,
+  ): Promise<Transaction> => {
+    try {
+      return await indexTransaction(chainId, tx, receipt);
+    } catch (error) {
+      logger.warn(
+        { err: error, chainId, hash: tx.hash },
+        'Failed to cache transaction; serving the fetched transaction',
+      );
+      return formatTransaction(await buildTransactionValues(chainId, tx, receipt, null));
+    }
+  };
+
   const indexBlockTransactions = async (chainId: number, blockNumber: bigint): Promise<void> => {
     try {
       const client = await rpcManager.getClient(chainId);
@@ -174,23 +327,47 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
         return;
       }
 
-      const receipts = await Promise.all(
-        block.transactions.map(tx =>
-          client
-            .getTransactionReceipt({
-              hash: typeof tx === 'string' ? (tx as `0x${string}`) : tx.hash,
-            })
-            .catch(() => null),
-        ),
+      // A block header can name its transactions without their bodies
+      // (includeTransactions silently downgrades on some providers) — the
+      // indexer indexes what it can read, and never invents the rest.
+      const readable = block.transactions.filter(
+        (tx): tx is Exclude<typeof tx, string> => typeof tx !== 'string',
       );
+      if (readable.length === 0) {
+        logger.warn(
+          { chainId, blockNumber },
+          'Block returned transaction hashes only; receipts cannot be read',
+        );
+        return;
+      }
 
-      for (let i = 0; i < block.transactions.length; i++) {
-        const tx = block.transactions[i];
-        const receipt = receipts[i];
+      // One unreadable receipt is not a transaction with no receipt: the
+      // same rule the hash path follows (retry once, then report). The
+      // transactions whose receipts DO resolve are still indexed — a
+      // provider hiccup on one of them must not drop the rest.
+      const outcomes = await Promise.all(readable.map(tx => readReceiptOutcome(client, tx.hash)));
+      let unreadable = 0;
+      for (let i = 0; i < readable.length; i++) {
+        const tx = readable[i];
+        const outcome = outcomes[i];
 
-        if (typeof tx !== 'string') {
-          await indexTransaction(chainId, tx, receipt);
+        if (outcome.kind === 'failed') {
+          logger.warn(
+            { err: outcome.error, chainId, blockNumber, hash: tx.hash },
+            'Transaction receipt could not be read; leaving it unindexed',
+          );
+          unreadable += 1;
+          continue;
         }
+        if (outcome.kind === 'pending') continue;
+
+        await indexTransaction(chainId, tx, outcome.receipt);
+      }
+      if (unreadable > 0) {
+        logger.warn(
+          { chainId, blockNumber, unreadable },
+          'Block indexed with unreadable receipts; those transactions are absent, not empty',
+        );
       }
     } catch (error) {
       console.error(`Failed to index transactions for block ${blockNumber}:`, error);
@@ -213,16 +390,43 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
         }
 
         const client = await rpcManager.getClient(chainId);
-        const [tx, receipt] = await Promise.all([
-          client.getTransaction({ hash: txHash as `0x${string}` }),
-          client.getTransactionReceipt({ hash: txHash as `0x${string}` }).catch(() => null),
-        ]);
+        const tx = await client.getTransaction({ hash: txHash as `0x${string}` });
+        const outcome = await readReceiptOutcome(client, txHash as `0x${string}`);
 
-        const transaction = await indexTransaction(chainId, tx, receipt);
-        return transaction;
+        if (outcome.kind === 'failed') {
+          // Report it. Swallowing into `null` is what turned one dropped
+          // read into a 404 for a transaction that exists; persisting a
+          // null receipt is worse, because that row claims status=NULL /
+          // logsCount=0 and short-circuits every later read of the hash.
+          throw outcome.error instanceof Error
+            ? outcome.error
+            : new Error('Failed to read transaction receipt', { cause: outcome.error });
+        }
+
+        if (outcome.kind === 'pending') {
+          // A pending transaction is a real answer with NO receipt facts.
+          // Nothing is cached: a stored row could never learn them later
+          // (the read short-circuits on any stored row), so the "no
+          // receipt" verdict would outlive the transaction's mining.
+          return formatTransaction({
+            ...toStoredRow(chainId, tx, null),
+            timestamp: null,
+            indexedAt: null,
+          });
+        }
+
+        return await cacheTransaction(chainId, tx, outcome.receipt);
       } catch (error) {
-        console.error(`Failed to get transaction ${txHash}:`, error);
-        return null;
+        logger.error({ err: error, chainId, txHash }, 'Failed to get transaction');
+        if (isReceiptNotFound(error)) {
+          // viem's transaction-not-found is DATA, and the ONLY answer that
+          // may map to the route's 404.
+          return null;
+        }
+        // A read that could not be completed is not a transaction that
+        // does not exist. /api/search renders the rejection as its honest
+        // degraded verdict; the hash route answers 500.
+        throw error;
       }
     },
 
@@ -246,7 +450,7 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
           .from(transactions)
           .where(and(eq(transactions.chainId, chainId), eq(transactions.blockNumber, blockNumber)));
 
-        const total = countResult[0]?.count || 0;
+        const total = Number(countResult[0]?.count ?? 0);
 
         if (txResults.length === 0 && offset === 0) {
           await indexBlockTransactions(chainId, blockNumber);
@@ -261,9 +465,19 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
             .limit(limit)
             .offset(offset);
 
+          // The count above was taken BEFORE indexing, so it described an
+          // empty block. Re-read it: `total` is the block's transaction
+          // count, not the length of the page just served (which is capped
+          // by `limit` and hid every later transaction of a busy block
+          // from pagination).
+          const indexedCount = await db
+            .select({ count: sql<number>`count(*)` })
+            .from(transactions)
+            .where(and(eq(transactions.chainId, chainId), eq(transactions.blockNumber, blockNumber)));
+
           return {
             transactions: newTransactions.map(tx => formatTransaction(tx)),
-            total: newTransactions.length,
+            total: Number(indexedCount[0]?.count ?? 0),
           };
         }
 
@@ -273,7 +487,10 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
         };
       } catch (error) {
         console.error(`Failed to get transactions for block ${blockNumber}:`, error);
-        return { transactions: [], total: 0 };
+        // A failed read is not an empty block (same rule as the sibling
+        // list endpoints and /api/stats/overview): the caller's 500/retry
+        // must be reachable.
+        throw error;
       }
     },
 
@@ -309,7 +526,10 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
             ),
           );
 
-        const total = countResult[0]?.count || 0;
+        // DuckDB count(*) arrives as a string through the adapter; normalize
+        // so the declared numeric total is real (same rule as the event and
+        // scan services).
+        const total = Number(countResult[0]?.count ?? 0);
 
         return {
           transactions: txResults.map(tx => formatTransaction(tx)),
@@ -317,7 +537,7 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
         };
       } catch (error) {
         console.error(`Failed to get transactions for address ${address}:`, error);
-        return { transactions: [], total: 0 };
+        throw error;
       }
     },
 
@@ -351,7 +571,9 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
         };
       } catch (error) {
         console.error('Failed to get latest transactions:', error);
-        return { transactions: [], total: 0 };
+        // routes/transactions.ts answers 500 'Failed to get transactions';
+        // swallowing here made an outage look like an empty chain.
+        throw error;
       }
     },
 
@@ -385,7 +607,11 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
           .orderBy(sql`${transactions.timestamp} DESC`)
           .limit(1000);
 
-        const totalTransactions = countResult[0]?.count || 0;
+        // Raw `sql<number>`count(*)`` comes back as a string from the adapter
+        // (drizzle's own count() helper does not). Without Number() the
+        // stats payload carried a string total, and /api/stats/overview's
+        // cross-chain `sum + ch.indexedTransactions` STRING-CONCATENATED it.
+        const totalTransactions = Number(countResult[0]?.count ?? 0);
 
         let avgGasPrice: string | null = null;
         const gasPrices = statsResult

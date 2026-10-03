@@ -234,9 +234,16 @@ function BroadcastBody({ chainId }: { chainId: number }) {
     };
   }, [debouncedRaw]);
 
-  const trimmedRaw = debouncedRaw.trim();
+  const currentTrimmedRaw = rawInput.trim();
 
-  const tx = decode?.ok ? decode.tx : null;
+  // The debounced copy drives the PREVIEW and the wrong-chain verdict; the
+  // bytes on the wire must be the ones the user can SEE in the textarea.
+  // Sending the debounced value meant a paste-then-immediate-click (or a
+  // click on a not-yet-re-decoded payload) broadcast the PREVIOUS signed
+  // transaction verbatim, with the chain check applied to different bytes
+  // than the ones that went to the node.
+  const settled = currentTrimmedRaw === debouncedRaw.trim();
+  const tx = settled && decode?.ok ? decode.tx : null;
 
   // The one hard block: a signature for another chain. Names come from
   // the chain config (getChainName falls back to "Chain <id>" for ids
@@ -255,16 +262,22 @@ function BroadcastBody({ chainId }: { chainId: number }) {
   const valueSymbol = valueChain?.nativeCurrency.symbol ?? 'ETH';
 
   const busy = broadcast.status === 'pending';
+  // An unsettled textarea (a paste still inside the 300ms debounce) leaves
+  // no preview to broadcast: the button is disabled until the bytes the
+  // user sees are the bytes that will be sent.
+  const unsettled = !settled;
   const broadcastDisabled = tx === null || mismatchInfo !== null || busy;
   const disabledTitle = busy
     ? 'Broadcasting…'
-    : tx === null
-      ? trimmedRaw === ''
-        ? 'Paste a signed raw transaction first'
-        : 'The pasted input does not decode as a signed transaction'
-      : mismatchInfo !== null
-        ? `Disabled: the transaction is signed for ${mismatchInfo.txChainName} (chain ID ${mismatchInfo.txChainId}), not ${currentChainName} (chain ID ${chainId})`
-        : undefined;
+    : unsettled
+      ? 'Re-checking the pasted transaction…'
+      : tx === null
+        ? currentTrimmedRaw === ''
+          ? 'Paste a signed raw transaction first'
+          : 'The pasted input does not decode as a signed transaction'
+        : mismatchInfo !== null
+          ? `Disabled: the transaction is signed for ${mismatchInfo.txChainName} (chain ID ${mismatchInfo.txChainId}), not ${currentChainName} (chain ID ${chainId})`
+          : undefined;
 
   const broadcastTx = async () => {
     if (tx === null || mismatchInfo !== null || busy) return;
@@ -272,7 +285,7 @@ function BroadcastBody({ chainId }: { chainId: number }) {
     try {
       const client = await createRpcClient(chainId);
       const hash = await sendRawTransaction(client, {
-        serializedTransaction: trimmedRaw as `0x${string}`,
+        serializedTransaction: currentTrimmedRaw as `0x${string}`,
       });
       void navigate(router, `/chain/${chainId}/tx/${hash}`).catch(() => undefined);
     } catch (err) {

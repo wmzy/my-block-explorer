@@ -417,7 +417,7 @@ export const openApiDocument: OpenApiDocument = {
       get: {
         tags: ['Stats'],
         summary: 'Aggregate stats across popular chains',
-        description: `Hybrid view: DuckDB index counts plus live RPC head probes (3s budget each). ${
+        description: `Hybrid view: DuckDB index counts plus live RPC head probes (3s budget each). The DuckDB reads are all-or-nothing: if the database cannot be read the whole response is a 503 rather than zeroed counts. ${
           AUTH_OPEN
         }`,
         operationId: 'getStatsOverview',
@@ -448,6 +448,7 @@ export const openApiDocument: OpenApiDocument = {
               timestamp: str(),
             }),
           ),
+          503: error('503', 'stats_unavailable — the indexed counts could not be read.'),
         },
       },
     },

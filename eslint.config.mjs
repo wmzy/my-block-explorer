@@ -172,6 +172,7 @@ export default [
       'src/util/adminAuth.ts',
       'src/util/apiBase.ts',
       'src/util/privateNotes.ts',
+      'src/util/storageAccess.ts',
       'src/util/units.ts',
       'src/util/watchlist.ts',
       'src/views/Contract/index.tsx',

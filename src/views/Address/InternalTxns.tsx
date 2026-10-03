@@ -10,9 +10,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { css } from '@linaria/core';
 import { TypedLink, useSearch, useSetSearch } from '@native-router/react';
-import { formatUnits } from 'viem';
 import { Alert } from 'haze-ui';
 import { getChainInfo, getChainSymbol } from '@/config/chains';
+import { formatFixedDecimals } from '@/utils/format';
 import { createRpcClient } from '@/utils/realTimeData';
 import { normalizeCallTrace, isTraceUnsupportedError } from '@/utils/traceFormat';
 import {
@@ -179,14 +179,17 @@ const badgeVariantForType = (
 };
 
 // Exact wei → display string honoring the chain's native-currency
-// decimals (the page's own formatTxValue semantics; bigint input here).
+// decimals. BigInt-only: the old `Number(formatUnits(...)).toFixed(4)`
+// collapsed distinct internal-transfer values past 2^53 whole units and
+// printed "1e+21" for larger ones.
 const formatInternalValue = (wei: bigint, chainId: number): string => {
   const symbol = getChainSymbol(chainId);
   const decimals = getChainInfo(chainId)?.nativeCurrency.decimals ?? 18;
-  const value = Number(formatUnits(wei, decimals));
-  if (value === 0) return `0 ${symbol}`;
-  if (value < 0.0001) return `<0.0001 ${symbol}`;
-  return `${value.toFixed(4)} ${symbol}`;
+  if (wei === 0n) return `0 ${symbol}`;
+  const shown = formatFixedDecimals(wei, decimals, 4);
+  if (shown === null) return `${wei} ${symbol}`;
+  if (/^0*\.?0*$/.test(shown)) return `<0.0001 ${symbol}`;
+  return `${shown} ${symbol}`;
 };
 
 // Provider error text can embed the whole JSON-RPC request body; keep the

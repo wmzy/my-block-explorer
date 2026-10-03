@@ -188,4 +188,38 @@ describe('CallTraceCard', () => {
     expect(await screen.findByTestId('call-trace-empty')).toHaveTextContent('No calls recorded.');
     expect(screen.queryByText('CALL')).not.toBeInTheDocument();
   });
+
+  it('resets to idle when the tx hash changes (the tx route reuses this card)', async () => {
+    const TX_B = `0x${'cd'.repeat(32)}`;
+    requestMock.mockResolvedValue(traceFixture());
+    const { rerender } = renderCard();
+
+    expand();
+    expect(await screen.findByText('STATICCALL')).toBeVisible();
+    expect(screen.getByTestId('call-trace-header')).toHaveAttribute('aria-expanded', 'true');
+
+    // The flat tx route reuses the SAME card instance when only :txHash
+    // changes (native-router composes matched elements without a key) —
+    // exactly what a rerender with new props reproduces.
+    rerender(
+      <MemoryRouter routes={routes} initialEntries={['/chain/1/tx/0xdeadbeef']}>
+        <CallTraceCard chainId={1} txHash={TX_B} txGasUsed="100000" />
+      </MemoryRouter>,
+    );
+
+    // The previous transaction's trace must not linger under the new hash:
+    // collapsed and showing nothing of tx A.
+    expect(screen.getByTestId('call-trace-header')).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByText('STATICCALL')).not.toBeInTheDocument();
+    expect(screen.queryByText('3 calls · depth 2 · 1 failed')).not.toBeInTheDocument();
+
+    // ...and expanding genuinely fetches THIS tx's trace (the fetch-once
+    // latch belongs to the tx, not to the component instance).
+    expand();
+    expect(await screen.findByText('STATICCALL')).toBeVisible();
+    expect(requestMock).toHaveBeenLastCalledWith({
+      method: 'debug_traceTransaction',
+      params: [TX_B, { tracer: 'callTracer' }],
+    });
+  });
 });

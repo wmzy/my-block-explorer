@@ -363,11 +363,23 @@ function AmountCell({ transfer, meta }: { transfer: TokenTransfer; meta: TokenMe
   );
 }
 
-function TransferRow({ chainId, transfer }: { chainId: number; transfer: TokenTransfer }) {
+function TransferRow({
+  chainId,
+  transfer,
+  holder,
+}: {
+  chainId: number;
+  transfer: TokenTransfer;
+  /** The viewed address, so a self-transfer can be told from a real OUT. */
+  holder: string;
+}) {
   // Only the shared-signature standard needs metadata; passing '' for the
   // ERC-1155 rows keeps the hook unconditional (rules of hooks) while
   // skipping their enrichment entirely.
   const meta = useTokenMeta(chainId, transfer.standard === 'erc20-or-erc721' ? transfer.token : '');
+  const holderLower = holder.toLowerCase();
+  const isSelfTransfer =
+    transfer.from.toLowerCase() === holderLower && transfer.to.toLowerCase() === holderLower;
   return (
     <tr>
       <td>
@@ -387,12 +399,22 @@ function TransferRow({ chainId, transfer }: { chainId: number; transfer: TokenTr
       <td title="Timestamps are not available for scan results">—</td>
       {/* Token-mode rows where the viewed contract is neither sender nor
           recipient (mints, burns, user-to-user transfers of the viewed
-          token): an em dash, honestly explained — never a guessed IN/OUT. */}
+          token): an em dash, honestly explained — never a guessed IN/OUT.
+          A self-transfer is a third case: the backend collapses it to ONE
+          row tagged 'out' (the outgoing scan query runs first), so
+          rendering that tag would charge the address for sending to
+          itself. The row's own from/to say what actually happened. */}
       <td>
         {transfer.direction === 'none' ? (
           <span title="The viewed token contract emitted this log; it is neither sender nor recipient">
             <Badge variant="default" size="sm">
               —
+            </Badge>
+          </span>
+        ) : isSelfTransfer ? (
+          <span title="Sent to itself — the balance is unchanged">
+            <Badge variant="default" size="sm">
+              SELF
             </Badge>
           </span>
         ) : (
@@ -514,6 +536,18 @@ export default function TokenTransfers({
   // Local state, deliberately NOT a URL param: mode is a view choice, and
   // the window/refresh/page params below stay shared by both modes.
   const [participantView, setParticipantView] = useState(false);
+
+  // The scan-mode choice belongs to ONE address, but the route reuses this
+  // component when only :address changes: a "participant" selection made on
+  // one token contract silently followed the user to the next one (the URL
+  // params below are re-parsed per render, but this local flag was not).
+  // Render-phase resync — the PrivateNoteChip pattern.
+  const addressIdentity = `${chainId}:${address}`;
+  const addressIdentityRef = useRef(addressIdentity);
+  if (addressIdentityRef.current !== addressIdentity) {
+    addressIdentityRef.current = addressIdentity;
+    setParticipantView(false);
+  }
   const scanMode: TransferScanMode = isTokenContract && !participantView ? 'token' : 'participant';
   const switchMode = (next: TransferScanMode) => {
     if (next === scanMode) return;
@@ -598,20 +632,26 @@ export default function TokenTransfers({
   // entry, the latch sends ?refresh=1 so the backend re-scans instead of
   // re-serving its (possibly 'partial') 60s cache entry.
   const retryFresh = () => {
-    requestTokenTransfersRefresh();
+    requestTokenTransfersRefresh(chainId, address, searchWindow, scanMode);
     void query.refetch();
   };
 
   // The tab's fetch lives here (not in the parent), so the unmounted tab
   // fetches nothing. A parent Refresh arrives as a signal bump and is an
   // explicit refresh too — same cache-bypass semantics as Retry.
+  //
+  // The identity values are deps so a refresh arriving AFTER an
+  // address/window/mode switch arms the latch for the request that is
+  // actually about to run. The signal ref is the real guard: an identity
+  // change alone re-runs the effect but returns immediately, so only a
+  // genuine signal bump refreshes.
   const appliedSignal = useRef(refreshSignal);
   useEffect(() => {
     if (refreshSignal === appliedSignal.current) return;
     appliedSignal.current = refreshSignal;
-    requestTokenTransfersRefresh();
+    requestTokenTransfersRefresh(chainId, address, searchWindow, scanMode);
     void Promise.resolve(query.refetch()).finally(() => onRefreshed?.());
-  }, [refreshSignal, query, onRefreshed]);
+  }, [refreshSignal, query, onRefreshed, chainId, address, searchWindow, scanMode]);
 
   if (query.loading && !query.data) {
     return <LoadingState message="Scanning token transfers..." />;
@@ -723,7 +763,9 @@ export default function TokenTransfers({
                 // rides ?ttWindow= (a pushed history entry, like ?ttPage=)
                 // so the depth survives refresh, share and back/forward,
                 // and a different address's URL never inherits it.
-                requestTokenTransfersRefresh();
+                // Armed for the WIDENED window — that is the request the
+                // ?ttWindow= write is about to produce, not the current one.
+                requestTokenTransfersRefresh(chainId, address, nextSearchWindow, scanMode);
                 void setSearch(prev => ({
                   ...prev,
                   tab: 'transfers',
@@ -815,6 +857,7 @@ export default function TokenTransfers({
                       key={`${transfer.txHash}-${transfer.logIndex}`}
                       chainId={chainId}
                       transfer={transfer}
+                      holder={address}
                     />
                   ))}
                   {transfers.length === 0 && (

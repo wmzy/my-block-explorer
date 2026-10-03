@@ -22,9 +22,23 @@ export function OpenInIdeButton({ chainId, address }: { chainId: number; address
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    // The Contract route reuses this component across contracts (params
+    // change without a remount), so an in-flight detection can be left
+    // behind. Without a cancelled guard a slow response for the PREVIOUS
+    // address could land last and repaint the button with that contract's
+    // IDEs — clicking it would then POST this address into the other
+    // contract's IDE. Same guard the other async effects in views/ use.
+    let cancelled = false;
     get<{ ides?: DetectedIde[] }>(`/api/chains/${chainId}/contracts/${address}/ides`)
-      .then(data => setDetectedIdes(data.ides ?? []))
-      .catch(() => setDetectedIdes([]));
+      .then(data => {
+        if (!cancelled) setDetectedIdes(data.ides ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setDetectedIdes([]);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [chainId, address]);
 
   useEffect(() => {
