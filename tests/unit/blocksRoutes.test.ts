@@ -81,4 +81,16 @@ describe('GET .../blocks pagination validation', () => {
     expect(body.total).toBe(0);
     expect(res.headers.get('X-Data-Source')).toBe('database');
   });
+
+  it('answers 500 when the list read fails, never an empty 200 page', async () => {
+    // The service used to swallow a failed read into {blocks: [], total: 0},
+    // which made this catch unreachable and rendered a database outage as
+    // "this chain has no indexed blocks".
+    mocks.getBlocks.mockRejectedValue(new Error('Failed query: no such table'));
+
+    const res = await app.request(BASE);
+
+    expect(res.status).toBe(500);
+    await expect(res.json()).resolves.toEqual({ error: 'Failed to get blocks' });
+  });
 });

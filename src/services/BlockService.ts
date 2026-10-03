@@ -340,7 +340,11 @@ const createBlockService = (deps: BlockServiceDeps) => {
         return { blocks: formattedBlocks, total };
       } catch (error) {
         logErr(error, 'BlockService.getBlocks', { chainId });
-        return { blocks: [], total: 0 };
+        // The route's own catch answers 500 'Failed to get blocks'. An
+        // error swallowed here reached the client as a 200 with an empty
+        // page — indistinguishable from a chain with nothing indexed, and
+        // with no retry affordance (same rule as /api/stats/overview).
+        throw error;
       }
     },
 

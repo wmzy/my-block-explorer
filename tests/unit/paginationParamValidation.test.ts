@@ -88,6 +88,17 @@ describe('GET /chains/:chainId/transactions — limit param', () => {
     expect(res.status).toBe(200);
     expect(transactionService.getLatestTransactions).toHaveBeenCalledWith(1, 5, 10);
   });
+
+  it('answers 500 when the list read fails, never an empty 200 page', async () => {
+    vi.mocked(transactionService.getLatestTransactions).mockRejectedValue(
+      new Error('Failed query: no such table'),
+    );
+
+    const res = await transactionsApp.request('/chains/1/transactions');
+
+    expect(res.status).toBe(500);
+    await expect(res.json()).resolves.toEqual({ error: 'Failed to get transactions' });
+  });
 });
 
 describe('GET /chains/:chainId/addresses/:address/transactions — page/limit params', () => {

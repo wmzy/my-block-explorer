@@ -501,7 +501,10 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
         };
       } catch (error) {
         console.error(`Failed to get transactions for block ${blockNumber}:`, error);
-        return { transactions: [], total: 0 };
+        // A failed read is not an empty block (same rule as the sibling
+        // list endpoints and /api/stats/overview): the caller's 500/retry
+        // must be reachable.
+        throw error;
       }
     },
 
@@ -548,7 +551,7 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
         };
       } catch (error) {
         console.error(`Failed to get transactions for address ${address}:`, error);
-        return { transactions: [], total: 0 };
+        throw error;
       }
     },
 
@@ -582,7 +585,9 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
         };
       } catch (error) {
         console.error('Failed to get latest transactions:', error);
-        return { transactions: [], total: 0 };
+        // routes/transactions.ts answers 500 'Failed to get transactions';
+        // swallowing here made an outage look like an empty chain.
+        throw error;
       }
     },
 
