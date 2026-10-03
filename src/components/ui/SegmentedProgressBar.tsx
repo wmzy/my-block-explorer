@@ -151,14 +151,23 @@ export function SegmentedProgressBar({ segments, className }: Props) {
     );
   }
 
-  const totalBlocks = segments.reduce((sum, s) => sum + (s.toBlock - s.fromBlock), 0);
+  // Segment bounds are INCLUSIVE (the walk completes when current > end,
+  // so the end block is itself walked; IndexingRangeManager's
+  // coveredBlocksOf and EventStatistics' coverage union both add the +1).
+  // Weighting them as `to - from` made every segment one block short, and
+  // a single-block range (fromBlock === toBlock — quick 'catchup' when the
+  // head already equals the furthest toBlock) measured ZERO blocks: it
+  // rendered 0% wide, or vanished entirely when every range was
+  // single-block. The progress fill handed in is already inclusive, so a
+  // completed one-block range could show "100%" inside an empty box.
+  const blockSpan = (s: Segment): number => Math.max(1, s.toBlock - s.fromBlock + 1);
+  const totalBlocks = segments.reduce((sum, s) => sum + blockSpan(s), 0);
 
   return (
     <div className={cx(containerStyle, className)}>
       <div className={trackStyle}>
         {segments.map(segment => {
-          const width =
-            totalBlocks > 0 ? ((segment.toBlock - segment.fromBlock) / totalBlocks) * 100 : 0;
+          const width = totalBlocks > 0 ? (blockSpan(segment) / totalBlocks) * 100 : 0;
 
           return (
             <div
