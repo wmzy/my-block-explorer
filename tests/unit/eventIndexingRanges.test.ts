@@ -746,8 +746,10 @@ describe('pausing an in-flight range keeps the checkpoint honest', () => {
     expect(closeOut?.status).toBe('paused');
     // The checkpoint is the last batch actually completed ([2000,3999] ran
     // before the abort took effect) — and, decisively, NOT the range's
-    // toBlock, which is what the old close-out always wrote.
-    expect(closeOut?.currentBlock).toBe(4_000n);
+    // toBlock, which is what the old close-out always wrote. It is the last
+    // COVERED block (3999), not the stepped-to next batch start (4000):
+    // resume adds +1, so persisting 4000 skipped block 4000 entirely.
+    expect(closeOut?.currentBlock).toBe(3_999n);
     expect(closeOut?.currentBlock).not.toBe(5_999n);
 
     // And the walk really did stop early rather than running to the end:
@@ -784,9 +786,47 @@ describe('pausing an in-flight range keeps the checkpoint honest', () => {
     await svc.startIndexingRange(CHAIN_ID, ADDRESS, 1, EMPTY_ABI);
 
     // The remainder really is fetched, and the run finishes complete.
+    // No gap: the last covered block was 3999, so resume must fetch from
+    // 4000 — the block after the checkpoint, never 4001 (which skipped it).
+    expect(pausedAt).toBe(3_999n);
     const firstResumeCall = client.getLogs.mock.calls[0]?.[0];
     expect(firstResumeCall?.fromBlock).toBe(pausedAt + 1n);
+    expect(firstResumeCall?.toBlock).toBeGreaterThanOrEqual(4_000n);
     expect(client.getLogs.mock.calls.at(-1)?.[0].toBlock).toBe(5_999n);
     expect(dbState.updates.at(-1)?.set.status).toBe('completed');
+  });
+
+  it('a pause leaves no block uncovered: the resumed walk fetches every un-indexed block', async () => {
+    // Same pause point as above; this time we record exactly which blocks
+    // the two runs asked for and prove the union is [0, 5999] with no hole.
+    dbState.rawRangeRows.push(rangeRow({ fromBlock: 0n, toBlock: 5_999n }));
+    const svc = await import('@/services/EventIndexingService');
+    const client = makeClient(20_000_000n);
+    mocks.getClient.mockResolvedValue(client);
+    const served: Array<{ from: bigint; to: bigint }> = [];
+    let calls = 0;
+    client.getLogs.mockImplementation(async (args: { fromBlock: bigint; toBlock: bigint }) => {
+      served.push({ from: args.fromBlock, to: args.toBlock });
+      calls += 1;
+      if (calls === 2) svc.pauseIndexingRange(CHAIN_ID, ADDRESS, 1);
+      return [];
+    });
+    await svc.startIndexingRange(CHAIN_ID, ADDRESS, 1, EMPTY_ABI);
+
+    const pausedAt = dbState.updates.at(-1)?.set.currentBlock as bigint;
+    dbState.updates.length = 0;
+    dbState.rawRangeRows.length = 0;
+    dbState.rawRangeRows.push(
+      rangeRow({ fromBlock: 0n, toBlock: 5_999n, currentBlock: pausedAt, status: 'paused' }),
+    );
+    await svc.startIndexingRange(CHAIN_ID, ADDRESS, 1, EMPTY_ABI);
+
+    // Sort by start and assert the windows tile [0,5999] contiguously.
+    const sorted = [...served].sort((a, b) => (a.from < b.from ? -1 : a.from > b.from ? 1 : 0));
+    expect(sorted[0]?.from).toBe(0n);
+    expect(sorted.at(-1)?.to).toBe(5_999n);
+    for (let i = 1; i < sorted.length; i++) {
+      expect(sorted[i].from).toBe(sorted[i - 1].to + 1n);
+    }
   });
 });

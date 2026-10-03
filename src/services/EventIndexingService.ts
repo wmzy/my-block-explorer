@@ -1373,6 +1373,13 @@ export const startIndexingRange = async (
 
     let totalInserted = range.totalEventsIndexed ?? 0;
 
+    // The LAST block a batch actually covered (batchTo forward, batchFrom
+    // backward). The resume protocol starts at `checkpoint + 1`, so this is
+    // what an abort must persist: by close-out time `currentBlock` has
+    // already been stepped to the NEXT batch's first block, and persisting
+    // that value skipped exactly that block on the next resume.
+    let lastCoveredBlock: bigint | null = null;
+
     const finalizedBlockNumber = await fetchFinalizedBlockNumber(chainId);
 
     while (!isComplete(currentBlock, endBlock) && !job.abort) {
@@ -1400,9 +1407,11 @@ export const startIndexingRange = async (
         totalInserted += decoded.length;
       }
 
+      const coveredBlock = direction === 'forward' ? batchTo : batchFrom;
+      lastCoveredBlock = coveredBlock;
       await updateRange(
         {
-          currentBlock: direction === 'forward' ? batchTo : batchFrom,
+          currentBlock: coveredBlock,
           totalEventsIndexed: totalInserted,
           status: 'indexing',
         },
@@ -1434,21 +1443,32 @@ export const startIndexingRange = async (
     );
 
     // The checkpoint must reflect WHERE THE WALK ACTUALLY GOT TO. On an
-    // abort (pause) that is `currentBlock`, which is short of the end —
-    // writing the end bound instead made the persisted row claim the whole
-    // window was indexed, so the next resume computed currentBlock+1 >
-    // endBlock, treated the range as already complete and fetched NOTHING.
-    // The remaining events were silently lost while the range reported
-    // itself finished. On normal completion the loop exits one step past
-    // the end, so the persisted checkpoint stays the end bound.
-    await updateRange(
-      {
-        currentBlock: job.abort ? currentBlock : endBlock,
-        status: job.abort ? 'paused' : 'completed',
-        totalEventsIndexed,
-      },
-      { onlyIfIndexing: true },
-    );
+    // abort (pause) that is the last COVERED block — the resume protocol
+    // starts at `checkpoint + 1`, and the loop's `currentBlock` has already
+    // been stepped to the NEXT batch's first block by close-out time.
+    // Persisting that stepped value skipped exactly that block on the next
+    // resume (with BATCH_SIZE 2000, a pause after [2000,3999] stored 4000
+    // and the resumed walk started at 4001 — block 4000's events were
+    // silently absent while the range later reported itself complete).
+    // With no completed batch the row's own checkpoint stands: a null
+    // rewinds to the range start on resume, which loses nothing.
+    const closeOut: {
+      currentBlock?: bigint;
+      status: RangeStatus;
+      totalEventsIndexed: number;
+    } = {
+      status: job.abort ? 'paused' : 'completed',
+      totalEventsIndexed,
+    };
+    if (job.abort) {
+      const checkpoint = lastCoveredBlock ?? range.currentBlock;
+      if (checkpoint !== null) closeOut.currentBlock = checkpoint;
+    } else {
+      // Normal completion: the loop exits one step past the end, so the
+      // persisted checkpoint stays the end bound.
+      closeOut.currentBlock = endBlock;
+    }
+    await updateRange(closeOut, { onlyIfIndexing: true });
 
     return { success: true };
   } catch (err) {
