@@ -25,6 +25,7 @@ import { useServiceDiscovery } from '@/hooks/ServiceDiscoveryContext';
 import { getSortedChains, isChainSupported } from '@/config/chains';
 import { LAST_CHAIN_STORAGE_KEY } from '@/util/storageKeys';
 import { readStorageItem, writeStorageItem } from '@/util/storageAccess';
+import { parseStrictInteger } from '@/utils/validation';
 import {
   GettingStarted,
   backendConnectedFromStatus,
@@ -46,9 +47,13 @@ export function readRememberedChainId(): number | undefined {
   // the reader is called during the render that decides the landing
   // redirect, the nav default and eight sibling views, so a throw here is
   // a white screen, not a missing preference.
-  const raw = readStorageItem(LAST_CHAIN_STORAGE_KEY);
-  const remembered = raw !== null ? Number.parseInt(raw, 10) : Number.NaN;
-  return Number.isInteger(remembered) && isChainSupported(remembered) ? remembered : undefined;
+  // Strict decimal parse: parseInt() accepted a valid prefix and ignored
+  // the rest, so a hand-edited or truncated "1abc" / "1e5" / " 7 " /
+  // "0x1a" resolved to a DIFFERENT, plausible chain id and the app
+  // silently reopened that chain — the malformed value the reader above
+  // promises to drop.
+  const remembered = parseStrictInteger(readStorageItem(LAST_CHAIN_STORAGE_KEY) ?? undefined);
+  return remembered !== null && isChainSupported(remembered) ? remembered : undefined;
 }
 
 // Preferred entry chain: mainnet when supported (the intuitive default for

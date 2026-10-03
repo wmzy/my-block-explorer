@@ -7,6 +7,7 @@ import { db } from './database/drizzle';
 import { registerSelfDestructCloser } from './services/selfDestruct';
 import { runStartupSecurityChecks } from './startupChecks';
 import { createStaticFrontendHandler } from './middleware/og-meta';
+import { parseStrictInteger } from './utils/strictInteger';
 
 export type ServerOptions = {
   port?: number;
@@ -39,7 +40,12 @@ export function proxyDispatcherOptions(
 }
 
 export async function createServer(options: ServerOptions = {}) {
-  const port = options.port ?? parseInt(process.env.PORT ?? '8201');
+  // Strict decimal parse: parseInt() accepted a valid prefix and ignored
+  // the rest, so PORT=8201abc bound 8201 and PORT=1e3 bound 1 — a
+  // silently different port than the operator wrote. Junk falls back to
+  // the documented default rather than handing NaN to serve(). The CLI
+  // --port flag already routes through the same parser.
+  const port = options.port ?? parseStrictInteger(process.env.PORT) ?? 8201;
   // Default to the loopback bind: an unset HOST must mean "local dev", never
   // "all interfaces". Passing undefined to serve() would make Node bind ::
   // (dual-stack, LAN-reachable) while startupChecks treats unset HOST as

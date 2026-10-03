@@ -23,6 +23,7 @@ import { readdir, rm, rmdir, stat } from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { parseMainDbPath } from './database/dbPath';
+import { parseStrictInteger } from './utils/strictInteger';
 
 export type UninstallTargetKind =
   | 'data-dir'
@@ -77,8 +78,12 @@ export const DEFAULT_PROBE_PORTS: readonly number[] = [8201, 8202, 8203, 8204, 8
 /** Probe ports + the PORT env override, de-duplicated, ascending. */
 export function defaultProbePorts(envPort: string | undefined): number[] {
   const ports = new Set<number>(DEFAULT_PROBE_PORTS);
-  const parsed = envPort === undefined ? Number.NaN : Number.parseInt(envPort, 10);
-  if (Number.isInteger(parsed) && parsed > 0 && parsed < 65536) ports.add(parsed);
+  // Strict decimal parse: parseInt() accepted a valid prefix, so
+  // PORT=8201abc probed 8201 — and probing a port the env never named is
+  // what refuses deletion ("a server is running"). '1e3' and '0x1a' are
+  // worse: they read as 1 and 26, two ports the operator never set.
+  const parsed = parseStrictInteger(envPort);
+  if (parsed !== null && parsed > 0 && parsed < 65536) ports.add(parsed);
   return [...ports].sort((a, b) => a - b);
 }
 

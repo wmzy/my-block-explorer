@@ -80,9 +80,13 @@ export class ZeroConfigManager {
 
     // Check Node.js version
     const nodeVersion = process.version;
-    const majorVersion = parseInt(nodeVersion.slice(1).split('.')[0]);
+    // parseInt() is not enough here: an unparseable version yields NaN, and
+    // `NaN < 26` is FALSE — so a malformed version SILENTLY PASSED the
+    // minimum-version gate, which is the one input the check exists to
+    // refuse. Presence, not truthiness, with an explicit numeric range.
+    const majorVersion = Number(nodeVersion.slice(1).split('.')[0]);
 
-    if (majorVersion < 26) {
+    if (!Number.isSafeInteger(majorVersion) || majorVersion < 26) {
       throw new Error(
         `Node.js version ${nodeVersion} is not supported. Please upgrade to Node.js 26 or later.`,
       );

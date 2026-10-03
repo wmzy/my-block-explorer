@@ -16,6 +16,7 @@
 import { getAddress } from 'viem';
 import { checkAddressValidity } from '@/views/Address/addressValidity';
 import { PRIVATE_NOTE_KEY_PREFIX, PRIVATE_NOTE_KEY_RE } from '@/util/storageKeys';
+import { parseStrictInteger } from '@/utils/strictInteger';
 
 // Canonical literals live in the manifest (util/storageKeys.ts);
 // re-exported so existing consumers keep this import point.
@@ -71,9 +72,9 @@ export function parsePrivateNoteKey(key: string): { chainId: number; address: st
   const rest = key.slice(PRIVATE_NOTE_KEY_PREFIX.length);
   const separator = rest.indexOf(':');
   if (separator <= 0) return null;
-  const chainId = Number.parseInt(rest.slice(0, separator), 10);
+  const chainId = parseStrictInteger(rest.slice(0, separator));
   const address = rest.slice(separator + 1);
-  if (!Number.isInteger(chainId) || chainId <= 0) return null;
+  if (chainId === null || chainId <= 0) return null;
   // The regex shape-checked the address; the two-tier check additionally
   // rejects a wrong-checksum spelling, and getAddress canonicalizes.
   if (!checkAddressValidity(address).valid) return null;
