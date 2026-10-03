@@ -114,13 +114,23 @@ describe('getContractSource — a failed lookup is not an EOA verdict', () => {
     await expect(service.getContractSource(CHAIN_ID, CONTRACT)).rejects.toThrow();
   });
 
-  it('reports a failed cache write instead of answering "not a contract"', async () => {
+  it('serves the fetched answer when only the cache write fails', async () => {
     selectRows([]);
     mockDb.insert.mockImplementation(() => {
       throw dbFailure();
     });
 
-    await expect(service.getContractSource(CHAIN_ID, CONTRACT)).rejects.toThrow();
+    // The cache write is an OPTIMIZATION: it may not turn an answer the
+    // request already holds into a failure, and above all not into `null`
+    // (the routes' 404 not_a_contract). This used to expect a rejection —
+    // the exact 500 "Failed to get contract source" the write caused; the
+    // read path now logs and serves (see cacheWriteIsNotLookupFailure).
+    // The fetch stubs here make this contract a REAL contract, so the
+    // answer is the unverified verdict, never null.
+    const result = await service.getContractSource(CHAIN_ID, CONTRACT);
+
+    expect(result).not.toBeNull();
+    expect(result?.verificationStatus).toBe('unverified');
   });
 });
 
