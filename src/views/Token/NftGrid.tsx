@@ -12,7 +12,7 @@
 // — no navigation; the tile's title carries the full id. The mandatory
 // caveat renders in every non-empty state: this is a discovery grid
 // over a scanned window, never the collection's supply.
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { css, cx } from '@linaria/core';
 
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
@@ -23,7 +23,7 @@ import {
   type NftMetadataItem,
   type NftMetadataOutcome,
 } from '@/services/nftMetadata';
-import { copyText } from '@/util/clipboard';
+import { useCopyFeedback } from '@/util/useCopyFeedback';
 import { NFT_ITEMS_LIMIT, type NftItem } from './nftItems';
 
 export type NftGridProps = {
@@ -246,27 +246,14 @@ type NftTileProps = {
 };
 
 function NftTile({ item, contract, outcome, onRetry, retrying }: NftTileProps) {
-  const [copied, setCopied] = useState(false);
-  const copyTimer = useRef<number | null>(null);
-
-  // Never leave a pending copy-confirmation timer behind on unmount.
-  useEffect(
-    () => () => {
-      if (copyTimer.current !== null) window.clearTimeout(copyTimer.current);
-    },
-    [],
-  );
+  // Shared copy-feedback hook: timer lifecycle (pending-reset cancelled on
+  // new copies, cleared on unmount) is the hook's own discipline. The
+  // confirmation appears only on a real copy — a clipboard denial stays
+  // quiet because the render below reads the 'ok' state only.
+  const copyFeedback = useCopyFeedback();
 
   const copyId = () => {
-    // The confirmation appears only on a real copy; a clipboard denial
-    // simply stays quiet (never a false "copied"). copyText also covers
-    // insecure contexts via its legacy fallback.
-    void copyText(item.tokenId).then(ok => {
-      if (!ok) return;
-      setCopied(true);
-      if (copyTimer.current !== null) window.clearTimeout(copyTimer.current);
-      copyTimer.current = window.setTimeout(() => setCopied(false), 1500);
-    });
+    void copyFeedback.copy(item.tokenId);
   };
 
   const idText = `#${shortId(item.tokenId)}`;
@@ -336,7 +323,11 @@ function NftTile({ item, contract, outcome, onRetry, retrying }: NftTileProps) {
       )}
 
       <span className={tileId} data-testid="nft-tile-id">
-        {copied ? <span className={tileCopied}>copied ✓</span> : idText}
+        {copyFeedback.state === 'ok' ? (
+          <span className={tileCopied}>copied ✓</span>
+        ) : (
+          idText
+        )}
       </span>
 
       {item.standard === 'erc1155' &&

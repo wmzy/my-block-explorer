@@ -7,11 +7,10 @@
 // releases the redirect. The card itself is presentational — visibility
 // lives in the pure helpers below so the matrix is unit-testable.
 import { css } from '@linaria/core';
-import { useCallback, useState } from 'react';
 import { TypedLink } from '@native-router/react';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent } from '@/components/ui/Card';
-import { copyText } from '@/util/clipboard';
+import { useCopyFeedback } from '@/util/useCopyFeedback';
 import type { DiscoveryStatus } from '@/hooks/useAutoDiscovery';
 import { getPreferredChainId, readRememberedChainId } from './Landing';
 
@@ -329,21 +328,16 @@ const docsStyle = css`
 `;
 
 export function GettingStarted({ onDismiss }: GettingStartedProps) {
-  const [copied, setCopied] = useState(false);
   // Step 2 resolves once per render through the shared landing rule —
   // remembered chain when valid, preferred entry chain otherwise. Never
   // a guessed chain id.
   const { blocks: blocksPath, contracts: contractsPath } = resolveGuideChainPaths();
 
   // Copy pattern shared with SetupRequiredScreen: shared copyText (async
-  // Clipboard API or legacy fallback), transient "Copied!" feedback,
-  // silent degradation when the clipboard is unavailable.
-  const handleCopy = useCallback(async () => {
-    if (await copyText(GETTING_STARTED_COMMAND)) {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    }
-  }, []);
+  // Clipboard API or legacy fallback), transient "Copied!" feedback that
+  // keeps the idle label when the clipboard write fails. The 1500ms reset
+  // this site used normalizes to the hook's 2000ms default (intentional).
+  const { state: copyState, copy } = useCopyFeedback();
 
   return (
     <div className={containerStyle}>
@@ -423,8 +417,12 @@ export function GettingStarted({ onDismiss }: GettingStartedProps) {
 
             <div className={commandRowStyle}>
               <code className={commandStyle}>{GETTING_STARTED_COMMAND}</code>
-              <Button variant="ghost" size="sm" onClick={handleCopy}>
-                {copied ? 'Copied!' : 'Copy'}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => void copy(GETTING_STARTED_COMMAND)}
+              >
+                {copyState === 'ok' ? 'Copied!' : 'Copy'}
               </Button>
             </div>
 

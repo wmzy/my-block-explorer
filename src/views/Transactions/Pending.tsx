@@ -28,7 +28,6 @@ import { Fragment, useMemo } from 'react';
 import { css } from '@linaria/core';
 import { navigate } from '@native-router/core';
 import { TypedLink, useMatched, useSearch, useSetSearch } from '@native-router/react';
-import { formatUnits } from 'viem';
 import { z } from 'zod';
 
 import TopNavigation from '@/components/TopNavigation';
@@ -49,7 +48,7 @@ import {
   type MempoolAnalysis,
   type MempoolRenderUnit,
 } from '@/utils/mempoolAnalysis';
-import { formatNumber } from '@/utils/format';
+import { formatNativeDisplay, formatNumber, truncateMiddle } from '@/utils/format';
 import { parseChainIdParam } from '@/utils/chainParam';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
 
@@ -158,23 +157,18 @@ const formatHash = (hash: string): string => {
   return `${hash.slice(0, 10)}...${hash.slice(-8)}`;
 };
 
-const formatAddr = (addr: string): string => {
-  if (!addr || addr.length < 10) return addr || 'N/A';
-  return `${addr.slice(0, 8)}...${addr.slice(-6)}`;
-};
+// Address-cell text: the shared 8/6 middle truncation, with the lists'
+// 'N/A' fallback for a blank cell.
+const addressCell = (addr: string): string => (addr ? truncateMiddle(addr, 8, 6) : 'N/A');
 
 /**
- * Pool value for display: formatUnits at the chain's native decimals
- * (BigInt-exact), trailing fractional zeros cut, with the same sub-floor
- * display cutoff the mined-tx lists use ("0.0001 units in integer wei").
+ * Pool value for display: the shared native display formatter at the
+ * chain's own decimals — exact minimal fraction (trailing zeros cut) with
+ * the same sub-floor cutoff the mined-tx lists use ("0.0001 units in
+ * integer wei").
  */
-export const formatPoolValue = (wei: bigint, decimals: number, symbol: string): string => {
-  if (wei === 0n) return `0 ${symbol}`;
-  if (decimals >= 4 && wei < 10n ** BigInt(decimals - 4)) return `<0.0001 ${symbol}`;
-  const raw = formatUnits(wei, decimals);
-  const trimmed = raw.includes('.') ? raw.replace(/0+$/, '').replace(/\.$/, '') : raw;
-  return `${trimmed} ${symbol}`;
-};
+export const formatPoolValue = (wei: bigint, decimals: number, symbol: string): string =>
+  formatNativeDisplay(wei, decimals, { symbol });
 
 /**
  * Gas price cell: EIP-1559 entries show their fee cap ("≤" — the actual
@@ -444,7 +438,7 @@ function PendingBody({ chainId }: { chainId: number }) {
                 <Fragment key={`conflict:${unit.group.winnerHash}`}>
                   <tr className={groupHeaderRow} data-testid="pending-conflict-group">
                     <td colSpan={6}>
-                      {formatAddr(unit.group.from)} · nonce {formatNumber(unit.group.nonce)} ·{' '}
+                      {addressCell(unit.group.from)} · nonce {formatNumber(unit.group.nonce)} ·{' '}
                       {formatNumber(unit.group.size)} competing transactions — likely winner first
                     </td>
                   </tr>
@@ -510,7 +504,7 @@ function PendingRow({
       <td>
         <CopyableHash
           value={entry.from}
-          truncated={formatAddr(entry.from)}
+          truncated={addressCell(entry.from)}
           href={`/chain/${chainId}/address/${entry.from}`}
         />
       </td>
@@ -520,7 +514,7 @@ function PendingRow({
         ) : (
           <CopyableHash
             value={entry.to}
-            truncated={formatAddr(entry.to)}
+            truncated={addressCell(entry.to)}
             href={`/chain/${chainId}/address/${entry.to}`}
           />
         )}

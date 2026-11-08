@@ -24,6 +24,7 @@ import { homedir, tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { parseMainDbPath } from './database/dbPath';
 import { parseStrictInteger } from './utils/strictInteger';
+import { formatFileSize } from './utils/format';
 
 export type UninstallTargetKind =
   | 'data-dir'
@@ -274,17 +275,9 @@ export async function probeRunningServers(options?: {
   return probed.filter((port): port is number => port !== null);
 }
 
-export function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  const units = ['KB', 'MB', 'GB', 'TB'];
-  let value = bytes;
-  let unit = -1;
-  do {
-    value /= 1024;
-    unit += 1;
-  } while (value >= 1024 && unit < units.length - 1);
-  return `${value.toFixed(1)} ${units[unit]}`;
-}
+// Byte sizes in the uninstall summary: the shared utils/format
+// formatFileSize (2-decimal units, PB-extending, non-finite guard) — the
+// same figure the in-app ops card and services/selfDestruct.ts show.
 
 /**
  * The uninstall flow, with every side effect injectable (prompt, log, fetch)
@@ -321,10 +314,10 @@ export async function runUninstall(options: {
   log(`my-block-explorer data under ${cwd}:`);
   for (const entry of existing) {
     const files = entry.files === 1 ? '1 file' : `${entry.files} files`;
-    log(`  ${entry.target.label}  —  ${formatBytes(entry.bytes)} (${files})`);
+    log(`  ${entry.target.label}  —  ${formatFileSize(entry.bytes)} (${files})`);
   }
   const totalBytes = existing.reduce((sum, entry) => sum + entry.bytes, 0);
-  log(`  Total: ${formatBytes(totalBytes)}`);
+  log(`  Total: ${formatFileSize(totalBytes)}`);
 
   const runningPorts = options.force
     ? []
@@ -360,12 +353,12 @@ export async function runUninstall(options: {
   const { results, freedBytes } = await removeTargets(existing, cwd);
   for (const result of results) {
     if (result.removed) {
-      log(`Removed ${result.target.label} (${formatBytes(result.bytes)})`);
+      log(`Removed ${result.target.label} (${formatFileSize(result.bytes)})`);
     } else {
       log(`FAILED to remove ${result.target.label}: ${result.error ?? 'unknown error'}`);
     }
   }
-  log(`Freed ${formatBytes(freedBytes)}.`);
+  log(`Freed ${formatFileSize(freedBytes)}.`);
 
   // Cosmetic: drop the now-empty data/ dir (custom layout: the custom db's
   // parent) so an uninstalled explorer leaves no husk behind.

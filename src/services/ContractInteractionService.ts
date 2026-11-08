@@ -9,6 +9,7 @@ import type {
   StateOverride as ViemStateOverride,
 } from 'viem';
 import type { StateOverride } from '../utils/stateOverride';
+import { HEX_ADDRESS_RE } from '../utils/address';
 
 const logger = createLogger('contract-interaction-service');
 
@@ -475,7 +476,7 @@ export class ContractInteractionService {
     try {
       // Address type validation
       if (type === 'address') {
-        if (typeof value !== 'string' || !value.match(/^0x[a-fA-F0-9]{40}$/)) {
+        if (typeof value !== 'string' || !HEX_ADDRESS_RE.test(value)) {
           return { valid: false, error: 'Invalid address format' };
         }
       }

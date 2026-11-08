@@ -4,9 +4,9 @@
 // with LEAF value types resolve their value INLINE (slot computed here
 // via encodeMappingKey + mappingValueSlot) instead of opening a column.
 import { css } from '@linaria/core';
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import type { Hex } from 'viem';
-import { copyText } from '@/util/clipboard';
+import { useCopyFeedback } from '@/util/useCopyFeedback';
 import type { StorageMapping, StorageType } from '@/types/storage';
 import type { StructRow } from './columnModel';
 import { buildViemReadSnippet } from '@/utils/storageSlotCode';
@@ -159,30 +159,14 @@ export function CopyButton({
   label: string;
   title?: string;
 }) {
-  const [result, setResult] = useState<'idle' | 'ok' | 'fail'>('idle');
-  const timerRef = useRef<number | undefined>(undefined);
-
-  useEffect(() => {
-    return () => {
-      if (timerRef.current !== undefined) window.clearTimeout(timerRef.current);
-    };
-  }, []);
-
-  const handleCopy = async () => {
-    // copyText falls back to the legacy execCommand path when the async
-    // Clipboard API is unavailable (non-secure context) or rejected.
-    const ok = await copyText(text);
-    setResult(ok ? 'ok' : 'fail');
-    if (timerRef.current !== undefined) window.clearTimeout(timerRef.current);
-    timerRef.current = window.setTimeout(() => setResult('idle'), 2000);
-  };
+  const { state: result, copy } = useCopyFeedback();
 
   return (
     <button
       type="button"
       className={copyButtonStyle}
       title={title}
-      onClick={() => void handleCopy()}
+      onClick={() => void copy(text)}
     >
       {result === 'ok' ? 'Copied ✓' : result === 'fail' ? 'Copy failed' : label}
     </button>

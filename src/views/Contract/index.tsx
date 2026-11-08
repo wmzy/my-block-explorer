@@ -20,6 +20,7 @@ import { useServiceDiscovery } from '@/hooks/ServiceDiscoveryContext';
 import { redirectReplace } from '@/views/Home/Landing';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
 import { parseChainIdParam } from '@/utils/chainParam';
+import { isAddressShape } from '@/utils/address';
 import { useContractCreation, useContractSource, useStorageLayout } from '@/services/contracts';
 import { createRpcClient } from '@/utils/realTimeData';
 import {
@@ -670,7 +671,7 @@ const BEACON_IMPLEMENTATION_ABI = [
 // readContract() answers the raw decoded string: a beacon without the
 // function (or a decode miss) must not leak a bogus value into a link.
 const isNonZeroAddress = (value: unknown): value is Address =>
-  typeof value === 'string' && /^0x[0-9a-fA-F]{40}$/.test(value) && !/^0x0{40}$/i.test(value);
+  typeof value === 'string' && isAddressShape(value) && !/^0x0{40}$/i.test(value);
 
 // On-chain proxy detection for contracts the verification services could
 // not resolve (unverified payloads with no implementation data). The pure

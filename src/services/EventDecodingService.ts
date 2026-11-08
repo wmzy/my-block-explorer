@@ -13,6 +13,7 @@ import {
   ValidationResult,
   EventParameter,
 } from '../types/events';
+import { isAddressShape } from '../utils/address';
 
 /**
  * Event decoding configuration
@@ -381,7 +382,7 @@ export class EventDecodingService {
   private validateByType(type: string, value: unknown): ValidationResult {
     // Address type validation
     if (type === 'address') {
-      if (typeof value !== 'string' || !/^0x[a-fA-F0-9]{40}$/.test(value)) {
+      if (typeof value !== 'string' || !isAddressShape(value)) {
         return { valid: false, error: 'Invalid address format' };
       }
       return { valid: true };
@@ -532,7 +533,7 @@ export class EventDecodingService {
     // Register default validators
     this.registerValidator('address', {
       validate: (param, value) => {
-        if (typeof value !== 'string' || !/^0x[a-fA-F0-9]{40}$/.test(value)) {
+        if (typeof value !== 'string' || !isAddressShape(value)) {
           return { valid: false, error: 'Invalid address format' };
         }
         return { valid: true, sanitizedValue: value.toLowerCase() };

@@ -15,13 +15,13 @@
 // Multiple candidates keep openchain's order (most popular first).
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db, signatureCache } from '../database/init';
+import { negativeEntryFresh } from '../utils/negativeCache';
 import { createLogger } from '../server/logger';
 
 const logger = createLogger('signature-service');
 
 const OPENCHAIN_LOOKUP_URL = 'https://api.openchain.xyz/signature-database/v1/lookup';
 const FETCH_TIMEOUT_MS = 5_000;
-const MS_PER_HOUR = 1000 * 60 * 60;
 
 // Negative entries expire after 24h: a selector unknown to openchain today
 // can gain a signature as the database grows, and 24h is long enough that a
@@ -180,8 +180,9 @@ export class SignatureService {
       }
       // Negative row: only trust it inside the TTL window. An expired one
       // is refetched (and the upsert below refreshes fetchedAt either way).
-      const ageHours = (Date.now() - (cached.fetchedAt?.getTime() ?? 0)) / MS_PER_HOUR;
-      if (ageHours < NOT_FOUND_CACHE_TTL_HOURS) {
+      // A null fetchedAt reads as expired (utils/negativeCache), so a row
+      // without a timestamp can never pin its miss in the cache.
+      if (negativeEntryFresh(cached.fetchedAt, NOT_FOUND_CACHE_TTL_HOURS)) {
         entry.resolve({ kind: entry.request.kind, signatures: [], notFound: true });
         continue;
       }

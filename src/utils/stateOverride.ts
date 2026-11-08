@@ -7,6 +7,8 @@
 // details. Values are kept exactly as given (hex strings, no numeric
 // coercion) — the RPC layer owns bigint conversion.
 
+import { HEX_ADDRESS_RE } from './address';
+
 /** One account's override; at least one field is required per entry. */
 export type StateOverrideEntry = {
   /** Wei balance as a canonical hex quantity (e.g. '0x1'). */
@@ -33,8 +35,8 @@ const HEX_QUANTITY_RE = /^0x(?:0|[1-9a-fA-F][0-9a-fA-F]*)$/;
 const HEX_BYTES_RE = /^0x(?:[0-9a-fA-F]{2})+$/;
 // Storage slot or value: exactly 32 bytes.
 const HEX_32_BYTE_RE = /^0x[0-9a-fA-F]{64}$/;
-// Address key: 0x-prefixed, 40 hex characters, any casing.
-const HEX_ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
+// Address key shape (0x-prefixed, 40 hex chars, any casing): the
+// canonical HEX_ADDRESS_RE imported from ./address above.
 
 // Caps mirror what one eth_call override can usefully express without
 // becoming a state upload; they also bound request size.

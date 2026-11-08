@@ -21,15 +21,28 @@
 // chunks, provider-ceiling memory against succeed→double→fail
 // oscillation) mirrors TokenTransferService's scan; its retryable-error
 // classification is reused by import (isRetryableChunkError) so the two
-// scans classify provider limits identically. The generic loop itself is
-// module-private there, and the Approval query shape (args.owner filter,
-// two events) does not fit its Transfer-only query table, so the loop
-// is re-stated here against the same constant ladder rather than forked
-// blind: any tuning change should be applied to both files.
+// scans classify provider limits identically, and its window/chunk
+// ladder + honesty budgets are single-sourced in utils/scanLadder. The
+// generic loop itself is module-private there, and the Approval query
+// shape (args.owner filter, two events) does not fit its Transfer-only
+// query table, so the loop is re-stated here against the shared ladder.
 import { getEventSelector, parseAbi, type AbiEvent, type Address, type Hex } from 'viem';
 import { rpcManager } from './RpcManager';
 import { isRetryableChunkError, type ScanLog } from './TokenTransferService';
 import { createLogger } from '../server/logger';
+import {
+  DEFAULT_MAX_SCAN_CALLS,
+  DEFAULT_SCAN_TIMEOUT_MS,
+  DEFAULT_WINDOW_BLOCKS,
+  INITIAL_CHUNK_BLOCKS,
+  MAX_WINDOW_BLOCKS,
+  MIN_WINDOW_BLOCKS,
+  SCAN_TIMEOUT_GRACE_MS,
+  createProviderCeilingMemory,
+} from '../utils/scanLadder';
+import { createTtlLruCache } from '../utils/ttlLruCache';
+import { isAddressShape } from '../utils/address';
+import { TimeoutError, withTimeout } from '../utils/withTimeout';
 
 // The scan-log shape is shared with the transfers scan — re-exported so
 // consumers (and tests) of the approvals surface import one canonical type.
@@ -175,22 +188,13 @@ export type ApprovalScanClient = {
   }) => Promise<unknown[]>;
 };
 
-// Window + chunk ladder: identical values to TokenTransferService's scan
-// (see the header comment — tune both together).
-const DEFAULT_WINDOW_BLOCKS = 100_000;
-const MAX_WINDOW_BLOCKS = 50_000_000;
-const MIN_WINDOW_BLOCKS = 1;
-const INITIAL_CHUNK_BLOCKS = 5_000;
-const MIN_CHUNK_BLOCKS = 10;
-const MAX_CHUNK_BLOCKS = 10_000;
-// Honesty budgets: stop after this many scan steps (one step = one chunk's
-// event queries — Approval plus ApprovalForAll) or this much elapsed time
-// and report coverage 'partial' instead of blocking forever.
-const DEFAULT_MAX_SCAN_CALLS = 40;
-const DEFAULT_SCAN_TIMEOUT_MS = 25_000;
-// Grace for the hard race guard (TokenTransferService pattern): the
-// cooperative elapsed check fires first whenever time progresses.
-const SCAN_TIMEOUT_GRACE_MS = 5_000;
+// Window + chunk ladder + honesty budgets: single-sourced in
+// utils/scanLadder (shared with TokenTransferService — tune both there).
+// The call budget counts ACTUAL getLogs calls issued: each scan step
+// fires two (Approval plus ApprovalForAll), so the default 40 means 20
+// steps, the same per-scan RPC ceiling the transfers scan documents.
+// Grace for the hard race guard: SCAN_TIMEOUT_GRACE_MS (scanLadder) —
+// the cooperative elapsed check fires first whenever time progresses.
 // Deterministic response cache: one canonical result per
 // (chain, address, window) for ~60s, like the transfers scan cache.
 const APPROVALS_CACHE_TTL_MS = 60_000;
@@ -387,21 +391,6 @@ const readMulticallResult = (outcome: unknown): unknown => {
   return null;
 };
 
-// Hard race guard for a provider call that never settles (typed so the
-// caller can distinguish it from real provider errors).
-class ScanTimeoutError extends Error {}
-
-// The losing timer is cleared on settle (crossChainProbe withinBudget
-// pattern): a winning scan must not leave a live ms-later timer pending
-// for every request.
-const withTimeout = <T>(promise: Promise<T>, ms: number, label: string): Promise<T> => {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const expired = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new ScanTimeoutError(`${label} timed out after ${ms}ms`)), ms);
-  });
-  return Promise.race([promise, expired]).finally(() => clearTimeout(timer));
-};
-
 type ScanOutcome = {
   pairs: DiscoveredPair[];
   // Raw events retained at the sweep boundary (newest-first, capped).
@@ -412,7 +401,6 @@ type ScanOutcome = {
 };
 
 type ApprovalsCacheEntry = {
-  expiresAt: number;
   scannedAt: string;
   approvals: DiscoveredApproval[];
   history: ApprovalHistoryEvent[];
@@ -441,36 +429,27 @@ const createApprovalScanService = (deps: ApprovalScanServiceDeps) => {
   const maxScanCalls = deps.maxScanCalls ?? DEFAULT_MAX_SCAN_CALLS;
   const scanTimeoutMs = deps.scanTimeoutMs ?? DEFAULT_SCAN_TIMEOUT_MS;
 
-  // Bounded LRU (Map insertion order; reads re-insert, oversize inserts
-  // evict the oldest key) — TokenTransferService's transfers cache shape.
-  const approvalsCache = new Map<string, ApprovalsCacheEntry>();
+  // Deterministic response cache (utils/ttlLruCache): one canonical scan
+  // per (chain, address, window) for ~60s, bounded to 20 entries —
+  // hit-validity here is pure freshness, so the shared cache IS the read
+  // path (the transfers cache shape).
+  const approvalsCache = createTtlLruCache<ApprovalsCacheEntry>({
+    ttlMs: APPROVALS_CACHE_TTL_MS,
+    maxEntries: APPROVALS_CACHE_MAX_ENTRIES,
+    now,
+  });
 
-  const readApprovalsCache = (key: string): ApprovalsCacheEntry | null => {
-    const entry = approvalsCache.get(key);
-    if (!entry) return null;
-    if (now() > entry.expiresAt) {
-      approvalsCache.delete(key);
-      return null;
-    }
-    approvalsCache.delete(key);
-    approvalsCache.set(key, entry);
-    return entry;
-  };
+  const readApprovalsCache = (key: string): ApprovalsCacheEntry | null =>
+    approvalsCache.get(key) ?? null;
 
   const writeApprovalsCache = (
     key: string,
-    entry: Omit<ApprovalsCacheEntry, 'expiresAt' | 'scannedAt'>,
+    entry: Omit<ApprovalsCacheEntry, 'scannedAt'>,
   ): string => {
     // Scan time is captured once per entry: later cache hits keep
     // reporting it (freshness = scan age, not serve age).
     const scannedAt = new Date(now()).toISOString();
-    approvalsCache.delete(key);
-    approvalsCache.set(key, { ...entry, expiresAt: now() + APPROVALS_CACHE_TTL_MS, scannedAt });
-    while (approvalsCache.size > APPROVALS_CACHE_MAX_ENTRIES) {
-      const oldest = approvalsCache.keys().next().value;
-      if (oldest === undefined) break;
-      approvalsCache.delete(oldest);
-    }
+    approvalsCache.set(key, { ...entry, scannedAt });
     return scannedAt;
   };
 
@@ -526,10 +505,10 @@ const createApprovalScanService = (deps: ApprovalScanServiceDeps) => {
     const startedAt = now();
     let upper = latest;
     let chunkSize = INITIAL_CHUNK_BLOCKS;
-    // Highest chunk size this provider is known to REJECT (range caps):
-    // growth after a clean chunk stays below it (anti-oscillation memory,
-    // TokenTransferService pattern).
-    let providerCeiling = MAX_CHUNK_BLOCKS;
+    // Provider ceiling memory (utils/scanLadder): growth after a clean
+    // chunk stays below the highest size this provider is known to
+    // reject (anti-oscillation, TokenTransferService pattern).
+    const ladder = createProviderCeilingMemory();
     let calls = 0;
     let covered = false;
     let failed = false;
@@ -540,7 +519,6 @@ const createApprovalScanService = (deps: ApprovalScanServiceDeps) => {
         upper - BigInt(chunkSize) + 1n > oldest ? upper - BigInt(chunkSize) + 1n : oldest;
       const fromBlock = lower;
       const toBlock = upper;
-      calls += 1;
       // This step's raw-event buffer: flushed once both queries of the
       // chunk returned (or on a hard abort — see the catch).
       let stepEvents: StepEvent[] = [];
@@ -554,6 +532,10 @@ const createApprovalScanService = (deps: ApprovalScanServiceDeps) => {
         // failure on the second never discards the first's discoveries.
         // Raw events ride the same boundary (classified once, projected
         // twice: distinct pairs + bounded history) — no second sweep.
+        // The call budget counts ACTUAL getLogs calls issued (+1 as each
+        // is dispatched, so in-flight calls are included) — not steps —
+        // keeping DEFAULT_MAX_SCAN_CALLS' per-scan RPC ceiling honest
+        // (it used to count a two-query step as one, doubling it).
         const record = (logs: readonly ScanLog[]): void => {
           for (const log of logs) {
             if (log.blockNumber === null) continue;
@@ -583,9 +565,11 @@ const createApprovalScanService = (deps: ApprovalScanServiceDeps) => {
             }
           }
         };
+        calls += 1;
         record(
           await client.getLogs({ fromBlock, toBlock, event: APPROVAL_EVENT, args: { owner } }),
         );
+        calls += 1;
         record(
           await client.getLogs({
             fromBlock,
@@ -615,8 +599,8 @@ const createApprovalScanService = (deps: ApprovalScanServiceDeps) => {
         // pairs stay: they were recorded the moment their query
         // returned.)
         stepEvents = [];
-        providerCeiling = chunkSize - 1;
-        chunkSize = Math.max(Math.floor(chunkSize / 2), MIN_CHUNK_BLOCKS);
+        ladder.noteRejected(chunkSize);
+        chunkSize = ladder.halve(chunkSize);
         const detail = error instanceof Error ? error.message : String(error);
         logger.warn(
           `Approval scan chunk for ${address} on chain ${chainId} rejected ` +
@@ -630,7 +614,7 @@ const createApprovalScanService = (deps: ApprovalScanServiceDeps) => {
         break;
       }
       upper = lower - 1n;
-      chunkSize = Math.min(chunkSize * 2, providerCeiling, MAX_CHUNK_BLOCKS);
+      chunkSize = ladder.grow(chunkSize);
     }
 
     // Newest approval first (the most recent approvals are the ones worth
@@ -643,7 +627,7 @@ const createApprovalScanService = (deps: ApprovalScanServiceDeps) => {
     );
     logger.info(
       `Approval scan for ${address} on chain ${chainId}: window=${effectiveWindow}, ` +
-      `scan steps=${calls}, approvals=${pairs.length}, ` +
+      `getLogs calls=${calls}, approvals=${pairs.length}, ` +
       `history events=${history.length}${historyTruncated ? ' (truncated)' : ''}, ` +
       `coverage=${failed ? 'scan-failed' : covered ? 'complete' : 'partial'}`,
     );
@@ -703,7 +687,7 @@ const createApprovalScanService = (deps: ApprovalScanServiceDeps) => {
   const rowForOutcome = (pair: DiscoveredPair, outcome: unknown): DiscoveredApproval | null => {
     const result = readMulticallResult(outcome);
     if (pair.kind === 'erc721') {
-      if (typeof result !== 'string' || !/^0x[0-9a-fA-F]{40}$/.test(result)) return null;
+      if (typeof result !== 'string' || !isAddressShape(result)) return null;
       if (result.toLowerCase() !== pair.spender) return null;
       return {
         kind: 'erc721',
@@ -824,7 +808,7 @@ const createApprovalScanService = (deps: ApprovalScanServiceDeps) => {
         // A hung provider call is a budget outcome, not a server error:
         // report an honest empty scan-failed instead of failing the
         // request (TokenTransferService pattern).
-        if (error instanceof ScanTimeoutError) {
+        if (error instanceof TimeoutError) {
           logger.warn(
             `Approval scan for ${address} on chain ${chainId} hung; ` +
             `returning empty scan-failed result`,

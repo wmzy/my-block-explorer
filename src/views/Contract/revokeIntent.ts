@@ -14,6 +14,8 @@
 
 import { parseAbi } from 'viem';
 
+import { HEX_ADDRESS_RE } from '@/utils/address';
+
 export type RevokeKind = 'erc20' | 'erc721' | 'erc1155';
 
 export type RevokeIntent = {
@@ -27,7 +29,7 @@ export type RevokeIntent = {
 };
 
 const REVOKE_VERSION = '1';
-const ADDRESS_PATTERN = /^0x[0-9a-fA-F]{40}$/;
+const ADDRESS_PATTERN = HEX_ADDRESS_RE;
 const TOKEN_ID_PATTERN = /^\d+$/;
 
 // Address(0): the ERC-721 revoke target — approving the zero address

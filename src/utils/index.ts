@@ -6,12 +6,17 @@
 // `from '@/utils'`, `'../utils'` or `'.'` self-imports exist), so these
 // star re-exports cannot introduce an import cycle.
 //
-// Three names are exported by two modules each; a bare star-export surface
+// Two names are exported by two modules each; a bare star-export surface
 // would silently DROP an ambiguous name. They are resolved explicitly at
 // the bottom — the losing variant stays reachable via its deep import:
-//   formatAddress / isValidAddress / sanitizeInput → format.ts and
-//     validation.ts (the barrel's original surface) win over address.ts
-//     and form-validation.ts.
+//   isValidAddress / sanitizeInput → format.ts and validation.ts (the
+//     barrel's original surface) win over address.ts.
+//     (sanitizeInput's second exporter, form-validation.ts, is deleted;
+//     its explicit pin below now just restates validation.ts.
+//     formatAddress used to be the third collision — address.ts's
+//     checksum formatter lost to format.ts's truncation formatter; it is
+//     now renamed checksumAddress, so both names flow from their single
+//     home modules unambiguously.)
 //
 // Graph note: serialization.ts reaches src/server/logger (pino), so
 // browser code that imports this barrel pulls that node-side dependency —
@@ -26,9 +31,7 @@ export * from './chainParam';
 export * from './contractInteraction';
 export * from './dbTime';
 export * from './errorHandler';
-export * from './event-search-optimization';
 export * from './events';
-export * from './form-validation';
 export * from './format';
 export * from './functionSelector';
 export * from './internalTxScan';
@@ -50,5 +53,4 @@ export * from './validation';
 // ambiguous star export. (withRetry and the rpcConfigService functions
 // each had a second exporter once — rpcClient.ts / rpcConfig.ts — both
 // since deleted; the star exports now carry them unambiguously.)
-export { formatAddress } from './format';
 export { isValidAddress, sanitizeInput } from './validation';

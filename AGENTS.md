@@ -1747,3 +1747,45 @@ pnpm typecheck           # tsc --noEmit
   BigInt exponent). Verified: tsc 0 errors, eslint 0 errors
   (36 pre-existing warnings), `vitest --changed main` 295 files /
   3738 passed.
+- **2026-11-08 duplication-review fix wave (8 agents, 2 waves + integration)** —
+  full-repo review (4 read-only scouts) then every finding fixed; verified: tsc
+  0, eslint 0 errors, `vitest --changed` 287 files / 3703 tests, `pnpm build`
+  green. **Canonical modules born this wave** (reuse, never re-roll):
+  `utils/address.ts` `addressVerdict`/`isAddressShape`/`HEX_ADDRESS_RE`/`checksumAddress`
+  (the two-tier shape→EIP-55 verdict; checksum twin RENAMED from formatAddress —
+  `formatAddress` now means middle-truncation only, `utils/format.ts`);
+  `utils/withTimeout.ts`, `utils/ttlLruCache.ts`, `utils/scanLadder.ts` (the
+  three scan services share them; `DEFAULT_MAX_SCAN_CALLS` counts ACTUAL getLogs
+  — the approvals scan silently budgeted 80 calls before);
+  `utils/negativeCache.ts` `negativeEntryFresh` (null fetchedAt = EXPIRED — the
+  old `?.getTime() ?? 0` idiom served NOT_FOUND rows forever);
+  `utils/jsonReplacer.ts` (mcp + serialization); `utils/fetchWithTimeout.ts`;
+  `strictInteger.parseHexQuantity`; `format.truncateMiddle/formatNativeDisplay/formatBigInt`;
+  `util/useCopyFeedback.ts` (11 copy state machines) and `util/useLazyExpand.ts`
+  (3 fetch-once-on-expand machines); `services/searchDispatch.ts` (ONE home for
+  search dispatch + history recording — TopNavigation's `<SearchBox/>` and the
+  Search page both consume it); `views/Contract/verifyShared.ts`;
+  `utils/validation.ts` `parsePaginationParams`/`parseChainAndAddressParams`;
+  shared retryability predicate in errorHandler (429-by-message retryable in
+  both paths). **Deleted (~2,900 lines)**: Dynamic event-filter subsystem
+  (DynamicEventFilterForm/DynamicFormGenerator/form-validation/types/forms —
+  zero importers), event-search-optimization.ts, cache.ts dead surface (only
+  blockCache lives), validatePaginationParams, serialization dead formatters,
+  types/events dead classes, examples/ dir. **Behavior changes (all
+  test-pinned)**: MCP tools validate address inputs two-tier (wrong checksum →
+  isError naming the checksummed form — was silently checksummed); approvals
+  scan budget 80→40 actual calls; 429-by-message retries; uninstall byte sizes
+  2-decimal `formatFileSize` units; EventTable error rows normalized to shared
+  ErrorState strings; mcp chainMeta custom-first precedence. **Conventions
+  pinned**: (1) a FULL `vi.mock('@/utils/format', () => ({…}))` breaks the
+  moment a view imports a NEW export from that module — mock partial with
+  `importOriginal` spread (4 test files caught this at integration);
+  (2) same-name-different-semantics exports (the formatAddress collision) are
+  silent through tsc AND the barrel — rename, don't pin; (3) subagents cannot
+  see each other's renames mid-wave: the checksumAddress rename was landed by
+  the file-owning agent, not the renaming agent. **Deferred deliberately**
+  (pattern-similarity, not copy-paste): in-flight-dedup Map ×5
+  (tokenMetadata/prices×2/SignatureService/chartStats — each bespoke-but-commented,
+  unification risk > payoff), Address view micro-extractions (label editor
+  twin, refresh-signal hook) — the 2,780-line view is otherwise untouched
+  churn-free.

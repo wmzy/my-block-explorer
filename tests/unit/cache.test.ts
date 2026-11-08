@@ -1,115 +1,100 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { LRUCache } from '@/utils/cache';
+import { LRUCache, blockCache } from '@/utils/cache';
 
 describe('LRUCache', () => {
-  let cache: LRUCache<string, any>;
+  let cache: LRUCache<string, string>;
 
   beforeEach(() => {
     cache = new LRUCache({
-      ttl: 1000, // 1秒TTL
+      ttl: 1000,
       maxSize: 3,
     });
   });
 
-  describe('基本缓存操作', () => {
-    it('应该能设置和获取缓存值', () => {
+  describe('basic operations', () => {
+    it('sets and gets a value', () => {
       cache.set('key1', 'value1');
       expect(cache.get('key1')).toBe('value1');
     });
 
-    it('应该在TTL过期后返回undefined', async () => {
-      cache.set('key1', 'value1', 100); // 100ms TTL
+    it('returns undefined after the TTL expires', async () => {
+      cache.set('key1', 'value1', 100);
       expect(cache.get('key1')).toBe('value1');
 
-      // 等待TTL过期
       await new Promise(resolve => setTimeout(resolve, 150));
       expect(cache.get('key1')).toBeUndefined();
     });
 
-    it('应该正确报告缓存是否存在', () => {
-      cache.set('key1', 'value1');
+    it('reports key existence and drops expired keys', async () => {
+      cache.set('key1', 'value1', 100);
       expect(cache.has('key1')).toBe(true);
       expect(cache.has('nonexistent')).toBe(false);
-    });
 
-    it('应该能删除缓存条目', () => {
-      cache.set('key1', 'value1');
-      expect(cache.has('key1')).toBe(true);
-
-      cache.delete('key1');
+      await new Promise(resolve => setTimeout(resolve, 150));
       expect(cache.has('key1')).toBe(false);
     });
 
-    it('应该能清空所有缓存', () => {
+    it('deletes and clears entries', () => {
       cache.set('key1', 'value1');
       cache.set('key2', 'value2');
       expect(cache.size()).toBe(2);
+
+      expect(cache.delete('key1')).toBe(true);
+      expect(cache.has('key1')).toBe(false);
 
       cache.clear();
       expect(cache.size()).toBe(0);
     });
   });
 
-  describe('LRU淘汰机制', () => {
-    it('应该在达到最大容量时淘汰最少使用的条目', () => {
-      // 填满缓存
+  describe('LRU eviction', () => {
+    it('evicts the least-used entry at max capacity', () => {
       cache.set('key1', 'value1');
       cache.set('key2', 'value2');
       cache.set('key3', 'value3');
       expect(cache.size()).toBe(3);
 
-      // 添加第4个条目，应该淘汰最少使用的
+      // Touch key1 so key2 becomes the least-used entry
+      cache.get('key1');
+
       cache.set('key4', 'value4');
       expect(cache.size()).toBe(3);
       expect(cache.has('key4')).toBe(true);
+      expect(cache.has('key1')).toBe(true);
+      expect(cache.has('key2')).toBe(false);
+      expect(cache.has('key3')).toBe(true);
     });
 
-    it('应该更新访问统计', () => {
+    it('replaces an existing key without evicting others', () => {
       cache.set('key1', 'value1');
+      cache.set('key2', 'value2');
+      cache.set('key3', 'value3');
 
-      // 多次访问应该更新统计
-      cache.get('key1');
-      cache.get('key1');
-      cache.get('key1');
-
-      const stats = cache.getStats();
-      expect(stats.size).toBe(1);
+      cache.set('key2', 'updated');
+      expect(cache.size()).toBe(3);
+      expect(cache.get('key2')).toBe('updated');
     });
   });
 
-  describe('getOrSet方法', () => {
-    it('应该在缓存未命中时调用工厂函数', async () => {
-      const factory = vi.fn().mockResolvedValue('computed_value');
+  describe('getOrSet', () => {
+    it('populates on miss and reuses the entry on hit', async () => {
+      const factory = vi.fn().mockResolvedValue('computed');
 
-      const result = await cache.getOrSet('key1', factory);
-
-      expect(result).toBe('computed_value');
+      await expect(cache.getOrSet('key1', factory)).resolves.toBe('computed');
       expect(factory).toHaveBeenCalledOnce();
-      expect(cache.get('key1')).toBe('computed_value');
-    });
+      expect(cache.get('key1')).toBe('computed');
 
-    it('应该在缓存命中时不调用工厂函数', async () => {
-      const factory = vi.fn().mockResolvedValue('computed_value');
-
-      // 先设置缓存
-      cache.set('key1', 'cached_value');
-
-      const result = await cache.getOrSet('key1', factory);
-
-      expect(result).toBe('cached_value');
-      expect(factory).not.toHaveBeenCalled();
+      await expect(cache.getOrSet('key1', factory)).resolves.toBe('computed');
+      expect(factory).toHaveBeenCalledOnce();
     });
   });
 
-  describe('缓存清理', () => {
-    it('应该能清理过期的条目', async () => {
-      cache.set('key1', 'value1', 100); // 100ms TTL
-      cache.set('key2', 'value2', 2000); // 2s TTL
-
+  describe('cleanup', () => {
+    it('removes only expired entries', async () => {
+      cache.set('key1', 'value1', 100);
+      cache.set('key2', 'value2', 2000);
       expect(cache.size()).toBe(2);
 
-      // 等待第一个条目过期
       await new Promise(resolve => setTimeout(resolve, 150));
 
       cache.cleanup();
@@ -117,16 +102,38 @@ describe('LRUCache', () => {
       expect(cache.has('key2')).toBe(true);
     });
   });
+});
 
-  describe('缓存统计', () => {
-    it('应该提供正确的统计信息', () => {
-      cache.set('key1', 'value1');
-      cache.set('key2', 'value2');
+describe('blockCache', () => {
+  beforeEach(() => {
+    blockCache.clear();
+  });
 
-      const stats = cache.getStats();
-      expect(stats.size).toBe(2);
-      expect(stats.maxSize).toBe(3);
-      expect(typeof stats.hitRate).toBe('number');
-    });
+  it('stores and returns block entries without re-fetching', async () => {
+    const block = { number: 100n, hash: '0xabc' };
+    const factory = vi.fn().mockResolvedValue(block);
+
+    await expect(blockCache.getOrSet('blocks:100', factory)).resolves.toBe(block);
+    expect(factory).toHaveBeenCalledOnce();
+
+    await expect(blockCache.getOrSet('blocks:100', factory)).resolves.toBe(block);
+    expect(factory).toHaveBeenCalledOnce();
+  });
+
+  it('honors per-entry TTL overrides', async () => {
+    blockCache.set('blocks:1', { number: 1n }, 100);
+    expect(blockCache.get('blocks:1')).toEqual({ number: 1n });
+
+    await new Promise(resolve => setTimeout(resolve, 150));
+    expect(blockCache.get('blocks:1')).toBeUndefined();
+  });
+
+  it('caps entries at its configured max size', () => {
+    for (let i = 0; i <= 500; i++) {
+      blockCache.set(`blocks:${i}`, { number: BigInt(i) });
+    }
+    expect(blockCache.size()).toBe(500);
+    // The most recently inserted key survives eviction
+    expect(blockCache.has('blocks:500')).toBe(true);
   });
 });

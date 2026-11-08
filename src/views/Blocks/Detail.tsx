@@ -23,7 +23,7 @@ import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
 import { useBlockByNumber } from '@/services/chainRpc';
 import { finalityLabelFor, useFinalityHeads } from '@/services/blocks';
 import { describeBlockProducer } from '@/utils/blockRpcData';
-import { formatRelativeTime } from '@/utils/format';
+import { formatBigInt, formatRelativeTime } from '@/utils/format';
 import { parseBlockNumberParam, parseChainIdParam } from '@/utils/chainParam';
 import { deriveSlotEpochFromIso } from '@/utils/slotEpoch';
 import { createRpcClient } from '@/utils/realTimeData';
@@ -31,10 +31,12 @@ import { computeBlockNav } from './nav';
 import InternalTxnsSection from './InternalTxnsSection';
 
 // Gas quantities are on-chain integers serialized as strings: format them
-// BigInt-safe (parseInt would silently lose precision past 2^53).
+// BigInt-safe with the shared exact grouping helper (Number coercion
+// would silently lose precision past 2^53, and the bare toLocaleString
+// followed the host locale).
 const formatGas = (gas: string): string => {
   try {
-    return BigInt(gas).toLocaleString();
+    return formatBigInt(BigInt(gas));
   } catch {
     return gas;
   }

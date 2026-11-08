@@ -5,7 +5,7 @@ import { getChainName } from '../config/chains';
 
 const logger = createLogger('blocks-routes');
 import { getValidatedChainId, getValidatedBlockNumber } from '../server/validation';
-import { parseStrictInteger } from '../utils/validation';
+import { parsePaginationParams } from '../utils/validation';
 import { formatBlockForApi, safeJsonResponse } from '../utils/serialization';
 import { respondError } from '../utils/api-error';
 
@@ -64,34 +64,18 @@ app.get('/chains/:chainId/blocks/:blockNumber', async c => {
 // Pagination sanity bounds mirroring transactions.ts: junk or non-positive
 // values 400 instead of feeding NaN into DuckDB (the service catch would
 // swallow the error and return an honest-looking EMPTY page), oversized
-// values clamp so a runaway client cannot scan arbitrarily deep.
+// values clamp so a runaway client cannot scan arbitrarily deep. The
+// parsing itself is the shared parsePaginationParams contract.
 const MAX_BLOCK_OFFSET = 100_000;
 const MAX_BLOCK_LIMIT = 100;
-
-const parseOffsetParam = (raw: string | undefined): number | null => {
-  if (raw === undefined || raw === '') return 0;
-  // Strict decimal parse: parseInt() accepted a valid prefix and ignored
-  // the rest, so `?offset=5abc` was served as offset 5 — a plausible page
-  // from a request the contract above says must 400. A genuinely negative
-  // offset still clamps to 0 (the documented policy), so it is matched
-  // explicitly instead of riding on the lenient parse.
-  const parsed = raw.startsWith('-') ? Number(raw) : parseStrictInteger(raw);
-  if (parsed === null || !Number.isSafeInteger(parsed)) return null;
-  return Math.min(Math.max(parsed, 0), MAX_BLOCK_OFFSET);
-};
-
-const parseLimitParam = (raw: string | undefined): number | null => {
-  if (raw === undefined || raw === '') return 20;
-  const parsed = parseStrictInteger(raw);
-  if (parsed === null || parsed < 1) return null;
-  return Math.min(parsed, MAX_BLOCK_LIMIT);
-};
 
 app.get('/chains/:chainId/blocks', async c => {
   const chainId = getValidatedChainId(c.req.param('chainId'));
 
-  const limit = parseLimitParam(c.req.query('limit'));
-  const offset = parseOffsetParam(c.req.query('offset'));
+  const { offset, limit } = parsePaginationParams(c.req.query('offset'), c.req.query('limit'), {
+    maxOffset: MAX_BLOCK_OFFSET,
+    maxLimit: MAX_BLOCK_LIMIT,
+  });
 
   if (limit === null) {
     return respondError(c, 400, 'invalid_limit', 'limit must be a positive integer');

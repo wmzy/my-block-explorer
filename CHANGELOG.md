@@ -9,6 +9,44 @@ commit subjects rather than a curated release notes process.
 
 ## Unreleased
 
+- **2026-11-08 duplication-review fix wave (8 agents, 2 waves + integration)** —
+  a full-repo review for duplicate logic / inelegant implementations, then every
+  finding fixed. All verified: `tsc` 0 errors, eslint 0 errors (98 pre-existing
+  warnings), `vitest --changed` 287 files / 3,703 tests green, `pnpm build`
+  green. **Dead code deleted (~2,900 lines)** — the never-imported Dynamic
+  event-filter subsystem (`DynamicEventFilterForm` + `DynamicFormGenerator` +
+  `form-validation` + `types/forms`), `event-search-optimization.ts`,
+  `cache.ts`'s unused instances/stats/timer (only `blockCache` was ever read),
+  `validatePaginationParams`, `serialization` dead formatters, `types/events`
+  dead error classes, and a stale `examples/` file importing services deleted
+  in September. **Scan-family consolidation** — one `utils/scanLadder.ts`
+  (constants + provider-ceiling memory), `utils/withTimeout.ts`,
+  `utils/ttlLruCache.ts`; fixed a real budget drift: the approvals scan
+  counted 2-getLogs steps as 1 call, so its `DEFAULT_MAX_SCAN_CALLS=40`
+  ceiling was silently 80 actual RPC calls (now 40, pinned red-on-old).
+  **Address validation unified** — canonical `addressVerdict` (two-tier
+  shape→EIP-55) in `utils/address.ts` consumed by server validation,
+  SearchService, the Address page, and (new) **every MCP tool input**:
+  wrong-checksum addresses now fail fast with a caller-ready message instead
+  of being silently checksummed; `HEX_ADDRESS_RE`/`isAddressShape` replaced
+  ~20 private/inline copies. **Frontend** — one `useCopyFeedback` hook (11
+  hand-rolled copy state machines migrated), one `searchDispatch` core (the
+  top-bar box and the Search page shared two full dispatch pipelines; history
+  recording + ENS resolution now have one home, `<SearchBox/>` extracted from
+  TopNavigation), `useLazyExpand` (3 hand-rolled fetch-once-on-expand
+  machines), shared verify-panel module, EventTable back on shared
+  ErrorState/EmptyState. **Formatting** — `truncateMiddle`/`formatNativeDisplay`/`formatBigInt`
+  replace ~15 view-local copies; `formatAddress` (checksum) renamed
+  `checksumAddress` so the name has exactly one semantics; `parseHexQuantity`
+  and the fetch-timeout probe each reduced to one shared helper; uninstall
+  byte sizes use `formatFileSize`. **Backend** — unified retryability
+  predicate (429-by-message now retryable in both paths, red-on-old pinned),
+  `negativeEntryFresh` fixes NOT_FOUND negative-cache rows with a null
+  `fetchedAt` never expiring, shared route pagination/chain+address param
+  parsers (4 routes), MCP chain precedence routed through `getChainInfo`.
+  Deferred deliberately (pattern-similarity, not copy-paste; see AGENTS.md):
+  in-flight-dedup cache ×5 unification, Address view micro-extractions.
+
 - **Help section (`/help`)** — a documentation section in the app, reachable
   from a top-bar **Help** link, the command palette (Ctrl/Cmd+K, "faq"
   keyword) and a Tools-hub card. The index lists eight topics — Troubleshooting,

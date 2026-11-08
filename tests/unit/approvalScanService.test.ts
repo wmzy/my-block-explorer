@@ -5,7 +5,9 @@
 // whose provider-ceiling behavior reuses TokenTransferService's shared
 // isRetryableChunkError classification (asserted here by CONFIGURATION:
 // an injected provider error that the shared classifier calls retryable
-// halves the chunk, one it calls fatal aborts with 'scan-failed').
+// halves the chunk, one it calls fatal aborts with 'scan-failed') — plus
+// the call budget counting ACTUAL getLogs calls issued (two per step),
+// keeping DEFAULT_MAX_SCAN_CALLS' per-scan ceiling honest.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import {
   encodeAbiParameters,
@@ -346,6 +348,25 @@ describe('ApprovalScanService - adaptive chunk sizing (shared classification)', 
 
     expect(result.coverage).toBe('partial');
     expect(result.pairCount).toBe(0);
+  });
+
+  it('counts ACTUAL getLogs calls against the budget, not scan steps', async () => {
+    // Regression pin: the budget used to count one per STEP while each
+    // step issues TWO getLogs (Approval + ApprovalForAll), silently
+    // doubling the per-scan RPC ceiling to 80. With the honest count the
+    // sweep stops at exactly DEFAULT_MAX_SCAN_CALLS issued calls (two
+    // queries per step → 20 steps) on a 50M-block window that 20 chunks
+    // of ≤10k blocks can never cover.
+    const { service, getLogsCalls } = makeHarness({
+      latest: 50_000_000n,
+      maxScanCalls: 40, // production default
+    });
+
+    const result = await service.getApprovals(1, OWNER, 50_000_000);
+
+    expect(result.coverage).toBe('partial');
+    expect(result.pairCount).toBe(0);
+    expect(getLogsCalls).toHaveLength(40);
   });
 });
 

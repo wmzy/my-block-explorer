@@ -1,5 +1,5 @@
 import { css, cx } from '@linaria/core';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 
 import { Badge } from '@/components/ui/Badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
@@ -8,6 +8,7 @@ import { ErrorState } from '@/components/ui/ErrorState';
 import { getChainSymbol } from '@/config/chains';
 import { formatNumber, formatValue } from '@/utils/format';
 import { createRpcClient } from '@/utils/realTimeData';
+import { useLazyExpand } from '@/util/useLazyExpand';
 import {
   countFailedCalls,
   countNodes,
@@ -251,33 +252,30 @@ export type CallTraceCardProps = {
 // - a frameless result reads "No calls recorded"; every displayed number
 //   comes from the trace itself (null stays absent, never 0).
 export function CallTraceCard({ chainId, txHash, txGasUsed }: CallTraceCardProps) {
-  const [expanded, setExpanded] = useState(false);
   const [state, setState] = useState<TraceState>({ phase: 'idle' });
-  // Guards the fetch-once-on-expand and drops stale settles when Retry
-  // supersedes an in-flight request.
-  const fetchedOnce = useRef(false);
-  const fetchSeq = useRef(0);
 
-  // The tx-detail route reuses this card across transactions (only :txHash
-  // changes — native-router composes matched elements without a key), so
-  // every piece of state above describes exactly ONE tx's trace. A different
-  // hash must reset all of it, the fetch-once latch included: otherwise tx B
-  // renders tx A's tree under its own header and never refetches. Adjusting
-  // state during render (React's documented props-change pattern) keeps the
-  // stale output from ever reaching the screen.
-  const txIdentity = `${chainId}:${txHash}`;
-  const txIdentityRef = useRef(txIdentity);
-  if (txIdentityRef.current !== txIdentity) {
-    txIdentityRef.current = txIdentity;
-    setExpanded(false);
-    setState({ phase: 'idle' });
-    fetchedOnce.current = false;
-    fetchSeq.current += 1; // drop any in-flight settle from the previous tx
-  }
+  // Lazy-expand machine (util/useLazyExpand): the fetch fires on the
+  // first expand only, toggles later reuse the settled result, and the
+  // tx-detail route's param change (the card is reused without a key)
+  // resets everything — expanded flag, fetch-once latch, the phase state
+  // below, and any in-flight settle — so tx B never renders tx A's tree.
+  const {
+    expanded,
+    toggle: handleToggle,
+    handleKeyDown,
+    claim,
+    isCurrent,
+  } = useLazyExpand(`${chainId}:${txHash}`, {
+    onFirstExpand: () => {
+      void runFetch();
+    },
+    onReset: () => {
+      setState({ phase: 'idle' });
+    },
+  });
 
   const runFetch = useCallback(async () => {
-    const seq = fetchSeq.current + 1;
-    fetchSeq.current = seq;
+    const seq = claim();
     setState({ phase: 'loading' });
     try {
       // viem's client.request is typed to the standard RPC schema; the
@@ -292,30 +290,14 @@ export function CallTraceCard({ chainId, txHash, txGasUsed }: CallTraceCardProps
         method: 'debug_traceTransaction',
         params: [txHash, { tracer: 'callTracer' }],
       });
-      if (fetchSeq.current !== seq) return;
+      if (!isCurrent(seq)) return;
       const root = normalizeCallTrace(raw);
       setState(root === null ? { phase: 'empty' } : { phase: 'loaded', root });
     } catch (err) {
-      if (fetchSeq.current !== seq) return;
+      if (!isCurrent(seq)) return;
       setState(isTraceUnsupportedError(err) ? { phase: 'unsupported' } : { phase: 'error' });
     }
-  }, [chainId, txHash]);
-
-  const handleToggle = () => {
-    const next = !expanded;
-    setExpanded(next);
-    if (next && !fetchedOnce.current) {
-      fetchedOnce.current = true;
-      void runFetch();
-    }
-  };
-
-  const handleKeyDown = (event: React.KeyboardEvent) => {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      handleToggle();
-    }
-  };
+  }, [chainId, txHash, claim, isCurrent]);
 
   const headerMeta =
     state.phase === 'loaded'

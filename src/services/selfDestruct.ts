@@ -24,11 +24,11 @@ import { multiChainDb } from '../database/chain-database-manager';
 import { db } from '../database/drizzle';
 import {
   collectTargetStats,
-  formatBytes,
   pruneEmptyDirs,
   removeTargets,
   resolveUninstallTargets,
 } from '../uninstall';
+import { formatFileSize } from '../utils/format';
 import { watchService } from './WatchService';
 
 /** How long the 202 response gets to reach the client before sockets die. */
@@ -127,12 +127,12 @@ export async function runSelfDestruct(options: {
   const { results, freedBytes } = await remove(stats, cwd);
   for (const result of results) {
     if (result.removed) {
-      log(`Self-destruct: removed ${result.target.label} (${formatBytes(result.bytes)}).`);
+      log(`Self-destruct: removed ${result.target.label} (${formatFileSize(result.bytes)}).`);
     } else {
       log(`Self-destruct: FAILED to remove ${result.target.label}: ${result.error ?? 'unknown error'}`);
     }
   }
-  log(`Self-destruct: freed ${formatBytes(freedBytes)}.`);
+  log(`Self-destruct: freed ${formatFileSize(freedBytes)}.`);
 
   // Same cosmetic husk-removal as the CLI: drop an emptied data/ dir.
   await prune([join(cwd, 'data')]);

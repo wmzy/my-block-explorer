@@ -15,16 +15,19 @@ import {
   isPopularChain,
   getChainType,
 } from '@/config/chains';
-import { detectSearchType, sanitizeInput } from '@/utils/validation';
-import { createRpcClient } from '@/utils/realTimeData';
+import { sanitizeInput } from '@/utils/validation';
 import { isBackendUnreachable } from '@/util/http';
 import { formatAddress } from '@/utils/format';
-import { fetchChainSearch } from '@/services/search';
-import { resolveEnsAddress, ensDestinations, type EnsDestinations } from '@/services/ensForward';
+import {
+  openEnsSearchDestination,
+  recordSearchAtClick,
+  runSearchDispatch,
+  type SearchNotice,
+} from '@/services/searchDispatch';
+import type { EnsDestinations } from '@/services/ensForward';
 import {
   clearSearchHistory,
   readSearchHistory,
-  recordSearchHistoryEntry,
   removeSearchHistoryEntry,
   type SearchHistoryEntry,
 } from '@/services/searchHistory';
@@ -859,52 +862,6 @@ function ChainSelector({
   );
 }
 
-// Subset of the /api/chains/:id/search response this component acts on. The
-// block payload's number arrives as a string (BigInt-safe serialization).
-type ChainSearchResponse = {
-  found?: boolean;
-  type?: string;
-  degraded?: boolean | null;
-  data?: { number?: string | number } | null;
-};
-
-// Runs one RPC probe and folds every failure mode (transport error, or a
-// method missing on a limited client) into null, so the unreachable
-// fallback below never surfaces probe noise as a user-facing error and
-// simply treats an unanswerable probe as "could not confirm".
-async function tryRpcProbe<T>(probe: () => Promise<T>): Promise<T | null> {
-  try {
-    return await probe();
-  } catch {
-    return null;
-  }
-}
-
-// Inline hint under the search box: 'miss' = definitive no-result on the
-// current chain, 'block-miss' = the same for a block number (verified
-// against the chain before navigating — chains differ in height),
-// 'failed' = a data source errored (degraded response, or a request that
-// failed outright), 'unreachable' = the backend could not be reached at
-// all (no HTTP response: offline / not connected — a different failure
-// from a data source erroring, with a retry instead of a network
-// escape; fallbackNote = the direct-RPC check of the selected chain ran
-// and could not confirm the query, so the note says what that means:
-// only this chain was checked, full cross-chain search needs the
-// backend), 'ens-resolved' / 'ens-not-found' / 'ens-failed' = outcome of
-// a client-side ENS lookup (resolved on Ethereum; not-found is
-// definitive, failed means the RPC never answered and is retryable).
-// ens-resolved also carries the destination choice: Ethereum (where the
-// name resolved) as the primary, the chain the search ran on as the
-// alternate.
-type SearchNotice =
-  | { kind: 'miss'; query: string }
-  | { kind: 'block-miss'; query: string }
-  | { kind: 'failed'; query: string }
-  | { kind: 'unreachable'; query: string; fallbackNote?: boolean }
-  | { kind: 'ens-resolved'; query: string; address: string; destinations: EnsDestinations }
-  | { kind: 'ens-not-found'; query: string }
-  | { kind: 'ens-failed'; query: string };
-
 // Destination actions for a resolved ENS name in the inline notice:
 // Ethereum (where the name resolved) is the primary; the chain the search
 // ran on is the secondary, shown only when it differs. The click is what
@@ -1034,15 +991,23 @@ function paletteShortcutLabel(): string {
   return /mac|iphone|ipad|ipod/i.test(platform) ? '⌘K' : 'Ctrl+K';
 }
 
-export default function TopNavigation({
+// The topbar's search island: the query input and Search button, the
+// local search-history dropdown and the inline notice cluster. Everything
+// that decides where a query goes (sanitize/classify, per-chain
+// verification, ENS resolution, navigation, history recording) runs
+// through the shared dispatch core in services/searchDispatch — this
+// component renders outcomes and owns the input/history UI state only.
+function SearchBox({
   currentChainId,
-  onChainChange,
   onSearch,
   searchPlaceholder,
-}: TopNavigationProps) {
+}: {
+  currentChainId: number;
+  onSearch?: (query: string) => void;
+  searchPlaceholder?: string;
+}) {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
-  const [, setShowRpcConfig, rpcConfigControl] = useControl<boolean>(null, false);
   const [loading, setLoading] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   // Recent searches live in this browser only (localStorage), never on the
@@ -1050,10 +1015,11 @@ export default function TopNavigation({
   // queries to everyone.
   const [history, setHistory] = useState<SearchHistoryEntry[]>(() => readSearchHistory());
   // Inline hint under the search box, cleared as soon as the input changes
-  // (see SearchNotice for the kinds).
+  // (see SearchNotice in services/searchDispatch for the kinds).
   const [searchNotice, setSearchNotice] = useState<SearchNotice | null>(null);
   const searchContainerRef = React.useRef<HTMLDivElement>(null);
-  const navRef = React.useRef<HTMLElement>(null);
+
+  const chainInfo = getChainInfo(currentChainId);
 
   // Fire-and-forget in-app navigation; a superseded navigation rejects with
   // NavigationCancelledError, swallowed here as "stay on the old view".
@@ -1061,82 +1027,15 @@ export default function TopNavigation({
     navigate(router, to).catch(() => undefined);
   };
 
-  // Backend-unreachable fallback for block-number and 32-byte-hash
-  // queries: the selected chain's own public RPC can still verify them
-  // without the backend. A block number is confirmed when the chain's
-  // head has reached it; a hash is probed as a transaction first, then
-  // as a block. 'skipped' = the chain has no usable RPC client (the
-  // plain unreachable notice stands, no note); 'missed' = the probe ran
-  // and could not confirm, and the notice gains an honest note that
-  // only this one chain was checked — full cross-chain search needs the
-  // backend. A confirmed hit navigates and lands in history exactly
-  // like the verified backend path.
-  const searchViaChainRpc = async (
-    chainId: number,
-    query: string,
-    searchType: 'block' | 'hash',
-  ): Promise<'navigated' | 'missed' | 'skipped'> => {
-    let client: Awaited<ReturnType<typeof createRpcClient>>;
-    try {
-      client = await createRpcClient(chainId);
-    } catch {
-      return 'skipped';
-    }
-
-    if (searchType === 'block') {
-      const blockNumber = BigInt(query);
-      const head = await tryRpcProbe(() => client.getBlockNumber());
-      if (head !== null && head >= blockNumber) {
-        setHistory(recordSearchHistoryEntry(query, chainId));
-        goTo(`/chain/${chainId}/block/${String(blockNumber)}`);
-        return 'navigated';
-      }
-      return 'missed';
-    }
-
-    const hash = query as `0x${string}`;
-    const tx = await tryRpcProbe(() => client.getTransaction({ hash }));
-    if (tx !== null) {
-      setHistory(recordSearchHistoryEntry(query, chainId));
-      goTo(`/chain/${chainId}/tx/${query}`);
-      return 'navigated';
-    }
-    const block = await tryRpcProbe(() => client.getBlock({ blockHash: hash }));
-    if (block !== null) {
-      setHistory(recordSearchHistoryEntry(query, chainId));
-      goTo(`/chain/${chainId}/block/${String(block.number)}`);
-      return 'navigated';
-    }
-    return 'missed';
-  };
-
-  const chainInfo = getChainInfo(currentChainId);
-
-  // Publish the bar's live height as --app-nav-height on <html>: elements
-  // that stick below the bar (the address page's anchor chip row) need the
-  // real height to clear it, and the height is content- and
-  // breakpoint-dependent — two rows at desktop widths, more when the bar's
-  // groups wrap on smaller viewports, and up to ~40px taller while an
-  // inline search notice is shown. A hardcoded offset would leave those
-  // sticky rows hidden behind the bar.
-  useEffect(() => {
-    const el = navRef.current;
-    if (!el || typeof ResizeObserver === 'undefined') return;
-    const root = document.documentElement;
-    const publish = () => {
-      root.style.setProperty(
-        '--app-nav-height',
-        `${Math.round(el.getBoundingClientRect().height)}px`,
-      );
-    };
-    publish();
-    const observer = new ResizeObserver(publish);
-    observer.observe(el);
-    return () => {
-      observer.disconnect();
-      root.style.removeProperty('--app-nav-height');
-    };
-  }, []);
+  // Query dispatcher for the search box and history items: the shared
+  // pipeline in services/searchDispatch, with this island's own router,
+  // inline notices and history state wired in as the side-effect ports.
+  const dispatchQuery = (rawQuery: string, chainId: number = currentChainId) =>
+    runSearchDispatch(rawQuery, chainId, {
+      navigate: goTo,
+      onNotice: setSearchNotice,
+      onHistory: setHistory,
+    });
 
   const handleSearchFocus = () => {
     setShowHistory(true);
@@ -1172,162 +1071,20 @@ export default function TopNavigation({
     setHistory(removeSearchHistoryEntry(entry.query, entry.chainId));
   };
 
-  // Shared query dispatcher for the search box and history items. It uses
-  // the same sanitize/detect pair as every other surface (utils/validation
-  // is the single source of truth): addresses deep-link straight to the
-  // target chain's page; block numbers and hashes are facts of exactly one
-  // chain (and chains differ in height / tx sets), so they are verified
-  // through the per-chain search API before anything navigates — a number
-  // or hash that is not on this chain surfaces as an inline miss with a
-  // network-picker escape hatch, never as a blind jump onto an error
-  // page; anything else goes to the full Search view. History records at
-  // landing time — the entry carries the chain the search actually
-  // reached (or, for a verified block/hash, the chain it was found on) —
-  // so re-running one from the dropdown searches that chain again, not
-  // whichever chain is currently selected.
-  const navigateForQuery = async (rawQuery: string, chainId: number = currentChainId) => {
-    const query = sanitizeInput(rawQuery.trim());
-    const searchType = detectSearchType(query);
-
-    if (searchType === 'address') {
-      setHistory(recordSearchHistoryEntry(query, chainId));
-      goTo(`/chain/${chainId}/address/${query}`);
-      return;
-    }
-
-    if (searchType === 'block') {
-      // A block number only exists below a chain's head, and heads differ
-      // wildly between chains: verify before navigating (same shape as
-      // the hash branch below).
-      // Through the shared http layer (runtime-discovered api base), NOT a
-      // raw same-origin fetch: in dev the same-origin /api is the Vite
-      // bridge's own backend instance, which competes with the discovered
-      // service for the single-writer DuckDB and serves different data.
-      let payload: ChainSearchResponse | undefined;
-      try {
-        payload = (await fetchChainSearch(chainId, query)) as ChainSearchResponse | undefined;
-      } catch (error) {
-        // Offline: the selected chain's own RPC can still confirm the
-        // number before the search gives up (see searchViaChainRpc).
-        if (isBackendUnreachable(error)) {
-          const outcome = await searchViaChainRpc(chainId, query, 'block');
-          if (outcome === 'navigated') return;
-          setSearchNotice({ kind: 'unreachable', query, fallbackNote: outcome === 'missed' });
-        } else {
-          setSearchNotice({ kind: 'failed', query });
-        }
-        return;
-      }
-
-      if (payload?.found && payload.type === 'block' && payload.data?.number !== undefined) {
-        setHistory(recordSearchHistoryEntry(query, chainId));
-        // The block detail route only accepts numbers, and the verified
-        // payload carries the canonical one.
-        goTo(`/chain/${chainId}/block/${String(payload.data.number)}`);
-        return;
-      }
-
-      // A degraded response means a data source errored — never worded as
-      // a definitive "no results".
-      setSearchNotice(
-        payload?.degraded ? { kind: 'failed', query } : { kind: 'block-miss', query },
-      );
-      return;
-    }
-
-    if (searchType === 'hash') {
-      // Through the shared http layer (runtime-discovered api base), NOT a
-      // raw same-origin fetch: in dev the same-origin /api is the Vite
-      // bridge's own backend instance, which competes with the discovered
-      // service for the single-writer DuckDB and serves different data.
-      let data: unknown;
-      try {
-        data = await fetchChainSearch(chainId, query);
-      } catch (error) {
-        // Offline: the selected chain's own RPC can still resolve the
-        // hash (tx first, then block) before the search gives up.
-        if (isBackendUnreachable(error)) {
-          const outcome = await searchViaChainRpc(chainId, query, 'hash');
-          if (outcome === 'navigated') return;
-          setSearchNotice({ kind: 'unreachable', query, fallbackNote: outcome === 'missed' });
-        } else {
-          setSearchNotice({ kind: 'failed', query });
-        }
-        return;
-      }
-      const payload = data as ChainSearchResponse | undefined;
-
-      if (payload?.found) {
-        if (payload.type === 'transaction') {
-          setHistory(recordSearchHistoryEntry(query, chainId));
-          goTo(`/chain/${chainId}/tx/${query}`);
-          return;
-        }
-        if (payload.type === 'block' && payload.data?.number !== undefined) {
-          // The block detail route only accepts numbers, not hashes.
-          setHistory(recordSearchHistoryEntry(query, chainId));
-          goTo(`/chain/${chainId}/block/${String(payload.data.number)}`);
-          return;
-        }
-      }
-
-      // A degraded response means a data source errored — never worded as
-      // a definitive "no results".
-      setSearchNotice(payload?.degraded ? { kind: 'failed', query } : { kind: 'miss', query });
-      return;
-    }
-
-    if (searchType === 'ens') {
-      // ENS names resolve in the browser against a mainnet client (where
-      // the ENS registry lives). A resolved address is a fact of
-      // Ethereum, so nothing navigates and no history is recorded yet:
-      // the notice offers Ethereum (primary) and the chain the search
-      // ran on (alternate), and history records whichever destination is
-      // actually opened. A definitive not-found is reported as such, an
-      // RPC failure as a retryable failure — never one blurred copy for
-      // both.
-      const outcome = await resolveEnsAddress(query);
-      if (outcome.status === 'resolved') {
-        setSearchNotice({
-          kind: 'ens-resolved',
-          query,
-          address: outcome.address,
-          destinations: ensDestinations(chainId),
-        });
-        return;
-      }
-      setSearchNotice(
-        outcome.status === 'not-found'
-          ? { kind: 'ens-not-found', query }
-          : { kind: 'ens-failed', query },
-      );
-      return;
-    }
-
-    // Free text goes to the full Search view, carrying the target chain
-    // as context (?chain=) so the global endpoint searches it and its
-    // suggestions link back to that chain's pages. History is NOT
-    // recorded here: the query's outcome is unknown until the view has
-    // actually run it, so the Search view records the entry when it
-    // navigates to a result (or the search lands on a chain).
-    goTo(`/search?q=${encodeURIComponent(query)}&chain=${chainId}`);
-  };
-
   const selectHistoryItem = (entry: SearchHistoryEntry) => {
     setSearchQuery(entry.query);
     setShowHistory(false);
     // Legacy entries predate per-chain recording: they re-run on the
     // currently selected chain instead of one they never carried.
-    void navigateForQuery(entry.query, entry.chainId ?? currentChainId);
+    void dispatchQuery(entry.query, entry.chainId ?? currentChainId);
   };
 
   // Opens a resolved ENS address on the chain the user chose — the moment
   // history records the entry, with the destination actually opened (not
   // the chain the search happened to run on).
   const openEnsAddress = (query: string, address: string, targetChainId: number) => {
-    setHistory(recordSearchHistoryEntry(query, targetChainId));
+    setHistory(openEnsSearchDestination({ name: query, address }, targetChainId, goTo));
     setSearchNotice(null);
-    goTo(`/chain/${targetChainId}/address/${address}`);
   };
 
   const handleSearch = async () => {
@@ -1339,17 +1096,16 @@ export default function TopNavigation({
       if (onSearch) {
         // The parent handles dispatch; history is recorded here only for
         // queries whose destination is known up front (address deep-links
-        // immediately, block/hash are facts of one chain). ENS is skipped
+        // immediately, block/hash are facts of one chain) — at click time,
+        // with the landing chain, through the shared core. ENS is skipped
         // — its destination only exists after resolution — and free text
         // ('unknown') is skipped too: its outcome is unknown until the
         // Search view lands somewhere, and that landing is what records.
-        const dispatchType = detectSearchType(sanitizeInput(searchQuery.trim()));
-        if (dispatchType !== 'ens' && dispatchType !== 'unknown') {
-          setHistory(recordSearchHistoryEntry(sanitizeInput(searchQuery.trim()), currentChainId));
-        }
+        const recorded = recordSearchAtClick(searchQuery, currentChainId);
+        if (recorded !== null) setHistory(recorded);
         await onSearch(searchQuery.trim());
       } else {
-        await navigateForQuery(searchQuery);
+        await dispatchQuery(searchQuery);
       }
     } catch (error) {
       // A failed dispatch must be visible, not just logged: name what
@@ -1367,6 +1123,191 @@ export default function TopNavigation({
     }
   };
 
+  return (
+    <div ref={searchContainerRef} className={searchArea}>
+      <div className={searchRow}>
+        <Input
+          value={searchQuery}
+          onChange={e => {
+            setSearchQuery(e.target.value);
+            setSearchNotice(null);
+          }}
+          onFocus={handleSearchFocus}
+          placeholder={
+            searchPlaceholder ?? `Search on ${chainInfo?.name ?? 'current chain'}...`
+          }
+          onKeyDown={e => {
+            if (e.key === 'Enter') handleSearch();
+            if (e.key === 'Escape') setShowHistory(false);
+          }}
+        />
+        <Button variant="solid" size="md" onClick={handleSearch} disabled={loading}>
+          {loading ? '...' : 'Search'}
+        </Button>
+      </div>
+
+      {searchNotice !== null && (
+        <div className={searchNoticeBox}>
+          <span>
+            {searchNotice.kind === 'miss' &&
+              `Hash not found on ${chainInfo?.name ?? 'this chain'} — it may exist on another network`}
+            {searchNotice.kind === 'block-miss' &&
+              `Block not found on ${chainInfo?.name ?? 'this chain'} — it may exist on another network`}
+            {searchNotice.kind === 'failed' &&
+              `Search failed on ${chainInfo?.name ?? 'this chain'} — a data source errored`}
+            {searchNotice.kind === 'unreachable' &&
+              (searchNotice.fallbackNote
+                ? `Search unavailable — cannot reach the explorer backend; direct RPC check of ${
+                  chainInfo?.name ?? 'this chain'
+                } found no match (full cross-chain search requires the backend)`
+                : 'Search unavailable — cannot reach the explorer backend')}
+            {searchNotice.kind === 'ens-resolved' &&
+              `Resolved ${searchNotice.query} → ${formatAddress(searchNotice.address)} on Ethereum`}
+            {searchNotice.kind === 'ens-not-found' &&
+              `ENS name "${searchNotice.query}" not found (checked on Ethereum)`}
+            {searchNotice.kind === 'ens-failed' &&
+              `ENS resolution failed for "${searchNotice.query}" — Ethereum RPC did not answer`}
+          </span>
+          <span className={searchNoticeActions}>
+            {(searchNotice.kind === 'miss' ||
+              searchNotice.kind === 'block-miss' ||
+              searchNotice.kind === 'failed') && (
+              <button
+                type="button"
+                className={searchNoticeLink}
+                onClick={() =>
+                  // No ?chain= on purpose: the query's chain is
+                  // unknown (it just missed here), so the Search view
+                  // must ask which network to search next instead of
+                  // re-running it on this one — the link opens the
+                  // network picker.
+                  goTo(`/search?q=${encodeURIComponent(searchNotice.query)}`)}
+              >
+                Choose a network →
+              </button>
+            )}
+            {searchNotice.kind === 'unreachable' && (
+              <button
+                type="button"
+                className={searchNoticeLink}
+                onClick={() => void handleSearch()}
+              >
+                Retry
+              </button>
+            )}
+            {searchNotice.kind === 'ens-resolved' && (
+              <EnsDestinationActions
+                destinations={searchNotice.destinations}
+                onOpen={targetChainId => {
+                  openEnsAddress(searchNotice.query, searchNotice.address, targetChainId);
+                }}
+              />
+            )}
+            {searchNotice.kind === 'ens-failed' && (
+              <button
+                type="button"
+                className={searchNoticeLink}
+                onClick={() => void dispatchQuery(searchNotice.query)}
+              >
+                Retry
+              </button>
+            )}
+          </span>
+        </div>
+      )}
+
+      {showHistory && filteredHistory.length > 0 && (
+        <div className={historyDropdown}>
+          <div className={historyHeader}>
+            <span>Recent Searches</span>
+            <button type="button" className={historyClearButton} onClick={handleClearHistory}>
+              Clear
+            </button>
+          </div>
+          {filteredHistory.map(entry => (
+            <div
+              key={`${entry.chainId ?? 'unscoped'}-${entry.query}`}
+              className={historyItem}
+            >
+              <button
+                type="button"
+                className={historyEntryButton}
+                onClick={() => selectHistoryItem(entry)}
+              >
+                <span style={{ color: 'var(--haze-color-text-muted)' }}>🔍</span>
+                <span
+                  className={cx(
+                    historyQuery,
+                    /^0x/.test(entry.query) ? historyQueryMono : undefined,
+                  )}
+                >
+                  {entry.query}
+                </span>
+                {/* Legacy entries carry no chain: the badge shows
+                    where a click would run them now (the currently
+                    selected chain), which is exactly what happens. */}
+                <span className={historyType}>
+                  {getChainName(entry.chainId ?? currentChainId)}
+                </span>
+              </button>
+              <button
+                type="button"
+                className={historyRemoveButton}
+                aria-label={`Remove ${entry.query} from history`}
+                onClick={() => handleRemoveHistoryEntry(entry)}
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export default function TopNavigation({
+  currentChainId,
+  onChainChange,
+  onSearch,
+  searchPlaceholder,
+}: TopNavigationProps) {
+  const router = useRouter();
+  const [, setShowRpcConfig, rpcConfigControl] = useControl<boolean>(null, false);
+  const navRef = React.useRef<HTMLElement>(null);
+
+  // Fire-and-forget in-app navigation; a superseded navigation rejects with
+  // NavigationCancelledError, swallowed here as "stay on the old view".
+  const goTo = (to: string) => {
+    navigate(router, to).catch(() => undefined);
+  };
+
+  // Publish the bar's live height as --app-nav-height on <html>: elements
+  // that stick below the bar (the address page's anchor chip row) need the
+  // real height to clear it, and the height is content- and
+  // breakpoint-dependent — two rows at desktop widths, more when the bar's
+  // groups wrap on smaller viewports, and up to ~40px taller while an
+  // inline search notice is shown. A hardcoded offset would leave those
+  // sticky rows hidden behind the bar.
+  useEffect(() => {
+    const el = navRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const root = document.documentElement;
+    const publish = () => {
+      root.style.setProperty(
+        '--app-nav-height',
+        `${Math.round(el.getBoundingClientRect().height)}px`,
+      );
+    };
+    publish();
+    const observer = new ResizeObserver(publish);
+    observer.observe(el);
+    return () => {
+      observer.disconnect();
+      root.style.removeProperty('--app-nav-height');
+    };
+  }, []);
+
   const paletteShortcut = paletteShortcutLabel();
 
   return (
@@ -1378,145 +1319,11 @@ export default function TopNavigation({
             <span className={logoText}>My Block Explorer</span>
           </div>
 
-          <div ref={searchContainerRef} className={searchArea}>
-            <div className={searchRow}>
-              <Input
-                value={searchQuery}
-                onChange={e => {
-                  setSearchQuery(e.target.value);
-                  setSearchNotice(null);
-                }}
-                onFocus={handleSearchFocus}
-                placeholder={
-                  searchPlaceholder ?? `Search on ${chainInfo?.name ?? 'current chain'}...`
-                }
-                onKeyDown={e => {
-                  if (e.key === 'Enter') handleSearch();
-                  if (e.key === 'Escape') setShowHistory(false);
-                }}
-              />
-              <Button variant="solid" size="md" onClick={handleSearch} disabled={loading}>
-                {loading ? '...' : 'Search'}
-              </Button>
-            </div>
-
-            {searchNotice !== null && (
-              <div className={searchNoticeBox}>
-                <span>
-                  {searchNotice.kind === 'miss' &&
-                    `Hash not found on ${chainInfo?.name ?? 'this chain'} — it may exist on another network`}
-                  {searchNotice.kind === 'block-miss' &&
-                    `Block not found on ${chainInfo?.name ?? 'this chain'} — it may exist on another network`}
-                  {searchNotice.kind === 'failed' &&
-                    `Search failed on ${chainInfo?.name ?? 'this chain'} — a data source errored`}
-                  {searchNotice.kind === 'unreachable' &&
-                    (searchNotice.fallbackNote
-                      ? `Search unavailable — cannot reach the explorer backend; direct RPC check of ${
-                        chainInfo?.name ?? 'this chain'
-                      } found no match (full cross-chain search requires the backend)`
-                      : 'Search unavailable — cannot reach the explorer backend')}
-                  {searchNotice.kind === 'ens-resolved' &&
-                    `Resolved ${searchNotice.query} → ${formatAddress(searchNotice.address)} on Ethereum`}
-                  {searchNotice.kind === 'ens-not-found' &&
-                    `ENS name "${searchNotice.query}" not found (checked on Ethereum)`}
-                  {searchNotice.kind === 'ens-failed' &&
-                    `ENS resolution failed for "${searchNotice.query}" — Ethereum RPC did not answer`}
-                </span>
-                <span className={searchNoticeActions}>
-                  {(searchNotice.kind === 'miss' ||
-                    searchNotice.kind === 'block-miss' ||
-                    searchNotice.kind === 'failed') && (
-                    <button
-                      type="button"
-                      className={searchNoticeLink}
-                      onClick={() =>
-                        // No ?chain= on purpose: the query's chain is
-                        // unknown (it just missed here), so the Search view
-                        // must ask which network to search next instead of
-                        // re-running it on this one — the link opens the
-                        // network picker.
-                        goTo(`/search?q=${encodeURIComponent(searchNotice.query)}`)}
-                    >
-                      Choose a network →
-                    </button>
-                  )}
-                  {searchNotice.kind === 'unreachable' && (
-                    <button
-                      type="button"
-                      className={searchNoticeLink}
-                      onClick={() => void handleSearch()}
-                    >
-                      Retry
-                    </button>
-                  )}
-                  {searchNotice.kind === 'ens-resolved' && (
-                    <EnsDestinationActions
-                      destinations={searchNotice.destinations}
-                      onOpen={targetChainId => {
-                        openEnsAddress(searchNotice.query, searchNotice.address, targetChainId);
-                      }}
-                    />
-                  )}
-                  {searchNotice.kind === 'ens-failed' && (
-                    <button
-                      type="button"
-                      className={searchNoticeLink}
-                      onClick={() => void navigateForQuery(searchNotice.query)}
-                    >
-                      Retry
-                    </button>
-                  )}
-                </span>
-              </div>
-            )}
-
-            {showHistory && filteredHistory.length > 0 && (
-              <div className={historyDropdown}>
-                <div className={historyHeader}>
-                  <span>Recent Searches</span>
-                  <button type="button" className={historyClearButton} onClick={handleClearHistory}>
-                    Clear
-                  </button>
-                </div>
-                {filteredHistory.map(entry => (
-                  <div
-                    key={`${entry.chainId ?? 'unscoped'}-${entry.query}`}
-                    className={historyItem}
-                  >
-                    <button
-                      type="button"
-                      className={historyEntryButton}
-                      onClick={() => selectHistoryItem(entry)}
-                    >
-                      <span style={{ color: 'var(--haze-color-text-muted)' }}>🔍</span>
-                      <span
-                        className={cx(
-                          historyQuery,
-                          /^0x/.test(entry.query) ? historyQueryMono : undefined,
-                        )}
-                      >
-                        {entry.query}
-                      </span>
-                      {/* Legacy entries carry no chain: the badge shows
-                          where a click would run them now (the currently
-                          selected chain), which is exactly what happens. */}
-                      <span className={historyType}>
-                        {getChainName(entry.chainId ?? currentChainId)}
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      className={historyRemoveButton}
-                      aria-label={`Remove ${entry.query} from history`}
-                      onClick={() => handleRemoveHistoryEntry(entry)}
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          <SearchBox
+            currentChainId={currentChainId}
+            onSearch={onSearch}
+            searchPlaceholder={searchPlaceholder}
+          />
 
           <div className={rightControls}>
             {/* Command-palette trigger (Ctrl/Cmd+K): opens the global

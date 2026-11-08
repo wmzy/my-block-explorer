@@ -3,7 +3,7 @@
 // tx rows the Transactions tab already holds — the current window's
 // DISCOVERED set, never a lifetime claim (the view's caveat line carries
 // that honesty; these numbers must never be presented without it).
-import { formatUnits } from 'viem';
+import { formatNativeDisplay } from '@/utils/format';
 
 // Minimal projection of the serialized tx rows (TxRecord in ./index):
 // blockNumber/value arrive as strings over JSON. `toAddress` is null (or
@@ -79,22 +79,15 @@ export function computeAddressSummaryStats(
   return { firstSeen, lastSeen, totalIn, totalOut, txCount: rows.length };
 }
 
-// Locale-pinned digit grouping: the display stays identical across host
-// locales AND stable for totals whose integer part exceeds 2^53 (where
-// Number.prototype.toLocaleString would flip to exponential notation).
-const groupDigits = (digits: string): string => digits.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-
 // Native-token total display over the chain's OWN decimals (never a
-// hardcoded 18 — repo-verified pitfall on non-18 chains). Same display
-// contract as the tx surfaces' formatValue, decimals-generic: zero
-// renders exactly; dust below the 4-decimal floor renders "<0.0001"
-// instead of a misleading "0.0000"; anything larger renders 4 decimals.
+// hardcoded 18 — repo-verified pitfall on non-18 chains). The shared
+// formatNativeDisplay's 'fixed4' + grouped contract: zero renders
+// exactly; dust below the 4-decimal floor renders "<0.0001" instead of a
+// misleading "0.0000"; anything larger renders 4 fraction digits with
+// thousands separators. Truncation (not rounding) at the 4th digit is
+// pinned by test: the summary must never show a total it did not measure.
 export function formatNativeTotal(value: bigint, decimals: number, symbol: string): string {
-  if (value === 0n) return `0 ${symbol}`;
-  const dustFloor = 10n ** BigInt(Math.max(decimals - 4, 0));
-  if (value < dustFloor) return `<0.0001 ${symbol}`;
-  const [intPart, fracPart = ''] = formatUnits(value, decimals).split('.');
-  return `${groupDigits(intPart)}.${fracPart.slice(0, 4).padEnd(4, '0')} ${symbol}`;
+  return formatNativeDisplay(value, decimals, { symbol, fraction: 'fixed4', grouped: true });
 }
 
 // Boundary display: a date when a timestamp is known (formatter injected

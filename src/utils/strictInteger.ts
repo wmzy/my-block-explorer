@@ -29,3 +29,23 @@ export function parseStrictInteger(value: string | number | undefined): number |
   const parsed = Number(value);
   return Number.isSafeInteger(parsed) ? parsed : null;
 }
+
+/**
+ * A JSON-RPC hex QUANTITY (`0x`-prefixed, non-negative) as a safe
+ * integer, or null when the value is not one. The canonical reader for
+ * every eth_chainId/eth_blockNumber-style answer (the RPC tester, the
+ * custom-chain probe, the wallet facade) — each used to carry its own
+ * copy of this exact function.
+ *
+ * parseInt(value, 16) is not this: it accepts a valid prefix and ignores
+ * the rest, so '0x1zz' read as 1 and '137abc' as 1276604 — a fabricated
+ * chain id / block height that a probe would then compare against the
+ * user's configuration and report as a match. BigInt first (quantities
+ * are uint64 in JSON-RPC), then a safe-integer gate so a value past 2^53
+ * is rejected rather than silently rounded.
+ */
+export function parseHexQuantity(value: unknown): number | null {
+  if (typeof value !== 'string' || !/^0x[0-9a-fA-F]+$/.test(value)) return null;
+  const parsed = Number(BigInt(value));
+  return Number.isSafeInteger(parsed) ? parsed : null;
+}

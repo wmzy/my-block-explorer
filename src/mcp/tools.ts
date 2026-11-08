@@ -16,7 +16,9 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { CallToolResult, ToolAnnotations } from '@modelcontextprotocol/sdk/types.js';
 import type { Address } from 'viem';
 import { getChainType, POPULAR_CHAINS, SUPPORTED_CHAINS } from '@/config/chains';
+import { bigintJsonReplacer } from '@/utils/jsonReplacer';
 import { parseSlotNumber } from '@/utils/storageSlots';
+import { addressVerdict } from '@/utils/address';
 import { coerceArgs, parseFunctionFragment } from './abi';
 import type { BlockRef, BlockTag, ChainMeta, RpcReader } from './rpc';
 import { McpApiError, McpBackendUnreachableError, type ExplorerApi } from './rest';
@@ -32,10 +34,11 @@ const read_only: ToolAnnotations = { readOnlyHint: true };
 
 /**
  * BigInt-safe JSON: viem RPC payloads carry bigint quantities; MCP text
- * content is a string, so integers become decimal strings.
+ * content is a string, so integers become decimal strings. The replacer
+ * is the shared import-free leaf (utils/jsonReplacer) — mcp stays pino-free.
  */
 export function jsonText(value: unknown): string {
-  return JSON.stringify(value, (_key, inner) => (typeof inner === 'bigint' ? inner.toString() : inner), 2) ?? 'null';
+  return JSON.stringify(value, bigintJsonReplacer, 2) ?? 'null';
 }
 
 /** JSON-safe copy (bigints → strings) for structuredContent. */
@@ -70,6 +73,25 @@ const chainIdParam = z
   .int()
   .describe('EVM chain id (e.g. 1 Ethereum, 137 Polygon) — call list_chains for known ids');
 const addressParam = z.string().describe('Contract or account address (0x-hex)');
+
+// The one shared address guard for every tool that takes an address
+// param. Thrown Errors are surfaced by the SDK as isError tool results
+// with the message verbatim, so the wording is caller-ready: an agent
+// that sent a wrong-checksum mixed-case address gets the exact
+// checksummed form to retry with (same two tiers as the explorer's
+// routes — utils/address.ts).
+function requireAddress(input: string): Address {
+  const verdict = addressVerdict(input);
+  if (verdict.tier === 'invalid-shape') {
+    throw new Error(`Invalid address: ${input} (expected 0x followed by 40 hex characters)`);
+  }
+  if (verdict.tier === 'invalid-checksum') {
+    throw new Error(
+      `Invalid address: ${input} (fails the EIP-55 checksum — use the checksummed form ${verdict.checksummed})`,
+    );
+  }
+  return verdict.checksummed;
+}
 
 function refFrom(params: { blockNumber?: number; blockTag?: BlockTag }): BlockRef {
   if (params.blockNumber !== undefined) return { blockNumber: params.blockNumber };
@@ -197,7 +219,8 @@ export function registerExplorerTools(server: McpServer, deps: McpDeps): void {
       annotations: read_only,
     },
     async ({ chainId, address }) => {
-      const { chain, balance, nonce, code } = await rpc.getAddressState(chainId, address as Address);
+      const checksummed = requireAddress(address);
+      const { chain, balance, nonce, code } = await rpc.getAddressState(chainId, checksummed);
       const classification =
         code === '0x' ? 'eoa' : code.startsWith('0xef0100') ? 'eip-7702-delegated' : 'contract';
       return ok({
@@ -225,6 +248,7 @@ export function registerExplorerTools(server: McpServer, deps: McpDeps): void {
       annotations: read_only,
     },
     async ({ chainId, address, includeSource }) => {
+      requireAddress(address);
       type SourceRow = {
         chainId: number;
         chainName: string;
@@ -329,6 +353,7 @@ export function registerExplorerTools(server: McpServer, deps: McpDeps): void {
       annotations: read_only,
     },
     async ({ chainId, address, signature, args, blockNumber, blockTag }) => {
+      const checksummed = requireAddress(address);
       const meta = await rpc.chainMeta(chainId);
       const fragment = parseFunctionFragment(signature);
       if (fragment.stateMutability !== 'view' && fragment.stateMutability !== 'pure') {
@@ -338,7 +363,7 @@ export function registerExplorerTools(server: McpServer, deps: McpDeps): void {
       }
       const coerced = coerceArgs(args ?? [], fragment);
       const result = await rpc.callReadonly(chainId, {
-        to: address as Address,
+        to: checksummed,
         fragment,
         args: coerced,
         ref: refFrom({ blockNumber, blockTag }),
@@ -364,6 +389,7 @@ export function registerExplorerTools(server: McpServer, deps: McpDeps): void {
       annotations: read_only,
     },
     async ({ chainId, address, page, pageSize, eventName, fromBlock, toBlock }) => {
+      requireAddress(address);
       type EventsRow = {
         chainId: number;
         chainName: string;
@@ -401,6 +427,7 @@ export function registerExplorerTools(server: McpServer, deps: McpDeps): void {
       annotations: read_only,
     },
     async ({ chainId, address }) => {
+      requireAddress(address);
       type RangesRow = { ranges: unknown[] };
       type StatsRow = { totalEvents?: number; uniqueEventTypes?: number };
       // Both open reads; each degrades independently (unreachable AND API
@@ -449,6 +476,12 @@ export function registerExplorerTools(server: McpServer, deps: McpDeps): void {
       annotations: read_only,
     },
     async ({ chainId, address, ...filters }) => {
+      requireAddress(address);
+      // The optional address filters get the same guard as the path
+      // param — a wrong-checksum from/to must fail with the retry form,
+      // not a silently checksum-corrected query.
+      if (filters.fromAddress !== undefined) requireAddress(filters.fromAddress);
+      if (filters.toAddress !== undefined) requireAddress(filters.toAddress);
       type TxRow = Record<string, unknown>;
       const result = await api.get<TxRow>(`/api/chains/${chainId}/addresses/${address}/transactions`, filters);
       return ok(result);
@@ -469,6 +502,7 @@ export function registerExplorerTools(server: McpServer, deps: McpDeps): void {
       annotations: read_only,
     },
     async ({ chainId, address, slot, blockNumber, blockTag }) => {
+      const checksummed = requireAddress(address);
       const meta = await rpc.chainMeta(chainId);
       let slotBigint: bigint;
       try {
@@ -476,7 +510,7 @@ export function registerExplorerTools(server: McpServer, deps: McpDeps): void {
       } catch (error) {
         return fail(`Invalid slot "${slot}": ${error instanceof Error ? error.message : String(error)}`);
       }
-      const value = await rpc.getStorageAt(chainId, address as Address, slotBigint, refFrom({ blockNumber, blockTag }));
+      const value = await rpc.getStorageAt(chainId, checksummed, slotBigint, refFrom({ blockNumber, blockTag }));
       return ok({ chain: chainBrief(meta), address, slot: slotBigint.toString(), value });
     },
   );

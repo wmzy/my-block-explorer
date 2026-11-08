@@ -3,6 +3,7 @@ import { createLogger } from '../server/logger';
 import { blockService } from '../services/BlockService';
 import { transactionService } from '../services/TransactionService';
 import { rpcManager } from '../services/RpcManager';
+import { withTimeoutOrNull } from '../utils/withTimeout';
 import {
   getChainName,
   getChainSymbol,
@@ -13,24 +14,6 @@ import {
 const logger = createLogger('stats-routes');
 
 const RPC_TIMEOUT_MS = 3000;
-
-// The timeout's timer must die with the race: a losing setTimeout keeps
-// the event loop alive for the full window (and stacks one per chain per
-// request here), so both outcomes of the wrapped promise clear it.
-const withTimeout = <T>(promise: Promise<T>, ms: number): Promise<T | null> =>
-  new Promise<T | null>((resolve, reject) => {
-    const timer = setTimeout(() => resolve(null), ms);
-    promise.then(
-      value => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      error => {
-        clearTimeout(timer);
-        reject(error);
-      },
-    );
-  });
 
 const app = new Hono();
 
@@ -55,7 +38,7 @@ app.get('/stats/overview', async c => {
           // The live head probe is the one read that degrades instead: an
           // unreachable node is a normal condition and the response has
           // always documented a null head with rpcConnected:false.
-          withTimeout(
+          withTimeoutOrNull(
             rpcManager.getClient(chainId).then(client => client.getBlockNumber()),
             RPC_TIMEOUT_MS,
           ).catch(() => null),

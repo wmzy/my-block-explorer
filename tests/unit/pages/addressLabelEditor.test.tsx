@@ -141,9 +141,10 @@ vi.mock('@/services/tokenMetadata', () => ({
   useTokenMetadata: () => undefined,
 }));
 
-vi.mock('@/utils/format', () => ({
-  formatRelativeTime: () => '3 min ago',
-}));
+vi.mock('@/utils/format', async importOriginal => {
+  const actual = await importOriginal<typeof import('@/utils/format')>();
+  return { ...actual, formatRelativeTime: () => '3 min ago' };
+});
 
 vi.mock('@/util/apiBase', () => ({
   getApiBase: () => mocks.apiBase,

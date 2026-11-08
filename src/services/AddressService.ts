@@ -5,6 +5,8 @@ import { contractSourceService } from './ContractSourceService';
 import type { Address, PublicClient } from 'viem';
 import { selectorOf } from '../utils/txDecode';
 import { withOneRetry } from '../utils/rpcReadRetry';
+import { createTtlLruCache } from '../utils/ttlLruCache';
+import { withTimeout } from '../utils/withTimeout';
 import { createLogger } from '../server/logger';
 
 const logger = createLogger('address-service');
@@ -259,19 +261,6 @@ const MAX_SEARCH_WINDOW_BLOCKS = 50_000_000;
 const TX_RESULT_TTL_MS = 60_000;
 const TX_RESULT_MAX_ENTRIES = 20;
 
-const withTimeout = <T>(promise: Promise<T>, ms: number, label: string): Promise<T> => {
-  // Clear the losing timer on settle — a dangling setTimeout per call keeps
-  // the vitest/scan loops littered with live timers (and keeps the losing
-  // promise's frame alive until the timer fires).
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
-  });
-  return Promise.race([promise, timeout]).finally(() => {
-    if (timer !== undefined) clearTimeout(timer);
-  });
-};
-
 const getSearchRange = (txCount: number): bigint => {
   if (txCount > 100) return 200_000n;
   if (txCount > 10) return 600_000n;
@@ -476,7 +465,6 @@ const binarySearchBalanceChanges = async (
 // `budget` is the discovery limit the list was produced under — a deeper
 // page may need a wider search than the cached entry covers.
 type TxSearchCacheEntry = {
-  expiresAt: number;
   result: AddressTransactionsResult;
   budget: number;
 };
@@ -486,14 +474,23 @@ type AddressServiceDeps = {
   indexedAddresses: typeof import('../database/init').indexedAddresses;
   rpcManager: typeof import('./RpcManager').rpcManager;
   contractSourceService: typeof import('./ContractSourceService').contractSourceService;
+  // Deterministic clock injection for the tx-search cache TTL (tests).
+  now?: () => number;
 };
 
 const createAddressService = (deps: AddressServiceDeps) => {
   const { db, indexedAddresses, rpcManager, contractSourceService } = deps;
+  const now = deps.now ?? Date.now;
 
-  // Bounded LRU: Map preserves insertion order, so reads re-insert to
-  // refresh recency and oversize inserts evict the oldest key first.
-  const txSearchCache = new Map<string, TxSearchCacheEntry>();
+  // Deterministic response cache (utils/ttlLruCache): one canonical
+  // search per (chain, address, window) for ~60s, bounded to 20 entries.
+  // The hit-validity predicate on top (budget vs requested slice) stays
+  // local — it is this service's contract, not the cache's.
+  const txSearchCache = createTtlLruCache<TxSearchCacheEntry>({
+    ttlMs: TX_RESULT_TTL_MS,
+    maxEntries: TX_RESULT_MAX_ENTRIES,
+    now,
+  });
 
   const readTxSearchCache = (
     key: string,
@@ -501,12 +498,6 @@ const createAddressService = (deps: AddressServiceDeps) => {
   ): AddressTransactionsResult | null => {
     const entry = txSearchCache.get(key);
     if (!entry) return null;
-    if (Date.now() > entry.expiresAt) {
-      txSearchCache.delete(key);
-      return null;
-    }
-    txSearchCache.delete(key);
-    txSearchCache.set(key, entry);
     // A list shorter than its discovery budget means the search exhausted
     // the window — nothing more to find, any page is servable. Otherwise
     // the budget must cover the requested slice.
@@ -521,13 +512,7 @@ const createAddressService = (deps: AddressServiceDeps) => {
     result: AddressTransactionsResult,
     budget: number,
   ): void => {
-    txSearchCache.delete(key);
-    txSearchCache.set(key, { expiresAt: Date.now() + TX_RESULT_TTL_MS, result, budget });
-    while (txSearchCache.size > TX_RESULT_MAX_ENTRIES) {
-      const oldest = txSearchCache.keys().next().value;
-      if (oldest === undefined) break;
-      txSearchCache.delete(oldest);
-    }
+    txSearchCache.set(key, { result, budget });
   };
 
   const getPersistentDataFromDB = async (

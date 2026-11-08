@@ -53,7 +53,7 @@ import {
   type ContractSource,
   type ContractCreationInfo,
 } from '@/services/ContractSourceService';
-import { formatAddress } from '@/utils/address';
+import { checksumAddress } from '@/utils/address';
 import type { Address } from 'viem';
 
 describe('ContractSourceService - Proxy Detection', () => {
@@ -158,7 +158,7 @@ describe('ContractSourceService - Proxy Detection', () => {
       expect(result).toEqual({
         isProxy: true,
         proxyType: 'beacon',
-        implementationAddress: formatAddress(beaconImplAddress), // the implementation() result, not the beacon address
+        implementationAddress: checksumAddress(beaconImplAddress), // the implementation() result, not the beacon address
       });
 
       // implementation() must be called on the beacon contract itself
@@ -191,7 +191,7 @@ describe('ContractSourceService - Proxy Detection', () => {
       expect(result).toEqual({
         isProxy: true,
         proxyType: 'beacon',
-        implementationAddress: formatAddress(beaconAddress), // EIP-55 checksum format
+        implementationAddress: checksumAddress(beaconAddress), // EIP-55 checksum format
       });
     });
 
@@ -256,10 +256,10 @@ describe('ContractSourceService - Proxy Detection', () => {
       expect(result).toEqual({
         isProxy: true,
         proxyType: 'unknown',
-        implementationAddress: formatAddress(implementationAddress),
+        implementationAddress: checksumAddress(implementationAddress),
       });
       // The resolved address is validated as a real contract
-      expect(isContractSpy).toHaveBeenCalledWith(chainId, formatAddress(implementationAddress));
+      expect(isContractSpy).toHaveBeenCalledWith(chainId, checksumAddress(implementationAddress));
     });
 
     it('should detect Gnosis Safe proxies via masterCopy() ABI fallback', async () => {
@@ -284,7 +284,7 @@ describe('ContractSourceService - Proxy Detection', () => {
       expect(result).toEqual({
         isProxy: true,
         proxyType: 'unknown',
-        implementationAddress: formatAddress(masterCopyAddress),
+        implementationAddress: checksumAddress(masterCopyAddress),
       });
       expect(mockClient.readContract).toHaveBeenCalledWith(
         expect.objectContaining({ address: proxyAddress, functionName: 'masterCopy' }),

@@ -95,6 +95,12 @@ All tools are **read-only** (`readOnlyHint`) — the mutating/admin surface
 web UI. Backend rate-limit buckets apply as for any REST client (e.g. search
 30/min·10, address-transactions 10/min·3).
 
+Every tool that takes an `address` input validates it with the same two-tier
+check as the web UI (hex shape, then EIP-55 checksum for mixed-case input):
+a wrong-checksum address fails fast with an `isError` result naming the
+checksummed form to retry with (lowercase/all-caps input skips the checksum
+tier, matching `getValidatedAddress` semantics).
+
 ## Honesty contracts carried into tool results
 
 - **Integer quantities are decimal strings** (wei, raw RPC fields) — never

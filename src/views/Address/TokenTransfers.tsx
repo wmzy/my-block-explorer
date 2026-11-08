@@ -28,7 +28,7 @@ import {
   type TransferStandardId,
 } from '@/views/Address/search';
 import { getExternalToolLinks } from '@/config/externalTools';
-import { formatRelativeTime } from '@/utils/format';
+import { formatRelativeTime, truncateMiddle } from '@/utils/format';
 import { DataTable, Pagination, linkStyle } from '@/components/ui/DataTable';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { ErrorState, EmptyState } from '@/components/ui/ErrorState';
@@ -131,7 +131,9 @@ const emptyPageCell = css`
   text-align: center;
 `;
 
-const formatAddr = (a: string) => (a ? `${a.slice(0, 8)}...${a.slice(-6)}` : 'N/A');
+// Address-cell text: the shared 8/6 middle truncation, with the lists'
+// 'N/A' fallback for a blank cell.
+const addressCell = (a: string) => (a ? truncateMiddle(a, 8, 6) : 'N/A');
 const formatHash = (h: string) => (h ? `${h.slice(0, 10)}...${h.slice(-8)}` : '');
 
 // Human-readable integer amount: thousands separators when the raw value
@@ -358,7 +360,7 @@ function AmountCell({ transfer, meta }: { transfer: TokenTransfer; meta: TokenMe
   // the shortened token address — never a guessed decimals amount.
   return (
     <td className={valueCell}>
-      <span>{transfer.value}</span> <span className={mutedValue}>{formatAddr(transfer.token)}</span>
+      <span>{transfer.value}</span> <span className={mutedValue}>{addressCell(transfer.token)}</span>
     </td>
   );
 }
@@ -426,7 +428,7 @@ function TransferRow({
       <td>
         <CopyableHash
           value={transfer.token}
-          truncated={meta?.symbol ?? formatAddr(transfer.token)}
+          truncated={meta?.symbol ?? addressCell(transfer.token)}
           href={`/chain/${chainId}/contract/${transfer.token}`}
         />
       </td>
@@ -436,14 +438,14 @@ function TransferRow({
       <td>
         <CopyableHash
           value={transfer.from}
-          truncated={formatAddr(transfer.from)}
+          truncated={addressCell(transfer.from)}
           href={`/chain/${chainId}/address/${transfer.from}`}
         />
       </td>
       <td>
         <CopyableHash
           value={transfer.to}
-          truncated={formatAddr(transfer.to)}
+          truncated={addressCell(transfer.to)}
           href={`/chain/${chainId}/address/${transfer.to}`}
         />
       </td>

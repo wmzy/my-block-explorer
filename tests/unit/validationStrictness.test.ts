@@ -14,12 +14,14 @@
 //    caller could detect.
 
 import { describe, it, expect } from 'vitest';
+import { getAddress } from 'viem';
 import { HTTPException } from 'hono/http-exception';
 import {
   isValidBlockNumber,
   isValidChainId,
   validateBlockRange,
-  validatePaginationParams,
+  parsePaginationParams,
+  parseChainAndAddressParams,
 } from '@/utils/validation';
 import { getValidatedBlockNumber, getValidatedChainId } from '@/server/validation';
 
@@ -96,17 +98,189 @@ describe('validateBlockRange', () => {
   });
 });
 
-describe('validatePaginationParams', () => {
-  it('rejects junk instead of accepting its numeric prefix', () => {
-    expect(() => validatePaginationParams('2abc')).toThrow(/Page must be a positive integer/);
-    expect(() => validatePaginationParams(1, '50; DROP')).toThrow(
-      /Limit must be between 1 and 100/,
-    );
+describe('parsePaginationParams — the shared route pagination contract', () => {
+  // The blocks/transactions list flavor: strict decimal or null, negative
+  // offsets clamp to 0, over-cap values clamp at the caps, defaults 0/20.
+  const LIST_OPTIONS = { maxOffset: 100_000, maxLimit: 100 } as const;
+
+  it('keeps the 0/20 defaults for absent and empty params', () => {
+    expect(parsePaginationParams(undefined, undefined, LIST_OPTIONS)).toEqual({
+      offset: 0,
+      limit: 20,
+    });
+    expect(parsePaginationParams('', '', LIST_OPTIONS)).toEqual({ offset: 0, limit: 20 });
   });
 
-  it('keeps accepting well-formed values', () => {
-    expect(validatePaginationParams('2', '50')).toEqual({ page: 2, limit: 50 });
-    expect(validatePaginationParams()).toEqual({ page: 1, limit: 20 });
+  it('passes strict decimal values through untouched', () => {
+    expect(parsePaginationParams('5', '20', LIST_OPTIONS)).toEqual({ offset: 5, limit: 20 });
+    expect(parsePaginationParams('100000', '1', LIST_OPTIONS)).toEqual({
+      offset: 100_000,
+      limit: 1,
+    });
+  });
+
+  it('clamps negative offsets to 0 (the \'-\'-prefix policy), including exponent spellings Number() accepts', () => {
+    expect(parsePaginationParams('-5', undefined, LIST_OPTIONS)).toEqual({
+      offset: 0,
+      limit: 20,
+    });
+    expect(parsePaginationParams('-5e3', undefined, LIST_OPTIONS).offset).toBe(0);
+  });
+
+  it('rejects junk offsets instead of parsing their numeric prefix', () => {
+    for (const junk of [
+      'abc',
+      '5abc',
+      '0x5',
+      '1e5',
+      ' 5',
+      '5.5',
+      '+5',
+      '-abc',
+      '-5.5',
+      '99999999999999999999',
+    ]) {
+      expect(
+        parsePaginationParams(junk, undefined, LIST_OPTIONS).offset,
+        `offset=${junk}`,
+      ).toBeNull();
+    }
+  });
+
+  it('clamps a safe over-cap offset at the cap', () => {
+    expect(parsePaginationParams('999999999', undefined, LIST_OPTIONS).offset).toBe(100_000);
+  });
+
+  it('rejects junk and non-positive limits', () => {
+    for (const junk of [
+      'abc',
+      '20abc',
+      '0',
+      '-5',
+      '1e2',
+      '0x14',
+      ' 7',
+      '2.5',
+      '99999999999999999999',
+    ]) {
+      expect(parsePaginationParams(undefined, junk, LIST_OPTIONS).limit, `limit=${junk}`).toBeNull();
+    }
+  });
+
+  it('clamps an over-cap limit to the cap instead of erroring', () => {
+    expect(parsePaginationParams(undefined, '999999', LIST_OPTIONS).limit).toBe(100);
+    expect(parsePaginationParams(undefined, '100', LIST_OPTIONS).limit).toBe(100);
+  });
+
+  it('contracts directory flavor: default limit 50, over-cap limit rejects instead of clamping', () => {
+    const options = {
+      maxOffset: 100_000,
+      maxLimit: 100,
+      defaultLimit: 50,
+      limitOverCap: 'reject',
+    } as const;
+
+    expect(parsePaginationParams(undefined, undefined, options)).toEqual({ offset: 0, limit: 50 });
+    expect(parsePaginationParams(undefined, '101', options).limit).toBeNull();
+    expect(parsePaginationParams(undefined, '100', options).limit).toBe(100);
+    // Offset edges stay the transactions-family ones.
+    expect(parsePaginationParams('-5', undefined, options).offset).toBe(0);
+    expect(parsePaginationParams('999999999', undefined, options).offset).toBe(100_000);
+    expect(parsePaginationParams('abc', undefined, options).offset).toBeNull();
+  });
+
+  it('page-shaped slot (addresses transactions list): 1-based default, floors at 1, negatives are junk', () => {
+    const options = {
+      maxLimit: 50,
+      defaultOffset: 1,
+      minOffset: 1,
+      negativeOffset: 'reject',
+    } as const;
+
+    expect(parsePaginationParams(undefined, undefined, options)).toEqual({ offset: 1, limit: 20 });
+    expect(parsePaginationParams('0', undefined, options).offset).toBe(1);
+    expect(parsePaginationParams('2', '9999', options)).toEqual({ offset: 2, limit: 50 });
+    expect(parsePaginationParams('-5', undefined, options).offset).toBeNull();
+    expect(parsePaginationParams('abc', undefined, options).offset).toBeNull();
+  });
+
+  it('address export flavor: uncapped offset, negatives reject like other junk', () => {
+    const options = { negativeOffset: 'reject' } as const;
+
+    expect(parsePaginationParams('12', undefined, options).offset).toBe(12);
+    expect(parsePaginationParams('999999999999', undefined, options).offset).toBe(999999999999);
+    for (const junk of ['abc', '-5', '12abc', '1.5']) {
+      expect(parsePaginationParams(junk, undefined, options).offset, `offset=${junk}`).toBeNull();
+    }
+  });
+
+  it('internal-transactions flavor: default limit 50 with a clamping cap of 100', () => {
+    const options = { negativeOffset: 'reject', defaultLimit: 50, maxLimit: 100 } as const;
+
+    expect(parsePaginationParams(undefined, undefined, options)).toEqual({ offset: 0, limit: 50 });
+    expect(parsePaginationParams('200', '500', options)).toEqual({ offset: 200, limit: 100 });
+  });
+});
+
+describe('parseChainAndAddressParams — the neutral chain+address validator', () => {
+  const VALID_ADDRESS = '0x1234567890abcdef1234567890abcdef12345678';
+
+  it('valid params return the chain id and the lowercased address', () => {
+    expect(parseChainAndAddressParams('1', VALID_ADDRESS)).toEqual({
+      chainId: 1,
+      address: VALID_ADDRESS,
+    });
+
+    // Checksummed input still stores lowercase (C-3).
+    const checksummed = getAddress(VALID_ADDRESS);
+    expect(parseChainAndAddressParams('137', checksummed)).toEqual({
+      chainId: 137,
+      address: checksummed.toLowerCase(),
+    });
+  });
+
+  it('reports the chain error first when both params are invalid', () => {
+    expect(parseChainAndAddressParams('abc', 'notanaddress')).toEqual({
+      error: 'invalid_chain_id',
+      message: 'Invalid chain ID',
+    });
+  });
+
+  it('rejects a malformed or unsupported chain id on its own', () => {
+    expect(parseChainAndAddressParams('1abc', VALID_ADDRESS)).toEqual({
+      error: 'invalid_chain_id',
+      message: 'Invalid chain ID',
+    });
+    // Outside viem's entire registry — the reliable "unsupported" case.
+    expect(parseChainAndAddressParams('424242424242424', VALID_ADDRESS)).toEqual({
+      error: 'unsupported_chain',
+      message: 'Unsupported chain',
+    });
+  });
+
+  it('rejects a shape-invalid address with the format message', () => {
+    expect(parseChainAndAddressParams('1', 'notanaddress')).toEqual({
+      error: 'invalid_address_format',
+      message: 'Invalid address format',
+    });
+  });
+
+  it('rejects a checksum-mismatched mixed-case address', () => {
+    // Build the mismatch from the canonical form: flipping one body
+    // letter's case keeps the string mixed-case (so the checksum tier,
+    // not the shape tier, fires) but guarantees the EIP-55 mismatch.
+    const checksummed = getAddress('0xd8da6bf26964af9d7eed9e03e53415d37aa96045');
+    const flipIndex = [...checksummed].findIndex((ch, i) => i >= 2 && /[a-f]/.test(ch));
+    expect(flipIndex).toBeGreaterThanOrEqual(0);
+    const corrupted =
+      checksummed.slice(0, flipIndex) +
+      checksummed.slice(flipIndex, flipIndex + 1).toUpperCase() +
+      checksummed.slice(flipIndex + 1);
+
+    expect(parseChainAndAddressParams('1', corrupted)).toEqual({
+      error: 'invalid_address_checksum',
+      message: 'Invalid address checksum',
+    });
   });
 });
 

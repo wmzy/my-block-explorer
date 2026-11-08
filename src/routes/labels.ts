@@ -14,11 +14,10 @@
 // body validation fails loudly with 400 'invalid_label' instead of silently
 // coercing garbage into the user's notes.
 import { Hono } from 'hono';
-import { HTTPException } from 'hono/http-exception';
 import { and, eq, sql } from 'drizzle-orm';
 import { db, addressLabels } from '../database/init';
 import { createLogger } from '../server/logger';
-import { getValidatedAddress, getValidatedChainId } from '../server/validation';
+import { parseChainAndAddressParams } from '../utils/validation';
 import { requireAdminTokenIfConfigured } from '../middleware/admin-token';
 import { createRateLimiter } from '../middleware/rate-limit';
 
@@ -29,25 +28,17 @@ const app = new Hono();
 const LABEL_MAX_LENGTH = 64;
 const NOTE_MAX_LENGTH = 500;
 
-// Same validation channel as the events routes (getValidatedAddress: shape
-// tier, then EIP-55 checksum for mixed-case input), with the HTTPException
-// converted into this file's JSON error shape instead of escaping as Hono's
-// plain-text exception response. Storage keys stay lowercase (C-3).
+// Same validation channel as the events routes (the shared two-tier
+// address verdict: shape tier, then EIP-55 checksum for mixed-case
+// input), mapped onto this file's JSON error shape via the neutral
+// parseChainAndAddressParams. Storage keys stay lowercase (C-3).
 const parseChainAndAddress = (
   chainIdStr: string,
   addressStr: string,
 ): { chainId: number; address: `0x${string}` } | { error: string; message: string } => {
-  try {
-    const chainId = getValidatedChainId(chainIdStr);
-    const address = getValidatedAddress(addressStr).toLowerCase() as `0x${string}`;
-    return { chainId, address };
-  } catch (error) {
-    return {
-      error: 'invalid_request',
-      message:
-        error instanceof HTTPException ? error.message : 'Chain ID and address must be valid',
-    };
-  }
+  const parsed = parseChainAndAddressParams(chainIdStr, addressStr);
+  if ('error' in parsed) return { error: 'invalid_request', message: parsed.message };
+  return parsed;
 };
 
 // PUT body validation: { label: 1-64 chars after trim, note?: <=500 chars }.

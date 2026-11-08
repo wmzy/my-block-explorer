@@ -60,10 +60,14 @@ vi.mock('@/config/chains', () => ({
   getSortedChains: () => [{ id: 1, name: 'Ethereum' }],
 }));
 
-vi.mock('@/utils/format', () => ({
-  formatNumber: (n: number) => n.toLocaleString(),
-  formatRelativeTime: () => '2 min ago',
-}));
+vi.mock('@/utils/format', async importOriginal => {
+  const actual = await importOriginal<typeof import('@/utils/format')>();
+  return {
+    ...actual,
+    formatNumber: (n: number) => n.toLocaleString(),
+    formatRelativeTime: () => '2 min ago',
+  };
+});
 
 const mockUseLatestBlocks = vi.fn<(...args: unknown[]) => Record<string, unknown>>();
 vi.mock('@/services/chainRpc', () => ({

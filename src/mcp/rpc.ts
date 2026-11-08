@@ -2,17 +2,21 @@
 // client, mirroring the browser's URL precedence (backend-stored user
 // rpc-config first, then a user-registered custom chain's url, then the
 // viem default) WITHOUT ever touching DuckDB — configs and custom chains
-// are fetched from the open REST endpoints and cached briefly. When the
-// backend is down, built-in chains still work over viem defaults (RPC
-// reads need no backend); chain ids viem does not ship do not.
+// are fetched from the open REST endpoints and cached briefly. Fetched
+// registrations are mirrored into the runtime chain registry
+// (config/customChains), so chain METADATA precedence (custom over
+// builtin) resolves through the one shared getChainInfo, exactly like
+// the backend's RpcManager and the browser. When the backend is down,
+// built-in chains still work over viem defaults (RPC reads need no
+// backend); chain ids viem does not ship do not.
 //
 // All viem generic-heavy calls live behind this facade so the tool layer
 // depends on a small structural interface (RpcReader) that tests can stub
 // without a network.
 
 import { createPublicClient, http, toHex, type Abi, type AbiFunction, type Address, type Chain, type PublicClient } from 'viem';
-import { getBuiltInChainInfo } from '@/config/chains';
-import { toViemChain, type CustomChain } from '@/config/customChains';
+import { getChainInfo } from '@/config/chains';
+import { listCustomChainIds, registerCustomChain, removeCustomChain, type CustomChain } from '@/config/customChains';
 import type { ExplorerApi } from './rest';
 
 export type BlockTag = 'latest' | 'earliest' | 'pending' | 'safe' | 'finalized';
@@ -125,6 +129,19 @@ export class RpcGateway implements RpcReader {
           });
         }
       }
+      // Mirror the fetched registrations into the runtime registry
+      // (config/customChains — the SAME fallback layer getChainInfo
+      // resolves through), exactly the way the backend's RpcManager and
+      // the browser's services/customChains do. Custom→builtin chain
+      // precedence therefore lives in ONE place (getChainInfo); the
+      // registry is reconciled against the table so deleted rows drop
+      // out here too.
+      for (const custom of customMap.values()) {
+        registerCustomChain(custom);
+      }
+      for (const id of listCustomChainIds()) {
+        if (!customMap.has(id)) removeCustomChain(id);
+      }
       this.remote = { at: this.now(), configs: configMap, customs: customMap };
     })().finally(() => {
       this.loading = null;
@@ -135,28 +152,29 @@ export class RpcGateway implements RpcReader {
   async chainMeta(chainId: number): Promise<ChainMeta> {
     await this.refreshRemote();
     const configured = this.remote?.configs.get(chainId);
+    // Name/symbol resolution goes through the ONE shared custom→builtin
+    // resolver (getChainInfo): a registration may shadow viem's dev
+    // placeholders (the anvil 31337 family), and this MCP process mirrors
+    // the fetched registrations into that same registry on refresh. A
+    // user-config url on an id NO registry knows still answers (the Chain
+    // is optional for dialing), with an honest fallback name.
+    const chain = getChainInfo(chainId);
     if (configured) {
-      const builtin = getBuiltInChainInfo(chainId);
       return {
         chainId,
-        name: builtin?.name ?? this.remote?.customs.get(chainId)?.name ?? `chain ${chainId}`,
-        symbol: builtin?.nativeCurrency.symbol ?? this.remote?.customs.get(chainId)?.symbol ?? 'ETH',
+        name: chain?.name ?? `chain ${chainId}`,
+        symbol: chain?.nativeCurrency.symbol ?? 'ETH',
         rpcUrl: configured,
         rpcSource: 'user-config',
       };
     }
-    const custom = this.remote?.customs.get(chainId);
-    if (custom) {
-      return { chainId, name: custom.name, symbol: custom.symbol, rpcUrl: custom.rpcUrl, rpcSource: 'custom-chain' };
-    }
-    const builtin = getBuiltInChainInfo(chainId);
-    if (builtin) {
+    if (chain) {
       return {
         chainId,
-        name: builtin.name,
-        symbol: builtin.nativeCurrency.symbol,
-        rpcUrl: builtin.rpcUrls.default.http[0],
-        rpcSource: 'viem-default',
+        name: chain.name,
+        symbol: chain.nativeCurrency.symbol,
+        rpcUrl: chain.rpcUrls.default.http[0],
+        rpcSource: this.remote?.customs.get(chainId) !== undefined ? 'custom-chain' : 'viem-default',
       };
     }
     throw new Error(
@@ -170,7 +188,11 @@ export class RpcGateway implements RpcReader {
     const meta = await this.chainMeta(chainId);
     const cacheKey = `${chainId}:${meta.rpcUrl}`;
     const cached = this.clients.get(cacheKey);
-    const chain = getBuiltInChainInfo(chainId) ?? chainFromCustom(this.remote?.customs.get(chainId));
+    // Same shared resolver as chainMeta: registrations shadow viem's dev
+    // placeholders; a Chain is optional for the actions used here, so
+    // unknown ids with only a user-config url still get a working
+    // transport.
+    const chain = getChainInfo(chainId) ?? undefined;
     if (cached) return { client: cached, chain };
     const client = createPublicClient({
       // A Chain is optional for the actions used here; unknown ids with
@@ -266,8 +288,4 @@ export class RpcGateway implements RpcReader {
       ...block,
     });
   }
-}
-
-function chainFromCustom(custom: CustomChain | undefined): Chain | undefined {
-  return custom === undefined ? undefined : toViemChain(custom);
 }

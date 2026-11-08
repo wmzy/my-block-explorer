@@ -12,7 +12,7 @@ import { css } from '@linaria/core';
 import { TypedLink, useSearch, useSetSearch } from '@native-router/react';
 import { Alert } from 'haze-ui';
 import { getChainInfo, getChainSymbol } from '@/config/chains';
-import { formatFixedDecimals } from '@/utils/format';
+import { formatFixedDecimals, truncateMiddle } from '@/utils/format';
 import { createRpcClient } from '@/utils/realTimeData';
 import { normalizeCallTrace, isTraceUnsupportedError } from '@/utils/traceFormat';
 import {
@@ -155,7 +155,6 @@ const recordsErrorLine = css`
   font-size: var(--haze-text-xs);
 `;
 
-const formatAddr = (a: string) => `${a.slice(0, 8)}...${a.slice(-6)}`;
 const formatHash = (h: string) => `${h.slice(0, 10)}...${h.slice(-8)}`;
 
 // Same call-type palette as the Call Trace card: creations green,
@@ -460,14 +459,14 @@ export default function InternalTxns({
                   <td>
                     <CopyableHash
                       value={record.from}
-                      truncated={formatAddr(record.from)}
+                      truncated={truncateMiddle(record.from, 8, 6)}
                       href={`/chain/${chainId}/address/${record.from}`}
                     />
                   </td>
                   <td>
                     <CopyableHash
                       value={record.to}
-                      truncated={formatAddr(record.to)}
+                      truncated={truncateMiddle(record.to, 8, 6)}
                       href={`/chain/${chainId}/address/${record.to}`}
                     />
                   </td>
@@ -582,7 +581,7 @@ export default function InternalTxns({
                           {row.from !== null ? (
                             <CopyableHash
                               value={row.from}
-                              truncated={formatAddr(row.from)}
+                              truncated={truncateMiddle(row.from, 8, 6)}
                               href={`/chain/${chainId}/address/${row.from}`}
                             />
                           ) : (
@@ -593,7 +592,7 @@ export default function InternalTxns({
                           {row.to !== null ? (
                             <CopyableHash
                               value={row.to}
-                              truncated={formatAddr(row.to)}
+                              truncated={truncateMiddle(row.to, 8, 6)}
                               href={`/chain/${chainId}/address/${row.to}`}
                             />
                           ) : (

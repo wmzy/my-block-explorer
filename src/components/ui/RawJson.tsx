@@ -3,7 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 
 import { Card, CardHeader, CardTitle } from './Card';
 import { ErrorState } from './ErrorState';
-import { copyText } from '@/util/clipboard';
+import { useCopyFeedback } from '@/util/useCopyFeedback';
+import { useLazyExpand } from '@/util/useLazyExpand';
 
 // One raw-RPC payload section of the Raw JSON card. `load` receives the
 // section's abort signal so a collapse mid-flight cancels the request;
@@ -35,9 +36,9 @@ type RawJsonProps = {
 
 // The clickable header row: full-width toggle with the Collapsible card's
 // affordances (role=button, keyboard, rotating chevron). Built on Card
-// primitives instead of the Collapsible component because the fetches must
-// fire on the FIRST expand only — semantics Collapsible's internal state
-// cannot signal outward (same reason CallTraceCard rolls its own).
+// primitives with the shared lazy-expand machine (util/useLazyExpand)
+// because the section fetches must fire on the FIRST expand only —
+// semantics a plain Collapsible's internal state cannot signal outward.
 const headerToggleStyle = css`
   display: flex;
   align-items: center;
@@ -151,25 +152,10 @@ const errorMessage = (error: unknown): string =>
 // (SourceCodeViewer/CustomAbiPanel): the button itself reports success or
 // failure — the honest outcome of the clipboard call, never a guess.
 function CopyButton({ text }: { text: string }) {
-  const [result, setResult] = useState<'idle' | 'ok' | 'fail'>('idle');
-  const timerRef = useRef<number | undefined>(undefined);
-
-  useEffect(() => {
-    return () => {
-      if (timerRef.current !== undefined) window.clearTimeout(timerRef.current);
-    };
-  }, []);
-
-  const handleCopy = async () => {
-    // Shared copyText: async Clipboard API with the legacy execCommand
-    // fallback (insecure contexts); the label reports the honest outcome.
-    setResult((await copyText(text)) ? 'ok' : 'fail');
-    if (timerRef.current !== undefined) window.clearTimeout(timerRef.current);
-    timerRef.current = window.setTimeout(() => setResult('idle'), 2000);
-  };
+  const { state: result, copy } = useCopyFeedback();
 
   return (
-    <button type="button" className={copyButtonStyle} onClick={() => void handleCopy()}>
+    <button type="button" className={copyButtonStyle} onClick={() => void copy(text)}>
       {result === 'ok' ? 'Copied ✓' : result === 'fail' ? 'Copy failed' : 'Copy'}
     </button>
   );
@@ -264,29 +250,12 @@ function RawJsonSection({ label, load, note, active }: RawJsonSectionProps) {
 // across collapse/expand; each failure degrades to its own retryable
 // error, never affecting siblings or the page.
 export function RawJsonCard({ title, fetchers, identity }: RawJsonProps) {
-  const [expanded, setExpanded] = useState(false);
-
-  // The detail routes reuse this card across transactions/blocks, so the
-  // expanded flag and every section's settled latch describe ONE entity.
-  // Adjusting state during render (React's documented props-change pattern)
-  // keeps the previous entity's payload off the screen; the identity in the
-  // section keys below remounts the sections so their latches reset too.
-  const identityRef = useRef(identity);
-  if (identityRef.current !== identity) {
-    identityRef.current = identity;
-    setExpanded(false);
-  }
-
-  const handleToggle = () => {
-    setExpanded(prev => !prev);
-  };
-
-  const handleKeyDown = (event: React.KeyboardEvent) => {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      handleToggle();
-    }
-  };
+  // Lazy-expand machine (util/useLazyExpand): the toggle plus the
+  // route-change reset — the tx and block routes reuse this card across
+  // entities, and the expanded flag must belong to exactly ONE. The
+  // sections themselves remount through the identity in their keys below,
+  // which resets their own settled latches.
+  const { expanded, toggle: handleToggle, handleKeyDown } = useLazyExpand(identity);
 
   return (
     <Card>

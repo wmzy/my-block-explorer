@@ -26,6 +26,9 @@
 // (util/storageKeys.ts) — the same literals the owners write and the
 // export side scans with, so the three sides cannot drift apart.
 import { WATCHLIST_MAX_ENTRIES } from '@/util/watchlist';
+// Address shape (0x + 40 hex chars) — the canonical regex from
+// utils/address.ts, the same shape tier every address surface uses.
+import { HEX_ADDRESS_RE } from '@/utils/address';
 import {
   CUSTOM_ABI_KEY_RE,
   IPFS_GATEWAY_STORAGE_KEY,
@@ -56,9 +59,6 @@ const SUPPORTED_BACKUP_VERSIONS: readonly number[] = [1, 2];
 // per-label 400s mid-restore.
 const LABEL_MAX_LENGTH = 64;
 const NOTE_MAX_LENGTH = 500;
-
-// 0x + 40 hex chars — the same shape tier every address surface uses.
-export const HEX_ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
 
 /** One address-label row exactly as GET /api/labels serves it. */
 export type BackupLabelRow = {

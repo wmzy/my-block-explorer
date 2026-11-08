@@ -18,7 +18,17 @@
 // (a 0-decimal token, where the in-repo formatFixed's `10n ** negative`
 // would throw).
 import { describe, it, expect } from 'vitest';
-import { formatEth, formatFixedDecimals, formatTokenAmount, formatValue } from '@/utils/format';
+import {
+  formatAddress,
+  formatBigInt,
+  formatEth,
+  formatFixedDecimals,
+  formatHash,
+  formatNativeDisplay,
+  formatTokenAmount,
+  formatValue,
+  truncateMiddle,
+} from '@/utils/format';
 import { formatValueByUnit } from '@/util/units';
 
 const ONE_ETH = 10n ** 18n;
@@ -115,5 +125,103 @@ describe('formatEth/formatFixedDecimals precision guards', () => {
     // Negative display precision is nonsense input; the clamp reads it
     // as zero displayed digits rather than throwing.
     expect(formatEth(ONE_ETH, -1)).toBe('1');
+  });
+});
+
+describe('truncateMiddle — the one truncation primitive', () => {
+  const ADDR = '0x1234567890abcdef1234567890abcdef12345678';
+
+  it('keeps a 8/6 budget byte-identical to the old list-cell slices', () => {
+    expect(truncateMiddle(ADDR, 8, 6)).toBe(`${ADDR.slice(0, 8)}...${ADDR.slice(-6)}`);
+  });
+
+  it('returns the empty string for empty input (never a bare ellipsis)', () => {
+    expect(truncateMiddle('', 8, 6)).toBe('');
+  });
+
+  it('returns short input unchanged — an ellipsis must shorten, not pad', () => {
+    // Shorter than lead+tail: slicing would duplicate characters.
+    expect(truncateMiddle('0x1234', 8, 6)).toBe('0x1234');
+    // Exactly lead+tail: truncation would keep every character.
+    expect(truncateMiddle('0x12345678', 8, 6)).toBe('0x12345678');
+  });
+
+  it('pins the exact boundary: unchanged at lead+tail+3, cut at +4', () => {
+    const at = 'a'.repeat(8 + 6 + 3);
+    const past = 'a'.repeat(8 + 6 + 4);
+    expect(truncateMiddle(at, 8, 6)).toBe(at);
+    expect(truncateMiddle(past, 8, 6)).toBe('aaaaaaaa...aaaaaa');
+  });
+
+  it('backs formatAddress/formatHash with their own stronger guards', () => {
+    // formatAddress's head includes 0x (length counts body hex chars).
+    expect(formatAddress(ADDR)).toBe(truncateMiddle(ADDR, 8, 6));
+    expect(formatHash(`0x${'ab'.repeat(32)}`)).toBe('0xabababab...abababab');
+  });
+});
+
+describe('formatBigInt — exact grouping without Number coercion', () => {
+  it('groups realistic gas magnitudes like the old en-US toLocaleString', () => {
+    expect(formatBigInt(0n)).toBe('0');
+    expect(formatBigInt(30_000_000n)).toBe('30,000,000');
+    expect(formatBigInt(1_234_567n)).toBe('1,234,567');
+  });
+
+  it('stays exact past 2^53, where Number(x) rounds', () => {
+    const n = 2n ** 60n + 1n; // Number() of this renders ...976, not ...977
+    expect(String(Number(n))).toBe(String(Number(2n ** 60n))); // the coercion really is lossy
+    expect(formatBigInt(n)).toBe('1,152,921,504,606,846,977');
+    expect(formatBigInt(10n ** 21n + 1n)).toBe('1,000,000,000,000,000,000,001');
+  });
+
+  it('groups negatives without a comma after the sign', () => {
+    expect(formatBigInt(-1234567n)).toBe('-1,234,567');
+  });
+});
+
+describe('formatNativeDisplay — decimals-generic native amounts', () => {
+  it('trims the exact fraction (\'trim\', no symbol)', () => {
+    expect(formatNativeDisplay(15n * 10n ** 17n, 18)).toBe('1.5');
+    expect(formatNativeDisplay(1n, 18, { floor: false })).toBe('0.000000000000000001');
+    expect(formatNativeDisplay(1_234_567n, 6, { floor: false })).toBe('1.234567');
+    expect(formatNativeDisplay(5_000_000n, 6)).toBe('5');
+  });
+
+  it('renders the sub-floor cutoff only below 10^(decimals-4)', () => {
+    expect(formatNativeDisplay(10n ** 14n, 18, { symbol: 'ETH' })).toBe('0.0001 ETH');
+    expect(formatNativeDisplay(10n ** 14n - 1n, 18, { symbol: 'ETH' })).toBe('<0.0001 ETH');
+    expect(formatNativeDisplay(1n, 6, { symbol: 'XTC' })).toBe('<0.0001 XTC');
+    // floor: false keeps the exact chart-label value.
+    expect(formatNativeDisplay(1n, 18, { floor: false })).toBe('0.000000000000000001');
+  });
+
+  it('renders zero exactly and appends the optional symbol', () => {
+    expect(formatNativeDisplay(0n, 18)).toBe('0');
+    expect(formatNativeDisplay(0n, 18, { symbol: 'ETH' })).toBe('0 ETH');
+  });
+
+  it('keeps the summary-total contract (\'fixed4\' + grouped, truncating)', () => {
+    expect(formatNativeDisplay(15n * 10n ** 17n, 18, { symbol: 'ETH', fraction: 'fixed4', grouped: true })).toBe('1.5000 ETH');
+    // 1234.56789012… truncated (not rounded) at the 4th digit.
+    expect(
+      formatNativeDisplay(1_234_567_890_123_456_789_000n, 18, {
+        symbol: 'ETH',
+        fraction: 'fixed4',
+        grouped: true,
+      }),
+    ).toBe('1,234.5678 ETH');
+    expect(
+      formatNativeDisplay(12_500_000n, 6, { symbol: 'POL', fraction: 'fixed4', grouped: true }),
+    ).toBe('12.5000 POL');
+  });
+
+  it('keeps the tx-surface contract (\'round4\', half-up like formatValue)', () => {
+    // 0.00015 ETH half-up at 4 digits is 0.0002; truncation would say 0.0001.
+    expect(formatNativeDisplay(15n * 10n ** 13n, 18, { symbol: 'ETH', fraction: 'round4' })).toBe(
+      '0.0002 ETH',
+    );
+    expect(formatNativeDisplay(15n * 10n ** 17n, 18, { symbol: 'ETH', fraction: 'round4' })).toBe(
+      '1.5000 ETH',
+    );
   });
 });

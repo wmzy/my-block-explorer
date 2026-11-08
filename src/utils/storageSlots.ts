@@ -23,6 +23,7 @@
 
 import { concat, hexToBigInt, hexToNumber, keccak256, pad, slice, toHex } from 'viem';
 import type { Hex } from 'viem';
+import { HEX_ADDRESS_RE } from './address';
 
 export type KeyFamily = 'uint' | 'int' | 'bool' | 'address' | 'bytes' | 'string' | 'unsupported';
 
@@ -99,7 +100,7 @@ export function validateMappingKey(key: string, keyTypeLabel: string): string | 
         ? null
         : 'Expected true/false';
     case 'address':
-      return /^0x[0-9a-fA-F]{40}$/.test(trimmed) ? null : 'Invalid address';
+      return HEX_ADDRESS_RE.test(trimmed) ? null : 'Invalid address';
     case 'bytes': {
       if (!/^0x[0-9a-fA-F]*$/.test(trimmed) || trimmed.length % 2 !== 0) {
         return 'Invalid hex';

@@ -134,26 +134,6 @@ export class LRUCache<K, V> {
   }
 
   /**
-   * Get cache statistics
-   */
-  getStats(): {
-    size: number;
-    maxSize: number;
-    hitRate: number;
-  } {
-    let totalAccess = 0;
-    for (const entry of this.cache.values()) {
-      totalAccess += entry.accessCount;
-    }
-
-    return {
-      size: this.cache.size,
-      maxSize: this.maxSize,
-      hitRate: totalAccess > 0 ? this.cache.size / totalAccess : 0,
-    };
-  }
-
-  /**
    * Evict the least-used entry
    */
   private evictLeastUsed(): void {
@@ -176,85 +156,8 @@ export class LRUCache<K, V> {
   }
 }
 
-/**
- * Cache manager
- */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type AnyCache = LRUCache<any, any>;
-
-export class CacheManager {
-  private caches = new Map<string, AnyCache>();
-
-  /**
-   * Get or create a cache instance
-   */
-  getCache<K, V>(name: string, options?: CacheOptions): LRUCache<K, V> {
-    if (!this.caches.has(name)) {
-      const defaultOptions: CacheOptions = {
-        ttl: 5 * 60 * 1000, // 5-minute default TTL
-        maxSize: 1000,
-      };
-      this.caches.set(name, new LRUCache({ ...defaultOptions, ...options }));
-    }
-    return this.caches.get(name)!;
-  }
-
-  /**
-   * Clean up expired entries in all caches
-   */
-  cleanupAll(): void {
-    for (const cache of this.caches.values()) {
-      cache.cleanup();
-    }
-  }
-
-  /**
-   * Get statistics for all caches
-   */
-  getAllStats(): Record<string, unknown> {
-    const stats: Record<string, unknown> = {};
-    for (const [name, cache] of this.caches.entries()) {
-      stats[name] = cache.getStats();
-    }
-    return stats;
-  }
-
-  /**
-   * Clear all caches
-   */
-  clearAll(): void {
-    for (const cache of this.caches.values()) {
-      cache.clear();
-    }
-  }
-}
-
-// Global cache manager instance
-export const cacheManager = new CacheManager();
-
-// Predefined cache instances
-export const blockCache = cacheManager.getCache('blocks', {
+// Block cache used by BlockService (30s TTL matches the RPC freshness window)
+export const blockCache = new LRUCache({
   ttl: 30 * 1000, // 30 seconds
   maxSize: 500,
 });
-
-export const transactionCache = cacheManager.getCache('transactions', {
-  ttl: 60 * 1000, // 1 minute
-  maxSize: 1000,
-});
-
-export const searchCache = cacheManager.getCache('search', {
-  ttl: 5 * 60 * 1000, // 5 minutes
-  maxSize: 200,
-});
-
-// Periodically clean up expired cache entries
-const cleanupTimer: ReturnType<typeof setInterval> = setInterval(() => {
-  cacheManager.cleanupAll();
-}, 60 * 1000); // clean up once per minute
-// Allow the process to exit even if this timer is still running (same
-// convention as the WatchService and DuckDB adapter timers); browsers have
-// no unref and simply keep the interval.
-if (cleanupTimer.unref) {
-  cleanupTimer.unref();
-}

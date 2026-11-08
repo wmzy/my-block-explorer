@@ -6,6 +6,7 @@
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { getAddress } from 'viem';
 import { createExplorerMcpServer } from '@/mcp/server';
 import { ExplorerApi } from '@/mcp/rest';
 import type { ChainMeta, RpcReader } from '@/mcp/rpc';
@@ -186,6 +187,51 @@ describe('MCP server over the real protocol path', () => {
     });
     expect(textOf(result)).toContain('"classification": "eip-7702-delegated"');
     expect(textOf(result).toLowerCase()).toContain(delegate.toLowerCase());
+  });
+
+  it('rejects a wrong-checksum address with the checksummed retry form, but serves lowercase input', async () => {
+    // The address tools used to cast `address as Address` unguarded, so a
+    // mixed-case address with a broken EIP-55 checksum was silently
+    // checksum-corrected and queried. Now every address param runs the
+    // shared two-tier guard (utils/address.ts) and surfaces a thrown
+    // caller-ready Error as an isError result.
+    stubFetch(() => null);
+    const handle = await connect(stubRpc());
+    restoreClose = handle.close;
+    const lower = '0x5aaeb6053f3e94c9b9a09f33669495e3474963fe';
+    const checksummed = getAddress(lower);
+    // Uppercase one body position the checksum renders lowercase.
+    let bad = '';
+    for (let i = 2; i < checksummed.length; i++) {
+      if (/[a-f]/.test(checksummed[i])) {
+        bad = lower.slice(0, i) + lower[i].toUpperCase() + lower.slice(i + 1);
+        break;
+      }
+    }
+    expect(bad).not.toBe('');
+    const rejected = await handle.client.callTool({
+      name: 'get_address_overview',
+      arguments: { chainId: 1, address: bad },
+    });
+    expect(rejected.isError).toBe(true);
+    expect(textOf(rejected)).toContain('Invalid address');
+    expect(textOf(rejected)).toContain('EIP-55');
+    expect(textOf(rejected)).toContain(checksummed);
+
+    // Shape tier: not even hex-shaped input gets a retry suggestion.
+    const malformed = await handle.client.callTool({
+      name: 'get_storage_at',
+      arguments: { chainId: 1, address: 'not-an-address', slot: '0' },
+    });
+    expect(malformed.isError).toBe(true);
+    expect(textOf(malformed)).toContain('40 hex');
+
+    // The checksum-less lowercase convention still succeeds.
+    const served = await handle.client.callTool({
+      name: 'get_address_overview',
+      arguments: { chainId: 1, address: lower },
+    });
+    expect(served.isError).toBeFalsy();
   });
 
   it('get_transaction fails honestly when the RPC does not know the hash', async () => {

@@ -11,12 +11,12 @@ import { join } from 'node:path';
 import {
   collectTargetStats,
   defaultProbePorts,
-  formatBytes,
   probeRunningServers,
   removeTargets,
   resolveUninstallTargets,
   runUninstall,
 } from '@/uninstall';
+import { formatFileSize } from '@/utils/format';
 
 async function makeDataDir(root: string): Promise<void> {
   await mkdir(join(root, 'data', 'chains', 'mainnet'), { recursive: true });
@@ -316,11 +316,16 @@ describe('runUninstall decision flow', () => {
   });
 });
 
-describe('formatBytes', () => {
-  it('formats the CLI summary units', () => {
-    expect(formatBytes(0)).toBe('0 B');
-    expect(formatBytes(512)).toBe('512 B');
-    expect(formatBytes(2048)).toBe('2.0 KB');
-    expect(formatBytes(15 * 1024 * 1024)).toBe('15.0 MB');
+describe('uninstall byte formatting', () => {
+  it('formats the CLI summary units via the shared formatFileSize', () => {
+    // The shared formatter (same one the in-app ops card and
+    // services/selfDestruct.ts show): 2-decimal units, "Bytes" spelled
+    // out, PB-extending, NaN/negative guarded.
+    expect(formatFileSize(0)).toBe('0 Bytes');
+    expect(formatFileSize(512)).toBe('512 Bytes');
+    expect(formatFileSize(2048)).toBe('2 KB');
+    expect(formatFileSize(15 * 1024 * 1024)).toBe('15 MB');
+    expect(formatFileSize(2.5 * 1024 ** 5)).toBe('2.5 PB');
+    expect(formatFileSize(Number.NaN)).toBe('—');
   });
 });

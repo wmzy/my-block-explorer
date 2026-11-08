@@ -10,6 +10,7 @@
 // views/Home/Watchlist.tsx — there deliberately is no background service.
 import { getAddress } from 'viem';
 import { checkAddressValidity } from '@/views/Address/addressValidity';
+import { HEX_ADDRESS_RE } from '@/utils/address';
 import { WATCHLIST_STORAGE_KEY } from '@/util/storageKeys';
 
 // Canonical literal lives in the manifest (util/storageKeys.ts);
@@ -17,10 +18,6 @@ import { WATCHLIST_STORAGE_KEY } from '@/util/storageKeys';
 export { WATCHLIST_STORAGE_KEY };
 
 export const WATCHLIST_MAX_ENTRIES = 25;
-
-// Shape both the writer guarantees and the reader re-verifies (storage is
-// user-editable; a hand-corrupted key must degrade, not crash the page).
-const HEX_ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
 
 export type WatchlistAddRejection =
   | 'format' // not 0x + 40 hex chars

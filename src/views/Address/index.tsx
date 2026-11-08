@@ -87,7 +87,7 @@ import { knownTokensForChain } from '@/config/knownTokens';
 import { useKnownTokenBalances } from '@/services/knownTokenBalances';
 import { createRpcClient } from '@/utils/realTimeData';
 import { useEnsName } from '@/services/ens';
-import { formatFixedDecimals, formatRelativeTime } from '@/utils/format';
+import { formatNativeDisplay, formatRelativeTime, truncateMiddle } from '@/utils/format';
 import { getExternalToolLinks } from '@/config/externalTools';
 import { redirectReplace } from '@/views/Home/Landing';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
@@ -1718,7 +1718,9 @@ export default function Address() {
   const directionVariant = { in: 'success', out: 'error', self: 'info' } as const;
   const directionLabel = { in: 'IN', out: 'OUT', self: 'SELF' } as const;
 
-  const formatAddr = (a: string) => (a ? `${a.slice(0, 8)}...${a.slice(-6)}` : 'N/A');
+  // Address-cell text: the shared 8/6 middle truncation, with the lists'
+  // 'N/A' fallback for a blank cell.
+  const addressCell = (a: string) => (a ? truncateMiddle(a, 8, 6) : 'N/A');
   const formatHash = (h: string) => (h ? `${h.slice(0, 10)}...${h.slice(-8)}` : '');
 
   // BigInt-safe block number display; falls back to the raw string when a
@@ -1735,17 +1737,14 @@ export default function Address() {
     const symbol = getChainSymbol(currentChainId);
     try {
       // BigInt-safe wei → whole-token conversion honoring the chain's
-      // native-currency decimals (most are 18). The old
-      // `Number(formatUnits(...)).toFixed(4)` round-tripped through a
+      // native-currency decimals (most are 18), on the shared native
+      // display formatter's 'round4' contract — the same fixed-4,
+      // half-up display the mined-tx surfaces (formatValue) use. The
+      // old `Number(formatUnits(...)).toFixed(4)` round-tripped through a
       // double, so distinct values past 2^53 whole units collapsed onto
       // one figure and larger ones printed as "1e+21".
       const decimals = chainInfo?.nativeCurrency.decimals ?? 18;
-      const wei = BigInt(value);
-      if (wei === 0n) return `0 ${symbol}`;
-      const shown = formatFixedDecimals(wei, decimals, 4);
-      if (shown === null) return value;
-      if (/^0*\.?0*$/.test(shown)) return `<0.0001 ${symbol}`;
-      return `${shown} ${symbol}`;
+      return formatNativeDisplay(BigInt(value), decimals, { symbol, fraction: 'round4' });
     } catch {
       return value;
     }
@@ -2195,7 +2194,7 @@ export default function Address() {
                           to={`/chain/${currentChainId}/address/${persistent.contractCreator}`}
                           className={linkStyle}
                         >
-                          {formatAddr(persistent.contractCreator)}
+                          {addressCell(persistent.contractCreator)}
                         </TypedLink>
                       </InfoItem>
                     )}
@@ -2211,7 +2210,7 @@ export default function Address() {
                               to={`/chain/${currentChainId}/contract/${persistent.implementationAddress}`}
                               className={linkStyle}
                             >
-                              {formatAddr(persistent.implementationAddress)}
+                              {addressCell(persistent.implementationAddress)}
                             </TypedLink>
                           </InfoItem>
                         )}
@@ -2352,7 +2351,7 @@ export default function Address() {
                                   className={linkStyle}
                                   title={holder.address}
                                 >
-                                  {formatAddr(holder.address)}
+                                  {addressCell(holder.address)}
                                 </TypedLink>
                                 <span>
                                   {tokenDecimals !== null
@@ -2724,14 +2723,14 @@ export default function Address() {
                                     <td>
                                       <CopyableHash
                                         value={tx.fromAddress}
-                                        truncated={formatAddr(tx.fromAddress)}
+                                        truncated={addressCell(tx.fromAddress)}
                                         href={`/chain/${currentChainId}/address/${tx.fromAddress}`}
                                       />
                                     </td>
                                     <td>
                                       <CopyableHash
                                         value={tx.toAddress}
-                                        truncated={formatAddr(tx.toAddress)}
+                                        truncated={addressCell(tx.toAddress)}
                                         href={`/chain/${currentChainId}/address/${tx.toAddress}`}
                                       />
                                     </td>

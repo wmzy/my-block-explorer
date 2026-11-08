@@ -29,9 +29,10 @@ vi.mock('@/config/chains', () => ({
   getChainSymbol: () => 'ETH',
 }));
 
-vi.mock('@/utils/format', () => ({
-  formatRelativeTime: () => '2 min ago',
-}));
+vi.mock('@/utils/format', async importOriginal => {
+  const actual = await importOriginal<typeof import('@/utils/format')>();
+  return { ...actual, formatRelativeTime: () => '2 min ago' };
+});
 
 type BlockHookResult = {
   data?: {

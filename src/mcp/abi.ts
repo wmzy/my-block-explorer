@@ -10,6 +10,7 @@
 // strings, so no comma-list/JSON-string grammar is needed here.
 
 import { parseAbiItem, type AbiFunction, type AbiParameter } from 'viem';
+import { HEX_ADDRESS_RE } from '@/utils/address';
 
 export class McpArgError extends Error {
   constructor(message: string) {
@@ -100,7 +101,7 @@ function elementTypeIsTuple(type: string): boolean {
 
 function coerceScalar(value: unknown, type: string, path: string): unknown {
   if (type === 'address') {
-    if (typeof value !== 'string' || !/^0x[0-9a-fA-F]{40}$/.test(value)) {
+    if (typeof value !== 'string' || !HEX_ADDRESS_RE.test(value)) {
       throw new McpArgError(`${path}: expected a 20-byte hex address, got ${preview(value)}`);
     }
     return value;

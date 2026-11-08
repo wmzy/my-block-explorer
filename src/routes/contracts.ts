@@ -6,7 +6,7 @@ const logger = createLogger('contracts-routes');
 import { contractInteractionService } from '../services/ContractInteractionService';
 import { getChainName } from '../config/chains';
 import { getValidatedChainId, getValidatedAddress } from '../server/validation';
-import { parseStrictInteger } from '../utils/validation';
+import { parsePaginationParams } from '../utils/validation';
 import { safeJsonResponse } from '../utils/serialization';
 import { createApiError, respondError } from '../utils/api-error';
 import { parseStateOverride, type StateOverride } from '../utils/stateOverride';
@@ -36,26 +36,8 @@ const app = new Hono();
 // deliberate deviation: an over-cap limit 400s instead of clamping — the
 // directory page always asks for its fixed page size, so anything above
 // the cap is a client bug worth surfacing, not silently shrinking.
-const parseContractsLimitParam = (raw: string | undefined): number | null => {
-  if (raw === undefined || raw === '') return CONTRACT_DIRECTORY_DEFAULT_LIMIT;
-  // Strict decimal parse: parseInt() accepted a valid prefix and ignored
-  // the rest, so `?limit=20abc` was served as limit 20 — the "silently
-  // paging" failure the comment above rules out.
-  const parsed = parseStrictInteger(raw);
-  if (parsed === null || parsed < 1) return null;
-  if (parsed > CONTRACT_DIRECTORY_MAX_LIMIT) return null;
-  return parsed;
-};
-
-const parseContractsOffsetParam = (raw: string | undefined): number | null => {
-  if (raw === undefined || raw === '') return 0;
-  // Strict decimal parse: parseInt() accepted a valid prefix and ignored
-  // the rest, so `?offset=5abc` was served as offset 5. A genuinely
-  // negative offset still clamps to 0 (documented policy).
-  const parsed = raw.startsWith('-') ? Number(raw) : parseStrictInteger(raw);
-  if (parsed === null || !Number.isSafeInteger(parsed)) return null;
-  return Math.min(Math.max(parsed, 0), CONTRACT_DIRECTORY_MAX_OFFSET);
-};
+// The bounds themselves come from SearchService (the query builder the
+// route feeds), the parsing from the shared parsePaginationParams.
 
 // Parses the optional eth_call-style stateOverride body field shared by
 // the simulate and estimate-gas endpoints (foundry parity). Absent →
@@ -112,7 +94,12 @@ const parseBodyValue = (raw: unknown): { ok: true; value?: bigint } | { ok: fals
 app.get('/chains/:chainId/contracts', async c => {
   const chainId = getValidatedChainId(c.req.param('chainId'));
 
-  const limit = parseContractsLimitParam(c.req.query('limit'));
+  const { offset, limit } = parsePaginationParams(c.req.query('offset'), c.req.query('limit'), {
+    maxOffset: CONTRACT_DIRECTORY_MAX_OFFSET,
+    maxLimit: CONTRACT_DIRECTORY_MAX_LIMIT,
+    defaultLimit: CONTRACT_DIRECTORY_DEFAULT_LIMIT,
+    limitOverCap: 'reject',
+  });
   if (limit === null) {
     return respondError(
       c,
@@ -122,7 +109,6 @@ app.get('/chains/:chainId/contracts', async c => {
     );
   }
 
-  const offset = parseContractsOffsetParam(c.req.query('offset'));
   if (offset === null) {
     return respondError(c, 400, 'invalid_offset', 'offset must be a non-negative integer');
   }

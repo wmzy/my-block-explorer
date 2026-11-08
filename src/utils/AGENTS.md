@@ -6,52 +6,69 @@ RPC data layer, formatting, caching, and error handling utilities.
 
 ```
 utils/
-├── realTimeData.ts           # Frontend RPC client factory + address data
-├── blockRpcData.ts           # Block/transaction RPC calls
-├── cache.ts                  # LRU cache + global instances
-├── format.ts                 # Value formatting (Eth, Gas, tokens)
-├── errorHandler.ts           # Error classes + withRetry decorator
-├── rpcErrorHandler.ts        # RPC error analysis
-├── rpcConfigService.ts       # RPC config management
-├── contractInteraction.ts    # Contract call utilities
-├── sorting-optimization.ts   # Large dataset sorting with caching (543 lines)
-├── event-search-optimization.ts # Search caching (519 lines)
-├── serialization.ts          # JSON serialization (BigInt handling)
-├── form-validation.ts        # Form validation utilities
-├── validation.ts             # Input validation
-├── address.ts                # Ethereum address utilities
-├── api-error.ts              # API error factory
-├── events.ts                 # Event utilities
-└── index.ts                  # Barrel export (incomplete!)
+├── realTimeData.ts        # Frontend RPC client factory (per-chain cache)
+├── blockRpcData.ts        # Block/transaction RPC reads
+├── format.ts              # Formatting: formatEth/formatGasPrice/formatNumber,
+│                          #   truncateMiddle, formatNativeDisplay, formatBigInt,
+│                          #   formatAddress/formatHash (middle truncation),
+│                          #   formatFileSize — import-free by design
+├── address.ts             # HEX_ADDRESS_RE, isAddressShape, addressVerdict
+│                          #   (two-tier shape→EIP-55), checksumAddress
+├── cache.ts               # LRU machinery + blockCache (its only instance)
+├── withTimeout.ts         # TimeoutError + withTimeout / withTimeoutOrNull
+├── ttlLruCache.ts         # createTtlLruCache (TTL + LRU, injectable clock)
+├── scanLadder.ts          # getLogs chunk-ladder constants + provider-ceiling
+│                          #   anti-oscillation memory (transfers+approvals)
+├── negativeCache.ts       # negativeEntryFresh (null fetchedAt = expired)
+├── jsonReplacer.ts        # import-free bigint JSON replacer (mcp + serialization)
+├── errorHandler.ts        # withRetry + unified retryability predicate
+├── rpcErrorHandler.ts     # analyzeRpcError (shares the retryability predicate)
+├── rpcReadRetry.ts        # withOneRetry (browser idempotent reads)
+├── providerErrors.ts      # isShrinkableProviderError etc.
+├── rpcConfigService.ts    # RPC config management (parseHexQuantity consumer)
+├── strictInteger.ts       # parseStrictInteger + parseHexQuantity (import-free leaf)
+├── fetchWithTimeout.ts    # AbortController-bounded fetch probe
+├── contractInteraction.ts # Contract call utilities (browser-side viem)
+├── sorting-optimization.ts# Large dataset sorting with caching
+├── serialization.ts       # JSON serialization (BigInt via jsonReplacer)
+├── validation.ts          # parsePaginationParams, parseChainAndAddressParams
+├── api-error.ts           # API error factory
+└── index.ts               # Barrel export
 ```
 
 ## WHERE TO LOOK
 
-| Task                      | File               | Key Export                                |
-| ------------------------- | ------------------ | ----------------------------------------- |
-| Create RPC client         | realTimeData.ts    | `createRpcClient()`                       |
-| Get address balance/nonce | realTimeData.ts    | `getRealTimeAddressData()`                |
-| Fetch blocks              | blockRpcData.ts    | `getLatestBlocks()`, `getBlockByNumber()` |
-| Fetch transactions        | blockRpcData.ts    | `getTransactionByHash()`                  |
-| Get cached data           | cache.ts           | `blockCache`, `searchCache`             |
-| Format values             | format.ts          | `formatEther()`, `formatGas()`            |
-| Retry logic               | errorHandler.ts    | `withRetry()`                             |
-| Analyze RPC errors        | rpcErrorHandler.ts | `analyzeRpcError()`                       |
+| Task                        | File               | Key Export                                |
+| --------------------------- | ------------------ | ----------------------------------------- |
+| Create RPC client           | realTimeData.ts    | `createRpcClient()`                       |
+| Get address balance/nonce   | realTimeData.ts    | `getRealTimeAddressData()`                |
+| Fetch blocks                | blockRpcData.ts    | `getLatestBlocks()`, `getBlockByNumber()` |
+| Get cached block data       | cache.ts           | `blockCache`                              |
+| Validate address (2-tier)   | address.ts         | `addressVerdict()`, `isAddressShape()`    |
+| Truncate address/hash       | format.ts          | `truncateMiddle()`, `formatAddress()`     |
+| Native amount display       | format.ts          | `formatNativeDisplay()`                   |
+| Timeout a promise           | withTimeout.ts     | `withTimeout()` / `withTimeoutOrNull()`   |
+| TTL cache                   | ttlLruCache.ts     | `createTtlLruCache()`                     |
+| Retry logic                 | errorHandler.ts    | `withRetry()`                             |
+| Analyze RPC errors          | rpcErrorHandler.ts | `analyzeRpcError()`                       |
 
 ## KEY PATTERNS
 
-### Singleton Caches
+### Shared scan machinery
 
-```typescript
-export const blockCache = new LRUCache(...);
-export const searchCache = new LRUCache(...);
-```
+TokenTransferService / ApprovalScanService / AddressService consume the SAME
+`scanLadder` constants, `withTimeout`, and `ttlLruCache` — never re-grow local
+copies (the 2026-11-08 review found the budget semantics had drifted between
+copies; `DEFAULT_MAX_SCAN_CALLS` counts ACTUAL getLogs dispatched).
 
-### Factory Functions
+### Canonical address semantics
 
-```typescript
-export const createRpcClient = async (chainId: number): Promise<PublicClient>
-```
+- `utils/format.ts formatAddress` = middle truncation (display).
+- `utils/address.ts checksumAddress` = EIP-55 checksumming (was `formatAddress`;
+  renamed because one name with two meanings leaked through the barrel).
+- `addressVerdict` = the two-tier verdict (shape → mixed-case checksum) used by
+  server validation (throw), SearchService (null), the Address page ({tier}),
+  and every MCP tool input.
 
 ### Retry Decorator
 
@@ -61,12 +78,12 @@ export const withRetry = async <T>(fn: () => Promise<T>, maxRetries = 3): Promis
 
 ## BARREL
 
-`index.ts` re-exports all util modules (3 cross-module name collisions are
+`index.ts` re-exports all util modules (2 cross-module name collisions are
 resolved with explicit re-exports that take precedence over ambiguous star
-exports: `formatAddress`→`format`, `isValidAddress`/`sanitizeInput`→
-`validation`). Deep imports remain canonical for call sites — the barrel is
-convenience surface, and `serialization.ts` pulls the pino logger through it
-(browser code should keep deep imports there).
+exports: `isValidAddress`/`sanitizeInput` → `validation`). Deep imports remain
+canonical for call sites — the barrel is convenience surface, and
+`serialization.ts` pulls the pino logger through it (browser code should keep
+deep imports there).
 
 ```typescript
 // Both work; deep imports are still the norm in call sites
@@ -76,8 +93,7 @@ import { createRpcClient } from '@/utils/realTimeData';
 
 ## NOTES
 
-- Two RPC client systems: `realTimeData.ts` (frontend), `rpcClient.ts` (simpler)
-- Duplicate functions: `formatAddress()` exists in both `address.ts` and
-  `format.ts`
-- Large files: `sorting-optimization.ts` (543 lines),
-  `event-search-optimization.ts` (519 lines)
+- `formatAddress` resolves to exactly ONE semantics repo-wide (format.ts
+  truncation); the checksum twin is `checksumAddress` in address.ts.
+- Dead-file discipline: `event-search-optimization.ts`, `form-validation.ts`
+  and the Dynamic form components were deleted 2026-11-08 (zero importers).

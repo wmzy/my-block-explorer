@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { css, cx } from '@linaria/core';
 
 import { SourceCodeViewer } from '@/components/SourceCodeViewer';
-import { copyText } from '@/util/clipboard';
+import { useCopyFeedback } from '@/util/useCopyFeedback';
 import {
   ABI_CATEGORY_ORDER,
   abiEntryKey,
@@ -337,14 +337,7 @@ export function AbiListPanel({
   const [category, setCategory] = useState<AbiCategory | 'all'>('all');
   const [filter, setFilter] = useState('');
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set<string>());
-  const [copyState, setCopyState] = useState<'idle' | 'ok' | 'failed'>('idle');
-  const copyTimerRef = useRef<number | undefined>(undefined);
-
-  useEffect(() => {
-    return () => {
-      if (copyTimerRef.current !== undefined) window.clearTimeout(copyTimerRef.current);
-    };
-  }, []);
+  const { state: copyState, copy } = useCopyFeedback();
 
   const entries = useMemo(() => {
     const rows: readonly unknown[] = Array.isArray(abi) ? abi : [];
@@ -414,17 +407,12 @@ export function AbiListPanel({
     });
   };
 
-  const handleCopy = async () => {
-    const ok = await copyText(buildAbiCopy(selected, entries));
-    setCopyState(ok ? 'ok' : 'failed');
-    if (copyTimerRef.current !== undefined) window.clearTimeout(copyTimerRef.current);
-    copyTimerRef.current = window.setTimeout(() => setCopyState('idle'), 2000);
-  };
+  const handleCopy = () => void copy(buildAbiCopy(selected, entries));
 
   const copyLabel =
     copyState === 'ok'
       ? 'Copied ✓'
-      : copyState === 'failed'
+      : copyState === 'fail'
         ? 'Copy failed'
         : `Copy selected (${selected.size})`;
 

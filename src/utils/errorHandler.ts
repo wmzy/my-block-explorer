@@ -74,37 +74,27 @@ export class RpcError extends Error {
   }
 }
 
-/**
- * Database error type
- */
-export class DatabaseError extends Error {
-  constructor(
-    message: string,
-    public originalError?: unknown,
-  ) {
-    super(message);
-    this.name = 'DatabaseError';
-  }
-}
+// Transient RPC conditions that arrive only in the error MESSAGE (no
+// code, no status): provider rate limiting (429), temporary
+// unavailability (503), and timeouts. viem-style Errors carry these
+// verbatim — rpcErrorHandler.analyzeRpcError has always message-sniffed
+// them, and the retry predicate must agree or createRetryableRpcCall
+// drops exactly the errors the analysis calls retryable.
+const TRANSIENT_RPC_MESSAGE_RE = /\b(?:429|503)\b|rate limit|service unavailable|timeout/i;
 
 /**
- * Validation error type
+ * Whether an error message names a transient RPC condition
+ * (429 / rate limit / 503 / service unavailable / timeout).
  */
-export class ValidationError extends Error {
-  constructor(
-    message: string,
-    public field?: string,
-  ) {
-    super(message);
-    this.name = 'ValidationError';
-  }
+export function isTransientRpcMessage(message: string): boolean {
+  return TRANSIENT_RPC_MESSAGE_RE.test(message);
 }
 
 /**
  * Check whether an error is retryable
  */
 export function isRetryableError(error: unknown): boolean {
-  const err = error as { code?: string; status?: number };
+  const err = error as { code?: string; status?: number; message?: string };
   // Network errors
   if (err.code === 'ECONNRESET' || err.code === 'ENOTFOUND' || err.code === 'ETIMEDOUT') {
     return true;
@@ -115,11 +105,20 @@ export function isRetryableError(error: unknown): boolean {
     return true;
   }
 
-  // RPC-specific errors
+  // RPC-specific errors: some RPC error codes are retryable
   if (error instanceof RpcError) {
-    // Some RPC error codes are retryable
     const retryableCodes = [-32603, -32005, -32000]; // Internal error, limit exceeded, unknown error
-    return retryableCodes.includes(error.code ?? 0);
+    if (retryableCodes.includes(error.code ?? 0)) {
+      return true;
+    }
+    // Fall through: a rate-limited RpcError is as retryable as a
+    // rate-limited plain Error.
+  }
+
+  // Transient conditions named only in the message (viem-style Errors
+  // carry no code/status): rate limits, 503s, timeouts.
+  if (typeof err.message === 'string' && isTransientRpcMessage(err.message)) {
+    return true;
   }
 
   return false;
@@ -143,22 +142,6 @@ export function normalizeError(error: unknown): {
     };
   }
 
-  if (error instanceof DatabaseError) {
-    return {
-      message: error.message,
-      type: 'database',
-      retryable: false,
-    };
-  }
-
-  if (error instanceof ValidationError) {
-    return {
-      message: error.message,
-      type: 'validation',
-      retryable: false,
-    };
-  }
-
   const err = error as { code?: string; message?: string };
   // Network errors
   if (err.code === 'ECONNRESET' || err.code === 'ENOTFOUND' || err.code === 'ETIMEDOUT') {
@@ -170,11 +153,13 @@ export function normalizeError(error: unknown): {
     };
   }
 
-  // Default error case
+  // Default error case — retryability comes from the SAME shared
+  // predicate createRetryableRpcCall ultimately consults, so a
+  // transient-by-message error (429/503/timeout) stays retryable here too.
   return {
     message: (error instanceof Error ? error.message : err.message) ?? 'Unknown error',
     type: 'unknown',
-    retryable: false,
+    retryable: isRetryableError(error),
   };
 }
 
@@ -240,7 +225,7 @@ export function logError(
   });
 
   // Critical errors could trigger alerting here
-  if (!normalized.retryable && normalized.type !== 'validation') {
+  if (!normalized.retryable) {
     console.error(`[${context}] CRITICAL ERROR - Manual intervention may be required`);
   }
 }

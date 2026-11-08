@@ -1,7 +1,7 @@
 import { useState, useCallback, useMemo } from 'react';
 import { css } from '@linaria/core';
 import { Tree } from 'haze-ui';
-import { copyText } from '@/util/clipboard';
+import { useCopyFeedback } from '@/util/useCopyFeedback';
 
 type SourceFile = {
   filename: string;
@@ -194,7 +194,9 @@ export function SourceCodeViewer({ sourceCode, sourceFiles }: SourceCodeViewerPr
   const hasMultipleFiles = sourceFiles && sourceFiles.length > 1;
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const [expandedKeys, setExpandedKeys] = useState<string[]>([]);
-  const [copied, setCopied] = useState(false);
+  // Shared copy-feedback hook (silent on failure — the render reads 'ok'
+  // only, matching the previous boolean contract).
+  const copyFeedback = useCopyFeedback();
 
   const treeData = useMemo(
     () => (hasMultipleFiles ? buildTreeData(sourceFiles) : []),
@@ -206,21 +208,20 @@ export function SourceCodeViewer({ sourceCode, sourceFiles }: SourceCodeViewerPr
     : sourceCode;
 
   const handleCopy = useCallback(() => {
-    // Shared copyText: async Clipboard API with the legacy execCommand
-    // fallback for insecure contexts; a genuine failure stays silent.
-    void copyText(activeContent).then(ok => {
-      if (!ok) return;
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  }, [activeContent]);
+    // The shared hook covers insecure contexts (copyText's legacy
+    // fallback); a genuine failure stays silent.
+    void copyFeedback.copy(activeContent);
+  }, [copyFeedback, activeContent]);
 
   if (!hasMultipleFiles) {
     return (
       <div className={containerStyles}>
         <div className={codeContainerStyles}>
-          <button className={`${copyButtonStyles} ${copied ? 'copied' : ''}`} onClick={handleCopy}>
-            {copied ? 'Copied!' : 'Copy'}
+          <button
+            className={`${copyButtonStyles} ${copyFeedback.state === 'ok' ? 'copied' : ''}`}
+            onClick={handleCopy}
+          >
+            {copyFeedback.state === 'ok' ? 'Copied!' : 'Copy'}
           </button>
           <pre className={codeBlockStyles}>{sourceCode}</pre>
         </div>
@@ -244,7 +245,7 @@ export function SourceCodeViewer({ sourceCode, sourceFiles }: SourceCodeViewerPr
               onSelect={(keys: string[]) => {
                 if (keys.length > 0) {
                   setSelectedKey(keys[0]);
-                  setCopied(false);
+                  copyFeedback.reset();
                 }
               }}
               onExpand={(keys: string[]) => setExpandedKeys(keys)}
@@ -252,8 +253,11 @@ export function SourceCodeViewer({ sourceCode, sourceFiles }: SourceCodeViewerPr
           </div>
         </div>
         <div className={codeAreaStyles}>
-          <button className={`${copyButtonStyles} ${copied ? 'copied' : ''}`} onClick={handleCopy}>
-            {copied ? 'Copied!' : 'Copy'}
+          <button
+            className={`${copyButtonStyles} ${copyFeedback.state === 'ok' ? 'copied' : ''}`}
+            onClick={handleCopy}
+          >
+            {copyFeedback.state === 'ok' ? 'Copied!' : 'Copy'}
           </button>
           <pre className={codeBlockStyles}>{activeContent}</pre>
         </div>

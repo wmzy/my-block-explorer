@@ -1,5 +1,4 @@
 import { createLogger } from '../server/logger';
-import { getAddress } from 'viem';
 import { blockService, type Block } from './BlockService';
 
 const logger = createLogger('search-service');
@@ -10,6 +9,9 @@ import { addressService, type AddressInfo } from './AddressService';
 // Vite config also bundles (honoApiPlugin dynamic import); that esbuild pass
 // does not resolve the '@/' alias, so runtime value imports must stay relative.
 import { detectSearchType, sanitizeInput } from '../utils/validation';
+// Same relative-import rule as above applies to the shared address
+// verdict (runtime value import into the backend graph).
+import { addressVerdict, isAddressShape } from '../utils/address';
 import { and, count, desc, eq, or, sql } from 'drizzle-orm';
 // Same relative-import rule applies to the database module (see above).
 import { db, contractSources, addressLabels } from '../database/init';
@@ -60,23 +62,13 @@ type SearchServiceDeps = {
 // The canonical CHECKSUMMED form of a user-typed address, or null when the
 // string is not an address this product will accept.
 //
-// Mirrors getValidatedAddress (server/validation.ts) exactly, including its
-// rule that only a MIXED-case address carries checksum information:
-// all-lower/all-upper pass through and are canonicalized, while a mixed-case
-// address must match its EIP-55 checksum. Kept as a local (rather than
-// importing the route helper) because that one throws HTTPException, and
-// this path must return a search result, not a 400.
-const HEX_ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
-
+// The shared two-tier verdict (utils/address.ts) — the same contract
+// getValidatedAddress (server/validation.ts) enforces — expressed as a
+// null return instead of an HTTPException: this path must produce a
+// search result, not a 400.
 const canonicalAddressOrNull = (value: string): `0x${string}` | null => {
-  if (!HEX_ADDRESS_RE.test(value)) return null;
-  // viem's getAddress silently checksums ANY hex-shaped input, so the
-  // explicit mixed-case comparison is what actually enforces EIP-55.
-  const checksummed = getAddress(value);
-  const body = value.slice(2);
-  const isMixedCase = /[a-f]/.test(body) && /[A-F]/.test(body);
-  if (isMixedCase && value !== checksummed) return null;
-  return checksummed;
+  const verdict = addressVerdict(value);
+  return verdict.tier === 'valid' ? verdict.checksummed : null;
 };
 
 const createSearchService = (deps: SearchServiceDeps) => {
@@ -227,7 +219,7 @@ const createSearchService = (deps: SearchServiceDeps) => {
       //    on the page it links to. One string, two verdicts.
       const address = canonicalAddressOrNull(query);
       if (address === null) {
-        const badChecksum = /^0x[a-fA-F0-9]{40}$/.test(query);
+        const badChecksum = isAddressShape(query);
         return {
           type: 'address',
           query,

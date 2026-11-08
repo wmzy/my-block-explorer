@@ -16,10 +16,10 @@
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { createLogger } from '../server/logger';
-import { getValidatedAddress, getValidatedChainId } from '../server/validation';
+import { getValidatedChainId } from '../server/validation';
 import { requireAdminTokenIfConfigured } from '../middleware/admin-token';
 import { createRateLimiter } from '../middleware/rate-limit';
-import { parseStrictInteger } from '../utils/validation';
+import { parseChainAndAddressParams, parseStrictInteger } from '../utils/validation';
 import {
   watchService,
   WATCH_EVENTS_DEFAULT_LIMIT,
@@ -59,24 +59,17 @@ const watchWriteLimiter = createRateLimiter({
   burst: 5,
 });
 
-// Same validation channel as the labels routes (getValidatedAddress:
-// shape tier, then EIP-55 checksum for mixed-case input), converted into
-// this file's JSON error shape. Storage keys stay lowercase (C-3).
+// Same validation channel as the labels routes (the shared two-tier
+// address verdict: shape tier, then EIP-55 checksum for mixed-case
+// input), mapped onto this file's JSON error shape via the neutral
+// parseChainAndAddressParams. Storage keys stay lowercase (C-3).
 const parseChainAndAddress = (
   chainIdStr: string,
   addressStr: string,
 ): { chainId: number; address: `0x${string}` } | { error: string; message: string } => {
-  try {
-    const chainId = getValidatedChainId(chainIdStr);
-    const address = getValidatedAddress(addressStr).toLowerCase() as `0x${string}`;
-    return { chainId, address };
-  } catch (error) {
-    return {
-      error: 'invalid_request',
-      message:
-        error instanceof HTTPException ? error.message : 'Chain ID and address must be valid',
-    };
-  }
+  const parsed = parseChainAndAddressParams(chainIdStr, addressStr);
+  if ('error' in parsed) return { error: 'invalid_request', message: parsed.message };
+  return parsed;
 };
 
 // PUT body validation: { label?: string | null, webhookUrl?: string | null }.

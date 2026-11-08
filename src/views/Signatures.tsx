@@ -32,7 +32,7 @@ import { useServiceDiscovery } from '@/hooks/ServiceDiscoveryContext';
 import { useSignatureLookup } from '@/services/signatures';
 import type { ResolvedSignatures, SignatureLookup } from '@/services/signatures';
 import { isBackendUnreachable } from '@/util/http';
-import { copyText } from '@/util/clipboard';
+import { useCopyFeedback } from '@/util/useCopyFeedback';
 import { readRememberedChainId } from '@/views/Home/Landing';
 
 // ---------------------------------------------------------------------------
@@ -245,25 +245,10 @@ const emptyNote = css`
 // (EventTable CopyButton): the button reports the honest outcome of the
 // clipboard call, never a guess.
 function SignatureCopyButton({ text }: { text: string }) {
-  const [result, setResult] = useState<'idle' | 'ok' | 'fail'>('idle');
-  const timerRef = useRef<number | undefined>(undefined);
-
-  useEffect(() => {
-    return () => {
-      if (timerRef.current !== undefined) window.clearTimeout(timerRef.current);
-    };
-  }, []);
-
-  const handleCopy = async () => {
-    // Shared copyText: async Clipboard API with the legacy execCommand
-    // fallback (plain-http LAN is the common local-explorer case).
-    setResult((await copyText(text)) ? 'ok' : 'fail');
-    if (timerRef.current !== undefined) window.clearTimeout(timerRef.current);
-    timerRef.current = window.setTimeout(() => setResult('idle'), 2000);
-  };
+  const { state: result, copy } = useCopyFeedback();
 
   return (
-    <button type="button" className={copyButton} onClick={() => void handleCopy()}>
+    <button type="button" className={copyButton} onClick={() => void copy(text)}>
       {result === 'ok' ? 'Copied ✓' : result === 'fail' ? 'Copy failed' : 'Copy'}
     </button>
   );

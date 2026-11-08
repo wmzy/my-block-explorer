@@ -2,9 +2,8 @@ import { describe, it, expect, vi } from 'vitest';
 import {
   withRetry,
   RpcError,
-  DatabaseError,
-  ValidationError,
   isRetryableError,
+  isTransientRpcMessage,
   normalizeError,
   createRetryableRpcCall,
   createRetryableDbCall,
@@ -79,23 +78,6 @@ describe('ErrorHandler', () => {
       expect(error.data).toEqual({ detail: 'timeout' });
       expect(error.chainId).toBe(1);
     });
-
-    it('DatabaseError应该包含正确的属性', () => {
-      const originalError = new Error('DB connection failed');
-      const error = new DatabaseError('Database operation failed', originalError);
-
-      expect(error.name).toBe('DatabaseError');
-      expect(error.message).toBe('Database operation failed');
-      expect(error.originalError).toBe(originalError);
-    });
-
-    it('ValidationError应该包含正确的属性', () => {
-      const error = new ValidationError('Invalid input', 'email');
-
-      expect(error.name).toBe('ValidationError');
-      expect(error.message).toBe('Invalid input');
-      expect(error.field).toBe('email');
-    });
   });
 
   describe('isRetryableError', () => {
@@ -133,12 +115,31 @@ describe('ErrorHandler', () => {
         { status: 401 },
         { status: 404 },
         new RpcError('Invalid params', -32602),
-        new ValidationError('Invalid input'),
+        new Error('execution reverted'),
       ];
 
       nonRetryableErrors.forEach(error => {
         expect(isRetryableError(error)).toBe(false);
       });
+    });
+
+    it('识别仅在message中携带的瞬态条件（429/503/timeout/rate limit）', () => {
+      // viem风格的Error没有code/status，限流/临时不可用/超时只出现在
+      // message里——与rpcErrorHandler.analyzeRpcError的分类保持一致
+      // （见rpcRetryableUnification.test.ts）。
+      const transient = [
+        new Error('429 Too Many Requests'),
+        new Error('503 Service Unavailable'),
+        new Error('Request timeout'),
+        new Error('rate limit exceeded'),
+        new RpcError('HTTP 429', -32602),
+      ];
+
+      transient.forEach(error => {
+        expect(isRetryableError(error)).toBe(true);
+      });
+      expect(isTransientRpcMessage('daily rate limit hit')).toBe(true);
+      expect(isTransientRpcMessage('execution reverted')).toBe(false);
     });
   });
 
@@ -152,28 +153,6 @@ describe('ErrorHandler', () => {
         code: 500,
         type: 'rpc',
         retryable: false, // RPC错误500不是可重试的
-      });
-    });
-
-    it('应该正确标准化DatabaseError', () => {
-      const error = new DatabaseError('DB failed');
-      const normalized = normalizeError(error);
-
-      expect(normalized).toEqual({
-        message: 'DB failed',
-        type: 'database',
-        retryable: false,
-      });
-    });
-
-    it('应该正确标准化ValidationError', () => {
-      const error = new ValidationError('Invalid input');
-      const normalized = normalizeError(error);
-
-      expect(normalized).toEqual({
-        message: 'Invalid input',
-        type: 'validation',
-        retryable: false,
       });
     });
 

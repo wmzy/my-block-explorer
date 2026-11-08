@@ -18,8 +18,12 @@ import {
 } from '@/services/search';
 import { detectSearchType, sanitizeInput } from '@/utils/validation';
 import { isBackendUnreachable } from '@/util/http';
-import { resolveEnsAddress, ensDestinations, type EnsDestinations } from '@/services/ensForward';
-import { recordSearchHistoryEntry } from '@/services/searchHistory';
+import type { EnsDestinations } from '@/services/ensForward';
+import {
+  openEnsSearchDestination,
+  recordSearchLanding,
+  resolveEnsForSearch,
+} from '@/services/searchDispatch';
 import { formatAddress } from '@/utils/format';
 import { readRememberedChainId } from '@/views/Home/Landing';
 import { degradedSearchMessage } from './degradedReasons';
@@ -400,12 +404,14 @@ export default function Search() {
   const lastConsumedRef = useRef<{ q: string; chain: number | null } | null>(null);
 
   // ENS names resolve in the browser against a mainnet client (that is
-  // where the ENS registry lives). Not-found, RPC failure and missing RPC
-  // configuration are distinct outcomes with distinct copy — only the RPC
-  // failure is retryable. A success is held as a destination choice (see
-  // ensResolution), never navigated or recorded on its own.
+  // where the ENS registry lives) — through the shared dispatch core, the
+  // single ENS entry point for every search surface. Not-found, RPC
+  // failure and missing RPC configuration are distinct outcomes with
+  // distinct copy — only the RPC failure is retryable. A success is held
+  // as a destination choice (see ensResolution), never navigated or
+  // recorded on its own.
   const resolveEnsName = async (name: string, chainContext?: number | null): Promise<void> => {
-    const outcome = await resolveEnsAddress(name);
+    const outcome = await resolveEnsForSearch(name, chainContext);
 
     if (outcome.status === 'not-found') {
       setEnsError({ name, kind: 'not-found', chainContext });
@@ -423,7 +429,7 @@ export default function Search() {
     setEnsResolution({
       name,
       address: outcome.address,
-      destinations: ensDestinations(chainContext ?? undefined),
+      destinations: outcome.destinations,
     });
   };
 
@@ -433,9 +439,10 @@ export default function Search() {
   const openEnsResolution = (destinationChainId: number) => {
     if (!ensResolution) return;
     const { name, address } = ensResolution;
-    recordSearchHistoryEntry(name, destinationChainId);
+    openEnsSearchDestination({ name, address }, destinationChainId, to => {
+      navigate(router, to).catch(() => undefined);
+    });
     setEnsResolution(null);
-    navigate(router, `/chain/${destinationChainId}/address/${address}`).catch(() => undefined);
   };
 
   // pinnedChainId: an explicitly pinned chain (example searches, a chain
@@ -527,7 +534,7 @@ export default function Search() {
 
       if (searchedChain !== null) {
         setResolvedChainId(searchedChain);
-        recordSearchHistoryEntry(sanitized, searchedChain);
+        recordSearchLanding(sanitized, searchedChain);
         if (!navigatingToResult) {
           // The URL pair changes here (the resolved chain may differ from
           // ?chain=) — record the synced pair so the effect does not
@@ -617,7 +624,7 @@ export default function Search() {
       // request (the catch below) never claims a chain, records history
       // or touches the URL.
       setResolvedChainId(selectedChainId);
-      recordSearchHistoryEntry(sanitized, selectedChainId);
+      recordSearchLanding(sanitized, selectedChainId);
 
       if (!searchResult.found || !searchResult.data) {
         // A data-source error is not a definitive miss — say so instead of

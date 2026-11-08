@@ -134,6 +134,26 @@ describe('SignatureService - database-first resolution', () => {
     expect(mockDb.insert).not.toHaveBeenCalled();
   });
 
+  it('refetches a NOT_FOUND row whose fetchedAt is null (never pins the miss)', async () => {
+    // Pins the null contract explicitly: a missing timestamp is EXPIRED,
+    // never fresh, so the miss is re-asked. (The pre-negativeCache
+    // formula reached the same outcome only arithmetically — its
+    // `(ts?.getTime() ?? 0)` bound null to the epoch, yielding a huge
+    // finite age — the shared helper makes the property a stated
+    // contract instead of an accident of parenthesization.)
+    selectReturns([{ kind: 'function', selector: FN_SELECTOR, signature: null, fetchedAt: null }]);
+    fetchMock.mockResolvedValue(
+      okResponse(
+        openchainPayload({ function: { [FN_SELECTOR]: [{ name: 'transfer(address,uint256)' }] } }),
+      ),
+    );
+
+    const results = await signatureService.lookup([fn(FN_SELECTOR)]);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(signaturesOf(results.get(FN_SELECTOR))).toEqual(['transfer(address,uint256)']);
+  });
+
   it('refetches an expired NOT_FOUND row and re-persists the answer', async () => {
     selectReturns([
       {

@@ -1,5 +1,7 @@
 // RPC error handling and user feedback utilities
 
+import { isTransientRpcMessage } from './errorHandler';
+
 export type RpcErrorDetails = {
   error: string;
   blockNumber?: number;
@@ -24,6 +26,17 @@ export function analyzeRpcError(
   const errorMessage = (error as { message?: string }).message ?? String(error);
   const { blockNumber, contractAddress, rpcUrl, chainId } = context;
 
+  // One cast command for every block-scoped diagnosis below (five
+  // branches used to hand-roll this same ternary).
+  const castCodeCommand = blockNumber
+    ? `cast code ${contractAddress} --block ${blockNumber} --rpc-url ${rpcUrl}`
+    : `cast code ${contractAddress} --rpc-url ${rpcUrl}`;
+
+  // Transient branches (503/429/timeout) derive `retryable` from the
+  // SAME shared predicate the retry loop uses (errorHandler), so the
+  // analysis and createRetryableRpcCall can never disagree on a
+  // rate-limited or timed-out request again.
+
   // Classify known RPC error types
   if (errorMessage.includes('no backends available for method')) {
     return {
@@ -34,9 +47,7 @@ export function analyzeRpcError(
       chainId,
       suggestion:
         'This RPC node may not support state queries for historical blocks. Switch to an RPC node with full historical data.',
-      castCommand: blockNumber
-        ? `cast code ${contractAddress} --block ${blockNumber} --rpc-url ${rpcUrl}`
-        : `cast code ${contractAddress} --rpc-url ${rpcUrl}`,
+      castCommand: castCodeCommand,
       retryable: false,
       troubleshooting: [
         '1. Check whether the RPC node supports historical data queries',
@@ -56,10 +67,8 @@ export function analyzeRpcError(
       chainId,
       suggestion:
         'The RPC server is temporarily unavailable; this is usually transient. Try again later.',
-      castCommand: blockNumber
-        ? `cast code ${contractAddress} --block ${blockNumber} --rpc-url ${rpcUrl}`
-        : `cast code ${contractAddress} --rpc-url ${rpcUrl}`,
-      retryable: true,
+      castCommand: castCodeCommand,
+      retryable: isTransientRpcMessage(errorMessage),
       troubleshooting: [
         '1. Wait 5-10 minutes and retry',
         '2. Check the RPC provider status page',
@@ -78,10 +87,8 @@ export function analyzeRpcError(
       chainId,
       suggestion:
         'Requests are too frequent and hit the RPC node rate limit. Lower the request rate or upgrade the RPC service plan.',
-      castCommand: blockNumber
-        ? `cast code ${contractAddress} --block ${blockNumber} --rpc-url ${rpcUrl}`
-        : `cast code ${contractAddress} --rpc-url ${rpcUrl}`,
-      retryable: true,
+      castCommand: castCodeCommand,
+      retryable: isTransientRpcMessage(errorMessage),
       troubleshooting: [
         '1. Wait for the rate limit to reset (usually 1 minute)',
         '2. Upgrade to a higher RPC service tier',
@@ -99,10 +106,8 @@ export function analyzeRpcError(
       rpcUrl,
       chainId,
       suggestion: 'The RPC request timed out, possibly due to network issues or a slow RPC node.',
-      castCommand: blockNumber
-        ? `cast code ${contractAddress} --block ${blockNumber} --rpc-url ${rpcUrl}`
-        : `cast code ${contractAddress} --rpc-url ${rpcUrl}`,
-      retryable: true,
+      castCommand: castCodeCommand,
+      retryable: isTransientRpcMessage(errorMessage),
       troubleshooting: [
         '1. Check the network connection',
         '2. Increase the request timeout',
@@ -121,9 +126,7 @@ export function analyzeRpcError(
       chainId,
       suggestion:
         'The RPC node is missing state data for the requested block. This typically happens on light nodes or incomplete archive nodes.',
-      castCommand: blockNumber
-        ? `cast code ${contractAddress} --block ${blockNumber} --rpc-url ${rpcUrl}`
-        : `cast code ${contractAddress} --rpc-url ${rpcUrl}`,
+      castCommand: castCodeCommand,
       retryable: false,
       troubleshooting: [
         '1. Use a full archive node',
@@ -162,9 +165,7 @@ export function analyzeRpcError(
     rpcUrl,
     chainId,
     suggestion: 'An unknown RPC error occurred. Check the RPC node status or try another endpoint.',
-    castCommand: blockNumber
-      ? `cast code ${contractAddress} --block ${blockNumber} --rpc-url ${rpcUrl}`
-      : `cast code ${contractAddress} --rpc-url ${rpcUrl}`,
+    castCommand: castCodeCommand,
     retryable: true,
     troubleshooting: [
       '1. Check the RPC node status',
@@ -173,44 +174,6 @@ export function analyzeRpcError(
       '4. Contact RPC provider technical support',
     ],
   };
-}
-
-export function formatRpcErrorForUser(errorDetails: RpcErrorDetails): string {
-  const {
-    error,
-    blockNumber,
-    contractAddress,
-    rpcUrl,
-    chainId,
-    suggestion,
-    castCommand,
-    retryable,
-    troubleshooting,
-  } = errorDetails;
-
-  let message = `🚨 RPC error details:\n\n`;
-  message += `Error: ${error}\n`;
-
-  if (blockNumber) message += `Block: ${blockNumber}\n`;
-  if (contractAddress) message += `Contract: ${contractAddress}\n`;
-  if (rpcUrl) message += `RPC: ${rpcUrl}\n`;
-  if (chainId) message += `Chain ID: ${chainId}\n`;
-
-  message += `\n💡 Suggestion: ${suggestion}\n`;
-
-  if (castCommand) {
-    message += `\n🔧 Verify command:\n\`\`\`bash\n${castCommand}\n\`\`\`\n`;
-    message += `Run this command to check directly whether the RPC node works.\n`;
-  }
-
-  message += `\n🔄 Retryable: ${retryable ? 'yes' : 'no'}\n`;
-
-  message += `\n🛠️ Troubleshooting steps:\n`;
-  troubleshooting.forEach(step => {
-    message += `${step}\n`;
-  });
-
-  return message;
 }
 
 export function shouldRetryRpcError(errorDetails: RpcErrorDetails): boolean {

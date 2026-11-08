@@ -17,7 +17,7 @@
 //   supported by this RPC"), never an error card.
 // - a block with zero transactions renders the empty state WITHOUT any
 //   tracing (the detail page already knows the count).
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useState } from 'react';
 import { css, cx } from '@linaria/core';
 import { TypedLink } from '@native-router/react';
 import { Alert } from 'haze-ui';
@@ -31,7 +31,8 @@ import { DataTable, linkStyle } from '@/components/ui/DataTable';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { getChainSymbol } from '@/config/chains';
-import { formatValue } from '@/utils/format';
+import { useLazyExpand } from '@/util/useLazyExpand';
+import { formatValue, truncateMiddle } from '@/utils/format';
 import { createRpcClient } from '@/utils/realTimeData';
 import { isTraceUnsupportedError, normalizeCallTrace } from '@/utils/traceFormat';
 import {
@@ -172,8 +173,8 @@ const retryRow = css`
   margin-top: var(--haze-space-3);
 `;
 
-const formatAddr = (a: string) => `${a.slice(0, 8)}...${a.slice(-6)}`;
-const formatHash = (h: string) => `${h.slice(0, 10)}...${h.slice(-8)}`;
+const formatAddr = (a: string) => (a ? truncateMiddle(a, 8, 6) : '');
+const formatHash = (h: string) => (h ? truncateMiddle(h, 10, 8) : '');
 
 // Same call-type palette as the Call Trace card and the address tab:
 // creations green, selfdestructs amber, read-only blue, code-in-place
@@ -307,36 +308,40 @@ export function InternalTxnsSection({
   blockHash,
   transactionCount,
 }: InternalTxnsSectionProps) {
-  const [expanded, setExpanded] = useState(false);
   const [state, setState] = useState<SweepState>({ phase: 'idle' });
-  // Guards the sweep-once-on-expand and drops stale settles when Retry
-  // supersedes an in-flight sweep.
-  const sweptOnce = useRef(false);
-  const sweepSeq = useRef(0);
 
-  // The block-detail route reuses this section across blocks (only
-  // :blockNumber changes — no remount), so all of the state above describes
-  // exactly ONE block's sweep. A different block must reset it, the
-  // sweep-once latch included: otherwise the next block renders the previous
-  // block's internal transactions and never re-sweeps. Adjusting state during
-  // render keeps the stale output from ever reaching the screen.
-  const blockIdentity = `${chainId}:${blockHash}`;
-  const blockIdentityRef = useRef(blockIdentity);
-  if (blockIdentityRef.current !== blockIdentity) {
-    blockIdentityRef.current = blockIdentity;
-    setExpanded(false);
-    setState({ phase: 'idle' });
-    sweptOnce.current = false;
-    sweepSeq.current += 1; // drop any in-flight settle from the previous block
-  }
+  // Lazy-expand machine (util/useLazyExpand): the sweep fires on the
+  // first expand only, and the block-detail route's param change (the
+  // section is reused without a remount) resets everything — expanded
+  // flag, sweep-once latch, the phase state below, and any in-flight
+  // settle — so the next block never renders the previous block's
+  // internal transactions. Zero-tx blocks leave the latch armed (the
+  // veto): the count the page already holds says there is nothing to
+  // trace, so expanding only reads the empty state, and a count that
+  // arrives later still sweeps.
+  const {
+    expanded,
+    toggle: handleToggle,
+    handleKeyDown,
+    claim,
+    isCurrent,
+  } = useLazyExpand(`${chainId}:${blockHash}`, {
+    onFirstExpand: () => {
+      if (transactionCount <= 0) return false;
+      void runSweep();
+      return true;
+    },
+    onReset: () => {
+      setState({ phase: 'idle' });
+    },
+  });
 
   const runSweep = useCallback(async () => {
-    const seq = sweepSeq.current + 1;
-    sweepSeq.current = seq;
+    const seq = claim();
     setState({ phase: 'loading' });
     try {
       const allHashes = await fetchBlockTxHashes(chainId, blockHash);
-      if (sweepSeq.current !== seq) return;
+      if (!isCurrent(seq)) return;
       const hashes = selectBlockTraceScope(allHashes.map(hash => ({ hash }))).txs.map(
         tx => tx.hash,
       );
@@ -355,11 +360,11 @@ export function InternalTxnsSection({
       }
       setState({ phase: 'tracing', settled: 0, total: hashes.length });
       const outcomes = await traceTxBatch(chainId, hashes, settled => {
-        if (sweepSeq.current === seq) {
+        if (isCurrent(seq)) {
           setState({ phase: 'tracing', settled, total: hashes.length });
         }
       });
-      if (sweepSeq.current !== seq) return;
+      if (!isCurrent(seq)) return;
       const aggregate = groupBlockInternalTxns(outcomes);
       if (aggregate.unsupported) {
         setState({ phase: 'unsupported' });
@@ -370,30 +375,12 @@ export function InternalTxnsSection({
         result: { aggregate, scopedCount: hashes.length, totalCount: allHashes.length },
       });
     } catch {
-      if (sweepSeq.current !== seq) return;
+      if (!isCurrent(seq)) return;
       // The tx-list fetch is a plain eth_* call: any failure here is a
       // retryable request failure, not a debug-capability verdict.
       setState({ phase: 'error' });
     }
-  }, [chainId, blockHash]);
-
-  const handleToggle = () => {
-    const next = !expanded;
-    setExpanded(next);
-    // Zero-tx blocks never sweep: the count the page already holds says
-    // there is nothing to trace, so expanding only reads the empty state.
-    if (next && !sweptOnce.current && transactionCount > 0) {
-      sweptOnce.current = true;
-      void runSweep();
-    }
-  };
-
-  const handleKeyDown = (event: React.KeyboardEvent) => {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      handleToggle();
-    }
-  };
+  }, [chainId, blockHash, claim, isCurrent]);
 
   // Retry re-runs the whole sweep (on-demand data — the address tab's
   // Retry semantics: a re-probe genuinely re-asks the node).

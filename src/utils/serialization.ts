@@ -4,6 +4,7 @@
  */
 
 import { createLogger } from '../server/logger';
+import { bigintJsonReplacer } from './jsonReplacer';
 
 const logger = createLogger('serialization');
 
@@ -41,11 +42,6 @@ export function serializeForJson(obj: unknown): unknown {
           seen.add(value);
         }
 
-        // Handle BigInt
-        if (typeof value === 'bigint') {
-          return value.toString();
-        }
-
         // Handle Date
         if (value instanceof Date) {
           return value.toISOString();
@@ -65,7 +61,10 @@ export function serializeForJson(obj: unknown): unknown {
           return '[Function]';
         }
 
-        return value;
+        // Default path is the shared BigInt-safe leaf (utils/jsonReplacer):
+        // bigint values become decimal strings, everything else passes
+        // through unchanged.
+        return bigintJsonReplacer(key, value);
       }),
     );
   } catch (error) {
@@ -144,38 +143,5 @@ export function formatTransactionForApi(
       transaction.cumulativeGasUsed != null ? String(transaction.cumulativeGasUsed) : undefined,
     timestamp:
       transaction.timestamp instanceof Date ? transaction.timestamp.toISOString() : undefined,
-  };
-}
-
-/**
- * Format address data for API responses
- */
-export function formatAddressForApi(
-  address: Record<string, unknown> | null,
-): Record<string, unknown> | null {
-  if (!address) return null;
-
-  return {
-    ...address,
-    firstSeenBlock: address.firstSeenBlock != null ? String(address.firstSeenBlock) : undefined,
-    lastSeenBlock: address.lastSeenBlock != null ? String(address.lastSeenBlock) : undefined,
-    lastQueried:
-      address.lastQueried instanceof Date ? address.lastQueried.toISOString() : undefined,
-  };
-}
-
-/**
- * Format statistics data for API responses
- */
-export function formatStatsForApi(
-  stats: Record<string, unknown> | null,
-): Record<string, unknown> | null {
-  if (!stats) return null;
-
-  return {
-    ...stats,
-    latestBlock: stats.latestBlock != null ? String(stats.latestBlock) : undefined,
-    totalBlocks: Number(stats.totalBlocks) || 0,
-    totalTransactions: Number(stats.totalTransactions) || 0,
   };
 }

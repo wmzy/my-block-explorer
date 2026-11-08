@@ -23,6 +23,8 @@ import { isAllowedCorsOrigin } from '../middleware/cors-origins';
 import { createApiError, respondError } from '../utils/api-error';
 import { getValidatedChainId } from '../server/validation';
 import { parseStrictInteger } from '../utils/validation';
+import { parseHexQuantity } from '../utils/strictInteger';
+import { fetchWithTimeout } from '../utils/fetchWithTimeout';
 import { chainCacheService } from '../services/ChainCacheService';
 
 const logger = createLogger('custom-chain-routes');
@@ -71,15 +73,16 @@ type ProbeResult =
 // 'rpc_invalid_response' for an endpoint that answered something that is
 // not a positive-integer hex quantity.
 async function probeRpcChainId(rpcUrl: string): Promise<ProbeResult> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), PROBE_TIMEOUT_MS);
   try {
-    const res = await fetch(rpcUrl, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_chainId' }),
-      signal: controller.signal,
-    });
+    const res = await fetchWithTimeout(
+      rpcUrl,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'eth_chainId' }),
+      },
+      PROBE_TIMEOUT_MS,
+    );
 
     if (!res.ok) {
       return {
@@ -109,11 +112,12 @@ async function probeRpcChainId(rpcUrl: string): Promise<ProbeResult> {
       };
     }
 
-    // BigInt first: chain ids are uint64 in JSON-RPC even though every
-    // real one fits a double; Number() of the BigInt keeps precision
-    // honest and rejects anything beyond 2^53 as non-integer.
-    const chainId = Number(BigInt(result));
-    if (!Number.isInteger(chainId) || chainId <= 0) {
+    // Canonical hex-quantity reader (utils/strictInteger parseHexQuantity,
+    // the same leaf the RPC tester and the wallet facade use): BigInt
+    // first, then a safe-integer gate, so an id past 2^53 is rejected
+    // rather than silently rounded into a fabricated chain id.
+    const chainId = parseHexQuantity(result);
+    if (chainId === null || chainId <= 0) {
       return {
         ok: false,
         code: 'rpc_invalid_response',
@@ -129,8 +133,6 @@ async function probeRpcChainId(rpcUrl: string): Promise<ProbeResult> {
       code: 'rpc_unreachable',
       message: `Could not reach the RPC endpoint: ${reason}`,
     };
-  } finally {
-    clearTimeout(timer);
   }
 }
 

@@ -9,6 +9,7 @@ import {
   type AbiParameter,
   type Hex,
 } from 'viem';
+import { HEX_ADDRESS_RE } from './address';
 
 export type DecodedFunctionCall = {
   functionName: string;
@@ -191,7 +192,7 @@ function formatErrorArg(value: unknown): string {
   if (typeof value === 'bigint') return groupDecimal(value);
   if (typeof value === 'boolean' || typeof value === 'number') return String(value);
   if (typeof value === 'string') {
-    if (/^0x[0-9a-fA-F]{40}$/.test(value)) {
+    if (HEX_ADDRESS_RE.test(value)) {
       try {
         return getAddress(value);
       } catch {

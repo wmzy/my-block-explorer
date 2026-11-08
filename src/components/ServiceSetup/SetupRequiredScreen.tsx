@@ -4,7 +4,7 @@ import { Alert } from 'haze-ui';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { ErrorState } from '@/components/ui/ErrorState';
-import { copyText } from '@/util/clipboard';
+import { useCopyFeedback } from '@/util/useCopyFeedback';
 
 type SetupRequiredScreenProps = {
   error: string | null;
@@ -377,7 +377,10 @@ export function SetupRequiredScreen({
 }: SetupRequiredScreenProps) {
   const [packageManager, setPackageManager] = useState<PackageManager>('npx');
   const [url, setUrl] = useState('');
-  const [copied, setCopied] = useState(false);
+  // Shared copy-feedback hook (silent on failure — the render reads 'ok'
+  // only, matching the previous boolean contract). resetMs normalizes to
+  // the app-wide 2000ms window.
+  const copyFeedback = useCopyFeedback();
 
   const currentCommand = PACKAGE_MANAGERS.find(p => p.key === packageManager)?.command ?? '';
 
@@ -409,14 +412,12 @@ export function SetupRequiredScreen({
     return () => clearInterval(timer);
   }, []);
 
-  const handleCopy = useCallback(async () => {
-    // copyText also covers insecure contexts via its legacy fallback;
-    // a genuine failure stays silent (as before).
-    if (await copyText(currentCommand)) {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    }
-  }, [currentCommand]);
+  const handleCopy = useCallback(() => {
+    // The shared hook covers insecure contexts (copyText's legacy
+    // fallback); a genuine failure stays silent (as before) because the
+    // render below reads the 'ok' state only.
+    void copyFeedback.copy(currentCommand);
+  }, [copyFeedback, currentCommand]);
 
   const handleConnect = async () => {
     const trimmedUrl = url.trim();
@@ -489,7 +490,9 @@ export function SetupRequiredScreen({
                       <span className={commandPartStyle}>{commandBase}</span>
                       <span className={argPartStyle}> --port {commandPort}</span>
                     </code>
-                    {copied && <span className={copiedToastStyle}>Copied!</span>}
+                    {copyFeedback.state === 'ok' && (
+                      <span className={copiedToastStyle}>Copied!</span>
+                    )}
                     <Button
                       variant="ghost"
                       size="sm"

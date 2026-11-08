@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { setApiBase, getStoredManualBase, storeManualBase } from '@/util/apiBase';
+import { fetchWithTimeout } from '@/utils/fetchWithTimeout';
 
 export const DEFAULT_PORTS = [8201, 8202, 8203, 8204, 8205] as const;
 const DEFAULT_HOST = 'localhost';
@@ -13,18 +14,18 @@ const MANUAL_URL_TIMEOUT_MS = 5000;
 
 // Probe a candidate base URL for a live backend. The probes never go
 // through the global base (util/http always prefixes getApiBase()), so this
-// stays a direct fetch with the probe's own timeout. Same error contract
-// as before: throws on failure, callers decide whether that means "port
-// closed" or "invalid URL".
+// stays a direct fetch with the probe's own timeout via the shared
+// fetchWithTimeout wrapper (routes/chains.ts probes RPC candidates with
+// the same budget pair). Same error contract as before: throws on
+// failure, callers decide whether that means "port closed" or "invalid
+// URL".
 async function probeHealth(url: string, timeoutMs: number): Promise<Record<string, unknown>> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-
   try {
-    const response = await fetch(`${url}/api/health`, {
-      signal: controller.signal,
-      headers: { Accept: 'application/json' },
-    });
+    const response = await fetchWithTimeout(
+      `${url}/api/health`,
+      { headers: { Accept: 'application/json' } },
+      timeoutMs,
+    );
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
@@ -40,8 +41,6 @@ async function probeHealth(url: string, timeoutMs: number): Promise<Record<strin
       throw new Error('Request timeout', { cause: error });
     }
     throw error;
-  } finally {
-    clearTimeout(timer);
   }
 }
 

@@ -54,7 +54,7 @@ import {
   formatRevertDescription,
   selectorOf,
 } from '@/utils/txDecode';
-import { formatGasPrice, formatNumber, formatTokenAmount, formatValue } from '@/utils/format';
+import { formatBigInt, formatGasPrice, formatNumber, formatTokenAmount, formatValue } from '@/utils/format';
 import { formatValueByUnit, getValueUnit, subscribeValueUnit } from '@/util/units';
 import { UsdValue } from '@/components/ui/UsdValue';
 
@@ -69,11 +69,12 @@ const getTxTypeText = (type: number): string => {
   return types[type] ?? `Type ${type}`;
 };
 
-// Gas amounts are plain unit counts: BigInt-parse first (block gas figures
-// stay far below Number.MAX_SAFE_INTEGER, so the Number step is exact).
+// Gas amounts are plain unit counts: BigInt-parse first, then the shared
+// exact grouping helper — the old Number() step was exact only below
+// 2^53 and silently rounded beyond it.
 const formatGas = (gas: string): string => {
   try {
-    return Number(BigInt(gas)).toLocaleString();
+    return formatBigInt(BigInt(gas));
   } catch {
     return gas;
   }

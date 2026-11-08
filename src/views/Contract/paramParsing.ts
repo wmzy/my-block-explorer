@@ -26,6 +26,7 @@
 import type { Abi } from 'viem';
 
 import { ApiError } from '@/util/apiError';
+import { HEX_ADDRESS_RE } from '@/utils/address';
 import { describeRevertData, extractRevertData } from '@/utils/txDecode';
 
 // A nested ABI component as viem models it: `name` is optional (unnamed
@@ -58,7 +59,7 @@ type ParseResult = { value?: unknown; error?: string };
 
 // Exported for the Interact form's From-address inline validation (same
 // 0x-prefixed 40-hex shape the parser accepts for address parameters).
-export const ADDRESS_PATTERN = /^0x[0-9a-fA-F]{40}$/;
+export const ADDRESS_PATTERN = HEX_ADDRESS_RE;
 const BOOL_PATTERN = /^(true|false)$/i;
 const HEX_PATTERN = /^0x[0-9a-fA-F]*$/;
 const INT_PATTERN = /^(u?)int(\d+)?$/;

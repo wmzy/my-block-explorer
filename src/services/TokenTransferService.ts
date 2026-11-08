@@ -2,6 +2,18 @@ import { decodeEventLog, parseAbi, type AbiEvent, type Address, type Hex } from 
 import { rpcManager } from './RpcManager';
 import { createLogger } from '../server/logger';
 import { transferStandardFromTopics, type TokenStandardId } from '../utils/tokenTransferDecode';
+import {
+  DEFAULT_MAX_SCAN_CALLS,
+  DEFAULT_SCAN_TIMEOUT_MS,
+  DEFAULT_WINDOW_BLOCKS,
+  INITIAL_CHUNK_BLOCKS,
+  MAX_WINDOW_BLOCKS,
+  MIN_WINDOW_BLOCKS,
+  SCAN_TIMEOUT_GRACE_MS,
+  createProviderCeilingMemory,
+} from '../utils/scanLadder';
+import { createTtlLruCache } from '../utils/ttlLruCache';
+import { TimeoutError, withTimeout } from '../utils/withTimeout';
 
 const logger = createLogger('token-transfer-service');
 
@@ -105,26 +117,12 @@ export type TransferScanClient = {
   getBlockNumber: () => Promise<bigint>;
 };
 
-// Default scan window (blocks) when no ?window= override is given.
-const DEFAULT_WINDOW_BLOCKS = 100_000;
-// Hard clamp for an explicit ?window= override.
-const MAX_WINDOW_BLOCKS = 50_000_000;
-const MIN_WINDOW_BLOCKS = 1;
-// Adaptive chunk sizing: start optimistic, halve on provider range/result
-// cap errors (floor), double on success (cap). The floor is 10 blocks:
-// some free providers (e.g. blastapi) cap topic-filtered eth_getLogs at a
-// 10-block range; the adaptive halving must be able to reach that limit.
-const INITIAL_CHUNK_BLOCKS = 5_000;
-const MIN_CHUNK_BLOCKS = 10;
-const MAX_CHUNK_BLOCKS = 10_000;
-// Honesty budgets: stop after this many getLogs calls total or this much
-// elapsed time and report coverage 'partial' instead of blocking forever.
-const DEFAULT_MAX_SCAN_CALLS = 40;
-const DEFAULT_SCAN_TIMEOUT_MS = 25_000;
-// Grace for the hard race guard: the cooperative elapsed check inside the
-// scan loop fires first whenever time actually progresses; the race only
-// catches a provider call that hangs outright.
-const SCAN_TIMEOUT_GRACE_MS = 5_000;
+// Window/chunk ladder + honesty budgets: single-sourced in
+// utils/scanLadder (shared with ApprovalScanService — tune both there).
+// Grace for the hard race guard: SCAN_TIMEOUT_GRACE_MS (scanLadder) — the
+// cooperative elapsed check inside the scan loop fires first whenever
+// time actually progresses; the race only catches a provider call that
+// hangs outright.
 // Deterministic pagination: one canonical full list per
 // (chain, address, window); pages are request-time slices into it.
 const TRANSFERS_CACHE_TTL_MS = 60_000;
@@ -316,28 +314,12 @@ const decodeTransferLog = (
   }
 };
 
-// Hard race guard for a provider call that never settles. Typed (not a
-// plain Error) so the caller can distinguish it from real provider errors.
-class ScanTimeoutError extends Error {}
-
-// The losing timer is cleared on settle (crossChainProbe withinBudget
-// pattern): a winning scan must not leave a live ms-later timer pending
-// for every request.
-const withTimeout = <T>(promise: Promise<T>, ms: number, label: string): Promise<T> => {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const expired = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new ScanTimeoutError(`${label} timed out after ${ms}ms`)), ms);
-  });
-  return Promise.race([promise, expired]).finally(() => clearTimeout(timer));
-};
-
 type ScanOutcome = {
   transfers: TokenTransfer[];
   coverage: 'complete' | 'partial';
 };
 
 type TransfersCacheEntry = {
-  expiresAt: number;
   transfers: TokenTransfer[];
   coverage: 'complete' | 'partial';
   // First-scan time this entry reports on every cache hit (ISO string).
@@ -362,21 +344,18 @@ const createTokenTransferService = (deps: TokenTransferServiceDeps) => {
   const maxScanCalls = deps.maxScanCalls ?? DEFAULT_MAX_SCAN_CALLS;
   const scanTimeoutMs = deps.scanTimeoutMs ?? DEFAULT_SCAN_TIMEOUT_MS;
 
-  // Bounded LRU: Map preserves insertion order, so reads re-insert to
-  // refresh recency and oversize inserts evict the oldest key first.
-  const transfersCache = new Map<string, TransfersCacheEntry>();
+  // Deterministic response cache (utils/ttlLruCache): one canonical
+  // scan per (chain, address, window, mode) for ~60s, bounded to 20
+  // entries — hit-validity here is pure freshness, so the shared cache
+  // IS the read path.
+  const transfersCache = createTtlLruCache<TransfersCacheEntry>({
+    ttlMs: TRANSFERS_CACHE_TTL_MS,
+    maxEntries: TRANSFERS_CACHE_MAX_ENTRIES,
+    now,
+  });
 
-  const readTransfersCache = (key: string): TransfersCacheEntry | null => {
-    const entry = transfersCache.get(key);
-    if (!entry) return null;
-    if (now() > entry.expiresAt) {
-      transfersCache.delete(key);
-      return null;
-    }
-    transfersCache.delete(key);
-    transfersCache.set(key, entry);
-    return entry;
-  };
+  const readTransfersCache = (key: string): TransfersCacheEntry | null =>
+    transfersCache.get(key) ?? null;
 
   const writeTransfersCache = (
     key: string,
@@ -386,18 +365,7 @@ const createTokenTransferService = (deps: TokenTransferServiceDeps) => {
     // The scan time is captured once per entry: later cache hits keep
     // reporting it (freshness = scan age, not serve age).
     const scannedAt = new Date(now()).toISOString();
-    transfersCache.delete(key);
-    transfersCache.set(key, {
-      expiresAt: now() + TRANSFERS_CACHE_TTL_MS,
-      transfers,
-      coverage,
-      scannedAt,
-    });
-    while (transfersCache.size > TRANSFERS_CACHE_MAX_ENTRIES) {
-      const oldest = transfersCache.keys().next().value;
-      if (oldest === undefined) break;
-      transfersCache.delete(oldest);
-    }
+    transfersCache.set(key, { transfers, coverage, scannedAt });
     return scannedAt;
   };
 
@@ -424,10 +392,11 @@ const createTokenTransferService = (deps: TokenTransferServiceDeps) => {
     const startedAt = now();
     let upper = latest;
     let chunkSize = INITIAL_CHUNK_BLOCKS;
-    // Highest chunk size this provider is known to REJECT (range caps):
-    // growth after a clean chunk stays below it, so a capped provider does
-    // not oscillate fail→halve→succeed→double→fail burning the call budget.
-    let providerCeiling = MAX_CHUNK_BLOCKS;
+    // Provider ceiling memory (utils/scanLadder): growth after a clean
+    // chunk stays below the highest size this provider is known to
+    // reject, so a capped provider does not oscillate
+    // fail→halve→succeed→double→fail burning the call budget.
+    const ladder = createProviderCeilingMemory();
     let calls = 0;
     let covered = false;
 
@@ -480,8 +449,8 @@ const createTokenTransferService = (deps: TokenTransferServiceDeps) => {
         });
       } catch (error) {
         if (!isRetryableChunkError(error)) throw error;
-        providerCeiling = chunkSize - 1;
-        chunkSize = Math.max(Math.floor(chunkSize / 2), MIN_CHUNK_BLOCKS);
+        ladder.noteRejected(chunkSize);
+        chunkSize = ladder.halve(chunkSize);
         const detail = error instanceof Error ? error.message : String(error);
         logger.warn(
           `Transfer scan chunk for ${address} on chain ${chainId} rejected ` +
@@ -494,7 +463,7 @@ const createTokenTransferService = (deps: TokenTransferServiceDeps) => {
         break;
       }
       upper = lower - 1n;
-      chunkSize = Math.min(chunkSize * 2, providerCeiling, MAX_CHUNK_BLOCKS);
+      chunkSize = ladder.grow(chunkSize);
     }
 
     const transfers = [...discovered.values()].sort(
@@ -578,7 +547,7 @@ const createTokenTransferService = (deps: TokenTransferServiceDeps) => {
       ).catch((error: unknown) => {
         // A hung provider call is a budget outcome, not a server error:
         // report an honest (empty) partial instead of failing the request.
-        if (error instanceof ScanTimeoutError) {
+        if (error instanceof TimeoutError) {
           logger.warn(
             `Token transfer scan for ${address} on chain ${chainId} (${mode} mode) hung; ` +
             `returning empty partial result`,

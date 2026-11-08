@@ -7,8 +7,8 @@
 // removal that reverts the contract to unverified on the next fetch.
 import { useState } from 'react';
 import { css } from '@linaria/core';
-import { post, del, isBackendUnreachable } from '@/util/http';
-import { ApiError } from '@/util/apiError';
+import { post, del } from '@/util/http';
+import { describeSubmitError } from './verifyShared';
 
 // Mirrors the backend's contract (routes/verify.ts): the ABI must parse
 // to a non-empty array. Validated live while typing so a doomed 400 never
@@ -47,21 +47,17 @@ type ManualDeleteResponse = {
   success?: boolean;
 };
 
-// Infra failures get plain-word attribution: which hop was unreachable.
-// 403 is the admin-token gate; 404 on DELETE means no mark existed (the
-// refetch that follows lands on the honest state either way).
-const describeSubmitError = (error: unknown, action: 'save' | 'remove'): string => {
-  if (isBackendUnreachable(error)) {
-    return 'The explorer API is unreachable — start the backend (or fix its address in ⚙ RPC settings) and try again.';
-  }
-  if (error instanceof ApiError && error.status === 403) {
-    return 'Requires admin token — set it via ⚙️ RPC → Admin token. The server must have ADMIN_TOKEN configured.';
-  }
-  if (error instanceof ApiError && error.status === 404 && action === 'remove') {
-    return 'No manual mark was found — the contract may have been re-verified or the mark already removed.';
-  }
-  return error instanceof Error ? error.message : 'Request failed.';
-};
+// Infra failures get plain-word attribution via the shared taxonomy
+// (verifyShared); 404 on REMOVE means no mark existed (the refetch that
+// follows lands on the honest state either way).
+const describeManualSubmitError = (error: unknown, action: 'save' | 'remove'): string =>
+  describeSubmitError(error, {
+    fallback: 'Request failed.',
+    statusText: apiError =>
+      apiError.status === 404 && action === 'remove'
+        ? 'No manual mark was found — the contract may have been re-verified or the mark already removed.'
+        : null,
+  });
 
 const panelStyles = css`
   margin-bottom: 20px;
@@ -249,7 +245,7 @@ export function ManualVerifyPanel({
         onChanged();
       }
     } catch (err) {
-      setError(describeSubmitError(err, 'save'));
+      setError(describeManualSubmitError(err, 'save'));
     } finally {
       setSubmitting(false);
     }
@@ -267,7 +263,7 @@ export function ManualVerifyPanel({
       );
       onChanged();
     } catch (err) {
-      setError(describeSubmitError(err, 'remove'));
+      setError(describeManualSubmitError(err, 'remove'));
     } finally {
       setRemoving(false);
     }

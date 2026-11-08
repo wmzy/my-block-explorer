@@ -1,5 +1,6 @@
 import { invalidateRpcClients } from './realTimeData';
 import { del, get, post } from '@/util/http';
+import { parseHexQuantity } from './strictInteger';
 
 // RPC configuration management service
 export type RpcConfig = {
@@ -49,24 +50,6 @@ export async function deleteRpcConfig(chainId: number): Promise<void> {
   await del(`/api/rpc-configs/${chainId}`);
 
   invalidateRpcClients();
-}
-
-/**
- * A JSON-RPC hex QUANTITY (`0x`-prefixed, non-negative) as a safe integer,
- * or null when the answer is not one.
- *
- * parseInt(value, 16) is not this: it accepts a valid prefix and ignores
- * the rest, so '0x1zz' read as 1 and '137abc' read as 1276604 — a
- * fabricated chain id / block height that the probe would then compare
- * against the user's configuration and report as a match. BigInt first
- * (quantities are uint64 in JSON-RPC), then a safe-integer gate so a
- * value past 2^53 is rejected rather than silently rounded. Mirrors the
- * canonical reader in src/routes/chains.ts and src/util/wallet.ts.
- */
-function parseHexQuantity(value: unknown): number | null {
-  if (typeof value !== 'string' || !/^0x[0-9a-fA-F]+$/.test(value)) return null;
-  const parsed = Number(BigInt(value));
-  return Number.isSafeInteger(parsed) ? parsed : null;
 }
 
 // Test an RPC connection

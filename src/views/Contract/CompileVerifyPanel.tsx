@@ -9,8 +9,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { css } from '@linaria/core';
 import * as ff from 'fetch-fun';
-import { get, post, isBackendUnreachable, longRunningApi } from '@/util/http';
-import { ApiError } from '@/util/apiError';
+import { get, post, longRunningApi } from '@/util/http';
+import { describeSubmitError, type PanelResult } from './verifyShared';
 
 // The compilers endpoint's entry shape (see CompileVerifyService).
 type CompilerVersionEntry = {
@@ -45,19 +45,16 @@ type CompileVerifyResponse = {
   };
 };
 
-type PanelResult =
-  | {
-    kind: 'verified';
-    tier: 'exact' | 'matches-metadata-only';
-    contractName: string;
-    compilerVersion: string;
-    onChainAuxdata?: string;
-    compiledAuxdata?: string;
-  }
-  | { kind: 'mismatch'; text: string }
-  | { kind: 'compile-error'; errors: string[] }
-  | { kind: 'notice'; text: string }
-  | { kind: 'error'; text: string };
+// The compile outcome builds on the shared panel union (verifyShared):
+// the verified payload carries the compile tiers, plus this panel's two
+// extra channels (bytecode mismatch, compiler errors).
+type CompilePanelResult = PanelResult<{
+  tier: 'exact' | 'matches-metadata-only';
+  contractName: string;
+  compilerVersion: string;
+  onChainAuxdata?: string;
+  compiledAuxdata?: string;
+}> | { kind: 'mismatch'; text: string } | { kind: 'compile-error'; errors: string[] };
 
 // Compiling runs a real compiler (download on first use + wasm compile):
 // the default 10s per-attempt budget would abort healthy runs, and even
@@ -203,23 +200,6 @@ const auxdataStyles = css`
   word-break: break-all;
 `;
 
-// Infra failures get plain-word attribution: which hop was unreachable
-// (same taxonomy as the Sourcify panel; 0 means the explorer API never
-// answered, 403 is the admin-token gate, 502 names the compile-side
-// network need the backend already put into words).
-const describeSubmitError = (error: unknown): string => {
-  if (isBackendUnreachable(error)) {
-    return 'The explorer API is unreachable — start the backend (or fix its address in ⚙ RPC settings) and try again.';
-  }
-  if (error instanceof ApiError && error.status === 403) {
-    return 'Requires admin token — set it via ⚙️ RPC → Admin token. The server must have ADMIN_TOKEN configured.';
-  }
-  if (error instanceof ApiError && error.status === 504) {
-    return 'The compile run exceeded its time budget — try a smaller input or a compiler version already downloaded.';
-  }
-  return error instanceof Error ? error.message : 'Verification request failed.';
-};
-
 const truncateHex = (hex: string | undefined, chars = 64): string => {
   if (hex === undefined) return '(none)';
   const body = hex.startsWith('0x') ? hex.slice(2) : hex;
@@ -271,7 +251,7 @@ export function CompileVerifyPanel({
   const [jsonText, setJsonText] = useState('');
   const [contractNameText, setContractNameText] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [result, setResult] = useState<PanelResult | null>(null);
+  const [result, setResult] = useState<CompilePanelResult | null>(null);
 
   // The version list is chain-independent and 24h server-cached; fetched
   // once per mount (the panel only renders while open).
@@ -369,7 +349,18 @@ export function CompileVerifyPanel({
         });
       }
     } catch (error) {
-      setResult({ kind: 'error', text: describeSubmitError(error) });
+      // Infra failures get plain-word attribution via the shared
+      // taxonomy (verifyShared); 504 names the compile-side time budget.
+      setResult({
+        kind: 'error',
+        text: describeSubmitError(error, {
+          fallback: 'Verification request failed.',
+          statusText: apiError =>
+            apiError.status === 504
+              ? 'The compile run exceeded its time budget — try a smaller input or a compiler version already downloaded.'
+              : null,
+        }),
+      });
     } finally {
       setSubmitting(false);
     }

@@ -10,6 +10,18 @@ import { createLogger } from '../server/logger';
 
 const logger = createLogger('rpc-manager');
 
+// Default transport tuning shared by every config row the manager loads
+// and by client creation: 10s request timeout, 3 retries, 100 req/s
+// ceiling. The load paths always plant the full set; client creation
+// honors a user config's timeout/retryCount overrides when present.
+// rateLimit is NOT overridable at client creation today (only the load
+// path plants it) — a possible follow-up, deliberately left unchanged.
+const DEFAULT_RPC_OPTIONS = {
+  timeout: 10_000,
+  retryCount: 3,
+  rateLimit: 100,
+} as const;
+
 // Log-safe RPC endpoint identity: provider URLs routinely embed API keys
 // in the path or query (Alchemy/Infura style), so logs carry the HOST
 // only — never the full URL (same convention as WatchService's
@@ -73,9 +85,7 @@ export class RpcManager {
           chainId: config.chainId,
           customRpcUrl: config.url ?? undefined,
           rpcBackups: undefined,
-          timeout: 10000,
-          retryCount: 3,
-          rateLimit: 100,
+          ...DEFAULT_RPC_OPTIONS,
         });
       }
     });
@@ -110,9 +120,7 @@ export class RpcManager {
             chainId: row.chainId,
             customRpcUrl: row.rpcUrl,
             rpcBackups: undefined,
-            timeout: 10000,
-            retryCount: 3,
-            rateLimit: 100,
+            ...DEFAULT_RPC_OPTIONS,
           });
         }
       }
@@ -226,8 +234,8 @@ export class RpcManager {
     return createPublicClient({
       chain: viemChain,
       transport: http(rpcUrl, {
-        timeout: userConfig?.timeout ?? 10000,
-        retryCount: userConfig?.retryCount ?? 3,
+        timeout: userConfig?.timeout ?? DEFAULT_RPC_OPTIONS.timeout,
+        retryCount: userConfig?.retryCount ?? DEFAULT_RPC_OPTIONS.retryCount,
       }),
     });
   }

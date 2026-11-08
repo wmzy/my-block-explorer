@@ -7,11 +7,12 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { css, cx } from '@linaria/core';
 import { TypedLink } from '@native-router/react';
 import { Address, AbiEvent } from 'viem';
-import { formatFixedDecimals } from '@/utils/format';
+import { EmptyState, ErrorState } from '@/components/ui/ErrorState';
+import { formatFixedDecimals, truncateMiddle } from '@/utils/format';
 import { EventFilterPanel, type EventFilterState } from './EventFilterPanel';
 import { get } from '@/util/http';
 import { getApiBase } from '@/util/apiBase';
-import { copyText } from '@/util/clipboard';
+import { useCopyFeedback } from '@/util/useCopyFeedback';
 import { parseStrictInteger } from '@/utils/validation';
 
 // Types
@@ -584,60 +585,6 @@ const loadingSpinner = css`
   }
 `;
 
-const errorContainer = css`
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 48px;
-  color: var(--haze-color-danger);
-  text-align: center;
-`;
-
-const errorMessage = css`
-  margin-bottom: 16px;
-  font-weight: 500;
-`;
-
-const retryButton = css`
-  padding: 8px 16px;
-  background: var(--haze-color-primary);
-  color: var(--haze-color-text-inverse);
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 14px;
-
-  &:hover {
-    background: var(--haze-color-primary-hover);
-  }
-`;
-
-const emptyStateContainer = css`
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 48px;
-  color: var(--haze-color-text-muted);
-  text-align: center;
-`;
-
-const emptyStateIcon = css`
-  font-size: 48px;
-  margin-bottom: 16px;
-  opacity: 0.5;
-`;
-
-const emptyStateTitle = css`
-  font-size: 18px;
-  font-weight: 600;
-  margin-bottom: 8px;
-`;
-
-const emptyStateDescription = css`
-  font-size: 14px;
-  color: var(--haze-color-text-muted);
-`;
-
 // Enhanced sorting controls
 const sortControlsContainer = css`
   display: flex;
@@ -872,16 +819,13 @@ const performanceToggleButton = css`
   }
 `;
 
-// Helper functions
-const formatAddress = (address: string): string => {
-  if (!address) return 'N/A';
-  return `${address.slice(0, 6)}...${address.slice(-4)}`;
-};
+// Helper functions — thin N/A-fallback wrappers over the shared
+// truncateMiddle (local lead/tail preserved: addresses 6/4, hashes 10/8).
+const formatAddress = (address: string): string =>
+  address ? truncateMiddle(address, 6, 4) : 'N/A';
 
-const formatTransactionHash = (hash: string): string => {
-  if (!hash) return 'N/A';
-  return `${hash.slice(0, 10)}...${hash.slice(-8)}`;
-};
+const formatTransactionHash = (hash: string): string =>
+  hash ? truncateMiddle(hash, 10, 8) : 'N/A';
 
 const formatTimestamp = (timestamp: string | null | undefined): string => {
   // Missing (never-fetched) or unparseable timestamps render as an explicit
@@ -1011,25 +955,10 @@ const argFiltersQueryParam = (abiFilters?: Record<string, string>): string | und
 // (RawJson/SourceCodeViewer): the button itself reports the honest outcome
 // of the clipboard call, never a guess.
 function CopyButton({ text, label }: { text: string; label: string }) {
-  const [result, setResult] = useState<'idle' | 'ok' | 'fail'>('idle');
-  const timerRef = useRef<number | undefined>(undefined);
-
-  useEffect(() => {
-    return () => {
-      if (timerRef.current !== undefined) window.clearTimeout(timerRef.current);
-    };
-  }, []);
-
-  const handleCopy = async () => {
-    // Shared copyText: async Clipboard API with the legacy execCommand
-    // fallback (plain-http LAN is the common local-explorer case).
-    setResult((await copyText(text)) ? 'ok' : 'fail');
-    if (timerRef.current !== undefined) window.clearTimeout(timerRef.current);
-    timerRef.current = window.setTimeout(() => setResult('idle'), 2000);
-  };
+  const { state: result, copy } = useCopyFeedback();
 
   return (
-    <button type="button" className={rawLogCopyButton} onClick={() => void handleCopy()}>
+    <button type="button" className={rawLogCopyButton} onClick={() => void copy(text)}>
       {result === 'ok' ? 'Copied ✓' : result === 'fail' ? 'Copy failed' : label}
     </button>
   );
@@ -1965,13 +1894,7 @@ export const EventTable: React.FC<EventTableProps> = ({
   if (error && events.length === 0) {
     return (
       <div className={cx(tableContainer, className)}>
-        <div className={errorContainer}>
-          <div className={errorMessage}>Failed to load events</div>
-          <div style={{ color: 'var(--haze-color-text-muted)', marginBottom: 16 }}>{error}</div>
-          <button className={retryButton} onClick={handleRetry}>
-            Retry
-          </button>
-        </div>
+        <ErrorState message={`Failed to load events: ${error}`} onRetry={handleRetry} />
       </div>
     );
   }
@@ -1989,15 +1912,13 @@ export const EventTable: React.FC<EventTableProps> = ({
       )}
 
       {events.length === 0 && !loading ? (
-        <div className={emptyStateContainer}>
-          <div className={emptyStateIcon}>📋</div>
-          <div className={emptyStateTitle}>No events found</div>
-          <div className={emptyStateDescription}>
+        <EmptyState message="No events found">
+          <div>
             {hasActiveFilters
               ? 'No events match the current filters.'
               : 'No events indexed in this range yet.'}
           </div>
-        </div>
+        </EmptyState>
       ) : (
         <>
           {/* Enhanced Sorting Controls */}
@@ -2252,12 +2173,7 @@ export const EventTable: React.FC<EventTableProps> = ({
 
           {/* Error overlay for pagination errors */}
           {error && events.length > 0 && (
-            <div className={errorContainer}>
-              <div className={errorMessage}>Error loading more events</div>
-              <button className={retryButton} onClick={handleRetry}>
-                Retry
-              </button>
-            </div>
+            <ErrorState message="Error loading more events" onRetry={handleRetry} />
           )}
 
           {/* Enhanced Pagination controls */}

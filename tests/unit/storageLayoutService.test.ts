@@ -92,6 +92,25 @@ describe('StorageLayoutService - NOT_FOUND cache TTL', () => {
     expect(mockDb.delete).not.toHaveBeenCalled();
   });
 
+  it('deletes a NOT_FOUND row with null updatedAt instead of serving it (null contract pin)', async () => {
+    // Pins the null contract explicitly: a missing timestamp is EXPIRED,
+    // so the row is dropped and the miss re-asked. (The pre-negativeCache
+    // formula reached expired only arithmetically — null bound to the
+    // epoch, age ≈ half a million hours; the helper states the property.)
+    mockDb.select.mockImplementation(() => ({
+      from: () => ({
+        where: () => ({
+          limit: async () => [row({ layout: 'NOT_FOUND', source: null, updatedAt: null })],
+        }),
+      }),
+    }));
+
+    const result = await storageLayoutService.getFromDatabase(chainId, address);
+
+    expect(result).toBeNull();
+    expect(mockDb.delete).toHaveBeenCalledTimes(1);
+  });
+
   it('returns a hit for a valid cached layout regardless of age', async () => {
     mockDb.select.mockImplementation(() => ({
       from: () => ({

@@ -1,22 +1,25 @@
 import { describe, it, expect } from 'vitest';
-import { isAddress, isAddressType, ADDRESS_REGEX } from '../addressTypeDetection';
+import { isAddress, isAddressType } from '../addressTypeDetection';
+// The shape regex moved to its canonical home (utils/address.ts); the
+// assertions below pin it there.
+import { HEX_ADDRESS_RE } from '../address';
 
 describe('addressTypeDetection', () => {
-  describe('ADDRESS_REGEX', () => {
+  describe('HEX_ADDRESS_RE', () => {
     it('should match valid Ethereum addresses', () => {
-      expect(ADDRESS_REGEX.test('0x1234567890123456789012345678901234567890')).toBe(true);
-      expect(ADDRESS_REGEX.test('0xABCDEF1234567890123456789012345678901234')).toBe(true);
-      expect(ADDRESS_REGEX.test('0xabcdef1234567890123456789012345678901234')).toBe(true);
-      expect(ADDRESS_REGEX.test('0x0000000000000000000000000000000000000000')).toBe(true);
-      expect(ADDRESS_REGEX.test('0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF')).toBe(true);
+      expect(HEX_ADDRESS_RE.test('0x1234567890123456789012345678901234567890')).toBe(true);
+      expect(HEX_ADDRESS_RE.test('0xABCDEF1234567890123456789012345678901234')).toBe(true);
+      expect(HEX_ADDRESS_RE.test('0xabcdef1234567890123456789012345678901234')).toBe(true);
+      expect(HEX_ADDRESS_RE.test('0x0000000000000000000000000000000000000000')).toBe(true);
+      expect(HEX_ADDRESS_RE.test('0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF')).toBe(true);
     });
 
     it('should not match invalid addresses', () => {
-      expect(ADDRESS_REGEX.test('0x123')).toBe(false);
-      expect(ADDRESS_REGEX.test('0x12345678901234567890123456789012345678901')).toBe(false);
-      expect(ADDRESS_REGEX.test('1234567890123456789012345678901234567890')).toBe(false);
-      expect(ADDRESS_REGEX.test('0xGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG')).toBe(false);
-      expect(ADDRESS_REGEX.test('')).toBe(false);
+      expect(HEX_ADDRESS_RE.test('0x123')).toBe(false);
+      expect(HEX_ADDRESS_RE.test('0x12345678901234567890123456789012345678901')).toBe(false);
+      expect(HEX_ADDRESS_RE.test('1234567890123456789012345678901234567890')).toBe(false);
+      expect(HEX_ADDRESS_RE.test('0xGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG')).toBe(false);
+      expect(HEX_ADDRESS_RE.test('')).toBe(false);
     });
   });
 

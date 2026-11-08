@@ -1,13 +1,10 @@
 import type React from 'react';
 import { CopyableHash } from '@/components/ui/CopyableHash';
-
-export const ADDRESS_REGEX = /^0x[a-fA-F0-9]{40}$/;
+import { isAddressShape } from '@/utils/address';
+import { truncateMiddle } from '@/utils/format';
 
 export function isAddress(value: unknown): boolean {
-  if (typeof value !== 'string') {
-    return false;
-  }
-  return ADDRESS_REGEX.test(value);
+  return typeof value === 'string' && isAddressShape(value);
 }
 
 export function isAddressType(type: string): boolean {
@@ -29,15 +26,6 @@ type FormatOptions = {
   truncateLength?: number;
 };
 
-function truncateAddress(address: string, length: number): string {
-  if (address.length <= length * 2 + 2) {
-    return address;
-  }
-  const prefix = address.slice(0, length);
-  const suffix = address.slice(-length);
-  return `${prefix}...${suffix}`;
-}
-
 function getAddressHref(chainId: number, address: string): string {
   return `/chain/${chainId}/address/${address}`;
 }
@@ -54,7 +42,7 @@ export function formatResultWithLinks(result: unknown, options: FormatOptions): 
   }
 
   if (typeof result === 'string' && isAddress(result)) {
-    const truncated = truncateAddress(result, truncateLength);
+    const truncated = truncateMiddle(result, truncateLength, truncateLength);
     const href = getAddressHref(chainId, result);
     return <CopyableHash value={result} truncated={truncated} href={href} />;
   }
@@ -66,7 +54,7 @@ export function formatResultWithLinks(result: unknown, options: FormatOptions): 
           [
           {result.map((item, idx) => {
             const value = typeof item === 'bigint' ? item.toString() : String(item);
-            const truncated = truncateAddress(value, truncateLength);
+            const truncated = truncateMiddle(value, truncateLength, truncateLength);
             const href = getAddressHref(chainId, value);
             return (
               <span key={idx}>
@@ -96,7 +84,7 @@ export function formatResultWithLinks(result: unknown, options: FormatOptions): 
         typeof value === 'string' &&
         isAddress(value)
       ) {
-        const truncated = truncateAddress(value, truncateLength);
+        const truncated = truncateMiddle(value, truncateLength, truncateLength);
         const href = getAddressHref(chainId, value);
         formattedFields.push(
           <span key={key}>
@@ -109,7 +97,7 @@ export function formatResultWithLinks(result: unknown, options: FormatOptions): 
             {key}: [
             {value.map((v, i) => {
               const strVal = typeof v === 'bigint' ? v.toString() : String(v);
-              const truncated = truncateAddress(strVal, truncateLength);
+              const truncated = truncateMiddle(strVal, truncateLength, truncateLength);
               const href = getAddressHref(chainId, strVal);
               return (
                 <span key={i}>

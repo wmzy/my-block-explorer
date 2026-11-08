@@ -19,7 +19,7 @@ import { useLatestBlocks } from '@/services/chainRpc';
 import { useLatestBlocksFeed } from '@/services/homeFeed';
 import { finalityLabelFor, useFinalityHeads } from '@/services/blocks';
 import { describeBlockProducer } from '@/utils/blockRpcData';
-import { formatNumber, formatRelativeTime } from '@/utils/format';
+import { formatNumber, formatRelativeTime, truncateMiddle } from '@/utils/format';
 import { gasUsageShare } from '@/utils/gasShare';
 
 const LIMIT = 20;
@@ -85,10 +85,10 @@ const minerNotExposedNote = css`
 // the old inline division printed "NaN%" / "Infinity%" there.
 export const formatGasUsage = (used: string, limit: string): string => gasUsageShare(used, limit);
 
-const formatMiner = (miner: string): string => {
-  if (!miner || miner.length < 10) return miner;
-  return `${miner.slice(0, 8)}...${miner.slice(-6)}`;
-};
+// Miner cell: the shared 8/6 middle truncation; a missing miner (the
+// zero-address convention on Bor-style chains is handled above) renders
+// as-is.
+const formatMiner = (miner: string): string => truncateMiddle(miner, 8, 6);
 
 export default function BlocksList() {
   const { params, router } = useMatched();

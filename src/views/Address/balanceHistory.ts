@@ -17,8 +17,8 @@
 //   curve. The card must then say the balance before the oldest
 //   discovered transaction is unknown.
 // - Every sum is BigInt-exact wei; floats only ever touch pixel mapping.
-import { formatUnits } from 'viem';
 import { parseDecimalInteger } from '@/views/Address/holdings';
+import { formatNativeDisplay } from '@/utils/format';
 
 /** Serialized discovered-tx row as the API returns it (numerics as strings). */
 export type BalanceTxInput = {
@@ -308,11 +308,11 @@ export function buildBalanceChartGeometry(
 /**
  * formatUnits output trimmed for display: full integer precision kept,
  * trailing fractional zeros cut, a bare sign dropped. BigInt-exact —
- * formatUnits itself never rounds.
+ * the shared formatNativeDisplay's 'trim' contract without the sub-floor
+ * cutoff (a chart point's exact value is the point). The ''/'-' guard
+ * stays: a malformed render never reaches the axis.
  */
 export function formatNativeAmount(value: bigint, decimals: number): string {
-  const raw = formatUnits(value, decimals);
-  if (!raw.includes('.')) return raw;
-  const trimmed = raw.replace(/0+$/, '').replace(/\.$/, '');
-  return trimmed === '' || trimmed === '-' ? '0' : trimmed;
+  const shown = formatNativeDisplay(value, decimals, { floor: false });
+  return shown === '' || shown === '-' ? '0' : shown;
 }

@@ -3,9 +3,8 @@ import { HTTPException } from 'hono/http-exception';
 import type { Abi } from 'viem';
 import { createLogger } from '../server/logger';
 import { createRateLimiter } from '../middleware/rate-limit';
-import { getChainName, isChainSupported, getSupportedChainIds } from '../config/chains';
-import { getValidatedChainId, getValidatedAddress } from '../server/validation';
-import { parseStrictInteger } from '../utils/validation';
+import { getChainName } from '../config/chains';
+import { parseChainAndAddressParams, parseStrictInteger } from '../utils/validation';
 import {
   addIndexingRange,
   getIndexingRanges,
@@ -50,41 +49,27 @@ const isValidBlockBound = (value: unknown): value is BlockTagInput =>
   typeof value === 'number' || (typeof value === 'string' && VALID_BLOCK_TAGS.includes(value));
 
 const validateChainAndAddress = (chainIdStr: string, addressStr: string) => {
-  const chainId = getValidatedChainId(chainIdStr);
-
-  // Address validation is delegated to getValidatedAddress: all-lowercase
-  // (or all-uppercase) passes — the checksum-less convention — while a
-  // mixed-case address must carry a correct EIP-55 checksum. Its
-  // HTTPException is converted to the JSON error shape used across this
-  // file instead of escaping as Hono's plain-text exception response.
-  let address: string;
-  try {
-    address = getValidatedAddress(addressStr);
-  } catch (error) {
+  const parsed = parseChainAndAddressParams(chainIdStr, addressStr);
+  if ('error' in parsed) {
+    // Chain failures keep today's surface: the HTTPException escapes this
+    // helper and the app-level onError renders it as the canonical JSON
+    // envelope (the short message doubles as the machine-readable error
+    // code). Address failures convert to the JSON error shape used across
+    // this file instead — the two-tier verdict's message rides along
+    // (all-lowercase/all-uppercase pass as the checksum-less convention,
+    // a mixed-case address must carry a correct EIP-55 checksum).
+    if (parsed.error === 'invalid_chain_id' || parsed.error === 'unsupported_chain') {
+      throw new HTTPException(400, { message: parsed.message });
+    }
     return {
-      error: createApiError(
-        400,
-        'invalid_address',
-        error instanceof HTTPException
-          ? error.message
-          : 'Address must be a valid 42-character hexadecimal string starting with 0x',
-      ),
-      status: 400 as const,
-    };
-  }
-
-  if (isNaN(chainId) || !isChainSupported(chainId)) {
-    return {
-      error: createApiError(400, 'unsupported_chain', `Chain ID ${chainId} is not supported`, {
-        supportedChains: getSupportedChainIds(),
-      }),
+      error: createApiError(400, 'invalid_address', parsed.message),
       status: 400 as const,
     };
   }
 
   // Storage keys stay lowercase (C-3): rows written before checksum-tight
   // validation remain reachable.
-  return { chainId, address: address.toLowerCase() as `0x${string}` };
+  return parsed;
 };
 
 // Query params shared by the events list and export endpoints. Malformed

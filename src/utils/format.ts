@@ -117,11 +117,30 @@ export function formatTokenAmount(
 }
 
 /**
- * Format an address - show the first and last few characters
+ * Middle truncation with an explicit head/tail budget — the single
+ * primitive behind every shortened address/hash cell. `lead`/`tail` are
+ * kept character counts (callers pass `length + 2` when the head should
+ * include the `0x` prefix), so the explorer's two display budgets (the
+ * 6/4 `formatAddress` form and the 8/6 list-cell form) share one slice
+ * pair instead of eleven hand-rolled ones.
+ *
+ * The input is returned unchanged when an ellipsis would not shorten it
+ * (empty and short strings included: a result at least as long as the
+ * input is not a truncation). Sites with their own fallback contract
+ * (the lists' 'N/A' for a blank cell) wrap THIS, never a second slice.
+ */
+export function truncateMiddle(s: string, lead: number, tail: number): string {
+  if (s.length <= lead + tail + 3) return s;
+  return `${s.slice(0, lead)}...${s.slice(-tail)}`;
+}
+
+/**
+ * Format an address - show the first and last few characters. The head
+ * slice includes the `0x` prefix (`length` counts hex body characters).
  */
 export function formatAddress(address: string, length = 6): string {
   if (!address || address.length < 10) return address;
-  return `${address.slice(0, length + 2)}...${address.slice(-length)}`;
+  return truncateMiddle(address, length + 2, length);
 }
 
 /**
@@ -129,8 +148,13 @@ export function formatAddress(address: string, length = 6): string {
  */
 export function formatHash(hash: string, length = 8): string {
   if (!hash || hash.length < 10) return hash;
-  return `${hash.slice(0, length + 2)}...${hash.slice(-length)}`;
+  return truncateMiddle(hash, length + 2, length);
 }
+
+// Locale-pinned digit grouping: identical across host locales AND stable
+// for integers whose magnitude exceeds 2^53 (where
+// Number.prototype.toLocaleString would flip to exponential notation).
+const groupDigits = (digits: string): string => digits.replace(/\B(?=(\d{3})+(?!\d))/g, ',');
 
 /**
  * Format a number - add thousands separators
@@ -138,6 +162,105 @@ export function formatHash(hash: string, length = 8): string {
 export function formatNumber(value: number | string | bigint): string {
   const num = typeof value === 'bigint' ? Number(value) : Number(value);
   return new Intl.NumberFormat('en-US').format(num);
+}
+
+/**
+ * Format a BigInt with thousands separators, exactly.
+ *
+ * Both call sites previously went through `toLocaleString()` — one as
+ * `BigInt(x).toLocaleString()`, one as `Number(BigInt(x)).toLocaleString()`
+ * — which loses grouping determinism to the host locale and (in the
+ * Number variant) precision past 2^53. String-level grouping has neither
+ * failure mode; realistic gas magnitudes render identically to the old
+ * en-US behavior.
+ */
+export function formatBigInt(value: bigint): string {
+  return groupDigits(value.toString());
+}
+
+/**
+ * How the fractional part of a native amount is rendered by
+ * formatNativeDisplay.
+ *
+ * - 'trim' — the exact minimal fraction, trailing zeros cut (chart
+ *   labels, mempool values);
+ * - 'fixed4' — exactly four fraction digits, truncated then zero-padded,
+ *   with optional integer grouping (the address summary totals);
+ * - 'round4' — exactly four fraction digits, half-up (the tx-surface
+ *   display contract formatValue/formatEth already use, decimals-generic).
+ */
+export type NativeFractionStyle = 'trim' | 'fixed4' | 'round4';
+
+export type FormatNativeDisplayOptions = {
+  /** Rendered after the amount with a space, e.g. 'ETH' → "1.5 ETH". */
+  symbol?: string;
+  /** Fraction style, default 'trim'. See NativeFractionStyle. */
+  fraction?: NativeFractionStyle;
+  /** Thousands separators on the integer part (summary totals). */
+  grouped?: boolean;
+  /**
+   * Sub-floor cutoff (default true): a nonzero amount that would render
+   * all-zero at four digits renders "<0.0001" instead — the same floor
+   * formatValue uses. Chart labels pass false: a point's exact value is
+   * the point.
+   */
+  floor?: boolean;
+};
+
+/**
+ * Format a native-token amount over the chain's OWN decimals — the one
+ * decimals-generic display entry point for the native-value surfaces
+ * (balance chart, mempool pool values, summary totals, the address tx
+ * table). Zero renders exactly; dust below the 4-decimal floor (when
+ * `floor` is on) renders the honest "<0.0001" cutoff compared in integer
+ * wei (`wei < 10^(decimals-4)`, never a rounded double).
+ */
+export function formatNativeDisplay(
+  wei: bigint,
+  decimals: number,
+  options: FormatNativeDisplayOptions = {},
+): string {
+  const { symbol, fraction = 'trim', grouped = false, floor = true } = options;
+  const suffix = symbol === undefined ? '' : ` ${symbol}`;
+  if (wei === 0n) return `0${suffix}`;
+  if (floor && wei > 0n && decimals >= 4 && wei < 10n ** BigInt(decimals - 4)) {
+    return `<0.0001${suffix}`;
+  }
+
+  const applyGrouping = (text: string): string => {
+    if (!grouped) return text;
+    const [intPart, ...rest] = text.split('.');
+    return rest.length > 0 ? `${groupDigits(intPart)}.${rest.join('.')}` : groupDigits(intPart);
+  };
+
+  if (fraction === 'round4') {
+    const shown = formatFixedDecimals(wei, decimals, 4);
+    // Unreachable for real chain decimals; degrade to the raw integer
+    // rather than render NaN.
+    if (shown === null) return `${wei.toString()}${suffix}`;
+    return `${applyGrouping(shown)}${suffix}`;
+  }
+
+  // Exact integer split — viem's formatUnits algorithm without the viem
+  // import (this module stays dependency-free): whole and padded
+  // fraction reassembled from BigInt digits only.
+  const unit = 10n ** BigInt(decimals);
+  const negative = wei < 0n;
+  const magnitude = negative ? -wei : wei;
+  const whole = magnitude / unit;
+  const fractionDigits = (magnitude % unit).toString().padStart(decimals, '0');
+
+  if (fraction === 'fixed4') {
+    const fixed = fractionDigits.slice(0, 4).padEnd(4, '0');
+    return `${negative ? '-' : ''}${applyGrouping(`${whole}.${fixed}`)}${suffix}`;
+  }
+
+  // 'trim': trailing fractional zeros cut; a bare sign or empty body is
+  // not a number the caller should see, but stay exact here — the
+  // balance-chart wrapper owns that guard.
+  const trimmed = fractionDigits.replace(/0+$/, '');
+  const body = trimmed === '' ? `${whole}` : `${whole}.${trimmed}`;
+  return `${negative ? '-' : ''}${applyGrouping(body)}${suffix}`;
 }
 
 /**

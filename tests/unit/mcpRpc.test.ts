@@ -3,8 +3,9 @@
 // exercised; the viem calls sit behind clientFor and are covered by the
 // live smoke).
 
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getSupportedChainIds } from '@/config/chains';
+import { resetCustomChainsForTests } from '@/config/customChains';
 import { RpcGateway } from '@/mcp/rpc';
 import { ExplorerApi } from '@/mcp/rest';
 
@@ -91,6 +92,66 @@ describe('RpcGateway.chainMeta precedence', () => {
     tick += 61_000;
     await gateway.chainMeta(1);
     expect(fetchImpl).toHaveBeenCalledTimes(4);
+  });
+});
+
+// Chain METADATA precedence resolves through the one shared resolver
+// (getChainInfo): fetched registrations are mirrored into the runtime
+// registry and custom wins over viem's dev placeholders — the same rule
+// the backend's RpcManager and the browser already follow. The old
+// local implementation preferred the builtin name for a user-config
+// url, which diverged from every other surface.
+describe('RpcGateway chain metadata resolves via the shared custom→builtin resolver', () => {
+  beforeEach(() => {
+    resetCustomChainsForTests();
+  });
+
+  it('lets a registration shadow viem’s placeholder even under a user-config url', async () => {
+    const { gateway } = gatewayFor(url => {
+      if (url.endsWith('/api/rpc-configs')) {
+        // A user RPC override on anvil's id (31337): the URL wins, and
+        // the NAME must come from the registration, not viem's template.
+        return {
+          status: 200,
+          body: { configs: [{ chainId: 31337, url: 'http://my-anvil:8546', urlRedacted: false }] },
+        };
+      }
+      if (url.endsWith('/api/chains/custom')) {
+        return {
+          status: 200,
+          body: { chains: [{ chainId: 31337, name: 'local anvil', symbol: 'ANV', rpcUrl: 'http://127.0.0.1:8545' }] },
+        };
+      }
+      return null;
+    });
+    const meta = await gateway.chainMeta(31337);
+    expect(meta).toMatchObject({
+      name: 'local anvil',
+      symbol: 'ANV',
+      rpcUrl: 'http://my-anvil:8546',
+      rpcSource: 'user-config',
+    });
+  });
+
+  it('reconciles the runtime registry when a registration disappears from the backend', async () => {
+    const { gateway: first } = gatewayFor(url => {
+      if (url.endsWith('/api/rpc-configs')) return { status: 200, body: { configs: [] } };
+      if (url.endsWith('/api/chains/custom')) {
+        return {
+          status: 200,
+          body: { chains: [{ chainId: 31337, name: 'local anvil', symbol: 'ANV', rpcUrl: 'http://127.0.0.1:8545' }] },
+        };
+      }
+      return null;
+    });
+    await first.chainMeta(31337);
+
+    // A fresh gateway (its own remote cache) sees the registration gone:
+    // the mirrored registry entry must drop, and viem's placeholder
+    // default serves the id again.
+    const { gateway: second } = gatewayFor(() => ({ status: 200, body: { configs: [], chains: [] } }));
+    const meta = await second.chainMeta(31337);
+    expect(meta.rpcSource).toBe('viem-default');
   });
 });
 

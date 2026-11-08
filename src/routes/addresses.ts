@@ -22,7 +22,7 @@ import { getChainName } from '../config/chains';
 
 const logger = createLogger('addresses-routes');
 import { getValidatedChainId, getValidatedAddress } from '../server/validation';
-import { parseStrictInteger } from '../utils/validation';
+import { parsePaginationParams } from '../utils/validation';
 import { formatTransactionForApi, safeJsonResponse } from '../utils/serialization';
 import { respondError } from '../utils/api-error';
 import { createRateLimiter } from '../middleware/rate-limit';
@@ -116,22 +116,26 @@ app.get(
     const chainId = getValidatedChainId(c.req.param('chainId'));
     const address = getValidatedAddress(c.req.param('address'));
 
-    const rawLimit = c.req.query('limit');
-    const rawPage = c.req.query('page');
-    // Strict decimal parse (parseInt accepted a valid prefix and ignored the
-    // rest, so `?limit=20abc` was served as limit 20).
-    const parsedLimit = rawLimit === undefined || rawLimit === '' ? 20 : parseStrictInteger(rawLimit);
-    const parsedPage = rawPage === undefined || rawPage === '' ? 1 : parseStrictInteger(rawPage);
+    // Pagination params fail loudly with 400 on non-numeric input instead of
+    // silently degrading to NaN arithmetic (same philosophy as the offset
+    // validation in transactions.ts). Non-positive limits are rejected too;
+    // pages below 1 keep the existing clamp-to-1 behavior. The page slot
+    // rides parsePaginationParams' offset side: 1-based default, floors at
+    // 1, and a '-' spelling is junk here (unlike the transactions-list
+    // offset, pages never clamp a negative).
+    const { offset: page, limit } = parsePaginationParams(
+      c.req.query('page'),
+      c.req.query('limit'),
+      { maxLimit: 50, defaultOffset: 1, minOffset: 1, negativeOffset: 'reject' },
+    );
 
-    if (parsedLimit === null || parsedLimit < 1) {
+    if (limit === null) {
       return respondError(c, 400, 'invalid_limit', 'limit must be a positive integer');
     }
-    if (parsedPage === null) {
+    if (page === null) {
       return respondError(c, 400, 'invalid_page', 'page must be a positive integer');
     }
 
-    const limit = Math.min(parsedLimit, 50);
-    const page = Math.max(parsedPage, 1);
     const offset = (page - 1) * limit;
 
     // Optional search-window override in blocks. Only fully-numeric values
@@ -356,11 +360,12 @@ app.get(
 
     // Chunked exports start at a non-negative integer offset; anything
     // else fails loudly (same philosophy as the list's page validation)
-    // rather than exporting from a mystery position. parseStrictInteger
-    // already refuses parseInt's lenient suffix handling ('12abc' → 12).
-    const rawOffset = c.req.query('offset') ?? '';
-    const parsedOffset = rawOffset === '' ? 0 : parseStrictInteger(rawOffset);
-    if (parsedOffset === null) {
+    // rather than exporting from a mystery position. Uncapped: the chunk
+    // size is the export row budget the response enforces separately.
+    const { offset } = parsePaginationParams(c.req.query('offset'), undefined, {
+      negativeOffset: 'reject',
+    });
+    if (offset === null) {
       return respondError(c, 400, 'invalid_offset', 'offset must be a non-negative integer');
     }
 
@@ -371,7 +376,7 @@ app.get(
         chainId,
         address,
         ADDRESS_EXPORT_MAX_ROWS,
-        parsedOffset,
+        offset,
         windowBlocks,
       );
 
@@ -503,25 +508,22 @@ app.get('/chains/:chainId/addresses/:address/scan/internal-transactions', async 
   // (~parseInt + NaN check): non-numeric, negative offset, and
   // non-positive limit are 400s instead of silent NaN arithmetic; the
   // page cap is 100.
-  const rawOffset = c.req.query('offset');
-  const rawLimit = c.req.query('limit');
-  // Strict decimal parse (parseInt accepted a valid prefix, so
-  // `?offset=5abc` was served as offset 5).
-  const parsedOffset =
-    rawOffset === undefined || rawOffset === '' ? 0 : parseStrictInteger(rawOffset);
-  const parsedLimit = rawLimit === undefined || rawLimit === '' ? 50 : parseStrictInteger(rawLimit);
+  const { offset, limit } = parsePaginationParams(c.req.query('offset'), c.req.query('limit'), {
+    negativeOffset: 'reject',
+    defaultLimit: 50,
+    maxLimit: 100,
+  });
 
-  if (parsedOffset === null || parsedOffset < 0) {
+  if (offset === null) {
     return respondError(c, 400, 'invalid_offset', 'offset must be a non-negative integer');
   }
-  if (parsedLimit === null || parsedLimit < 1) {
+  if (limit === null) {
     return respondError(c, 400, 'invalid_limit', 'limit must be a positive integer');
   }
-  const limit = Math.min(parsedLimit, 100);
 
   try {
     const page = await listInternalTransactions(chainId, address, {
-      offset: parsedOffset,
+      offset,
       limit,
     });
     c.header('X-Chain-Name', getChainName(chainId));

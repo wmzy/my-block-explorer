@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
 import { css } from '@linaria/core';
 import { numberToHex, parseEther, type Abi, type StateOverride as ViemStateOverride } from 'viem';
@@ -8,7 +8,7 @@ import { CopyableHash } from '@/components/ui/CopyableHash';
 import { getFunctionSelector, formatSelectorForDisplay } from '@/utils/functionSelector';
 import { buildCastCommand } from '@/utils/castCommand';
 import { buildViemScript } from '@/utils/viemScript';
-import { copyText } from '@/util/clipboard';
+import { useCopyFeedback } from '@/util/useCopyFeedback';
 import { formatResultWithLinks } from '@/utils/addressTypeDetection';
 import { functionSignature, type EnhancedContractFunction } from '@/utils/contractInteraction';
 import {
@@ -466,30 +466,17 @@ export function FunctionCallForm({
             });
 
   // Label-swap feedback for the copy buttons (SourceCodeViewer/RawJson
-  // pattern): the button itself reports the honest clipboard outcome.
-  const [copyFeedback, setCopyFeedback] = useState<{
-    which: 'cast' | 'calldata' | 'viem';
-    ok: boolean;
-  } | null>(null);
-  const copyTimerRef = useRef<number | undefined>(undefined);
+  // pattern): the button itself reports the honest clipboard outcome. One
+  // keyed useCopyFeedback instance shared by the three buttons — exactly
+  // one shows feedback at a time, like the single slot it replaces.
+  const { copy, stateFor } = useCopyFeedback();
 
-  useEffect(() => {
-    return () => {
-      if (copyTimerRef.current !== undefined) window.clearTimeout(copyTimerRef.current);
-    };
-  }, []);
+  const handleCopy = (which: 'cast' | 'calldata' | 'viem', text: string) => void copy(text, which);
 
-  const handleCopy = async (which: 'cast' | 'calldata' | 'viem', text: string) => {
-    // copyText covers insecure contexts (execCommand fallback) and never
-    // throws — the boolean is the honest clipboard outcome.
-    const ok = await copyText(text);
-    setCopyFeedback({ which, ok });
-    if (copyTimerRef.current !== undefined) window.clearTimeout(copyTimerRef.current);
-    copyTimerRef.current = window.setTimeout(() => setCopyFeedback(null), 2000);
+  const copyLabel = (which: 'cast' | 'calldata' | 'viem', idle: string) => {
+    const outcome = stateFor(which);
+    return outcome === 'ok' ? 'Copied ✓' : outcome === 'fail' ? 'Copy failed' : idle;
   };
-
-  const copyLabel = (which: 'cast' | 'calldata' | 'viem', idle: string) =>
-    copyFeedback?.which === which ? (copyFeedback.ok ? 'Copied ✓' : 'Copy failed') : idle;
 
   // --- Wallet send ---------------------------------------------------------
   //

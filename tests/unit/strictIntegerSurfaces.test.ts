@@ -23,6 +23,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 import { defaultProbePorts } from '@/uninstall';
 import { testRpcConnection } from '@/utils/rpcConfigService';
+import { parseHexQuantity } from '@/utils/strictInteger';
 import { walletChainId, type EIP1193Provider } from '@/util/wallet';
 import { LAST_CHAIN_STORAGE_KEY } from '@/util/storageKeys';
 import { parsePrivateNoteKey } from '@/util/privateNotes';
@@ -178,6 +179,47 @@ describe('testRpcConnection — a non-hex RPC answer is never coerced', () => {
     const result = await testRpcConnection('http://localhost:8545', 1);
     expect(result.status).toBe('success');
     expect(result.detectedChainId).toBe(1);
+  });
+});
+
+describe('parseHexQuantity — the canonical hex-quantity reader (utils/strictInteger)', () => {
+  it('parses well-formed quantities', () => {
+    expect(parseHexQuantity('0x1')).toBe(1);
+    expect(parseHexQuantity('0x7a69')).toBe(31337);
+    // Odd-length hex is a legal QUANTITY spelling ('0xabc', not '0x0abc').
+    expect(parseHexQuantity('0xabc')).toBe(0xabc);
+    expect(parseHexQuantity('0xABCDEF')).toBe(0xabcdef);
+  });
+
+  it('tolerates leading zeros rather than rejecting a provider that sends them', () => {
+    // JSON-RPC spec says minimal encoding, but leniency here is safe:
+    // the value is exact either way, and wallets/probes in the wild do
+    // send '0x01'.
+    expect(parseHexQuantity('0x01')).toBe(1);
+    expect(parseHexQuantity('0x0000000000000000000000000000000000000001')).toBe(1);
+  });
+
+  it('parses zero, and only zero, from the minimal zero quantity', () => {
+    expect(parseHexQuantity('0x0')).toBe(0);
+  });
+
+  it('rejects a bare prefix and junk (the parseInt-prefix trap)', () => {
+    expect(parseHexQuantity('0x')).toBeNull(); // prefix with no digits
+    expect(parseHexQuantity('0x1zz')).toBeNull(); // parseInt gave 1
+    expect(parseHexQuantity('137abc')).toBeNull(); // parseInt gave 1276604
+    expect(parseHexQuantity('137')).toBeNull(); // decimal, no prefix
+    expect(parseHexQuantity('')).toBeNull();
+    expect(parseHexQuantity(137)).toBeNull(); // non-string
+    expect(parseHexQuantity(null)).toBeNull();
+    expect(parseHexQuantity(undefined)).toBeNull();
+  });
+
+  it('rejects quantities past 2^53 instead of silently rounding them', () => {
+    // 2^60 + 1 is not representable as a double; a rounded value would
+    // fabricate a chain id / block height the endpoint never claimed.
+    expect(parseHexQuantity(`0x${(2n ** 60n + 1n).toString(16)}`)).toBeNull();
+    // The last safe quantity parses.
+    expect(parseHexQuantity('0x1fffffffffffff')).toBe(2 ** 53 - 1);
   });
 });
 

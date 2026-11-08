@@ -3,7 +3,7 @@ import { css } from '@linaria/core';
 import type { Abi, AbiEvent, AbiFunction, AbiParameter } from 'viem';
 import { cardStyles } from './styles';
 import type { ContractABI } from './types';
-import { copyText } from '@/util/clipboard';
+import { useCopyFeedback } from '@/util/useCopyFeedback';
 
 // Parses a raw JSON ABI string into the ContractABI shape the view's tabs
 // and panels consume (functions/events/errors split, plus the raw string
@@ -226,16 +226,8 @@ export function CustomAbiPanel({
   const [validation, setValidation] = useState<AbiValidation | null>(null);
   // Transient Copy ABI outcome: the label swaps to Copied!/Copy failed and
   // back after the reset timeout (cleared on unmount).
-  const [copyState, setCopyState] = useState<'idle' | 'copied' | 'failed'>('idle');
+  const { state: copyState, copy } = useCopyFeedback();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(
-    () => () => {
-      if (copyTimerRef.current !== null) clearTimeout(copyTimerRef.current);
-    },
-    [],
-  );
 
   const trimmed = draft.trim();
   const active = storedRaw.trim() !== '';
@@ -275,12 +267,7 @@ export function CustomAbiPanel({
   // stored, otherwise the pasted draft.
   const copySource = active ? storedRaw : trimmed;
 
-  const handleCopy = async () => {
-    const copied = await copyText(copySource);
-    setCopyState(copied ? 'copied' : 'failed');
-    if (copyTimerRef.current !== null) clearTimeout(copyTimerRef.current);
-    copyTimerRef.current = setTimeout(() => setCopyState('idle'), 2000);
-  };
+  const handleCopy = () => void copy(copySource);
 
   return (
     <div className={`${cardStyles} ${panelStyles}${active ? ' active' : ''}`}>
@@ -350,7 +337,7 @@ export function CustomAbiPanel({
           onClick={handleCopy}
           disabled={!copySource}
         >
-          {copyState === 'copied' ? 'Copied!' : copyState === 'failed' ? 'Copy failed' : 'Copy ABI'}
+          {copyState === 'ok' ? 'Copied!' : copyState === 'fail' ? 'Copy failed' : 'Copy ABI'}
         </button>
       </div>
       {validation && !validation.ok && (

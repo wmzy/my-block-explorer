@@ -1,5 +1,6 @@
 import { createRpcClient } from './realTimeData';
 import { withRetry } from './errorHandler';
+import { HEX_ADDRESS_RE } from './address';
 import { get } from '@/util/http';
 import type { Abi, AbiParameter, Address, StateOverride } from 'viem';
 
@@ -341,7 +342,7 @@ function validateArgument(
   try {
     // Address type validation
     if (type === 'address') {
-      if (typeof value !== 'string' || !value.match(/^0x[a-fA-F0-9]{40}$/)) {
+      if (typeof value !== 'string' || !HEX_ADDRESS_RE.test(value)) {
         return { valid: false, error: 'Invalid address format' };
       }
     }

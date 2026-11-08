@@ -5,7 +5,8 @@ import { createRetryableRpcCall } from '../utils/errorHandler';
 import { createLogger } from '../server/logger';
 
 const logger = createLogger('contract-source-service');
-import { addressEquals, formatAddress, isValidAddress } from '../utils/address';
+import { addressEquals, checksumAddress, isValidAddress, HEX_ADDRESS_RE } from '../utils/address';
+import { ageHours } from '../utils/negativeCache';
 import type { Address } from 'viem';
 import { analyzeRpcError, shouldRetryRpcError } from '../utils/rpcErrorHandler';
 
@@ -33,9 +34,7 @@ const MASTER_COPY_ABI = [
 
 // Guard for readContract() results: must be a non-zero 0x-prefixed 20-byte address
 const isValidResultAddress = (value: unknown): value is `0x${string}` =>
-  typeof value === 'string' && /^0x[0-9a-fA-F]{40}$/.test(value) && !/^0x0{40}$/i.test(value);
-
-const MS_PER_HOUR = 1000 * 60 * 60;
+  typeof value === 'string' && HEX_ADDRESS_RE.test(value) && !/^0x0{40}$/i.test(value);
 
 // Cache TTL tiers (in hours) for contract source records.
 // Verified non-proxy source code is immutable on-chain, so it caches long.
@@ -291,11 +290,16 @@ export class ContractSourceService {
       if (!row.creationTxHash) {
         // Failure rows expire after CREATION_FAILURE_CACHE_TTL_HOURS: a
         // contract queried seconds before deployment/verification must not
-        // stay "not found" forever. lastUpdated is the failure timestamp.
-        const ageHours = (Date.now() - (row.lastUpdated?.getTime() ?? 0)) / MS_PER_HOUR;
-        if (ageHours < CREATION_FAILURE_CACHE_TTL_HOURS) {
+        // stay "not found" forever. lastUpdated is the failure timestamp;
+        // a null one reads as expired (utils/negativeCache), never fresh.
+        const failureAgeHours = ageHours(row.lastUpdated);
+        if (failureAgeHours < CREATION_FAILURE_CACHE_TTL_HOURS) {
           logger.info(
-            { address, reason: row.creationMethod ?? 'unknown', ageHours: ageHours.toFixed(1) },
+            {
+              address,
+              reason: row.creationMethod ?? 'unknown',
+              ageHours: failureAgeHours.toFixed(1),
+            },
             'Found fresh cached failed search',
           );
           // Throw a sentinel error marking a cached failure
@@ -305,7 +309,11 @@ export class ContractSourceService {
         // Expired failure entry: drop it so the fresh search below can run
         // and re-cache (cacheFailedSearch skips inserts when a row exists).
         logger.info(
-          { address, reason: row.creationMethod ?? 'unknown', ageHours: ageHours.toFixed(1) },
+          {
+            address,
+            reason: row.creationMethod ?? 'unknown',
+            ageHours: failureAgeHours.toFixed(1),
+          },
           'Cached failed search expired, removing entry',
         );
         await db
@@ -366,7 +374,7 @@ export class ContractSourceService {
         creationTxHash: creationInfo.txHash as `0x${string}`,
         creationBlockNumber: BigInt(creationInfo.blockNumber),
         creationTimestamp: creationInfo.timestamp,
-        creatorAddress: creationInfo.creator ? formatAddress(creationInfo.creator) : null,
+        creatorAddress: creationInfo.creator ? checksumAddress(creationInfo.creator) : null,
         factoryAddress: null,
         creationMethod: 'binary_search',
         lastUpdated: new Date(),
@@ -700,7 +708,7 @@ export class ContractSourceService {
               logger.info(
                 {
                   expected: contractAddress,
-                  got: receipt.contractAddress ? formatAddress(receipt.contractAddress) : 'null',
+                  got: receipt.contractAddress ? checksumAddress(receipt.contractAddress) : 'null',
                 },
                 `Contract address doesn't match`,
               );
@@ -967,7 +975,7 @@ export class ContractSourceService {
     const now = new Date();
     const manualSource: ContractSource = {
       chainId,
-      address: formatAddress(address),
+      address: checksumAddress(address),
       ...(input.name ? { name: input.name } : {}),
       sourceCode: input.sourceCode ?? '',
       abi: input.abi,
@@ -1003,7 +1011,7 @@ export class ContractSourceService {
     const now = new Date();
     const source: ContractSource = {
       chainId,
-      address: formatAddress(address),
+      address: checksumAddress(address),
       name: input.name,
       compilerVersion: input.compilerVersion,
       ...(input.evmVersion !== undefined ? { evmVersion: input.evmVersion } : {}),
@@ -1581,7 +1589,7 @@ export class ContractSourceService {
               return {
                 isProxy: true,
                 proxyType: 'beacon',
-                implementationAddress: formatAddress(beaconImpl),
+                implementationAddress: checksumAddress(beaconImpl),
               };
             }
             logger.warn(
@@ -1600,7 +1608,7 @@ export class ContractSourceService {
           return {
             isProxy: true,
             proxyType: 'beacon',
-            implementationAddress: formatAddress(beaconAddress),
+            implementationAddress: checksumAddress(beaconAddress),
           };
         }
       } catch (error) {
@@ -1663,7 +1671,7 @@ export class ContractSourceService {
         try {
           const result = await client.readContract({ address, abi, functionName: fnName });
           if (isValidResultAddress(result)) {
-            const implAddress = formatAddress(result);
+            const implAddress = checksumAddress(result);
             const isValid = await this.isContractAddress(chainId, implAddress);
             if (isValid) {
               return {
@@ -1785,7 +1793,7 @@ export class ContractSourceService {
   private async saveToDatabase(contractSource: ContractSource): Promise<void> {
     try {
       const implAddress: `0x${string}` | null = contractSource.implementationAddress
-        ? formatAddress(contractSource.implementationAddress)
+        ? checksumAddress(contractSource.implementationAddress)
         : null;
 
       const constructorArgs: `0x${string}` | null = contractSource.constructorArguments?.startsWith(
@@ -1864,7 +1872,7 @@ export class ContractSourceService {
   ): Promise<void> {
     try {
       const implAddress: `0x${string}` | null = implementationAddress
-        ? formatAddress(implementationAddress)
+        ? checksumAddress(implementationAddress)
         : null;
 
       await db
@@ -1891,7 +1899,7 @@ export class ContractSourceService {
         .where(
           and(
             eq(contractSources.chainId, chainId),
-            eq(contractSources.address, formatAddress(address)),
+            eq(contractSources.address, checksumAddress(address)),
           ),
         );
     } catch (error) {
@@ -1901,9 +1909,7 @@ export class ContractSourceService {
 
   // Check whether the cache entry is still valid
   private isCacheValid(contractSource: ContractSource): boolean {
-    const now = new Date();
-    const lastChecked = contractSource.lastChecked;
-    const hoursDiff = (now.getTime() - lastChecked.getTime()) / MS_PER_HOUR;
+    const hoursDiff = ageHours(contractSource.lastChecked);
 
     // Cache TTL policy (see the *_CACHE_TTL_HOURS constants above):
     // - Verified non-proxy contracts: 30 days (source code cannot change)
@@ -2037,7 +2043,7 @@ export class ContractSourceService {
 
   async clearCache(chainId: number, address: Address): Promise<void> {
     try {
-      const formattedAddress = formatAddress(address);
+      const formattedAddress = checksumAddress(address);
 
       await db
         .delete(contractSources)

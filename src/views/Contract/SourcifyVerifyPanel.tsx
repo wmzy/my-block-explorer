@@ -8,8 +8,9 @@
 // the alternative path.
 import { useState } from 'react';
 import { css } from '@linaria/core';
-import { post, isBackendUnreachable } from '@/util/http';
-import { ApiError } from '@/util/apiError';
+import { post } from '@/util/http';
+import { formatFileSize } from '@/utils/format';
+import { describeSubmitError, type PanelResult } from './verifyShared';
 
 // Mirrors the backend's bundle caps (ContractVerifyService) so the page
 // refuses locally instead of round-tripping a doomed 400.
@@ -17,11 +18,6 @@ const MAX_FILES = 50;
 const MAX_TOTAL_BYTES = 2 * 1024 * 1024;
 
 type PickedFile = { name: string; content: string; bytes: number };
-
-type PanelResult =
-  | { kind: 'verified'; status: string }
-  | { kind: 'notice'; text: string }
-  | { kind: 'error'; text: string };
 
 // The endpoint's response union (see routes/verify.ts): success carries
 // the sourcify match status; domain refusals carry kind + sourcify's
@@ -164,25 +160,6 @@ const resultErrorStyles = css`
   word-break: break-word;
 `;
 
-// Infra failures get plain-word attribution: which hop was unreachable.
-// 502 bodies already say the Sourcify round trip failed; 0 means the
-// explorer API itself never answered; 403 is the admin-token gate.
-const describeSubmitError = (error: unknown): string => {
-  if (isBackendUnreachable(error)) {
-    return 'The explorer API is unreachable — start the backend (or fix its address in ⚙ RPC settings) and try again.';
-  }
-  if (error instanceof ApiError && error.status === 403) {
-    return 'Requires admin token — set it via ⚙️ RPC → Admin token. The server must have ADMIN_TOKEN configured.';
-  }
-  if (error instanceof ApiError && error.status === 502) {
-    return `${error.message} Try again in a moment.`;
-  }
-  return error instanceof Error ? error.message : 'Verification request failed.';
-};
-
-const formatBytes = (bytes: number): string =>
-  bytes >= 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${bytes} B`;
-
 export function SourcifyVerifyPanel({
   chainId,
   address,
@@ -259,7 +236,17 @@ export function SourcifyVerifyPanel({
         });
       }
     } catch (error) {
-      setResult({ kind: 'error', text: describeSubmitError(error) });
+      // Infra failures get plain-word attribution via the shared
+      // taxonomy (verifyShared): 502 bodies already say the Sourcify
+      // round trip failed.
+      setResult({
+        kind: 'error',
+        text: describeSubmitError(error, {
+          fallback: 'Verification request failed.',
+          statusText: apiError =>
+            apiError.status === 502 ? `${apiError.message} Try again in a moment.` : null,
+        }),
+      });
     } finally {
       setSubmitting(false);
     }
@@ -293,7 +280,7 @@ export function SourcifyVerifyPanel({
           {files.map(file => (
             <span key={file.name} className={chipStyles} data-testid="verify-file-chip">
               <span className={chipNameStyles}>{file.name}</span>
-              <span>({formatBytes(file.bytes)})</span>
+              <span>({formatFileSize(file.bytes)})</span>
               <button
                 type="button"
                 className={chipRemoveStyles}
@@ -315,7 +302,7 @@ export function SourcifyVerifyPanel({
       {tooMany && <p className={hintStyles}>Too many files — the limit is {MAX_FILES}.</p>}
       {tooBig && (
         <p className={hintStyles}>
-          Selected files total {formatBytes(totalBytes)} — the limit is 2 MB.
+          Selected files total {formatFileSize(totalBytes)} — the limit is 2 MB.
         </p>
       )}
       <div className={actionsRowStyles}>

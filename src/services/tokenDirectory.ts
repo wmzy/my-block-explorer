@@ -21,6 +21,7 @@ import { parseAbi, getAddress, type Address, type ContractFunctionParameters } f
 import { knownTokensForChain, type KnownToken } from '@/config/knownTokens';
 import { classifyTokenOverview } from '@/views/Address/tokenOverview';
 import { createRpcClient } from '@/utils/realTimeData';
+import { HEX_ADDRESS_RE } from '@/utils/address';
 import { bindQueryFn, createQueryCache, createQueryHook } from '@/util/useQuery';
 
 // ---------------------------------------------------------------------------
@@ -48,8 +49,6 @@ export type ViewedTokenMeta = { symbol?: string | null; name?: string | null };
 
 /** Storage seam for tests: the two members this module actually uses. */
 export type ViewedTokenStorage = Pick<Storage, 'getItem' | 'setItem'>;
-
-const HEX_ADDRESS_RE = /^0x[0-9a-fA-F]{40}$/;
 
 const viewedTokensStorageKey = (chainId: number): string =>
   `${VIEWED_TOKENS_STORAGE_PREFIX}${chainId}`;

@@ -2,7 +2,8 @@ import { contractInfo } from 'evmole';
 import { db, storageLayouts } from '../database/init';
 import { eq, and } from 'drizzle-orm';
 import { createLogger } from '../server/logger';
-import { formatAddress } from '../utils/address';
+import { checksumAddress } from '../utils/address';
+import { ageHours, negativeEntryFresh } from '../utils/negativeCache';
 import { rpcManager } from './RpcManager';
 import type { Address } from 'viem';
 import type {
@@ -18,7 +19,6 @@ const logger = createLogger('storage-layout-service');
 // budget: the explorer fetcher by the FETCHER_TIMEOUT_MS race below, the
 // evmole fallback by the viem transport's own timeout.
 const FETCHER_TIMEOUT_MS = 8_000;
-const MS_PER_HOUR = 1000 * 60 * 60;
 
 // "Not found" results are negative-cached for a bounded window only: the
 // contract may be verified (or even deployed) later, so a permanent
@@ -202,7 +202,7 @@ export class StorageLayoutService {
     source: string,
   ): Promise<void> {
     try {
-      const formattedAddress = formatAddress(address);
+      const formattedAddress = checksumAddress(address);
 
       await db
         .insert(storageLayouts)
@@ -238,7 +238,7 @@ export class StorageLayoutService {
     chainId: number,
     address: Address,
   ): Promise<{ layout: StorageLayout; source: 'fetcher' | 'evmole' } | null> {
-    const formattedAddress = formatAddress(address);
+    const formattedAddress = checksumAddress(address);
 
     const rows = await db
       .select()
@@ -254,16 +254,16 @@ export class StorageLayoutService {
 
     if (row.layout === 'NOT_FOUND') {
       // Negative entries expire after NOT_FOUND_CACHE_TTL_HOURS instead of
-      // sticking forever; updatedAt is when the miss was recorded.
-      const ageHours = (Date.now() - (row.updatedAt?.getTime() ?? 0)) / MS_PER_HOUR;
-      if (ageHours < NOT_FOUND_CACHE_TTL_HOURS) {
+      // sticking forever; updatedAt is when the miss was recorded. A null
+      // updatedAt reads as expired (utils/negativeCache), never fresh.
+      if (negativeEntryFresh(row.updatedAt, NOT_FOUND_CACHE_TTL_HOURS)) {
         throw new Error('CACHED_NOT_FOUND');
       }
 
       // Expired negative entry: drop it so the caller refetches (and
       // re-caches a hit or a fresh miss via cacheNotFound).
       logger.info(
-        { chainId, address: formattedAddress, ageHours: ageHours.toFixed(1) },
+        { chainId, address: formattedAddress, ageHours: ageHours(row.updatedAt).toFixed(1) },
         'Cached NOT_FOUND entry expired, removing row',
       );
       await db
@@ -288,7 +288,7 @@ export class StorageLayoutService {
 
   async cacheNotFound(chainId: number, address: Address): Promise<void> {
     try {
-      const formattedAddress = formatAddress(address);
+      const formattedAddress = checksumAddress(address);
 
       await db
         .insert(storageLayouts)
@@ -319,7 +319,7 @@ export class StorageLayoutService {
 
   async clearCache(chainId: number, address: Address): Promise<void> {
     try {
-      const formattedAddress = formatAddress(address);
+      const formattedAddress = checksumAddress(address);
 
       await db
         .delete(storageLayouts)

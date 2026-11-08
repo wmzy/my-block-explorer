@@ -58,6 +58,7 @@ import { classifyTokenOverview, formatTokenSupply } from '@/views/Address/tokenO
 import TokenTransfers, { TRANSFER_LIMIT } from '@/views/Address/TokenTransfers';
 import { getChainInfo, getChainName } from '@/config/chains';
 import { parseChainIdParam } from '@/utils/chainParam';
+import { truncateMiddle } from '@/utils/format';
 import { useContractSource } from '@/services/contracts';
 import { recordViewedToken } from '@/services/tokenDirectory';
 import { scanAbiRisks, type AbiRiskFlag } from '@/utils/abiRiskScan';
@@ -397,8 +398,6 @@ const priceChartSkeleton = css`
     }
   }
 `;
-
-const formatAddr = (a: string) => (a ? `${a.slice(0, 8)}...${a.slice(-6)}` : 'N/A');
 
 // Unknown-envelope narrowing for the source endpoint's JSON payload (the
 // service types it as a bare Record<string, unknown> — no `any` needed).
@@ -1051,7 +1050,10 @@ export default function TokenPage() {
         />
 
         <div className={addressRow}>
-          <CopyableHash value={displayAddress} truncated={formatAddr(displayAddress)} />
+          <CopyableHash
+            value={displayAddress}
+            truncated={displayAddress ? truncateMiddle(displayAddress, 8, 6) : 'N/A'}
+          />
         </div>
 
         <div className={headerLinks}>
