@@ -34,15 +34,18 @@ import type { Log } from 'viem';
 // does not resolve the '@/' alias for runtime imports).
 import { db, watchSubscriptions, type WatchSubscriptionRecord } from '../database/init';
 import { rpcManager } from './RpcManager';
+import { signatureService } from './SignatureService';
 import { getDefaultRpcUrl } from '../config/chains';
 import { getExternalTxLinks } from '../config/externalTools';
 import {
   buildDiscordMessage,
   buildWebhookPayload,
+  eventNameFromSignature,
   fetchWebhookSender,
   isDiscordWebhookUrl,
   sendWebhookWithRetry,
   shortWebhookReason,
+  wellKnownEventName,
   type WebhookSender,
 } from '../utils/webhooks';
 import { createLogger } from '../server/logger';
@@ -286,6 +289,32 @@ const webhookHostForLog = (url: string): string => {
   }
 };
 
+// Event-name resolution seam for webhook payloads: one batched call for
+// a sweep's unknown topic0s, answered as a topic0 → name map. The
+// default asks the signature database (openchain via SignatureService —
+// DuckDB-cached, never throws, misses surface as absent keys); tests
+// inject a fake.
+export type WebhookEventNameResolver = (
+  topic0s: readonly string[],
+) => Promise<Map<string, string>>;
+
+const resolveEventNamesFromSignatureDb: WebhookEventNameResolver = async topic0s => {
+  const outcomes = await signatureService.lookup(
+    topic0s.map(selector => ({ kind: 'event' as const, selector })),
+  );
+  const names = new Map<string, string>();
+  for (const [selector, outcome] of outcomes) {
+    // openchain orders candidates most-popular-first, so the first
+    // signature's name is the one to surface. Misses ({ notFound }) and
+    // outages ({ unavailable }) leave the map empty — the payload's
+    // eventName then stays honestly null.
+    if (!('signatures' in outcome)) continue;
+    const name = eventNameFromSignature(outcome.signatures[0] ?? '');
+    if (name !== null) names.set(selector, name);
+  }
+  return names;
+};
+
 export class WatchService {
   private rings = new Map<number, WatchEventRing>();
   private listeners = new Map<number, Set<(event: WatchFeedEvent) => void>>();
@@ -296,14 +325,20 @@ export class WatchService {
   private rpcMissingChains = new Set<number>();
   // Webhook delivery seam: the fetch sender by default, a fake in tests.
   private readonly webhookSender: WebhookSender;
+  // Event-name seam for webhook payloads: the signature-database
+  // resolver by default, a fake in tests.
+  private readonly eventNameResolver: WebhookEventNameResolver;
   // Already-POSTed event ids (the chain:txHash:logIndex dedupe basis —
   // the same basis the SSE consumers use). At-least-once publishing plus
   // a failed cursor write replays a range; this keeps the replay from
   // double-notifying the webhook endpoint. Bounded, oldest evicted.
   private readonly deliveredWebhookIds = new Set<string>();
 
-  constructor(options: { webhookSender?: WebhookSender } = {}) {
+  constructor(
+    options: { webhookSender?: WebhookSender; eventNameResolver?: WebhookEventNameResolver } = {},
+  ) {
     this.webhookSender = options.webhookSender ?? fetchWebhookSender;
+    this.eventNameResolver = options.eventNameResolver ?? resolveEventNamesFromSignatureDb;
   }
 
   /** Start the tick interval (idempotent; the interval never keeps the process alive). */
@@ -635,8 +670,37 @@ export class WatchService {
     let attempted = false;
     let lastAttemptAt = new Date();
 
+    // Event names beyond the local canonical table: ONE batched
+    // signature-database round trip for the sweep's unknown topic0s
+    // (deduped). Name resolution must never block or break delivery —
+    // a resolver failure degrades every unresolvable name to null.
+    let resolvedEventNames = new Map<string, string>();
+    const unknownTopic0s = [
+      ...new Set(
+        logs
+          .map(log => log.topics[0])
+          .filter(
+            (topic0): topic0 is `0x${string}` =>
+              topic0 !== null && topic0 !== undefined && wellKnownEventName(topic0) === null,
+          ),
+      ),
+    ];
+    if (unknownTopic0s.length > 0) {
+      try {
+        resolvedEventNames = await this.eventNameResolver(unknownTopic0s);
+      } catch {
+        resolvedEventNames = new Map();
+      }
+    }
+
     for (const log of logs) {
-      const payload = buildWebhookPayload(chainId, sub.address, log);
+      const payload = buildWebhookPayload(
+        chainId,
+        sub.address,
+        log,
+        new Date(),
+        resolvedEventNames,
+      );
       if (this.deliveredWebhookIds.has(payload.id)) continue;
 
       const body = discord

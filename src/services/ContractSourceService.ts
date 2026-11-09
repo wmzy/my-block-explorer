@@ -5,8 +5,13 @@ import { createRetryableRpcCall } from '../utils/errorHandler';
 import { createLogger } from '../server/logger';
 
 const logger = createLogger('contract-source-service');
-import { addressEquals, checksumAddress, isValidAddress, HEX_ADDRESS_RE } from '../utils/address';
+import { addressEquals, checksumAddress, isValidAddress, HEX_ADDRESS_RE, codeVerdict } from '../utils/address';
 import { ageHours } from '../utils/negativeCache';
+import { withTimeoutOrNull } from '../utils/withTimeout';
+// Backend graph rule: clientRequest comes from the dependency-free leaf
+// (traceFormat), never from utils/callTraceRpc (browser client factory —
+// see the AddressScanService import note for the full rationale).
+import { clientRequest } from '../utils/traceFormat';
 import type { Address } from 'viem';
 import { analyzeRpcError, shouldRetryRpcError } from '../utils/rpcErrorHandler';
 
@@ -505,7 +510,7 @@ export class ContractSourceService {
           }, chainId);
 
           const code = await getCode();
-          const hasCode = code && code !== '0x' && code.length > 2;
+          const hasCode = codeVerdict(code) !== 'eoa';
 
           logger.info({ midNumber, hasCode }, 'Block check result');
 
@@ -745,20 +750,13 @@ export class ContractSourceService {
             logger.info('Checking for internal contract creation via trace');
 
             try {
-              type CallTrace = {
-                type: string;
-                to?: string;
-                calls?: CallTrace[];
-              };
-              // debug_traceTransaction is a Geth-specific debug method
-              const trace = await (
-                client as unknown as {
-                  request: (args: { method: string; params: unknown[] }) => Promise<CallTrace>;
-                }
-              ).request({
+              // debug_traceTransaction is a Geth-specific debug method;
+              // the narrow cast over this already-held client lives in
+              // utils/callTraceRpc (clientRequest).
+              const trace = (await clientRequest(client, {
                 method: 'debug_traceTransaction',
                 params: [tx.hash, { tracer: 'callTracer' }],
-              });
+              })) as CallTracerCall;
 
               // Recursively inspect all calls in the trace for contract creation
               const findContractCreation = (call: CallTracerCall): boolean => {
@@ -1315,7 +1313,7 @@ export class ContractSourceService {
     try {
       const client = await rpcManager.getClient(chainId);
       const code = await client.getCode({ address });
-      return Boolean(code && code !== '0x' && code.length > 2);
+      return codeVerdict(code) !== 'eoa';
     } catch (error) {
       logger.error({ err: error }, 'Failed to check contract address');
       return false;
@@ -1497,10 +1495,12 @@ export class ContractSourceService {
     proxyType?: ProxyType;
     implementationAddress?: Address;
   }> {
-    const timeout = new Promise<{ isProxy: false }>(resolve =>
-      setTimeout(() => resolve({ isProxy: false }), 15_000),
-    );
-    return Promise.race([this._detectProxyImpl(chainId, address), timeout]);
+    // A proxy detection that cannot answer within the budget resolves
+    // "not a proxy" (withTimeoutOrNull's resolve-null contract); the
+    // losing timer is cleared on settle, so a fast answer must not leave
+    // a live 15s timer behind per request.
+    const detected = await withTimeoutOrNull(this._detectProxyImpl(chainId, address), 15_000);
+    return detected ?? { isProxy: false };
   }
 
   private async _detectProxyImpl(

@@ -8,18 +8,18 @@
 //
 // Honesty rules encoded:
 // - The payload carries what the watcher actually KNOWS. The watch tail
-//   holds raw logs, not contract ABIs: eventName is filled from the
-//   locally resolvable signature table (canonical ERC events + any ABI
-//   events registered through utils/events.ts) and is null — never
-//   guessed — when topic0 is unknown. Undecodable events still deliver,
-//   with the raw topics/data envelope as their args.
+//   holds raw logs, not contract ABIs: eventName comes from the local
+//   canonical ERC table, or — for anything else — from the caller's
+//   resolvedEventNames map (WatchService fills it through the openchain
+//   signature database), and is null — never guessed — when neither
+//   knows. Undecodable events still deliver, with the raw topics/data
+//   envelope as their args.
 // - Bigints travel as decimal strings (the repo-wide payload
 //   convention), so the JSON body is always JSON.stringify-safe.
 // - The sender never throws: every failure mode (network error, 5s
 //   timeout, non-2xx status) collapses into { ok: false, reason } and
 //   the caller records it on the subscription row.
 import { decodeEventLog, getEventSelector, parseAbiItem, type AbiEvent, type Log } from 'viem';
-import { getEventNameFromSignature } from './events';
 
 // One delivery attempt gets 5 seconds; sendWebhookWithRetry then gets
 // exactly one more (the assignment's "timeout 5s, ONE retry").
@@ -85,6 +85,27 @@ const WELL_KNOWN_EVENTS: Record<string, { name: string; event: AbiEvent }> = {
 };
 
 /**
+ * Locally resolvable canonical event name for a topic0, or null. The
+ * service layer uses this to skip signature-database lookups for the
+ * events the payload builder already names (and decodes) on its own.
+ */
+export function wellKnownEventName(topic0: string): string | null {
+  return WELL_KNOWN_EVENTS[topic0]?.name ?? null;
+}
+
+/**
+ * Event-name half of a canonical signature such as
+ * 'Transfer(address,address,uint256)': the leading Solidity identifier
+ * of an identifier+'(' shaped string, or null for anything else.
+ * openchain orders its candidates most-popular-first, so the FIRST
+ * valid candidate is the name to surface.
+ */
+export function eventNameFromSignature(signature: string): string | null {
+  const match = /^([A-Za-z_$][A-Za-z0-9_$]*)\(/.exec(signature);
+  return match !== null ? match[1] : null;
+}
+
+/**
  * Is this a Discord webhook endpoint? Discord's incoming-webhook
  * surface lives under discord.com/api/webhooks/… (https only); such URLs
  * get the {content, embeds} body instead of the generic payload.
@@ -122,13 +143,17 @@ export function toJsonSafeValue(value: unknown): unknown {
 /**
  * Pure log → generic webhook payload. The id is the dedupe basis; the
  * args are decoded for well-known events, the raw envelope otherwise;
- * bigints are stringified so the body stringifies cleanly.
+ * bigints are stringified so the body stringifies cleanly. For a
+ * non-canonical topic0, `resolvedEventNames` (the caller's
+ * signature-database answers, keyed by topic0) supplies the event NAME
+ * — args stay the raw envelope, since a name alone decodes nothing.
  */
 export function buildWebhookPayload(
   chainId: number,
   watchedAddress: string,
   log: Log,
   at: Date = new Date(),
+  resolvedEventNames?: ReadonlyMap<string, string>,
 ): WebhookEventPayload {
   const topic0 = log.topics[0] ?? null;
   let eventName: string | null = null;
@@ -155,11 +180,11 @@ export function buildWebhookPayload(
       args = { topics: [...log.topics], data: log.data };
     }
   } else if (topic0 !== null) {
-    // Events registered from a contract ABI elsewhere in the process
-    // (utils/events.ts registry): named, but undecodable here — deliver
-    // the name plus the raw envelope, never fabricated args.
-    const registered = getEventNameFromSignature(topic0);
-    eventName = registered !== 'Unknown' ? registered : null;
+    // Not a canonical event: the caller's resolved-name map may still
+    // know the NAME (WatchService's openchain-backed answers) — deliver
+    // it with the raw envelope, never fabricated args. Unknown to both:
+    // the name stays honestly null.
+    eventName = resolvedEventNames?.get(topic0) ?? null;
     args = { topics: [...log.topics], data: log.data };
   } else {
     args = { topics: [...log.topics], data: log.data };

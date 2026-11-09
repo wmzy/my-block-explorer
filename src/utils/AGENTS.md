@@ -15,6 +15,8 @@ utils/
 ├── address.ts             # HEX_ADDRESS_RE, isAddressShape, addressVerdict
 │                          #   (two-tier shape→EIP-55), checksumAddress
 ├── cache.ts               # LRU machinery + blockCache (its only instance)
+├── callTraceRpc.ts        # Trace family's browser RPC read: rpcRequest
+│                          #   (narrow untyped cast) + fetchCallTraceTree
 ├── withTimeout.ts         # TimeoutError + withTimeout / withTimeoutOrNull
 ├── ttlLruCache.ts         # createTtlLruCache (TTL + LRU, injectable clock)
 ├── scanLadder.ts          # getLogs chunk-ladder constants + provider-ceiling

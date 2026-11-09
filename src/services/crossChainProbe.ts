@@ -17,6 +17,8 @@ import { listCustomChains } from '@/config/customChains';
 import type { CustomChain } from '@/config/customChains';
 import { ensureCustomChainsLoaded } from '@/services/customChains';
 import { createRpcClient } from '@/utils/realTimeData';
+import { codeVerdict } from '@/utils/address';
+import { withTimeout } from '@/utils/withTimeout';
 
 /** How many popular chains the probe targets (always excluding the viewed one). */
 export const PROBE_POPULAR_CHAIN_COUNT = 5;
@@ -78,23 +80,12 @@ export function selectProbeChains(
   return selected;
 }
 
-// Race one call against the probe budget. The losing side is always
-// handled: Promise.race attaches handlers to both competitors, so a call
-// that rejects AFTER the budget expired surfaces nowhere.
-const withinBudget = async <T>(call: () => Promise<T>): Promise<T> => {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const budgetExpired = new Promise<never>((_, reject) => {
-    timer = setTimeout(
-      () => reject(new Error(`timed out after ${PROBE_CALL_BUDGET_MS / 1000}s`)),
-      PROBE_CALL_BUDGET_MS,
-    );
-  });
-  try {
-    return await Promise.race([call(), budgetExpired]);
-  } finally {
-    clearTimeout(timer);
-  }
-};
+// Race one call against the probe budget (utils/withTimeout). The losing
+// side is always handled: Promise.race attaches handlers to both
+// competitors, so a call that rejects AFTER the budget expired surfaces
+// nowhere.
+const withinBudget = async <T>(call: () => Promise<T>): Promise<T> =>
+  withTimeout(call(), PROBE_CALL_BUDGET_MS, 'Probe call');
 
 const errorReason = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
@@ -117,16 +108,18 @@ export async function probeAddressOnChain(
       withinBudget(() => client.getCode({ address })),
     ]);
     // viem folds a successful '0x' getCode (a plain EOA) into undefined —
-    // restore the sentinel before classifying, or the comparison below
-    // reads undefined as "not '0x'" and every EOA looks like a contract.
+    // restore the sentinel before classifying so the viem quirk stays
+    // visible at the call site (utils/address codeVerdict maps both
+    // undefined and '0x' to 'eoa', so behavior is identical either way).
     // An EIP-7702 delegated EOA (0xef0100<delegate> designator) genuinely
-    // HAS code, so it honestly classifies as contract here; the probed
-    // chain's own page carries the delegated-EOA nuance.
+    // HAS code, so it honestly classifies as contract here (codeVerdict
+    // 'delegated'); the probed chain's own page carries the delegated-EOA
+    // nuance.
     return {
       status: 'ok',
       chainId,
       balance,
-      isContract: (code ?? '0x') !== '0x',
+      isContract: codeVerdict(code ?? '0x') !== 'eoa',
     };
   } catch (error) {
     return { status: 'failed', chainId, reason: errorReason(error) };

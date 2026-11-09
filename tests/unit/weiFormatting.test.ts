@@ -19,6 +19,7 @@
 // would throw).
 import { describe, it, expect } from 'vitest';
 import {
+  cellText,
   formatAddress,
   formatBigInt,
   formatEth,
@@ -223,5 +224,19 @@ describe('formatNativeDisplay — decimals-generic native amounts', () => {
     expect(formatNativeDisplay(15n * 10n ** 17n, 18, { symbol: 'ETH', fraction: 'round4' })).toBe(
       '1.5000 ETH',
     );
+  });
+});
+
+describe('cellText — the shared 8/6 cell truncation with fallback', () => {
+  it('truncates like the old per-view addressCell one-liners', () => {
+    // head 8 (incl. 0x), tail 6 — the shape every list view used to hand-roll
+    expect(cellText('0x1234567890abcdef1234567890abcdef12345678')).toBe('0x123456...345678');
+  });
+
+  it('blank cells render the fallback (default N/A)', () => {
+    expect(cellText('')).toBe('N/A');
+    expect(cellText(null)).toBe('N/A');
+    expect(cellText(undefined, '—')).toBe('—');
+    expect(cellText('short', '—')).toBe('short');
   });
 });

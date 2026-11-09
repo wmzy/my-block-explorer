@@ -1,7 +1,9 @@
 // Webhook helpers contract (utils/webhooks.ts): the generic payload
 // builder (exact key set, honest eventName/args for known vs unknown
-// topic0, bigint→decimal-string args, chain:txHash:logIndex id), the
-// Discord message shape, the URL predicate, and the fetch sender's
+// topic0 — including the caller-resolved name map for non-canonical
+// events — bigint→decimal-string args, chain:txHash:logIndex id), the
+// Discord message shape, the URL predicate, the local canonical-name
+// predicate + signature-name extractor, and the fetch sender's
 // never-throw behavior with its ONE-retry wrapper (fetch is stubbed;
 // the timeout classification is exercised through a tiny budget).
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
@@ -9,6 +11,7 @@ import { getAddress, getEventSelector, toHex, type Log } from 'viem';
 import {
   buildDiscordMessage,
   buildWebhookPayload,
+  eventNameFromSignature,
   fetchWebhookSender,
   isDiscordWebhookUrl,
   sendWebhookWithRetry,
@@ -16,6 +19,7 @@ import {
   summarizeArgsForEmbed,
   toJsonSafeValue,
   webhookEventId,
+  wellKnownEventName,
   WATCH_WEBHOOK_TIMEOUT_MS,
 } from '@/utils/webhooks';
 
@@ -108,6 +112,28 @@ describe('buildWebhookPayload — generic shape', () => {
     });
   });
 
+  it('names an unknown topic0 from the caller-resolved map, args stay the raw envelope', () => {
+    const topic0 = `0x${'ab'.repeat(32)}`;
+    const resolved = new Map([[topic0, 'OrderFilled']]);
+    const payload = buildWebhookPayload(137, ADDRESS, unknownLog(), undefined, resolved);
+    expect(payload.eventName).toBe('OrderFilled');
+    expect(payload.args).toEqual({
+      topics: [topic0, `0x${'11'.repeat(32)}`],
+      data: '0xdeadbeef',
+    });
+  });
+
+  it('prefers the local canonical table over the resolved map (and decodes args)', () => {
+    const resolved = new Map([[TRANSFER_TOPIC0, 'NotTransfer']]);
+    const payload = buildWebhookPayload(1, ADDRESS, transferLog(), undefined, resolved);
+    expect(payload.eventName).toBe('Transfer');
+    expect(payload.args).toEqual({
+      from: getAddress(ADDRESS),
+      to: getAddress(COUNTERPARTY),
+      value: '1000000',
+    });
+  });
+
   it('degrades missing ids the way the feed does (never fabricated)', () => {
     const payload = buildWebhookPayload(
       1,
@@ -118,6 +144,39 @@ describe('buildWebhookPayload — generic shape', () => {
     expect(payload.transactionHash).toBeNull();
     expect(payload.logIndex).toBeNull();
     expect(payload.id).toBe('1:tx?:-1');
+  });
+});
+
+describe('wellKnownEventName — local canonical table', () => {
+  it('names the canonical ERC events', () => {
+    expect(wellKnownEventName(TRANSFER_TOPIC0)).toBe('Transfer');
+    expect(
+      wellKnownEventName(getEventSelector('Approval(address,address,uint256)')),
+    ).toBe('Approval');
+    expect(
+      wellKnownEventName(getEventSelector('OwnershipTransferred(address,address)')),
+    ).toBe('OwnershipTransferred');
+  });
+
+  it('returns null for anything the table cannot name', () => {
+    expect(wellKnownEventName(`0x${'ab'.repeat(32)}`)).toBeNull();
+    expect(wellKnownEventName('0x')).toBeNull();
+    expect(wellKnownEventName('')).toBeNull();
+  });
+});
+
+describe('eventNameFromSignature — canonical-signature name half', () => {
+  it('extracts the leading identifier', () => {
+    expect(eventNameFromSignature('Transfer(address,address,uint256)')).toBe('Transfer');
+    expect(eventNameFromSignature('OrderFilled(bytes32,uint256)')).toBe('OrderFilled');
+    expect(eventNameFromSignature('_LowLevelCall(address,uint256)')).toBe('_LowLevelCall');
+  });
+
+  it('refuses strings that do not start with a Solidity identifier', () => {
+    expect(eventNameFromSignature('(address)')).toBeNull();
+    expect(eventNameFromSignature('')).toBeNull();
+    expect(eventNameFromSignature('1Transfer(address)')).toBeNull();
+    expect(eventNameFromSignature('not a signature')).toBeNull();
   });
 });
 

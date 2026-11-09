@@ -168,9 +168,13 @@ Request → DB lookup → Found: return immediately
 `postgres` package interface so Drizzle ORM can use DuckDB. Handles type mapping
 (BIGINT→string), error translation, transaction semantics.
 
-### Per-Chain Event Databases
+### Single Main Database
 
-Events stored in separate DuckDB files: `data/chains/{type}/{name}-{id}.db`
+All persistent data lives in ONE DuckDB file (`data/blockchain.db`,
+per-chain rows keyed by composite `chain_id` keys). The former per-chain
+`data/chains/{type}/{name}-{id}.db` subsystem was dead code and was removed
+in the 2026-11-09 cleanup wave; `data/chains/` survives only as a legacy
+directory the uninstall/ops surfaces enumerate on disk.
 
 ### Vite-Hono Dev Bridge
 
@@ -871,7 +875,9 @@ pnpm typecheck           # tsc --noEmit
   dedup; session TZ pinned UTC; 6/min·3; two distinct 403 faces — server token
   unset vs browser token wrong; be:sqlConsole history max 10). **Cleanup** —
   `search_history` dropped (migration 0012; the parallel per-chain definition in
-  `src/database/chain-schema.ts` was removed in the 2026-09-24 leftovers wave);
+  `src/database/chain-schema.ts` was removed in the 2026-09-24 leftovers wave —
+  the whole dead per-chain DB subsystem, file included, went in the 2026-11-09
+  cleanup wave);
   utils barrel completed. **Conventions pinned**: (1) viem lenient-decodes
   truncated tail bytes — external-calldata decoders need a re-encode round-trip
   guard; (2) creation tx rows carry `toAddress: ''` (normalized in
@@ -1789,3 +1795,64 @@ pnpm typecheck           # tsc --noEmit
   unification risk > payoff), Address view micro-extractions (label editor
   twin, refresh-signal hook) — the 2,780-line view is otherwise untouched
   churn-free.
+
+- **2026-11-09 duplication follow-up wave (6 agents, 2 waves + integration)** — the
+  full review's residue fixed end-to-end; verified: tsc 0 errors, eslint 0 errors
+  (98 pre-existing warnings), `vitest --changed` 287 files green, `pnpm build`
+  green, live Chromium smoke on mainnet (tx detail incl. Call Trace card, address
+  page 7702 classification, contract + token pages). **Dead code deleted
+  (~1,900 lines)** — the WHOLE vestigial per-chain DB subsystem
+  (`database/chain-database-manager` + `chain-schema` + `chain-drizzle` +
+  `config/zero-config` + `zero-config-bootstrap`; every service writes the main
+  DB, the manager's only "live" consumer was itself dead — the root AGENTS.md
+  "Per-Chain Event Databases" section is rewritten to "Single Main Database"),
+  17 dead exports in `config/chains.ts` (incl. the duplicated
+  `data/chains/{type}/{name}-{id}.db` formula, dead with them — `data/chains/`
+  survives only as a legacy dir uninstall/ops enumerate), the
+  `DatabaseManager` alias in `database/init`, the never-called
+  `registerAbiEvents`/`getEventSelectorFromName`/`decodeEventData` trio in
+  `utils/events.ts`, and the never-read `SortingPerformanceMonitor` (EventTable's
+  perf panel now shows per-sort facts from the sorter's own metrics).
+  **Real bug fixed** — webhook event names were ALWAYS null in production
+  (`getEventNameFromSignature` consulted a cache only its dead callers could
+  populate): payloads now resolve names via subscription-ABI decode → deduped
+  batched openchain lookup per sweep → local canonical table; unknown stays
+  null, resolution failure never blocks delivery. **Consolidations** —
+  `codeVerdict()` in utils/address.ts is the ONE home for the raw-code
+  predicate (8 sites, EIP-7702-aware; vitalik.eth renders "Delegated EOA
+  (EIP-7702)" through it live); the callTracer family shares
+  `utils/callTraceRpc.ts` (browser) + `components/CallTypeBadge` +
+  `runTracePool` + a parameterized DFS walk; `clientRequest` (the narrow
+  untyped-request cast) lives in the dependency-free leaf `utils/traceFormat`
+  so backend walks (AddressScanService, ContractSourceService) import it
+  WITHOUT touching the browser client factory; formatHash/addressCell/
+  tokenId-comparator/sleep/ADMIN_TOKEN_GUIDANCE/MAX_WINDOW_BLOCKS/
+  selector-regex copies collapsed onto canonical homes; six hand-rolled
+  timeout wrappers → withTimeout/withTimeoutOrNull/fetchWithTimeout (incl.
+  ContractSourceService's detectProxy race whose LOSING timer never cleared);
+  five unbounded Map+expiry caches → createTtlLruCache (prices ×2,
+  tokenMetadata ×2, nftMetadata — eviction caps added); blockCache (utils/
+  cache.ts deleted) is a plain createTtlLruCache(15s, 500) in BlockService;
+  labels/watch route twins + limit/offset/page 400 leaves share mappings;
+  chain-id validation is one leaf; `errorMessage()` replaces ~15 instanceof
+  ternaries. **Visible copy changes** (intentional): absolute datetimes are
+  pinned en-US via one `formatDateTime` (contract creation time renders
+  "Dec 12, 2017, 19:17:35"); crossChainProbe timeout reason says `4000ms`;
+  `formatBigIntSafe` replaces a host-locale toLocaleString. **Conventions
+  pinned this wave**: (1) **browser-RPC modules never enter the utils barrel
+  or a backend import graph** — Agent A barrel-exported `callTraceRpc` and two
+  backend services imported it, dragging `realTimeData` → `@/`-aliased
+  browser modules into the vite.config esbuild graph: `pnpm build` failed at
+  config load. Diagnosis recipe: replicate vite's config bundling with
+  `esbuild vite.config.ts --bundle --platform=node --format=esm --external:<each
+  package.json dep> --metafile=…` and BFS the metafile for the offending chain
+  (grep alone misleads — type-only imports are erased, dynamic imports are
+  INLINED). NOTE: build was ALSO broken at HEAD 7ea6308 the same way (the
+  11-08 wave's "build green" claim didn't survive its final edits) — verify
+  `pnpm build`, not the changelog, after multi-agent waves. (2) B/A both
+  declined glyph-breaking merges (`…` vs `...` in TRUNCATED_ADDRESS twins) —
+  unifying is a visible change needing an explicit mandate; left as-is.
+  (3) An agent's final report may silently drop a briefed item (D never
+  deleted utils/cache.ts) — integration MUST re-run the acceptance greps
+  itself, not trust the report. **Deferred again** (unchanged):
+  in-flight-dedup Map ×5, Address view micro-extractions.

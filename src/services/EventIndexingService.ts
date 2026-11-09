@@ -10,6 +10,8 @@ import { rpcManager } from './RpcManager';
 import { decodeEventLog, TransactionReceiptNotFoundError, type Abi, type Log } from 'viem';
 import { getContractCreationBlock } from '../utils/events';
 import { inputToStoredValue, resolveToBlock } from '../utils/blockTagUtils';
+import { sleep } from '../utils/errorHandler';
+import { withTimeoutOrNull } from '../utils/withTimeout';
 // Relative path on purpose: vite.config.ts bundles the api-app backend graph
 // with esbuild, which does not resolve the '@/' alias for runtime imports.
 import { createLogger } from '../server/logger';
@@ -71,8 +73,6 @@ const activeJobs = new Map<string, { abort: boolean }>();
 
 const rangeJobKey = (chainId: number, address: string, rangeId: number) =>
   `${chainId}:${address.toLowerCase()}:range:${rangeId}`;
-
-const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
 // Provider range-cap adaptation (chunk-ladder lesson). Public RPCs cap the
 // block span of eth_getLogs; retrying the identical span then fails
@@ -606,11 +606,17 @@ export const getIndexingStatus = async (
 
   let latestBlock = 0;
   try {
-    const rpcTimeout = new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error('RPC timeout')), 10_000),
+    // One shared 10s budget covers client creation AND the head read
+    // (the hand-rolled twin races below shared a single deadline); a
+    // timeout is a missing value, so latestBlock simply stays 0.
+    const blockNumber = await withTimeoutOrNull(
+      (async () => {
+        const client = await rpcManager.getClient(chainId);
+        return client.getBlockNumber();
+      })(),
+      10_000,
     );
-    const client = await Promise.race([rpcManager.getClient(chainId), rpcTimeout]);
-    latestBlock = Number(await Promise.race([client.getBlockNumber(), rpcTimeout]));
+    if (blockNumber !== null) latestBlock = Number(blockNumber);
   } catch {
     // ignore
   }

@@ -15,7 +15,6 @@ import { EnvHttpProxyAgent, request } from 'undici';
 // database or starts a listener.
 vi.mock('@/api-app', () => ({ default: { fetch: vi.fn() }, reconcileStartupState: vi.fn() }));
 vi.mock('@/database/drizzle', () => ({ db: {} }));
-vi.mock('@/database/chain-database-manager', () => ({ multiChainDb: {} }));
 vi.mock('@/services/WatchService', () => ({ watchService: { start: vi.fn() } }));
 
 const { proxyDispatcherOptions } = await import('@/server');

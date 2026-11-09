@@ -33,7 +33,7 @@ type BlockServiceDeps = {
   db: typeof import('../database/init').db;
   blocks: typeof import('../database/init').blocks;
   rpcManager: typeof import('./RpcManager').rpcManager;
-  blockCache: typeof import('../utils/cache').blockCache;
+  blockCache: TtlLruCache<Block>;
   createRetryableRpcCall: typeof import('../utils/errorHandler').createRetryableRpcCall;
   createRetryableDbCall: typeof import('../utils/errorHandler').createRetryableDbCall;
   logError: typeof import('../utils/errorHandler').logError;
@@ -200,7 +200,7 @@ const createBlockService = (deps: BlockServiceDeps) => {
       try {
         const cached = blockCache.get(cacheKey);
         if (cached) {
-          return cached as Block;
+          return cached;
         }
 
         const dbQuery = retryableDb(async () => {
@@ -222,7 +222,7 @@ const createBlockService = (deps: BlockServiceDeps) => {
             : Infinity;
           if (cacheAge < 30000) {
             const block = formatBlock(dbResult[0]);
-            blockCache.set(cacheKey, block, 15000);
+            blockCache.set(cacheKey, block);
             return block;
           }
         }
@@ -235,7 +235,7 @@ const createBlockService = (deps: BlockServiceDeps) => {
         const latestBlock = await fetchLatestBlock();
         const block: Block = await cacheBlock(chainId, latestBlock);
 
-        blockCache.set(cacheKey, block, 15000);
+        blockCache.set(cacheKey, block);
         return block;
       } catch (error) {
         logErr(error, 'BlockService.getLatestBlock', { chainId });
@@ -453,8 +453,17 @@ export { createBlockService };
 
 import { db, blocks } from '../database/init';
 import { rpcManager } from './RpcManager';
-import { blockCache } from '../utils/cache';
+import { createTtlLruCache, type TtlLruCache } from '../utils/ttlLruCache';
 import { createRetryableRpcCall, createRetryableDbCall, logError } from '../utils/errorHandler';
+
+// The single block cache: 15s TTL (the freshness window every set site
+// used), 500 entries — the former bespoke LRUCache (utils/cache.ts, deleted
+// 2026-11-09) lived on the same numbers with a hybrid count+seconds eviction
+// score; this is the canonical plain-LRU cache every other service shares.
+const blockCache: TtlLruCache<Block> = createTtlLruCache<Block>({
+  ttlMs: 15_000,
+  maxEntries: 500,
+});
 
 export const blockService = createBlockService({
   db,

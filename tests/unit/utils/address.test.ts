@@ -5,7 +5,7 @@
 // any of them resurfaces as split-screen conflicting verdicts.
 import { describe, expect, it } from 'vitest';
 import { getAddress } from 'viem';
-import { HEX_ADDRESS_RE, addressVerdict, isAddressShape } from '@/utils/address';
+import { HEX_ADDRESS_RE, addressVerdict, codeVerdict, isAddressShape } from '@/utils/address';
 
 // EIP-55 reference address — mixed-case by construction, so both the
 // valid and the corrupted variants are easy to derive from it.
@@ -85,5 +85,34 @@ describe('addressVerdict', () => {
     expect(() => addressVerdict('not-an-address')).not.toThrow();
     expect(addressVerdict('not-an-address').tier).toBe('invalid-shape');
     expect(addressVerdict('0x0000000000000000000000000000000000000000').tier).toBe('valid');
+  });
+});
+
+describe('codeVerdict — the single home for the raw-code predicate', () => {
+  const DELEGATE = 'ab'.repeat(20); // exactly 40 hex chars
+  const DESIGNATOR = `0xef0100${DELEGATE}`;
+
+  it('empty / 0x reads are EOAs', () => {
+    expect(codeVerdict(undefined)).toBe('eoa');
+    expect(codeVerdict(null)).toBe('eoa');
+    expect(codeVerdict('')).toBe('eoa');
+    expect(codeVerdict('0x')).toBe('eoa');
+  });
+
+  it('an exact-length 0xef0100 designator is delegated, case-insensitive', () => {
+    expect(codeVerdict(DESIGNATOR)).toBe('delegated');
+    expect(codeVerdict(DESIGNATOR.toUpperCase())).toBe('delegated');
+  });
+
+  it('a truncated designator is NOT delegated (exact length guards garbled reads)', () => {
+    expect(codeVerdict(DESIGNATOR.slice(0, -2))).toBe('contract');
+    expect(codeVerdict('0xef0100')).toBe('contract');
+  });
+
+  it('deployed bytecode is a contract; !== \'eoa\' preserves the old predicate', () => {
+    expect(codeVerdict('0x6080604052')).toBe('contract');
+    // The legacy triple predicate's meaning, one spelling now:
+    expect(codeVerdict('0x6080') !== 'eoa').toBe(true);
+    expect(codeVerdict('0x') !== 'eoa').toBe(false);
   });
 });

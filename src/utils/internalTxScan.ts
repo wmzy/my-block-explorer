@@ -1,7 +1,10 @@
 // Internal-transaction scan: pure flattening/aggregation over the
 // normalized callTracer trees (see utils/traceFormat) of a bounded set of
-// discovered transactions. The RPC I/O lives in the view component
-// (views/Address/InternalTxns.tsx) — this module is the testable half.
+// discovered transactions. The RPC I/O lives in utils/callTraceRpc (the
+// family's single fetch) and the view components (views/Address/
+// InternalTxns.tsx, views/Blocks/InternalTxnsSection.tsx); this module is
+// the testable half — including the worker-injected bounded pool both
+// tracing UIs run their requests through.
 //
 // Honesty rules:
 // - "Internal" means frames BELOW the tx's top-level call: the root frame
@@ -163,9 +166,13 @@ export function flattenInternalTxTree(
   return { rows, truncated };
 }
 
-/** Outcome of tracing one transaction. */
-export type TraceTxOutcome =
-  | { hash: string; status: 'traced'; rows: InternalTxRow[]; truncated: boolean }
+/**
+ * Outcome of tracing one transaction. Generic over the row shape so the
+ * block sweep (views/Blocks/internalTxns) reuses the same union for its
+ * wider rows instead of re-declaring the three arms.
+ */
+export type TraceTxOutcome<Row = InternalTxRow> =
+  | { hash: string; status: 'traced'; rows: Row[]; truncated: boolean }
   | { hash: string; status: 'failed'; message: string }
   | { hash: string; status: 'unsupported'; message: string };
 
@@ -237,7 +244,9 @@ export function aggregateInternalTxns(
   };
 }
 
-const pluralize = (count: number, singular: string): string =>
+// Locale-grouped count + singular/plural noun — the summary lines' one
+// pluralizer (the block sweep's summary shares it).
+export const pluralize = (count: number, singular: string): string =>
   `${count.toLocaleString()} ${singular}${count === 1 ? '' : 's'}`;
 
 /**
@@ -262,4 +271,41 @@ export function tracedScopeLabel(tracedCount: number, page: number): string {
   return page > 1
     ? `Traced ${count} discovered transactions (page ${page.toLocaleString()} of the discovered set)`
     : `Traced the first ${count} discovered transactions`;
+}
+
+/** Parallel debug_traceTransaction calls per sweep — both tracing UIs' pool size. */
+export const TRACE_CONCURRENCY = 4;
+
+// Provider error text can embed the whole JSON-RPC request body; the
+// failed-trace rows keep readable with the head of the message instead.
+export const shortTraceFailureMessage = (message: string): string =>
+  message.length > 160 ? `${message.slice(0, 160)}…` : message;
+
+/**
+ * Bounded-concurrency pool over a hash list, worker injected: outcomes
+ * land at their input index, so the aggregate order is the input order,
+ * not completion order — the deterministic half of both tracing UIs.
+ * `onSettled` fires once per settled item (progress disclosure).
+ */
+export async function runTracePool<T>(
+  hashes: readonly string[],
+  concurrency: number,
+  traceOne: (hash: string) => Promise<T>,
+  onSettled: (settled: number) => void,
+): Promise<T[]> {
+  const outcomes: T[] = new Array(hashes.length);
+  let next = 0;
+  let settled = 0;
+  const workers = Array.from({ length: Math.min(concurrency, hashes.length) }, async () => {
+    for (;;) {
+      const index = next;
+      next += 1;
+      if (index >= hashes.length) return;
+      outcomes[index] = await traceOne(hashes[index]);
+      settled += 1;
+      onSettled(settled);
+    }
+  });
+  await Promise.all(workers);
+  return outcomes;
 }

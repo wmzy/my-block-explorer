@@ -48,7 +48,7 @@ import {
   type MempoolAnalysis,
   type MempoolRenderUnit,
 } from '@/utils/mempoolAnalysis';
-import { formatNativeDisplay, formatNumber, truncateMiddle } from '@/utils/format';
+import { cellText, formatHash, formatNativeDisplay, formatNumber } from '@/utils/format';
 import { parseChainIdParam } from '@/utils/chainParam';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
 
@@ -151,15 +151,6 @@ const groupHeaderRow = css`
     font-size: var(--haze-text-sm);
   }
 `;
-
-const formatHash = (hash: string): string => {
-  if (!hash || hash.length < 16) return hash;
-  return `${hash.slice(0, 10)}...${hash.slice(-8)}`;
-};
-
-// Address-cell text: the shared 8/6 middle truncation, with the lists'
-// 'N/A' fallback for a blank cell.
-const addressCell = (addr: string): string => (addr ? truncateMiddle(addr, 8, 6) : 'N/A');
 
 /**
  * Pool value for display: the shared native display formatter at the
@@ -438,7 +429,7 @@ function PendingBody({ chainId }: { chainId: number }) {
                 <Fragment key={`conflict:${unit.group.winnerHash}`}>
                   <tr className={groupHeaderRow} data-testid="pending-conflict-group">
                     <td colSpan={6}>
-                      {addressCell(unit.group.from)} · nonce {formatNumber(unit.group.nonce)} ·{' '}
+                      {cellText(unit.group.from)} · nonce {formatNumber(unit.group.nonce)} ·{' '}
                       {formatNumber(unit.group.size)} competing transactions — likely winner first
                     </td>
                   </tr>
@@ -504,7 +495,7 @@ function PendingRow({
       <td>
         <CopyableHash
           value={entry.from}
-          truncated={addressCell(entry.from)}
+          truncated={cellText(entry.from)}
           href={`/chain/${chainId}/address/${entry.from}`}
         />
       </td>
@@ -514,7 +505,7 @@ function PendingRow({
         ) : (
           <CopyableHash
             value={entry.to}
-            truncated={addressCell(entry.to)}
+            truncated={cellText(entry.to)}
             href={`/chain/${chainId}/address/${entry.to}`}
           />
         )}

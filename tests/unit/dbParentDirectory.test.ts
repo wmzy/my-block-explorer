@@ -2,11 +2,11 @@
 // WAS ASKED TO OPEN, not a hardcoded `data/`.
 //
 // It mkdir'd `join(process.cwd(), 'data')` regardless of the connection
-// string, so any database in a nested path — the per-chain event stores at
-// `data/chains/{mainnet,testnet}/{name}-{id}.db` — failed to open with
-// "Cannot open file ...: No such file or directory" on a fresh install,
-// and ChainDatabaseManager.initialize() compounded it by creating only
-// `data/chains`, never the `{type}` level below it.
+// string, so any database in a nested path failed to open with "Cannot
+// open file ...: No such file or directory" on a fresh install. (The
+// historical trigger was the per-chain event stores at
+// `data/chains/{mainnet,testnet}/{name}-{id}.db`; that subsystem is gone,
+// but a nested DATABASE_URL path is still real.)
 //
 // The parent must be derived from the resolved dbPath, which also covers a
 // relative DATABASE_URL (the documented default 'duckdb://data/blockchain.db')
@@ -16,7 +16,7 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { mkdtempSync, rmSync, existsSync, mkdirSync, symlinkSync } from 'fs';
 import { tmpdir } from 'os';
-import { join, dirname, relative } from 'path';
+import { join } from 'path';
 
 import { createDuckDBAdapter } from '@/database/duckdb-postgres-adapter';
 
@@ -101,38 +101,6 @@ describe('createDuckDBAdapter creates the parent directory of its own path', () 
         expect(existsSync(join(workDir, 'data'))).toBe(true);
       } finally {
         await adapter.end();
-      }
-    } finally {
-      process.chdir(previousCwd);
-    }
-  });
-});
-
-describe('ChainDatabaseManager.initialize creates the chain-type directory', () => {
-  it('creates data/chains/{type} before opening the chain database', async () => {
-    const root = tempRoot();
-    // A symlink keeps ./drizzle (migrations are resolved relative to cwd)
-    // reachable while the chain database itself lands in the temp tree.
-    const workDir = join(root, 'work');
-    mkdirSync(workDir, { recursive: true });
-    symlinkSync(join(process.cwd(), 'drizzle'), join(workDir, 'drizzle'), 'dir');
-
-    const previousCwd = process.cwd();
-    process.chdir(workDir);
-    try {
-      const { ChainDatabaseManager } = await import('@/database/chain-database-manager');
-      const manager = new ChainDatabaseManager(1);
-      try {
-        // The failure this pins: initialize() created only `data/chains`,
-        // so the `mainnet/` level below it was missing and the open threw
-        // "Cannot open file .../data/chains/mainnet/ethereum-1.db".
-        await expect(manager.initialize()).resolves.toBeUndefined();
-
-        const path = manager.getDatabasePath();
-        expect(existsSync(dirname(path))).toBe(true);
-        expect(relative(root, path)).toContain(join('chains', 'mainnet'));
-      } finally {
-        await manager.close().catch(() => undefined);
       }
     } finally {
       process.chdir(previousCwd);

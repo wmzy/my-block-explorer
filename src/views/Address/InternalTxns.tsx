@@ -12,22 +12,26 @@ import { css } from '@linaria/core';
 import { TypedLink, useSearch, useSetSearch } from '@native-router/react';
 import { Alert } from 'haze-ui';
 import { getChainInfo, getChainSymbol } from '@/config/chains';
-import { formatFixedDecimals, truncateMiddle } from '@/utils/format';
-import { createRpcClient } from '@/utils/realTimeData';
-import { normalizeCallTrace, isTraceUnsupportedError } from '@/utils/traceFormat';
+import { fetchCallTraceTree } from '@/utils/callTraceRpc';
+import { formatFixedDecimals, formatHash, truncateMiddle } from '@/utils/format';
 import {
   aggregateInternalTxns,
   flattenInternalTxTree,
   internalTxSummary,
+  runTracePool,
+  shortTraceFailureMessage,
   tracedScopeLabel,
   selectTraceScope,
+  TRACE_CONCURRENCY,
   DEFAULT_INTERNAL_TX_DEPTH,
   MAX_INTERNAL_TX_DEPTH,
   type InternalTxAggregate,
   type TraceTxOutcome,
 } from '@/utils/internalTxScan';
+import { isTraceUnsupportedError } from '@/utils/traceFormat';
 import { addressSearchSchema, effectiveInternalTxDepth } from '@/views/Address/search';
 import { fetchInternalTransactions, type InternalTxnsResult } from '@/services/addressScan';
+import { CallTypeBadge } from '@/components/CallTypeBadge';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { Collapsible } from '@/components/ui/Collapsible';
@@ -41,10 +45,6 @@ import { LoadingState } from '@/components/ui/LoadingState';
 // presets is not coerced — the control offers the actual (clamped)
 // value as an extra option so it never lies about the current setting.
 const DEPTH_PRESETS = [DEFAULT_INTERNAL_TX_DEPTH, 50, 100, MAX_INTERNAL_TX_DEPTH];
-
-// Bounded concurrency: ~4 parallel debug_traceTransaction calls keeps the
-// pool polite against public RPCs while making the scan finish in batches.
-const TRACE_CONCURRENCY = 4;
 
 // Header row at the head of the tab: the standing scope line (renders in
 // every phase so the data's provenance — on-demand traces over a
@@ -155,28 +155,6 @@ const recordsErrorLine = css`
   font-size: var(--haze-text-xs);
 `;
 
-const formatHash = (h: string) => `${h.slice(0, 10)}...${h.slice(-8)}`;
-
-// Same call-type palette as the Call Trace card: creations green,
-// selfdestructs amber, read-only blue, code-in-place purple, rest neutral.
-const badgeVariantForType = (
-  type: string,
-): 'default' | 'success' | 'warning' | 'info' | 'purple' => {
-  switch (type) {
-    case 'STATICCALL':
-      return 'info';
-    case 'DELEGATECALL':
-      return 'purple';
-    case 'CREATE':
-    case 'CREATE2':
-      return 'success';
-    case 'SELFDESTRUCT':
-      return 'warning';
-    default:
-      return 'default';
-  }
-};
-
 // Exact wei → display string honoring the chain's native-currency
 // decimals. BigInt-only: the old `Number(formatUnits(...)).toFixed(4)`
 // collapsed distinct internal-transfer values past 2^53 whole units and
@@ -191,30 +169,15 @@ const formatInternalValue = (wei: bigint, chainId: number): string => {
   return `${shown} ${symbol}`;
 };
 
-// Provider error text can embed the whole JSON-RPC request body; keep the
-// row readable with the head of the message instead.
-const shortMessage = (message: string): string =>
-  message.length > 160 ? `${message.slice(0, 160)}…` : message;
-
-// Trace one transaction through the browser RPC client. Mirrors the Call
-// Trace card's request shape (callTracer) and its narrow cast around
-// viem's typed client.request, which has no debug namespace.
+// Trace one transaction through the family's shared fetch
+// (utils/callTraceRpc — the Call Trace card's request shape and cast).
 const traceOneTx = async (
   chainId: number,
   viewedAddress: string,
   hash: string,
 ): Promise<TraceTxOutcome> => {
   try {
-    const client = await createRpcClient(chainId);
-    const raw = await (
-      client as unknown as {
-        request: (args: { method: string; params: unknown[] }) => Promise<unknown>;
-      }
-    ).request({
-      method: 'debug_traceTransaction',
-      params: [hash, { tracer: 'callTracer' }],
-    });
-    const root = normalizeCallTrace(raw);
+    const root = await fetchCallTraceTree(chainId, hash);
     if (root === null) return { hash, status: 'traced', rows: [], truncated: false };
     const { rows, truncated } = flattenInternalTxTree(hash, root, viewedAddress);
     return { hash, status: 'traced', rows, truncated };
@@ -224,32 +187,6 @@ const traceOneTx = async (
       ? { hash, status: 'unsupported', message }
       : { hash, status: 'failed', message };
   }
-};
-
-// Bounded-concurrency pool over the tx list. Outcomes land at their input
-// index, so the aggregate order is the discovered order, not completion
-// order — the deterministic half of the tab.
-const traceTxBatch = async (
-  chainId: number,
-  viewedAddress: string,
-  hashes: readonly string[],
-  onSettled: (settled: number) => void,
-): Promise<TraceTxOutcome[]> => {
-  const outcomes: TraceTxOutcome[] = new Array(hashes.length);
-  let next = 0;
-  let settled = 0;
-  const workers = Array.from({ length: Math.min(TRACE_CONCURRENCY, hashes.length) }, async () => {
-    for (;;) {
-      const index = next;
-      next += 1;
-      if (index >= hashes.length) return;
-      outcomes[index] = await traceOneTx(chainId, viewedAddress, hashes[index]);
-      settled += 1;
-      onSettled(settled);
-    }
-  });
-  await Promise.all(workers);
-  return outcomes;
 };
 
 export type InternalTxnsProps = {
@@ -322,9 +259,14 @@ export default function InternalTxns({
     const hashes = tracedTxs.map(tx => tx.hash);
     setProgress({ settled: 0, total: hashes.length });
     setAggregate(null);
-    const outcomes = await traceTxBatch(chainId, address, hashes, settled => {
-      if (runSeq.current === seq) setProgress({ settled, total: hashes.length });
-    });
+    const outcomes = await runTracePool(
+      hashes,
+      TRACE_CONCURRENCY,
+      hash => traceOneTx(chainId, address, hash),
+      settled => {
+        if (runSeq.current === seq) setProgress({ settled, total: hashes.length });
+      },
+    );
     if (runSeq.current !== seq) return;
     setProgress(null);
     setAggregate(aggregateInternalTxns(outcomes));
@@ -452,9 +394,7 @@ export default function InternalTxns({
                     </TypedLink>
                   </td>
                   <td>
-                    <Badge variant={badgeVariantForType(record.callType.toUpperCase())} size="sm">
-                      {record.callType}
-                    </Badge>
+                    <CallTypeBadge type={record.callType.toUpperCase()} label={record.callType} />
                   </td>
                   <td>
                     <CopyableHash
@@ -573,9 +513,7 @@ export default function InternalTxns({
                           </TypedLink>
                         </td>
                         <td>
-                          <Badge variant={badgeVariantForType(row.type)} size="sm">
-                            {row.type}
-                          </Badge>
+                          <CallTypeBadge type={row.type} />
                         </td>
                         <td>
                           {row.from !== null ? (
@@ -632,7 +570,7 @@ export default function InternalTxns({
                         >
                           {formatHash(failure.hash)}
                         </TypedLink>{' '}
-                        — {shortMessage(failure.message)}
+                        — {shortTraceFailureMessage(failure.message)}
                       </div>
                     ))}
                   </Collapsible>

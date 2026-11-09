@@ -17,6 +17,27 @@
 //   individual odd fields degrade honestly, and a single malformed CHILD
 //   is skipped rather than nuking its siblings.
 
+// Relative on purpose: reachable from the vite.config.ts esbuild graph,
+// which does not resolve the @/ alias (AGENTS.md).
+import { selectorOf } from './txDecode';
+
+/** What the narrow cast promises: EIP-1193 request args in, unknown JSON out. */
+export type UntypedRpcRequestArgs = { method: string; params: unknown[] };
+
+/**
+ * The narrow cast over an ALREADY-ACQUIRED viem client, for methods the
+ * typed client.request schema does not carry (the debug namespace, legacy
+ * full-tx eth_getBlockByHash). Lives in this dependency-free leaf so BOTH
+ * sides can share the single cast: the browser trace family
+ * (utils/callTraceRpc wraps it with the per-chain browser client) and
+ * server-side walks (AddressScanService passes its own RpcManager
+ * client). Nothing here interprets the payload — honest parsing stays
+ * with the pure extractors below.
+ */
+export function clientRequest(client: unknown, args: UntypedRpcRequestArgs): Promise<unknown> {
+  return (client as { request: (a: UntypedRpcRequestArgs) => Promise<unknown> }).request(args);
+}
+
 /** One normalized call frame; `depth` is 0 for the tx's top-level frame. */
 export type CallTraceNode = {
   /** Geth call type: CALL, STATICCALL, DELEGATECALL, CALLCODE, CREATE, CREATE2, SELFDESTRUCT — or whatever the node reported. */
@@ -77,17 +98,6 @@ const parseQuantity = (raw: unknown): bigint | null => {
 const optionalString = (raw: unknown): string | null =>
   typeof raw === 'string' && raw !== '' ? raw : null;
 
-/**
- * Function selector of a calldata hex string: the first 4 data bytes,
- * lowercased — null for "0x", shorter-than-4-byte inputs, or non-hex
- * strings. Same contract as selectorOf in utils/txDecode.
- */
-const selectorOfInput = (input: string | null): string | null => {
-  if (input === null || input.length < 10) return null;
-  const selector = input.slice(0, 10).toLowerCase();
-  return /^0x[0-9a-f]{8}$/.test(selector) ? selector : null;
-};
-
 const normalizeNode = (raw: unknown, depth: number): CallTraceNode | null => {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null;
   const record = raw as Record<string, unknown>;
@@ -109,7 +119,7 @@ const normalizeNode = (raw: unknown, depth: number): CallTraceNode | null => {
     gasUsed: parseQuantity(record.gasUsed),
     input,
     output: optionalString(record.output),
-    selector: selectorOfInput(input),
+    selector: selectorOf(input ?? undefined),
     error: optionalString(record.error),
     revertReason: optionalString(record.revertReason),
     depth,

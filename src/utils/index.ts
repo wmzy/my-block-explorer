@@ -25,7 +25,12 @@ export * from './address';
 export * from './api-error';
 export * from './blockRpcData';
 export * from './blockTagUtils';
-export * from './cache';
+// NOTE: './cache' (deleted 2026-11-09 — blockCache migrated to
+// ttlLruCache) and './callTraceRpc' (a browser-RPC module — browser code
+// deep-imports it, like serialization/pino; re-exporting it here would
+// drag realTimeData's browser graph into every backend barrel consumer,
+// including the vite.config esbuild bundle, which cannot resolve @/) are
+// deliberately NOT re-exported from this barrel.
 export * from './castCommand';
 export * from './chainParam';
 export * from './contractInteraction';
@@ -46,6 +51,7 @@ export * from './sorting-optimization';
 export * from './stateOverride';
 export * from './tokenTransferDecode';
 export * from './traceFormat';
+export * from './ttlLruCache';
 export * from './txDecode';
 export * from './validation';
 

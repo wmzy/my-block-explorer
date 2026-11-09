@@ -1,5 +1,9 @@
 import { HTTPException } from 'hono/http-exception';
-import { isValidTransactionHash, isValidBlockNumber } from '../utils/validation';
+import {
+  isValidTransactionHash,
+  isValidBlockNumber,
+  parseChainAndAddressParams,
+} from '../utils/validation';
 import { addressVerdict } from '../utils/address';
 import { isChainSupported } from '../config/chains';
 
@@ -31,6 +35,23 @@ export function getValidatedChainId(chainId: string | number): number {
   }
 
   return id;
+}
+
+/**
+ * The labels/watch wire contract over the neutral two-param validator
+ * (parseChainAndAddressParams): both sub-apps answer :chainId/:address
+ * param failures with the same bare {error: 'invalid_request', message}
+ * 400 body — NOT the createApiError envelope — so the mapping lives here
+ * once instead of as byte-identical local wrappers in each route file.
+ * Callers render the error arm with `c.json(parsed, 400)` as-is.
+ */
+export function parseChainAndAddressRequest(
+  chainIdStr: string,
+  addressStr: string,
+): { chainId: number; address: `0x${string}` } | { error: string; message: string } {
+  const parsed = parseChainAndAddressParams(chainIdStr, addressStr);
+  if ('error' in parsed) return { error: 'invalid_request', message: parsed.message };
+  return parsed;
 }
 
 export function getValidatedTxHash(txHash: string): string {

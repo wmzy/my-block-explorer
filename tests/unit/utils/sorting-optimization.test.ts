@@ -3,24 +3,17 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import {
-  OptimizedSorter,
-  optimizedSort,
-  sortingPerformanceMonitor,
-  SortingPerformanceMonitor,
-} from '@/utils/sorting-optimization';
+import { OptimizedSorter, optimizedSort } from '@/utils/sorting-optimization';
 
 describe('OptimizedSorter', () => {
   let sorter: OptimizedSorter;
 
   beforeEach(() => {
     sorter = new OptimizedSorter();
-    sortingPerformanceMonitor.clear();
   });
 
   afterEach(() => {
     sorter.clearCache();
-    sortingPerformanceMonitor.clear();
   });
 
   describe('basic sorting functionality', () => {
@@ -260,10 +253,6 @@ describe('OptimizedSorter', () => {
 });
 
 describe('optimizedSort convenience function', () => {
-  beforeEach(() => {
-    sortingPerformanceMonitor.clear();
-  });
-
   it('should provide the same interface as OptimizedSorter.sort', () => {
     const data = [{ id: 3 }, { id: 1 }, { id: 2 }];
     const sortConfigs = [{ key: 'id', direction: 'asc' as const, type: 'numeric' as const }];
@@ -271,128 +260,5 @@ describe('optimizedSort convenience function', () => {
     const result = optimizedSort(data, sortConfigs);
     expect(result.sortedData).toEqual([{ id: 1 }, { id: 2 }, { id: 3 }]);
     expect(result.metrics).toBeDefined();
-  });
-});
-
-describe('SortingPerformanceMonitor', () => {
-  let monitor: SortingPerformanceMonitor;
-
-  beforeEach(() => {
-    monitor = new SortingPerformanceMonitor();
-  });
-
-  it('should record and average metrics', () => {
-    const metrics = [
-      {
-        algorithmUsed: 'standard',
-        executionTime: 10,
-        dataSize: 100,
-        memoryUsage: 1000,
-        cacheHit: false,
-      },
-      {
-        algorithmUsed: 'optimized',
-        executionTime: 20,
-        dataSize: 200,
-        memoryUsage: 2000,
-        cacheHit: true,
-      },
-      {
-        algorithmUsed: 'standard',
-        executionTime: 15,
-        dataSize: 150,
-        memoryUsage: 1500,
-        cacheHit: false,
-      },
-    ];
-
-    metrics.forEach(metric => monitor.recordMetrics(metric));
-
-    const avg = monitor.getAverageMetrics();
-    expect(avg.avgExecutionTime).toBe(15); // (10 + 20 + 15) / 3
-    expect(avg.avgDataSize).toBe(150); // (100 + 200 + 150) / 3
-    expect(avg.avgMemoryUsage).toBe(1500); // (1000 + 2000 + 1500) / 3
-    expect(avg.cacheHitRate).toBe(1 / 3); // 1 cache hit out of 3
-    expect(avg.totalOperations).toBe(3);
-  });
-
-  it('should group metrics by algorithm', () => {
-    const metrics = [
-      {
-        algorithmUsed: 'standard',
-        executionTime: 10,
-        dataSize: 100,
-        memoryUsage: 1000,
-        cacheHit: false,
-      },
-      {
-        algorithmUsed: 'standard',
-        executionTime: 15,
-        dataSize: 150,
-        memoryUsage: 1500,
-        cacheHit: false,
-      },
-      {
-        algorithmUsed: 'optimized',
-        executionTime: 20,
-        dataSize: 200,
-        memoryUsage: 2000,
-        cacheHit: true,
-      },
-    ];
-
-    metrics.forEach(metric => monitor.recordMetrics(metric));
-
-    const grouped = monitor.getMetricsByAlgorithm();
-    expect(grouped.standard.count).toBe(2);
-    expect(grouped.standard.avgExecutionTime).toBe(12.5); // (10 + 15) / 2
-    expect(grouped.optimized.count).toBe(1);
-    expect(grouped.optimized.avgExecutionTime).toBe(20);
-  });
-
-  it('should handle empty metrics gracefully', () => {
-    const avg = monitor.getAverageMetrics();
-    const grouped = monitor.getMetricsByAlgorithm();
-
-    expect(avg.avgExecutionTime).toBe(0);
-    expect(avg.avgDataSize).toBe(0);
-    expect(avg.avgMemoryUsage).toBe(0);
-    expect(avg.cacheHitRate).toBe(0);
-    expect(avg.totalOperations).toBe(0);
-    expect(Object.keys(grouped)).toHaveLength(0);
-  });
-
-  it('should limit metrics history', () => {
-    monitor = new SortingPerformanceMonitor();
-    monitor['maxMetrics'] = 2;
-
-    // Add more metrics than the limit
-    for (let i = 0; i < 5; i++) {
-      monitor.recordMetrics({
-        algorithmUsed: 'standard',
-        executionTime: i,
-        dataSize: i * 10,
-        memoryUsage: i * 100,
-        cacheHit: false,
-      });
-    }
-
-    const avg = monitor.getAverageMetrics();
-    expect(avg.totalOperations).toBeLessThanOrEqual(2);
-  });
-
-  it('should clear metrics', () => {
-    monitor.recordMetrics({
-      algorithmUsed: 'standard',
-      executionTime: 10,
-      dataSize: 100,
-      memoryUsage: 1000,
-      cacheHit: false,
-    });
-
-    expect(monitor.getAverageMetrics().totalOperations).toBe(1);
-
-    monitor.clear();
-    expect(monitor.getAverageMetrics().totalOperations).toBe(0);
   });
 });

@@ -8,7 +8,7 @@ import { css, cx } from '@linaria/core';
 import { TypedLink } from '@native-router/react';
 import { Address, AbiEvent } from 'viem';
 import { EmptyState, ErrorState } from '@/components/ui/ErrorState';
-import { formatFixedDecimals, truncateMiddle } from '@/utils/format';
+import { formatDateTime, formatFixedDecimals, truncateMiddle } from '@/utils/format';
 import { EventFilterPanel, type EventFilterState } from './EventFilterPanel';
 import { get } from '@/util/http';
 import { getApiBase } from '@/util/apiBase';
@@ -827,27 +827,6 @@ const formatAddress = (address: string): string =>
 const formatTransactionHash = (hash: string): string =>
   hash ? truncateMiddle(hash, 10, 8) : 'N/A';
 
-const formatTimestamp = (timestamp: string | null | undefined): string => {
-  // Missing (never-fetched) or unparseable timestamps render as an explicit
-  // placeholder instead of a fabricated or Invalid Date.
-  if (!timestamp) return '—';
-  try {
-    const date = new Date(timestamp);
-    if (Number.isNaN(date.getTime())) return '—';
-    return date.toLocaleString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      second: '2-digit',
-      hour12: false,
-    });
-  } catch {
-    return '—';
-  }
-};
-
 const formatValue = (value?: string): string => {
   if (!value) return 'N/A';
   try {
@@ -868,14 +847,15 @@ const formatValue = (value?: string): string => {
 };
 
 // Import optimized sorting and search utilities
-import { optimizedSort, sortingPerformanceMonitor } from '../../utils/sorting-optimization';
+import { optimizedSort, type SortingPerformanceMetrics } from '../../utils/sorting-optimization';
 
 const clientSideSort = (
   data: EventData[],
   sortConfigs: SortConfig[],
   primarySort: SortState,
-): EventData[] => {
-  if (!sortConfigs.length && !primarySort.field) return data;
+): { sortedData: EventData[]; metrics: SortingPerformanceMetrics } => {
+  // The sorter itself handles the no-config case (returns a copy labeled
+  // 'no-sort'), so there is no separate early return here.
 
   // Prepare sort configurations for optimized sorter
   let finalSortConfigs: SortConfig[] = [];
@@ -917,17 +897,13 @@ const clientSideSort = (
     ),
   })}`;
 
-  // Use optimized sorting
-  const result = optimizedSort(data, finalSortConfigs, {
+  // Use optimized sorting; the returned metrics describe THIS sort (real
+  // algorithm used, honest cache hit) and feed the perf panel directly.
+  return optimizedSort(data, finalSortConfigs, {
     useCache: true,
     cacheKey,
     threshold: 1000, // Use optimized sorting for datasets over 1000 items
   });
-
-  // Record performance metrics
-  sortingPerformanceMonitor.recordMetrics(result.metrics);
-
-  return result.sortedData;
 };
 
 // The events route caps pageSize at 1000 (routes/events.ts), and the
@@ -1132,7 +1108,7 @@ export const EventRow = React.memo(({
         </td>
         <td className={tableCell}>{event.blockNumber}</td>
         <td className={cx(tableCell, timestampCell)}>
-          {formatTimestamp(event.blockTimestamp)}
+          {formatDateTime(event.blockTimestamp)}
         </td>
         <td className={cx(tableCell, eventNameCell)}>
           {event.eventName}
@@ -1296,19 +1272,14 @@ export const EventTable: React.FC<EventTableProps> = ({
   const [pageInput, setPageInput] = useState<string>('');
   const [totalPages, setTotalPages] = useState<number>(1);
 
-  // Performance monitoring state
+  // Performance monitoring state — per-sort facts straight from the sorter's
+  // metrics (no global history: the deleted SortingPerformanceMonitor kept a
+  // process-lifetime buffer whose averages mixed pages and sessions).
   const [sortingMetrics, setSortingMetrics] = useState<{
     sortTime: number;
     dataSize: number;
     algorithm: string;
     cacheHit: boolean;
-    avgMetrics?: {
-      avgExecutionTime: number;
-      avgDataSize: number;
-      avgMemoryUsage: number;
-      cacheHitRate: number;
-      totalOperations: number;
-    };
   } | null>(null);
   const [showPerformanceInfo, setShowPerformanceInfo] = useState(false);
 
@@ -1783,26 +1754,24 @@ export const EventTable: React.FC<EventTableProps> = ({
 
   useEffect(() => {
     if (shouldUseClientSideSort) {
-      const startTime = performance.now();
-
       // Arg filtering runs server-side (argFilters query param); this block
       // only sorts/paginates the loaded rows for display. The server-reported
       // pagination total stays authoritative.
-      const sortedData = clientSideSort(allEvents, multiSort, sort);
-      const paginatedData = paginateData(sortedData, pagination.page, pagination.limit);
-
-      const sortTime = performance.now() - startTime;
-
-      const avgMetrics = sortingPerformanceMonitor.getAverageMetrics();
-      const recentMetrics = sortingPerformanceMonitor.getMetricsByAlgorithm();
+      const sortResult = clientSideSort(allEvents, multiSort, sort);
+      const paginatedData = paginateData(
+        sortResult.sortedData,
+        pagination.page,
+        pagination.limit,
+      );
 
       setEvents(paginatedData);
       setSortingMetrics({
-        sortTime,
-        dataSize: sortedData.length,
-        algorithm: recentMetrics['optimized'] ? 'optimized' : 'standard',
-        cacheHit: sortTime < 5,
-        avgMetrics,
+        // The sorter's own timing of this sort, plus its honest algorithm
+        // label and cache-hit flag — never a wall-clock guess.
+        sortTime: sortResult.metrics.executionTime,
+        dataSize: sortResult.sortedData.length,
+        algorithm: sortResult.metrics.algorithmUsed,
+        cacheHit: sortResult.metrics.cacheHit,
       });
     } else {
       setEvents(allEvents);
@@ -2031,24 +2000,6 @@ export const EventTable: React.FC<EventTableProps> = ({
                         {sortingMetrics.cacheHit ? 'Yes' : 'No'}
                       </span>
                     </div>
-
-                    {sortingMetrics.avgMetrics && (
-                      <>
-                        <div className={performanceMetric}>
-                          <span className={performanceMetricLabel}>Avg time:</span>
-                          <span className={performanceMetricValue}>
-                            {sortingMetrics.avgMetrics.avgExecutionTime.toFixed(2)} ms
-                          </span>
-                        </div>
-
-                        <div className={performanceMetric}>
-                          <span className={performanceMetricLabel}>Cache hit rate:</span>
-                          <span className={performanceMetricValue}>
-                            {(sortingMetrics.avgMetrics.cacheHitRate * 100).toFixed(1)}%
-                          </span>
-                        </div>
-                      </>
-                    )}
 
                     <div className={performanceMetric}>
                       <span className={performanceMetricLabel}>Sort mode:</span>

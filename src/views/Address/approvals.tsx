@@ -38,7 +38,7 @@ import { linkStyle } from '@/components/ui/DataTable';
 import { ApiError } from '@/util/apiError';
 import { get, longRunningApi, withSignal } from '@/util/http';
 import { bindQueryFn, createQueryCache, createQueryHook } from '@/util/useQuery';
-import { formatHash, formatNumber, truncateMiddle } from '@/utils/format';
+import { cellText, formatDateTime, formatHash, formatNumber } from '@/utils/format';
 import { useTokenMetadata, type TokenMetadata } from '@/services/tokenMetadata';
 import { encodeRevokeIntent } from '@/views/Contract/revokeIntent';
 
@@ -285,10 +285,6 @@ const historySection = css`
 
 // --- helpers ---
 
-// Address-cell text: the shared 8/6 middle truncation, with the lists'
-// 'N/A' fallback for a blank cell.
-const addressCell = (a: string) => (a ? truncateMiddle(a, 8, 6) : 'N/A');
-
 const KIND_LABELS: Record<ApprovalKind, string> = {
   erc20: 'ERC-20',
   erc721: 'ERC-721',
@@ -375,7 +371,7 @@ function ApprovalRow({
 
   return (
     <tr data-testid="approval-row">
-      <td title={approval.token}>{symbol ?? addressCell(approval.token)}</td>
+      <td title={approval.token}>{symbol ?? cellText(approval.token)}</td>
       <td>
         <span className={kindBadge} data-testid="approval-kind">
           {KIND_LABELS[kind]}
@@ -384,7 +380,7 @@ function ApprovalRow({
       <td
         title={kind === 'erc1155' ? `Operator ${approval.spender}` : `Spender ${approval.spender}`}
       >
-        {addressCell(approval.spender)}
+        {cellText(approval.spender)}
       </td>
       <td>{kind === 'erc721' ? `#${approval.tokenId}` : '—'}</td>
       <td className={allowanceCell}>{allowanceBody}</td>
@@ -485,14 +481,14 @@ function ApprovalHistoryRow({
       </td>
       <td title={event.token}>
         <TypedLink to={`/chain/${chainId}/token/${event.token}`} className={linkStyle}>
-          {symbol ?? addressCell(event.token)}
+          {symbol ?? cellText(event.token)}
         </TypedLink>
       </td>
       <td>
         <span className={kindBadge}>{KIND_LABELS[kind]}</span>
       </td>
       <td title={kind === 'erc1155' ? `Operator ${event.spender}` : `Spender ${event.spender}`}>
-        {addressCell(event.spender)}
+        {cellText(event.spender)}
       </td>
       <td className={allowanceCell}>{historyValueBody(event, symbol, decimals)}</td>
     </tr>
@@ -629,8 +625,7 @@ export function ApprovalSection({ chainId, address }: ApprovalSectionProps): Rea
   let body: ReactNode;
   if (data !== undefined) {
     const rows = data.approvals;
-    const scannedLabel =
-      data.scannedAt !== undefined ? new Date(data.scannedAt).toLocaleString() : null;
+    const scannedLabel = data.scannedAt !== undefined ? formatDateTime(data.scannedAt) : null;
 
     if (data.reason === 'allowance-read-failed' && rows.length === 0) {
       // Discovery succeeded, current-value reads did not: the honest

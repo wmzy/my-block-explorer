@@ -1,43 +1,21 @@
 import { css, cx } from '@linaria/core';
 import { useCallback, useState } from 'react';
 
-import { Badge } from '@/components/ui/Badge';
+import { CallTypeBadge } from '@/components/CallTypeBadge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { CopyableHash } from '@/components/ui/CopyableHash';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { getChainSymbol } from '@/config/chains';
+import { fetchCallTraceTree } from '@/utils/callTraceRpc';
 import { formatNumber, formatValue } from '@/utils/format';
-import { createRpcClient } from '@/utils/realTimeData';
 import { useLazyExpand } from '@/util/useLazyExpand';
 import {
   countFailedCalls,
   countNodes,
   isTraceUnsupportedError,
   maxDepth,
-  normalizeCallTrace,
   type CallTraceNode,
 } from '@/utils/traceFormat';
-
-// Call-type badge color: read-only frames blue, code-executing frames in
-// place purple, creations green, selfdestructs amber, everything else
-// (CALL and future types) neutral — the badge still names unknown types.
-const badgeVariantForType = (
-  type: string,
-): 'default' | 'success' | 'warning' | 'info' | 'purple' => {
-  switch (type) {
-    case 'STATICCALL':
-      return 'info';
-    case 'DELEGATECALL':
-      return 'purple';
-    case 'CREATE':
-    case 'CREATE2':
-      return 'success';
-    case 'SELFDESTRUCT':
-      return 'warning';
-    default:
-      return 'default';
-  }
-};
 
 // Init code's first 4 bytes are NOT a function selector — CREATE-family
 // frames skip the selector chip even though normalization kept one.
@@ -167,9 +145,7 @@ function TraceNodeRow({
   return (
     <div className={traceNodeStyle}>
       <div className={traceRowStyle}>
-        <Badge variant={badgeVariantForType(node.type)} size="sm">
-          {node.type}
-        </Badge>
+        <CallTypeBadge type={node.type} />
         {node.depth === 0 && node.from !== null && (
           <CopyableHash
             value={node.from}
@@ -278,20 +254,8 @@ export function CallTraceCard({ chainId, txHash, txGasUsed }: CallTraceCardProps
     const seq = claim();
     setState({ phase: 'loading' });
     try {
-      // viem's client.request is typed to the standard RPC schema; the
-      // debug namespace is not in it, so the request goes through the
-      // same narrow cast the contract-creation trace uses.
-      const client = await createRpcClient(chainId);
-      const raw = await (
-        client as unknown as {
-          request: (args: { method: string; params: unknown[] }) => Promise<unknown>;
-        }
-      ).request({
-        method: 'debug_traceTransaction',
-        params: [txHash, { tracer: 'callTracer' }],
-      });
+      const root = await fetchCallTraceTree(chainId, txHash);
       if (!isCurrent(seq)) return;
-      const root = normalizeCallTrace(raw);
       setState(root === null ? { phase: 'empty' } : { phase: 'loaded', root });
     } catch (err) {
       if (!isCurrent(seq)) return;

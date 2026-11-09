@@ -23,7 +23,8 @@
 //   true size and `truncated` says whether the cap bit. queuedCount is
 //   never capped — it is a count, not a listing.
 // - txpool payloads carry no timestamps; nothing here invents one.
-import { createRpcClient } from '@/utils/realTimeData';
+import { rpcRequest } from '@/utils/callTraceRpc';
+import { withTimeout } from '@/utils/withTimeout';
 import { bindQueryFn, createQueryCache } from '@/util/useQuery';
 import { createPolledQueryHook, type PolledQueryResult } from './polledQuery';
 
@@ -270,27 +271,8 @@ export function isTxPoolUnsupportedError(error: unknown): boolean {
 // A node that never answers txpool_content (some providers black-hole the
 // namespace instead of rejecting it) must not hold the page in a
 // first-load skeleton forever: race the request against a fixed budget
-// and settle the honest failed state with Retry.
+// (utils/withTimeout) and settle the honest failed state with Retry.
 const TXPOOL_REQUEST_BUDGET_MS = 8_000;
-
-function withRequestBudget<T>(request: Promise<T>): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(
-      () => reject(new Error('txpool_content did not answer within the request budget')),
-      TXPOOL_REQUEST_BUDGET_MS,
-    );
-    request.then(
-      value => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      error => {
-        clearTimeout(timer);
-        reject(error);
-      },
-    );
-  });
-}
 
 /**
  * Fetch the node's transaction pool over the shared browser RPC client.
@@ -305,17 +287,15 @@ export async function fetchPendingTransactions(chainId: number): Promise<TxPoolR
     return { status: 'failed', chainId, message: 'Unknown chain' };
   }
   try {
-    const client = await createRpcClient(chainId);
-    // txpool_content is outside viem's typed RPC schema; the structural
-    // request cast is the repo's established route around it (same as
-    // CallTrace's debug_traceTransaction call). The budget race covers
-    // providers that accept the POST but never answer it.
-    const raw = await withRequestBudget(
-      (
-        client as unknown as {
-          request: (args: { method: string; params: unknown[] }) => Promise<unknown>;
-        }
-      ).request({ method: 'txpool_content', params: [] }),
+    // txpool_content is outside viem's typed RPC schema, so the request
+    // rides the shared untyped cast (utils/callTraceRpc rpcRequest — same
+    // route the Call Trace card's debug_traceTransaction takes). The
+    // budget race covers providers that accept the POST but never answer
+    // it (and now client creation too, which rides the same promise).
+    const raw = await withTimeout(
+      rpcRequest(chainId, { method: 'txpool_content', params: [] }),
+      TXPOOL_REQUEST_BUDGET_MS,
+      'txpool_content',
     );
     // A 200 whose body is not a txpool object is a failure, not an empty
     // pool: Geth omits maps when a side is empty but always answers with

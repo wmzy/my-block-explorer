@@ -58,7 +58,8 @@ import { classifyTokenOverview, formatTokenSupply } from '@/views/Address/tokenO
 import TokenTransfers, { TRANSFER_LIMIT } from '@/views/Address/TokenTransfers';
 import { getChainInfo, getChainName } from '@/config/chains';
 import { parseChainIdParam } from '@/utils/chainParam';
-import { truncateMiddle } from '@/utils/format';
+import { cellText } from '@/utils/format';
+import { codeVerdict } from '@/utils/address';
 import { useContractSource } from '@/services/contracts';
 import { recordViewedToken } from '@/services/tokenDirectory';
 import { scanAbiRisks, type AbiRiskFlag } from '@/utils/abiRiskScan';
@@ -793,7 +794,7 @@ export default function TokenPage() {
     address,
   );
   const code = codeQuery.data;
-  const hasCode = code !== undefined && code !== '0x' && code.length > 2;
+  const hasCode = codeVerdict(code) !== 'eoa';
   const delegatedEoa = isEip7702Designator(code);
 
   // Token detection: the settle-aware probe distinguishes "still reading"
@@ -1052,7 +1053,7 @@ export default function TokenPage() {
         <div className={addressRow}>
           <CopyableHash
             value={displayAddress}
-            truncated={displayAddress ? truncateMiddle(displayAddress, 8, 6) : 'N/A'}
+            truncated={cellText(displayAddress)}
           />
         </div>
 

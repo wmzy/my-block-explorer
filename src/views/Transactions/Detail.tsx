@@ -54,7 +54,7 @@ import {
   formatRevertDescription,
   selectorOf,
 } from '@/utils/txDecode';
-import { formatBigInt, formatGasPrice, formatNumber, formatTokenAmount, formatValue } from '@/utils/format';
+import { formatBigInt, formatDateTime, formatGasPrice, formatNumber, formatTokenAmount, formatValue } from '@/utils/format';
 import { formatValueByUnit, getValueUnit, subscribeValueUnit } from '@/util/units';
 import { UsdValue } from '@/components/ui/UsdValue';
 
@@ -1506,7 +1506,7 @@ export default function TransactionDetail() {
                   <InfoItem label="Transaction Type">{getTxTypeText(txInfo.type)}</InfoItem>
                   {txInfo.timestamp && (
                     <InfoItem label="Timestamp">
-                      {new Date(txInfo.timestamp).toLocaleString()}
+                      {formatDateTime(txInfo.timestamp)}
                     </InfoItem>
                   )}
                   {txInfo.contractAddress && (

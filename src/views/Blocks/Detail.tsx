@@ -23,7 +23,7 @@ import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
 import { useBlockByNumber } from '@/services/chainRpc';
 import { finalityLabelFor, useFinalityHeads } from '@/services/blocks';
 import { describeBlockProducer } from '@/utils/blockRpcData';
-import { formatBigInt, formatRelativeTime } from '@/utils/format';
+import { formatBigInt, formatDateTime, formatRelativeTime } from '@/utils/format';
 import { parseBlockNumberParam, parseChainIdParam } from '@/utils/chainParam';
 import { deriveSlotEpochFromIso } from '@/utils/slotEpoch';
 import { createRpcClient } from '@/utils/realTimeData';
@@ -647,7 +647,7 @@ export default function BlockDetail() {
                     />
                   </InfoItem>
                   <InfoItem label="Timestamp">
-                    {`${new Date(blockInfo.timestamp).toLocaleString()} (${formatRelativeTime(blockInfo.timestamp)})`}
+                    {`${formatDateTime(blockInfo.timestamp)} (${formatRelativeTime(blockInfo.timestamp)})`}
                   </InfoItem>
                   {slotEpoch !== undefined && (
                     // Consensus slot/epoch derived from the timestamp; the

@@ -33,7 +33,7 @@ import {
   getFilteredEventCount,
 } from '../services/EventExportService';
 import { safeJsonResponse } from '../utils/serialization';
-import { createApiError, respondError } from '../utils/api-error';
+import { createApiError, invalidPageResponse, respondError } from '../utils/api-error';
 import { contractSourceService } from '../services/ContractSourceService';
 import { requireAdminTokenIfConfigured } from '../middleware/admin-token';
 import type { BlockTagInput } from '@/types/events';
@@ -72,14 +72,29 @@ const validateChainAndAddress = (chainIdStr: string, addressStr: string) => {
   return parsed;
 };
 
+// The :rangeId URL segment, once for all five range routes. Strict decimal
+// parse (parseStrictInteger): parseInt() accepted a valid prefix, so
+// `…/ranges/3abc` addressed range 3, `…/ranges/0x10` range 16 and
+// `…/ranges/1e3` range 1 — a mutating request could delete, start or
+// pause a range the caller never named. Junk is 400 before any service is
+// reached, same rule as every other numeric route param.
+type ApiErrorBody = ReturnType<typeof createApiError>;
+
+const readRangeIdParam = (
+  raw: string,
+): { rangeId: number } | { error: ApiErrorBody; status: 400 } => {
+  const rangeId = parseStrictInteger(raw);
+  return rangeId === null
+    ? { error: createApiError(400, 'invalid_range_id', 'rangeId must be a number'), status: 400 }
+    : { rangeId };
+};
+
 // Query params shared by the events list and export endpoints. Malformed
 // argFilters fail loudly with 400 instead of being ignored: silently dropping
 // them would present unfiltered results as if they were filtered. The same
 // goes for non-scalar filter values — a typo like {a: [1,2]} must not run the
 // query unfiltered and return a wrong answer that looks right — and for junk
 // block bounds, which must not be treated as absent.
-type ApiErrorBody = ReturnType<typeof createApiError>;
-
 type ParsedEventFilters =
   | (EventArgFiltersOwner & { topics?: EventTopicFilters })
   | { error: ApiErrorBody; status: 400 };
@@ -310,7 +325,7 @@ app.get('/chains/:chainId/contracts/:address/events', async c => {
     rawPageSize === undefined || rawPageSize === '' ? 50 : parseStrictInteger(rawPageSize);
 
   if (parsedPage === null) {
-    return respondError(c, 400, 'invalid_page', 'page must be a positive integer');
+    return invalidPageResponse(c);
   }
   if (parsedPageSize === null) {
     return respondError(c, 400, 'invalid_page_size', 'pageSize must be a positive integer');
@@ -655,16 +670,9 @@ app.patch(
     if ('error' in result) return c.json(result.error, result.status);
 
     const { chainId, address } = result;
-    // Strict decimal parse: parseInt() accepted a valid prefix, so
-    // `…/ranges/3abc` addressed range 3, `…/ranges/0x10` range 16 and
-    // `…/ranges/1e3` range 1 — a mutating request could delete, start or
-    // pause a range the caller never named. Junk is now 400 before any
-    // service is reached. Same rule as every other numeric route param.
-    const rangeId = parseStrictInteger(c.req.param('rangeId'));
-
-    if (rangeId === null) {
-      return respondError(c, 400, 'invalid_range_id', 'rangeId must be a number');
-    }
+    const rangeIdParsed = readRangeIdParam(c.req.param('rangeId'));
+    if ('error' in rangeIdParsed) return c.json(rangeIdParsed.error, rangeIdParsed.status);
+    const { rangeId } = rangeIdParsed;
 
     try {
       const body = await c.req.json();
@@ -728,11 +736,9 @@ app.delete(
     if ('error' in result) return c.json(result.error, result.status);
 
     const { chainId, address } = result;
-    const rangeId = parseStrictInteger(c.req.param('rangeId'));
-
-    if (rangeId === null) {
-      return respondError(c, 400, 'invalid_range_id', 'rangeId must be a number');
-    }
+    const rangeIdParsed = readRangeIdParam(c.req.param('rangeId'));
+    if ('error' in rangeIdParsed) return c.json(rangeIdParsed.error, rangeIdParsed.status);
+    const { rangeId } = rangeIdParsed;
 
     try {
       const response = await deleteIndexingRange(chainId, address, rangeId);
@@ -780,11 +786,9 @@ app.post(
     if ('error' in result) return c.json(result.error, result.status);
 
     const { chainId, address } = result;
-    const rangeId = parseStrictInteger(c.req.param('rangeId'));
-
-    if (rangeId === null) {
-      return respondError(c, 400, 'invalid_range_id', 'rangeId must be a number');
-    }
+    const rangeIdParsed = readRangeIdParam(c.req.param('rangeId'));
+    if ('error' in rangeIdParsed) return c.json(rangeIdParsed.error, rangeIdParsed.status);
+    const { rangeId } = rangeIdParsed;
 
     try {
       let bodyAbi: unknown;
@@ -866,11 +870,9 @@ app.post(
     if ('error' in result) return c.json(result.error, result.status);
 
     const { chainId, address } = result;
-    const rangeId = parseStrictInteger(c.req.param('rangeId'));
-
-    if (rangeId === null) {
-      return respondError(c, 400, 'invalid_range_id', 'rangeId must be a number');
-    }
+    const rangeIdParsed = readRangeIdParam(c.req.param('rangeId'));
+    if ('error' in rangeIdParsed) return c.json(rangeIdParsed.error, rangeIdParsed.status);
+    const { rangeId } = rangeIdParsed;
 
     try {
       const isActive = getActiveRangeJob(chainId, address, rangeId);
@@ -965,11 +967,9 @@ app.post(
     if ('error' in result) return c.json(result.error, result.status);
 
     const { chainId, address } = result;
-    const rangeId = parseStrictInteger(c.req.param('rangeId'));
-
-    if (rangeId === null) {
-      return respondError(c, 400, 'invalid_range_id', 'rangeId must be a number');
-    }
+    const rangeIdParsed = readRangeIdParam(c.req.param('rangeId'));
+    if ('error' in rangeIdParsed) return c.json(rangeIdParsed.error, rangeIdParsed.status);
+    const { rangeId } = rangeIdParsed;
 
     try {
       let bodyAbi: unknown;

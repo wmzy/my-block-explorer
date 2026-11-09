@@ -135,6 +135,15 @@ export function truncateMiddle(s: string, lead: number, tail: number): string {
 }
 
 /**
+ * Table-cell text: the shared 8/6 middle truncation with a blank-cell
+ * fallback ('N/A' by default). The one home for what every list view
+ * used to hand-roll as its own `addressCell`/`formatAddr` one-liner.
+ */
+export function cellText(value: string | null | undefined, fallback = 'N/A'): string {
+  return value ? truncateMiddle(value, 8, 6) : fallback;
+}
+
+/**
  * Format an address - show the first and last few characters. The head
  * slice includes the `0x` prefix (`length` counts hex body characters).
  */
@@ -340,5 +349,31 @@ export function formatRelativeTime(timestamp: Date | string | number): string {
   if (diffInSeconds < 86400) return `${Math.floor(diffInSeconds / 3600)} hours ago`;
   if (diffInSeconds < 2592000) return `${Math.floor(diffInSeconds / 86400)} days ago`;
 
-  return date.toLocaleDateString();
+  // Old enough that only the date matters: pinned to en-US so the string is
+  // host-locale independent, like every other renderer in this module.
+  return date.toLocaleDateString('en-US');
+}
+
+/**
+ * The one absolute-datetime renderer for display surfaces (tables, info
+ * panels). Replaces the per-view `toLocaleString()` copies that each
+ * followed the host locale and had their own missing/invalid handling:
+ * nullish (never-fetched) and unparseable timestamps render an explicit
+ * '—' placeholder, never a fabricated value or 'Invalid Date'. The format
+ * is pinned to en-US ("Nov 9, 2026, 14:03:05") so output is deterministic
+ * across machines and test hosts.
+ */
+export function formatDateTime(timestamp: Date | string | number | null | undefined): string {
+  if (timestamp === null || timestamp === undefined || timestamp === '') return '—';
+  const date = timestamp instanceof Date ? timestamp : new Date(timestamp);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
 }

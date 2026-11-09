@@ -53,9 +53,11 @@ export function withRetry<T extends unknown[], R>(
 }
 
 /**
- * Sleep helper
+ * Sleep helper — the canonical `await sleep(ms)` for polling/backoff
+ * loops. Signal-aware variants (ContractVerifyService's polling sleep)
+ * stay local: abort semantics are their own contract.
  */
-function sleep(ms: number): Promise<void> {
+export function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 

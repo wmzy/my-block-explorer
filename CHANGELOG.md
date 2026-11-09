@@ -9,6 +9,60 @@ commit subjects rather than a curated release notes process.
 
 ## Unreleased
 
+- **2026-11-09 duplication follow-up wave (6 agents, 2 waves + integration)** —
+  the residue the 2026-11-08 review left behind, fixed end-to-end. All
+  verified: `tsc` 0 errors, eslint 0 errors (98 pre-existing warnings),
+  `vitest --changed` green, `pnpm build` green. **Dead code deleted
+  (~1,900 more lines)** — the entire vestigial per-chain DB subsystem
+  (`database/chain-database-manager.ts` + `chain-schema.ts` +
+  `chain-drizzle.ts` + `config/zero-config.ts` + `zero-config-bootstrap.ts`;
+  every service writes the main DB, the manager's only "live" consumer was
+  itself dead), 17 dead exports in `config/chains.ts` (incl. the duplicated
+  `data/chains/{type}/{name}-{id}.db` path formula, which died with them),
+  the `DatabaseManager` alias in `database/init.ts`, the never-called
+  `registerAbiEvents`/`getEventSelectorFromName`/`decodeEventData` trio in
+  `utils/events.ts`, and the never-read `SortingPerformanceMonitor`. **Real
+  bug fixed en route** — webhook event names were ALWAYS `null` in
+  production: the fallback consulted a registry cache that only the
+  never-called dead trio could populate. Webhook payloads now resolve
+  event names honestly (subscription-ABI decode first, then a deduped
+  batched openchain signature lookup per sweep, local canonical table for
+  the standards; unknown stays `null`, resolution failure never blocks
+  delivery). **Consolidations** — `codeVerdict()` in `utils/address.ts` is
+  now the single home for the `code !== '0x' && code.length > 2` predicate
+  (was hand-rolled at 8 sites, EIP-7702-aware); the callTracer family
+  shares `utils/callTraceRpc.ts` + `CallTypeBadge` + a parameterized DFS
+  walk (debug_trace cast ×3, badge switch ×3, batch pool ×2, shortMessage
+  ×2 gone); `formatHash`/`addressCell`/tokenId comparator/`sleep`/
+  timeout-wrapper/`ADMIN_TOKEN_GUIDANCE`/`MAX_WINDOW_BLOCKS`/selector-regex
+  copies all collapsed onto their canonical homes; `withTimeout`/
+  `withTimeoutOrNull`/`fetchWithTimeout` absorbed six hand-rolled
+  AbortController/race copies (prices ×2, txpool, crossChainProbe,
+  StorageLayoutService, ContractSourceService's unclosed detectProxy race);
+  five unbounded `Map`+expiry caches (prices ×2, tokenMetadata ×2,
+  nftMetadata) moved to `createTtlLruCache`; labels/watch route twins and
+  the limit/offset/page 400 leaves share one mapping; chain-id validation
+  is one leaf; `errorMessage()` replaces ~15 `error instanceof Error`
+  ternaries. Notable copy changes: crossChainProbe's timeout reason says
+  `4000ms` instead of `4s`; absolute datetimes are pinned en-US (one
+  `formatDateTime`); `formatBigIntSafe` replaces a host-locale
+  `toLocaleString` in the address page.
+
+- **Sorting perf-monitor removal + absolute-datetime unification** — the
+  never-actionable `SortingPerformanceMonitor` (a process-lifetime metrics
+  buffer in `utils/sorting-optimization.ts`, its only consumer EventTable)
+  is deleted. EventTable's perf panel now reports per-sort facts straight
+  from the sorter's own metrics (real `algorithmUsed`, honest `cacheHit`,
+  sorter-timed duration) instead of deriving "algorithm" from the global
+  buffer and guessing cache hits from `sortTime < 5`; the monitor-backed
+  "avg time / cache hit rate" rows went with it. Absolute datetimes across
+  the UI render through one `formatDateTime` (`utils/format.ts`, pinned
+  en-US, '—' for missing/unparseable input), replacing six host-locale
+  `toLocaleString()` copies in EventTable, Address (seen boundaries,
+  approvals scanned-at), Blocks Detail, Contract creation time, and
+  Transaction Detail; `formatRelativeTime`'s >30-day fallback is pinned to
+  en-US too.
+
 - **2026-11-08 duplication-review fix wave (8 agents, 2 waves + integration)** —
   a full-repo review for duplicate logic / inelegant implementations, then every
   finding fixed. All verified: `tsc` 0 errors, eslint 0 errors (98 pre-existing

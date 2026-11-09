@@ -7,7 +7,11 @@ const logger = createLogger('blocks-routes');
 import { getValidatedChainId, getValidatedBlockNumber } from '../server/validation';
 import { parsePaginationParams } from '../utils/validation';
 import { formatBlockForApi, safeJsonResponse } from '../utils/serialization';
-import { respondError } from '../utils/api-error';
+import {
+  invalidLimitResponse,
+  invalidOffsetResponse,
+  respondError,
+} from '../utils/api-error';
 
 const app = new Hono();
 
@@ -78,11 +82,11 @@ app.get('/chains/:chainId/blocks', async c => {
   });
 
   if (limit === null) {
-    return respondError(c, 400, 'invalid_limit', 'limit must be a positive integer');
+    return invalidLimitResponse(c);
   }
 
   if (offset === null) {
-    return respondError(c, 400, 'invalid_offset', 'offset must be a non-negative integer');
+    return invalidOffsetResponse(c);
   }
 
   try {

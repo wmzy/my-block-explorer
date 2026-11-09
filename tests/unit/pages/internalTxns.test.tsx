@@ -403,12 +403,15 @@ describe('InternalTxns', () => {
   });
 
   it('offers a between-preset deep-linked depth as its own truthful option', () => {
-    requestMock.mockResolvedValue({ type: 'CALL', from: SENDER, to: TARGET, input: '0x' });
+    // txLoading keeps the source list unsettled, so no scan is armed:
+    // this is a sync select-options pin and must not leak a running
+    // pool into the next test's cleared request mock.
     renderTab(
       {
         transactions: Array.from({ length: 60 }, (_, i) => ({
           hash: `0x${String(i).padStart(64, '0')}`,
         })),
+        txLoading: true,
       },
       '?itDepth=42',
     );

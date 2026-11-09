@@ -8,20 +8,16 @@
 // persistent verdict; everything else keeps the view's original
 // precedence (persistent record wins, RPC code read as the fallback).
 import { getAddress } from 'viem';
+import { codeVerdict } from '@/utils/address';
 
 export type AddressType = 'eoa' | 'contract' | 'delegated-eoa' | 'unknown';
 
-// EIP-7702 delegation designator: exactly 0xef0100 followed by the 20-byte
-// delegate address (46 hex chars, 48 including the 0x prefix). 0xef is an
-// invalid opcode, so deployed bytecode can never collide with the prefix;
-// the exact length still guards against truncated or garbled reads.
-const EIP7702_PREFIX = '0xef0100';
-const EIP7702_DESIGNATOR_LENGTH = EIP7702_PREFIX.length + 40;
-
+// EIP-7702 delegation designator check — the view-side spelling of the
+// raw-code verdict's 'delegated' tier. utils/address owns the matching
+// (exactly 0xef0100 + the 20-byte delegate address; 0xef is an invalid
+// opcode, so deployed bytecode can never collide with the prefix).
 export function isEip7702Designator(code: string | undefined): boolean {
-  if (code === undefined) return false;
-  const normalized = code.toLowerCase();
-  return normalized.length === EIP7702_DESIGNATOR_LENGTH && normalized.startsWith(EIP7702_PREFIX);
+  return codeVerdict(code) === 'delegated';
 }
 
 // The delegate address a 7702 designator points at (bytes 3-42 of the
@@ -29,7 +25,7 @@ export function isEip7702Designator(code: string | undefined): boolean {
 // not a designator.
 export function delegationTarget(code: string | undefined): string | undefined {
   if (code === undefined || !isEip7702Designator(code)) return undefined;
-  const target = `0x${code.slice(EIP7702_PREFIX.length)}`;
+  const target = `0x${code.slice('0xef0100'.length)}`;
   try {
     return getAddress(target);
   } catch {
@@ -56,7 +52,7 @@ export function classifyAddressType({ persistentType, rpcCode }: AddressTypeInpu
   if (isEip7702Designator(rpcCode)) return 'delegated-eoa';
   if (persistentType !== undefined) return persistentType ? 'contract' : 'eoa';
   if (rpcCode !== undefined) {
-    return rpcCode !== '0x' && rpcCode.length > 2 ? 'contract' : 'eoa';
+    return codeVerdict(rpcCode) !== 'eoa' ? 'contract' : 'eoa';
   }
   return 'unknown';
 }

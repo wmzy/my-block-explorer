@@ -30,7 +30,11 @@ export function createTtlLruCache<T>(options: {
   now?: () => number;
 }): TtlLruCache<T> {
   const { ttlMs, maxEntries } = options;
-  const now = options.now ?? Date.now;
+  // Default clock is late-bound (reads the global at each call): a
+  // module-load-time `?? Date.now` would freeze the REAL clock into the
+  // cache and defeat vitest fake timers for every consumer that relies
+  // on the default.
+  const now = options.now ?? (() => Date.now());
   const entries = new Map<string, Entry<T>>();
 
   const get = (key: string): T | undefined => {

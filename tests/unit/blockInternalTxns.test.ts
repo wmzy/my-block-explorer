@@ -9,7 +9,6 @@
 // eth_getBlockByHash payloads.
 import { describe, it, expect } from 'vitest';
 import {
-  BLOCK_TRACE_CONCURRENCY,
   MAX_BLOCK_TRACED_TXS,
   MAX_BLOCK_TOTAL_ROWS,
   blockInternalTxnsSummary,
@@ -22,7 +21,11 @@ import {
   type BlockInternalTxRow,
   type BlockTraceTxOutcome,
 } from '@/views/Blocks/internalTxns';
-import { MAX_INTERNAL_TRACE_DEPTH, MAX_ROWS_PER_TX } from '@/utils/internalTxScan';
+import {
+  MAX_INTERNAL_TRACE_DEPTH,
+  MAX_ROWS_PER_TX,
+  TRACE_CONCURRENCY,
+} from '@/utils/internalTxScan';
 import type { CallTraceNode } from '@/utils/traceFormat';
 
 const SENDER = '0x1111111111111111111111111111111111111111';
@@ -173,7 +176,9 @@ describe('flattenBlockInternalFrames', () => {
 
   it('exposes the shipped bounds (UI contracts, not accidents)', () => {
     expect(MAX_BLOCK_TRACED_TXS).toBe(50);
-    expect(BLOCK_TRACE_CONCURRENCY).toBe(4);
+    // The sweep's pool size is the shared TRACE_CONCURRENCY (both tracing
+    // UIs run one pool bound — the address tab's, by design).
+    expect(TRACE_CONCURRENCY).toBe(4);
     expect(MAX_BLOCK_TOTAL_ROWS).toBe(1000);
     // The per-tx walk bounds are the address tab's — one convention.
     expect(MAX_INTERNAL_TRACE_DEPTH).toBe(128);

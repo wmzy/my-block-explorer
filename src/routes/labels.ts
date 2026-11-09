@@ -17,7 +17,7 @@ import { Hono } from 'hono';
 import { and, eq, sql } from 'drizzle-orm';
 import { db, addressLabels } from '../database/init';
 import { createLogger } from '../server/logger';
-import { parseChainAndAddressParams } from '../utils/validation';
+import { parseChainAndAddressRequest } from '../server/validation';
 import { requireAdminTokenIfConfigured } from '../middleware/admin-token';
 import { createRateLimiter } from '../middleware/rate-limit';
 
@@ -28,18 +28,9 @@ const app = new Hono();
 const LABEL_MAX_LENGTH = 64;
 const NOTE_MAX_LENGTH = 500;
 
-// Same validation channel as the events routes (the shared two-tier
-// address verdict: shape tier, then EIP-55 checksum for mixed-case
-// input), mapped onto this file's JSON error shape via the neutral
-// parseChainAndAddressParams. Storage keys stay lowercase (C-3).
-const parseChainAndAddress = (
-  chainIdStr: string,
-  addressStr: string,
-): { chainId: number; address: `0x${string}` } | { error: string; message: string } => {
-  const parsed = parseChainAndAddressParams(chainIdStr, addressStr);
-  if ('error' in parsed) return { error: 'invalid_request', message: parsed.message };
-  return parsed;
-};
+// :chainId/:address param validation is the shared labels/watch contract
+// (parseChainAndAddressRequest): a bare {error: 'invalid_request',
+// message} 400, storage keys lowercase (C-3).
 
 // PUT body validation: { label: 1-64 chars after trim, note?: <=500 chars }.
 // An absent/null/whitespace-only note normalizes to null (cleared); a note
@@ -92,7 +83,7 @@ const findLabelRow = async (chainId: number, address: `0x${string}`) => {
 
 // GET /chains/:chainId/labels/:address — open read.
 app.get('/chains/:chainId/labels/:address', async c => {
-  const parsed = parseChainAndAddress(c.req.param('chainId'), c.req.param('address'));
+  const parsed = parseChainAndAddressRequest(c.req.param('chainId'), c.req.param('address'));
   if ('error' in parsed) return c.json(parsed, 400);
 
   try {
@@ -182,7 +173,7 @@ app.get('/labels', requireAdminTokenIfConfigured, listRateLimiter, async c => {
 // updatedAt rides the conflict path; createdAt keeps its original value on
 // update and defaults to now() on first insert.
 app.put('/chains/:chainId/labels/:address', requireAdminTokenIfConfigured, async c => {
-  const parsed = parseChainAndAddress(c.req.param('chainId'), c.req.param('address'));
+  const parsed = parseChainAndAddressRequest(c.req.param('chainId'), c.req.param('address'));
   if ('error' in parsed) return c.json(parsed, 400);
 
   let body: unknown;
@@ -220,7 +211,7 @@ app.put('/chains/:chainId/labels/:address', requireAdminTokenIfConfigured, async
 // DELETE /chains/:chainId/labels/:address — remove the label. Deleting an
 // absent label is 404 (idempotence would hide typos in the client's key).
 app.delete('/chains/:chainId/labels/:address', requireAdminTokenIfConfigured, async c => {
-  const parsed = parseChainAndAddress(c.req.param('chainId'), c.req.param('address'));
+  const parsed = parseChainAndAddressRequest(c.req.param('chainId'), c.req.param('address'));
   if ('error' in parsed) return c.json(parsed, 400);
 
   try {

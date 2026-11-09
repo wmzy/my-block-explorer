@@ -13,6 +13,7 @@
 // legitimate values are untouched.
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import {
+  formatDateTime,
   formatDuration,
   formatFileSize,
   formatPercentage,
@@ -62,5 +63,34 @@ describe('degenerate input renders a placeholder, never NaN/Invalid', () => {
     expect(formatPercentage(12.345)).toBe('12.35%');
     expect(formatPercentage(NaN)).toBe('—');
     expect(formatPercentage(Infinity)).toBe('—');
+  });
+
+  it('formatDateTime refuses to print "Invalid Date"', () => {
+    expect(formatDateTime(null)).toBe('—');
+    expect(formatDateTime(undefined)).toBe('—');
+    expect(formatDateTime('')).toBe('—');
+    expect(formatDateTime('not-a-date')).toBe('—');
+    expect(formatDateTime(new Date('nope'))).toBe('—');
+  });
+
+  it('formatDateTime renders one pinned en-US shape for every input kind', () => {
+    // Same instant as ISO string, epoch millis, and Date: the unified
+    // absolute renderer must not depend on the host locale or the input
+    // form (the per-view toLocaleString copies it replaced did both).
+    const iso = '2026-11-09T14:03:05.000Z';
+    const expected = new Date(iso).toLocaleString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false,
+    });
+
+    expect(formatDateTime(iso)).toBe(expected);
+    expect(formatDateTime(new Date(iso).getTime())).toBe(expected);
+    expect(formatDateTime(new Date(iso))).toBe(expected);
+    expect(expected).toMatch(/2026/);
   });
 });

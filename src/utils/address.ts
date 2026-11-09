@@ -46,6 +46,39 @@ export function addressVerdict(input: string): AddressVerdict {
 }
 
 /**
+ * Classify an eth_getCode result. The ONE home for the raw-code verdict —
+ * the triple predicate `code !== '0x' && code.length > 2` had been
+ * hand-rolled at seven call sites, and every future refinement (the
+ * EIP-7702 lesson) would have to be re-applied at each of them.
+ *
+ * - 'eoa'      — no code at all ('0x' or empty/undefined)
+ * - 'delegated'— EIP-7702 designator: exactly 0xef0100 + the 20-byte
+ *                delegate address. 0xef is an invalid opcode, so deployed
+ *                bytecode can never collide with the prefix; the exact
+ *                length still guards against truncated or garbled reads.
+ * - 'contract' — anything else (deployed bytecode, malformed designators)
+ *
+ * Callers that only care "is there code" (the old predicate's meaning)
+ * use `codeVerdict(code) !== 'eoa'`.
+ */
+export type CodeVerdict = 'eoa' | 'delegated' | 'contract';
+
+const EIP7702_PREFIX = '0xef0100';
+const EIP7702_DESIGNATOR_LENGTH = EIP7702_PREFIX.length + 40;
+
+export function codeVerdict(code: string | null | undefined): CodeVerdict {
+  if (!code || code === '0x') return 'eoa';
+  const normalized = code.toLowerCase();
+  if (
+    normalized.length === EIP7702_DESIGNATOR_LENGTH &&
+    normalized.startsWith(EIP7702_PREFIX)
+  ) {
+    return 'delegated';
+  }
+  return 'contract';
+}
+
+/**
  * Canonicalize an Ethereum address to its checksum (EIP-55) form.
  *
  * Named `checksumAddress` — the old `formatAddress` name collided with

@@ -21,8 +21,10 @@
 import {
   MAX_INTERNAL_TRACE_DEPTH,
   MAX_ROWS_PER_TX,
+  pluralize,
   selectTraceScope,
   type FailedTraceTx,
+  type TraceTxOutcome,
 } from '@/utils/internalTxScan';
 import type { CallTraceNode } from '@/utils/traceFormat';
 
@@ -31,9 +33,6 @@ import type { CallTraceNode } from '@/utils/traceFormat';
  * disclosed ("first N of M transactions traced"), never silently dropped.
  */
 export const MAX_BLOCK_TRACED_TXS = 50;
-
-/** Parallel debug_traceTransaction calls per sweep — the address tab's pool size. */
-export const BLOCK_TRACE_CONCURRENCY = 4;
 
 /** Row ceiling across a whole sweep (depth-capped txs x deep trees). */
 export const MAX_BLOCK_TOTAL_ROWS = 1000;
@@ -131,11 +130,8 @@ export function rowCarriesValue(value: bigint | null): value is bigint {
   return value !== null && value > 0n;
 }
 
-/** Outcome of tracing one of the block's transactions. */
-export type BlockTraceTxOutcome =
-  | { hash: string; status: 'traced'; rows: BlockInternalTxRow[]; truncated: boolean }
-  | { hash: string; status: 'failed'; message: string }
-  | { hash: string; status: 'unsupported'; message: string };
+/** Outcome of tracing one of the block's transactions (the shared union over this module's row shape). */
+export type BlockTraceTxOutcome = TraceTxOutcome<BlockInternalTxRow>;
 
 /** One parent tx's internal calls (only traced txs that produced rows land here). */
 export type BlockInternalTxGroup = {
@@ -213,9 +209,6 @@ export function groupBlockInternalTxns(
     totalRows,
   };
 }
-
-const pluralize = (count: number, singular: string): string =>
-  `${count.toLocaleString()} ${singular}${count === 1 ? '' : 's'}`;
 
 /**
  * The card's summary line: "N internal calls across M traced

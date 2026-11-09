@@ -6,6 +6,7 @@ import type { Address, PublicClient } from 'viem';
 import { selectorOf } from '../utils/txDecode';
 import { withOneRetry } from '../utils/rpcReadRetry';
 import { createTtlLruCache } from '../utils/ttlLruCache';
+import { codeVerdict } from '../utils/address';
 import { withTimeout } from '../utils/withTimeout';
 import { createLogger } from '../server/logger';
 
@@ -621,7 +622,7 @@ const createAddressService = (deps: AddressServiceDeps) => {
             { cause: error },
           );
         }
-        const isContract = Boolean(code && code !== '0x' && code.length > 2);
+        const isContract = codeVerdict(code) !== 'eoa';
         console.log(
           `🔍 Contract code check for ${address}: ${isContract ? 'CONTRACT' : 'EOA'} (code length: ${code?.length ?? 0})`,
         );

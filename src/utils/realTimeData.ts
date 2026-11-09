@@ -1,6 +1,6 @@
 import { createPublicClient, http, formatUnits, type PublicClient } from 'viem';
-import { getChainInfo } from '@/config/chains';
-import { get } from '@/util/http';
+import { getChainInfo } from '../config/chains';
+import { get } from '../util/http';
 
 // Native-currency display decimals of a chain. formatEther would hardcode
 // 18 and silently misrender balances on chains whose native unit uses
@@ -119,7 +119,7 @@ export const createRpcClient = async (chainId: number): Promise<PublicClient> =>
   // 31337 has a placeholder default RPC) must serve the registered URL,
   // and no view-level gate runs for such ids. Dynamic import — the
   // service statically imports this module (invalidateRpcClients).
-  await import('@/services/customChains').then(m => m.ensureCustomChainsLoaded());
+  await import('../services/customChains').then(m => m.ensureCustomChainsLoaded());
 
   const cached = clientCache.get(chainId);
   if (cached) return cached;

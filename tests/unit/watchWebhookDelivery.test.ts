@@ -2,11 +2,12 @@
 // for subscriptions with a webhookUrl (generic payload vs Discord
 // embed), the retry budget, honest status recording
 // (webhookStatus/webhookLastAt on the row), replay dedupe on the
-// chain:txHash:logIndex basis, never-fatal failures — and the pinned
-// byte-identity of the zero-webhook path (exactly today's one cursor
-// update, no sender calls). db and RpcManager are stubbed; the webhook
-// sender is injected as a fake (the seam WatchService's constructor
-// exposes for exactly this).
+// chain:txHash:logIndex basis, event-name resolution for non-canonical
+// topic0s through the injected resolver seam, never-fatal failures —
+// and the pinned byte-identity of the zero-webhook path (exactly
+// today's one cursor update, no sender calls). db and RpcManager are
+// stubbed; the webhook sender is injected as a fake (the seam
+// WatchService's constructor exposes for exactly this).
 import { describe, it, expect, vi } from 'vitest';
 import { getEventSelector, toHex, type Log } from 'viem';
 
@@ -88,7 +89,10 @@ const subscriptionRow = (webhookUrl: string | null): Record<string, unknown> => 
   updatedAt: new Date('2026-09-25T09:00:00.000Z'),
 });
 
-const makeService = (sender: WebhookSender) => new WatchService({ webhookSender: sender });
+const makeService = (
+  sender: WebhookSender,
+  eventNameResolver?: (topic0s: readonly string[]) => Promise<Map<string, string>>,
+) => new WatchService({ webhookSender: sender, eventNameResolver });
 
 const primeOneSub = (webhookUrl: string | null): void => {
   state.rows = [subscriptionRow(webhookUrl)];
@@ -279,5 +283,104 @@ describe('WatchService webhook delivery — fresh subscription baselines without
     expect(sender).not.toHaveBeenCalled();
     expect(state.updates).toHaveLength(1);
     expect(state.updates[0].set.lastProcessedBlock).toBe(100n);
+  });
+});
+
+describe('WatchService webhook delivery — event-name resolution seam', () => {
+  const UNKNOWN_TOPIC0: `0x${string}` = `0x${'ab'.repeat(32)}`;
+  const OTHER_UNKNOWN_TOPIC0: `0x${string}` = `0x${'cd'.repeat(32)}`;
+
+  const unknownLog = (topic0: `0x${string}`, logIndex: number): Log =>
+    ({
+      ...transferLog(),
+      topics: [topic0, `0x${'11'.repeat(32)}`],
+      data: '0xdeadbeef',
+      logIndex,
+    }) satisfies Log;
+
+  it('resolves unknown topic0s once per sweep (deduped) and names their payloads', async () => {
+    const sender = okSender();
+    const resolver = vi
+      .fn()
+      .mockResolvedValue(
+        new Map([
+          [UNKNOWN_TOPIC0, 'OrderFilled'],
+          [OTHER_UNKNOWN_TOPIC0, 'Swap'],
+        ]),
+      );
+    primeOneSub(WEBHOOK_URL);
+    // One canonical Transfer + two logs of one unknown event + one of
+    // another: the resolver must see the two DISTINCT unknown topic0s
+    // only — never the canonical one.
+    state.client = {
+      getBlockNumber: async () => 100n,
+      getLogs: async () => [
+        transferLog(),
+        unknownLog(UNKNOWN_TOPIC0, 8),
+        unknownLog(UNKNOWN_TOPIC0, 9),
+        unknownLog(OTHER_UNKNOWN_TOPIC0, 10),
+      ],
+    };
+
+    await makeService(sender, resolver).tick();
+
+    expect(resolver).toHaveBeenCalledTimes(1);
+    expect(resolver).toHaveBeenCalledWith([UNKNOWN_TOPIC0, OTHER_UNKNOWN_TOPIC0]);
+    expect(sender).toHaveBeenCalledTimes(4);
+
+    const names = sender.mock.calls.map(
+      call => (call[1] as { eventName: string | null }).eventName,
+    );
+    expect(names).toEqual(['Transfer', 'OrderFilled', 'OrderFilled', 'Swap']);
+    // Resolved names never fabricate args: the raw envelope rides along.
+    const resolvedPayload = sender.mock.calls[1][1] as { args: Record<string, unknown> };
+    expect(resolvedPayload.args).toEqual({
+      topics: [UNKNOWN_TOPIC0, `0x${'11'.repeat(32)}`],
+      data: '0xdeadbeef',
+    });
+    expect(state.updates[0].set.webhookStatus).toBe('ok');
+  });
+
+  it('skips the resolver entirely when every log is a canonical event', async () => {
+    const sender = okSender();
+    const resolver = vi.fn();
+    primeOneSub(WEBHOOK_URL);
+
+    await makeService(sender, resolver).tick();
+
+    expect(resolver).not.toHaveBeenCalled();
+    expect(sender).toHaveBeenCalledTimes(1);
+    expect((sender.mock.calls[0][1] as { eventName: string | null }).eventName).toBe('Transfer');
+  });
+
+  it('degrades a resolver miss to an honestly-null eventName', async () => {
+    const sender = okSender();
+    const resolver = vi.fn().mockResolvedValue(new Map());
+    primeOneSub(WEBHOOK_URL);
+    state.client = {
+      getBlockNumber: async () => 100n,
+      getLogs: async () => [unknownLog(UNKNOWN_TOPIC0, 8)],
+    };
+
+    await makeService(sender, resolver).tick();
+
+    expect(sender).toHaveBeenCalledTimes(1);
+    expect((sender.mock.calls[0][1] as { eventName: string | null }).eventName).toBeNull();
+  });
+
+  it('survives a throwing resolver: delivery proceeds with null names', async () => {
+    const sender = okSender();
+    const resolver = vi.fn().mockRejectedValue(new Error('signature db down'));
+    primeOneSub(WEBHOOK_URL);
+    state.client = {
+      getBlockNumber: async () => 100n,
+      getLogs: async () => [unknownLog(UNKNOWN_TOPIC0, 8)],
+    };
+
+    await expect(makeService(sender, resolver).tick()).resolves.toBeUndefined();
+
+    expect(sender).toHaveBeenCalledTimes(1);
+    expect((sender.mock.calls[0][1] as { eventName: string | null }).eventName).toBeNull();
+    expect(state.updates[0].set.webhookStatus).toBe('ok');
   });
 });

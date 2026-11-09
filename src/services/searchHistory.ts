@@ -4,6 +4,7 @@
 // reader/writer of the storage key and every surface that executes a search
 // records through it.
 import { SEARCH_HISTORY_STORAGE_KEY } from '@/util/storageKeys';
+import { readStorageItem, writeStorageItem } from '@/util/storageAccess';
 
 // Canonical literal lives in the manifest (util/storageKeys.ts);
 // re-exported so existing consumers keep this import point.
@@ -33,19 +34,16 @@ const isEntry = (value: unknown): value is SearchHistoryEntry =>
 // localStorage must never break searching — reads degrade to [] and writes
 // are swallowed (the returned list still reflects the attempted change).
 const persist = (entries: SearchHistoryEntry[]): SearchHistoryEntry[] => {
-  try {
-    localStorage.setItem(SEARCH_HISTORY_STORAGE_KEY, JSON.stringify(entries));
-  } catch {
-    // Quota/private mode — history silently stops persisting.
-  }
+  // Quota/private mode — history silently stops persisting.
+  writeStorageItem(SEARCH_HISTORY_STORAGE_KEY, JSON.stringify(entries));
   return entries;
 };
 
 /** Newest-first history entries, never more than the cap. */
 export function readSearchHistory(): SearchHistoryEntry[] {
+  const raw = readStorageItem(SEARCH_HISTORY_STORAGE_KEY);
+  if (raw === null) return [];
   try {
-    const raw = localStorage.getItem(SEARCH_HISTORY_STORAGE_KEY);
-    if (raw === null) return [];
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
     return parsed.filter(isEntry).slice(0, SEARCH_HISTORY_MAX_ENTRIES);

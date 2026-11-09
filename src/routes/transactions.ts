@@ -7,7 +7,7 @@ const logger = createLogger('transactions-routes');
 import { getValidatedChainId } from '../server/validation';
 import { parsePaginationParams } from '../utils/validation';
 import { formatTransactionForApi, safeJsonResponse } from '../utils/serialization';
-import { respondError } from '../utils/api-error';
+import { invalidLimitResponse, invalidOffsetResponse, respondError } from '../utils/api-error';
 
 const app = new Hono();
 
@@ -56,11 +56,11 @@ app.get('/chains/:chainId/transactions', async c => {
   });
 
   if (limit === null) {
-    return respondError(c, 400, 'invalid_limit', 'limit must be a positive integer');
+    return invalidLimitResponse(c);
   }
 
   if (offset === null) {
-    return respondError(c, 400, 'invalid_offset', 'offset must be a non-negative integer');
+    return invalidOffsetResponse(c);
   }
 
   try {

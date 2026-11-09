@@ -21,6 +21,8 @@
 
 import { useEffect, useState } from 'react';
 import { getAddress } from 'viem';
+import { fetchWithTimeout } from '@/utils/fetchWithTimeout';
+import { createTtlLruCache } from '@/utils/ttlLruCache';
 
 /** One usable price observation: the USD value and when we fetched it. */
 export type UsdPriceSnapshot = { usd: number; fetchedAt: number };
@@ -94,12 +96,16 @@ export function tokenPriceId(chainId: number, address: string): string | null {
   }
 }
 
-type CacheEntry = { snapshot: UsdPriceSnapshot | null; expires: number };
-
-// coin id → cache entry. A null snapshot is an honest negative: the API
-// answered (or failed) within this TTL window and that verdict stands
-// until expiry — one attempt per window per subject.
-const priceCache = new Map<string, CacheEntry>();
+// coin id → cached snapshot (utils/ttlLruCache: TTL + bounded LRU). A
+// null snapshot is an honest negative: the API answered (or failed)
+// within this TTL window and that verdict stands until expiry — one
+// attempt per window per subject. The bound only engages at page-scale
+// id churn; an eviction costs one refetch, never a wrong answer.
+const PRICE_CACHE_MAX_ENTRIES = 2_000;
+const priceCache = createTtlLruCache<UsdPriceSnapshot | null>({
+  ttlMs: PRICE_TTL_MS,
+  maxEntries: PRICE_CACHE_MAX_ENTRIES,
+});
 
 // coin id → never-rejecting in-flight promise. Concurrent callers for
 // overlapping subject sets share one request instead of duplicating work.
@@ -139,19 +145,11 @@ const runChunk = async (
   let coins: Record<string, unknown> | null = null;
 
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-    try {
-      const response = await fetch(`${API_URL}${chunk.join(',')}`, {
-        signal: controller.signal,
-      });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const parsed: unknown = await response.json();
-      if (isRecord(parsed) && isRecord(parsed.coins)) {
-        coins = parsed.coins;
-      }
-    } finally {
-      clearTimeout(timer);
+    const response = await fetchWithTimeout(`${API_URL}${chunk.join(',')}`, {}, REQUEST_TIMEOUT_MS);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const parsed: unknown = await response.json();
+    if (isRecord(parsed) && isRecord(parsed.coins)) {
+      coins = parsed.coins;
     }
   } catch (error) {
     console.warn(
@@ -165,7 +163,7 @@ const runChunk = async (
     const usd = coins === null ? null : readPrice(coins[id]);
     const snapshot: UsdPriceSnapshot | null = usd === null ? null : { usd, fetchedAt };
     settled.set(id, snapshot);
-    priceCache.set(id, { snapshot, expires: fetchedAt + PRICE_TTL_MS });
+    priceCache.set(id, snapshot);
   }
   return settled;
 };
@@ -235,13 +233,12 @@ export async function fetchUsdPrices(
     unique.push(id);
   }
 
-  const now = Date.now();
   const pending: Array<{ id: string; promise: Promise<UsdPriceSnapshot | null> }> = [];
   const toFetch: string[] = [];
   for (const id of unique) {
-    const entry = priceCache.get(id);
-    if (entry !== undefined && entry.expires > now) {
-      out.set(id, entry.snapshot);
+    const cached = priceCache.get(id);
+    if (cached !== undefined) {
+      out.set(id, cached);
       continue;
     }
     const existing = inflight.get(id);
@@ -473,13 +470,15 @@ const SECONDS_PER_DAY = 86_400;
 
 const CHART_API_URL = 'https://coins.llama.fi/chart/';
 
-type HistoryCacheEntry = { outcome: PriceHistoryOutcome; expires: number };
-
-// cache key (chain|token|window) → settled outcome + expiry. An
-// unavailable outcome is an honest negative exactly like the spot
-// layer's null snapshot: the verdict stands for one TTL window — one
-// attempt per window, no retry storms.
-const priceHistoryCache = new Map<string, HistoryCacheEntry>();
+// cache key (chain|token|window) → settled outcome (utils/ttlLruCache:
+// TTL + bounded LRU). An unavailable outcome is an honest negative
+// exactly like the spot layer's null snapshot: the verdict stands for
+// one TTL window — one attempt per window, no retry storms.
+const PRICE_HISTORY_CACHE_MAX_ENTRIES = 200;
+const priceHistoryCache = createTtlLruCache<PriceHistoryOutcome>({
+  ttlMs: PRICE_HISTORY_TTL_MS,
+  maxEntries: PRICE_HISTORY_CACHE_MAX_ENTRIES,
+});
 
 // cache key → never-rejecting in-flight promise, shared by concurrent
 // callers for the same subject/window.
@@ -589,17 +588,13 @@ const runHistoryRequest = async (
   const start = nowEpochSeconds - windowDays * SECONDS_PER_DAY;
   let parsed: unknown;
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-    try {
-      const response = await fetch(priceHistoryUrl(coinId, windowDays, nowEpochSeconds), {
-        signal: controller.signal,
-      });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      parsed = await response.json();
-    } finally {
-      clearTimeout(timer);
-    }
+    const response = await fetchWithTimeout(
+      priceHistoryUrl(coinId, windowDays, nowEpochSeconds),
+      {},
+      REQUEST_TIMEOUT_MS,
+    );
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    parsed = await response.json();
   } catch (error) {
     console.warn(
       '[prices] DefiLlama chart request failed:',
@@ -657,7 +652,7 @@ export async function fetchPriceHistory(
   const nowMs = Date.now();
 
   const cached = priceHistoryCache.get(key);
-  if (cached !== undefined && cached.expires > nowMs) return cached.outcome;
+  if (cached !== undefined) return cached;
 
   const existing = priceHistoryInflight.get(key);
   if (existing !== undefined) return existing;
@@ -666,7 +661,7 @@ export async function fetchPriceHistory(
     tokenAddress === undefined ? nativePriceId(chainId) : tokenPriceId(chainId, tokenAddress);
 
   const settle = (outcome: PriceHistoryOutcome): PriceHistoryOutcome => {
-    priceHistoryCache.set(key, { outcome, expires: Date.now() + PRICE_HISTORY_TTL_MS });
+    priceHistoryCache.set(key, outcome);
     priceHistoryInflight.delete(key);
     return outcome;
   };
@@ -690,10 +685,8 @@ export async function fetchPriceHistory(
 
 // Fresh cached outcome for a key, synchronously — the hook's no-flash
 // fast path for already-known series (e.g. toggling the window back).
-const peekHistory = (key: string): PriceHistoryOutcome | undefined => {
-  const entry = priceHistoryCache.get(key);
-  return entry !== undefined && entry.expires > Date.now() ? entry.outcome : undefined;
-};
+const peekHistory = (key: string): PriceHistoryOutcome | undefined =>
+  priceHistoryCache.get(key);
 
 /**
  * Price history for one subject through fetchPriceHistory, with this

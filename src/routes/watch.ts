@@ -16,10 +16,10 @@
 import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 import { createLogger } from '../server/logger';
-import { getValidatedChainId } from '../server/validation';
+import { getValidatedChainId, parseChainAndAddressRequest } from '../server/validation';
 import { requireAdminTokenIfConfigured } from '../middleware/admin-token';
 import { createRateLimiter } from '../middleware/rate-limit';
-import { parseChainAndAddressParams, parseStrictInteger } from '../utils/validation';
+import { parseStrictInteger } from '../utils/validation';
 import {
   watchService,
   WATCH_EVENTS_DEFAULT_LIMIT,
@@ -59,18 +59,9 @@ const watchWriteLimiter = createRateLimiter({
   burst: 5,
 });
 
-// Same validation channel as the labels routes (the shared two-tier
-// address verdict: shape tier, then EIP-55 checksum for mixed-case
-// input), mapped onto this file's JSON error shape via the neutral
-// parseChainAndAddressParams. Storage keys stay lowercase (C-3).
-const parseChainAndAddress = (
-  chainIdStr: string,
-  addressStr: string,
-): { chainId: number; address: `0x${string}` } | { error: string; message: string } => {
-  const parsed = parseChainAndAddressParams(chainIdStr, addressStr);
-  if ('error' in parsed) return { error: 'invalid_request', message: parsed.message };
-  return parsed;
-};
+// :chainId/:address param validation is the shared labels/watch contract
+// (parseChainAndAddressRequest): a bare {error: 'invalid_request',
+// message} 400, storage keys lowercase (C-3).
 
 // PUT body validation: { label?: string | null, webhookUrl?: string | null }.
 // Label: absent body, absent label and null all mean "no label" (cleared
@@ -174,7 +165,7 @@ app.put(
   requireAdminTokenIfConfigured,
   watchWriteLimiter,
   async c => {
-    const parsed = parseChainAndAddress(c.req.param('chainId'), c.req.param('address'));
+    const parsed = parseChainAndAddressRequest(c.req.param('chainId'), c.req.param('address'));
     if ('error' in parsed) return c.json(parsed, 400);
 
     let body: unknown;
@@ -214,7 +205,7 @@ app.delete(
   requireAdminTokenIfConfigured,
   watchWriteLimiter,
   async c => {
-    const parsed = parseChainAndAddress(c.req.param('chainId'), c.req.param('address'));
+    const parsed = parseChainAndAddressRequest(c.req.param('chainId'), c.req.param('address'));
     if ('error' in parsed) return c.json(parsed, 400);
 
     try {

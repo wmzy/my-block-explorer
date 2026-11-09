@@ -4,6 +4,7 @@ import { eq, and } from 'drizzle-orm';
 import { createLogger } from '../server/logger';
 import { checksumAddress } from '../utils/address';
 import { ageHours, negativeEntryFresh } from '../utils/negativeCache';
+import { withTimeoutOrNull } from '../utils/withTimeout';
 import { rpcManager } from './RpcManager';
 import type { Address } from 'viem';
 import type {
@@ -74,17 +75,15 @@ export class StorageLayoutService {
       logger.warn({ err: error }, 'Database lookup failed, continuing with API fetch');
     }
 
-    const fetcherPromise = this.fetchFromStorageLayoutFetcher(chainId, address);
-    // The losing timer is cleared on settle (crossChainProbe withinBudget
-    // pattern): a fast fetch (or failure) must not leave a live 8s timer
-    // behind per request.
-    let fetcherTimer: ReturnType<typeof setTimeout> | undefined;
-    const fetcherTimeoutPromise = new Promise<null>(resolve => {
-      fetcherTimer = setTimeout(() => resolve(null), FETCHER_TIMEOUT_MS);
-    });
-
     try {
-      const layout = await Promise.race([fetcherPromise, fetcherTimeoutPromise]);
+      // The fetcher is bounded by FETCHER_TIMEOUT_MS through
+      // withTimeoutOrNull (a timeout is a missing value, not an error);
+      // the losing timer is cleared on settle, so a fast fetch (or
+      // failure) must not leave a live 8s timer behind per request.
+      const layout = await withTimeoutOrNull(
+        this.fetchFromStorageLayoutFetcher(chainId, address),
+        FETCHER_TIMEOUT_MS,
+      );
       if (layout) {
         logger.info(
           { chainId, address, count: layout.storage.length },
@@ -95,8 +94,6 @@ export class StorageLayoutService {
       }
     } catch (error) {
       logger.warn({ err: error, chainId, address }, 'storage-layout-fetcher failed');
-    } finally {
-      clearTimeout(fetcherTimer);
     }
 
     try {

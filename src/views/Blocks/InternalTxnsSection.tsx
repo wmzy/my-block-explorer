@@ -24,6 +24,7 @@ import { Alert } from 'haze-ui';
 
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
+import { CallTypeBadge } from '@/components/CallTypeBadge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Collapsible } from '@/components/ui/Collapsible';
 import { CopyableHash } from '@/components/ui/CopyableHash';
@@ -32,11 +33,11 @@ import { ErrorState } from '@/components/ui/ErrorState';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { getChainSymbol } from '@/config/chains';
 import { useLazyExpand } from '@/util/useLazyExpand';
-import { formatValue, truncateMiddle } from '@/utils/format';
-import { createRpcClient } from '@/utils/realTimeData';
-import { isTraceUnsupportedError, normalizeCallTrace } from '@/utils/traceFormat';
+import { fetchCallTraceTree, rpcRequest } from '@/utils/callTraceRpc';
+import { cellText, formatHash, formatValue } from '@/utils/format';
+import { runTracePool, shortTraceFailureMessage, TRACE_CONCURRENCY } from '@/utils/internalTxScan';
+import { isTraceUnsupportedError } from '@/utils/traceFormat';
 import {
-  BLOCK_TRACE_CONCURRENCY,
   blockInternalTxnsSummary,
   blockTraceTruncationLabel,
   extractBlockTxHashes,
@@ -173,49 +174,15 @@ const retryRow = css`
   margin-top: var(--haze-space-3);
 `;
 
-const formatAddr = (a: string) => (a ? truncateMiddle(a, 8, 6) : '');
-const formatHash = (h: string) => (h ? truncateMiddle(h, 10, 8) : '');
-
-// Same call-type palette as the Call Trace card and the address tab:
-// creations green, selfdestructs amber, read-only blue, code-in-place
-// purple, rest neutral.
-const badgeVariantForType = (
-  type: string,
-): 'default' | 'success' | 'warning' | 'info' | 'purple' => {
-  switch (type) {
-    case 'STATICCALL':
-      return 'info';
-    case 'DELEGATECALL':
-      return 'purple';
-    case 'CREATE':
-    case 'CREATE2':
-      return 'success';
-    case 'SELFDESTRUCT':
-      return 'warning';
-    default:
-      return 'default';
-  }
-};
-
-// Provider error text can embed the whole JSON-RPC request body; keep the
-// row readable with the head of the message instead.
-const shortMessage = (message: string): string =>
-  message.length > 160 ? `${message.slice(0, 160)}…` : message;
-
 // The block's transaction list: eth_getBlockByHash against the shared
-// browser RPC client — the block detail's own data holds only the count,
-// and full tx objects are ephemeral node data (data-separation rule).
-// By HASH (not number) so the sweep always covers the block the page
-// rendered, even across a reorg. The request rides the same narrow cast
-// as the debug call below: the page hands the hash in as a plain string,
-// and the payload is validated by the pure extractor either way.
+// browser RPC client (utils/callTraceRpc's untyped-request seam) — the
+// block detail's own data holds only the count, and full tx objects are
+// ephemeral node data (data-separation rule). By HASH (not number) so
+// the sweep always covers the block the page rendered, even across a
+// reorg: the page hands the hash in as a plain string, and the payload
+// is validated by the pure extractor either way.
 const fetchBlockTxHashes = async (chainId: number, blockHash: string): Promise<string[]> => {
-  const client = await createRpcClient(chainId);
-  const block = await (
-    client as unknown as {
-      request: (args: { method: string; params: unknown[] }) => Promise<unknown>;
-    }
-  ).request({
+  const block = await rpcRequest(chainId, {
     method: 'eth_getBlockByHash',
     params: [blockHash, true],
   });
@@ -226,21 +193,12 @@ const fetchBlockTxHashes = async (chainId: number, blockHash: string): Promise<s
   return hashes;
 };
 
-// Trace one of the block's transactions through the browser RPC client —
-// the same request shape and narrow cast as the address tab and the Call
-// Trace card (viem's typed client.request has no debug namespace).
+// Trace one of the block's transactions through the family's shared
+// fetch (utils/callTraceRpc — the address tab's and the Call Trace
+// card's request shape and cast).
 const traceOneTx = async (chainId: number, hash: string): Promise<BlockTraceTxOutcome> => {
   try {
-    const client = await createRpcClient(chainId);
-    const raw = await (
-      client as unknown as {
-        request: (args: { method: string; params: unknown[] }) => Promise<unknown>;
-      }
-    ).request({
-      method: 'debug_traceTransaction',
-      params: [hash, { tracer: 'callTracer' }],
-    });
-    const root = normalizeCallTrace(raw);
+    const root = await fetchCallTraceTree(chainId, hash);
     if (root === null) return { hash, status: 'traced', rows: [], truncated: false };
     return { hash, status: 'traced', ...flattenBlockInternalFrames(hash, root) };
   } catch (err) {
@@ -249,34 +207,6 @@ const traceOneTx = async (chainId: number, hash: string): Promise<BlockTraceTxOu
       ? { hash, status: 'unsupported', message }
       : { hash, status: 'failed', message };
   }
-};
-
-// Bounded-concurrency pool over the scoped tx list. Outcomes land at
-// their input index, so the aggregate order is the block's tx order, not
-// completion order — the deterministic half of the card.
-const traceTxBatch = async (
-  chainId: number,
-  hashes: readonly string[],
-  onSettled: (settled: number) => void,
-): Promise<BlockTraceTxOutcome[]> => {
-  const outcomes: BlockTraceTxOutcome[] = new Array(hashes.length);
-  let next = 0;
-  let settled = 0;
-  const workers = Array.from(
-    { length: Math.min(BLOCK_TRACE_CONCURRENCY, hashes.length) },
-    async () => {
-      for (;;) {
-        const index = next;
-        next += 1;
-        if (index >= hashes.length) return;
-        outcomes[index] = await traceOneTx(chainId, hashes[index]);
-        settled += 1;
-        onSettled(settled);
-      }
-    },
-  );
-  await Promise.all(workers);
-  return outcomes;
 };
 
 type SweepResult = {
@@ -359,11 +289,16 @@ export function InternalTxnsSection({
         return;
       }
       setState({ phase: 'tracing', settled: 0, total: hashes.length });
-      const outcomes = await traceTxBatch(chainId, hashes, settled => {
-        if (isCurrent(seq)) {
-          setState({ phase: 'tracing', settled, total: hashes.length });
-        }
-      });
+      const outcomes = await runTracePool(
+        hashes,
+        TRACE_CONCURRENCY,
+        hash => traceOneTx(chainId, hash),
+        settled => {
+          if (isCurrent(seq)) {
+            setState({ phase: 'tracing', settled, total: hashes.length });
+          }
+        },
+      );
       if (!isCurrent(seq)) return;
       const aggregate = groupBlockInternalTxns(outcomes);
       if (aggregate.unsupported) {
@@ -456,9 +391,7 @@ export function InternalTxnsSection({
                   {group.rows.map((row, index) => (
                     <tr key={`${row.txHash}-${index}`}>
                       <td>
-                        <Badge variant={badgeVariantForType(row.type)} size="sm">
-                          {row.type}
-                        </Badge>
+                        <CallTypeBadge type={row.type} />
                         {(row.error !== null || row.revertReason !== null) && (
                           <span className={rowErrorStyle}>
                             {row.error !== null && <div>{`error: ${row.error}`}</div>}
@@ -472,7 +405,7 @@ export function InternalTxnsSection({
                         {row.from !== null ? (
                           <CopyableHash
                             value={row.from}
-                            truncated={formatAddr(row.from)}
+                            truncated={cellText(row.from, '')}
                             href={`/chain/${chainId}/address/${row.from}`}
                           />
                         ) : (
@@ -483,7 +416,7 @@ export function InternalTxnsSection({
                         {row.to !== null ? (
                           <CopyableHash
                             value={row.to}
-                            truncated={formatAddr(row.to)}
+                            truncated={cellText(row.to, '')}
                             href={`/chain/${chainId}/address/${row.to}`}
                           />
                         ) : (
@@ -524,7 +457,7 @@ export function InternalTxnsSection({
                   >
                     {formatHash(failure.hash)}
                   </TypedLink>{' '}
-                  — {shortMessage(failure.message)}
+                  — {shortTraceFailureMessage(failure.message)}
                 </div>
               ))}
             </Collapsible>

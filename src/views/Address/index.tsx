@@ -87,7 +87,14 @@ import { knownTokensForChain } from '@/config/knownTokens';
 import { useKnownTokenBalances } from '@/services/knownTokenBalances';
 import { createRpcClient } from '@/utils/realTimeData';
 import { useEnsName } from '@/services/ens';
-import { formatNativeDisplay, formatRelativeTime, truncateMiddle } from '@/utils/format';
+import {
+  cellText,
+  formatDateTime,
+  formatHash,
+  formatNativeDisplay,
+  formatRelativeTime,
+} from '@/utils/format';
+import { codeVerdict } from '@/utils/address';
 import { getExternalToolLinks } from '@/config/externalTools';
 import { redirectReplace } from '@/views/Home/Landing';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
@@ -1098,8 +1105,6 @@ export const resetBlockTimestampCacheForTests = (): void => {
   blockTimestampCache.clear();
 };
 
-const formatDateTimeLocal = (epochMs: number): string => new Date(epochMs).toLocaleString();
-
 // The row-carrying boundary wins as-is; a boundary whose row carried no
 // timestamp reads the RPC lookup cache (number → date, null/absent → the
 // "Block N" fallback below).
@@ -1186,11 +1191,11 @@ export function SummaryStatsRow({
   const cells = [
     {
       label: 'First Seen',
-      value: formatSeenBoundary(withCachedTimestamp(chainId, stats.firstSeen), formatDateTimeLocal),
+      value: formatSeenBoundary(withCachedTimestamp(chainId, stats.firstSeen), formatDateTime),
     },
     {
       label: 'Last Seen',
-      value: formatSeenBoundary(withCachedTimestamp(chainId, stats.lastSeen), formatDateTimeLocal),
+      value: formatSeenBoundary(withCachedTimestamp(chainId, stats.lastSeen), formatDateTime),
     },
     { label: 'Total In', value: formatNativeTotal(stats.totalIn, decimals, symbol) },
     { label: 'Total Out', value: formatNativeTotal(stats.totalOut, decimals, symbol) },
@@ -1522,7 +1527,7 @@ export default function Address() {
   // hide the contract page when the code read itself found contract code.
   // A delegated EOA is the one exception: its designator is bytecode-like
   // but deploys nothing at this address, so no contract page is offered.
-  const rpcClassifiesContract = code !== undefined && code !== '0x' && code.length > 2;
+  const rpcClassifiesContract = codeVerdict(code) !== 'eoa';
   // Explicit `=== true` keeps this a plain-boolean || (not nullish), so the
   // either-channel-suffices semantics survives the nullish-coalescing rule.
   const showsContractLink =
@@ -1717,11 +1722,6 @@ export default function Address() {
 
   const directionVariant = { in: 'success', out: 'error', self: 'info' } as const;
   const directionLabel = { in: 'IN', out: 'OUT', self: 'SELF' } as const;
-
-  // Address-cell text: the shared 8/6 middle truncation, with the lists'
-  // 'N/A' fallback for a blank cell.
-  const addressCell = (a: string) => (a ? truncateMiddle(a, 8, 6) : 'N/A');
-  const formatHash = (h: string) => (h ? `${h.slice(0, 10)}...${h.slice(-8)}` : '');
 
   // BigInt-safe block number display; falls back to the raw string when a
   // row arrives without a parseable number (pending txs).
@@ -2194,7 +2194,7 @@ export default function Address() {
                           to={`/chain/${currentChainId}/address/${persistent.contractCreator}`}
                           className={linkStyle}
                         >
-                          {addressCell(persistent.contractCreator)}
+                          {cellText(persistent.contractCreator)}
                         </TypedLink>
                       </InfoItem>
                     )}
@@ -2210,7 +2210,7 @@ export default function Address() {
                               to={`/chain/${currentChainId}/contract/${persistent.implementationAddress}`}
                               className={linkStyle}
                             >
-                              {addressCell(persistent.implementationAddress)}
+                              {cellText(persistent.implementationAddress)}
                             </TypedLink>
                           </InfoItem>
                         )}
@@ -2351,7 +2351,7 @@ export default function Address() {
                                   className={linkStyle}
                                   title={holder.address}
                                 >
-                                  {addressCell(holder.address)}
+                                  {cellText(holder.address)}
                                 </TypedLink>
                                 <span>
                                   {tokenDecimals !== null
@@ -2723,14 +2723,14 @@ export default function Address() {
                                     <td>
                                       <CopyableHash
                                         value={tx.fromAddress}
-                                        truncated={addressCell(tx.fromAddress)}
+                                        truncated={cellText(tx.fromAddress)}
                                         href={`/chain/${currentChainId}/address/${tx.fromAddress}`}
                                       />
                                     </td>
                                     <td>
                                       <CopyableHash
                                         value={tx.toAddress}
-                                        truncated={addressCell(tx.toAddress)}
+                                        truncated={cellText(tx.toAddress)}
                                         href={`/chain/${currentChainId}/address/${tx.toAddress}`}
                                       />
                                     </td>

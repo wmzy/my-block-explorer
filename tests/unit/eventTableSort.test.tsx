@@ -27,6 +27,7 @@ import type { AbiEvent } from 'viem';
 import EventTable from '@/components/events/EventTable';
 import { get } from '@/util/http';
 import { setApiBase } from '@/util/apiBase';
+import { optimizedSorter } from '@/utils/sorting-optimization';
 
 vi.mock('@/util/http', () => ({ get: vi.fn() }));
 
@@ -124,6 +125,10 @@ const headerCell = (label: string) =>
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // The sorter's result cache is module-global; without a reset, a later
+  // test's identical sort would legitimately report a cache hit and the
+  // per-sort assertions below would depend on test order.
+  optimizedSorter.clearCache();
   setApiBase(API_BASE);
   vi.mocked(get).mockResolvedValue({
     events: EVENTS,
@@ -202,5 +207,25 @@ describe('EventTable client-side sorting reorders rows', () => {
 
     await user.selectOptions(sortSelect(), 'transactionHash');
     await waitFor(() => expect(order().rowHashes).toEqual(ASCENDING));
+  });
+
+  it('reports per-sort facts in the perf panel, not global-history guesses', async () => {
+    const user = userEvent.setup();
+    renderTable();
+    await waitFor(() => expect(order().rowHashes).toEqual(DEFAULT_ORDER));
+
+    // The toggle button exists only while client-side sorting is active.
+    await user.click(screen.getByRole('button', { name: /^Perf:/ }));
+
+    // 3 rows sit far below the 1000-row optimized threshold, so the
+    // algorithm label must be the sorter's own 'standard' — the deleted
+    // SortingPerformanceMonitor derived this from a process-lifetime
+    // buffer and guessed cacheHit from sortTime < 5.
+    const panel = screen.getByText('Sorting performance').parentElement;
+    expect(within(panel as HTMLElement).getByText('standard')).toBeInTheDocument();
+    expect(within(panel as HTMLElement).getByText('No')).toBeInTheDocument();
+    // The monitor-backed averages are gone with the monitor itself.
+    expect(screen.queryByText('Avg time:')).not.toBeInTheDocument();
+    expect(screen.queryByText('Cache hit rate:')).not.toBeInTheDocument();
   });
 });

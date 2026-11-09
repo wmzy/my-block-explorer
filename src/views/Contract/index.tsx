@@ -14,6 +14,7 @@ import { BackendOfflineState } from '@/components/ui/ErrorState';
 import { CoverageBadge } from '@/components/ui/CoverageBadge';
 import { SourceCodeViewer } from '@/components/SourceCodeViewer';
 import { post, isBackendUnreachable } from '@/util/http';
+import { formatDateTime } from '@/utils/format';
 import { ApiError } from '@/util/apiError';
 import { CUSTOM_ABI_STORAGE_PREFIX } from '@/util/storageKeys';
 import { useServiceDiscovery } from '@/hooks/ServiceDiscoveryContext';
@@ -1584,7 +1585,7 @@ export default function Contract() {
                     <div className="info-item">
                       <span className="label">Creation Time</span>
                       <span className="value">
-                        {new Date(creationInfo.timestamp * 1000).toLocaleString()}
+                        {formatDateTime(creationInfo.timestamp * 1000)}
                       </span>
                     </div>
                     <div className="info-item">

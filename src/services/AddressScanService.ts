@@ -71,6 +71,12 @@ import {
   type DiscoveredTransaction,
 } from './AddressService';
 import { selectorOf } from '../utils/txDecode';
+// Backend graph rule: clientRequest comes from the dependency-free leaf
+// (traceFormat), never from utils/callTraceRpc — that module builds on the
+// BROWSER per-chain client factory (realTimeData), which has no place in a
+// server-side walk (and would drag the browser graph through the vite
+// config bundle).
+import { sleep } from '../utils/errorHandler';
 // Shared shrinkable-provider-error classification (formerly a conscious
 // copy of EventIndexingService's regex — see utils/providerErrors).
 import { isShrinkableProviderError } from '../utils/providerErrors';
@@ -78,6 +84,7 @@ import { createLogger } from '../server/logger';
 // Trace reuse: the same pure normalizer the frontend Call Trace card and
 // internal-tx tab use (utils/traceFormat) — never a reimplementation.
 import {
+  clientRequest,
   isTraceUnsupportedError,
   normalizeCallTrace,
   type CallTraceNode,
@@ -808,8 +815,6 @@ const TRANSIENT_RETRY_DELAY_MS = 150;
 // retries absorb a transient hiccup before the job honestly errors.
 const MAX_TRANSIENT_RETRIES_AT_MIN_BATCH = 2;
 
-const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
 type FirstBalanceChange = { block: bigint; balance: bigint };
 
 /**
@@ -895,13 +900,10 @@ const traceBlockInternalTransactions = async (
       if (index >= block.transactions.length) return;
       const tx = block.transactions[index];
       try {
-        const raw = await // Narrow cast around viem's typed client.request, which has no
-        // debug namespace (same route as the Call Trace card).
-        (
-          client as unknown as {
-            request: (args: { method: string; params: unknown[] }) => Promise<unknown>;
-          }
-        ).request({
+        // viem's typed client.request has no debug namespace; the narrow
+        // cast lives in utils/callTraceRpc (clientRequest) — same route
+        // as the Call Trace card, over this walk's already-held client.
+        const raw = await clientRequest(client, {
           method: 'debug_traceTransaction',
           params: [tx.hash, { tracer: 'callTracer' }],
         });

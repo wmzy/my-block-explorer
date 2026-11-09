@@ -9,10 +9,10 @@ database/
 ├── duckdb-postgres-adapter.ts  # 484-line PostgreSQL→DuckDB bridge
 ├── schema.ts                   # Drizzle schema (12+ tables)
 ├── drizzle.ts                  # Drizzle config entry
-├── duckdb.ts                   # DuckDB manager wrapper
 ├── db-types.ts                 # Custom types (bignum, timestamp, address)
-├── chain-database-manager.ts   # Per-chain DB file management
+├── dbPath.ts                   # Pure DATABASE_URL → main-db-path parse
 ├── migrate.ts                  # Migration script
+├── seedBuiltinLabels.ts        # Bundled address-label seeds
 └── init.ts                     # Re-exports
 ```
 
@@ -22,7 +22,6 @@ database/
 | -------------------- | ---------------------------- | --------------------------- |
 | Create DB connection | duckdb-postgres-adapter.ts   | `createDuckDBAdapter()`     |
 | Add table schema     | schema.ts                    | `duckdbTable()`             |
-| Get per-chain DB     | chain-database-manager.ts    | `MultiChainDatabaseManager` |
 | Run migrations       | migrate.ts                   | `runMigrations()`           |
 
 ## KEY TYPES
@@ -47,18 +46,15 @@ datetime; // TIMESTAMP_MS (milliseconds)
 | `contract_sources`  | chainId + address           | Contract source/ABI  |
 | `user_rpc_configs`  | chainId                     | Custom RPC settings  |
 
-## PER-CHAIN DATABASES
-
-```
-data/chains/{type}/{name}-{id}.db
-├── mainnet/ethereum-1.db
-├── mainnet/polygon-137.db
-└── testnet/sepolia-11155111.db
-```
-
 ## NOTES
 
 - No SERIAL type (DuckDB incompatible) — use composite primary keys
 - Adapter implements `postgres` package interface for Drizzle compatibility
 - Schema self-initialization in adapter `ensureTables()`
 - Drizzle config uses `dialect: "postgresql"` with `casing: "snake_case"`
+- One main database (data/blockchain.db, path from dbPath.ts); the former
+  per-chain `data/chains/{type}/{name}-{id}.db` subsystem
+  (chain-database-manager/chain-schema/chain-drizzle + config/zero-config)
+  was dead code — every service writes to the main DB — and was removed in
+  the 2026-11-09 cleanup wave. `data/chains/` only ever appears at runtime
+  as a directory the uninstall/ops surfaces enumerate on disk.

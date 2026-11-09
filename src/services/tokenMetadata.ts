@@ -11,6 +11,7 @@ import { useEffect, useState } from 'react';
 import { parseAbi, type Address, type ContractFunctionParameters } from 'viem';
 
 import { createRpcClient } from '@/utils/realTimeData';
+import { createTtlLruCache } from '@/utils/ttlLruCache';
 
 /** Human-readable labels for one token, or honest nulls when unknown. */
 export type TokenMetadata = { symbol: string | null; decimals: number | null };
@@ -32,17 +33,20 @@ const totalSupplyAbi = parseAbi(['function totalSupply() view returns (uint256)'
 
 const NULL_METADATA: TokenMetadata = { symbol: null, decimals: null };
 
-type CacheEntry = { metadata: TokenMetadata; expires: number };
-
-// `${chainId}:${lowercase address}:${includeDecimals ? 1 : 0}` → cache
-// entry. TTL eviction is lazy: expired entries are simply refetched and
-// overwritten on the next request. includeDecimals is part of the key
-// because it changes the ANSWER, not just the call shape: decimals() is
-// only requested when the caller sets it, so a decimals-less entry is a
-// genuinely different (and much poorer) answer. Keying by address alone
-// let an ERC-721/1155 reader poison the ERC-20 view of the same contract
-// with `decimals: null` for the full hour.
-const metadataCache = new Map<string, CacheEntry>();
+// `${chainId}:${lowercase address}:${includeDecimals ? 1 : 0}` → cached
+// metadata (utils/ttlLruCache: TTL + bounded LRU, lazy expiry on read).
+// includeDecimals is part of the key because it changes the ANSWER, not
+// just the call shape: decimals() is only requested when the caller sets
+// it, so a decimals-less entry is a genuinely different (and much
+// poorer) answer. Keying by address alone let an ERC-721/1155 reader
+// poison the ERC-20 view of the same contract with `decimals: null` for
+// the full hour. The bound only engages at page-scale token churn; an
+// eviction costs one refetch, never a wrong answer.
+const TOKEN_METADATA_CACHE_MAX_ENTRIES = 2_000;
+const metadataCache = createTtlLruCache<TokenMetadata>({
+  ttlMs: CACHE_TTL_MS,
+  maxEntries: TOKEN_METADATA_CACHE_MAX_ENTRIES,
+});
 
 // Same key shape as above → never-rejecting in-flight promise. Concurrent
 // callers agree on includeDecimals share one multicall batch instead of
@@ -136,10 +140,7 @@ const runTokenBatch = async (
       decimals: token.includeDecimals ? (decimals.get(token.lower) ?? null) : null,
     };
     resolved.set(token.lower, metadata);
-    metadataCache.set(cacheKey(chainId, token.lower, token.includeDecimals), {
-      metadata,
-      expires: Date.now() + CACHE_TTL_MS,
-    });
+    metadataCache.set(cacheKey(chainId, token.lower, token.includeDecimals), metadata);
   }
   return resolved;
 };
@@ -196,14 +197,13 @@ export async function fetchTokenMetadata(
   const out = new Map<string, TokenMetadata>();
   if (requests.length === 0 || !(chainId > 0)) return out;
 
-  const now = Date.now();
   const uncached = new Map<string, TokenMetadataRequest>();
   for (const request of requests) {
     const lower = request.address.toLowerCase();
     if (out.has(lower) || uncached.has(lower)) continue;
-    const entry = metadataCache.get(cacheKey(chainId, lower, request.includeDecimals));
-    if (entry !== undefined && entry.expires > now) {
-      out.set(lower, entry.metadata);
+    const cached = metadataCache.get(cacheKey(chainId, lower, request.includeDecimals));
+    if (cached !== undefined) {
+      out.set(lower, cached);
     } else {
       uncached.set(lower, request);
     }
@@ -316,11 +316,13 @@ export type TokenOverviewReads = {
   totalSupply: bigint | null;
 };
 
-type OverviewCacheEntry = { reads: TokenOverviewReads; expires: number };
-
-// `${chainId}:${lowercase address}` → cache entry. Lazy TTL eviction,
-// exactly like metadataCache above.
-const overviewCache = new Map<string, OverviewCacheEntry>();
+// `${chainId}:${lowercase address}` → cached reads (utils/ttlLruCache:
+// TTL + bounded LRU), exactly like metadataCache above.
+const TOKEN_OVERVIEW_CACHE_MAX_ENTRIES = 1_000;
+const overviewCache = createTtlLruCache<TokenOverviewReads>({
+  ttlMs: CACHE_TTL_MS,
+  maxEntries: TOKEN_OVERVIEW_CACHE_MAX_ENTRIES,
+});
 
 // `${chainId}:${lowercase address}` → never-rejecting in-flight promise.
 // Concurrent callers for the same contract share one multicall batch.
@@ -360,7 +362,7 @@ export async function fetchTokenOverview(
 
   const key = overviewCacheKey(chainId, lower);
   const cached = overviewCache.get(key);
-  if (cached !== undefined && cached.expires > Date.now()) return cached.reads;
+  if (cached !== undefined) return cached;
 
   const existing = overviewInflight.get(key);
   if (existing !== undefined) return existing;
@@ -389,7 +391,7 @@ export async function fetchTokenOverview(
         decimals: typeof decimals === 'number' ? decimals : null,
         totalSupply: readMulticallBigint(outcomes[3]),
       };
-      overviewCache.set(key, { reads, expires: Date.now() + CACHE_TTL_MS });
+      overviewCache.set(key, reads);
       return reads;
     } catch {
       // Transport-level failure: unresolved and uncached — the reads stay

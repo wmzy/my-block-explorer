@@ -30,6 +30,8 @@ import {
   type RestorePlan,
 } from '@/util/localBackup';
 import { STORAGE_KEY_MANIFEST, type StorageKeyManifestEntry } from '@/util/storageKeys';
+import { readStorageItem } from '@/util/storageAccess';
+import { sleep } from '@/utils/errorHandler';
 
 export const BACKUP_FILENAME = 'explorer-backup.json';
 
@@ -41,17 +43,6 @@ const CHAIN_POST_RETRY_MS = 12_000;
 
 const messageOf = (error: unknown): string =>
   error instanceof Error ? error.message : 'unknown error';
-
-const sleep = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
-
-/** Read one localStorage key; storage-unavailable browsers read as absent. */
-const readStored = (key: string): string | null => {
-  try {
-    return localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-};
 
 /**
  * Gather every exportable part. Expected failures land in notes (honest
@@ -182,7 +173,7 @@ function scanStorageByManifest(
   for (const entry of manifest) {
     if (!entry.includeInBackup) continue;
     if (entry.kind === 'exact') {
-      families.set(entry.id, { exact: readStored(entry.key) });
+      families.set(entry.id, { exact: readStorageItem(entry.key) });
     } else if (entry.kind === 'prefix') {
       families.set(entry.id, {
         scanned: snapshotKeys().filter(key => key.startsWith(entry.prefix)),
@@ -227,14 +218,14 @@ export function collectBrowserParts(
   // parsers, exactly as before the manifest reorganization.
   const customAbis: BackupBrowserParts['customAbis'] = [];
   for (const key of scannedKeys(families, 'customAbi')) {
-    const abi = readStored(key);
+    const abi = readStorageItem(key);
     if (abi !== null) customAbis.push({ key, abi });
   }
   const privateNotes: BackupBrowserParts['privateNotes'] = [];
   let corruptedNotes = 0;
   for (const key of scannedKeys(families, 'privateNote')) {
     const parsedKey = parsePrivateNoteKey(key);
-    const note = parsedKey === null ? null : parseStoredPrivateNote(readStored(key));
+    const note = parsedKey === null ? null : parseStoredPrivateNote(readStorageItem(key));
     if (parsedKey === null || note === null) {
       corruptedNotes += 1;
       continue;

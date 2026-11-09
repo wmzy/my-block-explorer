@@ -19,6 +19,7 @@
 import { useEffect, useState } from 'react';
 import { del } from '@/util/http';
 import { CHAIN_RESET_DISMISSED_PREFIX, LAST_HEAD_STORAGE_PREFIX } from '@/util/storageKeys';
+import { readStorageItem, writeStorageItem } from '@/util/storageAccess';
 
 // Canonical literals live in the manifest (util/storageKeys.ts);
 // re-exported so existing consumers keep this import point.
@@ -54,9 +55,9 @@ export function lastHeadStorageKey(chainId: number): string {
  * guessed number.
  */
 export function readStoredHead(chainId: number): StoredChainHead | null {
+  const raw = readStorageItem(lastHeadStorageKey(chainId));
+  if (raw === null) return null;
   try {
-    const raw = localStorage.getItem(lastHeadStorageKey(chainId));
-    if (raw === null) return null;
     const parsed: unknown = JSON.parse(raw);
     if (typeof parsed !== 'object' || parsed === null) return null;
     const { blockNumber, updatedAt } = parsed as Record<string, unknown>;
@@ -77,14 +78,11 @@ export function readStoredHead(chainId: number): StoredChainHead | null {
 
 /** Advance the baseline (best-effort — see module header). */
 export function storeHead(chainId: number, blockNumber: number): void {
-  try {
-    localStorage.setItem(
-      lastHeadStorageKey(chainId),
-      JSON.stringify({ blockNumber, updatedAt: Date.now() }),
-    );
-  } catch {
-    // Quota/private mode — the baseline lasts only for this session.
-  }
+  // Quota/private mode — the baseline lasts only for this session.
+  writeStorageItem(
+    lastHeadStorageKey(chainId),
+    JSON.stringify({ blockNumber, updatedAt: Date.now() }),
+  );
 }
 
 // Dismissal is keyed by the STORED head the regression was measured
@@ -97,19 +95,12 @@ export function dismissalStorageKey(chainId: number, storedBlockNumber: number):
 }
 
 export function isResetDismissed(chainId: number, storedBlockNumber: number): boolean {
-  try {
-    return localStorage.getItem(dismissalStorageKey(chainId, storedBlockNumber)) !== null;
-  } catch {
-    return false;
-  }
+  return readStorageItem(dismissalStorageKey(chainId, storedBlockNumber)) !== null;
 }
 
 export function dismissChainReset(chainId: number, storedBlockNumber: number): void {
-  try {
-    localStorage.setItem(dismissalStorageKey(chainId, storedBlockNumber), '1');
-  } catch {
-    // Best-effort: this session's banner state still hides the notice.
-  }
+  // Best-effort: this session's banner state still hides the notice.
+  writeStorageItem(dismissalStorageKey(chainId, storedBlockNumber), '1');
 }
 
 /**

@@ -8,7 +8,7 @@ import { getChainName } from '../config/chains';
 import { getValidatedChainId, getValidatedAddress } from '../server/validation';
 import { parsePaginationParams } from '../utils/validation';
 import { safeJsonResponse } from '../utils/serialization';
-import { createApiError, respondError } from '../utils/api-error';
+import { createApiError, invalidOffsetResponse, respondError } from '../utils/api-error';
 import { parseStateOverride, type StateOverride } from '../utils/stateOverride';
 import { requireAdminTokenIfConfigured } from '../middleware/admin-token';
 import { createRateLimiter } from '../middleware/rate-limit';
@@ -110,7 +110,7 @@ app.get('/chains/:chainId/contracts', async c => {
   }
 
   if (offset === null) {
-    return respondError(c, 400, 'invalid_offset', 'offset must be a non-negative integer');
+    return invalidOffsetResponse(c);
   }
 
   try {

@@ -2,6 +2,7 @@
  * Performance monitoring service for blockchain explorer
  * Ensures 1-9ms response time targets for cached data
  */
+import { withTimeout } from '../utils/withTimeout';
 
 interface PerformanceMetrics {
   operation: string;
@@ -391,12 +392,7 @@ export class PerformanceMonitor {
 
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
-        const result = await Promise.race([
-          this.executeTracked(operation, fn),
-          new Promise<never>((_, reject) =>
-            setTimeout(() => reject(new Error('Operation timeout')), timeout),
-          ),
-        ]);
+        const result = await withTimeout(this.executeTracked(operation, fn), timeout, 'Operation');
 
         return { success: true, duration: 0, result };
       } catch (error) {

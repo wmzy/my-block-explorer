@@ -24,7 +24,12 @@ const logger = createLogger('addresses-routes');
 import { getValidatedChainId, getValidatedAddress } from '../server/validation';
 import { parsePaginationParams } from '../utils/validation';
 import { formatTransactionForApi, safeJsonResponse } from '../utils/serialization';
-import { respondError } from '../utils/api-error';
+import {
+  invalidLimitResponse,
+  invalidOffsetResponse,
+  invalidPageResponse,
+  respondError,
+} from '../utils/api-error';
 import { createRateLimiter } from '../middleware/rate-limit';
 import {
   ADDRESS_EXPORT_MAX_ROWS,
@@ -130,10 +135,10 @@ app.get(
     );
 
     if (limit === null) {
-      return respondError(c, 400, 'invalid_limit', 'limit must be a positive integer');
+      return invalidLimitResponse(c);
     }
     if (page === null) {
-      return respondError(c, 400, 'invalid_page', 'page must be a positive integer');
+      return invalidPageResponse(c);
     }
 
     const offset = (page - 1) * limit;
@@ -366,7 +371,7 @@ app.get(
       negativeOffset: 'reject',
     });
     if (offset === null) {
-      return respondError(c, 400, 'invalid_offset', 'offset must be a non-negative integer');
+      return invalidOffsetResponse(c);
     }
 
     try {
@@ -515,10 +520,10 @@ app.get('/chains/:chainId/addresses/:address/scan/internal-transactions', async 
   });
 
   if (offset === null) {
-    return respondError(c, 400, 'invalid_offset', 'offset must be a non-negative integer');
+    return invalidOffsetResponse(c);
   }
   if (limit === null) {
-    return respondError(c, 400, 'invalid_limit', 'limit must be a positive integer');
+    return invalidLimitResponse(c);
   }
 
   try {

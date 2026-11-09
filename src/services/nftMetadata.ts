@@ -17,7 +17,9 @@ import { useEffect, useState } from 'react';
 import { parseAbi, type Address } from 'viem';
 
 import { createRpcClient } from '@/utils/realTimeData';
+import { createTtlLruCache } from '@/utils/ttlLruCache';
 import { IPFS_GATEWAY_STORAGE_KEY } from '@/util/storageKeys';
+import { readStorageItem, removeStorageItem, writeStorageItem } from '@/util/storageAccess';
 
 // Canonical literal lives in the manifest (util/storageKeys.ts);
 // re-exported so existing consumers keep this import point.
@@ -155,13 +157,8 @@ export function normalizeIpfsGateway(value: string): string {
 
 /** Current gateway preference, defaulting when unset or empty. */
 export function getIpfsGateway(): string {
-  let stored: string | null;
-  try {
-    stored = globalThis.localStorage?.getItem(IPFS_GATEWAY_STORAGE_KEY) ?? null;
-  } catch {
-    // Storage unavailable (private mode): fall back to the default.
-    stored = null;
-  }
+  // Storage unavailable (private mode) reads as absent → the default.
+  const stored = readStorageItem(IPFS_GATEWAY_STORAGE_KEY);
   const normalized = stored === null ? '' : normalizeIpfsGateway(stored);
   return normalized === '' ? DEFAULT_IPFS_GATEWAY : normalized;
 }
@@ -169,14 +166,11 @@ export function getIpfsGateway(): string {
 /** Persist the gateway preference; an empty value clears it (default). */
 export function setIpfsGateway(value: string): void {
   const normalized = normalizeIpfsGateway(value);
-  try {
-    if (normalized === '') {
-      globalThis.localStorage.removeItem(IPFS_GATEWAY_STORAGE_KEY);
-    } else {
-      globalThis.localStorage.setItem(IPFS_GATEWAY_STORAGE_KEY, normalized);
-    }
-  } catch {
-    // Storage unavailable (private mode): preference is not persisted.
+  // Storage unavailable (private mode): preference is not persisted.
+  if (normalized === '') {
+    removeStorageItem(IPFS_GATEWAY_STORAGE_KEY);
+  } else {
+    writeStorageItem(IPFS_GATEWAY_STORAGE_KEY, normalized);
   }
 }
 
@@ -319,13 +313,16 @@ const UNAVAILABLE_OUTCOME: NftMetadataOutcome = Object.freeze({
   status: 'unavailable',
 });
 
-type CacheEntry = { outcome: NftMetadataOutcome; expires: number };
-
-// `${gateway}|${chainId}:${lower contract}:${tokenId}` → cache entry.
-// The gateway rides in the key so switching the preference refetches
-// naturally. TTL eviction is lazy: expired entries are refetched and
-// overwritten on the next request.
-const metadataCache = new Map<string, CacheEntry>();
+// `${gateway}|${chainId}:${lower contract}:${tokenId}` → cached outcome
+// (utils/ttlLruCache: TTL + bounded LRU, lazy expiry on read). The
+// gateway rides in the key so switching the preference refetches
+// naturally. The bound only engages at inventory-scale item churn; an
+// eviction costs one refetch, never a wrong answer.
+const NFT_METADATA_CACHE_MAX_ENTRIES = 2_000;
+const metadataCache = createTtlLruCache<NftMetadataOutcome>({
+  ttlMs: NFT_METADATA_CACHE_TTL_MS,
+  maxEntries: NFT_METADATA_CACHE_MAX_ENTRIES,
+});
 
 // Same key → never-rejecting in-flight promise. Concurrent batches for
 // one item share a single resolution; the entry is deleted on settle.
@@ -407,10 +404,7 @@ const launchOne = (
   const promise = work()
     .then(outcome => {
       if (outcome.status !== 'unavailable') {
-        metadataCache.set(entryKey, {
-          outcome,
-          expires: Date.now() + NFT_METADATA_CACHE_TTL_MS,
-        });
+        metadataCache.set(entryKey, outcome);
       }
       return outcome;
     })
@@ -438,7 +432,6 @@ export async function fetchNftMetadataBatch(
   if (items.length === 0 || !(chainId > 0)) return out;
 
   const gateway = getIpfsGateway();
-  const now = Date.now();
 
   // Collapse duplicates by item key; first occurrence wins. The key
   // carries the standard, so the two shapes of a hybrid contract stay
@@ -458,8 +451,8 @@ export async function fetchNftMetadataBatch(
   for (const [itemKey, item] of unique) {
     const entryKey = outcomeCacheKey(gateway, chainId, itemKey);
     const cached = metadataCache.get(entryKey);
-    if (cached !== undefined && cached.expires > now) {
-      out.set(itemKey, cached.outcome);
+    if (cached !== undefined) {
+      out.set(itemKey, cached);
       continue;
     }
     const existing = inflight.get(entryKey);

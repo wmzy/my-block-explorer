@@ -23,7 +23,7 @@ import { aggregateNftHoldings, type NftContractHolding } from '@/views/Address/n
 import { InfoItem } from '@/components/ui/InfoGrid';
 import { Badge } from '@/components/ui/Badge';
 import { linkStyle } from '@/components/ui/DataTable';
-import { truncateMiddle } from '@/utils/format';
+import { cellText } from '@/utils/format';
 
 // One contract block: head line (link + standard badge + held count) and
 // a muted meta line beneath. Rows right-align into the InfoItem value
@@ -296,7 +296,7 @@ function NftContractRow({
           className={linkStyle}
           title={holding.contract}
         >
-          {holding.contract ? truncateMiddle(holding.contract, 8, 6) : 'N/A'}
+          {cellText(holding.contract)}
         </TypedLink>
         <Badge variant="default" size="sm">
           {holding.standard === 'erc721' ? 'ERC-721' : 'ERC-1155'}

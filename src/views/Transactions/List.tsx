@@ -26,7 +26,7 @@ import { useLatestTransactions } from '@/services/chainRpc';
 import { useLatestBlocksFeed } from '@/services/homeFeed';
 import { useSignaturesBatched } from '@/services/signatures';
 import { txCursorFromBlock } from '@/utils/blockRpcData';
-import { formatNumber, formatRelativeTime, formatValue } from '@/utils/format';
+import { formatHash, formatNumber, formatRelativeTime, formatValue } from '@/utils/format';
 import {
   TxMethodCell,
   methodColumnStyle,
@@ -142,11 +142,6 @@ export function isDroppedBlockParam(
 ): boolean {
   return rawBlockParam !== null && blockParam === undefined;
 }
-
-const formatHash = (hash: string): string => {
-  if (!hash || hash.length < 16) return hash;
-  return `${hash.slice(0, 10)}...${hash.slice(-8)}`;
-};
 
 // TxStatusBadge (components/ui) owns the status wording; -1 (no receipt
 // verdict) is "Pending" only for a block-less tx.

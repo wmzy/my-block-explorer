@@ -1,104 +1,10 @@
 /**
- * Event decoding and selector utilities for contract events
+ * Contract creation-block probing for event indexing.
+ *
+ * Sole consumer: EventIndexingService (indexing-range creation and
+ * fromBlock clamping). Dependency-free on purpose — no viem, no
+ * database — so the walk is directly testable with a plain RPC stub.
  */
-
-import { type Abi, type AbiEvent, toEventSelector, parseAbiItem } from 'viem';
-
-const signatureToNameCache = new Map<string, string>();
-const nameToSignatureCache = new Map<string, string>();
-
-/**
- * Register ABI events so that signature lookups work dynamically
- * instead of relying on a hardcoded table.
- */
-export const registerAbiEvents = (abi: Abi | readonly unknown[]): void => {
-  for (const item of abi) {
-    const entry = item as Record<string, unknown>;
-    if (entry.type !== 'event' || typeof entry.name !== 'string') continue;
-    try {
-      const selector = toEventSelector(entry as AbiEvent);
-      signatureToNameCache.set(selector, entry.name);
-      nameToSignatureCache.set(entry.name, selector);
-    } catch {
-      // skip malformed entries
-    }
-  }
-};
-
-export const getEventSelectorFromName = (eventName: string): string => {
-  const cached = nameToSignatureCache.get(eventName);
-  if (cached) return cached;
-
-  const wellKnown: Record<string, string> = {
-    Transfer: 'event Transfer(address indexed from, address indexed to, uint256 value)',
-    Approval: 'event Approval(address indexed owner, address indexed spender, uint256 value)',
-    OwnershipTransferred:
-      'event OwnershipTransferred(address indexed previousOwner, address indexed newOwner)',
-  };
-
-  const sig = wellKnown[eventName];
-  if (sig) {
-    try {
-      const parsed = parseAbiItem(sig) as AbiEvent;
-      const selector = toEventSelector(parsed);
-      nameToSignatureCache.set(eventName, selector);
-      signatureToNameCache.set(selector, eventName);
-      return selector;
-    } catch {
-      /* fall through */
-    }
-  }
-
-  return `0x${'0'.repeat(64)}`;
-};
-
-export const decodeEventData = (
-  eventName: string,
-  topics: readonly string[],
-  data: string,
-): Record<string, unknown> => {
-  try {
-    // topics[0] is the event signature selector, indexed params start at topics[1]
-    if (eventName === 'Transfer' && topics.length >= 3) {
-      return {
-        from: topics[1],
-        to: topics[2],
-        value: data && data !== '0x' ? BigInt(data) : undefined,
-        raw: { topics, data },
-      };
-    }
-
-    if (eventName === 'Approval' && topics.length >= 3) {
-      return {
-        owner: topics[1],
-        spender: topics[2],
-        value: data && data !== '0x' ? BigInt(data) : undefined,
-        raw: { topics, data },
-      };
-    }
-
-    if (eventName === 'OwnershipTransferred' && topics.length >= 3) {
-      return {
-        previousOwner: topics[1],
-        newOwner: topics[2],
-        raw: { topics, data },
-      };
-    }
-
-    return {
-      topics,
-      data,
-      raw: { topics, data },
-    };
-  } catch (error) {
-    console.warn('Failed to decode event data:', error);
-    return {
-      topics,
-      data,
-      raw: { topics, data },
-    };
-  }
-};
 
 type RpcClient = {
   getBlockNumber: () => Promise<bigint>;
@@ -209,10 +115,4 @@ export const getContractCreationBlock = async (
   } catch {
     return null;
   }
-};
-
-export const getEventNameFromSignature = (eventSignature: string): string => {
-  const cached = signatureToNameCache.get(eventSignature);
-  if (cached) return cached;
-  return 'Unknown';
 };

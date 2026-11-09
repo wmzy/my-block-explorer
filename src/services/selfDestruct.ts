@@ -3,9 +3,9 @@
 // while a server holds the DuckDB files open; the in-server flow inverts
 // that constraint — THIS process is the live writer, so the only honest
 // order is: stop background tickers → close the HTTP listener → close
-// every DuckDB handle (per-chain event DBs, then the main adapter, whose
-// end() checkpoints the WAL) → THEN delete the files the explorer wrote
-// (same enumeration as the CLI: src/uninstall.ts) → exit.
+// the main adapter (whose end() checkpoints the WAL) → THEN delete the
+// files the explorer wrote (same enumeration as the CLI: src/uninstall.ts)
+// → exit.
 //
 // Import-direction note: this module imports src/uninstall.ts, which is
 // now part of the api-app graph BY DESIGN (that graph already constructs
@@ -20,7 +20,6 @@
 // whether every existing target was actually removed.
 import { join } from 'node:path';
 
-import { multiChainDb } from '../database/chain-database-manager';
 import { db } from '../database/drizzle';
 import {
   collectTargetStats,
@@ -85,7 +84,6 @@ export function resetSelfDestructState(): void {
 export async function runSelfDestruct(options: {
   closer?: Closer | null;
   stopWatchers?: () => Promise<void>;
-  closeChainDbs?: () => Promise<void>;
   closeMainDb?: () => Promise<void>;
   cwd?: string;
   databaseUrl?: string;
@@ -115,7 +113,6 @@ export async function runSelfDestruct(options: {
   await step('close http server', async () => {
     await (options.closer ?? registeredCloser)?.();
   });
-  await step('close per-chain databases', options.closeChainDbs ?? (() => multiChainDb.closeAll()));
   await step('close main database', options.closeMainDb ?? (async () => void (await db.$client.end?.())));
 
   const collect = options.collectStats ?? collectTargetStats;
