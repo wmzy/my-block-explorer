@@ -23,6 +23,7 @@ import { getChainName } from '../config/chains';
 const logger = createLogger('addresses-routes');
 import { getValidatedChainId, getValidatedAddress } from '../server/validation';
 import { parsePaginationParams } from '../utils/validation';
+import { csvAttachmentHeaders } from '../utils/csv';
 import { formatTransactionForApi, safeJsonResponse } from '../utils/serialization';
 import {
   invalidLimitResponse,
@@ -398,14 +399,13 @@ app.get(
 
       const csv = buildAddressTransactionsCsv(result.transactions);
 
-      // ISO timestamp with filesystem-hostile characters stripped.
-      const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      c.header('Content-Type', 'text/csv; charset=utf-8');
-      c.header(
-        'Content-Disposition',
-        `attachment; filename="address-transactions-${chainId}-${address.toLowerCase()}-${timestamp}.csv"`,
-      );
-      c.header('Cache-Control', 'no-store');
+      // The filename lowercases the address (this route's convention);
+      // csvAttachmentHeaders stamps the rest verbatim.
+      for (const [name, value] of Object.entries(
+        csvAttachmentHeaders('address-transactions', chainId, address.toLowerCase()),
+      )) {
+        c.header(name, value);
+      }
       // An empty discovered set still downloads: header-only CSV, an
       // honest "nothing found", not an error.
       return c.body(csv);

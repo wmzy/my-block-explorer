@@ -52,6 +52,7 @@ const fakeStorage = (): ViewedTokenStorage & { backing: Map<string, string> } =>
     backing,
     getItem: (key: string) => backing.get(key) ?? null,
     setItem: (key: string, value: string) => void backing.set(key, value),
+    removeItem: (key: string) => void backing.delete(key),
   };
 };
 

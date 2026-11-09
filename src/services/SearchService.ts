@@ -12,6 +12,9 @@ import { detectSearchType, sanitizeInput } from '../utils/validation';
 // Same relative-import rule as above applies to the shared address
 // verdict (runtime value import into the backend graph).
 import { addressVerdict, isAddressShape } from '../utils/address';
+// Naive-UTC-safe datetime normalization for the cached-contract rows
+// (same relative-import rule as above).
+import { toIsoTimestamp } from '../utils/dbTime';
 import { and, count, desc, eq, or, sql } from 'drizzle-orm';
 // Same relative-import rule applies to the database module (see above).
 import { db, contractSources, addressLabels } from '../database/init';
@@ -445,23 +448,9 @@ const contractMatchFilter = (needle: string) => {
 };
 
 // The datetime column maps to Date through drizzle's fromDriver, but the
-// DuckDB adapter also has raw-read paths that hand back strings — accept
-// both, and never guess a date the row does not carry.
-// String shape note: DuckDB hands back the NAIVE stored value
-// ('2026-09-21 12:07:19.183', space-separated, no offset) and the stored
-// convention is UTC wall time (now() default). JS would parse that as
-// LOCAL time — on a UTC+8 machine every cached-at would read 8 hours old —
-// so a string without an explicit offset/designator is parsed as UTC.
-const toIsoTimestamp = (value: Date | string | null | undefined): string | null => {
-  if (value instanceof Date) return value.toISOString();
-  if (typeof value === 'string' && value.length > 0) {
-    const hasOffset = value.endsWith('Z') || /[+-]\d{2}:?\d{2}$/.test(value);
-    const normalized = hasOffset ? value : `${value.replace(' ', 'T')}Z`;
-    const parsed = new Date(normalized);
-    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
-  }
-  return null;
-};
+// DuckDB adapter also has raw-read paths that hand back strings —
+// toIsoTimestamp (utils/dbTime) accepts both and parses a naive string as
+// UTC (never machine-local).
 
 /**
  * One directory page of cached contract_sources rows: verified rows lead,

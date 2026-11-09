@@ -42,6 +42,7 @@ import {
 } from '../utils/scanLadder';
 import { createTtlLruCache } from '../utils/ttlLruCache';
 import { isAddressShape } from '../utils/address';
+import { errorMessage } from '../utils/errorHandler';
 import { TimeoutError, withTimeout } from '../utils/withTimeout';
 
 // The scan-log shape is shared with the transfers scan — re-exported so
@@ -585,7 +586,7 @@ const createApprovalScanService = (deps: ApprovalScanServiceDeps) => {
           // query's buffered events flush too (genuinely seen — the same
           // never-discard rule as its pairs).
           failed = true;
-          const detail = error instanceof Error ? error.message : String(error);
+          const detail = errorMessage(error);
           logger.warn(
             `Approval scan for ${address} on chain ${chainId} aborted ` +
             `(${detail}); keeping ${discovered.size} pairs found so far`,
@@ -601,7 +602,7 @@ const createApprovalScanService = (deps: ApprovalScanServiceDeps) => {
         stepEvents = [];
         ladder.noteRejected(chunkSize);
         chunkSize = ladder.halve(chunkSize);
-        const detail = error instanceof Error ? error.message : String(error);
+        const detail = errorMessage(error);
         logger.warn(
           `Approval scan chunk for ${address} on chain ${chainId} rejected ` +
           `(${detail}); halving to ${chunkSize} blocks`,
@@ -831,7 +832,7 @@ const createApprovalScanService = (deps: ApprovalScanServiceDeps) => {
           // Transport-level multicall failure: the discovery stands, the
           // current values do not — say so instead of serving a list
           // that would read as "no live approvals".
-          const detail = error instanceof Error ? error.message : String(error);
+          const detail = errorMessage(error);
           logger.warn(
             `Current-state reads for ${address} on chain ${chainId} failed (${detail}); ` +
             `reporting discovery without current values`,

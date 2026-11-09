@@ -5,7 +5,9 @@
  * persisted findings, provider-error honesty (verbatim message, never
  * silently complete), checkpoint persistence and resume-from-cursor,
  * catch-up requeue from a completed walk, pause, conflict/force
- * semantics, delete, and restart reconciliation.
+ * semantics, delete, restart reconciliation, and the findings-hydration
+ * read-path cache (remember / clear / evict-beyond-1000 / recency
+ * refresh).
  */
 
 import { describe, it, expect, vi } from 'vitest';
@@ -33,14 +35,22 @@ vi.mock('@/services/RpcManager', () => ({
 
 import { and, eq } from 'drizzle-orm';
 import { db } from '@/database/drizzle';
-import { addressScanJobs, addressScanFindings, addressScanInternalTxs } from '@/database/schema';
+import {
+  addressScanJobs,
+  addressScanFindings,
+  addressScanInternalTxs,
+  type AddressScanFindingRecord,
+} from '@/database/schema';
 import {
   catchupScanJob,
+  clearHydratedTransactionCache,
   createOrReplaceScanJob,
   deleteScanJob,
+  hydrateFindings,
   listInternalTransactions,
   pauseScanJob,
   reconcileInterruptedAddressScans,
+  rememberHydratedTransactions,
   resumeScanJob,
   toScanJobDto,
 } from '@/services/AddressScanService';
@@ -1196,5 +1206,97 @@ describe('getAddressTransactions deep-scan merge (service level)', () => {
     expect(legacy.transactions).toEqual([]);
     expect(legacy.total).toBe(0);
     expect(legacy.coverage).toBe('none');
+  });
+});
+
+describe('hydrateFindings read-path cache', () => {
+  // Minimal scripted client for the hydration RPC surface only.
+  const hydrateClient = () => {
+    const getTransaction = vi.fn(
+      async ({ hash }: { hash: `0x${string}` }) => ({
+        hash,
+        blockNumber: 700n,
+        from: `0x${'11'.repeat(20)}`,
+        to: `0x${'22'.repeat(20)}`,
+        value: 5n,
+        input: '0xdeadbeef',
+      }),
+    );
+    const client = {
+      getBlockNumber: vi.fn(async () => 1000n),
+      getBalance: vi.fn(async () => 0n),
+      getBlock: vi.fn(async ({ blockNumber }: { blockNumber: bigint }) => ({
+        number: blockNumber,
+        timestamp: 1700000000n,
+        transactions: [],
+      })),
+      getTransaction,
+    } as unknown as PublicClient;
+    return { client, getTransaction };
+  };
+
+  const envelope = (i: number): DiscoveredTransaction => ({
+    hash: `0x${i.toString(16).padStart(64, '0')}` as `0x${string}`,
+    blockNumber: BigInt(1000 + i),
+    fromAddress: `0x${'33'.repeat(20)}` as `0x${string}`,
+    toAddress: `0x${'44'.repeat(20)}` as `0x${string}`,
+    value: String(i),
+    timestamp: '2026-01-01T00:00:00.000Z',
+  });
+
+  const findingOf = (tx: DiscoveredTransaction): AddressScanFindingRecord => ({
+    chainId: 1,
+    address: `0x${'aa'.repeat(20)}` as `0x${string}`,
+    txHash: tx.hash as `0x${string}`,
+    blockNumber: tx.blockNumber,
+  });
+
+  it('serves remembered envelopes verbatim without RPC, then refetches after clear', async () => {
+    clearHydratedTransactionCache();
+    const { client, getTransaction } = hydrateClient();
+    mocks.client = client;
+    const tx = envelope(1);
+
+    rememberHydratedTransactions([tx]);
+    const cached = await hydrateFindings(1, `0x${'aa'.repeat(20)}` as `0x${string}`, [findingOf(tx)]);
+    expect(cached).toEqual([tx]);
+    expect(getTransaction).not.toHaveBeenCalled();
+
+    clearHydratedTransactionCache();
+    const refetched = await hydrateFindings(1, `0x${'aa'.repeat(20)}` as `0x${string}`, [findingOf(tx)]);
+    expect(getTransaction).toHaveBeenCalledTimes(1);
+    expect(refetched[0]).toMatchObject({
+      hash: tx.hash,
+      blockNumber: 700n,
+      value: '5',
+      selector: '0xdeadbeef',
+    });
+  });
+
+  it('bounds the cache at 1000 entries, evicting the oldest untouched key and honoring refreshed recency', async () => {
+    clearHydratedTransactionCache();
+    const { client, getTransaction } = hydrateClient();
+    mocks.client = client;
+
+    const txs = Array.from({ length: 1000 }, (_, i) => envelope(i));
+    rememberHydratedTransactions(txs);
+    // Re-setting an early entry refreshes its recency to newest.
+    rememberHydratedTransactions([txs[0]]);
+    // One more write overflows to 1001 and evicts the oldest untouched key.
+    const extra = envelope(1000);
+    rememberHydratedTransactions([extra]);
+
+    const out = await hydrateFindings(
+      1,
+      `0x${'bb'.repeat(20)}`,
+      [txs[0], txs[1], extra].map(findingOf),
+    );
+    // Only the evicted txs[1] goes back to RPC; the refreshed txs[0] and
+    // the newest extra still hit the cache.
+    expect(getTransaction).toHaveBeenCalledTimes(1);
+    expect(getTransaction).toHaveBeenCalledWith({ hash: txs[1].hash });
+    expect(out[0]).toEqual(txs[0]);
+    expect(out[1]?.hash).toBe(txs[1].hash);
+    expect(out[2]).toEqual(extra);
   });
 });

@@ -15,6 +15,11 @@
 // localStorage key through private notes.
 import { getAddress } from 'viem';
 import { checkAddressValidity } from '@/views/Address/addressValidity';
+import {
+  readStorageItem,
+  removeStorageItem,
+  writeStorageItem,
+} from '@/util/storageAccess';
 import { PRIVATE_NOTE_KEY_PREFIX, PRIVATE_NOTE_KEY_RE } from '@/util/storageKeys';
 import { parseStrictInteger } from '@/utils/strictInteger';
 
@@ -91,15 +96,6 @@ export function parseStoredPrivateNote(raw: string | null): string | null {
   return raw;
 }
 
-// Accessing the global can itself throw in fully sandboxed contexts.
-const browserStorage = (): PrivateNoteStorage | null => {
-  try {
-    return localStorage;
-  } catch {
-    return null;
-  }
-};
-
 /** The saved note, or null when absent/malformed-address/storage-off. */
 export function readPrivateNote(
   chainId: number,
@@ -108,13 +104,9 @@ export function readPrivateNote(
 ): string | null {
   const key = privateNoteStorageKey(chainId, address);
   if (key === null) return null;
-  const store = storage ?? browserStorage();
-  if (store === null) return null;
-  try {
-    return parseStoredPrivateNote(store.getItem(key));
-  } catch {
-    return null;
-  }
+  // The guarded helper resolves the injected storage or the real global
+  // (whose property access can itself throw) inside its own try.
+  return parseStoredPrivateNote(readStorageItem(key, null, storage));
 }
 
 /**
@@ -134,14 +126,9 @@ export function savePrivateNote(
   if (trimmed.length > PRIVATE_NOTE_MAX_CHARS) return { ok: false, reason: 'too-long' };
   const key = privateNoteStorageKey(chainId, address);
   if (key === null) return { ok: false, reason: 'malformed-address' };
-  const store = storage ?? browserStorage();
-  if (store === null) return { ok: false, reason: 'storage-unavailable' };
-  try {
-    store.setItem(key, trimmed);
-    return { ok: true, note: trimmed };
-  } catch {
-    return { ok: false, reason: 'storage-unavailable' };
-  }
+  return writeStorageItem(key, trimmed, storage)
+    ? { ok: true, note: trimmed }
+    : { ok: false, reason: 'storage-unavailable' };
 }
 
 /** Remove the note. Returns false when nothing was stored (or no write ran). */
@@ -152,13 +139,8 @@ export function clearPrivateNote(
 ): boolean {
   const key = privateNoteStorageKey(chainId, address);
   if (key === null) return false;
-  const store = storage ?? browserStorage();
-  if (store === null) return false;
-  try {
-    const existed = parseStoredPrivateNote(store.getItem(key)) !== null;
-    store.removeItem(key);
-    return existed;
-  } catch {
-    return false;
-  }
+  const existed = parseStoredPrivateNote(readStorageItem(key, null, storage)) !== null;
+  // True only when a note was stored AND the removal ran — a storage
+  // that throws must not report a clear that never happened.
+  return existed && removeStorageItem(key, storage);
 }

@@ -1,4 +1,5 @@
 import { invalidateRpcClients } from './realTimeData';
+import { errorMessage } from './errorHandler';
 import { del, get, post } from '@/util/http';
 import { parseHexQuantity } from './strictInteger';
 
@@ -212,7 +213,7 @@ export async function testRpcConnection(
   } catch (error) {
     return {
       status: 'failed',
-      error: error instanceof Error ? error.message : String(error),
+      error: errorMessage(error),
       latency: Date.now() - startTime,
     };
   }

@@ -9,6 +9,7 @@ import { and, desc, sql } from 'drizzle-orm';
 import { db } from '../database/drizzle';
 import { contractEvents } from '../database/schema';
 import { buildEventFilterConditions, type EventQueryFilters } from './EventIndexingService';
+import { csvTimestamp, escapeCsvField } from '../utils/csv';
 
 // Export refuses (HTTP 400 in the route) rather than truncates when the
 // filtered set is larger: a silently capped CSV would masquerade as complete.
@@ -63,23 +64,9 @@ export type CsvEventRow = {
   isFinalized: boolean | null;
 };
 
-// RFC 4180: quote a field containing a comma, quote, CR or LF, and double any
-// embedded quotes. Applied uniformly to every cell.
-const escapeCsvField = (field: string): string => {
-  if (/[",\r\n]/.test(field)) {
-    return `"${field.replace(/"/g, '""')}"`;
-  }
-  return field;
-};
-
-const csvTimestamp = (value: CsvEventRow['blockTimestamp']): string => {
-  if (value === null || value === '') return '';
-  // Numbers are unix seconds (the timestamp column's driver mapping); other
-  // forms are string/Date timestamps.
-  const date = typeof value === 'number' ? new Date(value * 1000) : new Date(value);
-  const time = date.getTime();
-  return Number.isNaN(time) ? '' : date.toISOString();
-};
+// Field quoting and timestamp rendering are the shared CSV primitives
+// from utils/csv.ts (one definition for both exporters; blockTimestamp
+// arrives as number | string | Date depending on the read path).
 
 /** Render filtered event rows as CSV with a fixed column order. */
 export const buildEventsCsv = (rows: readonly CsvEventRow[]): string => {

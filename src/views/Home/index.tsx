@@ -19,6 +19,7 @@ import { parseChainIdParam } from '@/utils/chainParam';
 import { PageContainer } from '@/components/ui/PageLayout';
 import { Button } from '@/components/ui/Button';
 import { ErrorState } from '@/components/ui/ErrorState';
+import { skeletonBase } from '@/components/ui/skeleton';
 import {
   useLatestBlocksFeed,
   useLatestTransactionsFeed,
@@ -377,31 +378,8 @@ const gasSparkSkeleton = css`
 `;
 
 // --- first-load skeletons ---
-
-// Shared placeholder surface. The pulse animates opacity only, so it stays
-// on the compositor (no layout work) and reads as a steady shimmer instead
-// of a flicker. Keyframes are defined exactly once here; every skeleton
-// size composes onto this base via cx.
-const skeletonBase = css`
-  display: inline-block;
-  background: var(--haze-color-border);
-  border-radius: var(--haze-radius-sm, 4px);
-  animation: home-skeleton-pulse 1.4s ease-in-out infinite;
-
-  @keyframes home-skeleton-pulse {
-    0%,
-    100% {
-      opacity: 1;
-    }
-    50% {
-      opacity: 0.4;
-    }
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    animation: none;
-  }
-`;
+// The shared placeholder surface + pulse lives in components/ui/skeleton
+// (skeletonBase); every size below composes onto it via cx.
 
 // Stats-bar value placeholder sized to the value line it stands in for.
 const statValueSkeleton = css`

@@ -25,7 +25,7 @@
 //   highest effective gas cap, a heuristic the node is free to overrule;
 //   tip statistics cover EIP-1559 entries only and the strip says so.
 import { Fragment, useMemo } from 'react';
-import { css } from '@linaria/core';
+import { css, cx } from '@linaria/core';
 import { navigate } from '@native-router/core';
 import { TypedLink, useMatched, useSearch, useSetSearch } from '@native-router/react';
 import { z } from 'zod';
@@ -38,6 +38,7 @@ import { CopyableHash } from '@/components/ui/CopyableHash';
 import { DataTable, linkStyle, monoStyle } from '@/components/ui/DataTable';
 import { EmptyState, ErrorState } from '@/components/ui/ErrorState';
 import { TableSkeleton } from '@/components/ui/LoadingState';
+import { noticeBarStyle } from '@/components/ui/noticeBar';
 import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
 import { getChainInfo, getChainName } from '@/config/chains';
 import { usePendingTransactions, type PoolEntry } from '@/services/txpool';
@@ -66,23 +67,18 @@ export const pendingSearchSchema = z.object({
   group: z.enum(['1']).optional().catch(undefined),
 });
 
-// Counts strip above the table (Blocks/List notice-bar family): pending
+// Counts strip above the table (the shared notice-bar strip): pending
 // and queued counts, the truncation note when the cap bit, the grouped-
 // view toggle, and the on-demand Refresh (the 5s poll owns the cadence
-// otherwise).
-const countsRow = css`
-  display: flex;
-  align-items: center;
-  gap: var(--haze-space-3);
-  flex-wrap: wrap;
-  padding: var(--haze-space-2) var(--haze-space-3);
-  margin-bottom: var(--haze-space-3);
-  border: 1px solid var(--haze-color-border);
-  border-radius: var(--haze-radius-lg);
-  background: var(--haze-color-primary-subtle);
-  font-size: var(--haze-text-sm);
-  color: var(--haze-color-text);
-`;
+// otherwise). Deltas from the base strip: a roomier gap and wrapping, so
+// the controls never crush the counts on narrow screens.
+const countsRow = cx(
+  noticeBarStyle,
+  css`
+    gap: var(--haze-space-3);
+    flex-wrap: wrap;
+  `,
+);
 
 const truncatedNote = css`
   color: var(--haze-color-text-secondary);
@@ -97,19 +93,18 @@ const broadcastLinkNote = css`
 `;
 
 // Analysis strip under the counts: the derived summary line plus the
-// mandatory derivation caveat (same notice-bar family, stacked).
-const analysisStrip = css`
-  display: flex;
-  flex-direction: column;
-  gap: var(--haze-space-2);
-  padding: var(--haze-space-2) var(--haze-space-3);
-  margin-bottom: var(--haze-space-3);
-  border: 1px solid var(--haze-color-border);
-  border-radius: var(--haze-radius-lg);
-  background: var(--haze-color-primary-subtle);
-  font-size: var(--haze-text-sm);
-  color: var(--haze-color-text);
-`;
+// mandatory derivation caveat (the shared notice-bar strip, stacked).
+// Deltas from the base strip: column layout, and align-items back to
+// stretch (the initial value — the original strip never declared
+// align-items) so each line keeps the bar's full width instead of
+// center-shrinking as the base strip's rows do.
+const analysisStrip = cx(
+  noticeBarStyle,
+  css`
+    flex-direction: column;
+    align-items: stretch;
+  `,
+);
 
 const analysisDerivation = css`
   color: var(--haze-color-text-secondary);

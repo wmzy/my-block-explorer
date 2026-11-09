@@ -16,6 +16,13 @@ import { SourceCodeViewer } from '@/components/SourceCodeViewer';
 import { post, isBackendUnreachable } from '@/util/http';
 import { formatDateTime } from '@/utils/format';
 import { ApiError } from '@/util/apiError';
+import {
+  readSessionItem,
+  readStorageItem,
+  removeSessionItem,
+  removeStorageItem,
+  writeStorageItem,
+} from '@/util/storageAccess';
 import { CUSTOM_ABI_STORAGE_PREFIX } from '@/util/storageKeys';
 import { useServiceDiscovery } from '@/hooks/ServiceDiscoveryContext';
 import { redirectReplace } from '@/views/Home/Landing';
@@ -868,29 +875,26 @@ const sourcifyVerifyUrl = (chainId: number, address: string) =>
 // localStorage persistence for the pasted custom ABI (the raw string),
 // scoped per chain + address so an ABI never leaks across contracts.
 // localStorage (not sessionStorage) keeps the unlock across browser
-// sessions. Access is guarded — browsers can throw on storage in private
+// sessions. Access goes through the guarded helpers
+// (util/storageAccess.ts) — browsers can throw on storage in private
 // modes or after storage policy changes.
 const customAbiStorageKey = (chainId: number, address: string) =>
   `${CUSTOM_ABI_STORAGE_PREFIX}${chainId}:${address.toLowerCase()}`;
 
 const readStoredCustomAbi = (chainId: number, address: string): string | null => {
   const key = customAbiStorageKey(chainId, address);
-  try {
-    const stored = localStorage.getItem(key);
-    if (stored !== null) return stored;
-    // One-time migration from the legacy sessionStorage entry: adopt it
-    // into localStorage and drop the legacy copy so it cannot resurrect
-    // after a Clear.
-    const legacy = sessionStorage.getItem(key);
-    if (legacy !== null) {
-      localStorage.setItem(key, legacy);
-      sessionStorage.removeItem(key);
-      return legacy;
-    }
-    return null;
-  } catch {
-    return null;
+  const stored = readStorageItem(key);
+  if (stored !== null) return stored;
+  // One-time migration from the legacy sessionStorage entry: adopt it
+  // into localStorage and drop the legacy copy so it cannot resurrect
+  // after a Clear — but only once the durable copy has actually landed
+  // (a failed adoption keeps the session copy for the next load).
+  const legacy = readSessionItem(key);
+  if (legacy !== null && writeStorageItem(key, legacy)) {
+    removeSessionItem(key);
+    return legacy;
   }
+  return null;
 };
 
 // A deployment cannot consume zero gas: a 0/'' answer means the RPC/indexer
@@ -1191,26 +1195,18 @@ export default function Contract() {
 
   const handleApplyCustomAbi = (raw: string) => {
     setCustomAbiRaw(raw);
-    try {
-      const key = customAbiStorageKey(currentChainId, address ?? '');
-      localStorage.setItem(key, raw);
-      // Drop any legacy sessionStorage copy so it cannot resurrect a
-      // cleared ABI on the next load.
-      sessionStorage.removeItem(key);
-    } catch {
-      // Storage unavailable: the in-memory ABI still applies for this mount.
-    }
+    const key = customAbiStorageKey(currentChainId, address ?? '');
+    writeStorageItem(key, raw);
+    // Drop any legacy sessionStorage copy so it cannot resurrect a
+    // cleared ABI on the next load.
+    removeSessionItem(key);
   };
 
   const handleClearCustomAbi = () => {
     setCustomAbiRaw(null);
-    try {
-      const key = customAbiStorageKey(currentChainId, address ?? '');
-      localStorage.removeItem(key);
-      sessionStorage.removeItem(key);
-    } catch {
-      // Nothing to remove when storage is unavailable.
-    }
+    const key = customAbiStorageKey(currentChainId, address ?? '');
+    removeStorageItem(key);
+    removeSessionItem(key);
   };
 
   const handleClearCache = async () => {

@@ -7,9 +7,22 @@ import {
   normalizeError,
   createRetryableRpcCall,
   createRetryableDbCall,
+  errorMessage,
 } from '@/utils/errorHandler';
 
 describe('ErrorHandler', () => {
+  describe('errorMessage', () => {
+    it('应该返回 Error 的 message', () => {
+      expect(errorMessage(new Error('boom'))).toBe('boom');
+    });
+
+    it('应该把非 Error 值渲染为字符串', () => {
+      expect(errorMessage('raw string')).toBe('raw string');
+      expect(errorMessage(42)).toBe('42');
+      expect(errorMessage(undefined)).toBe('undefined');
+    });
+  });
+
   describe('withRetry', () => {
     it('应该在成功时直接返回结果', async () => {
       const mockFn = vi.fn().mockResolvedValue('success');

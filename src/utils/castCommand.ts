@@ -23,6 +23,7 @@
 
 import { encodeFunctionData } from 'viem';
 import type { AbiFunction, AbiParameter } from 'viem';
+import { errorMessage } from './errorHandler';
 import {
   parseFunctionArgs,
   type ParamComponent,
@@ -111,7 +112,7 @@ export function buildCastCommand({
       args: parsed.values,
     });
   } catch (error) {
-    return { ok: false, reason: `cannot encode calldata: ${describeError(error)}` };
+    return { ok: false, reason: `cannot encode calldata: ${errorMessage(error)}` };
   }
 
   const mode = func.stateMutability === 'view' || func.stateMutability === 'pure' ? 'call' : 'send';
@@ -202,8 +203,4 @@ function toAbiParameter(input: ParamComponent): AbiParameter {
         type: input.type,
         components: input.components.map(toAbiParameter),
       };
-}
-
-function describeError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }

@@ -20,13 +20,15 @@ import { createLogger } from '../server/logger';
 import { parseChainAndAddressRequest } from '../server/validation';
 import { requireAdminTokenIfConfigured } from '../middleware/admin-token';
 import { createRateLimiter } from '../middleware/rate-limit';
+import { toIsoTimestamp } from '../utils/dbTime';
+import { LABEL_MAX_LENGTH, NOTE_MAX_LENGTH } from '../utils/labelContract';
 
 const logger = createLogger('labels-routes');
 
 const app = new Hono();
 
-const LABEL_MAX_LENGTH = 64;
-const NOTE_MAX_LENGTH = 500;
+// Label/note caps live in utils/labelContract.ts — the same wire
+// contract the backup format enforces on restore (util/localBackup.ts).
 
 // :chainId/:address param validation is the shared labels/watch contract
 // (parseChainAndAddressRequest): a bare {error: 'invalid_request',
@@ -105,22 +107,11 @@ app.get('/chains/:chainId/labels/:address', async c => {
   }
 });
 
-// Naive-UTC-safe datetime → ISO conversion, same contract as
-// services/SearchService.ts toIsoTimestamp: the drizzle adapter
-// normalizes DuckDB datetime reads to Date, but any string reaching this
-// layer without an explicit offset/designator is a naive UTC wall clock
-// and must parse as UTC — never machine-local (which would skew every
-// exported updatedAt by the server's timezone).
-const toIsoTimestamp = (value: Date | string | null | undefined): string | null => {
-  if (value instanceof Date) return value.toISOString();
-  if (typeof value === 'string' && value.length > 0) {
-    const hasOffset = value.endsWith('Z') || /[+-]\d{2}:?\d{2}$/.test(value);
-    const normalized = hasOffset ? value : `${value.replace(' ', 'T')}Z`;
-    const parsed = new Date(normalized);
-    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
-  }
-  return null;
-};
+// updatedAt rides through toIsoTimestamp (utils/dbTime): the drizzle
+// adapter normalizes DuckDB datetime reads to Date, and any string
+// reaching this layer without an explicit offset/designator is a naive
+// UTC wall clock — never machine-local, which would skew every exported
+// updatedAt by the server's timezone.
 
 // The list endpoint scans the whole table on every hit, so it carries its
 // own tight limiter (the per-address GET stays unlimited — it is a

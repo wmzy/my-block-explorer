@@ -12,6 +12,7 @@ import {
 import { toHex, type Address, type Hex } from 'viem';
 import { getStorageAt } from 'viem/actions';
 import { createRpcClient } from '@/utils/realTimeData';
+import { errorMessage } from '@/utils/errorHandler';
 
 export type SlotValueState = {
   status: 'idle' | 'loading' | 'ok' | 'error';
@@ -51,8 +52,6 @@ const normalizeSlotKey = (slot: Hex): string => {
     return slot.toLowerCase();
   }
 };
-
-const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 // eth_getStorageAt is ephemeral chain state: read browser-side through the
 // cached viem PublicClient, never through the backend HTTP API.

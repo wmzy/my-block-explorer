@@ -19,6 +19,7 @@ import { getChainType, POPULAR_CHAINS, SUPPORTED_CHAINS } from '@/config/chains'
 import { bigintJsonReplacer } from '@/utils/jsonReplacer';
 import { parseSlotNumber } from '@/utils/storageSlots';
 import { addressVerdict } from '@/utils/address';
+import { errorMessage } from '@/utils/errorHandler';
 import { coerceArgs, parseFunctionFragment } from './abi';
 import type { BlockRef, BlockTag, ChainMeta, RpcReader } from './rpc';
 import { McpApiError, McpBackendUnreachableError, type ExplorerApi } from './rest';
@@ -437,7 +438,7 @@ export function registerExplorerTools(server: McpServer, deps: McpDeps): void {
         try {
           return { data: await api.get<T>(path), error: null };
         } catch (error) {
-          return { data: null, error: error instanceof Error ? error.message : String(error) };
+          return { data: null, error: errorMessage(error) };
         }
       };
       const ranges = await softGet<RangesRow>(`/api/chains/${chainId}/contracts/${address}/events/ranges`);
@@ -508,7 +509,7 @@ export function registerExplorerTools(server: McpServer, deps: McpDeps): void {
       try {
         slotBigint = parseSlotNumber(slot);
       } catch (error) {
-        return fail(`Invalid slot "${slot}": ${error instanceof Error ? error.message : String(error)}`);
+        return fail(`Invalid slot "${slot}": ${errorMessage(error)}`);
       }
       const value = await rpc.getStorageAt(chainId, checksummed, slotBigint, refFrom({ blockNumber, blockTag }));
       return ok({ chain: chainBrief(meta), address, slot: slotBigint.toString(), value });

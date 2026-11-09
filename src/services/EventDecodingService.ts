@@ -14,6 +14,7 @@ import {
   EventParameter,
 } from '../types/events';
 import { isAddressShape } from '../utils/address';
+import { errorMessage } from '../utils/errorHandler';
 
 /**
  * Event decoding configuration
@@ -344,8 +345,7 @@ export class EventDecodingService {
         const transformedValue = this.transformParameter(param, validation.sanitizedValue ?? value);
         formatted[param.name] = transformedValue;
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        console.warn(`Failed to format parameter ${param.name}: ${errorMessage}`);
+        console.warn(`Failed to format parameter ${param.name}: ${errorMessage(error)}`);
         formatted[param.name] = value; // fall back to the raw value
       }
     }

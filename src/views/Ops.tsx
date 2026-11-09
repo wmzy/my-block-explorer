@@ -38,6 +38,7 @@ import {
 import { ApiError } from '@/util/apiError';
 import { copyText } from '@/util/clipboard';
 import { isBackendUnreachable } from '@/util/http';
+import { errorMessage } from '@/utils/errorHandler';
 import { formatDuration, formatFileSize, formatNumber } from '@/utils/format';
 
 // --- Error classification (exported for the view tests) ---
@@ -618,7 +619,7 @@ export function uninstallErrorText(error: unknown): string {
   if (isBackendUnreachable(error)) {
     return 'The backend is unreachable — it may already be shutting down. Nothing was confirmed.';
   }
-  return error instanceof Error ? error.message : String(error);
+  return errorMessage(error);
 }
 
 const uninstallDialog = css`

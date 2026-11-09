@@ -1856,3 +1856,52 @@ pnpm typecheck           # tsc --noEmit
   deleted utils/cache.ts) — integration MUST re-run the acceptance greps
   itself, not trust the report. **Deferred again** (unchanged):
   in-flight-dedup Map ×5, Address view micro-extractions.
+
+- **2026-11-09/10 duplication review fix wave (3 waves, 9 agents + integration)** —
+  full-repo review round 3 (scouts verified every claim with file:line
+  evidence before any fix); all findings fixed end-to-end. Verified: tsc 0
+  errors, eslint 0 errors, `vitest --changed` 370 files green, `pnpm build`
+  green, live Chromium smoke on mainnet + SSE curl proof on the built
+  server. See CHANGELOG "2026-11-09/10 duplication review fix wave" for the
+  full inventory. **Dead/risk deletions**: `src/database/migrate.ts` + the
+  undocumented `pnpm migrate` script (the adapter's auto-migrating runner is
+  the ONE system — the official-migrator bootstrap wrote name-less journal
+  rows the runtime runner can't match, forcing full replays);
+  ContractInteractionService's three non-ABI methods (dead clones of the
+  WithABI trio). **Canonical modules born this wave** (reuse, never
+  re-roll): `utils/csv.ts` (`escapeCsvField`/`csvTimestamp`/
+  `csvAttachmentHeaders`), `utils/labelContract.ts` (label/note wire caps),
+  `errorMessage()` in `utils/errorHandler.ts` (pure-form only —
+  custom-fallback ternaries are deliberately NOT errorMessage sites),
+  `toIsoTimestamp` in `utils/dbTime.ts` (naive-UTC datetime parsing has ONE
+  home now), `components/ui/noticeBar.ts`, `components/ui/skeleton.ts`,
+  `components/internalTxnsShared.ts` + `TracedProgress`,
+  `util/useClickOutside.ts`; DataTable newly exports
+  `tableShellStyle`/`tableBaseStyle`/`paginationBarStyle`/`pageInfoStyle`/
+  `pageButtonsStyle` for composition (EventTable is the consumer;
+  `--haze-text-xs` === 12px so its mono token adoption was zero-visual).
+  **Real bug fixed (pre-existing, found by the integration smoke)**: the SSE
+  live block stream never worked — `streamRoutes` mounted AFTER
+  `blocksRoutes` meant `/blocks/stream` was captured by
+  `/blocks/:blockNumber` and every EventSource connect died as 400
+  "Invalid block number" (silent eternal polling fallback). Fix = mount
+  order in api-app.ts; pinned by an inline comment at the mount. **Rules
+  pinned**: (1) a LITERAL route path must be mounted BEFORE any sibling
+  param pattern that can capture it (same rule the `/api/chains/custom`
+  mount already documents one block above); (2) wyw-in-js/Linaria keyframes
+  are block-scoped AND css factories cannot interpolate function params —
+  cross-file keyframe sharing ships as an exported base CLASS (skeleton.ts
+  pattern), and genuinely-different pulse timings stay local rather than
+  being forced into a factory; (3) `storageAccess` helpers resolve the
+  default storage INSIDE each try (a default parameter evaluates at the
+  call site, outside the guard — re-breaking the Safari-private-mode
+  property-GET case); eslint's localStorage allowlist is now 2 files
+  (storageAccess itself + backupRestore's per-key enumeration, which needs
+  `length`/`key(i)` and per-write error reporting); (4) the storageKeys
+  manifest is the registration point for EVERY be: key — two unregistered
+  keys (`be:sqlConsole`, `be:onboardingDismissed`) were invisible to the
+  backup planner until this wave; (5) `createTtlLruCache({ ttlMs:
+  Number.POSITIVE_INFINITY })` is the established shape for a pure
+  bound-only LRU (AddressScanService's hydrated-tx cache). **Deferred
+  (deliberate, unchanged)**: in-flight-dedup Map family (now 7 instances),
+  the three adaptive-halving scan ladders, Address-view micro-extractions.

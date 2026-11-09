@@ -9,6 +9,72 @@ commit subjects rather than a curated release notes process.
 
 ## Unreleased
 
+- **2026-11-09/10 duplication review fix wave (3 waves, 9 agents + integration)** —
+  a fresh full-repo review for duplicated/inelegant implementations; every
+  confirmed finding fixed. All verified: `tsc` 0 errors, eslint 0 errors (103
+  warnings, all pre-existing react-refresh/exhaustive-deps classes),
+  `vitest --changed` 370 files green, `pnpm build` green, live Chromium smoke
+  on mainnet. **Correctness** — the divergent second migration system
+  (`src/database/migrate.ts`, drizzle's official postgres-js migrator whose
+  name-less journal rows the runtime adapter's runner can never match, causing
+  full-migration replays) is deleted along with the undocumented `pnpm
+  migrate` script: the adapter's auto-migrating runner is the one system;
+  `toIsoTimestamp` (the naive-UTC-safe datetime parser — exact class of the
+  recorded +8h DuckDB skew bugs) is extracted to `utils/dbTime.ts` (was
+  verbatim ×2 in SearchService + routes/labels, acknowledged in comments);
+  three DEAD methods deleted from ContractInteractionService
+  (`readContract`/`simulateContract`/`estimateContractGas` non-ABI variants,
+  ~150 lines, zero callers — they were near-clones of the live WithABI trio
+  with an already-drifted `stateOverride` asymmetry); label/note wire caps
+  (64/500) single-sourced in `utils/labelContract.ts` (were independently
+  defined by the route and the backup restorer — a one-sided change silently
+  dropped restores). **Real bug found by the integration smoke (pre-existing,
+  user-visible)** — the SSE live block stream NEVER worked: streamRoutes'
+  literal `/chains/:chainId/blocks/stream` was mounted AFTER blocksRoutes'
+  `/blocks/:blockNumber`, so every EventSource connect was captured by the
+  block-detail route and answered `400 Invalid block number`; the app
+  silently degraded to polling forever and the "Live" badge never lit. Fixed
+  by mount order in api-app.ts; proven streaming `text/event-stream` with
+  real block frames on the built server. **Consolidations** —
+  `utils/csv.ts` (RFC-4180 escaping + timestamp cells + attachment headers;
+  was byte-identical pairs across the two export services and two routes);
+  events-route pagination migrated onto `parsePaginationParams` (new
+  `limitBelowOne: 'clamp'` option preserves the legacy clamp-`pageSize=0`
+  wire behavior, pinned by test); canonical `errorMessage()` in
+  utils/errorHandler.ts replaces ~25 pure-form inline ternaries and 5 local
+  definitions (custom-fallback and variant-semantics sites deliberately
+  untouched, classification pinned in the agent report);
+  AddressScanService's hand-rolled LRU → `createTtlLruCache({ ttlMs:
+  Infinity })` (plus the `cacheMisses` debug label no longer lies);
+  PerformanceMonitor.checkOperation lost its dead `expectedDuration` option,
+  measures real `duration`, and logs retries via `console.warn`. **localStorage
+  discipline completed** — all five storageAccess helpers take an optional
+  injectable `GuardedStorage` (default resolves INSIDE the try, keeping the
+  Safari-private-mode property-GET guard); themePreference/units/watchlist/
+  adminAuth/privateNotes/tokenDirectory/RpcConfig/GettingStarted/Sql/
+  Contract-custom-ABI all migrated off hand-rolled try/catch; the eslint
+  allowlist shrank 17 → 2 files (storageAccess + backupRestore's
+  enumeration loop); `be:sqlConsole` and `be:onboardingDismissed` registered
+  in the storageKeys manifest (previously invisible to the backup planner)
+  and the `be:viewedTokens:` literal single-sourced. **Frontend CSS layer**
+  — EventTable composes shared exports from DataTable
+  (`tableShellStyle`/`tableBaseStyle`/`paginationBarStyle`/`pageInfoStyle`/
+  `pageButtonsStyle`) and imports `monoStyle`, fixing the hardcoded-12px
+  drift (`--haze-text-xs` is exactly 12px, so zero visual change); its
+  within-file twins (sort/page-size selects, labels, raw-log chips, loading
+  JSX) collapsed; `components/ui/noticeBar.ts` absorbs the five verbatim
+  notice-strip copies; `components/ui/skeleton.ts` ships Home's
+  skeletonBase (keyframes are block-scoped in wyw-in-js — cross-file sharing
+  must be a base class; the NftHoldings/NftGrid pulse pair deduped as
+  `shimmerPulse`, the four genuinely-different pulses stay local);
+  `components/internalTxnsShared.ts` + `TracedProgress` absorb the
+  InternalTxns twin styles and progress copy; `util/useClickOutside.ts`
+  absorbs the three hand-rolled close-on-outside-click effects; BigInt
+  display goes through `formatBigInt` (locale-stable grouping, exact beyond
+  2^53) in TokenTransfers/Address/Blocks-Detail. **Deferred (deliberate,
+  unchanged)**: in-flight-dedup Map family (now 7 instances), the three
+  adaptive-halving scan ladders, Address-view micro-extractions.
+
 - **2026-11-09 duplication follow-up wave (6 agents, 2 waves + integration)** —
   the residue the 2026-11-08 review left behind, fixed end-to-end. All
   verified: `tsc` 0 errors, eslint 0 errors (98 pre-existing warnings),

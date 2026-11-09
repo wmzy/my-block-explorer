@@ -25,6 +25,7 @@ import {
   type RpcTestResult,
 } from '../utils/rpcConfigService';
 import { parseBackup, planRestore, type RestorePlan } from '@/util/localBackup';
+import { readStorageItem } from '@/util/storageAccess';
 import {
   collectBackupParts,
   executeRestore,
@@ -528,13 +529,7 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
     }
     setPendingRestoreNotes(parsed.file.notes ?? []);
     setPendingRestore(
-      planRestore(parsed.file, key => {
-        try {
-          return localStorage.getItem(key);
-        } catch {
-          return null;
-        }
-      }),
+      planRestore(parsed.file, key => readStorageItem(key)),
     );
   };
 

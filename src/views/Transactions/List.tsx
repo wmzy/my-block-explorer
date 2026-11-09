@@ -16,6 +16,7 @@ import { DataTable, Pagination, linkStyle, monoStyle } from '@/components/ui/Dat
 import { EmptyState, ErrorState } from '@/components/ui/ErrorState';
 import { EnsInline, shortAddress } from '@/components/ui/EnsInline';
 import { TableSkeleton } from '@/components/ui/LoadingState';
+import { noticeBarStyle } from '@/components/ui/noticeBar';
 import { TxStatusBadge } from '@/components/ui/TxStatusBadge';
 import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
 import { getChainInfo, getChainName, getChainSymbol } from '@/config/chains';
@@ -57,44 +58,11 @@ const listToolbar = css`
   }
 `;
 
-// Staleness hint row rendered under the table (Blocks/List pattern): the
-// walk is anchored to the displayed page's snapshot, but the live head
-// moved on — offer the one-click refresh.
-const newBlocksHint = css`
-  display: flex;
-  align-items: center;
-  gap: var(--haze-space-2);
-  padding: var(--haze-space-2) var(--haze-space-3);
-  margin-bottom: var(--haze-space-3);
-  border: 1px solid var(--haze-color-border);
-  border-radius: var(--haze-radius-lg);
-  background: var(--haze-color-primary-subtle);
-  font-size: var(--haze-text-sm);
-  color: var(--haze-color-text);
-`;
-
 // Header controls (anchored views get "Show latest" beside Refresh).
 const toolbarActions = css`
   display: flex;
   align-items: center;
   gap: var(--haze-space-2);
-`;
-
-// Anchor notice strip (?block= dropped as malformed / anchor beyond the
-// live head): the same bordered, subtle-background note family as the
-// staleness hint row — explained business outcomes, never an error
-// palette (the red ErrorState is reserved for real fetch failures).
-const anchorNoticeBar = css`
-  display: flex;
-  align-items: center;
-  gap: var(--haze-space-2);
-  padding: var(--haze-space-2) var(--haze-space-3);
-  margin-bottom: var(--haze-space-3);
-  border: 1px solid var(--haze-color-border);
-  border-radius: var(--haze-radius-lg);
-  background: var(--haze-color-primary-subtle);
-  font-size: var(--haze-text-sm);
-  color: var(--haze-color-text);
 `;
 
 // Search params: an optional ?block=N deep link starts the walk at block N;
@@ -392,7 +360,7 @@ export default function TransactionsList() {
             an error palette. One bar — the resolver's priority contract
             guarantees at most one notice. */}
         {anchorNotice !== null && (
-          <div className={anchorNoticeBar} role="status">
+          <div className={noticeBarStyle} role="status">
             {anchorNotice.kind === 'invalid-block'
               ? 'Invalid block parameter ignored — showing latest transactions'
               : `Anchor block ${formatNumber(anchorNotice.block)} has not been produced yet — showing nearest earlier transactions`}
@@ -512,7 +480,7 @@ export default function TransactionsList() {
             instead of letting Age cells silently creep. One click on
             Refresh re-pulls page 1 of the current anchor. */}
         {transactions.length > 0 && newBlockCount !== null && (
-          <div className={newBlocksHint}>
+          <div className={noticeBarStyle}>
             <span>
               {formatNumber(Number(newBlockCount))} new {newBlockCount === 1n ? 'block' : 'blocks'}{' '}
               —

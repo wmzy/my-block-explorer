@@ -184,50 +184,6 @@ export class ContractInteractionService {
   }
 
   /**
-   * Call a read-only contract function (readContract)
-   */
-  async readContract(params: ContractCallParams): Promise<ContractCallResult> {
-    try {
-      const client = await rpcManager.getClient(params.chainId);
-      const contractSource = await this.contractSourceService.getContractSource(
-        params.chainId,
-        params.contractAddress,
-      );
-
-      if (!contractSource?.abi) {
-        return {
-          success: false,
-          error: 'Contract ABI not available',
-        };
-      }
-
-      const abi = JSON.parse(contractSource.abi);
-
-      const readCall = createRetryableRpcCall(async () => {
-        return await client.readContract({
-          address: params.contractAddress,
-          abi,
-          functionName: params.functionName,
-          args: params.args,
-        });
-      }, params.chainId);
-
-      const result = await readCall();
-
-      return {
-        success: true,
-        result: this.formatContractResult(result),
-      };
-    } catch (error: unknown) {
-      logger.error({ err: error }, 'Read contract failed');
-      return {
-        success: false,
-        error: this.formatError(error),
-      };
-    }
-  }
-
-  /**
    * Simulate a contract call (simulateContract) - with a provided ABI
    */
   async simulateContractWithABI(
@@ -255,53 +211,6 @@ export class ContractInteractionService {
           value: params.value,
           account: params.from as `0x${string}` | undefined,
           stateOverride,
-        });
-      }, params.chainId);
-
-      const simulation = await simulateCall();
-
-      return {
-        success: true,
-        result: this.formatContractResult(simulation.result),
-        gasUsed: simulation.request.gas,
-      };
-    } catch (error: unknown) {
-      logger.error({ err: error }, 'Simulate contract failed');
-      return {
-        success: false,
-        error: this.formatError(error),
-      };
-    }
-  }
-
-  /**
-   * Simulate a contract call (simulateContract)
-   */
-  async simulateContract(params: ContractCallParams): Promise<ContractCallResult> {
-    try {
-      const client = await rpcManager.getClient(params.chainId);
-      const contractSource = await this.contractSourceService.getContractSource(
-        params.chainId,
-        params.contractAddress,
-      );
-
-      if (!contractSource?.abi) {
-        return {
-          success: false,
-          error: 'Contract ABI not available',
-        };
-      }
-
-      const abi = JSON.parse(contractSource.abi);
-
-      const simulateCall = createRetryableRpcCall(async () => {
-        return await client.simulateContract({
-          address: params.contractAddress,
-          abi,
-          functionName: params.functionName,
-          args: params.args,
-          value: params.value,
-          account: params.from as `0x${string}` | undefined,
         });
       }, params.chainId);
 
@@ -351,59 +260,6 @@ export class ContractInteractionService {
           value: params.value,
           account: params.from as `0x${string}` | undefined,
           stateOverride,
-        });
-      }, params.chainId);
-
-      const gasLimit = await estimateGas();
-
-      // Get the current gas price
-      const [gasPrice, feeData] = await Promise.all([
-        client.getGasPrice().catch(() => null),
-        client.estimateFeesPerGas().catch(() => null),
-      ]);
-
-      return {
-        gasLimit,
-        gasPrice: gasPrice ?? undefined,
-        maxFeePerGas: feeData?.maxFeePerGas ?? undefined,
-        maxPriorityFeePerGas: feeData?.maxPriorityFeePerGas ?? undefined,
-      };
-    } catch (error) {
-      logger.error({ err: error }, 'Gas estimation failed');
-      return null;
-    }
-  }
-
-  /**
-   * Estimate gas for a contract call
-   */
-  async estimateContractGas(params: ContractCallParams): Promise<{
-    gasLimit: bigint;
-    gasPrice?: bigint;
-    maxFeePerGas?: bigint;
-    maxPriorityFeePerGas?: bigint;
-  } | null> {
-    try {
-      const client = await rpcManager.getClient(params.chainId);
-      const contractSource = await this.contractSourceService.getContractSource(
-        params.chainId,
-        params.contractAddress,
-      );
-
-      if (!contractSource?.abi) {
-        return null;
-      }
-
-      const abi = JSON.parse(contractSource.abi);
-
-      const estimateGas = createRetryableRpcCall(async () => {
-        return await client.estimateContractGas({
-          address: params.contractAddress,
-          abi,
-          functionName: params.functionName,
-          args: params.args,
-          value: params.value,
-          account: params.from as `0x${string}` | undefined,
         });
       }, params.chainId);
 

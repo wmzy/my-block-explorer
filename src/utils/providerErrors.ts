@@ -15,8 +15,10 @@
  * semantics (a chunk may be retryable without the span being shrinkable).
  */
 
+import { errorMessage } from './errorHandler';
+
 export const SHRINKABLE_PROVIDER_ERROR_RE =
   /rate.?limit|too many requests|429|exceed|limit|timeout|timed out|econnreset|econnrefused|socket hang up|network|fetch failed/i;
 
 export const isShrinkableProviderError = (err: unknown): boolean =>
-  SHRINKABLE_PROVIDER_ERROR_RE.test(err instanceof Error ? err.message : String(err));
+  SHRINKABLE_PROVIDER_ERROR_RE.test(errorMessage(err));

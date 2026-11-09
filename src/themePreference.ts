@@ -6,6 +6,7 @@
 // matching searchHistory: a full/private-mode localStorage degrades reads
 // to 'system' and swallows writes — theming must never break rendering.
 
+import { readStorageItem, writeStorageItem } from '@/util/storageAccess';
 import { THEME_STORAGE_KEY } from '@/util/storageKeys';
 
 // Canonical literal lives in the manifest (util/storageKeys.ts);
@@ -39,21 +40,13 @@ export function applyThemePreference(mode: ThemePreference): 'light' | 'dark' | 
  * no-choice default that follows the OS).
  */
 export function readThemePreference(): ThemePreference {
-  try {
-    const raw = localStorage.getItem(THEME_STORAGE_KEY);
-    return raw === 'light' || raw === 'dark' ? raw : 'system';
-  } catch {
-    return 'system';
-  }
+  const raw = readStorageItem(THEME_STORAGE_KEY);
+  return raw === 'light' || raw === 'dark' ? raw : 'system';
 }
 
 /** Persist a choice (best-effort — see module header). */
 export function storeThemePreference(mode: ThemePreference): void {
-  try {
-    localStorage.setItem(THEME_STORAGE_KEY, mode);
-  } catch {
-    // Quota/private mode — the choice lasts only for this session.
-  }
+  writeStorageItem(THEME_STORAGE_KEY, mode);
 }
 
 /**

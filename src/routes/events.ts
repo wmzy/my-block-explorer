@@ -4,7 +4,11 @@ import type { Abi } from 'viem';
 import { createLogger } from '../server/logger';
 import { createRateLimiter } from '../middleware/rate-limit';
 import { getChainName } from '../config/chains';
-import { parseChainAndAddressParams, parseStrictInteger } from '../utils/validation';
+import {
+  parseChainAndAddressParams,
+  parsePaginationParams,
+  parseStrictInteger,
+} from '../utils/validation';
 import {
   addIndexingRange,
   getIndexingRanges,
@@ -33,6 +37,7 @@ import {
   getFilteredEventCount,
 } from '../services/EventExportService';
 import { safeJsonResponse } from '../utils/serialization';
+import { csvAttachmentHeaders } from '../utils/csv';
 import { createApiError, invalidPageResponse, respondError } from '../utils/api-error';
 import { contractSourceService } from '../services/ContractSourceService';
 import { requireAdminTokenIfConfigured } from '../middleware/admin-token';
@@ -318,20 +323,29 @@ app.get('/chains/:chainId/contracts/:address/events', async c => {
   // contract as addresses.ts): NaN would otherwise flow into the SQL
   // offset and surface as a 500. Missing/empty keeps the defaults, pages
   // below 1 keep the clamp-to-1 behavior, pageSize stays capped at 1000.
-  const rawPage = c.req.query('page');
-  const rawPageSize = c.req.query('pageSize');
-  const parsedPage = rawPage === undefined || rawPage === '' ? 1 : parseStrictInteger(rawPage);
-  const parsedPageSize =
-    rawPageSize === undefined || rawPageSize === '' ? 50 : parseStrictInteger(rawPageSize);
-
-  if (parsedPage === null) {
+  // The page slot rides parsePaginationParams' offset side (1-based
+  // default, floors at 1, a '-' spelling is junk) and pageSize its limit
+  // side — limitBelowOne 'clamp' keeps the legacy rule that a NUMERIC
+  // below-one pageSize clamps into [1, 1000] instead of 400ing (only
+  // non-numeric input 400s).
+  const { offset: page, limit: pageSize } = parsePaginationParams(
+    c.req.query('page'),
+    c.req.query('pageSize'),
+    {
+      defaultOffset: 1,
+      minOffset: 1,
+      negativeOffset: 'reject',
+      defaultLimit: 50,
+      maxLimit: 1000,
+      limitBelowOne: 'clamp',
+    },
+  );
+  if (page === null) {
     return invalidPageResponse(c);
   }
-  if (parsedPageSize === null) {
+  if (pageSize === null) {
     return respondError(c, 400, 'invalid_page_size', 'pageSize must be a positive integer');
   }
-  const page = Math.max(1, parsedPage);
-  const pageSize = Math.min(Math.max(1, parsedPageSize), 1000);
   const parsedFilters = parseEventFilters(new URL(c.req.url).searchParams);
   if ('error' in parsedFilters) return c.json(parsedFilters.error, parsedFilters.status);
 
@@ -400,14 +414,10 @@ app.get('/chains/:chainId/contracts/:address/events/export', exportRateLimiter, 
     const rows = await fetchFilteredEventsForExport(chainId, address, parsedFilters);
     const csv = buildEventsCsv(rows);
 
-    // ISO timestamp with filesystem-hostile characters stripped.
-    const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    c.header('Content-Type', 'text/csv; charset=utf-8');
-    c.header(
-      'Content-Disposition',
-      `attachment; filename="events-${chainId}-${address}-${timestamp}.csv"`,
-    );
-    c.header('Cache-Control', 'no-store');
+    const headers = csvAttachmentHeaders('events', chainId, address);
+    for (const [name, value] of Object.entries(headers)) {
+      c.header(name, value);
+    }
     return c.body(csv);
   } catch (error) {
     logger.error({ err: error }, 'Event export API error');

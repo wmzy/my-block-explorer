@@ -2,31 +2,26 @@
 // operations (rpc-config reads/writes, contract cache invalidation,
 // performance tooling) behind the x-admin-token header, mirroring
 // ADMIN_TOKEN on the server. Stored per browser; attached to every
-// request by the http chain in util/http.ts.
+// request by the http chain in util/http.ts. Storage access goes through
+// the guarded helpers (util/storageAccess.ts): private-mode failures
+// degrade to "no token" / "not persisted", never a throw.
+import {
+  readStorageItem,
+  removeStorageItem,
+  writeStorageItem,
+} from '@/util/storageAccess';
 import { ADMIN_TOKEN_STORAGE_KEY as STORAGE_KEY } from '@/util/storageKeys';
 
 export function getAdminToken(): string | null {
-  try {
-    return globalThis.localStorage?.getItem(STORAGE_KEY) ?? null;
-  } catch {
-    return null;
-  }
+  return readStorageItem(STORAGE_KEY);
 }
 
 export function setAdminToken(token: string): void {
-  try {
-    globalThis.localStorage.setItem(STORAGE_KEY, token);
-  } catch {
-    // Storage unavailable (private mode): token is simply not persisted.
-  }
+  writeStorageItem(STORAGE_KEY, token);
 }
 
 export function clearAdminToken(): void {
-  try {
-    globalThis.localStorage.removeItem(STORAGE_KEY);
-  } catch {
-    // Ignore: nothing to clear.
-  }
+  removeStorageItem(STORAGE_KEY);
 }
 
 export function hasAdminToken(): boolean {

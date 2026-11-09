@@ -22,7 +22,7 @@ import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
 import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { InfoGrid, InfoItem } from '@/components/ui/InfoGrid';
-import { linkStyle } from '@/components/ui/DataTable';
+import { linkStyle, monoStyle } from '@/components/ui/DataTable';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { Badge } from '@/components/ui/Badge';
@@ -141,13 +141,14 @@ const holderRankRow = css`
   }
 `;
 
-const rankNumber = css`
-  font-family: var(--haze-font-mono);
-  font-size: var(--haze-text-xs);
-  color: var(--haze-color-text-muted);
-  min-width: 1.5em;
-  text-align: right;
-`;
+const rankNumber = cx(
+  monoStyle,
+  css`
+    color: var(--haze-color-text-muted);
+    min-width: 1.5em;
+    text-align: right;
+  `,
+);
 
 // Share-of-discovered-supply bar, hand-rolled (no chart dependency — the
 // Gas panel's sparkline visual language: primary fill on a subtle track).
@@ -166,13 +167,14 @@ const shareFill = css`
   background: var(--haze-color-primary);
 `;
 
-const shareLabel = css`
-  font-family: var(--haze-font-mono);
-  font-size: var(--haze-text-xs);
-  color: var(--haze-color-text-muted);
-  min-width: 52px;
-  text-align: right;
-`;
+const shareLabel = cx(
+  monoStyle,
+  css`
+    color: var(--haze-color-text-muted);
+    min-width: 52px;
+    text-align: right;
+  `,
+);
 
 const holderAmount = css`
   font-family: var(--haze-font-mono);
@@ -316,14 +318,15 @@ const priceDotSpot = css`
 
 // First→last date labels under the chart, from the real point
 // timestamps (never the window bounds — only observed days claim space).
-const priceDateRow = css`
-  display: flex;
-  justify-content: space-between;
-  margin-top: var(--haze-space-2);
-  font-family: var(--haze-font-mono);
-  font-size: var(--haze-text-xs);
-  color: var(--haze-color-text-muted);
-`;
+const priceDateRow = cx(
+  monoStyle,
+  css`
+    display: flex;
+    justify-content: space-between;
+    margin-top: var(--haze-space-2);
+    color: var(--haze-color-text-muted);
+  `,
+);
 
 const priceFactsRow = css`
   display: flex;
@@ -363,15 +366,16 @@ const windowToggleGroup = css`
   gap: var(--haze-space-1);
 `;
 
-const windowToggle = css`
-  border: 1px solid var(--haze-color-border);
-  background: none;
-  color: var(--haze-color-text-muted);
-  font-family: var(--haze-font-mono);
-  font-size: var(--haze-text-xs);
-  padding: 1px 8px;
-  cursor: pointer;
-`;
+const windowToggle = cx(
+  monoStyle,
+  css`
+    border: 1px solid var(--haze-color-border);
+    background: none;
+    color: var(--haze-color-text-muted);
+    padding: 1px 8px;
+    cursor: pointer;
+  `,
+);
 
 const windowToggleActive = css`
   color: var(--haze-color-primary);

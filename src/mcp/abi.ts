@@ -10,6 +10,7 @@
 // strings, so no comma-list/JSON-string grammar is needed here.
 
 import { parseAbiItem, type AbiFunction, type AbiParameter } from 'viem';
+import { errorMessage } from '@/utils/errorHandler';
 import { HEX_ADDRESS_RE } from '@/utils/address';
 
 export class McpArgError extends Error {
@@ -28,7 +29,7 @@ export function parseFunctionFragment(signature: string): AbiFunction {
     parsed = parseAbiItem(signature.trim());
   } catch (error) {
     throw new McpArgError(
-      `Could not parse function signature: ${error instanceof Error ? error.message : String(error)}. ` +
+      `Could not parse function signature: ${errorMessage(error)}. ` +
       `Expected human-readable Solidity syntax, e.g. "function balanceOf(address account) view returns (uint256)".`,
     );
   }

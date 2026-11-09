@@ -26,6 +26,7 @@
 //   (the route maps that to 502 sourcify_unreachable; everything above is
 //   a domain outcome answered with HTTP 200).
 import { createLogger } from '../server/logger';
+import { errorMessage } from '../utils/errorHandler';
 import type { Address } from 'viem';
 
 const logger = createLogger('contract-verify-service');
@@ -159,7 +160,7 @@ export class ContractVerifyService {
       return {
         ok: false,
         kind: 'rejected',
-        message: `${METADATA_FILE_NAME} is not valid JSON: ${error instanceof Error ? error.message : String(error)}`,
+        message: `${METADATA_FILE_NAME} is not valid JSON: ${errorMessage(error)}`,
       };
     }
     const sources: Record<string, string> = {};

@@ -25,6 +25,7 @@ import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import { parseMainDbPath } from './database/dbPath';
 import { parseStrictInteger } from './utils/strictInteger';
 import { formatFileSize } from './utils/format';
+import { errorMessage } from './utils/errorHandler';
 
 export type UninstallTargetKind =
   | 'data-dir'
@@ -227,7 +228,7 @@ export async function removeTargets(
         target,
         removed: false,
         bytes: 0,
-        error: error instanceof Error ? error.message : String(error),
+        error: errorMessage(error),
       });
     }
   }

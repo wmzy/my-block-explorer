@@ -376,7 +376,6 @@ export class PerformanceMonitor {
     options: {
       timeout?: number;
       retries?: number;
-      expectedDuration?: number;
     } = {},
   ): Promise<{
     success: boolean;
@@ -386,26 +385,27 @@ export class PerformanceMonitor {
   }> {
     const timeout = options.timeout ?? 5000;
     const retries = options.retries ?? 0;
-    const _expectedDuration = options.expectedDuration ?? 9;
-
+    // Wall-clock elapsed across every attempt, in the module's own
+    // performance.now() idiom (same as executeTracked's metric).
+    const startTime = performance.now();
     let lastError: Error | undefined;
 
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
         const result = await withTimeout(this.executeTracked(operation, fn), timeout, 'Operation');
 
-        return { success: true, duration: 0, result };
+        return { success: true, duration: performance.now() - startTime, result };
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
         if (attempt < retries) {
-          console.log(`Retrying operation ${operation} (attempt ${attempt + 2})`);
+          console.warn(`Retrying operation ${operation} (attempt ${attempt + 2})`);
         }
       }
     }
 
     return {
       success: false,
-      duration: 0,
+      duration: performance.now() - startTime,
       error: lastError,
     };
   }

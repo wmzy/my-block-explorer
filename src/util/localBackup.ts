@@ -26,6 +26,12 @@
 // (util/storageKeys.ts) — the same literals the owners write and the
 // export side scans with, so the three sides cannot drift apart.
 import { WATCHLIST_MAX_ENTRIES } from '@/util/watchlist';
+// Label/note caps come from the ONE shared contract home
+// (utils/labelContract.ts, also consumed by routes/labels.ts): the
+// restore PUTs every planned label, so a file that already violates the
+// caps is rejected at parse time with a fixable message instead of N
+// per-label 400s mid-restore.
+import { LABEL_MAX_LENGTH, NOTE_MAX_LENGTH } from '@/utils/labelContract';
 // Address shape (0x + 40 hex chars) — the canonical regex from
 // utils/address.ts, the same shape tier every address surface uses.
 import { HEX_ADDRESS_RE } from '@/utils/address';
@@ -52,13 +58,6 @@ export const BACKUP_VERSION = 2;
 // READERS ignore keys they do not know, but they pin version === 1 —
 // which is exactly why the bump must be additive HERE, not silent.
 const SUPPORTED_BACKUP_VERSIONS: readonly number[] = [1, 2];
-
-// Label/note caps mirrored from the write API (routes/labels.ts): the
-// restore PUTs every planned label, so a file that already violates the
-// caps is rejected at parse time with a fixable message instead of N
-// per-label 400s mid-restore.
-const LABEL_MAX_LENGTH = 64;
-const NOTE_MAX_LENGTH = 500;
 
 /** One address-label row exactly as GET /api/labels serves it. */
 export type BackupLabelRow = {

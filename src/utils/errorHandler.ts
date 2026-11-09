@@ -10,6 +10,14 @@ export type RetryOptions = {
 };
 
 /**
+ * The one unknown-error → string renderer: an Error's message, else the
+ * value's string form.
+ */
+export function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/**
  * Retry decorator
  */
 export function withRetry<T extends unknown[], R>(

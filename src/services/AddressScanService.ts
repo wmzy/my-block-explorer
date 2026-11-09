@@ -76,10 +76,13 @@ import { selectorOf } from '../utils/txDecode';
 // BROWSER per-chain client factory (realTimeData), which has no place in a
 // server-side walk (and would drag the browser graph through the vite
 // config bundle).
-import { sleep } from '../utils/errorHandler';
+import { errorMessage, sleep } from '../utils/errorHandler';
 // Shared shrinkable-provider-error classification (formerly a conscious
 // copy of EventIndexingService's regex — see utils/providerErrors).
 import { isShrinkableProviderError } from '../utils/providerErrors';
+// The same TTL+LRU core the other scan services use for their response
+// caches; here with a never-expiring TTL (envelopes are immutable).
+import { createTtlLruCache } from '../utils/ttlLruCache';
 import { createLogger } from '../server/logger';
 // Trace reuse: the same pure normalizer the frontend Call Trace card and
 // internal-tx tab use (utils/traceFormat) — never a reimplementation.
@@ -635,21 +638,17 @@ const persistFindings = async (
 // ============================================
 
 // Transaction envelopes are immutable, so a hydrated finding serves
-// forever — the LRU only bounds memory. The walk pre-populates this cache
-// as it scans change blocks; read-time misses fill via RPC once.
-const hydratedTransactions = new Map<string, DiscoveredTransaction>();
-const HYDRATED_CACHE_MAX = 1000;
+// forever — the infinite TTL never expires (`now() > Infinity` is false)
+// and the LRU only bounds memory. The walk pre-populates this cache as it
+// scans change blocks; read-time misses fill via RPC once.
+const hydratedTransactions = createTtlLruCache<DiscoveredTransaction>({
+  ttlMs: Number.POSITIVE_INFINITY,
+  maxEntries: 1000,
+});
 
 export const rememberHydratedTransactions = (txs: readonly DiscoveredTransaction[]): void => {
   for (const tx of txs) {
-    const key = tx.hash.toLowerCase();
-    hydratedTransactions.delete(key);
-    hydratedTransactions.set(key, tx);
-  }
-  while (hydratedTransactions.size > HYDRATED_CACHE_MAX) {
-    const oldest = hydratedTransactions.keys().next().value;
-    if (oldest === undefined) break;
-    hydratedTransactions.delete(oldest);
+    hydratedTransactions.set(tx.hash.toLowerCase(), tx);
   }
 };
 
@@ -672,6 +671,7 @@ export const hydrateFindings = async (
   if (findings.length === 0) return [];
   const client = await rpcManager.getClient(chainId);
   const out: DiscoveredTransaction[] = [];
+  let cacheMisses = 0;
   for (const finding of findings) {
     const key = finding.txHash.toLowerCase();
     const cached = hydratedTransactions.get(key);
@@ -679,6 +679,7 @@ export const hydrateFindings = async (
       out.push(cached);
       continue;
     }
+    cacheMisses++;
     const tx = await client.getTransaction({ hash: key as `0x${string}` });
     const block = await client.getBlock({ blockNumber: tx.blockNumber });
     const hydrated: DiscoveredTransaction = {
@@ -697,7 +698,7 @@ export const hydrateFindings = async (
     out.push(hydrated);
   }
   logger.debug(
-    { chainId, address, findings: findings.length, cacheMisses: out.length },
+    { chainId, address, findings: findings.length, cacheMisses },
     'Hydrated deep-scan findings',
   );
   return out;
@@ -790,8 +791,6 @@ export const listInternalTransactions = async (
 // verbatim provider message (never silently 'complete').
 const PERMANENT_PROVIDER_ERROR_RE =
   /historical state|missing trie|pruned|archive node|header not found/i;
-
-const errorMessage = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
 const isPermanentProviderError = (err: unknown): boolean =>
   PERMANENT_PROVIDER_ERROR_RE.test(errorMessage(err));

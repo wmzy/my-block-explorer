@@ -13,6 +13,7 @@ import { TypedLink, useSearch, useSetSearch } from '@native-router/react';
 import { Alert } from 'haze-ui';
 import { getChainInfo, getChainSymbol } from '@/config/chains';
 import { fetchCallTraceTree } from '@/utils/callTraceRpc';
+import { errorMessage } from '@/utils/errorHandler';
 import { formatFixedDecimals, formatHash, truncateMiddle } from '@/utils/format';
 import {
   aggregateInternalTxns,
@@ -36,9 +37,18 @@ import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
 import { Collapsible } from '@/components/ui/Collapsible';
 import { CopyableHash } from '@/components/ui/CopyableHash';
-import { DataTable, linkStyle } from '@/components/ui/DataTable';
+import { DataTable, linkStyle, monoStyle } from '@/components/ui/DataTable';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { LoadingState } from '@/components/ui/LoadingState';
+import { TracedProgress } from '@/components/TracedProgress';
+import {
+  depthCell,
+  failedTxsCard,
+  failedTxRow,
+  muted,
+  retryRow,
+  summaryLine,
+} from '@/components/internalTxnsShared';
 
 // Trace-depth presets offered by the compact control: the scan default,
 // two widenings, and the clamp ceiling. A deep-linked depth between
@@ -86,42 +96,9 @@ const depthSelect = css`
   font-size: var(--haze-text-xs);
 `;
 
-// Aggregate header: counts + the honest bounds label, one line each.
-const summaryLine = css`
-  margin: 0 0 var(--haze-space-2);
-  font-size: var(--haze-text-xs);
-`;
-
-const failedTxsCard = css`
-  margin-top: var(--haze-space-3);
-`;
-
-// One failed-trace row inside the collapsed card: tx link + raw message.
-const failedTxRow = css`
-  font-family: var(--haze-font-mono);
-  font-size: var(--haze-text-xs);
-  overflow-wrap: anywhere;
-  margin-bottom: var(--haze-space-1);
-`;
-
-const muted = css`
-  color: var(--haze-color-text-muted);
-`;
-
-const valueCell = css`
-  font-family: var(--haze-font-mono);
-  font-size: var(--haze-text-xs);
-`;
-
-const depthCell = css`
-  color: var(--haze-color-text-muted);
-  font-family: var(--haze-font-mono);
-  font-size: var(--haze-text-xs);
-`;
-
-const retryRow = css`
-  margin-top: var(--haze-space-3);
-`;
+// The summary, muted, failed-trace and retry styles this tab shares with
+// the block detail page's traced Internal Transactions card live in
+// components/internalTxnsShared; value cells are the shared monoStyle.
 
 // Deep-scan records (persisted findings, a different data source than
 // the on-demand tracing below): stacked ABOVE the browser-scan flow so
@@ -182,7 +159,7 @@ const traceOneTx = async (
     const { rows, truncated } = flattenInternalTxTree(hash, root, viewedAddress);
     return { hash, status: 'traced', rows, truncated };
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = errorMessage(err);
     return isTraceUnsupportedError(err)
       ? { hash, status: 'unsupported', message }
       : { hash, status: 'failed', message };
@@ -410,7 +387,7 @@ export default function InternalTxns({
                       href={`/chain/${chainId}/address/${record.to}`}
                     />
                   </td>
-                  <td className={valueCell}>
+                  <td className={monoStyle}>
                     {record.value === '0'
                       ? '—'
                       : formatInternalValue(BigInt(record.value), chainId)}
@@ -454,9 +431,7 @@ export default function InternalTxns({
       )}
 
       {sourceReady && progress !== null && aggregate === null && (
-        <LoadingState
-          message={`Traced ${progress.settled.toLocaleString()} of ${progress.total.toLocaleString()} transactions…`}
-        />
+        <TracedProgress settled={progress.settled} total={progress.total} />
       )}
 
       {sourceReady && aggregate !== null && (
@@ -537,7 +512,7 @@ export default function InternalTxns({
                             <span className={muted}>not reported</span>
                           )}
                         </td>
-                        <td className={valueCell}>
+                        <td className={monoStyle}>
                           {row.value !== null && row.value > 0n
                             ? formatInternalValue(row.value, chainId)
                             : '—'}

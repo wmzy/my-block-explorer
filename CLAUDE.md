@@ -29,7 +29,6 @@ code in this repository.
 - `npm run db:migrate` - Apply database migrations
 - `npm run db:push` - Push schema changes directly to database
 - `npm run db:studio` - Open Drizzle Studio for database management
-- `npm run migrate` - Run custom migration script
 
 ### Code Quality
 

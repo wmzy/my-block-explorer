@@ -11,11 +11,18 @@ import { TypedLink } from '@native-router/react';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent } from '@/components/ui/Card';
 import { useCopyFeedback } from '@/util/useCopyFeedback';
+import {
+  readStorageItem,
+  writeStorageItem,
+  type GuardedStorage,
+} from '@/util/storageAccess';
+import { ONBOARDING_DISMISSED_STORAGE_KEY } from '@/util/storageKeys';
 import type { DiscoveryStatus } from '@/hooks/useAutoDiscovery';
 import { getPreferredChainId, readRememberedChainId } from './Landing';
 
-// localStorage flag: '1' means the user dismissed the guide for good.
-export const ONBOARDING_DISMISSED_KEY = 'be:onboardingDismissed';
+// Canonical literal lives in the manifest (util/storageKeys.ts);
+// re-exported so existing consumers keep this import point.
+export { ONBOARDING_DISMISSED_STORAGE_KEY as ONBOARDING_DISMISSED_KEY };
 
 // The command the setup ecosystem agrees on (SetupRequiredScreen's npx
 // tab shows the same string); single-sourced here for the Copy button
@@ -52,24 +59,17 @@ export function backendConnectedFromStatus(status: DiscoveryStatus): boolean | n
   return false;
 }
 
-// Storage helpers isolated for testability (injectable storage). A read
-// failure degrades to "not dismissed" — storage-unavailable browsers
-// keep seeing the guide rather than having it vanish permanently.
-export function readOnboardingDismissed(storage: Pick<Storage, 'getItem'> = localStorage): boolean {
-  try {
-    return storage.getItem(ONBOARDING_DISMISSED_KEY) === '1';
-  } catch {
-    return false;
-  }
+// Storage helpers isolated for testability (injectable storage — the
+// object flows into the guarded helpers in util/storageAccess.ts, so a
+// double gets the same treatment as the real global). A read failure
+// degrades to "not dismissed" — storage-unavailable browsers keep seeing
+// the guide rather than having it vanish permanently.
+export function readOnboardingDismissed(storage?: GuardedStorage): boolean {
+  return readStorageItem(ONBOARDING_DISMISSED_STORAGE_KEY, null, storage) === '1';
 }
 
-export function writeOnboardingDismissed(storage: Pick<Storage, 'setItem'> = localStorage): void {
-  try {
-    storage.setItem(ONBOARDING_DISMISSED_KEY, '1');
-  } catch {
-    // Storage unavailable (private mode): dismissal lasts for this
-    // session only, via the caller's component state.
-  }
+export function writeOnboardingDismissed(storage?: GuardedStorage): void {
+  writeStorageItem(ONBOARDING_DISMISSED_STORAGE_KEY, '1', storage);
 }
 
 // Step 2's chain destinations: the remembered chain when one is valid,

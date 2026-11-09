@@ -23,3 +23,24 @@ export const secondsToDate = (value: unknown): Date | undefined => {
   const parsed = new Date(text);
   return Number.isNaN(parsed.getTime()) ? undefined : parsed;
 };
+
+// Datetime columns reach this layer as a drizzle Date, but raw-read
+// adapter paths still hand back strings — accept both, and never guess a
+// date the row does not carry. DuckDB's string form is the NAIVE stored
+// value ('2026-09-21 12:07:19.183', space-separated, no offset) and the
+// stored convention is UTC wall time (now() default), so a string
+// without an explicit offset/Z designator must parse as UTC: JS would
+// read it as machine-local and skew the value by the server's timezone
+// (8 hours on a UTC+8 host).
+
+/** Normalize a datetime column value (Date or naive-UTC string) to an ISO string. */
+export const toIsoTimestamp = (value: Date | string | null | undefined): string | null => {
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'string' && value.length > 0) {
+    const hasOffset = value.endsWith('Z') || /[+-]\d{2}:?\d{2}$/.test(value);
+    const normalized = hasOffset ? value : `${value.replace(' ', 'T')}Z`;
+    const parsed = new Date(normalized);
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  }
+  return null;
+};

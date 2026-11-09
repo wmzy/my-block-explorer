@@ -10,7 +10,7 @@ import { rpcManager } from './RpcManager';
 import { decodeEventLog, TransactionReceiptNotFoundError, type Abi, type Log } from 'viem';
 import { getContractCreationBlock } from '../utils/events';
 import { inputToStoredValue, resolveToBlock } from '../utils/blockTagUtils';
-import { sleep } from '../utils/errorHandler';
+import { errorMessage, sleep } from '../utils/errorHandler';
 import { withTimeoutOrNull } from '../utils/withTimeout';
 // Relative path on purpose: vite.config.ts bundles the api-app backend graph
 // with esbuild, which does not resolve the '@/' alias for runtime imports.
@@ -272,7 +272,7 @@ const isDuplicateRowError = (err: unknown): boolean => {
   if (err !== null && typeof err === 'object' && (err as { code?: unknown }).code === '23505') {
     return true;
   }
-  return DUPLICATE_ROW_ERROR_RE.test(err instanceof Error ? err.message : String(err));
+  return DUPLICATE_ROW_ERROR_RE.test(errorMessage(err));
 };
 
 const insertEvents = async (
@@ -1478,7 +1478,7 @@ export const startIndexingRange = async (
 
     return { success: true };
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     logger.error({ err, key, msg }, 'Error indexing range');
     await updateRange({ status: 'error', errorMessage: msg }, { onlyIfIndexing: true });
     return { success: false, error: msg };

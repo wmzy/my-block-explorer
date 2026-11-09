@@ -10,6 +10,7 @@ import { CopyableHash } from '@/components/ui/CopyableHash';
 import { DataTable, Pagination, linkStyle, monoStyle } from '@/components/ui/DataTable';
 import { EmptyState, ErrorState } from '@/components/ui/ErrorState';
 import { TableSkeleton } from '@/components/ui/LoadingState';
+import { noticeBarStyle } from '@/components/ui/noticeBar';
 import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
 import { getChainInfo, getChainName, getChainType } from '@/config/chains';
 import { parseChainIdParam } from '@/utils/chainParam';
@@ -41,21 +42,6 @@ const headerRow = css`
   display: flex;
   align-items: center;
   gap: var(--haze-space-2);
-`;
-
-// Staleness hint row rendered next to the pagination footer: the walk is
-// anchored, but the live head moved on — offer the one-click re-anchor.
-const newBlocksHint = css`
-  display: flex;
-  align-items: center;
-  gap: var(--haze-space-2);
-  padding: var(--haze-space-2) var(--haze-space-3);
-  margin-bottom: var(--haze-space-3);
-  border: 1px solid var(--haze-color-border);
-  border-radius: var(--haze-radius-lg);
-  background: var(--haze-color-primary-subtle);
-  font-size: var(--haze-text-sm);
-  color: var(--haze-color-text);
 `;
 
 // Search params: ?page=K is the pagination index (1 when absent or
@@ -310,7 +296,7 @@ export default function BlocksList() {
             page says so instead of letting Age cells silently creep. One
             click on Refresh re-anchors the walk (same control as above). */}
         {blocks.length > 0 && newBlockCount !== null && (
-          <div className={newBlocksHint}>
+          <div className={noticeBarStyle}>
             <span>
               {formatNumber(Number(newBlockCount))} new {newBlockCount === 1n ? 'block' : 'blocks'}{' '}
               —

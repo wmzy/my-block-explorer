@@ -8,7 +8,9 @@
 //   data without receipts, and an invented success/failure would fabricate
 //   a fact the scan never observed. (The column exists so a future
 //   receipt-bearing channel can fill it without a format break.)
-// - The builder is pure: no database, no RPC, trivially unit-testable.
+// The builder is pure: no database, no RPC, trivially unit-testable.
+
+import { csvTimestamp, escapeCsvField } from '../utils/csv';
 
 // Export refuses (HTTP 400 in the route) rather than truncates when the
 // discovered set is larger: a silently capped CSV would masquerade as
@@ -27,23 +29,8 @@ export type CsvAddressTxRow = {
   status?: number | string | null;
 };
 
-// RFC 4180: quote a field containing a comma, quote, CR or LF, and double
-// any embedded quotes. Applied uniformly to every cell (same rule as
-// EventExportService).
-const escapeCsvField = (field: string): string => {
-  if (/[",\r\n]/.test(field)) {
-    return `"${field.replace(/"/g, '""')}"`;
-  }
-  return field;
-};
-
-// Discovery timestamps are ISO strings; numbers are unix seconds. An empty
-// or unparseable value renders as an empty cell (never a fabricated date).
-const csvTimestamp = (value: CsvAddressTxRow['timestamp']): string => {
-  if (value === null || value === '') return '';
-  const date = typeof value === 'number' ? new Date(value * 1000) : new Date(value);
-  return Number.isNaN(date.getTime()) ? '' : date.toISOString();
-};
+// Field quoting and timestamp rendering are the shared CSV primitives
+// from utils/csv.ts (one definition for both exporters).
 
 const csvStatus = (status: CsvAddressTxRow['status']): string => {
   if (status === undefined || status === null) return '';

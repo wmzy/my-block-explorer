@@ -19,12 +19,15 @@ import {
   LAST_CHAIN_STORAGE_KEY,
   LAST_HEAD_STORAGE_PREFIX,
   MANUAL_BASE_STORAGE_KEY,
+  ONBOARDING_DISMISSED_STORAGE_KEY,
   PRIVATE_NOTE_KEY_PREFIX,
   PRIVATE_NOTE_KEY_RE,
   SEARCH_HISTORY_STORAGE_KEY,
+  SQL_CONSOLE_STORAGE_KEY,
   STORAGE_KEY_MANIFEST,
   THEME_STORAGE_KEY,
   VALUE_UNIT_STORAGE_KEY,
+  VIEWED_TOKENS_STORAGE_PREFIX,
   WATCHLIST_STORAGE_KEY,
   type StorageKeyManifestEntry,
 } from '@/util/storageKeys';
@@ -53,11 +56,9 @@ describe('storage key manifest hygiene', () => {
     expect(ADMIN_TOKEN_STORAGE_KEY).toBe('my-block-explorer-admin-token');
     expect(MANUAL_BASE_STORAGE_KEY).toBe('my-block-explorer-api-url');
     expect(CUSTOM_ABI_STORAGE_PREFIX).toBe('custom-abi:');
-    // Families whose owner modules still hold local constants (outside
-    // this slice's edit list) are pinned here too.
-    expect(manifestById('onboardingDismissed')).toMatchObject({ key: 'be:onboardingDismissed' });
-    expect(manifestById('sqlConsoleHistory')).toMatchObject({ key: 'be:sqlConsole' });
-    expect(manifestById('viewedTokens')).toMatchObject({ prefix: 'be:viewedTokens:' });
+    expect(SQL_CONSOLE_STORAGE_KEY).toBe('be:sqlConsole');
+    expect(ONBOARDING_DISMISSED_STORAGE_KEY).toBe('be:onboardingDismissed');
+    expect(VIEWED_TOKENS_STORAGE_PREFIX).toBe('be:viewedTokens:');
   });
 
   it('gives every family a unique id, and no two exact families share a key', () => {

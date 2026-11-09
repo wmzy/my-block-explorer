@@ -115,7 +115,6 @@ export default [
     files: [
       'src/cli.ts',
       'src/server.ts',
-      'src/database/migrate.ts',
       'src/services/AddressService.ts',
       'src/services/PerformanceMonitor.ts',
       'tests/integration/rpc.test.ts',
@@ -126,12 +125,12 @@ export default [
   },
   {
     // localStorage guard: application code must not touch localStorage raw.
-    // Every storage owner follows the guarded-helper convention — reads are
-    // try/catch and degrade to null/absent, writes are best-effort and
-    // swallow quota/private-mode failures — so a full or storage-blocked
-    // browser degrades gracefully instead of crashing the app. The override
-    // below lists the modules that legitimately own a storage key family
-    // today (see util/storageKeys.ts for the key manifest).
+    // Every storage owner routes through the guarded helpers in
+    // util/storageAccess.ts — reads are try/catch and degrade to
+    // null/absent, writes are best-effort and swallow quota/private-mode
+    // failures — so a full or storage-blocked browser degrades gracefully
+    // instead of crashing the app (see util/storageKeys.ts for the key
+    // manifest every owner imports its key constant from).
     files: ['src/**'],
     rules: {
       'no-restricted-globals': [
@@ -139,7 +138,7 @@ export default [
         {
           name: 'localStorage',
           message:
-            'Raw localStorage reference outside the guarded modules. Route access through an allowlisted module that follows the guarded-helper convention (try/catch read -> null, silent best-effort write — see util/themePreference.ts, util/apiBase.ts) or extend the allowlist override in eslint.config.mjs.',
+            'Raw localStorage reference outside the guarded modules. Route access through the helpers in util/storageAccess.ts (try/catch read -> null, silent best-effort write); a new key/prefix constant belongs in util/storageKeys.ts.',
         },
       ],
       'no-restricted-properties': [
@@ -147,39 +146,25 @@ export default [
         {
           object: 'localStorage',
           message:
-            'Raw localStorage member access outside the guarded modules. Route access through an allowlisted module that follows the guarded-helper convention (try/catch read -> null, silent best-effort write — see util/themePreference.ts, util/apiBase.ts) or extend the allowlist override in eslint.config.mjs.',
+            'Raw localStorage member access outside the guarded modules. Route access through the helpers in util/storageAccess.ts (try/catch read -> null, silent best-effort write); a new key/prefix constant belongs in util/storageKeys.ts.',
         },
         {
           object: 'globalThis',
           property: 'localStorage',
           message:
-            'Raw localStorage member access outside the guarded modules. Route access through an allowlisted module that follows the guarded-helper convention (try/catch read -> null, silent best-effort write — see util/themePreference.ts, util/apiBase.ts) or extend the allowlist override in eslint.config.mjs.',
+            'Raw localStorage member access outside the guarded modules. Route access through the helpers in util/storageAccess.ts (try/catch read -> null, silent best-effort write); a new key/prefix constant belongs in util/storageKeys.ts.',
         },
       ],
     },
   },
   {
-    // localStorage allowlist — every file that legitimately touches
-    // localStorage today, all via the guarded-helper convention.
-    files: [
-      'src/themePreference.ts',
-      'src/components/RpcConfig.tsx',
-      'src/services/backupRestore.ts',
-      'src/services/chainReset.ts',
-      'src/services/nftMetadata.ts',
-      'src/services/searchHistory.ts',
-      'src/services/tokenDirectory.ts',
-      'src/util/adminAuth.ts',
-      'src/util/apiBase.ts',
-      'src/util/privateNotes.ts',
-      'src/util/storageAccess.ts',
-      'src/util/units.ts',
-      'src/util/watchlist.ts',
-      'src/views/Contract/index.tsx',
-      'src/views/Home/GettingStarted.tsx',
-      'src/views/Home/Landing.tsx',
-      'src/views/Sql/index.tsx',
-    ],
+    // localStorage allowlist — the only two files that legitimately touch
+    // localStorage raw. storageAccess.ts IS the guarded helper; backupRestore
+    // enumerates localStorage.length/key(i) for the backup scan (no helper
+    // covers enumeration) and its per-key restore loop must catch each
+    // write's own error to report it, which writeStorageItem's boolean
+    // would swallow.
+    files: ['src/services/backupRestore.ts', 'src/util/storageAccess.ts'],
     rules: {
       'no-restricted-globals': 'off',
       'no-restricted-properties': 'off',

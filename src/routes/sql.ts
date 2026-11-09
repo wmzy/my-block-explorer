@@ -36,8 +36,8 @@ app.use('/sql/*', requireAdminToken);
 
 // Raw DuckDB access reuses the single shared instance (db.$client is the
 // adapter's postgres-style `sql`, whose getDuckDB() returns the one
-// DuckDBInstance the whole app runs on — the same path migrate.ts uses).
-// A second instance would fight the single-writer file lock.
+// DuckDBInstance the whole app runs on — the same path the runtime
+// migrator uses). A second instance would fight the single-writer lock.
 
 // Words that have no business in a read-only console, checked as
 // case-insensitive word tokens ANYWHERE in the text — conservative on

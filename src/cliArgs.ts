@@ -11,6 +11,7 @@
 // measures). node:util is the entire import budget; anything richer
 // belongs in cli.ts after the kind has been decided.
 import { parseArgs } from 'node:util';
+import { errorMessage } from './utils/errorHandler';
 import { parseStrictInteger } from './utils/strictInteger';
 
 export type CliArgsResult =
@@ -63,7 +64,7 @@ export function parseCliArgs(argv: string[]): CliArgsResult {
     // Unknown options/flags (strict mode) land here.
     return {
       kind: 'error',
-      message: error instanceof Error ? error.message : String(error),
+      message: errorMessage(error),
       exitCode: 1,
     };
   }

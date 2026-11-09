@@ -24,6 +24,7 @@ import {
   type NftMetadataOutcome,
 } from '@/services/nftMetadata';
 import { useCopyFeedback } from '@/util/useCopyFeedback';
+import { shimmerPulse } from '@/components/ui/skeleton';
 import { NFT_ITEMS_LIMIT, type NftItem } from './nftItems';
 
 export type NftGridProps = {
@@ -102,23 +103,15 @@ const tileImagePlaceholder = css`
   background: var(--haze-color-bg-muted);
 `;
 
-// Metadata-slot skeleton while the batch resolves: opacity-pulse only
-// (compositor-friendly, the Home feed skeletons' convention).
-const tileImageShimmer = css`
-  background: var(--haze-color-bg-muted);
-  animation: nft-tile-pulse 1.4s ease-in-out infinite;
-
-  @keyframes nft-tile-pulse {
-    0%,
-    100% {
-      opacity: 1;
-    }
-
-    50% {
-      opacity: 0.35;
-    }
-  }
-`;
+// Metadata-slot skeleton while the batch resolves: the shared NFT shimmer
+// pulse (components/ui/skeleton) over this surface's muted placeholder —
+// opacity-pulse only (compositor-friendly).
+const tileImageShimmer = cx(
+  shimmerPulse,
+  css`
+    background: var(--haze-color-bg-muted);
+  `,
+);
 
 // One-line tile name; the title attribute carries the full text.
 const tileName = css`

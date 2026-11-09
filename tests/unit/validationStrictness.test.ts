@@ -204,6 +204,34 @@ describe('parsePaginationParams — the shared route pagination contract', () =>
     expect(parsePaginationParams('abc', undefined, options).offset).toBeNull();
   });
 
+  it('events flavor: page/pageSize slots, numeric below-one pageSize clamps into [1, 1000]', () => {
+    // routes/events.ts migrates its hand-rolled page/pageSize parse onto
+    // these options; the wire contract must stay byte-identical.
+    const options = {
+      defaultOffset: 1,
+      minOffset: 1,
+      negativeOffset: 'reject',
+      defaultLimit: 50,
+      maxLimit: 1000,
+      limitBelowOne: 'clamp',
+    } as const;
+
+    // Defaults 1/50 for absent and empty params.
+    expect(parsePaginationParams(undefined, undefined, options)).toEqual({ offset: 1, limit: 50 });
+    expect(parsePaginationParams('', '', options)).toEqual({ offset: 1, limit: 50 });
+    // Non-numeric (and '-'-spelled) input nulls for the route's 400s.
+    expect(parsePaginationParams('abc', undefined, options).offset).toBeNull();
+    expect(parsePaginationParams('-5', undefined, options).offset).toBeNull();
+    expect(parsePaginationParams(undefined, 'abc', options).limit).toBeNull();
+    // Numeric input clamps: page floors at 1, pageSize stays inside
+    // [1, 1000] — including a numeric 0, which lifts to 1 rather than
+    // erroring (the one divergence from the default below-one policy).
+    expect(parsePaginationParams('0', undefined, options).offset).toBe(1);
+    expect(parsePaginationParams(undefined, '0', options).limit).toBe(1);
+    expect(parsePaginationParams(undefined, '5000', options).limit).toBe(1000);
+    expect(parsePaginationParams('3', '25', options)).toEqual({ offset: 3, limit: 25 });
+  });
+
   it('address export flavor: uncapped offset, negatives reject like other junk', () => {
     const options = { negativeOffset: 'reject' } as const;
 

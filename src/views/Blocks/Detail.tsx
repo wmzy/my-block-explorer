@@ -631,7 +631,7 @@ export default function BlockDetail() {
               <CardContent>
                 <InfoGrid>
                   <InfoItem label="Block Number">
-                    {Number(BigInt(blockInfo.number)).toLocaleString()}
+                    {formatBigInt(BigInt(blockInfo.number))}
                   </InfoItem>
                   <InfoItem label="Block Hash">
                     <CopyableHash value={blockInfo.hash} />

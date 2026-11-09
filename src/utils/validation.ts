@@ -113,6 +113,14 @@ export type PaginationParseOptions = {
    * decimal input).
    */
   negativeOffset?: 'clamp' | 'reject';
+  /**
+   * Numeric below-one limit handling. 'reject' (default — every limit
+   * param so far: 0 sits next to 'must be a positive integer' and is
+   * junk) nulls the limit for the route's 400; 'clamp' (the events
+   * pageSize slot) lifts it to 1 BEFORE the cap so a numeric 0 keeps the
+   * legacy clamp-into-[1, maxLimit] rule — only NON-numeric input 400s.
+   */
+  limitBelowOne?: 'clamp' | 'reject';
 };
 
 /**
@@ -135,6 +143,11 @@ export type PaginationParseOptions = {
  * - non-safe integers ('99999999999999999999') are rejected; a safe
  *   over-cap offset clamps at maxOffset and an over-cap limit clamps or
  *   rejects per limitOverCap.
+ *
+ * The events list's page/pageSize slot is the fifth flavor: page rides
+ * the offset side (1-based) and pageSize the limit side with
+ * limitBelowOne 'clamp' — a numeric below-one pageSize lifts to 1
+ * instead of nulling, so only non-numeric input 400s.
  */
 export function parsePaginationParams(
   offsetRaw: string | undefined,
@@ -145,6 +158,7 @@ export function parsePaginationParams(
     maxLimit,
     defaultLimit = 20,
     limitOverCap = 'clamp',
+    limitBelowOne,
     maxOffset,
     defaultOffset = 0,
     minOffset = 0,
@@ -172,14 +186,23 @@ export function parsePaginationParams(
     limit = defaultLimit;
   } else {
     const parsed = parseStrictInteger(limitRaw);
-    if (parsed === null || parsed < 1) {
+    // limitBelowOne 'clamp' lifts a numeric below-one value to 1 before
+    // the cap (events' pageSize: 0 clamps into [1, maxLimit], only
+    // non-numeric input 400s); 'reject' keeps the shared default where
+    // a non-positive limit is junk.
+    if (parsed === null) {
       limit = null;
-    } else if (maxLimit === undefined) {
-      limit = parsed;
-    } else if (limitOverCap === 'reject') {
-      limit = parsed > maxLimit ? null : parsed;
     } else {
-      limit = Math.min(parsed, maxLimit);
+      const lifted = parsed < 1 && limitBelowOne === 'clamp' ? 1 : parsed;
+      if (lifted < 1) {
+        limit = null;
+      } else if (maxLimit === undefined) {
+        limit = lifted;
+      } else if (limitOverCap === 'reject') {
+        limit = lifted > maxLimit ? null : lifted;
+      } else {
+        limit = Math.min(lifted, maxLimit);
+      }
     }
   }
 

@@ -28,6 +28,7 @@ import {
   resolveUninstallTargets,
 } from '../uninstall';
 import { formatFileSize } from '../utils/format';
+import { errorMessage } from '../utils/errorHandler';
 import { watchService } from './WatchService';
 
 /** How long the 202 response gets to reach the client before sockets die. */
@@ -101,7 +102,7 @@ export async function runSelfDestruct(options: {
     try {
       await fn();
     } catch (error) {
-      log(`Self-destruct: ${name} failed (${error instanceof Error ? error.message : String(error)}) — continuing.`);
+      log(`Self-destruct: ${name} failed (${errorMessage(error)}) — continuing.`);
     }
   };
 

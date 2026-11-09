@@ -2,6 +2,7 @@ import { decodeEventLog, parseAbi, type AbiEvent, type Address, type Hex } from 
 import { rpcManager } from './RpcManager';
 import { createLogger } from '../server/logger';
 import { transferStandardFromTopics, type TokenStandardId } from '../utils/tokenTransferDecode';
+import { errorMessage } from '../utils/errorHandler';
 import {
   DEFAULT_MAX_SCAN_CALLS,
   DEFAULT_SCAN_TIMEOUT_MS,
@@ -451,7 +452,7 @@ const createTokenTransferService = (deps: TokenTransferServiceDeps) => {
         if (!isRetryableChunkError(error)) throw error;
         ladder.noteRejected(chunkSize);
         chunkSize = ladder.halve(chunkSize);
-        const detail = error instanceof Error ? error.message : String(error);
+        const detail = errorMessage(error);
         logger.warn(
           `Transfer scan chunk for ${address} on chain ${chainId} rejected ` +
           `(${detail}); halving to ${chunkSize} blocks`,

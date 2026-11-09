@@ -28,7 +28,7 @@ import {
   type TransferStandardId,
 } from '@/views/Address/search';
 import { getExternalToolLinks } from '@/config/externalTools';
-import { cellText, formatHash, formatRelativeTime } from '@/utils/format';
+import { cellText, formatBigInt, formatHash, formatRelativeTime } from '@/utils/format';
 import { DataTable, Pagination, linkStyle } from '@/components/ui/DataTable';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { ErrorState, EmptyState } from '@/components/ui/ErrorState';
@@ -133,9 +133,11 @@ const emptyPageCell = css`
 
 // Human-readable integer amount: thousands separators when the raw value
 // is a plain decimal integer, the raw string otherwise (never a guessed
-// parse of malformed data).
+// parse of malformed data). formatBigInt keeps the grouping locale-stable
+// and exact past 2^53, where BigInt#toLocaleString would follow the host
+// locale.
 const formatIntegerAmount = (raw: string): string =>
-  /^\d+$/.test(raw) ? BigInt(raw).toLocaleString() : raw;
+  /^\d+$/.test(raw) ? formatBigInt(BigInt(raw)) : raw;
 
 // Resolved token metadata. `decimals` present classifies the token as
 // ERC-20; decimals rejected while symbol resolves reads as ERC-721;

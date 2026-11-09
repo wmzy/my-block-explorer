@@ -130,6 +130,14 @@ app.get('/api/health', c => {
 // chain-scoped sub-apps below so the literal "custom" segment can never
 // be captured by one of their :chainId param patterns.
 app.route('/api', chainsRoutes);
+// SSE block stream FIRST: its literal `/chains/:chainId/blocks/stream`
+// path must be registered before blocksRoutes' `/blocks/:blockNumber`
+// param pattern or hono hands the connect to the block-detail route and
+// every EventSource connect dies as 400 "Invalid block number" (found
+// live during the 2026-11-09 smoke; the app silently degraded to polling
+// forever — the "Live" badge never lit). The sub-app self-manages its
+// response lifecycle (streamSSE + heartbeat + abort handling inside).
+app.route('/api', streamRoutes);
 app.route('/api', blocksRoutes);
 app.route('/api', transactionsRoutes);
 app.route('/api', addressesRoutes);
@@ -168,9 +176,6 @@ app.route('/api', opsRoutes);
 // the module also starts the watcher (it self-starts at module scope and
 // is a no-op until a subscription exists).
 app.route('/api', watchRoutes);
-// SSE block stream: mounted with the API sub-apps but self-manages its
-// response lifecycle (streamSSE + heartbeat + abort handling inside).
-app.route('/api', streamRoutes);
 // Debug routes expose raw SQL execution: mounted only when explicitly
 // opted in via ENABLE_DEBUG_API=1, and gated by requireAdminTokenIfConfigured
 // inside the sub-app (x-admin-token once ADMIN_TOKEN is set; open in a

@@ -3,6 +3,7 @@ import type { CSSProperties } from 'react';
 import { toast } from 'haze-ui';
 import { get, post } from '@/util/http';
 import { ApiError } from '@/util/apiError';
+import { useClickOutside } from '@/util/useClickOutside';
 
 type DetectedIde = {
   id: string;
@@ -41,16 +42,7 @@ export function OpenInIdeButton({ chainId, address }: { chainId: number; address
     };
   }, [chainId, address]);
 
-  useEffect(() => {
-    if (!dropdownOpen) return;
-    const handleClickOutside = (e: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
-        setDropdownOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [dropdownOpen]);
+  useClickOutside(dropdownRef, () => setDropdownOpen(false), { enabled: dropdownOpen });
 
   const handleOpen = useCallback(
     async (ideId: string) => {

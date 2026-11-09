@@ -957,40 +957,30 @@ export class BlockRepository {
 ##### 4. 迁移管理
 
 ```typescript
-// src/server/database/migrations.ts
-export class MigrationManager {
-  private db: DatabaseConnection;
+// src/database/duckdb-postgres-adapter.ts（运行时迁移器 — 唯一迁移系统）
+public async migrate(options: { migrationsFolder?: string } = {}): Promise<void> {
+  const migrationsDir = options.migrationsFolder ?? './drizzle';
+  const files = fs.readdirSync(migrationsDir).filter(f => f.endsWith('.sql')).sort();
 
-  constructor(db: DatabaseConnection) {
-    this.db = db;
-  }
+  for (const file of files) {
+    const migrationName = file.replace(/\.sql$/, '');
+    const hash = createHash('sha256').update(sql).digest('hex');
 
-  async runMigrations(): Promise<void> {
-    await this.createMigrationsTable();
+    // Journal keys on `name` + verifies `hash`: an already-applied migration
+    // is skipped, a modified one is an error, a journaled-but-missing table
+    // set is re-applied.
+    const existingRecord = await this.getMigrationRecord(migrationName);
+    if (existingRecord) { /* skip / re-apply per hash + table verification */ }
 
-    const migrations = [
-      { version: 1, name: 'initial_schema', sql: INITIAL_SCHEMA },
-      { version: 2, name: 'add_indexes', sql: ADD_INDEXES },
-      { version: 3, name: 'add_user_rpc_configs', sql: ADD_USER_RPC_CONFIGS },
-    ];
-
-    for (const migration of migrations) {
-      const applied = await this.isMigrationApplied(migration.version);
-      if (!applied) {
-        await this.applyMigration(migration);
-      }
+    const statements = this.parseMigration(sql); // split on --> statement-breakpoint
+    for (const statement of statements) {
+      await this.runMigrationStatement(statement, isReapply);
     }
-  }
-
-  private async applyMigration(migration: Migration): Promise<void> {
-    await this.db.exec(migration.sql);
-    await this.db.run(
-      'INSERT INTO migrations (version, name, applied_at) VALUES (?, ?, ?)',
-      [migration.version, migration.name, new Date().toISOString()],
-    );
-    console.log(`✅ Applied migration: ${migration.name}`);
+    await this.recordMigration(migrationName, hash);
   }
 }
+
+// ensureTables() 在每次 connect() 时调用 migrate() — 启动即自动迁移。
 ```
 
 ##### 5. 事务支持

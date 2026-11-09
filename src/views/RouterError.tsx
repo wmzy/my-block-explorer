@@ -7,6 +7,7 @@ import { BackendOfflineState } from '@/components/ui/ErrorState';
 import { useServiceDiscovery } from '@/hooks/ServiceDiscoveryContext';
 import { ApiError } from '@/util/apiError';
 import { isBackendUnreachable } from '@/util/http';
+import { errorMessage } from '@/utils/errorHandler';
 import { getChainInfo, isChainSupported } from '@/config/chains';
 import { readRememberedChainId } from '@/views/Home/Landing';
 
@@ -49,7 +50,7 @@ function isNotAContractError(error: unknown): error is ApiError {
 }
 
 export default function RouterError({ error }: { error: unknown }) {
-  const text = error instanceof Error ? error.message : String(error);
+  const text = errorMessage(error);
 
   // Loader failures for indexed surfaces (contract source, storage layout,
   // events) reject with an ApiError status 0 long before the crashed view's

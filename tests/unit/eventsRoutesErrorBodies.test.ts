@@ -163,6 +163,17 @@ describe('GET .../events pagination validation', () => {
     );
   });
 
+  it('clamps a numeric below-one pageSize to 1 instead of 400ing (only non-numeric input 400s)', async () => {
+    const res = await request(`${BASE}?pageSize=0`);
+
+    expect(res.status).toBe(200);
+    expect(mocks.getContractEvents).toHaveBeenCalledWith(
+      CHAIN_ID,
+      ADDRESS,
+      expect.objectContaining({ page: 1, pageSize: 1 }),
+    );
+  });
+
   it('treats empty pagination params as absent (defaults 1/50)', async () => {
     const res = await request(`${BASE}?page=&pageSize=`);
 

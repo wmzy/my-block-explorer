@@ -32,6 +32,8 @@ import {
   type SearchHistoryEntry,
 } from '@/services/searchHistory';
 import { ServiceDiscoveryContext } from '@/hooks/ServiceDiscoveryContext';
+import { useClickOutside } from '@/util/useClickOutside';
+import { monoStyle } from '@/components/ui/DataTable';
 import {
   nextThemePreference,
   readThemePreference,
@@ -301,8 +303,6 @@ const paletteTrigger = css`
   border-radius: var(--haze-radius-md);
   cursor: pointer;
   color: var(--haze-color-text-secondary);
-  font-family: var(--haze-font-mono);
-  font-size: var(--haze-text-xs);
   font-weight: var(--haze-weight-medium);
   letter-spacing: 0.02em;
   white-space: nowrap;
@@ -326,8 +326,6 @@ const paletteTriggerKey = css`
 // the controls beside it; the title carries the base URL (and the honest
 // offline reading when nothing was discovered).
 const versionChip = css`
-  font-family: var(--haze-font-mono);
-  font-size: var(--haze-text-xs);
   color: var(--haze-color-text-muted);
   white-space: nowrap;
   cursor: help;
@@ -680,16 +678,12 @@ function ChainSelector({
 
   const currentChain = getChainInfo(currentChainId);
 
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as Element;
-      if (isOpen && !target.closest('[data-chain-selector]')) {
-        setIsOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isOpen]);
+  const selectorRef = React.useRef<HTMLDivElement>(null);
+
+  // Same dismissal contract the hand-rolled effect had: a press outside
+  // the wrapper closes; the wrapper ref replaces the data-attribute
+  // closest() probe, and the listener rides the open state.
+  useClickOutside(selectorRef, () => setIsOpen(false), { enabled: isOpen });
 
   const selectChain = (chainId: number) => {
     onChainChange(chainId);
@@ -722,7 +716,7 @@ function ChainSelector({
   const highlightedChain = highlightedIndex !== null ? filteredChains[highlightedIndex] : undefined;
 
   return (
-    <div className={selectorWrapper} data-chain-selector>
+    <div ref={selectorRef} className={selectorWrapper}>
       <button
         onClick={() => setIsOpen(!isOpen)}
         className={selectorButton}
@@ -975,7 +969,7 @@ function BackendVersionChip() {
     : 'Backend offline - version unknown';
 
   return (
-    <span className={versionChip} title={title}>
+    <span className={cx(monoStyle, versionChip)} title={title}>
       v{version ?? '?'}
     </span>
   );
@@ -1042,20 +1036,9 @@ function SearchBox({
     setHistory(readSearchHistory());
   };
 
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as Element;
-      if (
-        showHistory &&
-        searchContainerRef.current &&
-        !searchContainerRef.current.contains(target)
-      ) {
-        setShowHistory(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [showHistory]);
+  useClickOutside(searchContainerRef, () => setShowHistory(false), {
+    enabled: showHistory,
+  });
 
   const filteredHistory = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -1333,7 +1316,7 @@ export default function TopNavigation({
                 The accessible name carries the words the keycaps cannot. */}
             <button
               type="button"
-              className={paletteTrigger}
+              className={cx(monoStyle, paletteTrigger)}
               aria-label={`Command palette (${paletteShortcut})`}
               title={`Command palette (${paletteShortcut})`}
               onClick={openCommandPalette}

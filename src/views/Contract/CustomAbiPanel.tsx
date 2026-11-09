@@ -4,6 +4,7 @@ import type { Abi, AbiEvent, AbiFunction, AbiParameter } from 'viem';
 import { cardStyles } from './styles';
 import type { ContractABI } from './types';
 import { useCopyFeedback } from '@/util/useCopyFeedback';
+import { errorMessage } from '@/utils/errorHandler';
 
 // Parses a raw JSON ABI string into the ContractABI shape the view's tabs
 // and panels consume (functions/events/errors split, plus the raw string
@@ -84,7 +85,7 @@ export function validateAbiJson(raw: string): AbiValidation {
   } catch (err) {
     return {
       ok: false,
-      message: `Not valid JSON: ${err instanceof Error ? err.message : String(err)}`,
+      message: `Not valid JSON: ${errorMessage(err)}`,
     };
   }
   if (!Array.isArray(parsed) || !parsed.every(isAbiEntry)) {

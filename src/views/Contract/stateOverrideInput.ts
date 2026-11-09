@@ -7,6 +7,7 @@
 // empty-input no-op, and the conversion into viem's StateOverride shape
 // used by the client-side simulate transport.
 
+import { errorMessage } from '@/utils/errorHandler';
 import { parseStateOverride, type StateOverride } from '@/utils/stateOverride';
 import type {
   Address,
@@ -36,7 +37,7 @@ export function parseStateOverrideInput(text: string): StateOverrideInputResult 
   try {
     parsed = JSON.parse(trimmed);
   } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
+    const reason = errorMessage(error);
     return { ok: false, errors: [`stateOverride: not valid JSON (${reason})`] };
   }
 

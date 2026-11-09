@@ -89,6 +89,7 @@ import { createRpcClient } from '@/utils/realTimeData';
 import { useEnsName } from '@/services/ens';
 import {
   cellText,
+  formatBigInt,
   formatDateTime,
   formatHash,
   formatNativeDisplay,
@@ -1723,11 +1724,12 @@ export default function Address() {
   const directionVariant = { in: 'success', out: 'error', self: 'info' } as const;
   const directionLabel = { in: 'IN', out: 'OUT', self: 'SELF' } as const;
 
-  // BigInt-safe block number display; falls back to the raw string when a
-  // row arrives without a parseable number (pending txs).
+  // BigInt-safe block number display (exact, locale-stable grouping);
+  // falls back to the raw string when a row arrives without a parseable
+  // number (pending txs).
   const formatBlockNumber = (n: string) => {
     try {
-      return Number(BigInt(n)).toLocaleString();
+      return formatBigInt(BigInt(n));
     } catch {
       return n;
     }

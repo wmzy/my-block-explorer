@@ -23,6 +23,7 @@ import { aggregateNftHoldings, type NftContractHolding } from '@/views/Address/n
 import { InfoItem } from '@/components/ui/InfoGrid';
 import { Badge } from '@/components/ui/Badge';
 import { linkStyle } from '@/components/ui/DataTable';
+import { shimmerPulse } from '@/components/ui/skeleton';
 import { cellText } from '@/utils/format';
 
 // One contract block: head line (link + standard badge + held count) and
@@ -142,24 +143,16 @@ const nftThumbPlaceholder = css`
   border: 1px solid var(--haze-color-border);
 `;
 
-// Metadata-slot skeleton: opacity-pulse only (compositor-friendly, same
-// convention as the Home feed skeletons). Rendered solely while the
-// metadata batch is in flight — the rows above never block on it.
-const nftThumbShimmer = css`
-  background: var(--haze-color-border);
-  animation: nft-metadata-pulse 1.4s ease-in-out infinite;
-
-  @keyframes nft-metadata-pulse {
-    0%,
-    100% {
-      opacity: 1;
-    }
-
-    50% {
-      opacity: 0.35;
-    }
-  }
-`;
+// Metadata-slot skeleton: the shared NFT shimmer pulse (components/ui/
+// skeleton) over this surface's border placeholder — opacity-pulse only
+// (compositor-friendly). Rendered solely while the metadata batch is in
+// flight — the rows above never block on it.
+const nftThumbShimmer = cx(
+  shimmerPulse,
+  css`
+    background: var(--haze-color-border);
+  `,
+);
 
 // Muted per-item note when metadata could not be fetched (transport
 // failure) — retryable, so it never claims the item has no metadata.

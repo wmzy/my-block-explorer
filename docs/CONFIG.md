@@ -40,7 +40,7 @@ are not configured via env — see below.
 
 | File                                        | Purpose                                                                                                                                                                                |
 | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `package.json`                              | Single package (no monorepo). Scripts: `dev`, `dev:server`, `build`, `build:client`, `build:server`, `build:pages`, `start`, `test*`, `typecheck`, `lint`, `format`, `db:*`, `migrate` |
+| `package.json`                              | Single package (no monorepo). Scripts: `dev`, `dev:server`, `build`, `build:client`, `build:server`, `build:pages`, `start`, `test*`, `typecheck`, `lint`, `format`, `db:*` |
 | `vite.config.ts`                            | React + `@wyw-in-js/vite` (Linaria) + `vite-plugin-haze-ui` + custom `honoApiPlugin` (bridges `/api` into the dev server); `@/` → `src/` alias; `dist/client` output                   |
 | `tsup.config.ts`                            | Server build → `dist/server`                                                                                                                                                           |
 | `vitest.config.ts`                          | Test setup (jsdom, aliases)                                                                                                                                                            |

@@ -5,6 +5,7 @@ import { contractSourceService } from './ContractSourceService';
 import type { Address, PublicClient } from 'viem';
 import { selectorOf } from '../utils/txDecode';
 import { withOneRetry } from '../utils/rpcReadRetry';
+import { errorMessage } from '../utils/errorHandler';
 import { createTtlLruCache } from '../utils/ttlLruCache';
 import { codeVerdict } from '../utils/address';
 import { withTimeout } from '../utils/withTimeout';
@@ -618,7 +619,7 @@ const createAddressService = (deps: AddressServiceDeps) => {
         } catch (error) {
           console.warn(`Failed to get contract code for ${address}:`, error);
           throw new Error(
-            `Failed to determine contract status for ${address}: ${error instanceof Error ? error.message : String(error)}`,
+            `Failed to determine contract status for ${address}: ${errorMessage(error)}`,
             { cause: error },
           );
         }

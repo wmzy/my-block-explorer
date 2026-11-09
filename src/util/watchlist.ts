@@ -11,6 +11,7 @@
 import { getAddress } from 'viem';
 import { checkAddressValidity } from '@/views/Address/addressValidity';
 import { HEX_ADDRESS_RE } from '@/utils/address';
+import { readStorageItem, writeStorageItem } from '@/util/storageAccess';
 import { WATCHLIST_STORAGE_KEY } from '@/util/storageKeys';
 
 // Canonical literal lives in the manifest (util/storageKeys.ts);
@@ -33,27 +34,26 @@ export type WatchlistAddResult =
 // degrade to [] and writes are swallowed while the returned list still
 // reflects the attempted change.
 const persist = (entries: string[]): string[] => {
-  try {
-    localStorage.setItem(WATCHLIST_STORAGE_KEY, JSON.stringify(entries));
-  } catch {
-    // Quota/private mode — the watchlist silently stops persisting.
-  }
+  writeStorageItem(WATCHLIST_STORAGE_KEY, JSON.stringify(entries));
   return entries;
 };
 
 /** Watched addresses, checksum-preserved, insertion order, never past the cap. */
 export function readWatchlist(): string[] {
+  const raw = readStorageItem(WATCHLIST_STORAGE_KEY);
+  if (raw === null) return [];
+  // The JSON parse keeps its own guard: hand-corrupted storage degrades
+  // to [] rather than crashing the page.
+  let parsed: unknown;
   try {
-    const raw = localStorage.getItem(WATCHLIST_STORAGE_KEY);
-    if (raw === null) return [];
-    const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter((entry): entry is string => typeof entry === 'string' && HEX_ADDRESS_RE.test(entry))
-      .slice(0, WATCHLIST_MAX_ENTRIES);
+    parsed = JSON.parse(raw);
   } catch {
     return [];
   }
+  if (!Array.isArray(parsed)) return [];
+  return parsed
+    .filter((entry): entry is string => typeof entry === 'string' && HEX_ADDRESS_RE.test(entry))
+    .slice(0, WATCHLIST_MAX_ENTRIES);
 }
 
 /**

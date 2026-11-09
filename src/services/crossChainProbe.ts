@@ -18,6 +18,7 @@ import type { CustomChain } from '@/config/customChains';
 import { ensureCustomChainsLoaded } from '@/services/customChains';
 import { createRpcClient } from '@/utils/realTimeData';
 import { codeVerdict } from '@/utils/address';
+import { errorMessage } from '@/utils/errorHandler';
 import { withTimeout } from '@/utils/withTimeout';
 
 /** How many popular chains the probe targets (always excluding the viewed one). */
@@ -87,9 +88,6 @@ export function selectProbeChains(
 const withinBudget = async <T>(call: () => Promise<T>): Promise<T> =>
   withTimeout(call(), PROBE_CALL_BUDGET_MS, 'Probe call');
 
-const errorReason = (error: unknown): string =>
-  error instanceof Error ? error.message : String(error);
-
 /**
  * Probe one address on one chain: `getBalance` + `getCode` in parallel,
  * each under the ~4s call budget (client creation included — the RPC
@@ -122,7 +120,7 @@ export async function probeAddressOnChain(
       isContract: codeVerdict(code ?? '0x') !== 'eoa',
     };
   } catch (error) {
-    return { status: 'failed', chainId, reason: errorReason(error) };
+    return { status: 'failed', chainId, reason: errorMessage(error) };
   }
 }
 

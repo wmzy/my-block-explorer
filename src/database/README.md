@@ -18,7 +18,6 @@ custom adapter for type-safe database operations.
 - `duckdb-postgres-adapter.ts` - DuckDB-compatible adapter
 - `duckdb-types.ts` - Type-safe DuckDB-specific constructors
 - `schema.ts` - Database table definitions
-- `migrate.ts` - Database migration script
 
 ## Design Principles
 
@@ -341,8 +340,8 @@ npx drizzle-kit generate
 # 2. Clean up database files (if needed)
 rm -f data/blockchain.db
 
-# 3. Run migrations
-npx tsx src/database/migrate.ts
+# 3. Run migrations (the adapter also auto-migrates on every connect)
+pnpm db:migrate
 
 # 4. Verify table structure
 npx tsx -e "

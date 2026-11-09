@@ -11,7 +11,6 @@ database/
 ├── drizzle.ts                  # Drizzle config entry
 ├── db-types.ts                 # Custom types (bignum, timestamp, address)
 ├── dbPath.ts                   # Pure DATABASE_URL → main-db-path parse
-├── migrate.ts                  # Migration script
 ├── seedBuiltinLabels.ts        # Bundled address-label seeds
 └── init.ts                     # Re-exports
 ```
@@ -22,7 +21,7 @@ database/
 | -------------------- | ---------------------------- | --------------------------- |
 | Create DB connection | duckdb-postgres-adapter.ts   | `createDuckDBAdapter()`     |
 | Add table schema     | schema.ts                    | `duckdbTable()`             |
-| Run migrations       | migrate.ts                   | `runMigrations()`           |
+| Run migrations       | duckdb-postgres-adapter.ts   | `migrate()` (auto on connect) |
 
 ## KEY TYPES
 

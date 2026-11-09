@@ -40,6 +40,7 @@ import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
 import { getChainInfo, getChainName } from '@/config/chains';
 import { formatGasPrice, formatNumber } from '@/utils/format';
 import { parseChainIdParam } from '@/utils/chainParam';
+import { errorMessage } from '@/utils/errorHandler';
 import { createRpcClient } from '@/utils/realTimeData';
 import {
   decodeRawTransaction,
@@ -291,7 +292,7 @@ function BroadcastBody({ chainId }: { chainId: number }) {
     } catch (err) {
       setBroadcast({
         status: 'failed',
-        message: err instanceof Error ? err.message : String(err),
+        message: errorMessage(err),
       });
     }
   };

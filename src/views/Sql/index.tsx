@@ -26,26 +26,33 @@ import {
   type SqlQueryResult,
 } from '@/services/sqlConsole';
 import { ApiError } from '@/util/apiError';
+import { readStorageItem, writeStorageItem } from '@/util/storageAccess';
+import { SQL_CONSOLE_STORAGE_KEY } from '@/util/storageKeys';
 import { isBackendUnreachable } from '@/util/http';
 
 // --- Query history (localStorage, max 10, click to refill the editor) ---
 
-export const SQL_HISTORY_KEY = 'be:sqlConsole';
+// Canonical literal lives in the manifest (util/storageKeys.ts);
+// re-exported under this module's historical name so existing
+// consumers keep this import point.
+export { SQL_CONSOLE_STORAGE_KEY as SQL_HISTORY_KEY };
 export const SQL_HISTORY_MAX = 10;
 
 export function readSqlHistory(): string[] {
+  const raw = readStorageItem(SQL_CONSOLE_STORAGE_KEY);
+  if (raw === null) return [];
+  // The JSON parse keeps its own guard: unreadable or hand-corrupted
+  // storage degrades to "no history".
+  let parsed: unknown;
   try {
-    const raw = globalThis.localStorage?.getItem(SQL_HISTORY_KEY);
-    if (raw === null) return [];
-    const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter((entry): entry is string => typeof entry === 'string')
-      .slice(0, SQL_HISTORY_MAX);
+    parsed = JSON.parse(raw);
   } catch {
-    // Unreadable or unavailable storage degrades to "no history".
     return [];
   }
+  if (!Array.isArray(parsed)) return [];
+  return parsed
+    .filter((entry): entry is string => typeof entry === 'string')
+    .slice(0, SQL_HISTORY_MAX);
 }
 
 // Pure history step: a re-run query moves to the front instead of
@@ -57,11 +64,8 @@ export function pushSqlHistory(history: string[], query: string): string[] {
 }
 
 function persistSqlHistory(history: string[]): void {
-  try {
-    globalThis.localStorage?.setItem(SQL_HISTORY_KEY, JSON.stringify(history));
-  } catch {
-    // Storage unavailable (private mode): history lives for this session only.
-  }
+  // Storage unavailable (private mode): history lives for this session only.
+  writeStorageItem(SQL_CONSOLE_STORAGE_KEY, JSON.stringify(history));
 }
 
 // --- Error classification (exported for the view tests) ---

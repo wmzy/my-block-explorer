@@ -8,6 +8,14 @@ import { css, cx } from '@linaria/core';
 import { TypedLink } from '@native-router/react';
 import { Address, AbiEvent } from 'viem';
 import { EmptyState, ErrorState } from '@/components/ui/ErrorState';
+import {
+  monoStyle,
+  pageButtonsStyle,
+  pageInfoStyle,
+  paginationBarStyle,
+  tableBaseStyle,
+  tableShellStyle,
+} from '@/components/ui/DataTable';
 import { formatDateTime, formatFixedDecimals, truncateMiddle } from '@/utils/format';
 import { EventFilterPanel, type EventFilterState } from './EventFilterPanel';
 import { get } from '@/util/http';
@@ -113,27 +121,25 @@ type ColumnConfig = {
 };
 
 // Styles: Linaria `css` classes over haze theme tokens (dark-theme safe).
-// DOM structure is unchanged from the former styled layer.
-const tableContainer = css`
-  background: var(--haze-color-bg);
-  border-radius: var(--haze-radius-lg);
-  box-shadow: var(--haze-shadow-md);
-  /* In-card touch scroller (DataTable mobile pattern): below the content
-     floor the table keeps its natural width and scrolls here instead of
-     clipping nowrap cells at phone widths. */
-  overflow-x: auto;
-  overflow-y: hidden;
-  -webkit-overflow-scrolling: touch;
-`;
+// DOM structure is unchanged from the former styled layer. The card shell
+// and table skeleton are the shared DataTable bases (single-sourced there);
+// only EventTable's deltas live here.
+const tableContainer = cx(
+  tableShellStyle,
+  css`
+    box-shadow: var(--haze-shadow-md);
+    /* The card never scrolls vertically — the pager below owns the page
+       height, and a second scroll pane would nest inside it. */
+    overflow-y: hidden;
+  `,
+);
 
-const tableStyle = css`
-  width: 100%;
-  /* Content defines the floor: the table never compresses its columns past
-     their natural width — narrow viewports scroll the container above. */
-  min-width: max-content;
-  border-collapse: collapse;
-  font-size: 14px;
-`;
+const tableStyle = cx(
+  tableBaseStyle,
+  css`
+    font-size: 14px;
+  `,
+);
 
 const tableHeader = css`
   background: var(--haze-color-bg-subtle);
@@ -201,16 +207,6 @@ const unfinalizedBadge = css`
   color: var(--haze-color-warning);
   background: var(--haze-color-warning-subtle);
   vertical-align: middle;
-`;
-
-const addressCell = css`
-  font-family: var(--haze-font-mono);
-  font-size: 12px;
-`;
-
-const transactionHashCell = css`
-  font-family: var(--haze-font-mono);
-  font-size: 12px;
 `;
 
 const valueCell = css`
@@ -283,14 +279,15 @@ const rawLogDisclosure = css`
   min-width: 0;
 `;
 
-const rawLogMetaRow = css`
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 20px;
-  font-family: var(--haze-font-mono);
-  font-size: 12px;
-`;
+const rawLogMetaRow = cx(
+  monoStyle,
+  css`
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 20px;
+  `,
+);
 
 const rawLogMetaItem = css`
   display: inline-flex;
@@ -315,12 +312,13 @@ const rawLogLink = css`
   }
 `;
 
-const rawLogHexValue = css`
-  font-family: var(--haze-font-mono);
-  font-size: 12px;
-  color: var(--haze-color-text);
-  word-break: break-all;
-`;
+const rawLogHexValue = cx(
+  monoStyle,
+  css`
+    color: var(--haze-color-text);
+    word-break: break-all;
+  `,
+);
 
 // Muted placeholder for a raw field the stored row does not carry — a
 // stated absence, never a fabricated value.
@@ -343,44 +341,48 @@ const rawLogTopicRow = css`
   min-width: 0;
 `;
 
-const rawLogTopicLabel = css`
-  font-family: var(--haze-font-mono);
-  font-size: 12px;
-  color: var(--haze-color-text-muted);
+const rawLogTopicLabel = cx(
+  monoStyle,
+  css`
+    color: var(--haze-color-text-muted);
+    flex-shrink: 0;
+    min-width: 48px;
+  `,
+);
+
+// Chip chrome shared by both topic0 markers (resolved name / lookup link).
+const rawLogChipBase = css`
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--haze-color-primary);
+  border: 1px solid var(--haze-color-border);
   flex-shrink: 0;
-  min-width: 48px;
 `;
 
 // Resolved event name chip next to topic0 when the row decoded successfully.
-const rawLogChip = css`
-  padding: 1px 8px;
-  border-radius: 999px;
-  font-size: 10px;
-  font-weight: 500;
-  font-family: inherit;
-  color: var(--haze-color-primary);
-  background: var(--haze-color-bg-muted);
-  border: 1px solid var(--haze-color-border);
-  flex-shrink: 0;
-`;
+const rawLogChip = cx(
+  rawLogChipBase,
+  css`
+    font-family: inherit;
+    background: var(--haze-color-bg-muted);
+  `,
+);
 
 // Unknown topic0: link out to the signature lookup page instead of a chip.
-const rawLogLookupChip = css`
-  padding: 1px 8px;
-  border-radius: 999px;
-  font-size: 10px;
-  font-weight: 500;
-  text-decoration: none;
-  color: var(--haze-color-primary);
-  background: var(--haze-color-bg);
-  border: 1px solid var(--haze-color-border);
-  flex-shrink: 0;
+const rawLogLookupChip = cx(
+  rawLogChipBase,
+  css`
+    text-decoration: none;
+    background: var(--haze-color-bg);
 
-  &:hover {
-    background: var(--haze-color-bg-muted);
-    text-decoration: underline;
-  }
-`;
+    &:hover {
+      background: var(--haze-color-bg-muted);
+      text-decoration: underline;
+    }
+  `,
+);
 
 const rawLogDataRow = css`
   display: flex;
@@ -391,22 +393,23 @@ const rawLogDataRow = css`
 
 // Scrollable mono pre (RawJson preStyle pattern): the unbroken data hex
 // scrolls inside the box instead of stretching the table sideways.
-const rawLogPre = css`
-  margin: 0;
-  flex: 1 1 auto;
-  min-width: 0;
-  max-width: 640px;
-  max-height: 200px;
-  overflow: auto;
-  border: 1px solid var(--haze-color-border);
-  border-radius: var(--haze-radius-sm);
-  background: var(--haze-color-bg);
-  padding: var(--haze-space-2) var(--haze-space-3);
-  font-family: var(--haze-font-mono);
-  font-size: 12px;
-  line-height: var(--haze-leading-relaxed);
-  white-space: pre;
-`;
+const rawLogPre = cx(
+  monoStyle,
+  css`
+    margin: 0;
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: 640px;
+    max-height: 200px;
+    overflow: auto;
+    border: 1px solid var(--haze-color-border);
+    border-radius: var(--haze-radius-sm);
+    background: var(--haze-color-bg);
+    padding: var(--haze-space-2) var(--haze-space-3);
+    line-height: var(--haze-leading-relaxed);
+    white-space: pre;
+  `,
+);
 
 const rawLogCopyButton = css`
   border: 1px solid var(--haze-color-border);
@@ -431,30 +434,24 @@ const rawLogNote = css`
   font-style: italic;
 `;
 
-const paginationContainer = css`
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 16px;
-  background: var(--haze-color-bg-subtle);
-  border-top: 1px solid var(--haze-color-border);
-  /* Phone widths: page info and the controls row each fill a phone line —
-     wrap instead of hiding Next/Export behind the table's side pan. */
-  flex-wrap: wrap;
-  gap: 8px;
-`;
+// Pager bar: the shared DataTable chrome plus an always-on wrap — this
+// table's controls row (jump input, export link) is wider than the plain
+// Prev/Next pair, so it wraps at every width instead of only on phones.
+const paginationContainer = cx(
+  paginationBarStyle,
+  css`
+    flex-wrap: wrap;
+    gap: 8px;
+  `,
+);
 
-const paginationInfo = css`
-  color: var(--haze-color-text-muted);
-  font-size: 14px;
-`;
-
-const paginationControls = css`
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-`;
+const paginationControls = cx(
+  pageButtonsStyle,
+  css`
+    align-items: center;
+    flex-wrap: wrap;
+  `,
+);
 
 const paginationButton = css`
   padding: 8px 12px;
@@ -478,13 +475,15 @@ const paginationButton = css`
   }
 `;
 
-const paginationInput = css`
+// Shared chrome for the toolbar's small form controls (page-jump input,
+// sort and page-size selects): box, padding, 14px text, focus ring.
+// Background/color live on the selects' delta only — the number input
+// keeps its browser-default field colors, as before.
+const fieldControlStyle = css`
   padding: 6px 8px;
   border: 1px solid var(--haze-color-border);
   border-radius: 4px;
   font-size: 14px;
-  width: 60px;
-  text-align: center;
 
   &:focus {
     outline: none;
@@ -492,6 +491,14 @@ const paginationInput = css`
     box-shadow: 0 0 0 2px var(--haze-color-focus-ring);
   }
 `;
+
+const paginationInput = cx(
+  fieldControlStyle,
+  css`
+    width: 60px;
+    text-align: center;
+  `,
+);
 
 // Disabled styling keys off the aria-disabled attribute the component already
 // renders, so the modifier never loses to the hover rule on order.
@@ -541,16 +548,20 @@ const goToPageContainer = css`
   margin-left: 16px;
 `;
 
-const goToPageLabel = css`
+// Shared label text for the toolbar controls ("Go to:", "Rows per page:",
+// "Sort:"). "Sort:" alone reads at weight 500 — its delta composes on top.
+const controlLabelStyle = css`
   font-size: 14px;
   color: var(--haze-color-text);
 `;
 
-const pageInfo = css`
-  font-size: 14px;
-  color: var(--haze-color-text-muted);
-  margin: 0 16px;
-`;
+// "Page N / M" — the shared pager info text plus the gap from the counts.
+const pageInfo = cx(
+  pageInfoStyle,
+  css`
+    margin: 0 16px;
+  `,
+);
 
 const paginationSeparator = css`
   width: 1px;
@@ -601,26 +612,20 @@ const sortOptionsContainer = css`
   gap: 12px;
 `;
 
-const sortLabel = css`
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--haze-color-text);
-`;
+const sortLabel = cx(
+  controlLabelStyle,
+  css`
+    font-weight: 500;
+  `,
+);
 
-const sortSelect = css`
-  padding: 6px 8px;
-  border: 1px solid var(--haze-color-border);
-  border-radius: 4px;
-  font-size: 14px;
-  background: var(--haze-color-bg);
-  color: var(--haze-color-text);
-
-  &:focus {
-    outline: none;
-    border-color: var(--haze-color-primary);
-    box-shadow: 0 0 0 2px var(--haze-color-focus-ring);
-  }
-`;
+const sortSelect = cx(
+  fieldControlStyle,
+  css`
+    background: var(--haze-color-bg);
+    color: var(--haze-color-text);
+  `,
+);
 
 // The active state rides aria-pressed so it wins specificity over the base
 // hover rule regardless of class order.
@@ -655,25 +660,8 @@ const pageSizeControl = css`
   gap: 8px;
 `;
 
-const pageSizeLabel = css`
-  font-size: 14px;
-  color: var(--haze-color-text);
-`;
-
-const pageSizeSelect = css`
-  padding: 6px 8px;
-  border: 1px solid var(--haze-color-border);
-  border-radius: 4px;
-  font-size: 14px;
-  background: var(--haze-color-bg);
-  color: var(--haze-color-text);
-
-  &:focus {
-    outline: none;
-    border-color: var(--haze-color-primary);
-    box-shadow: 0 0 0 2px var(--haze-color-focus-ring);
-  }
-`;
+// Page-size select shares the sort select's chrome entirely (the former
+// byte-identical pageSizeSelect const merged into sortSelect).
 
 const multiSortContainer = css`
   display: flex;
@@ -927,6 +915,20 @@ const argFiltersQueryParam = (abiFilters?: Record<string, string>): string | und
   return Object.keys(active).length > 0 ? JSON.stringify(active) : undefined;
 };
 
+// Local loading indicator. Not ui/LoadingState: that renders a vertical
+// column around a 32px Skeleton pulse with a 200px floor, while this table
+// shows a horizontal 24px border-spinner row — too different to swap
+// without a visual change. Both loading branches share this single
+// component instead of duplicating the layout JSX.
+function LoadingIndicator({ message }: { message: string }) {
+  return (
+    <div className={loadingContainer}>
+      <div className={loadingSpinner} />
+      <span style={{ marginLeft: 12 }}>{message}</span>
+    </div>
+  );
+}
+
 // Per-field copy button with the codebase's label-swap feedback pattern
 // (RawJson/SourceCodeViewer): the button itself reports the honest outcome
 // of the clipboard call, never a guess.
@@ -1114,7 +1116,7 @@ export const EventRow = React.memo(({
           {event.eventName}
           {event.isFinalized === false && <span className={unfinalizedBadge}>unfinalized</span>}
         </td>
-        <td className={cx(tableCell, addressCell)}>
+        <td className={cx(tableCell, monoStyle)}>
           {event.from ? (
             <a
               href={`/chain/${chainId}/address/${event.from}`}
@@ -1126,7 +1128,7 @@ export const EventRow = React.memo(({
             'N/A'
           )}
         </td>
-        <td className={cx(tableCell, addressCell)}>
+        <td className={cx(tableCell, monoStyle)}>
           {event.to ? (
             <a
               href={`/chain/${chainId}/address/${event.to}`}
@@ -1139,7 +1141,7 @@ export const EventRow = React.memo(({
           )}
         </td>
         <td className={cx(tableCell, valueCell)}>{formatValue(event.value)}</td>
-        <td className={cx(tableCell, transactionHashCell)}>
+        <td className={cx(tableCell, monoStyle)}>
           <a
             href={`/chain/${chainId}/tx/${event.transactionHash}`}
             style={{ color: 'var(--haze-color-primary)', textDecoration: 'none' }}
@@ -1851,10 +1853,7 @@ export const EventTable: React.FC<EventTableProps> = ({
   if (loading && events.length === 0) {
     return (
       <div className={cx(tableContainer, className)}>
-        <div className={loadingContainer}>
-          <div className={loadingSpinner} />
-          <span style={{ marginLeft: 12 }}>Loading events...</span>
-        </div>
+        <LoadingIndicator message="Loading events..." />
       </div>
     );
   }
@@ -1930,9 +1929,9 @@ export const EventTable: React.FC<EventTableProps> = ({
 
             {enableCustomPageSize && (
               <div className={pageSizeControl}>
-                <span className={pageSizeLabel}>Rows per page:</span>
+                <span className={controlLabelStyle}>Rows per page:</span>
                 <select
-                  className={pageSizeSelect}
+                  className={sortSelect}
                   value={pagination.limit}
                   onChange={e => handlePageSizeChange(Number(e.target.value))}
                 >
@@ -2115,12 +2114,7 @@ export const EventTable: React.FC<EventTableProps> = ({
           </table>
 
           {/* Loading indicator for pagination */}
-          {loading && events.length > 0 && (
-            <div className={loadingContainer}>
-              <div className={loadingSpinner} />
-              <span style={{ marginLeft: 12 }}>Loading more events...</span>
-            </div>
-          )}
+          {loading && events.length > 0 && <LoadingIndicator message="Loading more events..." />}
 
           {/* Error overlay for pagination errors */}
           {error && events.length > 0 && (
@@ -2130,7 +2124,7 @@ export const EventTable: React.FC<EventTableProps> = ({
           {/* Enhanced Pagination controls */}
           <div className={paginationContainer}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-              <div className={paginationInfo}>
+              <div className={pageInfoStyle}>
                 Showing {pagination.startIndex ?? 1}-{pagination.endIndex ?? events.length} of{' '}
                 {pagination.total} events
               </div>
@@ -2166,7 +2160,7 @@ export const EventTable: React.FC<EventTableProps> = ({
                   <div className={paginationSeparator} />
 
                   <div className={goToPageContainer}>
-                    <span className={goToPageLabel}>Go to:</span>
+                    <span className={controlLabelStyle}>Go to:</span>
                     <input
                       className={paginationInput}
                       type="number"

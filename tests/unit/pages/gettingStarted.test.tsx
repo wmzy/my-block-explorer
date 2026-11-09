@@ -124,6 +124,7 @@ describe('onboarding dismissal storage helpers', () => {
     const storage = {
       getItem: (key: string) => backing.get(key) ?? null,
       setItem: (key: string, value: string) => void backing.set(key, value),
+      removeItem: (key: string) => void backing.delete(key),
     };
 
     expect(readOnboardingDismissed(storage)).toBe(false);

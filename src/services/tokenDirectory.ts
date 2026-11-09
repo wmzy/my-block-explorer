@@ -22,13 +22,17 @@ import { knownTokensForChain, type KnownToken } from '@/config/knownTokens';
 import { classifyTokenOverview } from '@/views/Address/tokenOverview';
 import { createRpcClient } from '@/utils/realTimeData';
 import { HEX_ADDRESS_RE } from '@/utils/address';
+import { readStorageItem, writeStorageItem } from '@/util/storageAccess';
+import { VIEWED_TOKENS_STORAGE_PREFIX } from '@/util/storageKeys';
 import { bindQueryFn, createQueryCache, createQueryHook } from '@/util/useQuery';
+
+// Canonical literal lives in the manifest (util/storageKeys.ts);
+// re-exported so existing consumers keep this import point.
+export { VIEWED_TOKENS_STORAGE_PREFIX };
 
 // ---------------------------------------------------------------------------
 // Viewed-token storage (per browser, per chain)
 // ---------------------------------------------------------------------------
-
-export const VIEWED_TOKENS_STORAGE_PREFIX = 'be:viewedTokens:';
 
 export const VIEWED_TOKENS_MAX_ENTRIES = 50;
 
@@ -47,8 +51,8 @@ export type ViewedTokenEntry = {
 /** Metadata the token page hands the recorder; null = not resolved. */
 export type ViewedTokenMeta = { symbol?: string | null; name?: string | null };
 
-/** Storage seam for tests: the two members this module actually uses. */
-export type ViewedTokenStorage = Pick<Storage, 'getItem' | 'setItem'>;
+/** Storage seam for tests: the members the guarded helpers need. */
+export type ViewedTokenStorage = Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>;
 
 const viewedTokensStorageKey = (chainId: number): string =>
   `${VIEWED_TOKENS_STORAGE_PREFIX}${chainId}`;
@@ -105,13 +109,9 @@ export function parseViewedTokens(raw: string | null): ViewedTokenEntry[] {
 /** Viewed tokens of one chain, newest-first, never past the cap. Best-effort: storage failures read as []. */
 export function readViewedTokens(
   chainId: number,
-  storage: ViewedTokenStorage = localStorage,
+  storage?: ViewedTokenStorage,
 ): ViewedTokenEntry[] {
-  try {
-    return parseViewedTokens(storage.getItem(viewedTokensStorageKey(chainId)));
-  } catch {
-    return [];
-  }
+  return parseViewedTokens(readStorageItem(viewedTokensStorageKey(chainId), null, storage));
 }
 
 // Best-effort persist (searchHistory precedent): a full/private-mode
@@ -119,13 +119,9 @@ export function readViewedTokens(
 const writeViewedTokens = (
   chainId: number,
   entries: readonly ViewedTokenEntry[],
-  storage: ViewedTokenStorage,
+  storage?: ViewedTokenStorage,
 ): ViewedTokenEntry[] => {
-  try {
-    storage.setItem(viewedTokensStorageKey(chainId), JSON.stringify(entries));
-  } catch {
-    // Quota/private mode — the directory silently stops persisting.
-  }
+  writeStorageItem(viewedTokensStorageKey(chainId), JSON.stringify(entries), storage);
   return [...entries];
 };
 
@@ -165,7 +161,7 @@ export function recordViewedToken(
   chainId: number,
   address: string,
   meta: ViewedTokenMeta = {},
-  storage: ViewedTokenStorage = localStorage,
+  storage?: ViewedTokenStorage,
 ): ViewedTokenEntry[] {
   let checksummed: string;
   try {

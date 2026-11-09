@@ -28,12 +28,22 @@ import { CallTypeBadge } from '@/components/CallTypeBadge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { Collapsible } from '@/components/ui/Collapsible';
 import { CopyableHash } from '@/components/ui/CopyableHash';
-import { DataTable, linkStyle } from '@/components/ui/DataTable';
+import { DataTable, linkStyle, monoStyle } from '@/components/ui/DataTable';
 import { ErrorState } from '@/components/ui/ErrorState';
 import { LoadingState } from '@/components/ui/LoadingState';
+import { TracedProgress } from '@/components/TracedProgress';
+import {
+  depthCell,
+  failedTxsCard,
+  failedTxRow,
+  muted,
+  retryRow,
+  summaryLine,
+} from '@/components/internalTxnsShared';
 import { getChainSymbol } from '@/config/chains';
 import { useLazyExpand } from '@/util/useLazyExpand';
 import { fetchCallTraceTree, rpcRequest } from '@/utils/callTraceRpc';
+import { errorMessage } from '@/utils/errorHandler';
 import { cellText, formatHash, formatValue } from '@/utils/format';
 import { runTracePool, shortTraceFailureMessage, TRACE_CONCURRENCY } from '@/utils/internalTxScan';
 import { isTraceUnsupportedError } from '@/utils/traceFormat';
@@ -100,42 +110,30 @@ const scopeNote = css`
   font-size: var(--haze-text-xs);
 `;
 
-const summaryLine = css`
-  margin: 0 0 var(--haze-space-2);
-  font-size: var(--haze-text-xs);
-`;
+// The summary, muted, failed-trace, retry and depth-cell styles this
+// card shares with the address page's Internal Txns tab live in
+// components/internalTxnsShared.
 
-const muted = css`
-  color: var(--haze-color-text-muted);
-`;
-
-const valueCell = css`
-  font-family: var(--haze-font-mono);
-  font-size: var(--haze-text-xs);
-  white-space: nowrap;
-`;
-
-const selectorCell = css`
-  font-family: var(--haze-font-mono);
-  font-size: var(--haze-text-xs);
-`;
-
-const depthCell = css`
-  color: var(--haze-color-text-muted);
-  font-family: var(--haze-font-mono);
-  font-size: var(--haze-text-xs);
-`;
+// Value cell: the shared mono cell, kept on one line (block rows are
+// dense — a wrapping figure would tear the row rhythm).
+const valueCell = cx(
+  monoStyle,
+  css`
+    white-space: nowrap;
+  `,
+);
 
 // A failed internal call's error text under its type badge: danger ink,
 // kept inside the row so a deep revert reads immediately.
-const rowErrorStyle = css`
-  display: block;
-  margin-top: var(--haze-space-1);
-  font-family: var(--haze-font-mono);
-  font-size: var(--haze-text-xs);
-  color: var(--haze-color-danger);
-  word-break: break-all;
-`;
+const rowErrorStyle = cx(
+  monoStyle,
+  css`
+    display: block;
+    margin-top: var(--haze-space-1);
+    color: var(--haze-color-danger);
+    word-break: break-all;
+  `,
+);
 
 // One parent-tx table under its linked header.
 const txGroup = css`
@@ -156,22 +154,6 @@ const txGroupMeta = css`
   font-weight: 400;
   font-size: var(--haze-text-xs);
   color: var(--haze-color-text-muted);
-`;
-
-const failedTxsCard = css`
-  margin-top: var(--haze-space-3);
-`;
-
-// One failed-trace row inside the collapsed card: tx link + raw message.
-const failedTxRow = css`
-  font-family: var(--haze-font-mono);
-  font-size: var(--haze-text-xs);
-  overflow-wrap: anywhere;
-  margin-bottom: var(--haze-space-1);
-`;
-
-const retryRow = css`
-  margin-top: var(--haze-space-3);
 `;
 
 // The block's transaction list: eth_getBlockByHash against the shared
@@ -202,7 +184,7 @@ const traceOneTx = async (chainId: number, hash: string): Promise<BlockTraceTxOu
     if (root === null) return { hash, status: 'traced', rows: [], truncated: false };
     return { hash, status: 'traced', ...flattenBlockInternalFrames(hash, root) };
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = errorMessage(err);
     return isTraceUnsupportedError(err)
       ? { hash, status: 'unsupported', message }
       : { hash, status: 'failed', message };
@@ -426,7 +408,7 @@ export function InternalTxnsSection({
                       <td className={valueCell}>
                         {rowCarriesValue(row.value) ? formatValue(row.value, symbol) : '—'}
                       </td>
-                      <td className={selectorCell}>{row.selector ?? '—'}</td>
+                      <td className={monoStyle}>{row.selector ?? '—'}</td>
                       <td className={depthCell}>{row.depth}</td>
                     </tr>
                   ))}
@@ -519,9 +501,7 @@ export function InternalTxnsSection({
             <LoadingState message="Fetching the block's transaction list..." />
           )}
           {transactionCount > 0 && state.phase === 'tracing' && (
-            <LoadingState
-              message={`Traced ${state.settled.toLocaleString()} of ${state.total.toLocaleString()} transactions…`}
-            />
+            <TracedProgress settled={state.settled} total={state.total} />
           )}
           {transactionCount > 0 && state.phase === 'error' && (
             <ErrorState

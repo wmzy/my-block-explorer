@@ -1,5 +1,6 @@
 import { createPublicClient, http, formatUnits, type PublicClient } from 'viem';
 import { getChainInfo } from '../config/chains';
+import { errorMessage } from './errorHandler';
 import { get } from '../util/http';
 
 // Native-currency display decimals of a chain. formatEther would hardcode
@@ -29,7 +30,7 @@ const loadRpcConfigs = (): Promise<void> => {
       rpcConfigsLoaded = true;
     })
     .catch((reason: unknown) => {
-      const message = reason instanceof Error ? reason.message : String(reason);
+      const message = errorMessage(reason);
       const status =
         typeof (reason as { status?: unknown } | null)?.status === 'number'
           ? (reason as { status: number }).status

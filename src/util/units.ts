@@ -9,6 +9,7 @@
 // wakes every mounted consumer (the UnitToggle and the rows it governs)
 // without a reload. This module is the single reader/writer of the key.
 
+import { readStorageItem, writeStorageItem } from '@/util/storageAccess';
 import { VALUE_UNIT_STORAGE_KEY } from '@/util/storageKeys';
 import { formatFixedDecimals } from '@/utils/format';
 
@@ -28,12 +29,16 @@ let lastWritten: UnitPreference | null = null;
 
 /** The stored preference; anything absent or unusable reads as 'native'. */
 export function getValueUnit(): UnitPreference {
-  try {
-    const raw = localStorage.getItem(VALUE_UNIT_STORAGE_KEY);
-    return raw === 'gwei' || raw === 'wei' ? raw : 'native';
-  } catch {
-    return lastWritten ?? 'native';
-  }
+  const raw = readStorageItem(VALUE_UNIT_STORAGE_KEY);
+  if (raw === 'gwei' || raw === 'wei') return raw;
+  // The guarded read collapses "storage threw" and "nothing stored" into
+  // null — lastWritten is the session memory for both halves of that
+  // case: an unreadable browser AND a write that could not persist keep
+  // the in-session choice instead of snapping back to 'native' after
+  // every toggle. A stored-but-invalid string ('parsecs', hand-edited)
+  // is authoritative absence: 'native'.
+  if (raw === null) return lastWritten ?? 'native';
+  return 'native';
 }
 
 /**
@@ -43,11 +48,7 @@ export function getValueUnit(): UnitPreference {
  */
 export function setValueUnit(unit: UnitPreference): void {
   lastWritten = unit;
-  try {
-    localStorage.setItem(VALUE_UNIT_STORAGE_KEY, unit);
-  } catch {
-    // Quota/private mode — the choice lasts only for this session.
-  }
+  writeStorageItem(VALUE_UNIT_STORAGE_KEY, unit);
   for (const listener of listeners) {
     listener();
   }
