@@ -26,6 +26,7 @@ import {
   formatFixedDecimals,
   formatHash,
   formatNativeDisplay,
+  formatRawUnits,
   formatTokenAmount,
   formatValue,
   truncateMiddle,
@@ -238,5 +239,31 @@ describe('cellText — the shared 8/6 cell truncation with fallback', () => {
     expect(cellText(null)).toBe('N/A');
     expect(cellText(undefined, '—')).toBe('—');
     expect(cellText('short', '—')).toBe('short');
+  });
+});
+
+describe('formatRawUnits — raw base units to a human amount', () => {
+  it('formats under the token own decimals (bigint and decimal-string wire form)', () => {
+    expect(formatRawUnits(1_500_000n, 6)).toBe('1.5');
+    expect(formatRawUnits('1500000', 6)).toBe('1.5');
+    // Full precision, never display-truncated — the amount cells that
+    // show fewer digits do their own rounding on top.
+    expect(formatRawUnits(10n ** 24n + 1n, 18)).toBe('1000000.000000000000000001');
+  });
+
+  it('keeps the raw base units when decimals is unknown (null OR undefined)', () => {
+    expect(formatRawUnits(1_234_567n, null)).toBe('1234567');
+    expect(formatRawUnits(1_234_567n, undefined)).toBe('1234567');
+    expect(formatRawUnits('1234567', null)).toBe('1234567');
+  });
+
+  it('appends the symbol only when known — bare by design for some surfaces', () => {
+    expect(formatRawUnits(1_500_000n, 6, 'USDT')).toBe('1.5 USDT');
+    expect(formatRawUnits(1_500_000n, 6, null)).toBe('1.5');
+    expect(formatRawUnits(1_500_000n, 6, undefined)).toBe('1.5');
+    // The symbol rides along independently of decimals (the holdings
+    // rows' shape): unknown decimals + known symbol shows the raw base
+    // units WITH the symbol.
+    expect(formatRawUnits(1_500_000n, null, 'USDT')).toBe('1500000 USDT');
   });
 });

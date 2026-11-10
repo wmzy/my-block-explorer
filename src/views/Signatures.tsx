@@ -14,10 +14,11 @@
 // signature exists. Name fragments are NOT resolvable by the backend
 // (exact-selector lookups only), so a classified name degrades to an
 // explicit explanation instead of a silently wrong query.
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import type { KeyboardEvent } from 'react';
 import { css } from '@linaria/core';
 import { navigate } from '@native-router/core';
+import { useDebouncedQueryParam } from '@/util/useDebouncedQueryParam';
 import { useSearch, useSetSearch, useRouter } from '@native-router/react';
 import { z } from 'zod';
 import { Input } from 'haze-ui';
@@ -111,10 +112,6 @@ export function classifySignatureQuery(raw: string): SignatureQueryClassificatio
 // classification renders guidance instead of rejecting the URL). Exported
 // for the page tests.
 export const searchSchema = z.object({ q: z.string().optional() });
-
-// Debounce: the URL (?q=) only moves once typing pauses, so the query
-// layer is not re-keyed per keystroke (Contracts directory pattern).
-const SEARCH_DEBOUNCE_MS = 300;
 
 // ---------------------------------------------------------------------------
 // Styles
@@ -359,44 +356,9 @@ export default function SignaturesView() {
     navigate(router, `/chain/${chainId}`).catch(() => undefined);
   };
 
-  // The input starts from the deep-linked ?q= and then leads the URL: the
-  // debounced write (or Enter) replaces the URL entry so typing does not
-  // spam history (Contracts directory pattern).
-  const [qInput, setQInput] = useState(() => qParam ?? '');
-  // The ?q= value this view itself last pushed — distinguishes the URL
-  // write the debounce causes (input must keep leading) from an external
-  // URL change (deep link, back/forward — input must follow).
-  const lastPushedQRef = useRef<string | null>(null);
-
-  const commitQ = useCallback(
-    (next: string) => {
-      if ((qParam ?? '') === next) return;
-      lastPushedQRef.current = next;
-      void setSearch(
-        prev => {
-          const { q: _oldQ, ...rest } = prev;
-          return next === '' ? rest : { ...rest, q: next };
-        },
-        { replace: true },
-      );
-    },
-    [qParam, setSearch],
-  );
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      commitQ(qInput.trim());
-    }, SEARCH_DEBOUNCE_MS);
-    return () => clearTimeout(timer);
-  }, [qInput, commitQ]);
-
-  // External ?q= change (deep link, back/forward): sync the input unless
-  // the URL carries exactly what this view just pushed.
-  useEffect(() => {
-    const urlQ = qParam ?? '';
-    if (lastPushedQRef.current === urlQ) return;
-    setQInput(urlQ);
-  }, [qParam]);
+  // The ?q= input (shared directory debounce): the debounced write or an
+  // Enter (commit) replaces the URL entry so typing does not spam history.
+  const qFilter = useDebouncedQueryParam('q', qParam, setSearch);
 
   // Classification drives everything below from the SETTLED URL value, so
   // a deep link auto-searches the moment the page opens.
@@ -411,14 +373,14 @@ export default function SignaturesView() {
 
   // The submit affordance reflects what is TYPED (immediate feedback);
   // the results reflect the settled ?q= (debounce depth between them).
-  const inputClassification = classifySignatureQuery(qInput);
+  const inputClassification = classifySignatureQuery(qFilter.value);
   const canSubmit =
     inputClassification.kind === 'selector' || inputClassification.kind === 'topic0';
 
   const handleInputKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
     if (event.key === 'Enter') {
       event.preventDefault();
-      commitQ(qInput.trim());
+      qFilter.commit(qFilter.value.trim());
     }
   };
 
@@ -453,8 +415,8 @@ export default function SignaturesView() {
           <div className={queryBox}>
             <Input
               placeholder="Function selector (0x + 8 hex) or event topic0 (0x + 64 hex)"
-              value={qInput}
-              onChange={e => setQInput(e.target.value)}
+              value={qFilter.value}
+              onChange={e => qFilter.setValue(e.target.value)}
               onKeyDown={handleInputKeyDown}
               spellCheck={false}
               aria-label="Signature lookup query"
@@ -463,7 +425,7 @@ export default function SignaturesView() {
           <Button
             variant="outline"
             size="sm"
-            onClick={() => commitQ(qInput.trim())}
+            onClick={() => qFilter.commit(qFilter.value.trim())}
             disabled={!canSubmit}
           >
             Look up

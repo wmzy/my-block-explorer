@@ -1,3 +1,5 @@
+import { toast } from 'haze-ui';
+
 // Clipboard write with a legacy execCommand fallback. The async Clipboard
 // API is only available in secure contexts — plain-http on a LAN hostname
 // is the common local-explorer case — and can still be rejected by
@@ -38,4 +40,38 @@ export async function copyText(text: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+// Copy + toast feedback: the shared tail every toast-reporting copy
+// affordance composes (RawDataBlock, CopyableHash, AddressQr) — write to
+// the clipboard, then surface the honest outcome as a 2s toast and hand
+// the boolean back for callers that also track state. Wording stays
+// per-site because the PM copy genuinely differs: the generic cells say
+// "Copied to clipboard!", the QR dialog says "Address copied to
+// clipboard!" and ships its success as an info toast — so the defaults
+// carry the shared wording and the QR site overrides both messages plus
+// the success channel via copiedKind.
+export type ToastCopyOptions = {
+  /** Success wording; defaults to the shared "Copied to clipboard!". */
+  copied?: string;
+  /** Failure wording; defaults to the shared "Failed to copy". */
+  failed?: string;
+  /** Success toast channel: 'success' (default) or the QR dialog's 'info'. */
+  copiedKind?: 'success' | 'info';
+};
+
+export async function toastCopy(text: string, opts: ToastCopyOptions = {}): Promise<boolean> {
+  const ok = await copyText(text);
+  const duration = 2000;
+  if (ok) {
+    const copied = opts.copied ?? 'Copied to clipboard!';
+    if (opts.copiedKind === 'info') {
+      toast.info(copied, { duration });
+    } else {
+      toast(copied, { variant: 'success', duration });
+    }
+  } else {
+    toast(opts.failed ?? 'Failed to copy', { variant: 'danger', duration });
+  }
+  return ok;
 }

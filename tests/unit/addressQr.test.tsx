@@ -11,6 +11,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/vitest';
 import { getAddress } from 'viem';
 import QRCode from 'qrcode';
+import { toast } from 'haze-ui';
 import { AddressQr } from '@/components/ui/AddressQr';
 
 const LOWERCASE = '0x1234567890abcdef1234567890abcdef12345678';
@@ -111,6 +112,14 @@ describe('AddressQr', () => {
     await waitFor(() => {
       expect(navigator.clipboard.writeText).toHaveBeenCalledWith(CHECKSUMMED);
     });
+    // The shared toastCopy tail fires this dialog's OWN PM wording on the
+    // info channel — the generic cells' "Copied to clipboard!" must never
+    // leak in here.
+    expect(toast.info).toHaveBeenCalledWith('Address copied to clipboard!', { duration: 2000 });
+    expect(toast).not.toHaveBeenCalledWith(
+      'Copied to clipboard!',
+      expect.objectContaining({ variant: 'success' }),
+    );
   });
 
   it('says so honestly when the encoder fails (copy stays available)', async () => {

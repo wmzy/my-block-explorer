@@ -4,7 +4,11 @@
 // and wrong-block lookups out of the URL surfaces.
 import { describe, it, expect } from 'vitest';
 
-import { parseBlockNumberParam, parseChainIdParam } from '@/utils/chainParam';
+import {
+  parseBlockNumberParam,
+  parseChainIdParam,
+  resolveMainnetDefaultChainId,
+} from '@/utils/chainParam';
 
 describe('parseChainIdParam', () => {
   it.each(['1', '11155111', '137'])('parses the plain decimal id %s', raw => {
@@ -53,5 +57,23 @@ describe('parseBlockNumberParam', () => {
 
   it('rejects numbers beyond the safe integer range instead of losing precision', () => {
     expect(parseBlockNumberParam('9007199254740993')).toBeNull();
+  });
+});
+
+describe('resolveMainnetDefaultChainId', () => {
+  it('defaults to mainnet (1) when the route param is absent', () => {
+    expect(resolveMainnetDefaultChainId(undefined)).toBe(1);
+  });
+
+  it('resolves a well-formed param as itself', () => {
+    expect(resolveMainnetDefaultChainId('1')).toBe(1);
+    expect(resolveMainnetDefaultChainId('137')).toBe(137);
+    expect(resolveMainnetDefaultChainId('11155111')).toBe(11155111);
+  });
+
+  it('parks a malformed param on the guarded id 0 (unsupported state), never a wrong chain', () => {
+    for (const raw of ['abc', '0x1a', '1e5', ' 12', '-1', '0', '', '9007199254740993']) {
+      expect(resolveMainnetDefaultChainId(raw), raw).toBe(0);
+    }
   });
 });

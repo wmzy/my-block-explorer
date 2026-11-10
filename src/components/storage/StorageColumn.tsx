@@ -6,7 +6,7 @@
 import { css } from '@linaria/core';
 import { useEffect, useState, type ReactNode } from 'react';
 import { hexToBigInt, pad, type Hex } from 'viem';
-import { clampRange, type ResolvedColumn } from './columnModel';
+import { clampRange, shortSlot, type ResolvedColumn } from './columnModel';
 import type { StorageType } from '@/types/storage';
 import { arrayElementPlacement, slotAdd } from '@/utils/storageSlots';
 import { buildCastStorageCommand, buildViemReadSnippet, exprAdd } from '@/utils/storageSlotCode';
@@ -239,7 +239,7 @@ function ColumnHeader({
         {column.slot !== null && (
           <CopyButton
             text={column.slot}
-            label={`slot: ${shortHex(column.slot)}`}
+            label={`slot: ${shortSlot(column.slot)}`}
             title={column.slot}
           />
         )}
@@ -570,8 +570,4 @@ function RangeControls({
       </button>
     </div>
   );
-}
-
-function shortHex(slot: Hex): string {
-  return slot.length <= 14 ? slot : `${slot.slice(0, 8)}…${slot.slice(-4)}`;
 }

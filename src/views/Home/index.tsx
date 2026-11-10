@@ -15,7 +15,7 @@ import {
   formatValue,
 } from '@/utils/format';
 import { gasUsedPercentLabel } from '@/utils/gasShare';
-import { parseChainIdParam } from '@/utils/chainParam';
+import { resolveMainnetDefaultChainId } from '@/utils/chainParam';
 import { PageContainer } from '@/components/ui/PageLayout';
 import { Button } from '@/components/ui/Button';
 import { ErrorState } from '@/components/ui/ErrorState';
@@ -731,14 +731,12 @@ function GasPanel({ feed, chainId }: { feed: GasFeedState; chainId: number }) {
 export default function Home() {
   const { params, router } = useMatched();
 
-  // An unparseable :chainId param ("abc", "0x1", "1e5") is a broken link,
-  // not an unsupported chain: parseChainIdParam returns null and the raw
-  // param travels on to the unsupported state so it can say which of the
-  // two problems this is. The guarded id 0 parks the feeds (no RPC traffic
-  // for a chain that cannot render).
+  // Two-tier mainnet-default guard: the raw param travels on to the
+  // unsupported state so it can say which of the two problems this is.
+  // The guarded id 0 parks the feeds (no RPC traffic for a chain that
+  // cannot render).
   const rawChainId = params.chainId;
-  const parsedChainId = rawChainId === undefined ? 1 : parseChainIdParam(rawChainId);
-  const currentChainId = parsedChainId ?? 0;
+  const currentChainId = resolveMainnetDefaultChainId(rawChainId);
   const chainInfo = getChainInfo(currentChainId);
   const symbol = getChainSymbol(currentChainId);
 
@@ -1056,7 +1054,13 @@ export default function Home() {
                           </span>
                         </div>
                         <div className={listRow}>
-                          <span className={listValue}>{formatValue(BigInt(tx.value), symbol)}</span>
+                          <span className={listValue}>
+                            {formatValue(
+                              BigInt(tx.value),
+                              symbol,
+                              chainInfo?.nativeCurrency.decimals ?? 18,
+                            )}
+                          </span>
                           {tx.gasUsed && tx.effectiveGasPrice && (
                             <span className={listSecondary}>
                               Fee:{' '}

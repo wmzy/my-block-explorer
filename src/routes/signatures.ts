@@ -5,6 +5,7 @@
 import { Hono } from 'hono';
 import { createLogger } from '../server/logger';
 import { signatureService, type SelectorLookup } from '../services/SignatureService';
+import { respondError } from '../utils/api-error';
 
 const logger = createLogger('signatures-routes');
 
@@ -51,7 +52,7 @@ app.get('/signatures', async c => {
             ? FUNCTION_SELECTOR_RE.test(selector)
             : EVENT_TOPIC0_RE.test(selector);
         if (!wellFormed) {
-          return c.json({ error: 'invalid_selector', message: shapeError(kind, segment) }, 400);
+          return respondError(c, 400, 'invalid_selector', shapeError(kind, segment));
         }
         parsed.push({ kind, selector });
       }
@@ -63,12 +64,11 @@ app.get('/signatures', async c => {
   const unique = new Map<string, SelectorLookup>();
   for (const request of parsed) unique.set(`${request.kind}:${request.selector}`, request);
   if (unique.size > MAX_SELECTORS) {
-    return c.json(
-      {
-        error: 'too_many_selectors',
-        message: `Too many selectors requested (${unique.size}); the limit is ${MAX_SELECTORS} per call`,
-      },
+    return respondError(
+      c,
       400,
+      'too_many_selectors',
+      `Too many selectors requested (${unique.size}); the limit is ${MAX_SELECTORS} per call`,
     );
   }
   if (unique.size === 0) return c.json({ results: {} });
@@ -80,7 +80,7 @@ app.get('/signatures', async c => {
     return c.json({ results });
   } catch (error) {
     logger.error({ err: error }, 'signature lookup failed');
-    return c.json({ error: 'internal_error', message: 'Signature lookup failed' }, 500);
+    return respondError(c, 500, 'internal_error', 'Signature lookup failed');
   }
 });
 

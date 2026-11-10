@@ -50,7 +50,7 @@ import {
   type MempoolRenderUnit,
 } from '@/utils/mempoolAnalysis';
 import { cellText, formatHash, formatNativeDisplay, formatNumber } from '@/utils/format';
-import { parseChainIdParam } from '@/utils/chainParam';
+import { resolveMainnetDefaultChainId } from '@/utils/chainParam';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
 
 const GWEI = 1_000_000_000;
@@ -216,12 +216,10 @@ export const conflictBadgeTitle = (entry: AnalyzedPoolEntry): string => {
 export default function PendingTransactionsPage() {
   const { params, router } = useMatched();
 
-  // An unparseable :chainId param is a broken link, not an unsupported
-  // chain: parseChainIdParam returns null and the raw param travels on to
-  // the unsupported state (same two-tier guard as the Charts view).
+  // Two-tier mainnet-default guard: the raw param travels on to the
+  // unsupported state.
   const rawChainId = params.chainId;
-  const parsedChainId = rawChainId === undefined ? 1 : parseChainIdParam(rawChainId);
-  const currentChainId = parsedChainId ?? 0;
+  const currentChainId = resolveMainnetDefaultChainId(rawChainId);
   const chainInfo = getChainInfo(currentChainId);
 
   const handleChainChange = (newChainId: number) => {

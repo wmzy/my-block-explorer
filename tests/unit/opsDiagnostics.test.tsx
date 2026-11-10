@@ -31,6 +31,10 @@ vi.mock('haze-ui', async () => {
     // Ops also renders the (always-closed here) uninstall Dialog — it
     // must exist as a component or the whole page crashes at import.
     Dialog: () => null,
+    // util/clipboard's toastCopy imports the module-level toast() — the
+    // copy-diagnostics path goes through it (same instance as useToast's
+    // return here, matching the global setup mock's shared-toast contract).
+    toast: toastFn,
     useToast: () => toastFn,
   };
 });

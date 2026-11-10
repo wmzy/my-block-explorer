@@ -64,14 +64,18 @@ const tableContainer = css`...`;
 - Client-side vs server-side sort detection
 - Multi-column sorting with priority
 - ABI-driven filtering (EventFilterPanel)
-- Request-generation guard on polls (claim an id, never read a shared one)
+- Request-generation guard on polls (the shared `util/useGenerationGuard`
+  hook — claim an id, never read a shared one; NOT needed for query-cache
+  fetches, whose newest-run-wins is native to react-toolroom)
 - Enhanced pagination (goto page, first/last)
 
 ### EventStatistics
 
 - Real-time indexing progress bar
 - Status badges: `idle | indexing | paused | error | completed`
-- 5-second polling for updates
+- Ranges data rides the SHARED query-cache poll (`services/eventsRanges.ts`
+  — ONE 3s loop shared with IndexingRangeManager; the status half fetches
+  alongside it, keep-last-good on outage)
 - Event type breakdown
 
 ## TESTS

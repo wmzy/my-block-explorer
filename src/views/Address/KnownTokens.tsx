@@ -12,7 +12,6 @@
 import { css, cx } from '@linaria/core';
 import { useMemo, type ReactNode } from 'react';
 import { TypedLink } from '@native-router/react';
-import { formatUnits } from 'viem';
 
 import { CopyableHash } from '@/components/ui/CopyableHash';
 import { linkStyle } from '@/components/ui/DataTable';
@@ -27,6 +26,7 @@ import {
   type KnownTokenBalance,
 } from '@/services/knownTokenBalances';
 import { tokenAmountToUsd, useTokenUsdPrices, type UsdPriceSnapshot } from '@/services/prices';
+import { formatRawUnits } from '@/utils/format';
 import { useTokenMetas, type TokenMeta } from '@/views/Address/TokenTransfers';
 
 // One held-token row: linked symbol on the left (CopyableHash conventions
@@ -92,7 +92,7 @@ function KnownTokenRow({
   const amount =
     decimals !== undefined ? (
       <span title={`${row.balance.toString()} base units`}>
-        {formatUnits(row.balance, decimals)}
+        {formatRawUnits(row.balance, decimals)}
       </span>
     ) : (
       <span title="Token decimals unknown — raw value">{row.balance.toString()}</span>

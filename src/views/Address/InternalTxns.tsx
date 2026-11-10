@@ -14,7 +14,7 @@ import { Alert } from 'haze-ui';
 import { getChainInfo, getChainSymbol } from '@/config/chains';
 import { fetchCallTraceTree } from '@/utils/callTraceRpc';
 import { errorMessage } from '@/utils/errorHandler';
-import { formatFixedDecimals, formatHash, truncateMiddle } from '@/utils/format';
+import { formatHash, formatNumber, formatValue, truncateMiddle } from '@/utils/format';
 import {
   aggregateInternalTxns,
   flattenInternalTxTree,
@@ -132,19 +132,11 @@ const recordsErrorLine = css`
   font-size: var(--haze-text-xs);
 `;
 
-// Exact wei → display string honoring the chain's native-currency
-// decimals. BigInt-only: the old `Number(formatUnits(...)).toFixed(4)`
-// collapsed distinct internal-transfer values past 2^53 whole units and
-// printed "1e+21" for larger ones.
-const formatInternalValue = (wei: bigint, chainId: number): string => {
-  const symbol = getChainSymbol(chainId);
-  const decimals = getChainInfo(chainId)?.nativeCurrency.decimals ?? 18;
-  if (wei === 0n) return `0 ${symbol}`;
-  const shown = formatFixedDecimals(wei, decimals, 4);
-  if (shown === null) return `${wei} ${symbol}`;
-  if (/^0*\.?0*$/.test(shown)) return `<0.0001 ${symbol}`;
-  return `${shown} ${symbol}`;
-};
+// Value cells render through the shared formatValue (utils/format):
+// zero exact, sub-0.0001-unit dust floored ("<0.0001"), 4 decimals over
+// the chain's OWN native-currency decimals, BigInt-exact. The chain's
+// symbol/decimals pair is derived at each call site below — the
+// formatter never guesses a chain.
 
 // Trace one transaction through the family's shared fetch
 // (utils/callTraceRpc — the Call Trace card's request shape and cast).
@@ -313,9 +305,9 @@ export default function InternalTxns({
       <div className={tabHeader}>
         <p className={scopeNote} data-testid="internal-txns-scope-note">
           Internal transfers are traced on demand with <code>debug_traceTransaction</code> over the
-          first {traceDepth.toLocaleString()} discovered transactions of the selected window
+          first {formatNumber(traceDepth)} discovered transactions of the selected window
           {windowDeeperThanTrace
-            ? ` (the window holds ${transactions.length.toLocaleString()} — more than the depth covers)`
+            ? ` (the window holds ${formatNumber(transactions.length)} — more than the depth covers)`
             : ''}{' '}
           — not full indexing, and discovery itself is heuristic.
         </p>
@@ -329,7 +321,7 @@ export default function InternalTxns({
           >
             {depthOptions.map(option => (
               <option key={option} value={String(option)}>
-                {option.toLocaleString()}
+                {formatNumber(option)}
               </option>
             ))}
           </select>
@@ -390,7 +382,11 @@ export default function InternalTxns({
                   <td className={monoStyle}>
                     {record.value === '0'
                       ? '—'
-                      : formatInternalValue(BigInt(record.value), chainId)}
+                      : formatValue(
+                          BigInt(record.value),
+                          getChainSymbol(chainId),
+                          getChainInfo(chainId)?.nativeCurrency.decimals ?? 18,
+                        )}
                   </td>
                   <td>
                     {record.reverted ? (
@@ -407,8 +403,8 @@ export default function InternalTxns({
           </DataTable>
           {records.total > records.transactions.length && (
             <p className={recordsDisclosure}>
-              Showing {records.transactions.length.toLocaleString()} of{' '}
-              {records.total.toLocaleString()}
+              Showing {formatNumber(records.transactions.length)} of{' '}
+              {formatNumber(records.total)}
             </p>
           )}
         </section>
@@ -514,7 +510,11 @@ export default function InternalTxns({
                         </td>
                         <td className={monoStyle}>
                           {row.value !== null && row.value > 0n
-                            ? formatInternalValue(row.value, chainId)
+                            ? formatValue(
+                                row.value,
+                                getChainSymbol(chainId),
+                                getChainInfo(chainId)?.nativeCurrency.decimals ?? 18,
+                              )
                             : '—'}
                         </td>
                         <td className={depthCell}>{row.depth}</td>

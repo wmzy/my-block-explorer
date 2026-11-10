@@ -29,6 +29,12 @@ describe('isLoopbackHost', () => {
     expect(isLoopbackHost('::1')).toBe(true);
     expect(isLoopbackHost('[::1]')).toBe(true);
     expect(isLoopbackHost('0:0:0:0:0:0:0:1')).toBe(true);
+    // The fold onto the shared cors-origins socket predicate also
+    // accepts the v4-mapped spelling (its ::ffff:-stripping
+    // normalization): a HOST of ::ffff:127.0.0.1 is a loopback bind,
+    // which the old local copy misread as remote.
+    expect(isLoopbackHost('::ffff:127.0.0.1')).toBe(true);
+    expect(isLoopbackHost('[::ffff:127.0.0.1]')).toBe(true);
   });
 
   it('rejects wildcard, private and public binds as non-loopback', () => {

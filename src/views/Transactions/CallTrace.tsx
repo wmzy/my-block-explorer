@@ -5,7 +5,7 @@ import { CallTypeBadge } from '@/components/CallTypeBadge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { CopyableHash } from '@/components/ui/CopyableHash';
 import { ErrorState } from '@/components/ui/ErrorState';
-import { getChainSymbol } from '@/config/chains';
+import { getChainInfo, getChainSymbol } from '@/config/chains';
 import { fetchCallTraceTree } from '@/utils/callTraceRpc';
 import { formatNumber, formatValue } from '@/utils/format';
 import { useLazyExpand } from '@/util/useLazyExpand';
@@ -141,6 +141,7 @@ function TraceNodeRow({
   const showSelector = node.selector !== null && !CREATE_FAMILY.has(node.type);
   const gasShare =
     node.gasUsed !== null && txGasUsed !== null ? gasShareLabel(node.gasUsed, txGasUsed) : '';
+  const nativeDecimals = getChainInfo(chainId)?.nativeCurrency.decimals ?? 18;
 
   return (
     <div className={traceNodeStyle}>
@@ -169,7 +170,7 @@ function TraceNodeRow({
         )}
         {node.value !== null && node.value > 0n && (
           <span className={traceMutedStyle} title={`${node.value.toString()} wei`}>
-            {formatValue(node.value, symbol)}
+            {formatValue(node.value, symbol, nativeDecimals)}
           </span>
         )}
         {node.gasUsed !== null && (

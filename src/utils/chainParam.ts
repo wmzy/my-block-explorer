@@ -24,3 +24,14 @@ export function parseBlockNumberParam(raw: string | undefined): number | null {
   const parsed = Number(raw);
   return Number.isSafeInteger(parsed) && parsed >= 0 ? parsed : null;
 }
+
+/**
+ * The two-tier chain-id guard the un-scoped mainnet routes share: no
+ * :chainId param at all means mainnet (id 1); a parseable id resolves as
+ * itself; anything malformed parses to null and parks the view on 0 (the
+ * guarded id that renders the unsupported state without RPC traffic) —
+ * never a wrong chain.
+ */
+export function resolveMainnetDefaultChainId(raw: string | undefined): number {
+  return (raw === undefined ? 1 : parseChainIdParam(raw)) ?? 0;
+}

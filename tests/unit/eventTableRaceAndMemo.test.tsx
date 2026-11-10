@@ -14,6 +14,7 @@ import type { ReactNode } from 'react';
 import '@testing-library/jest-dom/vitest';
 
 import EventTable, { EventRow, type EventRowProps } from '@/components/events/EventTable';
+import { spinnerBase } from '@/components/ui/Button';
 import { get } from '@/util/http';
 
 vi.mock('@/util/http', () => ({
@@ -129,6 +130,22 @@ describe('EventTable fetch lifecycle', () => {
     await flush();
 
     expect(get).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders the loading pane on the shared border-spinner base (Button export)', async () => {
+    // First-load fetch never settles: the pane stays up for assertion.
+    const hold = createDeferred<ReturnType<typeof page>>();
+    vi.mocked(get).mockImplementation(() => hold.promise);
+
+    renderTable();
+
+    const message = await screen.findByText('Loading events...');
+    // The pane is [spinner div, message span]; the spinner must carry the
+    // SAME exported base class Button's loading span uses — the dedup
+    // contract for the former twin border-spinners.
+    const spinner = message.previousElementSibling;
+    expect(spinner?.tagName).toBe('DIV');
+    expect((spinner?.getAttribute('class') ?? '').split(/\s+/)).toContain(spinnerBase);
   });
 
   it('re-renders only the toggled row on a raw-log disclosure toggle', async () => {

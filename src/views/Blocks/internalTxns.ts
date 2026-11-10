@@ -26,6 +26,7 @@ import {
   type FailedTraceTx,
   type TraceTxOutcome,
 } from '@/utils/internalTxScan';
+import { formatNumber } from '@/utils/format';
 import type { CallTraceNode } from '@/utils/traceFormat';
 
 /**
@@ -229,7 +230,7 @@ export function blockInternalTxnsSummary(aggregate: BlockInternalTxnsAggregate):
  */
 export function blockTraceTruncationLabel(tracedCount: number, totalCount: number): string | null {
   if (tracedCount >= totalCount) return null;
-  return `first ${tracedCount.toLocaleString()} of ${totalCount.toLocaleString()} transactions traced`;
+  return `first ${formatNumber(tracedCount)} of ${formatNumber(totalCount)} transactions traced`;
 }
 
 /**

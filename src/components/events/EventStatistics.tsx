@@ -2,6 +2,11 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { css, cx } from '@linaria/core';
 import type { Address } from 'viem';
 import { get } from '@/util/http';
+import {
+  EVENT_RANGES_POLL_INTERVAL,
+  useEventRanges,
+} from '@/services/eventsRanges';
+import { useGenerationGuard } from '@/util/useGenerationGuard';
 
 type IndexingStatus = {
   chainId: number;
@@ -198,100 +203,110 @@ export const EventStatistics = ({
   onEventsUpdated,
 }: EventStatisticsProps) => {
   const [stats, setStats] = useState<IndexingStatus | null>(null);
-  const [ranges, setRanges] = useState<IndexingRangeSummary[]>([]);
   const [loading, setLoading] = useState(false);
   // True when the status endpoint itself failed (503 from the honest
   // error envelope) — the bar then says "Status unavailable" instead of
   // silently disappearing, and good /ranges data still renders coverage.
   const [statusFailed, setStatusFailed] = useState(false);
   const prevEventsRef = useRef(0);
-  // Generation guard: the Contract route reuses this component across a
-  // contract switch, so a fetch started for the previous contract can
-  // settle after the new one answered and would paint the old contract's
-  // status, ranges and outage state over the new contract's. Every run
-  // stamps the current identity; only the newest run may write, and a
-  // contract change restarts the "events grew" counter so the new
-  // contract's total is compared against its own baseline (its count can
-  // legitimately be lower than the previous contract's).
-  const requestIdRef = useRef(0);
+  // Generation guard (shared claim-based hook, util/useGenerationGuard):
+  // the Contract route reuses this component across a contract switch, so
+  // a status fetch started for the previous contract can settle after the
+  // new one answered and would paint the old contract's status and outage
+  // state over the new contract's. Every run claims the current identity;
+  // only the newest run may write, and a contract change restarts the
+  // "events grew" counter so the new contract's total is compared against
+  // its own baseline (its count can legitimately be lower than the
+  // previous contract's).
+  const statusGuard = useGenerationGuard();
   const identityRef = useRef(`${chainId}:${contractAddress}`);
 
   if (identityRef.current !== `${chainId}:${contractAddress}`) {
     identityRef.current = `${chainId}:${contractAddress}`;
-    requestIdRef.current += 1;
+    statusGuard.invalidate();
     prevEventsRef.current = 0;
   }
 
+  // Ranges half: the shared query-cache service (services/eventsRanges.ts)
+  // — ONE cache entry and ONE 3s poll loop shared with
+  // IndexingRangeManager. EventStatistics passes the aggregate-status leg
+  // of its poll gate here (the legacy status can index without range
+  // rows); the any-range-indexing leg the hook derives from its own data.
+  const rangesQuery = useEventRanges(chainId, contractAddress, stats?.status === 'indexing');
+  const { refetch: refetchRanges, fetching: rangesFetching } = rangesQuery;
+  const ranges = rangesQuery.data?.ranges ?? [];
+
   // Indexing status drives the status/event metrics; the ranges feed the
-  // coverage metric (same endpoint IndexingRangeManager polls). Both ride
-  // one refresh and one 3s poll so the bar never disagrees with the
-  // segmented range view. allSettled: one endpoint failing must not drag
-  // the other's good data down with it.
+  // coverage metric through the shared service above. The old
+  // Promise.allSettled pair's independence guarantee survives the split:
+  // a status outage keeps the last good stats and the coverage metric
+  // keeps rendering from the shared ranges cache — one endpoint failing
+  // still cannot drag the other's good data down with it.
   const fetchStatus = useCallback(async () => {
-    // Claim a NEW generation for this run: an id merely READ from the ref is
-    // shared by every overlapping tick, so isCurrent() could not tell a
-    // superseded run from the newest one and a stale 3s tick was able to
-    // paint over fresher status/ranges (and clear the spinner).
-    const requestId = ++requestIdRef.current;
-    const isCurrent = () => requestId === requestIdRef.current;
+    // Claim a NEW generation for this run: an id merely READ from the ref
+    // is shared by every overlapping tick, so isCurrent() could not tell
+    // a superseded run from the newest one and a stale 3s tick was able
+    // to paint over fresher status (and clear the spinner).
+    const requestId = statusGuard.claim();
+    const isCurrent = () => statusGuard.isCurrent(requestId);
     try {
       setLoading(true);
-      const [statusRes, rangesRes] = await Promise.allSettled([
-        get<IndexingStatus>(
-          `/api/chains/${chainId}/contracts/${contractAddress}/events/indexing-status`,
-        ),
-        get<{ ranges?: IndexingRangeSummary[] }>(
-          `/api/chains/${chainId}/contracts/${contractAddress}/events/ranges`,
-        ),
-      ]);
+      const status = await get<IndexingStatus>(
+        `/api/chains/${chainId}/contracts/${contractAddress}/events/indexing-status`,
+      );
       if (!isCurrent()) return;
-      if (statusRes.status === 'fulfilled') {
-        setStats(statusRes.value);
-        setStatusFailed(false);
-
-        if (statusRes.value.totalEventsIndexed > prevEventsRef.current) {
-          prevEventsRef.current = statusRes.value.totalEventsIndexed;
-          onEventsUpdated?.();
-        }
-      } else {
-        // Keep the last good stats (if any); mark the outage honestly.
-        setStatusFailed(true);
+      setStats(status);
+      setStatusFailed(false);
+      if (status.totalEventsIndexed > prevEventsRef.current) {
+        prevEventsRef.current = status.totalEventsIndexed;
+        onEventsUpdated?.();
       }
-      if (rangesRes.status === 'fulfilled') {
-        setRanges(rangesRes.value.ranges ?? []);
-      }
+    } catch {
+      // Keep the last good stats (if any); mark the outage honestly.
+      if (isCurrent()) setStatusFailed(true);
     } finally {
       // Only the newest run owns the spinner: a superseded run must not
       // clear the flag its successor set.
       if (isCurrent()) setLoading(false);
     }
-  }, [chainId, contractAddress, onEventsUpdated]);
+  }, [chainId, contractAddress, onEventsUpdated, statusGuard]);
 
   useEffect(() => {
     fetchStatus();
     return () => {
       // Unmount / identity change invalidates in-flight runs.
-      requestIdRef.current += 1;
+      statusGuard.invalidate();
     };
-  }, [fetchStatus]);
+  }, [fetchStatus, statusGuard]);
 
-  // Poll at IndexingRangeManager's 3s cadence while anything is indexing
-  // (the aggregate status OR any individual range — the legacy status row
-  // can lag a freshly started range job), so the coverage bar advances in
-  // step with the segmented range view. Idle stays unpolled as before.
+  // Poll the status endpoint at the shared 3s cadence while anything is
+  // indexing (the aggregate status OR any individual range — the legacy
+  // status row can lag a freshly started range job); the ranges half
+  // polls on the same cadence inside the shared service, so the coverage
+  // bar advances in step with the segmented range view. Idle stays
+  // unpolled as before.
   const anyRangeIndexing = ranges.some(r => r.status === 'indexing');
 
   useEffect(() => {
     if (stats?.status !== 'indexing' && !anyRangeIndexing) return;
 
-    const id = setInterval(fetchStatus, 3000);
+    const id = setInterval(fetchStatus, EVENT_RANGES_POLL_INTERVAL);
     return () => clearInterval(id);
   }, [stats?.status, anyRangeIndexing, fetchStatus]);
 
   const handleRefresh = useCallback(() => {
     fetchStatus();
+    // The old single refresh re-fetched BOTH halves of the allSettled
+    // pair; the split keeps that — the shared ranges entry refreshes too.
+    void refetchRanges();
     onRefresh?.();
-  }, [fetchStatus, onRefresh]);
+  }, [fetchStatus, refetchRanges, onRefresh]);
+
+  // Spinner/disabled state covers both halves of the old allSettled pair:
+  // the local status flag and the shared ranges fetch (fetching is true
+  // during every shared tick — exactly when the old combined fetch showed
+  // its spinner).
+  const busy = loading || rangesFetching;
 
   if (!stats && !statusFailed) return null;
 
@@ -371,10 +386,10 @@ export const EventStatistics = ({
       <button
         className={refreshBtnStyle}
         onClick={handleRefresh}
-        disabled={loading}
+        disabled={busy}
         title="Refresh"
       >
-        {loading ? '...' : '↻'}
+        {busy ? '...' : '↻'}
       </button>
     </div>
   );

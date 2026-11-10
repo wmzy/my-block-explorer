@@ -14,7 +14,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { css, cx } from '@linaria/core';
 import { TypedLink, useMatched, useSearch } from '@native-router/react';
-import { formatUnits, getAddress } from 'viem';
+import { getAddress } from 'viem';
 
 import TopNavigation from '@/components/TopNavigation';
 import { redirectReplace } from '@/views/Home/Landing';
@@ -58,7 +58,7 @@ import { classifyTokenOverview, formatTokenSupply } from '@/views/Address/tokenO
 import TokenTransfers, { TRANSFER_LIMIT } from '@/views/Address/TokenTransfers';
 import { getChainInfo, getChainName } from '@/config/chains';
 import { parseChainIdParam } from '@/utils/chainParam';
-import { cellText } from '@/utils/format';
+import { cellText, formatRawUnits } from '@/utils/format';
 import { codeVerdict } from '@/utils/address';
 import { useContractSource } from '@/services/contracts';
 import { recordViewedToken } from '@/services/tokenDirectory';
@@ -1041,8 +1041,7 @@ export default function TokenPage() {
   const symbolSuffix = symbol !== null ? ` ${symbol}` : '';
   // Amount formatter with the TOKEN's own decimals — never a guessed
   // divisor (raw base units when decimals is unknown, like the supply).
-  const formatNet = (net: bigint): string =>
-    decimals !== null ? formatUnits(net, decimals) : net.toString();
+  const formatNet = (net: bigint): string => formatRawUnits(net, decimals);
 
   return (
     <>

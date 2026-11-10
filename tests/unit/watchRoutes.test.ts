@@ -249,6 +249,23 @@ describe('DELETE /chains/:chainId/watch/:address', () => {
 });
 
 describe('GET /chains/:chainId/watch/events', () => {
+  it('rejects a bad chain id with 400 via the shared validator escape', async () => {
+    // Aligned with the sibling scan routes: getValidatedChainId throws
+    // HTTPException, which api-app's onError renders as the canonical
+    // envelope in production. This bare sub-app harness has no onError,
+    // so Hono's default exception page surfaces — the same escape-pinning
+    // pattern approvalsRoute.test.ts uses. The old route re-caught the
+    // throw and rendered a bare invalid_request body.
+    const junk = await request('/chains/abc/watch/events');
+    expect(junk.status).toBe(400);
+    expect(await junk.text()).toContain('Invalid chain ID');
+
+    const unsupported = await request('/chains/424242424242424/watch/events');
+    expect(unsupported.status).toBe(400);
+    expect(await unsupported.text()).toContain('Unsupported chain');
+    expect(serviceMocks.recentEvents).not.toHaveBeenCalled();
+  });
+
   it('serves the ring buffer newest-first with the default limit 25', async () => {
     serviceMocks.recentEvents.mockReturnValue([]);
     const res = await request('/chains/1/watch/events');

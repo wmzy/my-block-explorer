@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { css, cx } from '@linaria/core';
 import type { ReactNode } from 'react';
 import { TypedLink, useMatched, useSearch, useSetSearch } from '@native-router/react';
-import { erc20Abi, formatUnits } from 'viem';
+import { erc20Abi } from 'viem';
 import type { ContractFunctionParameters } from 'viem';
 import { Alert } from 'haze-ui';
 import { getChainInfo, getChainName, getChainSymbol } from '@/config/chains';
@@ -28,6 +28,7 @@ import { classifyAddressType, delegationTarget } from '@/views/Address/addressTy
 import { checkAddressValidity } from '@/views/Address/addressValidity';
 import {
   addressSearchSchema,
+  clampPage,
   effectiveActivityTab,
   effectiveTxFilters,
   hasActiveTxFilters,
@@ -93,9 +94,12 @@ import {
   formatDateTime,
   formatHash,
   formatNativeDisplay,
+  formatNumber,
+  formatRawUnits,
   formatRelativeTime,
 } from '@/utils/format';
 import { codeVerdict } from '@/utils/address';
+import { MULTICALL3_ADDRESS } from '@/utils/multicall';
 import { getExternalToolLinks } from '@/config/externalTools';
 import { redirectReplace } from '@/views/Home/Landing';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
@@ -543,12 +547,6 @@ export function InvalidAddressError({ address, chainId }: { address: string; cha
   );
 }
 
-// Canonical Multicall3 deployment (same constant as
-// services/tokenMetadata.ts): the viem client built by
-// utils/realTimeData is not tied to one chain type, so the multicall
-// address cannot be inferred from chain config — pass it explicitly.
-const MULTICALL3_ADDRESS = '0xcA11bde05977b3631167028862bE2a173976CA11';
-
 // Per-kind label of one holding row. The verified branch only applies to
 // ERC-20 rows (the only standard the on-chain balanceOf batch checks);
 // erc721/erc1155/unclassified rows render the discovered aggregate.
@@ -563,11 +561,10 @@ function holdingRowContent(
     // honest fallback for an incomplete metadata record (never a guessed
     // 18-decimal formatting).
     const formatAmount = (amount: bigint): string =>
-      meta?.decimals !== undefined ? formatUnits(amount, meta.decimals) : amount.toString();
-    const symbolSuffix = meta?.symbol !== undefined ? ` ${meta.symbol}` : '';
+      formatRawUnits(amount, meta?.decimals, meta?.symbol);
     if (verifiedBalance === undefined) {
       return {
-        text: `${formatAmount(holding.net)}${symbolSuffix}`,
+        text: formatAmount(holding.net),
         title: undefined,
       };
     }
@@ -577,19 +574,15 @@ function holdingRowContent(
       return {
         text: (
           <>
-            On-chain {formatAmount(verifiedBalance)}
-            {symbolSuffix}{' '}
-            <span className={holdingsMuted}>
-              discovered {formatAmount(holding.net)}
-              {symbolSuffix}
-            </span>
+            On-chain {formatAmount(verifiedBalance)}{' '}
+            <span className={holdingsMuted}>discovered {formatAmount(holding.net)}</span>
           </>
         ),
         title: undefined,
       };
     }
     return {
-      text: `${formatAmount(holding.net)}${symbolSuffix} (on-chain verified)`,
+      text: `${formatAmount(holding.net)} (on-chain verified)`,
       title: undefined,
     };
   }
@@ -603,12 +596,12 @@ function holdingRowContent(
   }
   if (holding.kind === 'erc1155') {
     return {
-      text: `ID ${holding.tokenId} × ${holding.net.toLocaleString()}`,
+      text: `ID ${holding.tokenId} × ${formatBigInt(holding.net)}`,
       title: undefined,
     };
   }
   return {
-    text: `${holding.net.toLocaleString()} (standard unresolved)`,
+    text: `${formatBigInt(holding.net)} (standard unresolved)`,
     title: undefined,
   };
 }
@@ -661,6 +654,10 @@ function HoldingsList({
             args: [address],
           });
         }
+        // The viem client built by utils/realTimeData is not tied to one
+        // chain type, so the multicall address (the canonical
+        // MULTICALL3_ADDRESS import) cannot be inferred from chain
+        // config — it is passed explicitly.
         const outcomes = await client.multicall({
           contracts,
           allowFailure: true,
@@ -1215,8 +1212,8 @@ export function SummaryStatsRow({
       <p className={summaryStatsCaveat}>
         ◍ Over{' '}
         {discoveredTotal !== undefined && discoveredTotal > stats.txCount
-          ? `the newest ${stats.txCount.toLocaleString()} of ${discoveredTotal.toLocaleString()} discovered transactions`
-          : `the ${stats.txCount.toLocaleString()} discovered transactions`}{' '}
+          ? `the newest ${formatNumber(stats.txCount)} of ${formatNumber(discoveredTotal)} discovered transactions`
+          : `the ${formatNumber(stats.txCount)} discovered transactions`}{' '}
         of the selected window — not lifetime totals.
       </p>
     </div>
@@ -1308,11 +1305,11 @@ export default function Address() {
     tfMax: tfMaxParam,
     tfMethod: tfMethodParam,
   } = useSearch(addressSearchSchema);
-  const txPage = Math.max(1, Math.floor(txPageParam));
+  const txPage = clampPage(txPageParam);
   const setTxPage = (next: number) => {
     void setSearch(prev => ({
       ...prev,
-      page: String(Math.max(1, Math.floor(next))),
+      page: String(clampPage(next)),
     }));
   };
 
@@ -1664,8 +1661,6 @@ export default function Address() {
   // (only reached when isErc20, but the fallback keeps the raw units
   // honest if that invariant ever loosens).
   const tokenDecimals = tokenClassification?.decimals ?? null;
-  const tokenSymbol = tokenClassification?.symbol ?? null;
-  const tokenSymbolSuffix = tokenSymbol !== null ? ` ${tokenSymbol}` : '';
   // Discovered holders of the viewed token itself: net per-participant
   // balances from the token-mode scan rows (each row IS this token),
   // ERC-20 semantics only, ids excluded.
@@ -1820,7 +1815,7 @@ export default function Address() {
   const txSearchWindowBlocks = txData?.searchWindowBlocks;
   const searchWindowLabel =
     txSearchWindowBlocks !== undefined
-      ? `within the last ${txSearchWindowBlocks.toLocaleString()} blocks`
+      ? `within the last ${formatNumber(txSearchWindowBlocks)} blocks`
       : 'within a capped block window';
   const externalToolLinks = getExternalToolLinks(currentChainId, address);
 
@@ -1844,10 +1839,10 @@ export default function Address() {
   // "at least" floor belongs to discovery, not to the narrowing, so the
   // phrase says "matching" instead.
   const txCountPhrase = hasTxFilters
-    ? `${txTotal.toLocaleString()} matching discovered transactions`
+    ? `${formatNumber(txTotal)} matching discovered transactions`
     : txCoverage === 'complete'
-      ? `${txTotal.toLocaleString()} transactions`
-      : `At least ${txTotal.toLocaleString()} transactions discovered`;
+      ? `${formatNumber(txTotal)} transactions`
+      : `At least ${formatNumber(txTotal)} transactions discovered`;
 
   // Page-level coverage aggregate (PM review: one honest chip near the
   // header instead of stacked caveat paragraphs). Pure derivation in
@@ -2121,7 +2116,7 @@ export default function Address() {
                     <InfoItem label="Outgoing Transactions (Nonce)">
                       {realTimeQuery.data ? (
                         <>
-                          {realTimeQuery.data.transactionCount.toLocaleString()}
+                          {formatNumber(realTimeQuery.data.transactionCount)}
                           <button
                             type="button"
                             className={nonceHint}
@@ -2186,7 +2181,7 @@ export default function Address() {
 
                     {persistent?.contractCreationBlock && (
                       <InfoItem label="Created at Block">
-                        {persistent.contractCreationBlock.toLocaleString()}
+                        {formatNumber(persistent.contractCreationBlock)}
                       </InfoItem>
                     )}
 
@@ -2221,7 +2216,7 @@ export default function Address() {
 
                     {realTimeQuery.data && (
                       <InfoItem label="Latest Block">
-                        {realTimeQuery.data.latestBlock.toLocaleString()}
+                        {formatNumber(realTimeQuery.data.latestBlock)}
                       </InfoItem>
                     )}
 
@@ -2356,17 +2351,18 @@ export default function Address() {
                                   {cellText(holder.address)}
                                 </TypedLink>
                                 <span>
-                                  {tokenDecimals !== null
-                                    ? formatUnits(holder.net, tokenDecimals)
-                                    : holder.net.toString()}
-                                  {tokenSymbolSuffix}
+                                  {formatRawUnits(
+                                    holder.net,
+                                    tokenDecimals,
+                                    tokenClassification?.symbol ?? null,
+                                  )}
                                 </span>
                               </div>
                             ))}
                             <p className={holdingsCaveat}>
                               Discovered via scanned transfers — may be incomplete
                               {tokenHolders.excludedTransfers > 0
-                                ? ` (non-ERC-20 rows excluded: ${tokenHolders.excludedTransfers.toLocaleString()})`
+                                ? ` (non-ERC-20 rows excluded: ${formatNumber(tokenHolders.excludedTransfers)})`
                                 : ''}
                             </p>
                           </>
@@ -2559,7 +2555,7 @@ export default function Address() {
                         <>
                           <Alert variant="warning">
                             {realTimeQuery.data
-                              ? `This address has sent ${realTimeQuery.data.transactionCount.toLocaleString()} transactions (nonce).`
+                              ? `This address has sent ${formatNumber(realTimeQuery.data.transactionCount)} transactions (nonce).`
                               : 'This address has sent an unknown number of transactions (nonce unavailable).'}{' '}
                             Incoming activity cannot be scanned because the balance-history
                             heuristic needs non-zero balance; token activity is never scanned.

@@ -12,6 +12,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, act } from '@testing-library/react';
 import EventStatistics, { computeIndexingCoverage } from '@/components/events/EventStatistics';
 import { get } from '@/util/http';
+import { clearAllCaches } from '@/util/useQuery';
 
 vi.mock('@/util/http', () => ({
   get: vi.fn(),
@@ -147,6 +148,10 @@ describe('EventStatistics coverage metric', () => {
   };
 
   beforeEach(() => {
+    // The shared ranges cache outlives a component tree; each test mounts
+    // against a cold cache so fixtures from a previous test cannot
+    // stale-serve into this one.
+    clearAllCaches();
     vi.clearAllMocks();
   });
 

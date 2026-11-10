@@ -60,6 +60,18 @@ export function clampRange(from: number, to: number, length: number): { from: nu
   return { from: start, to: end };
 }
 
+/**
+ * Slot-label truncation shared by the column header chip and the member
+ * row slot chips: 8 lead + 4 tail around a single '…' glyph, the whole
+ * value kept at 14 chars or fewer. Deliberately local to the storage
+ * family — utils/format's truncateMiddle uses a 3-dot '...' separator
+ * and a lead+tail+3 threshold, and this rendering pins the '…' glyph
+ * and the 14 cutoff byte-for-byte.
+ */
+export function shortSlot(slot: Hex): string {
+  return slot.length <= 14 ? slot : `${slot.slice(0, 8)}…${slot.slice(-4)}`;
+}
+
 export type StructRow = {
   label: string;
   slot: Hex;

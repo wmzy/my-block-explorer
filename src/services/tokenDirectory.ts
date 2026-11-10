@@ -9,8 +9,8 @@
 // Layering follows the established service shapes: storage is best-effort
 // per-browser (searchHistory/watchlist precedent — reads degrade to [],
 // writes are swallowed in private mode), row enrichment is ONE Multicall3
-// batch of name()/symbol()/decimals()/totalSupply() (tokenMetadata's
-// multicall pattern; a transport-level failure REJECTS so the query hook
+// batch of name()/symbol()/decimals()/totalSupply() (the shared
+// utils/multicall helpers; a transport-level failure REJECTS so the query hook
 // surfaces a retryable error — knownTokenBalances' convention), and prices
 // resolve in the view through the existing prices.ts spot batch. The
 // "ERC-20" claim reuses classifyTokenOverview's rule verbatim: decimals()
@@ -21,6 +21,7 @@ import { parseAbi, getAddress, type Address, type ContractFunctionParameters } f
 import { knownTokensForChain, type KnownToken } from '@/config/knownTokens';
 import { classifyTokenOverview } from '@/views/Address/tokenOverview';
 import { createRpcClient } from '@/utils/realTimeData';
+import { MULTICALL3_ADDRESS, readMulticallBigint, readMulticallValue } from '@/utils/multicall';
 import { HEX_ADDRESS_RE } from '@/utils/address';
 import { readStorageItem, writeStorageItem } from '@/util/storageAccess';
 import { VIEWED_TOKENS_STORAGE_PREFIX } from '@/util/storageKeys';
@@ -260,11 +261,8 @@ export function directoryRowsForChain(chainId: number): TokenDirectoryRow[] {
 }
 
 // ---------------------------------------------------------------------------
-// Row enrichment (ONE Multicall3 batch — tokenMetadata's multicall pattern)
+// Row enrichment (ONE Multicall3 batch — utils/multicall helpers)
 // ---------------------------------------------------------------------------
-
-/** Canonical Multicall3 deployment (same constant as services/tokenMetadata.ts). */
-const MULTICALL3_ADDRESS: Address = '0xcA11bde05977b3631167028862bE2a173976CA11';
 
 const nameAbi = parseAbi(['function name() view returns (string)']);
 const symbolAbi = parseAbi(['function symbol() view returns (string)']);
@@ -286,31 +284,6 @@ export type TokenDirectoryPage = {
   addressesKey: string;
   /** Reads keyed by lowercase address. */
   reads: Map<string, TokenDirectoryReads>;
-};
-
-// Narrows one viem multicall outcome to its primitive value (string/uint8
-// returns). With allowFailure, viem wraps each result as
-// { status: 'success', result } or { status: 'failure', error }; test
-// doubles may hand back a bare null for a reverted call. Anything
-// unrecognized decodes to null.
-const readMulticallValue = (outcome: unknown): string | number | null => {
-  if (typeof outcome !== 'object' || outcome === null || !('status' in outcome)) {
-    return null;
-  }
-  const record: { status: unknown; result?: unknown } = outcome;
-  if (record.status !== 'success') return null;
-  const value: unknown = record.result;
-  return typeof value === 'string' || typeof value === 'number' ? value : null;
-};
-
-// Narrows one viem multicall outcome to its bigint value (uint256 returns
-// such as totalSupply) — tokenMetadata's readMulticallBigint twin.
-const readMulticallBigint = (outcome: unknown): bigint | null => {
-  if (typeof outcome !== 'object' || outcome === null || !('status' in outcome)) {
-    return null;
-  }
-  const record: { status?: unknown; result?: unknown } = outcome;
-  return record.status === 'success' && typeof record.result === 'bigint' ? record.result : null;
 };
 
 /**

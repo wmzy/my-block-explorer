@@ -1,3 +1,4 @@
+import { toIsoTimestamp } from '../utils/dbTime';
 import { customType } from 'drizzle-orm/pg-core';
 
 // ✅ DuckDB-compatible base types - re-exported directly for compatibility
@@ -18,16 +19,19 @@ export const uint256 = bignum;
 // unix timestamp, second precision
 export const timestamp = customType<{
   data: number;
-  driverData: string;
+  driverData: string | Date;
 }>({
   dataType: () => 'TIMESTAMP_S',
-  toDriver: (value: number) => {
-    if (typeof value === 'number') {
-      return new Date(value * 1000).toISOString();
-    }
-    return String(value);
-  },
-  fromDriver: (value: string) => Math.floor(new Date(value).getTime() / 1000),
+  toDriver: (value: number) => new Date(value * 1000).toISOString(),
+  // The adapter (duckdb-postgres-adapter adaptResult) already normalizes
+  // every DuckDB timestamp shape — TIMESTAMP_S seconds objects included —
+  // to a UTC-correct Date before drizzle maps the row; assert that Date
+  // directly. A string can still arrive on raw-render paths: parse it
+  // offset-aware (naive = UTC), never machine-local.
+  fromDriver: (value: string | Date) =>
+    value instanceof Date
+      ? Math.floor(value.getTime() / 1000)
+      : Math.floor(Date.parse(toIsoTimestamp(value) ?? '') / 1000),
 });
 
 export const address = customType<{
@@ -90,11 +94,15 @@ export const txStatus = customType<{
 // Datetime types
 export const datetime = customType<{
   data: Date;
-  driverData: string;
+  driverData: string | Date;
 }>({
   dataType: () => 'TIMESTAMP_MS',
   toDriver: (value: Date) => value.toISOString(),
-  fromDriver: (value: string) => new Date(value),
+  // Same defense as `timestamp` above: the adapter normally hands back a
+  // UTC-correct Date; a naive string on raw-render paths parses
+  // offset-aware (naive = UTC), never machine-local.
+  fromDriver: (value: string | Date) =>
+    value instanceof Date ? value : new Date(toIsoTimestamp(value) ?? Number.NaN),
 });
 
 // ✅ DuckDB-compatible table constructor

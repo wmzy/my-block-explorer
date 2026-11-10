@@ -1,8 +1,8 @@
 import { css, cx } from '@linaria/core';
-import { Tooltip, useToast } from 'haze-ui';
+import { Tooltip } from 'haze-ui';
 import { TypedLink } from '@native-router/react';
 import { linkStyle } from './DataTable';
-import { copyText } from '@/util/clipboard';
+import { toastCopy } from '@/util/clipboard';
 
 const copyable = css`
   cursor: pointer;
@@ -23,16 +23,11 @@ type CopyableHashProps = {
 };
 
 export function CopyableHash({ value, truncated, href, className }: CopyableHashProps) {
-  const toast = useToast();
-
   const handleCopy = async (e: React.MouseEvent) => {
     if (href) return;
     e.preventDefault();
-    if (await copyText(value)) {
-      toast('Copied to clipboard!', { variant: 'success', duration: 2000 });
-    } else {
-      toast('Failed to copy', { variant: 'danger', duration: 2000 });
-    }
+    // Shared copy+toast tail: the default wording this cell always shipped.
+    await toastCopy(value);
   };
 
   const display = truncated ?? value;

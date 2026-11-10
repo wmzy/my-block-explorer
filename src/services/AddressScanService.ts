@@ -77,6 +77,9 @@ import { selectorOf } from '../utils/txDecode';
 // server-side walk (and would drag the browser graph through the vite
 // config bundle).
 import { errorMessage, sleep } from '../utils/errorHandler';
+// DuckDB datetime rows reach the DTO layer as naive-UTC strings on raw
+// read paths — dbTime is the one offset-aware parser.
+import { toIsoTimestamp } from '../utils/dbTime';
 // Shared shrinkable-provider-error classification (formerly a conscious
 // copy of EventIndexingService's regex — see utils/providerErrors).
 import { isShrinkableProviderError } from '../utils/providerErrors';
@@ -353,10 +356,10 @@ export const toScanJobDto = (row: AddressScanJobRecord): ScanJobDto => {
     tracesRecorded: row.tracesRecorded ?? 0,
     errorMessage: row.errorMessage ?? null,
     coverage: deriveScanCoverage(status, fromBlock),
-    updatedAt: (row.updatedAt instanceof Date
-      ? row.updatedAt
-      : new Date(String(row.updatedAt))
-    ).toISOString(),
+    // toIsoTimestamp reads DuckDB's naive-UTC strings as UTC (a bare
+    // new Date(String(...)) would skew by the host timezone). The column
+    // is notNull; epoch is the total-function fallback, never real data.
+    updatedAt: toIsoTimestamp(row.updatedAt) ?? new Date(0).toISOString(),
   };
 };
 
@@ -771,10 +774,9 @@ export const listInternalTransactions = async (
       callType: row.callType,
       reverted: row.reverted,
       tracePath: row.tracePath,
-      timestamp: (row.blockTimestamp instanceof Date
-        ? row.blockTimestamp
-        : new Date(String(row.blockTimestamp))
-      ).toISOString(),
+      // Naive-UTC string → ISO via dbTime (never machine-local); epoch
+      // only keeps the mapping total — the column is notNull.
+      timestamp: toIsoTimestamp(row.blockTimestamp) ?? new Date(0).toISOString(),
     })),
     total: Number(countRows[0]?.count ?? 0),
     offset: pagination.offset,

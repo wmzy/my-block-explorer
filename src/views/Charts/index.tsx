@@ -18,7 +18,7 @@ import TopNavigation from '@/components/TopNavigation';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
 import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
-import { parseChainIdParam } from '@/utils/chainParam';
+import { resolveMainnetDefaultChainId } from '@/utils/chainParam';
 import { formatNumber } from '@/utils/format';
 import { formatGwei } from '@/services/gasHistory';
 import {
@@ -585,12 +585,10 @@ function TxPerDayCard({
 export default function ChartsPage() {
   const { params, router } = useMatched();
 
-  // An unparseable :chainId param is a broken link, not an unsupported
-  // chain: parseChainIdParam returns null and the raw param travels on to
-  // the unsupported state (same two-tier guard as the Home view).
+  // Two-tier mainnet-default guard: the raw param travels on to the
+  // unsupported state.
   const rawChainId = params.chainId;
-  const parsedChainId = rawChainId === undefined ? 1 : parseChainIdParam(rawChainId);
-  const currentChainId = parsedChainId ?? 0;
+  const currentChainId = resolveMainnetDefaultChainId(rawChainId);
   const chainInfo = getChainInfo(currentChainId);
 
   const handleChainChange = (newChainId: number) => {

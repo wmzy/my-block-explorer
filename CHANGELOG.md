@@ -9,6 +9,77 @@ commit subjects rather than a curated release notes process.
 
 ## Unreleased
 
+- **2026-11-10 duplication review fix wave (7 agents, 2 waves + integration)** —
+  round 4 of the dedup review; every confirmed finding fixed. All verified:
+  `tsc` 0 errors, eslint 0 errors (46 warnings, all pre-existing
+  react-refresh/exhaustive-deps classes; 39 matched at HEAD), `vitest
+  --changed` 263 files / 3,347 tests green, `pnpm build` green (client +
+  server). **Dead code** — `EventDecodingService` (562 lines, zero
+  importers; its sibling family died 2026-09-30 but this file escaped) +
+  the 7 decoding types in `types/events.ts` that existed only for it. **New
+  canonical modules** — `utils/multicall.ts` (MULTICALL3_ADDRESS +
+  readMulticallValue/Bigint/Result; was re-declared in 4 services + the
+  Address view), `utils/transactionType.ts` (the toDb/toRpc tx-type mirror,
+  in an import-free leaf), `utils/scanParams.ts` (?refresh=1 literal +
+  readStrictInt; was verbatim twins in transfers/approvals),
+  `middleware/rpc-url-visibility.ts` (redactUrl + requestSeesFullUrl; was
+  verbatim twins in routes/chains + routes/rpc-config — the URL-secret
+  policy now changes in one place; startupChecks' HOST loopback predicate
+  folds onto the same core, gaining ::ffff:127.x-mapped-HOST recognition),
+  `util/useGenerationGuard.ts` (the ++claim guard ×3 — claim-only API so
+  the read-based regression class cannot return; NOT needed on query-cache
+  fetches, whose newest-run-wins is native to react-toolroom),
+  `util/useDebouncedQueryParam.ts` + `useDebouncedValue` (the ?q=
+  input-leads-URL state machine ×3 + two debounce twins),
+  `resolveMainnetDefaultChainId` in utils/chainParam (the two-tier chainId
+  guard ×4). **Events poll unified** — `services/eventsRanges.ts`: ONE
+  query-cache entry + ONE module-level coordinator interval behind both
+  EventStatistics and IndexingRangeManager (was two parallel 3s polls of
+  the same /events/ranges; now 3 GET/3s total incl. status + head, both
+  panels fed by the same request; mutations refetch the shared entry;
+  IndexingRangeManager's per-tick full-panel "Loading…" re-flash removed —
+  initial-load only now). **Behavior fixes** — `formatValue` learns native
+  decimals (was hardcoded 18-decimal scaling on every tx surface; Home/tx
+  list/detail/call-trace/internal-txns now thread
+  nativeCurrency.decimals — non-18-decimal chains render correct values);
+  AddressScanService's defensive datetime parse + db-types' timestamp
+  customTypes route through `toIsoTimestamp` (naive strings parsed as UTC,
+  never machine-local; the datetime customType's dead-branch twin fixed
+  with it); labels/signatures/verify 400s migrate onto the canonical
+  `respondError` envelope (additive statusCode/timestamp; the
+  deliberately-bare contracts stay bare and are documented in api-error.ts
+  — watch's chain-id 400 now renders through the shared envelope instead
+  of a bare invalid_request). **Consolidations** — errorMessage where
+  genuinely pure-form (mcp/rest's causeMessage; the ~20 scout-flagged
+  ternaries mostly proved to be deliberate custom-fallbacks and stayed),
+  `formatRawUnits` (the formatUnits+symbol pattern ×7), `formatGasString`
+  (×2), `shortSlot` (storage chips ×2), `spinnerBase` (Button/EventTable
+  border-spinner twins, exported base class per the Linaria keyframe
+  lesson), `toastCopy` in util/clipboard (copy+toast ×3 + Ops
+  diagnostics), `useConditionalPolling` + `POLL_DISABLED_INTERVAL` in
+  polledQuery (×2), bare `toLocaleString()` display sites →
+  formatNumber/formatNumber-en-US across views (BigInt-exact sites use
+  formatBigInt — formatNumber's bigint path rounds through Number),
+  `effectiveTransferStandard` identity export inlined, clampPage dedup,
+  watch's inline limit parse → parsePaginationParams. **Integration finds
+  (pinned)**: (1) consolidating the tx-type mirror by importing
+  blockRpcData from TransactionService dragged
+  realTimeData→config/chains→customChains→'@/util/http' into the
+  vite.config bundle and broke `vite build` — the browser-RPC-in-backend-
+  graph rule re-proven; the shared helper lives in an import-free leaf and
+  a pure re-export is NOT enough for a module's own internal calls (bind
+  via import + re-export). (2) react-toolroom's useRun defers the initial
+  load past render — tests asserting mount-parked requests need one
+  `await act(async () => {})` flush first. (3) vitest's jsdom reports
+  `document.hidden === true` (visibilityState 'prerender') — any
+  visibility-gated poll tick is dead in tests; the coordinator now polls
+  regardless of visibility, matching the hand-rolled intervals it
+  replaced. (4) The ETA sampler being fed the mount payload makes the
+  ≥6s window form one tick earlier (mount → first tick counts); the
+  estimate is unchanged. (5) Agent C's formatGasString test expectations
+  contradicted BigInt's own semantics (BigInt('') is 0n, '0x1a' parses as
+  hex) — tests now pin the real contract.
+
 - **2026-11-09/10 duplication review fix wave (3 waves, 9 agents + integration)** —
   a fresh full-repo review for duplicated/inelegant implementations; every
   confirmed finding fixed. All verified: `tsc` 0 errors, eslint 0 errors (103

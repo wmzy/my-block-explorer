@@ -1857,6 +1857,54 @@ pnpm typecheck           # tsc --noEmit
   itself, not trust the report. **Deferred again** (unchanged):
   in-flight-dedup Map ×5, Address view micro-extractions.
 
+- **2026-11-10 duplication review fix wave (7 agents, 2 waves + integration)** —
+  round 4; verified: tsc 0, eslint 0 errors, `vitest --changed` 263 files /
+  3,347 tests, `pnpm build` green. **Dead**: EventDecodingService (562
+  lines, zero importers — escaped the 2026-09-30 family deletion) + its 7
+  decoding types in types/events.ts. **New canonical modules** (reuse,
+  never re-roll): `utils/multicall.ts` (MULTICALL3_ADDRESS +
+  readMulticallValue/Bigint/Result — barrel-registered), 
+  `utils/transactionType.ts` normalizeTransactionType (import-FREE leaf:
+  backend TransactionService + browser blockRpcData both consume it),
+  `utils/scanParams.ts` (refreshSchema + readStrictInt),
+  `middleware/rpc-url-visibility.ts` (redactUrl + requestSeesFullUrl — the
+  URL-secret redaction policy's ONE home; cors-origins stays import-free
+  and now also carries the shared loopback predicate for startupChecks),
+  `util/useGenerationGuard.ts` (claim-only API; query-cache fetches don't
+  need it — newest-run-wins is native), `util/useDebouncedQueryParam.ts` +
+  useDebouncedValue, chainParam resolveMainnetDefaultChainId. **Events
+  poll**: services/eventsRanges.ts — ONE coordinator interval + ONE
+  query-cache entry behind EventStatistics + IndexingRangeManager (was two
+  parallel 3s polls); mutations refetch the shared entry; IRM's loading is
+  initial-load only (per-tick panel re-flash gone). **Behavior fixes**:
+  formatValue takes nativeCurrency.decimals (tx surfaces were hardcoded
+  18-decimal; all value sites now thread decimals), AddressScanService +
+  db-types datetime paths route through toIsoTimestamp, labels/signatures/
+  verify 400s on the canonical respondError envelope (bare contracts stay
+  bare + documented in api-error.ts). Also: formatRawUnits (formatUnits+
+  symbol ×7), formatGasString, shortSlot, spinnerBase (Button/EventTable),
+  toastCopy (util/clipboard), useConditionalPolling, errorMessage only
+  where pure-form (the scout's ~20 candidates were mostly deliberate
+  custom-fallbacks — the convention held), toLocaleString display sites →
+  formatNumber (bigint sites → formatBigInt: formatNumber's bigint path
+  rounds through Number). **Rules pinned**: (1) consolidating a
+  backend/browser pair onto a browser-module export drags the browser RPC
+  graph into the vite.config bundle and breaks the build — shared helpers
+  between backend and browser sides live in import-free LEAVES
+  (transactionType.ts); and a pure `export {x} from` re-export does NOT
+  bind x for the module's own internal calls — import it AND re-export.
+  (2) react-toolroom's useRun defers the initial load past render —
+  tests asserting mount-parked requests need an `await act(async () => {})`
+  flush first. (3) vitest's jsdom reports document.hidden === true
+  (visibilityState 'prerender') — visibility-gated poll ticks are DEAD in
+  tests (the coordinator now polls regardless, matching the hand-rolled
+  intervals it replaced). (4) A query-cache-backed sampler fed at mount
+  forms its ≥6s window one tick earlier than tick-only sampling. (5)
+  BigInt test fixtures: BigInt('') is 0n and BigInt('0x1a') parses as hex
+  — write formatGasString-class tests against the real semantics. (6)
+  Main-bisect lesson: reverting untracked NEW files during bisect has no
+  git recourse — back them up before `rm` (multicall/scanParams were
+  reconstructed from their surviving contract tests).
 - **2026-11-09/10 duplication review fix wave (3 waves, 9 agents + integration)** —
   full-repo review round 3 (scouts verified every claim with file:line
   evidence before any fix); all findings fixed end-to-end. Verified: tsc 0

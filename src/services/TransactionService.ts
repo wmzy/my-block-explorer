@@ -2,6 +2,9 @@ import { db, transactions, blocks } from '../database/init';
 import { eq, and, sql, count } from 'drizzle-orm';
 import { rpcManager } from './RpcManager';
 import { withOneRetry } from '../utils/rpcReadRetry';
+// tx.type → integer DB column value; the RPC formatter shares this exact
+// mapping through the same import-free leaf.
+import { normalizeTransactionType } from '../utils/transactionType';
 import { secondsToDate } from '../utils/dbTime';
 import { createLogger } from '../server/logger';
 import type { Address, Transaction as ViemTransaction, TransactionReceipt } from 'viem';
@@ -192,19 +195,6 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
   const toDbTxStatus = (receipt: TransactionReceipt | null | undefined): 0 | 1 | null =>
     receipt ? (receipt.status === 'success' ? 1 : 0) : null;
 
-  // viem tx.type is a label ('eip1559', ...) or hex string; the column is an
-  // integer. Unknown labels fall back to 0 (legacy).
-  const toDbTxType = (txType: ViemTransaction['type']): number => {
-    if (typeof txType === 'number') return txType;
-    if (txType === 'eip2930') return 1;
-    if (txType === 'eip1559') return 2;
-    if (txType === 'eip4844') return 3;
-    if (txType === 'eip7702') return 4;
-    if (txType === 'legacy' || txType === undefined || txType === null) return 0;
-    const parsed = Number(txType);
-    return Number.isFinite(parsed) ? parsed : 0;
-  };
-
   // The row an indexed transaction would be stored as. Factored out of
   // indexTransaction so the pending path can answer from the same
   // mapping WITHOUT writing it.
@@ -233,7 +223,7 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
     effectiveGasPrice:
       receipt?.effectiveGasPrice != null ? BigInt(receipt.effectiveGasPrice) : null,
     status: toDbTxStatus(receipt),
-    type: toDbTxType(tx.type),
+    type: normalizeTransactionType(tx.type),
     nonce: tx.nonce != null ? BigInt(tx.nonce) : null,
     inputData: tx.input ?? null,
     // Receipt-derived: a transaction whose receipt was never read carries

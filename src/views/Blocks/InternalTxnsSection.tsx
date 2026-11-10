@@ -40,11 +40,11 @@ import {
   retryRow,
   summaryLine,
 } from '@/components/internalTxnsShared';
-import { getChainSymbol } from '@/config/chains';
+import { getChainInfo, getChainSymbol } from '@/config/chains';
 import { useLazyExpand } from '@/util/useLazyExpand';
 import { fetchCallTraceTree, rpcRequest } from '@/utils/callTraceRpc';
 import { errorMessage } from '@/utils/errorHandler';
-import { cellText, formatHash, formatValue } from '@/utils/format';
+import { cellText, formatHash, formatNumber, formatValue } from '@/utils/format';
 import { runTracePool, shortTraceFailureMessage, TRACE_CONCURRENCY } from '@/utils/internalTxScan';
 import { isTraceUnsupportedError } from '@/utils/traceFormat';
 import {
@@ -307,6 +307,7 @@ export function InternalTxnsSection({
   };
 
   const symbol = getChainSymbol(chainId);
+  const nativeDecimals = getChainInfo(chainId)?.nativeCurrency.decimals ?? 18;
   const headerMeta =
     state.phase === 'settled' ? blockInternalTxnsSummary(state.result.aggregate) : null;
 
@@ -348,7 +349,7 @@ export function InternalTxnsSection({
                   {formatHash(group.hash)}
                 </TypedLink>
                 <span className={txGroupMeta}>
-                  {`${group.rows.length.toLocaleString()} internal ${
+                  {`${formatNumber(group.rows.length)} internal ${
                     group.rows.length === 1 ? 'call' : 'calls'
                   }`}
                 </span>
@@ -406,7 +407,9 @@ export function InternalTxnsSection({
                         )}
                       </td>
                       <td className={valueCell}>
-                        {rowCarriesValue(row.value) ? formatValue(row.value, symbol) : '—'}
+                        {rowCarriesValue(row.value)
+                          ? formatValue(row.value, symbol, nativeDecimals)
+                          : '—'}
                       </td>
                       <td className={monoStyle}>{row.selector ?? '—'}</td>
                       <td className={depthCell}>{row.depth}</td>

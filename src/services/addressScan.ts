@@ -29,7 +29,6 @@ import {
   useCache,
   useInjectable,
   useLoading,
-  usePolling,
   useRefresh,
   useResultSelect,
   useRun,
@@ -41,6 +40,7 @@ import { ApiError } from '@/util/apiError';
 import { DEFAULT_STALE_TIME } from '@/util/loaderCache';
 import { bindQueryFn, createQueryCache } from '@/util/useQuery';
 import { api, del, get, post, withSignal, type ApiClient } from '@/util/http';
+import { useConditionalPolling } from './polledQuery';
 
 export const SCAN_JOB_STATUSES = ['pending', 'running', 'paused', 'error', 'complete'] as const;
 
@@ -403,11 +403,6 @@ const queryScanJob = bindQueryFn(fetchScanJob, scanJobCache);
 
 const SCAN_POLL_INTERVAL = 3_000;
 
-// usePolling has no disabled state; the stopped cadence is expressed as
-// the largest setInterval delay environments accept without clamping the
-// timer down to 1 ms (~24.8 days) — chainRpc.ts's proven constant.
-const POLL_DISABLED_INTERVAL = 2_147_483_000;
-
 // useResultSelect always applies select when a result exists; a
 // module-level identity keeps the reference stable.
 const identity = <T>(r: T) => r;
@@ -447,9 +442,12 @@ export function useScanJob(chainId: number, address: string): ScanJobQueryResult
   useRun(injectable, runArgs, { signal: true, hash: hashArgs });
 
   const active = data?.status === 'pending' || data?.status === 'running';
-  usePolling(injectable, active ? SCAN_POLL_INTERVAL : POLL_DISABLED_INTERVAL, {
-    args: [chainId, address] as unknown as [number, string, signal?: AbortSignal],
-  });
+  useConditionalPolling(
+    injectable,
+    active,
+    SCAN_POLL_INTERVAL,
+    [chainId, address] as unknown as Parameters<typeof injectable>,
+  );
 
   const refetch = useRefresh(injectable, runArgs, provider);
 

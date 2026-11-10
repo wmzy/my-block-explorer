@@ -31,14 +31,14 @@
 import { css } from '@linaria/core';
 import { useCallback, useMemo, type ReactNode } from 'react';
 import { TypedLink } from '@native-router/react';
-import { formatUnits, getAddress } from 'viem';
+import { getAddress } from 'viem';
 import { Collapsible } from '@/components/ui/Collapsible';
 import { Button } from '@/components/ui/Button';
 import { linkStyle } from '@/components/ui/DataTable';
 import { ApiError } from '@/util/apiError';
 import { get, longRunningApi, withSignal } from '@/util/http';
 import { bindQueryFn, createQueryCache, createQueryHook } from '@/util/useQuery';
-import { cellText, formatDateTime, formatHash, formatNumber } from '@/utils/format';
+import { cellText, formatDateTime, formatHash, formatNumber, formatRawUnits } from '@/utils/format';
 import { useTokenMetadata, type TokenMetadata } from '@/services/tokenMetadata';
 import { encodeRevokeIntent } from '@/views/Contract/revokeIntent';
 
@@ -331,8 +331,9 @@ function ApprovalRow({
 
   // Allowance / state cell. ERC-20: Max badge for effectively-unlimited
   // grants; otherwise the decimals-formatted amount when the token's
-  // decimals resolved (BigInt-exact via formatUnits), and the RAW decimal
-  // string when they did not — a guessed decimals amount is never shown.
+  // decimals resolved (BigInt-exact via the shared formatRawUnits), and
+  // the RAW decimal string when they did not — a guessed decimals amount
+  // is never shown.
   // ERC-721: the row exists only while getApproved(tokenId) still names
   // this spender. ERC-1155: isApprovedForAll covers every token id of the
   // contract — the scope IS the grant. (The NFT kinds' wire sentinels are
@@ -358,10 +359,7 @@ function ApprovalRow({
     );
   } else if (decimals !== null) {
     allowanceBody = (
-      <span title={approval.allowance}>
-        {formatUnits(BigInt(approval.allowance), decimals)}
-        {symbol !== null ? ` ${symbol}` : ''}
-      </span>
+      <span title={approval.allowance}>{formatRawUnits(approval.allowance, decimals, symbol)}</span>
     );
   } else {
     allowanceBody = <span title="Token decimals unknown — raw value">{approval.allowance}</span>;
@@ -439,12 +437,7 @@ function historyValueBody(
     );
   }
   if (decimals !== null) {
-    return (
-      <span title={event.value}>
-        {formatUnits(amount, decimals)}
-        {symbol !== null ? ` ${symbol}` : ''}
-      </span>
-    );
+    return <span title={event.value}>{formatRawUnits(amount, decimals, symbol)}</span>;
   }
   return <span title="Token decimals unknown — raw value">{event.value}</span>;
 }

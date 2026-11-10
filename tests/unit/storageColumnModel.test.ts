@@ -26,6 +26,7 @@ import {
   decodeStoragePath,
   encodeStoragePath,
   resolveColumns,
+  shortSlot,
   type Segment,
 } from '@/components/storage/columnModel';
 
@@ -620,5 +621,31 @@ describe('augmentLayoutTypes', () => {
       },
     };
     expect(augmentLayoutTypes(layout).types).toEqual(layout.types);
+  });
+});
+
+// shortSlot: the slot-chip truncation the column header and member rows
+// share — the byte-identical rendering both local shortHex twins always
+// produced (single '…' glyph, 8 lead + 4 tail, whole value at 14 chars).
+describe('shortSlot', () => {
+  it('keeps a slot of 14 chars or fewer whole', () => {
+    // 0x + 12 hex nibbles = exactly 14 chars — the whole-value boundary.
+    expect(shortSlot('0x123456789012')).toBe('0x123456789012');
+  });
+
+  it("truncates at 15 chars: 8 lead + single '…' glyph + 4 tail", () => {
+    // 0x + 13 nibbles = exactly 15 chars — the first truncated length.
+    const slot: `0x${string}` = '0x1234567890123';
+    expect(shortSlot(slot)).toBe(`${slot.slice(0, 8)}…${slot.slice(-4)}`);
+  });
+
+  it('truncates a full 66-char slot exactly as the chips always rendered', () => {
+    const slot: `0x${string}` = `0x${'ab'.repeat(32)}`;
+    const expected = `${slot.slice(0, 8)}…${slot.slice(-4)}`;
+    expect(shortSlot(slot)).toBe(expected);
+    // The separator is the single '…' glyph — NOT utils/format
+    // truncateMiddle's '...' (different threshold AND separator).
+    expect(shortSlot(slot)).not.toContain('...');
+    expect(shortSlot('0x123456789012345')).not.toBe('0x123456789012345');
   });
 });

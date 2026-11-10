@@ -10,6 +10,7 @@ import { render, screen, act } from '@testing-library/react';
 import EventStatistics from '@/components/events/EventStatistics';
 import IndexingRangeManager from '@/components/events/IndexingRangeManager';
 import { get } from '@/util/http';
+import { clearAllCaches } from '@/util/useQuery';
 
 vi.mock('@/util/http', () => ({
   get: vi.fn(),
@@ -38,6 +39,9 @@ const deferred = () => {
 };
 
 beforeEach(() => {
+  // The shared ranges cache outlives a component tree; contract keys from
+  // a previous test must not stale-serve into this one's switch scenario.
+  clearAllCaches();
   vi.clearAllMocks();
 });
 

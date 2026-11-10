@@ -18,7 +18,6 @@ import {
   useCache,
   useInjectable,
   useLoading,
-  usePolling,
   useRefresh,
   useResultSelect,
   useRun,
@@ -35,7 +34,7 @@ import {
 import { DEFAULT_STALE_TIME } from '@/util/loaderCache';
 import { parseBlockNumberParam } from '@/utils/chainParam';
 import { bindQueryFn, createQueryCache, createQueryHook } from '@/util/useQuery';
-import type { PolledQueryResult } from './polledQuery';
+import { useConditionalPolling, type PolledQueryResult } from './polledQuery';
 
 export type LatestBlocksPage = {
   blocks: RpcBlock[];
@@ -138,12 +137,6 @@ const identity = <T>(r: T) => r;
 // confirmation within ~one block of 12s chains.
 const PENDING_TX_POLL_INTERVAL = 6_000;
 
-// usePolling has no disabled state; the stopped cadence is expressed as the
-// largest setInterval delay environments accept without clamping the timer
-// down to 1 ms (~24.8 days). The timer exists but its tick effectively never
-// fires, and swapping the interval re-arms it the moment status flips.
-const POLL_DISABLED_INTERVAL = 2_147_483_000;
-
 /** Latest blocks page; omit the cursor for the head page. */
 export function useLatestBlocks(chainId: number, limit: number, beforeBlock?: bigint) {
   return useLatestBlocksQuery([
@@ -202,9 +195,12 @@ export function useTransactionByHash(
   // yet). A settled receipt (success or failed) swaps to the disabled
   // interval, which re-arms the timer to a never-firing tick.
   const pending = data?.status === -1;
-  usePolling(injectable, pending ? PENDING_TX_POLL_INTERVAL : POLL_DISABLED_INTERVAL, {
-    args: [chainId, txHash] as unknown as [number, string, signal?: AbortSignal],
-  });
+  useConditionalPolling(
+    injectable,
+    pending,
+    PENDING_TX_POLL_INTERVAL,
+    [chainId, txHash] as unknown as Parameters<typeof injectable>,
+  );
 
   const refetch = useRefresh(injectable, runArgs, provider);
 

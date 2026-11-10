@@ -20,6 +20,7 @@ import {
 } from '../services/ContractVerifyService';
 import { compileVerifyService, CompileVerifyHttpError } from '../services/CompileVerifyService';
 import { contractSourceService } from '../services/ContractSourceService';
+import { respondError } from '../utils/api-error';
 import { safeJsonResponse } from '../utils/serialization';
 
 const logger = createLogger('verify-routes');
@@ -44,8 +45,9 @@ const contractVerifyRateLimiter = createRateLimiter({
 //   post-verification refresh succeeded — omitted when it could not run)
 // - 200 { verified: false, kind: 'unsupported_chain'|'rejected', message }
 //   — Sourcify's domain answer, message verbatim
-// - 400 { error: 'invalid_files', message } — structural bundle problems
-// - 502 { error: 'sourcify_unreachable', message } — upstream unavailable
+// - 400 invalid_files, 502 sourcify_unreachable — the shared respondError
+//   envelope ({error, message, statusCode, timestamp}); structural bundle
+//   problems / upstream unavailable
 app.post(
   '/chains/:chainId/contracts/:address/verify',
   requireAdminTokenIfConfigured,
@@ -62,7 +64,7 @@ app.post(
     }
     const validation = validateVerificationFiles(isRecordLike(body) ? body.files : undefined);
     if (!validation.ok) {
-      return c.json({ error: 'invalid_files', message: validation.message }, 400);
+      return respondError(c, 400, 'invalid_files', validation.message);
     }
 
     let outcome;
@@ -70,10 +72,10 @@ app.post(
       outcome = await contractVerifyService.submitVerification(chainId, address, validation.files);
     } catch (error) {
       if (error instanceof SourcifyUnreachableError) {
-        return c.json({ error: 'sourcify_unreachable', message: error.message }, 502);
+        return respondError(c, 502, 'sourcify_unreachable', error.message);
       }
       logger.error({ err: error, chainId, address }, 'Contract verification submission failed');
-      return c.json({ error: 'verification_failed', message: 'Contract verification failed' }, 500);
+      return respondError(c, 500, 'verification_failed', 'Contract verification failed');
     }
 
     if (!outcome.ok) {
@@ -121,7 +123,8 @@ app.post(
 // - 200 { verified: true, verificationSource: 'manual', verificationStatus?,
 //        contractSource? } — contractSource is the freshly re-read source
 //   (same shape as GET .../source); omitted only when the read-back failed
-// - 400 { error: 'missing_fields' | 'invalid_abi', message }
+// - 400 missing_fields | invalid_abi — the shared respondError envelope
+//   ({error, message, statusCode, timestamp})
 app.post(
   '/chains/:chainId/contracts/:address/verify/manual',
   requireAdminTokenIfConfigured,
@@ -143,18 +146,22 @@ app.post(
     const name = typeof record.name === 'string' ? record.name : undefined;
 
     if (abi === undefined || abi.trim() === '') {
-      return c.json(
-        { error: 'missing_fields', message: 'abi is required and must be a non-empty string' },
+      return respondError(
+        c,
         400,
+        'missing_fields',
+        'abi is required and must be a non-empty string',
       );
     }
     if (
       (record.sourceCode !== undefined && sourceCode === undefined) ||
       (record.name !== undefined && name === undefined)
     ) {
-      return c.json(
-        { error: 'missing_fields', message: 'sourceCode and name must be strings when present' },
+      return respondError(
+        c,
         400,
+        'missing_fields',
+        'sourceCode and name must be strings when present',
       );
     }
     let parsedAbi: unknown;
@@ -164,9 +171,11 @@ app.post(
       parsedAbi = null;
     }
     if (!Array.isArray(parsedAbi) || parsedAbi.length === 0) {
-      return c.json(
-        { error: 'invalid_abi', message: 'abi must be valid JSON parsing to a non-empty array' },
+      return respondError(
+        c,
         400,
+        'invalid_abi',
+        'abi must be valid JSON parsing to a non-empty array',
       );
     }
 
@@ -178,9 +187,11 @@ app.post(
       });
     } catch (error) {
       logger.error({ err: error, chainId, address }, 'Manual verification save failed');
-      return c.json(
-        { error: 'verification_failed', message: 'Failed to save manual verification' },
+      return respondError(
+        c,
         500,
+        'verification_failed',
+        'Failed to save manual verification',
       );
     }
 
@@ -227,19 +238,20 @@ app.delete(
       deleted = await contractSourceService.deleteManualVerification(chainId, address);
     } catch (error) {
       logger.error({ err: error, chainId, address }, 'Manual verification delete failed');
-      return c.json(
-        { error: 'verification_failed', message: 'Failed to delete manual verification' },
+      return respondError(
+        c,
         500,
+        'verification_failed',
+        'Failed to delete manual verification',
       );
     }
 
     if (!deleted) {
-      return c.json(
-        {
-          error: 'not_found',
-          message: 'No manual verification mark exists for this contract',
-        },
+      return respondError(
+        c,
         404,
+        'not_found',
+        'No manual verification mark exists for this contract',
       );
     }
 
@@ -262,10 +274,7 @@ app.get('/chains/:chainId/contracts/:address/verify/compilers', async c => {
     return c.json(list);
   } catch (error) {
     logger.error({ err: error }, 'Compiler list fetch failed');
-    return c.json(
-      { error: 'compilers_unavailable', message: 'Failed to load the compiler list' },
-      502,
-    );
+    return respondError(c, 502, 'compilers_unavailable', 'Failed to load the compiler list');
   }
 });
 
@@ -318,6 +327,10 @@ app.post(
         ...(record.contractName !== undefined ? { contractName: record.contractName } : {}),
       });
     } catch (error) {
+      // Deliberately NOT respondError: the typed service error carries
+      // documented TOP-LEVEL extras (e.g. contract_name_required's
+      // candidates array — pinned by tests) that must keep spreading
+      // beside error/message, not nest inside a details field.
       if (error instanceof CompileVerifyHttpError) {
         return c.json(
           {
@@ -329,7 +342,7 @@ app.post(
         );
       }
       logger.error({ err: error, chainId, address }, 'Compile verification failed');
-      return c.json({ error: 'verification_failed', message: 'Compile verification failed' }, 500);
+      return respondError(c, 500, 'verification_failed', 'Compile verification failed');
     }
 
     if (!outcome.ok) {
@@ -351,10 +364,7 @@ app.post(
       await contractSourceService.saveLocalCompileVerification(chainId, address, outcome.saved);
     } catch (error) {
       logger.error({ err: error, chainId, address }, 'Compile verification save failed');
-      return c.json(
-        { error: 'verification_failed', message: 'Failed to save the verified source' },
-        500,
-      );
+      return respondError(c, 500, 'verification_failed', 'Failed to save the verified source');
     }
 
     let fresh: Awaited<ReturnType<typeof contractSourceService.getContractSource>>;

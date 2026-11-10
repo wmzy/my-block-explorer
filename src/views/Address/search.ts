@@ -99,16 +99,11 @@ export const effectiveActivityTab = (
   ttPage: number,
 ): ActivityTabId => tab ?? (ttPage > 1 ? 'transfers' : 'transactions');
 
-// Effective token-standard filter for the transfers tab. An explicit
-// valid ?ttStandard= wins; absence (or a malformed value — the schema's
-// .catch(undefined) already degraded it) means "all standards". Pure so
-// the explicit-vs-absent contract is testable (the ?tab= lesson: the
-// distinction must stay observable, never baked into a default). No
-// inference branch exists on purpose — no other param implies a
-// standard, unlike ttPage's tab inference.
-export const effectiveTransferStandard = (
-  ttStandard: TransferStandardId | undefined,
-): TransferStandardId | undefined => ttStandard;
+// Clamp a page number into the valid 1+ integer domain: the ONE shared
+// guard of this page's ?page=/?ttPage= read-side clamps and writer
+// pushes (the schemas deliberately admit 0/negatives so a malformed
+// deep link degrades during render instead of throwing).
+export const clampPage = (page: number): number => Math.max(1, Math.floor(page));
 
 // Effective tx-tab advanced filters: the values safe to SEND (and to
 // show as active). Absent means absent; an explicit value survives only

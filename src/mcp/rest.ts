@@ -13,6 +13,8 @@
 // custom-chains redaction policy treats as a loopback-class reader, so
 // this server receives FULL (unredacted) configured RPC urls.
 
+import { errorMessage } from '@/utils/errorHandler';
+
 /** Fetch failed before any HTTP status existed — backend not running. */
 export class McpBackendUnreachableError extends Error {
   constructor(
@@ -22,7 +24,7 @@ export class McpBackendUnreachableError extends Error {
     super(
       `Explorer backend unreachable at ${base} — start it with \`npx my-block-explorer\` ` +
       `(or \`pnpm dev:server\` in the repo), or point EXPLORER_API_URL at a running instance. ` +
-      `Detail: ${causeMessage(cause_)}`,
+      `Detail: ${errorMessage(cause_)}`,
     );
     this.name = 'McpBackendUnreachableError';
   }
@@ -38,11 +40,6 @@ export class McpApiError extends Error {
     super(message);
     this.name = 'McpApiError';
   }
-}
-
-function causeMessage(error: unknown): string {
-  if (error instanceof Error) return error.message;
-  return String(error);
 }
 
 type FetchLike = (

@@ -138,18 +138,13 @@ const formatBlock = (block: Block, includeTimestamp = true): RpcBlock => ({
 });
 
 // viem's tx.type is a label ('eip1559', …) or a hex string, never a plain
-// number — Number('eip1559') is NaN and rendered as "Type NaN".
-// Mirror of the backend's toDbTxType (TransactionService).
-const toRpcTxType = (txType: unknown): number => {
-  if (typeof txType === 'number') return txType;
-  if (txType === 'eip2930') return 1;
-  if (txType === 'eip1559') return 2;
-  if (txType === 'eip4844') return 3;
-  if (txType === 'eip7702') return 4;
-  if (txType === 'legacy' || txType === undefined || txType === null) return 0;
-  const parsed = Number(txType);
-  return Number.isFinite(parsed) ? parsed : 0;
-};
+// number — Number('eip1559') is NaN and rendered as "Type NaN". The ONE
+// normalizer lives in the import-free leaf utils/transactionType.ts
+// (TransactionService imports the leaf directly — blockRpcData must stay
+// OUT of the backend import graph); imported for THIS module's own calls
+// and re-exported for the barrel.
+import { normalizeTransactionType } from './transactionType';
+export { normalizeTransactionType };
 
 // Authorization quantities arrive as bigint/number (viem-formatted) or as
 // raw 0x-quantity strings, depending on which surface they came from.
@@ -329,7 +324,7 @@ const formatTransaction = (
     effectiveGasPrice: receipt?.effectiveGasPrice?.toString(),
     nonce: (tx.nonce as number)?.toString() ?? '0',
     status: receipt?.status === 'success' ? 1 : receipt ? 0 : -1,
-    type: toRpcTxType(tx.type),
+    type: normalizeTransactionType(tx.type),
     timestamp: blockTimestamp ? new Date(Number(blockTimestamp) * 1000).toISOString() : undefined,
     inputData: tx.input as string,
     contractAddress: receipt?.contractAddress ?? undefined,

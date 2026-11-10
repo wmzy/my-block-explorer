@@ -8,6 +8,7 @@ import {
   type CoverageSource,
   type CoverageSummary,
 } from '@/components/ui/CoverageBadge';
+import { formatNumber } from '@/utils/format';
 
 export type AddressCoverageInputs = {
   /** Live RPC balance/nonce read (services/addressRealTime). */
@@ -81,7 +82,7 @@ const indexedSource = ({ loading, failed }: AddressCoverageInputs['indexed']): C
 };
 
 const windowPhrase = (blocks: number | undefined): string =>
-  blocks !== undefined ? `the last ${blocks.toLocaleString()} blocks` : 'a capped block window';
+  blocks !== undefined ? `the last ${formatNumber(blocks)} blocks` : 'a capped block window';
 
 const txHistorySource = ({
   active,

@@ -28,6 +28,7 @@ import {
   useRefresh,
   useResultSelect,
   useRun,
+  type AsyncFunc,
   type CacheProvider,
 } from 'react-toolroom/async';
 
@@ -48,6 +49,35 @@ export type PolledQueryResult<T> = {
 // useResultSelect always applies select when a result exists; a module-level
 // identity keeps the reference stable.
 const identity = <T>(r: T) => r;
+
+// usePolling has no disabled state; the stopped cadence is expressed as
+// the largest setInterval delay environments accept without clamping the
+// timer down to 1 ms (~24.8 days). The timer exists but its tick
+// effectively never fires, and swapping the interval re-arms it the
+// moment the condition flips back on.
+export const POLL_DISABLED_INTERVAL = 2_147_483_000;
+
+/**
+ * Conditional polling for query hooks that own their own composition (the
+ * shape behind chainRpc's useTransactionByHash and addressScan's
+ * useScanJob): ticks every `intervalMs` while `active`, otherwise the
+ * never-firing disabled interval — swapping the interval re-arms the timer
+ * the moment `active` flips, so no tick races a stale cadence. `args` must
+ * carry the same logical tuple `useRun` was given (no signal slot — the
+ * cache key derivation trims a trailing signal before hashing) so ticks
+ * land on the same keyed entry; callers on the widened
+ * `[...K, signal?]` runtime signature keep their widening cast when
+ * passing it here. Like usePolling itself, ticks skip while the document
+ * is hidden and the timer is cleaned up on unmount.
+ */
+export function useConditionalPolling<AF extends AsyncFunc>(
+  injectableFn: AF,
+  active: boolean,
+  intervalMs: number,
+  args: Parameters<AF>,
+): void {
+  usePolling(injectableFn, active ? intervalMs : POLL_DISABLED_INTERVAL, { args });
+}
 
 export function createPolledQueryHook<T, K extends unknown[]>(config: {
   queryFn: QueryFn<T, K>;

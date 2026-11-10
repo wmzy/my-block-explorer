@@ -26,6 +26,7 @@ import IndexingRangeManager, {
 } from '@/components/events/IndexingRangeManager';
 import { toast } from 'haze-ui';
 import { ApiError } from '@/util/apiError';
+import { clearAllCaches } from '@/util/useQuery';
 
 const { mockGet, mockPost, mockDel } = vi.hoisted(() => ({
   mockGet: vi.fn(),
@@ -94,6 +95,10 @@ let headFixture = 0;
 beforeEach(() => {
   rangesFixture = [];
   headFixture = 0;
+  // The shared ranges cache (services/eventsRanges.ts) outlives a
+  // component tree; every test mounts against a cold cache so the previous
+  // test's payload cannot stale-serve into this one.
+  clearAllCaches();
   mockGet.mockReset().mockImplementation(async (url: string) => {
     if (url === rangesUrl) return { ranges: rangesFixture };
     if (url === statusUrl) return { latestBlock: headFixture };
@@ -1151,24 +1156,26 @@ describe('indexing-rate ETA rendering', () => {
     expect(screen.getByText(/Progress: 10%/)).toBeInTheDocument();
     expect(screen.queryByText(/remaining \(est\.\)/)).toBeNull();
 
-    // t+3s poll: one more observation, but a single 3s interval is under
-    // the 6s minimum span — still no estimate.
+    // t+3s poll: one more observation, but the span so far (mount → now)
+    // is 3s — under the 6s minimum span, still no estimate.
     rangesFixture = [range(7, 0, 1_000_000, 'indexing', 103_000)];
     await act(async () => {
       await vi.advanceTimersByTimeAsync(3_000);
     });
     expect(screen.queryByText(/remaining \(est\.\)/)).toBeNull();
 
-    // t+6s poll: the window now holds two 3s-spaced observations (first →
-    // last = 3s) — still under the span threshold.
+    // t+6s poll: the window spans mount → now = 6s at a steady 1,000
+    // blocks/s (the shared-cache restructure feeds the sampler the mount
+    // payload too, so the window forms one tick earlier than the old
+    // tick-only sampling); ~897,000 blocks remain ≈ 15 minutes.
     rangesFixture = [range(7, 0, 1_000_000, 'indexing', 106_000)];
     await act(async () => {
       await vi.advanceTimersByTimeAsync(3_000);
     });
-    expect(screen.queryByText(/remaining \(est\.\)/)).toBeNull();
+    expect(screen.getByText(/— ~15m remaining \(est\.\)/)).toBeInTheDocument();
 
-    // t+9s poll: the window spans 6s at a steady 1,000 blocks/s;
-    // ~891,000 blocks remain ≈ 15 minutes.
+    // t+9s poll: the spanned window keeps the same steady rate — still
+    // ~15 minutes (891,000 blocks at 1,000/s).
     rangesFixture = [range(7, 0, 1_000_000, 'indexing', 109_000)];
     await act(async () => {
       await vi.advanceTimersByTimeAsync(3_000);

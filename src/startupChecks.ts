@@ -1,10 +1,11 @@
 // Startup security posture for the standalone API server (src/server.ts).
 //
-// Zero-dependency and side-effect-free on import, mirroring the
-// cors-origins.ts precedent: the vite dev bridge dynamically imports
-// src/api-app.ts, so nothing in that graph may decide to exit the process
-// at module-load time. server.ts calls runStartupSecurityChecks()
-// explicitly, right before listen().
+// Side-effect-free on import with a dependency-free import graph (the one
+// import is cors-origins.ts, itself zero-import, mirroring its own
+// precedent): the vite dev bridge dynamically imports src/api-app.ts, so
+// nothing in that graph may decide to exit the process at module-load
+// time. server.ts calls runStartupSecurityChecks() explicitly, right
+// before listen().
 //
 // Policy (public-deployment safety):
 // - HOST unset is the local default bind and is treated as loopback.
@@ -13,6 +14,8 @@
 // - Non-loopback bind + ENABLE_DEBUG_API=1: refuse to start (raw SQL
 //   execution on a reachable interface), unless ALLOW_INSECURE_START=1
 //   explicitly accepts the risk — in which case the warning still fires.
+
+import { isLoopbackRemoteAddress } from './middleware/cors-origins';
 
 export type StartupSecurityEnv = {
   host?: string | undefined;
@@ -46,11 +49,18 @@ export function isLoopbackHost(host: string | undefined): boolean {
   // Unset/empty host = default bind; treated as loopback per policy above.
   const value = (host ?? '').trim().toLowerCase();
   if (!value) return true;
-  // Tolerate bracketed IPv6 forms ("[::1]") and the expanded ::1 spelling.
+  // Tolerate bracketed IPv6 forms ("[::1]"); the shared socket-address
+  // loopback predicate (middleware/cors-origins.ts, kept import-free for
+  // the Vite dev server) decides the address forms. HOST-only extras on
+  // top of it: the 'localhost' spelling and the expanded ::1 form — plus,
+  // via the predicate's ::ffff:-stripping normalization, a HOST spelled
+  // as a v4-mapped loopback, which the old local copy misread as remote.
   const unbracketed = value.replace(/^\[/, '').replace(/\]$/, '');
-  if (unbracketed === 'localhost' || unbracketed === '::1') return true;
-  if (unbracketed === '0:0:0:0:0:0:0:1') return true;
-  return /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(unbracketed);
+  return (
+    unbracketed === 'localhost' ||
+    unbracketed === '0:0:0:0:0:0:0:1' ||
+    isLoopbackRemoteAddress(unbracketed)
+  );
 }
 
 export function evaluateStartupSecurity(env: StartupSecurityEnv): StartupSecurityPosture {

@@ -11,6 +11,7 @@ import { useEffect, useState } from 'react';
 import { parseAbi, type Address, type ContractFunctionParameters } from 'viem';
 
 import { createRpcClient } from '@/utils/realTimeData';
+import { MULTICALL3_ADDRESS, readMulticallBigint, readMulticallValue } from '@/utils/multicall';
 import { createTtlLruCache } from '@/utils/ttlLruCache';
 
 /** Human-readable labels for one token, or honest nulls when unknown. */
@@ -18,11 +19,6 @@ export type TokenMetadata = { symbol: string | null; decimals: number | null };
 
 /** One token to resolve; decimals() is only called when the token is an ERC-20. */
 export type TokenMetadataRequest = { address: string; includeDecimals: boolean };
-
-// Canonical Multicall3 deployment. The viem client built by
-// utils/realTimeData is not tied to a single chain type, so viem cannot
-// infer the multicall address from chain config — pass it explicitly.
-const MULTICALL3_ADDRESS: Address = '0xcA11bde05977b3631167028862bE2a173976CA11';
 
 const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
@@ -65,20 +61,6 @@ export function resetTokenMetadataCacheForTests(): void {
   overviewCache.clear();
   overviewInflight.clear();
 }
-
-// Narrows one viem multicall outcome to its primitive value. With
-// allowFailure, viem wraps each result as { status: 'success', result } or
-// { status: 'failure', error }; test doubles may hand back a bare null for
-// a reverted call. Anything unrecognized decodes to null.
-const readMulticallValue = (outcome: unknown): string | number | null => {
-  if (typeof outcome !== 'object' || outcome === null || !('status' in outcome)) {
-    return null;
-  }
-  const record: { status: unknown; result?: unknown } = outcome;
-  if (record.status !== 'success') return null;
-  const value: unknown = record.result;
-  return typeof value === 'string' || typeof value === 'number' ? value : null;
-};
 
 // Runs one aggregated multicall for a group of uncached tokens and returns
 // their metadata. Per-token call-level failures (reverts) resolve to null
@@ -333,17 +315,6 @@ const overviewInflight = new Map<string, Promise<TokenOverviewReads | undefined>
 // deliberately NOT the metadata cacheKey (which carries includeDecimals).
 const overviewCacheKey = (chainId: number, addressLower: string): string =>
   `${chainId}:${addressLower}`;
-
-// Narrows one multicall outcome to its bigint value (uint256 returns such
-// as totalSupply). Anything unrecognized — including test doubles handing
-// back a bare null for a reverted call — decodes to null.
-const readMulticallBigint = (outcome: unknown): bigint | null => {
-  if (typeof outcome !== 'object' || outcome === null || !('status' in outcome)) {
-    return null;
-  }
-  const record: { status?: unknown; result?: unknown } = outcome;
-  return record.status === 'success' && typeof record.result === 'bigint' ? record.result : null;
-};
 
 /**
  * Read name()/symbol()/decimals()/totalSupply() for one contract through a

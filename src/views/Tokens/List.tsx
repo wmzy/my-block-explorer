@@ -9,7 +9,8 @@
 // ?q= filters client-side over the resolved symbol/name/address and rides
 // the URL (Contracts/List debounce + settle-guard pattern), so filtered
 // views are shareable links.
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo } from 'react';
+import { useDebouncedQueryParam } from '@/util/useDebouncedQueryParam';
 import { css } from '@linaria/core';
 import { TypedLink, useMatched, useSearch, useSetSearch } from '@native-router/react';
 import { z } from 'zod';
@@ -109,11 +110,6 @@ export const DIRECTORY_CAVEAT =
 // tests (Contracts/List convention).
 export const searchSchema = z.object({ q: z.string().optional() });
 
-// Debounce for the filter box: the URL (?q=) only moves once typing
-// pauses, so the enrichment query and the filter are not re-keyed per
-// keystroke.
-const FILTER_DEBOUNCE_MS = 300;
-
 /** One enriched, display-ready row (runtime reads first, hints as fallback). */
 type DisplayRow = {
   address: string;
@@ -132,38 +128,9 @@ export default function TokensList() {
   const currentChainId = parseChainIdParam(params.chainId) ?? 0;
   const chainInfo = getChainInfo(currentChainId);
 
-  // The filter input starts from the deep-linked ?q= and then leads the
-  // URL: every debounced change replaces the URL entry (typing must not
-  // spam history). No offset to reset — the directory is one bounded page.
-  const [qInput, setQInput] = useState(() => qParam ?? '');
-  // The ?q= value this view itself last pushed — distinguishes the URL
-  // write the debounce causes (input must keep leading) from an external
-  // URL change (deep link, back/forward — input must follow).
-  const lastPushedQRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      const next = qInput.trim();
-      if ((qParam ?? '') === next) return;
-      lastPushedQRef.current = next;
-      void setSearch(
-        prev => {
-          const { q: _oldQ, ...rest } = prev;
-          return next === '' ? rest : { ...rest, q: next };
-        },
-        { replace: true },
-      );
-    }, FILTER_DEBOUNCE_MS);
-    return () => clearTimeout(timer);
-  }, [qInput, qParam, setSearch]);
-
-  // External ?q= change (deep link, back/forward): sync the input unless
-  // the URL carries exactly what this view just pushed.
-  useEffect(() => {
-    const urlQ = qParam ?? '';
-    if (lastPushedQRef.current === urlQ) return;
-    setQInput(urlQ);
-  }, [qParam]);
+  // The ?q= filter box (shared directory debounce; no offset to strip —
+  // the directory is one bounded page).
+  const qFilter = useDebouncedQueryParam('q', qParam, setSearch);
 
   // Directory rows: curated ∪ viewed, read from localStorage at mount and
   // on chain switches (navigating to a token page and back remounts this
@@ -261,8 +228,8 @@ export default function TokensList() {
             <div className={filterBox}>
               <Input
                 placeholder="Filter by symbol, name or address..."
-                value={qInput}
-                onChange={e => setQInput(e.target.value)}
+                value={qFilter.value}
+                onChange={e => qFilter.setValue(e.target.value)}
               />
             </div>
             <Button variant="outline" size="sm" onClick={refresh} disabled={readsQuery.fetching}>

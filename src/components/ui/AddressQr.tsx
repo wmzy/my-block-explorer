@@ -3,10 +3,9 @@ import { useState } from 'react';
 import { css } from '@linaria/core';
 import { Dialog } from 'haze-ui';
 import { useControl } from 'react-use-control';
-import { toast } from 'haze-ui';
+import { toastCopy } from '@/util/clipboard';
 import { Button } from '@/components/ui/Button';
 import { checksummedAddressOrNull } from '@/util/privateNotes';
-import { copyText } from '@/util/clipboard';
 
 // Header icon button: the same family as the page's back button (bordered
 // subtle square), just icon-sized so it reads as a header action.
@@ -150,13 +149,14 @@ export function AddressQr({ address }: { address: string }) {
 
   if (payload === null) return null;
 
-  const copyAddress = async () => {
-    if (await copyText(payload)) {
-      toast.info('Address copied to clipboard!', { duration: 2000 });
-    } else {
-      toast.danger('Failed to copy address', { duration: 2000 });
-    }
-  };
+  // Shared copy+toast tail with the QR dialog's own PM wording and its
+  // info success channel (generic cells say "Copied to clipboard!").
+  const copyAddress = () =>
+    toastCopy(payload, {
+      copied: 'Address copied to clipboard!',
+      failed: 'Failed to copy address',
+      copiedKind: 'info',
+    });
 
   return (
     <>

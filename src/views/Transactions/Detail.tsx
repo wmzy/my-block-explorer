@@ -54,7 +54,7 @@ import {
   formatRevertDescription,
   selectorOf,
 } from '@/utils/txDecode';
-import { formatBigInt, formatDateTime, formatGasPrice, formatNumber, formatTokenAmount, formatValue } from '@/utils/format';
+import { formatDateTime, formatGasPrice, formatGasString, formatNumber, formatTokenAmount, formatValue } from '@/utils/format';
 import { formatValueByUnit, getValueUnit, subscribeValueUnit } from '@/util/units';
 import { UsdValue } from '@/components/ui/UsdValue';
 
@@ -67,17 +67,6 @@ const getTxTypeText = (type: number): string => {
     4: 'EIP-7702',
   };
   return types[type] ?? `Type ${type}`;
-};
-
-// Gas amounts are plain unit counts: BigInt-parse first, then the shared
-// exact grouping helper — the old Number() step was exact only below
-// 2^53 and silently rounded beyond it.
-const formatGas = (gas: string): string => {
-  try {
-    return formatBigInt(BigInt(gas));
-  } catch {
-    return gas;
-  }
 };
 
 // Wrong-chain lookups: viem raises TransactionNotFoundError, and some
@@ -483,6 +472,7 @@ function SafeMultisigCard({
   if (decoded === null) return null;
 
   const innerSelector = selectorOf(decoded.data);
+  const nativeDecimals = getChainInfo(chainId)?.nativeCurrency.decimals ?? 18;
 
   return (
     <Card>
@@ -499,7 +489,7 @@ function SafeMultisigCard({
           <InfoItem label="Inner Value">
             {/* Exact wei rides the title, same contract as the Value row. */}
             <span title={`${decoded.value} wei`}>
-              {formatValue(decoded.value, getChainSymbol(chainId))}
+              {formatValue(decoded.value, getChainSymbol(chainId), nativeDecimals)}
             </span>
           </InfoItem>
           <InfoItem label="Operation">
@@ -611,6 +601,7 @@ function AccountAbstractionCard({
         }));
 
   const symbol = getChainSymbol(chainId);
+  const nativeDecimals = getChainInfo(chainId)?.nativeCurrency.decimals ?? 18;
 
   return (
     <Card>
@@ -664,7 +655,7 @@ function AccountAbstractionCard({
                 {row.actualGasCost !== null ? (
                   // Exact wei rides the title, same contract as the Value row.
                   <span title={`${row.actualGasCost} wei`}>
-                    {formatValue(row.actualGasCost, symbol)}
+                    {formatValue(row.actualGasCost, symbol, nativeDecimals)}
                   </span>
                 ) : (
                   '—'
@@ -1420,9 +1411,9 @@ export default function TransactionDetail() {
                   <InfoItem label="Value Unit">
                     <UnitToggle symbol={valueChain.symbol} />
                   </InfoItem>
-                  <InfoItem label="Gas Limit">{formatGas(txInfo.gasLimit)}</InfoItem>
+                  <InfoItem label="Gas Limit">{formatGasString(txInfo.gasLimit)}</InfoItem>
                   {txInfo.gasUsed && (
-                    <InfoItem label="Gas Used">{formatGas(txInfo.gasUsed)}</InfoItem>
+                    <InfoItem label="Gas Used">{formatGasString(txInfo.gasUsed)}</InfoItem>
                   )}
                   {txFeeWei !== null && (
                     <InfoItem label="Transaction Fee">

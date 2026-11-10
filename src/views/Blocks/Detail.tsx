@@ -23,24 +23,18 @@ import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
 import { useBlockByNumber } from '@/services/chainRpc';
 import { finalityLabelFor, useFinalityHeads } from '@/services/blocks';
 import { describeBlockProducer } from '@/utils/blockRpcData';
-import { formatBigInt, formatDateTime, formatRelativeTime } from '@/utils/format';
+import {
+  formatBigInt,
+  formatDateTime,
+  formatGasString,
+  formatNumber,
+  formatRelativeTime,
+} from '@/utils/format';
 import { parseBlockNumberParam, parseChainIdParam } from '@/utils/chainParam';
 import { deriveSlotEpochFromIso } from '@/utils/slotEpoch';
 import { createRpcClient } from '@/utils/realTimeData';
 import { computeBlockNav } from './nav';
 import InternalTxnsSection from './InternalTxnsSection';
-
-// Gas quantities are on-chain integers serialized as strings: format them
-// BigInt-safe with the shared exact grouping helper (Number coercion
-// would silently lose precision past 2^53, and the bare toLocaleString
-// followed the host locale).
-const formatGas = (gas: string): string => {
-  try {
-    return formatBigInt(BigInt(gas));
-  } catch {
-    return gas;
-  }
-};
 
 const formatBytes = (bytes?: number): string => {
   if (!bytes) return 'N/A';
@@ -591,7 +585,7 @@ export default function BlockDetail() {
 
         {!invalidNumber && error && !loading && headChecked && futureBlock && (
           <EmptyState
-            message={`Block ${futureBlock.requested.toLocaleString()} does not exist yet. The chain is currently at block ${futureBlock.latest.toLocaleString()}.`}
+            message={`Block ${formatNumber(futureBlock.requested)} does not exist yet. The chain is currently at block ${formatNumber(futureBlock.latest)}.`}
           >
             <div className={futureBlockLinks}>
               <Button variant="outline" size="sm" onClick={handleCheckAgain}>
@@ -656,7 +650,7 @@ export default function BlockDetail() {
                     // can land one slot off the true consensus slot.
                     <InfoItem label="Slot / Epoch">
                       <span title="Derived from the block timestamp — may be off by one slot">
-                        {`${slotEpoch.slot.toLocaleString()} · epoch ${slotEpoch.epoch.toLocaleString()}`}
+                        {`${formatNumber(slotEpoch.slot)} · epoch ${formatNumber(slotEpoch.epoch)}`}
                       </span>
                     </InfoItem>
                   )}
@@ -672,8 +666,8 @@ export default function BlockDetail() {
                       </span>
                     )}
                   </InfoItem>
-                  <InfoItem label="Gas Limit">{formatGas(blockInfo.gasLimit)}</InfoItem>
-                  <InfoItem label="Gas Used">{formatGas(blockInfo.gasUsed)}</InfoItem>
+                  <InfoItem label="Gas Limit">{formatGasString(blockInfo.gasLimit)}</InfoItem>
+                  <InfoItem label="Gas Used">{formatGasString(blockInfo.gasUsed)}</InfoItem>
                   {blockInfo.baseFeePerGas && (
                     <InfoItem label="Base Fee Per Gas">
                       {`${formatGwei(BigInt(blockInfo.baseFeePerGas))} gwei`}
@@ -684,14 +678,14 @@ export default function BlockDetail() {
                   )}
                   {blockInfo.blobGasUsed && (
                     <InfoItem label="Blob Gas Used">
-                      {`${formatGas(blockInfo.blobGasUsed)}${
-                        blobCount !== undefined ? ` (${blobCount.toLocaleString()} blobs)` : ''
+                      {`${formatGasString(blockInfo.blobGasUsed)}${
+                        blobCount !== undefined ? ` (${formatNumber(blobCount)} blobs)` : ''
                       }`}
                     </InfoItem>
                   )}
                   {blockInfo.excessBlobGas && (
                     <InfoItem label="Excess Blob Gas">
-                      {formatGas(blockInfo.excessBlobGas)}
+                      {formatGasString(blockInfo.excessBlobGas)}
                     </InfoItem>
                   )}
                   <InfoItem label="Transaction Count">
@@ -713,7 +707,7 @@ export default function BlockDetail() {
                 </InfoGrid>
                 {withdrawals !== undefined && withdrawals.length > 0 && (
                   <Collapsible
-                    title={`Withdrawals (${withdrawals.length.toLocaleString()})`}
+                    title={`Withdrawals (${formatNumber(withdrawals.length)})`}
                     className={withdrawalsSection}
                   >
                     <div className={cx(withdrawalRowStyle, withdrawalHeaderStyle)}>
@@ -726,7 +720,7 @@ export default function BlockDetail() {
                         <li key={withdrawal.index} className={withdrawalRowStyle}>
                           {/* Validator indices share the BigInt-safe integer
                               formatting with the gas figures. */}
-                          <span>{formatGas(withdrawal.validatorIndex)}</span>
+                          <span>{formatGasString(withdrawal.validatorIndex)}</span>
                           <TypedLink
                             to={`/chain/${currentChainId}/address/${withdrawal.address}`}
                             className={linkStyle}

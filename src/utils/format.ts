@@ -1,4 +1,5 @@
 // Formatting utilities
+import { formatUnits } from 'viem';
 
 /**
  * Exact fixed-decimal rendering of a scaled integer amount.
@@ -72,14 +73,44 @@ export function formatEth(value: bigint | string, decimals = 4): string {
 }
 
 // Shared native-token value display for the tx surfaces (Home feed, tx
-// list, tx detail): one display contract instead of three. Zero renders
-// exactly; dust below the 4-decimal floor renders the "<0.0001" floor
-// instead of a misleading "0.0000"; anything larger renders 4 decimals.
-export function formatValue(wei: bigint, symbol: string): string {
+// list, tx detail, internal transfers): one display contract instead of
+// per-view copies. Zero renders exactly; dust below the 0.0001-unit
+// display floor renders the "<0.0001" floor instead of a misleading
+// "0.0000"; anything larger renders 4 decimals over the chain's OWN
+// native-currency decimals (`decimals`, default 18 — the shape every
+// pre-existing 2-arg caller means, byte-identical to the old hard-coded
+// path). An invalid `decimals` (formatFixedDecimals' guard) falls back
+// to the raw wei integer, never a fabricated amount.
+export function formatValue(wei: bigint, symbol: string, decimals = 18): string {
   if (wei === 0n) return `0 ${symbol}`;
-  // 0.0001 ETH in integer wei — the display floor, compared exactly.
-  if (wei < 10n ** 14n) return `<0.0001 ${symbol}`;
-  return `${formatEth(wei, 4)} ${symbol}`;
+  const shown = formatFixedDecimals(wei, decimals, 4);
+  if (shown === null) return `${wei} ${symbol}`;
+  // 0.0001 native units in integer wei — the display floor, compared
+  // exactly (the historical 18-decimal gate was `wei < 10n ** 14n`).
+  // Flooring the WHOLE sub-floor band — including values half-up would
+  // round to "0.0001" — is what the default path has always done.
+  const floorUnit = 10n ** BigInt(Math.max(decimals - 4, 0));
+  if (wei < floorUnit) return `<0.0001 ${symbol}`;
+  return `${shown} ${symbol}`;
+}
+
+// Raw base-unit value → human amount: the shared shape of every token
+// surface's amount cell. viem's exact formatUnits under the token's OWN
+// decimals when they resolved (null OR undefined both mean "unknown"),
+// the untouched base-unit string when they did not — a guessed divisor
+// would fabricate the amount. `value` may be the decimal-string wire
+// form (BigInt() accepts bigint too); a non-numeric string throws inside
+// BigInt, exactly what the callers' guarded formatUnits calls did. The
+// symbol is appended only when known (non-nullish): some surfaces render
+// the bare amount next to their own symbol column.
+export function formatRawUnits(
+  value: bigint | string,
+  decimals: number | null | undefined,
+  symbol?: string | null,
+): string {
+  const amount =
+    decimals != null ? formatUnits(BigInt(value), decimals) : value.toString();
+  return symbol != null ? `${amount} ${symbol}` : amount;
 }
 
 /**
@@ -185,6 +216,24 @@ export function formatNumber(value: number | string | bigint): string {
  */
 export function formatBigInt(value: bigint): string {
   return groupDigits(value.toString());
+}
+
+/**
+ * Format a gas quantity that travels as a decimal string.
+ *
+ * Gas quantities are on-chain integers serialized as strings: format
+ * them BigInt-safe with the shared exact grouping helper (Number
+ * coercion would silently lose precision past 2^53, and a bare
+ * toLocaleString followed the host locale). A string BigInt cannot parse
+ * (a provider quirk, a placeholder) is renderer intent, not an error —
+ * returned verbatim.
+ */
+export function formatGasString(gas: string): string {
+  try {
+    return formatBigInt(BigInt(gas));
+  } catch {
+    return gas;
+  }
 }
 
 /**

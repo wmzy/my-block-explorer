@@ -28,6 +28,7 @@ import {
   type EtaTracker,
 } from '@/components/events/IndexingRangeManager';
 import { ApiError } from '@/util/apiError';
+import { formatNumber } from '@/utils/format';
 import {
   catchupScanJob,
   deleteScanJob,
@@ -498,11 +499,11 @@ export function DeepScan({ chainId, address, txPayload }: DeepScanProps) {
         />
       </div>
       <p className={metaLineStyle} data-testid="deep-scan-progress">
-        Walked {job.blocksWalked.toLocaleString()} / {job.blocksTotal.toLocaleString()} blocks (
-        {progressPercent.toFixed(1)}%) — cursor at block {job.cursorBlock.toLocaleString()}
+        Walked {formatNumber(job.blocksWalked)} / {formatNumber(job.blocksTotal)} blocks (
+        {progressPercent.toFixed(1)}%) — cursor at block {formatNumber(job.cursorBlock)}
       </p>
       <p className={metaLineStyle} data-testid="deep-scan-txs">
-        Transactions found: {job.txsFound.toLocaleString()}
+        Transactions found: {formatNumber(job.txsFound)}
       </p>
       {/* Traces meta rides ONLY a job that asked for recording; an
           unrequested walk renders nothing (no zero-line noise). A probes
@@ -511,7 +512,7 @@ export function DeepScan({ chainId, address, txPayload }: DeepScanProps) {
         <p className={metaLineStyle} data-testid="deep-scan-traces">
           {job.tracesSupported === false
             ? 'traces unavailable on this RPC — the walk continued without them'
-            : `Internal transactions recorded: ${job.tracesRecorded.toLocaleString()}`}
+            : `Internal transactions recorded: ${formatNumber(job.tracesRecorded)}`}
         </p>
       )}
       <p className={metaLineStyle} data-testid="deep-scan-eta">
@@ -596,17 +597,17 @@ export function DeepScan({ chainId, address, txPayload }: DeepScanProps) {
       )}
       {job.status === 'complete' && job.coverage === 'complete' && (
         <p className={completeLineStyle} data-testid="deep-scan-complete">
-          Deep scan complete — every block from genesis (0) to {job.toBlock.toLocaleString()} was
+          Deep scan complete — every block from genesis (0) to {formatNumber(job.toBlock)} was
           walked and verified. No external transaction for this address exists outside this list:
           this is the product&apos;s only provable &quot;complete&quot; coverage … up to block{' '}
-          {job.toBlock.toLocaleString()}.
+          {formatNumber(job.toBlock)}.
         </p>
       )}
       {job.status === 'complete' && job.coverage === null && (
         <p className={mutedStyle}>
-          Walk finished (blocks {job.fromBlock.toLocaleString()}–{job.toBlock.toLocaleString()}),
+          Walk finished (blocks {formatNumber(job.fromBlock)}–{formatNumber(job.toBlock)}),
           but coverage stays discovered — a non-genesis start cannot prove there was no activity
-          before block {job.fromBlock.toLocaleString()}.
+          before block {formatNumber(job.fromBlock)}.
         </p>
       )}
       {actionError !== null && (

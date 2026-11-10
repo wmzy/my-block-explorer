@@ -9,7 +9,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { css } from '@linaria/core';
 import { TypedLink, useSearch, useSetSearch } from '@native-router/react';
-import { erc20Abi, formatUnits } from 'viem';
+import { erc20Abi } from 'viem';
 import { Alert } from 'haze-ui';
 import {
   useTokenTransfers,
@@ -23,12 +23,19 @@ import { createRpcClient } from '@/utils/realTimeData';
 import { checkAddressValidity } from '@/views/Address/addressValidity';
 import {
   addressSearchSchema,
-  effectiveTransferStandard,
+  clampPage,
   shouldPinTransfersPage,
   type TransferStandardId,
 } from '@/views/Address/search';
 import { getExternalToolLinks } from '@/config/externalTools';
-import { cellText, formatBigInt, formatHash, formatRelativeTime } from '@/utils/format';
+import {
+  cellText,
+  formatBigInt,
+  formatHash,
+  formatNumber,
+  formatRawUnits,
+  formatRelativeTime,
+} from '@/utils/format';
 import { DataTable, Pagination, linkStyle } from '@/components/ui/DataTable';
 import { LoadingState } from '@/components/ui/LoadingState';
 import { ErrorState, EmptyState } from '@/components/ui/ErrorState';
@@ -336,10 +343,7 @@ function AmountCell({ transfer, meta }: { transfer: TokenTransfer; meta: TokenMe
   if (meta?.decimals !== undefined) {
     try {
       return (
-        <td className={valueCell}>
-          {formatUnits(BigInt(transfer.value), meta.decimals)}
-          {meta.symbol !== undefined ? ` ${meta.symbol}` : ''}
-        </td>
+        <td className={valueCell}>{formatRawUnits(transfer.value, meta.decimals, meta.symbol)}</td>
       );
     } catch {
       // Non-numeric value: fall through to the raw fallback below.
@@ -390,7 +394,7 @@ function TransferRow({
       </td>
       <td>
         <TypedLink to={`/chain/${chainId}/block/${transfer.blockNumber}`} className={linkStyle}>
-          {transfer.blockNumber.toLocaleString()}
+          {formatNumber(transfer.blockNumber)}
         </TypedLink>
       </td>
       {/* The scan contract carries no timestamps — an em dash, never a
@@ -486,20 +490,22 @@ export default function TokenTransfers({
     ttWindow: ttWindowParam,
     ttStandard: ttStandardParam,
   } = useSearch(addressSearchSchema);
-  const page = Math.max(1, Math.floor(ttPageParam));
+  const page = clampPage(ttPageParam);
   const setPage = (next: number) => {
     void setSearch(prev => ({
       ...prev,
       tab: 'transfers',
-      ttPage: String(Math.max(1, Math.floor(next))),
+      ttPage: String(clampPage(next)),
     }));
   };
   // Standard filter chip (?ttStandard=): URL-driven like ?ttPage=, with
   // the same explicit-vs-absent discipline — an explicit standard wins,
-  // absence is "all standards". Client-side over the fetched rows only:
-  // the scan, the pagination and the beyond-data convergence below all
-  // keep operating on the unfiltered list.
-  const standardFilter = effectiveTransferStandard(ttStandardParam);
+  // absence (or a malformed value, degraded by the schema's
+  // .catch(undefined)) is "all standards"; no param implies a standard,
+  // so the param itself IS the effective filter. Client-side over the
+  // fetched rows only: the scan, the pagination and the beyond-data
+  // convergence below all keep operating on the unfiltered list.
+  const standardFilter = ttStandardParam;
   const setStandardFilter = (next: TransferStandardId | undefined) => {
     void setSearch(prev => {
       const merged: Record<string, string | string[]> = { ...prev, tab: 'transfers' };
@@ -591,7 +597,7 @@ export default function TokenTransfers({
   // First-scan time (server cache hit) — absent on legacy payloads
   // without the field, in which case no freshness is claimed.
   const scannedAt = data?.scannedAt;
-  const windowLabel = windowBlocks !== undefined ? windowBlocks.toLocaleString() : undefined;
+  const windowLabel = windowBlocks !== undefined ? formatNumber(windowBlocks) : undefined;
   // nextCursor drives Next (null = end of the discovered list); no total
   // is claimed — the scan never asserts one.
   const hasNext = data ? data.nextCursor !== null : false;

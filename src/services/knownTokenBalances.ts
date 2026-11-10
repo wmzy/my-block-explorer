@@ -18,17 +18,12 @@
 // The shaping logic (zero-filter, ordering, cap+remainder) lives as
 // exported pure functions precisely so it is unit-testable without any
 // RPC or hook harness.
-import { parseAbi, type Address, type ContractFunctionParameters } from 'viem';
+import { parseAbi, type ContractFunctionParameters } from 'viem';
 
 import { knownTokensForChain } from '@/config/knownTokens';
 import { createRpcClient } from '@/utils/realTimeData';
+import { MULTICALL3_ADDRESS, readMulticallBigint } from '@/utils/multicall';
 import { bindQueryFn, createQueryCache, createQueryHook } from '@/util/useQuery';
-
-// Canonical Multicall3 deployment (same constant as
-// services/tokenMetadata.ts): the viem client built by utils/realTimeData
-// is not tied to a single chain type, so viem cannot infer the multicall
-// address from chain config — pass it explicitly.
-const MULTICALL3_ADDRESS: Address = '0xcA11bde05977b3631167028862bE2a173976CA11';
 
 const balanceOfAbi = parseAbi(['function balanceOf(address) view returns (uint256)']);
 
@@ -47,20 +42,6 @@ export type KnownTokenBalancesPage = {
   checked: number;
   /** Non-zero balances only, in curated-list order (shaping is the view's job). */
   balances: KnownTokenBalance[];
-};
-
-// Narrows one viem multicall outcome to its bigint value. With
-// allowFailure, viem wraps each result as { status: 'success', result }
-// or { status: 'failure', error }; test doubles may hand back a bare
-// null for a reverted call. Anything unrecognized decodes to null — the
-// row is then skipped, never invented.
-const readMulticallBigint = (outcome: unknown): bigint | null => {
-  if (typeof outcome !== 'object' || outcome === null || !('status' in outcome)) {
-    return null;
-  }
-  const record: { status: unknown; result?: unknown } = outcome;
-  if (record.status !== 'success') return null;
-  return typeof record.result === 'bigint' ? record.result : null;
 };
 
 /**

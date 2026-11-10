@@ -550,6 +550,29 @@ describe('InternalTxns deep-scan records', () => {
     expect(await screen.findByTestId('internal-txns-summary')).toBeInTheDocument();
   });
 
+  it('floors the sub-0.0001 band through the shared formatValue contract', async () => {
+    // 50,000,000,000,000 wei = 0.00005 ETH: inside [5·10¹³, 10¹⁴), the
+    // band a 4-decimal half-up rounding would render as "0.0001". The
+    // shared formatValue integer dust gate floors the WHOLE sub-floor
+    // band at "<0.0001" — the deliberate alignment with every other tx
+    // surface this view adopted when its local formatter was deleted.
+    requestMock.mockResolvedValue({
+      type: 'CALL',
+      from: SENDER,
+      to: TARGET,
+      value: '0x0',
+      input: '0x',
+      calls: [],
+    });
+    mocks.fetchInternalTransactions.mockResolvedValue(
+      recordsBody([record({ value: '50000000000000' })]),
+    );
+    renderTab();
+
+    expect(await screen.findByText('<0.0001 ETH')).toBeInTheDocument();
+    expect(screen.queryByText('0.0001 ETH')).not.toBeInTheDocument();
+  });
+
   it('keeps the section absent on an empty result — the browser flow stays byte-identical', async () => {
     requestMock.mockResolvedValue(traceWithInternalPayout());
     mocks.fetchInternalTransactions.mockResolvedValue(recordsBody([]));

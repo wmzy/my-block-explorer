@@ -8,7 +8,6 @@ Business logic layer for blockchain explorer. All services are chain-agnostic.
 services/
 ├── RpcManager.ts              # Central RPC client manager (singleton)
 ├── EventIndexingService.ts    # Batch event indexing (2000 blocks/batch)
-├── EventDecodingService.ts    # ABI event decoding
 ├ ContractSourceService.ts     # Contract verification (Sourcify/Etherscan)
 ├── ContractInteractionService.ts # Contract read/simulate
 ├── BlockService.ts            # Block data (RPC + DB hybrid)
@@ -34,7 +33,7 @@ services/
 ### Singleton Manager
 
 ```typescript
-export const rpcManager = new RpcManager(); // Line 218
+export const rpcManager = new RpcManager(); // Line 343
 ```
 
 ### Hybrid Data Access (RPC + DB)
@@ -58,6 +57,6 @@ RpcManager (foundation)
 ## NOTES
 
 - All services receive `chainId` parameter for multi-chain support
-- Large files: ContractSourceService (1585 lines), EventIndexingService (1090
+- Large files: ContractSourceService (2061 lines), EventIndexingService (1781
   lines)
 - Retry logic via `createRetryableRpcCall()` wrapper

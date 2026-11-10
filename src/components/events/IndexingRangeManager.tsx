@@ -1,10 +1,12 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { css } from '@linaria/core';
 import { SegmentedProgressBar } from '../ui/SegmentedProgressBar';
 import { toast } from 'haze-ui';
 import { get, post, del } from '@/util/http';
 import { ApiError } from '@/util/apiError';
 import { parseStrictInteger } from '@/utils/validation';
+import { useEventRanges, type EventRangeRow } from '@/services/eventsRanges';
+import { useGenerationGuard } from '@/util/useGenerationGuard';
 
 const containerStyles = css`
   background: var(--haze-color-bg);
@@ -320,9 +322,32 @@ type IndexingRange = {
   totalEventsIndexed: number;
   errorMessage: string | null;
   priority: number;
-  createdAt: Date | null;
-  updatedAt: Date | null;
+  // ISO strings on the wire (bigintJsonResponse serializes the persisted
+  // model); Date objects still arrive from raw test fixtures. Unused for
+  // rendering — kept for model completeness.
+  createdAt: string | Date | null;
+  updatedAt: string | Date | null;
 };
+
+// Wire row → the bigint range model every helper below (overlap precheck,
+// ETA samplers, coverage folds) is typed against. BigInt() accepts the
+// wire's decimal strings, plain numbers, and the bigint values raw test
+// fixtures hand back alike.
+const toModelIndexingRange = (row: EventRangeRow): IndexingRange => ({
+  chainId: row.chainId,
+  address: row.address as IndexingRange['address'],
+  rangeId: row.rangeId,
+  fromBlock: BigInt(row.fromBlock),
+  toBlock: BigInt(row.toBlock),
+  direction: row.direction,
+  currentBlock: row.currentBlock === null ? null : BigInt(row.currentBlock),
+  status: row.status,
+  totalEventsIndexed: row.totalEventsIndexed,
+  errorMessage: row.errorMessage,
+  priority: row.priority,
+  createdAt: row.createdAt,
+  updatedAt: row.updatedAt,
+});
 
 // Statuses that keep a walked-block checkpoint (currentBlock persists; both
 // start and resume continue from it). Their walked blocks are indexed and
@@ -666,8 +691,6 @@ export const IndexingRangeManager: React.FC<Props> = ({
   abi,
   onRefresh,
 }) => {
-  const [ranges, setRanges] = useState<IndexingRange[]>([]);
-  const [loading, setLoading] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
   const [formState, setFormState] = useState<AddRangeForm>(defaultFormState);
   const [quickFormState, setQuickFormState] = useState<QuickCreateForm>(defaultQuickFormState);
@@ -694,79 +717,73 @@ export const IndexingRangeManager: React.FC<Props> = ({
   // determine it — that must render as "unknown", never as block #0.
   const creationBlockNumber = creationBlock ?? 0;
   const hasKnownCreationBlock = creationBlockNumber > 0;
-  const maxRangeToBlock = ranges.length > 0 ? Math.max(...ranges.map(r => Number(r.toBlock))) : 0;
   const quickUrl = `/api/chains/${chainId}/contracts/${contractAddress}/events/ranges/quick`;
-  // Generation guard: the Contract route reuses this component across a
-  // contract switch, and the 3s poll overlaps the remount fetch, so a
-  // slower run for the previous contract (or a superseded poll tick) could
-  // settle after a newer one and replace the current contract's ranges,
-  // its 'Pausing…' set and the chain head. Only the newest run writes.
-  const rangesRequestIdRef = useRef(0);
-  const fetchRanges = useCallback(async () => {
-    // Claim a NEW generation for this run (the EventTable pattern): reading
-    // the current id without claiming one let two overlapping poll ticks
-    // share an id, so both passed isCurrent() and the slower (staler) tick
-    // could replace the fresher one's ranges and chain head.
-    const requestId = ++rangesRequestIdRef.current;
-    const isCurrent = () => requestId === rangesRequestIdRef.current;
-    setLoading(true);
-    try {
-      const data = await get<{ ranges?: IndexingRange[] }>(
-        `/api/chains/${chainId}/contracts/${contractAddress}/events/ranges`,
-      );
-      if (!isCurrent()) return;
-      const nextRanges = data.ranges ?? [];
-      setRanges(nextRanges);
-      // Drop the transient 'Pausing…' state once the polled status is no
-      // longer 'indexing' (paused, errored, or the range is gone).
-      setPausingRangeIds(prev => {
-        if (prev.size === 0) return prev;
-        const next = new Set<number>();
-        for (const id of prev) {
-          const range = nextRanges.find(r => r.rangeId === id);
-          if (range?.status === 'indexing') next.add(id);
-        }
-        return next;
-      });
-      if (nextRanges.length > 0) {
-        // Refresh the chain head alongside the ranges so the staleness
-        // banner tracks both sides of the gap. When the head is unknown
-        // (RPC unavailable) the banner simply stays hidden.
-        try {
-          const status = await get<{ latestBlock?: number }>(
-            `/api/chains/${chainId}/contracts/${contractAddress}/events/indexing-status`,
-          );
-          if (!isCurrent()) return;
-          setHeadBlock(status.latestBlock ?? 0);
-        } catch {
-          // keep the last known head
-        }
+
+  // Ranges data: the shared query-cache service (services/eventsRanges.ts)
+  // — one cache entry and ONE 3s poll loop shared with EventStatistics
+  // (the service module owns the single-flight coordinator; this
+  // component's own gate — poll while any range is indexing — is exactly
+  // what the hook derives from its data, so no extra input is needed).
+  // Race safety is native to the query layer: every run claims a monotonic
+  // sequence and a settle older than an already-applied claim (contract
+  // switch, superseded tick, mutation refetch) is discarded — the guard
+  // this component used to hand-roll.
+  const rangesQuery = useEventRanges(chainId, contractAddress);
+  const { refetch: refetchRanges } = rangesQuery;
+  const ranges = useMemo(
+    () => (rangesQuery.data?.ranges ?? []).map(toModelIndexingRange),
+    [rangesQuery.data],
+  );
+  const maxRangeToBlock = ranges.length > 0 ? Math.max(...ranges.map(r => Number(r.toBlock))) : 0;
+  // Initial-load gate: true until a payload has landed for THESE args (a
+  // cold mount renders "Loading...", a settled error falls through to the
+  // empty state — the old catch path — and a landed payload renders).
+  const loading = rangesQuery.data === undefined && rangesQuery.error === undefined;
+
+  // Fold the transient 'Pausing…' set against every fresh ranges payload
+  // (mount fetch, shared 3s tick, and mutation refetches all land here):
+  // drop an id once its range is no longer 'indexing' (paused, errored, or
+  // the range is gone).
+  useEffect(() => {
+    setPausingRangeIds(prev => {
+      if (prev.size === 0) return prev;
+      const next = new Set<number>();
+      for (const id of prev) {
+        const range = ranges.find(r => r.rangeId === id);
+        if (range?.status === 'indexing') next.add(id);
       }
-    } catch (error) {
-      if (isCurrent()) console.error('Failed to fetch ranges:', error);
-    } finally {
-      // Only the newest run owns the spinner.
-      if (isCurrent()) setLoading(false);
-    }
-  }, [chainId, contractAddress]);
+      return next;
+    });
+  }, [ranges]);
+
+  // Chain head for the staleness banner and Catch up to head: refreshed
+  // alongside every fresh ranges payload, the same cadence the old chained
+  // fetch had. When the head is unknown (RPC unavailable) the banner
+  // simply stays hidden — a failure keeps the last known head. The shared
+  // generation guard kills a head fetch whose payload was superseded
+  // (contract switch mid-flight), so a stale head cannot land on the new
+  // contract.
+  const headGuard = useGenerationGuard();
   useEffect(() => {
-    // Bump the generation so the previous contract's in-flight fetch can
-    // never write into this one (the cleanup covers the unmount too).
-    rangesRequestIdRef.current += 1;
-    fetchRanges();
+    if (ranges.length === 0) return;
+    const requestId = headGuard.claim();
+    get<{ latestBlock?: number }>(
+      `/api/chains/${chainId}/contracts/${contractAddress}/events/indexing-status`,
+    )
+      .then(status => {
+        if (headGuard.isCurrent(requestId)) setHeadBlock(status.latestBlock ?? 0);
+      })
+      .catch(() => {
+        // keep the last known head
+      });
     return () => {
-      rangesRequestIdRef.current += 1;
+      headGuard.invalidate();
     };
-  }, [fetchRanges]);
-  useEffect(() => {
-    const hasIndexing = ranges.some(r => r.status === 'indexing');
-    if (hasIndexing) {
-      const interval = setInterval(fetchRanges, 3000);
-      return () => clearInterval(interval);
-    }
-  }, [ranges, fetchRanges]);
+  }, [ranges, chainId, contractAddress, headGuard]);
+
   // ETA speedometer state: per-rangeId sample windows harvested from the
-  // poll above. A ref, not state — the samples are derived input for the
+  // shared ranges poll (every fresh payload — mount, tick, refetch — lands
+  // in `ranges`). A ref, not state — the samples are derived input for the
   // next render, and re-rendering on every observation would buy nothing.
   const etaTrackersRef = useRef<Map<number, EtaTracker>>(new Map());
   // One observation per range per poll commit. The ETA rendered by this
@@ -868,7 +885,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
         setTruncatedNotice(
           typeof data.truncatedToBlock === 'number' ? data.truncatedToBlock : null,
         );
-        await fetchRanges();
+        await refetchRanges();
         if (data.overlaps && data.overlaps.length > 0) {
           setOverlaps(data.overlaps);
         }
@@ -890,7 +907,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
       ranges,
       creationBlockNumber,
       hasKnownCreationBlock,
-      fetchRanges,
+      refetchRanges,
       onRefresh,
     ],
   );
@@ -927,7 +944,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
           abi,
           ...(mode === 'all' && fullHistoryConfirmed ? { confirmFullHistory: true } : {}),
         });
-        await fetchRanges();
+        await refetchRanges();
         quickCreateToast(data);
         // A successful create disarms the gate — the next 'all' submit
         // starts from a clean baseline.
@@ -961,7 +978,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
       chainId,
       contractAddress,
       abi,
-      fetchRanges,
+      refetchRanges,
       onRefresh,
       creationBlockNumber,
       headBlock,
@@ -1030,7 +1047,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
           { abi },
         );
         toast.success('Indexing started');
-        await fetchRanges();
+        await refetchRanges();
       } catch (error) {
         console.error('Failed to start indexing:', error);
         toast.danger(describeMutationError(error, 'Failed to start indexing'));
@@ -1038,7 +1055,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
         setActionLoading(null);
       }
     },
-    [chainId, contractAddress, abi, fetchRanges],
+    [chainId, contractAddress, abi, refetchRanges],
   );
   const handlePauseIndexing = useCallback(
     async (rangeId: number) => {
@@ -1052,7 +1069,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
           `/api/chains/${chainId}/contracts/${contractAddress}/events/ranges/${rangeId}/pause`,
           {},
         );
-        await fetchRanges();
+        await refetchRanges();
       } catch (error) {
         // Pause did not take effect — clear the transient state so the
         // button does not stay stuck on 'Pausing…'.
@@ -1068,7 +1085,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
         setActionLoading(null);
       }
     },
-    [chainId, contractAddress, fetchRanges],
+    [chainId, contractAddress, refetchRanges],
   );
   const handleResumeIndexing = useCallback(
     async (rangeId: number) => {
@@ -1081,7 +1098,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
           { abi },
         );
         toast.success('Indexing resumed');
-        await fetchRanges();
+        await refetchRanges();
       } catch (error) {
         console.error('Failed to resume indexing:', error);
         toast.danger(describeMutationError(error, 'Failed to resume indexing'));
@@ -1089,7 +1106,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
         setActionLoading(null);
       }
     },
-    [chainId, contractAddress, abi, fetchRanges],
+    [chainId, contractAddress, abi, refetchRanges],
   );
   const handleDeleteRange = useCallback(
     async (rangeId: number) => {
@@ -1098,7 +1115,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
       setActionLoading(rangeId);
       try {
         await del(`/api/chains/${chainId}/contracts/${contractAddress}/events/ranges/${rangeId}`);
-        await fetchRanges();
+        await refetchRanges();
         onRefresh?.();
       } catch (error) {
         console.error('Failed to delete range:', error);
@@ -1107,7 +1124,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
         setActionLoading(null);
       }
     },
-    [chainId, contractAddress, fetchRanges, onRefresh],
+    [chainId, contractAddress, refetchRanges, onRefresh],
   );
   const formatBlock = (block: bigint | number): string => {
     return Number(block).toLocaleString();

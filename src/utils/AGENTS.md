@@ -14,7 +14,12 @@ utils/
 │                          #   formatFileSize — import-free by design
 ├── address.ts             # HEX_ADDRESS_RE, isAddressShape, addressVerdict
 │                          #   (two-tier shape→EIP-55), checksumAddress
-├── cache.ts               # LRU machinery + blockCache (its only instance)
+├── multicall.ts           # MULTICALL3_ADDRESS + readMulticallValue/Bigint/
+│                          #   Result outcome narrowers (pure, barrel-safe)
+├── scanParams.ts          # refreshSchema (?refresh=1) + readStrictInt
+│                          #   (transfers/approvals shared query params)
+├── dbTime.ts              # secondsToDate + toIsoTimestamp (naive-UTC-safe
+│                          #   DuckDB datetime parsing — the ONE home)
 ├── callTraceRpc.ts        # Trace family's browser RPC read: rpcRequest
 │                          #   (narrow untyped cast) + fetchCallTraceTree
 ├── withTimeout.ts         # TimeoutError + withTimeout / withTimeoutOrNull
@@ -45,8 +50,8 @@ utils/
 | Create RPC client           | realTimeData.ts    | `createRpcClient()`                       |
 | Get address balance/nonce   | realTimeData.ts    | `getRealTimeAddressData()`                |
 | Fetch blocks                | blockRpcData.ts    | `getLatestBlocks()`, `getBlockByNumber()` |
-| Get cached block data       | cache.ts           | `blockCache`                              |
 | Validate address (2-tier)   | address.ts         | `addressVerdict()`, `isAddressShape()`    |
+| Multicall3 batch reads      | multicall.ts       | `readMulticallBigint()`, `MULTICALL3_ADDRESS` |
 | Truncate address/hash       | format.ts          | `truncateMiddle()`, `formatAddress()`     |
 | Native amount display       | format.ts          | `formatNativeDisplay()`                   |
 | Timeout a promise           | withTimeout.ts     | `withTimeout()` / `withTimeoutOrNull()`   |

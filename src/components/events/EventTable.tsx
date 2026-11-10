@@ -16,7 +16,9 @@ import {
   tableBaseStyle,
   tableShellStyle,
 } from '@/components/ui/DataTable';
+import { spinnerBase } from '@/components/ui/Button';
 import { formatDateTime, formatFixedDecimals, truncateMiddle } from '@/utils/format';
+import { useGenerationGuard } from '@/util/useGenerationGuard';
 import { EventFilterPanel, type EventFilterState } from './EventFilterPanel';
 import { get } from '@/util/http';
 import { getApiBase } from '@/util/apiBase';
@@ -578,22 +580,15 @@ const loadingContainer = css`
   color: var(--haze-color-text-muted);
 `;
 
+// The events loading pane's spinner: the shared border-spinner base
+// (Button's spinnerBase export) at 24px, recolored to the table's muted
+// track and primary-lit quadrant — identical 2px geometry and 1s linear
+// cadence; only size and colors are site deltas.
 const loadingSpinner = css`
   width: 24px;
   height: 24px;
-  border: 2px solid var(--haze-color-border);
-  border-top: 2px solid var(--haze-color-primary);
-  border-radius: 50%;
-  animation: event-table-spin 1s linear infinite;
-
-  @keyframes event-table-spin {
-    0% {
-      transform: rotate(0deg);
-    }
-    100% {
-      transform: rotate(360deg);
-    }
-  }
+  --spinner-track: var(--haze-color-border);
+  --spinner-indicator: var(--haze-color-primary);
 `;
 
 // Enhanced sorting controls
@@ -918,12 +913,14 @@ const argFiltersQueryParam = (abiFilters?: Record<string, string>): string | und
 // Local loading indicator. Not ui/LoadingState: that renders a vertical
 // column around a 32px Skeleton pulse with a 200px floor, while this table
 // shows a horizontal 24px border-spinner row — too different to swap
-// without a visual change. Both loading branches share this single
-// component instead of duplicating the layout JSX.
+// without a visual change. The spinner itself is shared geometry: Button's
+// spinnerBase plus this table's size/color deltas (see loadingSpinner).
+// Both loading branches share this single component instead of
+// duplicating the layout JSX.
 function LoadingIndicator({ message }: { message: string }) {
   return (
     <div className={loadingContainer}>
-      <div className={loadingSpinner} />
+      <div className={cx(spinnerBase, loadingSpinner)} />
       <span style={{ marginLeft: 12 }}>{message}</span>
     </div>
   );
@@ -1320,19 +1317,19 @@ export const EventTable: React.FC<EventTableProps> = ({
     pagination.total <= clientSideSortThreshold &&
     pagination.total <= EVENT_CLIENT_SORT_MAX_PAGE_SIZE;
 
-  // Request-race guard: every fetchEvents call stamps itself with the
-  // current (monotonic) id, and each async setState below is gated on the
-  // id still being current. When a slower earlier request (previous page,
-  // old sort) resolves after a newer one, its response is discarded instead
-  // of clobbering rows that no longer match the pagination/sort state. The
-  // unmount cleanup bumps the id so in-flight responses never setState on a
-  // dead component.
-  const requestIdRef = useRef(0);
+  // Request-race guard (util/useGenerationGuard): every fetchEvents call
+  // CLAIMS a fresh monotonic id, and each async setState below is gated on
+  // the id still being current. When a slower earlier request (previous
+  // page, old sort) resolves after a newer one, its response is discarded
+  // instead of clobbering rows that no longer match the pagination/sort
+  // state. The hook's unmount cleanup invalidates in-flight responses so
+  // they never setState on a dead component.
+  const requestGuard = useGenerationGuard();
 
   // API call function
   const fetchEvents = useCallback(
     async (cursor?: string, targetPage?: number, totalOverride?: number) => {
-      const requestId = ++requestIdRef.current;
+      const requestId = requestGuard.claim();
       setLoading(true);
       setError(null);
 
@@ -1417,7 +1414,7 @@ export const EventTable: React.FC<EventTableProps> = ({
 
         // Superseded by a newer request (or unmounted): discard instead of
         // rendering rows that no longer match the current pagination/sort.
-        if (requestId !== requestIdRef.current) return;
+        if (!requestGuard.isCurrent(requestId)) return;
 
         const normalizedEvents = (data.events ?? []).map(e => {
           const args =
@@ -1473,13 +1470,13 @@ export const EventTable: React.FC<EventTableProps> = ({
           totalPages: data.totalPages,
         }));
       } catch (err) {
-        if (requestId !== requestIdRef.current) return;
+        if (!requestGuard.isCurrent(requestId)) return;
         console.error('Failed to fetch events:', err);
         setError(err instanceof Error ? err.message : 'Failed to load events');
       } finally {
         // Only the newest request owns the loading flag: a superseded
         // request clearing it would un-disable controls mid-flight.
-        if (requestId === requestIdRef.current) {
+        if (requestGuard.isCurrent(requestId)) {
           setLoading(false);
         }
       }
@@ -1487,6 +1484,9 @@ export const EventTable: React.FC<EventTableProps> = ({
     [
       chainId,
       contractAddress,
+      // Referentially stable (useGenerationGuard memoizes its api object),
+      // listed for exhaustive-deps like the values above.
+      requestGuard,
       pagination.page,
       pagination.limit,
       // The client-side branch's page size is derived from the reported
@@ -1507,15 +1507,6 @@ export const EventTable: React.FC<EventTableProps> = ({
   useEffect(() => {
     fetchEvents();
   }, [chainId, contractAddress, refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Unmount invalidates in-flight responses (see requestIdRef): the bumped
-  // id turns their gated setStates into no-ops.
-  useEffect(
-    () => () => {
-      requestIdRef.current++;
-    },
-    [],
-  );
 
   // Limit/sort changes refetch — except on mount, where the initial-load
   // effect above already issued the identical request (initialEvents

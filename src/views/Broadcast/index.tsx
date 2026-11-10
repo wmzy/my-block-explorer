@@ -39,7 +39,8 @@ import { InfoGrid, InfoItem } from '@/components/ui/InfoGrid';
 import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
 import { getChainInfo, getChainName } from '@/config/chains';
 import { formatGasPrice, formatNumber } from '@/utils/format';
-import { parseChainIdParam } from '@/utils/chainParam';
+import { resolveMainnetDefaultChainId } from '@/utils/chainParam';
+import { useDebouncedValue } from '@/util/useDebouncedQueryParam';
 import { errorMessage } from '@/utils/errorHandler';
 import { createRpcClient } from '@/utils/realTimeData';
 import {
@@ -151,12 +152,10 @@ type BroadcastState =
 export default function BroadcastTransactionPage() {
   const { params, router } = useMatched();
 
-  // An unparseable :chainId param is a broken link, not an unsupported
-  // chain: parseChainIdParam returns null and the raw param travels on
-  // to the unsupported state (same two-tier guard as Pending/Charts).
+  // Two-tier mainnet-default guard: the raw param travels on to the
+  // unsupported state when malformed.
   const rawChainId = params.chainId;
-  const parsedChainId = rawChainId === undefined ? 1 : parseChainIdParam(rawChainId);
-  const currentChainId = parsedChainId ?? 0;
+  const currentChainId = resolveMainnetDefaultChainId(rawChainId);
   const chainInfo = getChainInfo(currentChainId);
 
   const handleChainChange = (newChainId: number) => {
@@ -196,17 +195,12 @@ export default function BroadcastTransactionPage() {
 function BroadcastBody({ chainId }: { chainId: number }) {
   const { router } = useMatched();
   const [rawInput, setRawInput] = useState('');
-  const [debouncedRaw, setDebouncedRaw] = useState('');
   const [decode, setDecode] = useState<RawTransactionDecodeResult | null>(null);
   const [broadcast, setBroadcast] = useState<BroadcastState>({ status: 'idle' });
 
   // Debounce the paste: decoding on every keystroke would re-render the
-  // preview mid-edit; the timer resets per keystroke so only settled
-  // input is ever decoded.
-  useEffect(() => {
-    const timer = window.setTimeout(() => setDebouncedRaw(rawInput), 300);
-    return () => window.clearTimeout(timer);
-  }, [rawInput]);
+  // preview mid-edit; only settled input is ever decoded.
+  const debouncedRaw = useDebouncedValue(rawInput, 300);
 
   // Async local decode (sender recovery is async in viem). Last write
   // wins: a stale resolve after a newer edit is discarded, so the

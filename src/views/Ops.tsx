@@ -36,7 +36,7 @@ import {
   type UninstallPreview,
 } from '@/services/opsSummary';
 import { ApiError } from '@/util/apiError';
-import { copyText } from '@/util/clipboard';
+import { toastCopy } from '@/util/clipboard';
 import { isBackendUnreachable } from '@/util/http';
 import { errorMessage } from '@/utils/errorHandler';
 import { formatDuration, formatFileSize, formatNumber } from '@/utils/format';
@@ -860,7 +860,6 @@ function UninstallCard() {
 
 export default function Ops() {
   const router = useRouter();
-  const toast = useToast();
   // Not chain-scoped, but the topbar still is (its links and search route
   // into /chain/:chainId pages): the remembered chain provides that context,
   // same fallback order as the other chain-less pages (SQL console, Search).
@@ -874,15 +873,13 @@ export default function Ops() {
 
   // One-click diagnostics for bug reports: the already-fetched summary,
   // serialized whole (per-section verdicts included) to the clipboard.
-  // Same toast contract as CopyableHash — success and failure both say so.
+  // Same helper + toast contract as the copy sites (util/clipboard toastCopy).
   const copyDiagnostics = async () => {
     if (summary.data === undefined) return;
-    const text = JSON.stringify(buildOpsDiagnostics(summary.data), null, 2);
-    if (await copyText(text)) {
-      toast('Diagnostics copied to clipboard', { variant: 'success', duration: 2000 });
-    } else {
-      toast('Failed to copy diagnostics', { variant: 'danger', duration: 2000 });
-    }
+    await toastCopy(JSON.stringify(buildOpsDiagnostics(summary.data), null, 2), {
+      copied: 'Diagnostics copied to clipboard',
+      failed: 'Failed to copy diagnostics',
+    });
   };
 
   const gate = opsAdminGateFromError(summary.error);

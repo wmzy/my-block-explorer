@@ -19,6 +19,7 @@ import type { ContractSource } from './types';
 import { describeCallError } from './paramParsing';
 import { fetchContractAbi } from '@/services/contracts';
 import { useInjectedProvider } from '@/util/wallet';
+import { useDebouncedValue } from '@/util/useDebouncedQueryParam';
 
 const functionListStyles = css`
   .function-item {
@@ -315,7 +316,9 @@ export function ContractInteract({
     source: 'all',
     name: '',
   });
-  const [debouncedNameFilter, setDebouncedNameFilter] = useState('');
+  // Settled name filter (shared debounce): typing in the box re-keys
+  // nothing until it pauses.
+  const debouncedNameFilter = useDebouncedValue(filters.name, 300);
 
   // The route reuses this panel across contracts (chainId/contractAddress
   // change without a remount). Every piece of state declared above belongs
@@ -407,13 +410,6 @@ export function ContractInteract({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reload only when the contract data (or its merged facet ABIs) changes
   }, [chainId, contractAddress, contractSource, abiOverride, facetMerge]);
-
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedNameFilter(filters.name);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [filters.name]);
 
   // ABI that a read/simulate call is routed against. For a real proxy pair
   // the target selector decides: 'proxy' targets the proxy's own ABI (its

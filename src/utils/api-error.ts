@@ -35,9 +35,17 @@ export const respondError = (
 // The shared 400 envelopes for parsePaginationParams' null results: the
 // blocks/transactions/addresses/contracts/events list routes all answer
 // a junk limit/offset/page with these exact bodies, so the error codes
-// and messages live here once. (The transfers and watch list endpoints
-// serve a different bare {error, message} body and keep their own
-// inline envelopes.) Callers with a site-specific message — the
+// and messages live here once. The endpoints that still answer with a
+// deliberately bare {error, message} body (no statusCode/timestamp),
+// each pinned by its own tests: the transfers scan endpoint's
+// invalid_cursor/invalid_limit 400s (routes/transfers.ts), the watch
+// list/write endpoints (routes/watch.ts) and the watch-events limit 400,
+// the labels/watch shared invalid_request param contract
+// (server/validation.ts parseChainAndAddressRequest, rendered bare by
+// both route files), and the compile-verification endpoint's
+// CompileVerifyHttpError mapping whose documented extras (candidates)
+// spread top-level beside error/message (routes/verify.ts). Everything
+// else renders respondError. Callers with a site-specific message — the
 // contracts directory's cap-naming limit 400 — stay on respondError.
 export const invalidLimitResponse = (c: Context) =>
   respondError(c, 400, 'invalid_limit', 'limit must be a positive integer');

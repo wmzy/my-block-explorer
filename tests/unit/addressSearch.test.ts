@@ -6,9 +6,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   addressSearchSchema,
+  clampPage,
   effectiveActivityTab,
   effectiveInternalTxDepth,
-  effectiveTransferStandard,
   shouldPinTransfersPage,
 } from '@/views/Address/search';
 import {
@@ -174,18 +174,18 @@ describe('effectiveActivityTab', () => {
   });
 });
 
-describe('effectiveTransferStandard', () => {
-  it('lets an explicit valid ?ttStandard= win (never inferred, never defaulted)', () => {
-    expect(effectiveTransferStandard('erc20')).toBe('erc20');
-    expect(effectiveTransferStandard('erc721')).toBe('erc721');
-    expect(effectiveTransferStandard('erc1155')).toBe('erc1155');
+// clampPage: the ONE shared 1+ integer guard of the page's ?page=/
+// ?ttPage= read-side clamps and writer pushes (it replaced the identical
+// per-caller Math.max(1, Math.floor(...)) copies).
+describe('clampPage', () => {
+  it('floors fractional pages', () => {
+    expect(clampPage(3)).toBe(3);
+    expect(clampPage(2.9)).toBe(2);
   });
 
-  it('derives "all standards" from absence', () => {
-    // The schema already degraded malformed values to undefined, so the
-    // derivation only ever sees a valid member or absence — both must
-    // stay distinguishable (the ?tab= lesson).
-    expect(effectiveTransferStandard(undefined)).toBeUndefined();
+  it('clamps the malformed-deep-link domain (0, negatives) to page 1', () => {
+    expect(clampPage(0)).toBe(1);
+    expect(clampPage(-4)).toBe(1);
   });
 });
 

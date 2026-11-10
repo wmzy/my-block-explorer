@@ -8,7 +8,7 @@ import { useState } from 'react';
 import type { Hex } from 'viem';
 import { useCopyFeedback } from '@/util/useCopyFeedback';
 import type { StorageMapping, StorageType } from '@/types/storage';
-import type { StructRow } from './columnModel';
+import { shortSlot, type StructRow } from './columnModel';
 import { buildViemReadSnippet } from '@/utils/storageSlotCode';
 import {
   encodeMappingKey,
@@ -237,7 +237,7 @@ export function StorageMemberRow(props: StorageMemberRowProps) {
           <CopyButton text={slot} label={`slot ${formatSlotDecimal(slot)}`} title={slot} />
         )}
         {slotChip === 'hex' && (
-          <CopyButton text={slot} label={`slot: ${shortHex(slot)}`} title={slot} />
+          <CopyButton text={slot} label={`slot: ${shortSlot(slot)}`} title={slot} />
         )}
         {props.expr != null && (
           <CopyButton
@@ -277,10 +277,6 @@ export function StorageMemberRow(props: StorageMemberRowProps) {
       )}
     </div>
   );
-}
-
-function shortHex(slot: Hex): string {
-  return slot.length <= 14 ? slot : `${slot.slice(0, 8)}…${slot.slice(-4)}`;
 }
 
 function MappingKeyGroup({

@@ -21,6 +21,7 @@ import { parseChainAndAddressRequest } from '../server/validation';
 import { requireAdminTokenIfConfigured } from '../middleware/admin-token';
 import { createRateLimiter } from '../middleware/rate-limit';
 import { toIsoTimestamp } from '../utils/dbTime';
+import { respondError } from '../utils/api-error';
 import { LABEL_MAX_LENGTH, NOTE_MAX_LENGTH } from '../utils/labelContract';
 
 const logger = createLogger('labels-routes');
@@ -91,7 +92,7 @@ app.get('/chains/:chainId/labels/:address', async c => {
   try {
     const row = await findLabelRow(parsed.chainId, parsed.address);
     if (row === null) {
-      return c.json({ error: 'label_not_found', message: 'No label set for this address' }, 404);
+      return respondError(c, 404, 'label_not_found', 'No label set for this address');
     }
     c.header('Cache-Control', 'no-store');
     // source tells the client whether the row is a bundled seed
@@ -103,7 +104,7 @@ app.get('/chains/:chainId/labels/:address', async c => {
     return c.json({ label: row.label, note: row.note, source });
   } catch (error) {
     logger.error({ err: error }, 'Label lookup failed');
-    return c.json({ error: 'internal_error', message: 'Label lookup failed' }, 500);
+    return respondError(c, 500, 'internal_error', 'Label lookup failed');
   }
 });
 
@@ -156,7 +157,7 @@ app.get('/labels', requireAdminTokenIfConfigured, listRateLimiter, async c => {
     });
   } catch (error) {
     logger.error({ err: error }, 'Label list failed');
-    return c.json({ error: 'internal_error', message: 'Failed to list labels' }, 500);
+    return respondError(c, 500, 'internal_error', 'Failed to list labels');
   }
 });
 
@@ -171,10 +172,14 @@ app.put('/chains/:chainId/labels/:address', requireAdminTokenIfConfigured, async
   try {
     body = await c.req.json();
   } catch {
-    return c.json({ error: 'invalid_label', message: 'Request body must be valid JSON' }, 400);
+    return respondError(c, 400, 'invalid_label', 'Request body must be valid JSON');
   }
   const parsedBody = parseLabelBody(body);
-  if ('error' in parsedBody) return c.json(parsedBody, 400);
+  // Same code ('invalid_label') as the invalid-JSON arm above — same
+  // envelope, so one endpoint answers one error shape.
+  if ('error' in parsedBody) {
+    return respondError(c, 400, parsedBody.error, parsedBody.message);
+  }
 
   const { chainId, address } = parsed;
   const { label, note } = parsedBody;
@@ -195,7 +200,7 @@ app.put('/chains/:chainId/labels/:address', requireAdminTokenIfConfigured, async
     return c.json({ label, note, source: 'user' });
   } catch (error) {
     logger.error({ err: error }, 'Label upsert failed');
-    return c.json({ error: 'internal_error', message: 'Failed to save label' }, 500);
+    return respondError(c, 500, 'internal_error', 'Failed to save label');
   }
 });
 
@@ -208,7 +213,7 @@ app.delete('/chains/:chainId/labels/:address', requireAdminTokenIfConfigured, as
   try {
     const existing = await findLabelRow(parsed.chainId, parsed.address);
     if (existing === null) {
-      return c.json({ error: 'label_not_found', message: 'No label set for this address' }, 404);
+      return respondError(c, 404, 'label_not_found', 'No label set for this address');
     }
     await db
       .delete(addressLabels)
@@ -218,7 +223,7 @@ app.delete('/chains/:chainId/labels/:address', requireAdminTokenIfConfigured, as
     return c.body(null, 204);
   } catch (error) {
     logger.error({ err: error }, 'Label delete failed');
-    return c.json({ error: 'internal_error', message: 'Failed to delete label' }, 500);
+    return respondError(c, 500, 'internal_error', 'Failed to delete label');
   }
 });
 

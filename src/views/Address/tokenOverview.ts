@@ -10,9 +10,8 @@
 // (null — the caller renders nothing). Holder nets only reflect the rows
 // that were scanned (coverage may be partial) — callers must render the
 // incompleteness caveat.
-import { formatUnits } from 'viem';
-
 import type { TokenTransfer } from '@/services/tokenTransfers';
+import { formatRawUnits } from '@/utils/format';
 import { parseDecimalInteger } from '@/views/Address/holdings';
 
 /** Settled per-probe reads; null = that call reverted or returned nothing. */
@@ -63,10 +62,11 @@ export function classifyTokenOverview(reads: TokenOverviewReadsInput): TokenClas
 /**
  * Format a total supply BigInt-exactly with the TOKEN's own decimals —
  * never the chain's native-currency decimals. Unknown decimals keep the
- * raw base units (a guessed divisor would fabricate the amount).
+ * raw base units (a guessed divisor would fabricate the amount). Thin
+ * alias over the shared formatRawUnits, kept for the token-page callers.
  */
 export function formatTokenSupply(totalSupply: bigint, decimals: number | null): string {
-  return decimals !== null ? formatUnits(totalSupply, decimals) : totalSupply.toString();
+  return formatRawUnits(totalSupply, decimals);
 }
 
 /** One participant's discovered net balance of the viewed token. */

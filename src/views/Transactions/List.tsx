@@ -464,7 +464,9 @@ export default function TransactionsList() {
                       />
                     )}
                   </td>
-                  <td className={monoStyle}>{formatValue(BigInt(tx.value), symbol)}</td>
+                  <td className={monoStyle}>
+                    {formatValue(BigInt(tx.value), symbol, chainInfo?.nativeCurrency.decimals ?? 18)}
+                  </td>
                   <td>
                     <TxStatusBadge status={tx.status} hasBlock={tx.blockNumber !== null} />
                   </td>

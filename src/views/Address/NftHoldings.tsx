@@ -24,7 +24,7 @@ import { InfoItem } from '@/components/ui/InfoGrid';
 import { Badge } from '@/components/ui/Badge';
 import { linkStyle } from '@/components/ui/DataTable';
 import { shimmerPulse } from '@/components/ui/skeleton';
-import { cellText } from '@/utils/format';
+import { cellText, formatBigInt, formatNumber } from '@/utils/format';
 
 // One contract block: head line (link + standard badge + held count) and
 // a muted meta line beneath. Rows right-align into the InfoItem value
@@ -175,7 +175,7 @@ function heldCountText(holding: NftContractHolding): string {
   }
   // Raw base units with grouping separators — never an invented decimal
   // interpretation (ERC-1155 decimals are not read anywhere here).
-  return `${holding.heldCount} ${holding.heldCount === 1 ? 'id' : 'ids'} · ${holding.totalUnits.toLocaleString()} units total`;
+  return `${holding.heldCount} ${holding.heldCount === 1 ? 'id' : 'ids'} · ${formatBigInt(holding.totalUnits)} units total`;
 }
 
 // Thumbnail with honest degradation: no image (or an unresolvable one)
@@ -305,7 +305,7 @@ function NftContractRow({
               : ''}
           </span>
         )}
-        <span>last activity block {holding.lastActivityBlock.toLocaleString()}</span>
+        <span>last activity block {formatNumber(holding.lastActivityBlock)}</span>
         {holding.standard === 'erc1155' && holding.dataInconsistent && (
           <span className={nftInconsistent}>
             more units sent than received within the window — affected ids shown as not held
@@ -413,7 +413,7 @@ export default function NftHoldings({ transfers, address, chainId, loading }: Nf
         ))}
         {preview.totalOwnedItems > preview.items.length && (
           <p className={nftNote}>
-            showing first {NFT_METADATA_PREVIEW_LIMIT} of {preview.totalOwnedItems.toLocaleString()}{' '}
+            showing first {NFT_METADATA_PREVIEW_LIMIT} of {formatNumber(preview.totalOwnedItems)}{' '}
             held items
           </p>
         )}

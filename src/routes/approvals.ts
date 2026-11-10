@@ -1,5 +1,4 @@
 import { Hono } from 'hono';
-import { z } from 'zod';
 import { createLogger } from '../server/logger';
 import { getValidatedChainId, getValidatedAddress } from '../server/validation';
 import { approvalScanService } from '../services/ApprovalScanService';
@@ -7,6 +6,7 @@ import { createRateLimiter } from '../middleware/rate-limit';
 import { safeJsonResponse } from '../utils/serialization';
 import { respondError } from '../utils/api-error';
 import { parseStrictInteger } from '../utils/validation';
+import { refreshSchema } from '../utils/scanParams';
 
 const logger = createLogger('approvals-routes');
 
@@ -27,10 +27,6 @@ const readWindow = (raw: string | undefined): number | undefined => {
   if (parsed === null || parsed < 1 || parsed > MAX_WINDOW_BLOCKS) return undefined;
   return parsed;
 };
-// Cache-bypass flag: only the exact literal '1' forces a re-scan; junk
-// values ('true', '0', 'abc') degrade to a cache-serving read instead of
-// 400ing, matching the flag's own documented convention.
-const refreshSchema = z.literal('1').optional().catch(undefined);
 
 // On-demand approvals discovery (owner-filtered approval-event
 // eth_getLogs sweep — ERC-20/ERC-721 Approval + ERC-1155

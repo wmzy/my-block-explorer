@@ -43,6 +43,7 @@ import {
 import { createTtlLruCache } from '../utils/ttlLruCache';
 import { isAddressShape } from '../utils/address';
 import { errorMessage } from '../utils/errorHandler';
+import { MULTICALL3_ADDRESS, readMulticallResult } from '../utils/multicall';
 import { TimeoutError, withTimeout } from '../utils/withTimeout';
 
 // The scan-log shape is shared with the transfers scan — re-exported so
@@ -214,10 +215,6 @@ export const MAX_APPROVAL_HISTORY_EVENTS = 200;
 // is split into batches of 50 (mixed-kind batches — ordering follows the
 // discovered-pair order).
 const MULTICALL_BATCH_SIZE = 50;
-// Canonical Multicall3 deployment (same constant as services/
-// tokenMetadata.ts and the Address view; the backend client is not tied
-// to a single chain type, so the address must be passed explicitly).
-const MULTICALL3_ADDRESS: Address = '0xcA11bde05977b3631167028862bE2a173976CA11';
 
 // "Unlimited" threshold: grants at or above 2^128 read as Max. Covers the
 // max-uint sentinel (2^256-1) and the large fixed "infinite" values some
@@ -378,18 +375,6 @@ const historyEventFromLog = (
     txHash: log.transactionHash.toLowerCase(),
     value,
   };
-};
-
-// Unwraps one viem multicall outcome's result. With allowFailure, viem
-// wraps each result as { status: 'success', result } or
-// { status: 'failure', error }; test doubles may hand back a bare null
-// for a reverted call. Anything unsuccessful decodes to null.
-const readMulticallResult = (outcome: unknown): unknown => {
-  if (typeof outcome === 'object' && outcome !== null && 'status' in outcome) {
-    const o = outcome as { status?: unknown; result?: unknown };
-    if (o.status === 'success') return o.result;
-  }
-  return null;
 };
 
 type ScanOutcome = {

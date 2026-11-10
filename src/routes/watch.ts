@@ -19,7 +19,7 @@ import { createLogger } from '../server/logger';
 import { getValidatedChainId, parseChainAndAddressRequest } from '../server/validation';
 import { requireAdminTokenIfConfigured } from '../middleware/admin-token';
 import { createRateLimiter } from '../middleware/rate-limit';
-import { parseStrictInteger } from '../utils/validation';
+import { parsePaginationParams } from '../utils/validation';
 import {
   watchService,
   WATCH_EVENTS_DEFAULT_LIMIT,
@@ -132,7 +132,10 @@ const parseWatchBody = (
   return { label: parsedLabel, webhookUrl: parsedWebhookUrl };
 };
 
-// GET /chains/:chainId/watch — list this chain's subscriptions.
+// GET /chains/:chainId/watch — list this chain's subscriptions. Its
+// error bodies are deliberately bare {error, message} — the documented
+// watch-list contract (utils/api-error.ts names it) — unlike the events
+// endpoint below, which rides the shared validator + canonical envelope.
 app.get('/chains/:chainId/watch', async c => {
   let chainId: number;
   try {
@@ -230,32 +233,23 @@ app.delete(
 // GET /chains/:chainId/watch/events?limit= — newest ring-buffer events,
 // newest-first. default 25, capped at 100 (clamped, not 400: an
 // oversized ask is served honestly at the cap); a non-integer or
-// non-positive limit is a 400.
+// non-positive limit is a 400. The chain-id param validates through the
+// shared getValidatedChainId exactly like the sibling scan routes
+// (transfers/approvals): a bad id throws HTTPException, which api-app's
+// onError renders as the canonical error envelope — unlike the list
+// endpoint above, this one never had a pinned invalid_request body. The
+// limit slot rides the shared parsePaginationParams contract (strict
+// decimal parse, below-one reject, over-cap clamp); its 400 keeps this
+// endpoint's documented bare {error: 'invalid_limit', message} body.
 app.get('/chains/:chainId/watch/events', async c => {
-  let chainId: number;
-  try {
-    chainId = getValidatedChainId(c.req.param('chainId'));
-  } catch (error) {
-    return c.json(
-      {
-        error: 'invalid_request',
-        message: error instanceof HTTPException ? error.message : 'Invalid chain ID',
-      },
-      400,
-    );
-  }
+  const chainId = getValidatedChainId(c.req.param('chainId'));
 
-  const limitRaw = c.req.query('limit');
-  let limit = WATCH_EVENTS_DEFAULT_LIMIT;
-  if (limitRaw !== undefined) {
-    // Strict decimal parse: Number() would accept '0x10' (16), '1e2'
-    // (100) and ' 7 ' (7), silently answering a page the client never
-    // asked for. parseStrictInteger is the repo-wide convention.
-    const parsed = parseStrictInteger(limitRaw);
-    if (parsed === null || parsed < 1) {
-      return c.json({ error: 'invalid_limit', message: 'limit must be a positive integer' }, 400);
-    }
-    limit = Math.min(parsed, WATCH_EVENTS_MAX_LIMIT);
+  const { limit } = parsePaginationParams(undefined, c.req.query('limit'), {
+    defaultLimit: WATCH_EVENTS_DEFAULT_LIMIT,
+    maxLimit: WATCH_EVENTS_MAX_LIMIT,
+  });
+  if (limit === null) {
+    return c.json({ error: 'invalid_limit', message: 'limit must be a positive integer' }, 400);
   }
 
   c.header('Cache-Control', 'no-store');
