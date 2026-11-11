@@ -16,6 +16,7 @@ import { DataTable, Pagination, linkStyle, monoStyle } from '@/components/ui/Dat
 import { EmptyState, ErrorState } from '@/components/ui/ErrorState';
 import { EnsInline, shortAddress } from '@/components/ui/EnsInline';
 import { TableSkeleton } from '@/components/ui/LoadingState';
+import { NewBlocksNotice } from '@/components/ui/NewBlocksNotice';
 import { noticeBarStyle } from '@/components/ui/noticeBar';
 import { TxStatusBadge } from '@/components/ui/TxStatusBadge';
 import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
@@ -481,21 +482,12 @@ export default function TransactionsList() {
             once the polled live head moves past it the page says so
             instead of letting Age cells silently creep. One click on
             Refresh re-pulls page 1 of the current anchor. */}
-        {transactions.length > 0 && newBlockCount !== null && (
-          <div className={noticeBarStyle}>
-            <span>
-              {formatNumber(Number(newBlockCount))} new {newBlockCount === 1n ? 'block' : 'blocks'}{' '}
-              —
-            </span>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={handleRefresh}
-              disabled={refreshQuery.fetching}
-            >
-              Refresh
-            </Button>
-          </div>
+        {transactions.length > 0 && (
+          <NewBlocksNotice
+            count={newBlockCount === null ? null : Number(newBlockCount)}
+            refreshing={refreshQuery.fetching}
+            onRefresh={handleRefresh}
+          />
         )}
 
         {(transactions.length > 0 || data?.hasMore === true) && (

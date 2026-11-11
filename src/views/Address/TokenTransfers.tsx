@@ -20,7 +20,7 @@ import {
 import { useTokenOverview } from '@/services/tokenMetadata';
 import { classifyTokenOverview } from '@/views/Address/tokenOverview';
 import { createRpcClient } from '@/utils/realTimeData';
-import { checkAddressValidity } from '@/views/Address/addressValidity';
+import { checkAddressValidity } from '@/utils/addressValidity';
 import {
   addressSearchSchema,
   clampPage,

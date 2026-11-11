@@ -25,15 +25,18 @@ export * from './address';
 export * from './api-error';
 export * from './blockRpcData';
 export * from './blockTagUtils';
-// NOTE: './cache' (deleted 2026-11-09 — blockCache migrated to
-// ttlLruCache) and './callTraceRpc' (a browser-RPC module — browser code
-// deep-imports it, like serialization/pino; re-exporting it here would
-// drag realTimeData's browser graph into every backend barrel consumer,
-// including the vite.config esbuild bundle, which cannot resolve @/) are
-// deliberately NOT re-exported from this barrel.
+// NOTE: modules whose import graph reaches the browser RPC layer —
+// './callTraceRpc', './realTimeData', './rpcConfigService' and
+// './contractInteraction' (it imports createRpcClient from realTimeData)
+// — are deliberately NOT re-exported from this barrel: they pull
+// @/util/http (browser service discovery), an alias the vite.config
+// esbuild bundle cannot resolve, so re-exporting them would drag that
+// browser graph into every backend barrel consumer. Deep-import only
+// (`@/utils/<module>`), the same policy './serialization' documents for
+// its pino graph (note above). ('./cache' was deleted 2026-11-09 —
+// blockCache migrated to ttlLruCache.)
 export * from './castCommand';
 export * from './chainParam';
-export * from './contractInteraction';
 export * from './csv';
 export * from './dbTime';
 export * from './errorHandler';
@@ -43,8 +46,6 @@ export * from './functionSelector';
 export * from './internalTxScan';
 export * from './labelContract';
 export * from './providerErrors';
-export * from './realTimeData';
-export * from './rpcConfigService';
 export * from './rpcErrorHandler';
 export * from './rawTxDecode';
 export * from './viemScript';
@@ -60,5 +61,7 @@ export * from './validation';
 // Collision winners — an explicit re-export takes precedence over an
 // ambiguous star export. (withRetry and the rpcConfigService functions
 // each had a second exporter once — rpcClient.ts / rpcConfig.ts — both
-// since deleted; the star exports now carry them unambiguously.)
+// since deleted; withRetry now flows unambiguously from errorHandler's
+// star export, and rpcConfigService is deep-import only per the
+// browser-RPC note above.)
 export { isValidAddress, sanitizeInput } from './validation';

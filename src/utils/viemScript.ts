@@ -19,7 +19,7 @@
 // form uses (paramParsing.parseFunctionArgs), so the script is buildable
 // exactly when the form's submit would encode successfully.
 
-import { parseFunctionArgs, type ParamComponent } from '@/views/Contract/paramParsing';
+import { parseFunctionArgs, type ParamComponent } from './paramParsing';
 import { type CastableFunction, toAbiFunction } from './castCommand';
 
 export type { CastableFunction } from './castCommand';

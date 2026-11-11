@@ -430,68 +430,12 @@ export class OptimizedSorter {
   }
 
   /**
-   * Clear cache
+   * Clear cache — cross-test reset seam for the module-global singleton
+   * (production sorts are one-shot, but EventTable's suite resets this
+   * between cases so cache-hit metrics stay order-independent).
    */
   clearCache(): void {
     this.cache.clear();
-  }
-
-  /**
-   * Get cache statistics
-   */
-  getCacheStats(): {
-    size: number;
-    maxSize: number;
-    memoryUsage: number;
-    hitRate: number;
-  } {
-    let totalMemory = 0;
-    let _expiredCount = 0;
-    const now = Date.now();
-
-    for (const [, cache] of this.cache.entries()) {
-      totalMemory += this.estimateMemoryUsage(cache.data);
-      if (now - cache.timestamp > cache.ttl) {
-        _expiredCount++;
-      }
-    }
-
-    // Clean up expired entries
-    for (const [key, cache] of this.cache.entries()) {
-      if (now - cache.timestamp > cache.ttl) {
-        this.cache.delete(key);
-      }
-    }
-
-    return {
-      size: this.cache.size,
-      maxSize: this.cacheMaxSize,
-      memoryUsage: totalMemory,
-      hitRate: 0, // Would need to track hits/misses for real implementation
-    };
-  }
-
-  /**
-   * Optimize sorting parameters for better performance
-   */
-  optimizeSortConfigs<T>(data: T[], sortConfigs: SortConfig[]): SortConfig[] {
-    const dataSize = data.length;
-
-    if (dataSize < 1000) {
-      // For small datasets, return as-is
-      return sortConfigs;
-    }
-
-    // For large datasets, optimize by:
-    // 1. Prioritizing indexed fields
-    // 2. Reducing number of sort levels
-    // 3. Using optimal sort directions
-
-    const optimized = [...sortConfigs]
-      .sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0))
-      .slice(0, Math.min(sortConfigs.length, 3)); // Limit to 3 sort levels for large datasets
-
-    return optimized;
   }
 }
 

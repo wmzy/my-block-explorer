@@ -9,7 +9,7 @@
 // open (per-block matching against the live stream) lives in
 // views/Home/Watchlist.tsx — there deliberately is no background service.
 import { getAddress } from 'viem';
-import { checkAddressValidity } from '@/views/Address/addressValidity';
+import { checkAddressValidity } from '@/utils/addressValidity';
 import { HEX_ADDRESS_RE } from '@/utils/address';
 import { readStorageItem, writeStorageItem } from '@/util/storageAccess';
 import { WATCHLIST_STORAGE_KEY } from '@/util/storageKeys';

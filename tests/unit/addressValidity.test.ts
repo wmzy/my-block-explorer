@@ -5,7 +5,7 @@
 // into conflicting verdicts again.
 import { describe, it, expect } from 'vitest';
 import { getAddress } from 'viem';
-import { checkAddressValidity } from '@/views/Address/addressValidity';
+import { checkAddressValidity } from '@/utils/addressValidity';
 
 describe('checkAddressValidity', () => {
   const lower = '0x1234567890abcdef1234567890abcdef12345678';

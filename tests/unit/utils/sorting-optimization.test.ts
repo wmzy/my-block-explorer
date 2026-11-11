@@ -185,20 +185,22 @@ describe('OptimizedSorter', () => {
       expect(result3.metrics.cacheHit).toBe(false);
     });
 
-    it('should limit cache size', () => {
+    it('should evict the oldest entry when the cache exceeds its max size', () => {
       sorter = new OptimizedSorter();
       sorter['cacheMaxSize'] = 2;
 
       const data = [{ id: 1 }];
       const sortConfigs = [{ key: 'id', direction: 'asc' as const, type: 'numeric' as const }];
 
-      // Fill cache beyond max size
+      // Fill the cache beyond its max size (FIFO eviction drops 'test1').
       sorter.sort(data, sortConfigs, { useCache: true, cacheKey: 'test1' });
       sorter.sort(data, sortConfigs, { useCache: true, cacheKey: 'test2' });
       sorter.sort(data, sortConfigs, { useCache: true, cacheKey: 'test3' });
 
-      const stats = sorter.getCacheStats();
-      expect(stats.size).toBeLessThanOrEqual(2);
+      // 'test1' was evicted: the re-sort computes fresh instead of hitting
+      // the cache (metrics is the public read-out; getCacheStats is gone).
+      const result = sorter.sort(data, sortConfigs, { useCache: true, cacheKey: 'test1' });
+      expect(result.metrics.cacheHit).toBe(false);
     });
   });
 
@@ -231,23 +233,6 @@ describe('OptimizedSorter', () => {
       expect(result.sortedData[0].address).toBe('0x1234567890ABCDEF');
       expect(result.sortedData[1].address).toBe('0xABCDEF1234567890');
       expect(result.sortedData[2].address).toBe('0xabcdef1234567890');
-    });
-  });
-
-  describe('optimization methods', () => {
-    it('should optimize sort configurations for large datasets', () => {
-      const data = Array.from({ length: 2000 }, (_, i) => ({ id: i }));
-      const sortConfigs = [
-        { key: 'field1', direction: 'asc' as const, type: 'text' as const, priority: 3 },
-        { key: 'field2', direction: 'desc' as const, type: 'numeric' as const, priority: 1 },
-        { key: 'field3', direction: 'asc' as const, type: 'text' as const, priority: 2 },
-        { key: 'field4', direction: 'desc' as const, type: 'text' as const, priority: 4 },
-        { key: 'field5', direction: 'asc' as const, type: 'numeric' as const, priority: 0 },
-      ];
-
-      const optimized = sorter.optimizeSortConfigs(data, sortConfigs);
-      expect(optimized.length).toBeLessThanOrEqual(3); // Should limit to 3 for large datasets
-      expect(optimized[0].priority).toBe(0); // Should be sorted by priority
     });
   });
 });

@@ -1,6 +1,5 @@
 import { createRpcClient } from './realTimeData';
 import { withRetry } from './errorHandler';
-import { HEX_ADDRESS_RE } from './address';
 import { get } from '@/util/http';
 import type { Abi, AbiParameter, Address, StateOverride } from 'viem';
 
@@ -47,34 +46,6 @@ export type ContractCallParams = {
   from?: string;
   blockNumber?: bigint;
 };
-
-/**
- * Parse a contract ABI and extract callable functions
- */
-export function parseContractFunctions(abi: string): {
-  readFunctions: ContractFunction[];
-  writeFunctions: ContractFunction[];
-} {
-  try {
-    const parsedAbi = JSON.parse(abi) as Abi;
-    const functions = parsedAbi.filter(
-      (item): item is ContractFunction & { type: 'function' } => item.type === 'function',
-    );
-
-    const readFunctions = functions.filter(
-      func => func.stateMutability === 'view' || func.stateMutability === 'pure',
-    );
-
-    const writeFunctions = functions.filter(
-      func => func.stateMutability === 'nonpayable' || func.stateMutability === 'payable',
-    );
-
-    return { readFunctions, writeFunctions };
-  } catch (error) {
-    console.error('Failed to parse contract ABI:', error);
-    return { readFunctions: [], writeFunctions: [] };
-  }
-}
 
 /**
  * Call a read-only contract function
@@ -181,55 +152,6 @@ export async function simulateContract(
 }
 
 /**
- * Estimate gas for a contract call
- */
-export async function estimateContractGas(params: ContractCallParams): Promise<{
-  gasLimit: bigint;
-  gasPrice?: bigint;
-  maxFeePerGas?: bigint;
-  maxPriorityFeePerGas?: bigint;
-} | null> {
-  try {
-    const client = await createRpcClient(params.chainId);
-
-    // Fetch the contract ABI
-    const contractSource = await fetchContractSource(params.chainId, params.contractAddress);
-    if (!contractSource?.abi) {
-      return null;
-    }
-
-    const abi = JSON.parse(contractSource.abi) as Abi;
-
-    const gasLimit = await retryRpc(async () => {
-      return await client.estimateContractGas({
-        address: params.contractAddress as Address,
-        abi,
-        functionName: params.functionName,
-        args: params.args,
-        value: params.value,
-        account: params.from as Address | undefined,
-      });
-    });
-
-    // Get the current gas price
-    const [gasPrice, feeData] = await Promise.all([
-      client.getGasPrice().catch(() => null),
-      client.estimateFeesPerGas().catch(() => null),
-    ]);
-
-    return {
-      gasLimit,
-      gasPrice: gasPrice ?? undefined,
-      maxFeePerGas: feeData?.maxFeePerGas ?? undefined,
-      maxPriorityFeePerGas: feeData?.maxPriorityFeePerGas ?? undefined,
-    };
-  } catch (error) {
-    console.error('Gas estimation failed:', error);
-    return null;
-  }
-}
-
-/**
  * Fetch contract source (from the backend API)
  */
 async function fetchContractSource(
@@ -300,84 +222,6 @@ function formatError(error: unknown): string {
   return 'Unknown error occurred';
 }
 
-/**
- * Validate function arguments
- */
-export function validateFunctionArgs(
-  contractFunction: ContractFunction,
-  args: unknown[],
-): { valid: boolean; errors: string[] } {
-  const errors: string[] = [];
-
-  if (args.length !== contractFunction.inputs.length) {
-    errors.push(`Expected ${contractFunction.inputs.length} arguments, got ${args.length}`);
-  }
-
-  contractFunction.inputs.forEach((input, index) => {
-    const arg = args[index];
-    const validation = validateArgument(input.type, arg, input.name);
-    if (!validation.valid) {
-      errors.push(`Argument ${index} (${input.name}): ${validation.error}`);
-    }
-  });
-
-  return {
-    valid: errors.length === 0,
-    errors,
-  };
-}
-
-/**
- * Validate a single argument
- */
-function validateArgument(
-  type: string,
-  value: unknown,
-  _name: string,
-): { valid: boolean; error?: string } {
-  if (value === undefined || value === null || value === '') {
-    return { valid: false, error: 'Value is required' };
-  }
-
-  try {
-    // Address type validation
-    if (type === 'address') {
-      if (typeof value !== 'string' || !HEX_ADDRESS_RE.test(value)) {
-        return { valid: false, error: 'Invalid address format' };
-      }
-    }
-
-    // Numeric type validation
-    if (type.startsWith('uint') || type.startsWith('int')) {
-      if (typeof value === 'string' || typeof value === 'number' || typeof value === 'bigint') {
-        const _num = BigInt(value);
-        // More range checks could be added
-      }
-    }
-
-    // Bytes type validation
-    if (type.startsWith('bytes')) {
-      if (typeof value !== 'string' || !value.startsWith('0x')) {
-        return {
-          valid: false,
-          error: 'Invalid bytes format, should start with 0x',
-        };
-      }
-    }
-
-    // Boolean type validation
-    if (type === 'bool') {
-      if (typeof value !== 'boolean' && value !== 'true' && value !== 'false') {
-        return { valid: false, error: 'Invalid boolean value' };
-      }
-    }
-
-    return { valid: true };
-  } catch {
-    return { valid: false, error: `Invalid ${type} value` };
-  }
-}
-
 // Source tag for proxy contracts: 'proxy' = admin functions on proxy, 'impl' = implementation contract
 export type FunctionSource = 'proxy' | 'impl';
 
@@ -445,7 +289,7 @@ export function parseContractFunctionsUnified(
           })),
           stateMutability: func.stateMutability ?? 'nonpayable',
           interactionType: isRead ? 'read' : 'write',
-          source: implABI ? 'impl' : 'impl',
+          source: 'impl',
         });
       }
     } catch (error) {

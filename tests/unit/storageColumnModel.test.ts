@@ -633,7 +633,7 @@ describe('shortSlot', () => {
     expect(shortSlot('0x123456789012')).toBe('0x123456789012');
   });
 
-  it("truncates at 15 chars: 8 lead + single '…' glyph + 4 tail", () => {
+  it('truncates at 15 chars: 8 lead + single \'…\' glyph + 4 tail', () => {
     // 0x + 13 nibbles = exactly 15 chars — the first truncated length.
     const slot: `0x${string}` = '0x1234567890123';
     expect(shortSlot(slot)).toBe(`${slot.slice(0, 8)}…${slot.slice(-4)}`);

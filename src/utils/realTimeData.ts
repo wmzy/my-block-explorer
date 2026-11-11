@@ -155,29 +155,3 @@ export const getContractCode = async (chainId: number, address: string) => {
   const client = await createRpcClient(chainId);
   return await client.getCode({ address: address as `0x${string}` });
 };
-
-/**
- * Get balances for multiple addresses in batch
- */
-export const getBatchBalances = async (chainId: number, addresses: string[]) => {
-  const client = await createRpcClient(chainId);
-
-  const balances = await Promise.all(
-    addresses.map(address => client.getBalance({ address: address as `0x${string}` })),
-  );
-
-  return addresses.map((address, index) => ({
-    address,
-    balance: formatUnits(balances[index], nativeDecimals(chainId)),
-    balanceWei: balances[index].toString(),
-  }));
-};
-
-/**
- * Check whether an address is a contract
- */
-export const isContractAddress = async (chainId: number, address: string): Promise<boolean> => {
-  const client = await createRpcClient(chainId);
-  const code = await client.getCode({ address: address as `0x${string}` });
-  return Boolean(code && code !== '0x' && code.length > 2);
-};

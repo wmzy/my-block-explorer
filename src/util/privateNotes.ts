@@ -14,7 +14,7 @@
 // is pinned to, so a hostile backup file cannot reach any other
 // localStorage key through private notes.
 import { getAddress } from 'viem';
-import { checkAddressValidity } from '@/views/Address/addressValidity';
+import { checkAddressValidity } from '@/utils/addressValidity';
 import {
   readStorageItem,
   removeStorageItem,

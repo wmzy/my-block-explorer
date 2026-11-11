@@ -5,8 +5,6 @@ import {
   createRpcClient,
   getRealTimeAddressData,
   getContractCode,
-  getBatchBalances,
-  isContractAddress,
   invalidateRpcClients,
 } from '@/utils/realTimeData';
 
@@ -216,103 +214,6 @@ describe('realTimeData', () => {
       mockClient.getCode.mockRejectedValue(new Error('Contract not found'));
 
       await expect(getContractCode(testChainId, testAddress)).rejects.toThrow('Contract not found');
-    });
-  });
-
-  describe('getBatchBalances', () => {
-    const testAddresses = [
-      '0x1234567890123456789012345678901234567890',
-      '0x9876543210987654321098765432109876543210',
-      '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd',
-    ];
-    const testChainId = 1;
-
-    beforeEach(() => {
-      mockClient.getBalance
-        .mockResolvedValueOnce(BigInt('1000000000000000000')) // 1 ETH
-        .mockResolvedValueOnce(BigInt('2000000000000000000')) // 2 ETH
-        .mockResolvedValueOnce(BigInt('0')); // 0 ETH
-
-      vi.mocked(formatUnits)
-        .mockReturnValueOnce('1.0')
-        .mockReturnValueOnce('2.0')
-        .mockReturnValueOnce('0.0');
-    });
-
-    it('should fetch balances for multiple addresses', async () => {
-      const result = await getBatchBalances(testChainId, testAddresses);
-
-      expect(result).toEqual([
-        { address: testAddresses[0], balance: '1.0', balanceWei: '1000000000000000000' },
-        { address: testAddresses[1], balance: '2.0', balanceWei: '2000000000000000000' },
-        { address: testAddresses[2], balance: '0.0', balanceWei: '0' },
-      ]);
-
-      // Batch path honors the chain decimals too (mainnet 18 here).
-      expect(formatUnits).toHaveBeenNthCalledWith(1, BigInt('1000000000000000000'), 18);
-      expect(mockClient.getBalance).toHaveBeenCalledTimes(3);
-    });
-
-    it('should handle empty address list', async () => {
-      const result = await getBatchBalances(testChainId, []);
-
-      expect(result).toEqual([]);
-      expect(mockClient.getBalance).not.toHaveBeenCalled();
-    });
-
-    // Note: Single address and error handling tests are complex due to
-    // mock state management. The basic functionality is covered by other tests.
-  });
-
-  describe('isContractAddress', () => {
-    const testAddress = '0x1234567890123456789012345678901234567890';
-    const testChainId = 1;
-
-    it('should identify contract addresses', async () => {
-      mockClient.getCode.mockResolvedValue('0x608060405234801561001057600080fd5b50');
-
-      const result = await isContractAddress(testChainId, testAddress);
-
-      expect(result).toBe(true);
-      expect(mockClient.getCode).toHaveBeenCalledWith({ address: testAddress });
-    });
-
-    it('should identify EOA addresses', async () => {
-      mockClient.getCode.mockResolvedValue('0x');
-
-      const result = await isContractAddress(testChainId, testAddress);
-
-      expect(result).toBe(false);
-    });
-
-    it('should handle null code', async () => {
-      mockClient.getCode.mockResolvedValue(null);
-
-      const result = await isContractAddress(testChainId, testAddress);
-
-      expect(result).toBe(false);
-    });
-
-    it('should handle minimal code', async () => {
-      mockClient.getCode.mockResolvedValue('0x60');
-
-      const result = await isContractAddress(testChainId, testAddress);
-
-      expect(result).toBe(true); // 2 characters after 0x is still considered contract code
-    });
-
-    it('should handle exactly minimal valid code', async () => {
-      mockClient.getCode.mockResolvedValue('0x606');
-
-      const result = await isContractAddress(testChainId, testAddress);
-
-      expect(result).toBe(true); // Exactly 3 characters after 0x
-    });
-
-    it('should handle RPC errors', async () => {
-      mockClient.getCode.mockRejectedValue(new Error('RPC failed'));
-
-      await expect(isContractAddress(testChainId, testAddress)).rejects.toThrow('RPC failed');
     });
   });
 

@@ -50,7 +50,7 @@ import {
   seriesExtent,
 } from '@/views/Charts/chartSvg';
 import { toDailyGappedSeries } from './priceHistorySeries';
-import { checkAddressValidity } from '@/views/Address/addressValidity';
+import { checkAddressValidity } from '@/utils/addressValidity';
 import { InvalidAddressError } from '@/views/Address';
 import { isEip7702Designator } from '@/views/Address/addressType';
 import { addressSearchSchema } from '@/views/Address/search';
@@ -58,7 +58,7 @@ import { classifyTokenOverview, formatTokenSupply } from '@/views/Address/tokenO
 import TokenTransfers, { TRANSFER_LIMIT } from '@/views/Address/TokenTransfers';
 import { getChainInfo, getChainName } from '@/config/chains';
 import { parseChainIdParam } from '@/utils/chainParam';
-import { cellText, formatRawUnits } from '@/utils/format';
+import { cellText, formatNumber, formatRawUnits } from '@/utils/format';
 import { codeVerdict } from '@/utils/address';
 import { useContractSource } from '@/services/contracts';
 import { recordViewedToken } from '@/services/tokenDirectory';
@@ -785,7 +785,7 @@ export default function TokenPage() {
   const currentChainId = parseChainIdParam(params.chainId) ?? 0;
   const chainInfo = getChainInfo(currentChainId);
   const address = params.address ?? '';
-  // Two-tier URL-param guard (the address page's twin, ./addressValidity):
+  // Two-tier URL-param guard (the address page's twin, @/utils/addressValidity):
   // a shape error or a checksum error renders the guidance card — an
   // invalid-checksum address is NEVER rendered as a valid token page.
   const validity = checkAddressValidity(address);
@@ -1192,7 +1192,7 @@ export default function TokenPage() {
                   <p className={caveat}>
                     Discovered from scanned window — may be incomplete
                     {holders.excludedTransfers > 0
-                      ? ` (non-ERC-20 rows excluded: ${holders.excludedTransfers.toLocaleString()})`
+                      ? ` (non-ERC-20 rows excluded: ${formatNumber(holders.excludedTransfers)})`
                       : ''}
                   </p>
                 </>
@@ -1210,7 +1210,7 @@ export default function TokenPage() {
             </CardHeader>
             <CardContent>
               <InfoGrid>
-                <InfoItem label="Mint events">{mintBurn.mintCount.toLocaleString()}</InfoItem>
+                <InfoItem label="Mint events">{formatNumber(mintBurn.mintCount)}</InfoItem>
                 <InfoItem label="Minted">
                   {mintBurn.minted !== null ? (
                     `${formatNet(mintBurn.minted)}${symbolSuffix}`
@@ -1223,7 +1223,7 @@ export default function TokenPage() {
                     </span>
                   )}
                 </InfoItem>
-                <InfoItem label="Burn events">{mintBurn.burnCount.toLocaleString()}</InfoItem>
+                <InfoItem label="Burn events">{formatNumber(mintBurn.burnCount)}</InfoItem>
                 <InfoItem label="Burned">
                   {mintBurn.burned !== null ? (
                     `${formatNet(mintBurn.burned)}${symbolSuffix}`

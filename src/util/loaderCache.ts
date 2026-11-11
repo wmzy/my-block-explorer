@@ -37,16 +37,6 @@ function snapshotValues(cache: CacheProvider<unknown, unknown[]>) {
   return new Map((cache.snapshot?.() ?? []).map(e => [e.key, e.value]));
 }
 
-// Explicit rebinding: resets seen to the snapshot baseline at call time.
-export function bindCacheRefresh<T, K extends unknown[]>(
-  cache: CacheProvider<T, K>,
-  router: unknown,
-) {
-  const wide = cache as unknown as CacheProvider<unknown, unknown[]>;
-  bindRefresh(wide, router);
-  bindings.set(wide, { router, scheduled: false, seen: snapshotValues(wide) });
-}
-
 // clear/delete emit indistinguishable events, so an explicit whole-entity
 // clear resets the seen generation here.
 export function resetRefreshSeen<T, K extends unknown[]>(cache: CacheProvider<T, K>) {

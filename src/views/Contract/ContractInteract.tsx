@@ -16,7 +16,7 @@ import { resolveRevokeTarget, type RevokeIntent } from './revokeIntent';
 import { cardStyles } from './styles';
 import { argsKey } from './types';
 import type { ContractSource } from './types';
-import { describeCallError } from './paramParsing';
+import { describeCallError } from '@/utils/paramParsing';
 import { fetchContractAbi } from '@/services/contracts';
 import { useInjectedProvider } from '@/util/wallet';
 import { useDebouncedValue } from '@/util/useDebouncedQueryParam';

@@ -28,7 +28,7 @@ import {
   parseFunctionArgs,
   type ParamComponent,
   type ParamDescriptor,
-} from '@/views/Contract/paramParsing';
+} from './paramParsing';
 
 // Subset of EnhancedContractFunction the builder needs; the full form
 // function object satisfies it structurally.

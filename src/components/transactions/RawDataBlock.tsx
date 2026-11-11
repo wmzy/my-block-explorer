@@ -1,4 +1,5 @@
-import { css } from '@linaria/core';
+import { css, cx } from '@linaria/core';
+import { copyButtonBase } from '../ui/CopyButton';
 import { toastCopy } from '@/util/clipboard';
 
 const blockStyle = css`
@@ -19,18 +20,14 @@ const headerStyle = css`
   color: var(--haze-color-text-secondary);
 `;
 
-const copyButtonStyle = css`
-  border: 1px solid var(--haze-color-border);
-  border-radius: var(--haze-radius-sm);
-  background: var(--haze-color-bg);
-  padding: var(--haze-space-1) var(--haze-space-3);
-  font-size: var(--haze-text-xs);
-  cursor: pointer;
-
-  &:hover {
-    background: var(--haze-color-bg-muted);
-  }
-`;
+// Shared copy-button chrome plus this block's xs-text delta (the button
+// keeps its toastCopy tail — it is not a label-swap CopyButton).
+const copyButtonStyle = cx(
+  copyButtonBase,
+  css`
+    font-size: var(--haze-text-xs);
+  `,
+);
 
 const dataStyle = css`
   margin: 0;

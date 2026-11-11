@@ -368,12 +368,12 @@ pnpm typecheck           # tsc --noEmit
   empty ONLY when the panel's abi actually carries a same-name overload
   accepting exactly the filled count
   (`sameNameInputCounts`/`overloadInputCounts` in
-  `views/Contract/ paramParsing.ts` — viem resolves overloads by argument
+  `utils/paramParsing.ts` — viem resolves overloads by argument
   count): a single-input function like `balanceOf` never promises omission, an
   empty submit stops at a field-level `required` error, and `buildCastCommand`
   refuses the same states so the copy/wallet paths can never encode a shortened
   signature's (nonexistent) selector. Failure classification
-  (`views/Contract/paramParsing.ts`: API vs network vs encoding).
+  (`utils/paramParsing.ts`: API vs network vs encoding).
   Backend-unreachable errors (ApiError status 0, `isBackendUnreachable` in
   `util/http.ts`) render `BackendOfflineState`: cause attribution +
   `npx my-block-explorer --port 8201` + retry via the discovery `reconnect` (no
@@ -387,7 +387,7 @@ pnpm typecheck           # tsc --noEmit
   source/abi routes answer `404 + code:'not_a_contract'`, and **RouterError**
   (not the view — deep links reject in the loader) renders a dedicated "This
   address is not a contract" card with a View-as-address link. Address pages run
-  a **page-level two-tier checksum guard** (`views/Address/addressValidity.ts`:
+  a **page-level two-tier checksum guard** (`utils/addressValidity.ts`:
   shape vs EIP-55, matching `server/validation.ts` semantics —
   all-lower/all-upper skip checksum) — an invalid address shows one guidance
   card with an all-lowercase recovery link instead of per-tab contradictory
@@ -1953,3 +1953,50 @@ pnpm typecheck           # tsc --noEmit
   bound-only LRU (AddressScanService's hydrated-tx cache). **Deferred
   (deliberate, unchanged)**: in-flight-dedup Map family (now 7 instances),
   the three adaptive-halving scan ladders, Address-view micro-extractions.
+- **2026-11-11 duplication review fix wave (4 scouts + 4 fix agents +
+  integration)** — round 5; 14 findings (11 fixed, 3 deliberate). All
+  verified: tsc 0, eslint 0 errors (106 pre-existing warnings), `vitest
+  --changed` 174 files / 2,324 tests, `pnpm build` green, live Chromium
+  smoke (Contract page light+dark+hover+InfoGrid, Blocks, Signatures).
+  **Dead** — `services/PerformanceMonitor.ts` WHOLE FILE (442 lines; only
+  its own test imported it — the 2026-09-30 "DIFFERENT live file" note was
+  stale, its consumers died in later waves; it also ran a 60s timer from
+  import) + its test + its eslint no-console allowlist entry;
+  `bindCacheRefresh` (loaderCache); `parseContractFunctions`/
+  `estimateContractGas`/`validateFunctionArgs` (utils/contractInteraction)
+  + the service-side `validateFunctionArgs`/`validateArgument` twins +
+  `getFunctionInputTypes`; `getBatchBalances`/`isContractAddress`
+  (realTimeData, test-only); `getCacheStats` (fabricated hitRate: 0)/
+  `optimizeSortConfigs` (sorting-optimization); dead ternary
+  `implABI ? 'impl' : 'impl'`. **Barrel truth (D1, latent convention
+  violation)** — utils/index.ts star-exported realTimeData/rpcConfigService/
+  contractInteraction while its own comment banned callTraceRpc for exactly
+  that reason; the three star-exports are GONE, the comment now states the
+  general rule (browser-RPC-graph modules are deep-import-only), and
+  barrel.test.ts pins the exclusion NEGATIVELY (asserts createRpcClient
+  etc. are NOT exported). **Layering** — two pure leaves moved out of
+  views/ to kill util→views edges: addressValidity → `utils/
+  addressValidity.ts`, paramParsing → `utils/paramParsing.ts` (both
+  deep-import-only, no barrel lines; castCommand/viemScript import
+  utils-internal now). **New canonical UI** — `components/ui/CopyButton`
+  + `copyButtonBase` (label-swap copy idiom was hand-copied 6×; CSS
+  triplets folded), `components/ui/NewBlocksNotice` (byte-identical
+  staleness banner ×2 views); EventTable imports SortConfig instead of
+  re-rolling it. **Contract view styling island (V1)** — the last
+  dark-mode-breaking view: 5 inline #007bff links with JS hover → linkStyle,
+  hardcoded Refresh button → Button, 22 info-item rows → InfoGrid/InfoItem
+  (dead CSS deleted), linaria #007bff literals →
+  var(--haze-color-primary), formatCreationGas BigInt-exact via formatBigInt
+  (Unknown-on-zero semantics kept; WETH live-verifies it). Token view
+  toLocaleString ×4 → formatNumber. **Rules pinned**: (1) a module's own
+  doc-comment claiming an exclusion is NOT evidence the exclusion exists —
+  diff comment vs export list; (2) eslint assertion verdicts drift between
+  rounds (7 pre-existing errors fixed in files round 4 never touched —
+  always run the gate, never inherit the previous round's green); (3)
+  AbiListPanel/FunctionCallForm label-swap buttons stay bespoke (keyed
+  per-item state / dynamic count labels don't fit the plain CopyButton API);
+  (4) contractPage tests' `selector: 'span.label'` pins are now
+  `selector: 'span'` (InfoItem label is a linaria-classed span; the
+  tab-bar Implementation toggle is a <button> so the span selector still
+  isolates the info-card row). Deferred (unchanged): in-flight-dedup Maps,
+  scan ladders, Address-view micro-extractions.

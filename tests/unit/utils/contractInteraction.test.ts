@@ -14,7 +14,6 @@ import {
   parseContractFunctionsUnified,
   readContract,
   simulateContract,
-  estimateContractGas,
 } from '@/utils/contractInteraction';
 import { createRpcClient } from '@/utils/realTimeData';
 
@@ -206,18 +205,5 @@ describe('RPC client resolution (createRpcClient factory)', () => {
     });
 
     expect(result).toEqual({ success: false, error: 'Unsupported chain ID: 999999' });
-  });
-
-  it('returns null from gas estimation when client creation fails', async () => {
-    vi.mocked(createRpcClient).mockRejectedValue(new Error('Unsupported chain ID: 999999'));
-
-    await expect(
-      estimateContractGas({
-        chainId: 999999,
-        contractAddress: CONTRACT,
-        functionName: 'deposit',
-        args: [],
-      }),
-    ).resolves.toBeNull();
   });
 });

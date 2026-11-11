@@ -12,7 +12,8 @@ import { arrayElementPlacement, slotAdd } from '@/utils/storageSlots';
 import { buildCastStorageCommand, buildViemReadSnippet, exprAdd } from '@/utils/storageSlotCode';
 import { useRefreshStorageValues, useSlotValue } from '@/services/storageValues';
 import { EmptyState } from '@/components/ui/ErrorState';
-import { CopyButton, StorageMemberRow } from './StorageMemberRow';
+import { CopyButton } from '@/components/ui/CopyButton';
+import { copyButtonStyle, StorageMemberRow } from './StorageMemberRow';
 import { StorageLeafValue } from './StorageLeafValue';
 
 // Beyond this length an array is "huge": the addressable window for the
@@ -241,6 +242,7 @@ function ColumnHeader({
             text={column.slot}
             label={`slot: ${shortSlot(column.slot)}`}
             title={column.slot}
+            className={copyButtonStyle}
           />
         )}
         {column.expr !== null && (
@@ -248,6 +250,7 @@ function ColumnHeader({
             text={buildViemReadSnippet({ chainId, address, slotExpr: column.expr })}
             label="viem"
             title="Copy a runnable viem snippet reading this column's base slot"
+            className={copyButtonStyle}
           />
         )}
         {column.slot !== null && (
@@ -255,6 +258,7 @@ function ColumnHeader({
             text={buildCastStorageCommand({ address, slot: column.slot, chainId })}
             label="cast"
             title="Copy the foundry-cast command reading this column's base slot"
+            className={copyButtonStyle}
           />
         )}
         <button

@@ -25,7 +25,7 @@ import {
   formatTokenSupply,
 } from '@/views/Address/tokenOverview';
 import { classifyAddressType, delegationTarget } from '@/views/Address/addressType';
-import { checkAddressValidity } from '@/views/Address/addressValidity';
+import { checkAddressValidity } from '@/utils/addressValidity';
 import {
   addressSearchSchema,
   clampPage,
@@ -490,7 +490,7 @@ type AddressTxPage = {
   searchWindowBlocks?: number;
 };
 
-// The address-page two-tier validity verdict lives in ./addressValidity
+// The address-page two-tier validity verdict lives in @/utils/addressValidity
 // (shape error vs checksum error — the frontend twin of the server's
 // getValidatedAddress). The ADDRESS STRING is the ground truth: the page
 // branches on it directly, never on a server error message, so an invalid
@@ -519,7 +519,7 @@ const activityTabs: ReadonlyArray<{ id: ActivityTabId; label: string }> = [
 // transaction list and the tx detail page cannot disagree.
 
 // The two-tier invalid-address guidance card, rendered page-level for any
-// address the local validity check rejects (see ./addressValidity). The
+// address the local validity check rejects (see @/utils/addressValidity). The
 // tier comes from the address string itself, so the card is query-error
 // agnostic — the queries' 400s are a symptom of the same verdict, not
 // additional information worth surfacing.
@@ -1262,7 +1262,7 @@ export default function Address() {
   const currentChainId = parseChainIdParam(params.chainId) ?? 0;
   const chainInfo = getChainInfo(currentChainId);
   const address = params.address ?? '';
-  // Page-level two-tier verdict (./addressValidity): an invalid address
+  // Page-level two-tier verdict (@/utils/addressValidity): an invalid address
   // renders the guidance card instead of the data cards below — the
   // queries may even succeed against a forgiving RPC, but their results
   // are meaningless for an address the explorer cannot accept.

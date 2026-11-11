@@ -12,9 +12,12 @@ import RpcConfig from '@/components/RpcConfig';
 import { ExternalLinks } from '@/components/ui/ExternalLinks';
 import { BackendOfflineState } from '@/components/ui/ErrorState';
 import { CoverageBadge } from '@/components/ui/CoverageBadge';
+import { Button } from '@/components/ui/Button';
+import { InfoGrid, InfoItem } from '@/components/ui/InfoGrid';
+import { linkStyle } from '@/components/ui/DataTable';
 import { SourceCodeViewer } from '@/components/SourceCodeViewer';
 import { post, isBackendUnreachable } from '@/util/http';
-import { formatDateTime } from '@/utils/format';
+import { formatBigInt, formatDateTime } from '@/utils/format';
 import { ApiError } from '@/util/apiError';
 import {
   readSessionItem,
@@ -163,8 +166,8 @@ const tabsStyles = css`
     }
 
     &.active {
-      color: #007bff;
-      border-bottom-color: #007bff;
+      color: var(--haze-color-primary);
+      border-bottom-color: var(--haze-color-primary);
     }
   }
 
@@ -220,7 +223,7 @@ const proxyToggleStyles = css`
 
     &.active {
       background: white;
-      color: #007bff;
+      color: var(--haze-color-primary);
       box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
     }
   }
@@ -350,44 +353,11 @@ const shadowNoticeButtonStyles = css`
   }
 `;
 
+// Grid-only delta over the shared InfoGrid: the rows are shared InfoItem
+// components (theme tokens own the label/value styling, the row chrome and
+// the phone-width stacking), so only the row gap stays page-local.
 const infoGridStyles = css`
-  display: grid;
   gap: 16px;
-
-  .info-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 12px 0;
-    border-bottom: 1px solid #f0f0f0;
-
-    &:last-child {
-      border-bottom: none;
-    }
-  }
-
-  .label {
-    font-weight: 500;
-    color: #666;
-  }
-
-  .value {
-    font-family:
-      'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
-    color: #1a1a1a;
-    word-break: break-all;
-  }
-
-  /* Phone widths: the two-column label/value row crushes long mono values
-     (hashes, implementation addresses) into a sliver — stack label above
-     value instead, the same degradation the InfoGrid rows use. */
-  @media (max-width: 768px) {
-    .info-item {
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 4px;
-    }
-  }
 `;
 
 const statusBadgeStyles = css`
@@ -433,7 +403,7 @@ const verifyCellStyles = css`
 `;
 
 const verifyLinkStyles = css`
-  color: #007bff;
+  color: var(--haze-color-primary);
   text-decoration: none;
 
   &:hover {
@@ -455,7 +425,7 @@ const verifyInlineButtonStyles = css`
   background: none;
   padding: 0;
   font-size: 12px;
-  color: #007bff;
+  color: var(--haze-color-primary);
   cursor: pointer;
 
   &:hover {
@@ -486,7 +456,7 @@ const cacheNoticeStyles = css`
 // Sourcify deep link's affordance in the info grid (blue, underline on
 // hover).
 const notAContractLinkStyles = css`
-  color: #007bff;
+  color: var(--haze-color-primary);
   text-decoration: none;
 
   &:hover {
@@ -589,27 +559,18 @@ function NotAContractState({ chainId, address }: { chainId: number; address: str
   return (
     <div className={cardStyles}>
       <h2>This address is not a contract on this chain</h2>
-      <div className={infoGridStyles}>
-        <div className="info-item">
-          <span className="label">Address</span>
-          <span className="value">{address}</span>
-        </div>
-        <div className="info-item">
-          <span className="label">Address type</span>
-          <span className="value">Not a contract</span>
-        </div>
-        <div className="info-item">
-          <span className="label">Next step</span>
-          <span className="value">
-            <TypedLink
-              className={notAContractLinkStyles}
-              to={`/chain/${chainId}/address/${address}`}
-            >
-              View as address →
-            </TypedLink>
-          </span>
-        </div>
-      </div>
+      <InfoGrid className={infoGridStyles}>
+        <InfoItem label="Address">{address}</InfoItem>
+        <InfoItem label="Address type">Not a contract</InfoItem>
+        <InfoItem label="Next step">
+          <TypedLink
+            className={notAContractLinkStyles}
+            to={`/chain/${chainId}/address/${address}`}
+          >
+            View as address →
+          </TypedLink>
+        </InfoItem>
+      </InfoGrid>
       <p>
         This address holds no on-chain code — it is an externally owned account (EOA), or no
         contract is deployed at it on this chain.
@@ -826,38 +787,29 @@ function ProxyDetectionCard({
       <div className={cardHeaderStyles}>
         <h2>Proxy Detection</h2>
       </div>
-      <div className={infoGridStyles}>
-        <div className="info-item">
-          <span className="label">Proxy Kind</span>
-          <span className="value">
-            <span className={proxyKindBadgeStyles}>
-              {DETECTED_PROXY_KIND_LABELS[detection.kind]} Proxy
-            </span>
+      <InfoGrid className={infoGridStyles}>
+        <InfoItem label="Proxy Kind">
+          <span className={proxyKindBadgeStyles}>
+            {DETECTED_PROXY_KIND_LABELS[detection.kind]} Proxy
           </span>
-        </div>
-        <div className="info-item">
-          <span className="label">Implementation</span>
-          <span className="value">
-            {detection.implementation ? (
-              <TypedLink
-                className={proxyImplLinkStyles}
-                to={`/chain/${chainId}/contract/${detection.implementation}`}
-              >
-                {detection.implementation}
-              </TypedLink>
-            ) : (
-              'Not resolved'
-            )}
-          </span>
-        </div>
-        <div className="info-item">
-          <span className="label">Detected Via</span>
-          <span className="value">
-            {viaLabel}
-            {detection.slot ? ` (${detection.slot})` : ''}
-          </span>
-        </div>
-      </div>
+        </InfoItem>
+        <InfoItem label="Implementation">
+          {detection.implementation ? (
+            <TypedLink
+              className={proxyImplLinkStyles}
+              to={`/chain/${chainId}/contract/${detection.implementation}`}
+            >
+              {detection.implementation}
+            </TypedLink>
+          ) : (
+            'Not resolved'
+          )}
+        </InfoItem>
+        <InfoItem label="Detected Via">
+          {viaLabel}
+          {detection.slot ? ` (${detection.slot})` : ''}
+        </InfoItem>
+      </InfoGrid>
       <p className={proxyFootnoteStyles}>
         Detected on-chain via {viaLabel} — not verified source data.
       </p>
@@ -899,10 +851,16 @@ const readStoredCustomAbi = (chainId: number, address: string): string | null =>
 
 // A deployment cannot consume zero gas: a 0/'' answer means the RPC/indexer
 // did not record the creation receipt — render Unknown instead of a
-// confident-looking '0 gas'.
+// confident-looking '0 gas'. Grouping is BigInt-exact (formatBigInt): gas
+// is an on-chain integer that can exceed 2^53, and host-locale
+// toLocaleString is neither precise nor stable there.
 const formatCreationGas = (gasUsed: string): string => {
-  const gas = Number.parseInt(gasUsed, 10);
-  return Number.isFinite(gas) && gas > 0 ? `${gas.toLocaleString()} gas` : 'Unknown';
+  try {
+    const gas = BigInt(gasUsed);
+    return gas > 0n ? `${formatBigInt(gas)} gas` : 'Unknown';
+  } catch {
+    return 'Unknown';
+  }
 };
 
 // Friendly provenance labels for the Verification Source row: the raw enum
@@ -1345,186 +1303,139 @@ export default function Contract() {
             <div className={cardStyles}>
               <div className={cardHeaderStyles}>
                 <h2>Contract Information</h2>
-                <button
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={handleClearCache}
                   disabled={refreshing}
-                  style={{
-                    padding: '6px 12px',
-                    background: refreshing ? '#e9ecef' : '#007bff',
-                    color: 'white',
-                    border: 'none',
-                    borderRadius: '4px',
-                    cursor: refreshing ? 'not-allowed' : 'pointer',
-                    fontSize: '13px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                  }}
                 >
                   {refreshing ? 'Refreshing...' : '↻ Force Refresh'}
-                </button>
+                </Button>
               </div>
               {cacheNotice && (
                 <div role="status" className={`${cacheNoticeStyles} ${cacheNotice.kind}`}>
                   {cacheNotice.text}
                 </div>
               )}
-              <div className={infoGridStyles}>
+              <InfoGrid className={infoGridStyles}>
                 {contractSource.name && (
-                  <div className="info-item">
-                    <span className="label">Contract Name</span>
-                    <span className="value">{contractSource.name}</span>
-                  </div>
+                  <InfoItem label="Contract Name">{contractSource.name}</InfoItem>
                 )}
-                <div className="info-item">
-                  <span className="label">Verification Status</span>
+                <InfoItem label="Verification Status">
                   <span className={`${statusBadgeStyles} ${contractSource.verificationStatus}`}>
                     {contractSource.verificationStatus}
                   </span>
-                </div>
+                </InfoItem>
                 {contractSource.verificationStatus === 'unverified' && (
-                  <div className="info-item">
-                    <span className="label">Verify this contract</span>
-                    <span className="value">
-                      <span className={verifyCellStyles}>
-                        <a
-                          className={verifyLinkStyles}
-                          href={sourcifyVerifyUrl(currentChainId, address ?? '')}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          Verify at Sourcify ↗
-                        </a>
-                        <button
-                          type="button"
-                          className={verifyInlineButtonStyles}
-                          aria-expanded={verifyPanelOpen}
-                          onClick={() => setVerifyPanelOpen(open => !open)}
-                        >
-                          {verifyPanelOpen ? 'Hide in-page verification' : 'Verify in this page'}
-                        </button>
-                        <span className={verifyHintStyles}>
-                          Verified there? ↻ Force Refresh above pulls it in immediately
-                        </span>
+                  <InfoItem label="Verify this contract">
+                    <span className={verifyCellStyles}>
+                      <a
+                        className={verifyLinkStyles}
+                        href={sourcifyVerifyUrl(currentChainId, address ?? '')}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        Verify at Sourcify ↗
+                      </a>
+                      <button
+                        type="button"
+                        className={verifyInlineButtonStyles}
+                        aria-expanded={verifyPanelOpen}
+                        onClick={() => setVerifyPanelOpen(open => !open)}
+                      >
+                        {verifyPanelOpen ? 'Hide in-page verification' : 'Verify in this page'}
+                      </button>
+                      <span className={verifyHintStyles}>
+                        Verified there? ↻ Force Refresh above pulls it in immediately
                       </span>
                     </span>
-                  </div>
+                  </InfoItem>
                 )}
                 {contractSource.verificationSource === 'manual' && (
-                  <div className="info-item">
-                    <span className="label">Local Trust Mark</span>
-                    <span className="value">
-                      <span className={verifyCellStyles}>
-                        <button
-                          type="button"
-                          className={verifyInlineButtonStyles}
-                          aria-expanded={verifyPanelOpen}
-                          onClick={() => setVerifyPanelOpen(open => !open)}
-                        >
-                          {verifyPanelOpen ? 'Hide local trust panel' : 'Manage local trust mark'}
-                        </button>
-                        <span className={verifyHintStyles}>
-                          A locally-pasted annotation — manage or remove it in this page
-                        </span>
+                  <InfoItem label="Local Trust Mark">
+                    <span className={verifyCellStyles}>
+                      <button
+                        type="button"
+                        className={verifyInlineButtonStyles}
+                        aria-expanded={verifyPanelOpen}
+                        onClick={() => setVerifyPanelOpen(open => !open)}
+                      >
+                        {verifyPanelOpen ? 'Hide local trust panel' : 'Manage local trust mark'}
+                      </button>
+                      <span className={verifyHintStyles}>
+                        A locally-pasted annotation — manage or remove it in this page
                       </span>
                     </span>
-                  </div>
+                  </InfoItem>
                 )}
-                <div className="info-item">
-                  <span className="label">Verification Source</span>
-                  <span className="value">
-                    {(() => {
-                      const meta = VERIFICATION_SOURCE_META[contractSource.verificationSource];
-                      return meta ? (
-                        <span title={meta.title}>{meta.label}</span>
-                      ) : (
-                        contractSource.verificationSource
-                      );
-                    })()}
-                  </span>
-                </div>
+                <InfoItem label="Verification Source">
+                  {(() => {
+                    const meta = VERIFICATION_SOURCE_META[contractSource.verificationSource];
+                    return meta ? (
+                      <span title={meta.title}>{meta.label}</span>
+                    ) : (
+                      contractSource.verificationSource
+                    );
+                  })()}
+                </InfoItem>
                 {contractSource.compilerVersion && (
-                  <div className="info-item">
-                    <span className="label">Compiler Version</span>
-                    <span className="value">
-                      {contractSource.compilerVersion}
-                      {contractSource.evmVersion && ` (EVM: ${contractSource.evmVersion})`}
-                    </span>
-                  </div>
+                  <InfoItem label="Compiler Version">
+                    {contractSource.compilerVersion}
+                    {contractSource.evmVersion && ` (EVM: ${contractSource.evmVersion})`}
+                  </InfoItem>
                 )}
                 {contractSource.optimizationEnabled !== undefined && (
-                  <div className="info-item">
-                    <span className="label">Optimization</span>
-                    <span className="value">
-                      {contractSource.optimizationEnabled ? 'Enabled' : 'Disabled'}
-                      {contractSource.optimizationRuns &&
-                        ` (${contractSource.optimizationRuns} runs)`}
-                    </span>
-                  </div>
+                  <InfoItem label="Optimization">
+                    {contractSource.optimizationEnabled ? 'Enabled' : 'Disabled'}
+                    {contractSource.optimizationRuns && ` (${contractSource.optimizationRuns} runs)`}
+                  </InfoItem>
                 )}
                 {contractSource.isProxy && (
                   <>
-                    <div className="info-item">
-                      <span className="label">Proxy Type</span>
-                      <span className="value">
-                        <span
-                          style={{
-                            display: 'inline-block',
-                            padding: '2px 10px',
-                            borderRadius: '4px',
-                            background: '#e8f5e9',
-                            color: '#2e7d32',
-                            fontWeight: 600,
-                            fontSize: '13px',
-                          }}
-                        >
-                          {PROXY_TYPE_LABELS[contractSource.proxyType ?? 'unknown'] ??
-                            contractSource.proxyType?.toUpperCase()}{' '}
-                          Proxy
-                        </span>
+                    <InfoItem label="Proxy Type">
+                      <span
+                        style={{
+                          display: 'inline-block',
+                          padding: '2px 10px',
+                          borderRadius: '4px',
+                          background: '#e8f5e9',
+                          color: '#2e7d32',
+                          fontWeight: 600,
+                          fontSize: '13px',
+                        }}
+                      >
+                        {PROXY_TYPE_LABELS[contractSource.proxyType ?? 'unknown'] ??
+                          contractSource.proxyType?.toUpperCase()}{' '}
+                        Proxy
                       </span>
-                    </div>
+                    </InfoItem>
                     {isDiamond ? (
-                      <div className="info-item">
-                        <span className="label">Facets</span>
-                        <span className="value">
-                          {diamondFacets.map((facet, index) => (
-                            <div key={facet}>
-                              <TypedLink
-                                to={`/chain/${currentChainId}/contract/${facet}`}
-                                style={{ color: '#007bff', textDecoration: 'none' }}
-                                onMouseOver={e =>
-                                  ((e.target as HTMLElement).style.textDecoration = 'underline')}
-                                onMouseOut={e =>
-                                  ((e.target as HTMLElement).style.textDecoration = 'none')}
-                              >
-                                {index === 0 && contractSource.implementationContract?.name
-                                  ? `${contractSource.implementationContract.name} (${facet})`
-                                  : facet}
-                              </TypedLink>
-                            </div>
-                          ))}
-                        </span>
-                      </div>
+                      <InfoItem label="Facets">
+                        {diamondFacets.map((facet, index) => (
+                          <div key={facet}>
+                            <TypedLink
+                              className={linkStyle}
+                              to={`/chain/${currentChainId}/contract/${facet}`}
+                            >
+                              {index === 0 && contractSource.implementationContract?.name
+                                ? `${contractSource.implementationContract.name} (${facet})`
+                                : facet}
+                            </TypedLink>
+                          </div>
+                        ))}
+                      </InfoItem>
                     ) : (
                       contractSource.implementationAddress && (
-                        <div className="info-item">
-                          <span className="label">Implementation</span>
-                          <span className="value">
-                            <TypedLink
-                              to={`/chain/${currentChainId}/contract/${contractSource.implementationAddress}`}
-                              style={{ color: '#007bff', textDecoration: 'none' }}
-                              onMouseOver={e =>
-                                ((e.target as HTMLElement).style.textDecoration = 'underline')}
-                              onMouseOut={e =>
-                                ((e.target as HTMLElement).style.textDecoration = 'none')}
-                            >
-                              {contractSource.implementationContract?.name
-                                ? `${contractSource.implementationContract.name} (${contractSource.implementationAddress})`
-                                : contractSource.implementationAddress}
-                            </TypedLink>
-                          </span>
-                        </div>
+                        <InfoItem label="Implementation">
+                          <TypedLink
+                            className={linkStyle}
+                            to={`/chain/${currentChainId}/contract/${contractSource.implementationAddress}`}
+                          >
+                            {contractSource.implementationContract?.name
+                              ? `${contractSource.implementationContract.name} (${contractSource.implementationAddress})`
+                              : contractSource.implementationAddress}
+                          </TypedLink>
+                        </InfoItem>
                       )
                     )}
                   </>
@@ -1533,64 +1444,38 @@ export default function Contract() {
                 {/* Contract Creation Information */}
                 {creationInfo && (
                   <>
-                    <div className="info-item">
-                      <span className="label">Creation Transaction</span>
-                      <span className="value">
-                        <TypedLink
-                          to={`/chain/${currentChainId}/tx/${creationInfo.txHash}`}
-                          style={{ color: '#007bff', textDecoration: 'none' }}
-                          onMouseOver={e =>
-                            ((e.target as HTMLElement).style.textDecoration = 'underline')}
-                          onMouseOut={e =>
-                            ((e.target as HTMLElement).style.textDecoration = 'none')}
-                        >
-                          {creationInfo.txHash}
-                        </TypedLink>
-                      </span>
-                    </div>
-                    <div className="info-item">
-                      <span className="label">Creation Block</span>
-                      <span className="value">
-                        <TypedLink
-                          to={`/chain/${currentChainId}/block/${creationInfo.blockNumber}`}
-                          style={{ color: '#007bff', textDecoration: 'none' }}
-                          onMouseOver={e =>
-                            ((e.target as HTMLElement).style.textDecoration = 'underline')}
-                          onMouseOut={e =>
-                            ((e.target as HTMLElement).style.textDecoration = 'none')}
-                        >
-                          #{creationInfo.blockNumber}
-                        </TypedLink>
-                      </span>
-                    </div>
-                    <div className="info-item">
-                      <span className="label">Creator</span>
-                      <span className="value">
-                        <TypedLink
-                          to={`/chain/${currentChainId}/address/${creationInfo.creator}`}
-                          style={{ color: '#007bff', textDecoration: 'none' }}
-                          onMouseOver={e =>
-                            ((e.target as HTMLElement).style.textDecoration = 'underline')}
-                          onMouseOut={e =>
-                            ((e.target as HTMLElement).style.textDecoration = 'none')}
-                        >
-                          {creationInfo.creator}
-                        </TypedLink>
-                      </span>
-                    </div>
-                    <div className="info-item">
-                      <span className="label">Creation Time</span>
-                      <span className="value">
-                        {formatDateTime(creationInfo.timestamp * 1000)}
-                      </span>
-                    </div>
-                    <div className="info-item">
-                      <span className="label">Gas Used</span>
+                    <InfoItem label="Creation Transaction">
+                      <TypedLink
+                        className={linkStyle}
+                        to={`/chain/${currentChainId}/tx/${creationInfo.txHash}`}
+                      >
+                        {creationInfo.txHash}
+                      </TypedLink>
+                    </InfoItem>
+                    <InfoItem label="Creation Block">
+                      <TypedLink
+                        className={linkStyle}
+                        to={`/chain/${currentChainId}/block/${creationInfo.blockNumber}`}
+                      >
+                        #{creationInfo.blockNumber}
+                      </TypedLink>
+                    </InfoItem>
+                    <InfoItem label="Creator">
+                      <TypedLink
+                        className={linkStyle}
+                        to={`/chain/${currentChainId}/address/${creationInfo.creator}`}
+                      >
+                        {creationInfo.creator}
+                      </TypedLink>
+                    </InfoItem>
+                    <InfoItem label="Creation Time">
+                      {formatDateTime(creationInfo.timestamp * 1000)}
+                    </InfoItem>
+                    <InfoItem label="Gas Used">
                       {(() => {
                         const gasLabel = formatCreationGas(creationInfo.gasUsed);
                         return (
                           <span
-                            className="value"
                             title={
                               gasLabel === 'Unknown'
                                 ? 'Creation gas not recorded by the indexer'
@@ -1601,15 +1486,12 @@ export default function Contract() {
                           </span>
                         );
                       })()}
-                    </div>
+                    </InfoItem>
                   </>
                 )}
 
                 {creationLoading && (
-                  <div className="info-item">
-                    <span className="label">Creation Info</span>
-                    <span className="value">Loading...</span>
-                  </div>
+                  <InfoItem label="Creation Info">Loading...</InfoItem>
                 )}
 
                 {/* RPC error notice */}
@@ -1623,7 +1505,7 @@ export default function Contract() {
                     onRetry={refetchCreation}
                   />
                 )}
-              </div>
+              </InfoGrid>
             </div>
 
             {/* On-chain proxy detection (unverified contracts only, see the

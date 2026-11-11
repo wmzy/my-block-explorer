@@ -1236,17 +1236,17 @@ describe('hydrateFindings read-path cache', () => {
   };
 
   const envelope = (i: number): DiscoveredTransaction => ({
-    hash: `0x${i.toString(16).padStart(64, '0')}` as `0x${string}`,
+    hash: `0x${i.toString(16).padStart(64, '0')}`,
     blockNumber: BigInt(1000 + i),
-    fromAddress: `0x${'33'.repeat(20)}` as `0x${string}`,
-    toAddress: `0x${'44'.repeat(20)}` as `0x${string}`,
+    fromAddress: `0x${'33'.repeat(20)}`,
+    toAddress: `0x${'44'.repeat(20)}`,
     value: String(i),
     timestamp: '2026-01-01T00:00:00.000Z',
   });
 
   const findingOf = (tx: DiscoveredTransaction): AddressScanFindingRecord => ({
     chainId: 1,
-    address: `0x${'aa'.repeat(20)}` as `0x${string}`,
+    address: `0x${'aa'.repeat(20)}`,
     txHash: tx.hash as `0x${string}`,
     blockNumber: tx.blockNumber,
   });
@@ -1258,12 +1258,12 @@ describe('hydrateFindings read-path cache', () => {
     const tx = envelope(1);
 
     rememberHydratedTransactions([tx]);
-    const cached = await hydrateFindings(1, `0x${'aa'.repeat(20)}` as `0x${string}`, [findingOf(tx)]);
+    const cached = await hydrateFindings(1, `0x${'aa'.repeat(20)}`, [findingOf(tx)]);
     expect(cached).toEqual([tx]);
     expect(getTransaction).not.toHaveBeenCalled();
 
     clearHydratedTransactionCache();
-    const refetched = await hydrateFindings(1, `0x${'aa'.repeat(20)}` as `0x${string}`, [findingOf(tx)]);
+    const refetched = await hydrateFindings(1, `0x${'aa'.repeat(20)}`, [findingOf(tx)]);
     expect(getTransaction).toHaveBeenCalledTimes(1);
     expect(refetched[0]).toMatchObject({
       hash: tx.hash,

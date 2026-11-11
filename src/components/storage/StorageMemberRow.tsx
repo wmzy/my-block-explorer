@@ -6,7 +6,7 @@
 import { css } from '@linaria/core';
 import { useState } from 'react';
 import type { Hex } from 'viem';
-import { useCopyFeedback } from '@/util/useCopyFeedback';
+import { CopyButton } from '@/components/ui/CopyButton';
 import type { StorageMapping, StorageType } from '@/types/storage';
 import { shortSlot, type StructRow } from './columnModel';
 import { buildViemReadSnippet } from '@/utils/storageSlotCode';
@@ -89,7 +89,11 @@ const openButtonStyle = css`
   }
 `;
 
-const copyButtonStyle = css`
+// The storage family's bespoke copy-chip chrome (mono, transparent) shared
+// by this row and StorageColumn's header controls — deliberately NOT the
+// ui/CopyButton copyButtonBase triplet: transparent background, no hover
+// fill.
+export const copyButtonStyle = css`
   padding: 0 var(--haze-space-1);
   font-family: var(--haze-font-mono);
   font-size: var(--haze-text-xs);
@@ -146,32 +150,6 @@ const mutedTextStyle = css`
   font-size: var(--haze-text-xs);
   color: var(--haze-color-text-secondary);
 `;
-
-// Honest-clipboard copy button using the label-swap feedback idiom
-// (EventTable's CopyButton): the label itself reports the real outcome of
-// the clipboard call, never a guess. Kept local to the storage family.
-export function CopyButton({
-  text,
-  label,
-  title,
-}: {
-  text: string;
-  label: string;
-  title?: string;
-}) {
-  const { state: result, copy } = useCopyFeedback();
-
-  return (
-    <button
-      type="button"
-      className={copyButtonStyle}
-      title={title}
-      onClick={() => void copy(text)}
-    >
-      {result === 'ok' ? 'Copied ✓' : result === 'fail' ? 'Copy failed' : label}
-    </button>
-  );
-}
 
 // Row affordance classification for a VALUE type (array elements and
 // mapping values arrive as raw StorageTypes, not StructRows). Mirrors
@@ -234,10 +212,20 @@ export function StorageMemberRow(props: StorageMemberRowProps) {
     <div className={rowStyle}>
       <div className={rowTopStyle}>
         {slotChip === 'decimal' && (
-          <CopyButton text={slot} label={`slot ${formatSlotDecimal(slot)}`} title={slot} />
+          <CopyButton
+            text={slot}
+            label={`slot ${formatSlotDecimal(slot)}`}
+            title={slot}
+            className={copyButtonStyle}
+          />
         )}
         {slotChip === 'hex' && (
-          <CopyButton text={slot} label={`slot: ${shortSlot(slot)}`} title={slot} />
+          <CopyButton
+            text={slot}
+            label={`slot: ${shortSlot(slot)}`}
+            title={slot}
+            className={copyButtonStyle}
+          />
         )}
         {props.expr != null && (
           <CopyButton
@@ -248,6 +236,7 @@ export function StorageMemberRow(props: StorageMemberRowProps) {
             })}
             label="viem"
             title={`Copy a runnable viem snippet reading ${label} (slot ${formatSlotDecimal(slot)})`}
+            className={copyButtonStyle}
           />
         )}
         <span className={labelStyle} title={label}>

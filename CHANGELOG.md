@@ -9,6 +9,64 @@ commit subjects rather than a curated release notes process.
 
 ## Unreleased
 
+- **2026-11-11 duplication review fix wave (4 read-only scouts + 4 fix agents
+  + integration)** — round 5 of the dedup review; 14 findings (11 fixed, 3
+  recorded as deliberate). All verified: `tsc` 0 errors, eslint 0 errors (106
+  pre-existing warnings), `vitest --changed` 174 files / 2,324 tests green,
+  `pnpm build` green, live Chromium smoke on the Contract page (light + dark,
+  hover, InfoGrid rows) plus Blocks/Signatures through the vite bridge.
+  **Dead code** — `services/PerformanceMonitor.ts` deleted entirely (442
+  lines, zero production importers — only its own test consumed it; it also
+  started a 60s reporting timer from module import. The 2026-09-30 note
+  calling it "a DIFFERENT live file" was stale: its consumers died in later
+  waves) + its test; `bindCacheRefresh` (util/loaderCache); dead exports
+  `parseContractFunctions`/`estimateContractGas`/`validateFunctionArgs`
+  (utils/contractInteraction), the uncalled
+  `ContractInteractionService.validateFunctionArgs` twin + private
+  `validateArgument` helpers, `ContractInteractionService.getFunctionInputTypes`,
+  `getBatchBalances`/`isContractAddress` (utils/realTimeData, test-only),
+  `getCacheStats` (incl. its fabricated `hitRate: 0`)/`optimizeSortConfigs`
+  (sorting-optimization), and the dead ternary
+  `source: implABI ? 'impl' : 'impl'` → `'impl'`. eslint's no-console
+  allowlist lost its PerformanceMonitor entry. **Barrel truth** —
+  `utils/index.ts` star-exported `realTimeData`/`rpcConfigService`/
+  `contractInteraction` despite its own comment banning exactly that (they
+  drag the browser RPC graph + unresolvable `@/` aliases into backend barrel
+  consumers incl. the vite.config esbuild bundle); the three star-exports are
+  dropped and the comment now states the general deep-import-only rule;
+  barrel.test.ts pins the exclusion negatively. **Layering fixes** — two
+  pure leaf modules moved out of views/ to kill inverted util→views edges:
+  `views/Address/addressValidity.ts` → `utils/addressValidity.ts` (11
+  importers) and `views/Contract/paramParsing.ts` → `utils/paramParsing.ts`
+  (6 importers; castCommand/viemScript now import utils-internal). Both stay
+  deep-import-only (no barrel lines). **New canonical components** —
+  `components/ui/CopyButton.tsx` + exported `copyButtonBase` css (the honest
+  label-swap copy idiom was hand-copied 6×: EventTable/StorageMemberRow/
+  RawJson/Signatures/SourceCodeViewer×2; the CSS near-triplets in
+  RawDataBlock/RawJson/EventTable fold onto the shared base) and
+  `components/ui/NewBlocksNotice.tsx` (the byte-identical "N new blocks —
+  Refresh" staleness banner duplicated across Blocks/List + Transactions/
+  List). EventTable's local `SortConfig` re-roll → import from
+  sorting-optimization. **Contract view styling island migrated** — the last
+  view predating the shared-component conventions (and the only file that
+  broke dark mode): 5 inline-styled `#007bff` TypedLinks with JS hover →
+  `linkStyle` (CSS hover), the hardcoded Refresh button → shared `Button`,
+  22 hand-rolled `info-item` rows → `InfoGrid`/`InfoItem` (dead local CSS
+  deleted), remaining linaria `#007bff` literals → `var(--haze-color-primary)`,
+  and `formatCreationGas` is now BigInt-exact via `formatBigInt` (was
+  `Number.parseInt` + host-locale `toLocaleString`; the 0/''/invalid →
+  'Unknown' honesty contract is preserved — live-verified on WETH's ancient
+  creation). **Locale-stable counts** — four raw `.toLocaleString()` sites in
+  Token/NftGrid views → `formatNumber`. **Conventions pinned**: (1) the
+  barrels own docs lie — a comment claiming a module is "deliberately NOT
+  re-exported" must be checked against the actual export list; (2) eslint
+  verdicts on type assertions can flip between rounds (the 7 pre-existing
+  errors fixed here — 6 unnecessary `0x${string}` assertions + 1 quote —
+  surfaced in files round 4 never touched); (3) two label-swap copies in
+  AbiListPanel/FunctionCallForm are deliberately NOT on shared CopyButton
+  (keyed per-item state and dynamic `Copy selected (N)` labels don't fit the
+  plain API). Deferred (unchanged): in-flight-dedup Map family, the three
+  scan ladders, Address-view micro-extractions.
 - **2026-11-10 duplication review fix wave (7 agents, 2 waves + integration)** —
   round 4 of the dedup review; every confirmed finding fixed. All verified:
   `tsc` 0 errors, eslint 0 errors (46 warnings, all pre-existing

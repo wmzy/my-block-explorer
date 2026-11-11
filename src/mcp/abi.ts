@@ -5,9 +5,10 @@
 // viem's encoder wants real `bigint`s for int/uint inputs. This module
 // walks the parsed ABI fragment's input types and converts each value,
 // failing with a field path (`args[1]`) so an agent can correct the exact
-// argument. It is the MCP-side counterpart of the Interact form's
-// paramParsing — but operating on structured JSON values, not form
-// strings, so no comma-list/JSON-string grammar is needed here.
+// argument. It is the MCP-side counterpart of the shared form-string
+// parser (src/utils/paramParsing.ts, consumed by the Interact form) —
+// but operating on structured JSON values, not form strings, so no
+// comma-list/JSON-string grammar is needed here.
 
 import { parseAbiItem, type AbiFunction, type AbiParameter } from 'viem';
 import { errorMessage } from '@/utils/errorHandler';

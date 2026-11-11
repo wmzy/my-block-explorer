@@ -2,8 +2,8 @@ import { css, cx } from '@linaria/core';
 import { useEffect, useRef, useState } from 'react';
 
 import { Card, CardHeader, CardTitle } from './Card';
+import { CopyButton, copyButtonBase } from './CopyButton';
 import { ErrorState } from './ErrorState';
-import { useCopyFeedback } from '@/util/useCopyFeedback';
 import { useLazyExpand } from '@/util/useLazyExpand';
 
 // One raw-RPC payload section of the Raw JSON card. `load` receives the
@@ -121,19 +121,15 @@ const statusStyle = css`
   color: var(--haze-color-text-muted);
 `;
 
-const copyButtonStyle = css`
-  border: 1px solid var(--haze-color-border);
-  border-radius: var(--haze-radius-sm);
-  background: var(--haze-color-bg);
-  padding: var(--haze-space-1) var(--haze-space-3);
-  font-size: var(--haze-text-xs);
-  cursor: pointer;
-  flex-shrink: 0;
-
-  &:hover {
-    background: var(--haze-color-bg-muted);
-  }
-`;
+// Shared copy-button chrome plus this card's deltas (xs text, no shrink
+// inside the section header row).
+const copyButtonStyle = cx(
+  copyButtonBase,
+  css`
+    font-size: var(--haze-text-xs);
+    flex-shrink: 0;
+  `,
+);
 
 // JSON.stringify(undefined) is undefined (not a string) and BigInt values
 // make it throw; both collapse to a rendering instead of a crash.
@@ -147,19 +143,6 @@ const prettyPrint = (data: unknown): string => {
 
 const errorMessage = (error: unknown): string =>
   error instanceof Error && error.message !== '' ? error.message : 'The request failed.';
-
-// Per-section copy button with the codebase's label-swap feedback pattern
-// (SourceCodeViewer/CustomAbiPanel): the button itself reports success or
-// failure — the honest outcome of the clipboard call, never a guess.
-function CopyButton({ text }: { text: string }) {
-  const { state: result, copy } = useCopyFeedback();
-
-  return (
-    <button type="button" className={copyButtonStyle} onClick={() => void copy(text)}>
-      {result === 'ok' ? 'Copied ✓' : result === 'fail' ? 'Copy failed' : 'Copy'}
-    </button>
-  );
-}
 
 type SectionPhase =
   | { kind: 'idle' }
@@ -217,7 +200,7 @@ function RawJsonSection({ label, load, note, active }: RawJsonSectionProps) {
     <div className={sectionStyle}>
       <div className={sectionHeaderStyle}>
         <span>{label}</span>
-        {phase.kind === 'loaded' && <CopyButton text={phase.text} />}
+        {phase.kind === 'loaded' && <CopyButton text={phase.text} className={copyButtonStyle} />}
       </div>
       {note !== undefined ? (
         <p className={noteStyle} data-testid="raw-json-note">

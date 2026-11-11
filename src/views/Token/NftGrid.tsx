@@ -24,6 +24,7 @@ import {
   type NftMetadataOutcome,
 } from '@/services/nftMetadata';
 import { useCopyFeedback } from '@/util/useCopyFeedback';
+import { formatNumber } from '@/utils/format';
 import { shimmerPulse } from '@/components/ui/skeleton';
 import { NFT_ITEMS_LIMIT, type NftItem } from './nftItems';
 
@@ -339,7 +340,7 @@ function NftTile({ item, contract, outcome, onRetry, retrying }: NftTileProps) {
             data-testid="nft-tile-amount"
             title="net units minted within the scanned window (mints minus burns)"
           >
-            × {item.amount.toLocaleString()}
+            × {formatNumber(item.amount)}
           </span>
         ))}
     </div>

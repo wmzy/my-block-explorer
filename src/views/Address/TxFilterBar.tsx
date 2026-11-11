@@ -14,7 +14,7 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { useSignaturesBatched } from '@/services/signatures';
 import type { SignatureOutcome } from '@/services/signatures';
-import { checkAddressValidity } from './addressValidity';
+import { checkAddressValidity } from '@/utils/addressValidity';
 
 // Raw filter field values ('' = field empty = filter absent). The URL is
 // the source of truth; the bar holds a local draft while the user types.

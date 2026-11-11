@@ -32,8 +32,8 @@ import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
 import { useServiceDiscovery } from '@/hooks/ServiceDiscoveryContext';
 import { useSignatureLookup } from '@/services/signatures';
 import type { ResolvedSignatures, SignatureLookup } from '@/services/signatures';
+import { CopyButton } from '@/components/ui/CopyButton';
 import { isBackendUnreachable } from '@/util/http';
-import { useCopyFeedback } from '@/util/useCopyFeedback';
 import { readRememberedChainId } from '@/views/Home/Landing';
 
 // ---------------------------------------------------------------------------
@@ -238,19 +238,6 @@ const emptyNote = css`
 // Pieces
 // ---------------------------------------------------------------------------
 
-// Per-row copy with the codebase's label-swap feedback pattern
-// (EventTable CopyButton): the button reports the honest outcome of the
-// clipboard call, never a guess.
-function SignatureCopyButton({ text }: { text: string }) {
-  const { state: result, copy } = useCopyFeedback();
-
-  return (
-    <button type="button" className={copyButton} onClick={() => void copy(text)}>
-      {result === 'ok' ? 'Copied ✓' : result === 'fail' ? 'Copy failed' : 'Copy'}
-    </button>
-  );
-}
-
 // The found-candidates rows for one side. A separate component so the
 // found branch's narrowed outcome stays narrowed (the hook's found status
 // already carries the precise type).
@@ -263,7 +250,7 @@ function FoundSignatureRows({ outcome }: { outcome: ResolvedSignatures }) {
           <Badge variant="info" size="sm">
             {outcome.source}
           </Badge>
-          <SignatureCopyButton text={signature} />
+          <CopyButton text={signature} className={copyButton} />
         </li>
       ))}
     </ul>

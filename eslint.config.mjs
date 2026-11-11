@@ -109,14 +109,12 @@ export default [
   {
     // Console allowlist: files where console output IS the interface.
     // CLI entry points print startup banners and command UX; AddressService
-    // and PerformanceMonitor emit cache/persistence trace lines and the
-    // human-readable performance report; the rpc integration test states
+    // emits cache/persistence trace lines; the rpc integration test states
     // it runs on mocked responses.
     files: [
       'src/cli.ts',
       'src/server.ts',
       'src/services/AddressService.ts',
-      'src/services/PerformanceMonitor.ts',
       'tests/integration/rpc.test.ts',
     ],
     rules: {

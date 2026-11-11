@@ -10,8 +10,8 @@ import {
   paramLabel,
   parseFunctionArgs,
   sameNameInputCounts,
-} from '@/views/Contract/paramParsing';
-import type { ParamDescriptor } from '@/views/Contract/paramParsing';
+} from '@/utils/paramParsing';
+import type { ParamDescriptor } from '@/utils/paramParsing';
 import { ApiError } from '@/util/apiError';
 import { encodeErrorResult, encodeFunctionData, parseAbi, type Abi } from 'viem';
 

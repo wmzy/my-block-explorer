@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { clampInternalTxDepth, DEFAULT_INTERNAL_TX_DEPTH } from '@/utils/internalTxScan';
-import { checkAddressValidity } from './addressValidity';
+import { checkAddressValidity } from '@/utils/addressValidity';
 
 // The address page's URL-driven state, shared by every writer on the page
 // (the view for the tx tab and the active-tab switch, TokenTransfers for
@@ -109,7 +109,7 @@ export const clampPage = (page: number): number => Math.max(1, Math.floor(page))
 // show as active). Absent means absent; an explicit value survives only
 // when it is valid — addresses pass the same two-tier shape/checksum
 // verdict as the server's getValidatedAddress (the frontend twin in
-// ./addressValidity), wei amounts must be non-negative integer decimals,
+// @/utils/addressValidity), wei amounts must be non-negative integer decimals,
 // and a method selector must be '0x' + 8 hex chars (case-insensitive).
 // Invalid values degrade to undefined here (never to a default), so a
 // malformed hand-crafted link can never fire a doomed request. Values

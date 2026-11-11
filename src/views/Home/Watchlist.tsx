@@ -38,7 +38,7 @@ import {
 import { getApiBase, onApiBaseChange } from '@/util/apiBase';
 import { isBackendUnreachable } from '@/util/http';
 import { ApiError } from '@/util/apiError';
-import { checkAddressValidity } from '@/views/Address/addressValidity';
+import { checkAddressValidity } from '@/utils/addressValidity';
 import { useLiveBlockEvents, useWatchEvents, type LiveBlockPayload } from '@/services/liveChain';
 import {
   deleteWatchSubscription,

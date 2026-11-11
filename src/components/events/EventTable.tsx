@@ -22,7 +22,7 @@ import { useGenerationGuard } from '@/util/useGenerationGuard';
 import { EventFilterPanel, type EventFilterState } from './EventFilterPanel';
 import { get } from '@/util/http';
 import { getApiBase } from '@/util/apiBase';
-import { useCopyFeedback } from '@/util/useCopyFeedback';
+import { CopyButton, copyButtonBase } from '@/components/ui/CopyButton';
 import { parseStrictInteger } from '@/utils/validation';
 
 // Types
@@ -96,13 +96,6 @@ type FilterState = {
 type SortState = {
   field: string;
   direction: 'asc' | 'desc';
-};
-
-type SortConfig = {
-  key: string;
-  direction: 'asc' | 'desc';
-  type?: 'numeric' | 'text' | 'address' | 'timestamp';
-  priority?: number;
 };
 
 type SortOption = {
@@ -413,19 +406,15 @@ const rawLogPre = cx(
   `,
 );
 
-const rawLogCopyButton = css`
-  border: 1px solid var(--haze-color-border);
-  border-radius: var(--haze-radius-sm);
-  background: var(--haze-color-bg);
-  padding: var(--haze-space-1) var(--haze-space-3);
-  font-size: 12px;
-  cursor: pointer;
-  flex-shrink: 0;
-
-  &:hover {
-    background: var(--haze-color-bg-muted);
-  }
-`;
+// Shared copy-button chrome plus this table's deltas (12px text, no
+// shrink inside the meta rows).
+const rawLogCopyButton = cx(
+  copyButtonBase,
+  css`
+    font-size: 12px;
+    flex-shrink: 0;
+  `,
+);
 
 // Honest degrade: the row predates raw-log storage (or was supplied without
 // raw fields) — a stated absence, never an error state.
@@ -830,7 +819,11 @@ const formatValue = (value?: string): string => {
 };
 
 // Import optimized sorting and search utilities
-import { optimizedSort, type SortingPerformanceMetrics } from '../../utils/sorting-optimization';
+import {
+  optimizedSort,
+  type SortConfig,
+  type SortingPerformanceMetrics,
+} from '../../utils/sorting-optimization';
 
 const clientSideSort = (
   data: EventData[],
@@ -926,19 +919,6 @@ function LoadingIndicator({ message }: { message: string }) {
   );
 }
 
-// Per-field copy button with the codebase's label-swap feedback pattern
-// (RawJson/SourceCodeViewer): the button itself reports the honest outcome
-// of the clipboard call, never a guess.
-function CopyButton({ text, label }: { text: string; label: string }) {
-  const { state: result, copy } = useCopyFeedback();
-
-  return (
-    <button type="button" className={rawLogCopyButton} onClick={() => void copy(text)}>
-      {result === 'ok' ? 'Copied ✓' : result === 'fail' ? 'Copy failed' : label}
-    </button>
-  );
-}
-
 // The raw-log disclosure body rendered inside a row's expandable detail row.
 // Every field comes straight from the indexed contract_events row and is
 // nullable: a row whose raw fields are all absent (written before raw-log
@@ -1002,7 +982,7 @@ function RawLogDisclosure({
         <span className={rawLogMetaItem}>
           <span className={rawLogMetaLabel}>Address</span>{' '}
           <span className={rawLogHexValue}>{emitter}</span>
-          <CopyButton text={emitter} label="Copy address" />
+          <CopyButton text={emitter} label="Copy address" className={rawLogCopyButton} />
         </span>
       </div>
 
@@ -1040,7 +1020,7 @@ function RawLogDisclosure({
             <pre className={rawLogPre} data-testid="raw-log-data">
               {data}
             </pre>
-            <CopyButton text={data} label="Copy data" />
+            <CopyButton text={data} label="Copy data" className={rawLogCopyButton} />
           </div>
         ) : (
           <span className={notStoredValue}>not stored</span>

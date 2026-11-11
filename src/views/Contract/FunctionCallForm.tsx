@@ -25,7 +25,7 @@ import {
   parseFunctionArgs,
   sameNameInputCounts,
   ADDRESS_PATTERN,
-} from './paramParsing';
+} from '@/utils/paramParsing';
 import { parseStateOverrideInput, toViemStateOverride } from './stateOverrideInput';
 import { argsKey } from './types';
 

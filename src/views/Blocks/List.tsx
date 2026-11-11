@@ -10,7 +10,7 @@ import { CopyableHash } from '@/components/ui/CopyableHash';
 import { DataTable, Pagination, linkStyle, monoStyle } from '@/components/ui/DataTable';
 import { EmptyState, ErrorState } from '@/components/ui/ErrorState';
 import { TableSkeleton } from '@/components/ui/LoadingState';
-import { noticeBarStyle } from '@/components/ui/noticeBar';
+import { NewBlocksNotice } from '@/components/ui/NewBlocksNotice';
 import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
 import { getChainInfo, getChainName, getChainType } from '@/config/chains';
 import { parseChainIdParam } from '@/utils/chainParam';
@@ -295,21 +295,12 @@ export default function BlocksList() {
             anchor by design, so once the polled live head moves past it the
             page says so instead of letting Age cells silently creep. One
             click on Refresh re-anchors the walk (same control as above). */}
-        {blocks.length > 0 && newBlockCount !== null && (
-          <div className={noticeBarStyle}>
-            <span>
-              {formatNumber(Number(newBlockCount))} new {newBlockCount === 1n ? 'block' : 'blocks'}{' '}
-              —
-            </span>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={handleRefresh}
-              disabled={headQuery.fetching}
-            >
-              Refresh
-            </Button>
-          </div>
+        {blocks.length > 0 && (
+          <NewBlocksNotice
+            count={newBlockCount === null ? null : Number(newBlockCount)}
+            refreshing={headQuery.fetching}
+            onRefresh={handleRefresh}
+          />
         )}
 
         {blocks.length > 0 && (

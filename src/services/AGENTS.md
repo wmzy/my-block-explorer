@@ -14,8 +14,7 @@ services/
 ├── TransactionService.ts      # Transaction data
 ├── AddressService.ts          # Address data, binary search tx discovery
 ├── SearchService.ts           # Unified search
-├── ens.ts                     # ENS reverse resolution hook (mainnet-pinned, frontend)
-└── PerformanceMonitor.ts      # Global performance tracking
+└── ens.ts                     # ENS reverse resolution hook (mainnet-pinned, frontend)
 ```
 
 ## WHERE TO LOOK

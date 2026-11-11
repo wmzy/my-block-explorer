@@ -9,7 +9,6 @@ import type {
   StateOverride as ViemStateOverride,
 } from 'viem';
 import type { StateOverride } from '../utils/stateOverride';
-import { HEX_ADDRESS_RE } from '../utils/address';
 
 const logger = createLogger('contract-interaction-service');
 
@@ -280,86 +279,6 @@ export class ContractInteractionService {
     } catch (error) {
       logger.error({ err: error }, 'Gas estimation failed');
       return null;
-    }
-  }
-
-  /**
-   * Get the input parameter types of a function signature
-   */
-  getFunctionInputTypes(contractFunction: ContractFunction): string[] {
-    return contractFunction.inputs.map(input => input.type);
-  }
-
-  /**
-   * Validate function arguments
-   */
-  validateFunctionArgs(
-    contractFunction: ContractFunction,
-    args: unknown[],
-  ): { valid: boolean; errors: string[] } {
-    const errors: string[] = [];
-
-    if (args.length !== contractFunction.inputs.length) {
-      errors.push(`Expected ${contractFunction.inputs.length} arguments, got ${args.length}`);
-    }
-
-    contractFunction.inputs.forEach((input, index) => {
-      const arg = args[index];
-      const validation = this.validateArgument(input.type, arg, input.name);
-      if (!validation.valid) {
-        errors.push(`Argument ${index} (${input.name}): ${validation.error}`);
-      }
-    });
-
-    return {
-      valid: errors.length === 0,
-      errors,
-    };
-  }
-
-  /**
-   * Validate a single argument
-   */
-  private validateArgument(
-    type: string,
-    value: unknown,
-    _name: string,
-  ): { valid: boolean; error?: string } {
-    if (value === undefined || value === null || value === '') {
-      return { valid: false, error: 'Value is required' };
-    }
-
-    try {
-      // Address type validation
-      if (type === 'address') {
-        if (typeof value !== 'string' || !HEX_ADDRESS_RE.test(value)) {
-          return { valid: false, error: 'Invalid address format' };
-        }
-      }
-
-      // Numeric type validation
-      if (type.startsWith('uint') || type.startsWith('int')) {
-        const _num = BigInt(value as string | number | bigint | boolean);
-        // More range checks could be added
-      }
-
-      // Bytes type validation
-      if (type.startsWith('bytes')) {
-        if (typeof value !== 'string' || !value.startsWith('0x')) {
-          return { valid: false, error: 'Invalid bytes format, should start with 0x' };
-        }
-      }
-
-      // Boolean type validation
-      if (type === 'bool') {
-        if (typeof value !== 'boolean' && value !== 'true' && value !== 'false') {
-          return { valid: false, error: 'Invalid boolean value' };
-        }
-      }
-
-      return { valid: true };
-    } catch {
-      return { valid: false, error: `Invalid ${type} value` };
     }
   }
 

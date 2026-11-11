@@ -634,7 +634,7 @@ describe('Contract view proxy implementation rendering', () => {
     // Implementation *toggle* in the tab bar still renders — scoped here
     // to the info card's label).
     expect(
-      screen.queryByText('Implementation', { selector: 'span.label' }),
+      screen.queryByText('Implementation', { selector: 'span' }),
     ).not.toBeInTheDocument();
   });
 
@@ -643,7 +643,7 @@ describe('Contract view proxy implementation rendering', () => {
     renderAt(`/chain/1/contract/${ADDRESS}`);
 
     expect(
-      await screen.findByText('Implementation', { selector: 'span.label' }),
+      await screen.findByText('Implementation', { selector: 'span' }),
     ).toBeInTheDocument();
     expect(screen.getByRole('link', { name: new RegExp(IMPL) })).toHaveAttribute(
       'href',
@@ -1146,7 +1146,7 @@ describe('Contract view on-chain proxy detection', () => {
     renderAt(`/chain/1/contract/${ADDRESS}`);
 
     expect(
-      await screen.findByText('Implementation', { selector: 'span.label' }),
+      await screen.findByText('Implementation', { selector: 'span' }),
     ).toBeInTheDocument();
     expect(screen.getByRole('link', { name: new RegExp(IMPL) })).toHaveAttribute(
       'href',
