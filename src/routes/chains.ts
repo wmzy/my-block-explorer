@@ -9,8 +9,6 @@
 // manager so the chain is served immediately. GET applies the same
 // URL-secret redaction policy as routes/rpc-config.ts.
 import { Hono } from 'hono';
-import type { Context } from 'hono';
-import { getConnInfo } from '@hono/node-server/conninfo';
 import { eq } from 'drizzle-orm';
 import { createLogger } from '../server/logger';
 import { db, customChains } from '../database/init';
@@ -19,8 +17,9 @@ import { getBuiltInChainInfo, isBuiltInChainProtected } from '../config/chains';
 import { registerCustomChain, removeCustomChain } from '../config/customChains';
 import { requireAdminTokenIfConfigured } from '../middleware/admin-token';
 import { createRateLimiter } from '../middleware/rate-limit';
-import { isAllowedCorsOrigin } from '../middleware/cors-origins';
-import { createApiError, respondError } from '../utils/api-error';
+import { redactUrl, requestSeesFullUrl } from '../middleware/rpc-url-visibility';
+import { createApiError, readJsonBody, respondError } from '../utils/api-error';
+import { errorMessage } from '../utils/errorHandler';
 import { getValidatedChainId } from '../server/validation';
 import { parseStrictInteger } from '../utils/validation';
 import { parseHexQuantity } from '../utils/strictInteger';
@@ -30,33 +29,6 @@ import { chainCacheService } from '../services/ChainCacheService';
 const logger = createLogger('custom-chain-routes');
 
 const app = new Hono();
-
-// Same URL-secret policy as routes/rpc-config.ts: registration URLs can
-// embed provider API keys in the path or query, so they are secrets
-// despite sitting in a "URL" field. Redact to scheme + host; a URL that
-// does not parse degrades to an opaque marker rather than leaking.
-function redactUrl(url: string): string {
-  try {
-    const { protocol, host } = new URL(url);
-    return `${protocol}//${host}/…`;
-  } catch {
-    return '…';
-  }
-}
-
-// Origin-less requests cannot lean on CORS — the socket is the only
-// unforgeable trust signal left for them (see rpc-config.ts for the full
-// rationale). Runtimes without socket info fail closed.
-function isLoopbackRemote(c: Context): boolean {
-  try {
-    const address = getConnInfo(c).remote.address;
-    if (!address) return false;
-    const normalized = address.toLowerCase().replace(/^::ffff:/, '');
-    return normalized === '::1' || /^127(?:\.\d{1,3}){3}$/.test(normalized);
-  } catch {
-    return false;
-  }
-}
 
 // Probe budget: short — a dead endpoint must not hold the request (and
 // its rate-limit token) hostage.
@@ -127,7 +99,7 @@ async function probeRpcChainId(rpcUrl: string): Promise<ProbeResult> {
 
     return { ok: true, chainId };
   } catch (error) {
-    const reason = error instanceof Error ? error.message : 'network error';
+    const reason = errorMessage(error, 'network error');
     return {
       ok: false,
       code: 'rpc_unreachable',
@@ -144,8 +116,7 @@ app.get('/chains/custom', async c => {
   try {
     const rows = await db.select().from(customChains);
 
-    const origin = c.req.header('origin');
-    const seesFullUrl = origin ? isAllowedCorsOrigin(origin) : isLoopbackRemote(c);
+    const seesFullUrl = requestSeesFullUrl(c);
 
     return c.json({
       chains: rows.map(row => ({
@@ -175,12 +146,7 @@ const registerRateLimiter = createRateLimiter({
 });
 
 app.post('/chains/custom', requireAdminTokenIfConfigured, registerRateLimiter, async c => {
-  let body: unknown;
-  try {
-    body = await c.req.json();
-  } catch {
-    return respondError(c, 400, 'invalid_json', 'Request body must be valid JSON');
-  }
+  const body = await readJsonBody(c);
   // Destructured from a parsed-JSON value: every field is unknown and
   // must earn its type through the guards below.
   const { rpcUrl, name, symbol, decimals } = (body ?? {}) as Record<string, unknown>;

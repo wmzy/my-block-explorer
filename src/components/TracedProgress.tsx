@@ -4,11 +4,12 @@
 // traced-transaction counts both owe the user while the on-demand sweep
 // settles. The surfaces' shared styles live in components/internalTxnsShared.
 import { LoadingState } from '@/components/ui/LoadingState';
+import { formatNumber } from '@/utils/format';
 
 export function TracedProgress({ settled, total }: { settled: number; total: number }) {
   return (
     <LoadingState
-      message={`Traced ${settled.toLocaleString()} of ${total.toLocaleString()} transactions…`}
+      message={`Traced ${formatNumber(settled)} of ${formatNumber(total)} transactions…`}
     />
   );
 }

@@ -645,7 +645,10 @@ export class DuckDBPostgresAdapter {
             const high = typeof obj.high === 'number' ? BigInt(obj.high) : (obj.high as bigint);
             adaptedRow[key] = Number((high << 64n) + low);
           } else if ('micros' in obj) {
-            // DuckDBTimestampValue (TIMESTAMP, µs precision): µs → ms
+            // DuckDBTimestampValue (TIMESTAMP, µs precision): µs → ms.
+            // The `'micros' in obj` check covers the class itself — the
+            // installed @duckdb/node-api constructor assigns micros as an
+            // own field — so no constructor.name fallback is needed.
             adaptedRow[key] = new Date(Number(obj.micros) / 1000);
           } else if ('millis' in obj) {
             // DuckDBTimestampMillisecondsValue (TIMESTAMP_MS — the type
@@ -657,9 +660,6 @@ export class DuckDBPostgresAdapter {
           } else if ('seconds' in obj) {
             // DuckDBTimestampSecondsValue (TIMESTAMP_S)
             adaptedRow[key] = new Date(Number(obj.seconds) * 1000);
-          } else if (value.constructor.name === 'DuckDBTimestampValue') {
-            const tsValue = value as { micros?: number };
-            adaptedRow[key] = new Date(Number(tsValue.micros) / 1000);
           }
         }
       }

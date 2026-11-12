@@ -26,7 +26,6 @@ import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { CallTypeBadge } from '@/components/CallTypeBadge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
-import { Collapsible } from '@/components/ui/Collapsible';
 import { CopyableHash } from '@/components/ui/CopyableHash';
 import { DataTable, linkStyle, monoStyle } from '@/components/ui/DataTable';
 import { ErrorState } from '@/components/ui/ErrorState';
@@ -34,8 +33,7 @@ import { LoadingState } from '@/components/ui/LoadingState';
 import { TracedProgress } from '@/components/TracedProgress';
 import {
   depthCell,
-  failedTxsCard,
-  failedTxRow,
+  FailedTracesCollapsible,
   muted,
   retryRow,
   summaryLine,
@@ -45,7 +43,7 @@ import { useLazyExpand } from '@/util/useLazyExpand';
 import { fetchCallTraceTree, rpcRequest } from '@/utils/callTraceRpc';
 import { errorMessage } from '@/utils/errorHandler';
 import { cellText, formatHash, formatNumber, formatValue } from '@/utils/format';
-import { runTracePool, shortTraceFailureMessage, TRACE_CONCURRENCY } from '@/utils/internalTxScan';
+import { runTracePool, TRACE_CONCURRENCY } from '@/utils/internalTxScan';
 import { isTraceUnsupportedError } from '@/utils/traceFormat';
 import {
   blockInternalTxnsSummary,
@@ -421,37 +419,11 @@ export function InternalTxnsSection({
           ))
         )}
         {aggregate.failedTxs.length > 0 && (
-          <>
-            <Collapsible
-              className={failedTxsCard}
-              title={`${aggregate.failedTxs.length} trace ${
-                aggregate.failedTxs.length === 1 ? 'failure' : 'failures'
-              }`}
-              badge={(
-                <Badge variant="warning" size="sm">
-                  failed
-                </Badge>
-              )}
-            >
-              {aggregate.failedTxs.map(failure => (
-                <div key={failure.hash} className={failedTxRow}>
-                  <TypedLink
-                    to={`/chain/${chainId}/tx/${failure.hash}`}
-                    className={linkStyle}
-                    title={failure.hash}
-                  >
-                    {formatHash(failure.hash)}
-                  </TypedLink>{' '}
-                  — {shortTraceFailureMessage(failure.message)}
-                </div>
-              ))}
-            </Collapsible>
-            <div className={retryRow}>
-              <Button variant="secondary" size="sm" onClick={retry}>
-                Retry failed traces
-              </Button>
-            </div>
-          </>
+          <FailedTracesCollapsible
+            failures={aggregate.failedTxs}
+            chainId={chainId}
+            onRetry={retry}
+          />
         )}
       </>
     );

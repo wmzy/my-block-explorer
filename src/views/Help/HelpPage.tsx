@@ -13,13 +13,14 @@
 // remembered chain and fetches nothing — the help section works with the
 // backend offline.
 import { css } from '@linaria/core';
-import { NotFoundError, navigate } from '@native-router/core';
+import { NotFoundError } from '@native-router/core';
 import { TypedLink, useMatched, useRouter } from '@native-router/react';
 
 import TopNavigation from '@/components/TopNavigation';
 import { Card, CardContent, CardTitle } from '@/components/ui/Card';
 import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
 import { readRememberedChainId } from '@/views/Home/Landing';
+import { chainRedirect } from '@/views/chainNav';
 import { findHelpTopic, relatedHelpTopics } from './helpContent';
 
 const sectionCardStyle = css`
@@ -122,9 +123,7 @@ export default function HelpPage() {
   const topic = findHelpTopic(match.params.topic);
 
   const navChainId = readRememberedChainId() ?? 1;
-  const handleNavChainChange = (chainId: number) => {
-    void navigate(router, `/chain/${chainId}`).catch(() => undefined);
-  };
+  const handleNavChainChange = (chainId: number) => chainRedirect(router, chainId);
 
   // Unknown topic: raise the ROUTER's 404, which the app's notFound prop
   // renders (src/views/NotFound.tsx) — the same treatment any other

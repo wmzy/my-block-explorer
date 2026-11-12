@@ -38,6 +38,7 @@ import {
 } from '../services/EventExportService';
 import { safeJsonResponse } from '../utils/serialization';
 import { csvAttachmentHeaders } from '../utils/csv';
+import { errorMessage } from '../utils/errorHandler';
 import { createApiError, invalidPageResponse, respondError } from '../utils/api-error';
 import { contractSourceService } from '../services/ContractSourceService';
 import { requireAdminTokenIfConfigured } from '../middleware/admin-token';
@@ -277,7 +278,7 @@ app.get('/chains/:chainId/contracts/:address/events/statistics', async c => {
       c,
       500,
       'internal_error',
-      error instanceof Error ? error.message : 'Failed to fetch event statistics',
+      errorMessage(error, 'Failed to fetch event statistics'),
     );
   }
 });
@@ -305,7 +306,7 @@ app.get('/chains/:chainId/contracts/:address/events/indexing-status', async c =>
       createApiError(
         503,
         'indexing_status_unavailable',
-        error instanceof Error ? error.message : 'Failed to load indexing status',
+        errorMessage(error, 'Failed to load indexing status'),
       ),
       503,
     );
@@ -425,7 +426,7 @@ app.get('/chains/:chainId/contracts/:address/events/export', exportRateLimiter, 
       c,
       500,
       'internal_error',
-      error instanceof Error ? error.message : 'Failed to export events',
+      errorMessage(error, 'Failed to export events'),
     );
   }
 });
@@ -458,7 +459,7 @@ app.get('/chains/:chainId/contracts/:address/events/ranges', async c => {
       c,
       500,
       'internal_error',
-      error instanceof Error ? error.message : 'Failed to fetch indexing ranges',
+      errorMessage(error, 'Failed to fetch indexing ranges'),
     );
   }
 });
@@ -521,7 +522,7 @@ app.post(
         c,
         500,
         'internal_error',
-        error instanceof Error ? error.message : 'Failed to add indexing range',
+        errorMessage(error, 'Failed to add indexing range'),
       );
     }
   },
@@ -665,7 +666,7 @@ app.post(
         c,
         500,
         'internal_error',
-        error instanceof Error ? error.message : 'Failed to create indexing range',
+        errorMessage(error, 'Failed to create indexing range'),
       );
     }
   },
@@ -731,7 +732,7 @@ app.patch(
         c,
         500,
         'internal_error',
-        error instanceof Error ? error.message : 'Failed to update indexing range',
+        errorMessage(error, 'Failed to update indexing range'),
       );
     }
   },
@@ -781,7 +782,7 @@ app.delete(
         c,
         500,
         'internal_error',
-        error instanceof Error ? error.message : 'Failed to delete indexing range',
+        errorMessage(error, 'Failed to delete indexing range'),
       );
     }
   },
@@ -865,7 +866,7 @@ app.post(
         c,
         500,
         'internal_error',
-        error instanceof Error ? error.message : 'Failed to start indexing range',
+        errorMessage(error, 'Failed to start indexing range'),
       );
     }
   },
@@ -962,7 +963,7 @@ app.post(
         c,
         500,
         'internal_error',
-        error instanceof Error ? error.message : 'Failed to pause indexing range',
+        errorMessage(error, 'Failed to pause indexing range'),
       );
     }
   },
@@ -1046,7 +1047,7 @@ app.post(
         c,
         500,
         'internal_error',
-        error instanceof Error ? error.message : 'Failed to resume indexing range',
+        errorMessage(error, 'Failed to resume indexing range'),
       );
     }
   },

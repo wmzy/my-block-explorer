@@ -25,6 +25,7 @@ export * from './address';
 export * from './api-error';
 export * from './blockRpcData';
 export * from './blockTagUtils';
+export * from './chunk';
 // NOTE: modules whose import graph reaches the browser RPC layer —
 // './callTraceRpc', './realTimeData', './rpcConfigService' and
 // './contractInteraction' (it imports createRpcClient from realTimeData)

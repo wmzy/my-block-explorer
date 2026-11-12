@@ -8,7 +8,6 @@
 // and the local power-user workflow can present themselves.
 import { useState, type KeyboardEvent } from 'react';
 import { css } from '@linaria/core';
-import { navigate } from '@native-router/core';
 import { useRouter } from '@native-router/react';
 import { Alert } from 'haze-ui';
 
@@ -19,6 +18,7 @@ import { DataTable } from '@/components/ui/DataTable';
 import { BackendOfflineState, EmptyState } from '@/components/ui/ErrorState';
 import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
 import { readRememberedChainId } from '@/views/Home/Landing';
+import { chainRedirect } from '@/views/chainNav';
 import {
   runSqlQuery,
   useSqlTables,
@@ -29,6 +29,7 @@ import { ApiError } from '@/util/apiError';
 import { readStorageItem, writeStorageItem } from '@/util/storageAccess';
 import { SQL_CONSOLE_STORAGE_KEY } from '@/util/storageKeys';
 import { isBackendUnreachable } from '@/util/http';
+import { errorMessage } from '@/utils/errorHandler';
 
 // --- Query history (localStorage, max 10, click to refill the editor) ---
 
@@ -335,7 +336,7 @@ function RunErrorNotice({ error, onRetry }: { error: unknown; onRetry: () => voi
       </Alert>
     );
   }
-  return <Alert variant="danger">{error instanceof Error ? error.message : 'Query failed.'}</Alert>;
+  return <Alert variant="danger">{errorMessage(error, 'Query failed.')}</Alert>;
 }
 
 function SqlResults({ result }: { result: SqlQueryResult }) {
@@ -389,9 +390,7 @@ export default function SqlConsole() {
   // never a hard-coded one — provides that context, same fallback order
   // as the other chain-less pages (Search).
   const navChainId = readRememberedChainId() ?? 1;
-  const handleNavChainChange = (chainId: number) => {
-    navigate(router, `/chain/${chainId}`).catch(() => undefined);
-  };
+  const handleNavChainChange = (chainId: number) => chainRedirect(router, chainId);
 
   const tables = useSqlTables();
   const [queryText, setQueryText] = useState('');
@@ -458,7 +457,7 @@ export default function SqlConsole() {
                   <div>
                     <p className={sidebarNote}>
                       Schema unavailable:{' '}
-                      {tables.error instanceof Error ? tables.error.message : 'unknown error'}
+                      {errorMessage(tables.error, 'unknown error')}
                     </p>
                     <Button variant="outline" size="sm" onClick={() => void tables.refetch()}>
                       Retry

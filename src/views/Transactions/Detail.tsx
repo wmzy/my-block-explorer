@@ -22,8 +22,9 @@ import { RawJsonCard, type RawJsonFetcher } from '@/components/ui/RawJson';
 import { UnitToggle } from '@/components/ui/UnitToggle';
 import { POPULAR_CHAINS, getChainInfo, getChainName, getChainSymbol } from '@/config/chains';
 import { parseChainIdParam } from '@/utils/chainParam';
+import { errorMessage } from '@/utils/errorHandler';
 import { getExternalTxLinks } from '@/config/externalTools';
-import { redirectReplace } from '@/views/Home/Landing';
+import { chainRedirect } from '@/views/chainNav';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
 import { finalityLabelFor, useFinalityHeads } from '@/services/blocks';
 import { useContractSource } from '@/services/contracts';
@@ -1246,13 +1247,12 @@ export default function TransactionDetail() {
     ];
   }, [currentChainId, txHash, txBlockNumber]);
 
-  const handleChainChange = (newChainId: number) => {
-    // Same-params refresh via the shared replace helper: the hash is
-    // chain-agnostic, so switching chains re-resolves this exact
-    // transaction on the target chain's RPC instead of kicking the user
-    // back to the chain home page, without pushing a history entry.
-    void redirectReplace(router, `/chain/${newChainId}/tx/${txHash}`).catch(() => undefined);
-  };
+  // Same-params refresh via the shared replace helper: the hash is
+  // chain-agnostic, so switching chains re-resolves this exact
+  // transaction on the target chain's RPC instead of kicking the user
+  // back to the chain home page, without pushing a history entry.
+  const handleChainChange = (newChainId: number) =>
+    chainRedirect(router, newChainId, `/tx/${txHash}`, { replace: true });
 
   if (!chainInfo) {
     return (
@@ -1310,11 +1310,7 @@ export default function TransactionDetail() {
         )}
 
         {txHash && error && !isTxNotFound(error) && (
-          <ErrorState
-            message={
-              error instanceof Error ? error.message : 'Failed to fetch transaction information'
-            }
-          />
+          <ErrorState message={errorMessage(error, 'Failed to fetch transaction information')} />
         )}
 
         {txHash && !loading && !error && txInfo && (

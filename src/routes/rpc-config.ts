@@ -1,6 +1,4 @@
 import { Hono } from 'hono';
-import type { Context } from 'hono';
-import { getConnInfo } from '@hono/node-server/conninfo';
 import { eq } from 'drizzle-orm';
 import { createLogger } from '../server/logger';
 import { db, userRpcConfigs } from '../database/init';
@@ -10,41 +8,10 @@ import { rpcManager } from '../services/RpcManager';
 import { getChainInfo } from '../config/chains';
 import { getValidatedChainId } from '../server/validation';
 import { requireAdminTokenIfConfigured } from '../middleware/admin-token';
-import { isAllowedCorsOrigin } from '../middleware/cors-origins';
-import { respondError } from '../utils/api-error';
+import { redactUrl, requestSeesFullUrl } from '../middleware/rpc-url-visibility';
+import { readJsonBody, respondError } from '../utils/api-error';
 
 const app = new Hono();
-
-// Custom endpoint URLs routinely embed provider API keys in the path or
-// query (the RPC config modal invites exactly that), so they are secrets
-// despite sitting in a "URL" field. Redact to scheme + host; a URL that
-// does not parse degrades to an opaque marker rather than leaking.
-function redactUrl(url: string): string {
-  try {
-    const { protocol, host } = new URL(url);
-    return `${protocol}//${host}/…`;
-  } catch {
-    return '…';
-  }
-}
-
-// Origin-less requests cannot lean on CORS — browsers always send Origin on
-// cross-origin reads, so "no Origin" mostly means scripts (curl, anything
-// HTTP-capable), not a trusted same-origin reader. The one unforgeable
-// signal left is the socket: only loopback callers (127.0.0.0/8, ::1,
-// including the ::ffff:-mapped IPv4 form Node reports on dual-stack
-// listeners) keep seeing full URLs. Runtimes without socket info (the
-// in-process Vite dev bridge) and any parse surprise fail closed.
-function isLoopbackRemote(c: Context): boolean {
-  try {
-    const address = getConnInfo(c).remote.address;
-    if (!address) return false;
-    const normalized = address.toLowerCase().replace(/^::ffff:/, '');
-    return normalized === '::1' || /^127(?:\.\d{1,3}){3}$/.test(normalized);
-  } catch {
-    return false;
-  }
-}
 
 // Reads are open (the RPC config modal needs them without an admin
 // token), but the full URL only goes to readers the CORS policy already
@@ -59,8 +26,7 @@ app.get('/rpc-configs', async c => {
   try {
     const configs = await db.select().from(userRpcConfigs);
 
-    const origin = c.req.header('origin');
-    const seesFullUrl = origin ? isAllowedCorsOrigin(origin) : isLoopbackRemote(c);
+    const seesFullUrl = requestSeesFullUrl(c);
 
     return c.json({
       configs: configs.map(config => ({
@@ -83,12 +49,7 @@ app.get('/rpc-configs', async c => {
 // Writes use the opt-in gate: without ADMIN_TOKEN a local session can
 // still save its RPC config; with one configured, writes require it.
 app.post('/rpc-configs', requireAdminTokenIfConfigured, async c => {
-  let body: Record<string, unknown>;
-  try {
-    body = await c.req.json();
-  } catch {
-    return respondError(c, 400, 'invalid_json', 'Request body must be valid JSON');
-  }
+  const body = await readJsonBody<Record<string, unknown>>(c);
   // Destructured from Record<string, unknown>: every field is unknown and
   // must earn its type through the guards below.
   const { chainId, name, url, supportsHistory, maxEventRange } = body;

@@ -22,13 +22,14 @@ import { TxStatusBadge } from '@/components/ui/TxStatusBadge';
 import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
 import { getChainInfo, getChainName, getChainSymbol } from '@/config/chains';
 import { parseChainIdParam } from '@/utils/chainParam';
-import { redirectReplace } from '@/views/Home/Landing';
+import { chainRedirect } from '@/views/chainNav';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
 import { useLatestTransactions } from '@/services/chainRpc';
 import { useLatestBlocksFeed } from '@/services/homeFeed';
 import { useSignaturesBatched } from '@/services/signatures';
 import { txCursorFromBlock } from '@/utils/blockRpcData';
 import { formatHash, formatNumber, formatRelativeTime, formatValue } from '@/utils/format';
+import { errorMessage } from '@/utils/errorHandler';
 import {
   TxMethodCell,
   methodColumnStyle,
@@ -305,9 +306,8 @@ export default function TransactionsList() {
   // Chain switches replace the current entry via the shared Wave A helper;
   // the list legitimately drops a ?block= deep-link param on switch (the
   // seeded block belongs to the old chain).
-  const handleChainChange = (newChainId: number) => {
-    void redirectReplace(router, `/chain/${newChainId}/transactions`).catch(() => undefined);
-  };
+  const handleChainChange = (newChainId: number) =>
+    chainRedirect(router, newChainId, '/transactions', { replace: true });
 
   // Page title, hoisted so the header and the table's accessible caption
   // share one wording — the screen-reader name of the table is exactly
@@ -372,7 +372,7 @@ export default function TransactionsList() {
 
         {error && (
           <ErrorState
-            message={error instanceof Error ? error.message : 'Failed to fetch transactions'}
+            message={errorMessage(error, 'Failed to fetch transactions')}
             onRetry={refetch}
           />
         )}

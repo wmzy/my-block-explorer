@@ -28,7 +28,7 @@ import {
 } from '@/util/storageAccess';
 import { CUSTOM_ABI_STORAGE_PREFIX } from '@/util/storageKeys';
 import { useServiceDiscovery } from '@/hooks/ServiceDiscoveryContext';
-import { redirectReplace } from '@/views/Home/Landing';
+import { chainRedirect } from '@/views/chainNav';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
 import { parseChainIdParam } from '@/utils/chainParam';
 import { isAddressShape } from '@/utils/address';
@@ -1047,11 +1047,8 @@ export default function Contract() {
   // Chain switches replace the current entry via the shared Wave A helper,
   // keeping the address param so the same contract reloads on the target
   // chain without pushing a history entry.
-  const handleChainChange = (newChainId: number) => {
-    void redirectReplace(router, `/chain/${newChainId}/contract/${address ?? ''}`).catch(
-      () => undefined,
-    );
-  };
+  const handleChainChange = (newChainId: number) =>
+    chainRedirect(router, newChainId, `/contract/${address ?? ''}`, { replace: true });
 
   const isProxy = contractSource?.isProxy && !!contractSource?.implementationContract;
 

@@ -21,7 +21,7 @@ import { parseChainAndAddressRequest } from '../server/validation';
 import { requireAdminTokenIfConfigured } from '../middleware/admin-token';
 import { createRateLimiter } from '../middleware/rate-limit';
 import { toIsoTimestamp } from '../utils/dbTime';
-import { respondError } from '../utils/api-error';
+import { readJsonBody, respondError } from '../utils/api-error';
 import { LABEL_MAX_LENGTH, NOTE_MAX_LENGTH } from '../utils/labelContract';
 
 const logger = createLogger('labels-routes');
@@ -168,12 +168,7 @@ app.put('/chains/:chainId/labels/:address', requireAdminTokenIfConfigured, async
   const parsed = parseChainAndAddressRequest(c.req.param('chainId'), c.req.param('address'));
   if ('error' in parsed) return c.json(parsed, 400);
 
-  let body: unknown;
-  try {
-    body = await c.req.json();
-  } catch {
-    return respondError(c, 400, 'invalid_label', 'Request body must be valid JSON');
-  }
+  const body = await readJsonBody(c, 'invalid_label');
   const parsedBody = parseLabelBody(body);
   // Same code ('invalid_label') as the invalid-JSON arm above — same
   // envelope, so one endpoint answers one error shape.

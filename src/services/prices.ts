@@ -23,6 +23,8 @@ import { useEffect, useState } from 'react';
 import { getAddress } from 'viem';
 import { fetchWithTimeout } from '@/utils/fetchWithTimeout';
 import { createTtlLruCache } from '@/utils/ttlLruCache';
+import { chunk } from '@/utils/chunk';
+import { errorMessage } from '@/utils/errorHandler';
 
 /** One usable price observation: the USD value and when we fetched it. */
 export type UsdPriceSnapshot = { usd: number; fetchedAt: number };
@@ -154,7 +156,7 @@ const runChunk = async (
   } catch (error) {
     console.warn(
       `[prices] DefiLlama price request failed (${chunk.length} ids):`,
-      error instanceof Error ? error.message : error,
+      errorMessage(error),
     );
   }
 
@@ -174,17 +176,16 @@ const runChunk = async (
 // launchTokenBatch pattern).
 const launchChunks = (ids: readonly string[]): Map<string, Promise<UsdPriceSnapshot | null>> => {
   const promises = new Map<string, Promise<UsdPriceSnapshot | null>>();
-  const chunks: string[][] = [];
-  for (let index = 0; index < ids.length; index += MAX_IDS_PER_REQUEST) {
-    chunks.push(ids.slice(index, index + MAX_IDS_PER_REQUEST));
-  }
+  // Local name `batch`: the loop below keeps its per-chunk role without
+  // shadowing the imported chunk() util.
+  const batches = chunk(ids, MAX_IDS_PER_REQUEST);
 
-  for (const chunk of chunks) {
+  for (const batch of batches) {
     const reservations: Array<{
       id: string;
       resolve: (snapshot: UsdPriceSnapshot | null) => void;
     }> = [];
-    for (const id of chunk) {
+    for (const id of batch) {
       let resolveId: (snapshot: UsdPriceSnapshot | null) => void = () => {};
       const promise = new Promise<UsdPriceSnapshot | null>(resolve => {
         resolveId = resolve;
@@ -201,12 +202,12 @@ const launchChunks = (ids: readonly string[]): Map<string, Promise<UsdPriceSnaps
       // Safe unconditionally: fetchUsdPrices only registers an id that
       // is absent from this map, so each key still points at OUR
       // promise when the chunk settles.
-      for (const id of chunk) {
+      for (const id of batch) {
         inflight.delete(id);
       }
     };
 
-    void runChunk(chunk)
+    void runChunk(batch)
       .then(finish)
       .catch(() => finish(new Map()));
   }
@@ -596,10 +597,7 @@ const runHistoryRequest = async (
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     parsed = await response.json();
   } catch (error) {
-    console.warn(
-      '[prices] DefiLlama chart request failed:',
-      error instanceof Error ? error.message : error,
-    );
+    console.warn('[prices] DefiLlama chart request failed:', errorMessage(error));
     return { status: 'unavailable', reason: 'request failed' };
   }
 

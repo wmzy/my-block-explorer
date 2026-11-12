@@ -12,9 +12,22 @@ export type RetryOptions = {
 /**
  * The one unknown-error → string renderer: an Error's message, else the
  * value's string form.
+ *
+ * Optional `fallback` replaces the HAND-ROLLED
+ * `error instanceof Error ? error.message : '<fallback>'` ternaries that
+ * had spread across ~45 call sites: it kicks in only when the derived
+ * message is empty (Error with an empty message, or a falsy non-Error
+ * value). A truthy non-Error value still renders its own string form —
+ * `errorMessage(new Error('boom'), 'x') === 'boom'` and
+ * `errorMessage('boom', 'x') === 'boom'`, but `errorMessage(undefined, 'x')
+ * === 'x'` — real information always beats the fallback. Without a
+ * fallback the behavior is byte-identical to the historical one-arg form
+ * (`String(undefined)` stays `'undefined'`).
  */
-export function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+export function errorMessage(error: unknown, fallback?: string): string {
+  const message =
+    error instanceof Error ? error.message : String(fallback === undefined ? error : error ?? '');
+  return message.trim() === '' && fallback !== undefined ? fallback : message;
 }
 
 /**

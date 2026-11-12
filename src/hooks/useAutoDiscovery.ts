@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { setApiBase, getStoredManualBase, storeManualBase } from '@/util/apiBase';
+import { errorMessage } from '@/utils/errorHandler';
 import { fetchWithTimeout } from '@/utils/fetchWithTimeout';
 
 export const DEFAULT_PORTS = [8201, 8202, 8203, 8204, 8205] as const;
@@ -185,7 +186,7 @@ export function useAutoDiscovery() {
         return null;
       } catch (err) {
         if (attempt !== attemptRef.current) return null;
-        setError(err instanceof Error ? err.message : 'Discovery failed');
+        setError(errorMessage(err, 'Discovery failed'));
         setStatus('error');
         return null;
       } finally {
@@ -265,7 +266,7 @@ export function useAutoDiscovery() {
         return false;
       } catch (err) {
         if (attempt !== attemptRef.current) return false;
-        setError(err instanceof Error ? err.message : 'Invalid API URL');
+        setError(errorMessage(err, 'Invalid API URL'));
         return false;
       }
     },

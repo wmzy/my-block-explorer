@@ -27,7 +27,7 @@ import { Hono } from 'hono';
 import { createLogger } from '../server/logger';
 import { requireAdminToken, requireAdminTokenIfConfigured } from '../middleware/admin-token';
 import { createRateLimiter, getRateLimitStats } from '../middleware/rate-limit';
-import { createApiError } from '../utils/api-error';
+import { createApiError, readJsonBody } from '../utils/api-error';
 import {
   collectTargetStats,
   resolveUninstallTargets,
@@ -170,15 +170,11 @@ app.post('/ops/uninstall/preview', opsUninstallLimiter, async c => {
 // then the process tears everything down and exits; a second arm attempt
 // inside the window is a 409 (scheduleSelfDestruct is one-shot).
 app.post('/ops/uninstall', opsUninstallLimiter, async c => {
-  let body: unknown;
-  try {
-    body = await c.req.json();
-  } catch {
-    return c.json(
-      createApiError(400, 'invalid_json', 'Request body must be JSON: {"confirm": "uninstall"}.'),
-      400,
-    );
-  }
+  const body = await readJsonBody(
+    c,
+    'invalid_json',
+    'Request body must be JSON: {"confirm": "uninstall"}.',
+  );
   const confirm =
     typeof body === 'object' && body !== null
       ? (body as Record<string, unknown>).confirm

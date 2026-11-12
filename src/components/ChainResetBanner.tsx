@@ -12,6 +12,7 @@ import { Alert } from 'haze-ui';
 import { toast } from 'haze-ui';
 import { Button } from '@/components/ui/Button';
 import { ApiError } from '@/util/apiError';
+import { formatNumber } from '@/utils/format';
 import {
   acknowledgeChainReset,
   clearChainCachedData,
@@ -86,7 +87,7 @@ export function chainResetCopy(
   const headMove =
     currentHead === null
       ? ''
-      : ` The head moved backwards (block ${storedBlockNumber.toLocaleString()} → ${currentHead.toLocaleString()}), which usually means the node was reset (anvil/hardhat).`;
+      : ` The head moved backwards (block ${formatNumber(storedBlockNumber)} → ${formatNumber(currentHead)}), which usually means the node was reset (anvil/hardhat).`;
   return {
     lead: 'This chain looks like it was reset — cached contract data may be stale.',
     detail:

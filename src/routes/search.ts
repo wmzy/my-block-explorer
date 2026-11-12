@@ -15,6 +15,7 @@ import {
 import { detectSearchType, sanitizeInput, parseStrictInteger } from '../utils/validation';
 import { safeJsonResponse } from '../utils/serialization';
 import { respondError } from '../utils/api-error';
+import { errorMessage } from '../utils/errorHandler';
 import { createRateLimiter } from '../middleware/rate-limit';
 import { createLogger } from '../server/logger';
 
@@ -136,7 +137,7 @@ app.get('/search', searchRateLimiter, async c => {
       c,
       500,
       'internal_error',
-      error instanceof Error ? error.message : 'Search failed',
+      errorMessage(error, 'Search failed'),
     );
   }
 });
@@ -194,7 +195,7 @@ app.get('/chains/:chainId/search', async c => {
       c,
       500,
       'internal_error',
-      error instanceof Error ? error.message : 'Internal server error',
+      errorMessage(error, 'Internal server error'),
     );
   }
 });

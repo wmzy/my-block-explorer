@@ -15,9 +15,10 @@ import { addressVerdict, isAddressShape } from '../utils/address';
 // Naive-UTC-safe datetime normalization for the cached-contract rows
 // (same relative-import rule as above).
 import { toIsoTimestamp } from '../utils/dbTime';
+import { errorMessage } from '../utils/errorHandler';
 import { and, count, desc, eq, or, sql } from 'drizzle-orm';
 // Same relative-import rule applies to the database module (see above).
-import { db, contractSources, addressLabels } from '../database/init';
+import { db, contractSources, addressLabels, sqlCountTotal } from '../database/init';
 // Pure data + functions, no frontend-only imports: safe to bundle into the
 // backend graph (and through the Vite config's alias-less esbuild pass,
 // hence the relative path).
@@ -149,7 +150,7 @@ const createSearchService = (deps: SearchServiceDeps) => {
         query,
         chainId,
         found: false,
-        error: error instanceof Error ? error.message : 'Block search failed',
+        error: errorMessage(error, 'Block search failed'),
         degraded: true,
         degradedReasons: ['block-lookup-failed'],
       };
@@ -197,7 +198,7 @@ const createSearchService = (deps: SearchServiceDeps) => {
         query,
         chainId,
         found: false,
-        error: error instanceof Error ? error.message : 'Transaction search failed',
+        error: errorMessage(error, 'Transaction search failed'),
         degraded: true,
         degradedReasons: ['transaction-lookup-failed'],
       };
@@ -247,7 +248,7 @@ const createSearchService = (deps: SearchServiceDeps) => {
         query,
         chainId,
         found: false,
-        error: error instanceof Error ? error.message : 'Address search failed',
+        error: errorMessage(error, 'Address search failed'),
         degraded: true,
         degradedReasons: ['address-lookup-failed'],
       };
@@ -377,7 +378,7 @@ const createSearchService = (deps: SearchServiceDeps) => {
           query: trimmedQuery,
           chainId,
           found: false,
-          error: error instanceof Error ? error.message : 'Search failed',
+          error: errorMessage(error, 'Search failed'),
           degraded: true,
           degradedReasons: ['search-failed'],
         };
@@ -506,9 +507,9 @@ export async function listCachedContracts(options: {
       verificationSource: row.verificationSource ?? null,
       updatedAt: toIsoTimestamp(row.lastUpdated),
     })),
-    // drizzle's count() casts DuckDB's BIGINT to a JS number (same note
-    // as the transactions list).
-    total: countResult[0]?.value || 0,
+    // drizzle count rows unwrap through sqlCountTotal (the count-shape
+    // note lives there).
+    total: sqlCountTotal(countResult),
     q: q !== '' ? q : null,
     offset,
   };

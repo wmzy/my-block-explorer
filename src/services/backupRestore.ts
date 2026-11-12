@@ -31,7 +31,7 @@ import {
 } from '@/util/localBackup';
 import { STORAGE_KEY_MANIFEST, type StorageKeyManifestEntry } from '@/util/storageKeys';
 import { readStorageItem } from '@/util/storageAccess';
-import { sleep } from '@/utils/errorHandler';
+import { errorMessage, sleep } from '@/utils/errorHandler';
 
 export const BACKUP_FILENAME = 'explorer-backup.json';
 
@@ -40,9 +40,6 @@ export const BACKUP_FILENAME = 'explorer-backup.json';
 // 429 mid-restore waits one refill period and retries that chain once
 // before its failure is reported.
 const CHAIN_POST_RETRY_MS = 12_000;
-
-const messageOf = (error: unknown): string =>
-  error instanceof Error ? error.message : 'unknown error';
 
 /**
  * Gather every exportable part. Expected failures land in notes (honest
@@ -81,7 +78,7 @@ export async function collectBackupParts(): Promise<BackupParts> {
         'labels skipped — admin token required (save it under "Admin token", then retry the export)',
       );
     } else {
-      note(`labels skipped — ${messageOf(error)}`);
+      note(`labels skipped — ${errorMessage(error, 'unknown error')}`);
     }
   }
 
@@ -131,7 +128,7 @@ export async function collectBackupParts(): Promise<BackupParts> {
     if (isBackendUnreachable(error)) {
       note('server data skipped — backend unreachable');
     } else {
-      note(`custom chains skipped — ${messageOf(error)}`);
+      note(`custom chains skipped — ${errorMessage(error, 'unknown error')}`);
     }
   }
 
@@ -323,7 +320,7 @@ export async function executeRestore(plan: RestorePlan): Promise<RestoreReport> 
       localStorage.setItem(write.key, write.value);
       report.storage.written += 1;
     } catch (error) {
-      report.storage.failures.push({ key: write.key, message: messageOf(error) });
+      report.storage.failures.push({ key: write.key, message: errorMessage(error, 'unknown error') });
     }
   }
 
@@ -337,7 +334,7 @@ export async function executeRestore(plan: RestorePlan): Promise<RestoreReport> 
       } else {
         report.labels.failures.push({
           address: `${item.address} (chain ${item.chainId})`,
-          message: messageOf(error),
+          message: errorMessage(error, 'unknown error'),
         });
       }
     }
@@ -364,7 +361,7 @@ export async function executeRestore(plan: RestorePlan): Promise<RestoreReport> 
       if (error instanceof ApiError && error.status === 403) {
         report.chains.adminDenied = true;
       } else {
-        report.chains.failures.push({ name, message: messageOf(error) });
+        report.chains.failures.push({ name, message: errorMessage(error, 'unknown error') });
       }
     }
   }

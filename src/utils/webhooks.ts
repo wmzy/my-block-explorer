@@ -20,6 +20,9 @@
 //   timeout, non-2xx status) collapses into { ok: false, reason } and
 //   the caller records it on the subscription row.
 import { decodeEventLog, getEventSelector, parseAbiItem, type AbiEvent, type Log } from 'viem';
+// Dependency-free leaf (no node-only imports) — safe for this module's
+// dependency-light contract.
+import { errorMessage } from './errorHandler';
 
 // One delivery attempt gets 5 seconds; sendWebhookWithRetry then gets
 // exactly one more (the assignment's "timeout 5s, ONE retry").
@@ -294,7 +297,7 @@ export const fetchWebhookSender: WebhookSender = async (url, body, timeoutMs) =>
     }
     return {
       ok: false,
-      reason: shortWebhookReason(err instanceof Error ? err.message : 'network error'),
+      reason: shortWebhookReason(errorMessage(err, 'network error')),
     };
   }
 };

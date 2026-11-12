@@ -22,7 +22,6 @@ import {
   cellText,
   formatAddress,
   formatBigInt,
-  formatEth,
   formatFixedDecimals,
   formatHash,
   formatNativeDisplay,
@@ -68,7 +67,6 @@ describe('exact wei/token formatting', () => {
   it('keeps ordinary amounts byte-identical to the old float path', () => {
     // Regression guard: the common cases must not move.
     expect(formatTokenAmount(1234500000000000000n, 18)).toBe('1.2345');
-    expect(formatEth(ONE_ETH)).toBe('1.0000');
     expect(formatValue(2n * ONE_ETH, 'ETH')).toBe('2.0000 ETH');
     expect(formatValue(0n, 'ETH')).toBe('0 ETH');
     expect(formatValue(99999999999999n, 'ETH')).toBe('<0.0001 ETH');
@@ -108,25 +106,10 @@ describe('exact wei/token formatting', () => {
   });
 });
 
-describe('formatEth/formatFixedDecimals precision guards', () => {
+describe('formatFixedDecimals precision guards', () => {
   it('renders zero displayed digits without a trailing dot', () => {
     expect(formatFixedDecimals(ONE_ETH, 18, 0)).toBe('1');
     expect(formatFixedDecimals(123456789n, 8, 0)).toBe('1');
-    expect(formatEth(ONE_ETH, 0)).toBe('1');
-  });
-
-  it('caps display precision at the native unit instead of throwing', () => {
-    // decimals > 18 asks for sub-wei precision that does not exist;
-    // a negative BigInt exponent used to throw.
-    expect(formatEth(2n * ONE_ETH, 20)).toBe('2.000000000000000000');
-    expect(formatEth(ONE_ETH, 100)).toBe('1.000000000000000000');
-  });
-
-  it('falls back to the default precision on non-integer input', () => {
-    expect(formatEth(ONE_ETH, 4.5)).toBe('1.0000');
-    // Negative display precision is nonsense input; the clamp reads it
-    // as zero displayed digits rather than throwing.
-    expect(formatEth(ONE_ETH, -1)).toBe('1');
   });
 });
 

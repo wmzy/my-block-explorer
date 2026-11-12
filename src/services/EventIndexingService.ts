@@ -11,6 +11,8 @@ import { decodeEventLog, TransactionReceiptNotFoundError, type Abi, type Log } f
 import { getContractCreationBlock } from '../utils/events';
 import { inputToStoredValue, resolveToBlock } from '../utils/blockTagUtils';
 import { errorMessage, sleep } from '../utils/errorHandler';
+import { chunk } from '../utils/chunk';
+import { formatNumber } from '../utils/format';
 import { withTimeoutOrNull } from '../utils/withTimeout';
 // Relative path on purpose: vite.config.ts bundles the api-app backend graph
 // with esbuild, which does not resolve the '@/' alias for runtime imports.
@@ -189,6 +191,10 @@ const decodeLogs = (logs: Log[], abi: Abi, blockTimestamps: Map<bigint, number |
   }> = [];
 
   for (const log of logs) {
+    // Decode-failure defaults: a log whose decode throws still lands as a
+    // row, flagged Unknown with empty args (the historical catch shape).
+    let eventName = 'Unknown';
+    let decodedArgs = '{}';
     try {
       const result = decodeEventLog({ abi, data: log.data, topics: log.topics, strict: false });
       if (!result) continue;
@@ -199,39 +205,26 @@ const decodeLogs = (logs: Log[], abi: Abi, blockTimestamps: Map<bigint, number |
           args[k] = typeof v === 'bigint' ? v.toString() : String(v);
         }
       }
-
-      decoded.push({
-        blockNumber: log.blockNumber ?? 0n,
-        blockTimestamp: blockTimestamps.get(log.blockNumber ?? 0n) ?? null,
-        transactionHash: log.transactionHash ?? '0x',
-        transactionIndex: log.transactionIndex ?? 0,
-        logIndex: log.logIndex ?? 0,
-        eventName: result.eventName ?? 'Unknown',
-        eventSignature: (log.topics[0] as string) ?? '',
-        decodedArgs: JSON.stringify(args),
-        topic0: (log.topics[0] as string) ?? '',
-        topic1: (log.topics[1] as string) ?? null,
-        topic2: (log.topics[2] as string) ?? null,
-        topic3: (log.topics[3] as string) ?? null,
-        data: log.data ?? '0x',
-      });
+      eventName = result.eventName ?? 'Unknown';
+      decodedArgs = JSON.stringify(args);
     } catch {
-      decoded.push({
-        blockNumber: log.blockNumber ?? 0n,
-        blockTimestamp: blockTimestamps.get(log.blockNumber ?? 0n) ?? null,
-        transactionHash: log.transactionHash ?? '0x',
-        transactionIndex: log.transactionIndex ?? 0,
-        logIndex: log.logIndex ?? 0,
-        eventName: 'Unknown',
-        eventSignature: (log.topics[0] as string) ?? '',
-        decodedArgs: '{}',
-        topic0: (log.topics[0] as string) ?? '',
-        topic1: (log.topics[1] as string) ?? null,
-        topic2: (log.topics[2] as string) ?? null,
-        topic3: (log.topics[3] as string) ?? null,
-        data: log.data ?? '0x',
-      });
+      // Decode failed: the defaults above stand.
     }
+    decoded.push({
+      blockNumber: log.blockNumber ?? 0n,
+      blockTimestamp: blockTimestamps.get(log.blockNumber ?? 0n) ?? null,
+      transactionHash: log.transactionHash ?? '0x',
+      transactionIndex: log.transactionIndex ?? 0,
+      logIndex: log.logIndex ?? 0,
+      eventName,
+      eventSignature: (log.topics[0] as string) ?? '',
+      decodedArgs,
+      topic0: (log.topics[0] as string) ?? '',
+      topic1: (log.topics[1] as string) ?? null,
+      topic2: (log.topics[2] as string) ?? null,
+      topic3: (log.topics[3] as string) ?? null,
+      data: log.data ?? '0x',
+    });
   }
   return decoded;
 };
@@ -303,18 +296,19 @@ const insertEvents = async (
     indexedAt: new Date(),
   }));
 
-  for (let i = 0; i < rows.length; i += INSERT_CHUNK_SIZE) {
-    const chunk = rows.slice(i, i + INSERT_CHUNK_SIZE);
+  // Loop-local name `batch`: keeps the per-chunk role without shadowing
+  // the imported chunk() util.
+  for (const batch of chunk(rows, INSERT_CHUNK_SIZE)) {
     try {
-      await insertEventChunk(chunk);
+      await insertEventChunk(batch);
     } catch (err) {
       // A chunk can fail for one bad row (the batch aborts atomically):
       // retry row-by-row so the good rows still land.
       logger.warn(
-        { chainId, contractAddress, rowCount: chunk.length, err },
+        { chainId, contractAddress, rowCount: batch.length, err },
         'Event chunk insert failed; retrying rows individually',
       );
-      for (const row of chunk) {
+      for (const row of batch) {
         try {
           await insertEventChunk([row]);
         } catch (rowErr) {
@@ -1664,7 +1658,7 @@ export const createRangeAll = async (
   if (spanBlocks > FULL_HISTORY_GATE_BLOCKS && options?.confirmFullHistory !== true) {
     return {
       success: false,
-      error: `Indexing the full history spans about ${spanBlocks.toLocaleString()} blocks — confirm with confirmFullHistory: true`,
+      error: `Indexing the full history spans about ${formatNumber(spanBlocks)} blocks — confirm with confirmFullHistory: true`,
       reason: 'full-history-unconfirmed',
       spanBlocks,
       fromBlock,

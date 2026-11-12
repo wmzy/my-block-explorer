@@ -64,6 +64,10 @@ const mocks = vi.hoisted(() => {
 
 vi.mock('@/database/init', () => ({
   db: { select: () => mocks.dbSelect() },
+  // SearchService's count queries route through this helper; the mock
+  // never executes them (dbSelect serves canned rows) but the export
+  // must exist for the import to bind.
+  sqlCountTotal: (rows: ReadonlyArray<{ value: number }>) => rows[0]?.value || 0,
   contractSources: {
     chainId: { name: 'chain_id' },
     address: { name: 'address' },

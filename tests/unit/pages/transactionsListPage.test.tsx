@@ -48,7 +48,7 @@ vi.mock('@/config/chains', () => ({
   getSortedChains: () => [{ id: 1, name: 'Ethereum' }],
 }));
 
-// Real formatters are pure functions; keep them (formatEth included) instead
+// Real formatters are pure functions; keep them all instead
 // of a hand-listed factory that silently breaks when the view imports more.
 // Only relative time is pinned for determinism.
 vi.mock('@/utils/format', async importOriginal => {

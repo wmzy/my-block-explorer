@@ -8,6 +8,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { hexToBigInt, pad, type Hex } from 'viem';
 import { clampRange, shortSlot, type ResolvedColumn } from './columnModel';
 import type { StorageType } from '@/types/storage';
+import { formatNumber } from '@/utils/format';
 import { arrayElementPlacement, slotAdd } from '@/utils/storageSlots';
 import { buildCastStorageCommand, buildViemReadSnippet, exprAdd } from '@/utils/storageSlotCode';
 import { useRefreshStorageValues, useSlotValue } from '@/services/storageValues';
@@ -371,7 +372,7 @@ function LiveArrayColumn(props: StorageColumnProps & { isRoot: boolean; lengthSl
           <span className={lengthLineStyle}>
             length: {length}
             {length > HUGE_ARRAY
-              ? ` (huge — first ${HUGE_ARRAY.toLocaleString('en-US')} addressable)`
+              ? ` (huge — first ${formatNumber(HUGE_ARRAY)} addressable)`
               : ''}
           </span>
         )}

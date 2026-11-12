@@ -676,14 +676,27 @@ export class ContractSourceService {
         );
 
         try {
+          // Receipt fetch shared by both branches below: a creation tx
+          // checks the receipt's contractAddress, any other tx scans its
+          // logs (and, on a hit, its trace). Defined after the
+          // typeof-tx string guard at the loop top, so tx.hash is real.
+          const getReceipt = createRetryableRpcCall(async () => {
+            return await client.getTransactionReceipt({ hash: tx.hash });
+          }, chainId);
+          // Every confirmation path below reports the same summary row
+          // for this tx — one literal instead of three copies.
+          const found = (receipt: Awaited<ReturnType<typeof getReceipt>>) => ({
+            txHash: tx.hash,
+            blockNumber: Number(block.number),
+            creator: tx.from,
+            timestamp: Number(block.timestamp),
+            gasUsed: receipt.gasUsed,
+            gasPrice: tx.gasPrice ?? 0n,
+          });
+
           // Contract creation tx: to is null or undefined
           if (tx.to === null || tx.to === undefined) {
             logger.info({ txHash: tx.hash }, 'Found contract creation tx');
-
-            // Fetch the receipt to confirm the contract address
-            const getReceipt = createRetryableRpcCall(async () => {
-              return await client.getTransactionReceipt({ hash: tx.hash });
-            }, chainId);
 
             const receipt = await getReceipt();
             logger.info(
@@ -701,14 +714,7 @@ export class ContractSourceService {
                 'Contract creation transaction found',
               );
 
-              return {
-                txHash: tx.hash,
-                blockNumber: Number(block.number),
-                creator: tx.from,
-                timestamp: Number(block.timestamp),
-                gasUsed: receipt.gasUsed,
-                gasPrice: tx.gasPrice ?? 0n,
-              };
+              return found(receipt);
             } else {
               logger.info(
                 {
@@ -722,10 +728,6 @@ export class ContractSourceService {
             // Check whether a factory contract or similar created it
             logger.info('Checking if tx creates contract via factory or internal transaction');
 
-            const getReceipt = createRetryableRpcCall(async () => {
-              return await client.getTransactionReceipt({ hash: tx.hash });
-            }, chainId);
-
             const receipt = await getReceipt();
 
             // Method 1: look for events related to our target contract in the tx logs
@@ -736,14 +738,7 @@ export class ContractSourceService {
             if (hasContractEvent) {
               logger.info({ txHash: tx.hash }, 'Found factory/internal creation');
               logger.info({ contractAddress }, 'Transaction created events for contract');
-              return {
-                txHash: tx.hash,
-                blockNumber: Number(block.number),
-                creator: tx.from,
-                timestamp: Number(block.timestamp),
-                gasUsed: receipt.gasUsed,
-                gasPrice: tx.gasPrice ?? 0n,
-              };
+              return found(receipt);
             }
 
             // Method 2: check whether a CREATE2 or CREATE opcode created this contract
@@ -781,14 +776,7 @@ export class ContractSourceService {
 
               if (findContractCreation(trace)) {
                 logger.info({ txHash: tx.hash }, 'Found internal contract creation');
-                return {
-                  txHash: tx.hash,
-                  blockNumber: Number(block.number),
-                  creator: tx.from,
-                  timestamp: Number(block.timestamp),
-                  gasUsed: receipt.gasUsed,
-                  gasPrice: tx.gasPrice ?? 0n,
-                };
+                return found(receipt);
               }
             } catch (traceError) {
               logger.info({ err: traceError }, 'debug_traceTransaction not supported or failed');

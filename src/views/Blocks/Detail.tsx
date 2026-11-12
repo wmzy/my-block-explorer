@@ -18,7 +18,7 @@ import { linkStyle } from '@/components/ui/DataTable';
 import { ExternalLinks } from '@/components/ui/ExternalLinks';
 import { getChainInfo, getChainName, getChainSymbol, getChainType } from '@/config/chains';
 import { getExternalBlockLinks } from '@/config/externalTools';
-import { redirectReplace } from '@/views/Home/Landing';
+import { chainRedirect } from '@/views/chainNav';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
 import { useBlockByNumber } from '@/services/chainRpc';
 import { finalityLabelFor, useFinalityHeads } from '@/services/blocks';
@@ -31,6 +31,7 @@ import {
   formatRelativeTime,
 } from '@/utils/format';
 import { parseBlockNumberParam, parseChainIdParam } from '@/utils/chainParam';
+import { errorMessage } from '@/utils/errorHandler';
 import { deriveSlotEpochFromIso } from '@/utils/slotEpoch';
 import { createRpcClient } from '@/utils/realTimeData';
 import { computeBlockNav } from './nav';
@@ -38,14 +39,14 @@ import InternalTxnsSection from './InternalTxnsSection';
 
 const formatBytes = (bytes?: number): string => {
   if (!bytes) return 'N/A';
-  return `${bytes.toLocaleString()} bytes`;
+  return `${formatNumber(bytes)} bytes`;
 };
 
 // Future-block polling cadence and budget: while the requested number is
 // beyond the chain head, the head is re-probed every 4 s; after ~5 minutes
 // the automatic probing stops (the manual button stays available).
-export const FUTURE_BLOCK_POLL_INTERVAL_MS = 4_000;
-export const FUTURE_BLOCK_POLL_BUDGET_MS = 5 * 60_000;
+const FUTURE_BLOCK_POLL_INTERVAL_MS = 4_000;
+const FUTURE_BLOCK_POLL_BUDGET_MS = 5 * 60_000;
 
 // Per-blob gas (EIP-4844): each blob costs exactly 131,072 gas. Expressing
 // blob usage as a blob count is schedule-independent — the original
@@ -404,9 +405,8 @@ export default function BlockDetail() {
   // different data. Keeping the number would silently show that unrelated
   // block as if it were the one being read. Land on the new chain's home
   // instead: deterministic and honest (the user re-picks a block there).
-  const handleChainChange = (newChainId: number) => {
-    void redirectReplace(router, `/chain/${newChainId}`).catch(() => undefined);
-  };
+  const handleChainChange = (newChainId: number) =>
+    chainRedirect(router, newChainId, '', { replace: true });
 
   // Finality label for the viewed block (same semantics as the list rows):
   // unknown heads render no badge — absence of data is not "pending" — and
@@ -611,9 +611,7 @@ export default function BlockDetail() {
         )}
 
         {!invalidNumber && error && !loading && headChecked && !futureBlock && (
-          <ErrorState
-            message={error instanceof Error ? error.message : 'Failed to fetch block information'}
-          />
+          <ErrorState message={errorMessage(error, 'Failed to fetch block information')} />
         )}
 
         {!invalidNumber && !loading && !error && blockInfo && (

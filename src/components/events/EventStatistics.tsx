@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { css, cx } from '@linaria/core';
 import type { Address } from 'viem';
 import { get } from '@/util/http';
+import { formatNumber } from '@/utils/format';
 import {
   EVENT_RANGES_POLL_INTERVAL,
   useEventRanges,
@@ -347,7 +348,7 @@ export const EventStatistics = ({
       <div className={metricStyle}>
         Indexing coverage:
         <span className={metricValueStyle}>
-          {coverage.coveredBlocks.toLocaleString()} /{coverage.spanBlocks.toLocaleString()}
+          {formatNumber(coverage.coveredBlocks)} /{formatNumber(coverage.spanBlocks)}
         </span>
         ({coverage.coverage.toFixed(1)}
         %)
@@ -365,7 +366,7 @@ export const EventStatistics = ({
       <div className={metricStyle}>
         Events:
         <span className={metricValueStyle}>
-          {stats ? (stats.totalEventsIndexed || 0).toLocaleString() : '—'}
+          {stats ? formatNumber(stats.totalEventsIndexed || 0) : '—'}
         </span>
       </div>
 

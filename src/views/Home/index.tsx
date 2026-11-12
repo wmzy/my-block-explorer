@@ -37,7 +37,8 @@ import {
 import { describeBlockProducer } from '@/utils/blockRpcData';
 import { gasTransferCostUsd, useNativeUsdPrice } from '@/services/prices';
 import { UsdValue } from '@/components/ui/UsdValue';
-import { redirectReplace, rememberChainId } from './Landing';
+import { rememberChainId } from './Landing';
+import { chainRedirect } from '../chainNav';
 import { UnsupportedChainState } from './UnsupportedChainState';
 import { ChainResetBanner } from '@/components/ChainResetBanner';
 import Watchlist from './Watchlist';
@@ -627,7 +628,7 @@ function GasPanel({ feed, chainId }: { feed: GasFeedState; chainId: number }) {
                       {tiers && nativePrice != null && (
                         <span
                           className={gasTierUsdStyle}
-                          title={`≈ cost of a plain ${TRANSFER_GAS_UNITS.toLocaleString()}-gas transfer at this tier (base fee + tip)`}
+                          title={`≈ cost of a plain ${formatNumber(TRANSFER_GAS_UNITS)}-gas transfer at this tier (base fee + tip)`}
                         >
                           <UsdValue
                             usd={gasTransferCostUsd(
@@ -811,9 +812,8 @@ export default function Home() {
 
   // Chain switches replace the current entry (shared Wave A helper) so
   // hopping between chains never pile up history entries.
-  const handleChainChange = (newChainId: number) => {
-    void redirectReplace(router, `/chain/${newChainId}`).catch(() => undefined);
-  };
+  const handleChainChange = (newChainId: number) =>
+    chainRedirect(router, newChainId, '', { replace: true });
 
   // Unknown chain deep link (an id the config cannot resolve, e.g.
   // /chain/999999): an explicit, honest state instead of the old silent

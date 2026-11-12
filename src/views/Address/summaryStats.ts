@@ -3,7 +3,7 @@
 // tx rows the Transactions tab already holds — the current window's
 // DISCOVERED set, never a lifetime claim (the view's caveat line carries
 // that honesty; these numbers must never be presented without it).
-import { formatNativeDisplay } from '@/utils/format';
+import { formatNativeDisplay, formatNumber } from '@/utils/format';
 
 // Minimal projection of the serialized tx rows (TxRecord in ./index):
 // blockNumber/value arrive as strings over JSON. `toAddress` is null (or
@@ -99,5 +99,5 @@ export function formatSeenBoundary(
 ): string {
   return seen.timestamp !== undefined
     ? formatDateTime(seen.timestamp)
-    : `Block ${seen.blockNumber.toLocaleString('en-US')}`;
+    : `Block ${formatNumber(seen.blockNumber)}`;
 }

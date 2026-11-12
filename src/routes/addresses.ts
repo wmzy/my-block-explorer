@@ -24,6 +24,7 @@ const logger = createLogger('addresses-routes');
 import { getValidatedChainId, getValidatedAddress } from '../server/validation';
 import { parsePaginationParams } from '../utils/validation';
 import { csvAttachmentHeaders } from '../utils/csv';
+import { formatNumber } from '../utils/format';
 import { formatTransactionForApi, safeJsonResponse } from '../utils/serialization';
 import {
   invalidLimitResponse,
@@ -393,7 +394,7 @@ app.get(
           c,
           400,
           'too_many_rows',
-          `Export limited to ${ADDRESS_EXPORT_MAX_ROWS.toLocaleString()} rows; ${result.total.toLocaleString()} discovered — narrow the window`,
+          `Export limited to ${formatNumber(ADDRESS_EXPORT_MAX_ROWS)} rows; ${formatNumber(result.total)} discovered — narrow the window`,
         );
       }
 

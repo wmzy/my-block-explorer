@@ -61,9 +61,10 @@ describe('describeSubmitError (shared verify taxonomy)', () => {
     expect(describeSubmitError(new Error('socket hung up'), sourcifyOptions)).toBe(
       'socket hung up',
     );
-    expect(describeSubmitError('not an error', sourcifyOptions)).toBe(
-      'Verification request failed.',
-    );
-    expect(describeSubmitError('not an error', manualRemoveOptions)).toBe('Request failed.');
+    // A thrown non-Error keeps its own string form (errorMessage's
+    // contract: real information always beats the fallback) — only a
+    // falsy or empty-message failure reaches the action-noun fallback.
+    expect(describeSubmitError('not an error', sourcifyOptions)).toBe('not an error');
+    expect(describeSubmitError('', manualRemoveOptions)).toBe('Request failed.');
   });
 });

@@ -9,9 +9,11 @@ import { bigintJsonReplacer } from './jsonReplacer';
 const logger = createLogger('serialization');
 
 /**
- * Custom JSON serialization handling BigInt and circular references
+ * Custom JSON serialization handling BigInt and circular references.
+ * Not exported: safeJsonResponse (below) is its sole consumer and the
+ * module's public surface.
  */
-export function serializeForJson(obj: unknown): unknown {
+function serializeForJson(obj: unknown): unknown {
   if (obj === null || obj === undefined) {
     return obj;
   }

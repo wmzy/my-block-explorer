@@ -20,10 +20,11 @@ import { TableSkeleton } from '@/components/ui/LoadingState';
 import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
 import { getChainInfo, getChainName } from '@/config/chains';
 import { parseChainIdParam } from '@/utils/chainParam';
-import { redirectReplace } from '@/views/Home/Landing';
+import { chainRedirect } from '@/views/chainNav';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
 import { CONTRACT_DIRECTORY_PAGE_SIZE, useContractDirectory } from '@/services/contractDirectory';
 import { formatNumber, formatRelativeTime } from '@/utils/format';
+import { errorMessage } from '@/utils/errorHandler';
 
 // Header row: title on the left, the filter input and Refresh on the
 // right (Transactions/List toolbar family).
@@ -121,9 +122,8 @@ export default function ContractsList() {
   // Chain switches replace the current entry via the shared Wave A helper
   // (Transactions/List pattern); a ?q= filter legitimately survives — the
   // directory of another chain may well hold the same name.
-  const handleChainChange = (newChainId: number) => {
-    void redirectReplace(router, `/chain/${newChainId}/contracts`).catch(() => undefined);
-  };
+  const handleChainChange = (newChainId: number) =>
+    chainRedirect(router, newChainId, '/contracts', { replace: true });
 
   const page = Math.floor(offset / CONTRACT_DIRECTORY_PAGE_SIZE) + 1;
   const hasPrev = offset > 0;
@@ -186,7 +186,7 @@ export default function ContractsList() {
 
         {error && (
           <ErrorState
-            message={error instanceof Error ? error.message : 'Failed to fetch contracts'}
+            message={errorMessage(error, 'Failed to fetch contracts')}
             onRetry={refetch}
           />
         )}

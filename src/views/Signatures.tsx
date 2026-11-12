@@ -17,7 +17,6 @@
 import { useState } from 'react';
 import type { KeyboardEvent } from 'react';
 import { css } from '@linaria/core';
-import { navigate } from '@native-router/core';
 import { useDebouncedQueryParam } from '@/util/useDebouncedQueryParam';
 import { useSearch, useSetSearch, useRouter } from '@native-router/react';
 import { z } from 'zod';
@@ -34,7 +33,9 @@ import { useSignatureLookup } from '@/services/signatures';
 import type { ResolvedSignatures, SignatureLookup } from '@/services/signatures';
 import { CopyButton } from '@/components/ui/CopyButton';
 import { isBackendUnreachable } from '@/util/http';
+import { errorMessage } from '@/utils/errorHandler';
 import { readRememberedChainId } from '@/views/Home/Landing';
+import { chainRedirect } from '@/views/chainNav';
 
 // ---------------------------------------------------------------------------
 // Input classification (pure, exported for tests)
@@ -294,9 +295,7 @@ function LookupSection({
           />
         ) : (
           <ErrorState
-            message={
-              lookup.error instanceof Error ? lookup.error.message : 'Signature lookup failed'
-            }
+            message={errorMessage(lookup.error, 'Signature lookup failed')}
             onRetry={() => void lookup.refetch()}
           />
         )
@@ -339,9 +338,7 @@ export default function SignaturesView() {
   // Not chain-scoped, but the topbar still is (Sql console pattern): the
   // remembered chain — never a hard-coded one — provides that context.
   const navChainId = readRememberedChainId() ?? 1;
-  const handleNavChainChange = (chainId: number) => {
-    navigate(router, `/chain/${chainId}`).catch(() => undefined);
-  };
+  const handleNavChainChange = (chainId: number) => chainRedirect(router, chainId);
 
   // The ?q= input (shared directory debounce): the debounced write or an
   // Enter (commit) replaces the URL entry so typing does not spam history.

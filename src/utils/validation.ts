@@ -55,14 +55,6 @@ export function isValidBlockNumber(blockNumber: string | number): boolean {
 }
 
 /**
- * Validate a chain ID
- */
-export function isValidChainId(chainId: string | number): boolean {
-  const num = parseStrictInteger(chainId);
-  return num !== null && num > 0;
-}
-
-/**
  * Options for parsePaginationParams. Every row encodes an observed
  * divergence between the four former per-route implementations; the
  * defaults are the blocks/transactions/contracts majority.
@@ -267,62 +259,6 @@ export function sanitizeInput(input: string): string {
   }
 
   return cleaned;
-}
-
-/**
- * Validate a time range
- */
-export function validateTimeRange(from?: string, to?: string) {
-  if (!from && !to) return { from: undefined, to: undefined };
-
-  const fromDate = from ? new Date(from) : undefined;
-  const toDate = to ? new Date(to) : undefined;
-
-  if (from && isNaN(fromDate!.getTime())) {
-    throw new Error('Invalid from date format');
-  }
-
-  if (to && isNaN(toDate!.getTime())) {
-    throw new Error('Invalid to date format');
-  }
-
-  if (fromDate && toDate && fromDate > toDate) {
-    throw new Error('From date must be before to date');
-  }
-
-  return { from: fromDate, to: toDate };
-}
-
-/**
- * Validate a block range
- */
-export function validateBlockRange(fromBlock?: string | number, toBlock?: string | number) {
-  if (fromBlock === undefined && toBlock === undefined) {
-    return { fromBlock: undefined, toBlock: undefined };
-  }
-
-  // Absence is decided by undefined, never by truthiness: block 0 is
-  // genesis, a real bound. The old `fromBlock ? … : undefined` guard
-  // dropped a 0 from bound (so the span silently widened to the head) and
-  // skipped the from>to check whenever either side was 0, letting
-  // validateBlockRange(10, 0) return an inverted range.
-  const from = fromBlock === undefined ? undefined : parseStrictInteger(fromBlock);
-  const to = toBlock === undefined ? undefined : parseStrictInteger(toBlock);
-
-  if (from !== undefined && (from === null || from < 0)) {
-    throw new Error('Invalid from block number');
-  }
-
-  if (to !== undefined && (to === null || to < 0)) {
-    throw new Error('Invalid to block number');
-  }
-
-  // Past the guards both bounds are undefined or a non-negative integer.
-  if (from !== undefined && to !== undefined && from !== null && to !== null && from > to) {
-    throw new Error('From block must be before to block');
-  }
-
-  return { fromBlock: from ?? undefined, toBlock: to ?? undefined };
 }
 
 /**

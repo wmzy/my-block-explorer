@@ -14,7 +14,6 @@
 // hidden below 768px, so the header points keyboard users at Ctrl/Cmd+K
 // and everyone else at the cards below.
 import { css } from '@linaria/core';
-import { navigate } from '@native-router/core';
 import { TypedLink, useRouter } from '@native-router/react';
 
 import TopNavigation from '@/components/TopNavigation';
@@ -23,6 +22,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
 import { getChainName } from '@/config/chains';
 import { readRememberedChainId } from '@/views/Home/Landing';
+import { chainRedirect } from '@/views/chainNav';
 
 // --- Pure card model (exported for the unit tests) ---
 
@@ -258,9 +258,7 @@ export default function Tools() {
   // console, Ops, Search).
   const remembered = readRememberedChainId();
   const navChainId = remembered ?? 1;
-  const handleNavChainChange = (chainId: number) => {
-    navigate(router, `/chain/${chainId}`).catch(() => undefined);
-  };
+  const handleNavChainChange = (chainId: number) => chainRedirect(router, chainId);
 
   const cards = buildToolCards(
     remembered,

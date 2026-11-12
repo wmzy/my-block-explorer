@@ -43,35 +43,6 @@ export function formatFixedDecimals(
   return `${negative ? '-' : ''}${whole}${fractionDigits > 0 ? `.${fractionText}` : ''}`;
 }
 
-/**
- * Format an ether value.
- *
- * `decimals` is the DISPLAYED precision. The old implementation
- * round-tripped viem's exact string through parseFloat().toFixed(), which
- * collapsed distinct amounts past 2^53 (10,000,000,000,000,001 and
- * 10,000,000,000,000,000 wei both read "0.0000" here), printed "1e+21"
- * for huge figures, and rendered a NONZERO amount below the display floor
- * as an exact "0.0000". A nonzero amount that rounds to zero now renders
- * as the honest "<0.0001" floor — the same contract formatValue below
- * already used.
- */
-export function formatEth(value: bigint | string, decimals = 4): string {
-  const wei = BigInt(value);
-  // Display precision is capped at the native unit's 18 digits: more
-  // asks for sub-wei precision that does not exist (and a negative
-  // BigInt exponent throws). Non-integer input falls back to the
-  // default precision; negative or over-18 input clamps into range.
-  const precision =
-    Number.isInteger(decimals) ? Math.min(Math.max(decimals, 0), 18) : 4;
-  if (wei === 0n) return precision === 0 ? '0' : `0.${'0'.repeat(precision)}`;
-  if (precision === 0) return formatFixedDecimals(wei, 18, 0) ?? '';
-  // 1/10^precision native unit in wei — the display floor, compared exactly.
-  if (wei > 0n && wei < 10n ** BigInt(18 - precision)) {
-    return `<0.${'0'.repeat(precision - 1)}1`;
-  }
-  return formatFixedDecimals(wei, 18, precision) ?? '';
-}
-
 // Shared native-token value display for the tx surfaces (Home feed, tx
 // list, tx detail, internal transfers): one display contract instead of
 // per-view copies. Zero renders exactly; dust below the 0.0001-unit
@@ -81,6 +52,16 @@ export function formatEth(value: bigint | string, decimals = 4): string {
 // pre-existing 2-arg caller means, byte-identical to the old hard-coded
 // path). An invalid `decimals` (formatFixedDecimals' guard) falls back
 // to the raw wei integer, never a fabricated amount.
+//
+// Deliberately NOT a thin wrapper over formatNativeDisplay(wei, decimals,
+// {fraction: 'round4'}): the two agree on every non-negative input at
+// integer decimals, but diverge off the happy path — formatNativeDisplay's
+// floor guard requires wei > 0n, so a negative amount renders "-0.0000"
+// there while this contract floors ANY sub-floor value (negative included)
+// to "<0.0001"; and a non-integer/Infinity decimals >= 4 makes
+// formatNativeDisplay's own floor guard throw (10n ** BigInt(...)) where
+// this degrades to the raw wei. That divergence is why the floor
+// comparison lives here instead of being shared.
 export function formatValue(wei: bigint, symbol: string, decimals = 18): string {
   if (wei === 0n) return `0 ${symbol}`;
   const shown = formatFixedDecimals(wei, decimals, 4);
@@ -245,7 +226,7 @@ export function formatGasString(gas: string): string {
  * - 'fixed4' — exactly four fraction digits, truncated then zero-padded,
  *   with optional integer grouping (the address summary totals);
  * - 'round4' — exactly four fraction digits, half-up (the tx-surface
- *   display contract formatValue/formatEth already use, decimals-generic).
+ * display contract formatValue already uses, decimals-generic).
  */
 export type NativeFractionStyle = 'trim' | 'fixed4' | 'round4';
 

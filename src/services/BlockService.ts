@@ -315,7 +315,7 @@ const createBlockService = (deps: BlockServiceDeps) => {
           .from(blocks)
           .where(eq(blocks.chainId, chainId));
 
-        const total = countResult[0]?.value || 0;
+        const total = sqlCountTotal(countResult);
         const formattedBlocks = blockList.map(b => formatBlock(b as Record<string, unknown>));
 
         return { blocks: formattedBlocks, total };
@@ -371,7 +371,7 @@ const createBlockService = (deps: BlockServiceDeps) => {
           .orderBy(desc(blocks.number))
           .limit(100);
 
-        const totalBlocks = countResult[0]?.value || 0;
+        const totalBlocks = sqlCountTotal(countResult);
         // Presence, not truthiness: `blocks.number` is a bignum column, so a
         // chain whose only indexed block is genesis yields 0n — falsy, and
         // the old test reported latestBlock: null beside totalBlocks: 1
@@ -451,7 +451,7 @@ const createBlockService = (deps: BlockServiceDeps) => {
 export type BlockService = ReturnType<typeof createBlockService>;
 export { createBlockService };
 
-import { db, blocks } from '../database/init';
+import { db, blocks, sqlCountTotal } from '../database/init';
 import { rpcManager } from './RpcManager';
 import { createTtlLruCache, type TtlLruCache } from '../utils/ttlLruCache';
 import { createRetryableRpcCall, createRetryableDbCall, logError } from '../utils/errorHandler';

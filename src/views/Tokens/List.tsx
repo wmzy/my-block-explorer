@@ -26,7 +26,7 @@ import { TableSkeleton } from '@/components/ui/LoadingState';
 import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
 import { getChainInfo, getChainName } from '@/config/chains';
 import { parseChainIdParam } from '@/utils/chainParam';
-import { redirectReplace } from '@/views/Home/Landing';
+import { chainRedirect } from '@/views/chainNav';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
 import {
   directoryRowsForChain,
@@ -196,9 +196,8 @@ export default function TokensList() {
   // Chain switches replace the current entry (Transactions/List pattern);
   // a ?q= filter legitimately survives — another chain may hold the same
   // symbol.
-  const handleChainChange = (newChainId: number) => {
-    void redirectReplace(router, `/chain/${newChainId}/tokens`).catch(() => undefined);
-  };
+  const handleChainChange = (newChainId: number) =>
+    chainRedirect(router, newChainId, '/tokens', { replace: true });
 
   if (chainInfo === null) {
     return (

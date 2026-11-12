@@ -17,7 +17,7 @@ import { TypedLink, useMatched, useSearch } from '@native-router/react';
 import { getAddress } from 'viem';
 
 import TopNavigation from '@/components/TopNavigation';
-import { redirectReplace } from '@/views/Home/Landing';
+import { chainRedirect } from '@/views/chainNav';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
 import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
@@ -921,9 +921,8 @@ export default function TokenPage() {
     [verifiedAbi],
   );
 
-  const handleChainChange = (newChainId: number) => {
-    void redirectReplace(router, `/chain/${newChainId}/token/${address}`).catch(() => undefined);
-  };
+  const handleChainChange = (newChainId: number) =>
+    chainRedirect(router, newChainId, `/token/${address}`, { replace: true });
 
   // --- Guards (after every hook) ---
 

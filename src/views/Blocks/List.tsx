@@ -14,14 +14,15 @@ import { NewBlocksNotice } from '@/components/ui/NewBlocksNotice';
 import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
 import { getChainInfo, getChainName, getChainType } from '@/config/chains';
 import { parseChainIdParam } from '@/utils/chainParam';
-import { redirectReplace } from '@/views/Home/Landing';
+import { chainRedirect } from '@/views/chainNav';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
 import { useLatestBlocks } from '@/services/chainRpc';
 import { useLatestBlocksFeed } from '@/services/homeFeed';
 import { finalityLabelFor, useFinalityHeads } from '@/services/blocks';
 import { describeBlockProducer } from '@/utils/blockRpcData';
-import { formatNumber, formatRelativeTime, truncateMiddle } from '@/utils/format';
+import { cellText, formatNumber, formatRelativeTime } from '@/utils/format';
 import { gasUsageShare } from '@/utils/gasShare';
+import { errorMessage } from '@/utils/errorHandler';
 
 const LIMIT = 20;
 
@@ -71,10 +72,10 @@ const minerNotExposedNote = css`
 // the old inline division printed "NaN%" / "Infinity%" there.
 export const formatGasUsage = (used: string, limit: string): string => gasUsageShare(used, limit);
 
-// Miner cell: the shared 8/6 middle truncation; a missing miner (the
-// zero-address convention on Bor-style chains is handled above) renders
-// as-is.
-const formatMiner = (miner: string): string => truncateMiddle(miner, 8, 6);
+// Miner cell: the shared 8/6 cell truncation. A missing miner never
+// reaches it — the producer-kind branches at the call site render their
+// own note instead.
+const formatMiner = cellText;
 
 export default function BlocksList() {
   const { params, router } = useMatched();
@@ -185,9 +186,8 @@ export default function BlocksList() {
 
   // Chain switches replace the current entry (shared Wave A helper); the
   // list has no params worth keeping.
-  const handleChainChange = (newChainId: number) => {
-    void redirectReplace(router, `/chain/${newChainId}/blocks`).catch(() => undefined);
-  };
+  const handleChainChange = (newChainId: number) =>
+    chainRedirect(router, newChainId, '/blocks', { replace: true });
 
   if (!chainInfo) {
     return (
@@ -225,7 +225,7 @@ export default function BlocksList() {
 
         {error && (
           <ErrorState
-            message={error instanceof Error ? error.message : 'Failed to fetch blocks'}
+            message={errorMessage(error, 'Failed to fetch blocks')}
             onRetry={refetch}
           />
         )}

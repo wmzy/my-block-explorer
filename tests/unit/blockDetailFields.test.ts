@@ -3,8 +3,7 @@
 // collapsing to undefined (the row is skipped, never fabricated); the ETH
 // formatters are lossless on the gwei/wei integers viem's formatUnits is
 // given; and the blob utilization percentage is exact basis-point math
-// against the EIP-4844 per-block blob gas capacity. The polling cadence
-// constants pin the public polling contract the view's effect consumes.
+// against the EIP-4844 per-block blob gas capacity.
 import { describe, it, expect } from 'vitest';
 
 import {
@@ -12,8 +11,6 @@ import {
   computeBurntFees,
   formatEthValue,
   formatWithdrawalEth,
-  FUTURE_BLOCK_POLL_BUDGET_MS,
-  FUTURE_BLOCK_POLL_INTERVAL_MS,
 } from '@/views/Blocks/Detail';
 
 describe('computeBurntFees', () => {
@@ -84,12 +81,5 @@ describe('blobCountFromGas', () => {
   it('collapses unparseable values to undefined', () => {
     expect(blobCountFromGas('not-gas')).toBeUndefined();
     expect(blobCountFromGas('')).toBeUndefined();
-  });
-});
-
-describe('future-block polling contract', () => {
-  it('probes the head every 4 s for a ~5 minute budget', () => {
-    expect(FUTURE_BLOCK_POLL_INTERVAL_MS).toBe(4_000);
-    expect(FUTURE_BLOCK_POLL_BUDGET_MS).toBe(5 * 60_000);
   });
 });

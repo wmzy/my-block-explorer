@@ -17,7 +17,8 @@ import {
   tableShellStyle,
 } from '@/components/ui/DataTable';
 import { spinnerBase } from '@/components/ui/Button';
-import { formatDateTime, formatFixedDecimals, truncateMiddle } from '@/utils/format';
+import { formatDateTime, formatFixedDecimals, formatNumber, truncateMiddle } from '@/utils/format';
+import { errorMessage } from '@/utils/errorHandler';
 import { useGenerationGuard } from '@/util/useGenerationGuard';
 import { EventFilterPanel, type EventFilterState } from './EventFilterPanel';
 import { get } from '@/util/http';
@@ -1452,7 +1453,7 @@ export const EventTable: React.FC<EventTableProps> = ({
       } catch (err) {
         if (!requestGuard.isCurrent(requestId)) return;
         console.error('Failed to fetch events:', err);
-        setError(err instanceof Error ? err.message : 'Failed to load events');
+        setError(errorMessage(err, 'Failed to load events'));
       } finally {
         // Only the newest request owns the loading flag: a superseded
         // request clearing it would un-disable controls mid-flight.
@@ -1942,7 +1943,7 @@ export const EventTable: React.FC<EventTableProps> = ({
                     <div className={performanceMetric}>
                       <span className={performanceMetricLabel}>Rows:</span>
                       <span className={performanceMetricValue}>
-                        {Number(sortingMetrics.dataSize ?? 0).toLocaleString()}
+                        {formatNumber(sortingMetrics.dataSize ?? 0)}
                       </span>
                     </div>
 
@@ -2182,7 +2183,7 @@ export const EventTable: React.FC<EventTableProps> = ({
                       click hit the backend 400. */}
                   {exportExceedsLimit && (
                     <span className={exportLimitNotice}>
-                      Too many rows ({pagination.total.toLocaleString()}) — narrow the block range
+                      Too many rows ({formatNumber(pagination.total)}) — narrow the block range
                       or filters and export in chunks (limit 100,000 rows).
                     </span>
                   )}

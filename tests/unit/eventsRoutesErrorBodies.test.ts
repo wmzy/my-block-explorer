@@ -299,7 +299,7 @@ describe('GET .../events/indexing-status failure shape', () => {
     }
   });
 
-  it('falls back to a stable message when the rejection is not an Error', async () => {
+  it('renders a truthy non-Error rejection as its own string (errorMessage contract)', async () => {
     mocks.getIndexingStatus.mockRejectedValue('raw string rejection');
 
     const res = await request(`${BASE}/indexing-status`);
@@ -307,7 +307,10 @@ describe('GET .../events/indexing-status failure shape', () => {
     expect(res.status).toBe(503);
     await expect(res.json()).resolves.toMatchObject({
       error: 'indexing_status_unavailable',
-      message: 'Failed to load indexing status',
+      // The shared errorMessage() renderer (utils/errorHandler) keeps a
+      // truthy non-Error's own string form instead of the fallback — the
+      // documented semantics delta of the 2026-11 errorMessage adoption.
+      message: 'raw string rejection',
     });
   });
 });

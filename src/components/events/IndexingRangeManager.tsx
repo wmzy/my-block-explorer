@@ -4,6 +4,7 @@ import { SegmentedProgressBar } from '../ui/SegmentedProgressBar';
 import { toast } from 'haze-ui';
 import { get, post, del } from '@/util/http';
 import { ApiError } from '@/util/apiError';
+import { formatNumber } from '@/utils/format';
 import { parseStrictInteger } from '@/utils/validation';
 import { useEventRanges, type EventRangeRow } from '@/services/eventsRanges';
 import { useGenerationGuard } from '@/util/useGenerationGuard';
@@ -461,7 +462,7 @@ const findFirstOverlap = (
 // Pre-submit warning copy shown while the overlap gate is armed (bounds
 // formatted like every other block number in the view).
 const overlapWarningText = (range: IndexingRange): string =>
-  `Overlaps existing range #${range.rangeId} (${Number(range.fromBlock).toLocaleString()}–${Number(range.toBlock).toLocaleString()}) — events in the overlap will be indexed twice`;
+  `Overlaps existing range #${range.rangeId} (${formatNumber(range.fromBlock)}–${formatNumber(range.toBlock)}) — events in the overlap will be indexed twice`;
 
 // A would-be range that overlaps an already-loaded one, pending an explicit
 // second click. `source` picks which form's submit button relabels to
@@ -557,10 +558,12 @@ type QuickCreateResponse = {
 // toast says "indexing started" only when the backend actually did. A
 // clamped toBlock is appended so the created bounds are never a surprise.
 const quickCreateToast = (data: QuickCreateResponse): void => {
-  const blocks = `blocks ${data.fromBlock?.toLocaleString() ?? '?'} - ${data.toBlock?.toLocaleString() ?? '?'}`;
+  const blocks = `blocks ${
+    data.fromBlock === undefined ? '?' : formatNumber(data.fromBlock)
+  } - ${data.toBlock === undefined ? '?' : formatNumber(data.toBlock)}`;
   const truncated =
     data.truncatedToBlock !== undefined
-      ? ` — toBlock exceeds chain head ${data.truncatedToBlock.toLocaleString()} — truncated`
+      ? ` — toBlock exceeds chain head ${formatNumber(data.truncatedToBlock)} — truncated`
       : '';
   if (data.started) {
     toast.success(`Indexing started: ${blocks}${truncated}`);
@@ -1127,7 +1130,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
     [chainId, contractAddress, refetchRanges, onRefresh],
   );
   const formatBlock = (block: bigint | number): string => {
-    return Number(block).toLocaleString();
+    return formatNumber(block);
   };
   // Editing the gated form (or switching quick mode) invalidates the armed
   // confirmation: the next submit re-runs the precheck.
@@ -1266,7 +1269,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
         <h3>Event Indexing Ranges</h3>
         <span className="creation-info">
           {hasKnownCreationBlock
-            ? `Contract created at block #${creationBlockNumber.toLocaleString()}`
+            ? `Contract created at block #${formatNumber(creationBlockNumber)}`
             : 'Contract creation block: unknown'}
         </span>
         <div style={{ display: 'flex', gap: '8px', marginLeft: 'auto' }}>
@@ -1351,7 +1354,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
       )}
       {truncatedNotice !== null && (
         <div className={warningStyles} role="alert">
-          toBlock exceeds chain head {truncatedNotice.toLocaleString()} — truncated
+          toBlock exceeds chain head {formatNumber(truncatedNotice)} — truncated
         </div>
       )}
       {fullHistoryGate !== null && (
@@ -1360,7 +1363,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
         // armed and unchecked, runQuickCreate blocks the submit.
         <div className={warningStyles} role="alert">
           Full history spans about {Math.round(fullHistoryGate.spanBlocks / 1_000_000)}M blocks (
-          {fullHistoryGate.spanBlocks.toLocaleString()}) — indexing may take hours to days.
+          {formatNumber(fullHistoryGate.spanBlocks)}) — indexing may take hours to days.
           <label
             style={{
               display: 'flex',
@@ -1450,7 +1453,7 @@ export const IndexingRangeManager: React.FC<Props> = ({
                       </>
                     )}
                     {range.totalEventsIndexed > 0 && (
-                      <span>{range.totalEventsIndexed.toLocaleString()} events indexed</span>
+                      <span>{formatNumber(range.totalEventsIndexed)} events indexed</span>
                     )}
                     {range.errorMessage && (
                       <span style={{ color: 'var(--haze-color-danger)' }}>

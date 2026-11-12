@@ -8,7 +8,7 @@ RPC data layer, formatting, caching, and error handling utilities.
 utils/
 ├── realTimeData.ts        # Frontend RPC client factory (per-chain cache)
 ├── blockRpcData.ts        # Block/transaction RPC reads
-├── format.ts              # Formatting: formatEth/formatGasPrice/formatNumber,
+├── format.ts              # Formatting: formatValue/formatGasPrice/formatNumber,
 │                          #   truncateMiddle, formatNativeDisplay, formatBigInt,
 │                          #   formatAddress/formatHash (middle truncation),
 │                          #   formatFileSize — import-free by design

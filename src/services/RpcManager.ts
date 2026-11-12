@@ -7,6 +7,7 @@ import {
 } from '../config/chains';
 import { listCustomChainIds, registerCustomChain, removeCustomChain } from '../config/customChains';
 import { createLogger } from '../server/logger';
+import { errorMessage } from '../utils/errorHandler';
 
 const logger = createLogger('rpc-manager');
 
@@ -326,7 +327,7 @@ export class RpcManager {
     } catch (error) {
       return {
         success: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        error: errorMessage(error, 'Unknown error'),
       };
     }
   }

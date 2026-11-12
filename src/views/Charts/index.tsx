@@ -12,10 +12,10 @@
 import { useMemo } from 'react';
 import { css, cx } from '@linaria/core';
 import { useMatched } from '@native-router/react';
-import { navigate } from '@native-router/core';
 
 import TopNavigation from '@/components/TopNavigation';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
+import { chainRedirect } from '@/views/chainNav';
 import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
 import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/Card';
 import { resolveMainnetDefaultChainId } from '@/utils/chainParam';
@@ -591,9 +591,7 @@ export default function ChartsPage() {
   const currentChainId = resolveMainnetDefaultChainId(rawChainId);
   const chainInfo = getChainInfo(currentChainId);
 
-  const handleChainChange = (newChainId: number) => {
-    void navigate(router, `/chain/${newChainId}/charts`).catch(() => undefined);
-  };
+  const handleChainChange = (newChainId: number) => chainRedirect(router, newChainId, '/charts');
 
   if (!chainInfo) {
     return (

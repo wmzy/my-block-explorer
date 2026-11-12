@@ -14,13 +14,12 @@ import { Alert } from 'haze-ui';
 import { getChainInfo, getChainSymbol } from '@/config/chains';
 import { fetchCallTraceTree } from '@/utils/callTraceRpc';
 import { errorMessage } from '@/utils/errorHandler';
-import { formatHash, formatNumber, formatValue, truncateMiddle } from '@/utils/format';
+import { cellText, formatHash, formatNumber, formatValue } from '@/utils/format';
 import {
   aggregateInternalTxns,
   flattenInternalTxTree,
   internalTxSummary,
   runTracePool,
-  shortTraceFailureMessage,
   tracedScopeLabel,
   selectTraceScope,
   TRACE_CONCURRENCY,
@@ -35,7 +34,6 @@ import { fetchInternalTransactions, type InternalTxnsResult } from '@/services/a
 import { CallTypeBadge } from '@/components/CallTypeBadge';
 import { Button } from '@/components/ui/Button';
 import { Badge } from '@/components/ui/Badge';
-import { Collapsible } from '@/components/ui/Collapsible';
 import { CopyableHash } from '@/components/ui/CopyableHash';
 import { DataTable, linkStyle, monoStyle } from '@/components/ui/DataTable';
 import { ErrorState } from '@/components/ui/ErrorState';
@@ -43,8 +41,7 @@ import { LoadingState } from '@/components/ui/LoadingState';
 import { TracedProgress } from '@/components/TracedProgress';
 import {
   depthCell,
-  failedTxsCard,
-  failedTxRow,
+  FailedTracesCollapsible,
   muted,
   retryRow,
   summaryLine,
@@ -368,14 +365,14 @@ export default function InternalTxns({
                   <td>
                     <CopyableHash
                       value={record.from}
-                      truncated={truncateMiddle(record.from, 8, 6)}
+                      truncated={cellText(record.from)}
                       href={`/chain/${chainId}/address/${record.from}`}
                     />
                   </td>
                   <td>
                     <CopyableHash
                       value={record.to}
-                      truncated={truncateMiddle(record.to, 8, 6)}
+                      truncated={cellText(record.to)}
                       href={`/chain/${chainId}/address/${record.to}`}
                     />
                   </td>
@@ -490,7 +487,7 @@ export default function InternalTxns({
                           {row.from !== null ? (
                             <CopyableHash
                               value={row.from}
-                              truncated={truncateMiddle(row.from, 8, 6)}
+                              truncated={cellText(row.from)}
                               href={`/chain/${chainId}/address/${row.from}`}
                             />
                           ) : (
@@ -501,7 +498,7 @@ export default function InternalTxns({
                           {row.to !== null ? (
                             <CopyableHash
                               value={row.to}
-                              truncated={truncateMiddle(row.to, 8, 6)}
+                              truncated={cellText(row.to)}
                               href={`/chain/${chainId}/address/${row.to}`}
                             />
                           ) : (
@@ -524,37 +521,11 @@ export default function InternalTxns({
                 </DataTable>
               )}
               {aggregate.failedTxs.length > 0 && (
-                <>
-                  <Collapsible
-                    className={failedTxsCard}
-                    title={`${aggregate.failedTxs.length} trace ${
-                      aggregate.failedTxs.length === 1 ? 'failure' : 'failures'
-                    }`}
-                    badge={(
-                      <Badge variant="warning" size="sm">
-                        failed
-                      </Badge>
-                    )}
-                  >
-                    {aggregate.failedTxs.map(failure => (
-                      <div key={failure.hash} className={failedTxRow}>
-                        <TypedLink
-                          to={`/chain/${chainId}/tx/${failure.hash}`}
-                          className={linkStyle}
-                          title={failure.hash}
-                        >
-                          {formatHash(failure.hash)}
-                        </TypedLink>{' '}
-                        — {shortTraceFailureMessage(failure.message)}
-                      </div>
-                    ))}
-                  </Collapsible>
-                  <div className={retryRow}>
-                    <Button variant="secondary" size="sm" onClick={retry}>
-                      Retry failed traces
-                    </Button>
-                  </div>
-                </>
+                <FailedTracesCollapsible
+                  failures={aggregate.failedTxs}
+                  chainId={chainId}
+                  onRetry={retry}
+                />
               )}
             </>
           )}

@@ -4,6 +4,7 @@ import { blockService } from '../services/BlockService';
 import { transactionService } from '../services/TransactionService';
 import { rpcManager } from '../services/RpcManager';
 import { withTimeoutOrNull } from '../utils/withTimeout';
+import { errorMessage } from '../utils/errorHandler';
 import {
   getChainName,
   getChainSymbol,
@@ -90,7 +91,7 @@ app.get('/stats/overview', async c => {
     return c.json(
       {
         error: 'stats_unavailable',
-        message: error instanceof Error ? error.message : 'Failed to load stats overview',
+        message: errorMessage(error, 'Failed to load stats overview'),
       },
       503,
     );

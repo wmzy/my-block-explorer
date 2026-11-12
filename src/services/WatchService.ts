@@ -49,6 +49,7 @@ import {
   type WebhookSender,
 } from '../utils/webhooks';
 import { createLogger } from '../server/logger';
+import { errorMessage } from '../utils/errorHandler';
 
 const logger = createLogger('watch-service');
 
@@ -733,7 +734,7 @@ export class WatchService {
       } catch (err) {
         // The sender contract is never-throw; this guards a broken
         // sender implementation all the same — record, don't crash.
-        failure = shortWebhookReason(err instanceof Error ? err.message : 'delivery crashed');
+        failure = shortWebhookReason(errorMessage(err, 'delivery crashed'));
         logger.warn(
           { err, chainId, address: sub.address, host: webhookHostForLog(url) },
           'Watch webhook delivery threw (sender contract violated); recorded and skipped',

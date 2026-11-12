@@ -17,7 +17,6 @@ vi.mock('@/util/http', () => ({
 
 import {
   MAX_SELECTORS_PER_REQUEST,
-  chunkSelectors,
   fetchSignatures,
   resetSignatureOutcomeCacheForTests,
   useSignaturesBatched,
@@ -132,29 +131,6 @@ describe('fetchSignatures - outcome honesty', () => {
     expect(outcomes[FN_SELECTOR]).toEqual({ unavailable: true });
     expect(outcomes[EVENT_TOPIC0]).toEqual({ unavailable: true });
     expect(mocks.get).toHaveBeenCalledTimes(1);
-  });
-});
-
-describe('chunkSelectors - request-cap chunking', () => {
-  it('returns no chunks for an empty list', () => {
-    expect(chunkSelectors([], MAX_SELECTORS_PER_REQUEST)).toEqual([]);
-  });
-
-  it('keeps a list under the cap as one chunk, order preserved', () => {
-    expect(chunkSelectors(['a', 'b', 'c'], 25)).toEqual([['a', 'b', 'c']]);
-  });
-
-  it('splits at the cap: 26 items under a 25 cap become 25 + 1', () => {
-    const items = Array.from({ length: 26 }, (_, i) => `s${i}`);
-    const chunks = chunkSelectors(items, 25);
-
-    expect(chunks.map(chunk => chunk.length)).toEqual([25, 1]);
-    // Order is preserved across the split.
-    expect(chunks.flat()).toEqual(items);
-  });
-
-  it('clamps a cap below 1 to one item per chunk', () => {
-    expect(chunkSelectors(['a', 'b'], 0)).toEqual([['a'], ['b']]);
   });
 });
 

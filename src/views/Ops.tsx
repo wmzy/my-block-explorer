@@ -15,7 +15,6 @@
 // The react-toolroom cache holds errors, so the page-level failure states
 // (backend offline, admin gate, rate limit) carry retry affordances too.
 import { css, cx } from '@linaria/core';
-import { navigate } from '@native-router/core';
 import { useRouter } from '@native-router/react';
 import { Alert, Dialog, useToast } from 'haze-ui';
 import { useControl } from 'react-use-control';
@@ -28,6 +27,7 @@ import { DataTable } from '@/components/ui/DataTable';
 import { BackendOfflineState } from '@/components/ui/ErrorState';
 import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
 import { readRememberedChainId } from '@/views/Home/Landing';
+import { chainRedirect } from '@/views/chainNav';
 import { useOpsSummary, type OpsMeta, type OpsSummary } from '@/services/opsSummary';
 import {
   UNINSTALL_CONFIRM_PHRASE,
@@ -324,7 +324,7 @@ function SummaryErrorNotice({ error, onRetry }: { error: unknown; onRetry: () =>
   }
   return (
     <Alert variant="danger">
-      {error instanceof Error ? error.message : 'Failed to load the ops summary.'}
+      {errorMessage(error, 'Failed to load the ops summary.')}
     </Alert>
   );
 }
@@ -864,9 +864,7 @@ export default function Ops() {
   // into /chain/:chainId pages): the remembered chain provides that context,
   // same fallback order as the other chain-less pages (SQL console, Search).
   const navChainId = readRememberedChainId() ?? 1;
-  const handleNavChainChange = (chainId: number) => {
-    navigate(router, `/chain/${chainId}`).catch(() => undefined);
-  };
+  const handleNavChainChange = (chainId: number) => chainRedirect(router, chainId);
 
   const summary = useOpsSummary();
   const retry = () => void summary.refetch();

@@ -18,6 +18,7 @@ import {
 } from '@/services/search';
 import { detectSearchType, sanitizeInput } from '@/utils/validation';
 import { isBackendUnreachable } from '@/util/http';
+import { errorMessage } from '@/utils/errorHandler';
 import type { EnsDestinations } from '@/services/ensForward';
 import {
   openEnsSearchDestination,
@@ -574,7 +575,7 @@ export default function Search() {
               message: 'Search unavailable — cannot reach the explorer backend',
               onRetry: () => void handleSearch(searchQuery, pinnedChainId),
             }
-          : { message: err instanceof Error ? err.message : 'Search failed' },
+          : { message: errorMessage(err, 'Search failed') },
       );
     } finally {
       setIsSearching(false);
@@ -662,7 +663,7 @@ export default function Search() {
               message: 'Search unavailable — cannot reach the explorer backend',
               onRetry: () => void handleChainSelect(selectedChainId),
             }
-          : { message: err instanceof Error ? err.message : 'Search failed' },
+          : { message: errorMessage(err, 'Search failed') },
       );
     } finally {
       setIsSearching(false);

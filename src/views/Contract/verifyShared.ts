@@ -4,6 +4,7 @@
 // unreachable-backend sentence duplicated verbatim in each file.
 
 import { isBackendUnreachable } from '@/util/http';
+import { errorMessage } from '@/utils/errorHandler';
 import { ApiError } from '@/util/apiError';
 
 /**
@@ -42,5 +43,5 @@ export function describeSubmitError(
     const specific = options.statusText(error);
     if (specific !== null) return specific;
   }
-  return error instanceof Error ? error.message : options.fallback;
+  return errorMessage(error, options.fallback);
 }

@@ -101,7 +101,7 @@ import {
 import { codeVerdict } from '@/utils/address';
 import { MULTICALL3_ADDRESS } from '@/utils/multicall';
 import { getExternalToolLinks } from '@/config/externalTools';
-import { redirectReplace } from '@/views/Home/Landing';
+import { chainRedirect } from '@/views/chainNav';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
 import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
 import { TxStatusBadge } from '@/components/ui/TxStatusBadge';
@@ -1750,9 +1750,8 @@ export default function Address() {
   // Chain switch replaces the current history entry (the old page's
   // semantics) via preload + commitReplace, so Back from the switched
   // view never resurfaces the same address on the previous chain.
-  const handleChainChange = (newChainId: number) => {
-    void redirectReplace(router, `/chain/${newChainId}/address/${address}`).catch(() => undefined);
-  };
+  const handleChainChange = (newChainId: number) =>
+    chainRedirect(router, newChainId, `/address/${address}`, { replace: true });
 
   const isInitialLoading =
     infoQuery.loading && realTimeQuery.loading && !infoQuery.data && !realTimeQuery.data;

@@ -1,5 +1,7 @@
 import { css, cx } from '@linaria/core';
 
+import { formatNumber } from '@/utils/format';
+
 export type SegmentStatus = 'pending' | 'indexing' | 'paused' | 'completed' | 'error';
 
 export type Segment = {
@@ -121,8 +123,8 @@ const statusDotStyle = css`
 `;
 
 function getTooltipText(segment: Segment): string {
-  const from = segment.fromBlock.toLocaleString();
-  const to = segment.toBlock.toLocaleString();
+  const from = formatNumber(segment.fromBlock);
+  const to = formatNumber(segment.toBlock);
   const pct = segment.progress.toFixed(1);
 
   if (segment.status === 'completed') {

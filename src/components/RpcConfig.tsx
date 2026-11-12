@@ -15,6 +15,7 @@ import {
 } from '@/services/nftMetadata';
 import { getChainName } from '../config/chains';
 import { parseStrictInteger } from '@/utils/validation';
+import { errorMessage } from '@/utils/errorHandler';
 import { getRpcPresets, type RpcPreset } from '../config/rpcPresets';
 import {
   getRpcConfigs,
@@ -545,7 +546,7 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
       // executeRestore absorbs per-item failures into its report; a
       // throw here is an unexpected crash and lands verbatim.
       console.error('Restore failed:', error);
-      setBackupMessage(error instanceof Error ? error.message : 'Restore failed.');
+      setBackupMessage(errorMessage(error, 'Restore failed.'));
     } finally {
       setRestoring(false);
     }

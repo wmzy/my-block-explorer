@@ -50,6 +50,7 @@ import {
 } from '@/utils/rawTxDecode';
 import { formatPoolValue } from '@/views/Transactions/Pending';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
+import { chainRedirect } from '@/views/chainNav';
 
 // One-line labels for the decoded transaction types (tx-detail naming
 // family, uppercase spec form — never an invented marketing name).
@@ -158,9 +159,8 @@ export default function BroadcastTransactionPage() {
   const currentChainId = resolveMainnetDefaultChainId(rawChainId);
   const chainInfo = getChainInfo(currentChainId);
 
-  const handleChainChange = (newChainId: number) => {
-    void navigate(router, `/chain/${newChainId}/broadcast`).catch(() => undefined);
-  };
+  const handleChainChange = (newChainId: number) =>
+    chainRedirect(router, newChainId, '/broadcast');
 
   if (!chainInfo) {
     return (

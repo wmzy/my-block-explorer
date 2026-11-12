@@ -1,7 +1,7 @@
 // Blockchain data type definitions
 // Builds on viem's built-in types with multi-chain support
 
-import type { Block as ViemBlock, Transaction as ViemTransaction, Address, Hash } from 'viem';
+import type { Block as ViemBlock, Transaction as ViemTransaction, Address } from 'viem';
 
 // Base entity type - every record carries a chain ID
 export type BaseEntity = {
@@ -37,44 +37,4 @@ export type AddressInfo = BaseEntity & {
   totalReceived?: string;
   totalSent?: string;
   updatedAt?: string;
-};
-
-// Token transfer type
-export type TokenTransfer = BaseEntity & {
-  transactionHash: Hash;
-  blockNumber: number;
-  logIndex: number;
-  from: Address;
-  to: Address;
-  value: string;
-  tokenAddress: Address;
-  tokenName?: string;
-  tokenSymbol?: string;
-  tokenDecimals?: number;
-  timestamp: bigint;
-};
-
-// Network statistics type
-export type NetworkStats = BaseEntity & {
-  latestBlock: number;
-  avgBlockTime: number;
-  avgGasPrice: string;
-  tps: number; // transactions per second
-  totalTransactions: number;
-  price?: {
-    usd: number;
-    change24h: number;
-  };
-};
-
-// Daily statistics type
-export type DailyStats = BaseEntity & {
-  date: string; // date (YYYY-MM-DD)
-  transactionCount: number; // transaction count
-  blockCount: number; // block count
-  avgGasPrice: string; // average gas price
-  totalGasUsed: string; // total gas used
-  activeAddresses: number; // active address count
-  totalValue: string; // total transferred value
-  avgBlockTime: number; // average block time
 };

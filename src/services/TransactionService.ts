@@ -1,4 +1,4 @@
-import { db, transactions, blocks } from '../database/init';
+import { db, transactions, blocks, sqlCountTotal } from '../database/init';
 import { eq, and, sql, count } from 'drizzle-orm';
 import { rpcManager } from './RpcManager';
 import { withOneRetry } from '../utils/rpcReadRetry';
@@ -554,10 +554,11 @@ const createTransactionService = (deps: TransactionServiceDeps) => {
 
         return {
           transactions: txResults.map(tx => formatTransaction(tx)),
-          // drizzle's count() casts DuckDB's BIGINT to a JS number — the
-          // raw sql`count(*)` came out as a string, diverging from the
-          // blocks list response this endpoint mirrors.
-          total: countResult[0]?.value || 0,
+          // routes/transactions.ts answers 500 'Failed to get transactions';
+          // swallowing here made an outage look like an empty chain.
+          // The count row unwraps through sqlCountTotal (the drizzle/
+          // DuckDB count-shape note lives there).
+          total: sqlCountTotal(countResult),
         };
       } catch (error) {
         console.error('Failed to get latest transactions:', error);

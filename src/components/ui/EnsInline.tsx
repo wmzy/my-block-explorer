@@ -14,17 +14,16 @@ import { TypedLink } from '@native-router/react';
 import { linkStyle } from '@/components/ui/DataTable';
 import { useEnsName } from '@/services/ens';
 import { checksumAddress } from '@/utils/address';
-import { truncateMiddle } from '@/utils/format';
+import { cellText } from '@/utils/format';
 
 // The truncation the transactions list has always rendered in address
 // cells: 8 leading + 6 trailing hex chars around an ellipsis; a blank
 // input degrades to 'N/A' (the creation-row branch renders it verbatim).
 // Exported so the list's non-ENS branches keep byte-identical text — a
-// thin fallback wrapper over the shared truncateMiddle primitive, kept
-// as the one definition of this cell's text contract.
+// thin wrapper over the shared cellText cell contract, kept as the one
+// definition of this cell's text.
 export function shortAddress(address: string): string {
-  if (!address) return 'N/A';
-  return truncateMiddle(address, 8, 6);
+  return cellText(address);
 }
 
 // One line, always: a resolved name replaces a 16-char address with text

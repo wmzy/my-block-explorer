@@ -29,6 +29,7 @@ import { mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { Worker } from 'node:worker_threads';
 import { createLogger } from '../server/logger';
+import { errorMessage } from '../utils/errorHandler';
 import type { Address } from 'viem';
 
 const logger = createLogger('compile-verify-service');
@@ -979,7 +980,7 @@ export class CompileVerifyService {
       };
       return { versions };
     } catch (error) {
-      const reason = error instanceof Error ? error.message : 'unknown error';
+      const reason = errorMessage(error, 'unknown error');
       const cached = await this.listCachedVersions();
       const degraded =
         cached.length > 0
@@ -1119,7 +1120,7 @@ export class CompileVerifyService {
           signal: AbortSignal.timeout(COMPILER_LOAD_BUDGET_MS),
         });
       } catch (error) {
-        const reason = error instanceof Error ? error.message : 'unknown error';
+        const reason = errorMessage(error, 'unknown error');
         throw compilerUnavailable(
           `Could not download solc ${build.longVersion} from binaries.soliditylang.org (${reason}); this server needs internet access the first time a compiler version is used`,
         );
@@ -1159,7 +1160,7 @@ export class CompileVerifyService {
       });
     } catch (error) {
       if (error instanceof CompileVerifyHttpError) throw error;
-      const reason = error instanceof Error ? error.message : 'unknown error';
+      const reason = errorMessage(error, 'unknown error');
       throw compilerUnavailable(`Failed to initialize the solc ${build.longVersion} build: ${reason}`);
     }
   }
@@ -1209,7 +1210,7 @@ export class CompileVerifyService {
       // soljson instead of reusing a terminated worker.
       if (runner.isDead()) this.compilerCache.delete(versionEntry.longVersion);
       if (error instanceof CompileVerifyHttpError) throw error;
-      const reason = error instanceof Error ? error.message : 'unknown error';
+      const reason = errorMessage(error, 'unknown error');
       throw compileFailed(
         `The solc ${versionEntry.longVersion} build crashed while compiling: ${reason}`,
       );
@@ -1327,7 +1328,7 @@ export class CompileVerifyService {
       try {
         return await fetcher(chainId, address);
       } catch (error) {
-        const reason = error instanceof Error ? error.message : 'unknown error';
+        const reason = errorMessage(error, 'unknown error');
         throw rpcUnavailable(`Could not fetch the on-chain code: ${reason}`);
       }
     }
@@ -1336,7 +1337,7 @@ export class CompileVerifyService {
     try {
       client = await rpcManager.getClient(chainId);
     } catch (error) {
-      const reason = error instanceof Error ? error.message : 'unknown error';
+      const reason = errorMessage(error, 'unknown error');
       throw rpcUnavailable(`No RPC client for chain ${chainId}: ${reason}`);
     }
     try {
@@ -1344,7 +1345,7 @@ export class CompileVerifyService {
       // requests); both empty and undefined mean "no code" to the caller.
       return (await client.getCode({ address })) ?? '';
     } catch (error) {
-      const reason = error instanceof Error ? error.message : 'unknown error';
+      const reason = errorMessage(error, 'unknown error');
       throw rpcUnavailable(`eth_getCode failed for ${address} on chain ${chainId}: ${reason}`);
     }
   }

@@ -6,6 +6,7 @@ import { useControl } from 'react-use-control';
 import { toastCopy } from '@/util/clipboard';
 import { Button } from '@/components/ui/Button';
 import { checksummedAddressOrNull } from '@/util/privateNotes';
+import { errorMessage } from '@/utils/errorHandler';
 
 // Header icon button: the same family as the page's back button (bordered
 // subtle square), just icon-sized so it reads as a header action.
@@ -135,9 +136,10 @@ export function AddressQr({ address }: { address: string }) {
       } catch (err) {
         if (!cancelled) {
           setError(
-            `The QR code could not be generated — ${
-              err instanceof Error ? err.message : 'unknown error'
-            }. Copy the address below instead.`,
+            `The QR code could not be generated — ${errorMessage(
+              err,
+              'unknown error',
+            )}. Copy the address below instead.`,
           );
         }
       }

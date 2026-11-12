@@ -19,6 +19,7 @@
 //   a bound sets `truncated`, which the UI must disclose, never hide.
 
 import type { CallTraceNode } from '@/utils/traceFormat';
+import { formatNumber } from '@/utils/format';
 
 /** One flattened internal call. `depth` counts from the tx's top-level frame (0), so the first internal level is 1. */
 export type InternalTxRow = {
@@ -247,7 +248,7 @@ export function aggregateInternalTxns(
 // Locale-grouped count + singular/plural noun — the summary lines' one
 // pluralizer (the block sweep's summary shares it).
 export const pluralize = (count: number, singular: string): string =>
-  `${count.toLocaleString()} ${singular}${count === 1 ? '' : 's'}`;
+  `${formatNumber(count)} ${singular}${count === 1 ? '' : 's'}`;
 
 /**
  * The aggregate header line: "N internal transfers across M traced
@@ -267,9 +268,9 @@ export function internalTxSummary(aggregate: InternalTxAggregate): string {
  * the label names the page instead — completeness is never implied.
  */
 export function tracedScopeLabel(tracedCount: number, page: number): string {
-  const count = tracedCount.toLocaleString();
+  const count = formatNumber(tracedCount);
   return page > 1
-    ? `Traced ${count} discovered transactions (page ${page.toLocaleString()} of the discovered set)`
+    ? `Traced ${count} discovered transactions (page ${formatNumber(page)} of the discovered set)`
     : `Traced the first ${count} discovered transactions`;
 }
 

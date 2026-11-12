@@ -8,7 +8,12 @@ import { getChainName } from '../config/chains';
 import { getValidatedChainId, getValidatedAddress } from '../server/validation';
 import { parsePaginationParams } from '../utils/validation';
 import { safeJsonResponse } from '../utils/serialization';
-import { createApiError, invalidOffsetResponse, respondError } from '../utils/api-error';
+import {
+  createApiError,
+  invalidOffsetResponse,
+  readJsonBody,
+  respondError,
+} from '../utils/api-error';
 import { parseStateOverride, type StateOverride } from '../utils/stateOverride';
 import { requireAdminTokenIfConfigured } from '../middleware/admin-token';
 import { createRateLimiter } from '../middleware/rate-limit';
@@ -331,12 +336,7 @@ app.post('/chains/:chainId/contracts/:address/read', contractReadRateLimiter, as
 
   // A malformed JSON body must not reach the generic catch below, where it
   // would surface as an opaque 500 'Failed to read contract'.
-  let body;
-  try {
-    body = await c.req.json();
-  } catch {
-    return respondError(c, 400, 'invalid_json', 'Request body must be valid JSON');
-  }
+  const body = await readJsonBody<{ functionName?: unknown; args?: unknown[] }>(c);
 
   try {
     const { functionName, args = [] } = body;
@@ -401,12 +401,13 @@ app.post('/chains/:chainId/contracts/:address/simulate', contractSimulateRateLim
 
   // A malformed JSON body must not reach the generic catch below, where it
   // would surface as an opaque 500 'Failed to simulate contract'.
-  let body;
-  try {
-    body = await c.req.json();
-  } catch {
-    return respondError(c, 400, 'invalid_json', 'Request body must be valid JSON');
-  }
+  const body = await readJsonBody<{
+    functionName?: unknown;
+    args?: unknown[];
+    value?: unknown;
+    from?: string;
+    stateOverride?: unknown;
+  }>(c);
 
   try {
     const { functionName, args = [], value, from, stateOverride: stateOverrideRaw } = body;
@@ -499,12 +500,13 @@ app.post(
 
     // Same contract as simulate: a malformed JSON body is a 400 invalid_json,
     // not an opaque 500 'Failed to estimate gas'.
-    let body;
-    try {
-      body = await c.req.json();
-    } catch {
-      return respondError(c, 400, 'invalid_json', 'Request body must be valid JSON');
-    }
+    const body = await readJsonBody<{
+      functionName?: unknown;
+      args?: unknown[];
+      value?: unknown;
+      from?: string;
+      stateOverride?: unknown;
+    }>(c);
 
     try {
       const { functionName, args = [], value, from, stateOverride: stateOverrideRaw } = body;
@@ -649,12 +651,7 @@ app.post(
 
     // A malformed JSON body must not reach the generic catch below, where it
     // would surface as an opaque 500.
-    let body;
-    try {
-      body = await c.req.json();
-    } catch {
-      return respondError(c, 400, 'invalid_json', 'Request body must be valid JSON');
-    }
+    const body = await readJsonBody<Record<string, unknown>>(c);
 
     try {
       const ide = body.ide as IdeId;

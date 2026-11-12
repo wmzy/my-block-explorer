@@ -17,7 +17,8 @@ import { db } from '../database/init';
 import { createLogger } from '../server/logger';
 import { requireAdminToken } from '../middleware/admin-token';
 import { createRateLimiter } from '../middleware/rate-limit';
-import { respondError } from '../utils/api-error';
+import { readJsonBody, respondError } from '../utils/api-error';
+import { errorMessage } from '../utils/errorHandler';
 
 const logger = createLogger('sql-routes');
 
@@ -173,12 +174,11 @@ const sqlQueryRateLimiter = createRateLimiter({
  * { columns: string[], rows: SqlJsonValue[][], rowCount: number, truncated: boolean }
  */
 app.post('/sql/query', sqlQueryRateLimiter, async c => {
-  let body: unknown;
-  try {
-    body = await c.req.json();
-  } catch {
-    return respondError(c, 400, 'invalid_query', 'Request body must be JSON: { "sql": "..." }.');
-  }
+  const body = await readJsonBody(
+    c,
+    'invalid_query',
+    'Request body must be JSON: { "sql": "..." }.',
+  );
   const query = (body as { sql?: unknown } | null)?.sql;
   if (typeof query !== 'string' || query.trim() === '') {
     return respondError(c, 400, 'invalid_query', 'Missing or empty "sql" string.');
@@ -214,7 +214,7 @@ app.post('/sql/query', sqlQueryRateLimiter, async c => {
     // Admin-only audience: surface the real DuckDB error verbatim — it is
     // the most useful thing on this page. Logged at warn because a typo'd
     // query is routine operator behavior, not a server fault.
-    const message = error instanceof Error ? error.message : 'Query execution failed.';
+    const message = errorMessage(error, 'Query execution failed.');
     logger.warn({ err: error }, 'SQL console query failed');
     return respondError(c, 400, 'invalid_query', message);
   }
@@ -252,7 +252,7 @@ app.get('/sql/tables', async c => {
       conn.disconnectSync();
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : 'Schema listing failed.';
+    const message = errorMessage(error, 'Schema listing failed.');
     logger.error({ err: error }, 'SQL console schema listing failed');
     return respondError(c, 500, 'Schema Listing Failed', message);
   }

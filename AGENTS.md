@@ -2000,3 +2000,53 @@ pnpm typecheck           # tsc --noEmit
   tab-bar Implementation toggle is a <button> so the span selector still
   isolates the info-card row). Deferred (unchanged): in-flight-dedup Maps,
   scan ladders, Address-view micro-extractions.
+- **2026-11-11/12 duplication review fix wave round 6 (4 scouts + 4 fix
+  agents + integration)** — 20 findings from the round-6 review, all fixed
+  or dispositioned; net −450 lines / 78 files. All verified: tsc 0, eslint
+  0 errors (112 warnings = 106 pre-existing + 6 react-refresh from
+  internalTxnsShared .ts→.tsx, the views pattern), `vitest run --changed
+  --maxWorkers=4` full green, `pnpm build` green, live curl smoke on the
+  built server + browser smoke of the chain-switch flow. **P0** —
+  `middleware/rpc-url-visibility.ts` (round-4 canonical) had ZERO
+  importers: routes/rpc-config.ts + routes/chains.ts still ran local
+  redactUrl/isLoopbackRemote twins + the inlined trust ternary; both now
+  import `redactUrl`/`requestSeesFullUrl`. LESSON re-pinned: a canonical
+  module whose callers were never migrated is dead weight wearing a
+  "shared" doc-comment — always grep importers, never trust the header.
+  **New canonicals** — `errorMessage(error, fallback?)` (errorHandler;
+  empty message or falsy non-Error → fallback, truthy non-Error keeps its
+  own string — ~45 ternaries across routes/services/views/components
+  migrated; `normalizeError` + `isDuplicateClassError` deliberately stay
+  hand-rolled: different semantics); `utils/chunk.ts` (throws on size <1);
+  `sqlCountTotal` (database/init.ts — contractDirectoryRoutes' init mock
+  had to grow it, the classic add-export→extend-mock seam);
+  `readJsonBody(c, code?, message?)` (utils/api-error.ts — throws
+  HTTPException with a prebuilt respondError Response; app.onError replays
+  `e.res` verbatim so the wire is byte-identical in bare-sub-app tests
+  too; folds all 9 invalid_json arms incl. labels/sql/ops variants);
+  `views/chainNav.ts chainRedirect(router, chainId, path?, {replace})`
+  (the chain-switch nav 19 views hand-rolled; per-site replace-vs-push
+  history semantics preserved; Search's custom variant untouched);
+  `FailedTracesCollapsible` (internalTxnsShared.tsx, renamed .ts→.tsx).
+  **Dead deleted** — types/api.ts whole file + api re-exports (barrel
+  alive for Transaction), TokenTransfer/NetworkStats/DailyStats
+  (blockchain.ts), formatEth, validateTimeRange/validateBlockRange/
+  isValidChainId, serializeForJson export, chunkSelectors export,
+  FUTURE_BLOCK_POLL_* exports, adapter's unreachable constructor-name
+  timestamp branch (verified `micros` is an own field of the installed
+  class → the `'micros' in obj` check always wins). **formatValue is NOT
+  a formatNativeDisplay wrapper** — negative-wei and non-integer-decimals
+  inputs diverge (floor-to-`<0.0001` vs `-0.0000`; raw-wei degrade vs
+  BigInt throw); kept separate with a cross-reference comment. **Extractions**
+  — ContractSourceService creation-tx scan (one getReceipt + found()
+  closure; every logger.info preserved), EventIndexingService decodeLogs
+  (13-field literal once). **toLocaleString → formatNumber repo-wide**
+  (last ~28 default-locale sites; quick-create toasts now group block
+  numbers — string bounds previously rendered via
+  String.prototype.toLocaleString identity, flagged cosmetic delta).
+  **cellText** adopted at InternalTxns ×4, Blocks/List formatMiner,
+  EnsInline (its fallback param reproduces the blank→N/A guard). Tests
+  re-pinned where the errorMessage contract sanctions the delta
+  (eventsRoutesErrorBodies, verifyShared non-Error cases). Deferred
+  (unchanged): in-flight-dedup Maps, scan ladders, Address-view
+  micro-extractions.

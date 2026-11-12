@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { css } from '@linaria/core';
 import * as ff from 'fetch-fun';
 import { get, post, longRunningApi } from '@/util/http';
+import { errorMessage } from '@/utils/errorHandler';
 import { describeSubmitError, type PanelResult } from './verifyShared';
 
 // The compilers endpoint's entry shape (see CompileVerifyService).
@@ -266,7 +267,7 @@ export function CompileVerifyPanel({
       .catch(error => {
         if (cancelled) return;
         setVersions([]);
-        setListUnavailable(error instanceof Error ? error.message : 'Compiler list unavailable.');
+        setListUnavailable(errorMessage(error, 'Compiler list unavailable.'));
       });
     return () => {
       cancelled = true;

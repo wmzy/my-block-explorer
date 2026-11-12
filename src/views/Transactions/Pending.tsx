@@ -26,7 +26,6 @@
 //   tip statistics cover EIP-1559 entries only and the strip says so.
 import { Fragment, useMemo } from 'react';
 import { css, cx } from '@linaria/core';
-import { navigate } from '@native-router/core';
 import { TypedLink, useMatched, useSearch, useSetSearch } from '@native-router/react';
 import { z } from 'zod';
 
@@ -52,6 +51,7 @@ import {
 import { cellText, formatHash, formatNativeDisplay, formatNumber } from '@/utils/format';
 import { resolveMainnetDefaultChainId } from '@/utils/chainParam';
 import { UnsupportedChainState } from '@/views/Home/UnsupportedChainState';
+import { chainRedirect } from '@/views/chainNav';
 
 const GWEI = 1_000_000_000;
 
@@ -222,9 +222,8 @@ export default function PendingTransactionsPage() {
   const currentChainId = resolveMainnetDefaultChainId(rawChainId);
   const chainInfo = getChainInfo(currentChainId);
 
-  const handleChainChange = (newChainId: number) => {
-    void navigate(router, `/chain/${newChainId}/pending`).catch(() => undefined);
-  };
+  const handleChainChange = (newChainId: number) =>
+    chainRedirect(router, newChainId, '/pending');
 
   if (!chainInfo) {
     return (

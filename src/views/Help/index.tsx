@@ -10,13 +10,13 @@
 // Nothing here fetches: it is copy plus a pure model
 // (./helpContent), so it also works with the backend offline.
 import { css } from '@linaria/core';
-import { navigate } from '@native-router/core';
 import { TypedLink, useRouter } from '@native-router/react';
 
 import TopNavigation from '@/components/TopNavigation';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/Card';
 import { PageContainer, PageHeader } from '@/components/ui/PageLayout';
 import { readRememberedChainId } from '@/views/Home/Landing';
+import { chainRedirect } from '@/views/chainNav';
 import {
   FAQ,
   GLOSSARY,
@@ -184,9 +184,7 @@ export default function Help() {
   // it follows the remembered chain (the same fallback as the other
   // chain-less pages) and a chain switch lands on that chain's home.
   const navChainId = readRememberedChainId() ?? 1;
-  const handleNavChainChange = (chainId: number) => {
-    void navigate(router, `/chain/${chainId}`).catch(() => undefined);
-  };
+  const handleNavChainChange = (chainId: number) => chainRedirect(router, chainId);
 
   return (
     <>

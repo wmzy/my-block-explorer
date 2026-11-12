@@ -20,6 +20,7 @@
 // can attribute backend-offline precisely.
 import { api, get, withSignal } from '@/util/http';
 import { bindQueryFn, createQueryCache, createQueryHook } from '@/util/useQuery';
+import { chunk } from '@/utils/chunk';
 
 export type SignatureKind = 'function' | 'event';
 
@@ -174,20 +175,6 @@ export const MAX_SELECTORS_PER_REQUEST = 25;
 const MAX_BATCH_CHUNKS = 4;
 
 /**
- * Pure: split a list into consecutive chunks of at most `maxPerChunk`
- * items, order preserved. `maxPerChunk` below 1 is clamped to 1; an empty
- * list yields no chunks.
- */
-export function chunkSelectors<T>(items: readonly T[], maxPerChunk: number): T[][] {
-  const size = Math.max(1, Math.floor(maxPerChunk));
-  const chunks: T[][] = [];
-  for (let index = 0; index < items.length; index += size) {
-    chunks.push(items.slice(index, index + size));
-  }
-  return chunks;
-}
-
-/**
  * Resolve openchain signatures for a selector set that may exceed the
  * API's 25-selector request cap: the set is chunked (≤ cap per chunk) and
  * every chunk rides its own batched GET; the outcomes merge into one map.
@@ -198,7 +185,7 @@ export function chunkSelectors<T>(items: readonly T[], maxPerChunk: number): T[]
 export function useSignaturesBatched(
   selectors: readonly string[],
 ): Record<string, SignatureOutcome> {
-  const chunks = chunkSelectors(
+  const chunks = chunk(
     [...new Set(selectors.filter(selector => selector !== ''))],
     MAX_SELECTORS_PER_REQUEST,
   ).slice(0, MAX_BATCH_CHUNKS);
