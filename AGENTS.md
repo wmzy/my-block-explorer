@@ -801,7 +801,18 @@ pnpm typecheck           # tsc --noEmit
     pinned: semantic-release from conventional commits on push to main, version
     NEVER written back to the repo (no @semantic-release/git) — a guard step now
     FAILS when package.json ≠ latest v-tag; package.json set to 1.2.0;
-    CHANGELOG.md created (hand-maintained; tags authoritative). `/api/health` +
+    CHANGELOG.md created (hand-maintained; tags authoritative). **Version-sync
+    oscillation trap (2026-11-12)**: a sync commit that bumps package.json to
+    the CURRENT tag while unreleased feat/fix commits exist gets TAGGED ITSELF
+    by the push (semantic-release releases the pending commits and puts the new
+    tag on the sync commit), re-breaking the guard — this is exactly how
+    c437169 synced to v1.3.0 and shipped as v1.4.0, leaving every push from
+    2026-09-26 to 2026-11-12 red (the failing guard also blocks the Release
+    step, so no new tag can ever be cut to fix the state). Recovery is
+    TWO pushes: (1) sync to the old tag → run goes green and semantic-release
+    cuts the pending release (v1.5.0); (2) sync to the freshly cut tag — a
+    pure-chore sync with no releasable commits cuts nothing, and package.json
+    == latest tag holds for future pushes. `/api/health` +
     `/api` index version now read package.json via `src/version.ts` (was
     hardcoded "1.0.0"; appVersion resolves lazily, degrades to 'unknown' rather
     than a fabricated number). **Bug fixed en route (pre-existing)** —
