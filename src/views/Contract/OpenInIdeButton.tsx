@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { CSSProperties } from 'react';
+import { css, cx } from '@linaria/core';
 import { toast } from 'haze-ui';
 import { get, post } from '@/util/http';
 import { ApiError } from '@/util/apiError';
@@ -9,6 +9,65 @@ type DetectedIde = {
   id: string;
   displayName: string;
 };
+
+const buttonStyles = css`
+  padding: 6px 12px;
+  background: var(--haze-color-bg);
+  color: var(--haze-color-text);
+  border: 1px solid var(--haze-color-border);
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.15s;
+  font-family: inherit;
+  white-space: nowrap;
+`;
+
+// Transient success tint while the open request is confirmed.
+const openedStyles = css`
+  color: var(--haze-color-success);
+  border-color: var(--haze-color-success);
+  background: var(--haze-color-success-subtle);
+`;
+
+const dropdownWrapStyles = css`
+  position: relative;
+`;
+
+const dropdownMenuStyles = css`
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  background: var(--haze-color-bg);
+  border: 1px solid var(--haze-color-border);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  min-width: 140px;
+  z-index: 10;
+  overflow: hidden;
+`;
+
+const dropdownItemStyles = css`
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--haze-color-text);
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--haze-color-border);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+
+  &:hover {
+    background: var(--haze-color-bg-muted);
+  }
+`;
 
 // "Open in IDE" action: detected IDEs come from the backend, opening fires
 // the write-side POST. Zero IDEs (or a failed detection) renders nothing —
@@ -78,22 +137,6 @@ export function OpenInIdeButton({ chainId, address }: { chainId: number; address
     [chainId, address],
   );
 
-  const baseBtnStyle: CSSProperties = {
-    padding: '6px 12px',
-    background: 'white',
-    color: '#333',
-    border: '1px solid #d0d5dd',
-    borderRadius: '4px',
-    cursor: 'pointer',
-    fontSize: '13px',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-    transition: 'all 0.15s',
-    fontFamily: 'inherit',
-    whiteSpace: 'nowrap',
-  };
-
   if (detectedIdes.length === 0) {
     return null;
   }
@@ -101,10 +144,7 @@ export function OpenInIdeButton({ chainId, address }: { chainId: number; address
   if (detectedIdes.length === 1) {
     return (
       <button
-        style={{
-          ...baseBtnStyle,
-          ...(opened ? { color: '#16a34a', borderColor: '#16a34a', background: '#f0fdf4' } : {}),
-        }}
+        className={cx(buttonStyles, opened && openedStyles)}
         onClick={() => handleOpen(detectedIdes[0].id)}
         disabled={opening}
       >
@@ -114,51 +154,20 @@ export function OpenInIdeButton({ chainId, address }: { chainId: number; address
   }
 
   return (
-    <div ref={dropdownRef} style={{ position: 'relative' }}>
+    <div ref={dropdownRef} className={dropdownWrapStyles}>
       <button
-        style={{
-          ...baseBtnStyle,
-          ...(opened ? { color: '#16a34a', borderColor: '#16a34a', background: '#f0fdf4' } : {}),
-        }}
+        className={cx(buttonStyles, opened && openedStyles)}
         onClick={() => setDropdownOpen(prev => !prev)}
         disabled={opening}
       >
         {opening ? 'Opening...' : opened ? 'Opened!' : 'Open in IDE ▾'}
       </button>
       {dropdownOpen && (
-        <div
-          style={{
-            position: 'absolute',
-            top: '100%',
-            left: 0,
-            marginTop: '4px',
-            background: 'white',
-            border: '1px solid #d0d5dd',
-            borderRadius: '6px',
-            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
-            minWidth: '140px',
-            zIndex: 10,
-            overflow: 'hidden',
-          }}
-        >
+        <div className={dropdownMenuStyles}>
           {detectedIdes.map(ide => (
             <button
               key={ide.id}
-              style={{
-                display: 'block',
-                width: '100%',
-                padding: '8px 12px',
-                fontSize: '13px',
-                color: '#333',
-                background: 'none',
-                border: 'none',
-                borderBottom: '1px solid #e8ecef',
-                cursor: 'pointer',
-                textAlign: 'left',
-                fontFamily: 'inherit',
-              }}
-              onMouseOver={e => ((e.target as HTMLElement).style.background = '#f0f4f8')}
-              onMouseOut={e => ((e.target as HTMLElement).style.background = 'none')}
+              className={dropdownItemStyles}
               onClick={() => handleOpen(ide.id)}
             >
               {ide.displayName}

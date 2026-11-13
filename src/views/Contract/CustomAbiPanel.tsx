@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { css } from '@linaria/core';
+import { css, cx } from '@linaria/core';
 import type { Abi, AbiEvent, AbiFunction, AbiParameter } from 'viem';
-import { cardStyles } from './styles';
+import { badgeWarn, cardStyles } from './styles';
 import type { ContractABI } from './types';
 import { useCopyFeedback } from '@/util/useCopyFeedback';
 import { errorMessage } from '@/utils/errorHandler';
@@ -102,14 +102,14 @@ export function validateAbiJson(raw: string): AbiValidation {
 
 const panelStyles = css`
   &.active {
-    border-color: #f0a500;
-    box-shadow: 0 0 0 1px rgba(240, 165, 0, 0.3);
+    border-color: var(--haze-color-warning);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--haze-color-warning) 30%, transparent);
   }
 `;
 
 const panelNoteStyles = css`
   font-size: 13px;
-  color: #8a6d3b;
+  color: var(--haze-color-warning);
   margin: 0 0 12px 0;
 `;
 
@@ -121,14 +121,16 @@ const textareaStyles = css`
   font-family:
     'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
   font-size: 13px;
-  border: 1px solid #e1e5e9;
+  border: 1px solid var(--haze-color-border);
+  background: var(--haze-color-bg);
+  color: var(--haze-color-text);
   border-radius: 6px;
   resize: vertical;
 
   &:focus {
     outline: none;
-    border-color: #f0a500;
-    box-shadow: 0 0 0 2px rgba(240, 165, 0, 0.15);
+    border-color: var(--haze-color-warning);
+    box-shadow: 0 0 0 2px var(--haze-color-focus-ring);
   }
 `;
 
@@ -142,14 +144,14 @@ const actionsStyles = css`
 const actionButtonStyles = css`
   padding: 6px 14px;
   font-size: 13px;
-  border: 1px solid #dee2e6;
+  border: 1px solid var(--haze-color-border);
   border-radius: 4px;
-  background: #f8f9fa;
-  color: #495057;
+  background: var(--haze-color-bg-subtle);
+  color: var(--haze-color-text-secondary);
   cursor: pointer;
 
   &:hover {
-    background: #e9ecef;
+    background: var(--haze-color-bg-muted);
   }
 
   &:disabled {
@@ -157,14 +159,16 @@ const actionButtonStyles = css`
     opacity: 0.6;
   }
 
+  /* Same recipe as the shared warningActionButton family in ./styles. */
   &.primary {
-    background: #f0a500;
-    border-color: #d69200;
-    color: white;
+    background: var(--haze-color-warning);
+    border-color: var(--haze-color-warning-hover);
+    color: var(--haze-color-text-inverse);
     font-weight: 500;
 
     &:hover {
-      background: #d69200;
+      background: var(--haze-color-warning-hover);
+      border-color: var(--haze-color-warning-active);
     }
   }
 `;
@@ -176,13 +180,13 @@ const feedbackStyles = css`
   font-size: 13px;
 
   &.error {
-    background: #f8d7da;
-    color: #721c24;
+    background: var(--haze-color-danger-subtle);
+    color: var(--haze-color-danger);
   }
 
   &.ok {
-    background: #fff8e6;
-    color: #8a6d3b;
+    background: var(--haze-color-warning-subtle);
+    color: var(--haze-color-warning);
   }
 `;
 
@@ -190,8 +194,6 @@ const activeChipStyles = css`
   display: inline-block;
   padding: 2px 10px;
   border-radius: 10px;
-  background: #f0a500;
-  color: white;
   font-size: 12px;
   font-weight: 600;
 `;
@@ -210,6 +212,17 @@ const activeChipStyles = css`
 // 'impl-unverified' (a proxy whose implementation is unverified while the
 // proxy itself still has a server ABI) must not claim the whole contract
 // has no ABI anywhere.
+const panelHeaderStyles = css`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+
+  h2 {
+    margin: 0;
+  }
+`;
+
 export function CustomAbiPanel({
   storedRaw,
   onApply,
@@ -272,16 +285,9 @@ export function CustomAbiPanel({
 
   return (
     <div className={`${cardStyles} ${panelStyles}${active ? ' active' : ''}`}>
-      <div
-        style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          marginBottom: '12px',
-        }}
-      >
-        <h2 style={{ margin: 0 }}>Use custom ABI</h2>
-        {active && <span className={activeChipStyles}>Active</span>}
+      <div className={panelHeaderStyles}>
+        <h2>Use custom ABI</h2>
+        {active && <span className={cx(badgeWarn, activeChipStyles)}>Active</span>}
       </div>
       {unlockReason === 'impl-unverified' ? (
         <p className={panelNoteStyles}>

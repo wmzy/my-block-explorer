@@ -21,12 +21,10 @@ import {
 import { compileVerifyService, CompileVerifyHttpError } from '../services/CompileVerifyService';
 import { contractSourceService } from '../services/ContractSourceService';
 import { respondError } from '../utils/api-error';
+import { isRecord } from '../utils/isRecord';
 import { safeJsonResponse } from '../utils/serialization';
 
 const logger = createLogger('verify-routes');
-
-const isRecordLike = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null;
 
 const app = new Hono();
 
@@ -62,7 +60,7 @@ app.post(
     } catch {
       body = null;
     }
-    const validation = validateVerificationFiles(isRecordLike(body) ? body.files : undefined);
+    const validation = validateVerificationFiles(isRecord(body) ? body.files : undefined);
     if (!validation.ok) {
       return respondError(c, 400, 'invalid_files', validation.message);
     }
@@ -140,7 +138,7 @@ app.post(
       body = null;
     }
 
-    const record = isRecordLike(body) ? body : {};
+    const record = isRecord(body) ? body : {};
     const abi = typeof record.abi === 'string' ? record.abi : undefined;
     const sourceCode = typeof record.sourceCode === 'string' ? record.sourceCode : undefined;
     const name = typeof record.name === 'string' ? record.name : undefined;
@@ -317,7 +315,7 @@ app.post(
     } catch {
       body = null;
     }
-    const record = isRecordLike(body) ? body : {};
+    const record = isRecord(body) ? body : {};
 
     let outcome;
     try {

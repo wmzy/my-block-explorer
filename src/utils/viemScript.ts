@@ -21,6 +21,7 @@
 
 import { parseFunctionArgs, type ParamComponent } from './paramParsing';
 import { type CastableFunction, toAbiFunction } from './castCommand';
+import { VIEM_CHAIN_EXPORTS } from '@/utils/viemChainExports';
 
 export type { CastableFunction } from './castCommand';
 
@@ -47,23 +48,6 @@ const INT_TYPE_PATTERN = /^(u?)int(\d+)?$/;
 // Rightmost array suffix — the same shape paramParsing peels, so any
 // array (fixed, dynamic, nested) is literalized element-wise.
 const ARRAY_SUFFIX_PATTERN = /^(.*)\[(\d*)]$/;
-
-// viem/chains export names for exactly the explorer's ten popular chain
-// ids — the curated set where the snippet imports viem's own chain object
-// instead of defining an inline twin. Every other id (testnets, custom
-// registrations) goes through the defineChain fallback below.
-export const VIEM_CHAIN_EXPORTS: ReadonlyMap<number, string> = new Map([
-  [1, 'mainnet'],
-  [137, 'polygon'],
-  [56, 'bsc'],
-  [42161, 'arbitrum'],
-  [8453, 'base'],
-  [10, 'optimism'],
-  [43114, 'avalanche'],
-  [250, 'fantom'],
-  [42220, 'celo'],
-  [100, 'gnosis'],
-]);
 
 // Build the viem snippet for one function's current form state. `rawArgs`
 // are the form's raw input strings; a null/undefined entry is a missing

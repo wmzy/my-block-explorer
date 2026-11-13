@@ -168,43 +168,6 @@ export const indexedAddresses = duckdbTable(
   ],
 );
 
-// User preferences table
-export const userPreferences = duckdbTable('user_preferences', {
-  id: integer().primaryKey(),
-  theme: varchar({ length: 20 }).default('light'),
-  language: varchar({ length: 10 }).default('en'),
-  updatedAt: datetime().default(sql`now()`),
-});
-
-// Index status table
-export const indexStatus = duckdbTable(
-  'index_status',
-  {
-    ...chainColumns,
-    indexType: varchar({ length: 20 }).notNull(), // 'blocks', 'transactions'
-    lastIndexedBlock: bignum(),
-    lastIndexedAt: datetime().default(sql`now()`),
-  },
-  table => [primaryKey({ columns: [table.chainId, table.indexType] })],
-);
-
-// Access history table
-export const accessHistory = duckdbTable(
-  'access_history',
-  {
-    ...chainColumns,
-    type: varchar({ length: 20 }).notNull(), // 'block', 'transaction', 'address'
-    identifier: varchar({ length: 66 }).notNull(), // hash or address
-    firstAccessed: datetime().default(sql`now()`),
-    lastAccessed: datetime().default(sql`now()`),
-    accessCount: integer().default(1),
-  },
-  table => [
-    primaryKey({ columns: [table.chainId, table.type, table.identifier] }),
-    // NOTE: indexes are created manually in migration scripts
-  ],
-);
-
 // Contract source table
 export const contractSources = duckdbTable(
   'contract_sources',
@@ -321,23 +284,6 @@ export const contractEvents = duckdbTable(
   ],
 );
 
-// Event table registry
-export const eventTableRegistry = duckdbTable(
-  'event_table_registry',
-  {
-    ...chainAddressColumns,
-    contractAddress: address().notNull(),
-    eventSignature: varchar({ length: 66 }).notNull(),
-    eventName: varchar({ length: 255 }),
-    tableName: varchar({ length: 255 }).notNull(),
-    tableSchema: text(),
-    isActive: boolean().default(true),
-    lastAccessed: datetime(),
-    ...timestampColumns,
-  },
-  table => [primaryKey({ columns: [table.chainId, table.contractAddress, table.eventSignature] })],
-);
-
 export const storageLayouts = duckdbTable(
   'storage_layouts',
   {
@@ -353,9 +299,6 @@ export const storageLayouts = duckdbTable(
 );
 
 // Inferred type exports
-export type EventTableRegistry = typeof eventTableRegistry.$inferSelect;
-export type NewEventTableRegistry = typeof eventTableRegistry.$inferInsert;
-
 export type UserRpcConfig = typeof userRpcConfigs.$inferSelect;
 export type NewUserRpcConfig = typeof userRpcConfigs.$inferInsert;
 

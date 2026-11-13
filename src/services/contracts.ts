@@ -5,10 +5,12 @@ import type { StorageLayout } from '@/types/storage';
 import { isChainSupported } from '@/config/chains';
 import { api, get, post, withSignal } from '@/util/http';
 import { bindQueryFn, createQueryCache, createQueryHook } from '@/util/useQuery';
+// The one "one day" constant — import-free leaf.
+import { MS_PER_DAY } from '@/utils/time';
 
 // Immutable data never changes once the indexer has it; 24h is effectively
 // "for the lifetime of a session" while still reclaiming memory eventually.
-export const IMMUTABLE_CACHE_TIME = 24 * 60 * 60 * 1000;
+export const IMMUTABLE_CACHE_TIME = MS_PER_DAY;
 
 export type ContractSource = Record<string, unknown>;
 export type ContractAbi = Record<string, unknown>;

@@ -50,6 +50,8 @@ import {
 } from '../utils/webhooks';
 import { createLogger } from '../server/logger';
 import { errorMessage } from '../utils/errorHandler';
+// Shared-cursor bounded pool (import-free leaf) for the per-chain sweep.
+import { runBoundedPool } from '../utils/boundedPool';
 
 const logger = createLogger('watch-service');
 
@@ -565,29 +567,21 @@ export class WatchService {
       return;
     }
 
-    // Bounded worker pool over a shared cursor: at most
-    // WATCH_GETLOGS_CONCURRENCY getLogs in flight for this chain.
-    let cursor = 0;
-    const worker = async (): Promise<void> => {
-      while (cursor < subs.length) {
-        const sub = subs[cursor];
-        cursor += 1;
-        try {
-          await this.scanSubscription(client, chainId, sub, head);
-        } catch (err) {
-          // The cursor did not move for this row: the same range is
-          // retried next tick. Events may already have been published —
-          // at-least-once, deduped downstream.
-          logger.warn(
-            { err, chainId, address: sub.address },
-            'Watch sweep failed for one subscription; range retried next tick',
-          );
-        }
+    // Bounded worker pool: at most WATCH_GETLOGS_CONCURRENCY getLogs in
+    // flight for this chain.
+    await runBoundedPool(subs, WATCH_GETLOGS_CONCURRENCY, async sub => {
+      try {
+        await this.scanSubscription(client, chainId, sub, head);
+      } catch (err) {
+        // The cursor did not move for this row: the same range is
+        // retried next tick. Events may already have been published —
+        // at-least-once, deduped downstream.
+        logger.warn(
+          { err, chainId, address: sub.address },
+          'Watch sweep failed for one subscription; range retried next tick',
+        );
       }
-    };
-    await Promise.all(
-      Array.from({ length: Math.min(WATCH_GETLOGS_CONCURRENCY, subs.length) }, () => worker()),
-    );
+    });
   }
 
   private async scanSubscription(

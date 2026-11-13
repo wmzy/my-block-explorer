@@ -1,4 +1,5 @@
 import React from 'react';
+import { css } from '@linaria/core';
 
 type ErrorBoundaryProps = {
   children: React.ReactNode;
@@ -9,6 +10,26 @@ type ErrorBoundaryState = {
   hasError: boolean;
   error: Error | null;
 };
+
+const fallbackStyles = css`
+  padding: 2rem;
+  text-align: center;
+`;
+
+const fallbackMessageStyles = css`
+  color: var(--haze-color-text-muted);
+  margin-top: 0.5rem;
+`;
+
+const fallbackButtonStyles = css`
+  margin-top: 1rem;
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+  border-radius: 4px;
+  border: 1px solid var(--haze-color-border);
+  background: var(--haze-color-bg-muted);
+  color: var(--haze-color-text);
+`;
 
 export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
   constructor(props: ErrorBoundaryProps) {
@@ -31,21 +52,14 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
       }
 
       return (
-        <div style={{ padding: '2rem', textAlign: 'center' }}>
+        <div className={fallbackStyles}>
           <h2>Something went wrong</h2>
-          <p style={{ color: '#666', marginTop: '0.5rem' }}>
+          <p className={fallbackMessageStyles}>
             {this.state.error?.message ?? 'An unexpected error occurred.'}
           </p>
           <button
             onClick={() => this.setState({ hasError: false, error: null })}
-            style={{
-              marginTop: '1rem',
-              padding: '0.5rem 1rem',
-              cursor: 'pointer',
-              borderRadius: '4px',
-              border: '1px solid #ccc',
-              background: '#f5f5f5',
-            }}
+            className={fallbackButtonStyles}
           >
             Try again
           </button>

@@ -25,6 +25,8 @@ import { fetchWithTimeout } from '@/utils/fetchWithTimeout';
 import { createTtlLruCache } from '@/utils/ttlLruCache';
 import { chunk } from '@/utils/chunk';
 import { errorMessage } from '@/utils/errorHandler';
+// Canonical record-shape guard (rejects arrays) — import-free leaf.
+import { isRecord } from '@/utils/isRecord';
 
 /** One usable price observation: the USD value and when we fetched it. */
 export type UsdPriceSnapshot = { usd: number; fetchedAt: number };
@@ -120,9 +122,6 @@ export function resetPricesForTests(): void {
   priceHistoryCache.clear();
   priceHistoryInflight.clear();
 }
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null;
 
 // Ids travel inside a URL path segment: anything empty or containing
 // separators/whitespace is rejected before it can corrupt the request.

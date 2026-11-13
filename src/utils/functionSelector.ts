@@ -14,7 +14,7 @@ export function getFunctionSelector(func: ContractFunction): `0x${string}` | nul
   }
 }
 
-export function buildFunctionSignature(func: Pick<ContractFunction, 'name' | 'inputs'>): string {
+function buildFunctionSignature(func: Pick<ContractFunction, 'name' | 'inputs'>): string {
   const paramTypes = func.inputs.map(input => input.type).join(',');
   return `functionName(${paramTypes})`.replace('functionName', func.name);
 }

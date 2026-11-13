@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, type ReactNode } from 'react';
-import { css } from '@linaria/core';
+import { css, cx } from '@linaria/core';
 import type { Abi, StateOverride as ViemStateOverride } from 'viem';
 import {
   parseContractFunctionsUnified,
@@ -13,7 +13,7 @@ import {
 } from '@/utils/contractInteraction';
 import { FunctionCallForm } from './FunctionCallForm';
 import { resolveRevokeTarget, type RevokeIntent } from './revokeIntent';
-import { cardStyles } from './styles';
+import { cardStyles, noticeBoxWarn, secondaryActionButton } from './styles';
 import { argsKey } from './types';
 import type { ContractSource } from './types';
 import { describeCallError } from '@/utils/paramParsing';
@@ -23,8 +23,8 @@ import { useDebouncedValue } from '@/util/useDebouncedQueryParam';
 
 const functionListStyles = css`
   .function-item {
-    background: #f8f9fa;
-    border: 1px solid #e1e5e9;
+    background: var(--haze-color-bg-subtle);
+    border: 1px solid var(--haze-color-border);
     border-radius: 6px;
     padding: 12px 16px;
     margin-bottom: 8px;
@@ -33,7 +33,7 @@ const functionListStyles = css`
       font-family:
         'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
       font-weight: 600;
-      color: #1a1a1a;
+      color: var(--haze-color-text);
       margin-bottom: 4px;
       /* Long signatures (nested tuple args) wrap instead of pushing the
          card wide on a phone. */
@@ -42,8 +42,8 @@ const functionListStyles = css`
 
     .function-type {
       display: inline-block;
-      background: #007bff;
-      color: white;
+      background: var(--haze-color-primary);
+      color: var(--haze-color-text-inverse);
       font-size: 11px;
       padding: 2px 6px;
       border-radius: 3px;
@@ -51,12 +51,11 @@ const functionListStyles = css`
     }
 
     &.view .function-type {
-      background: #28a745;
+      background: var(--haze-color-success);
     }
 
     &.payable .function-type {
-      background: #ffc107;
-      color: #000;
+      background: var(--haze-color-warning);
     }
   }
 `;
@@ -66,8 +65,8 @@ const filterControlsStyles = css`
   flex-wrap: wrap;
   gap: 16px;
   padding: 16px;
-  background: #f8f9fa;
-  border: 1px solid #e1e5e9;
+  background: var(--haze-color-bg-subtle);
+  border: 1px solid var(--haze-color-border);
   border-radius: 8px;
   margin-bottom: 20px;
 `;
@@ -81,37 +80,34 @@ const filterGroupStyles = css`
 const filterLabelStyles = css`
   font-size: 14px;
   font-weight: 500;
-  color: #666;
+  color: var(--haze-color-text-muted);
 `;
 
 const filterSelectStyles = css`
   padding: 6px 12px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--haze-color-border);
   border-radius: 4px;
   font-size: 14px;
-  background: white;
+  background: var(--haze-color-bg);
+  color: var(--haze-color-text);
 `;
 
 const filterInputStyles = css`
   padding: 6px 12px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--haze-color-border);
   border-radius: 4px;
   font-size: 14px;
+  background: var(--haze-color-bg);
+  color: var(--haze-color-text);
   width: 150px;
 `;
 
+// Layout half of the Reset button; colors/hover/disabled come from the
+// shared secondaryActionButton family in ./styles.
 const resetButtonStyles = css`
   padding: 6px 12px;
-  background: #6c757d;
-  color: white;
-  border: none;
   border-radius: 4px;
   font-size: 14px;
-  cursor: pointer;
-
-  &:hover {
-    background: #5a6268;
-  }
 `;
 
 // Wraps the block override row so the inline error can claim its own line.
@@ -125,19 +121,15 @@ const blockGroupStyles = css`
 const blockErrorStyles = css`
   flex-basis: 100%;
   font-size: 12px;
-  color: #c62828;
+  color: var(--haze-color-danger);
 `;
 
 // Diamond facet-merge honesty notes: amber palette matches the diamond
-// banner on the contract page — omissions are named, never silent.
+// banner on the contract page — omissions are named, never silent. Colors
+// come from the shared noticeBoxWarn family (composed at the JSX site).
 const facetNoteStyles = css`
   margin-bottom: 16px;
-  padding: 10px 14px;
-  background: #fff8e6;
-  border: 1px solid #f0a500;
-  border-radius: 6px;
   font-size: 13px;
-  color: #8a6d3b;
 
   div + div {
     margin-top: 6px;
@@ -145,16 +137,16 @@ const facetNoteStyles = css`
 `;
 
 // Revoke-intent card: the container sits above the function list; the
-// note rows inside reuse the amber honesty palette (the standard-ABI
-// fallback is a caveat, never silent).
+// note rows inside reuse the danger tint (the standard-ABI fallback is a
+// caveat, never silent).
 const revokeCardStyles = css`
   margin-bottom: 20px;
   padding: 14px 16px;
-  background: #fdf3f4;
-  border: 1px solid #e6a0a6;
+  background: var(--haze-color-danger-subtle);
+  border: 1px solid color-mix(in srgb, var(--haze-color-danger) 25%, transparent);
   border-radius: 8px;
   font-size: 14px;
-  color: #7a3b42;
+  color: var(--haze-color-danger);
 
   div + div {
     margin-top: 6px;
@@ -175,6 +167,32 @@ const revokeSummaryStyles = css`
 
 const revokeNoteStyles = css`
   font-size: 13px;
+`;
+
+// Proxy/impl banner above the function list: the info tint names which
+// address the calls hit (proxy admin functions vs implementation surface).
+const proxyBannerStyles = css`
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  background: var(--haze-color-info-subtle);
+  border: 1px solid color-mix(in srgb, var(--haze-color-info) 25%, transparent);
+  border-radius: 8px;
+  font-size: 14px;
+  color: var(--haze-color-info);
+`;
+
+const proxyBannerImplStyles = css`
+  margin-left: 8px;
+  font-family: monospace;
+  font-size: 12px;
+  word-break: break-all;
+`;
+
+// Wallet availability note above the function list.
+const walletIntroStyles = css`
+  margin-bottom: 16px;
+  font-size: 14px;
+  color: var(--haze-color-text-muted);
 `;
 
 // The block override feeds viem's bigint `blockNumber` parameter directly —
@@ -792,31 +810,14 @@ export function ContractInteract({
       {revokeArea}
 
       {isProxyMode && (
-        <div
-          style={{
-            padding: '12px 16px',
-            marginBottom: '16px',
-            background: '#f0f7ff',
-            border: '1px solid #c6dfff',
-            borderRadius: '8px',
-            fontSize: '14px',
-            color: '#1a56db',
-          }}
-        >
+        <div className={proxyBannerStyles}>
           {contractTarget === 'proxy'
             ? 'Interacting with the proxy contract itself (admin functions).'
             : isDiamondProxy
               ? 'Interacting via the diamond proxy address — the function list merges every facet\u2019s ABI.'
               : 'Interacting with implementation contract via proxy address.'}
           {!isDiamondProxy && contractSource.implementationAddress && (
-            <span
-              style={{
-                marginLeft: '8px',
-                fontFamily: 'monospace',
-                fontSize: '12px',
-                wordBreak: 'break-all',
-              }}
-            >
+            <span className={proxyBannerImplStyles}>
               Implementation: {contractSource.implementationAddress}
             </span>
           )}
@@ -829,7 +830,7 @@ export function ContractInteract({
       {isDiamondProxy &&
         contractTarget !== 'proxy' &&
         (facetMerge.unavailable.length > 0 || facetMerge.skippedSignatures.length > 0) && (
-        <div role="status" className={facetNoteStyles}>
+        <div role="status" className={cx(noticeBoxWarn, facetNoteStyles)}>
           {facetMerge.unavailable.length > 0 && (
             <div>
               ABI unavailable for {facetMerge.unavailable.join(', ')} — those facets' functions
@@ -887,7 +888,7 @@ export function ContractInteract({
               setGlobalBlockNumber('');
               setBlockError('');
             }}
-            className={resetButtonStyles}
+            className={cx(secondaryActionButton, resetButtonStyles)}
           >
             Reset
           </button>
@@ -899,7 +900,7 @@ export function ContractInteract({
         </div>
       </div>
 
-      <div style={{ marginBottom: '16px', fontSize: '14px', color: '#666' }}>
+      <div className={walletIntroStyles}>
         {walletProvider === null
           ? 'Write functions are simulations only. To execute transactions, use a Web3 wallet.'
           : 'Write functions simulate locally — or send them from your wallet below. This explorer never sees your keys.'}

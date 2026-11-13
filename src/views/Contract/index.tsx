@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
-import { css } from '@linaria/core';
+import { css, cx } from '@linaria/core';
 import { getAddress, type Address, type Hex } from 'viem';
 import { useControl } from 'react-use-control';
 import { z } from 'zod';
@@ -55,7 +55,18 @@ import { OpenInIdeButton } from './OpenInIdeButton';
 import { SourcifyVerifyPanel } from './SourcifyVerifyPanel';
 import { CompileVerifyPanel } from './CompileVerifyPanel';
 import { ManualVerifyPanel } from './ManualVerifyPanel';
-import { cardStyles, errorStyles, loadingStyles } from './styles';
+import {
+  badgeError,
+  badgeOk,
+  badgeWarn,
+  cardStyles,
+  errorStyles,
+  loadingStyles,
+  noticeBoxError,
+  noticeBoxOk,
+  noticeBoxWarn,
+  warningActionButton,
+} from './styles';
 import type { ContractABI, ContractCreationInfo, ContractSource } from './types';
 
 const pageStyles = css`
@@ -77,18 +88,18 @@ const headerStyles = css`
   h1 {
     font-size: 24px;
     margin: 0 0 8px 0;
-    color: #1a1a1a;
+    color: var(--haze-color-text);
   }
 
   .chain-info {
-    color: #666;
+    color: var(--haze-color-text-muted);
     font-size: 14px;
   }
 
   .address {
     font-family:
       'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
-    background: #f8f9fa;
+    background: var(--haze-color-bg-subtle);
     padding: 4px 8px;
     border-radius: 4px;
     font-size: 14px;
@@ -143,7 +154,7 @@ const tabsStyles = css`
   display: flex;
   justify-content: space-between;
   align-items: center;
-  border-bottom: 1px solid #e1e5e9;
+  border-bottom: 1px solid var(--haze-color-border);
   margin-bottom: 20px;
 
   .tabs-left {
@@ -156,13 +167,13 @@ const tabsStyles = css`
     border: none;
     cursor: pointer;
     font-size: 14px;
-    color: #666;
+    color: var(--haze-color-text-muted);
     border-bottom: 2px solid transparent;
     transition: all 0.2s;
     white-space: nowrap;
 
     &:hover {
-      color: #1a1a1a;
+      color: var(--haze-color-text);
     }
 
     &.active {
@@ -196,13 +207,13 @@ const proxyToggleStyles = css`
 
   .toggle-label {
     font-size: 13px;
-    color: #666;
+    color: var(--haze-color-text-muted);
     margin-right: 8px;
   }
 
   .toggle-group {
     display: flex;
-    background: #f0f0f0;
+    background: var(--haze-color-bg-muted);
     border-radius: 16px;
     padding: 2px;
   }
@@ -214,21 +225,23 @@ const proxyToggleStyles = css`
     background: none;
     cursor: pointer;
     border-radius: 14px;
-    color: #666;
+    color: var(--haze-color-text-muted);
     transition: all 0.2s;
 
     &:hover {
-      color: #1a1a1a;
+      color: var(--haze-color-text);
     }
 
     &.active {
-      background: white;
+      background: var(--haze-color-bg);
       color: var(--haze-color-primary);
       box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
     }
   }
 `;
 
+// Shape of the custom-ABI badge; colors come from the shared badgeWarn
+// family (composed at the JSX site).
 const customAbiBadgeStyles = css`
   display: inline-flex;
   align-items: center;
@@ -237,9 +250,6 @@ const customAbiBadgeStyles = css`
   align-self: center;
   padding: 2px 10px;
   border-radius: 12px;
-  background: #f0a500;
-  border: 1px solid #d69200;
-  color: white;
   font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
@@ -249,20 +259,20 @@ const customAbiBadgeClearStyles = css`
   border: none;
   background: none;
   padding: 0;
-  color: white;
+  color: var(--haze-color-warning);
   font-size: 13px;
   line-height: 1;
   cursor: pointer;
 
   &:hover {
-    color: #fff3cd;
+    color: var(--haze-color-warning-hover);
   }
 `;
 
 // One-time notice for a stored custom ABI silently shadowed by a server
 // ABI that appeared after the paste (the contract got verified): the paste
 // stays in localStorage but is no longer used. Amber palette matches the
-// other custom-ABI affordances on this page.
+// other custom-ABI affordances on this page (colors from noticeBoxWarn).
 const shadowNoticeStyles = css`
   display: flex;
   align-items: center;
@@ -270,12 +280,7 @@ const shadowNoticeStyles = css`
   gap: 12px;
   flex-wrap: wrap;
   margin-bottom: 20px;
-  padding: 12px 16px;
-  background: #fff8e6;
-  border: 1px solid #f0a500;
-  border-radius: 6px;
   font-size: 14px;
-  color: #8a6d3b;
 `;
 
 const shadowNoticeActionsStyles = css`
@@ -285,15 +290,11 @@ const shadowNoticeActionsStyles = css`
 
 // Amber notice for EIP-2535 diamond proxies: source/ABI/events/storage
 // render facet[0] only, so the diamond must not read as a plain proxy with
-// a single implementation. Same palette as the custom-ABI notices.
+// a single implementation. Same palette as the custom-ABI notices
+// (colors from noticeBoxWarn).
 const diamondNoticeStyles = css`
   margin-bottom: 20px;
-  padding: 12px 16px;
-  background: #fff8e6;
-  border: 1px solid #f0a500;
-  border-radius: 6px;
   font-size: 14px;
-  color: #8a6d3b;
 `;
 
 // Kind badge inside the on-chain proxy detection card: the info palette
@@ -302,14 +303,14 @@ const proxyKindBadgeStyles = css`
   display: inline-block;
   padding: 2px 10px;
   border-radius: 4px;
-  background: var(--haze-info-subtle);
-  color: var(--haze-info);
+  background: var(--haze-color-info-subtle);
+  color: var(--haze-color-info);
   font-weight: 600;
   font-size: 13px;
 `;
 
 const proxyImplLinkStyles = css`
-  color: var(--haze-primary);
+  color: var(--haze-color-primary);
   text-decoration: none;
 
   &:hover {
@@ -322,35 +323,36 @@ const proxyImplLinkStyles = css`
 const proxyFootnoteStyles = css`
   margin: 12px 0 0;
   font-size: 13px;
-  color: var(--haze-text-muted);
+  color: var(--haze-color-text-muted);
 `;
 
+// Layout shared by the shadow-notice action buttons; colors come from the
+// warningActionButton family (primary) and the local amber secondary below.
 const shadowNoticeButtonStyles = css`
   padding: 6px 14px;
   font-size: 13px;
   border-radius: 4px;
+`;
+
+const shadowNoticeSecondaryStyles = css`
   cursor: pointer;
+  background: transparent;
+  border: 1px solid var(--haze-color-border);
+  color: var(--haze-color-warning);
 
-  &.primary {
-    background: #f0a500;
-    border: 1px solid #d69200;
-    color: white;
-    font-weight: 500;
-
-    &:hover {
-      background: #d69200;
-    }
+  &:hover {
+    background: var(--haze-color-warning-subtle);
   }
+`;
 
-  &.secondary {
-    background: transparent;
-    border: 1px solid #e1e5e9;
-    color: #8a6d3b;
-
-    &:hover {
-      background: #fdf3dd;
-    }
-  }
+// Shape of the proxy-kind badge in the info grid; colors come from the
+// shared badgeOk family (composed at the JSX site).
+const proxyTypeBadgeStyles = css`
+  display: inline-block;
+  padding: 2px 10px;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 13px;
 `;
 
 // Grid-only delta over the shared InfoGrid: the rows are shared InfoItem
@@ -360,6 +362,8 @@ const infoGridStyles = css`
   gap: 16px;
 `;
 
+// Shape of the verification status badge; the ok/error/warn colors come
+// from the shared badge families (composed at the JSX site).
 const statusBadgeStyles = css`
   display: inline-block;
   padding: 4px 8px;
@@ -367,21 +371,6 @@ const statusBadgeStyles = css`
   font-size: 12px;
   font-weight: 500;
   text-transform: uppercase;
-
-  &.verified {
-    background: #d4edda;
-    color: #155724;
-  }
-
-  &.unverified {
-    background: #f8d7da;
-    color: #721c24;
-  }
-
-  &.partial {
-    background: #fff3cd;
-    color: #856404;
-  }
 `;
 
 // Unverified guidance cell in the info grid: the Sourcify deep link plus
@@ -413,7 +402,7 @@ const verifyLinkStyles = css`
 
 const verifyHintStyles = css`
   font-size: 12px;
-  color: #666;
+  color: var(--haze-color-text-muted);
   word-break: normal;
 `;
 
@@ -434,22 +423,11 @@ const verifyInlineButtonStyles = css`
 `;
 
 // Force Refresh outcome banner inside the contract information card; the
-// palette matches the verification status badges above it.
+// palette comes from the shared notice families (composed at the JSX
+// site), matching the verification status badges above it.
 const cacheNoticeStyles = css`
   margin-bottom: 12px;
-  padding: 8px 12px;
-  border-radius: 4px;
   font-size: 13px;
-
-  &.ok {
-    background: #d4edda;
-    color: #155724;
-  }
-
-  &.error {
-    background: #f8d7da;
-    color: #721c24;
-  }
 `;
 
 // Dedicated not-a-contract state (P1-2): the address-page link mirrors the
@@ -465,35 +443,23 @@ const notAContractLinkStyles = css`
 `;
 
 // Inline unlock pointer rendered by the ABI/Interact tabs when the contract
-// has no server ABI and nothing pasted yet.
+// has no server ABI and nothing pasted yet. Colors come from the shared
+// noticeBoxWarn family (composed at the JSX site).
 const abiUnlockStyles = css`
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
-  padding: 14px 16px;
-  background: #fff8e6;
-  border: 1px solid #f0a500;
-  border-radius: 6px;
   font-size: 14px;
-  color: #8a6d3b;
 `;
 
+// Layout half of the unlock button; colors/hover/disabled come from the
+// shared warningActionButton family.
 const abiUnlockButtonStyles = css`
   padding: 6px 14px;
   font-size: 13px;
-  border: 1px solid #f0a500;
   border-radius: 4px;
-  background: #f0a500;
-  color: white;
-  font-weight: 500;
-  cursor: pointer;
-
-  &:hover {
-    background: #d69200;
-    border-color: #d69200;
-  }
 `;
 
 // Wraps the unlock hint's action buttons when both exist (paste-ABI jump +
@@ -531,16 +497,24 @@ function AbiUnlockHint({
   return (
     <div className={cardStyles}>
       <h2>{title}</h2>
-      <div className={abiUnlockStyles}>
+      <div className={cx(noticeBoxWarn, abiUnlockStyles)}>
         <span>{message}</span>
         <div className={abiUnlockActionsStyles}>
           {onSwitchView && (
-            <button type="button" className={abiUnlockButtonStyles} onClick={onSwitchView}>
+            <button
+              type="button"
+              className={cx(warningActionButton, abiUnlockButtonStyles)}
+              onClick={onSwitchView}
+            >
               {switchLabel ?? 'Switch to Proxy view'}
             </button>
           )}
           {onFocusPanel && (
-            <button type="button" className={abiUnlockButtonStyles} onClick={onFocusPanel}>
+            <button
+              type="button"
+              className={cx(warningActionButton, abiUnlockButtonStyles)}
+              onClick={onFocusPanel}
+            >
               {focusLabel ?? 'Open custom ABI panel'}
             </button>
           )}
@@ -1194,7 +1168,7 @@ export default function Contract() {
       <>
         <TopNavigation currentChainId={currentChainId} onChainChange={handleChainChange} />
         <div className={pageStyles}>
-          <div className={errorStyles}>Invalid contract address or chain ID</div>
+          <div className={cx(noticeBoxError, errorStyles)}>Invalid contract address or chain ID</div>
         </div>
       </>
     );
@@ -1288,7 +1262,7 @@ export default function Contract() {
           />
         ) : (
           error && (
-            <div className={errorStyles}>
+            <div className={cx(noticeBoxError, errorStyles)}>
               Error:
               {error}
             </div>
@@ -1310,7 +1284,13 @@ export default function Contract() {
                 </Button>
               </div>
               {cacheNotice && (
-                <div role="status" className={`${cacheNoticeStyles} ${cacheNotice.kind}`}>
+                <div
+                  role="status"
+                  className={cx(
+                    cacheNoticeStyles,
+                    cacheNotice.kind === 'ok' ? noticeBoxOk : noticeBoxError,
+                  )}
+                >
                   {cacheNotice.text}
                 </div>
               )}
@@ -1319,7 +1299,16 @@ export default function Contract() {
                   <InfoItem label="Contract Name">{contractSource.name}</InfoItem>
                 )}
                 <InfoItem label="Verification Status">
-                  <span className={`${statusBadgeStyles} ${contractSource.verificationStatus}`}>
+                  <span
+                    className={cx(
+                      statusBadgeStyles,
+                      contractSource.verificationStatus === 'verified'
+                        ? badgeOk
+                        : contractSource.verificationStatus === 'partial'
+                          ? badgeWarn
+                          : badgeError,
+                    )}
+                  >
                     {contractSource.verificationStatus}
                   </span>
                 </InfoItem>
@@ -1390,17 +1379,7 @@ export default function Contract() {
                 {contractSource.isProxy && (
                   <>
                     <InfoItem label="Proxy Type">
-                      <span
-                        style={{
-                          display: 'inline-block',
-                          padding: '2px 10px',
-                          borderRadius: '4px',
-                          background: '#e8f5e9',
-                          color: '#2e7d32',
-                          fontWeight: 600,
-                          fontSize: '13px',
-                        }}
-                      >
+                      <span className={cx(badgeOk, proxyTypeBadgeStyles)}>
                         {PROXY_TYPE_LABELS[contractSource.proxyType ?? 'unknown'] ??
                           contractSource.proxyType?.toUpperCase()}{' '}
                         Proxy
@@ -1567,7 +1546,7 @@ export default function Contract() {
                 explicit choice (Clear frees the stale localStorage entry,
                 Keep only hides the banner for this session). */}
             {customAbiShadowed && !shadowNoticeDismissed && (
-              <div role="status" className={shadowNoticeStyles}>
+              <div role="status" className={cx(noticeBoxWarn, shadowNoticeStyles)}>
                 <span>
                   This contract is now verified server-side — your pasted custom ABI is no longer
                   used.
@@ -1575,14 +1554,14 @@ export default function Contract() {
                 <div className={shadowNoticeActionsStyles}>
                   <button
                     type="button"
-                    className={`${shadowNoticeButtonStyles} primary`}
+                    className={cx(warningActionButton, shadowNoticeButtonStyles)}
                     onClick={handleClearCustomAbi}
                   >
                     Clear custom ABI
                   </button>
                   <button
                     type="button"
-                    className={`${shadowNoticeButtonStyles} secondary`}
+                    className={cx(shadowNoticeSecondaryStyles, shadowNoticeButtonStyles)}
                     onClick={() => setShadowNoticeDismissed(true)}
                   >
                     Keep
@@ -1596,7 +1575,7 @@ export default function Contract() {
                 presenting the diamond as a single-implementation proxy.
                 Interact is the exception: it merges every facet's ABI. */}
             {isDiamond && (
-              <div role="status" className={diamondNoticeStyles}>
+              <div role="status" className={cx(noticeBoxWarn, diamondNoticeStyles)}>
                 Diamond proxy — {diamondFacets.length} facets. Source, ABI, Events and Storage below
                 show facet[0] only; Interact merges every facet&apos;s ABI.
               </div>
@@ -1636,7 +1615,7 @@ export default function Contract() {
                 </button>
                 {(customAbiActive || customAbiShadowed) && (
                   <span
-                    className={customAbiBadgeStyles}
+                    className={cx(badgeWarn, customAbiBadgeStyles)}
                     title={
                       customAbiActive
                         ? 'ABI views are using your pasted custom ABI'

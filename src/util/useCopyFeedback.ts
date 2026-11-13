@@ -96,3 +96,14 @@ export function useCopyFeedback({
 
   return { state, copy, reset, stateFor };
 }
+
+// The label a copy button shows for the machine's current state:
+// 'Copied ✓' after a good write, 'Copy failed' after a bad one, else the
+// caller's idle label (GettingStarted's 'Copy', the NFT tile's id text).
+// Pure — no hooks inside — but named (and housed) beside the state
+// machine it verbalizes so every label-swap site reads identically.
+export function useCopyLabel(state: CopyFeedbackState, idleLabel: string): string {
+  if (state === 'ok') return 'Copied ✓';
+  if (state === 'fail') return 'Copy failed';
+  return idleLabel;
+}

@@ -23,7 +23,7 @@
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Hono } from 'hono';
-import type { MiddlewareHandler } from 'hono';
+import type { Context, MiddlewareHandler, Next } from 'hono';
 import { serveStatic } from '@hono/node-server/serve-static';
 import {
   deriveDocumentTitle,
@@ -139,6 +139,38 @@ const isEligibleNavigation = (
   pathname !== '/api' &&
   isHtmlNavigation(accept);
 
+// The serve tail both middlewares share: read index.html, render it (the
+// og middleware injects the derived share meta; the SPA fallback passes
+// the plain document through), then answer the navigation. A failed read
+// fails OPEN to the static path below (the SPA still loads; only the
+// injected meta is lost; the wiring's startup check makes this
+// unreachable in a correct deployment).
+const serveIndexHtml = async (
+  c: Context,
+  next: Next,
+  readIndexHtml: () => Promise<string>,
+  indexHtmlPath: string,
+  render: (html: string) => string,
+): Promise<Response | void> => {
+  let html: string;
+  try {
+    html = await readIndexHtml();
+  } catch (error) {
+    console.error(`og-meta: cannot read ${indexHtmlPath}:`, error);
+    return next();
+  }
+  const body = render(html);
+  c.header('Content-Type', 'text/html; charset=utf-8');
+  // The served document differs per route while the file is shared:
+  // shared caches must revalidate, or one route's unfurl data poisons
+  // every other route.
+  c.header('Cache-Control', 'no-cache');
+  if (c.req.method === 'HEAD') {
+    return c.body(null, 200);
+  }
+  return c.body(body, 200);
+};
+
 // Derivable HTML navigations get index.html with the shared derivations
 // injected. Everything else — non-HTML Accept, other methods, /api/*, and
 // shapes the derivations cannot name (they fall back to the static
@@ -153,31 +185,13 @@ export function createOgMetaMiddleware(options: OgMetaOptions): MiddlewareHandle
     const search = url.search;
     if (!isDerivableMetaPath(url.pathname, search)) return next();
 
-    let html: string;
-    try {
-      html = await readIndexHtml();
-    } catch (error) {
-      // Fail open to the static path below (the SPA still loads; only the
-      // injected meta is lost). The wiring's startup check makes this
-      // unreachable in a correct deployment.
-      console.error(`og-meta: cannot read ${options.indexHtmlPath}:`, error);
-      return next();
-    }
-
-    const body = injectShareMeta(
-      html,
-      deriveDocumentTitle(url.pathname, search),
-      deriveMetaDescription(url.pathname, search),
+    return serveIndexHtml(c, next, readIndexHtml, options.indexHtmlPath, html =>
+      injectShareMeta(
+        html,
+        deriveDocumentTitle(url.pathname, search),
+        deriveMetaDescription(url.pathname, search),
+      ),
     );
-    c.header('Content-Type', 'text/html; charset=utf-8');
-    // The served document differs per route while the file is shared:
-    // shared caches must revalidate, or one route's unfurl data poisons
-    // every other route.
-    c.header('Cache-Control', 'no-cache');
-    if (c.req.method === 'HEAD') {
-      return c.body(null, 200);
-    }
-    return c.body(body, 200);
   };
 }
 
@@ -192,19 +206,7 @@ export function createSpaFallback(options: OgMetaOptions): MiddlewareHandler {
     if (!isEligibleNavigation(c.req.method, url.pathname, c.req.header('accept'))) {
       return next();
     }
-    let html: string;
-    try {
-      html = await readIndexHtml();
-    } catch (error) {
-      console.error(`og-meta: cannot read ${options.indexHtmlPath}:`, error);
-      return next();
-    }
-    c.header('Content-Type', 'text/html; charset=utf-8');
-    c.header('Cache-Control', 'no-cache');
-    if (c.req.method === 'HEAD') {
-      return c.body(null, 200);
-    }
-    return c.body(html, 200);
+    return serveIndexHtml(c, next, readIndexHtml, options.indexHtmlPath, html => html);
   };
 }
 

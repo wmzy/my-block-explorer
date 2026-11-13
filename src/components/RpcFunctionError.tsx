@@ -11,8 +11,8 @@ type Props = {
 };
 
 const errorBoxStyles = css`
-  background: #fef2f2;
-  border: 1px solid #fecaca;
+  background: var(--haze-color-danger-subtle);
+  border: 1px solid color-mix(in srgb, var(--haze-color-danger) 25%, transparent);
   border-radius: 8px;
   padding: 16px;
   margin: 16px 0;
@@ -29,13 +29,13 @@ const errorBoxStyles = css`
 
     .title {
       font-weight: 600;
-      color: #991b1b;
+      color: var(--haze-color-danger);
       margin: 0;
     }
   }
 
   .error-content {
-    color: #7f1d1d;
+    color: var(--haze-color-danger);
     font-size: 14px;
     line-height: 1.5;
     margin-bottom: 16px;
@@ -44,7 +44,7 @@ const errorBoxStyles = css`
       font-weight: 500;
       font-family:
         'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
-      background: #fed7d7;
+      background: color-mix(in srgb, var(--haze-color-danger) 15%, transparent);
       padding: 2px 6px;
       border-radius: 4px;
     }
@@ -55,27 +55,27 @@ const errorBoxStyles = css`
   }
 
   .error-details {
-    background: #fff5f5;
-    border: 1px solid #fed7d7;
+    background: var(--haze-color-bg);
+    border: 1px solid color-mix(in srgb, var(--haze-color-danger) 15%, transparent);
     border-radius: 6px;
     padding: 12px;
     margin: 12px 0;
     font-size: 13px;
-    color: #7f1d1d;
+    color: var(--haze-color-danger);
     font-family:
       'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
   }
 
   .suggestions {
-    background: #fff5f5;
-    border: 1px solid #fed7d7;
+    background: var(--haze-color-bg);
+    border: 1px solid color-mix(in srgb, var(--haze-color-danger) 15%, transparent);
     border-radius: 6px;
     padding: 12px;
     margin: 12px 0;
 
     .suggestion-title {
       font-weight: 600;
-      color: #991b1b;
+      color: var(--haze-color-danger);
       margin: 0 0 8px 0;
       font-size: 14px;
     }
@@ -83,7 +83,7 @@ const errorBoxStyles = css`
     ul {
       margin: 0;
       padding-left: 20px;
-      color: #7f1d1d;
+      color: var(--haze-color-danger);
       font-size: 13px;
 
       li {
@@ -109,21 +109,21 @@ const buttonStyles = css`
   transition: all 0.2s;
 
   &.primary {
-    background: #dc2626;
-    color: white;
+    background: var(--haze-color-danger);
+    color: var(--haze-color-text-inverse);
 
     &:hover {
-      background: #b91c1c;
+      background: var(--haze-color-danger-hover);
     }
   }
 
   &.secondary {
-    background: white;
-    color: #7f1d1d;
-    border: 1px solid #fecaca;
+    background: var(--haze-color-bg);
+    color: var(--haze-color-danger);
+    border: 1px solid color-mix(in srgb, var(--haze-color-danger) 25%, transparent);
 
     &:hover {
-      background: #fef2f2;
+      background: var(--haze-color-danger-subtle);
     }
   }
 `;

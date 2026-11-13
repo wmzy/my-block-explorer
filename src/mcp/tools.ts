@@ -18,7 +18,7 @@ import type { Address } from 'viem';
 import { getChainType, POPULAR_CHAINS, SUPPORTED_CHAINS } from '@/config/chains';
 import { bigintJsonReplacer } from '@/utils/jsonReplacer';
 import { parseSlotNumber } from '@/utils/storageSlots';
-import { addressVerdict } from '@/utils/address';
+import { addressVerdict, codeVerdict } from '@/utils/address';
 import { errorMessage } from '@/utils/errorHandler';
 import { coerceArgs, parseFunctionFragment } from './abi';
 import type { BlockRef, BlockTag, ChainMeta, RpcReader } from './rpc';
@@ -222,8 +222,11 @@ export function registerExplorerTools(server: McpServer, deps: McpDeps): void {
     async ({ chainId, address }) => {
       const checksummed = requireAddress(address);
       const { chain, balance, nonce, code } = await rpc.getAddressState(chainId, checksummed);
-      const classification =
-        code === '0x' ? 'eoa' : code.startsWith('0xef0100') ? 'eip-7702-delegated' : 'contract';
+      // Shared eth_getCode verdict (utils/address), spelled with this
+      // tool's long-standing labels: the designator case renders as
+      // 'eip-7702-delegated', everything else keeps its verdict name.
+      const verdict = codeVerdict(code);
+      const classification = verdict === 'delegated' ? 'eip-7702-delegated' : verdict;
       return ok({
         chain: chainBrief(chain),
         address,

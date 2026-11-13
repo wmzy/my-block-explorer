@@ -213,8 +213,8 @@ const completeLineStyle = css`
   margin: var(--haze-space-2) 0 0;
   padding: var(--haze-space-2) var(--haze-space-3);
   border-radius: 6px;
-  border: 1px solid #22c55e;
-  background: color-mix(in srgb, #22c55e 10%, transparent);
+  border: 1px solid var(--haze-color-success);
+  background: color-mix(in srgb, var(--haze-color-success) 10%, transparent);
   font-size: var(--haze-text-sm, 14px);
 `;
 

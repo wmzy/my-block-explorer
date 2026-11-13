@@ -6,9 +6,10 @@
 // When a mark already exists the panel shows its state and offers the
 // removal that reverts the contract to unverified on the next fetch.
 import { useState } from 'react';
-import { css } from '@linaria/core';
+import { css, cx } from '@linaria/core';
 import { post, del } from '@/util/http';
 import { describeSubmitError } from './verifyShared';
+import { noticeBoxError, noticeBoxOk, secondaryActionButton } from './styles';
 
 // Mirrors the backend's contract (routes/verify.ts): the ABI must parse
 // to a non-empty array. Validated live while typing so a doomed 400 never
@@ -67,7 +68,7 @@ const introStyles = css`
   margin: 0 0 12px 0;
   font-size: 13px;
   line-height: 1.5;
-  color: #8a6d3b;
+  color: var(--haze-color-warning);
 `;
 
 const fieldLabelStyles = css`
@@ -85,7 +86,9 @@ const abiInputStyles = css`
   font-size: 12px;
   padding: 8px;
   border-radius: 6px;
-  border: 1px solid #ced4da;
+  border: 1px solid var(--haze-color-border);
+  background: var(--haze-color-bg);
+  color: var(--haze-color-text);
   resize: vertical;
 `;
 
@@ -95,7 +98,9 @@ const nameInputStyles = css`
   font-size: 13px;
   padding: 6px 8px;
   border-radius: 6px;
-  border: 1px solid #ced4da;
+  border: 1px solid var(--haze-color-border);
+  background: var(--haze-color-bg);
+  color: var(--haze-color-text);
 `;
 
 const sourceInputStyles = css`
@@ -106,20 +111,22 @@ const sourceInputStyles = css`
   font-size: 12px;
   padding: 8px;
   border-radius: 6px;
-  border: 1px solid #ced4da;
+  border: 1px solid var(--haze-color-border);
+  background: var(--haze-color-bg);
+  color: var(--haze-color-text);
   resize: vertical;
 `;
 
 const feedbackOkStyles = css`
   margin: 6px 0 0 0;
   font-size: 12px;
-  color: #28a745;
+  color: var(--haze-color-success);
 `;
 
 const feedbackBadStyles = css`
   margin: 6px 0 0 0;
   font-size: 12px;
-  color: #dc3545;
+  color: var(--haze-color-danger);
 `;
 
 const actionsRowStyles = css`
@@ -130,39 +137,26 @@ const actionsRowStyles = css`
   flex-wrap: wrap;
 `;
 
+// Layout halves of the action buttons; colors/hover/disabled come from the
+// shared secondaryActionButton family (neutral submit) and the danger
+// recipe (remove) in ./styles.
 const submitStyles = css`
   padding: 8px 18px;
   font-size: 14px;
   border-radius: 6px;
-  cursor: pointer;
-  background: #6c757d;
-  border: 1px solid #5a6268;
-  color: white;
-  font-weight: 500;
-
-  &:hover:not(:disabled) {
-    background: #5a6268;
-  }
-
-  &:disabled {
-    background: #b6bec4;
-    border-color: #b6bec4;
-    cursor: not-allowed;
-  }
 `;
 
 const removeStyles = css`
   padding: 8px 18px;
   font-size: 14px;
   border-radius: 6px;
-  cursor: pointer;
-  background: #f8d7da;
-  border: 1px solid #f5c6cb;
-  color: #721c24;
+  background: var(--haze-color-danger-subtle);
+  border: 1px solid color-mix(in srgb, var(--haze-color-danger) 25%, transparent);
+  color: var(--haze-color-danger);
   font-weight: 500;
 
   &:hover:not(:disabled) {
-    background: #f1b8bd;
+    background: color-mix(in srgb, var(--haze-color-danger) 15%, transparent);
   }
 
   &:disabled {
@@ -173,23 +167,12 @@ const removeStyles = css`
 
 const resultNoticeStyles = css`
   margin-top: 14px;
-  padding: 10px 14px;
-  border-radius: 6px;
   font-size: 14px;
-  background: #d4edda;
-  border: 1px solid #c3e6cb;
-  color: #155724;
 `;
 
 const resultErrorStyles = css`
   margin-top: 14px;
-  padding: 10px 14px;
-  border-radius: 6px;
   font-size: 14px;
-  background: #f8d7da;
-  border: 1px solid #f5c6cb;
-  color: #721c24;
-  word-break: break-word;
 `;
 
 const markedStateStyles = css`
@@ -351,7 +334,7 @@ export function ManualVerifyPanel({
           <div className={actionsRowStyles}>
             <button
               type="button"
-              className={submitStyles}
+              className={cx(secondaryActionButton, submitStyles)}
               disabled={!canSubmit}
               onClick={() => void handleSubmit()}
             >
@@ -361,12 +344,12 @@ export function ManualVerifyPanel({
         </>
       )}
       {notice && (
-        <div role="status" className={resultNoticeStyles}>
+        <div role="status" className={cx(noticeBoxOk, resultNoticeStyles)}>
           {notice}
         </div>
       )}
       {error && (
-        <div role="alert" className={resultErrorStyles}>
+        <div role="alert" className={cx(noticeBoxError, resultErrorStyles)}>
           {error}
         </div>
       )}

@@ -9,8 +9,8 @@ type Props = {
 };
 
 const alertStyles = css`
-  background: #fef2f2;
-  border: 1px solid #fecaca;
+  background: var(--haze-color-danger-subtle);
+  border: 1px solid color-mix(in srgb, var(--haze-color-danger) 25%, transparent);
   border-radius: 8px;
   padding: 16px;
   margin-bottom: 16px;
@@ -20,7 +20,7 @@ const alertStyles = css`
 `;
 
 const iconStyles = css`
-  color: #dc2626;
+  color: var(--haze-color-danger);
   font-size: 20px;
   flex-shrink: 0;
   margin-top: 2px;
@@ -31,26 +31,26 @@ const contentStyles = css`
 
   h4 {
     margin: 0 0 8px 0;
-    color: #991b1b;
+    color: var(--haze-color-danger);
     font-size: 16px;
     font-weight: 600;
   }
 
   p {
     margin: 0 0 12px 0;
-    color: #7f1d1d;
+    color: var(--haze-color-danger);
     font-size: 14px;
     line-height: 1.5;
   }
 
   .suggestion {
-    background: #fff5f5;
-    border: 1px solid #fed7d7;
+    background: var(--haze-color-bg);
+    border: 1px solid color-mix(in srgb, var(--haze-color-danger) 15%, transparent);
     border-radius: 6px;
     padding: 12px;
     margin: 8px 0;
     font-size: 13px;
-    color: #7f1d1d;
+    color: var(--haze-color-danger);
   }
 `;
 
@@ -70,21 +70,21 @@ const buttonStyles = css`
   transition: all 0.2s;
 
   &.primary {
-    background: #dc2626;
-    color: white;
+    background: var(--haze-color-danger);
+    color: var(--haze-color-text-inverse);
 
     &:hover {
-      background: #b91c1c;
+      background: var(--haze-color-danger-hover);
     }
   }
 
   &.secondary {
-    background: white;
-    color: #7f1d1d;
-    border: 1px solid #fecaca;
+    background: var(--haze-color-bg);
+    color: var(--haze-color-danger);
+    border: 1px solid color-mix(in srgb, var(--haze-color-danger) 25%, transparent);
 
     &:hover {
-      background: #fef2f2;
+      background: var(--haze-color-danger-subtle);
     }
   }
 `;
@@ -92,14 +92,14 @@ const buttonStyles = css`
 const closeButtonStyles = css`
   background: none;
   border: none;
-  color: #991b1b;
+  color: var(--haze-color-danger);
   cursor: pointer;
   font-size: 18px;
   padding: 4px;
   border-radius: 4px;
 
   &:hover {
-    background: #fecaca;
+    background: var(--haze-color-danger-subtle);
   }
 `;
 

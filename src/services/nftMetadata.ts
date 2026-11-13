@@ -18,6 +18,8 @@ import { parseAbi, type Address } from 'viem';
 
 import { createRpcClient } from '@/utils/realTimeData';
 import { createTtlLruCache } from '@/utils/ttlLruCache';
+// Canonical record-shape guard (rejects arrays) — import-free leaf.
+import { isRecord } from '@/utils/isRecord';
 import { IPFS_GATEWAY_STORAGE_KEY } from '@/util/storageKeys';
 import { readStorageItem, removeStorageItem, writeStorageItem } from '@/util/storageAccess';
 
@@ -196,12 +198,6 @@ const IMAGE_FIELDS = ['image', 'image_url', 'image_data'] as const;
  * that is not a plain object (null, array, primitive) is malformed →
  * null. Missing/empty/non-string fields stay honest nulls.
  */
-// Plain-object check: `typeof x === 'object'` alone narrows unknown to
-// `object`, which has no index signature — this predicate is what makes
-// the record view below type-safe.
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
 export function pickNftMetadataFields(json: unknown): NftMetadataFields | null {
   if (!isRecord(json)) {
     return null;
@@ -298,6 +294,8 @@ const makeDefaultReadUri = (chainId: number): NftUriReader => {
  * non-2xx → reject. AbortSignal.timeout is feature-detected for
  * environments (older jsdom) that lack it.
  */
+// fetchWithTimeout exempt: this site feature-detects AbortSignal.timeout
+// for older test environments (jsdom) that lack it.
 const defaultFetchJson = async (url: string): Promise<unknown> => {
   const init: RequestInit =
     typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'

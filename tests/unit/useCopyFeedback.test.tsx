@@ -6,7 +6,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 
-import { useCopyFeedback } from '@/util/useCopyFeedback';
+import { useCopyFeedback, useCopyLabel } from '@/util/useCopyFeedback';
 import { copyText } from '@/util/clipboard';
 
 vi.mock('@/util/clipboard', () => ({ copyText: vi.fn() }));
@@ -212,5 +212,15 @@ describe('useCopyFeedback', () => {
     act(() => {
       vi.advanceTimersByTime(5000);
     });
+  });
+});
+
+describe('useCopyLabel', () => {
+  it('verbalizes each machine state, falling back to the caller idle label', () => {
+    expect(useCopyLabel('ok', 'Copy')).toBe('Copied ✓');
+    expect(useCopyLabel('fail', 'Copy')).toBe('Copy failed');
+    expect(useCopyLabel('idle', 'Copy')).toBe('Copy');
+    // The idle label is whatever the site shows at rest — the NFT tile's id.
+    expect(useCopyLabel('idle', '#7')).toBe('#7');
   });
 });

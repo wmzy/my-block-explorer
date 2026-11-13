@@ -11,7 +11,7 @@ const dataSourceCaptionStyle = css`
   display: block;
   margin: 0 0 8px;
   font-size: 12px;
-  color: var(--haze-text-secondary, #6b7280);
+  color: var(--haze-color-text-secondary);
 `;
 
 // Events tab: indexing controls, statistics and the event table share one

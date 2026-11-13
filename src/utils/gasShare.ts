@@ -1,18 +1,18 @@
 // Gas share of a block: gasUsed against gasLimit.
 //
-// The raw arithmetic `(used / limit) * 100` printed "NaN%" for a
+// The raw arithmetic `(used / limit) * 100` once printed "NaN%" for a
 // zero-over-zero block and "Infinity%" when a quirky RPC reported a gas
 // limit of 0 against real usage — arithmetic noise rendered as a
-// measured figure, on the block list and the Home stats bar. The repo
-// already ships formatPercentage, which degrades any non-finite ratio to
-// the shared placeholder; these helpers route the on-chain quantities
-// through it while keeping the measured number itself visible.
+// measured figure, on the block list and the Home stats bar. The
+// percentage text now renders through formatPercentage ('./format'),
+// which degrades any non-finite ratio to the shared placeholder, while
+// the measured gas figure itself stays visible.
 //
 // Inputs are the decimal-string gas quantities the RpcBlock shape
 // carries. A figure that will not parse (an absent or malformed value)
 // is treated as "no ratio to report", never as 0.
 
-import { formatNumber } from './format';
+import { formatNumber, formatPercentage } from './format';
 
 /** Parse a decimal-string gas quantity; null when absent or unparseable. */
 const parseGas = (value: string | undefined | null): bigint | null => {
@@ -28,7 +28,7 @@ const parseGas = (value: string | undefined | null): bigint | null => {
  * Percentage of the block's gas limit that was used, or null when the
  * ratio cannot be computed (missing figure, or a zero limit).
  */
-export function blockGasSharePercent(
+function blockGasSharePercent(
   gasUsed: string | undefined | null,
   gasLimit: string | undefined | null,
 ): number | null {
@@ -50,7 +50,7 @@ export function gasUsageShare(
   const used = parseGas(gasUsed);
   const figure = used === null ? (gasUsed ?? '') : formatNumber(used);
   const percent = blockGasSharePercent(gasUsed, gasLimit);
-  return percent === null ? figure : `${figure} (${percent.toFixed(1)}%)`;
+  return percent === null ? figure : `${figure} (${formatPercentage(percent, 1)})`;
 }
 
 /**
@@ -62,5 +62,6 @@ export function gasUsedPercentLabel(
   gasLimit: string | undefined | null,
 ): string {
   const percent = blockGasSharePercent(gasUsed, gasLimit);
-  return percent === null ? '—' : `${percent.toFixed(1)}%`;
+  // NaN degrades to the shared placeholder inside formatPercentage.
+  return formatPercentage(percent ?? Number.NaN, 1);
 }

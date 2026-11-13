@@ -30,7 +30,7 @@ import type { PoolEntry } from '@/services/txpool';
  * entry has one, else the legacy gas price. Undefined when the entry
  * reported neither — an honest absence, never a fabricated 0.
  */
-export const effectiveGasCap = (entry: PoolEntry): bigint | undefined =>
+const effectiveGasCap = (entry: PoolEntry): bigint | undefined =>
   entry.maxFeePerGas ?? entry.gasPrice;
 
 /**
@@ -38,7 +38,7 @@ export const effectiveGasCap = (entry: PoolEntry): bigint | undefined =>
  * separate one (maxPriorityFeePerGas); a legacy entry's gasPrice has no
  * tip component this snapshot can isolate, so it reads undefined.
  */
-export const effectiveTip = (entry: PoolEntry): bigint | undefined =>
+const effectiveTip = (entry: PoolEntry): bigint | undefined =>
   entry.maxFeePerGas !== undefined ? entry.maxPriorityFeePerGas : undefined;
 
 /** Min / p25 / median / max of the pool's effective gas caps (wei). */

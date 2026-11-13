@@ -1,5 +1,5 @@
 // Addresses service: info and paginated transactions.
-import type { Transaction } from '@/types/index';
+import type { Transaction } from '@/types/blockchain';
 
 import { api, get, longRunningApi, withSignal } from '@/util/http';
 import { bindQueryFn, createQueryCache, createQueryHook } from '@/util/useQuery';

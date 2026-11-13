@@ -32,6 +32,7 @@ import {
 } from '@/services/crossChainProbe';
 import { formatNativeTotal } from '@/views/Address/summaryStats';
 import { UsdValue } from '@/components/ui/UsdValue';
+import { shimmerPulse } from '@/components/ui/skeleton';
 
 // One quiet line between the Overview card and the activity area: no
 // card chrome on purpose — the strip is a disclosure, not a data card.
@@ -148,25 +149,18 @@ const chipBalanceStyle = css`
 `;
 
 // Staggered skeleton chips while (re)probing behind an already-given
-// expand intent: one placeholder per popular slot, each entering the
-// pulse a beat after the previous one.
-const skeletonChipStyle = css`
-  width: 9rem;
-  height: 1.75rem;
-  border-radius: var(--haze-radius-sm);
-  background: var(--haze-color-bg-muted);
-  animation: cross-chain-skeleton-pulse 1.4s ease-in-out infinite;
-
-  @keyframes cross-chain-skeleton-pulse {
-    0%,
-    100% {
-      opacity: 0.35;
-    }
-    50% {
-      opacity: 0.7;
-    }
-  }
-`;
+// expand intent: one placeholder per popular slot on the shared shimmer
+// pulse (components/ui/skeleton), each entering a beat after the
+// previous one via the inline animation-delay.
+const skeletonChipStyle = cx(
+  shimmerPulse,
+  css`
+    width: 9rem;
+    height: 1.75rem;
+    border-radius: var(--haze-radius-sm);
+    background: var(--haze-color-bg-muted);
+  `,
+);
 
 // Stable identity for the "no prices yet" map — avoids a state churn
 // render every effect run.

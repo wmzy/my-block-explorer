@@ -12,12 +12,11 @@
 // Pure module: type imports only, no RPC/browser dependencies — so it is
 // safe from any barrel or backend import graph.
 import { type Address } from 'viem';
+// Canonical record-shape guard (rejects arrays) — import-free leaf.
+import { isRecord } from './isRecord';
 
 /** The canonical Multicall3 deployment (same address on every chain). */
 export const MULTICALL3_ADDRESS: Address = '0xcA11bde05977b3631167028862bE2a173976CA11';
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null;
 
 const successResult = (outcome: unknown): { ok: true; result: unknown } | { ok: false } => {
   if (!isRecord(outcome) || outcome.status !== 'success' || !('result' in outcome)) {

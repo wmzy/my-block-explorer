@@ -30,6 +30,11 @@ import path from 'node:path';
 import { Worker } from 'node:worker_threads';
 import { createLogger } from '../server/logger';
 import { errorMessage } from '../utils/errorHandler';
+// Canonical record-shape guard (rejects arrays) and the shared fetch
+// budget wrapper + one-day constant — all import-free leaves.
+import { isRecord } from '../utils/isRecord';
+import { fetchWithTimeout } from '../utils/fetchWithTimeout';
+import { MS_PER_DAY } from '../utils/time';
 import type { Address } from 'viem';
 
 const logger = createLogger('compile-verify-service');
@@ -52,7 +57,7 @@ export const COMPILE_TIMEOUT_MS = 60_000;
 // content-verified part, and re-creating a worker from it is cheap.
 export const MAX_RESIDENT_COMPILERS = 3;
 // The version list changes rarely; one fetch per day per process.
-const VERSION_LIST_TTL_MS = 24 * 60 * 60 * 1000;
+const VERSION_LIST_TTL_MS = MS_PER_DAY;
 // A degraded (offline) list answer must not pin "unavailable" for a day.
 const DEGRADED_LIST_TTL_MS = 5 * 60 * 1000;
 // Bounds the caller-supplied sources so one submission cannot turn into
@@ -126,9 +131,6 @@ export type ResolvedSolcBuild = {
   fileName: string;
   sha256?: string;
 };
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
 
 const asString = (value: unknown): string | undefined =>
   typeof value === 'string' ? value : undefined;
@@ -907,7 +909,7 @@ export type CompileVerifyOutcome = CompileVerifySuccess | CompileVerifyFailure;
 
 export type CompileVerifyDeps = {
   /** JSON fetcher for the version list (injectable for tests). */
-  fetchJson?: (url: string, signal: AbortSignal) => Promise<unknown>;
+  fetchJson?: (url: string, timeoutMs: number) => Promise<unknown>;
   /** Compiler loader (injectable for tests). */
   loadCompilerBuild?: (build: ResolvedSolcBuild) => Promise<SolcCompilerHandle>;
   /** On-chain eth_getCode boundary (injectable for tests). */
@@ -964,10 +966,7 @@ export class CompileVerifyService {
 
   private async fetchVersionList(): Promise<CompilerListResult> {
     try {
-      const raw = await (this.deps.fetchJson ?? defaultFetchJson)(
-        SOLC_LIST_URL,
-        AbortSignal.timeout(15_000),
-      );
+      const raw = await (this.deps.fetchJson ?? defaultFetchJson)(SOLC_LIST_URL, 15_000);
       const versions = parseSolcVersionList(raw);
       if (versions.length === 0) {
         throw new Error('the list contained no usable builds');
@@ -1116,9 +1115,11 @@ export class CompileVerifyService {
       }
       let response: Response;
       try {
-        response = await fetch(`${SOLC_BINARIES_BASE_URL}${build.fileName}`, {
-          signal: AbortSignal.timeout(COMPILER_LOAD_BUDGET_MS),
-        });
+        response = await fetchWithTimeout(
+          `${SOLC_BINARIES_BASE_URL}${build.fileName}`,
+          {},
+          COMPILER_LOAD_BUDGET_MS,
+        );
       } catch (error) {
         const reason = errorMessage(error, 'unknown error');
         throw compilerUnavailable(
@@ -1366,8 +1367,8 @@ const extractAbi = (contract: Record<string, unknown>): string => {
   return Array.isArray(abi) ? JSON.stringify(abi) : '[]';
 };
 
-const defaultFetchJson = async (url: string, signal: AbortSignal): Promise<unknown> => {
-  const response = await fetch(url, { signal });
+const defaultFetchJson = async (url: string, timeoutMs: number): Promise<unknown> => {
+  const response = await fetchWithTimeout(url, {}, timeoutMs);
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   return await response.json();
 };

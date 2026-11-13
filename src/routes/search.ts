@@ -50,8 +50,7 @@ app.get('/search', searchRateLimiter, async c => {
     // Strict decimal parse: parseInt() accepted a valid prefix, so
     // `?chainId=1abc` was treated as a valid hint for chain 1.
     const parsedHint = chainIdParam ? parseStrictInteger(chainIdParam) : null;
-    const requestedChainId = parsedHint ?? Number.NaN;
-    const hasChainHint = !isNaN(requestedChainId) && isChainSupported(requestedChainId);
+    const hasChainHint = parsedHint !== null && isChainSupported(parsedHint);
 
     if ((searchType === 'hash' || searchType === 'block') && !hasChainHint) {
       return c.json({
@@ -80,7 +79,7 @@ app.get('/search', searchRateLimiter, async c => {
     // chosen chain is echoed as searchedChainId so clients know exactly
     // what was searched.
     const searchedChainId = hasChainHint
-      ? requestedChainId
+      ? parsedHint
       : isChainSupported(1)
         ? 1
         : (getSortedChains()[0]?.id ?? 1);
@@ -97,7 +96,7 @@ app.get('/search', searchRateLimiter, async c => {
     // helper): an absent section never claims "no matches" was checked.
     const localContracts =
       searchType === 'unknown'
-        ? await searchLocalContractHits(sanitized, hasChainHint ? requestedChainId : undefined)
+        ? await searchLocalContractHits(sanitized, hasChainHint ? parsedHint : undefined)
         : undefined;
 
     // Curated token/label hits ride the SAME free-text-only, strictly
@@ -110,7 +109,7 @@ app.get('/search', searchRateLimiter, async c => {
     // above; an absent section never claims "no matches" was checked.
     const tokenHits =
       searchType === 'unknown'
-        ? await searchTokenEntityHits(sanitized, hasChainHint ? requestedChainId : undefined)
+        ? await searchTokenEntityHits(sanitized, hasChainHint ? parsedHint : undefined)
         : undefined;
 
     // Hash/block hits now flow through this endpoint too, and their Block/
@@ -145,10 +144,6 @@ app.get('/search', searchRateLimiter, async c => {
 app.get('/chains/:chainId/search', async c => {
   const chainIdParam = c.req.param('chainId');
   const query = c.req.query('q');
-
-  if (!chainIdParam) {
-    return respondError(c, 400, 'missing_chain_id', 'Please provide a valid chain ID');
-  }
 
   const chainId = parseStrictInteger(chainIdParam);
   if (chainId === null || chainId <= 0 || !isChainSupported(chainId)) {

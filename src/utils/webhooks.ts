@@ -23,6 +23,8 @@ import { decodeEventLog, getEventSelector, parseAbiItem, type AbiEvent, type Log
 // Dependency-free leaf (no node-only imports) — safe for this module's
 // dependency-light contract.
 import { errorMessage } from './errorHandler';
+// Shared AbortController+timer budget wrapper — same leaf contract.
+import { fetchWithTimeout } from './fetchWithTimeout';
 
 // One delivery attempt gets 5 seconds; sendWebhookWithRetry then gets
 // exactly one more (the assignment's "timeout 5s, ONE retry").
@@ -280,12 +282,15 @@ export type WebhookSender = (
 export const fetchWebhookSender: WebhookSender = async (url, body, timeoutMs) => {
   const budget = timeoutMs ?? WATCH_WEBHOOK_TIMEOUT_MS;
   try {
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(budget),
-    });
+    const res = await fetchWithTimeout(
+      url,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      },
+      budget,
+    );
     if (!res.ok) {
       return { ok: false, reason: shortWebhookReason(`HTTP ${res.status}`) };
     }

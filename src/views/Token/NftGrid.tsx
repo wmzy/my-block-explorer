@@ -23,7 +23,7 @@ import {
   type NftMetadataItem,
   type NftMetadataOutcome,
 } from '@/services/nftMetadata';
-import { useCopyFeedback } from '@/util/useCopyFeedback';
+import { useCopyFeedback, useCopyLabel } from '@/util/useCopyFeedback';
 import { formatNumber } from '@/utils/format';
 import { shimmerPulse } from '@/components/ui/skeleton';
 import { NFT_ITEMS_LIMIT, type NftItem } from './nftItems';
@@ -242,8 +242,9 @@ type NftTileProps = {
 function NftTile({ item, contract, outcome, onRetry, retrying }: NftTileProps) {
   // Shared copy-feedback hook: timer lifecycle (pending-reset cancelled on
   // new copies, cleared on unmount) is the hook's own discipline. The
-  // confirmation appears only on a real copy — a clipboard denial stays
-  // quiet because the render below reads the 'ok' state only.
+  // label swap is the shared useCopyLabel — a real copy confirms in
+  // place, a denied clipboard says 'Copy failed' (never a false
+  // confirmation), idle shows the id.
   const copyFeedback = useCopyFeedback();
 
   const copyId = () => {
@@ -251,6 +252,7 @@ function NftTile({ item, contract, outcome, onRetry, retrying }: NftTileProps) {
   };
 
   const idText = `#${shortId(item.tokenId)}`;
+  const copyLabel = useCopyLabel(copyFeedback.state, idText);
 
   return (
     <div
@@ -317,10 +319,10 @@ function NftTile({ item, contract, outcome, onRetry, retrying }: NftTileProps) {
       )}
 
       <span className={tileId} data-testid="nft-tile-id">
-        {copyFeedback.state === 'ok' ? (
-          <span className={tileCopied}>copied ✓</span>
-        ) : (
+        {copyFeedback.state === 'idle' ? (
           idText
+        ) : (
+          <span className={tileCopied}>{copyLabel}</span>
         )}
       </span>
 

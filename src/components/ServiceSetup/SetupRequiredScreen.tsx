@@ -4,6 +4,7 @@ import { Alert } from 'haze-ui';
 import { Card, CardContent } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { ErrorState } from '@/components/ui/ErrorState';
+import { panelEnterBase } from '@/components/ui/motion';
 import { useCopyFeedback } from '@/util/useCopyFeedback';
 
 type SetupRequiredScreenProps = {
@@ -48,22 +49,19 @@ const containerStyle = css`
   background: var(--haze-color-bg);
 `;
 
-const contentWrapperStyle = css`
-  width: 100%;
-  max-width: 540px;
-  animation: content-enter 0.6s cubic-bezier(0.16, 1, 0.3, 1);
-
-  @keyframes content-enter {
-    from {
-      opacity: 0;
-      transform: translateY(20px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-`;
+// The content column rides the shared enter-rise (components/ui/motion
+// panelEnterBase), pinned to this screen's original taller, slower
+// rise: 20px over 0.6s with no scale-down.
+const contentWrapperStyle = cx(
+  panelEnterBase,
+  css`
+    width: 100%;
+    max-width: 540px;
+    --panel-enter-distance: 20px;
+    --panel-enter-scale: 1;
+    --panel-enter-duration: 0.6s;
+  `,
+);
 
 const headerSectionStyle = css`
   text-align: center;

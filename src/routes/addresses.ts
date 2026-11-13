@@ -56,6 +56,14 @@ const parseWeiFilterParam = (raw: string | undefined): bigint | undefined => {
 // else is a loud 400 at the call site, never a silent fallthrough.
 const METHOD_SELECTOR_RE = /^0x[0-9a-fA-F]{8}$/;
 
+// Optional ?window= search-window override in blocks, shared by the list
+// and export endpoints: only fully-numeric values count — undefined, junk
+// or an empty string falls back to the txCount-tiered default (the
+// service clamps to 1..50_000_000 and echoes the effective window in
+// `searchWindowBlocks`).
+const optionalWindowParam = (raw: string | undefined): number | undefined =>
+  raw !== undefined && /^\d+$/.test(raw) ? Number(raw) : undefined;
+
 app.get('/chains/:chainId/addresses/:address', async c => {
   const chainId = getValidatedChainId(c.req.param('chainId'));
   const address = getValidatedAddress(c.req.param('address'));
@@ -145,13 +153,10 @@ app.get(
 
     const offset = (page - 1) * limit;
 
-    // Optional search-window override in blocks. Only fully-numeric values
-    // count — anything else ('abc', partial digits) falls back to the
-    // txCount-tiered default. The service clamps to 1..50_000_000 and
-    // echoes the effective window in `searchWindowBlocks`.
-    const rawWindow = c.req.query('window');
-    const windowBlocks =
-      rawWindow !== undefined && /^\d+$/.test(rawWindow) ? Number(rawWindow) : undefined;
+    // Optional search-window override in blocks (shared optionalWindowParam
+    // above: fully-numeric only, anything else keeps the txCount-tiered
+    // default).
+    const windowBlocks = optionalWindowParam(c.req.query('window'));
 
     // Additive opt-in (?balanceHistory=1): attaches `balancePoints` — the
     // cumulative discovered-delta series computed from the SAME cached
@@ -358,12 +363,9 @@ app.get(
     const chainId = getValidatedChainId(c.req.param('chainId'));
     const address = getValidatedAddress(c.req.param('address'));
 
-    // Same window parsing as the list endpoint: only fully-numeric values
-    // count, anything else falls back to the txCount-tiered default. The
-    // service clamps and echoes the effective window.
-    const rawWindow = c.req.query('window');
-    const windowBlocks =
-      rawWindow !== undefined && /^\d+$/.test(rawWindow) ? Number(rawWindow) : undefined;
+    // Same window parsing as the list endpoint (shared optionalWindowParam:
+    // fully-numeric only, anything else keeps the txCount-tiered default).
+    const windowBlocks = optionalWindowParam(c.req.query('window'));
 
     // Chunked exports start at a non-negative integer offset; anything
     // else fails loudly (same philosophy as the list's page validation)

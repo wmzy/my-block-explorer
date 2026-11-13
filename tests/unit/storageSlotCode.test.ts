@@ -97,6 +97,15 @@ console.log(value);
     expect(snippet).not.toContain('chainId 1,');
   });
 
+  it('falls back to mainnet with a TODO for zksync 324 — outside the curated set', () => {
+    // The private table this module once carried mapped 324 → zksync; the
+    // shared VIEM_CHAIN_EXPORTS table is exactly POPULAR_CHAINS (which
+    // keeps fantom 250 instead), so 324 now takes the honest fallback.
+    const snippet = buildViemReadSnippet({ chainId: 324, address: ADDR, slotExpr: '0n' });
+    expect(snippet).toContain('import { mainnet } from \'viem/chains\';');
+    expect(snippet).toContain('chain: mainnet, // TODO: chainId 324');
+  });
+
   it.each([
     [42161, 'arbitrum'],
     [8453, 'base'],
@@ -104,7 +113,6 @@ console.log(value);
     [43114, 'avalanche'],
     [56, 'bsc'],
     [42220, 'celo'],
-    [324, 'zksync'],
   ])('uses the named viem chain export for id %i (%s)', (chainId, chainName) => {
     const snippet = buildViemReadSnippet({ chainId, address: ADDR, slotExpr: '0n' });
     expect(snippet).toContain(`import { ${chainName} } from 'viem/chains';`);

@@ -12,10 +12,11 @@
 // heuristic, so the chart always carries the incompleteness caveat, and
 // a live-balance/deltas mismatch renders as an explicit unknown-history
 // step rather than a silently offset curve.
-import { css } from '@linaria/core';
+import { css, cx } from '@linaria/core';
 import type { ReactNode } from 'react';
 import { useMemo } from 'react';
 import { Badge } from '@/components/ui/Badge';
+import { shimmerPulse } from '@/components/ui/skeleton';
 import { Collapsible } from '@/components/ui/Collapsible';
 import { getChainInfo } from '@/config/chains';
 import { ApiError } from '@/util/apiError';
@@ -217,24 +218,18 @@ const balanceUnavailable = css`
   padding: var(--haze-space-2) 0;
 `;
 
-const balanceChartSkeleton = css`
-  display: block;
-  width: 100%;
-  height: 96px;
-  border-radius: var(--haze-radius-sm);
-  background: var(--haze-color-bg-muted);
-  animation: balance-pulse 1.6s ease-in-out infinite;
-
-  @keyframes balance-pulse {
-    0%,
-    100% {
-      opacity: 1;
-    }
-    50% {
-      opacity: 0.55;
-    }
-  }
-`;
+// Chart-shaped first-load placeholder: the shared shimmer pulse
+// (components/ui/skeleton) over this surface's muted block.
+const balanceChartSkeleton = cx(
+  shimmerPulse,
+  css`
+    display: block;
+    width: 100%;
+    height: 96px;
+    border-radius: var(--haze-radius-sm);
+    background: var(--haze-color-bg-muted);
+  `,
+);
 
 // --- helpers ---
 

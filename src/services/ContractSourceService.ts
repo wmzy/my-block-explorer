@@ -14,6 +14,8 @@ import { withTimeoutOrNull } from '../utils/withTimeout';
 import { clientRequest } from '../utils/traceFormat';
 import type { Address } from 'viem';
 import { analyzeRpcError, shouldRetryRpcError } from '../utils/rpcErrorHandler';
+// Shared AbortController+timer budget wrapper for the plain HTTP fetches.
+import { fetchWithTimeout } from '../utils/fetchWithTimeout';
 
 // ABI for the implementation() view function exposed by beacon contracts
 const IMPLEMENTATION_ABI = [
@@ -1059,7 +1061,7 @@ export class ContractSourceService {
       const baseUrl = 'https://sourcify.dev/server/v2';
       const contractUrl = `${baseUrl}/contract/${chainId}/${address}?fields=abi,sources,compilation,proxyResolution`;
 
-      const response = await fetch(contractUrl, { signal: AbortSignal.timeout(10000) });
+      const response = await fetchWithTimeout(contractUrl, {}, 10000);
 
       if (!response.ok) {
         if (response.status === 404) {
@@ -1280,7 +1282,7 @@ export class ContractSourceService {
   private async fetchAbiFromExplorer(chainId: number, address: Address): Promise<string> {
     try {
       const url = `https://api.routescan.io/v2/network/mainnet/evm/${chainId}/etherscan?module=contract&action=getsourcecode&address=${address}`;
-      const response = await fetch(url, { signal: AbortSignal.timeout(8000) });
+      const response = await fetchWithTimeout(url, {}, 8000);
       if (!response.ok) return '[]';
 
       const data = await response.json();

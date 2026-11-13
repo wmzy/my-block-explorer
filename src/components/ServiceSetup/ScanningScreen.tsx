@@ -1,5 +1,7 @@
 import { css, cx } from '@linaria/core';
 
+import { indeterminateSweepBase, panelEnterBase } from '@/components/ui/motion';
+
 type ScanningScreenProps = {
   /** Candidate ports, all probed concurrently. */
   ports: readonly number[];
@@ -14,30 +16,27 @@ const containerStyle = css`
   background: var(--haze-color-bg);
 `;
 
-const cardStyle = css`
-  background: var(--haze-color-bg-subtle);
-  border: 1px solid var(--haze-color-border);
-  border-radius: var(--haze-radius-xl);
-  box-shadow: var(--haze-shadow-lg);
-  padding: var(--haze-space-10) var(--haze-space-8);
-  text-align: center;
-  max-width: 420px;
-  width: 90%;
-  position: relative;
-  overflow: hidden;
-  animation: card-enter 0.6s cubic-bezier(0.16, 1, 0.3, 1);
-
-  @keyframes card-enter {
-    from {
-      opacity: 0;
-      transform: translateY(20px) scale(0.98);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0) scale(1);
-    }
-  }
-`;
+// The card rides the shared enter-rise (components/ui/motion
+// panelEnterBase), pinned to this screen's original taller, slower
+// rise: 20px over 0.6s with the slight 0.98 scale.
+const cardStyle = cx(
+  panelEnterBase,
+  css`
+    background: var(--haze-color-bg-subtle);
+    border: 1px solid var(--haze-color-border);
+    border-radius: var(--haze-radius-xl);
+    box-shadow: var(--haze-shadow-lg);
+    padding: var(--haze-space-10) var(--haze-space-8);
+    text-align: center;
+    max-width: 420px;
+    width: 90%;
+    position: relative;
+    overflow: hidden;
+    --panel-enter-distance: 20px;
+    --panel-enter-scale: 0.98;
+    --panel-enter-duration: 0.6s;
+  `,
+);
 
 const scanLineStyle = css`
   position: absolute;
@@ -142,9 +141,6 @@ const progressContainerStyle = css`
   margin: 0 0 var(--haze-space-3) 0;
 `;
 
-// Indeterminate bar: the probes run concurrently, so there is no N-of-M
-// progress to show — the shimmer communicates activity, the per-probe
-// timeout bounds the wait.
 const progressBarBgStyle = css`
   width: 100%;
   height: 6px;
@@ -153,35 +149,19 @@ const progressBarBgStyle = css`
   overflow: hidden;
 `;
 
-const progressBarFillStyle = css`
-  height: 100%;
-  width: 100%;
-  background-color: var(--haze-color-primary);
-  border-radius: var(--haze-radius-sm);
-  position: relative;
-
-  &::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(
-      90deg,
-      transparent 0%,
-      var(--haze-color-text-inverse) 50%,
-      transparent 100%
-    );
-    animation: shimmer 2s infinite;
-  }
-
-  @keyframes shimmer {
-    0% {
-      transform: translateX(-100%);
-    }
-    100% {
-      transform: translateX(100%);
-    }
-  }
-`;
+// Indeterminate bar: the probes run concurrently, so there is no N-of-M
+// progress to show — the shared sweep (components/ui/motion
+// indeterminateSweepBase) carries the activity shimmer, the per-probe
+// timeout bounds the wait.
+const progressBarFillStyle = cx(
+  indeterminateSweepBase,
+  css`
+    height: 100%;
+    width: 100%;
+    background-color: var(--haze-color-primary);
+    border-radius: var(--haze-radius-sm);
+  `,
+);
 
 const progressTextStyle = css`
   font-size: var(--haze-text-sm);

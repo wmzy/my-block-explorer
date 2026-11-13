@@ -30,7 +30,7 @@ export const respondError = (
   details?: unknown,
 ) => {
   const body = createApiError(statusCode, error, message ?? error, details);
-  return c.json(body, statusCode as 400 | 401 | 403 | 404 | 500);
+  return c.json(body, statusCode as 400 | 401 | 403 | 404 | 409 | 500 | 502);
 };
 
 // The invalid-JSON catch arm every JSON-body write route used to carry

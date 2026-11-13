@@ -26,6 +26,8 @@ import {
   getProviderLogSpanCeiling,
   recordProviderLogSpanCeiling,
 } from './providerCeilings';
+// Shared-cursor bounded pool (import-free leaf) for the parallel fan-outs.
+import { runBoundedPool } from '../utils/boundedPool';
 
 const logger = createLogger('event-indexing-service');
 
@@ -147,28 +149,19 @@ const fetchBlockTimestamps = async (
   const map = new Map<bigint, number | null>();
   const unique = [...new Set(blockNumbers)];
 
-  // Bounded worker pool over a shared cursor: a batch of BATCH_SIZE logs could
-  // otherwise fire one getBlock request per block all at once.
-  let cursor = 0;
-  const worker = async () => {
-    while (cursor < unique.length) {
-      const bn = unique[cursor];
-      cursor += 1;
-      try {
-        const block = await client.getBlock({ blockNumber: bn });
-        map.set(bn, Number(block.timestamp));
-      } catch {
-        // Honest-data policy: when a block timestamp cannot be fetched we
-        // record null instead of fabricating a value. The row is stored with
-        // a NULL block_timestamp and gets backfilled on a later re-scan.
-        map.set(bn, null);
-      }
+  // Bounded worker pool: a batch of BATCH_SIZE logs could otherwise fire
+  // one getBlock request per block all at once.
+  await runBoundedPool(unique, BLOCK_TIMESTAMP_CONCURRENCY, async bn => {
+    try {
+      const block = await client.getBlock({ blockNumber: bn });
+      map.set(bn, Number(block.timestamp));
+    } catch {
+      // Honest-data policy: when a block timestamp cannot be fetched we
+      // record null instead of fabricating a value. The row is stored with
+      // a NULL block_timestamp and gets backfilled on a later re-scan.
+      map.set(bn, null);
     }
-  };
-
-  await Promise.all(
-    Array.from({ length: Math.min(BLOCK_TIMESTAMP_CONCURRENCY, unique.length) }, () => worker()),
-  );
+  });
   return map;
 };
 

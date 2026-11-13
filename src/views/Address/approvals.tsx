@@ -28,13 +28,14 @@
 // flow (views/Contract/revokeIntent.ts) — this card never broadcasts
 // anything itself. revoke.cash stays as the secondary external escape
 // hatch.
-import { css } from '@linaria/core';
+import { css, cx } from '@linaria/core';
 import { useCallback, useMemo, type ReactNode } from 'react';
 import { TypedLink } from '@native-router/react';
 import { getAddress } from 'viem';
 import { Collapsible } from '@/components/ui/Collapsible';
 import { Button } from '@/components/ui/Button';
 import { linkStyle } from '@/components/ui/DataTable';
+import { shimmerSweep } from '@/components/ui/skeleton';
 import { ApiError } from '@/util/apiError';
 import { get, longRunningApi, withSignal } from '@/util/http';
 import { bindQueryFn, createQueryCache, createQueryHook } from '@/util/useQuery';
@@ -254,28 +255,17 @@ const approvalsUnavailable = css`
   flex-wrap: wrap;
 `;
 
-const approvalsSkeleton = css`
-  display: inline-block;
-  width: 100%;
-  height: 3rem;
-  border-radius: var(--haze-radius-md, var(--haze-radius-lg));
-  background: linear-gradient(
-    90deg,
-    var(--haze-color-bg-subtle) 25%,
-    var(--haze-color-bg-muted) 50%,
-    var(--haze-color-bg-subtle) 75%
-  );
-  background-size: 200% 100%;
-  animation: approvals-shimmer 1.2s ease-in-out infinite;
-  @keyframes approvals-shimmer {
-    0% {
-      background-position: 200% 0;
-    }
-    100% {
-      background-position: -200% 0;
-    }
-  }
-`;
+// First-load placeholder: the shared gradient sweep (components/ui/
+// skeleton shimmerSweep) sized to one row of the table.
+const approvalsSkeleton = cx(
+  shimmerSweep,
+  css`
+    display: inline-block;
+    width: 100%;
+    height: 3rem;
+    border-radius: var(--haze-radius-md, var(--haze-radius-lg));
+  `,
+);
 
 // History sub-section: rides the SAME fetch below the current-allowance
 // table, as its own collapsed-by-default collapsible.

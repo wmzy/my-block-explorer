@@ -49,6 +49,13 @@ type TopNavigationProps = {
   searchPlaceholder?: string;
 };
 
+// Fire-and-forget in-app navigation shared by the bar and its search box:
+// a superseded navigation rejects with NavigationCancelledError, swallowed
+// here as "stay on the old view".
+const goTo = (router: ReturnType<typeof useRouter>, to: string) => {
+  navigate(router, to).catch(() => undefined);
+};
+
 // --- Styles ---
 
 const nav = css`
@@ -1015,18 +1022,12 @@ function SearchBox({
 
   const chainInfo = getChainInfo(currentChainId);
 
-  // Fire-and-forget in-app navigation; a superseded navigation rejects with
-  // NavigationCancelledError, swallowed here as "stay on the old view".
-  const goTo = (to: string) => {
-    navigate(router, to).catch(() => undefined);
-  };
-
   // Query dispatcher for the search box and history items: the shared
   // pipeline in services/searchDispatch, with this island's own router,
   // inline notices and history state wired in as the side-effect ports.
   const dispatchQuery = (rawQuery: string, chainId: number = currentChainId) =>
     runSearchDispatch(rawQuery, chainId, {
-      navigate: goTo,
+      navigate: to => goTo(router, to),
       onNotice: setSearchNotice,
       onHistory: setHistory,
     });
@@ -1066,7 +1067,9 @@ function SearchBox({
   // history records the entry, with the destination actually opened (not
   // the chain the search happened to run on).
   const openEnsAddress = (query: string, address: string, targetChainId: number) => {
-    setHistory(openEnsSearchDestination({ name: query, address }, targetChainId, goTo));
+    setHistory(
+      openEnsSearchDestination({ name: query, address }, targetChainId, to => goTo(router, to)),
+    );
     setSearchNotice(null);
   };
 
@@ -1164,7 +1167,7 @@ function SearchBox({
                   // must ask which network to search next instead of
                   // re-running it on this one — the link opens the
                   // network picker.
-                  goTo(`/search?q=${encodeURIComponent(searchNotice.query)}`)}
+                  goTo(router, `/search?q=${encodeURIComponent(searchNotice.query)}`)}
               >
                 Choose a network →
               </button>
@@ -1259,12 +1262,6 @@ export default function TopNavigation({
   const [, setShowRpcConfig, rpcConfigControl] = useControl<boolean>(null, false);
   const navRef = React.useRef<HTMLElement>(null);
 
-  // Fire-and-forget in-app navigation; a superseded navigation rejects with
-  // NavigationCancelledError, swallowed here as "stay on the old view".
-  const goTo = (to: string) => {
-    navigate(router, to).catch(() => undefined);
-  };
-
   // Publish the bar's live height as --app-nav-height on <html>: elements
   // that stick below the bar (the address page's anchor chip row) need the
   // real height to clear it, and the height is content- and
@@ -1297,7 +1294,7 @@ export default function TopNavigation({
     <>
       <nav className={nav} ref={navRef}>
         <div className={navInner}>
-          <div onClick={() => goTo(`/chain/${currentChainId}`)} className={logoStyle}>
+          <div onClick={() => goTo(router, `/chain/${currentChainId}`)} className={logoStyle}>
             <span style={{ fontSize: '24px' }}>🚀</span>
             <span className={logoText}>My Block Explorer</span>
           </div>
@@ -1343,49 +1340,49 @@ export default function TopNavigation({
             <button
               type="button"
               className={navLink}
-              onClick={() => goTo(`/chain/${currentChainId}/blocks`)}
+              onClick={() => goTo(router, `/chain/${currentChainId}/blocks`)}
             >
               Blocks
             </button>
             <button
               type="button"
               className={navLink}
-              onClick={() => goTo(`/chain/${currentChainId}/transactions`)}
+              onClick={() => goTo(router, `/chain/${currentChainId}/transactions`)}
             >
               Transactions
             </button>
             <button
               type="button"
               className={navLink}
-              onClick={() => goTo(`/chain/${currentChainId}/pending`)}
+              onClick={() => goTo(router, `/chain/${currentChainId}/pending`)}
             >
               Pending
             </button>
             <button
               type="button"
               className={navLink}
-              onClick={() => goTo(`/chain/${currentChainId}/broadcast`)}
+              onClick={() => goTo(router, `/chain/${currentChainId}/broadcast`)}
             >
               Broadcast
             </button>
             <button
               type="button"
               className={navLink}
-              onClick={() => goTo(`/chain/${currentChainId}/contracts`)}
+              onClick={() => goTo(router, `/chain/${currentChainId}/contracts`)}
             >
               Contracts
             </button>
             <button
               type="button"
               className={navLink}
-              onClick={() => goTo(`/chain/${currentChainId}/tokens`)}
+              onClick={() => goTo(router, `/chain/${currentChainId}/tokens`)}
             >
               Tokens
             </button>
             <button
               type="button"
               className={navLink}
-              onClick={() => goTo(`/chain/${currentChainId}/charts`)}
+              onClick={() => goTo(router, `/chain/${currentChainId}/charts`)}
             >
               Charts
             </button>
@@ -1393,13 +1390,13 @@ export default function TopNavigation({
                 Signatures, Coverage legend, Broadcast…) — also the
                 command palette's touch fallback. Not chain-scoped, so it
                 links the bare /tools path like the admin group below. */}
-            <button type="button" className={navLink} onClick={() => goTo('/tools')}>
+            <button type="button" className={navLink} onClick={() => goTo(router, '/tools')}>
               Tools
             </button>
             {/* Help section: the answer index (topics, shortcuts,
                 glossary, FAQ). Not chain-scoped — the copy is the same on
                 every chain — so it links the bare /help path. */}
-            <button type="button" className={navLink} onClick={() => goTo('/help')}>
+            <button type="button" className={navLink} onClick={() => goTo(router, '/help')}>
               Help
             </button>
             {/* Admin group, visually separated from the page links: the
@@ -1411,7 +1408,7 @@ export default function TopNavigation({
               type="button"
               className={cx(navLink, navLinkMuted)}
               aria-label="SQL console (admin)"
-              onClick={() => goTo('/sql')}
+              onClick={() => goTo(router, '/sql')}
             >
               SQL
             </button>
@@ -1422,7 +1419,7 @@ export default function TopNavigation({
               type="button"
               className={cx(navLink, navLinkMuted)}
               aria-label="Ops overview (admin)"
-              onClick={() => goTo('/ops')}
+              onClick={() => goTo(router, '/ops')}
             >
               Ops
             </button>

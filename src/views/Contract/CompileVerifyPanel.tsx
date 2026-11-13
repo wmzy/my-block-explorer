@@ -7,11 +7,12 @@
 // is a real match, and the outcome tiers are honest: exact, match after
 // ignoring the metadata hash, or mismatch with the first differing byte.
 import { useEffect, useMemo, useState } from 'react';
-import { css } from '@linaria/core';
+import { css, cx } from '@linaria/core';
 import * as ff from 'fetch-fun';
 import { get, post, longRunningApi } from '@/util/http';
 import { errorMessage } from '@/utils/errorHandler';
 import { describeSubmitError, type PanelResult } from './verifyShared';
+import { noticeBoxError, noticeBoxOk, noticeBoxWarn, primaryActionButton } from './styles';
 
 // The compilers endpoint's entry shape (see CompileVerifyService).
 type CompilerVersionEntry = {
@@ -69,7 +70,7 @@ const panelStyles = css`
 const introStyles = css`
   margin: 0 0 12px 0;
   font-size: 14px;
-  color: #666;
+  color: var(--haze-color-text-muted);
 `;
 
 const fieldLabelStyles = css`
@@ -83,7 +84,9 @@ const versionSelectStyles = css`
   font-size: 13px;
   padding: 6px 8px;
   border-radius: 6px;
-  border: 1px solid #ced4da;
+  border: 1px solid var(--haze-color-border);
+  background: var(--haze-color-bg);
+  color: var(--haze-color-text);
   max-width: 100%;
 `;
 
@@ -93,7 +96,9 @@ const inputStyles = css`
   font-size: 13px;
   padding: 6px 8px;
   border-radius: 6px;
-  border: 1px solid #ced4da;
+  border: 1px solid var(--haze-color-border);
+  background: var(--haze-color-bg);
+  color: var(--haze-color-text);
 `;
 
 const textareaStyles = css`
@@ -104,20 +109,22 @@ const textareaStyles = css`
   font-size: 12px;
   padding: 8px;
   border-radius: 6px;
-  border: 1px solid #ced4da;
+  border: 1px solid var(--haze-color-border);
+  background: var(--haze-color-bg);
+  color: var(--haze-color-text);
   resize: vertical;
 `;
 
 const hintStyles = css`
   margin: 6px 0 0 0;
   font-size: 12px;
-  color: #8a6d3b;
+  color: var(--haze-color-warning);
 `;
 
 const feedbackBadStyles = css`
   margin: 6px 0 0 0;
   font-size: 12px;
-  color: #dc3545;
+  color: var(--haze-color-danger);
 `;
 
 const actionsRowStyles = css`
@@ -128,70 +135,34 @@ const actionsRowStyles = css`
   flex-wrap: wrap;
 `;
 
+// Layout half of the submit button; colors/hover/disabled come from the
+// shared primaryActionButton family in ./styles.
 const submitStyles = css`
   padding: 8px 18px;
   font-size: 14px;
   border-radius: 6px;
-  cursor: pointer;
-  background: #007bff;
-  border: 1px solid #0062cc;
-  color: white;
-  font-weight: 500;
-
-  &:hover:not(:disabled) {
-    background: #0069d9;
-  }
-
-  &:disabled {
-    background: #a8c7ea;
-    border-color: #a8c7ea;
-    cursor: not-allowed;
-  }
 `;
 
 const resultVerifiedStyles = css`
   margin-top: 14px;
-  padding: 10px 14px;
-  border-radius: 6px;
   font-size: 14px;
-  background: #d4edda;
-  border: 1px solid #c3e6cb;
-  color: #155724;
 `;
 
 const resultMismatchStyles = css`
   margin-top: 14px;
-  padding: 10px 14px;
-  border-radius: 6px;
   font-size: 14px;
-  background: #f8d7da;
-  border: 1px solid #f5c6cb;
-  color: #721c24;
-  word-break: break-word;
 `;
 
 const resultErrorListStyles = css`
   margin-top: 14px;
-  padding: 10px 14px;
-  border-radius: 6px;
   font-size: 12px;
-  background: #f8d7da;
-  border: 1px solid #f5c6cb;
-  color: #721c24;
-  word-break: break-word;
   white-space: pre-wrap;
   font-family: monospace;
 `;
 
 const resultNoticeStyles = css`
   margin-top: 14px;
-  padding: 10px 14px;
-  border-radius: 6px;
   font-size: 14px;
-  background: #fff8e6;
-  border: 1px solid #f0a500;
-  color: #8a6d3b;
-  word-break: break-word;
 `;
 
 const auxdataStyles = css`
@@ -448,7 +419,7 @@ export function CompileVerifyPanel({
       <div className={actionsRowStyles}>
         <button
           type="button"
-          className={submitStyles}
+          className={cx(primaryActionButton, submitStyles)}
           disabled={!canSubmit}
           onClick={() => void handleSubmit()}
         >
@@ -462,13 +433,13 @@ export function CompileVerifyPanel({
         </p>
       )}
       {result?.kind === 'verified' && result.tier === 'exact' && (
-        <div role="status" className={resultVerifiedStyles} data-testid="compile-verify-result">
+        <div role="status" className={cx(noticeBoxOk, resultVerifiedStyles)} data-testid="compile-verify-result">
           Verified — recompiled bytecode matches the on-chain code exactly ({result.contractName},
           solc {result.compilerVersion}). Source saved and marked verified.
         </div>
       )}
       {result?.kind === 'verified' && result.tier === 'matches-metadata-only' && (
-        <div role="status" className={resultVerifiedStyles} data-testid="compile-verify-result">
+        <div role="status" className={cx(noticeBoxOk, resultVerifiedStyles)} data-testid="compile-verify-result">
           Verified — bytecode matches after ignoring the metadata hash ({result.contractName}, solc{' '}
           {result.compilerVersion}). Source saved and marked verified. The auxdata differs:
           <div className={auxdataStyles}>on-chain: {truncateHex(result.onChainAuxdata)}</div>
@@ -476,25 +447,25 @@ export function CompileVerifyPanel({
         </div>
       )}
       {result?.kind === 'mismatch' && (
-        <div role="alert" className={resultMismatchStyles} data-testid="compile-verify-result">
+        <div role="alert" className={cx(noticeBoxError, resultMismatchStyles)} data-testid="compile-verify-result">
           {result.text} Check the compiler version, optimizer settings, and that the contract was
           not deployed with constructor arguments baked into runtime values (immutables).
         </div>
       )}
       {result?.kind === 'compile-error' && (
-        <div role="alert" className={resultErrorListStyles} data-testid="compile-verify-result">
+        <div role="alert" className={cx(noticeBoxError, resultErrorListStyles)} data-testid="compile-verify-result">
           {result.errors.length > 0
             ? result.errors.join('\n')
             : 'The compiler reported errors without detail.'}
         </div>
       )}
       {result?.kind === 'notice' && (
-        <div role="status" className={resultNoticeStyles} data-testid="compile-verify-result">
+        <div role="status" className={cx(noticeBoxWarn, resultNoticeStyles)} data-testid="compile-verify-result">
           {result.text}
         </div>
       )}
       {result?.kind === 'error' && (
-        <div role="alert" className={resultMismatchStyles} data-testid="compile-verify-result">
+        <div role="alert" className={cx(noticeBoxError, resultMismatchStyles)} data-testid="compile-verify-result">
           {result.text}
         </div>
       )}

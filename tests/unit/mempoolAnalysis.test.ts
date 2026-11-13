@@ -6,7 +6,7 @@
 // and the render plan the grouped view consumes.
 import { describe, it, expect } from 'vitest';
 
-import { analyzeMempool, effectiveGasCap, effectiveTip } from '@/utils/mempoolAnalysis';
+import { analyzeMempool } from '@/utils/mempoolAnalysis';
 import type { PoolEntry } from '@/services/txpool';
 
 const GWEI = 1_000_000_000n;
@@ -28,35 +28,47 @@ const entry = (overrides: Partial<PoolEntry> & { hash: string }): PoolEntry => (
 
 const hashOf = (tag: string): string => `0x${tag.padEnd(64, '0')}`.slice(0, 66);
 
-describe('effectiveGasCap / effectiveTip', () => {
-  it('uses the 1559 fee cap when present, else the legacy gas price, else nothing', () => {
-    const eip1559 = entry({
-      hash: hashOf('a'),
-      gasPrice: 1n * GWEI,
-      maxFeePerGas: 30n * GWEI,
-      maxPriorityFeePerGas: 2n * GWEI,
-    });
-    const legacy = entry({ hash: hashOf('b'), gasPrice: 10n * GWEI });
-    const bare = entry({ hash: hashOf('c') });
+describe('effective cap / tip semantics (via analyzeMempool)', () => {
+  it('caps use the 1559 fee cap when present, else the legacy gas price, else nothing', () => {
+    const analysis = analyzeMempool([
+      entry({
+        hash: hashOf('a'),
+        nonce: 1,
+        gasPrice: 1n * GWEI,
+        maxFeePerGas: 30n * GWEI,
+        maxPriorityFeePerGas: 2n * GWEI,
+      }),
+      entry({ hash: hashOf('b'), nonce: 2, gasPrice: 10n * GWEI }),
+      entry({ hash: hashOf('c'), nonce: 3 }),
+    ]);
 
-    expect(effectiveGasCap(eip1559)).toBe(30n * GWEI);
-    expect(effectiveGasCap(legacy)).toBe(10n * GWEI);
-    expect(effectiveGasCap(bare)).toBeUndefined();
+    // The 1559 cap (30), not its legacy gasPrice shadow (1); the legacy
+    // price (10); the bare entry contributes no cap — never a fabricated
+    // 0 — and lands in the no-fee-data count instead.
+    expect(analysis.capStats).toEqual({
+      count: 2,
+      min: 10n * GWEI,
+      p25: 10n * GWEI,
+      median: 10n * GWEI,
+      max: 30n * GWEI,
+    });
+    expect(analysis.noFeeDataCount).toBe(1);
   });
 
-  it('exposes a tip only for 1559 entries — legacy pricing has no isolable tip', () => {
-    const eip1559 = entry({
-      hash: hashOf('a'),
-      maxFeePerGas: 30n * GWEI,
-      maxPriorityFeePerGas: 2n * GWEI,
-    });
-    const legacy = entry({ hash: hashOf('b'), gasPrice: 10n * GWEI });
-    // A 1559 tx whose tip the node omitted: honest absence.
-    const tipless1559 = entry({ hash: hashOf('d'), maxFeePerGas: 5n * GWEI });
+  it('tips cover only 1559 entries — legacy pricing has no isolable tip', () => {
+    const analysis = analyzeMempool([
+      entry({
+        hash: hashOf('a'),
+        nonce: 1,
+        maxFeePerGas: 30n * GWEI,
+        maxPriorityFeePerGas: 2n * GWEI,
+      }),
+      entry({ hash: hashOf('b'), nonce: 2, gasPrice: 10n * GWEI }),
+      // A 1559 tx whose tip the node omitted: honest absence.
+      entry({ hash: hashOf('d'), nonce: 3, maxFeePerGas: 5n * GWEI }),
+    ]);
 
-    expect(effectiveTip(eip1559)).toBe(2n * GWEI);
-    expect(effectiveTip(legacy)).toBeUndefined();
-    expect(effectiveTip(tipless1559)).toBeUndefined();
+    expect(analysis.tipStats).toEqual({ count: 1, p25: 2n * GWEI, median: 2n * GWEI });
   });
 });
 

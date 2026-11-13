@@ -39,7 +39,7 @@ describe('utils barrel', () => {
       addressEquals: 'address',
       createApiError: 'api-error',
       getLatestBlocks: 'blockRpcData',
-      isBlockTagSentinel: 'blockTagUtils',
+      resolveToBlock: 'blockTagUtils',
       chunk: 'chunk',
       createTtlLruCache: 'ttlLruCache',
       buildCastCommand: 'castCommand',

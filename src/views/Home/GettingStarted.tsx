@@ -10,7 +10,7 @@ import { css } from '@linaria/core';
 import { TypedLink } from '@native-router/react';
 import { Button } from '@/components/ui/Button';
 import { Card, CardContent } from '@/components/ui/Card';
-import { useCopyFeedback } from '@/util/useCopyFeedback';
+import { useCopyFeedback, useCopyLabel } from '@/util/useCopyFeedback';
 import {
   readStorageItem,
   writeStorageItem,
@@ -334,10 +334,12 @@ export function GettingStarted({ onDismiss }: GettingStartedProps) {
   const { blocks: blocksPath, contracts: contractsPath } = resolveGuideChainPaths();
 
   // Copy pattern shared with SetupRequiredScreen: shared copyText (async
-  // Clipboard API or legacy fallback), transient "Copied!" feedback that
-  // keeps the idle label when the clipboard write fails. The 1500ms reset
-  // this site used normalizes to the hook's 2000ms default (intentional).
+  // Clipboard API or legacy fallback) with the shared label swap
+  // (useCopyLabel — 'Copied ✓' on success, 'Copy failed' on a denied
+  // write). The 1500ms reset this site used normalizes to the hook's
+  // 2000ms default (intentional).
   const { state: copyState, copy } = useCopyFeedback();
+  const copyLabel = useCopyLabel(copyState, 'Copy');
 
   return (
     <div className={containerStyle}>
@@ -422,7 +424,7 @@ export function GettingStarted({ onDismiss }: GettingStartedProps) {
                 size="sm"
                 onClick={() => void copy(GETTING_STARTED_COMMAND)}
               >
-                {copyState === 'ok' ? 'Copied!' : 'Copy'}
+                {copyLabel}
               </Button>
             </div>
 

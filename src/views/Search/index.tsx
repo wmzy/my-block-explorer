@@ -446,6 +446,29 @@ export default function Search() {
     setEnsResolution(null);
   };
 
+  // Both search flows navigate a found result through the same type→path
+  // mapping: an address by its echoed segment (the payload's checksummed
+  // address in the global flow, the sanitized query itself in the
+  // chain-picked one), a transaction/block by the payload's own hash and
+  // number. Only the chain resolution differs per flow, so the resolved
+  // chain arrives as an argument.
+  const navigateToSearchResult = (
+    type: string,
+    data: unknown,
+    chainId: number,
+    addressSegment: string,
+  ) => {
+    if (type === 'address') {
+      navigate(router, `/chain/${chainId}/address/${addressSegment}`).catch(() => undefined);
+    } else if (type === 'transaction') {
+      navigate(router, `/chain/${chainId}/tx/${(data as Transaction).hash}`).catch(() => undefined);
+    } else if (type === 'block') {
+      // Navigate by block number — the detail route only accepts numbers,
+      // and the query itself may have been a block hash.
+      navigate(router, `/chain/${chainId}/block/${(data as Block).number}`).catch(() => undefined);
+    }
+  };
+
   // pinnedChainId: an explicitly pinned chain (example searches, a chain
   // switch from the header) — or null to force "no chain context" (the
   // cross-chain retry), which must not fall back to the ?chain= param the
@@ -551,18 +574,15 @@ export default function Search() {
 
       // Navigate on the chain the endpoint actually searched when it says
       // so (searchedChainId); the payload's own chainId is only a fallback.
-      if (searchResult.found && searchResult.type === 'address' && searchResult.data) {
-        const data = searchResult.data as AddressInfo;
+      if (navigatingToResult && searchResult.data) {
+        const data = searchResult.data as AddressInfo | Transaction | Block;
         const targetChain = searchedChain ?? data.chainId;
-        navigate(router, `/chain/${targetChain}/address/${data.address}`).catch(() => undefined);
-      } else if (searchResult.found && searchResult.type === 'transaction' && searchResult.data) {
-        const data = searchResult.data as Transaction;
-        const targetChain = searchedChain ?? data.chainId;
-        navigate(router, `/chain/${targetChain}/tx/${data.hash}`).catch(() => undefined);
-      } else if (searchResult.found && searchResult.type === 'block' && searchResult.data) {
-        const data = searchResult.data as Block;
-        const targetChain = searchedChain ?? data.chainId;
-        navigate(router, `/chain/${targetChain}/block/${data.number}`).catch(() => undefined);
+        navigateToSearchResult(
+          searchResult.type,
+          data,
+          targetChain,
+          (data as AddressInfo).address,
+        );
       }
     } catch (err) {
       // No HTTP response at all (backend offline / not connected) gets the
@@ -640,19 +660,12 @@ export default function Search() {
         return;
       }
 
+      // The picked chain wins unless the payload echoes its own; the
+      // address segment is the sanitized query itself (the query IS the
+      // address for an address hit).
       const chainId = searchResult.chainId ?? selectedChainId;
 
-      if (searchResult.type === 'address') {
-        navigate(router, `/chain/${chainId}/address/${sanitized}`).catch(() => undefined);
-      } else if (searchResult.type === 'transaction') {
-        const data = searchResult.data as Transaction;
-        navigate(router, `/chain/${chainId}/tx/${data.hash}`).catch(() => undefined);
-      } else if (searchResult.type === 'block') {
-        // Navigate by block number — the detail route only accepts numbers,
-        // and the query itself may have been a block hash.
-        const data = searchResult.data as Block;
-        navigate(router, `/chain/${chainId}/block/${data.number}`).catch(() => undefined);
-      }
+      navigateToSearchResult(searchResult.type, searchResult.data, chainId, sanitized);
     } catch (err) {
       // Same attribution as the global search: an unreachable backend is
       // the environment, not the picked chain — the Retry re-runs the

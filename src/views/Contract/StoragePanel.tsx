@@ -1,7 +1,14 @@
+import { css, cx } from '@linaria/core';
 import { useStorageLayout } from '@/services/contracts';
 import { StorageExplorer } from '@/components/storage';
-import { cardStyles, errorStyles, loadingStyles } from './styles';
+import { cardStyles, errorStyles, loadingStyles, noticeBoxError, noticeBoxWarn } from './styles';
 import type { ContractSource } from './types';
+
+// Spacing for the evmole provenance note on top of the shared warn family.
+const inferredNoteStyles = css`
+  margin-bottom: 12px;
+  font-size: 12px;
+`;
 
 // Storage tab: the proxy/impl toggle decides which address the layout is
 // read for; the hook returns the raw {found, layout, source} envelope, and
@@ -50,7 +57,7 @@ export function StoragePanel({
     return (
       <div className={cardStyles}>
         <h2>Storage Layout</h2>
-        <div className={errorStyles}>
+        <div className={cx(noticeBoxError, errorStyles)}>
           {error instanceof Error
             ? error.message
             : 'Storage layout not available for this contract.'}
@@ -62,17 +69,7 @@ export function StoragePanel({
   return (
     <div className={cardStyles}>
       {layoutSource === 'evmole' && (
-        <div
-          style={{
-            padding: '8px 12px',
-            marginBottom: '12px',
-            background: '#fff8e1',
-            border: '1px solid #856404',
-            borderRadius: '8px',
-            fontSize: '12px',
-            color: '#856404',
-          }}
-        >
+        <div className={cx(noticeBoxWarn, inferredNoteStyles)}>
           Inferred from bytecode (unverified contract)
         </div>
       )}

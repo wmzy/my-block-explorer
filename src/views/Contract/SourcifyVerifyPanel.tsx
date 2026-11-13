@@ -7,10 +7,11 @@
 // was unreachable. The external widget deep link in the info card remains
 // the alternative path.
 import { useState } from 'react';
-import { css } from '@linaria/core';
+import { css, cx } from '@linaria/core';
 import { post } from '@/util/http';
 import { formatFileSize } from '@/utils/format';
 import { describeSubmitError, type PanelResult } from './verifyShared';
+import { noticeBoxError, noticeBoxOk, noticeBoxWarn, primaryActionButton } from './styles';
 
 // Mirrors the backend's bundle caps (ContractVerifyService) so the page
 // refuses locally instead of round-tripping a doomed 400.
@@ -37,7 +38,7 @@ const panelStyles = css`
 const introStyles = css`
   margin: 0 0 12px 0;
   font-size: 14px;
-  color: #666;
+  color: var(--haze-color-text-muted);
 `;
 
 const fileRowStyles = css`
@@ -66,13 +67,13 @@ const chipStyles = css`
   align-items: center;
   gap: 8px;
   padding: 4px 10px;
-  background: #f8f9fa;
-  border: 1px solid #e1e5e9;
+  background: var(--haze-color-bg-subtle);
+  border: 1px solid var(--haze-color-border);
   border-radius: 4px;
   font-size: 13px;
   font-family:
     'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas, 'Courier New', monospace;
-  color: #1a1a1a;
+  color: var(--haze-color-text);
   width: fit-content;
 `;
 
@@ -84,20 +85,20 @@ const chipRemoveStyles = css`
   border: none;
   background: none;
   padding: 0 2px;
-  color: #999;
+  color: var(--haze-color-text-muted);
   font-size: 15px;
   line-height: 1;
   cursor: pointer;
 
   &:hover {
-    color: #721c24;
+    color: var(--haze-color-danger);
   }
 `;
 
 const hintStyles = css`
   margin: 8px 0 0 0;
   font-size: 13px;
-  color: #8a6d3b;
+  color: var(--haze-color-warning);
 `;
 
 const actionsRowStyles = css`
@@ -108,56 +109,27 @@ const actionsRowStyles = css`
   flex-wrap: wrap;
 `;
 
+// Layout half of the submit button; colors/hover/disabled come from the
+// shared primaryActionButton family in ./styles.
 const submitStyles = css`
   padding: 8px 18px;
   font-size: 14px;
   border-radius: 6px;
-  cursor: pointer;
-  background: #007bff;
-  border: 1px solid #0062cc;
-  color: white;
-  font-weight: 500;
-
-  &:hover:not(:disabled) {
-    background: #0069d9;
-  }
-
-  &:disabled {
-    background: #a8c7ea;
-    border-color: #a8c7ea;
-    cursor: not-allowed;
-  }
 `;
 
 const resultVerifiedStyles = css`
   margin-top: 14px;
-  padding: 10px 14px;
-  border-radius: 6px;
   font-size: 14px;
-  background: #d4edda;
-  border: 1px solid #c3e6cb;
-  color: #155724;
 `;
 
 const resultNoticeStyles = css`
   margin-top: 14px;
-  padding: 10px 14px;
-  border-radius: 6px;
   font-size: 14px;
-  background: #fff8e6;
-  border: 1px solid #f0a500;
-  color: #8a6d3b;
 `;
 
 const resultErrorStyles = css`
   margin-top: 14px;
-  padding: 10px 14px;
-  border-radius: 6px;
   font-size: 14px;
-  background: #f8d7da;
-  border: 1px solid #f5c6cb;
-  color: #721c24;
-  word-break: break-word;
 `;
 
 export function SourcifyVerifyPanel({
@@ -308,7 +280,7 @@ export function SourcifyVerifyPanel({
       <div className={actionsRowStyles}>
         <button
           type="button"
-          className={submitStyles}
+          className={cx(primaryActionButton, submitStyles)}
           disabled={!canSubmit}
           onClick={() => void handleSubmit()}
         >
@@ -316,17 +288,17 @@ export function SourcifyVerifyPanel({
         </button>
       </div>
       {result?.kind === 'verified' && (
-        <div role="status" className={resultVerifiedStyles} data-testid="verify-result">
+        <div role="status" className={cx(noticeBoxOk, resultVerifiedStyles)} data-testid="verify-result">
           Verified ({result.status}) — source refreshed
         </div>
       )}
       {result?.kind === 'notice' && (
-        <div role="status" className={resultNoticeStyles} data-testid="verify-result">
+        <div role="status" className={cx(noticeBoxWarn, resultNoticeStyles)} data-testid="verify-result">
           {result.text}
         </div>
       )}
       {result?.kind === 'error' && (
-        <div role="alert" className={resultErrorStyles} data-testid="verify-result">
+        <div role="alert" className={cx(noticeBoxError, resultErrorStyles)} data-testid="verify-result">
           {result.text}
         </div>
       )}

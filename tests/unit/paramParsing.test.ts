@@ -7,7 +7,6 @@ import { describe, it, expect } from 'vitest';
 import {
   describeCallError,
   describeRevertedCall,
-  paramLabel,
   parseFunctionArgs,
   sameNameInputCounts,
 } from '@/utils/paramParsing';
@@ -206,7 +205,13 @@ describe('parseFunctionArgs empty-input rule', () => {
   it('labels unnamed inputs by position', () => {
     const result = parse([param('', 'address'), param('n', 'uint256')], ['', '5']);
     expect(result.fieldErrors[0]).toBe('arg 0: required');
-    expect(paramLabel(param('', 'uint256'), 1)).toBe('arg 1');
+    // A hole at index 1 (an empty input with a filled one after it)
+    // names the unnamed parameter by its position.
+    const holeAtOne = parse(
+      [param('a', 'address'), param('', 'uint256'), param('flag', 'bool')],
+      ['', '', 'true'],
+    );
+    expect(holeAtOne.fieldErrors).toEqual(['a: required', 'arg 1: required', '']);
   });
 });
 

@@ -24,7 +24,6 @@ import {
   watchService,
   WATCH_EVENTS_DEFAULT_LIMIT,
   WATCH_EVENTS_MAX_LIMIT,
-  WATCH_MAX_SUBSCRIPTIONS_PER_CHAIN,
 } from '../services/WatchService';
 
 const logger = createLogger('watch-routes');
@@ -259,13 +258,7 @@ app.get('/chains/:chainId/watch/events', async c => {
 // Lifecycle: mounting this sub-app owns the watcher interval (the
 // EventIndexingService pattern — the service graph comes alive with the
 // app import). Idempotent; WatchService.stop() exists for tests and
-// shutdown. The export below documents the cap for API consumers.
-export const WATCH_ROUTE_LIMITS = {
-  maxSubscriptionsPerChain: WATCH_MAX_SUBSCRIPTIONS_PER_CHAIN,
-  eventsDefaultLimit: WATCH_EVENTS_DEFAULT_LIMIT,
-  eventsMaxLimit: WATCH_EVENTS_MAX_LIMIT,
-} as const;
-
+// shutdown.
 watchService.start();
 
 export default app;

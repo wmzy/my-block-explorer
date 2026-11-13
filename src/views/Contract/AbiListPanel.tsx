@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { css, cx } from '@linaria/core';
 
 import { SourceCodeViewer } from '@/components/SourceCodeViewer';
+import { badgeWarn } from './styles';
 import { useCopyFeedback } from '@/util/useCopyFeedback';
 import {
   ABI_CATEGORY_ORDER,
@@ -21,16 +22,14 @@ const panelStyles = css`
   gap: var(--haze-space-3);
 `;
 
-// Amber provenance chip (style moved verbatim from the Contract page's ABI
-// card so the custom-ABI badge keeps its exact look).
+// Amber provenance chip (shape moved from the Contract page's ABI card;
+// colors come from the shared badgeWarn family so the custom-ABI badge
+// follows the theme).
 const provenanceChipStyles = css`
   display: inline-block;
   margin-bottom: 12px;
   padding: 2px 10px;
   border-radius: 12px;
-  background: #f0a500;
-  border: 1px solid #d69200;
-  color: white;
   font-size: 12px;
   font-weight: 600;
 `;
@@ -418,7 +417,9 @@ export function AbiListPanel({
 
   return (
     <div className={panelStyles}>
-      {provenanceLabel ? <span className={provenanceChipStyles}>{provenanceLabel}</span> : null}
+      {provenanceLabel ? (
+        <span className={cx(badgeWarn, provenanceChipStyles)}>{provenanceLabel}</span>
+      ) : null}
       <div className={headerRowStyles}>
         <div className={chipRowStyles}>
           <button

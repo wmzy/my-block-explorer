@@ -95,6 +95,8 @@ import {
   normalizeCallTrace,
   type CallTraceNode,
 } from '../utils/traceFormat';
+// Shared-cursor bounded pool (import-free leaf) for the trace fan-out.
+import { runBoundedPool } from '../utils/boundedPool';
 import type { Address, PublicClient } from 'viem';
 
 const logger = createLogger('address-scan-service');
@@ -888,18 +890,14 @@ const traceBlockInternalTransactions = async (
   const rows: NewAddressScanInternalTx[] = [];
   const blockTimestamp = new Date(Number(block.timestamp) * 1000);
   let unsupported = false;
-  let next = 0;
 
   // Bounded-concurrency pool with lazy dispatch: an unsupported verdict
   // stops NEW work; requests already in flight still settle (their
   // successes, if any, persist below — real rows are never dropped).
-  const worker = async (): Promise<void> => {
-    for (;;) {
-      if (unsupported) return;
-      const index = next;
-      next += 1;
-      if (index >= block.transactions.length) return;
-      const tx = block.transactions[index];
+  await runBoundedPool(
+    block.transactions,
+    TRACE_CONCURRENCY,
+    async (tx, index) => {
       try {
         // viem's typed client.request has no debug namespace; the narrow
         // cast lives in utils/callTraceRpc (clientRequest) — same route
@@ -937,11 +935,8 @@ const traceBlockInternalTransactions = async (
           'debug_traceTransaction failed; skipping trace for this transaction',
         );
       }
-    }
-  };
-
-  await Promise.all(
-    Array.from({ length: Math.min(TRACE_CONCURRENCY, block.transactions.length) }, worker),
+    },
+    { shouldStop: () => unsupported },
   );
 
   if (rows.length > 0) {

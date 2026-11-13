@@ -69,7 +69,7 @@ const ARRAY_SUFFIX_PATTERN = /^(.*)\[(\d*)\]$/;
 
 // Human-facing field label: the ABI parameter name when present, else the
 // position, so error messages always identify the input.
-export function paramLabel(input: ParamDescriptor, index: number): string {
+function paramLabel(input: ParamDescriptor, index: number): string {
   return input.name !== '' ? input.name : `arg ${index}`;
 }
 

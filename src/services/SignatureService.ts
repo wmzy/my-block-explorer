@@ -16,6 +16,10 @@
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { db, signatureCache } from '../database/init';
 import { negativeEntryFresh } from '../utils/negativeCache';
+// Canonical record-shape guard (rejects arrays) + the shared fetch budget
+// wrapper — both import-free leaves.
+import { isRecord } from '../utils/isRecord';
+import { fetchWithTimeout } from '../utils/fetchWithTimeout';
 import { createLogger } from '../server/logger';
 
 const logger = createLogger('signature-service');
@@ -44,9 +48,6 @@ type QueuedLookup = {
   request: SelectorLookup;
   resolve: (outcome: SignatureLookupOutcome) => void;
 };
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null;
 
 // One openchain candidate entry: { name: "transfer(address,uint256)" }.
 // Anything else (missing/non-string/blank name) is dropped defensively —
@@ -277,10 +278,11 @@ export class SignatureService {
     const url = `${OPENCHAIN_LOOKUP_URL}?${params.toString()}`;
 
     try {
-      const response = await fetch(url, {
-        signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
-        headers: { accept: 'application/json' },
-      });
+      const response = await fetchWithTimeout(
+        url,
+        { headers: { accept: 'application/json' } },
+        FETCH_TIMEOUT_MS,
+      );
       if (!response.ok) {
         logger.warn({ status: response.status }, 'openchain lookup answered non-OK');
         return null;

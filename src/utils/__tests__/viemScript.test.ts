@@ -8,10 +8,9 @@
 // and unbuildable states (invalid/empty-required/null args) surface as
 // reasons instead of fabricated scripts.
 import { describe, it, expect } from 'vitest';
-import * as viemChains from 'viem/chains';
 
-import { buildViemScript, VIEM_CHAIN_EXPORTS, type ViemChainInfo } from '@/utils/viemScript';
-import { getDefaultRpcUrl, POPULAR_CHAINS } from '@/config/chains';
+import { buildViemScript, type ViemChainInfo } from '@/utils/viemScript';
+import { getDefaultRpcUrl } from '@/config/chains';
 import type { ContractFunctionInput, EnhancedContractFunction } from '@/utils/contractInteraction';
 
 const ADDR_A = '0x1111111111111111111111111111111111111111';
@@ -244,14 +243,10 @@ describe('buildViemScript chain selection', () => {
     }
   });
 
-  it('curates exactly the popular ids, each a real viem/chains export', () => {
-    for (const name of VIEM_CHAIN_EXPORTS.values()) {
-      expect(viemChains).toHaveProperty(name);
-    }
-    expect([...VIEM_CHAIN_EXPORTS.keys()].sort((a, b) => a - b)).toEqual(
-      [...POPULAR_CHAINS.map(chain => chain.id)].sort((a, b) => a - b),
-    );
-  });
+  // The curated id→name table itself (exactly POPULAR_CHAINS ids, every
+  // mapped name a real viem/chains export) is pinned by
+  // tests/unit/utils/viemChainExports.test.ts — buildViemScript now
+  // deep-imports that leaf instead of carrying its own copy.
 });
 
 describe('buildViemScript abi const', () => {

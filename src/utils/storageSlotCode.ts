@@ -11,6 +11,8 @@
 import { getDefaultRpcUrl } from '@/config/chains';
 import type { Hex } from 'viem';
 
+import { VIEM_CHAIN_EXPORTS } from '@/utils/viemChainExports';
+
 /** A TS expression evaluating to a Hex/bigint slot. */
 export type SlotExpr = string;
 
@@ -36,22 +38,6 @@ export function exprKeccakConcat(left: SlotExpr, right: SlotExpr): SlotExpr {
   return `keccak256(concat([${left}, ${right}]))`;
 }
 
-// Well-known chain ids → named exports from 'viem/chains'. viem ≥2.16
-// renamed the BNB Smart Chain export from `bnb` to `bsc`; this tree pins
-// viem 2.x with `bsc`, and the snippet must import a name that exists.
-const VIEM_CHAIN_EXPORTS: Record<number, string> = {
-  1: 'mainnet',
-  137: 'polygon',
-  42161: 'arbitrum',
-  10: 'optimism',
-  8453: 'base',
-  100: 'gnosis',
-  43114: 'avalanche',
-  56: 'bsc',
-  42220: 'celo',
-  324: 'zksync',
-};
-
 // viem names a symbolic expression may reference; the snippet imports
 // exactly the ones used so it is copy-paste runnable as-is.
 const EXPR_HELPER_IDENTIFIERS = ['concat', 'keccak256', 'pad', 'toHex'] as const;
@@ -62,17 +48,19 @@ function exprHelperImports(expr: string): readonly string[] {
 
 /**
  * A runnable TypeScript snippet that reads one storage slot with viem.
- * Well-known chains get their named chain; an unknown id falls back to
- * mainnet with a TODO comment (never a fabricated chain).
+ * Chains in the curated VIEM_CHAIN_EXPORTS table (exactly POPULAR_CHAINS)
+ * import their named viem chain; every other id — zksync 324 included —
+ * falls back to mainnet with a TODO comment (never a fabricated chain).
  */
 export function buildViemReadSnippet(opts: {
   chainId: number;
   address: string;
   slotExpr: SlotExpr;
 }): string {
-  const chainName = VIEM_CHAIN_EXPORTS[opts.chainId] ?? 'mainnet';
+  const chainExport = VIEM_CHAIN_EXPORTS.get(opts.chainId);
+  const chainName = chainExport ?? 'mainnet';
   const chainLine =
-    VIEM_CHAIN_EXPORTS[opts.chainId] === undefined
+    chainExport === undefined
       ? `  chain: mainnet, // TODO: chainId ${opts.chainId} — import the right chain from 'viem/chains'`
       : `  chain: ${chainName},`;
   // toHex is used by the snippet body itself (bigint → Hex for

@@ -12,13 +12,6 @@ export const EIP1967_IMPLEMENTATION_SLOT =
   '0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc';
 
 /**
- * EIP-1967 admin slot. Derived as
- * toHex(BigInt(keccak256(toBytes('eip1967.proxy.admin'))) - 1n, { size: 32 }).
- */
-export const EIP1967_ADMIN_SLOT =
-  '0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103';
-
-/**
  * EIP-1967 beacon slot. Derived as
  * toHex(BigInt(keccak256(toBytes('eip1967.proxy.beacon'))) - 1n, { size: 32 }).
  */
@@ -67,14 +60,14 @@ export function decodeMinimalProxy(code: Hex): Address | null {
  * other compiler versions/builds honestly return false — misses are
  * acceptable, false positives are not.
  */
-export const BEACON_PROXY_BYTECODE_PREFIX = '0x60806040526040523615600b5760e01c8063';
+const BEACON_PROXY_BYTECODE_PREFIX = '0x60806040526040523615600b5760e01c8063';
 
 /**
  * Case-insensitive startsWith match of the canonical BeaconProxy dispatcher
  * prefix against deployed bytecode. See BEACON_PROXY_BYTECODE_PREFIX for the
  * heuristic's limits.
  */
-export function decodeBeaconProxyPrefix(code: Hex): boolean {
+function decodeBeaconProxyPrefix(code: Hex): boolean {
   return code.toLowerCase().startsWith(BEACON_PROXY_BYTECODE_PREFIX);
 }
 

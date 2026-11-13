@@ -3,6 +3,8 @@
  * matching signature proves the function exists in the ABI, not that it is
  * reachable or attacker-controlled; this is a name heuristic, not an audit.
  */
+// Canonical record-shape guard (rejects arrays) — import-free leaf.
+import { isRecord } from './isRecord';
 
 export type AbiRiskFlagId =
   'mint' | 'pausable' | 'blacklist' | 'upgradeable' | 'ownership' | 'fee-controls';
@@ -91,9 +93,6 @@ const FLAG_COPY: ReadonlyArray<{
     detail: 'Fee-setting function present — fees can change',
   },
 ];
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null;
 
 /** Normalize a raw ABI entry into a matched-function candidate, or null. */
 function normalizeFunction(entry: unknown): AbiFunction | null {

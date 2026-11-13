@@ -247,7 +247,7 @@ describe('GettingStarted card', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
 
-    await screen.findByRole('button', { name: 'Copied!' });
+    await screen.findByRole('button', { name: 'Copied ✓' });
     expect(writeText).toHaveBeenCalledTimes(1);
     expect(writeText).toHaveBeenCalledWith(GETTING_STARTED_COMMAND);
   });

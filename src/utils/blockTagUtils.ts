@@ -2,18 +2,17 @@ import type { PublicClient } from 'viem';
 import type { BlockTag, BlockTagInput, BlockTagSentinel } from '../types/events';
 import { BLOCK_TAG_SENTINELS, SENTINEL_TO_TAG } from '../types/events';
 
-export const isBlockTagSentinel = (value: number): value is BlockTagSentinel =>
-  value in SENTINEL_TO_TAG;
+const isBlockTagSentinel = (value: number): value is BlockTagSentinel => value in SENTINEL_TO_TAG;
 
-export const blockTagToSentinel = (tag: BlockTag): BlockTagSentinel => BLOCK_TAG_SENTINELS[tag];
+const blockTagToSentinel = (tag: BlockTag): BlockTagSentinel => BLOCK_TAG_SENTINELS[tag];
 
-export const sentinelToBlockTag = (sentinel: BlockTagSentinel): BlockTag =>
+const sentinelToBlockTag = (sentinel: BlockTagSentinel): BlockTag =>
   SENTINEL_TO_TAG[sentinel];
 
 export const inputToStoredValue = (input: BlockTagInput): number =>
   typeof input === 'string' ? blockTagToSentinel(input) : input;
 
-export const resolveBlockTag = async (
+const resolveBlockTag = async (
   client: PublicClient,
   sentinel: BlockTagSentinel,
 ): Promise<bigint> => {

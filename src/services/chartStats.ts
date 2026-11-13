@@ -23,6 +23,8 @@
 // of serving a dead RPC's verdict until midnight.
 import { createRpcClient } from '@/utils/realTimeData';
 import { formatNumber } from '@/utils/format';
+// The one "one day" constant — import-free leaf.
+import { MS_PER_DAY } from '@/utils/time';
 
 import { bindQueryFn, createQueryCache } from '@/util/useQuery';
 
@@ -66,7 +68,6 @@ const TX_SAMPLE_CONCURRENCY = 4;
 // cadence only re-checks the day cache (plus retries unsettled failures).
 const CHARTS_POLL_INTERVAL = 60_000;
 
-const MS_PER_DAY = 86_400_000;
 const GWEI = 1_000_000_000;
 
 // --- types ---

@@ -120,6 +120,13 @@
       "when": 1790763795274,
       "tag": "0016_bouncy_black_tom",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1794491446642,
+      "tag": "0017_previous_magneto",
+      "breakpoints": true
     }
   ]
 }

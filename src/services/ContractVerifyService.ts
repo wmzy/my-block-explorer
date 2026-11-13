@@ -27,6 +27,8 @@
 //   a domain outcome answered with HTTP 200).
 import { createLogger } from '../server/logger';
 import { errorMessage } from '../utils/errorHandler';
+// Canonical record-shape guard (rejects arrays) — import-free leaf.
+import { isRecord } from '../utils/isRecord';
 import type { Address } from 'viem';
 
 const logger = createLogger('contract-verify-service');
@@ -66,15 +68,12 @@ export type SourcifyVerifyOutcome =
 export type VerificationFilesValidation =
   { ok: true; files: Record<string, string> } | { ok: false; message: string };
 
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null;
-
 // Structural validation of the file bundle: an object of file name ->
 // content strings, with metadata.json present, at most MAX_VERIFY_FILES
 // entries and MAX_VERIFY_TOTAL_BYTES of content. Shared by the route (400
 // invalid_files) and the service (defense in depth for other callers).
 export function validateVerificationFiles(files: unknown): VerificationFilesValidation {
-  if (!isRecord(files) || Array.isArray(files)) {
+  if (!isRecord(files)) {
     return {
       ok: false,
       message: 'files must be an object mapping file names to their string contents',

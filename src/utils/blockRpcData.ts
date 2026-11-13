@@ -439,7 +439,7 @@ export const getBlockTransactions = async (
 // Composite transaction cursor: blockNumber * SCALE + transactionIndex.
 // transactionIndex stays far below 1M on real chains, so the encoding is
 // injective and compares identically to the (blockNumber, index) pair.
-export const TX_CURSOR_SCALE = 1_000_000n;
+const TX_CURSOR_SCALE = 1_000_000n;
 
 // Per-page scan cap: without it a sparse or dead chain would walk its whole
 // history inside a single request.

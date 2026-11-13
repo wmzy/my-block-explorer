@@ -3,27 +3,27 @@
  * Provides efficient sorting algorithms and optimization strategies
  */
 
-export interface SortConfig {
+export type SortConfig = {
   key: string;
   direction: 'asc' | 'desc';
   type?: 'numeric' | 'text' | 'address' | 'timestamp';
   priority?: number;
-}
+};
 
-export interface SortingPerformanceMetrics {
+export type SortingPerformanceMetrics = {
   algorithmUsed: string;
   executionTime: number;
   dataSize: number;
   memoryUsage: number;
   cacheHit: boolean;
-}
+};
 
-export interface SortingCache {
+export type SortingCache = {
   key: string;
   data: unknown[];
   timestamp: number;
   ttl: number;
-}
+};
 
 /**
  * A value that is exactly a plain decimal integer, or null otherwise.

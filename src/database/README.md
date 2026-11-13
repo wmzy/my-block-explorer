@@ -108,8 +108,8 @@ export const userRpcConfigs = duckdbTable('user_rpc_configs', {
 });
 
 // ✅ Option 3: use a composite primary key
-export const accessHistory = duckdbTable(
-  'access_history',
+export const queryHistory = duckdbTable(
+  'query_history',
   {
     chainId: integer(),
     type: varchar({ length: 20 }),

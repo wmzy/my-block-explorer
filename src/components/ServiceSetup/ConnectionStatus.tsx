@@ -1,7 +1,8 @@
-import { css } from '@linaria/core';
+import { css, cx } from '@linaria/core';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { StatusBadge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
+import { panelEnterBase } from '@/components/ui/motion';
 import { getApiBase } from '@/util/apiBase';
 import { useServiceDiscovery } from '@/hooks/ServiceDiscoveryContext';
 
@@ -30,31 +31,25 @@ const clickableBadgeStyle = css`
   }
 `;
 
-const expandedPanelStyle = css`
-  position: absolute;
-  bottom: calc(100% + var(--haze-space-3));
-  left: 0;
-  background: var(--haze-color-bg);
-  border: 1px solid var(--haze-color-border);
-  border-radius: var(--haze-radius-lg);
-  padding: var(--haze-space-5);
-  min-width: 300px;
-  box-shadow:
-    var(--haze-shadow-lg),
-    0 0 0 1px var(--haze-color-border);
-  animation: panel-enter 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-
-  @keyframes panel-enter {
-    from {
-      opacity: 0;
-      transform: translateY(8px) scale(0.96);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0) scale(1);
-    }
-  }
-`;
+// The expanded panel rides the shared enter-rise (components/ui/motion
+// panelEnterBase) — its defaults ARE this panel's original animation
+// (0.3s, 8px, scale 0.96 on the same deceleration curve).
+const expandedPanelStyle = cx(
+  panelEnterBase,
+  css`
+    position: absolute;
+    bottom: calc(100% + var(--haze-space-3));
+    left: 0;
+    background: var(--haze-color-bg);
+    border: 1px solid var(--haze-color-border);
+    border-radius: var(--haze-radius-lg);
+    padding: var(--haze-space-5);
+    min-width: 300px;
+    box-shadow:
+      var(--haze-shadow-lg),
+      0 0 0 1px var(--haze-color-border);
+  `,
+);
 
 const expandedRowStyle = css`
   display: flex;

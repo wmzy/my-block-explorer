@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { FormEvent } from 'react';
-import { css } from '@linaria/core';
+import { css, cx } from '@linaria/core';
 import { numberToHex, parseEther, type Abi, type StateOverride as ViemStateOverride } from 'viem';
 import { getChainInfo, getChainName, getChainSymbol, getDefaultRpcUrl } from '@/config/chains';
 import { Collapsible } from '@/components/ui/Collapsible';
@@ -28,24 +28,25 @@ import {
 } from '@/utils/paramParsing';
 import { parseStateOverrideInput, toViemStateOverride } from './stateOverrideInput';
 import { argsKey } from './types';
+import { noticeBoxError, noticeBoxOk } from './styles';
 
 const functionNameReadStyles = css`
   font-weight: 600;
   margin-bottom: 12px;
-  color: #0066cc;
+  color: var(--haze-color-primary);
 `;
 
 const functionNameWriteStyles = css`
   font-weight: 600;
   margin-bottom: 12px;
-  color: #cc6600;
+  color: var(--haze-color-warning-hover);
 `;
 
 const mutabilityStyles = css`
   font-size: 12px;
   font-weight: normal;
   margin-left: 8px;
-  color: #666;
+  color: var(--haze-color-text-muted);
 `;
 
 const inputGroupStyles = css`
@@ -57,22 +58,24 @@ const labelStyles = css`
   font-size: 14px;
   font-weight: 500;
   margin-bottom: 4px;
-  color: #333;
+  color: var(--haze-color-text);
 `;
 
 const inputStyles = css`
   width: 100%;
   padding: 8px 12px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--haze-color-border);
   border-radius: 4px;
   font-family: monospace;
   font-size: 13px;
+  background: var(--haze-color-bg);
+  color: var(--haze-color-text);
 `;
 
 const fieldErrorStyles = css`
   margin-top: 4px;
   font-size: 12px;
-  color: #c62828;
+  color: var(--haze-color-danger);
 `;
 
 // Foundry-style state-override map: mono textarea (same palette as the
@@ -82,11 +85,13 @@ const stateOverrideTextareaStyles = css`
   width: 100%;
   min-height: 72px;
   padding: 8px 12px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--haze-color-border);
   border-radius: 4px;
   font-family: monospace;
   font-size: 12px;
   line-height: 1.5;
+  background: var(--haze-color-bg);
+  color: var(--haze-color-text);
   resize: vertical;
 `;
 
@@ -95,20 +100,20 @@ const stateOverrideTextareaStyles = css`
 const stateOverrideNoteStyles = css`
   margin-top: 6px;
   font-size: 12px;
-  color: #888;
+  color: var(--haze-color-text-muted);
 `;
 
 const weiHintStyles = css`
   margin-top: 4px;
   font-family: monospace;
   font-size: 11px;
-  color: #888;
+  color: var(--haze-color-text-muted);
   word-break: break-all;
 `;
 
 const buttonReadStyles = css`
-  background: #0066cc;
-  color: white;
+  background: var(--haze-color-primary);
+  color: var(--haze-color-text-inverse);
   border: none;
   padding: 8px 16px;
   border-radius: 4px;
@@ -117,18 +122,21 @@ const buttonReadStyles = css`
   font-weight: 500;
 
   &:hover:not(:disabled) {
-    background: #0052a3;
+    background: var(--haze-color-primary-hover);
   }
 
   &:disabled {
-    background: #ccc;
+    background: var(--haze-color-bg-muted);
+    color: var(--haze-color-text-muted);
     cursor: not-allowed;
   }
 `;
 
+// Same warning ladder as the shared warningActionButton family (borderless
+// twin): the simulate action keeps the write-function orange.
 const buttonWriteStyles = css`
-  background: #cc6600;
-  color: white;
+  background: var(--haze-color-warning);
+  color: var(--haze-color-text-inverse);
   border: none;
   padding: 8px 16px;
   border-radius: 4px;
@@ -137,11 +145,12 @@ const buttonWriteStyles = css`
   font-weight: 500;
 
   &:hover:not(:disabled) {
-    background: #b85c00;
+    background: var(--haze-color-warning-hover);
   }
 
   &:disabled {
-    background: #ccc;
+    background: var(--haze-color-bg-muted);
+    color: var(--haze-color-text-muted);
     cursor: not-allowed;
   }
 `;
@@ -158,9 +167,9 @@ const formFooterStyles = css`
 // Secondary outline style so the copy actions never compete with the
 // primary Query/Simulate submit.
 const copyButtonStyles = css`
-  background: white;
-  color: #0066cc;
-  border: 1px solid #0066cc;
+  background: var(--haze-color-bg);
+  color: var(--haze-color-primary);
+  border: 1px solid var(--haze-color-primary);
   padding: 7px 14px;
   border-radius: 4px;
   cursor: pointer;
@@ -168,13 +177,13 @@ const copyButtonStyles = css`
   font-weight: 500;
 
   &:hover:not(:disabled) {
-    background: #e8f0fe;
+    background: var(--haze-color-primary-subtle);
   }
 
   &:disabled {
-    color: #999;
-    border-color: #ccc;
-    background: #f5f5f5;
+    color: var(--haze-color-text-muted);
+    border-color: var(--haze-color-border);
+    background: var(--haze-color-bg-muted);
     cursor: not-allowed;
   }
 `;
@@ -182,8 +191,8 @@ const copyButtonStyles = css`
 // Wallet send sits beside Simulate but must never be mistaken for it:
 // the broadcast action takes the success-card green, not simulate orange.
 const buttonSendStyles = css`
-  background: #2e7d32;
-  color: white;
+  background: var(--haze-color-success);
+  color: var(--haze-color-text-inverse);
   border: none;
   padding: 8px 16px;
   border-radius: 4px;
@@ -192,11 +201,12 @@ const buttonSendStyles = css`
   font-weight: 500;
 
   &:hover:not(:disabled) {
-    background: #256a29;
+    background: var(--haze-color-success-hover);
   }
 
   &:disabled {
-    background: #ccc;
+    background: var(--haze-color-bg-muted);
+    color: var(--haze-color-text-muted);
     cursor: not-allowed;
   }
 `;
@@ -205,7 +215,7 @@ const buttonSendStyles = css`
 const walletNoteStyles = css`
   margin-top: 6px;
   font-size: 12px;
-  color: #888;
+  color: var(--haze-color-text-muted);
 `;
 
 // Quiet wallet outcomes (user rejection, chain-switch notes): muted, no
@@ -213,21 +223,19 @@ const walletNoteStyles = css`
 const walletQuietStyles = css`
   margin-top: 8px;
   font-size: 13px;
-  color: #666;
+  color: var(--haze-color-text-muted);
 `;
 
+// Spacing half of the result card; colors come from the shared
+// noticeBoxOk family in ./styles.
 const resultSuccessStyles = css`
   margin-top: 12px;
-  padding: 12px;
-  background: #e8f5e8;
-  border-radius: 4px;
-  border: 1px solid #4caf50;
 `;
 
 const resultTitleStyles = css`
   font-size: 14px;
   font-weight: 600;
-  color: #2e7d32;
+  color: var(--haze-color-success);
   margin-bottom: 8px;
 `;
 
@@ -240,37 +248,35 @@ const simulatedTagStyles = css`
   border-radius: 3px;
   font-size: 11px;
   font-weight: 500;
-  background: #fff3cd;
-  color: #856404;
+  background: var(--haze-color-warning-subtle);
+  color: var(--haze-color-warning);
 `;
 
 const resultContentStyles = css`
   font-family: monospace;
   font-size: 12px;
-  color: #1b5e20;
+  color: var(--haze-color-success);
   margin: 0;
   white-space: pre-wrap;
   word-break: break-all;
 `;
 
+// Spacing half of the per-call error card; colors come from the shared
+// noticeBoxError family in ./styles.
 const functionErrorStyles = css`
   margin-top: 12px;
-  padding: 12px;
-  background: #ffebee;
-  border-radius: 4px;
-  border: 1px solid #f44336;
 `;
 
 const functionErrorTitleStyles = css`
   font-size: 14px;
   font-weight: 600;
-  color: #c62828;
+  color: var(--haze-color-danger);
   margin-bottom: 8px;
 `;
 
 const functionErrorContentStyles = css`
   font-size: 13px;
-  color: #b71c1c;
+  color: var(--haze-color-danger);
   /* Revert payloads can be one long hex run: wrap anywhere instead of
      pushing the card wide. */
   overflow-wrap: anywhere;
@@ -280,9 +286,27 @@ const selectorStyles = css`
   font-family: monospace;
   font-size: 11px;
   padding: 2px 6px;
-  background: #e8f0fe;
+  background: var(--haze-color-primary-subtle);
   border-radius: 4px;
-  color: #1a73e8;
+  color: var(--haze-color-primary);
+`;
+
+// Interaction-type chip tints: read takes the success pair, write the
+// warning pair (haze badge recipes).
+const selectorReadStyles = css`
+  background: var(--haze-color-success-subtle);
+  color: var(--haze-color-success);
+`;
+
+const selectorWriteStyles = css`
+  background: var(--haze-color-warning-subtle);
+  color: var(--haze-color-warning);
+`;
+
+// Badge row above the form body: selector + interaction type + source.
+const badgeRowStyles = css`
+  display: flex;
+  gap: 4px;
 `;
 
 // Wallet-send lifecycle for one form. 'rejected' is the user's own 4001
@@ -639,17 +663,17 @@ export function FunctionCallForm({
   );
 
   const badge = (
-    <span style={{ display: 'flex', gap: '4px' }}>
+    <span className={badgeRowStyles}>
       {selectorDisplay && <span className={selectorStyles}>{selectorDisplay}</span>}
       <span
-        className={selectorStyles}
-        style={{ background: func.interactionType === 'read' ? '#d4edda' : '#fff3cd' }}
+        className={cx(
+          selectorStyles,
+          func.interactionType === 'read' ? selectorReadStyles : selectorWriteStyles,
+        )}
       >
         {func.interactionType}
       </span>
-      <span className={selectorStyles} style={{ background: '#e8f0fe' }}>
-        {func.source}
-      </span>
+      <span className={selectorStyles}>{func.source}</span>
     </span>
   );
 
@@ -879,7 +903,7 @@ export function FunctionCallForm({
         {/* Broadcast success: the hash links to this explorer's own tx
             page (route verified in views/index.tsx). */}
         {walletSend.phase === 'sent' && (
-          <div className={resultSuccessStyles}>
+          <div className={cx(noticeBoxOk, resultSuccessStyles)}>
             <div className={resultTitleStyles}>Sent — transaction broadcast:</div>
             <div className={resultContentStyles}>
               <CopyableHash
@@ -892,7 +916,7 @@ export function FunctionCallForm({
 
         {/* Other provider errors: attributed inline, message verbatim. */}
         {walletSend.phase === 'error' && (
-          <div className={functionErrorStyles}>
+          <div className={cx(noticeBoxError, functionErrorStyles)}>
             <div className={functionErrorTitleStyles}>Wallet send error:</div>
             <div className={functionErrorContentStyles}>{walletSend.message}</div>
           </div>
@@ -900,7 +924,7 @@ export function FunctionCallForm({
 
         {/* Results */}
         {result !== undefined && (
-          <div className={resultSuccessStyles}>
+          <div className={cx(noticeBoxOk, resultSuccessStyles)}>
             <div className={resultTitleStyles}>
               Result:
               {func.interactionType === 'write' && (
@@ -920,7 +944,7 @@ export function FunctionCallForm({
 
         {/* Errors */}
         {error && (
-          <div className={functionErrorStyles}>
+          <div className={cx(noticeBoxError, functionErrorStyles)}>
             <div className={functionErrorTitleStyles}>Error:</div>
             <div className={functionErrorContentStyles}>{error}</div>
           </div>

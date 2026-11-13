@@ -20,6 +20,7 @@ import { createRpcClient } from '@/utils/realTimeData';
 import { codeVerdict } from '@/utils/address';
 import { errorMessage } from '@/utils/errorHandler';
 import { withTimeout } from '@/utils/withTimeout';
+import { runBoundedPool } from '@/utils/boundedPool';
 
 /** How many popular chains the probe targets (always excluding the viewed one). */
 export const PROBE_POPULAR_CHAIN_COUNT = 5;
@@ -142,21 +143,10 @@ export async function probeAddressAcrossChains(
   try {
     await ensureCustomChainsLoaded();
     const chainIds = selectProbeChains(currentChainId, listCustomChains());
-    const outcomes = new Array<ProbeOutcome>(chainIds.length);
     const concurrency = Math.max(1, Math.floor(options.concurrency ?? PROBE_CONCURRENCY));
-    let nextIndex = 0;
-    const runWorker = async (): Promise<void> => {
-      for (;;) {
-        // Read-and-increment is synchronous, so workers never claim the
-        // same slot despite sharing the cursor across awaits.
-        const index = nextIndex;
-        nextIndex += 1;
-        if (index >= chainIds.length) return;
-        outcomes[index] = await probeAddressOnChain(chainIds[index], address);
-      }
-    };
-    await Promise.all(Array.from({ length: Math.min(concurrency, chainIds.length) }, runWorker));
-    return outcomes;
+    return await runBoundedPool(chainIds, concurrency, chainId =>
+      probeAddressOnChain(chainId, address),
+    );
   } catch {
     // Unreachable by construction — every layer settles instead of
     // throwing — kept so the never-rejects contract is structural.

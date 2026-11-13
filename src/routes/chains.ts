@@ -18,7 +18,7 @@ import { registerCustomChain, removeCustomChain } from '../config/customChains';
 import { requireAdminTokenIfConfigured } from '../middleware/admin-token';
 import { createRateLimiter } from '../middleware/rate-limit';
 import { redactUrl, requestSeesFullUrl } from '../middleware/rpc-url-visibility';
-import { createApiError, readJsonBody, respondError } from '../utils/api-error';
+import { readJsonBody, respondError } from '../utils/api-error';
 import { errorMessage } from '../utils/errorHandler';
 import { getValidatedChainId } from '../server/validation';
 import { parseStrictInteger } from '../utils/validation';
@@ -185,7 +185,7 @@ app.post('/chains/custom', requireAdminTokenIfConfigured, registerRateLimiter, a
 
   const probe = await probeRpcChainId(rpcUrl);
   if (!probe.ok) {
-    return c.json(createApiError(502, probe.code, probe.message), 502);
+    return respondError(c, 502, probe.code, probe.message);
   }
 
   // viem already shipping the id as a REAL network means the user does
@@ -197,18 +197,16 @@ app.post('/chains/custom', requireAdminTokenIfConfigured, registerRateLimiter, a
   if (isBuiltInChainProtected(probe.chainId)) {
     const known = getBuiltInChainInfo(probe.chainId);
     const knownName = known?.name ?? String(probe.chainId);
-    return c.json(
-      createApiError(
-        409,
-        'chain_already_known',
-        `The RPC reports chain ID ${probe.chainId}, which this explorer already knows as "${knownName}". ` +
-        'Use the RPC override (⚙ RPC panel) for a known chain.',
-        {
-          existingName: knownName,
-          hint: 'Use the RPC override (⚙ RPC panel) for a known chain',
-        },
-      ),
+    return respondError(
+      c,
       409,
+      'chain_already_known',
+      `The RPC reports chain ID ${probe.chainId}, which this explorer already knows as "${knownName}". ` +
+      'Use the RPC override (⚙ RPC panel) for a known chain.',
+      {
+        existingName: knownName,
+        hint: 'Use the RPC override (⚙ RPC panel) for a known chain',
+      },
     );
   }
 

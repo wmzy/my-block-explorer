@@ -187,17 +187,19 @@ describe('NftGrid tiles', () => {
     render(<NftGrid chainId={CHAIN_ID} contract={CONTRACT} items={[item721('7')]} />);
 
     fireEvent.click(screen.getByTestId('nft-item-tile'));
-    await screen.findByText('copied ✓');
+    await screen.findByText('Copied ✓');
     expect(writeText).toHaveBeenCalledWith('7');
   });
 
-  it('stays quiet when the clipboard is unavailable (never a false confirmation)', () => {
+  it('says Copy failed when the clipboard write is denied (never a false confirmation)', async () => {
+    const writeText = vi.fn().mockRejectedValue(new Error('denied'));
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
     settleMetadata([item721('7')], () => ({ status: 'none' }));
     render(<NftGrid chainId={CHAIN_ID} contract={CONTRACT} items={[item721('7')]} />);
 
     fireEvent.click(screen.getByTestId('nft-item-tile'));
-    expect(screen.queryByText('copied ✓')).not.toBeInTheDocument();
-    expect(screen.getByTestId('nft-tile-id')).toHaveTextContent('#7');
+    expect(await screen.findByText('Copy failed')).toBeInTheDocument();
+    expect(screen.queryByText('Copied ✓')).not.toBeInTheDocument();
   });
 
   it('does not copy when the retry button inside the tile is clicked', () => {

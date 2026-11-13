@@ -2,13 +2,10 @@ import { getAddress, keccak256, toBytes, toHex } from 'viem';
 import { describe, expect, it } from 'vitest';
 
 import {
-  BEACON_PROXY_BYTECODE_PREFIX,
   EIP1822_PROXIABLE_SLOT,
-  EIP1967_ADMIN_SLOT,
   EIP1967_BEACON_SLOT,
   EIP1967_IMPLEMENTATION_SLOT,
   classifyProxyCode,
-  decodeBeaconProxyPrefix,
   decodeMinimalProxy,
   slotValueToAddress,
 } from '@/utils/proxyDetection';
@@ -19,6 +16,9 @@ const IMPL_ADDRESS = '0x1234567890abcdef1234567890abcdef123456cd';
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
 const MINIMAL_PROXY_PREFIX = '363d3d373d3d3d363d73';
 const MINIMAL_PROXY_SUFFIX = '5af43d82803e903d91602b57fd5bf3';
+// The canonical OpenZeppelin BeaconProxy dispatcher prefix, inlined as
+// independent test data (the module keeps its copy private).
+const BEACON_PROXY_PREFIX = '0x60806040526040523615600b5760e01c8063';
 
 const buildMinimalProxyRuntime = (impl: string) =>
   asHex(`${MINIMAL_PROXY_PREFIX}${impl.slice(2).toLowerCase()}${MINIMAL_PROXY_SUFFIX}`);
@@ -30,10 +30,6 @@ describe('proxyDetection', () => {
   describe('storage slot constants', () => {
     it('pins EIP-1967 implementation slot to keccak256(label) - 1', () => {
       expect(EIP1967_IMPLEMENTATION_SLOT).toBe(deriveEip1967Slot('eip1967.proxy.implementation'));
-    });
-
-    it('pins EIP-1967 admin slot to keccak256(label) - 1', () => {
-      expect(EIP1967_ADMIN_SLOT).toBe(deriveEip1967Slot('eip1967.proxy.admin'));
     });
 
     it('pins EIP-1967 beacon slot to keccak256(label) - 1', () => {
@@ -111,21 +107,16 @@ describe('proxyDetection', () => {
     });
   });
 
-  describe('decodeBeaconProxyPrefix', () => {
-    it('matches the canonical prefix with arbitrary trailing bytecode', () => {
-      const code = asHex(`${BEACON_PROXY_BYTECODE_PREFIX.slice(2)}515afa`);
-      expect(decodeBeaconProxyPrefix(code)).toBe(true);
+  describe('beacon prefix (via classifyProxyCode)', () => {
+    it('matches the fully uppercased prefix form', () => {
+      const code = asHex(`${BEACON_PROXY_PREFIX.slice(2).toUpperCase()}515afa`);
+      expect(classifyProxyCode(code)).toEqual({ kind: 'beacon' });
     });
 
     it('does not match when one early nibble differs', () => {
       // Same prefix with the first nibble changed from 6 to 7.
       const code = asHex('70806040526040523615600b5760e01c8063515afa');
-      expect(decodeBeaconProxyPrefix(code)).toBe(false);
-    });
-
-    it('matches the fully uppercased prefix form', () => {
-      const code = asHex(`${BEACON_PROXY_BYTECODE_PREFIX.slice(2).toUpperCase()}515afa`);
-      expect(decodeBeaconProxyPrefix(code)).toBe(true);
+      expect(classifyProxyCode(code)).toBeNull();
     });
   });
 
@@ -137,7 +128,7 @@ describe('proxyDetection', () => {
     });
 
     it('classifies beacon-prefixed bytecode as beacon', () => {
-      const code = asHex(`${BEACON_PROXY_BYTECODE_PREFIX.slice(2)}515afa`);
+      const code = asHex(`${BEACON_PROXY_PREFIX.slice(2)}515afa`);
       expect(classifyProxyCode(code)).toEqual({ kind: 'beacon' });
     });
 

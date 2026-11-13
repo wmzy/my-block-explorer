@@ -4,7 +4,7 @@
 // surface deltas then compose on top via cx (the Home feed skeleton
 // convention). A parameterized pulse factory is not an option — wyw-in-js
 // rejects interpolating function parameters into css templates — so each
-// genuinely different pulse cadence is its own named export.
+// genuinely different animation is its own named export.
 import { css } from '@linaria/core';
 
 // Shared placeholder surface with the feed pulse (1.4s, full opacity
@@ -35,8 +35,9 @@ export const skeletonBase = css`
 
 // Metadata-slot shimmer pulse (1.4s, full opacity dipping to 0.35): the
 // byte-identical animation shared by the address page's NFT holdings
-// thumbs and the token page's NFT tiles. Those two sites lay it over
-// different backgrounds, so this class carries the pulse only.
+// thumbs, the token page's NFT tiles and every chart-shaped first-load
+// placeholder. Those sites lay it over different backgrounds, so this
+// class carries the pulse and the reduced-motion opt-out only.
 export const shimmerPulse = css`
   animation: nft-shimmer-pulse 1.4s ease-in-out infinite;
 
@@ -49,5 +50,39 @@ export const shimmerPulse = css`
     50% {
       opacity: 0.35;
     }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
+  }
+`;
+
+// Wide-row placeholder shimmer (1.2s): a highlight gradient sweeping
+// across the surface via background-position — the approvals-table
+// convention. Genuinely different from the opacity pulses above (it
+// animates background-position, not opacity), so it ships as its own
+// class per this file's one-animation-per-export rule, gradient surface
+// and reduced-motion opt-out included.
+export const shimmerSweep = css`
+  background: linear-gradient(
+    90deg,
+    var(--haze-color-bg-subtle) 25%,
+    var(--haze-color-bg-muted) 50%,
+    var(--haze-color-bg-subtle) 75%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-sweep 1.2s ease-in-out infinite;
+
+  @keyframes skeleton-sweep {
+    0% {
+      background-position: 200% 0;
+    }
+    100% {
+      background-position: -200% 0;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
   }
 `;

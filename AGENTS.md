@@ -2058,6 +2058,54 @@ pnpm typecheck           # tsc --noEmit
   **cellText** adopted at InternalTxns ×4, Blocks/List formatMiner,
   EnsInline (its fallback param reproduces the blank→N/A guard). Tests
   re-pinned where the errorMessage contract sanctions the delta
-  (eventsRoutesErrorBodies, verifyShared non-Error cases). Deferred
+  (eventsRouteErrorBodies, verifyShared non-Error cases). Deferred
   (unchanged): in-flight-dedup Maps, scan ladders, Address-view
   micro-extractions.
+
+- **2026-11-13 duplication review fix wave round 7 (4 scouts + 5 fix agents +
+  integration)** — findings fixed end-to-end; verified tsc/eslint 0 errors,
+  `vitest --changed` 246 files green, `pnpm build` green, browser smoke on the
+  built bundle via the standalone server (USDC decimals() → `Result: 6`
+  through the restyled Interact form, dark mode, Storage/ABI tabs, RPC
+  modal, topnav search dispatch). **New canonicals (reuse, never re-roll)**:
+  `utils/isRecord.ts` (9 hand-rolled locals deleted; canonical REJECTS
+  arrays), `utils/boundedPool.ts` `runBoundedPool` (the 4 backend
+  shared-cursor loops migrated — crossChainProbe, EventIndexingService
+  timestamps, WatchService tick, AddressScanService trace fan-out;
+  `runTracePool` stays as the browser specialization),
+  `utils/viemChainExports.ts` (the two private tables had diverged
+  fantom-vs-zksync; parity test pins POPULAR_CHAINS + real viem/chains
+  exports), `utils/time.ts` `MS_PER_DAY`; `components/ui/motion.ts`
+  (exported base-CLASS twin of skeleton.ts — site deltas override
+  `--panel-enter-*` vars instead of forking keyframes); `useCopyLabel`
+  (useCopyFeedback). Contract views' hex island → `--haze-color-*` via 13
+  shared families in `views/Contract/styles.ts` (RpcConfig's hidden file
+  input uses the native `hidden` attribute — CSS-class hiding is invisible
+  to jsdom, attribute hiding is not); migration **0017** drops the four
+  dead tables (user_preferences, index_status, access_history,
+  event_table_registry); `types/index.ts` barrel deleted (its one type-only
+  importer retargeted to `@/types/blockchain`); gasShare now actually
+  routes through formatPercentage (the header comment used to lie).
+  **Rules pinned this wave**: (1) **kill → POLL the pid for exit before
+  starting the next DuckDB opener** — the server's graceful shutdown holds a
+  ~5s window (closeAllConnections + force-exit timer) during which a second
+  writer is a dual-writer; two overlapping writers trash the
+  `drizzle.__drizzle_migrations` journal into the half-applied state
+  (signature: 0001 CREATE replay loop + cause-less "Failed query" on every
+  read; detection: `SELECT id FROM drizzle.__drizzle_migrations ORDER BY id`
+  non-contiguous; recovery: rebuild fresh — labels reseed, rpc-configs
+  re-add). (2) **The vite dev bridge is currently BROKEN against DuckDB on
+  this tree** — every bridge query fails (cause:{}, 0001 replay every watch
+  tick) while the standalone server on identical code+file is clean; a
+  multi-hour bridge run left the journal trashed. Root cause undiagnosed.
+  Until fixed, smoke via the standalone server with
+  `SERVE_STATIC_DIR=dist/client` (single process serves SPA + API
+  same-origin — no service discovery needed) and DO NOT leave `pnpm dev`
+  running against the real `data/blockchain.db`. (3) Agent reports need
+  integration spot-checks: one claimed OptimizedSorter dead (3 test files
+  instantiate it), one reported og-meta line numbers past EOF (finding
+  real, numbers wrong), and one brief's "indeterminate bar in
+  SegmentedProgressBar" premise didn't match HEAD. Deferred (unchanged):
+  in-flight-dedup Maps (now 8 with CompileVerify's version-list), scan
+  ladders, Address-view micro-extractions, the bespoke copy-button family
+  (AbiListPanel/FunctionCallForm/CustomAbiPanel).

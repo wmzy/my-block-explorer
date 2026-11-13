@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useId, useRef } from 'react';
-import { css } from '@linaria/core';
+import { css, cx } from '@linaria/core';
 import { Dialog } from 'haze-ui';
 import { TypedLink } from '@native-router/react';
 import { useControl, type Control } from 'react-use-control';
@@ -47,11 +47,11 @@ const headerStyles = css`
   align-items: center;
   margin-bottom: 20px;
   padding-bottom: 16px;
-  border-bottom: 1px solid #eee;
+  border-bottom: 1px solid var(--haze-color-border);
 
   h2 {
     margin: 0;
-    color: #333;
+    color: var(--haze-color-text);
     font-size: 18px;
   }
 
@@ -60,7 +60,7 @@ const headerStyles = css`
     border: none;
     font-size: 24px;
     cursor: pointer;
-    color: #666;
+    color: var(--haze-color-text-muted);
     padding: 0;
     width: 32px;
     height: 32px;
@@ -70,7 +70,7 @@ const headerStyles = css`
     border-radius: 50%;
 
     &:hover {
-      background: #f5f5f5;
+      background: var(--haze-color-bg-muted);
     }
   }
 `;
@@ -81,20 +81,20 @@ const sectionStyles = css`
   h3 {
     margin: 0 0 12px 0;
     font-size: 16px;
-    color: #333;
+    color: var(--haze-color-text);
   }
 
   p {
     margin: 0 0 16px 0;
-    color: #666;
+    color: var(--haze-color-text-muted);
     font-size: 14px;
     line-height: 1.5;
   }
 `;
 
 const currentConfigStyles = css`
-  background: #f8f9fa;
-  border: 1px solid #e9ecef;
+  background: var(--haze-color-bg-subtle);
+  border: 1px solid var(--haze-color-border);
   border-radius: 8px;
   padding: 16px;
   margin-bottom: 16px;
@@ -106,22 +106,22 @@ const currentConfigStyles = css`
     margin-bottom: 8px;
 
     &.default {
-      color: #6c757d;
+      color: var(--haze-color-text-secondary);
     }
 
     &.custom {
-      color: #28a745;
+      color: var(--haze-color-success);
     }
   }
 
   .url {
     font-family: monospace;
     font-size: 13px;
-    color: #495057;
-    background: white;
+    color: var(--haze-color-text-secondary);
+    background: var(--haze-color-bg);
     padding: 8px;
     border-radius: 4px;
-    border: 1px solid #dee2e6;
+    border: 1px solid var(--haze-color-border);
     margin-bottom: 8px;
   }
 
@@ -133,7 +133,7 @@ const currentConfigStyles = css`
 
 const presetStyles = css`
   .preset-item {
-    border: 1px solid #e9ecef;
+    border: 1px solid var(--haze-color-border);
     border-radius: 8px;
     padding: 16px;
     margin-bottom: 12px;
@@ -141,8 +141,8 @@ const presetStyles = css`
     transition: all 0.2s;
 
     &:hover {
-      border-color: #007bff;
-      background: #f8f9ff;
+      border-color: var(--haze-color-primary);
+      background: var(--haze-color-primary-subtle);
     }
 
     .preset-header {
@@ -153,13 +153,13 @@ const presetStyles = css`
 
       .preset-name {
         font-weight: 500;
-        color: #333;
+        color: var(--haze-color-text);
       }
 
       .preset-provider {
         font-size: 12px;
-        color: #6c757d;
-        background: #e9ecef;
+        color: var(--haze-color-text-secondary);
+        background: var(--haze-color-bg-muted);
         padding: 2px 8px;
         border-radius: 12px;
       }
@@ -168,13 +168,13 @@ const presetStyles = css`
     .preset-url {
       font-family: monospace;
       font-size: 13px;
-      color: #495057;
+      color: var(--haze-color-text-secondary);
       margin-bottom: 4px;
     }
 
     .preset-description {
       font-size: 12px;
-      color: #6c757d;
+      color: var(--haze-color-text-secondary);
     }
   }
 `;
@@ -187,21 +187,23 @@ const customFormStyles = css`
       display: block;
       margin-bottom: 6px;
       font-weight: 500;
-      color: #333;
+      color: var(--haze-color-text);
       font-size: 14px;
     }
 
     input {
       width: 100%;
       padding: 10px 12px;
-      border: 1px solid #ddd;
+      border: 1px solid var(--haze-color-border);
       border-radius: 6px;
       font-size: 14px;
+      background: var(--haze-color-bg);
+      color: var(--haze-color-text);
 
       &:focus {
         outline: none;
-        border-color: #007bff;
-        box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+        border-color: var(--haze-color-primary);
+        box-shadow: 0 0 0 2px var(--haze-color-focus-ring);
       }
     }
   }
@@ -218,34 +220,34 @@ const buttonStyles = css`
     transition: all 0.2s;
 
     &.primary {
-      background: #007bff;
-      color: white;
+      background: var(--haze-color-primary);
+      color: var(--haze-color-text-inverse);
 
       &:hover {
-        background: #0056b3;
+        background: var(--haze-color-primary-hover);
       }
 
       &:disabled {
-        background: #6c757d;
+        background: var(--haze-color-text-secondary);
         cursor: not-allowed;
       }
     }
 
     &.secondary {
-      background: #6c757d;
-      color: white;
+      background: var(--haze-color-text-secondary);
+      color: var(--haze-color-text-inverse);
 
       &:hover {
-        background: #545b62;
+        background: var(--haze-color-text-muted);
       }
     }
 
     &.danger {
-      background: #dc3545;
-      color: white;
+      background: var(--haze-color-danger);
+      color: var(--haze-color-text-inverse);
 
       &:hover {
-        background: #c82333;
+        background: var(--haze-color-danger-hover);
       }
     }
 
@@ -263,9 +265,9 @@ const buttonStyles = css`
 `;
 
 const adminNoticeStyles = css`
-  background: #fff3cd;
-  border: 1px solid #ffe69c;
-  color: #664d03;
+  background: var(--haze-color-warning-subtle);
+  border: 1px solid color-mix(in srgb, var(--haze-color-warning) 25%, transparent);
+  color: var(--haze-color-warning);
   border-radius: 6px;
   padding: 10px 12px;
   font-size: 13px;
@@ -277,9 +279,9 @@ const adminNoticeStyles = css`
 // custom-endpoint form carries a persistent heads-up that this affects
 // every user of the backend, not just this browser.
 const globalEffectHintStyles = css`
-  background: #fff3cd;
-  border: 1px solid #ffe69c;
-  color: #664d03;
+  background: var(--haze-color-warning-subtle);
+  border: 1px solid color-mix(in srgb, var(--haze-color-warning) 25%, transparent);
+  color: var(--haze-color-warning);
   border-radius: 6px;
   padding: 8px 10px;
   font-size: 12px;
@@ -290,19 +292,19 @@ const globalEffectHintStyles = css`
 // Backup confirmation (what a restore WILL do) and the post-restore
 // per-section summary share one panel look: quiet box, tight list.
 const backupPanelStyles = css`
-  background: #f8f9fa;
-  border: 1px solid #e9ecef;
+  background: var(--haze-color-bg-subtle);
+  border: 1px solid var(--haze-color-border);
   border-radius: 8px;
   padding: 12px 14px;
   margin-top: 12px;
   font-size: 13px;
   line-height: 1.5;
-  color: #495057;
+  color: var(--haze-color-text-secondary);
 
   strong {
     display: block;
     margin-bottom: 6px;
-    color: #333;
+    color: var(--haze-color-text);
   }
 
   ul {
@@ -316,30 +318,94 @@ const backupPanelStyles = css`
 
   .note {
     margin-top: 6px;
-    color: #664d03;
+    color: var(--haze-color-warning);
   }
 `;
 
 // Quiet footer link to the coverage legend: reference material, not a
-// setting — muted like the preset descriptions (same #6c757d family this
-// file already uses), the file's link blue only on hover. This keeps the
-// coverage vocabulary discoverable from the settings surface on every
-// page, beyond the badge's ⓘ detail.
+// setting — muted like the preset descriptions, the link blue only on
+// hover. This keeps the coverage vocabulary discoverable from the
+// settings surface on every page, beyond the badge's ⓘ detail.
 const coverageFooterStyles = css`
   margin-top: 16px;
   padding-top: 12px;
-  border-top: 1px solid #e9ecef;
+  border-top: 1px solid var(--haze-color-border);
   text-align: center;
   font-size: 13px;
 
   a {
-    color: #6c757d;
+    color: var(--haze-color-text-secondary);
 
     &:hover {
-      color: #007bff;
+      color: var(--haze-color-primary);
       text-decoration: underline;
     }
   }
+`;
+
+const configNameStyles = css`
+  margin-bottom: 8px;
+`;
+
+const configNameLabelStyles = css`
+  font-weight: 500;
+  margin-bottom: 4px;
+`;
+
+const configRangeNoteStyles = css`
+  font-size: 12px;
+  color: var(--haze-color-text-secondary);
+  margin-top: 4px;
+`;
+
+// Shared shape of the connection-test outcome banner; ok/error tints are
+// the haze soft-box recipes (composed at the JSX site).
+const testBannerStyles = css`
+  padding: 12px;
+  border-radius: 6px;
+  margin-bottom: 16px;
+  font-size: 14px;
+`;
+
+const testBannerOkStyles = css`
+  background: var(--haze-color-success-subtle);
+  border: 1px solid color-mix(in srgb, var(--haze-color-success) 25%, transparent);
+  color: var(--haze-color-success);
+`;
+
+const testBannerErrorStyles = css`
+  background: var(--haze-color-danger-subtle);
+  border: 1px solid color-mix(in srgb, var(--haze-color-danger) 25%, transparent);
+  color: var(--haze-color-danger);
+`;
+
+const testBannerTitleStyles = css`
+  margin-bottom: 8px;
+`;
+
+const testBannerDetailStyles = css`
+  font-size: 12px;
+  line-height: 1.4;
+`;
+
+const testBannerErrorTextStyles = css`
+  font-size: 12px;
+  color: var(--haze-color-danger);
+`;
+
+const testBannerCmdStyles = css`
+  font-size: 11px;
+  margin-top: 8px;
+  font-family: monospace;
+  background: color-mix(in srgb, var(--haze-color-text) 8%, transparent);
+  padding: 4px;
+  border-radius: 3px;
+`;
+
+const fieldHintStyles = css`
+  font-size: 12px;
+  color: var(--haze-color-text-secondary);
+  margin-top: 4px;
 `;
 
 type Props = {
@@ -714,17 +780,11 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
           {currentConfig ? (
             <>
               <div className="status custom">✅ Using a custom RPC node</div>
-              <div style={{ marginBottom: '8px' }}>
-                <div style={{ fontWeight: '500', marginBottom: '4px' }}>{currentConfig.name}</div>
+              <div className={configNameStyles}>
+                <div className={configNameLabelStyles}>{currentConfig.name}</div>
                 <div className="url">{currentConfig.url}</div>
                 {currentConfig.maxEventRange && (
-                  <div
-                    style={{
-                      fontSize: '12px',
-                      color: '#6c757d',
-                      marginTop: '4px',
-                    }}
-                  >
+                  <div className={configRangeNoteStyles}>
                     📊 Event query range: {currentConfig.maxEventRange} blocks
                   </div>
                 )}
@@ -826,13 +886,7 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
                 min="100"
                 max="50000"
               />
-              <div
-                style={{
-                  fontSize: '12px',
-                  color: '#6c757d',
-                  marginTop: '4px',
-                }}
-              >
+              <div className={fieldHintStyles}>
                 Maximum block range per event query. Smaller values are more stable; larger values
                 are faster but may time out.
               </div>
@@ -840,22 +894,18 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
 
             {testResult && (
               <div
-                style={{
-                  padding: '12px',
-                  borderRadius: '6px',
-                  marginBottom: '16px',
-                  background: testResult.status === 'success' ? '#d4edda' : '#f8d7da',
-                  color: testResult.status === 'success' ? '#155724' : '#721c24',
-                  fontSize: '14px',
-                }}
+                className={cx(
+                  testBannerStyles,
+                  testResult.status === 'success' ? testBannerOkStyles : testBannerErrorStyles,
+                )}
               >
                 {testResult.status === 'success' ? (
                   <div>
-                    <div style={{ marginBottom: '8px' }}>
+                    <div className={testBannerTitleStyles}>
                       ✅ <strong>Connection successful</strong> (latency: {testResult.latency}
                       ms)
                     </div>
-                    <div style={{ fontSize: '12px', lineHeight: '1.4' }}>
+                    <div className={testBannerDetailStyles}>
                       {testResult.detectedChainId && (
                         <div>
                           🔗 Chain ID: {testResult.detectedChainId}{' '}
@@ -876,20 +926,11 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
                   </div>
                 ) : (
                   <div>
-                    <div style={{ marginBottom: '8px' }}>
+                    <div className={testBannerTitleStyles}>
                       ❌ <strong>Connection failed</strong>
                     </div>
-                    <div style={{ fontSize: '12px', color: '#721c24' }}>{testResult.error}</div>
-                    <div
-                      style={{
-                        fontSize: '11px',
-                        marginTop: '8px',
-                        fontFamily: 'monospace',
-                        background: 'rgba(0,0,0,0.1)',
-                        padding: '4px',
-                        borderRadius: '3px',
-                      }}
-                    >
+                    <div className={testBannerErrorTextStyles}>{testResult.error}</div>
+                    <div className={testBannerCmdStyles}>
                       Verification commands:
                       <br />
                       cast chain-id --rpc-url {customUrl}
@@ -1040,7 +1081,7 @@ export default function RpcConfig({ open, onClose, chainId, onConfigSaved }: Pro
           ref={backupFileInputRef}
           type="file"
           accept="application/json,.json"
-          style={{ display: 'none' }}
+          hidden
           onChange={handleBackupFileChosen}
         />
         {backupMessage !== null && (

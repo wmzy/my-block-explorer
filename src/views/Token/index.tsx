@@ -29,6 +29,7 @@ import { Badge } from '@/components/ui/Badge';
 import { CopyableHash } from '@/components/ui/CopyableHash';
 import { EnsInline } from '@/components/ui/EnsInline';
 import { UsdValue, formatUsd } from '@/components/ui/UsdValue';
+import { shimmerPulse } from '@/components/ui/skeleton';
 import { useContractCode } from '@/services/addressRealTime';
 import { useTokenOverviewProbe } from '@/services/tokenMetadata';
 import {
@@ -60,6 +61,7 @@ import { getChainInfo, getChainName } from '@/config/chains';
 import { parseChainIdParam } from '@/utils/chainParam';
 import { cellText, formatNumber, formatRawUnits } from '@/utils/format';
 import { codeVerdict } from '@/utils/address';
+import { isRecord } from '@/utils/isRecord';
 import { useContractSource } from '@/services/contracts';
 import { recordViewedToken } from '@/services/tokenDirectory';
 import { scanAbiRisks, type AbiRiskFlag } from '@/utils/abiRiskScan';
@@ -382,32 +384,19 @@ const windowToggleActive = css`
   border-color: var(--haze-color-primary);
 `;
 
-// Chart-shaped loading placeholder (the Charts page pulse convention:
-// opacity-only animation, so it stays on the compositor).
-const priceChartSkeleton = css`
-  display: block;
-  width: 100%;
-  height: 96px;
-  border-radius: var(--haze-radius-sm, 4px);
-  background: var(--haze-color-border);
-  opacity: 0.35;
-  animation: price-history-pulse 1.6s ease-in-out infinite;
-
-  @keyframes price-history-pulse {
-    0%,
-    100% {
-      opacity: 0.35;
-    }
-    50% {
-      opacity: 0.7;
-    }
-  }
-`;
-
-// Unknown-envelope narrowing for the source endpoint's JSON payload (the
-// service types it as a bare Record<string, unknown> — no `any` needed).
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null;
+// Chart-shaped loading placeholder: the shared shimmer pulse
+// (components/ui/skeleton) over this surface's border block —
+// opacity-only animation, so it stays on the compositor.
+const priceChartSkeleton = cx(
+  shimmerPulse,
+  css`
+    display: block;
+    width: 100%;
+    height: 96px;
+    border-radius: var(--haze-radius-sm, 4px);
+    background: var(--haze-color-border);
+  `,
+);
 
 /**
  * Dedicated not-a-token state (RouterError's not_a_contract precedent, as
